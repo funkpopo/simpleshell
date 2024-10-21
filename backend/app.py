@@ -203,10 +203,12 @@ def update_config():
 def sftp_list_directory():
     data = request.json
     connection = data['connection']
-    path = normalize_path(data['path'])
+    path = data['path']
+    force_root = data.get('forceRoot', False)
 
     print(f"Received SFTP list directory request for path: {path}")
     print(f"Connection details: {connection}")
+    print(f"Force root: {force_root}")
 
     try:
         transport = paramiko.Transport((connection['host'], connection['port']))
@@ -218,9 +220,10 @@ def sftp_list_directory():
 
         sftp = paramiko.SFTPClient.from_transport(transport)
 
-        # 处理根目录的特殊情况
-        if path == '/' or path == 'root' or path == '':
-            path = '.'
+        if force_root:
+            path = '/'
+        elif path == '/' or path == 'root' or path == '':
+            path = sftp.normalize('.')
 
         try:
             print(f"Attempting to list directory: {path}")
@@ -438,7 +441,7 @@ def sftp_download_file():
         temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'temp')
         os.makedirs(temp_dir, exist_ok=True)
 
-        # 下载文件到临时文件夹
+        # 下载��件到临时文件夹
         filename = os.path.basename(path)
         local_path = os.path.join(temp_dir, filename)
         print(f"Downloading file to: {local_path}")

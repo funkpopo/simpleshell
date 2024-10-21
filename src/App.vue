@@ -66,16 +66,27 @@
               </a-tab-pane>
             </a-tabs>
           </div>
-          <div class="terminal-container" :class="{ 'sidebar-open': isRightSidebarOpen }">
-            <SSHTerminal 
-              v-for="tab in tabs"
-              :key="tab.id"
-              :connection="tab.connection" 
-              :sessionId="tab.id" 
-              @close="closeTab"
-              ref="sshTerminals"
-              v-show="activeTab === tab.id"
-            />
+          <div class="terminal-and-sidebar-container">
+            <div class="terminal-container" :class="{ 'sidebar-open': isRightSidebarOpen }">
+              <SSHTerminal 
+                v-for="tab in tabs"
+                :key="tab.id"
+                :connection="tab.connection" 
+                :sessionId="tab.id" 
+                @close="closeTab"
+                ref="sshTerminals"
+                v-show="activeTab === tab.id"
+              />
+            </div>
+            <transition name="slide-fade">
+              <div v-if="isRightSidebarOpen && hasActiveConnection" class="right-sidebar">
+                <SFTPExplorer 
+                  v-if="activeConnection" 
+                  :key="activeConnection.id" 
+                  :connection="activeConnection" 
+                />
+              </div>
+            </transition>
           </div>
           <div 
             v-if="hasActiveConnection"
@@ -86,15 +97,6 @@
             <icon-menu-unfold v-if="isRightSidebarOpen" />
             <icon-menu-fold v-else />
           </div>
-          <transition name="slide-fade">
-            <div v-if="isRightSidebarOpen && hasActiveConnection" class="right-sidebar">
-              <SFTPExplorer 
-                v-if="activeConnection" 
-                :key="activeConnection.id" 
-                :connection="activeConnection" 
-              />
-            </div>
-          </transition>
         </a-layout-content>
       </a-layout>
 
@@ -491,6 +493,7 @@ export default {
 }
 
 .content-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -498,13 +501,38 @@ export default {
   background-color: var(--color-bg-2);
 }
 
-.tabs-container {
+.terminal-and-sidebar-container {
   flex: 1;
-  overflow-x: auto;
+  display: flex;
+  overflow: hidden;
+}
+
+.terminal-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  transition: margin-right 0.3s ease;
+}
+
+.terminal-container.sidebar-open {
+  margin-right: 300px;
+}
+
+.right-sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 300px;
+  height: 100%;
+  background-color: var(--color-bg-2);
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  overflow-y: auto;
+  transition: transform 0.3s ease;
 }
 
 .toggle-sidebar-button {
-  position: fixed;
+  position: absolute;
   top: 50%;
   right: 0;
   transform: translateY(-50%);
@@ -525,15 +553,9 @@ export default {
   background-color: var(--color-fill-3);
 }
 
-.terminal-container {
+.tabs-container {
   flex: 1;
-  position: relative;
-  overflow: hidden;
-  transition: margin-right 0.3s ease;
-}
-
-.terminal-container.sidebar-open {
-  margin-right: 300px;
+  overflow-x: auto;
 }
 
 .close-icon {
@@ -590,20 +612,6 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-.right-sidebar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  width: 300px;
-  height: 100%;
-  background-color: var(--color-bg-2);
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
-  padding: 20px;
-  overflow-y: auto;
-  transition: transform 0.3s ease;
 }
 
 .slide-fade-enter-active,

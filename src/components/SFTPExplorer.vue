@@ -3,6 +3,12 @@
     <div class="sftp-header">
       <h3>SFTP Explorer</h3>
       <div class="sftp-actions">
+        <a-button size="small" @click="goToBase">
+          <template #icon>
+            <icon-home />
+          </template>
+          /
+        </a-button>
         <a-button size="small" @click="refreshCurrentDirectory">
           <template #icon>
             <icon-refresh />
@@ -11,32 +17,40 @@
         <a-button size="small" @click="showHistory">History</a-button>
       </div>
     </div>
-    <a-spin :loading="loading">
-      <a-tree
-        v-if="fileTree.length > 0"
-        :data="fileTree"
-        :loadMore="loadMoreData"
-        @select="onSelect"
-        :defaultExpandedKeys="['root']"
-      >
-        <template #icon="nodeData">
-          <icon-file v-if="nodeData.isLeaf" />
-          <icon-folder v-else />
-        </template>
-        <template #title="nodeData">
-          <span
-            :class="{ 'folder-drop-target': !nodeData.isLeaf }"
-            @dblclick="nodeData.isLeaf && onItemDoubleClick(nodeData)"
-            @dragover.prevent
-            @drop.prevent="(event) => onDrop(event, nodeData)"
-            @contextmenu.prevent="(event) => showContextMenu(event, nodeData)"
-          >
-            {{ nodeData.title }}
-          </span>
-        </template>
-      </a-tree>
-      <div v-else-if="!loading">No files or directories found.</div>
-    </a-spin>
+    <div class="sftp-content">
+      <a-spin :loading="loading">
+        <a-tree
+          v-if="fileTree.length > 0"
+          :data="fileTree"
+          :loadMore="loadMoreData"
+          @select="onSelect"
+          :defaultExpandedKeys="['/']"
+          :expandedKeys="expandedKeys"
+          @expand="onExpand"
+        >
+          <template #icon="nodeData">
+            <icon-file v-if="nodeData.isLeaf" class="file-icon" />
+            <icon-folder v-else class="folder-icon" />
+          </template>
+          <template #title="nodeData">
+            <span
+              :class="{ 
+                'folder-drop-target': !nodeData.isLeaf,
+                'file-name': nodeData.isLeaf,
+                'folder-name': !nodeData.isLeaf
+              }"
+              @dblclick="nodeData.isLeaf && onItemDoubleClick(nodeData)"
+              @dragover.prevent
+              @drop.prevent="(event) => onDrop(event, nodeData)"
+              @contextmenu.prevent="(event) => showContextMenu(event, nodeData)"
+            >
+              {{ nodeData.title }}
+            </span>
+          </template>
+        </a-tree>
+        <div v-else-if="!loading">No files or directories found.</div>
+      </a-spin>
+    </div>
     <a-modal v-model:visible="fileContentVisible" title="File Content">
       <pre>{{ fileContent }}</pre>
     </a-modal>
@@ -62,7 +76,7 @@
 
 <script>
 import { ref, onMounted, watch } from 'vue';
-import { IconFile, IconFolder, IconRefresh } from '@arco-design/web-vue/es/icon';
+import { IconFile, IconFolder, IconRefresh, IconHome } from '@arco-design/web-vue/es/icon';
 import axios from 'axios';
 import { Message } from '@arco-design/web-vue';
 import { Menu, MenuItem, getCurrentWindow, shell } from '@electron/remote';
@@ -72,7 +86,8 @@ export default {
   components: {
     IconFile,
     IconFolder,
-    IconRefresh
+    IconRefresh,
+    IconHome
   },
   props: {
     connection: {
@@ -93,10 +108,21 @@ export default {
     const newName = ref('');
     const itemToRename = ref(null);
     const currentUploadPath = ref('/');
+    const expandedKeys = ref([]);
 
-    // 添加一个新的辅助函数来规范化路径
     const normalizePath = (path) => {
-      return path.replace(/\\/g, '/');
+      return path.replace(/\\/g, '/').replace(/\/+/g, '/');
+    };
+
+    const sortItems = (items) => {
+      return items.sort((a, b) => {
+        // 首先按照是否为目录排序
+        if (a.isDirectory !== b.isDirectory) {
+          return a.isDirectory ? -1 : 1;
+        }
+        // 然后按照名称字母顺序排序
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
     };
 
     const fetchRootDirectory = async () => {
@@ -104,32 +130,29 @@ export default {
       try {
         const response = await axios.post('http://localhost:5000/sftp_list_directory', {
           connection: props.connection,
-          path: '/'
+          path: '/',
+          forceRoot: true
         });
         console.log('Root directory response:', response.data);
         if (response.data.error) {
           throw new Error(response.data.error);
         }
+        const sortedItems = sortItems(response.data.map(item => ({
+          title: item.name,
+          key: normalizePath('/' + item.name),
+          isLeaf: !item.isDirectory,
+          children: item.isDirectory ? [] : undefined
+        })));
         fileTree.value = [{
           title: '/',
           key: 'root',
           isLeaf: false,
-          children: response.data.map(item => ({
-            title: item.name,
-            key: normalizePath(item.path),
-            isLeaf: !item.isDirectory,
-            children: item.isDirectory ? [] : undefined
-          }))
+          children: sortedItems
         }];
         console.log('Processed file tree:', fileTree.value);
       } catch (error) {
         console.error('Failed to fetch root directory:', error);
-        if (error.response) {
-          console.error('Error response:', error.response.data);
-          Message.error(`Failed to fetch root directory: ${error.response.data.error || error.message}`);
-        } else {
-          Message.error(`Failed to fetch root directory: ${error.message}`);
-        }
+        Message.error(`Failed to fetch root directory: ${error.message}`);
         fileTree.value = [];
       } finally {
         loading.value = false;
@@ -140,20 +163,24 @@ export default {
       if (node.children && node.children.length > 0) return;
       
       try {
-        const path = node.key === 'root' ? '/' : normalizePath(node.key);
+        const path = node.key === 'root' ? '/' : node.key;
+        console.log('Loading more data for path:', path);
         const response = await axios.post('http://localhost:5000/sftp_list_directory', {
           connection: props.connection,
-          path: path
+          path: path,
+          forceRoot: path === '/'
         });
         if (response.data.error) {
           throw new Error(response.data.error);
         }
-        node.children = response.data.map(item => ({
+        const sortedItems = sortItems(response.data.map(item => ({
           title: item.name,
-          key: normalizePath(item.path),
+          key: normalizePath(path + '/' + item.name),
           isLeaf: !item.isDirectory,
           children: item.isDirectory ? [] : undefined
-        }));
+        })));
+        node.children = sortedItems;
+        console.log('Loaded children:', node.children);
       } catch (error) {
         console.error('Failed to fetch directory contents:', error);
         Message.error(`Failed to fetch directory contents: ${error.message}`);
@@ -252,8 +279,8 @@ export default {
             });
             console.log('Upload response:', response.data);
             Message.success(`Uploaded ${file.name} successfully`);
-            // 刷新当前目录
-            await refreshDirectory({ key: uploadPath });
+            // 刷新当前目录，保持展开状态
+            await refreshDirectoryKeepingState(uploadPath);
           } catch (error) {
             console.error('Failed to upload file:', error);
             Message.error(`Failed to upload ${file.name}: ${error.message}`);
@@ -263,6 +290,57 @@ export default {
       }
       // Reset the file input
       event.target.value = '';
+    };
+
+    const refreshDirectoryKeepingState = async (path) => {
+      try {
+        loading.value = true;
+        console.log('Refreshing directory:', path);
+        const response = await axios.post('http://localhost:5000/sftp_list_directory', {
+          connection: props.connection,
+          path: path
+        });
+        
+        if (response.data.error) {
+          throw new Error(response.data.error);
+        }
+
+        const updateNode = (node, newChildren) => {
+          if (node.key === path) {
+            node.children = newChildren;
+            return true;
+          }
+          if (node.children) {
+            for (let child of node.children) {
+              if (updateNode(child, newChildren)) {
+                return true;
+              }
+            }
+          }
+          return false;
+        };
+
+        const newChildren = sortItems(response.data.map(item => ({
+          title: item.name,
+          key: normalizePath(path + '/' + item.name),
+          isLeaf: !item.isDirectory,
+          children: item.isDirectory ? [] : undefined
+        })));
+
+        updateNode(fileTree.value[0], newChildren);
+
+        console.log('Directory refreshed:', path);
+        Message.success(`Refreshed ${path}`);
+      } catch (error) {
+        console.error('Failed to refresh directory:', error);
+        Message.error('Failed to refresh directory');
+      } finally {
+        loading.value = false;
+      }
+    };
+
+    const onExpand = (keys) => {
+      expandedKeys.value = keys;
     };
 
     const contextMenuVisible = ref(false);
@@ -315,11 +393,9 @@ export default {
           // 获取父目录的路径
           const parentKey = item.key.split('/').slice(0, -1).join('/') || '/';
           
-          // 刷新整个文件树
-          await fetchRootDirectory();
+          // 刷新父目录，保持展开状态
+          await refreshDirectoryKeepingState(parentKey);
           
-          // 找到并展开父目录
-          await expandToPath(parentKey);
           await logOperation('delete', item.key);
         } catch (error) {
           console.error('Failed to delete item:', error);
@@ -549,6 +625,17 @@ export default {
       }
     };
 
+    const goToBase = async () => {
+      try {
+        await fetchRootDirectory();
+        currentDirectory.value = '/';
+        Message.success('Switched to base directory');
+      } catch (error) {
+        console.error('Failed to switch to base directory:', error);
+        Message.error('Failed to switch to base directory');
+      }
+    };
+
     onMounted(() => {
       console.log('SFTPExplorer mounted, connection:', props.connection);
       fetchRootDirectory();
@@ -589,6 +676,12 @@ export default {
       findNodeByKey,
       onItemDoubleClick,
       normalizePath,
+      fetchRootDirectory,
+      goToBase,
+      sortItems,
+      expandedKeys,
+      onExpand,
+      refreshDirectoryKeepingState,
     };
   }
 };
@@ -596,10 +689,21 @@ export default {
 
 <style scoped>
 .sftp-explorer {
-  height: 100%;
   display: flex;
   flex-direction: column;
+  height: 100%;
   color: var(--color-text-1);
+}
+
+.sftp-header {
+  flex: 0 0 auto;
+  padding: 10px;
+}
+
+.sftp-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0 10px;
 }
 
 .folder-drop-target {
@@ -621,28 +725,73 @@ export default {
   color: var(--color-text-2);
 }
 
-:deep(.arco-btn) {
-  margin-left: 8px;
-}
-
-.sftp-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
 .sftp-actions {
   display: flex;
   gap: 8px;
 }
 
 .sftp-actions .arco-btn {
-  padding: 0 4px;
+  padding: 0 8px;
 }
 
 .sftp-actions .arco-btn .arco-icon {
-  margin-right: 0;
+  margin-right: 4px;
+}
+
+/* 自定义滚动条样式 */
+.sftp-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sftp-content::-webkit-scrollbar-track {
+  background: var(--color-fill-2);
+}
+
+.sftp-content::-webkit-scrollbar-thumb {
+  background-color: var(--color-fill-3);
+  border-radius: 4px;
+  border: 2px solid var(--color-fill-2);
+}
+
+.sftp-content::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-fill-4);
+}
+
+.file-icon {
+  color: var(--color-text-3);
+}
+
+.folder-icon {
+  color: var(--color-primary-light-4);
+}
+
+.file-name {
+  color: var(--color-text-2);
+}
+
+.folder-name {
+  color: var(--color-primary-light-4);
+  font-weight: bold;
+}
+
+:deep(.arco-tree-node-title) {
+  color: var(--color-text-1);
+  display: flex;
+  align-items: center;
+}
+
+:deep(.arco-tree-node-icon) {
+  margin-right: 8px;
+}
+
+:deep(.arco-tree-node-selected) .file-name,
+:deep(.arco-tree-node-selected) .folder-name {
+  color: var(--color-primary);
+}
+
+:deep(.arco-tree-node:hover) .file-name,
+:deep(.arco-tree-node:hover) .folder-name {
+  color: var(--color-primary-light-3);
 }
 </style>
 

@@ -22,7 +22,7 @@ export default {
       required: true
     }
   },
-  emits: ['close'],
+  emits: ['close', 'pathChange'],
   setup(props, { emit }) {
     const terminal = ref(null)
     let term = null
@@ -31,6 +31,7 @@ export default {
     const isTerminalReady = ref(false)
     const outputBuffer = ref([])
     const isDarkMode = inject('isDarkMode', ref(false))
+    const currentPath = ref('/')
 
     const handlePaste = (event) => {
       if (term && isTerminalReady.value) {
@@ -115,15 +116,17 @@ export default {
         theme: isDarkMode.value ? getDarkTheme() : getLightTheme(),
         allowTransparency: true,
         scrollback: 10000,
-        cols: 120,  // 增加初始列数
-        rows: 40,   // 增加初始行数
       })
+      
+      term.open(terminal.value)
+
+      // 等待终端完全加载
+      await new Promise(resolve => setTimeout(resolve, 0))
+
       fitAddon = new FitAddon()
       term.loadAddon(fitAddon)
       term.loadAddon(new WebLinksAddon())
 
-      term.open(terminal.value)
-      
       fitAddon.fit()
 
       term.attachCustomKeyEventHandler((event) => {
@@ -133,8 +136,6 @@ export default {
         }
         return true
       })
-
-      window.addEventListener('resize', handleResize)
 
       isTerminalReady.value = true
       
@@ -160,19 +161,19 @@ export default {
       term.onLineFeed(() => {
         term.scrollToBottom()
       })
+
+      window.addEventListener('resize', handleResize)
     }
 
     const handleResize = () => {
-      if (fitAddon && term) {
+      if (fitAddon && term && isTerminalReady.value) {
         fitAddon.fit()
         term.scrollToBottom()
-        if (socket && isTerminalReady.value) {
-          socket.emit('resize', { 
-            session_id: props.sessionId, 
-            cols: term.cols, 
-            rows: term.rows 
-          })
-        }
+        socket.emit('resize', { 
+          session_id: props.sessionId, 
+          cols: term.cols, 
+          rows: term.rows 
+        })
       }
     }
 
@@ -234,20 +235,34 @@ export default {
       })
     }
 
+    const detectPathChange = (output) => {
+      // 使用正则表达式匹配路径
+      const pathRegex = /^(.+?)\s*[\r\n]/;
+      const match = output.match(pathRegex);
+      if (match) {
+        const newPath = match[1].trim();
+        if (newPath !== currentPath.value) {
+          currentPath.value = newPath;
+          emit('pathChange', newPath);
+          console.log('Path changed in SSHTerminal:', newPath);
+        }
+      }
+    };
+
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
-        term.write(text)
-        term.scrollToBottom()
+        term.write(text);
+        term.scrollToBottom();
+        detectPathChange(text);
       } else {
-        outputBuffer.value.push(text)
+        outputBuffer.value.push(text);
       }
-    }
+    };
 
     onMounted(async () => {
       console.log('Mounting SSHTerminal component')
       await initializeSocket()
       await initializeTerminal()
-      window.addEventListener('resize', handleResize)
     })
 
     const closeConnection = () => {
@@ -279,7 +294,8 @@ export default {
       handlePaste,
       setTheme,
       isDarkMode,
-      manualResize
+      manualResize,
+      currentPath
     }
   }
 }
