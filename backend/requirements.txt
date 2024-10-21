@@ -1,0 +1,5 @@
+Flask==2.1.0
+Flask-SocketIO==5.1.1
+paramiko==2.11.0
+python-socketio==5.5.2
+eventlet==0.33.0

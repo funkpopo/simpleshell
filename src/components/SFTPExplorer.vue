@@ -1,0 +1,648 @@
+<template>
+  <div class="sftp-explorer">
+    <div class="sftp-header">
+      <h3>SFTP Explorer</h3>
+      <div class="sftp-actions">
+        <a-button size="small" @click="refreshCurrentDirectory">
+          <template #icon>
+            <icon-refresh />
+          </template>
+        </a-button>
+        <a-button size="small" @click="showHistory">History</a-button>
+      </div>
+    </div>
+    <a-spin :loading="loading">
+      <a-tree
+        v-if="fileTree.length > 0"
+        :data="fileTree"
+        :loadMore="loadMoreData"
+        @select="onSelect"
+        :defaultExpandedKeys="['root']"
+      >
+        <template #icon="nodeData">
+          <icon-file v-if="nodeData.isLeaf" />
+          <icon-folder v-else />
+        </template>
+        <template #title="nodeData">
+          <span
+            :class="{ 'folder-drop-target': !nodeData.isLeaf }"
+            @dblclick="nodeData.isLeaf && onItemDoubleClick(nodeData)"
+            @dragover.prevent
+            @drop.prevent="(event) => onDrop(event, nodeData)"
+            @contextmenu.prevent="(event) => showContextMenu(event, nodeData)"
+          >
+            {{ nodeData.title }}
+          </span>
+        </template>
+      </a-tree>
+      <div v-else-if="!loading">No files or directories found.</div>
+    </a-spin>
+    <a-modal v-model:visible="fileContentVisible" title="File Content">
+      <pre>{{ fileContent }}</pre>
+    </a-modal>
+    <a-modal v-model:visible="historyVisible" title="SFTP Operation History">
+      <pre>{{ historyContent }}</pre>
+    </a-modal>
+    <input
+      type="file"
+      ref="fileInput"
+      style="display: none;"
+      @change="handleFileUpload"
+      multiple
+    >
+    <a-modal v-model:visible="renameModalVisible" title="Rename">
+      <a-input v-model="newName" placeholder="Enter new name" />
+      <template #footer>
+        <a-button @click="renameModalVisible = false">Cancel</a-button>
+        <a-button type="primary" @click="confirmRename">Confirm</a-button>
+      </template>
+    </a-modal>
+  </div>
+</template>
+
+<script>
+import { ref, onMounted, watch } from 'vue';
+import { IconFile, IconFolder, IconRefresh } from '@arco-design/web-vue/es/icon';
+import axios from 'axios';
+import { Message } from '@arco-design/web-vue';
+import { Menu, MenuItem, getCurrentWindow, shell } from '@electron/remote';
+
+export default {
+  name: 'SFTPExplorer',
+  components: {
+    IconFile,
+    IconFolder,
+    IconRefresh
+  },
+  props: {
+    connection: {
+      type: Object,
+      required: true
+    }
+  },
+  setup(props) {
+    const fileTree = ref([]);
+    const loading = ref(false);
+    const fileContentVisible = ref(false);
+    const fileContent = ref('');
+    const fileInput = ref(null);
+    const historyVisible = ref(false);
+    const historyContent = ref('');
+    const currentDirectory = ref('/');
+    const renameModalVisible = ref(false);
+    const newName = ref('');
+    const itemToRename = ref(null);
+    const currentUploadPath = ref('/');
+
+    // 添加一个新的辅助函数来规范化路径
+    const normalizePath = (path) => {
+      return path.replace(/\\/g, '/');
+    };
+
+    const fetchRootDirectory = async () => {
+      loading.value = true;
+      try {
+        const response = await axios.post('http://localhost:5000/sftp_list_directory', {
+          connection: props.connection,
+          path: '/'
+        });
+        console.log('Root directory response:', response.data);
+        if (response.data.error) {
+          throw new Error(response.data.error);
+        }
+        fileTree.value = [{
+          title: '/',
+          key: 'root',
+          isLeaf: false,
+          children: response.data.map(item => ({
+            title: item.name,
+            key: normalizePath(item.path),
+            isLeaf: !item.isDirectory,
+            children: item.isDirectory ? [] : undefined
+          }))
+        }];
+        console.log('Processed file tree:', fileTree.value);
+      } catch (error) {
+        console.error('Failed to fetch root directory:', error);
+        if (error.response) {
+          console.error('Error response:', error.response.data);
+          Message.error(`Failed to fetch root directory: ${error.response.data.error || error.message}`);
+        } else {
+          Message.error(`Failed to fetch root directory: ${error.message}`);
+        }
+        fileTree.value = [];
+      } finally {
+        loading.value = false;
+      }
+    };
+
+    const loadMoreData = async (node) => {
+      if (node.children && node.children.length > 0) return;
+      
+      try {
+        const path = node.key === 'root' ? '/' : normalizePath(node.key);
+        const response = await axios.post('http://localhost:5000/sftp_list_directory', {
+          connection: props.connection,
+          path: path
+        });
+        if (response.data.error) {
+          throw new Error(response.data.error);
+        }
+        node.children = response.data.map(item => ({
+          title: item.name,
+          key: normalizePath(item.path),
+          isLeaf: !item.isDirectory,
+          children: item.isDirectory ? [] : undefined
+        }));
+      } catch (error) {
+        console.error('Failed to fetch directory contents:', error);
+        Message.error(`Failed to fetch directory contents: ${error.message}`);
+      }
+    };
+
+    const onSelect = (selectedKeys, { selectedNodes }) => {
+      if (selectedNodes.length > 0) {
+        const node = selectedNodes[0];
+        currentDirectory.value = normalizePath(node.key === 'root' ? '/' : node.key);
+        if (!node.isLeaf) {
+          loadMoreData(node);
+        }
+      }
+    };
+
+    const onItemClick = async (data) => {
+      if (data.isLeaf) {
+        try {
+          const response = await axios.post('http://localhost:5000/sftp_read_file', {
+            connection: props.connection,
+            path: normalizePath(data.key)
+          });
+          fileContent.value = response.data;
+          fileContentVisible.value = true;
+          await logOperation('read', normalizePath(data.key));
+        } catch (error) {
+          console.error('Failed to read file:', error);
+          Message.error('Failed to read file');
+        }
+      }
+    };
+
+    const onDrop = async (event, targetNode) => {
+      if (targetNode.isLeaf) {
+        Message.error('Cannot upload to a file. Please choose a folder.');
+        return;
+      }
+
+      const files = event.dataTransfer.files;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const base64Content = e.target.result.split(',')[1]; // 获取 Base64 编码的文件内容
+            await axios.post('http://localhost:5000/sftp_upload_file', {
+              connection: props.connection,
+              path: normalizePath(targetNode.key === 'root' ? '/' : targetNode.key),
+              filename: file.name,
+              content: base64Content
+            });
+            Message.success(`Uploaded ${file.name} successfully`);
+            // Refresh the target directory
+            await loadMoreData(targetNode);
+            await logOperation('upload', `${targetNode.key}/${file.name}`);
+          } catch (error) {
+            console.error('Failed to upload file:', error);
+            Message.error(`Failed to upload ${file.name}`);
+          }
+        };
+        reader.readAsDataURL(file); // 使用 readAsDataURL 而不是 readAsArrayBuffer
+      }
+    };
+
+    const openFileUpload = (nodeData) => {
+      if (nodeData.isLeaf) {
+        currentUploadPath.value = normalizePath(nodeData.key.substring(0, nodeData.key.lastIndexOf('/')));
+      } else {
+        currentUploadPath.value = normalizePath(nodeData.key);
+      }
+      currentUploadPath.value = currentUploadPath.value === 'root' ? '/' : currentUploadPath.value;
+      console.log('Opening file upload. Current upload path:', currentUploadPath.value);
+      fileInput.value.click();
+    };
+
+    const handleFileUpload = async (event) => {
+      const files = event.target.files;
+      if (!files.length) return;
+
+      const uploadPath = currentUploadPath.value;
+      console.log('Handling file upload. Upload path:', uploadPath);
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const base64Content = e.target.result.split(',')[1];
+            console.log('Uploading file:', file.name, 'to path:', uploadPath);
+            const response = await axios.post('http://localhost:5000/sftp_upload_file', {
+              connection: props.connection,
+              path: uploadPath,
+              filename: file.name,
+              content: base64Content
+            });
+            console.log('Upload response:', response.data);
+            Message.success(`Uploaded ${file.name} successfully`);
+            // 刷新当前目录
+            await refreshDirectory({ key: uploadPath });
+          } catch (error) {
+            console.error('Failed to upload file:', error);
+            Message.error(`Failed to upload ${file.name}: ${error.message}`);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+      // Reset the file input
+      event.target.value = '';
+    };
+
+    const contextMenuVisible = ref(false);
+    const contextMenuPosition = ref({ left: 0, top: 0 });
+    // const selectedItem = ref(null);
+
+    const showContextMenu = (event, nodeData) => {
+      event.preventDefault();
+      // 更新当前上传路径
+      if (nodeData.isLeaf) {
+        currentUploadPath.value = normalizePath(nodeData.key.substring(0, nodeData.key.lastIndexOf('/')));
+      } else {
+        currentUploadPath.value = normalizePath(nodeData.key);
+      }
+      currentUploadPath.value = currentUploadPath.value === 'root' ? '/' : currentUploadPath.value;
+      console.log('Context menu opened. Current upload path:', currentUploadPath.value);
+      
+      const menu = new Menu();
+      menu.append(new MenuItem({
+        label: 'Refresh',
+        click: () => refreshDirectory(nodeData)
+      }));
+      menu.append(new MenuItem({
+        label: 'Upload',
+        click: () => openFileUpload(nodeData)
+      }));
+      menu.append(new MenuItem({
+        label: 'Rename',
+        click: () => showRenameModal(nodeData)
+      }));
+      menu.append(new MenuItem({
+        label: 'Delete',
+        click: () => deleteSelectedItem(nodeData)
+      }));
+      menu.popup({ window: getCurrentWindow() });
+    };
+
+    const deleteSelectedItem = async (item) => {
+      if (item) {
+        try {
+          const response = await axios.post('http://localhost:5000/sftp_delete_item', {
+            connection: props.connection,
+            path: item.key
+          });
+          if (response.data.error) {
+            throw new Error(response.data.error);
+          }
+          Message.success(`Deleted ${item.title} successfully`);
+          
+          // 获取父目录的路径
+          const parentKey = item.key.split('/').slice(0, -1).join('/') || '/';
+          
+          // 刷新整个文件树
+          await fetchRootDirectory();
+          
+          // 找到并展开父目录
+          await expandToPath(parentKey);
+          await logOperation('delete', item.key);
+        } catch (error) {
+          console.error('Failed to delete item:', error);
+          Message.error(`Failed to delete ${item.title}: ${error.message}`);
+        }
+      }
+    };
+
+    const expandToPath = async (path) => {
+      const pathParts = path.split('/').filter(Boolean);
+      let currentNode = fileTree.value[0]; // 根节点
+      
+      for (const part of pathParts) {
+        if (currentNode.children) {
+          await loadMoreData(currentNode);
+          currentNode = currentNode.children.find(child => child.title === part);
+          if (!currentNode) break;
+        } else {
+          break;
+        }
+      }
+      
+      if (currentNode) {
+        currentNode.expanded = true;
+      }
+    };
+
+    const logOperation = async (operation, path) => {
+      try {
+        await axios.post('http://localhost:5000/log_sftp_operation', {
+          operation,
+          path,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error('Failed to log SFTP operation:', error);
+      }
+    };
+
+    const refreshCurrentDirectory = async () => {
+      try {
+        loading.value = true;
+        const path = currentDirectory.value === 'root' ? '/' : currentDirectory.value;
+        const response = await axios.post('http://localhost:5000/sftp_list_directory', {
+          connection: props.connection,
+          path: path
+        });
+        
+        // 更新当前目录的内容
+        const currentNode = findNodeByKey(fileTree.value[0], currentDirectory.value);
+        if (currentNode) {
+          currentNode.children = response.data.map(item => ({
+            title: item.name,
+            key: normalizePath(item.path),
+            isLeaf: !item.isDirectory,
+            children: item.isDirectory ? [] : undefined
+          }));
+        }
+        
+        Message.success('Directory refreshed');
+      } catch (error) {
+        console.error('Failed to refresh directory:', error);
+        Message.error('Failed to refresh directory');
+      } finally {
+        loading.value = false;
+      }
+    };
+
+    const refreshDirectory = async (node) => {
+      try {
+        loading.value = true;
+        const path = node.key === 'root' ? '/' : node.key;
+        console.log('Refreshing directory:', path);
+        const response = await axios.post('http://localhost:5000/sftp_list_directory', {
+          connection: props.connection,
+          path: path
+        });
+        
+        if (node.key === 'root') {
+          fileTree.value[0].children = response.data.map(item => ({
+            title: item.name,
+            key: item.path,
+            isLeaf: !item.isDirectory,
+            children: item.isDirectory ? [] : undefined
+          }));
+        } else {
+          const parentNode = findParentNode(fileTree.value[0], node.key);
+          if (parentNode) {
+            const index = parentNode.children.findIndex(child => child.key === node.key);
+            if (index !== -1) {
+              parentNode.children[index].children = response.data.map(item => ({
+                title: item.name,
+                key: item.path,
+                isLeaf: !item.isDirectory,
+                children: item.isDirectory ? [] : undefined
+              }));
+            }
+          }
+        }
+        
+        console.log('Directory refreshed:', path);
+        Message.success(`Refreshed ${node.title}`);
+      } catch (error) {
+        console.error('Failed to refresh directory:', error);
+        Message.error('Failed to refresh directory');
+      } finally {
+        loading.value = false;
+      }
+    };
+
+    const findNodeByKey = (node, key) => {
+      if (node.key === key) return node;
+      if (node.children) {
+        for (let child of node.children) {
+          const result = findNodeByKey(child, key);
+          if (result) return result;
+        }
+      }
+      return null;
+    };
+
+    const findParentNode = (node, key) => {
+      if (node.children) {
+        for (let child of node.children) {
+          if (child.key === key) {
+            return node;
+          }
+          const result = findParentNode(child, key);
+          if (result) {
+            return result;
+          }
+        }
+      }
+      return null;
+    };
+
+    const showHistory = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/get_sftp_history');
+        historyContent.value = response.data;
+        historyVisible.value = true;
+      } catch (error) {
+        console.error('Failed to fetch SFTP history:', error);
+        Message.error('Failed to fetch SFTP history');
+      }
+    };
+
+    const showRenameModal = (node) => {
+      itemToRename.value = node;
+      newName.value = node.title;
+      renameModalVisible.value = true;
+    };
+
+    const confirmRename = async () => {
+      if (!itemToRename.value || !newName.value) return;
+
+      try {
+        const oldPath = itemToRename.value.key;
+        const newPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + newName.value;
+
+        await axios.post('http://localhost:5000/sftp_rename_item', {
+          connection: props.connection,
+          oldPath: oldPath,
+          newPath: newPath
+        });
+
+        Message.success(`Renamed successfully`);
+        renameModalVisible.value = false;
+
+        // Refresh the parent directory
+        const parentKey = oldPath.split('/').slice(0, -1).join('/') || '/';
+        await refreshDirectory({ key: parentKey });
+
+        await logOperation('rename', `${oldPath} to ${newPath}`);
+      } catch (error) {
+        console.error('Failed to rename item:', error);
+        Message.error(`Failed to rename: ${error.message}`);
+      }
+    };
+
+    const onItemDoubleClick = async (data) => {
+      if (data.isLeaf) {
+        try {
+          console.log('Attempting to download file:', data.key);
+          const response = await axios.post('http://localhost:5000/sftp_download_file', {
+            connection: props.connection,
+            path: data.key
+          }, {
+            responseType: 'blob'
+          });
+
+          console.log('File download response received');
+          const url = window.URL.createObjectURL(new Blob([response.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', data.title);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          console.log('File downloaded, attempting to open');
+          Message.success(`File ${data.title} downloaded successfully`);
+
+          // 尝试用系统默认程序打开文件
+          const tempFilePath = `${process.cwd()}/temp/${data.title}`;
+          console.log('Attempting to open file:', tempFilePath);
+          const result = await shell.openPath(tempFilePath);
+          if (result) {
+            console.error('Failed to open file:', result);
+            Message.error(`Failed to open file: ${result}`);
+          } else {
+            console.log('File opened successfully');
+          }
+        } catch (error) {
+          console.error('Failed to download and open file:', error);
+          if (error.response) {
+            console.error('Error response:', error.response.data);
+            if (error.response.status === 404) {
+              Message.error(`File not found: ${data.key}`);
+            } else {
+              Message.error(`Failed to download and open file: ${error.response.data.error || error.message}`);
+            }
+          } else {
+            Message.error(`Failed to download and open file: ${error.message}`);
+          }
+        }
+      }
+    };
+
+    onMounted(() => {
+      console.log('SFTPExplorer mounted, connection:', props.connection);
+      fetchRootDirectory();
+    });
+
+    watch(() => props.connection, (newConnection) => {
+      console.log('Connection changed:', newConnection);
+      fetchRootDirectory();
+    });
+
+    return {
+      fileTree,
+      loading,
+      loadMoreData,
+      onSelect,
+      onItemClick,
+      onDrop,
+      fileContentVisible,
+      fileContent,
+      fileInput,
+      openFileUpload,
+      handleFileUpload,
+      contextMenuVisible,
+      contextMenuPosition,
+      showContextMenu,
+      deleteSelectedItem,
+      expandToPath,
+      historyVisible,
+      historyContent,
+      showHistory,
+      refreshCurrentDirectory,
+      refreshDirectory,
+      currentDirectory,
+      renameModalVisible,
+      newName,
+      showRenameModal,
+      confirmRename,
+      findNodeByKey,
+      onItemDoubleClick,
+      normalizePath,
+    };
+  }
+};
+</script>
+
+<style scoped>
+.sftp-explorer {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  color: var(--color-text-1);
+}
+
+.folder-drop-target {
+  cursor: pointer;
+}
+
+.folder-drop-target:hover {
+  background-color: var(--color-fill-2);
+}
+
+:deep(.arco-tree-node-title) {
+  color: var(--color-text-1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+:deep(.arco-tree-node-icon) {
+  color: var(--color-text-2);
+}
+
+:deep(.arco-btn) {
+  margin-left: 8px;
+}
+
+.sftp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.sftp-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sftp-actions .arco-btn {
+  padding: 0 4px;
+}
+
+.sftp-actions .arco-btn .arco-icon {
+  margin-right: 0;
+}
+</style>
+
