@@ -1,3 +1,11 @@
+import sys
+import collections.abc
+sys.modules['collections'] = collections
+
+import collections
+if not hasattr(collections, 'MutableMapping'):
+    collections.MutableMapping = collections.abc.MutableMapping
+
 from flask import Flask, request, jsonify, send_file
 from flask_socketio import SocketIO
 from flask_cors import CORS
@@ -461,6 +469,15 @@ def sftp_download_file():
         print(f"Error type: {type(e)}")
         print(f"Error args: {e.args}")
         return jsonify({'error': str(e)}), 500
+
+@socketio.on('resize')
+def handle_resize(data):
+    session_id = data['session_id']
+    cols = data['cols']
+    rows = data['rows']
+    if session_id in SSH_SESSIONS:
+        chan = SSH_SESSIONS[session_id]['chan']
+        chan.resize_pty(width=cols, height=rows)
 
 if __name__ == '__main__':
     try:

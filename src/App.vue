@@ -188,6 +188,16 @@ export default {
       })
     }
 
+    const detectSystemTheme = () => {
+      const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+      const isDarkMode = darkModeMediaQuery.matches
+      toggleTheme(isDarkMode)
+    }
+
+    const systemThemeChangeHandler = (e) => {
+      toggleTheme(e.matches)
+    }
+
     provide('theme', theme)
     provide('isDarkMode', isDarkMode)
 
@@ -311,10 +321,21 @@ export default {
     onMounted(() => {
       fetchConnections()
       window.addEventListener('resize', resizeAllTerminals)
+      
+      // 检测系统主题并设置初始主题
+      detectSystemTheme()
+      
+      // 添加系统主题变化的监听器
+      const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+      darkModeMediaQuery.addListener(systemThemeChangeHandler)
     })
 
     onUnmounted(() => {
       window.removeEventListener('resize', resizeAllTerminals)
+      
+      // 移除系统主题变化的监听器
+      const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+      darkModeMediaQuery.removeListener(systemThemeChangeHandler)
     })
 
     const folders = ref([])
@@ -564,7 +585,7 @@ export default {
   vertical-align: middle;
 }
 
-/* 可选：如果您想���图标居中显示 */
+/* 可选：如果您想图标居中显示 */
 .arco-menu-item {
   display: flex;
   justify-content: center;
@@ -596,4 +617,3 @@ export default {
   opacity: 0;
 }
 </style>
-

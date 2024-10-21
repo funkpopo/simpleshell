@@ -3,9 +3,10 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, nextTick, inject } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, inject } from 'vue'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
+import { WebLinksAddon } from 'xterm-addon-web-links'
 import 'xterm/css/xterm.css'
 import io from 'socket.io-client'
 
@@ -111,10 +112,15 @@ export default {
         fontSize: 14,
         fontFamily: 'Consolas, "Courier New", monospace',
         copyOnSelect: true,
-        theme: isDarkMode.value ? getDarkTheme() : getLightTheme()
+        theme: isDarkMode.value ? getDarkTheme() : getLightTheme(),
+        allowTransparency: true,
+        scrollback: 10000,
+        cols: 120,  // 增加初始列数
+        rows: 40,   // 增加初始行数
       })
       fitAddon = new FitAddon()
       term.loadAddon(fitAddon)
+      term.loadAddon(new WebLinksAddon())
 
       term.open(terminal.value)
       
@@ -142,18 +148,46 @@ export default {
         console.log('Sending SSH input')
         socket.emit('ssh_input', { session_id: props.sessionId, input: data })
       })
+
+      // 发送初始终端大小
+      socket.emit('resize', { 
+        session_id: props.sessionId, 
+        cols: term.cols, 
+        rows: term.rows 
+      })
+
+      // 添加自动滚动到底部的功能
+      term.onLineFeed(() => {
+        term.scrollToBottom()
+      })
     }
 
     const handleResize = () => {
-      if (fitAddon) {
+      if (fitAddon && term) {
         fitAddon.fit()
+        term.scrollToBottom()
+        if (socket && isTerminalReady.value) {
+          socket.emit('resize', { 
+            session_id: props.sessionId, 
+            cols: term.cols, 
+            rows: term.rows 
+          })
+        }
       }
     }
 
     const manualResize = () => {
-      if (fitAddon) {
+      if (fitAddon && term) {
         nextTick(() => {
           fitAddon.fit()
+          term.scrollToBottom()
+          if (socket && isTerminalReady.value) {
+            socket.emit('resize', { 
+              session_id: props.sessionId, 
+              cols: term.cols, 
+              rows: term.rows 
+            })
+          }
         })
       }
     }
@@ -203,6 +237,7 @@ export default {
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
         term.write(text)
+        term.scrollToBottom()
       } else {
         outputBuffer.value.push(text)
       }
@@ -210,8 +245,8 @@ export default {
 
     onMounted(async () => {
       console.log('Mounting SSHTerminal component')
-      await initializeTerminal()
       await initializeSocket()
+      await initializeTerminal()
       window.addEventListener('resize', handleResize)
     })
 
@@ -233,6 +268,11 @@ export default {
       window.removeEventListener('resize', handleResize)
     })
 
+    // 监听父组件的主题变化
+    watch(() => isDarkMode.value, (newValue) => {
+      setTheme(newValue ? 'dark' : 'light')
+    })
+
     return { 
       terminal,
       closeConnection,
@@ -251,10 +291,12 @@ export default {
   height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 :deep(.xterm) {
   flex: 1;
+  padding: 10px;
 }
 
 .terminal-container.dark-mode {
@@ -263,12 +305,6 @@ export default {
 }
 
 /* 自定义 xterm 滚动条样式 */
-:deep(.xterm) {
-  padding-right: 10px;
-  flex: 1;
-  height: 100%;
-}
-
 :deep(.xterm-viewport) {
   scrollbar-width: thin;
   scrollbar-color: var(--color-text-4) transparent;
@@ -292,4 +328,3 @@ export default {
   background-color: var(--color-text-3);
 }
 </style>
-
