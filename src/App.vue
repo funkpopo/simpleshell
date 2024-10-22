@@ -3,7 +3,7 @@
     <a-layout class="layout">
       <a-layout-header>
         <div class="header-content">
-          <h1>SSH Client</h1>
+          <h3>SimpleSSH</h3>
           <a-switch
             v-model="isDarkMode"
             :checked-value="true"
@@ -124,7 +124,11 @@
             <a-input-password v-model="newConnection.password" />
           </a-form-item>
           <a-form-item v-if="newConnection.authType === 'key'" label="Private Key">
-            <a-input v-model="newConnection.privateKey" type="textarea" />
+            <a-input v-model="newConnection.privateKeyPath" placeholder="Select private key file" readonly>
+              <template #suffix>
+                <a-button @click="selectPrivateKeyFile">Select File</a-button>
+              </template>
+            </a-input>
           </a-form-item>
         </a-form>
       </a-modal>
@@ -145,7 +149,10 @@ import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, comput
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
 import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold } from '@arco-design/web-vue/es/icon'
+import { Message } from '@arco-design/web-vue' // 添加这行
 import axios from 'axios'
+import { dialog } from '@electron/remote'
+import fs from 'fs'
 
 export default {
   name: 'App',
@@ -171,6 +178,7 @@ export default {
       username: '',
       authType: 'password',
       password: '',
+      privateKeyPath: '',
       privateKey: '',
       folderId: null
     })
@@ -206,6 +214,27 @@ export default {
     const showAddConnectionModal = (folderId = null) => {
       addConnectionModalVisible.value = true
       newConnection.folderId = folderId
+    }
+
+    const selectPrivateKeyFile = async () => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      })
+
+      if (!result.canceled && result.filePaths.length > 0) {
+        const filePath = result.filePaths[0]
+        newConnection.privateKeyPath = filePath
+        try {
+          const privateKeyContent = fs.readFileSync(filePath, 'utf-8')
+          newConnection.privateKey = privateKeyContent
+        } catch (error) {
+          console.error('Failed to read private key file:', error)
+          Message.error('Failed to read private key file')
+        }
+      }
     }
 
     const addConnection = async () => {
@@ -244,6 +273,7 @@ export default {
         username: '',
         authType: 'password',
         password: '',
+        privateKeyPath: '',
         privateKey: '',
         folderId: null
       })
@@ -429,6 +459,7 @@ export default {
       toggleRightSidebar,
       activeConnection,
       hasActiveConnection,
+      selectPrivateKeyFile,
     }
   }
 }
@@ -625,3 +656,4 @@ export default {
   opacity: 0;
 }
 </style>
+

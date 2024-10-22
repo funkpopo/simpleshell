@@ -24,9 +24,7 @@
           :data="fileTree"
           :loadMore="loadMoreData"
           @select="onSelect"
-          :defaultExpandedKeys="['/']"
-          :expandedKeys="expandedKeys"
-          @expand="onExpand"
+          :defaultExpandedKeys="['root']"
         >
           <template #icon="nodeData">
             <icon-file v-if="nodeData.isLeaf" class="file-icon" />
@@ -34,12 +32,12 @@
           </template>
           <template #title="nodeData">
             <span
-              :class="{ 
+              :class="{
                 'folder-drop-target': !nodeData.isLeaf,
                 'file-name': nodeData.isLeaf,
                 'folder-name': !nodeData.isLeaf
               }"
-              @dblclick="nodeData.isLeaf && onItemDoubleClick(nodeData)"
+              @dblclick="onItemDoubleClick(nodeData)"
               @dragover.prevent
               @drop.prevent="(event) => onDrop(event, nodeData)"
               @contextmenu.prevent="(event) => showContextMenu(event, nodeData)"
@@ -79,7 +77,9 @@ import { ref, onMounted, watch } from 'vue';
 import { IconFile, IconFolder, IconRefresh, IconHome } from '@arco-design/web-vue/es/icon';
 import axios from 'axios';
 import { Message } from '@arco-design/web-vue';
-import { Menu, MenuItem, getCurrentWindow, shell } from '@electron/remote';
+import { Menu, MenuItem, getCurrentWindow, shell, dialog } from '@electron/remote';
+import path from 'path';
+import fs from 'fs';
 
 export default {
   name: 'SFTPExplorer',
@@ -120,7 +120,7 @@ export default {
         if (a.isDirectory !== b.isDirectory) {
           return a.isDirectory ? -1 : 1;
         }
-        // 然后按照名称字母顺序排序
+        // 然后按照名字母顺序排序
         return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
       });
     };
@@ -163,27 +163,30 @@ export default {
       if (node.children && node.children.length > 0) return;
       
       try {
-        const path = node.key === 'root' ? '/' : node.key;
-        console.log('Loading more data for path:', path);
+        const path = node.key === 'root' ? '/' : normalizePath(node.key);
+        console.log('Attempting to load directory:', path);
         const response = await axios.post('http://localhost:5000/sftp_list_directory', {
           connection: props.connection,
-          path: path,
-          forceRoot: path === '/'
+          path: path
         });
         if (response.data.error) {
           throw new Error(response.data.error);
         }
-        const sortedItems = sortItems(response.data.map(item => ({
+        console.log('Directory contents:', response.data);
+        node.children = sortItems(response.data.map(item => ({
           title: item.name,
           key: normalizePath(path + '/' + item.name),
           isLeaf: !item.isDirectory,
           children: item.isDirectory ? [] : undefined
         })));
-        node.children = sortedItems;
-        console.log('Loaded children:', node.children);
       } catch (error) {
         console.error('Failed to fetch directory contents:', error);
-        Message.error(`Failed to fetch directory contents: ${error.message}`);
+        if (error.response) {
+          console.error('Error response:', error.response.data);
+          Message.error(`Failed to fetch directory contents: ${error.response.data.error || error.message}`);
+        } else {
+          Message.error(`Failed to fetch directory contents: ${error.message}`);
+        }
       }
     };
 
@@ -343,21 +346,8 @@ export default {
       expandedKeys.value = keys;
     };
 
-    const contextMenuVisible = ref(false);
-    const contextMenuPosition = ref({ left: 0, top: 0 });
-    // const selectedItem = ref(null);
-
     const showContextMenu = (event, nodeData) => {
       event.preventDefault();
-      // 更新当前上传路径
-      if (nodeData.isLeaf) {
-        currentUploadPath.value = normalizePath(nodeData.key.substring(0, nodeData.key.lastIndexOf('/')));
-      } else {
-        currentUploadPath.value = normalizePath(nodeData.key);
-      }
-      currentUploadPath.value = currentUploadPath.value === 'root' ? '/' : currentUploadPath.value;
-      console.log('Context menu opened. Current upload path:', currentUploadPath.value);
-      
       const menu = new Menu();
       menu.append(new MenuItem({
         label: 'Refresh',
@@ -374,6 +364,10 @@ export default {
       menu.append(new MenuItem({
         label: 'Delete',
         click: () => deleteSelectedItem(nodeData)
+      }));
+      menu.append(new MenuItem({
+        label: 'Download',
+        click: () => downloadItem(nodeData)
       }));
       menu.popup({ window: getCurrentWindow() });
     };
@@ -588,27 +582,17 @@ export default {
           });
 
           console.log('File download response received');
-          const url = window.URL.createObjectURL(new Blob([response.data]));
-          const link = document.createElement('a');
-          link.href = url;
-          link.setAttribute('download', data.title);
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
+          const tempDir = path.join(process.cwd(), 'temp');
+          const tempFilePath = path.join(tempDir, data.title);
+
+          // 将文件保存到临时目录
+          fs.writeFileSync(tempFilePath, Buffer.from(await response.data.arrayBuffer()));
 
           console.log('File downloaded, attempting to open');
           Message.success(`File ${data.title} downloaded successfully`);
 
-          // 尝试用系统默认程序打开文件
-          const tempFilePath = `${process.cwd()}/temp/${data.title}`;
-          console.log('Attempting to open file:', tempFilePath);
-          const result = await shell.openPath(tempFilePath);
-          if (result) {
-            console.error('Failed to open file:', result);
-            Message.error(`Failed to open file: ${result}`);
-          } else {
-            console.log('File opened successfully');
-          }
+          // 直接打开文件
+          shell.openPath(tempFilePath);
         } catch (error) {
           console.error('Failed to download and open file:', error);
           if (error.response) {
@@ -636,6 +620,70 @@ export default {
       }
     };
 
+    const downloadFile = async (nodeData) => {
+      try {
+        const savePath = await dialog.showSaveDialog({
+          title: 'Save file',
+          defaultPath: nodeData.title,
+          buttonLabel: 'Save'
+        });
+
+        if (savePath.canceled) {
+          return;
+        }
+
+        const response = await axios.post('http://localhost:5000/sftp_download_file', {
+          connection: props.connection,
+          path: nodeData.key
+        }, {
+          responseType: 'blob'
+        });
+
+        fs.writeFileSync(savePath.filePath, Buffer.from(await response.data.arrayBuffer()));
+
+        Message.success(`File ${nodeData.title} downloaded successfully`);
+        await logOperation('download', nodeData.key);
+      } catch (error) {
+        console.error('Failed to download file:', error);
+        if (error.response) {
+          console.error('Error response:', error.response.data);
+          Message.error(`Failed to download file: ${error.response.data.error || error.message}`);
+        } else {
+          Message.error(`Failed to download file: ${error.message}`);
+        }
+      }
+    };
+
+    const downloadItem = async (nodeData) => {
+      try {
+        const savePath = await dialog.showSaveDialog({
+          title: 'Save item',
+          defaultPath: nodeData.title + (nodeData.isLeaf ? '' : '.zip'),
+          buttonLabel: 'Save'
+        });
+
+        if (savePath.canceled) {
+          return;
+        }
+
+        const response = await axios.post('http://localhost:5000/sftp_download_item', {
+          connection: props.connection,
+          path: nodeData.key,
+          isDirectory: !nodeData.isLeaf
+        }, {
+          responseType: 'blob'
+        });
+
+        fs.writeFileSync(savePath.filePath, Buffer.from(await response.data.arrayBuffer()));
+
+        Message.success(`${nodeData.isLeaf ? 'File' : 'Folder'} ${nodeData.title} downloaded successfully`);
+        await logOperation('download', nodeData.key);
+      } catch (error) {
+        console.error('Failed to download item:', error);
+        Message.error(`Failed to download ${nodeData.title}: ${error.message}`);
+      }
+    };
+
     onMounted(() => {
       console.log('SFTPExplorer mounted, connection:', props.connection);
       fetchRootDirectory();
@@ -658,8 +706,6 @@ export default {
       fileInput,
       openFileUpload,
       handleFileUpload,
-      contextMenuVisible,
-      contextMenuPosition,
       showContextMenu,
       deleteSelectedItem,
       expandToPath,
@@ -682,6 +728,8 @@ export default {
       expandedKeys,
       onExpand,
       refreshDirectoryKeepingState,
+      downloadFile,
+      downloadItem,
     };
   }
 };

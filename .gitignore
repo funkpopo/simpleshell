@@ -1,28 +1,83 @@
-.DS_Store
-node_modules
-/dist
-
-
-# local env files
-.env.local
-.env.*.local
-config.json
-
-# Log files
+# Logs
+logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-sftp_log.log
+lerna-debug.log*
+
+# Dependencies
+node_modules
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
 
 # Editor directories and files
+.vscode/*
+!.vscode/extensions.json
 .idea
-.vscode
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-#Electron-builder output
-/dist_electron
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Vue.js / Electron build output
+dist
+dist_electron
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Config files that may contain sensitive information
+config.json
+electron-builder.env
+
+# Python virtual environment
+venv/
+*.pyc
+__pycache__/
+
+# Backend build output
+backend/build/
+backend/dist/
+backend/*.spec
+
+# Temporary files
+temp/
+*.tmp
+*.bak
+
+# SFTP log
+sftp_log.log
+
+# Exclude the packaged app.exe from backend folder
+/backend/app.exe
+
+# But include the Python source file
+!/backend/app.py
+
+# Exclude any potential database files
+*.db
+*.sqlite
+
+# Exclude potential key files
+*.pem
+*.key
+
+# Exclude potential token or secret files
+*token*
+*secret*
+
+# Exclude potential backup files
+*.backup

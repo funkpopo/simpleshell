@@ -1,0 +1,17 @@
+appId: com.example.simplessh
+productName: SimpleSSH
+directories:
+  output: dist_electron
+  buildResources: build
+files:
+  - dist_electron/**/*
+extraResources:
+  - from: backend
+    to: ./
+    filter:
+      - app.exe
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64

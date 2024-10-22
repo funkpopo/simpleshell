@@ -1,10 +1,11 @@
 import sys
-import collections.abc
-sys.modules['collections'] = collections
-
 import collections
-if not hasattr(collections, 'MutableMapping'):
-    collections.MutableMapping = collections.abc.MutableMapping
+import collections.abc
+import zipfile
+import io
+
+# 只替换 MutableMapping
+collections.MutableMapping = collections.abc.MutableMapping
 
 from flask import Flask, request, jsonify, send_file
 from flask_socketio import SocketIO
@@ -15,7 +16,6 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 import eventlet
-import io
 import stat
 import base64
 from datetime import datetime
@@ -53,7 +53,6 @@ def log_to_file(operation, path, timestamp):
     with open(LOG_FILE, 'a') as f:
         f.write(f"{timestamp},{operation},{path}\n")
 
-# 在文件顶部添加这个函数
 def normalize_path(path):
     return path.replace('\\', '/').rstrip('/')
 
@@ -203,7 +202,7 @@ def update_config():
 def sftp_list_directory():
     data = request.json
     connection = data['connection']
-    path = data['path']
+    path = normalize_path(data['path'])
     force_root = data.get('forceRoot', False)
 
     print(f"Received SFTP list directory request for path: {path}")
@@ -261,7 +260,7 @@ def sftp_list_directory():
 def sftp_read_file():
     data = request.json
     connection = data['connection']
-    path = data['path']
+    path = normalize_path(data['path'])
 
     try:
         transport = paramiko.Transport((connection['host'], connection['port']))
@@ -287,7 +286,7 @@ def sftp_read_file():
 def sftp_upload_file():
     data = request.json
     connection = data['connection']
-    path = data['path']
+    path = normalize_path(data['path'])
     filename = data['filename']
     content = base64.b64decode(data['content'])
 
@@ -322,7 +321,7 @@ def sftp_upload_file():
 def sftp_delete_item():
     data = request.json
     connection = data['connection']
-    path = data['path']
+    path = normalize_path(data['path'])
 
     print(f"Attempting to delete item: {path}")
 
@@ -335,9 +334,6 @@ def sftp_delete_item():
             transport.connect(username=connection['username'], pkey=pkey)
 
         sftp = paramiko.SFTPClient.from_transport(transport)
-        
-        # 标准化路径
-        path = path.replace('\\', '/')
         
         # 检查文件是否存在
         try:
@@ -386,8 +382,8 @@ def get_sftp_history():
 def sftp_rename_item():
     data = request.json
     connection = data['connection']
-    old_path = data['oldPath']
-    new_path = data['newPath']
+    old_path = normalize_path(data['oldPath'])
+    new_path = normalize_path(data['newPath'])
 
     print(f"Attempting to rename item from {old_path} to {new_path}")
 
@@ -441,7 +437,7 @@ def sftp_download_file():
         temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'temp')
         os.makedirs(temp_dir, exist_ok=True)
 
-        # 下载��件到临时文件夹
+        # 下载文件到临时文件夹
         filename = os.path.basename(path)
         local_path = os.path.join(temp_dir, filename)
         print(f"Downloading file to: {local_path}")
@@ -472,6 +468,75 @@ def sftp_download_file():
         print(f"Error type: {type(e)}")
         print(f"Error args: {e.args}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/sftp_download_item', methods=['POST'])
+def sftp_download_item():
+    data = request.json
+    connection = data['connection']
+    path = normalize_path(data['path'])
+    is_directory = data['isDirectory']
+
+    print(f"Attempting to download item: {path}")
+
+    try:
+        transport = paramiko.Transport((connection['host'], connection['port']))
+        if connection['authType'] == 'password':
+            transport.connect(username=connection['username'], password=connection['password'])
+        else:
+            pkey = paramiko.RSAKey.from_private_key(io.StringIO(connection['privateKey']))
+            transport.connect(username=connection['username'], pkey=pkey)
+
+        sftp = paramiko.SFTPClient.from_transport(transport)
+
+        if is_directory:
+            memory_file = io.BytesIO()
+            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                def zipdir(path, ziph):
+                    for root, dirs, files in sftp_walk(sftp, path):
+                        for file in files:
+                            full_path = os.path.join(root, file).replace('\\', '/')
+                            relative_path = os.path.relpath(full_path, path).replace('\\', '/')
+                            file_content = sftp.open(full_path).read()
+                            ziph.writestr(relative_path, file_content)
+                zipdir(path, zf)
+            memory_file.seek(0)
+            sftp.close()
+            transport.close()
+            return send_file(
+                memory_file,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name=f"{os.path.basename(path)}.zip"
+            )
+        else:
+            file_obj = io.BytesIO(sftp.open(path, 'rb').read())
+            sftp.close()
+            transport.close()
+            return send_file(
+                file_obj,
+                mimetype='application/octet-stream',
+                as_attachment=True,
+                download_name=os.path.basename(path)
+            )
+
+    except Exception as e:
+        print(f"Error in sftp_download_item: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+def sftp_walk(sftp, remotepath):
+    path = remotepath
+    files = []
+    folders = []
+    for f in sftp.listdir_attr(remotepath):
+        if stat.S_ISDIR(f.st_mode):
+            folders.append(f.filename)
+        else:
+            files.append(f.filename)
+    yield path, folders, files
+    for folder in folders:
+        new_path = os.path.join(remotepath, folder)
+        for x in sftp_walk(sftp, new_path):
+            yield x
 
 @socketio.on('resize')
 def handle_resize(data):

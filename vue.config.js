@@ -15,5 +15,6 @@ module.exports = defineConfig({
         "fs": false
       }
     }
-  }
+  },
+  lintOnSave: false
 })
