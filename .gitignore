@@ -61,6 +61,9 @@ temp/
 # SFTP log
 sftp_log.log
 
+# Electron-builder output
+/dist_electron
+
 # Exclude the packaged app.exe from backend folder
 /backend/app.exe
 

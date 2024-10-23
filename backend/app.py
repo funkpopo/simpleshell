@@ -26,17 +26,29 @@ app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-# 修改 CONFIG_FILE 路径为项目根目录
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
+# 修改 CONFIG_FILE 路径的定义部分
+def get_application_path():
+    """获取应用程序的路径，兼容开发环境和打包后的环境"""
+    if getattr(sys, 'frozen', False):
+        # 如果是打包后的环境，使用 sys._MEIPASS
+        application_path = os.path.dirname(sys.executable)
+    else:
+        # 如果是开发环境，使用当前文件的目录的父目录
+        application_path = os.path.dirname(os.path.dirname(__file__))
+    return application_path
+
+# 修改 CONFIG_FILE 的定义
+CONFIG_FILE = os.path.join(get_application_path(), 'config.json')
 SSH_SESSIONS = {}
 
 # 创建一个线程池
 executor = ThreadPoolExecutor(max_workers=100)
 
-LOG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'sftp_log.log')
+# 同样修改 LOG_FILE 的路径
+LOG_FILE = os.path.join(get_application_path(), 'sftp_log.log')
 
-# 确保 temp 文件夹存在
-temp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'temp')
+# 修改 temp 目录的路径
+temp_dir = os.path.join(get_application_path(), 'temp')
 os.makedirs(temp_dir, exist_ok=True)
 
 def load_config():
@@ -546,6 +558,10 @@ def handle_resize(data):
     if session_id in SSH_SESSIONS:
         chan = SSH_SESSIONS[session_id]['chan']
         chan.resize_pty(width=cols, height=rows)
+
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "ok"}), 200
 
 if __name__ == '__main__':
     try:

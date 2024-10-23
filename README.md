@@ -48,7 +48,7 @@ SSH连接配置保存在 `backend/config.json` 文件中。该文件包含了所
    pip install -r backend/requirements.txt
    ```
 
-## 运行项目
+## 运行项目（测试）
 
 1. 启动后端服务器：
    ```
@@ -61,7 +61,27 @@ SSH连接配置保存在 `backend/config.json` 文件中。该文件包含了所
    npm run serve
    ```
 
-3. 在浏览器中访问 `http://localhost:8080`
+3. 测试electron打包
+   ```
+   npm run build:electron
+   ```
+
+4. 在浏览器中访问 `http://localhost:8080`
+
+---
+
+## 编译打包
+
+1. 编译前端
+   ```
+   npm run electron:build
+   ```
+
+2. 打包后端
+   ```
+   cd backend
+   python -m PyInstaller app.py
+   ```
 
 ## 贡献
 

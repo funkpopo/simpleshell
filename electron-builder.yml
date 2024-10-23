@@ -5,13 +5,25 @@ directories:
   buildResources: build
 files:
   - dist_electron/**/*
+  - "!.editorconfig"
 extraResources:
-  - from: backend
-    to: ./
-    filter:
-      - app.exe
+  - from: backend/dist/app.exe
+    to: ./app.exe
+extraFiles:
+  - from: config.json
+    to: ./config.json
 win:
   target:
     - target: nsis
       arch:
         - x64
+  requestedExecutionLevel: requireAdministrator
+  # 添加文件压缩配置
+  compression: maximum # 最大压缩
+  artifactName: "${productName}-${version}-${arch}.${ext}" # 生成文件的命名规则
+asar: true # 启用 asar 打包以减小体积
+# 配置需要压缩的文件类型
+fileAssociations:
+  - ext: "exe"
+    role: "None"
+compression: "maximum" # 全局压缩级别设置为最大
