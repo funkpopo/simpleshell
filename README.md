@@ -80,7 +80,9 @@ SSH连接配置保存在 `backend/config.json` 文件中。该文件包含了所
 2. 打包后端
    ```
    cd backend
-   python -m PyInstaller app.py
+   python -m PyInstaller --onefile app.py
+   # 使用spec文件更好
+   python -m PyInstaller --clean .\app.spec
    ```
 
 ## 贡献
