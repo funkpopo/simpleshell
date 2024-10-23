@@ -229,7 +229,7 @@ export default {
         const reader = new FileReader();
         reader.onload = async (e) => {
           try {
-            const base64Content = e.target.result.split(',')[1]; // 获取 Base64 编码的文件内容
+            const base64Content = e.target.result.split(',')[1]; // 获取 Base64 编码的��容
             await axios.post('http://localhost:5000/sftp_upload_file', {
               connection: props.connection,
               path: normalizePath(targetNode.key === 'root' ? '/' : targetNode.key),
@@ -349,48 +349,71 @@ export default {
     const showContextMenu = (event, nodeData) => {
       event.preventDefault();
       const menu = new Menu();
+      
       menu.append(new MenuItem({
         label: 'Refresh',
         click: () => refreshDirectory(nodeData)
       }));
-      menu.append(new MenuItem({
-        label: 'Upload',
-        click: () => openFileUpload(nodeData)
-      }));
+
       menu.append(new MenuItem({
         label: 'Rename',
         click: () => showRenameModal(nodeData)
       }));
+
       menu.append(new MenuItem({
-        label: 'Delete',
-        click: () => deleteSelectedItem(nodeData)
+        label: 'Upload',
+        click: () => openFileUpload(nodeData)
       }));
+
       menu.append(new MenuItem({
         label: 'Download',
         click: () => downloadItem(nodeData)
       }));
-      menu.popup({ window: getCurrentWindow() });
+
+      // 添加分隔线
+      menu.append(new MenuItem({ type: 'separator' }));
+
+      // 修改删除选项
+      menu.append(new MenuItem({
+        label: 'Delete',
+        click: () => deleteSelectedItem(nodeData),
+        type: 'normal',
+        // 使用 Electron 原生的菜单样式
+        role: 'delete'
+      }));
+
+      menu.popup();
     };
 
     const deleteSelectedItem = async (item) => {
       if (item) {
         try {
-          const response = await axios.post('http://localhost:5000/sftp_delete_item', {
-            connection: props.connection,
-            path: item.key
+          // 使用更醒目的确认对话框
+          const result = await dialog.showMessageBox({
+            type: 'warning',
+            title: 'Confirm Delete',
+            message: `Are you sure you want to delete "${item.title}"?`,
+            detail: 'This action cannot be undone.',
+            buttons: ['Cancel', 'Delete'],
+            defaultId: 0,
+            cancelId: 0,
+            icon: path.join(__dirname, 'warning-icon.png') // 可以添加自定义警告图标
           });
-          if (response.data.error) {
-            throw new Error(response.data.error);
+
+          if (result.response === 1) { // 用户点击 Delete
+            const response = await axios.post('http://localhost:5000/sftp_delete_item', {
+              connection: props.connection,
+              path: item.key
+            });
+            if (response.data.error) {
+              throw new Error(response.data.error);
+            }
+            Message.success(`Deleted ${item.title} successfully`);
+            
+            const parentKey = item.key.split('/').slice(0, -1).join('/') || '/';
+            await refreshDirectoryKeepingState(parentKey);
+            await logOperation('delete', item.key);
           }
-          Message.success(`Deleted ${item.title} successfully`);
-          
-          // 获取父目录的路径
-          const parentKey = item.key.split('/').slice(0, -1).join('/') || '/';
-          
-          // 刷新父目录，保持展开状态
-          await refreshDirectoryKeepingState(parentKey);
-          
-          await logOperation('delete', item.key);
         } catch (error) {
           console.error('Failed to delete item:', error);
           Message.error(`Failed to delete ${item.title}: ${error.message}`);
@@ -842,4 +865,6 @@ export default {
   color: var(--color-primary-light-3);
 }
 </style>
+
+
 
