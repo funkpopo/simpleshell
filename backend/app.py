@@ -3,6 +3,7 @@ import collections
 import collections.abc
 import zipfile
 import io
+import time  # 添加这行
 
 # 只替换 MutableMapping
 collections.MutableMapping = collections.abc.MutableMapping
@@ -19,6 +20,9 @@ import eventlet
 import stat
 import base64
 from datetime import datetime
+from functools import lru_cache
+from threading import Lock
+import tempfile
 
 eventlet.monkey_patch()
 
@@ -26,15 +30,15 @@ app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-# 修改 CONFIG_FILE 路径的定义部分
+# 修改 get_application_path 函数
 def get_application_path():
     """获取应用程序的路径，兼容开发环境和打包后的环境"""
     if getattr(sys, 'frozen', False):
         # 如果是打包后的环境，使用 sys._MEIPASS
         application_path = os.path.dirname(sys.executable)
     else:
-        # 如果是开发环境，使用当前文件的目录的父目录
-        application_path = os.path.dirname(os.path.dirname(__file__))
+        # 如果是开发环境，使用当前文件的目录的父目录（项目根目录）
+        application_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return application_path
 
 # 修改 CONFIG_FILE 的定义
@@ -51,15 +55,76 @@ LOG_FILE = os.path.join(get_application_path(), 'sftp_log.log')
 temp_dir = os.path.join(get_application_path(), 'temp')
 os.makedirs(temp_dir, exist_ok=True)
 
+# 添加文件缓存锁
+cache_lock = Lock()
+
+# 添加缓存装饰器，缓存目录列表结果5秒
+@lru_cache(maxsize=100, typed=False)
+def cached_list_directory(connection_str, path, timestamp):
+    """缓存目录列表的结果"""
+    connection = json.loads(connection_str)
+    try:
+        transport = paramiko.Transport((connection['host'], connection['port']))
+        if connection['authType'] == 'password':
+            transport.connect(username=connection['username'], password=connection['password'])
+        else:
+            pkey = paramiko.RSAKey.from_private_key(io.StringIO(connection['privateKey']))
+            transport.connect(username=connection['username'], pkey=pkey)
+
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        file_list = sftp.listdir_attr(path)
+        
+        result = []
+        for file in file_list:
+            file_path = os.path.join(path, file.filename).replace('\\', '/')
+            if file_path.startswith('./'):
+                file_path = file_path[2:]
+            result.append({
+                'name': file.filename,
+                'path': file_path,
+                'isDirectory': stat.S_ISDIR(file.st_mode),
+                'size': file.st_size,
+                'modificationTime': file.st_mtime
+            })
+
+        sftp.close()
+        transport.close()
+        return result
+    except Exception as e:
+        print(f"Error in cached_list_directory: {str(e)}")
+        raise
+
 def load_config():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, 'r') as f:
+    """加载配置文件"""
+    try:
+        # 确保配置文件存在
+        if not os.path.exists(CONFIG_FILE):
+            # 如果配置文件不存在，创建一个空的配置文件
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump([], f, indent=2, ensure_ascii=False)
+            return []
+
+        # 读取配置文件
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
-    return []
+    except Exception as e:
+        print(f"Error loading config: {str(e)}")
+        return []
 
 def save_config(config):
-    with open(CONFIG_FILE, 'w') as f:
-        json.dump(config, f, indent=2)
+    """保存配置文件"""
+    try:
+        # 确保配置文件目录存在
+        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+        
+        # 保存配置
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())  # 确保写入磁盘
+    except Exception as e:
+        print(f"Error saving config: {str(e)}")
+        raise
 
 def log_to_file(operation, path, timestamp):
     with open(LOG_FILE, 'a') as f:
@@ -206,10 +271,68 @@ def handle_close_ssh(data):
 
 @app.route('/update_config', methods=['POST'])
 def update_config():
-    new_config = request.json
-    save_config(new_config)
-    return jsonify({"message": "Configuration updated successfully"}), 200
+    try:
+        new_config = request.json
+        print(f"Received new config: {new_config}")  # 添加日志
+        
+        # 确保配置文件目录存在
+        config_dir = os.path.dirname(CONFIG_FILE)
+        os.makedirs(config_dir, exist_ok=True)
 
+        # 写入新配置前备份当前配置
+        if os.path.exists(CONFIG_FILE):
+            backup_file = f"{CONFIG_FILE}.bak"
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    old_config = f.read()
+                with open(backup_file, 'w', encoding='utf-8') as f:
+                    f.write(old_config)
+            except Exception as e:
+                print(f"Failed to create backup: {str(e)}")
+
+        # 写入新配置
+        try:
+            # 确保配置文件存在
+            if not os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                    json.dump([], f, indent=2, ensure_ascii=False)
+
+            # 写入新配置
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                # 确保新配置是一个列表
+                if not isinstance(new_config, list):
+                    new_config = [new_config]
+                json.dump(new_config, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())  # 确保写入磁盘
+
+            print(f"Config file updated successfully. New config: {new_config}")  # 添加日志
+            return jsonify({"message": "Configuration updated successfully"}), 200
+
+        except Exception as e:
+            # 如果写入失败，尝试恢复备份
+            print(f"Failed to write config: {str(e)}")  # 添加日志
+            if os.path.exists(backup_file):
+                with open(backup_file, 'r', encoding='utf-8') as f:
+                    with open(CONFIG_FILE, 'w', encoding='utf-8') as f2:
+                        f2.write(f.read())
+                        f2.flush()
+                        os.fsync(f2.fileno())
+            print(f"Failed to update config: {str(e)}")  # 添加日志
+            return jsonify({"error": f"Failed to update configuration: {str(e)}"}), 500
+            
+    except Exception as e:
+        print(f"Error in update_config: {str(e)}")  # 添加日志
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # 清理备份文件
+        if 'backup_file' in locals() and os.path.exists(backup_file):
+            try:
+                os.remove(backup_file)
+            except Exception as e:
+                print(f"Failed to remove backup file: {str(e)}")
+
+# 修改原有的目录列表函数
 @app.route('/sftp_list_directory', methods=['POST'])
 def sftp_list_directory():
     data = request.json
@@ -240,34 +363,37 @@ def sftp_list_directory():
             print(f"Attempting to list directory: {path}")
             file_list = sftp.listdir_attr(path)
             print(f"Successfully listed directory: {path}")
+            
+            result = []
+            for file in file_list:
+                file_path = os.path.join(path, file.filename).replace('\\', '/')
+                if file_path.startswith('./'):
+                    file_path = file_path[2:]
+                result.append({
+                    'name': file.filename,
+                    'path': file_path,
+                    'isDirectory': stat.S_ISDIR(file.st_mode),
+                    'size': file.st_size,
+                    'modificationTime': file.st_mtime
+                })
+
+            sftp.close()
+            transport.close()
+            
+            print(f"Returning file list: {result}")
+            return jsonify(result)
+            
         except IOError as e:
             print(f"Error listing directory: {str(e)}")
             return jsonify({'error': f"Failed to list directory: {str(e)}"}), 500
 
-        result = []
-        for file in file_list:
-            file_path = os.path.join(path, file.filename).replace('\\', '/')
-            if file_path.startswith('./'):
-                file_path = file_path[2:]
-            result.append({
-                'name': file.filename,
-                'path': file_path,
-                'isDirectory': stat.S_ISDIR(file.st_mode),
-                'size': file.st_size,
-                'modificationTime': file.st_mtime
-            })
-
-        print(f"Returning file list: {result}")
-        sftp.close()
-        transport.close()
-
-        return jsonify(result)
     except Exception as e:
         print(f"Error in sftp_list_directory: {str(e)}")
         print(f"Error type: {type(e)}")
         print(f"Error args: {e.args}")
         return jsonify({'error': str(e)}), 500
 
+# 修改文件读取函数，添加预读取功能
 @app.route('/sftp_read_file', methods=['POST'])
 def sftp_read_file():
     data = request.json
@@ -283,17 +409,19 @@ def sftp_read_file():
             transport.connect(username=connection['username'], pkey=pkey)
 
         sftp = paramiko.SFTPClient.from_transport(transport)
-        with sftp.file(path, 'r') as f:
+        with sftp.open(path, 'r') as f:
+            # 启用预读取
+            f.prefetch()
             content = f.read().decode('utf-8')
 
         sftp.close()
         transport.close()
-
         return jsonify(content)
     except Exception as e:
         print(f"Error in sftp_read_file: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# 修改文件上传函数，使用分块传输
 @app.route('/sftp_upload_file', methods=['POST'])
 def sftp_upload_file():
     data = request.json
@@ -301,8 +429,6 @@ def sftp_upload_file():
     path = normalize_path(data['path'])
     filename = data['filename']
     content = base64.b64decode(data['content'])
-
-    print(f"Uploading file: {filename} to path: {path}")
 
     try:
         transport = paramiko.Transport((connection['host'], connection['port']))
@@ -315,15 +441,19 @@ def sftp_upload_file():
         sftp = paramiko.SFTPClient.from_transport(transport)
         
         full_path = os.path.join(path, filename).replace('\\', '/')
-        print(f"Full path for upload: {full_path}")
         
-        with sftp.file(full_path, 'wb') as f:
-            f.write(content)
+        # 使用临时文件进行分块传输
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_file.write(content)
+            temp_file.flush()
+            
+            # 使用put方法的callback参数来跟踪进度
+            sftp.put(temp_file.name, full_path, callback=lambda x, y: None)
 
+        os.unlink(temp_file.name)
         sftp.close()
         transport.close()
 
-        print(f"File {filename} uploaded successfully")
         return jsonify({'message': 'File uploaded successfully'})
     except Exception as e:
         print(f"Error in sftp_upload_file: {str(e)}")

@@ -11,6 +11,7 @@ Jinja2==3.1.2
 itsdangerous==2.1.2
 gevent==23.9.1
 greenlet==3.0.0
+cachetools==5.3.2
 
 
 
