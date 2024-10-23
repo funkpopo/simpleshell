@@ -1,8 +1,10 @@
 'use strict'
 
-import { app, protocol, BrowserWindow } from 'electron'
+import { app, protocol, BrowserWindow, dialog, Menu } from 'electron'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
+import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer'
 import { initialize, enable } from '@electron/remote/main'
+import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
 
@@ -13,13 +15,10 @@ const isDevelopment = process.env.NODE_ENV !== 'production'
 // 禁用硬件加速
 app.disableHardwareAcceleration()
 
-// 预加载窗口
-let mainWindow = null
-let backendProcess = null
-let isAppReady = false
-let isWindowCreated = false
+// 设置空菜单
+Menu.setApplicationMenu(null)
 
-// 提前注册协议
+// Scheme must be registered before the app is ready
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { secure: true, standard: true } }
 ])
@@ -136,7 +135,7 @@ async function waitForBackend() {
   throw new Error('Backend failed to start within 30 seconds')
 }
 
-function startBackend() {
+async function createWindow() {
   try {
     // 启动后端服务
     const backendStarted = startBackend()
@@ -164,19 +163,15 @@ function startBackend() {
       }
     })
 
-  enable(mainWindow.webContents)
+    require("@electron/remote/main").enable(mainWindow.webContents)
 
-  if (process.env.WEBPACK_DEV_SERVER_URL) {
-    await mainWindow.loadURL(process.env.WEBPACK_DEV_SERVER_URL)
-    if (!process.env.IS_TEST) mainWindow.webContents.openDevTools()
-  } else {
-    createProtocol('app')
-    mainWindow.loadURL('app://./index.html')
-  }
-
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show()
-  })
+    if (process.env.WEBPACK_DEV_SERVER_URL) {
+      await mainWindow.loadURL(process.env.WEBPACK_DEV_SERVER_URL)
+      if (!process.env.IS_TEST) mainWindow.webContents.openDevTools()
+    } else {
+      createProtocol('app')
+      mainWindow.loadURL('app://./index.html')
+    }
 
     mainWindow.on('closed', () => {
       mainWindow = null
@@ -188,12 +183,13 @@ function startBackend() {
   }
 }
 
-// 确保只有一个实例
+// 确保只有一个实例在运行
 const gotTheLock = app.requestSingleInstanceLock()
+
 if (!gotTheLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
@@ -252,22 +248,16 @@ if (!gotTheLock) {
   })
 }
 
-// 开发环境下的退出处理
+// Exit cleanly on request from parent process in development mode.
 if (isDevelopment) {
   if (process.platform === 'win32') {
     process.on('message', (data) => {
       if (data === 'graceful-exit') {
-        if (backendProcess) {
-          backendProcess.kill()
-        }
         app.quit()
       }
     })
   } else {
     process.on('SIGTERM', () => {
-      if (backendProcess) {
-        backendProcess.kill()
-      }
       app.quit()
     })
   }

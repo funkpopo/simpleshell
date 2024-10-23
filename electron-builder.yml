@@ -9,9 +9,6 @@ files:
 extraResources:
   - from: backend/dist/app.exe
     to: ./app.exe
-extraFiles:
-  - from: config.json
-    to: ./config.json
 win:
   target:
     - target: nsis
