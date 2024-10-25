@@ -1,6 +1,6 @@
 {
   "name": "simplessh",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "author": "Sunn",
   "description": "A simple SSH client",
