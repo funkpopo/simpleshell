@@ -4,14 +4,15 @@ directories:
   output: dist_electron
   buildResources: build
 files:
-  - dist_electron/**/*
-  - "!.editorconfig"
-extraResources:
-  - from: "backend/dist/app/app.exe"
-    to: "app.exe"
-  - from: "backend/dist/app/"
-    filter: "!app.exe"
-    to: "."
+  - "dist_electron/**/*"
+  - "!**/.editorconfig"
+  - "service.exe"
+  - "_internal/**/*"
+extraFiles:
+  - from: "backend/dist/service/service.exe"
+    to: "service.exe"
+  - from: "backend/dist/service/_internal"
+    to: "_internal"
 win:
   target:
     - target: nsis

@@ -1,22 +1,53 @@
+# First, import only the absolute minimum required
 import sys
+import os
+
+# Create MutableMapping if it doesn't exist
+try:
+    from collections.abc import MutableMapping
+except ImportError:
+    from collections import MutableMapping
+except AttributeError:
+    from abc import ABCMeta, abstractmethod
+    class MutableMapping(metaclass=ABCMeta):
+        @abstractmethod
+        def __getitem__(self, key): pass
+        @abstractmethod
+        def __setitem__(self, key, value): pass
+        @abstractmethod
+        def __delitem__(self, key): pass
+        @abstractmethod
+        def __iter__(self): pass
+        @abstractmethod
+        def __len__(self): pass
+        def clear(self): 
+            for key in list(self): del self[key]
+
+# Patch collections if needed
 import collections
-import collections.abc
+if not hasattr(collections, 'MutableMapping'):
+    setattr(collections, 'MutableMapping', MutableMapping)
+
+# Now import eventlet and do monkey patching
+import eventlet
+eventlet.monkey_patch(all=True)
+
+# Import remaining modules
 import zipfile
 import io
-import time  # 添加这行
-
-# 只替换 MutableMapping
-collections.MutableMapping = collections.abc.MutableMapping
-
+import time
+import dns.namedict
+import dns.resolver
+import dns.rdtypes
+import dns.rdtypes.IN
+import dns.rdtypes.ANY
 from flask import Flask, request, jsonify, send_file
 from flask_socketio import SocketIO
 from flask_cors import CORS
 import paramiko
 import json
-import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-import eventlet
 import stat
 import base64
 from datetime import datetime
@@ -24,11 +55,34 @@ from functools import lru_cache
 from threading import Lock
 import tempfile
 
-eventlet.monkey_patch()
-
+# Initialize Flask and SocketIO
 app = Flask(__name__)
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+# Configure SocketIO with explicit settings
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode='eventlet',
+    logger=True,
+    engineio_logger=True,
+    ping_timeout=60,
+    ping_interval=25,
+    max_http_buffer_size=1e8,
+    async_handlers=True
+)
+
+# Set environment variables for eventlet
+os.environ['EVENTLET_NONBLOCK'] = '1'
+os.environ['EVENTLET_WEBSOCKET'] = '1'
+os.environ['EVENTLET_NO_GREENDNS'] = '1'
+
+def get_application_path():
+    if getattr(sys, 'frozen', False):
+        application_path = os.path.dirname(sys.executable)
+    else:
+        application_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return application_path
 
 # 修改 get_application_path 函数
 def get_application_path():
@@ -730,6 +784,27 @@ def sftp_create_folder():
 
 if __name__ == '__main__':
     try:
-        socketio.run(app, debug=True)
+        # Initialize paths
+        application_path = get_application_path()
+        temp_dir = os.path.join(application_path, 'temp')
+        os.makedirs(temp_dir, exist_ok=True)
+
+        # Configure logging
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger('werkzeug')
+        logger.setLevel(logging.INFO)
+
+        # Start the server
+        socketio.run(
+            app,
+            debug=False,
+            host='127.0.0.1',
+            port=5000,
+            use_reloader=False,
+            log_output=True,
+            max_size=1024 * 1024 * 100  # 100MB max size
+        )
     except Exception as e:
         print(f"Error running the server: {str(e)}")
+        sys.exit(1)
