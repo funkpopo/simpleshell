@@ -30,27 +30,36 @@ function showError(title, content) {
   dialog.showErrorBox(title, content)
 }
 
+function getBackendPath() {
+  const appPath = app.getPath('exe')
+  const appDir = path.dirname(appPath)
+  
+  if (isDevelopment) {
+    return {
+      executable: 'python',
+      args: [path.join(__dirname, '..', 'backend', 'app.py')],
+      cwd: path.join(__dirname, '..')
+    };
+  } else {
+    return {
+      executable: path.join(appDir, 'resources', 'app.exe'),
+      args: [],
+      cwd: appDir
+    };
+  }
+}
+
 function startBackend() {
   try {
-    const appPath = app.getPath('exe')
-    const appDir = path.dirname(appPath)
+    const { executable, args, cwd } = getBackendPath();
     
-    // 在开发环境和生产环境使用不同的后端启动方式
-    const backendExecutable = isDevelopment
-      ? 'python'
-      : path.join(appDir, 'app.exe')
-
-    const backendArgs = isDevelopment
-      ? [path.join(__dirname, '..', 'backend', 'app.py')]
-      : []
-
-    console.log('Starting backend process:', backendExecutable)
-    console.log('Backend args:', backendArgs)
-    console.log('Working directory:', appDir)
+    console.log('Starting backend process:', executable);
+    console.log('Backend args:', args);
+    console.log('Working directory:', cwd);
 
     // 检查后端可执行文件是否存在
-    if (!isDevelopment && !fs.existsSync(backendExecutable)) {
-      throw new Error(`Backend executable not found at: ${backendExecutable}`)
+    if (!isDevelopment && !fs.existsSync(executable)) {
+      throw new Error(`Backend executable not found at: ${executable}`);
     }
 
     // 尝试终止可能存在的旧进程
@@ -62,42 +71,49 @@ function startBackend() {
       }
     }
 
-    backendProcess = spawn(backendExecutable, backendArgs, {
+    // 创建临时目录
+    const tempDir = path.join(cwd, 'temp')
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true })
+    }
+
+    // 修改进程启动配置
+    backendProcess = spawn(executable, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32', // Windows 上不需要 detached
-      cwd: appDir,
+      detached: false,
+      cwd: cwd,
       windowsHide: true,
       env: {
         ...process.env,
-        PYTHONUNBUFFERED: '1'
+        PYTHONUNBUFFERED: '1',
+        PYTHONIOENCODING: 'utf-8',
+        TEMP: tempDir,
+        TMP: tempDir
       }
     })
 
+    // 简化日志记录，只在控制台输出
     backendProcess.stdout.on('data', (data) => {
-      console.log(`Backend stdout: ${data}`)
+      console.log(`Backend stdout: ${data.toString()}`)
     })
 
     backendProcess.stderr.on('data', (data) => {
-      console.error(`Backend stderr: ${data}`)
-      // 如果发现关键错误信息，可以显示给用户
-      if (data.toString().includes('Error:')) {
-        showError('Backend Error', data.toString())
-      }
+      console.error(`Backend stderr: ${data.toString()}`)
     })
 
     backendProcess.on('error', (err) => {
       console.error('Failed to start backend process:', err)
-      showError('Backend Start Error', `Failed to start backend: ${err.message}`)
     })
 
-    backendProcess.on('close', (code) => {
-      console.log(`Backend process exited with code ${code}`)
+    backendProcess.on('close', (code, signal) => {
+      console.log(`Backend process exited with code ${code} (signal: ${signal})`)
+      
       if (code !== 0 && code !== null) {
-        // 如果后端进程异常退出，尝试重启
-        console.log('Attempting to restart backend process...')
+        // 尝试重启后端，但不显示错误提示
         setTimeout(() => {
+          console.log('Attempting to restart backend...')
           startBackend()
-        }, 1000) // 等待1秒后重试
+        }, 1000)
       }
     })
 
@@ -109,11 +125,11 @@ function startBackend() {
     return true
   } catch (error) {
     console.error('Error in startBackend:', error)
-    showError('Backend Error', `Failed to start backend service: ${error.message}`)
     return false
   }
 }
 
+// 修改等待后端就绪的函数
 async function waitForBackend() {
   const maxAttempts = 30 // 最多等待30秒
   let attempts = 0

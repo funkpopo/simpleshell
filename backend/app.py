@@ -693,6 +693,41 @@ def handle_resize(data):
 def health_check():
     return jsonify({"status": "ok"}), 200
 
+# 添加新的路由处理创建文件夹
+@app.route('/sftp_create_folder', methods=['POST'])
+def sftp_create_folder():
+    data = request.json
+    connection = data['connection']
+    path = normalize_path(data['path'])
+
+    print(f"Attempting to create folder: {path}")
+
+    try:
+        transport = paramiko.Transport((connection['host'], connection['port']))
+        if connection['authType'] == 'password':
+            transport.connect(username=connection['username'], password=connection['password'])
+        else:
+            pkey = paramiko.RSAKey.from_private_key(io.StringIO(connection['privateKey']))
+            transport.connect(username=connection['username'], pkey=pkey)
+
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        
+        try:
+            sftp.mkdir(path)
+        except IOError as e:
+            if 'already exists' in str(e):
+                return jsonify({'error': 'Folder already exists'}), 409
+            raise e
+
+        sftp.close()
+        transport.close()
+
+        print(f"Folder created successfully: {path}")
+        return jsonify({'message': 'Folder created successfully'})
+    except Exception as e:
+        print(f"Error in sftp_create_folder: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     try:
         socketio.run(app, debug=True)

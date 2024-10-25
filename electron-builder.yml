@@ -7,20 +7,29 @@ files:
   - dist_electron/**/*
   - "!.editorconfig"
 extraResources:
-  - from: backend/dist/app.exe
-    to: ./app.exe
+  - from: "backend/dist/app/app.exe"
+    to: "app.exe"
+  - from: "backend/dist/app/"
+    filter: "!app.exe"
+    to: "."
 win:
   target:
     - target: nsis
       arch:
         - x64
   requestedExecutionLevel: requireAdministrator
-  # 添加文件压缩配置
-  compression: maximum # 最大压缩
-  artifactName: "${productName}-${version}-${arch}.${ext}" # 生成文件的命名规则
-asar: true # 启用 asar 打包以减小体积
-# 配置需要压缩的文件类型
+  compression: maximum
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: "${productName}"
+  uninstallDisplayName: "${productName}"
+  artifactName: "${productName}-Setup-${version}.${ext}"
+asar: true
 fileAssociations:
   - ext: "exe"
     role: "None"
-compression: "maximum" # 全局压缩级别设置为最大
+compression: "maximum"

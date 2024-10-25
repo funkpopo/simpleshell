@@ -69,6 +69,13 @@
         <a-button type="primary" @click="confirmRename">Confirm</a-button>
       </template>
     </a-modal>
+    <a-modal v-model:visible="newFolderModalVisible" title="New Folder">
+      <a-input v-model="newFolderName" placeholder="Enter folder name" />
+      <template #footer>
+        <a-button @click="newFolderModalVisible = false">Cancel</a-button>
+        <a-button type="primary" @click="confirmCreateFolder">Create</a-button>
+      </template>
+    </a-modal>
   </div>
 </template>
 
@@ -109,6 +116,9 @@ export default {
     const itemToRename = ref(null);
     const currentUploadPath = ref('/');
     const expandedKeys = ref([]);
+    const newFolderModalVisible = ref(false);
+    const newFolderName = ref('');
+    const currentFolderPath = ref('');
 
     const normalizePath = (path) => {
       return path.replace(/\\/g, '/').replace(/\/+/g, '/');
@@ -229,7 +239,7 @@ export default {
         const reader = new FileReader();
         reader.onload = async (e) => {
           try {
-            const base64Content = e.target.result.split(',')[1]; // 获取 Base64 编码的��容
+            const base64Content = e.target.result.split(',')[1]; // 获取 Base64 编码的容
             await axios.post('http://localhost:5000/sftp_upload_file', {
               connection: props.connection,
               path: normalizePath(targetNode.key === 'root' ? '/' : targetNode.key),
@@ -350,6 +360,21 @@ export default {
       event.preventDefault();
       const menu = new Menu();
       
+      // 只有在右键点击文件夹时才显示新建文件夹选项
+      if (!nodeData.isLeaf) {
+        menu.append(new MenuItem({
+          label: 'New Folder',
+          click: () => createNewFolder(nodeData)
+        }));
+
+        menu.append(new MenuItem({
+          label: 'Upload',
+          click: () => openFileUpload(nodeData)
+        }));
+
+        menu.append(new MenuItem({ type: 'separator' }));
+      }
+
       menu.append(new MenuItem({
         label: 'Refresh',
         click: () => refreshDirectory(nodeData)
@@ -360,25 +385,22 @@ export default {
         click: () => showRenameModal(nodeData)
       }));
 
-      menu.append(new MenuItem({
-        label: 'Upload',
-        click: () => openFileUpload(nodeData)
-      }));
-
-      menu.append(new MenuItem({
-        label: 'Download',
-        click: () => downloadItem(nodeData)
-      }));
+      // 如果是文件，显示下载选项
+      if (nodeData.isLeaf) {
+        menu.append(new MenuItem({
+          label: 'Download',
+          click: () => downloadItem(nodeData)
+        }));
+      }
 
       // 添加分隔线
       menu.append(new MenuItem({ type: 'separator' }));
 
       // 修改删除选项
       menu.append(new MenuItem({
-        label: 'Delete',
+        label: `Delete ${nodeData.isLeaf ? 'File' : 'Folder'}`,
         click: () => deleteSelectedItem(nodeData),
         type: 'normal',
-        // 使用 Electron 原生的菜单样式
         role: 'delete'
       }));
 
@@ -707,6 +729,43 @@ export default {
       }
     };
 
+    const createNewFolder = (nodeData) => {
+      newFolderName.value = '';
+      currentFolderPath.value = nodeData.isLeaf 
+        ? path.dirname(nodeData.key)
+        : nodeData.key;
+      newFolderModalVisible.value = true;
+    };
+
+    const confirmCreateFolder = async () => {
+      if (!newFolderName.value.trim()) {
+        Message.error('Please enter a folder name');
+        return;
+      }
+
+      try {
+        const folderPath = normalizePath(`${currentFolderPath.value}/${newFolderName.value}`);
+        const response = await axios.post('http://localhost:5000/sftp_create_folder', {
+          connection: props.connection,
+          path: folderPath
+        });
+
+        if (response.data.error) {
+          throw new Error(response.data.error);
+        }
+
+        Message.success('Folder created successfully');
+        newFolderModalVisible.value = false;
+
+        // 刷新当前目录
+        await refreshDirectoryKeepingState(currentFolderPath.value);
+        await logOperation('create_folder', folderPath);
+      } catch (error) {
+        console.error('Failed to create folder:', error);
+        Message.error(`Failed to create folder: ${error.message}`);
+      }
+    };
+
     onMounted(() => {
       console.log('SFTPExplorer mounted, connection:', props.connection);
       fetchRootDirectory();
@@ -753,6 +812,10 @@ export default {
       refreshDirectoryKeepingState,
       downloadFile,
       downloadItem,
+      newFolderModalVisible,
+      newFolderName,
+      createNewFolder,
+      confirmCreateFolder,
     };
   }
 };
@@ -864,7 +927,10 @@ export default {
 :deep(.arco-tree-node:hover) .folder-name {
   color: var(--color-primary-light-3);
 }
+
+/* 可以添加一些样式来美化新文件夹对话框 */
+.arco-modal-content .arco-input {
+  margin-bottom: 16px;
+}
 </style>
-
-
 

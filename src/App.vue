@@ -1,24 +1,35 @@
 <template>
-  <a-config-provider :theme="theme">
+  <a-config-provider :theme="theme" :locale="locale">
     <a-layout class="layout">
       <a-layout-header>
         <div class="header-content">
           <h3>SimpleSSH</h3>
-          <a-switch
-            v-model="isDarkMode"
-            :checked-value="true"
-            :unchecked-value="false"
-            checked-color="#165DFF"
-            unchecked-color="#165DFF"
-            @change="toggleTheme"
-          >
-            <template #checked>
-              <icon-moon-fill />
-            </template>
-            <template #unchecked>
-              <icon-sun-fill />
-            </template>
-          </a-switch>
+          <div class="header-actions">
+            <!-- 添加设置按钮 -->
+            <a-button
+              type="text"
+              @click="showSettings"
+            >
+              <template #icon>
+                <icon-settings />
+              </template>
+            </a-button>
+            <a-switch
+              v-model="isDarkMode"
+              :checked-value="true"
+              :unchecked-value="false"
+              checked-color="#165DFF"
+              unchecked-color="#165DFF"
+              @change="toggleTheme"
+            >
+              <template #checked>
+                <icon-moon-fill />
+              </template>
+              <template #unchecked>
+                <icon-sun-fill />
+              </template>
+            </a-switch>
+          </div>
         </div>
       </a-layout-header>
       <a-layout class="main-content">
@@ -31,6 +42,7 @@
           <a-menu mode="inline">
             <a-menu-item key="add-folder" @click="showAddFolderModal">
               <icon-folder-add />
+              <span>{{ $t('common.addFolder') }}</span>
             </a-menu-item>
             <a-sub-menu v-for="folder in folders" :key="folder.id">
               <template #title>
@@ -153,74 +165,74 @@
         </a-layout-content>
       </a-layout>
 
-      <a-modal v-model:visible="addConnectionModalVisible" title="Add SSH Connection" @ok="addConnection">
+      <a-modal v-model:visible="addConnectionModalVisible" :title="$t('common.addConnection')" @ok="addConnection">
         <a-form :model="newConnection">
-          <a-form-item label="Name">
+          <a-form-item :label="$t('common.name')">
             <a-input v-model="newConnection.name" />
           </a-form-item>
-          <a-form-item label="Host">
+          <a-form-item :label="$t('common.host')">
             <a-input v-model="newConnection.host" />
           </a-form-item>
-          <a-form-item label="Port">
+          <a-form-item :label="$t('common.port')">
             <a-input-number v-model="newConnection.port" :min="1" :max="65535" />
           </a-form-item>
-          <a-form-item label="Username">
+          <a-form-item :label="$t('common.username')">
             <a-input v-model="newConnection.username" />
           </a-form-item>
-          <a-form-item label="Authentication">
+          <a-form-item :label="$t('common.authentication')">
             <a-radio-group v-model="newConnection.authType">
-              <a-radio value="password">Password</a-radio>
-              <a-radio value="key">Private Key</a-radio>
+              <a-radio value="password">{{ $t('common.password') }}</a-radio>
+              <a-radio value="key">{{ $t('common.privateKey') }}</a-radio>
             </a-radio-group>
           </a-form-item>
-          <a-form-item v-if="newConnection.authType === 'password'" label="Password">
+          <a-form-item v-if="newConnection.authType === 'password'" :label="$t('common.password')">
             <a-input-password v-model="newConnection.password" />
           </a-form-item>
-          <a-form-item v-if="newConnection.authType === 'key'" label="Private Key">
-            <a-input v-model="newConnection.privateKeyPath" placeholder="Select private key file" readonly>
+          <a-form-item v-if="newConnection.authType === 'key'" :label="$t('common.privateKey')">
+            <a-input v-model="newConnection.privateKeyPath" :placeholder="$t('common.selectFile')" readonly>
               <template #suffix>
-                <a-button @click="selectPrivateKeyFile">Select File</a-button>
+                <a-button @click="selectPrivateKeyFile">{{ $t('common.selectFile') }}</a-button>
               </template>
             </a-input>
           </a-form-item>
         </a-form>
       </a-modal>
 
-      <a-modal v-model:visible="addFolderModalVisible" title="Add Folder" @ok="addFolder">
+      <a-modal v-model:visible="addFolderModalVisible" :title="$t('common.addFolder')" @ok="addFolder">
         <a-form :model="newFolder">
-          <a-form-item label="Folder Name">
-            <a-input v-model="newFolder.name" />
+          <a-form-item :label="$t('common.folderName')">
+            <a-input v-model="newFolder.name" :placeholder="$t('common.enterFolderName')" />
           </a-form-item>
         </a-form>
       </a-modal>
 
-      <a-modal v-model:visible="editConnectionModalVisible" title="Edit SSH Connection" @ok="updateConnection">
+      <a-modal v-model:visible="editConnectionModalVisible" :title="$t('common.editConnection')" @ok="updateConnection">
         <a-form :model="editingConnection">
-          <a-form-item label="Name">
+          <a-form-item :label="$t('common.name')">
             <a-input v-model="editingConnection.name" />
           </a-form-item>
-          <a-form-item label="Host">
+          <a-form-item :label="$t('common.host')">
             <a-input v-model="editingConnection.host" />
           </a-form-item>
-          <a-form-item label="Port">
+          <a-form-item :label="$t('common.port')">
             <a-input-number v-model="editingConnection.port" :min="1" :max="65535" />
           </a-form-item>
-          <a-form-item label="Username">
+          <a-form-item :label="$t('common.username')">
             <a-input v-model="editingConnection.username" />
           </a-form-item>
-          <a-form-item label="Authentication">
+          <a-form-item :label="$t('common.authentication')">
             <a-radio-group v-model="editingConnection.authType">
-              <a-radio value="password">Password</a-radio>
-              <a-radio value="key">Private Key</a-radio>
+              <a-radio value="password">{{ $t('common.password') }}</a-radio>
+              <a-radio value="key">{{ $t('common.privateKey') }}</a-radio>
             </a-radio-group>
           </a-form-item>
-          <a-form-item v-if="editingConnection.authType === 'password'" label="Password">
+          <a-form-item v-if="editingConnection.authType === 'password'" :label="$t('common.password')">
             <a-input-password v-model="editingConnection.password" />
           </a-form-item>
-          <a-form-item v-if="editingConnection.authType === 'key'" label="Private Key">
-            <a-input v-model="editingConnection.privateKeyPath" placeholder="Select private key file" readonly>
+          <a-form-item v-if="editingConnection.authType === 'key'" :label="$t('common.privateKey')">
+            <a-input v-model="editingConnection.privateKeyPath" :placeholder="$t('common.selectFile')" readonly>
               <template #suffix>
-                <a-button @click="selectPrivateKeyFile">Select File</a-button>
+                <a-button @click="selectPrivateKeyFile">{{ $t('common.selectFile') }}</a-button>
               </template>
             </a-input>
           </a-form-item>
@@ -228,10 +240,30 @@
       </a-modal>
 
       <!-- 添加文件夹编辑模态框 -->
-      <a-modal v-model:visible="editFolderModalVisible" title="Edit Folder" @ok="updateFolder">
+      <a-modal v-model:visible="editFolderModalVisible" :title="$t('common.editFolder')" @ok="updateFolder">
         <a-form :model="editingFolder">
-          <a-form-item label="Folder Name">
-            <a-input v-model="editingFolder.name" />
+          <a-form-item :label="$t('common.folderName')">
+            <a-input v-model="editingFolder.name" :placeholder="$t('common.enterFolderName')" />
+          </a-form-item>
+        </a-form>
+      </a-modal>
+
+      <!-- 添加设置对话框 -->
+      <a-modal
+        v-model:visible="settingsVisible"
+        :title="$t('settings.title')"
+        @ok="saveSettings"
+        @cancel="settingsVisible = false"
+      >
+        <a-form :model="settings" layout="vertical">
+          <a-form-item :label="$t('settings.language')">
+            <a-select
+              v-model="settings.language"
+              :style="{ width: '100%' }"
+            >
+              <a-option value="zh-CN">中文</a-option>
+              <a-option value="en-US">English</a-option>
+            </a-select>
           </a-form-item>
         </a-form>
       </a-modal>
@@ -243,12 +275,14 @@
 import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed } from 'vue'
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
-import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete } from '@arco-design/web-vue/es/icon'
+import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue' // 添加这行
 import axios from 'axios'
 import { dialog } from '@electron/remote'
 import fs from 'fs'
 import { Menu, MenuItem } from '@electron/remote'
+import enUS from '@arco-design/web-vue/es/locale/lang/en-us'
+import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
 
 export default {
   name: 'App',
@@ -262,7 +296,8 @@ export default {
     IconMenuFold,
     IconMenuUnfold,
     IconEdit,
-    IconDelete
+    IconDelete,
+    IconSettings
   },
   setup() {
     const connections = ref([])
@@ -863,6 +898,31 @@ export default {
       return colors[index];
     };
 
+    // 添加语言设置相关的代码
+    const locale = ref(zhCN)
+    const settingsVisible = ref(false)
+    const settings = reactive({
+      language: localStorage.getItem('language') || 'zh-CN'
+    })
+
+    // 初始化时设置语言
+    watch(() => settings.language, (newLang) => {
+      locale.value = newLang === 'zh-CN' ? zhCN : enUS
+      localStorage.setItem('language', newLang)
+    }, { immediate: true })
+
+    const showSettings = () => {
+      settingsVisible.value = true
+    }
+
+    const saveSettings = () => {
+      settingsVisible.value = false
+      Message.success(locale.value.settings.saved)
+    }
+
+    // 提供语言设置给子组件
+    provide('locale', locale)
+
     return {
       connections,
       tabs,
@@ -907,6 +967,11 @@ export default {
       siderCollapsed,
       toggleSider,
       getAvatarColor,
+      locale,
+      settingsVisible,
+      settings,
+      showSettings,
+      saveSettings,
     }
   }
 }
@@ -1182,7 +1247,7 @@ export default {
   padding-right: 10px !important;
 }
 
-/* 修改文件夹标题相关���式 */
+/* 修改文件夹标题相关式 */
 .folder-header {
   display: flex;
   justify-content: space-between;
@@ -1416,7 +1481,7 @@ export default {
   width: 48px;
 }
 
-/* 折叠按钮样式 */
+/* 折叠���钮样式 */
 .sider-trigger {
   position: absolute;
   bottom: 12px;
@@ -1503,6 +1568,20 @@ export default {
 .arco-layout-sider-collapsed .arco-menu-item[key="add-folder"] {
   width: 64px;
   padding: 12px 0 !important;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-actions .arco-btn {
+  color: var(--color-text-1);
+}
+
+.header-actions .arco-btn:hover {
+  background-color: var(--color-fill-3);
 }
 </style>
 
