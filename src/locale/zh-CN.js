@@ -2,7 +2,9 @@ export default {
   settings: {
     title: '设置',
     language: '语言',
-    saved: '设置保存成功'
+    saved: '设置保存成功',
+    pingInterval: 'PING 间隔',
+    pingIntervalDescription: '设置为 0 以禁用 PING。最大值为 3600 秒（1小时）。此设置将与您的连接一起保存。'
   },
   common: {
     delete: '删除',

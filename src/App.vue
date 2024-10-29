@@ -265,6 +265,16 @@
               <a-option value="en-US">English</a-option>
             </a-select>
           </a-form-item>
+          <!-- 添加 PING 设置 -->
+          <a-form-item :label="$t('settings.pingInterval')">
+            <a-input-number
+              v-model="settings.pingInterval"
+              :min="0"
+              :max="3600"
+              :style="{ width: '100%' }"
+            />
+            <div class="setting-description">{{ $t('settings.pingIntervalDescription') }}</div>
+          </a-form-item>
         </a-form>
       </a-modal>
     </a-layout>
@@ -443,18 +453,24 @@ export default {
 
     const fetchConnections = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/get_connections')
-        const allItems = response.data
+        const response = await axios.get('http://localhost:5000/get_connections');
+        const allItems = response.data;
+        
+        // 获取全局设置
+        const globalSettings = allItems.find(item => item.type === 'settings') || {};
+        if (globalSettings.pingInterval !== undefined) {
+          settings.pingInterval = globalSettings.pingInterval;
+        }
         
         folders.value = allItems.filter(item => item.type === 'folder').map(folder => ({
           ...folder,
           connections: folder.connections || []
-        }))
-        connections.value = allItems.filter(item => item.type === 'connection' && !item.folderId)
+        }));
+        connections.value = allItems.filter(item => item.type === 'connection' && !item.folderId);
       } catch (error) {
-        console.error('Failed to fetch connections:', error)
+        console.error('Failed to fetch connections:', error);
       }
-    }
+    };
 
     const sshTerminals = ref([])
 
@@ -675,7 +691,7 @@ export default {
 
           console.log('Sending updated config to backend:', currentConfig);
 
-          // 发送更新后的完整配置到后端
+          // 发送更新后的完整配置后端
           const saveResponse = await axios.post('http://localhost:5000/update_config', currentConfig);
           
           if (saveResponse.data.error) {
@@ -902,8 +918,9 @@ export default {
     const locale = ref(zhCN)
     const settingsVisible = ref(false)
     const settings = reactive({
-      language: localStorage.getItem('language') || 'zh-CN'
-    })
+      language: localStorage.getItem('language') || 'zh-CN',
+      pingInterval: 30 // 默认值，会被配置文件中的值覆盖
+    });
 
     // 初始化时设置语言
     watch(() => settings.language, (newLang) => {
@@ -915,10 +932,45 @@ export default {
       settingsVisible.value = true
     }
 
-    const saveSettings = () => {
-      settingsVisible.value = false
-      Message.success(locale.value.settings.saved)
-    }
+    const saveSettings = async () => {
+      try {
+        // 获取当前配置
+        const response = await axios.get('http://localhost:5000/get_connections');
+        let currentConfig = response.data;
+        
+        // 更新或添加设置
+        const settingsIndex = currentConfig.findIndex(item => item.type === 'settings');
+        const settingsData = {
+          type: 'settings',
+          pingInterval: settings.pingInterval
+        };
+        
+        if (settingsIndex !== -1) {
+          currentConfig[settingsIndex] = settingsData;
+        } else {
+          currentConfig.push(settingsData);
+        }
+        
+        // 保存更新后的配置
+        await axios.post('http://localhost:5000/update_config', currentConfig);
+        
+        // 更新本地存储和状态
+        localStorage.setItem('language', settings.language);
+        
+        // 重启 PING 定时器
+        if (settings.pingInterval > 0) {
+          startPingTimer();
+        } else {
+          stopPingTimer();
+        }
+        
+        settingsVisible.value = false;
+        Message.success(locale.value.settings.saved);
+      } catch (error) {
+        console.error('Failed to save settings:', error);
+        Message.error('Failed to save settings');
+      }
+    };
 
     // 提供语言设置给子组件
     provide('locale', locale)
@@ -1481,7 +1533,7 @@ export default {
   width: 48px;
 }
 
-/* 折叠���钮样式 */
+/* 折叠钮样式 */
 .sider-trigger {
   position: absolute;
   bottom: 12px;
@@ -1582,6 +1634,16 @@ export default {
 
 .header-actions .arco-btn:hover {
   background-color: var(--color-fill-3);
+}
+
+.setting-description {
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-top: 4px;
+}
+
+.arco-form-item {
+  margin-bottom: 24px;
 }
 </style>
 

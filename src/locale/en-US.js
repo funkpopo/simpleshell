@@ -2,7 +2,9 @@ export default {
   settings: {
     title: 'Settings',
     language: 'Language',
-    saved: 'Settings saved successfully'
+    saved: 'Settings saved successfully',
+    pingInterval: 'PING Interval',
+    pingIntervalDescription: 'Set to 0 to disable PING. Maximum value is 3600 seconds (1 hour). This setting will be saved with your connections.'
   },
   common: {
     delete: 'Delete',
