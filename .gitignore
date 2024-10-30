@@ -42,7 +42,6 @@ dist_electron
 # Config files that may contain sensitive information
 config.json
 electron-builder.env
-package-lock.json
 
 # Python virtual environment
 venv/
@@ -52,6 +51,7 @@ __pycache__/
 # Backend build output
 backend/build/
 backend/dist/
+backend/*.spec
 
 # Temporary files
 temp/

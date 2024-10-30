@@ -17,11 +17,8 @@
 - 配置保存和加载
 
 ## 使用说明
-
 使用左侧菜单添加和管理SSH连接
-
 点击连接以打开新的终端标签页
-
 在终端界面与远程服务器实时交互
 
 ## 配置文件
@@ -36,8 +33,8 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 
 ## 开发
 
-- 前端：Node.js v20.12.1+ Vue 3 + ArcoDesign + Xterm.js
-- 后端：Python 3.12.4 + Flask + Flask-SocketIO
+- 前端：Vue 3 + ArcoDesign + Xterm.js
+- 后端：Python + Flask + Flask-SocketIO
 
 ## 安装依赖
 
@@ -61,7 +58,12 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 
 2. 启动前端开发服务器：
    ```
-   npm run electron:serve
+   npm run serve
+   ```
+
+3. 测试electron打包
+   ```
+   npm run build:electron
    ```
 
 4. 在浏览器中访问 `http://localhost:8080`
@@ -78,9 +80,9 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 2. 打包后端
    ```
    cd backend
-   python -m PyInstaller --onefile service.py
+   python -m PyInstaller --onefile app.py
    # 使用spec文件更好
-   python -m PyInstaller --clean .\service.spec
+   python -m PyInstaller --clean .\app.spec
    ```
 
 ## 贡献

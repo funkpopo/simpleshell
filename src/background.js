@@ -37,12 +37,12 @@ function getBackendPath() {
   if (isDevelopment) {
     return {
       executable: 'python',
-      args: [path.join(__dirname, '..', 'backend', 'service.py')],
+      args: [path.join(__dirname, '..', 'backend', 'app.py')],
       cwd: path.join(__dirname, '..')
     };
   } else {
     return {
-      executable: path.join(appDir, 'service.exe'),
+      executable: path.join(appDir, 'resources', 'app.exe'),
       args: [],
       cwd: appDir
     };
@@ -71,6 +71,12 @@ function startBackend() {
       }
     }
 
+    // 创建临时目录
+    const tempDir = path.join(cwd, 'temp')
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true })
+    }
+
     // 修改进程启动配置
     backendProcess = spawn(executable, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -80,7 +86,9 @@ function startBackend() {
       env: {
         ...process.env,
         PYTHONUNBUFFERED: '1',
-        PYTHONIOENCODING: 'utf-8'
+        PYTHONIOENCODING: 'utf-8',
+        TEMP: tempDir,
+        TMP: tempDir
       }
     })
 
@@ -91,19 +99,21 @@ function startBackend() {
 
     backendProcess.stderr.on('data', (data) => {
       console.error(`Backend stderr: ${data.toString()}`)
-      // 不要立即退出，让错误信息能够完整显示
     })
 
     backendProcess.on('error', (err) => {
       console.error('Failed to start backend process:', err)
-      throw err; // 抛出错误以便上层捕获
     })
 
     backendProcess.on('close', (code, signal) => {
       console.log(`Backend process exited with code ${code} (signal: ${signal})`)
       
       if (code !== 0 && code !== null) {
-        throw new Error(`Backend process exited with code ${code}`);
+        // 尝试重启后端，但不显示错误提示
+        setTimeout(() => {
+          console.log('Attempting to restart backend...')
+          startBackend()
+        }, 1000)
       }
     })
 
@@ -115,7 +125,7 @@ function startBackend() {
     return true
   } catch (error) {
     console.error('Error in startBackend:', error)
-    throw error; // 抛出错误以便上层捕获
+    return false
   }
 }
 
@@ -132,10 +142,7 @@ async function waitForBackend() {
         return true
       }
     } catch (error) {
-      console.log(`Waiting for backend... Attempt ${attempts + 1}/${maxAttempts}`)
-      if (backendProcess && backendProcess.exitCode !== null) {
-        throw new Error(`Backend process exited with code ${backendProcess.exitCode}`);
-      }
+      console.log('Waiting for backend...', attempts)
     }
     await new Promise(resolve => setTimeout(resolve, 1000))
     attempts++
@@ -147,10 +154,20 @@ async function waitForBackend() {
 async function createWindow() {
   try {
     // 启动后端服务
-    await startBackend();
+    const backendStarted = startBackend()
+    if (!backendStarted) {
+      throw new Error('Failed to start backend service')
+    }
 
     // 等待后端服务就绪
-    await waitForBackend();
+    try {
+      await waitForBackend()
+    } catch (error) {
+      console.error('Backend startup timeout:', error)
+      showError('Backend Error', 'Backend service failed to start in time')
+      app.quit()
+      return
+    }
 
     mainWindow = new BrowserWindow({
       width: 1200,
@@ -210,7 +227,21 @@ if (!gotTheLock) {
     const appPath = app.getPath('exe')
     const appDir = path.dirname(appPath)
     
+    // 确保必要的目录和文件存在
+    const tempDir = path.join(appDir, 'temp')
+    const configPath = path.join(appDir, 'config.json')
+    
     try {
+      // 创建 temp 目录
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir)
+      }
+      
+      // 确保 config.json 存在
+      if (!fs.existsSync(configPath)) {
+        fs.writeFileSync(configPath, '[]', 'utf8')
+      }
+
       if (isDevelopment && !process.env.IS_TEST) {
         try {
           await installExtension(VUEJS3_DEVTOOLS)
