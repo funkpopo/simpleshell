@@ -13,7 +13,7 @@
     "electron:serve": "vue-cli-service electron:serve",
     "postinstall": "electron-builder install-app-deps",
     "postuninstall": "electron-builder install-app-deps",
-    "dev": "concurrently \"cd backend && python app.py\" \"npm run electron:serve\""
+    "dev": "concurrently \"cd backend && python service.py\" \"npm run electron:serve\""
   },
   "dependencies": {
     "@arco-design/web-vue": "^2.56.2",

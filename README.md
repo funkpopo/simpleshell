@@ -1,17 +1,17 @@
 # SSH Project
 
-本项目基于Python + Vue3 + ArcoDesign + Xterm.js开发，实现一个SSH客户端工具，具有直观友好的用户界面。
+本项目前端基于Python3 + Vue3 + ArcoDesign + Xterm.js开发，实现一个SSH客户端工具，具有直观友好的用户界面。
 
 - 通过Vue创建前端页面，使用ArcoDesign作为UI框架
 - 使用Xterm.js实现网页终端功能
-- Python作为后端服务器，使用Socket.IO实现客户端和SSH服务器之间的通信
+- 使用Python3 + FastAPI + Uvicorn实现后端服务器
 - 支持文字复制粘贴操作
 - 可以文件夹式管理多个安全可靠的SSH连接
 
 ## 功能特性
-
 - 直观的用户界面，易于使用
 - 支持多个SSH连接的管理
+- 支持SFTP文件传输
 - 实时终端交互
 - 安全的密码和密钥认证
 - 配置保存和加载
@@ -34,7 +34,6 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 ## 开发
 
 - 前端：Vue 3 + ArcoDesign + Xterm.js
-- 后端：Python + Flask + Flask-SocketIO
 
 ## 安装依赖
 
@@ -52,8 +51,7 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 
 1. 启动后端服务器：
    ```
-   cd backend
-   python app.py
+   python backend/main.py
    ```
 
 2. 启动前端开发服务器：
@@ -61,12 +59,10 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
    npm run serve
    ```
 
-3. 测试electron打包
+3. 测试electron（自动启动后端）
    ```
-   npm run build:electron
+   npm run electron:serve
    ```
-
-4. 在浏览器中访问 `http://localhost:8080`
 
 ---
 
@@ -77,12 +73,9 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
    npm run electron:build
    ```
 
-2. 打包后端
+2. 编译后端
    ```
-   cd backend
-   python -m PyInstaller --onefile app.py
-   # 使用spec文件更好
-   python -m PyInstaller --clean .\app.spec
+   python backend/build.py
    ```
 
 ## 贡献

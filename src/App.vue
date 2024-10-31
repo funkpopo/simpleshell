@@ -11,7 +11,7 @@
               @click="showSettings"
             >
               <template #icon>
-                <icon-settings />
+                <icon-settings style="font-size: 32; stroke-linecap: round; stroke-linejoin: round;"/>
               </template>
             </a-button>
             <a-switch
@@ -248,15 +248,15 @@
         </a-form>
       </a-modal>
 
-      <!-- 添加设置对话框 -->
+      <!-- 修改设置对话框部分 -->
       <a-modal
         v-model:visible="settingsVisible"
-        :title="$t('settings.title')"
+        :title="t('settings.title')"
         @ok="saveSettings"
         @cancel="settingsVisible = false"
       >
         <a-form :model="settings" layout="vertical">
-          <a-form-item :label="$t('settings.language')">
+          <a-form-item :label="t('settings.language')">
             <a-select
               v-model="settings.language"
               :style="{ width: '100%' }"
@@ -267,6 +267,26 @@
             </a-select>
           </a-form-item>
         </a-form>
+        <template #footer>
+          <div class="settings-footer">
+            <div class="copyright">
+              <a-link href="https://github.com/funkpopo" target="_blank">
+                <template #icon>
+                  <icon-github />
+                </template>
+              </a-link>
+              Powered by Python3, Vue3 and Xterm.js
+            </div>
+            <div class="buttons">
+              <a-button @click="settingsVisible = false">
+                {{ t('sftp.cancel') }}
+              </a-button>
+              <a-button type="primary" @click="saveSettings">
+                {{ t('sftp.confirm') }}
+              </a-button>
+            </div>
+          </div>
+        </template>
       </a-modal>
     </a-layout>
   </a-config-provider>
@@ -277,7 +297,7 @@ import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, comput
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
 import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings } from '@arco-design/web-vue/es/icon'
-import { Message } from '@arco-design/web-vue' // 添加这行
+import { Message, Modal } from '@arco-design/web-vue' // 添加这行
 import axios from 'axios'
 import { dialog } from '@electron/remote'
 import fs from 'fs'
@@ -286,7 +306,7 @@ import enUS from '@arco-design/web-vue/es/locale/lang/en-us'
 import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
 
 export default {
-  name: 'App',
+  name: 'SimpleSSH',
   components: {
     SSHTerminal,
     SFTPExplorer,
@@ -346,8 +366,12 @@ export default {
     provide('isDarkMode', isDarkMode)
 
     const showAddConnectionModal = (folderId = null) => {
-      addConnectionModalVisible.value = true
+      if (!folderId) {
+        Message.error('Please select a folder first')
+        return
+      }
       newConnection.folderId = folderId
+      addConnectionModalVisible.value = true
     }
 
     const selectPrivateKeyFile = async () => {
@@ -372,45 +396,58 @@ export default {
     }
 
     const addConnection = async () => {
-      const connection = { 
-        ...newConnection, 
-        id: Date.now(),
-        type: 'connection'
-      }
-      
-      if (connection.folderId) {
-        const folder = folders.value.find(f => f.id === connection.folderId)
-        if (folder) {
-          if (!folder.connections) {
-            folder.connections = []
-          }
-          folder.connections.push(connection)
-        }
-      } else {
-        connections.value.push(connection)
-      }
-      
       try {
-        await axios.post('http://localhost:5000/add_connection', connection)
-        console.log('Connection saved successfully')
-        await fetchConnections() // 重新获取所有连接以更新视图
-      } catch (error) {
-        console.error('Failed to save connection:', error)
-      }
+        const connection = { 
+          ...newConnection, 
+          id: Date.now(),
+          type: 'connection'
+        }
+        
+        // 获取当前配置
+        const response = await axios.get('http://localhost:5000/get_connections')
+        let currentConfig = response.data
 
-      addConnectionModalVisible.value = false
-      // Reset form
-      Object.assign(newConnection, {
-        name: '',
-        host: '',
-        port: 22,
-        username: '',
-        authType: 'password',
-        password: '',
-        privateKeyPath: '',
-        privateKey: '',
-        folderId: null
-      })
+        if (!connection.folderId) {
+          Message.error('Please select a folder first')
+          return
+        }
+
+        // 找到目标文件夹并添加连接
+        currentConfig = currentConfig.map(item => {
+          if (item.type === 'folder' && item.id === connection.folderId) {
+            return {
+              ...item,
+              connections: [...(item.connections || []), connection]
+            }
+          }
+          return item
+        })
+
+        // 保存更新后的配置
+        await axios.post('http://localhost:5000/update_config', currentConfig)
+        
+        // 刷新连接列表
+        await refreshConnections()
+        
+        // 重置表单并关闭对话框
+        addConnectionModalVisible.value = false
+        Object.assign(newConnection, {
+          name: '',
+          host: '',
+          port: 22,
+          username: '',
+          authType: 'password',
+          password: '',
+          privateKeyPath: '',
+          privateKey: '',
+          folderId: null
+        })
+
+        Message.success('Connection added successfully')
+      } catch (error) {
+        console.error('Failed to add connection:', error)
+        Message.error('Failed to add connection')
+      }
     }
 
     const openConnection = (connection) => {
@@ -639,6 +676,7 @@ export default {
           })
 
           await axios.post('http://localhost:5000/update_config', updatedConfig)
+          await refreshConnections()
           Message.success('Connection updated successfully')
           editConnectionModalVisible.value = false
         }
@@ -668,7 +706,7 @@ export default {
           // 找到并更新对应的文件夹
           currentConfig = currentConfig.map(item => {
             if (item.type === 'folder' && item.id === folder.id) {
-              // 过滤掉要删除的连接
+              // 滤掉要删除的连接
               const updatedConnections = (item.connections || []).filter(
                 conn => conn.id !== connection.id
               );
@@ -947,21 +985,86 @@ export default {
         // 更新本地存储
         localStorage.setItem('language', settings.language)
         
+        // 关闭设置对话框
         settingsVisible.value = false
-        Message.success(locale.value.settings.saved)
+
+        // 显示重启提示对话框
+        Modal.info({
+          title: t('settings.languageChanged'),
+          content: t('settings.restartRequired'),
+          okText: t('settings.restartNow'),
+          cancelText: t('settings.restartLater'),
+          hideCancel: false,
+          onOk: () => {
+            // 用户选择立即重启
+            const { app } = require('@electron/remote')
+            app.relaunch()
+            app.exit(0)
+          },
+          onCancel: () => {
+            // 用户选稍后重启
+            Message.success(t('settings.restartReminder'))
+          }
+        })
       } catch (error) {
+        // 只有在实际保存设置失败时才显示错误
         console.error('Failed to save settings:', error)
-        Message.error('Failed to save settings')
+        if (error.response) {
+          Message.error(t('settings.saveFailed'))
+        } else {
+          // 如果是网络错误但本地存储更新成功，仍然认为是成功的
+          if (localStorage.getItem('language') === settings.language) {
+            settingsVisible.value = false
+            Message.success(t('settings.saved'))
+          } else {
+            Message.error(t('settings.saveFailed'))
+          }
+        }
       }
     }
 
-    // 提供语言设置给子组件
+    // 提供语言设给子组件
     provide('locale', locale)
 
     const handleLanguageChange = (value) => {
       const i18n = inject('i18n')
       i18n.locale = value
       locale.value = value === 'zh-CN' ? zhCN : enUS
+    }
+
+    const refreshConnections = async () => {
+      try {
+        console.log('Refreshing connections...')
+        const response = await axios.get('http://localhost:5000/get_connections')
+        const allItems = response.data
+        
+        // 获取全设置
+        const globalSettings = allItems.find(item => item.type === 'settings') || {}
+        if (globalSettings.language !== undefined) {
+          settings.language = globalSettings.language
+        }
+        
+        // 更新文件夹和连接
+        folders.value = allItems.filter(item => item.type === 'folder').map(folder => ({
+          ...folder,
+          connections: folder.connections || []
+        }))
+        connections.value = allItems.filter(item => item.type === 'connection' && !item.folderId)
+        
+        console.log('Connections refreshed successfully')
+        console.log('Current folders:', folders.value)
+        console.log('Current connections:', connections.value)
+      } catch (error) {
+        console.error('Failed to refresh connections:', error)
+        Message.error('Failed to refresh connections')
+      }
+    }
+
+    const i18n = inject('i18n')
+
+    // 添加 t 函数
+    const t = (key, params) => {
+      return i18n.t(key, params)
     }
 
     return {
@@ -1013,6 +1116,7 @@ export default {
       settings,
       showSettings,
       saveSettings,
+      t
     }
   }
 }
@@ -1358,7 +1462,7 @@ export default {
   background-color: rgb(var(--red-1));
 }
 
-/* 添加左侧边栏相关样�� */
+/* 添加左侧边栏相关样 */
 .arco-layout-sider {
   position: relative;
   transition: all 0.2s;
@@ -1420,7 +1524,7 @@ export default {
   width: 100%;
 }
 
-/* 调整菜单容器的样式 */
+/* 调整菜单容器的样 */
 .arco-layout-sider-collapsed .arco-menu {
   width: 100%;
   padding: 0;
@@ -1633,6 +1737,41 @@ export default {
 
 .arco-form-item {
   margin-bottom: 24px;
+}
+
+.settings-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.settings-footer .copyright {
+  color: var(--color-text-3);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-footer .buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-footer .arco-link {
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.settings-footer .arco-link:hover {
+  color: var(--color-primary);
+}
+
+/* 确保图标垂直居中 */
+.settings-footer .arco-icon {
+  vertical-align: middle;
 }
 </style>
 

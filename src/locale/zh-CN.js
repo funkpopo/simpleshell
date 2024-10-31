@@ -18,17 +18,13 @@ export default {
   settings: {
     title: '设置',
     language: '语言',
-    saved: '设置保存成功'
-  },
-  sftp: {
-    explorer: 'SFTP 浏览器',
-    upload: '上传',
-    download: '下载',
-    delete: '删除',
-    rename: '重命名',
-    newFolder: '新建文件夹',
-    refresh: '刷新',
-    history: '历史记录'
+    saved: '设置保存成功',
+    languageChanged: '语言已更改',
+    restartRequired: '需要重启应用程序以应用新的语言设置。',
+    restartNow: '立即重启',
+    restartLater: '稍后重启',
+    restartReminder: '请重启应用程序以应用新的语言设置',
+    saveFailed: '保存设置失败'
   },
   messages: {
     confirmDelete: '确定要删除此项吗？',
@@ -37,5 +33,31 @@ export default {
     downloadSuccess: '下载成功',
     renameSuccess: '重命名成功',
     error: '发生错误'
+  },
+  sftp: {
+    explorer: 'SFTP 浏览器',
+    refresh: '刷新',
+    history: '历史记录',
+    upload: '上传文件',
+    download: '下载',
+    newFolder: '新建文件夹',
+    rename: '重命名',
+    delete: '删除',
+    deleteFile: '删除文件',
+    deleteFolder: '删除文件夹',
+    confirmDelete: '确定要删除 "{name}" 吗？',
+    cannotUndo: '此操作无法撤销。',
+    historyTitle: 'SFTP 操作历史',
+    clearHistory: '清除历史',
+    enterNewName: '输入新名称',
+    enterFolderName: '输入文件夹名称',
+    createFolder: '创建',
+    cancel: '取消',
+    confirm: '确认',
+    uploadSuccess: '上传成功',
+    downloadSuccess: '下载成功',
+    deleteSuccess: '删除成功',
+    renameSuccess: '重命名成功',
+    createFolderSuccess: '文件夹创建成功'
   }
 }

@@ -10,16 +10,19 @@ import { spawn } from 'child_process'
 
 initialize()
 
+// 禁用菜单栏
+Menu.setApplicationMenu(null)
+
 const isDevelopment = process.env.NODE_ENV !== 'production'
 
 // 禁用硬件加速
 app.disableHardwareAcceleration()
 
-// 设置空菜单
-Menu.setApplicationMenu(null)
+let backendProcess = null
+let mainWindow = null
 
-// 获取应用程序的便携式路径
-function getPortablePath() {
+// 获取应用程序的根目录
+function getAppRootPath() {
   if (isDevelopment) {
     return path.join(__dirname, '..')
   } else {
@@ -27,71 +30,39 @@ function getPortablePath() {
   }
 }
 
-// 重写 app.getPath 方法，使用便携式路径
-const portablePath = getPortablePath()
-app.setPath('userData', path.join(portablePath, 'data'))
-app.setPath('temp', path.join(portablePath, 'temp'))
-app.setPath('logs', path.join(portablePath, 'logs'))
-
-// 确保必要的目录存在
-const requiredDirs = ['data', 'temp', 'logs']
-requiredDirs.forEach(dir => {
-  const dirPath = path.join(portablePath, dir)
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true })
-  }
-})
-
-// 修改配置文件路径
-const CONFIG_FILE = path.join(portablePath, 'data', 'config.json')
-if (!fs.existsSync(CONFIG_FILE)) {
-  fs.writeFileSync(CONFIG_FILE, '[]', 'utf8')
-}
-
-// 修改日志文件路径
-const LOG_FILE = path.join(portablePath, 'logs', 'sftp_log.log')
-
-// Scheme must be registered before the app is ready
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { secure: true, standard: true } }
-])
-
-let backendProcess = null
-let mainWindow = null
-
-function showError(title, content) {
-  dialog.showErrorBox(title, content)
-}
-
+// 获取后端可执行文件路径
 function getBackendPath() {
   if (isDevelopment) {
     return {
       executable: 'python',
-      args: [path.join(__dirname, '..', 'backend', 'app.py')],
+      args: [path.join(__dirname, '..', 'backend', 'service.py')],
       cwd: path.join(__dirname, '..')
     }
   } else {
     return {
-      executable: path.join(portablePath, 'resources', 'app.exe'),
+      executable: path.join(app.getPath('exe'), '..', 'resources', 'service', 'service.exe'),
       args: [],
-      cwd: portablePath
+      cwd: path.join(app.getPath('exe'), '..', 'resources', 'service')
     }
   }
 }
 
-// 修改后端进程启动配置
+// 启动后端服务
 function startBackend() {
   try {
     const { executable, args, cwd } = getBackendPath()
+    const rootDir = getAppRootPath()
     
     console.log('Starting backend process:', executable)
     console.log('Backend args:', args)
     console.log('Working directory:', cwd)
+    console.log('Root directory:', rootDir)
 
     if (!isDevelopment && !fs.existsSync(executable)) {
       throw new Error(`Backend executable not found at: ${executable}`)
     }
 
+    // 终止已存在的后端进程
     if (backendProcess) {
       try {
         backendProcess.kill()
@@ -100,12 +71,19 @@ function startBackend() {
       }
     }
 
-    // 使用便携式路径
-    const tempDir = path.join(portablePath, 'temp')
+    // 创建临时目录
+    const tempDir = path.join(rootDir, 'temp')
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true })
     }
 
+    // 确保配置文件存在
+    const configPath = path.join(rootDir, 'config.json')
+    if (!fs.existsSync(configPath)) {
+      fs.writeFileSync(configPath, '[]', 'utf8')
+    }
+
+    // 启动后端进程
     backendProcess = spawn(executable, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: false,
@@ -117,12 +95,12 @@ function startBackend() {
         PYTHONIOENCODING: 'utf-8',
         TEMP: tempDir,
         TMP: tempDir,
-        CONFIG_PATH: CONFIG_FILE,  // 传递配置文件路径给后端
-        LOG_PATH: LOG_FILE         // 传递日志文件路径给后端
+        CONFIG_PATH: configPath,
+        LOG_PATH: path.join(rootDir, 'sftp_log.log')
       }
     })
 
-    // 简化日志记录，只在控制台输出
+    // 日志处理
     backendProcess.stdout.on('data', (data) => {
       console.log(`Backend stdout: ${data.toString()}`)
     })
@@ -139,7 +117,6 @@ function startBackend() {
       console.log(`Backend process exited with code ${code} (signal: ${signal})`)
       
       if (code !== 0 && code !== null) {
-        // 尝试重启后端，但不显示错误提示
         setTimeout(() => {
           console.log('Attempting to restart backend...')
           startBackend()
@@ -147,7 +124,6 @@ function startBackend() {
       }
     })
 
-    // 检查进程是否成功启动
     if (!backendProcess.pid) {
       throw new Error('Failed to get backend process PID')
     }
@@ -159,9 +135,9 @@ function startBackend() {
   }
 }
 
-// 修改等待后端就绪的函数
+// 等待后端服务就绪
 async function waitForBackend() {
-  const maxAttempts = 30 // 最多等待30秒
+  const maxAttempts = 30
   let attempts = 0
 
   while (attempts < maxAttempts) {
@@ -181,27 +157,58 @@ async function waitForBackend() {
   throw new Error('Backend failed to start within 30 seconds')
 }
 
+// 清理后端进程
+function cleanupBackend() {
+  if (backendProcess) {
+    try {
+      if (process.platform === 'win32') {
+        const { execSync } = require('child_process')
+        try {
+          backendProcess.kill()
+          execSync(`taskkill /F /T /PID ${backendProcess.pid}`, { 
+            windowsHide: true,
+            stdio: 'ignore' 
+          })
+          execSync('taskkill /F /IM service.exe', { 
+            windowsHide: true,
+            stdio: 'ignore' 
+          })
+        } catch (e) {
+          console.log('Error during process cleanup:', e)
+        }
+      } else {
+        process.kill(-backendProcess.pid, 'SIGKILL')
+      }
+    } catch (error) {
+      console.error('Error killing backend process:', error)
+    } finally {
+      backendProcess = null
+    }
+  }
+}
+
+// 创建主窗���
 async function createWindow() {
   try {
-    // 启动后端服务
     const backendStarted = startBackend()
     if (!backendStarted) {
       throw new Error('Failed to start backend service')
     }
 
-    // 等待后端服务就绪
     try {
       await waitForBackend()
     } catch (error) {
       console.error('Backend startup timeout:', error)
-      showError('Backend Error', 'Backend service failed to start in time')
+      dialog.showErrorBox('Backend Error', 'Backend service failed to start in time')
       app.quit()
       return
     }
 
     mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
+      width: 1024,
+      height: 768,
+      minWidth: 800,
+      minHeight: 600,
       webPreferences: {
         nodeIntegration: process.env.ELECTRON_NODE_INTEGRATION,
         contextIsolation: !process.env.ELECTRON_NODE_INTEGRATION,
@@ -219,12 +226,18 @@ async function createWindow() {
       mainWindow.loadURL('app://./index.html')
     }
 
+    mainWindow.on('close', (e) => {
+      e.preventDefault()
+      cleanupBackend()
+      mainWindow.destroy()
+    })
+
     mainWindow.on('closed', () => {
       mainWindow = null
     })
   } catch (error) {
     console.error('Error in createWindow:', error)
-    showError('Application Error', `Failed to start application: ${error.message}`)
+    dialog.showErrorBox('Application Error', `Failed to start application: ${error.message}`)
     app.quit()
   }
 }
@@ -243,10 +256,18 @@ if (!gotTheLock) {
   })
 
   app.on('window-all-closed', () => {
+    cleanupBackend()
     if (process.platform !== 'darwin') {
-      cleanupBackend() // 使用新的清理函数
       app.quit()
     }
+  })
+
+  app.on('will-quit', () => {
+    cleanupBackend()
+  })
+
+  app.on('before-quit', () => {
+    cleanupBackend()
   })
 
   app.on('activate', () => {
@@ -254,47 +275,19 @@ if (!gotTheLock) {
   })
 
   app.on('ready', async () => {
-    const appPath = app.getPath('exe')
-    const appDir = path.dirname(appPath)
-    
-    // 确保必要的目录和文件存在
-    const tempDir = path.join(appDir, 'temp')
-    const configPath = path.join(appDir, 'config.json')
-    
-    try {
-      // 创建 temp 目录
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir)
+    if (isDevelopment && !process.env.IS_TEST) {
+      try {
+        await installExtension(VUEJS3_DEVTOOLS)
+      } catch (e) {
+        console.error('Vue Devtools failed to install:', e.toString())
       }
-      
-      // 确保 config.json 存在
-      if (!fs.existsSync(configPath)) {
-        fs.writeFileSync(configPath, '[]', 'utf8')
-      }
-
-      if (isDevelopment && !process.env.IS_TEST) {
-        try {
-          await installExtension(VUEJS3_DEVTOOLS)
-        } catch (e) {
-          console.error('Vue Devtools failed to install:', e.toString())
-        }
-      }
-      
-      await createWindow()
-    } catch (error) {
-      console.error('Error during app ready:', error)
-      showError('Initialization Error', `Failed to initialize application: ${error.message}`)
-      app.quit()
     }
-  })
-
-  // 确保在应用退出时清理后端进程
-  app.on('will-quit', () => {
-    cleanupBackend() // 使用新的清理函数
+    
+    await createWindow()
   })
 }
 
-// Exit cleanly on request from parent process in development mode.
+// 开发模式下的进程清理
 if (isDevelopment) {
   if (process.platform === 'win32') {
     process.on('message', (data) => {
@@ -309,43 +302,11 @@ if (isDevelopment) {
   }
 }
 
-// 添加新的清理函数
-function cleanupBackend() {
-  if (backendProcess) {
-    try {
-      // 在 Windows 上，我们需要使用 taskkill 来确保进程及其子进程都被终止
-      if (process.platform === 'win32') {
-        const { execSync } = require('child_process')
-        try {
-          // 首先尝试正常终止进程
-          backendProcess.kill()
-          
-          // 然后强制终止所有相关进程
-          execSync(`taskkill /F /T /PID ${backendProcess.pid}`, { 
-            windowsHide: true,
-            stdio: 'ignore' 
-          })
-        } catch (e) {
-          console.log('Error during taskkill:', e)
-        }
-      } else {
-        // 在非 Windows 平台上使用 kill
-        process.kill(-backendProcess.pid) // 使用负 PID 来终止整个进程组
-      }
-    } catch (error) {
-      console.error('Error killing backend process:', error)
-    } finally {
-      backendProcess = null
-    }
-  }
-}
-
-// 添加进程退出时的清理
+// 添加更多的进程清理点
 process.on('exit', () => {
   cleanupBackend()
 })
 
-// 添加异常退出时的清理
 process.on('SIGINT', () => {
   cleanupBackend()
   process.exit()

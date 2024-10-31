@@ -18,17 +18,13 @@ export default {
   settings: {
     title: 'Settings',
     language: 'Language',
-    saved: 'Settings saved successfully'
-  },
-  sftp: {
-    explorer: 'SFTP Explorer',
-    upload: 'Upload',
-    download: 'Download',
-    delete: 'Delete',
-    rename: 'Rename',
-    newFolder: 'New Folder',
-    refresh: 'Refresh',
-    history: 'History'
+    saved: 'Settings saved successfully',
+    languageChanged: 'Language Changed',
+    restartRequired: 'The application needs to restart to apply the new language setting.',
+    restartNow: 'Restart Now',
+    restartLater: 'Restart Later',
+    restartReminder: 'Please restart the application to apply the new language setting',
+    saveFailed: 'Failed to save settings'
   },
   messages: {
     confirmDelete: 'Are you sure you want to delete this item?',
@@ -37,5 +33,31 @@ export default {
     downloadSuccess: 'Downloaded successfully',
     renameSuccess: 'Renamed successfully',
     error: 'An error occurred'
+  },
+  sftp: {
+    explorer: 'SFTP Explorer',
+    refresh: 'Refresh',
+    history: 'History',
+    upload: 'Upload File',
+    download: 'Download',
+    newFolder: 'New Folder',
+    rename: 'Rename',
+    delete: 'Delete',
+    deleteFile: 'Delete File',
+    deleteFolder: 'Delete Folder',
+    confirmDelete: 'Are you sure you want to delete "{name}"?',
+    cannotUndo: 'This action cannot be undone.',
+    historyTitle: 'SFTP Operation History',
+    clearHistory: 'Clear History',
+    enterNewName: 'Enter new name',
+    enterFolderName: 'Enter folder name',
+    createFolder: 'Create',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    uploadSuccess: 'Uploaded successfully',
+    downloadSuccess: 'Downloaded successfully',
+    deleteSuccess: 'Deleted successfully',
+    renameSuccess: 'Renamed successfully',
+    createFolderSuccess: 'Folder created successfully'
   }
 }

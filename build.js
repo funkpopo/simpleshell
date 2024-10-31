@@ -15,7 +15,7 @@ async function build() {
 
     // 构建后端
     console.log('Building backend...');
-    execSync('cd backend && python -m PyInstaller --clean app.spec', { stdio: 'inherit' });
+    execSync('cd backend && python -m PyInstaller --clean service.spec', { stdio: 'inherit' });
 
     // 确保目标目录存在
     const resourcesDir = path.join('dist_electron', 'win-unpacked', 'resources');

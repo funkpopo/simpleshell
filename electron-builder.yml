@@ -7,11 +7,8 @@ files:
   - dist_electron/**/*
   - "!.editorconfig"
 extraResources:
-  - from: "backend/dist/app/app.exe"
-    to: "app.exe"
-  - from: "backend/dist/app/"
-    filter: "!app.exe"
-    to: "."
+  - from: "backend/dist/service"
+    to: "resources"
 win:
   target:
     - target: portable
@@ -20,8 +17,6 @@ win:
   requestedExecutionLevel: requireAdministrator
   compression: maximum
   artifactName: "${productName}-portable-${version}-${arch}.${ext}"
-portable:
-  splashImage: build/splash.png
 asar: true
 fileAssociations:
   - ext: "exe"

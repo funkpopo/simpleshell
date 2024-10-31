@@ -1,61 +1,113 @@
 <template>
   <div class="sftp-explorer">
     <div class="sftp-header">
-      <h3>{{ $t('sftp.explorer') }}</h3>
+      <h3>SFTP Explorer</h3>
       <div class="sftp-actions">
-        <a-button size="small" @click="goToBase">
-          <template #icon>
-            <icon-home />
-          </template>
-          /
-        </a-button>
-        <a-button size="small" @click="refreshCurrentDirectory">
-          <template #icon>
-            <icon-refresh />
-          </template>
-          {{ $t('sftp.refresh') }}
-        </a-button>
-        <a-button size="small" @click="showHistory">{{ $t('sftp.history') }}</a-button>
+        <a-button-group>
+          <a-button type="primary" @click="refreshCurrentDirectory">
+            <template #icon><icon-refresh /></template>
+            Refresh
+          </a-button>
+          <a-button type="primary" @click="showHistory">
+            <template #icon><icon-history /></template>
+            History
+          </a-button>
+        </a-button-group>
       </div>
     </div>
     <div class="sftp-content">
       <a-spin :loading="loading">
-        <a-tree
-          v-if="fileTree.length > 0"
-          :data="fileTree"
-          :loadMore="loadMoreData"
-          @select="onSelect"
-          :defaultExpandedKeys="['root']"
-        >
-          <template #icon="nodeData">
-            <icon-file v-if="nodeData.isLeaf" class="file-icon" />
-            <icon-folder v-else class="folder-icon" />
-          </template>
-          <template #title="nodeData">
-            <span
-              :class="{
-                'folder-drop-target': !nodeData.isLeaf,
-                'file-name': nodeData.isLeaf,
-                'folder-name': !nodeData.isLeaf
-              }"
-              @dblclick="onItemDoubleClick(nodeData)"
-              @dragover.prevent
-              @drop.prevent="(event) => onDrop(event, nodeData)"
-              @contextmenu.prevent="(event) => showContextMenu(event, nodeData)"
-            >
-              {{ nodeData.title }}
-            </span>
-          </template>
-        </a-tree>
-        <div v-else-if="!loading">No files or directories found.</div>
+        <template v-if="fileTree && fileTree.length > 0">
+          <a-tree
+            :data="fileTree"
+            :loadMore="loadMoreData"
+            @select="onSelect"
+            :defaultExpandedKeys="['root']"
+          >
+            <template #icon="nodeData">
+              <icon-file v-if="nodeData.isLeaf" class="file-icon" />
+              <icon-folder v-else class="folder-icon" />
+            </template>
+            <template #title="nodeData">
+              <span
+                :class="{
+                  'folder-drop-target': !nodeData.isLeaf,
+                  'file-name': nodeData.isLeaf,
+                  'folder-name': !nodeData.isLeaf,
+                  'hidden-file': nodeData.isHidden
+                }"
+                @dblclick="onItemDoubleClick(nodeData)"
+                @dragover.prevent
+                @drop.prevent="(event) => onDrop(event, nodeData)"
+                @contextmenu.prevent="(event) => showContextMenu(event, nodeData)"
+              >
+                {{ nodeData.title }}
+              </span>
+            </template>
+          </a-tree>
+        </template>
+        <div v-else-if="!loading" class="empty-state">
+          No files or directories found.
+        </div>
       </a-spin>
     </div>
+
+    <!-- 模态框 -->
     <a-modal v-model:visible="fileContentVisible" title="File Content">
       <pre>{{ fileContent }}</pre>
     </a-modal>
-    <a-modal v-model:visible="historyVisible" title="SFTP Operation History">
-      <pre>{{ historyContent }}</pre>
+
+    <a-modal 
+      v-model:visible="historyVisible" 
+      :title="t('sftp.historyTitle')"
+      :width="modalWidth"
+      :mask-closable="true"
+      :footer="null"
+      class="history-modal"
+    >
+      <div class="history-container">
+        <div class="history-toolbar">
+          <a-button type="primary" size="small" @click="refreshHistory">
+            <template #icon><icon-refresh /></template>
+            {{ t('sftp.refresh') }}
+          </a-button>
+          <a-button type="primary" size="small" @click="clearHistory">
+            <template #icon><icon-delete /></template>
+            {{ t('sftp.clearHistory') }}
+          </a-button>
+        </div>
+        <div class="history-content">
+          <a-table
+            :columns="historyColumns"
+            :data="parsedHistory"
+            :pagination="{
+              pageSize: pageSize,
+              total: parsedHistory.length,
+              showTotal: true
+            }"
+            :bordered="false"
+            :stripe="true"
+            size="small"
+            :scroll="{ y: tableHeight }"
+          >
+            <template #cell="{ column, record }">
+              <template v-if="column.dataIndex === 'time'">
+                {{ formatTime(record.time) }}
+              </template>
+              <template v-else-if="column.dataIndex === 'operation'">
+                <a-tag :color="getOperationColor(record.operation)">
+                  {{ record.operation }}
+                </a-tag>
+              </template>
+              <template v-else>
+                {{ record[column.dataIndex] }}
+              </template>
+            </template>
+          </a-table>
+        </div>
+      </div>
     </a-modal>
+
     <input
       type="file"
       ref="fileInput"
@@ -63,28 +115,30 @@
       @change="handleFileUpload"
       multiple
     >
-    <a-modal v-model:visible="renameModalVisible" title="Rename">
-      <a-input v-model="newName" placeholder="Enter new name" />
+
+    <a-modal v-model:visible="renameModalVisible" :title="t('sftp.rename')">
+      <a-input v-model="newName" :placeholder="t('sftp.enterNewName')" />
       <template #footer>
-        <a-button @click="renameModalVisible = false">Cancel</a-button>
-        <a-button type="primary" @click="confirmRename">Confirm</a-button>
+        <a-button @click="renameModalVisible = false">{{ t('sftp.cancel') }}</a-button>
+        <a-button type="primary" @click="confirmRename">{{ t('sftp.confirm') }}</a-button>
       </template>
     </a-modal>
-    <a-modal v-model:visible="newFolderModalVisible" title="New Folder">
-      <a-input v-model="newFolderName" placeholder="Enter folder name" />
+
+    <a-modal v-model:visible="newFolderModalVisible" :title="t('sftp.newFolder')">
+      <a-input v-model="newFolderName" :placeholder="t('sftp.enterFolderName')" />
       <template #footer>
-        <a-button @click="newFolderModalVisible = false">Cancel</a-button>
-        <a-button type="primary" @click="confirmCreateFolder">Create</a-button>
+        <a-button @click="newFolderModalVisible = false">{{ t('sftp.cancel') }}</a-button>
+        <a-button type="primary" @click="confirmCreateFolder">{{ t('sftp.createFolder') }}</a-button>
       </template>
     </a-modal>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, watch, inject } from 'vue';
+import { ref, onMounted, watch, inject, onUnmounted } from 'vue';
 import { IconFile, IconFolder, IconRefresh, IconHome } from '@arco-design/web-vue/es/icon';
 import axios from 'axios';
-import { Message } from '@arco-design/web-vue';
+import { Message, Modal } from '@arco-design/web-vue';
 import { Menu, MenuItem, getCurrentWindow, shell, dialog } from '@electron/remote';
 import path from 'path';
 import fs from 'fs';
@@ -116,11 +170,71 @@ export default {
     const newName = ref('');
     const itemToRename = ref(null);
     const currentUploadPath = ref('/');
-    const expandedKeys = ref([]);
+    const expandedKeys = ref(['root']);
     const newFolderModalVisible = ref(false);
     const newFolderName = ref('');
     const currentFolderPath = ref('');
     const i18n = inject('i18n');
+
+    const historyColumns = [
+      {
+        title: 'Time',
+        dataIndex: 'time',
+      },
+      {
+        title: 'Operation',
+        dataIndex: 'operation',
+      },
+      {
+        title: 'Path',
+        dataIndex: 'path',
+        ellipsis: true
+      }
+    ]
+
+    const parsedHistory = ref([])
+
+    const formatTime = (timeStr) => {
+      const date = new Date(timeStr)
+      return date.toLocaleString()
+    }
+
+    const getOperationColor = (operation) => {
+      const colors = {
+        upload: 'green',
+        download: 'blue',
+        delete: 'red',
+        rename: 'orange',
+        create_folder: 'purple'
+      }
+      return colors[operation] || 'default'
+    }
+
+    const refreshHistory = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/get_sftp_history')
+        const lines = response.data.trim().split('\n')
+        parsedHistory.value = lines.map(line => {
+          const [time, operation, path] = line.split(',')
+          return { time, operation, path }
+        }).reverse() // 最新的记录显示在前面
+        Message.success('History refreshed')
+      } catch (error) {
+        console.error('Failed to fetch SFTP history:', error)
+        Message.error('Failed to fetch history')
+      }
+    }
+
+    const clearHistory = async () => {
+      try {
+        await axios.post('http://localhost:5000/clear_sftp_history')
+        parsedHistory.value = []
+        Message.success('History cleared')
+      } catch (error) {
+        console.error('Failed to clear SFTP history:', error)
+        Message.error('Failed to clear history')
+      }
+    }
 
     const normalizePath = (path) => {
       return path.replace(/\\/g, '/').replace(/\/+/g, '/');
@@ -143,7 +257,8 @@ export default {
         const response = await axios.post('http://localhost:5000/sftp_list_directory', {
           connection: props.connection,
           path: '/',
-          forceRoot: true
+          forceRoot: true,
+          showHidden: true
         });
         console.log('Root directory response:', response.data);
         if (response.data.error) {
@@ -153,7 +268,8 @@ export default {
           title: item.name,
           key: normalizePath('/' + item.name),
           isLeaf: !item.isDirectory,
-          children: item.isDirectory ? [] : undefined
+          children: item.isDirectory ? [] : undefined,
+          isHidden: item.name.startsWith('.')
         })));
         fileTree.value = [{
           title: '/',
@@ -362,86 +478,127 @@ export default {
       event.preventDefault();
       const menu = new Menu();
       
-      // 只有在右键点击文件夹时才显示新建文件夹选项
+      // 刷新选项
+      menu.append(new MenuItem({
+        label: t('sftp.refresh'),
+        click: () => refreshDirectory(nodeData.key)
+      }));
+
+      // 文件夹特有选项
       if (!nodeData.isLeaf) {
         menu.append(new MenuItem({
-          label: 'New Folder',
+          label: t('sftp.upload'),
+          click: () => {
+            // 创建隐藏的文件输入元素
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.multiple = true;
+            input.style.display = 'none';
+            document.body.appendChild(input);
+
+            // 监听文件选择
+            input.onchange = async (e) => {
+              const files = e.target.files;
+              if (!files.length) return;
+
+              for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                  try {
+                    const base64Content = e.target.result.split(',')[1];
+                    await axios.post('http://localhost:5000/sftp_upload_file', {
+                      connection: props.connection,
+                      path: nodeData.key === 'root' ? '/' : nodeData.key,
+                      filename: file.name,
+                      content: base64Content
+                    });
+                    Message.success(t('sftp.uploadSuccess'));
+                    await refreshDirectory(nodeData.key);
+                    await logOperation('upload', `${nodeData.key}/${file.name}`);
+                  } catch (error) {
+                    console.error('Failed to upload file:', error);
+                    Message.error(`Failed to upload ${file.name}: ${error.message}`);
+                  }
+                };
+                reader.readAsDataURL(file);
+              }
+              // 清理临时元素
+              document.body.removeChild(input);
+            };
+
+            // 触发文件选择
+            input.click();
+          }
+        }));
+
+        menu.append(new MenuItem({
+          label: t('sftp.newFolder'),
           click: () => createNewFolder(nodeData)
         }));
-
-        menu.append(new MenuItem({
-          label: 'Upload',
-          click: () => openFileUpload(nodeData)
-        }));
-
-        menu.append(new MenuItem({ type: 'separator' }));
       }
 
-      menu.append(new MenuItem({
-        label: 'Refresh',
-        click: () => refreshDirectory(nodeData)
-      }));
-
-      menu.append(new MenuItem({
-        label: 'Rename',
-        click: () => showRenameModal(nodeData)
-      }));
-
-      // 如果是文件，显示下载选项
+      // 文件特有选项
       if (nodeData.isLeaf) {
         menu.append(new MenuItem({
-          label: 'Download',
+          label: t('sftp.download'),
           click: () => downloadItem(nodeData)
         }));
       }
 
-      // 添加分隔线
+      // 重命名选项
+      menu.append(new MenuItem({
+        label: t('sftp.rename'),
+        click: () => showRenameModal(nodeData)
+      }));
+
       menu.append(new MenuItem({ type: 'separator' }));
 
-      // 修改删除选项
+      // 删除选项
       menu.append(new MenuItem({
-        label: `Delete ${nodeData.isLeaf ? 'File' : 'Folder'}`,
-        click: () => deleteSelectedItem(nodeData),
-        type: 'normal',
-        role: 'delete'
+        label: nodeData.isLeaf ? t('sftp.deleteFile') : t('sftp.deleteFolder'),
+        click: () => {
+          Modal.warning({
+            title: t('sftp.delete'),
+            content: t('sftp.confirmDelete', { name: nodeData.title }),
+            titleAlign: 'start',
+            hideCancel: false,
+            okText: t('sftp.delete'),
+            cancelText: t('sftp.cancel'),
+            okButtonProps: {
+              status: 'danger'
+            },
+            onOk: () => {
+              deleteItem(nodeData.key)
+            }
+          })
+        },
+        type: 'normal'
       }));
 
       menu.popup();
     };
 
-    const deleteSelectedItem = async (item) => {
-      if (item) {
-        try {
-          // 使用更醒目的确认对话框
-          const result = await dialog.showMessageBox({
-            type: 'warning',
-            title: 'Confirm Delete',
-            message: `Are you sure you want to delete "${item.title}"?`,
-            detail: 'This action cannot be undone.',
-            buttons: ['Cancel', 'Delete'],
-            defaultId: 0,
-            cancelId: 0,
-            icon: path.join(__dirname, 'warning-icon.png') // 可以添加自定义警告图标
-          });
+    const deleteItem = async (path) => {
+      try {
+        const response = await axios.post('http://localhost:5000/sftp_delete_item', {
+          connection: props.connection,
+          path: path
+        });
 
-          if (result.response === 1) { // 用户点击 Delete
-            const response = await axios.post('http://localhost:5000/sftp_delete_item', {
-              connection: props.connection,
-              path: item.key
-            });
-            if (response.data.error) {
-              throw new Error(response.data.error);
-            }
-            Message.success(`Deleted ${item.title} successfully`);
-            
-            const parentKey = item.key.split('/').slice(0, -1).join('/') || '/';
-            await refreshDirectoryKeepingState(parentKey);
-            await logOperation('delete', item.key);
-          }
-        } catch (error) {
-          console.error('Failed to delete item:', error);
-          Message.error(`Failed to delete ${item.title}: ${error.message}`);
+        if (response.data.error) {
+          throw new Error(response.data.error);
         }
+
+        Message.success('Item deleted successfully');
+        await logOperation('delete', path);
+        
+        // 刷新当前目录
+        const parentPath = path.split('/').slice(0, -1).join('/') || '/';
+        await refreshDirectory(parentPath);
+      } catch (error) {
+        console.error('Failed to delete item:', error);
+        Message.error(`Failed to delete item: ${error.message}`);
       }
     };
 
@@ -505,40 +662,60 @@ export default {
       }
     };
 
-    const refreshDirectory = async (node) => {
+    const refreshDirectory = async (path) => {
       try {
         loading.value = true;
-        const path = node.key === 'root' ? '/' : node.key;
         console.log('Refreshing directory:', path);
+        
         const response = await axios.post('http://localhost:5000/sftp_list_directory', {
           connection: props.connection,
           path: path
         });
-        
-        if (node.key === 'root') {
-          fileTree.value[0].children = response.data.map(item => ({
-            title: item.name,
-            key: item.path,
-            isLeaf: !item.isDirectory,
-            children: item.isDirectory ? [] : undefined
-          }));
-        } else {
-          const parentNode = findParentNode(fileTree.value[0], node.key);
-          if (parentNode) {
-            const index = parentNode.children.findIndex(child => child.key === node.key);
-            if (index !== -1) {
-              parentNode.children[index].children = response.data.map(item => ({
-                title: item.name,
-                key: item.path,
-                isLeaf: !item.isDirectory,
-                children: item.isDirectory ? [] : undefined
-              }));
+
+        if (response.data.error) {
+          throw new Error(response.data.error);
+        }
+
+        // 更新文件树
+        const updateNode = (node) => {
+          if (node.key === path) {
+            node.children = response.data.map(item => ({
+              title: item.name,
+              key: normalizePath(path + '/' + item.name),
+              isLeaf: !item.isDirectory,
+              children: item.isDirectory ? [] : undefined
+            }));
+            return true;
+          }
+          if (node.children) {
+            for (let child of node.children) {
+              if (updateNode(child)) {
+                return true;
+              }
             }
           }
+          return false;
+        };
+
+        // 如果是根目录
+        if (path === '/') {
+          fileTree.value = [{
+            title: '/',
+            key: 'root',
+            isLeaf: false,
+            children: response.data.map(item => ({
+              title: item.name,
+              key: normalizePath('/' + item.name),
+              isLeaf: !item.isDirectory,
+              children: item.isDirectory ? [] : undefined
+            }))
+          }];
+        } else {
+          // 更新特定目录
+          fileTree.value.forEach(node => updateNode(node));
         }
-        
-        console.log('Directory refreshed:', path);
-        Message.success(`Refreshed ${node.title}`);
+
+        Message.success('Directory refreshed');
       } catch (error) {
         console.error('Failed to refresh directory:', error);
         Message.error('Failed to refresh directory');
@@ -574,15 +751,9 @@ export default {
     };
 
     const showHistory = async () => {
-      try {
-        const response = await axios.get('http://localhost:5000/get_sftp_history');
-        historyContent.value = response.data;
-        historyVisible.value = true;
-      } catch (error) {
-        console.error('Failed to fetch SFTP history:', error);
-        Message.error('Failed to fetch SFTP history');
-      }
-    };
+      historyVisible.value = true
+      await refreshHistory()
+    }
 
     const showRenameModal = (node) => {
       itemToRename.value = node;
@@ -617,41 +788,35 @@ export default {
       }
     };
 
-    const onItemDoubleClick = async (data) => {
-      if (data.isLeaf) {
+    const onItemDoubleClick = async (nodeData) => {
+      if (nodeData.isLeaf) {
         try {
-          console.log('Attempting to download file:', data.key);
           const response = await axios.post('http://localhost:5000/sftp_download_file', {
             connection: props.connection,
-            path: data.key
+            path: nodeData.key
           }, {
             responseType: 'blob'
           });
 
-          console.log('File download response received');
-          const tempDir = path.join(process.cwd(), 'temp');
-          const tempFilePath = path.join(tempDir, data.title);
+          const url = window.URL.createObjectURL(new Blob([response.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', nodeData.title);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.URL.revokeObjectURL(url);
 
-          // 将文件保存到临时目录
-          fs.writeFileSync(tempFilePath, Buffer.from(await response.data.arrayBuffer()));
-
-          console.log('File downloaded, attempting to open');
-          Message.success(`File ${data.title} downloaded successfully`);
-
-          // 直接打开文件
-          shell.openPath(tempFilePath);
+          Message.success('File downloaded successfully');
+          log_sftp_operation('download', nodeData.key);
         } catch (error) {
-          console.error('Failed to download and open file:', error);
-          if (error.response) {
-            console.error('Error response:', error.response.data);
-            if (error.response.status === 404) {
-              Message.error(`File not found: ${data.key}`);
-            } else {
-              Message.error(`Failed to download and open file: ${error.response.data.error || error.message}`);
-            }
-          } else {
-            Message.error(`Failed to download and open file: ${error.message}`);
-          }
+          console.error('Failed to download file:', error);
+          Message.error('Failed to download file');
+        }
+      } else {
+        // 如果是文件夹，展开它
+        if (nodeData.children && nodeData.children.length === 0) {
+          await refreshDirectory(nodeData.key);
         }
       }
     };
@@ -768,15 +933,42 @@ export default {
       }
     };
 
+    const modalWidth = ref(700)
+    const pageSize = ref(10)
+    const tableHeight = ref(400)
+
+    const updateModalSize = () => {
+      const windowHeight = window.innerHeight
+      const windowWidth = window.innerWidth
+      
+      // 计算模态框宽度（最大700，最小500）
+      modalWidth.value = Math.min(Math.max(windowWidth * 0.7, 500), 700)
+      
+      // 计算表格高度（窗口高度的60%，最小300）
+      tableHeight.value = Math.max(windowHeight * 0.6, 300)
+      
+      // 计算每页显示数量（根据表格高度）
+      pageSize.value = Math.max(Math.floor((tableHeight.value - 100) / 40), 5)
+    }
+
     onMounted(() => {
       console.log('SFTPExplorer mounted, connection:', props.connection);
       fetchRootDirectory();
+      updateModalSize()
+      window.addEventListener('resize', updateModalSize)
     });
 
-    watch(() => props.connection, (newConnection) => {
-      console.log('Connection changed:', newConnection);
-      fetchRootDirectory();
+    onUnmounted(() => {
+      window.removeEventListener('resize', updateModalSize)
     });
+
+    watch(() => props.connection, () => {
+      fetchRootDirectory()
+    }, { immediate: true })
+
+    const t = (key, params) => {
+      return i18n.t(key, params)
+    }
 
     return {
       fileTree,
@@ -791,7 +983,7 @@ export default {
       openFileUpload,
       handleFileUpload,
       showContextMenu,
-      deleteSelectedItem,
+      deleteItem,
       expandToPath,
       historyVisible,
       historyContent,
@@ -818,7 +1010,16 @@ export default {
       newFolderName,
       createNewFolder,
       confirmCreateFolder,
-      t: i18n.t
+      t,
+      historyColumns,
+      parsedHistory,
+      formatTime,
+      getOperationColor,
+      refreshHistory,
+      clearHistory,
+      modalWidth,
+      pageSize,
+      tableHeight
     };
   }
 };
@@ -934,6 +1135,120 @@ export default {
 /* 可以添加一些样式来美化新文件夹对话框 */
 .arco-modal-content .arco-input {
   margin-bottom: 16px;
+}
+
+.sftp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sftp-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 隐藏文件的样式 */
+.hidden-file {
+  opacity: 0.6;
+}
+
+/* 右键菜单中删除选项的样式 */
+:deep(.danger-menu-item) {
+  color: #f5222d !important;
+}
+
+:deep(.danger-menu-item:hover) {
+  background-color: #fff1f0 !important;
+}
+
+.history-container {
+  display: flex;
+  flex-direction: column;
+  height: 600px;
+}
+
+.history-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 8px;
+}
+
+.history-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+:deep(.arco-table-th) {
+  background-color: var(--color-fill-2) !important;
+}
+
+:deep(.arco-table-tr:hover) {
+  background-color: var(--color-fill-2);
+}
+
+:deep(.arco-tag) {
+  min-width: 80px;
+  text-align: center;
+}
+
+:deep(.arco-modal-content) {
+  padding: 0 20px;
+}
+
+.history-modal {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.history-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 8px;
+}
+
+.history-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+:deep(.arco-table-container) {
+  height: 100%;
+}
+
+:deep(.arco-table-body) {
+  overflow-y: auto;
+}
+
+:deep(.arco-modal-content) {
+  padding: 0 20px;
+  height: calc(100% - 100px); /* 减去标题和padding的高度 */
+}
+
+:deep(.arco-table-th) {
+  background-color: var(--color-fill-2) !important;
+}
+
+:deep(.arco-table-tr:hover) {
+  background-color: var(--color-fill-2);
+}
+
+:deep(.arco-tag) {
+  min-width: 80px;
+  text-align: center;
 }
 </style>
 

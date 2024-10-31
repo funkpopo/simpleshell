@@ -22,24 +22,45 @@ const messages = {
 }
 
 // 设置默认语言
-if (!localStorage.getItem('language')) {
-  localStorage.setItem('language', 'en-US')
-}
+const defaultLocale = localStorage.getItem('language') || 'zh-CN'
 
 // 创建 i18n 实例
 const i18n = {
-  locale: localStorage.getItem('language') || 'en-US',
+  locale: defaultLocale,
   messages,
-  t(key) {
-    const locale = this.locale
-    return key.split('.').reduce((o, i) => o[i], this.messages[locale])
+  t(key, params = {}) {
+    const keys = key.split('.')
+    let value = this.messages[this.locale]
+    
+    for (const k of keys) {
+      if (!value || typeof value !== 'object') {
+        console.warn(`Translation key not found: ${key}`)
+        return key
+      }
+      value = value[k]
+    }
+
+    if (typeof value === 'string') {
+      return value.replace(/\{(\w+)\}/g, (_, key) => params[key] || '')
+    }
+
+    console.warn(`Translation value is not a string: ${key}`)
+    return key
   }
 }
 
-app.config.globalProperties.$t = (key) => i18n.t(key)
+// 添加全局属性
+app.config.globalProperties.$t = (key, params) => i18n.t(key, params)
+
+// 提供 i18n 实例
 app.provide('i18n', i18n)
 
+// 使用 Arco Design Vue
 app.use(ArcoVue, {
   locale: i18n.locale === 'zh-CN' ? zhCN : enUS
 })
+
 app.mount('#app')
+
+// 导出 i18n 实例以供其他组件使用
+export { i18n }
