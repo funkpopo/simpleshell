@@ -18,6 +18,39 @@ app.disableHardwareAcceleration()
 // 设置空菜单
 Menu.setApplicationMenu(null)
 
+// 获取应用程序的便携式路径
+function getPortablePath() {
+  if (isDevelopment) {
+    return path.join(__dirname, '..')
+  } else {
+    return path.dirname(app.getPath('exe'))
+  }
+}
+
+// 重写 app.getPath 方法，使用便携式路径
+const portablePath = getPortablePath()
+app.setPath('userData', path.join(portablePath, 'data'))
+app.setPath('temp', path.join(portablePath, 'temp'))
+app.setPath('logs', path.join(portablePath, 'logs'))
+
+// 确保必要的目录存在
+const requiredDirs = ['data', 'temp', 'logs']
+requiredDirs.forEach(dir => {
+  const dirPath = path.join(portablePath, dir)
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true })
+  }
+})
+
+// 修改配置文件路径
+const CONFIG_FILE = path.join(portablePath, 'data', 'config.json')
+if (!fs.existsSync(CONFIG_FILE)) {
+  fs.writeFileSync(CONFIG_FILE, '[]', 'utf8')
+}
+
+// 修改日志文件路径
+const LOG_FILE = path.join(portablePath, 'logs', 'sftp_log.log')
+
 // Scheme must be registered before the app is ready
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { secure: true, standard: true } }
@@ -31,38 +64,34 @@ function showError(title, content) {
 }
 
 function getBackendPath() {
-  const appPath = app.getPath('exe')
-  const appDir = path.dirname(appPath)
-  
   if (isDevelopment) {
     return {
       executable: 'python',
       args: [path.join(__dirname, '..', 'backend', 'app.py')],
       cwd: path.join(__dirname, '..')
-    };
+    }
   } else {
     return {
-      executable: path.join(appDir, 'resources', 'app.exe'),
+      executable: path.join(portablePath, 'resources', 'app.exe'),
       args: [],
-      cwd: appDir
-    };
+      cwd: portablePath
+    }
   }
 }
 
+// 修改后端进程启动配置
 function startBackend() {
   try {
-    const { executable, args, cwd } = getBackendPath();
+    const { executable, args, cwd } = getBackendPath()
     
-    console.log('Starting backend process:', executable);
-    console.log('Backend args:', args);
-    console.log('Working directory:', cwd);
+    console.log('Starting backend process:', executable)
+    console.log('Backend args:', args)
+    console.log('Working directory:', cwd)
 
-    // 检查后端可执行文件是否存在
     if (!isDevelopment && !fs.existsSync(executable)) {
-      throw new Error(`Backend executable not found at: ${executable}`);
+      throw new Error(`Backend executable not found at: ${executable}`)
     }
 
-    // 尝试终止可能存在的旧进程
     if (backendProcess) {
       try {
         backendProcess.kill()
@@ -71,13 +100,12 @@ function startBackend() {
       }
     }
 
-    // 创建临时目录
-    const tempDir = path.join(cwd, 'temp')
+    // 使用便携式路径
+    const tempDir = path.join(portablePath, 'temp')
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true })
     }
 
-    // 修改进程启动配置
     backendProcess = spawn(executable, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: false,
@@ -88,7 +116,9 @@ function startBackend() {
         PYTHONUNBUFFERED: '1',
         PYTHONIOENCODING: 'utf-8',
         TEMP: tempDir,
-        TMP: tempDir
+        TMP: tempDir,
+        CONFIG_PATH: CONFIG_FILE,  // 传递配置文件路径给后端
+        LOG_PATH: LOG_FILE         // 传递日志文件路径给后端
       }
     })
 

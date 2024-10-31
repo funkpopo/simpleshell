@@ -14,20 +14,14 @@ extraResources:
     to: "."
 win:
   target:
-    - target: nsis
+    - target: portable
       arch:
         - x64
   requestedExecutionLevel: requireAdministrator
   compression: maximum
-  artifactName: "${productName}-${version}-${arch}.${ext}"
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  shortcutName: "${productName}"
-  uninstallDisplayName: "${productName}"
-  artifactName: "${productName}-Setup-${version}.${ext}"
+  artifactName: "${productName}-portable-${version}-${arch}.${ext}"
+portable:
+  splashImage: build/splash.png
 asar: true
 fileAssociations:
   - ext: "exe"

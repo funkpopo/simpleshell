@@ -260,20 +260,11 @@
             <a-select
               v-model="settings.language"
               :style="{ width: '100%' }"
+              @change="handleLanguageChange"
             >
               <a-option value="zh-CN">中文</a-option>
               <a-option value="en-US">English</a-option>
             </a-select>
-          </a-form-item>
-          <!-- 添加 PING 设置 -->
-          <a-form-item :label="$t('settings.pingInterval')">
-            <a-input-number
-              v-model="settings.pingInterval"
-              :min="0"
-              :max="3600"
-              :style="{ width: '100%' }"
-            />
-            <div class="setting-description">{{ $t('settings.pingIntervalDescription') }}</div>
           </a-form-item>
         </a-form>
       </a-modal>
@@ -282,7 +273,7 @@
 </template>
 
 <script>
-import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed } from 'vue'
+import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed, inject } from 'vue'
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
 import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings } from '@arco-design/web-vue/es/icon'
@@ -918,8 +909,7 @@ export default {
     const locale = ref(zhCN)
     const settingsVisible = ref(false)
     const settings = reactive({
-      language: localStorage.getItem('language') || 'zh-CN',
-      pingInterval: 30 // 默认值，会被配置文件中的值覆盖
+      language: localStorage.getItem('language') || 'zh-CN'
     });
 
     // 初始化时设置语言
@@ -935,45 +925,44 @@ export default {
     const saveSettings = async () => {
       try {
         // 获取当前配置
-        const response = await axios.get('http://localhost:5000/get_connections');
-        let currentConfig = response.data;
+        const response = await axios.get('http://localhost:5000/get_connections')
+        let currentConfig = response.data
         
         // 更新或添加设置
-        const settingsIndex = currentConfig.findIndex(item => item.type === 'settings');
+        const settingsIndex = currentConfig.findIndex(item => item.type === 'settings')
         const settingsData = {
           type: 'settings',
-          pingInterval: settings.pingInterval
-        };
+          language: settings.language
+        }
         
         if (settingsIndex !== -1) {
-          currentConfig[settingsIndex] = settingsData;
+          currentConfig[settingsIndex] = settingsData
         } else {
-          currentConfig.push(settingsData);
+          currentConfig.push(settingsData)
         }
         
         // 保存更新后的配置
-        await axios.post('http://localhost:5000/update_config', currentConfig);
+        await axios.post('http://localhost:5000/update_config', currentConfig)
         
-        // 更新本地存储和状态
-        localStorage.setItem('language', settings.language);
+        // 更新本地存储
+        localStorage.setItem('language', settings.language)
         
-        // 重启 PING 定时器
-        if (settings.pingInterval > 0) {
-          startPingTimer();
-        } else {
-          stopPingTimer();
-        }
-        
-        settingsVisible.value = false;
-        Message.success(locale.value.settings.saved);
+        settingsVisible.value = false
+        Message.success(locale.value.settings.saved)
       } catch (error) {
-        console.error('Failed to save settings:', error);
-        Message.error('Failed to save settings');
+        console.error('Failed to save settings:', error)
+        Message.error('Failed to save settings')
       }
-    };
+    }
 
     // 提供语言设置给子组件
     provide('locale', locale)
+
+    const handleLanguageChange = (value) => {
+      const i18n = inject('i18n')
+      i18n.locale = value
+      locale.value = value === 'zh-CN' ? zhCN : enUS
+    }
 
     return {
       connections,
@@ -1369,7 +1358,7 @@ export default {
   background-color: rgb(var(--red-1));
 }
 
-/* 添加左侧边栏相关样式 */
+/* 添加左侧边栏相关样�� */
 .arco-layout-sider {
   position: relative;
   transition: all 0.2s;

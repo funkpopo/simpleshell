@@ -1,7 +1,7 @@
 <template>
   <div class="sftp-explorer">
     <div class="sftp-header">
-      <h3>SFTP Explorer</h3>
+      <h3>{{ $t('sftp.explorer') }}</h3>
       <div class="sftp-actions">
         <a-button size="small" @click="goToBase">
           <template #icon>
@@ -13,8 +13,9 @@
           <template #icon>
             <icon-refresh />
           </template>
+          {{ $t('sftp.refresh') }}
         </a-button>
-        <a-button size="small" @click="showHistory">History</a-button>
+        <a-button size="small" @click="showHistory">{{ $t('sftp.history') }}</a-button>
       </div>
     </div>
     <div class="sftp-content">
@@ -80,7 +81,7 @@
 </template>
 
 <script>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, inject } from 'vue';
 import { IconFile, IconFolder, IconRefresh, IconHome } from '@arco-design/web-vue/es/icon';
 import axios from 'axios';
 import { Message } from '@arco-design/web-vue';
@@ -119,6 +120,7 @@ export default {
     const newFolderModalVisible = ref(false);
     const newFolderName = ref('');
     const currentFolderPath = ref('');
+    const i18n = inject('i18n');
 
     const normalizePath = (path) => {
       return path.replace(/\\/g, '/').replace(/\/+/g, '/');
@@ -816,6 +818,7 @@ export default {
       newFolderName,
       createNewFolder,
       confirmCreateFolder,
+      t: i18n.t
     };
   }
 };

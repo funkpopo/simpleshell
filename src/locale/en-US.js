@@ -1,51 +1,41 @@
 export default {
-  settings: {
-    title: 'Settings',
-    language: 'Language',
-    saved: 'Settings saved successfully',
-    pingInterval: 'PING Interval',
-    pingIntervalDescription: 'Set to 0 to disable PING. Maximum value is 3600 seconds (1 hour). This setting will be saved with your connections.'
-  },
   common: {
-    delete: 'Delete',
-    rename: 'Rename',
-    refresh: 'Refresh',
-    upload: 'Upload',
-    download: 'Download',
-    newFolder: 'New Folder',
-    cancel: 'Cancel',
-    confirm: 'Confirm',
-    save: 'Save',
-    create: 'Create',
-    edit: 'Edit',
-    addFolder: 'Add Folder',
     addConnection: 'Add Connection',
-    folderName: 'Folder Name',
-    editFolder: 'Edit Folder',
-    deleteFolder: 'Delete Folder',
-    deleteFile: 'Delete File',
+    addFolder: 'Add Folder',
     name: 'Name',
     host: 'Host',
     port: 'Port',
     username: 'Username',
-    password: 'Password',
     authentication: 'Authentication',
+    password: 'Password',
     privateKey: 'Private Key',
     selectFile: 'Select File',
-    history: 'History',
-    enterNewName: 'Enter new name',
-    enterFolderName: 'Enter folder name'
+    folderName: 'Folder Name',
+    enterFolderName: 'Enter folder name',
+    editFolder: 'Edit Folder',
+    editConnection: 'Edit Connection'
+  },
+  settings: {
+    title: 'Settings',
+    language: 'Language',
+    saved: 'Settings saved successfully'
+  },
+  sftp: {
+    explorer: 'SFTP Explorer',
+    upload: 'Upload',
+    download: 'Download',
+    delete: 'Delete',
+    rename: 'Rename',
+    newFolder: 'New Folder',
+    refresh: 'Refresh',
+    history: 'History'
   },
   messages: {
-    confirmDelete: 'Are you sure you want to delete "{name}"?',
-    cannotUndo: 'This action cannot be undone.',
+    confirmDelete: 'Are you sure you want to delete this item?',
+    deleteSuccess: 'Deleted successfully',
     uploadSuccess: 'Uploaded successfully',
     downloadSuccess: 'Downloaded successfully',
-    createFolderSuccess: 'Folder created successfully',
-    folderExists: 'Folder already exists',
-    pleaseEnterName: 'Please enter a name',
-    connectionSaved: 'Connection saved successfully',
-    connectionDeleted: 'Connection deleted successfully',
-    folderDeleted: 'Folder deleted successfully'
+    renameSuccess: 'Renamed successfully',
+    error: 'An error occurred'
   }
 }

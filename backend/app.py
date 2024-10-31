@@ -1,11 +1,11 @@
+import os
 import sys
 import collections
 import collections.abc
 import zipfile
 import io
-import time  # 添加这行
+import time
 
-# 只替换 MutableMapping
 collections.MutableMapping = collections.abc.MutableMapping
 
 from flask import Flask, request, jsonify, send_file
@@ -13,7 +13,6 @@ from flask_socketio import SocketIO
 from flask_cors import CORS
 import paramiko
 import json
-import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 import eventlet
@@ -23,6 +22,7 @@ from datetime import datetime
 from functools import lru_cache
 from threading import Lock
 import tempfile
+from paramiko import SSHClient, AutoAddPolicy
 
 eventlet.monkey_patch()
 
@@ -30,29 +30,16 @@ app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-# 修改 get_application_path 函数
-def get_application_path():
-    """获取应用程序的路径，兼容开发环境和打包后的环境"""
-    if getattr(sys, 'frozen', False):
-        # 如果是打包后的环境，使用 sys._MEIPASS
-        application_path = os.path.dirname(sys.executable)
-    else:
-        # 如果是开发环境，使用当前文件的目录的父目录（项目根目录）
-        application_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return application_path
+# 从环境变量获取配置文件和日志文件路径
+CONFIG_FILE = os.environ.get('CONFIG_PATH', 'config.json')
+LOG_FILE = os.environ.get('LOG_PATH', 'sftp_log.log')
 
-# 修改 CONFIG_FILE 的定义
-CONFIG_FILE = os.path.join(get_application_path(), 'config.json')
-SSH_SESSIONS = {}
+# 确保配置文件目录存在
+os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
-# 创建一个线程池
-executor = ThreadPoolExecutor(max_workers=100)
-
-# 同样修改 LOG_FILE 的路径
-LOG_FILE = os.path.join(get_application_path(), 'sftp_log.log')
-
-# 修改 temp 目录的路径
-temp_dir = os.path.join(get_application_path(), 'temp')
+# 使用环境变量中的临时目录
+temp_dir = os.environ.get('TEMP', os.path.join(os.path.dirname(CONFIG_FILE), 'temp'))
 os.makedirs(temp_dir, exist_ok=True)
 
 # 添加文件缓存锁
@@ -727,6 +714,95 @@ def sftp_create_folder():
     except Exception as e:
         print(f"Error in sftp_create_folder: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+# Add these global variables
+SSH_SESSIONS = {}
+
+# Add these helper functions
+def create_ssh_session(connection_details):
+    """Create a new SSH session and return the session ID"""
+    try:
+        ssh = SSHClient()
+        ssh.set_missing_host_key_policy(AutoAddPolicy())
+        
+        if connection_details['authType'] == 'password':
+            ssh.connect(
+                hostname=connection_details['host'],
+                port=connection_details['port'],
+                username=connection_details['username'],
+                password=connection_details['password']
+            )
+        else:  # key-based authentication
+            ssh.connect(
+                hostname=connection_details['host'],
+                port=connection_details['port'],
+                username=connection_details['username'],
+                key_filename=connection_details['privateKeyPath']
+            )
+            
+        session_id = f"{connection_details['host']}_{connection_details['port']}_{connection_details['username']}_{id(ssh)}"
+        SSH_SESSIONS[session_id] = {
+            'client': ssh,
+            'channels': {}
+        }
+        return {'success': True, 'session_id': session_id}
+        
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def close_ssh_session(session_id):
+    """Close an SSH session and remove it from the sessions dictionary"""
+    if session_id in SSH_SESSIONS:
+        try:
+            # Close all channels
+            for channel in SSH_SESSIONS[session_id]['channels'].values():
+                if channel and not channel.closed:
+                    channel.close()
+            
+            # Close the SSH client
+            SSH_SESSIONS[session_id]['client'].close()
+            
+            # Remove the session from our dictionary
+            del SSH_SESSIONS[session_id]
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    return {'success': False, 'error': 'Session not found'}
+
+# Add these route handlers
+@app.route('/api/ssh/connect', methods=['POST'])
+def connect():
+    connection_details = request.json
+    result = create_ssh_session(connection_details)
+    return jsonify(result)
+
+@app.route('/api/ssh/disconnect', methods=['POST'])
+def disconnect():
+    session_id = request.json.get('session_id')
+    result = close_ssh_session(session_id)
+    return jsonify(result)
+
+@app.route('/api/ssh/execute', methods=['POST'])
+def execute_command():
+    session_id = request.json.get('session_id')
+    command = request.json.get('command')
+    
+    if session_id not in SSH_SESSIONS:
+        return jsonify({'success': False, 'error': 'Session not found'})
+    
+    try:
+        ssh = SSH_SESSIONS[session_id]['client']
+        stdin, stdout, stderr = ssh.exec_command(command)
+        output = stdout.read().decode()
+        error = stderr.read().decode()
+        
+        return jsonify({
+            'success': True,
+            'output': output,
+            'error': error
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     try:

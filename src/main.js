@@ -2,22 +2,44 @@ import { createApp } from 'vue'
 import ArcoVue from '@arco-design/web-vue'
 import App from './App.vue'
 import '@arco-design/web-vue/dist/arco.css'
-import enUS from './locale/en-US'
-import zhCN from './locale/zh-CN'
+import enUS from '@arco-design/web-vue/es/locale/lang/en-us'
+import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
+import customEnUS from './locale/en-US'
+import customZhCN from './locale/zh-CN'
 
 const app = createApp(App)
 
-// 设置默认语言为英文
+// 合并 Arco Design 的语言包和自定义语言包
+const messages = {
+  'en-US': {
+    ...enUS,
+    ...customEnUS
+  },
+  'zh-CN': {
+    ...zhCN,
+    ...customZhCN
+  }
+}
+
+// 设置默认语言
 if (!localStorage.getItem('language')) {
   localStorage.setItem('language', 'en-US')
 }
 
-// 注册语言包
-app.config.globalProperties.$t = function(key) {
-  const lang = localStorage.getItem('language') || 'en-US'
-  const messages = lang === 'zh-CN' ? zhCN : enUS
-  return key.split('.').reduce((o, i) => o[i], messages)
+// 创建 i18n 实例
+const i18n = {
+  locale: localStorage.getItem('language') || 'en-US',
+  messages,
+  t(key) {
+    const locale = this.locale
+    return key.split('.').reduce((o, i) => o[i], this.messages[locale])
+  }
 }
 
-app.use(ArcoVue)
+app.config.globalProperties.$t = (key) => i18n.t(key)
+app.provide('i18n', i18n)
+
+app.use(ArcoVue, {
+  locale: i18n.locale === 'zh-CN' ? zhCN : enUS
+})
 app.mount('#app')
