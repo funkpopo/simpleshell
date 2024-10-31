@@ -4,11 +4,13 @@ directories:
   output: dist_electron
   buildResources: build
 files:
-  - dist_electron/**/*
-  - "!.editorconfig"
+  - "dist_electron/**/*"
+  - "!node_modules/**/*"
 extraResources:
   - from: "backend/dist/service"
-    to: "resources"
+    to: "resources/service"
+  - from: "config.json"
+    to: "config.json"
 win:
   target:
     - target: portable
@@ -17,8 +19,11 @@ win:
   requestedExecutionLevel: requireAdministrator
   compression: maximum
   artifactName: "${productName}-portable-${version}-${arch}.${ext}"
+portable:
+  splashImage: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: false
+  createStartMenuShortcut: false
 asar: true
-fileAssociations:
-  - ext: "exe"
-    role: "None"
-compression: "maximum"

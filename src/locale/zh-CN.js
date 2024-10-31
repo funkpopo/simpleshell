@@ -13,7 +13,9 @@ export default {
     folderName: '文件夹名称',
     enterFolderName: '请输入文件夹名称',
     editFolder: '编辑文件夹',
-    editConnection: '编辑连接'
+    editConnection: '编辑连接',
+    delete: '删除',
+    cancel: '取消'
   },
   settings: {
     title: '设置',
@@ -27,8 +29,11 @@ export default {
     saveFailed: '保存设置失败'
   },
   messages: {
-    confirmDelete: '确定要删除此项吗？',
+    confirmDelete: '确认删除',
+    confirmDeleteConnection: '确定要删除连接 "{name}" 吗？',
+    confirmDeleteFolder: '确定要删除文件夹 "{name}" 及其所有连接（{count} 个连接）吗？',
     deleteSuccess: '删除成功',
+    deleteFailed: '删除失败',
     uploadSuccess: '上传成功',
     downloadSuccess: '下载成功',
     renameSuccess: '重命名成功',

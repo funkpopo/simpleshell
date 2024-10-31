@@ -5,131 +5,164 @@
         <div class="header-content">
           <h3>SimpleSSH</h3>
           <div class="header-actions">
-            <!-- 添加设置按钮 -->
-            <a-button
-              type="text"
-              @click="showSettings"
-            >
-              <template #icon>
-                <icon-settings style="font-size: 32; stroke-linecap: round; stroke-linejoin: round;"/>
-              </template>
-            </a-button>
-            <a-switch
-              v-model="isDarkMode"
-              :checked-value="true"
-              :unchecked-value="false"
-              checked-color="#165DFF"
-              unchecked-color="#165DFF"
-              @change="toggleTheme"
-            >
-              <template #checked>
-                <icon-moon-fill />
-              </template>
-              <template #unchecked>
-                <icon-sun-fill />
-              </template>
-            </a-switch>
+            <div class="header-buttons">
+              <a-button
+                type="text"
+                class="header-btn"
+                @click="showSettings"
+              >
+                <template #icon>
+                  <icon-settings />
+                </template>
+              </a-button>
+              <div class="theme-switch" @click="toggleTheme">
+                <icon-sun-fill v-if="!isDarkMode" class="theme-icon" />
+                <icon-moon-fill v-else class="theme-icon" />
+              </div>
+            </div>
           </div>
         </div>
       </a-layout-header>
       <a-layout class="main-content">
         <a-layout-sider 
-          v-model:collapsed="siderCollapsed"
-          :width="200" 
-          collapsible
-          :style="{ background: 'var(--color-bg-2)' }"
+          :collapsed="siderCollapsed" 
+          collapsible 
+          :width="240"
+          @collapse="siderCollapsed = $event"
         >
-          <a-menu mode="inline">
+          <a-menu
+            :style="{ width: '100%' }"
+            :collapsed="siderCollapsed"
+          >
+            <!-- Add Folder 按钮 -->
             <a-menu-item key="add-folder" @click="showAddFolderModal">
-              <icon-folder-add />
-              <span>{{ $t('common.addFolder') }}</span>
-            </a-menu-item>
-            <a-sub-menu v-for="folder in folders" :key="folder.id">
-              <template #title>
-                <div class="folder-header">
-                  <template v-if="siderCollapsed">
-                    <div class="folder-avatar">
-                      <a-avatar :size="32" :style="{ backgroundColor: getAvatarColor(folder.name) ,position: 'relative', left: '5px' }">
-                        {{ folder.name.charAt(0).toUpperCase() }}
-                      </a-avatar>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <span>{{ folder.name }}</span>
-                    <div class="folder-actions">
-                      <a-button 
-                        type="text" 
-                        size="mini"
-                        @click.stop="editFolder(folder)"
-                      >
-                        <icon-edit />
-                      </a-button>
-                      <a-button 
-                        type="text" 
-                        size="mini" 
-                        status="danger"
-                        @click.stop="deleteFolder(folder)"
-                      >
-                        <icon-delete />
-                      </a-button>
-                    </div>
-                  </template>
-                </div>
+              <template #icon>
+                <a-avatar 
+                  v-if="siderCollapsed"
+                  shape="square"
+                  :style="{ backgroundColor: 'rgb(var(--primary-6))' }"
+                >
+                  +
+                </a-avatar>
+                <icon-plus v-else />
               </template>
-              <a-menu-item-group>
-                <template #title>
-                  <span class="add-connection-button" @click.stop="showAddConnectionModal(folder.id)">
-                    Add Connection
-                  </span>
+              <template #default>
+                {{ t('common.addFolder') }}
+              </template>
+            </a-menu-item>
+
+            <!-- 文件夹列表 -->
+            <div 
+              v-for="folder in folders" 
+              :key="folder.id"
+              :data-id="folder.id"
+              class="folder-item"
+              @mouseenter="showFolderMenu(folder)"
+              @mouseleave="hideFolderMenu"
+              @contextmenu.prevent="showFolderContextMenu($event, folder)"
+            >
+              <a-menu-item :key="folder.id" class="folder-menu-item">
+                <template #icon>
+                  <a-avatar 
+                    v-if="siderCollapsed"
+                    shape="square"
+                    :style="{ backgroundColor: getAvatarColor(folder.name) }"
+                  >
+                    {{ folder.name.charAt(0).toUpperCase() }}
+                  </a-avatar>
+                  <icon-folder v-else />
                 </template>
-              </a-menu-item-group>
-              <a-menu-item 
-                v-for="conn in folder.connections" 
-                :key="conn.id" 
-                @click="openConnection(conn)"
-                class="connection-item"
+                <template #default>
+                  <div class="folder-title-wrapper">
+                    <span class="folder-name">{{ folder.name }}</span>
+                  </div>
+                </template>
+              </a-menu-item>
+
+              <!-- 漂浮菜单 -->
+              <div 
+                v-show="activeFolderId === folder.id"
+                class="floating-menu"
+                @mouseenter="showFolderMenu(folder)"
+                @mouseleave="hideFolderMenu"
+                @contextmenu.prevent
               >
-                <div class="connection-content">
-                  <span class="connection-name">{{ conn.name }}</span>
-                  <div class="connection-actions">
+                <div class="floating-menu-content">
+                  <!-- 添加连接按钮 -->
+                  <div class="menu-section">
                     <a-button 
-                      type="text" 
-                      size="mini"
-                      @click.stop="editConnection(conn, folder)"
+                      class="new-connection-btn" 
+                      @click.stop="showAddConnectionModal(folder.id)"
+                      @contextmenu.prevent
                     >
-                      <icon-edit />
-                    </a-button>
-                    <a-button 
-                      type="text" 
-                      size="mini" 
-                      status="danger"
-                      @click.stop="deleteConnection(conn, folder)"
-                    >
-                      <icon-delete />
+                      <template #icon><icon-plus /></template>
+                      {{ t('common.addConnection') }}
                     </a-button>
                   </div>
+
+                  <!-- 连接列表 -->
+                  <div class="menu-section connections" @contextmenu.prevent>
+                    <div
+                      v-for="connection in folder.connections"
+                      :key="connection.id"
+                      class="connection-entry"
+                      @click="openConnection(connection)"
+                      @contextmenu.prevent
+                    >
+                      <span class="connection-title">{{ connection.name }}</span>
+                      <div class="connection-controls">
+                        <a-button 
+                          class="control-btn"
+                          @click.stop="editConnection(connection, folder)"
+                          @contextmenu.prevent
+                        >
+                          <icon-edit />
+                        </a-button>
+                        <a-button 
+                          class="control-btn delete"
+                          @click.stop="deleteConnection(connection, folder)"
+                          @contextmenu.prevent
+                        >
+                          <icon-delete />
+                        </a-button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </a-menu-item>
-            </a-sub-menu>
+              </div>
+            </div>
           </a-menu>
         </a-layout-sider>
+
         <a-layout-content :class="{ 'dark-mode': isDarkMode }" class="content-wrapper">
           <div class="content-header">
-            <a-tabs v-model:activeKey="activeTab" type="card" class="tabs-container" @edit="onTabEdit">
-              <a-tab-pane 
-                v-for="tab in tabs" 
-                :key="tab.id" 
-                :closable="true"
+            <div class="tabs-container">
+              <draggable 
+                v-model="tabs" 
+                :animation="200"
+                item-key="id"
+                class="tab-list"
+                @start="onDragStart"
+                @end="onDragEnd"
+                handle=".tab-handle"
               >
-                <template #title>
-                  <span>{{ tab.name }}</span>
-                  <icon-close
-                    class="close-icon"
-                    @click.stop="closeTab(tab.id)"
-                  />
+                <template #item="{ element }">
+                  <div 
+                    class="tab-item"
+                    :class="{ 'active': activeTab === element.id }"
+                    @click="activeTab = element.id"
+                  >
+                    <div class="tab-handle">
+                      <span class="tab-title">{{ element.name }}</span>
+                    </div>
+                    <icon-close
+                      class="close-icon"
+                      @click.stop="closeTab(element.id)"
+                    />
+                  </div>
                 </template>
-              </a-tab-pane>
-            </a-tabs>
+              </draggable>
+            </div>
           </div>
           <div class="terminal-and-sidebar-container">
             <div class="terminal-container" :class="{ 'sidebar-open': isRightSidebarOpen }">
@@ -269,13 +302,14 @@
         </a-form>
         <template #footer>
           <div class="settings-footer">
-            <div class="copyright">
-              <a-link href="https://github.com/funkpopo" target="_blank">
-                <template #icon>
-                  <icon-github />
-                </template>
-              </a-link>
-              Powered by Python3, Vue3 and Xterm.js
+            <div class="footer-left">
+              <img 
+                src="@/assets/github-light.png" 
+                alt="GitHub" 
+                class="github-icon"
+                @click="openGithubLink"
+              />
+              <span class="powered-by">Powered by Python3, Vue3 and Xterm.js</span>
             </div>
             <div class="buttons">
               <a-button @click="settingsVisible = false">
@@ -296,7 +330,7 @@
 import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed, inject } from 'vue'
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
-import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings } from '@arco-design/web-vue/es/icon'
+import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder } from '@arco-design/web-vue/es/icon'
 import { Message, Modal } from '@arco-design/web-vue' // 添加这行
 import axios from 'axios'
 import { dialog } from '@electron/remote'
@@ -304,6 +338,9 @@ import fs from 'fs'
 import { Menu, MenuItem } from '@electron/remote'
 import enUS from '@arco-design/web-vue/es/locale/lang/en-us'
 import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
+import draggable from 'vuedraggable'
+import { ipcRenderer } from 'electron'
+import { shell } from '@electron/remote'
 
 export default {
   name: 'SimpleSSH',
@@ -318,7 +355,10 @@ export default {
     IconMenuUnfold,
     IconEdit,
     IconDelete,
-    IconSettings
+    IconSettings,
+    IconPlus,
+    IconFolder,
+    draggable,
   },
   setup() {
     const connections = ref([])
@@ -340,16 +380,10 @@ export default {
     const theme = ref('light')
     const isDarkMode = ref(false)
 
-    const toggleTheme = (checked) => {
-      isDarkMode.value = checked
-      theme.value = checked ? 'dark' : 'light'
+    const toggleTheme = () => {
+      isDarkMode.value = !isDarkMode.value
+      theme.value = isDarkMode.value ? 'dark' : 'light'
       document.body.setAttribute('arco-theme', theme.value)
-      // 为所有 SSHTerminal 组件提供主题信息
-      sshTerminals.value.forEach(terminal => {
-        if (terminal) {
-          terminal.setTheme(theme.value)
-        }
-      })
     }
 
     const detectSystemTheme = () => {
@@ -542,7 +576,7 @@ export default {
     onUnmounted(() => {
       window.removeEventListener('resize', resizeAllTerminals)
       
-      // 移除系统主题变化的监听器
+      // 移除系统主题变化的监听
       const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
       darkModeMediaQuery.removeListener(systemThemeChangeHandler)
     })
@@ -558,31 +592,28 @@ export default {
     }
 
     const addFolder = async () => {
-      const folder = { 
-        id: Date.now(), 
-        type: 'folder',
-        name: newFolder.name, 
-        connections: [] 
-      }
-      folders.value.push(folder)
-      
       try {
-        await saveFolderToConfig(folder)
-        console.log('Folder saved successfully')
+        const folder = { 
+          id: Date.now(), 
+          type: 'folder',
+          name: newFolder.name, 
+          connections: [] 
+        }
+        
+        const config = await ipcRenderer.invoke('read-config')
+        config.push(folder)
+        await ipcRenderer.invoke('save-config', config)
+        
+        addFolderModalVisible.value = false
+        newFolder.name = ''
+        
+        // 刷新连接列表
+        await refreshConnections()
+        
+        Message.success('Folder added successfully')
       } catch (error) {
-        console.error('Failed to save folder:', error)
-      }
-
-      addFolderModalVisible.value = false
-      newFolder.name = ''
-    }
-
-    const saveFolderToConfig = async (folder) => {
-      try {
-        await axios.post('http://localhost:5000/add_folder', folder)
-      } catch (error) {
-        console.error('Error saving folder to config:', error)
-        throw error
+        console.error('Failed to add folder:', error)
+        Message.error('Failed to add folder')
       }
     }
 
@@ -601,6 +632,15 @@ export default {
     const toggleRightSidebar = () => {
       if (hasActiveConnection.value) {
         isRightSidebarOpen.value = !isRightSidebarOpen.value;
+        // 添加延时以等待过渡动画完成
+        setTimeout(() => {
+          const activeTerminal = sshTerminals.value.find(
+            terminal => terminal.sessionId === activeTab.value
+          );
+          if (activeTerminal && activeTerminal.manualResize) {
+            activeTerminal.manualResize();
+          }
+        }, 300);
       }
     }
 
@@ -688,64 +728,66 @@ export default {
 
     const deleteConnection = async (connection, folder) => {
       try {
-        const result = await dialog.showMessageBox({
-          type: 'warning',
-          title: 'Confirm Delete',
-          message: `Are you sure you want to delete connection "${connection.name}"?`,
-          detail: 'This action cannot be undone.',
-          buttons: ['Cancel', 'Delete'],
-          defaultId: 0,
-          cancelId: 0
-        });
+        Modal.warning({
+          title: t('messages.confirmDelete'),
+          content: t('messages.confirmDeleteConnection', { name: connection.name }),
+          titleAlign: 'start',
+          hideCancel: false,
+          okText: t('common.delete'),
+          cancelText: t('common.cancel'),
+          okButtonProps: {
+            status: 'danger'
+          },
+          async onOk() {
+            try {
+              // 获取整的当前配置
+              const response = await axios.get('http://localhost:5000/get_connections');
+              let currentConfig = response.data;
 
-        if (result.response === 1) {
-          // 获取完整的当前配置
-          const response = await axios.get('http://localhost:5000/get_connections');
-          let currentConfig = response.data;
+              // 找到并更新对的文件夹
+              currentConfig = currentConfig.map(item => {
+                if (item.type === 'folder' && item.id === folder.id) {
+                  return {
+                    ...item,
+                    connections: (item.connections || []).filter(
+                      conn => conn.id !== connection.id
+                    )
+                  };
+                }
+                return item;
+              });
 
-          // 找到并更新对应的文件夹
-          currentConfig = currentConfig.map(item => {
-            if (item.type === 'folder' && item.id === folder.id) {
-              // 滤掉要删除的连接
-              const updatedConnections = (item.connections || []).filter(
-                conn => conn.id !== connection.id
-              );
-              return {
-                ...item,
-                connections: updatedConnections
-              };
+              // 发送更新后的完整配置到后端
+              const saveResponse = await axios.post('http://localhost:5000/update_config', currentConfig);
+              
+              if (saveResponse.data.error) {
+                throw new Error(saveResponse.data.error);
+              }
+
+              // 更新本地状态
+              const folderIndex = folders.value.findIndex(f => f.id === folder.id);
+              if (folderIndex !== -1) {
+                folders.value[folderIndex].connections = folders.value[folderIndex].connections.filter(
+                  conn => conn.id !== connection.id
+                );
+              }
+
+              // 关闭相关的标签页
+              const tabIndex = tabs.value.findIndex(tab => tab.connection.id === connection.id);
+              if (tabIndex !== -1) {
+                closeTab(tabs.value[tabIndex].id);
+              }
+
+              Message.success(t('messages.deleteSuccess'));
+            } catch (error) {
+              console.error('Failed to delete connection:', error);
+              Message.error(t('messages.deleteFailed'));
             }
-            return item;
-          });
-
-          console.log('Sending updated config to backend:', currentConfig);
-
-          // 发送更新后的完整配置后端
-          const saveResponse = await axios.post('http://localhost:5000/update_config', currentConfig);
-          
-          if (saveResponse.data.error) {
-            throw new Error(saveResponse.data.error);
           }
-
-          // 更新本地状态
-          const folderIndex = folders.value.findIndex(f => f.id === folder.id);
-          if (folderIndex !== -1) {
-            folders.value[folderIndex].connections = folders.value[folderIndex].connections.filter(
-              conn => conn.id !== connection.id
-            );
-          }
-
-          // 关闭相关的标签页
-          const tabIndex = tabs.value.findIndex(tab => tab.connection.id === connection.id);
-          if (tabIndex !== -1) {
-            closeTab(tabs.value[tabIndex].id);
-          }
-
-          Message.success('Connection deleted successfully');
-        }
+        });
       } catch (error) {
-        console.error('Failed to delete connection:', error);
-        Message.error(`Failed to delete connection: ${error.message}`);
+        console.error('Error showing delete dialog:', error);
+        Message.error(t('messages.error'));
       }
     };
 
@@ -760,7 +802,7 @@ export default {
         
         folder.connections.push(newConnection)
 
-        // 更新配置文件
+        // 更新配置文
         const config = await axios.get('http://localhost:5000/get_connections')
         const updatedConfig = config.data.map(item => {
           if (item.id === folder.id) {
@@ -788,25 +830,65 @@ export default {
       connections: []
     })
 
-    // 添加文件夹右键菜单
+    // 修改 showFolderContextMenu 函数
     const showFolderContextMenu = (event, folder) => {
       const menu = new Menu()
       menu.append(new MenuItem({
-        label: 'Edit',
+        label: '编辑',
         click: () => editFolder(folder)
       }))
       menu.append(new MenuItem({
-        label: 'Duplicate',
+        label: '复制',
         click: () => duplicateFolder(folder)
       }))
+      menu.append(new MenuItem({ type: 'separator' }))
       menu.append(new MenuItem({
-        type: 'separator'
-      }))
-      menu.append(new MenuItem({
-        label: 'Delete',
-        click: () => deleteFolder(folder),
-        type: 'normal',
-        role: 'delete'
+        label: '删除',
+        click: () => {
+          Modal.warning({
+            title: t('messages.confirmDelete'),
+            content: t('messages.confirmDeleteFolder', { 
+              name: folder.name,
+              count: folder.connections?.length || 0 
+            }),
+            titleAlign: 'start',
+            hideCancel: false,
+            okText: t('common.delete'),
+            cancelText: t('common.cancel'),
+            okButtonProps: {
+              status: 'danger'
+            },
+            async onOk() {
+              try {
+                // 获取当前配置
+                const response = await axios.get('http://localhost:5000/get_connections')
+                const updatedConfig = response.data.filter(item => item.id !== folder.id)
+                
+                // 保存更新后的配置
+                await axios.post('http://localhost:5000/update_config', updatedConfig)
+                
+                // 更新本地状态
+                const index = folders.value.findIndex(f => f.id === folder.id)
+                if (index !== -1) {
+                  folders.value.splice(index, 1)
+                }
+                
+                // 关闭相关的标签页
+                folder.connections?.forEach(conn => {
+                  const tabIndex = tabs.value.findIndex(tab => tab.connection.id === conn.id)
+                  if (tabIndex !== -1) {
+                    closeTab(tabs.value[tabIndex].id)
+                  }
+                })
+                
+                Message.success(t('messages.deleteSuccess'))
+              } catch (error) {
+                console.error('Failed to delete folder:', error)
+                Message.error(t('messages.deleteFailed'))
+              }
+            }
+          })
+        }
       }))
       menu.popup()
     }
@@ -857,7 +939,7 @@ export default {
           connections: folder.connections.map(conn => ({
             ...conn,
             id: Date.now() + Math.random(),
-            folderId: null // 将在下面更新
+            folderId: null // 将在下更新
           }))
         }
         
@@ -882,41 +964,52 @@ export default {
     // 删除文件夹
     const deleteFolder = async (folder) => {
       try {
-        const result = await dialog.showMessageBox({
-          type: 'warning',
-          title: 'Confirm Delete',
-          message: `Are you sure you want to delete folder "${folder.name}" and all its connections?`,
-          detail: 'This action cannot be undone.',
-          buttons: ['Cancel', 'Delete'],
-          defaultId: 0,
-          cancelId: 0
-        })
-
-        if (result.response === 1) {
-          const config = await axios.get('http://localhost:5000/get_connections')
-          const updatedConfig = config.data.filter(item => item.id !== folder.id)
-          
-          await axios.post('http://localhost:5000/update_config', updatedConfig)
-          
-          // 更新本地状态
-          const index = folders.value.findIndex(f => f.id === folder.id)
-          if (index !== -1) {
-            folders.value.splice(index, 1)
-          }
-          
-          // 关闭相关的标签页
-          folder.connections.forEach(conn => {
-            const tabIndex = tabs.value.findIndex(tab => tab.connection.id === conn.id)
-            if (tabIndex !== -1) {
-              closeTab(tabs.value[tabIndex].id)
+        Modal.warning({
+          title: t('messages.confirmDelete'),
+          content: t('messages.confirmDeleteFolder', { 
+            name: folder.name,
+            count: folder.connections?.length || 0 
+          }),
+          titleAlign: 'start',
+          hideCancel: false,
+          okText: t('common.delete'),
+          cancelText: t('common.cancel'),
+          okButtonProps: {
+            status: 'danger'
+          },
+          async onOk() {
+            try {
+              // 获取当前配置
+              const response = await axios.get('http://localhost:5000/get_connections')
+              const updatedConfig = response.data.filter(item => item.id !== folder.id)
+              
+              // 保存更新后的配置
+              await axios.post('http://localhost:5000/update_config', updatedConfig)
+              
+              // 更新本地状态
+              const index = folders.value.findIndex(f => f.id === folder.id)
+              if (index !== -1) {
+                folders.value.splice(index, 1)
+              }
+              
+              // 关闭相关的标签页
+              folder.connections?.forEach(conn => {
+                const tabIndex = tabs.value.findIndex(tab => tab.connection.id === conn.id)
+                if (tabIndex !== -1) {
+                  closeTab(tabs.value[tabIndex].id)
+                }
+              })
+              
+              Message.success(t('messages.deleteSuccess'))
+            } catch (error) {
+              console.error('Failed to delete folder:', error)
+              Message.error(t('messages.deleteFailed'))
             }
-          })
-          
-          Message.success('Folder deleted successfully')
-        }
+          }
+        })
       } catch (error) {
-        console.error('Failed to delete folder:', error)
-        Message.error('Failed to delete folder')
+        console.error('Error showing delete dialog:', error)
+        Message.error(t('messages.error'))
       }
     }
 
@@ -943,7 +1036,7 @@ export default {
       return colors[index];
     };
 
-    // 添加语言设置相关的代码
+    // 添加语言设置相的代码
     const locale = ref(zhCN)
     const settingsVisible = ref(false)
     const settings = reactive({
@@ -1007,7 +1100,7 @@ export default {
           }
         })
       } catch (error) {
-        // 只有在实际保存设置失败时才显示错误
+        // 有在实际保存设置失败时才显示错误
         console.error('Failed to save settings:', error)
         if (error.response) {
           Message.error(t('settings.saveFailed'))
@@ -1034,29 +1127,57 @@ export default {
 
     const refreshConnections = async () => {
       try {
-        console.log('Refreshing connections...')
-        const response = await axios.get('http://localhost:5000/get_connections')
-        const allItems = response.data
-        
-        // 获取全设置
-        const globalSettings = allItems.find(item => item.type === 'settings') || {}
-        if (globalSettings.language !== undefined) {
-          settings.language = globalSettings.language
-        }
+        const config = await ipcRenderer.invoke('read-config')
         
         // 更新文件夹和连接
-        folders.value = allItems.filter(item => item.type === 'folder').map(folder => ({
+        folders.value = config.filter(item => item.type === 'folder').map(folder => ({
           ...folder,
           connections: folder.connections || []
         }))
-        connections.value = allItems.filter(item => item.type === 'connection' && !item.folderId)
+        connections.value = config.filter(item => item.type === 'connection' && !item.folderId)
         
-        console.log('Connections refreshed successfully')
-        console.log('Current folders:', folders.value)
-        console.log('Current connections:', connections.value)
+        // 更新全局设置
+        const globalSettings = config.find(item => item.type === 'settings') || {}
+        if (globalSettings.language !== undefined) {
+          settings.language = globalSettings.language
+        }
       } catch (error) {
         console.error('Failed to refresh connections:', error)
         Message.error('Failed to refresh connections')
+      }
+    }
+
+    // 监听配置文件更新
+    onMounted(() => {
+      refreshConnections()
+      
+      // 监听配置文件变化
+      ipcRenderer.on('config-updated', (event, newConfig) => {
+        folders.value = newConfig.filter(item => item.type === 'folder').map(folder => ({
+          ...folder,
+          connections: folder.connections || []
+        }))
+        connections.value = newConfig.filter(item => item.type === 'connection' && !item.folderId)
+        
+        const globalSettings = newConfig.find(item => item.type === 'settings') || {}
+        if (globalSettings.language !== undefined) {
+          settings.language = globalSettings.language
+        }
+      })
+    })
+
+    onUnmounted(() => {
+      // 移除事件监听
+      ipcRenderer.removeAllListeners('config-updated')
+    })
+
+    // 修改保存配置的方法
+    const saveConfig = async (config) => {
+      try {
+        await ipcRenderer.invoke('save-config', config)
+      } catch (error) {
+        console.error('Failed to save config:', error)
+        Message.error('Failed to save config')
       }
     }
 
@@ -1065,6 +1186,63 @@ export default {
     // 添加 t 函数
     const t = (key, params) => {
       return i18n.t(key, params)
+    }
+
+    const onDragStart = () => {
+      // 可以添加拖拽开始时的逻辑
+    }
+
+    const onDragEnd = () => {
+      // 可以添加拖拽结束时的逻辑
+    }
+
+    watch(siderCollapsed, () => {
+      // 添加延时以等待侧边栏过动画完成
+      setTimeout(() => {
+        const activeTerminal = sshTerminals.value.find(
+          terminal => terminal.sessionId === activeTab.value
+        );
+        if (activeTerminal && activeTerminal.manualResize) {
+          activeTerminal.manualResize();
+        }
+      }, 300);
+    });
+
+    const activeFolderId = ref(null)
+    let menuHideTimeout = null
+
+    const showFolderMenu = (folder) => {
+      if (menuHideTimeout) {
+        clearTimeout(menuHideTimeout)
+      }
+      activeFolderId.value = folder.id
+      
+      // 在下一个渲染周期中调整菜单位置
+      nextTick(() => {
+        const folderEl = document.querySelector(`.folder-item[data-id="${folder.id}"]`)
+        const menuEl = document.querySelector('.floating-menu')
+        if (folderEl && menuEl) {
+          const folderRect = folderEl.getBoundingClientRect()
+          menuEl.style.top = `${folderRect.top}px`
+          
+          // 阻止右键菜单事件
+          menuEl.addEventListener('contextmenu', (e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            return false
+          }, true)
+        }
+      })
+    }
+
+    const hideFolderMenu = () => {
+      menuHideTimeout = setTimeout(() => {
+        activeFolderId.value = null
+      }, 200) // 添加延时以改善用户体验
+    }
+
+    const openGithubLink = () => {
+      shell.openExternal('https://github.com/funkpopo')
     }
 
     return {
@@ -1087,7 +1265,6 @@ export default {
       newFolder,
       showAddFolderModal,
       addFolder,
-      saveFolderToConfig,
       isRightSidebarOpen,
       toggleRightSidebar,
       activeConnection,
@@ -1116,7 +1293,11 @@ export default {
       settings,
       showSettings,
       saveSettings,
-      t
+      t,
+      activeFolderId,
+      showFolderMenu,
+      hideFolderMenu,
+      openGithubLink
     }
   }
 }
@@ -1147,6 +1328,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 0 20px;
+  height: 100%;
 }
 
 .arco-layout-header {
@@ -1275,7 +1457,7 @@ export default {
   color: var(--color-primary);
 }
 
-/* 确保按钮在子菜单中正确对齐 */
+/* 确保按钮在子菜单正确对齐 */
 .arco-menu-inline .arco-menu-item-group-title {
   padding-left: 24px;
 }
@@ -1285,13 +1467,13 @@ export default {
   padding-left: 40px !important;
 }
 
-/* 添加以下样式来调整添加文件夹图标按钮的外观 */
+/* 添加下样式来调整添加文件夹图标按钮的外观 */
 .arco-menu-item .arco-icon {
-  font-size: 30px;
+  font-size: 30;
   vertical-align: middle;
 }
 
-/* 可选：如果您想图标居中显示 */
+/* 选：如果您想图标居中显示 */
 .arco-menu-item {
   display: flex;
   justify-content: center;
@@ -1318,14 +1500,14 @@ export default {
   background-color: var(--color-fill-2);
 }
 
-/* 添加菜单相关的 z-index */
+/* 添加菜相关的 z-index */
 .arco-layout-sider {
   z-index: 1000;  /* 确保侧边栏在最上层 */
   position: relative;
 }
 
 .arco-menu {
-  z-index: 1001;  /* 确保菜单在最上层 */
+  z-index: 1001;  /* 确保菜单最上层 */
   position: relative;
 }
 
@@ -1334,12 +1516,12 @@ export default {
   position: relative;
 }
 
-/* 确保 Add Folder 按钮在最上层 */
+/* 确保 Add Folder 按钮在上层 */
 .arco-menu-item[key="add-folder"] {
   z-index: 1003;
 }
 
-/* 添加连接项相关样式 */
+/* 添加连接项相样式 */
 .connection-item {
   padding: 8px 16px !important;
 }
@@ -1359,34 +1541,6 @@ export default {
   margin-right: 8px;
 }
 
-.connection-actions {
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.connection-item:hover .connection-actions {
-  opacity: 1;
-}
-
-/* 连接按钮样式 */
-.connection-actions .arco-btn {
-  padding: 0 4px;
-  height: 24px;
-  line-height: 24px;
-  font-size: 15px;
-}
-
-.connection-actions .arco-btn:hover {
-  background-color: var(--color-fill-3);
-}
-
-.connection-actions .arco-btn[status="danger"]:hover {
-  color: rgb(var(--red-6));
-  background-color: rgb(var(--red-1));
-}
-
 /* 调整菜单项内边距 */
 .arco-menu-inline .arco-menu-item {
   padding-right: 10px !important;
@@ -1398,7 +1552,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  padding-right: 4px; /* 减小右侧内边距 */
+  padding-right: 4px; /* 减小右侧内距 */
   min-width: 0; /* 确保可以正确处理溢出 */
 }
 
@@ -1407,7 +1561,7 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-right: 8px; /* 确保文字和按钮之间有足够间距 */
+  margin-right: 8px; /* 确保文字和按钮之间有足够间 */
 }
 
 .folder-actions {
@@ -1424,37 +1578,21 @@ export default {
 
 /* 调整按钮样式 */
 .folder-actions .arco-btn {
-  padding: 0 4px;
+  padding: 0;
+  width: 24px;
   height: 24px;
-  line-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .folder-actions .arco-btn .arco-icon {
-  font-size: 20px; /* 减小图标大小 */
+  font-size: 16px;
 }
 
-/* 调整子菜单标题的内边距 */
-.arco-menu-inline .arco-sub-menu-title {
-  padding-right: 4px !important; /* 减小右侧内边距 */
-}
-
-/* 确保文件夹名称不会被按钮遮挡 */
-.arco-sub-menu-title {
-  display: flex;
-  align-items: center;
-  min-width: 0; /* 确保可以正确处理溢出 */
-}
-
-/* 调整图标大小 */
-.folder-actions .icon-edit,
-.folder-actions .icon-delete {
-  font-size: 14px;
-}
-
-/* 调整按钮悬停效果 */
+/* 确保按钮在悬停时的样式正确 */
 .folder-actions .arco-btn:hover {
   background-color: var(--color-fill-3);
-  padding: 0 2px;
 }
 
 .folder-actions .arco-btn[status="danger"]:hover {
@@ -1468,7 +1606,7 @@ export default {
   transition: all 0.2s;
 }
 
-/* 修改折叠时的样式 */
+/* 修改折叠的样式 */
 .arco-layout-sider-collapsed {
   width: 64px !important;
   min-width: 64px !important;
@@ -1493,10 +1631,10 @@ export default {
 
 .arco-layout-sider-collapsed .arco-avatar {
   font-weight: bold;
-  font-size: 20px;
+  font-size: 20;
 }
 
-/* 调整子菜单标题在折叠时的样式 */
+/* 调整子菜单标题在折叠的样式 */
 .arco-layout-sider-collapsed .arco-sub-menu-title {
   padding: 0 !important;
   height: auto !important;
@@ -1514,7 +1652,7 @@ export default {
 
 .arco-layout-sider-collapsed .arco-menu-item[key="add-folder"] .arco-icon {
   margin: 0;
-  font-size: 24px;
+  font-size: 20;
 }
 
 /* 调整子菜单项在折叠时的样式 */
@@ -1524,7 +1662,7 @@ export default {
   width: 100%;
 }
 
-/* 调整菜单容器的样 */
+/* 调整菜容器的样 */
 .arco-layout-sider-collapsed .arco-menu {
   width: 100%;
   padding: 0;
@@ -1545,7 +1683,7 @@ export default {
   width: 100%;
 }
 
-/* 移除之前的折叠相关样式，添加新的折叠布局样式 */
+/* 移除之前的折叠相关式，添加新的折叠布局样式 */
 
 /* 左侧边栏基础样式 */
 .arco-layout-sider {
@@ -1554,243 +1692,531 @@ export default {
   transition: all 0.2s cubic-bezier(0.34, 0.69, 0.1, 1);
 }
 
-/* 折叠状态下的边栏样式 */
-.arco-layout-sider-collapsed {
-  width: 50px !important;
-  min-width: 50px !important;
-}
-
-/* Add Folder 按钮样式 */
-.arco-menu-item[key="add-folder"] {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 48px;
-}
-
-.arco-layout-sider-collapsed .arco-menu-item[key="add-folder"] .arco-icon {
-  font-size: 20px;
-}
-
-/* 文件夹标题样式 */
-.arco-sub-menu-title {
-  height: 48px;
-  line-height: 48px;
-  padding: 0 16px;
-}
-
-.arco-layout-sider-collapsed .arco-sub-menu-title {
-  padding: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-/* 文件夹头像样式 */
-.folder-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 4px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-/* 连接项样式 */
-.connection-item {
-  height: 40px;
-  line-height: 40px;
-}
-
-.arco-layout-sider-collapsed .connection-item {
-  padding: 0 !important;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-/* 隐藏折叠状态下的额外元素 */
-.arco-layout-sider-collapsed .folder-actions,
-.arco-layout-sider-collapsed .connection-actions,
-.arco-layout-sider-collapsed .add-connection-button,
-.arco-layout-sider-collapsed .connection-name {
-  display: none;
-}
-
-/* 菜单样式调整 */
-.arco-menu {
-  border-right: none;
-}
-
-.arco-layout-sider-collapsed .arco-menu {
-  width: 48px;
-}
-
-/* 折叠钮样式 */
-.sider-trigger {
-  position: absolute;
-  bottom: 12px;
-  right: -12px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background-color: var(--color-bg-2);
-  color: var(--color-text-1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  z-index: 1;
-  transition: all 0.2s;
-}
-
-.sider-trigger:hover {
-  background-color: var(--color-fill-3);
-  transform: scale(1.1);
-}
-
-/* 确保内容区域正确过渡 */
-.arco-layout-content {
-  transition: margin-left 0.2s cubic-bezier(0.34, 0.69, 0.1, 1);
-}
-
-/* 修改 Add Folder 按钮的样式 */
-.arco-menu-item[key="add-folder"] {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 48px;
-  padding: 0 !important;
-}
-
-.arco-menu-item[key="add-folder"] .arco-icon {
-  font-size: 24px;
-  margin: 0;
-}
-
-/* 调整折叠状态下的菜单样式 */
+/* 折叠状态下的菜单栏样式 */
 .arco-layout-sider-collapsed {
   width: 64px !important;
   min-width: 64px !important;
 }
 
-.arco-layout-sider-collapsed .arco-menu {
-  width: 64px;
-}
-
-/* 确保折叠状态下的菜单项居中 */
-.arco-layout-sider-collapsed .arco-menu-item {
-  padding: 0 !important;
+/* 文件夹头像样式 */
+.folder-avatar {
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-/* 移除菜单项的右边框 */
-.arco-menu {
-  border-right: none !important;
-}
-
-/* 调整图标大小和位置 */
-.arco-menu-item .arco-icon {
-  margin-right: 0;
-  line-height: 1;
-}
-
-/* 确保菜单项在折叠状态下的宽度正确 */
-.arco-layout-sider-collapsed .arco-menu-inner {
-  width: 64px;
-}
-
-/* 调整菜单容器的样式 */
-.arco-menu {
   width: 100%;
-  transition: width 0.2s;
+  height: 48px;
+  padding: 8px 0;
 }
 
-/* 确保图标在折叠状态下居中 */
-.arco-layout-sider-collapsed .arco-menu-item[key="add-folder"] {
-  width: 64px;
-  padding: 12px 0 !important;
-}
-
-.header-actions {
+/* 文件夹标题样式 */
+.folder-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  width: 100%;
 }
 
-.header-actions .arco-btn {
-  color: var(--color-text-1);
+/* 文件操作按钮样式 */
+.folder-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
-.header-actions .arco-btn:hover {
-  background-color: var(--color-fill-3);
+.folder-header:hover .folder-actions {
+  opacity: 1;
 }
 
-.setting-description {
-  font-size: 12px;
-  color: var(--color-text-3);
-  margin-top: 4px;
+/* 连接样式 */
+.connection-item {
+  padding: 8px 16px;
 }
 
-.arco-form-item {
-  margin-bottom: 24px;
-}
-
-.settings-footer {
+.connection-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
   width: 100%;
 }
 
-.settings-footer .copyright {
-  color: var(--color-text-3);
-  font-size: 12px;
+/* Add Connection 按钮样式 */
+.add-connection-button {
+  color: rgb(var(--primary-6));
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.add-connection-button:hover {
+  opacity: 1;
+}
+
+/* 文件夹悬浮菜单样式 */
+.folder-floating-menu {
+  position: fixed;
+  left: 240px;
+  min-width: 260px;
+  background: var(--color-bg-2);
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  z-index: 1100;
+  transition: all 0.2s ease;
+}
+
+/* 收起侧边栏时的位调整 */
+.arco-layout-sider-collapsed .folder-floating-menu {
+  left: 64px;
+}
+
+/* 菜单内容容器 */
+.floating-menu-content {
+  padding: 8px;
+}
+
+/* 菜单分区 */
+.menu-section {
+  padding: 4px;
+}
+
+.menu-section + .menu-section {
+  margin-top: 4px;
+}
+
+/* 新建连接按钮 */
+.new-connection-btn {
+  width: 100%;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  background: var(--color-bg-2);
+  transition: all 0.2s ease;
 }
 
-.settings-footer .buttons {
-  display: flex;
-  gap: 8px;
+.new-connection-btn:hover {
+  background: var(--color-fill-2);
+  border-color: var(--color-primary-light-2);
 }
 
-.settings-footer .arco-link {
-  font-size: 16px;
+/* 连接列表区域 */
+.connections {
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+/* 连接项 */
+.connection-entry {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 2px;
 }
 
-.settings-footer .arco-link:hover {
+.connection-entry:hover {
+  background: var(--color-fill-2);
+}
+
+/* 连接标题 */
+.connection-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-1);
+}
+
+/* 连接控制按钮组 */
+.connection-controls {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.connection-entry:hover .connection-controls {
+  opacity: 1;
+}
+
+/* 控制按钮 */
+.control-btn {
+  padding: 2px;
+  height: 20px;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+/* 编辑按钮样式 */
+.control-btn:not(.delete) {
+  color: rgb(var(--primary-6));
+}
+
+.control-btn:not(.delete):hover {
+  background: var(--color-primary-light-1);
+  color: rgb(var(--primary-6));
+}
+
+/* 删除按钮样式 */
+.control-btn.delete {
+  color: rgb(var(--danger-6));
+}
+
+.control-btn.delete:hover {
+  background: var(--color-danger-light-1);
+  color: rgb(var(--danger-6));
+}
+
+/* 图标样式 */
+.control-btn .arco-icon {
+  font-size: 14px;
+}
+
+/* 漂浮菜单基础样式 */
+.floating-menu {
+  position: fixed;
+  min-width: 260px;
+  background: var(--color-bg-2);
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  z-index: 1100;
+  transition: all 0.2s ease;
+  transform: translateX(240px); /* 使用 transform 定位 */
+  pointer-events: all; /* 确保菜单可以接收事件 */
+}
+
+/* 收起侧边栏时的位置调整 */
+.arco-layout-sider-collapsed .floating-menu {
+  transform: translateX(64px);
+}
+
+/* 修改文件夹项的定位 */
+.folder-item {
+  position: relative;
+  cursor: pointer;
+}
+
+/* 菜单内容容器 */
+.floating-menu-content {
+  padding: 8px;
+  pointer-events: all; /* 确保内容可以接收事件 */
+}
+
+/* 连接列表区域 */
+.connections {
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  pointer-events: all; /* 确保连接列表可以接收事件 */
+}
+
+/* 连接项样式调整 */
+.connection-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px; /* 减小内边距 */
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 2px;
+  height: 32px; /* 固定高度 */
+}
+
+.connection-entry:hover {
+  background: var(--color-fill-2);
+}
+
+/* 连接标题样式 */
+.connection-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-1);
+}
+
+/* 连接控制按钮组样式 */
+.connection-controls {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.connection-entry:hover .connection-controls {
+  opacity: 1;
+}
+
+/* 控制按钮样式 */
+.control-btn {
+  padding: 2px;
+  height: 20px;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 2px;
+  color: var(--color-text-2);
+  transition: all 0.2s ease;
+}
+
+.control-btn:hover {
+  background: var(--color-fill-3);
+  color: var(--color-text-1);
+}
+
+.control-btn.delete:hover {
+  background: var(--color-danger-light-1);
+  color: var(--color-danger);
+}
+
+/* 图标样式 */
+.control-btn .arco-icon {
+  font-size: 14px;
+}
+
+/* 连接列表容器样式 */
+.connections {
+  background: var(--color-bg-2);
+  border: none; /* 移除边框 */
+  border-radius: 4px;
+  padding: 4px;
+}
+
+/* 确保按钮可以正常显示和交互 */
+.connection-controls .arco-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  min-width: unset !important;
+}
+
+/* 修复按钮图标显示 */
+.connection-controls .arco-btn .arco-icon {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* 标签页容器样式 */
+.content-header {
+  flex: 0 0 auto;
+  background-color: var(--color-bg-2);
+  border-bottom: 1px solid var(--color-border);
+  padding: 4px 8px 0;
+}
+
+.tabs-container {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  height: 40px;
+}
+
+/* 隐藏滚动条但保持功能 */
+.tabs-container::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
+.tab-list {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+}
+
+/* 标签页样式 */
+.tab-item {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 36px;
+  background-color: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  margin-right: 2px;
+}
+
+/* 活动标签页样式 */
+.tab-item.active {
+  background-color: var(--color-bg-1);
+  border-color: var(--color-primary);
   color: var(--color-primary);
+  z-index: 1;
 }
 
-/* 确保图标垂直居中 */
-.settings-footer .arco-icon {
-  vertical-align: middle;
+.tab-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--color-primary);
+}
+
+/* 标签页内容样式 */
+.tab-handle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.tab-title {
+  font-size: 14px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 关闭按钮样式 */
+.close-icon {
+  margin-left: 8px;
+  font-size: 14px;
+  color: var(--color-text-3);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.close-icon:hover {
+  color: var(--color-text-1);
+  background-color: var(--color-fill-3);
+}
+
+/* 标签页悬停效果 */
+.tab-item:hover {
+  background-color: var(--color-fill-2);
+}
+
+.tab-item.active:hover {
+  background-color: var(--color-bg-1);
+}
+
+/* 拖拽时的样式 */
+.sortable-ghost {
+  opacity: 0.5;
+  background-color: var(--color-fill-3);
+}
+
+.sortable-drag {
+  opacity: 0.9;
+  background-color: var(--color-bg-1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 头部按钮容器样式 */
+.header-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+}
+
+/* 设置按钮样式 */
+.header-btn {
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.header-btn .arco-icon {
+  font-size: 16px;
+}
+
+/* 主题切换按钮样式 */
+.theme-switch {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background-color: var(--color-fill-2);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.theme-switch:hover {
+  background-color: var(--color-fill-3);
+}
+
+.theme-icon {
+  font-size: 16px;
+  color: var(--color-text-2);
+  transition: all 0.2s ease;
+}
+
+.theme-switch:hover .theme-icon {
+  color: var(--color-text-1);
+}
+
+/* 设置对话框底部样式 */
+.settings-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+}
+
+/* 左侧内容样式 */
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* GitHub 图标样式 */
+.github-icon {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.github-icon:hover {
+  opacity: 0.8;
+}
+
+/* Powered by 文本样式 */
+.powered-by {
+  color: var(--color-text-2);
+  font-size: 14px;
+}
+
+/* 按钮组样式 */
+.buttons {
+  display: flex;
+  gap: 8px;
 }
 </style>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

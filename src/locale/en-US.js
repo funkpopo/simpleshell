@@ -13,7 +13,9 @@ export default {
     folderName: 'Folder Name',
     enterFolderName: 'Enter folder name',
     editFolder: 'Edit Folder',
-    editConnection: 'Edit Connection'
+    editConnection: 'Edit Connection',
+    delete: 'Delete',
+    cancel: 'Cancel'
   },
   settings: {
     title: 'Settings',
@@ -27,8 +29,11 @@ export default {
     saveFailed: 'Failed to save settings'
   },
   messages: {
-    confirmDelete: 'Are you sure you want to delete this item?',
+    confirmDelete: 'Confirm Delete',
+    confirmDeleteConnection: 'Are you sure you want to delete connection "{name}"?',
+    confirmDeleteFolder: 'Are you sure you want to delete folder "{name}" and all its connections ({count} connections)?',
     deleteSuccess: 'Deleted successfully',
+    deleteFailed: 'Failed to delete',
     uploadSuccess: 'Uploaded successfully',
     downloadSuccess: 'Downloaded successfully',
     renameSuccess: 'Renamed successfully',

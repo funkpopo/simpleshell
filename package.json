@@ -23,9 +23,8 @@
     "electron-packager": "^17.1.2",
     "flask-cors": "^0.0.1",
     "jszip": "^3.10.1",
-    "socket.io-client": "^4.8.0",
     "vue": "^3.5.12",
-    "vuedraggable": "^2.24.3",
+    "vuedraggable": "^4.1.0",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "xterm-addon-web-links": "^0.9.0"
@@ -72,5 +71,26 @@
     "last 2 versions",
     "not dead",
     "not ie 11"
-  ]
+  ],
+  "build": {
+    "appId": "com.example.simplessh",
+    "productName": "SimpleSSH",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "dist_electron/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "portable": {
+      "splashImage": false
+    }
+  }
 }

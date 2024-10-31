@@ -63,7 +63,7 @@ sftp_log.log
 
 # Electron-builder output
 /dist_electron
-/data
+/userdata
 
 # Exclude any potential database files
 *.db
