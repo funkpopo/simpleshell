@@ -4,13 +4,12 @@ directories:
   output: dist_electron
   buildResources: build
 files:
-  - "dist_electron/**/*"
-  - "!node_modules/**/*"
+  - "dist/**/*"
+  - "package.json"
+  - "background.js"
 extraResources:
-  - from: "backend/dist/service"
-    to: "resources/service"
-  - from: "config.json"
-    to: "config.json"
+  - from: "backend/dist/service.exe"
+    to: "."
 win:
   target:
     - target: portable
@@ -19,6 +18,13 @@ win:
   requestedExecutionLevel: requireAdministrator
   compression: maximum
   artifactName: "${productName}-portable-${version}-${arch}.${ext}"
+  signAndEditExecutable: true
+  fileAssociations:
+    - ext: "ssh"
+      name: "SSH Connection"
+      description: "SSH Connection File"
+  publisherName: "Sunn@github.com/funkpopo"
+  legalTrademarks: "Copyright © 2024 Sunn@github.com/funkpopo"
 portable:
   splashImage: false
 nsis:
@@ -27,3 +33,4 @@ nsis:
   createDesktopShortcut: false
   createStartMenuShortcut: false
 asar: true
+electronVersion: 33.0.1

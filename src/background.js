@@ -7,6 +7,7 @@ import { initialize, enable } from '@electron/remote/main'
 import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
+import { execSync } from 'child_process'
 
 initialize()
 
@@ -31,9 +32,15 @@ function getAppDataPath() {
   }
 }
 
-// 定义配置文件和日志路径
-const CONFIG_PATH = path.join(getAppDataPath(), 'config.json')
-const LOG_PATH = path.join(getAppDataPath(), 'sftp_log.log')
+// 获取resources目录路径
+const resourcesPath = process.env.NODE_ENV === 'development' 
+  ? path.join(__dirname, '../backend/dist/service') 
+  : path.join(process.resourcesPath)
+
+// 配置文件路径
+const configPath = path.join(resourcesPath, 'config.json')
+// 日志文件路径
+const logPath = path.join(resourcesPath, 'sftp_log.log')
 
 // 修改临时目录路径
 function createTempDir() {
@@ -54,9 +61,9 @@ function getBackendPath() {
     }
   } else {
     return {
-      executable: path.join(app.getPath('exe'), '..', 'resources', 'service', 'service.exe'),
+      executable: path.join(process.resourcesPath, 'service.exe'),
       args: [],
-      cwd: path.join(app.getPath('exe'), '..', 'resources', 'service')
+      cwd: process.resourcesPath
     }
   }
 }
@@ -65,12 +72,10 @@ function getBackendPath() {
 function startBackend() {
   try {
     const { executable, args, cwd } = getBackendPath()
-    const rootDir = getAppDataPath()
     
     console.log('Starting backend process:', executable)
     console.log('Backend args:', args)
     console.log('Working directory:', cwd)
-    console.log('Root directory:', rootDir)
 
     if (!isDevelopment && !fs.existsSync(executable)) {
       throw new Error(`Backend executable not found at: ${executable}`)
@@ -78,20 +83,7 @@ function startBackend() {
 
     // 终止已存在的后端进程
     if (backendProcess) {
-      try {
-        backendProcess.kill()
-      } catch (e) {
-        console.log('Error killing existing backend process:', e)
-      }
-    }
-
-    // 创建临时目录
-    const tempDir = createTempDir()
-
-    // 确保配置文件存在
-    const configPath = path.join(rootDir, 'config.json')
-    if (!fs.existsSync(configPath)) {
-      fs.writeFileSync(configPath, '[]', 'utf8')
+      cleanupBackend()
     }
 
     // 启动后端进程
@@ -102,46 +94,35 @@ function startBackend() {
       windowsHide: true,
       env: {
         ...process.env,
-        PYTHONUNBUFFERED: '1',
-        PYTHONIOENCODING: 'utf-8',
-        TEMP: tempDir,
-        TMP: tempDir,
-        CONFIG_PATH: CONFIG_PATH,
-        LOG_PATH: LOG_PATH
+        CONFIG_PATH: configPath,
+        LOG_PATH: logPath
       }
     })
 
-    // 日志处理
-    backendProcess.stdout.on('data', (data) => {
-      console.log(`Backend stdout: ${data.toString()}`)
-    })
-
-    backendProcess.stderr.on('data', (data) => {
-      console.error(`Backend stderr: ${data.toString()}`)
-    })
-
+    // 添加进程事件处理
     backendProcess.on('error', (err) => {
       console.error('Failed to start backend process:', err)
+      dialog.showErrorBox('Backend Error', `Failed to start backend service: ${err.message}`)
     })
 
     backendProcess.on('close', (code, signal) => {
       console.log(`Backend process exited with code ${code} (signal: ${signal})`)
-      
-      if (code !== 0 && code !== null) {
-        setTimeout(() => {
-          console.log('Attempting to restart backend...')
-          startBackend()
-        }, 1000)
-      }
+      backendProcess = null
     })
 
-    if (!backendProcess.pid) {
-      throw new Error('Failed to get backend process PID')
-    }
+    // 添加标准输出和错误输出的处理
+    backendProcess.stdout.on('data', (data) => {
+      console.log(`Backend stdout: ${data}`)
+    })
+
+    backendProcess.stderr.on('data', (data) => {
+      console.error(`Backend stderr: ${data}`)
+    })
 
     return true
   } catch (error) {
     console.error('Error in startBackend:', error)
+    dialog.showErrorBox('Backend Error', `Failed to start backend service: ${error.message}`)
     return false
   }
 }
@@ -172,23 +153,17 @@ async function waitForBackend() {
 function cleanupBackend() {
   if (backendProcess) {
     try {
+      // 在 Windows 上使用 taskkill 确保子进程被终止
       if (process.platform === 'win32') {
-        const { execSync } = require('child_process')
         try {
-          backendProcess.kill()
-          execSync(`taskkill /F /T /PID ${backendProcess.pid}`, { 
-            windowsHide: true,
-            stdio: 'ignore' 
-          })
-          execSync('taskkill /F /IM service.exe', { 
-            windowsHide: true,
-            stdio: 'ignore' 
-          })
+          execSync(`taskkill /pid ${backendProcess.pid} /T /F`, { windowsHide: true })
         } catch (e) {
-          console.log('Error during process cleanup:', e)
+          console.error('Error killing process with taskkill:', e)
+          // 如果 taskkill 失败，尝试使用 process.kill
+          process.kill(backendProcess.pid)
         }
       } else {
-        process.kill(-backendProcess.pid, 'SIGKILL')
+        process.kill(-backendProcess.pid) // 在 Unix 系统上使用进程组 ID
       }
     } catch (error) {
       console.error('Error killing backend process:', error)
@@ -203,15 +178,15 @@ let configWatcher = null
 
 function setupConfigWatcher(win) {
   // 确保配置文件存在
-  if (!fs.existsSync(CONFIG_PATH)) {
-    fs.writeFileSync(CONFIG_PATH, '[]', 'utf8')
+  if (!fs.existsSync(configPath)) {
+    fs.writeFileSync(configPath, '[]', 'utf8')
   }
 
   // 设置文件监听
-  configWatcher = fs.watch(CONFIG_PATH, (eventType) => {
+  configWatcher = fs.watch(configPath, (eventType) => {
     if (eventType === 'change') {
       try {
-        const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
         win.webContents.send('config-updated', config)
       } catch (error) {
         console.error('Error reading config file:', error)
@@ -242,21 +217,48 @@ async function createWindow() {
       height: 768,
       minWidth: 800,
       minHeight: 600,
+      show: false,
       webPreferences: {
-        nodeIntegration: process.env.ELECTRON_NODE_INTEGRATION,
-        contextIsolation: !process.env.ELECTRON_NODE_INTEGRATION,
-        enableRemoteModule: true
+        nodeIntegration: true,
+        contextIsolation: false,
+        enableRemoteModule: true,
+        webSecurity: false,
+        nodeIntegrationInWorker: true,
+        preload: path.join(__dirname, 'preload.js')
       }
     })
 
     require("@electron/remote/main").enable(mainWindow.webContents)
 
     if (process.env.WEBPACK_DEV_SERVER_URL) {
+      // 开发环境
       await mainWindow.loadURL(process.env.WEBPACK_DEV_SERVER_URL)
       if (!process.env.IS_TEST) mainWindow.webContents.openDevTools()
     } else {
-      createProtocol('app')
-      mainWindow.loadURL('app://./index.html')
+      // 生产环境
+      try {
+        // 修改这里的路径处理
+        const indexPath = isDevelopment
+          ? path.join(__dirname, '../dist/index.html')
+          : path.join(process.resourcesPath, 'app.asar/dist/index.html')
+
+        console.log('Loading index.html from:', indexPath)
+        
+        if (!fs.existsSync(indexPath)) {
+          throw new Error(`index.html not found at ${indexPath}`)
+        }
+
+        // 使用 loadFile 加载
+        await mainWindow.loadFile(indexPath)
+        
+        // 显示窗口
+        mainWindow.show()
+      } catch (error) {
+        console.error('Failed to load app:', error)
+        console.error('Current directory:', __dirname)
+        console.error('Resource path:', process.resourcesPath)
+        dialog.showErrorBox('Loading Error', `Failed to load app: ${error.message}`)
+      }
     }
 
     mainWindow.on('close', (e) => {
@@ -302,29 +304,16 @@ if (!gotTheLock) {
 
   app.on('window-all-closed', () => {
     cleanupBackend()
-    if (configWatcher) {
-      configWatcher.close()
-    }
     if (process.platform !== 'darwin') {
       app.quit()
     }
   })
 
-  app.on('will-quit', () => {
+  app.on('before-quit', () => {
     cleanupBackend()
-    cleanupUserData()
-    // 清理锁文件
-    const lockFile = path.join(getAppDataPath(), '.lock')
-    if (fs.existsSync(lockFile)) {
-      try {
-        fs.unlinkSync(lockFile)
-      } catch (error) {
-        console.error('Error cleaning up lock file:', error)
-      }
-    }
   })
 
-  app.on('before-quit', () => {
+  app.on('will-quit', () => {
     cleanupBackend()
   })
 
@@ -350,6 +339,11 @@ if (!gotTheLock) {
         } catch (e) {
           console.error('Vue Devtools failed to install:', e.toString())
         }
+      }
+
+      // 创建协议
+      if (!process.env.WEBPACK_DEV_SERVER_URL) {
+        createProtocol('app')
       }
       
       await createWindow()
@@ -405,10 +399,10 @@ process.on('uncaughtException', (error) => {
   process.exit(1)
 })
 
-// 处理 IPC 消息
+// 理 IPC 消息
 ipcMain.handle('read-config', async () => {
   try {
-    const config = fs.readFileSync(CONFIG_PATH, 'utf8')
+    const config = fs.readFileSync(configPath, 'utf8')
     return JSON.parse(config)
   } catch (error) {
     console.error('Error reading config:', error)
@@ -418,7 +412,7 @@ ipcMain.handle('read-config', async () => {
 
 ipcMain.handle('save-config', async (event, config) => {
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8')
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
     return true
   } catch (error) {
     console.error('Error saving config:', error)
@@ -446,6 +440,10 @@ function cleanupUserData() {
 app.on('before-quit', () => {
   cleanupBackend()
   cleanupUserData()
+})
+
+app.on('will-quit', () => {
+  cleanupBackend()
 })
 
 // 在应用启动时检查并清理旧的锁文件

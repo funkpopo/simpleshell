@@ -13,6 +13,8 @@ import zipfile
 import io
 from datetime import datetime
 from gevent import monkey
+import socket
+import sys
 monkey.patch_all()
 
 app = Flask(__name__)
@@ -21,19 +23,71 @@ socketio = SocketIO(app,
                    cors_allowed_origins="*",
                    async_mode='gevent',
                    logger=True,
-                   engineio_logger=True)
+                   engineio_logger=True,
+                   ping_timeout=60,  # 增加超时时间
+                   ping_interval=25)  # 增加心跳间隔
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 获取配置文件路径
-CONFIG_PATH = os.getenv('CONFIG_PATH', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json'))
-LOG_PATH = os.getenv('LOG_PATH', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'sftp_log.log'))
+def get_executable_dir():
+    # 获取可执行文件所在目录
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
 
-# 存储SSH会话
+# 配置文件路径
+CONFIG_PATH = os.path.join(get_executable_dir(), 'config.json')
+# 日志文件路径
+LOG_PATH = os.path.join(get_executable_dir(), 'sftp_log.log')
+
+# 修改会话管理相关代码
+class SSHSession:
+    def __init__(self, ssh_client, channel, read_thread=None):
+        self.ssh_client = ssh_client
+        self.channel = channel
+        self.active = True
+        self.read_thread = read_thread
+        self.lock = threading.Lock()
+        self.client_id = None  # 添加客户端ID
+
+# 修改会话存储结构
 ssh_sessions = {}
-sftp_sessions = {}
+client_sessions = {}  # 添加客户端会话映射
+sessions_lock = threading.Lock()
+
+@socketio.on('connect')
+def handle_connect():
+    client_id = request.sid
+    print(f"Client connected: {client_id}")
+    with sessions_lock:
+        client_sessions[client_id] = set()
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    client_id = request.sid
+    print(f"Client disconnected: {client_id}")
+    with sessions_lock:
+        if client_id in client_sessions:
+            # 只清理当前客户端的会话
+            sessions = client_sessions[client_id].copy()
+            for session_id in sessions:
+                try:
+                    if session_id in ssh_sessions:
+                        session = ssh_sessions[session_id]
+                        session.active = False
+                        with session.lock:
+                            try:
+                                session.channel.close()
+                                session.ssh_client.close()
+                            except:
+                                pass
+                        del ssh_sessions[session_id]
+                        client_sessions[client_id].remove(session_id)
+                except Exception as e:
+                    print(f"Error cleaning up session {session_id}: {e}")
+            del client_sessions[client_id]
 
 def load_config():
     try:
@@ -105,118 +159,309 @@ def create_ssh_client(connection):
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         
-        if connection.get('authType') == 'password':
-            ssh.connect(
-                connection['host'],
-                port=connection['port'],
-                username=connection['username'],
-                password=connection['password']
-            )
-        else:
-            private_key = paramiko.RSAKey.from_private_key(
-                io.StringIO(connection['privateKey'])
-            )
-            ssh.connect(
-                connection['host'],
-                port=connection['port'],
-                username=connection['username'],
-                pkey=private_key
-            )
+        connect_kwargs = {
+            'hostname': connection['host'],
+            'port': int(connection['port']),
+            'username': connection['username'],
+            'timeout': 30
+        }
         
+        if connection.get('authType') == 'password':
+            connect_kwargs['password'] = connection['password']
+        else:
+            if connection.get('privateKey'):
+                pkey = paramiko.RSAKey.from_private_key(
+                    io.StringIO(connection['privateKey'])
+                )
+                connect_kwargs['pkey'] = pkey
+            elif connection.get('privateKeyPath'):
+                pkey = paramiko.RSAKey.from_private_key_file(
+                    connection['privateKeyPath']
+                )
+                connect_kwargs['pkey'] = pkey
+        
+        print(f"Attempting SSH connection to {connection['host']}:{connection['port']}")
+        ssh.connect(**connect_kwargs)
+        print("SSH connection successful")
         return ssh
     except Exception as e:
-        logger.error(f"SSH connection error: {e}")
+        print(f"SSH connection error: {e}")
         raise
+
+# 添加 read_output 函数定义（放在 create_ssh_client 函数之后）
+def read_output(session_id, channel):
+    try:
+        buffer = ""
+        last_output_time = time.time()
+        
+        while True:
+            with sessions_lock:
+                if session_id not in ssh_sessions or not ssh_sessions[session_id].active:
+                    break
+            
+            try:
+                if channel.recv_ready():
+                    output = channel.recv(4096).decode('utf-8', errors='ignore')
+                    if output:
+                        buffer += output
+                        last_output_time = time.time()
+                        
+                        # 立即发送包含换行符的输出
+                        if '\n' in buffer:
+                            socketio.emit('ssh_output', {
+                                'session_id': session_id,
+                                'output': buffer
+                            })
+                            buffer = ""
+                        # 或者当缓冲区达到一定大小时发送
+                        elif len(buffer) >= 1024:
+                            socketio.emit('ssh_output', {
+                                'session_id': session_id,
+                                'output': buffer
+                            })
+                            buffer = ""
+                else:
+                    # 如果缓冲区中有数据且超过50ms没有新数据，发送剩余数据
+                    if buffer and (time.time() - last_output_time) > 0.05:
+                        socketio.emit('ssh_output', {
+                            'session_id': session_id,
+                            'output': buffer
+                        })
+                        buffer = ""
+                    socketio.sleep(0.01)
+            except socket.timeout:
+                continue
+            except Exception as e:
+                print(f"Error reading from channel: {e}")
+                break
+                
+    except Exception as e:
+        print(f"Error in read_output for session {session_id}: {e}")
+        with sessions_lock:
+            if session_id in ssh_sessions:
+                ssh_sessions[session_id].active = False
+        socketio.emit('ssh_error', {
+            'session_id': session_id,
+            'error': str(e)
+        })
+    finally:
+        # 发送剩余的缓冲区数据
+        if buffer:
+            socketio.emit('ssh_output', {
+                'session_id': session_id,
+                'output': buffer
+            })
+        print(f"Read thread ending for session {session_id}")
 
 @socketio.on('open_ssh')
 def handle_ssh_connection(data):
     try:
+        client_id = request.sid
         session_id = data['session_id']
-        print(f"Opening SSH connection for session {session_id}")
+        print(f"Opening SSH connection for session {session_id} from client {client_id}")
+        
+        # 创建新的 SSH 客户端
         ssh = create_ssh_client(data)
+        
+        # 创建交互式会话
         channel = ssh.invoke_shell(
             term='xterm-256color',
             width=80,
-            height=24
+            height=24,
+            environment={
+                'TERM': 'xterm-256color',
+                'LANG': 'en_US.UTF-8',
+                'LC_ALL': 'en_US.UTF-8'
+            }
         )
-        ssh_sessions[session_id] = {
-            'ssh': ssh,
-            'channel': channel
-        }
         
-        def read_output():
-            while True:
-                try:
-                    if channel.recv_ready():
-                        output = channel.recv(1024).decode('utf-8', errors='ignore')
-                        print(f"Sending SSH output for session {session_id}: {output}")
-                        socketio.emit('ssh_output', {
-                            'session_id': session_id,
-                            'output': output
-                        })
-                    time.sleep(0.1)
-                except Exception as e:
-                    print(f"Error in read_output for session {session_id}: {e}")
-                    break
+        channel.settimeout(0.1)
+        channel.setblocking(0)
         
-        thread = threading.Thread(target=read_output)
-        thread.daemon = True
-        thread.start()
+        # 等待初始输出并发送
+        initial_output = ""
+        max_attempts = 50  # 增加等待时间到5秒
+        attempts = 0
+        last_output_time = time.time()
+        
+        while attempts < max_attempts:
+            if channel.recv_ready():
+                output = channel.recv(4096).decode('utf-8', errors='ignore')
+                if output:
+                    initial_output += output
+                    last_output_time = time.time()  # 更新最后输出时间
+            
+            # 如果已经有输出，且超过0.5秒没有新输出，认为初始输出完成
+            if initial_output and (time.time() - last_output_time) > 0.5:
+                break
+                
+            socketio.sleep(0.1)
+            attempts += 1
+        
+        print(f"Initial output collected: {initial_output}")
+        
+        # 创建并启动读取线程
+        read_thread = threading.Thread(
+            target=read_output,
+            args=(session_id, channel),
+            daemon=True
+        )
+        read_thread.start()
+        
+        # 创建新的会话对象
+        session = SSHSession(ssh, channel, read_thread)
+        session.client_id = client_id
+        
+        # 安全地存储会话
+        with sessions_lock:
+            ssh_sessions[session_id] = session
+            if client_id not in client_sessions:
+                client_sessions[client_id] = set()
+            client_sessions[client_id].add(session_id)
         
         print(f"SSH connection established for session {session_id}")
+        
+        # 先发送连接成功消息
         socketio.emit('ssh_connected', {
             'session_id': session_id,
             'message': 'Connected successfully'
         })
+        
+        # 如果有初始输出，立即发送
+        if initial_output:
+            print(f"Sending initial output for session {session_id}")
+            # 分批发送大量输出，避免单个消息过大
+            chunk_size = 1024
+            for i in range(0, len(initial_output), chunk_size):
+                chunk = initial_output[i:i + chunk_size]
+                socketio.emit('ssh_output', {
+                    'session_id': session_id,
+                    'output': chunk
+                })
+                socketio.sleep(0.01)  # 添加小延迟，避免消息堆积
+        
     except Exception as e:
         print(f"Error establishing SSH connection: {e}")
-        socketio.emit('ssh_error', {'error': str(e)})
+        socketio.emit('ssh_error', {
+            'session_id': session_id,
+            'error': str(e)
+        })
 
 @socketio.on('ssh_input')
 def handle_ssh_input(data):
     try:
+        client_id = request.sid
         session_id = data['session_id']
         input_data = data['input']
-        print(f"Received SSH input for session {session_id}: {input_data}")
         
-        session = ssh_sessions.get(session_id)
-        if session:
-            channel = session['channel']
-            channel.send(input_data)
-            print(f"Input sent to SSH server for session {session_id}")
-        else:
-            print(f"No session found for {session_id}")
+        with sessions_lock:
+            session = ssh_sessions.get(session_id)
+            if not session or not session.active:
+                raise Exception('Session not found or inactive')
+            if session.client_id != client_id:
+                raise Exception('Session belongs to another client')
+            
+            with session.lock:
+                # 发送输入到SSH服务器
+                session.channel.send(input_data)
+                print(f"Input sent to SSH server for session {session_id}")
+                
+                # 立即尝试读取响应
+                max_attempts = 10  # 最多尝试10次
+                attempts = 0
+                output_buffer = ""
+                
+                while attempts < max_attempts:
+                    if session.channel.recv_ready():
+                        output = session.channel.recv(4096).decode('utf-8', errors='ignore')
+                        if output:
+                            output_buffer += output
+                            # 如果收到完整的响应（包含换行符）或缓冲区足够大，就发送
+                            if '\n' in output_buffer or len(output_buffer) >= 1024:
+                                socketio.emit('ssh_output', {
+                                    'session_id': session_id,
+                                    'output': output_buffer
+                                })
+                                output_buffer = ""
+                    else:
+                        # 如果没有更多数据且缓冲区不为空，发送剩余数据
+                        if output_buffer:
+                            socketio.emit('ssh_output', {
+                                'session_id': session_id,
+                                'output': output_buffer
+                            })
+                            output_buffer = ""
+                        # 如果已经有输出了，就不用继续等待
+                        if attempts > 0:
+                            break
+                    socketio.sleep(0.01)  # 短暂等待更多输出
+                    attempts += 1
+                
     except Exception as e:
         print(f"Error handling SSH input: {e}")
-        socketio.emit('ssh_error', {'error': str(e)})
+        socketio.emit('ssh_error', {
+            'session_id': session_id,
+            'error': str(e)
+        })
 
 @socketio.on('close_ssh')
 def handle_ssh_close(data):
     try:
+        client_id = request.sid
         session_id = data['session_id']
-        if session_id in ssh_sessions:
-            session = ssh_sessions[session_id]
-            session['channel'].close()
-            session['ssh'].close()
-            del ssh_sessions[session_id]
-            emit('ssh_closed', {
-                'session_id': session_id,
-                'message': 'Connection closed'
-            })
+        print(f"Closing SSH session {session_id} for client {client_id}")
+        
+        with sessions_lock:
+            if session_id in ssh_sessions:
+                session = ssh_sessions[session_id]
+                if session.client_id == client_id:  # 验证会话所有权
+                    session.active = False
+                    with session.lock:
+                        try:
+                            session.channel.close()
+                            session.ssh_client.close()
+                        except:
+                            pass
+                    
+                    del ssh_sessions[session_id]
+                    if client_id in client_sessions:
+                        client_sessions[client_id].remove(session_id)
+                    
+                    socketio.emit('ssh_closed', {
+                        'session_id': session_id,
+                        'message': 'Connection closed'
+                    })
+                    print(f"Session {session_id} closed successfully")
+                else:
+                    print(f"Session {session_id} belongs to another client")
+            else:
+                print(f"Session {session_id} not found")
     except Exception as e:
-        emit('ssh_error', {'error': str(e)})
+        print(f"Error closing session {session_id}: {e}")
+        socketio.emit('ssh_error', {
+            'session_id': session_id,
+            'error': str(e)
+        })
 
 @socketio.on('resize')
 def handle_resize(data):
     try:
-        session = ssh_sessions.get(data['session_id'])
-        if session:
-            session['channel'].resize_pty(
-                width=int(data['cols']),
-                height=int(data['rows'])
-            )
+        client_id = request.sid
+        session_id = data['session_id']
+        
+        with sessions_lock:
+            session = ssh_sessions.get(session_id)
+            if session and session.active and session.client_id == client_id:
+                with session.lock:
+                    session.channel.resize_pty(
+                        width=int(data['cols']),
+                        height=int(data['rows'])
+                    )
     except Exception as e:
-        emit('ssh_error', {'error': str(e)})
+        socketio.emit('ssh_error', {
+            'session_id': session_id,
+            'error': str(e)
+        })
 
 # SFTP相关路由
 @app.route('/sftp_list_directory', methods=['POST'])

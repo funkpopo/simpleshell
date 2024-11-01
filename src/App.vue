@@ -3,7 +3,10 @@
     <a-layout class="layout">
       <a-layout-header>
         <div class="header-content">
-          <h3>SimpleSSH</h3>
+          <h3 @click="checkUpdate" class="app-title" :class="{ 'has-update': hasUpdate }">
+            {{ appTitle }}
+            <a-badge v-if="hasUpdate" :text="newVersion" status="processing" />
+          </h3>
           <div class="header-actions">
             <div class="header-buttons">
               <a-button
@@ -323,6 +326,22 @@
         </template>
       </a-modal>
     </a-layout>
+
+    <!-- 添加更新提示对话框 -->
+    <a-modal
+      v-model:visible="updateModalVisible"
+      :title="t('update.newVersion')"
+      @cancel="closeUpdateModal"
+    >
+      <p>{{ t('update.newVersionAvailable', { version: newVersion }) }}</p>
+      <p>{{ t('update.currentVersion', { version: currentVersion }) }}</p>
+      <template #footer>
+        <a-button @click="closeUpdateModal">{{ t('update.later') }}</a-button>
+        <a-button type="primary" @click="goToDownload">
+          {{ t('update.download') }}
+        </a-button>
+      </template>
+    </a-modal>
   </a-config-provider>
 </template>
 
@@ -802,7 +821,7 @@ export default {
         
         folder.connections.push(newConnection)
 
-        // 更新配置文
+        // 更配置文
         const config = await axios.get('http://localhost:5000/get_connections')
         const updatedConfig = config.data.map(item => {
           if (item.id === folder.id) {
@@ -1116,7 +1135,7 @@ export default {
       }
     }
 
-    // 提供语言设给子组件
+    // 提供语言设子组件
     provide('locale', locale)
 
     const handleLanguageChange = (value) => {
@@ -1245,6 +1264,49 @@ export default {
       shell.openExternal('https://github.com/funkpopo')
     }
 
+    // 从 package.json 中获取��本号
+    const version = __APP_VERSION__ // 这个变量会在构建时被替换为实际版本号
+    const appTitle = `SimpleSSH v${version}`
+
+    const currentVersion = __APP_VERSION__
+    const hasUpdate = ref(false)
+    const newVersion = ref('')
+    const updateModalVisible = ref(false)
+
+    const checkUpdate = async () => {
+      try {
+        const response = await axios.get(
+          'https://api.github.com/repos/funkpopo/simplessh/releases/latest'
+        )
+        
+        const latestVersion = response.data.tag_name.replace('v', '')
+        const current = currentVersion.split('.')
+        const latest = latestVersion.split('.')
+        
+        // 比较版本号
+        const hasNewVersion = latest.some((num, i) => {
+          return parseInt(num) > parseInt(current[i] || 0)
+        })
+
+        if (hasNewVersion) {
+          hasUpdate.value = true
+          newVersion.value = latestVersion
+          updateModalVisible.value = true
+        }
+      } catch (error) {
+        console.error('Failed to check for updates:', error)
+      }
+    }
+
+    const closeUpdateModal = () => {
+      updateModalVisible.value = false
+    }
+
+    const goToDownload = () => {
+      shell.openExternal('https://github.com/funkpopo/simplessh/releases/latest')
+      updateModalVisible.value = false
+    }
+
     return {
       connections,
       tabs,
@@ -1297,7 +1359,15 @@ export default {
       activeFolderId,
       showFolderMenu,
       hideFolderMenu,
-      openGithubLink
+      openGithubLink,
+      appTitle,
+      currentVersion,
+      hasUpdate,
+      newVersion,
+      updateModalVisible,
+      checkUpdate,
+      closeUpdateModal,
+      goToDownload
     }
   }
 }
@@ -1516,7 +1586,7 @@ export default {
   position: relative;
 }
 
-/* 确保 Add Folder 按钮在上层 */
+/* 确�� Add Folder 按钮在上层 */
 .arco-menu-item[key="add-folder"] {
   z-index: 1003;
 }
@@ -2041,7 +2111,7 @@ export default {
   height: 100%;
 }
 
-/* 标签页样式 */
+/* 标签页式 */
 .tab-item {
   display: flex;
   align-items: center;
@@ -2189,7 +2259,7 @@ export default {
   padding: 16px 0;
 }
 
-/* 左侧内容样式 */
+/* 左侧��容样式 */
 .footer-left {
   display: flex;
   align-items: center;
@@ -2218,5 +2288,21 @@ export default {
 .buttons {
   display: flex;
   gap: 8px;
+}
+
+.app-title {
+  cursor: pointer;
+  transition: color 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-title:hover {
+  color: var(--color-primary-light-4);
+}
+
+.app-title.has-update {
+  color: var(--color-primary-light-4);
 }
 </style>
