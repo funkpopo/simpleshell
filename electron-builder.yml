@@ -6,11 +6,10 @@ directories:
 files:
   - "dist_electron/**/*"
   - "!node_modules/**/*"
+  - "package.json"
 extraResources:
-  - from: "backend/dist/service"
-    to: "resources/service"
-  - from: "config.json"
-    to: "config.json"
+  - from: "backend/dist/service.exe"
+    to: "service.exe"
 win:
   target:
     - target: portable
@@ -27,3 +26,7 @@ nsis:
   createDesktopShortcut: false
   createStartMenuShortcut: false
 asar: true
+asarUnpack:
+  - "resources/**/*"
+  - "dist_electron/preload.js"
+npmRebuild: true

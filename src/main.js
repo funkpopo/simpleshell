@@ -7,6 +7,25 @@ import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
 import customEnUS from './locale/en-US'
 import customZhCN from './locale/zh-CN'
 
+const initLocalStorage = () => {
+  try {
+    // 使用 preload 脚本提供的 API
+    const storage = window.electronAPI.localStorage
+    if (storage) {
+      if (!storage.getItem('language')) {
+        storage.setItem('language', 'zh-CN')
+      }
+    } else {
+      console.warn('localStorage API is not available')
+    }
+  } catch (error) {
+    console.error('Error initializing localStorage:', error)
+  }
+}
+
+// 在创建应用之前调用
+initLocalStorage()
+
 const app = createApp(App)
 
 // 合并 Arco Design 的语言包和自定义语言包

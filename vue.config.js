@@ -5,7 +5,7 @@ module.exports = defineConfig({
   pluginOptions: {
     electronBuilder: {
       nodeIntegration: true,
-      externals: ['@electron/remote'],
+      externals: ['@electron/remote']
     }
   },
   configureWebpack: {

@@ -10,28 +10,33 @@ import { spawn } from 'child_process'
 
 initialize()
 
-// 禁用菜单栏
-Menu.setApplicationMenu(null)
-
 const isDevelopment = process.env.NODE_ENV !== 'production'
 
 // 禁用硬件加速
 app.disableHardwareAcceleration()
 
+// 设置空菜单
+Menu.setApplicationMenu(null)
+
+// Scheme must be registered before the app is ready
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { secure: true, standard: true } }
+])
+
 let backendProcess = null
 let mainWindow = null
 
-// 修改配置文件路径，使用应用程序目录而不是用户数据目录
+// 修改获取应用数据路径的函数
 function getAppDataPath() {
   if (isDevelopment) {
     return path.join(__dirname, '..')
   } else {
-    // 使用应用程序所在目录
-    return path.dirname(app.getPath('exe'))
+    // 使用 resources 目录
+    return path.join(process.resourcesPath)
   }
 }
 
-// 定义配置文件和日志路径
+// 修改配置文件和日志路径
 const CONFIG_PATH = path.join(getAppDataPath(), 'config.json')
 const LOG_PATH = path.join(getAppDataPath(), 'sftp_log.log')
 
@@ -44,7 +49,7 @@ function createTempDir() {
   return tempPath
 }
 
-// 获取后端可执行文件路径
+// 修改后端路径获取函数
 function getBackendPath() {
   if (isDevelopment) {
     return {
@@ -54,23 +59,21 @@ function getBackendPath() {
     }
   } else {
     return {
-      executable: path.join(app.getPath('exe'), '..', 'resources', 'service', 'service.exe'),
+      executable: path.join(process.resourcesPath, 'service.exe'),
       args: [],
-      cwd: path.join(app.getPath('exe'), '..', 'resources', 'service')
+      cwd: process.resourcesPath
     }
   }
 }
 
-// 启动后端服务
+// 修改后端进程启动函数
 function startBackend() {
   try {
     const { executable, args, cwd } = getBackendPath()
-    const rootDir = getAppDataPath()
     
     console.log('Starting backend process:', executable)
     console.log('Backend args:', args)
     console.log('Working directory:', cwd)
-    console.log('Root directory:', rootDir)
 
     if (!isDevelopment && !fs.existsSync(executable)) {
       throw new Error(`Backend executable not found at: ${executable}`)
@@ -78,28 +81,28 @@ function startBackend() {
 
     // 终止已存在的后端进程
     if (backendProcess) {
-      try {
-        backendProcess.kill()
-      } catch (e) {
-        console.log('Error killing existing backend process:', e)
-      }
+      cleanupBackend()
     }
 
     // 创建临时目录
-    const tempDir = createTempDir()
-
-    // 确保配置文件存在
-    const configPath = path.join(rootDir, 'config.json')
-    if (!fs.existsSync(configPath)) {
-      fs.writeFileSync(configPath, '[]', 'utf8')
+    const tempDir = path.join(cwd, 'temp')
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true })
     }
 
-    // 启动后端进程
+    // 修改进程启动配置
     backendProcess = spawn(executable, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      detached: false,
+      detached: false, // 确保不会独立运行
       cwd: cwd,
       windowsHide: true,
+      // 在 Windows 上设置进程组
+      ...(process.platform === 'win32' ? { 
+        shell: false,
+        windowsHide: true,
+        // 创建新的进程组但不分离
+        createProcessGroup: true
+      } : {}),
       env: {
         ...process.env,
         PYTHONUNBUFFERED: '1',
@@ -111,7 +114,11 @@ function startBackend() {
       }
     })
 
-    // 日志处理
+    // 设置进程引用，确保子进程随父进程退出
+    if (process.platform === 'win32') {
+      require('child_process').exec(`wmic process where ParentProcessId=${backendProcess.pid} CALL setpriority "normal"`)
+    }
+
     backendProcess.stdout.on('data', (data) => {
       console.log(`Backend stdout: ${data.toString()}`)
     })
@@ -126,15 +133,10 @@ function startBackend() {
 
     backendProcess.on('close', (code, signal) => {
       console.log(`Backend process exited with code ${code} (signal: ${signal})`)
-      
-      if (code !== 0 && code !== null) {
-        setTimeout(() => {
-          console.log('Attempting to restart backend...')
-          startBackend()
-        }, 1000)
-      }
+      backendProcess = null
     })
 
+    // 检查进程是否成功启动
     if (!backendProcess.pid) {
       throw new Error('Failed to get backend process PID')
     }
@@ -146,7 +148,109 @@ function startBackend() {
   }
 }
 
-// 等待后端服务就绪
+// 修改清理函数
+function cleanupBackend() {
+  if (backendProcess) {
+    try {
+      if (process.platform === 'win32') {
+        try {
+          // 首先尝试使用 taskkill 终止进程树
+          const { execSync } = require('child_process')
+          execSync(`taskkill /F /T /PID ${backendProcess.pid}`, { 
+            windowsHide: true,
+            stdio: 'ignore' 
+          })
+        } catch (e) {
+          console.log('Error during taskkill:', e)
+          // 如果 taskkill 失败，尝试使用 process.kill
+          try {
+            process.kill(backendProcess.pid)
+          } catch (killError) {
+            console.log('Error during process.kill:', killError)
+          }
+        }
+      } else {
+        // 在 Unix 系统上终止进程组
+        process.kill(-backendProcess.pid)
+      }
+    } catch (error) {
+      console.error('Error killing backend process:', error)
+    } finally {
+      backendProcess = null
+    }
+  }
+}
+
+// 修改应用退出处理
+app.on('before-quit', (event) => {
+  // 在应用退出前确保后端进程被清理
+  if (backendProcess) {
+    event.preventDefault()
+    cleanupBackend()
+    app.quit()
+  }
+})
+
+app.on('will-quit', () => {
+  cleanupBackend()
+})
+
+// 确保在所有窗口关闭时清理后端进程
+app.on('window-all-closed', () => {
+  cleanupBackend()
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})
+
+// 添加进程异常处理
+process.on('exit', () => {
+  cleanupBackend()
+})
+
+process.on('SIGINT', () => {
+  cleanupBackend()
+  process.exit()
+})
+
+process.on('SIGTERM', () => {
+  cleanupBackend()
+  process.exit()
+})
+
+// 处理配置文件读取
+ipcMain.handle('read-config', async () => {
+  try {
+    if (!fs.existsSync(CONFIG_PATH)) {
+      // 如果配置文件不存在，创建一个空的配置文件
+      fs.writeFileSync(CONFIG_PATH, '[]', 'utf8')
+      return []
+    }
+    const config = fs.readFileSync(CONFIG_PATH, 'utf8')
+    return JSON.parse(config)
+  } catch (error) {
+    console.error('Error reading config:', error)
+    return []
+  }
+})
+
+// 处理配置文件保存
+ipcMain.handle('save-config', async (event, config) => {
+  try {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8')
+    return true
+  } catch (error) {
+    console.error('Error saving config:', error)
+    return false
+  }
+})
+
+// 添加错误处理函数
+function showError(title, message) {
+  dialog.showErrorBox(title, message)
+}
+
+// 添加等待后端服务就绪的函数
 async function waitForBackend() {
   const maxAttempts = 30
   let attempts = 0
@@ -168,71 +272,23 @@ async function waitForBackend() {
   throw new Error('Backend failed to start within 30 seconds')
 }
 
-// 清理后端进程
-function cleanupBackend() {
-  if (backendProcess) {
-    try {
-      if (process.platform === 'win32') {
-        const { execSync } = require('child_process')
-        try {
-          backendProcess.kill()
-          execSync(`taskkill /F /T /PID ${backendProcess.pid}`, { 
-            windowsHide: true,
-            stdio: 'ignore' 
-          })
-          execSync('taskkill /F /IM service.exe', { 
-            windowsHide: true,
-            stdio: 'ignore' 
-          })
-        } catch (e) {
-          console.log('Error during process cleanup:', e)
-        }
-      } else {
-        process.kill(-backendProcess.pid, 'SIGKILL')
-      }
-    } catch (error) {
-      console.error('Error killing backend process:', error)
-    } finally {
-      backendProcess = null
-    }
-  }
-}
-
-// 监听配置文件变化
-let configWatcher = null
-
-function setupConfigWatcher(win) {
-  // 确保配置文件存在
-  if (!fs.existsSync(CONFIG_PATH)) {
-    fs.writeFileSync(CONFIG_PATH, '[]', 'utf8')
-  }
-
-  // 设置文件监听
-  configWatcher = fs.watch(CONFIG_PATH, (eventType) => {
-    if (eventType === 'change') {
-      try {
-        const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
-        win.webContents.send('config-updated', config)
-      } catch (error) {
-        console.error('Error reading config file:', error)
-      }
-    }
-  })
-}
-
-// 创建主窗
 async function createWindow() {
   try {
+    // 启动后端前先等待一下
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
     const backendStarted = startBackend()
     if (!backendStarted) {
       throw new Error('Failed to start backend service')
     }
 
+    // 等待后端服务就绪
     try {
       await waitForBackend()
     } catch (error) {
       console.error('Backend startup timeout:', error)
       dialog.showErrorBox('Backend Error', 'Backend service failed to start in time')
+      cleanupBackend() // 添加这行，确保在超时时清理后端进程
       app.quit()
       return
     }
@@ -243,13 +299,45 @@ async function createWindow() {
       minWidth: 800,
       minHeight: 600,
       webPreferences: {
-        nodeIntegration: process.env.ELECTRON_NODE_INTEGRATION,
-        contextIsolation: !process.env.ELECTRON_NODE_INTEGRATION,
-        enableRemoteModule: true
+        nodeIntegration: true,
+        contextIsolation: false,
+        enableRemoteModule: true,
+        webSecurity: false,
+        allowRunningInsecureContent: true,
+        webviewTag: true,
+        webSockets: true,
+        experimentalFeatures: true,
+        additionalArguments: ['--enable-features=WebSocketStream'],
+        nativeWindowOpen: true,
+        sandbox: false
       }
     })
 
     require("@electron/remote/main").enable(mainWindow.webContents)
+
+    // 添加 WebSocket 连接错误处理
+    mainWindow.webContents.session.webRequest.onBeforeRequest((details, callback) => {
+      if (details.url.startsWith('ws://')) {
+        console.log('WebSocket connection attempt:', details.url)
+      }
+      callback({ cancel: false })
+    })
+
+    mainWindow.webContents.session.webRequest.onErrorOccurred((details) => {
+      if (details.url.startsWith('ws://')) {
+        console.error('WebSocket error:', details.error)
+      }
+    })
+
+    // 添加 CSP 配置
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': ["default-src 'self' 'unsafe-inline' 'unsafe-eval' ws://localhost:5000 http://localhost:5000"]
+        }
+      })
+    })
 
     if (process.env.WEBPACK_DEV_SERVER_URL) {
       await mainWindow.loadURL(process.env.WEBPACK_DEV_SERVER_URL)
@@ -259,36 +347,43 @@ async function createWindow() {
       mainWindow.loadURL('app://./index.html')
     }
 
+    mainWindow.on('closed', () => {
+      mainWindow = null
+    })
+
     mainWindow.on('close', (e) => {
       e.preventDefault()
       cleanupBackend()
       mainWindow.destroy()
     })
 
-    mainWindow.on('closed', () => {
-      mainWindow = null
+    mainWindow.webContents.on('did-finish-load', () => {
+      console.log('Window loaded, checking WebSocket...')
+      // 尝试建立测试 WebSocket 连接
+      mainWindow.webContents.executeJavaScript(`
+        try {
+          const testWs = new WebSocket('ws://localhost:5000');
+          testWs.onopen = () => {
+            console.log('Test WebSocket connected');
+            testWs.close();
+          };
+          testWs.onerror = (error) => {
+            console.error('Test WebSocket error:', error);
+          };
+        } catch (error) {
+          console.error('Failed to create test WebSocket:', error);
+        }
+      `)
     })
-
-    setupConfigWatcher(mainWindow)
   } catch (error) {
     console.error('Error in createWindow:', error)
-    dialog.showErrorBox('Application Error', `Failed to start application: ${error.message}`)
+    showError('Application Error', `Failed to start application: ${error.message}`)
     app.quit()
   }
 }
 
-// 在文件顶部定义 USER_DATA_PATH
-const USER_DATA_PATH = path.join(getAppDataPath(), 'userdata')
-
-// 在 app.requestSingleInstanceLock() 之前添加
-// 设置单实例锁文件路径
-app.setPath('userData', USER_DATA_PATH)
-
-// 修改获取锁的代码
-const gotTheLock = app.requestSingleInstanceLock({
-  // 指定锁文件路径
-  lockFilePath: path.join(getAppDataPath(), '.lock')
-})
+// 确保只有一个实例在运行
+const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
   app.quit()
@@ -302,30 +397,9 @@ if (!gotTheLock) {
 
   app.on('window-all-closed', () => {
     cleanupBackend()
-    if (configWatcher) {
-      configWatcher.close()
-    }
     if (process.platform !== 'darwin') {
       app.quit()
     }
-  })
-
-  app.on('will-quit', () => {
-    cleanupBackend()
-    cleanupUserData()
-    // 清理锁文件
-    const lockFile = path.join(getAppDataPath(), '.lock')
-    if (fs.existsSync(lockFile)) {
-      try {
-        fs.unlinkSync(lockFile)
-      } catch (error) {
-        console.error('Error cleaning up lock file:', error)
-      }
-    }
-  })
-
-  app.on('before-quit', () => {
-    cleanupBackend()
   })
 
   app.on('activate', () => {
@@ -333,17 +407,18 @@ if (!gotTheLock) {
   })
 
   app.on('ready', async () => {
+    const appPath = app.getPath('exe')
+    const appDir = path.dirname(appPath)
+    
+    // 确保必要的目录和文件存在
+    const tempDir = path.join(appDir, 'temp')
+    
     try {
-      // 确保所需目录存在
-      ensureDirectories()
-      
-      // 重定向用户数据目录到应用程序目录
-      app.setPath('userData', USER_DATA_PATH)
-      app.setPath('sessionData', path.join(USER_DATA_PATH, 'session'))
-      app.setPath('temp', path.join(USER_DATA_PATH, 'temp'))
-      app.setPath('cache', path.join(USER_DATA_PATH, 'cache'))
-      app.setPath('logs', path.join(USER_DATA_PATH, 'logs'))
-      
+      // 创建 temp 目录
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir)
+      }
+
       if (isDevelopment && !process.env.IS_TEST) {
         try {
           await installExtension(VUEJS3_DEVTOOLS)
@@ -354,15 +429,19 @@ if (!gotTheLock) {
       
       await createWindow()
     } catch (error) {
-      console.error('Error in app ready handler:', error)
-      dialog.showErrorBox('Initialization Error', 
-        `Failed to initialize application: ${error.message}\n\nPlease ensure the application has write permissions to its directory.`)
+      console.error('Error during app ready:', error)
+      showError('Initialization Error', `Failed to initialize application: ${error.message}`)
       app.quit()
     }
   })
+
+  // 确保在应用退出时清理后端进程
+  app.on('will-quit', () => {
+    cleanupBackend()
+  })
 }
 
-// 开发模式下的进程清理
+// Exit cleanly on request from parent process in development mode.
 if (isDevelopment) {
   if (process.platform === 'win32') {
     process.on('message', (data) => {
@@ -377,7 +456,7 @@ if (isDevelopment) {
   }
 }
 
-// 添加更多的进程清理点
+// 添加更多的清理点
 process.on('exit', () => {
   cleanupBackend()
 })
@@ -394,89 +473,6 @@ process.on('SIGTERM', () => {
 
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error)
-  try {
-    cleanupBackend()
-    cleanupUserData()
-  } catch (cleanupError) {
-    console.error('Error during cleanup:', cleanupError)
-  }
-  dialog.showErrorBox('Unexpected Error', 
-    `An unexpected error occurred: ${error.message}\n\nThe application will now close.`)
+  cleanupBackend()
   process.exit(1)
 })
-
-// 处理 IPC 消息
-ipcMain.handle('read-config', async () => {
-  try {
-    const config = fs.readFileSync(CONFIG_PATH, 'utf8')
-    return JSON.parse(config)
-  } catch (error) {
-    console.error('Error reading config:', error)
-    return []
-  }
-})
-
-ipcMain.handle('save-config', async (event, config) => {
-  try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8')
-    return true
-  } catch (error) {
-    console.error('Error saving config:', error)
-    return false
-  }
-})
-
-// 在清理函数中添加用户数据目录的清理
-function cleanupUserData() {
-  try {
-    const tempDir = path.join(USER_DATA_PATH, 'temp')
-    if (fs.existsSync(tempDir)) {
-      console.log('Cleaning up temp directory:', tempDir)
-      fs.rmSync(tempDir, { recursive: true, force: true })
-      fs.mkdirSync(tempDir)
-      console.log('Temp directory cleaned and recreated')
-    }
-  } catch (error) {
-    console.error('Error cleaning up user data:', error)
-    // 不抛出错误，继续执行清理流程
-  }
-}
-
-// 在现有的清理函数中添加对用户数据的清理
-app.on('before-quit', () => {
-  cleanupBackend()
-  cleanupUserData()
-})
-
-// 在应用启动时检查并清理旧的锁文件
-const lockFile = path.join(getAppDataPath(), '.lock')
-if (fs.existsSync(lockFile)) {
-  try {
-    fs.unlinkSync(lockFile)
-  } catch (error) {
-    console.error('Error cleaning up old lock file:', error)
-  }
-}
-
-// 添加确保目录存在的函数
-function ensureDirectories() {
-  try {
-    const dirs = [
-      USER_DATA_PATH,
-      path.join(USER_DATA_PATH, 'session'),
-      path.join(USER_DATA_PATH, 'temp'),
-      path.join(USER_DATA_PATH, 'cache'),
-      path.join(USER_DATA_PATH, 'logs')
-    ]
-    
-    dirs.forEach(dir => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true })
-        console.log(`Created directory: ${dir}`)
-      }
-    })
-  } catch (error) {
-    console.error('Error ensuring directories:', error)
-    throw error
-  }
-}

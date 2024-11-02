@@ -66,7 +66,7 @@
                   <a-avatar 
                     v-if="siderCollapsed"
                     shape="square"
-                    :style="{ backgroundColor: getAvatarColor(folder.name) }"
+                    :style="{ backgroundColor: getAvatarColor(folder) }"
                   >
                     {{ folder.name.charAt(0).toUpperCase() }}
                   </a-avatar>
@@ -165,7 +165,7 @@
             </div>
           </div>
           <div class="terminal-and-sidebar-container">
-            <div class="terminal-container" :class="{ 'sidebar-open': isRightSidebarOpen }">
+            <div class="terminal-container">
               <SSHTerminal 
                 v-for="tab in tabs"
                 :key="tab.id"
@@ -591,23 +591,37 @@ export default {
       addFolderModalVisible.value = true
     }
 
+    // 生成随机颜色的函数
+    const generateRandomColor = () => {
+      // 生成柔和的颜色
+      const r = Math.floor(Math.random() * 156 + 100); // 100-255
+      const g = Math.floor(Math.random() * 156 + 100); // 100-255
+      const b = Math.floor(Math.random() * 156 + 100); // 100-255
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
     const addFolder = async () => {
       try {
+        // 获取当前配置
+        const config = await ipcRenderer.invoke('read-config')
+        
+        // 生成随机颜色
+        const randomColor = generateRandomColor()
+
         const folder = { 
           id: Date.now(), 
           type: 'folder',
           name: newFolder.name, 
-          connections: [] 
+          connections: [],
+          avatarColor: randomColor
         }
         
-        const config = await ipcRenderer.invoke('read-config')
         config.push(folder)
         await ipcRenderer.invoke('save-config', config)
         
         addFolderModalVisible.value = false
         newFolder.name = ''
         
-        // 刷新连接列表
         await refreshConnections()
         
         Message.success('Folder added successfully')
@@ -632,15 +646,15 @@ export default {
     const toggleRightSidebar = () => {
       if (hasActiveConnection.value) {
         isRightSidebarOpen.value = !isRightSidebarOpen.value;
-        // 添加延时以等待过渡动画完成
+        // 等待过渡动画完成后再调整终端大小
         setTimeout(() => {
           const activeTerminal = sshTerminals.value.find(
             terminal => terminal.sessionId === activeTab.value
           );
-          if (activeTerminal && activeTerminal.manualResize) {
-            activeTerminal.manualResize();
+          if (activeTerminal && activeTerminal.updateTerminalStyle) {
+            activeTerminal.updateTerminalStyle();
           }
-        }, 300);
+        }, 300); // 与 CSS 过渡时间匹配
       }
     }
 
@@ -1023,20 +1037,7 @@ export default {
       });
     };
 
-    // 添加获取头像颜色的函数
-    const getAvatarColor = (name) => {
-      const colors = [
-        'rgb(var(--primary-6))',
-        'rgb(var(--success-6))',
-        'rgb(var(--warning-6))',
-        'rgb(var(--danger-6))',
-        'rgb(var(--link-6))'
-      ];
-      const index = name.length % colors.length;
-      return colors[index];
-    };
-
-    // 添加语言设置相的代码
+    // 添加语言设相的代码
     const locale = ref(zhCN)
     const settingsVisible = ref(false)
     const settings = reactive({
@@ -1245,6 +1246,11 @@ export default {
       shell.openExternal('https://github.com/funkpopo')
     }
 
+    // 修改 getAvatarColor 函数
+    const getAvatarColor = (folder) => {
+      return folder.avatarColor || generateRandomColor()
+    }
+
     return {
       connections,
       tabs,
@@ -1373,19 +1379,15 @@ export default {
 
 .terminal-and-sidebar-container {
   flex: 1;
-  display: flex;
+  position: relative;
   overflow: hidden;
 }
 
 .terminal-container {
-  flex: 1;
+  width: 100%;
+  height: 100%;
   position: relative;
   overflow: hidden;
-  transition: margin-right 0.3s ease;
-}
-
-.terminal-container.sidebar-open {
-  margin-right: 300px;
 }
 
 .right-sidebar {
@@ -1396,9 +1398,8 @@ export default {
   height: 100%;
   background-color: var(--color-bg-2);
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
-  z-index: 997;  /* 降低 z-index */
+  z-index: 100;
   overflow-y: auto;
-  transition: transform 0.3s ease;
 }
 
 .toggle-sidebar-button {
@@ -1411,8 +1412,8 @@ export default {
   padding: 10px 5px;
   border-radius: 4px 0 0 4px;
   cursor: pointer;
-  z-index: 998;  /* 降低 z-index */
-  transition: all 0.3s ease;
+  z-index: 101;
+  transition: right 0.3s ease;
 }
 
 .toggle-sidebar-button.open {
@@ -1482,13 +1483,17 @@ export default {
 
 .slide-fade-enter-active,
 .slide-fade-leave-active {
-  transition: all 0.3s ease;
+  transition: transform 0.3s ease;
 }
 
 .slide-fade-enter-from,
 .slide-fade-leave-to {
   transform: translateX(100%);
-  opacity: 0;
+}
+
+.slide-fade-enter-to,
+.slide-fade-leave-from {
+  transform: translateX(0);
 }
 
 /* 添加右键菜单相关样式 */
