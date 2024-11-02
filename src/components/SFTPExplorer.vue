@@ -141,7 +141,6 @@ import axios from 'axios';
 import { Message, Modal } from '@arco-design/web-vue';
 import { Menu, MenuItem, getCurrentWindow, shell, dialog } from '@electron/remote';
 import path from 'path';
-import fs from 'fs';
 
 export default {
   name: 'SFTPExplorer',
@@ -623,10 +622,15 @@ export default {
 
     const logOperation = async (operation, path) => {
       try {
-        await axios.post('http://localhost:5000/log_sftp_operation', {
-          operation,
-          path,
-          timestamp: new Date().toISOString()
+        await fetch('http://localhost:5000/sftp_operation_log', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            operation: 'your_operation',
+            path: 'your_path'
+          })
         });
       } catch (error) {
         console.error('Failed to log SFTP operation:', error);
@@ -808,7 +812,7 @@ export default {
           window.URL.revokeObjectURL(url);
 
           Message.success('File downloaded successfully');
-          log_sftp_operation('download', nodeData.key);
+          await logOperation('download', nodeData.key);
         } catch (error) {
           console.error('Failed to download file:', error);
           Message.error('Failed to download file');
@@ -851,7 +855,10 @@ export default {
           responseType: 'blob'
         });
 
-        fs.writeFileSync(savePath.filePath, Buffer.from(await response.data.arrayBuffer()));
+        // 使用 Buffer.from 创建缓冲区
+        const buffer = Buffer.from(await response.data.arrayBuffer());
+        // 使用 fs.writeFileSync 写入文件
+        fs.writeFileSync(savePath.filePath, buffer);
 
         Message.success(`File ${nodeData.title} downloaded successfully`);
         await logOperation('download', nodeData.key);
@@ -886,7 +893,10 @@ export default {
           responseType: 'blob'
         });
 
-        fs.writeFileSync(savePath.filePath, Buffer.from(await response.data.arrayBuffer()));
+        // 使用 Buffer.from 创建缓冲区
+        const buffer = Buffer.from(await response.data.arrayBuffer());
+        // 使用 fs.writeFileSync 写入文件
+        fs.writeFileSync(savePath.filePath, buffer);
 
         Message.success(`${nodeData.isLeaf ? 'File' : 'Folder'} ${nodeData.title} downloaded successfully`);
         await logOperation('download', nodeData.key);

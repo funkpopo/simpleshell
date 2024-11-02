@@ -64,5 +64,12 @@ export default {
     deleteSuccess: '删除成功',
     renameSuccess: '重命名成功',
     createFolderSuccess: '文件夹创建成功'
+  },
+  update: {
+    newVersion: '发现新版本',
+    newVersionAvailable: '新版本 {version} 已发布',
+    currentVersion: '当前版本：{version}',
+    download: '下载',
+    later: '稍后'
   }
 }

@@ -64,5 +64,12 @@ export default {
     deleteSuccess: 'Deleted successfully',
     renameSuccess: 'Renamed successfully',
     createFolderSuccess: 'Folder created successfully'
+  },
+  update: {
+    newVersion: 'New Version Available',
+    newVersionAvailable: 'New version {version} is available',
+    currentVersion: 'Current version: {version}',
+    download: 'Download',
+    later: 'Later'
   }
 }

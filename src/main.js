@@ -79,6 +79,12 @@ app.use(ArcoVue, {
   locale: i18n.locale === 'zh-CN' ? zhCN : enUS
 })
 
+// 添加错误处理
+app.config.errorHandler = (err, vm, info) => {
+  console.error('Vue Error:', err)
+  console.error('Error Info:', info)
+}
+
 app.mount('#app')
 
 // 导出 i18n 实例以供其他组件使用
