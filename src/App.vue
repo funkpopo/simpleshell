@@ -1098,7 +1098,7 @@ export default {
           cancelText: t('settings.restartLater'),
           hideCancel: false,
           onOk: () => {
-            // 用户选择立即重启
+            // 用户选择立即重��
             const { app } = require('@electron/remote')
             app.relaunch()
             app.exit(0)
@@ -1438,13 +1438,17 @@ export default {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--color-text-1);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .layout {
-  height: calc(100vh - 4px);
-  margin-top: 4px;
+  height: 100%;
+  margin-top: 0;
   display: flex;
   flex-direction: column;
+  flex: 1;
 }
 
 .main-content {
@@ -1465,7 +1469,7 @@ export default {
   background-color: var(--color-bg-2);
   color: var(--color-text-1);
   padding: 8px 0;
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .arco-layout-sider {

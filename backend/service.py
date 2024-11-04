@@ -655,7 +655,8 @@ def rename_item():
             sftp.close()
             ssh.close()
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logging.error("Exception in rename_item: %s", str(e))
+        return jsonify({"error": "An internal error has occurred."}), 500
 
 @app.route('/sftp_create_folder', methods=['POST'])
 def create_folder():
@@ -675,7 +676,8 @@ def create_folder():
             sftp.close()
             ssh.close()
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logging.error("Exception in create_folder: %s", str(e))
+        return jsonify({"error": "An internal error has occurred."}), 500
 
 @app.route('/get_sftp_history', methods=['GET'])
 def get_sftp_history():
@@ -683,7 +685,8 @@ def get_sftp_history():
         with open(LOG_PATH, 'r', encoding='utf-8') as f:
             return f.read()
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logging.error("Exception in get_sftp_history: %s", str(e))
+        return jsonify({"error": "An internal error has occurred."}), 500
 
 @app.route('/clear_sftp_history', methods=['POST'])
 def clear_sftp_history():
@@ -692,7 +695,8 @@ def clear_sftp_history():
             f.write('')
         return jsonify({"status": "success"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logging.error("Exception in clear_sftp_history: %s", str(e))
+        return jsonify({"error": "An internal error has occurred."}), 500
 
 # 在文件开头添加 RequestsSession 类
 class RequestsSession:
