@@ -1098,7 +1098,7 @@ export default {
           cancelText: t('settings.restartLater'),
           hideCancel: false,
           onOk: () => {
-            // 用户选择立即重��
+            // 用户选择立即重
             const { app } = require('@electron/remote')
             app.relaunch()
             app.exit(0)

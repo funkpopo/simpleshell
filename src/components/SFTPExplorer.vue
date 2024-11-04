@@ -1,5 +1,12 @@
 <template>
-  <div class="sftp-explorer">
+  <div 
+    class="sftp-explorer"
+    :class="{ 'drag-active': isDragging }"
+    @dragenter.prevent="handleDragEnter"
+    @dragover.prevent="handleDragOver"
+    @dragleave.prevent="handleDragLeave"
+    @drop.prevent="handleDrop"
+  >
     <div class="sftp-header">
       <h3>SFTP Explorer</h3>
       <div class="sftp-actions">
@@ -22,27 +29,31 @@
             :data="fileTree"
             :loadMore="loadMoreData"
             @select="onSelect"
-            :defaultExpandedKeys="['root']"
+            v-model:expandedKeys="expandedKeys"
+            @expand="onExpand"
           >
             <template #icon="nodeData">
               <icon-file v-if="nodeData.isLeaf" class="file-icon" />
               <icon-folder v-else class="folder-icon" />
             </template>
             <template #title="nodeData">
-              <span
+              <div
                 :class="{
-                  'folder-drop-target': !nodeData.isLeaf,
-                  'file-name': nodeData.isLeaf,
-                  'folder-name': !nodeData.isLeaf,
-                  'hidden-file': nodeData.isHidden
+                  'tree-node-content': true,
+                  'folder-item': !nodeData.isLeaf,
+                  'file-item': nodeData.isLeaf,
+                  'hidden-file': nodeData.isHidden,
+                  'drag-over': !nodeData.isLeaf && dragTargetKey === nodeData.key
                 }"
-                @dblclick="onItemDoubleClick(nodeData)"
-                @dragover.prevent
-                @drop.prevent="(event) => onDrop(event, nodeData)"
-                @contextmenu.prevent="(event) => showContextMenu(event, nodeData)"
+                @dragenter.prevent="(e) => handleFolderDragEnter(e, nodeData)"
+                @dragover.prevent="(e) => handleFolderDragOver(e, nodeData)"
+                @dragleave.prevent="(e) => handleFolderDragLeave(e, nodeData)"
+                @drop.prevent="(e) => handleFolderDrop(e, nodeData)"
+                @contextmenu.prevent.stop="(e) => showContextMenu(e, nodeData)"
+                @dblclick.stop="handleNodeDoubleClick(nodeData)"
               >
-                {{ nodeData.title }}
-              </span>
+                <span class="item-title">{{ nodeData.title }}</span>
+              </div>
             </template>
           </a-tree>
         </template>
@@ -88,11 +99,11 @@
             :bordered="false"
             :stripe="true"
             size="small"
-            :scroll="{ y: tableHeight }"
+            :scroll="{ y: tableHeight, x: '100%' }"
           >
             <template #cell="{ column, record }">
               <template v-if="column.dataIndex === 'time'">
-                {{ formatTime(record.time) }}
+                {{ formatHistoryTime(record.time) }}
               </template>
               <template v-else-if="column.dataIndex === 'operation'">
                 <a-tag :color="getOperationColor(record.operation)">
@@ -131,16 +142,40 @@
         <a-button type="primary" @click="confirmCreateFolder">{{ t('sftp.createFolder') }}</a-button>
       </template>
     </a-modal>
+
+    <!-- 替换原有的进度条模态框为浮动通知 -->
+    <div 
+      v-if="downloadProgressVisible" 
+      class="download-progress-float"
+    >
+      <div class="download-progress">
+        <div class="progress-info">
+          <span class="file-name">{{ downloadInfo.fileName }}</span>
+          <span class="progress-percent">{{ downloadInfo.progress }}%</span>
+        </div>
+        <a-progress
+          :percent="downloadInfo.progress"
+          :status="downloadInfo.status"
+          :show-text="false"
+          size="small"
+        />
+        <div class="progress-details">
+          <span>{{ downloadInfo.speed }}</span>
+          <span>{{ downloadInfo.timeRemaining }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, watch, inject, onUnmounted } from 'vue';
+import { ref, onMounted, watch, inject, onUnmounted, reactive } from 'vue';
 import { IconFile, IconFolder, IconRefresh, IconHome } from '@arco-design/web-vue/es/icon';
 import axios from 'axios';
 import { Message, Modal } from '@arco-design/web-vue';
 import { Menu, MenuItem, getCurrentWindow, shell, dialog } from '@electron/remote';
 import path from 'path';
+import fs from 'fs';
 
 export default {
   name: 'SFTPExplorer',
@@ -169,7 +204,7 @@ export default {
     const newName = ref('');
     const itemToRename = ref(null);
     const currentUploadPath = ref('/');
-    const expandedKeys = ref(['root']);
+    const expandedKeys = ref([]);
     const newFolderModalVisible = ref(false);
     const newFolderName = ref('');
     const currentFolderPath = ref('');
@@ -179,21 +214,25 @@ export default {
       {
         title: 'Time',
         dataIndex: 'time',
+        width: 180,
+        fixed: 'left'
       },
       {
         title: 'Operation',
         dataIndex: 'operation',
+        width: 120,
       },
       {
         title: 'Path',
         dataIndex: 'path',
-        ellipsis: true
+        ellipsis: true,
+        minWidth: 300
       }
     ]
 
     const parsedHistory = ref([])
 
-    const formatTime = (timeStr) => {
+    const formatHistoryTime = (timeStr) => {
       const date = new Date(timeStr)
       return date.toLocaleString()
     }
@@ -259,24 +298,34 @@ export default {
           forceRoot: true,
           showHidden: true
         });
-        console.log('Root directory response:', response.data);
+        
         if (response.data.error) {
           throw new Error(response.data.error);
         }
-        const sortedItems = sortItems(response.data.map(item => ({
+
+        // 保存当前展开的路径
+        const previouslyExpanded = [...expandedKeys.value];
+        
+        // 更新文件树
+        fileTree.value = sortItems(response.data.map(item => ({
           title: item.name,
           key: normalizePath('/' + item.name),
           isLeaf: !item.isDirectory,
           children: item.isDirectory ? [] : undefined,
           isHidden: item.name.startsWith('.')
         })));
-        fileTree.value = [{
-          title: '/',
-          key: 'root',
-          isLeaf: false,
-          children: sortedItems
-        }];
-        console.log('Processed file tree:', fileTree.value);
+
+        // 重新加载之前展开的目录
+        for (const key of previouslyExpanded) {
+          const node = findNodeByKey(key);
+          if (node && !node.isLeaf) {
+            await loadMoreData(node);
+          }
+        }
+
+        // 恢复展开状态
+        expandedKeys.value = previouslyExpanded;
+        
       } catch (error) {
         console.error('Failed to fetch root directory:', error);
         Message.error(`Failed to fetch root directory: ${error.message}`);
@@ -469,18 +518,25 @@ export default {
       }
     };
 
-    const onExpand = (keys) => {
+    const onExpand = async (keys, { expanded, node }) => {
       expandedKeys.value = keys;
+      if (expanded && node.children.length === 0) {
+        await loadMoreData(node);
+      }
     };
 
     const showContextMenu = (event, nodeData) => {
       event.preventDefault();
+      event.stopPropagation();
       const menu = new Menu();
       
       // 刷新选项
       menu.append(new MenuItem({
         label: t('sftp.refresh'),
-        click: () => refreshDirectory(nodeData.key)
+        click: async () => {
+          const refreshPath = nodeData.key === 'root' ? '/' : nodeData.key;
+          await refreshDirectory(refreshPath);
+        }
       }));
 
       // 文件夹特有选项
@@ -502,25 +558,7 @@ export default {
 
               for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                  try {
-                    const base64Content = e.target.result.split(',')[1];
-                    await axios.post('http://localhost:5000/sftp_upload_file', {
-                      connection: props.connection,
-                      path: nodeData.key === 'root' ? '/' : nodeData.key,
-                      filename: file.name,
-                      content: base64Content
-                    });
-                    Message.success(t('sftp.uploadSuccess'));
-                    await refreshDirectory(nodeData.key);
-                    await logOperation('upload', `${nodeData.key}/${file.name}`);
-                  } catch (error) {
-                    console.error('Failed to upload file:', error);
-                    Message.error(`Failed to upload ${file.name}: ${error.message}`);
-                  }
-                };
-                reader.readAsDataURL(file);
+                await uploadFiles([file], nodeData.key === 'root' ? '/' : nodeData.key);
               }
               // 清理临时元素
               document.body.removeChild(input);
@@ -535,10 +573,14 @@ export default {
           label: t('sftp.newFolder'),
           click: () => createNewFolder(nodeData)
         }));
-      }
 
-      // 文件特有选项
-      if (nodeData.isLeaf) {
+        // 添加文件下载选项
+        menu.append(new MenuItem({
+          label: t('sftp.downloadFolder'),
+          click: () => downloadFolder(nodeData)
+        }));
+      } else {
+        // 文件下载选项
         menu.append(new MenuItem({
           label: t('sftp.download'),
           click: () => downloadItem(nodeData)
@@ -640,27 +682,51 @@ export default {
     const refreshCurrentDirectory = async () => {
       try {
         loading.value = true;
-        const path = currentDirectory.value === 'root' ? '/' : currentDirectory.value;
-        const response = await axios.post('http://localhost:5000/sftp_list_directory', {
-          connection: props.connection,
-          path: path
-        });
         
-        // 更新当前目录的内容
-        const currentNode = findNodeByKey(fileTree.value[0], currentDirectory.value);
-        if (currentNode) {
-          currentNode.children = response.data.map(item => ({
-            title: item.name,
-            key: normalizePath(item.path),
-            isLeaf: !item.isDirectory,
-            children: item.isDirectory ? [] : undefined
-          }));
+        // 如果是目录，直接刷新整个文件树
+        if (currentDirectory.value === '/' || currentDirectory.value === 'root') {
+          await fetchRootDirectory();
+        } else {
+          // 获取当前目录的内容
+          const response = await axios.post('http://localhost:5000/sftp_list_directory', {
+            connection: props.connection,
+            path: currentDirectory.value
+          });
+
+          if (response.data.error) {
+            throw new Error(response.data.error);
+          }
+
+          // 更新当前目录的内容
+          const updateNode = (nodes) => {
+            for (let i = 0; i < nodes.length; i++) {
+              if (nodes[i].key === currentDirectory.value) {
+                nodes[i].children = sortItems(response.data.map(item => ({
+                  title: item.name,
+                  key: normalizePath(`${currentDirectory.value}/${item.name}`),
+                  isLeaf: !item.isDirectory,
+                  children: item.isDirectory ? [] : undefined
+                })));
+                return true;
+              }
+              if (nodes[i].children && updateNode(nodes[i].children)) {
+                return true;
+              }
+            }
+            return false;
+          };
+
+          // 如果找到并更新了节点，则不需刷新整个树
+          if (!updateNode(fileTree.value)) {
+            // 如果没找到节点，刷新整文件树
+            await fetchRootDirectory();
+          }
         }
-        
-        Message.success('Directory refreshed');
+
+        Message.success(t('sftp.refreshSuccess'));
       } catch (error) {
         console.error('Failed to refresh directory:', error);
-        Message.error('Failed to refresh directory');
+        Message.error(t('sftp.refreshFailed'));
       } finally {
         loading.value = false;
       }
@@ -673,85 +739,80 @@ export default {
         
         const response = await axios.post('http://localhost:5000/sftp_list_directory', {
           connection: props.connection,
-          path: path
+          path: path === 'root' ? '/' : path
         });
 
         if (response.data.error) {
           throw new Error(response.data.error);
         }
 
-        // 更新文件树
-        const updateNode = (node) => {
-          if (node.key === path) {
-            node.children = response.data.map(item => ({
-              title: item.name,
-              key: normalizePath(path + '/' + item.name),
-              isLeaf: !item.isDirectory,
-              children: item.isDirectory ? [] : undefined
-            }));
-            return true;
-          }
-          if (node.children) {
-            for (let child of node.children) {
-              if (updateNode(child)) {
+        // 如果是根目录，直接更新整个文件树
+        if (path === '/' || path === 'root') {
+          fileTree.value = sortItems(response.data.map(item => ({
+            title: item.name,
+            key: normalizePath('/' + item.name),
+            isLeaf: !item.isDirectory,
+            children: item.isDirectory ? [] : undefined
+          })));
+        } else {
+          // 更新特定目录
+          const updateNode = (nodes) => {
+            for (let i = 0; i < nodes.length; i++) {
+              if (nodes[i].key === path) {
+                nodes[i].children = sortItems(response.data.map(item => ({
+                  title: item.name,
+                  key: normalizePath(`${path}/${item.name}`),
+                  isLeaf: !item.isDirectory,
+                  children: item.isDirectory ? [] : undefined
+                })));
+                return true;
+              }
+              if (nodes[i].children && updateNode(nodes[i].children)) {
                 return true;
               }
             }
-          }
-          return false;
-        };
-
-        // 如果是根目录
-        if (path === '/') {
-          fileTree.value = [{
-            title: '/',
-            key: 'root',
-            isLeaf: false,
-            children: response.data.map(item => ({
-              title: item.name,
-              key: normalizePath('/' + item.name),
-              isLeaf: !item.isDirectory,
-              children: item.isDirectory ? [] : undefined
-            }))
-          }];
-        } else {
-          // 更新特定目录
-          fileTree.value.forEach(node => updateNode(node));
+            return false;
+          };
+          updateNode(fileTree.value);
         }
 
-        Message.success('Directory refreshed');
+        Message.success(t('sftp.refreshSuccess'));
       } catch (error) {
         console.error('Failed to refresh directory:', error);
-        Message.error('Failed to refresh directory');
+        Message.error(t('sftp.refreshFailed'));
       } finally {
         loading.value = false;
       }
     };
 
-    const findNodeByKey = (node, key) => {
-      if (node.key === key) return node;
-      if (node.children) {
-        for (let child of node.children) {
-          const result = findNodeByKey(child, key);
-          if (result) return result;
+    const findNodeByKey = (key) => {
+      const findInNodes = (nodes) => {
+        for (const node of nodes) {
+          if (node.key === key) return node;
+          if (node.children) {
+            const result = findInNodes(node.children);
+            if (result) return result;
+          }
         }
-      }
-      return null;
+        return null;
+      };
+      return findInNodes(fileTree.value);
     };
 
-    const findParentNode = (node, key) => {
-      if (node.children) {
-        for (let child of node.children) {
-          if (child.key === key) {
-            return node;
-          }
-          const result = findParentNode(child, key);
-          if (result) {
-            return result;
+    const findParentNode = (key) => {
+      const findInNodes = (nodes) => {
+        for (const node of nodes) {
+          if (node.children) {
+            for (const child of node.children) {
+              if (child.key === key) return node;
+            }
+            const result = findInNodes(node.children);
+            if (result) return result;
           }
         }
-      }
-      return null;
+        return null;
+      };
+      return findInNodes(fileTree.value);
     };
 
     const showHistory = async () => {
@@ -795,9 +856,10 @@ export default {
     const onItemDoubleClick = async (nodeData) => {
       if (nodeData.isLeaf) {
         try {
-          const response = await axios.post('http://localhost:5000/sftp_download_file', {
+          const response = await axios.post('http://localhost:5000/sftp/download', {
             connection: props.connection,
-            path: nodeData.key
+            path: nodeData.key,
+            isDirectory: false
           }, {
             responseType: 'blob'
           });
@@ -876,31 +938,51 @@ export default {
     const downloadItem = async (nodeData) => {
       try {
         const savePath = await dialog.showSaveDialog({
-          title: 'Save item',
-          defaultPath: nodeData.title + (nodeData.isLeaf ? '' : '.zip'),
+          title: 'Save file',
+          defaultPath: nodeData.title,
           buttonLabel: 'Save'
         });
 
-        if (savePath.canceled) {
-          return;
-        }
+        if (savePath.canceled) return;
 
-        const response = await axios.post('http://localhost:5000/sftp_download_item', {
+        // 显示进度条
+        downloadProgressVisible.value = true;
+        downloadInfo.fileName = nodeData.title;
+        downloadInfo.progress = 0;
+        downloadInfo.status = 'normal';
+        downloadInfo.startTime = null;
+        downloadInfo.downloadedSize = 0;
+        downloadInfo.totalSize = 0;
+
+        const response = await axios.post('http://localhost:5000/sftp_download_file', {
           connection: props.connection,
-          path: nodeData.key,
-          isDirectory: !nodeData.isLeaf
+          path: nodeData.key
         }, {
-          responseType: 'blob'
+          responseType: 'blob',
+          onDownloadProgress: (progressEvent) => {
+            updateDownloadProgress(
+              progressEvent.loaded,
+              progressEvent.total,
+              nodeData.title
+            );
+          }
         });
 
-        // 使用 Buffer.from 创建缓冲区
         const buffer = Buffer.from(await response.data.arrayBuffer());
-        // 使用 fs.writeFileSync 写入文件
         fs.writeFileSync(savePath.filePath, buffer);
 
-        Message.success(`${nodeData.isLeaf ? 'File' : 'Folder'} ${nodeData.title} downloaded successfully`);
+        // 完成后更新状态
+        downloadInfo.status = 'success';
+        downloadInfo.progress = 100;
+        
+        setTimeout(() => {
+          downloadProgressVisible.value = false;
+          Message.success(`${nodeData.title} downloaded successfully`);
+        }, 500);
+
         await logOperation('download', nodeData.key);
       } catch (error) {
+        downloadInfo.status = 'error';
         console.error('Failed to download item:', error);
         Message.error(`Failed to download ${nodeData.title}: ${error.message}`);
       }
@@ -943,6 +1025,77 @@ export default {
       }
     };
 
+    const downloadFolder = async (nodeData) => {
+      try {
+        const savePath = await dialog.showOpenDialog({
+          title: t('sftp.selectFolderToSave'),
+          properties: ['openDirectory', 'createDirectory'],
+          buttonLabel: t('sftp.select')
+        });
+
+        if (savePath.canceled) return;
+
+        const targetDir = savePath.filePaths[0];
+        const folderPath = path.join(targetDir, nodeData.title);
+
+        // 创建目标文件夹
+        if (!fs.existsSync(folderPath)) {
+          fs.mkdirSync(folderPath, { recursive: true });
+        }
+
+        // 显示进度提示
+        Message.loading({
+          content: t('sftp.downloadingFolder', { name: nodeData.title }),
+          duration: 0
+        });
+
+        // 递归下载文件夹内容
+        const downloadFolderContent = async (remotePath, localPath) => {
+          try {
+            const response = await axios.post('http://localhost:5000/sftp_list_directory', {
+              connection: props.connection,
+              path: remotePath
+            });
+
+            for (const item of response.data) {
+              const remoteItemPath = normalizePath(`${remotePath}/${item.name}`);
+              const localItemPath = path.join(localPath, item.name);
+
+              if (item.isDirectory) {
+                // 如果是目录，创建本地目录并递归下载
+                fs.mkdirSync(localItemPath, { recursive: true });
+                await downloadFolderContent(remoteItemPath, localItemPath);
+              } else {
+                // 如果是文件，直接下载
+                const fileResponse = await axios.post('http://localhost:5000/sftp_download_file', {
+                  connection: props.connection,
+                  path: remoteItemPath
+                }, {
+                  responseType: 'blob'
+                });
+
+                const buffer = Buffer.from(await fileResponse.data.arrayBuffer());
+                fs.writeFileSync(localItemPath, buffer);
+              }
+            }
+          } catch (error) {
+            throw new Error(`Failed to download folder content: ${error.message}`);
+          }
+        };
+
+        // 开始下载
+        await downloadFolderContent(nodeData.key, folderPath);
+
+        Message.clear(); // 清除进度提示
+        Message.success(t('sftp.downloadFolderSuccess', { name: nodeData.title }));
+        await logOperation('download_folder', nodeData.key);
+      } catch (error) {
+        Message.clear(); // 清除进度提示
+        console.error('Failed to download folder:', error);
+        Message.error(t('sftp.downloadFolderFailed', { name: nodeData.title }));
+      }
+    };
+
     const modalWidth = ref(700)
     const pageSize = ref(10)
     const tableHeight = ref(400)
@@ -979,6 +1132,195 @@ export default {
     const t = (key, params) => {
       return i18n.t(key, params)
     }
+
+    // 添加拖拽相关的状态
+    const isDragging = ref(false);
+    const dragTargetKey = ref(null);
+    const dragLeaveTimer = ref(null);
+
+    // 处理整体拖拽事件
+    const handleDragEnter = (event) => {
+      event.preventDefault();
+      isDragging.value = true;
+    };
+
+    const handleDragOver = (event) => {
+      event.preventDefault();
+    };
+
+    const handleDragLeave = (event) => {
+      event.preventDefault();
+      // 使用定时器避免子元素触发的 dragleave 事件
+      if (dragLeaveTimer.value) {
+        clearTimeout(dragLeaveTimer.value);
+      }
+      dragLeaveTimer.value = setTimeout(() => {
+        isDragging.value = false;
+      }, 100);
+    };
+
+    const handleDrop = (event) => {
+      event.preventDefault();
+      isDragging.value = false;
+      // 如果没有特定目标文件夹，则上传到根目录
+      uploadFiles(event.dataTransfer.files, '/');
+    };
+
+    // 处理文件夹的拖拽事件
+    const handleFolderDragEnter = (event, nodeData) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!nodeData.isLeaf) {
+        dragTargetKey.value = nodeData.key;
+      }
+    };
+
+    const handleFolderDragOver = (event, nodeData) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!nodeData.isLeaf) {
+        dragTargetKey.value = nodeData.key;
+      }
+    };
+
+    const handleFolderDragLeave = (event, nodeData) => {
+      event.preventDefault();
+      event.stopPropagation();
+      // 检查是否真的离开了节点区域
+      const rect = event.currentTarget.getBoundingClientRect();
+      const x = event.clientX;
+      const y = event.clientY;
+      
+      if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+        if (dragTargetKey.value === nodeData.key) {
+          dragTargetKey.value = null;
+        }
+      }
+    };
+
+    const handleFolderDrop = async (event, nodeData) => {
+      event.preventDefault();
+      event.stopPropagation();
+      isDragging.value = false;
+      dragTargetKey.value = null;
+
+      if (nodeData.isLeaf) return;
+
+      const files = event.dataTransfer.files;
+      if (files.length > 0) {
+        await uploadFiles(files, nodeData.key);
+      }
+    };
+
+    // 优化文件上传函数
+    const uploadFiles = async (files, targetPath) => {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const reader = new FileReader();
+        
+        try {
+          const base64Content = await new Promise((resolve, reject) => {
+            reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+
+          await axios.post('http://localhost:5000/sftp_upload_file', {
+            connection: props.connection,
+            path: targetPath,
+            filename: file.name,
+            content: base64Content
+          });
+
+          Message.success(`Uploaded ${file.name} successfully`);
+          await logOperation('upload', `${targetPath}/${file.name}`);
+          
+          // 刷新目标目录
+          await refreshDirectoryKeepingState(targetPath);
+        } catch (error) {
+          console.error('Failed to upload file:', error);
+          Message.error(`Failed to upload ${file.name}: ${error.message}`);
+        }
+      }
+    };
+
+    // 添加双击处理函数
+    const handleNodeDoubleClick = async (nodeData) => {
+      if (nodeData.isLeaf) {
+        // 如果是文件，执行原来的双击操作（下载）
+        await onItemDoubleClick(nodeData);
+      } else {
+        // 如果是文件夹，切换展开状态
+        const index = expandedKeys.value.indexOf(nodeData.key);
+        if (index === -1) {
+          // 展开文件夹
+          expandedKeys.value = [...expandedKeys.value, nodeData.key];
+          // 如果子节点还没有加载，加载子节点
+          if (!nodeData.children || nodeData.children.length === 0) {
+            await loadMoreData(nodeData);
+          }
+        } else {
+          // 收起文件夹
+          expandedKeys.value = expandedKeys.value.filter(key => key !== nodeData.key);
+        }
+      }
+    };
+
+    // 在 setup 中添加进度相关的状态
+    const downloadProgressVisible = ref(false);
+    const downloadInfo = reactive({
+      fileName: '',
+      progress: 0,
+      status: 'normal',
+      speed: '',
+      timeRemaining: '',
+      startTime: null,
+      totalSize: 0,
+      downloadedSize: 0
+    });
+
+    // 添加下载进度处理函数
+    const updateDownloadProgress = (loaded, total, fileName) => {
+      if (!downloadInfo.startTime) {
+        downloadInfo.startTime = Date.now();
+      }
+
+      downloadInfo.fileName = fileName;
+      downloadInfo.downloadedSize = loaded;
+      downloadInfo.totalSize = total;
+      downloadInfo.progress = Math.round((loaded / total) * 100);
+
+      // 计算下载速度
+      const elapsedTime = (Date.now() - downloadInfo.startTime) / 1000;
+      const speed = loaded / elapsedTime;
+      downloadInfo.speed = formatSpeed(speed);
+
+      // 计算剩余时间
+      const remaining = (total - loaded) / speed;
+      downloadInfo.timeRemaining = formatTime(remaining);
+    };
+
+    // 格式化速度显示
+    const formatSpeed = (bytesPerSecond) => {
+      if (bytesPerSecond >= 1024 * 1024) {
+        return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
+      } else if (bytesPerSecond >= 1024) {
+        return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+      }
+      return `${Math.round(bytesPerSecond)} B/s`;
+    };
+
+    // 格式化时间显示
+    const formatTime = (seconds) => {
+      if (seconds < 60) {
+        return t('sftp.remainingSeconds', { seconds: Math.round(seconds) });
+      } else if (seconds < 3600) {
+        const minutes = Math.round(seconds / 60);
+        return t('sftp.remainingMinutes', { minutes });
+      }
+      const hours = Math.round(seconds / 3600);
+      return t('sftp.remainingHours', { hours });
+    };
 
     return {
       fileTree,
@@ -1023,13 +1365,26 @@ export default {
       t,
       historyColumns,
       parsedHistory,
-      formatTime,
+      formatHistoryTime,
       getOperationColor,
       refreshHistory,
       clearHistory,
       modalWidth,
       pageSize,
-      tableHeight
+      tableHeight,
+      isDragging,
+      dragTargetKey,
+      handleDragEnter,
+      handleDragOver,
+      handleDragLeave,
+      handleDrop,
+      handleFolderDragEnter,
+      handleFolderDragOver,
+      handleFolderDragLeave,
+      handleFolderDrop,
+      handleNodeDoubleClick,
+      downloadProgressVisible,
+      downloadInfo,
     };
   }
 };
@@ -1041,6 +1396,8 @@ export default {
   flex-direction: column;
   height: 100%;
   color: var(--color-text-1);
+  position: relative;
+  z-index: 9999;
 }
 
 .sftp-header {
@@ -1191,6 +1548,7 @@ export default {
 .history-content {
   flex: 1;
   overflow-y: auto;
+  position: relative;
 }
 
 :deep(.arco-table-th) {
@@ -1240,7 +1598,7 @@ export default {
 }
 
 :deep(.arco-table-body) {
-  overflow-y: auto;
+  overflow-y: auto !important;
 }
 
 :deep(.arco-modal-content) {
@@ -1259,6 +1617,209 @@ export default {
 :deep(.arco-tag) {
   min-width: 80px;
   text-align: center;
+}
+
+/* 添加拖拽相关样式 */
+.drag-over {
+  background-color: var(--color-primary-light-1) !important;
+  border: 2px dashed var(--color-primary) !important;
+}
+
+.folder-drop-target {
+  cursor: pointer;
+  padding: 2px 4px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.folder-drop-target.drag-over {
+  background-color: var(--color-primary-light-1);
+  border: 2px dashed var(--color-primary);
+}
+
+/* 添加全局拖拽提示样式 */
+.sftp-explorer.drag-active {
+  position: relative;
+}
+
+.sftp-explorer.drag-active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(var(--primary-1), 0.1);
+  border: 2px dashed var(--color-primary);
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* 确保拖拽样式不会影响右键菜单的显示 */
+:deep(.arco-tree-node) {
+  position: relative;
+  z-index: 10000;
+  pointer-events: all;
+}
+
+/* 拖拽提示层���应该影响交互 */
+.sftp-explorer.drag-active::after {
+  z-index: 0;
+}
+
+/* 修改和添加以下样式 */
+:deep(.arco-tree-node) {
+  padding: 0;
+  margin: 1px 0;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+}
+
+:deep(.arco-tree-node:hover) {
+  background-color: var(--color-fill-2);
+}
+
+/* 移除其他元素的悬停效果，只保留树节点的悬停效果 */
+:deep(.arco-tree-node-title:hover),
+:deep(.arco-tree-node-title-text:hover),
+.tree-node-content:hover {
+  background-color: transparent;
+}
+
+/* 修改树节点标题样式 */
+:deep(.arco-tree-node-title) {
+  width: 100%;
+  padding: 0;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+:deep(.arco-tree-node-title-text) {
+  flex: 1;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* 修改内容区域样式 */
+.tree-node-content {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  width: 100%;
+  min-height: 24px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+
+/* 选中状态样式调整 */
+:deep(.arco-tree-node-selected) {
+  background-color: var(--color-primary-light-1);
+}
+
+:deep(.arco-tree-node-selected) .tree-node-content {
+  background-color: transparent;
+}
+
+/* 文件夹和文件项样式调整 */
+.folder-item,
+.file-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+/* 拖拽状态样式调整 */
+:deep(.arco-tree-node) .folder-item.drag-over {
+  background-color: transparent;
+}
+
+:deep(.arco-tree-node.drag-over) {
+  background-color: var(--color-primary-light-1);
+  border: 2px dashed var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--primary-6), 0.1);
+}
+
+/* 确保深色模式下的样式一致性 */
+:deep([arco-theme='dark'] .arco-tree-node:hover) {
+  background-color: var(--color-fill-3);
+}
+
+/* 添加进度条相关样式 */
+.download-progress-float {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 300px;
+  background-color: var(--color-bg-2);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  padding: 12px;
+  z-index: 10000;
+  animation: slide-in 0.3s ease;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.download-progress {
+  width: 100%;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.file-name {
+  font-size: 13px;
+  color: var(--color-text-1);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 8px;
+}
+
+.progress-percent {
+  font-size: 13px;
+  color: var(--color-text-2);
+  flex-shrink: 0;
+}
+
+:deep(.arco-progress) {
+  margin: 4px 0;
+}
+
+.progress-details {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+/* 深色模式适配 */
+:deep([arco-theme='dark']) .download-progress-float {
+  background-color: var(--color-bg-3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 </style>
 

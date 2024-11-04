@@ -63,7 +63,17 @@ export default {
     downloadSuccess: '下载成功',
     deleteSuccess: '删除成功',
     renameSuccess: '重命名成功',
-    createFolderSuccess: '文件夹创建成功'
+    createFolderSuccess: '文件夹创建成功',
+    downloadFolder: '下载文件夹',
+    selectFolderToSave: '选择保存位置',
+    select: '选择',
+    downloadingFolder: '正在下载文件夹 {name}...',
+    downloadFolderSuccess: '文件夹 {name} 下载成功',
+    downloadFolderFailed: '文件夹 {name} 下载失败',
+    downloading: '正在下载',
+    remainingSeconds: '{seconds} 秒',
+    remainingMinutes: '{minutes} 分钟',
+    remainingHours: '{hours} 小时'
   },
   update: {
     newVersion: '发现新版本',

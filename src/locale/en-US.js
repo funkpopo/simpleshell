@@ -63,7 +63,17 @@ export default {
     downloadSuccess: 'Downloaded successfully',
     deleteSuccess: 'Deleted successfully',
     renameSuccess: 'Renamed successfully',
-    createFolderSuccess: 'Folder created successfully'
+    createFolderSuccess: 'Folder created successfully',
+    downloadFolder: 'Download Folder',
+    selectFolderToSave: 'Select folder to save',
+    select: 'Select',
+    downloadingFolder: 'Downloading folder {name}...',
+    downloadFolderSuccess: 'Folder {name} downloaded successfully',
+    downloadFolderFailed: 'Failed to download folder {name}',
+    downloading: 'Downloading',
+    remainingSeconds: '{seconds} seconds',
+    remainingMinutes: '{minutes} minutes',
+    remainingHours: '{hours} hours'
   },
   update: {
     newVersion: 'New Version Available',
