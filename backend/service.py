@@ -15,6 +15,8 @@ from datetime import datetime
 from gevent import monkey
 import socket
 import sys
+import requests
+import atexit
 monkey.patch_all()
 
 app = Flask(__name__)
@@ -34,8 +36,11 @@ logger = logging.getLogger(__name__)
 def get_executable_dir():
     # 获取可执行文件所在目录
     if getattr(sys, 'frozen', False):
+        # 生产环境
         return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
+    else:
+        # 开发环境，使用 backend 目录
+        return os.path.dirname(os.path.abspath(__file__))
 
 # 配置文件路径
 CONFIG_PATH = os.path.join(get_executable_dir(), 'config.json')
@@ -169,24 +174,36 @@ def create_ssh_client(connection):
         if connection.get('authType') == 'password':
             connect_kwargs['password'] = connection['password']
         else:
-            if connection.get('privateKey'):
-                pkey = paramiko.RSAKey.from_private_key(
-                    io.StringIO(connection['privateKey'])
-                )
-                connect_kwargs['pkey'] = pkey
-            elif connection.get('privateKeyPath'):
-                pkey = paramiko.RSAKey.from_private_key_file(
-                    connection['privateKeyPath']
-                )
-                connect_kwargs['pkey'] = pkey
+            try:
+                if connection.get('privateKey'):
+                    pkey = paramiko.RSAKey.from_private_key(
+                        io.StringIO(connection['privateKey'])
+                    )
+                    connect_kwargs['pkey'] = pkey
+                elif connection.get('privateKeyPath'):
+                    pkey = paramiko.RSAKey.from_private_key_file(
+                        connection['privateKeyPath']
+                    )
+                    connect_kwargs['pkey'] = pkey
+            except paramiko.ssh_exception.SSHException:
+                raise Exception('Invalid private key format or passphrase required')
+            except IOError:
+                raise Exception('Failed to read private key file')
         
         print(f"Attempting SSH connection to {connection['host']}:{connection['port']}")
         ssh.connect(**connect_kwargs)
         print("SSH connection successful")
         return ssh
+    except paramiko.AuthenticationException:
+        raise Exception('Authentication Failed: Invalid username, password or key')
+    except paramiko.SSHException as e:
+        raise Exception(f'SSH Error: {str(e)}')
+    except socket.gaierror:
+        raise Exception('Failed to resolve hostname. Please check the host address')
+    except socket.timeout:
+        raise Exception('Connection timed out. Please check network or firewall settings')
     except Exception as e:
-        print(f"SSH connection error: {e}")
-        raise
+        raise Exception(f'Connection failed: {str(e)}')
 
 # 添加 read_output 函数定义（放在 create_ssh_client 函数之后）
 def read_output(session_id, channel):
@@ -260,21 +277,65 @@ def handle_ssh_connection(data):
         session_id = data['session_id']
         print(f"Opening SSH connection for session {session_id} from client {client_id}")
         
-        # 创建新的 SSH 客户端
-        ssh = create_ssh_client(data)
+        try:
+            # 创建新的 SSH 客户端
+            ssh = create_ssh_client(data)
+        except paramiko.AuthenticationException:
+            # 认证失败的错误处理
+            socketio.emit('ssh_error', {
+                'session_id': session_id,
+                'error': 'Authentication Failed: Invalid username, password or key'
+            })
+            return
+        except paramiko.SSHException as e:
+            # SSH 相关的其他错误
+            socketio.emit('ssh_error', {
+                'session_id': session_id,
+                'error': f'SSH Error: {str(e)}'
+            })
+            return
+        except socket.gaierror:
+            # 域名解析错误
+            socketio.emit('ssh_error', {
+                'session_id': session_id,
+                'error': 'Failed to resolve hostname. Please check the host address'
+            })
+            return
+        except socket.timeout:
+            # 连接超时
+            socketio.emit('ssh_error', {
+                'session_id': session_id,
+                'error': 'Connection timed out. Please check network or firewall settings'
+            })
+            return
+        except Exception as e:
+            # 其他错误
+            socketio.emit('ssh_error', {
+                'session_id': session_id,
+                'error': f'Connection failed: {str(e)}'
+            })
+            return
         
         # 创建交互式会话
-        channel = ssh.invoke_shell(
-            term='xterm-256color',
-            width=80,
-            height=24,
-            environment={
-                'TERM': 'xterm-256color',
-                'LANG': 'en_US.UTF-8',
-                'LC_ALL': 'en_US.UTF-8'
-            }
-        )
-        
+        try:
+            channel = ssh.invoke_shell(
+                term='xterm-256color',
+                width=80,
+                height=24,
+                environment={
+                    'TERM': 'xterm-256color',
+                    'LANG': 'en_US.UTF-8',
+                    'LC_ALL': 'en_US.UTF-8'
+                }
+            )
+        except Exception as e:
+            socketio.emit('ssh_error', {
+                'session_id': session_id,
+                'error': f'Failed to create terminal: {str(e)}'
+            })
+            ssh.close()
+            return
+
         channel.settimeout(0.1)
         channel.setblocking(0)
         
@@ -344,7 +405,7 @@ def handle_ssh_connection(data):
         print(f"Error establishing SSH connection: {e}")
         socketio.emit('ssh_error', {
             'session_id': session_id,
-            'error': str(e)
+            'error': f'Connection error: {str(e)}'
         })
 
 @socketio.on('ssh_input')
@@ -632,6 +693,46 @@ def clear_sftp_history():
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# 在文件开头添加 RequestsSession 类
+class RequestsSession:
+    def __init__(self):
+        self.session = requests.Session()
+        self.headers = {
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'SimpleSSH'
+        }
+        # 从环境变量获取代理设置
+        self.proxies = {}
+        if os.environ.get('HTTP_PROXY'):
+            self.proxies['http'] = os.environ.get('HTTP_PROXY')
+        if os.environ.get('HTTPS_PROXY'):
+            self.proxies['https'] = os.environ.get('HTTPS_PROXY')
+
+    def get(self, url, timeout=15):
+        try:
+            response = self.session.get(
+                url,
+                headers=self.headers,
+                proxies=self.proxies,
+                timeout=timeout,
+                verify=True
+            )
+            response.raise_for_status()
+            return response
+        except Exception as e:
+            raise e
+        
+    def close(self):
+        self.session.close()
+
+# 添加全局 requests_session 对象
+requests_session = RequestsSession()
+
+# 在应用退出时关闭 session
+@atexit.register
+def cleanup():
+    requests_session.close()
 
 if __name__ == '__main__':
     try:

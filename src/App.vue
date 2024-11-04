@@ -3,7 +3,10 @@
     <a-layout class="layout">
       <a-layout-header>
         <div class="header-content">
-          <h3>SimpleSSH</h3>
+          <div class="app-title" @click="checkUpdate" title="点击检查更新">
+            <h3>SimpleSSH</h3>
+            <span class="version">v{{ currentVersion }}</span>
+          </div>
           <div class="header-actions">
             <div class="header-buttons">
               <a-button
@@ -100,7 +103,7 @@
                     </a-button>
                   </div>
 
-                  <!-- 连接列表 -->
+                  <!-- 连接 -->
                   <div class="menu-section connections" @contextmenu.prevent>
                     <div
                       v-for="connection in folder.connections"
@@ -327,7 +330,7 @@
 </template>
 
 <script>
-import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed, inject } from 'vue'
+import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed, inject, h } from 'vue'
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
 import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder } from '@arco-design/web-vue/es/icon'
@@ -1041,7 +1044,12 @@ export default {
     const locale = ref(zhCN)
     const settingsVisible = ref(false)
     const settings = reactive({
-      language: localStorage.getItem('language') || 'zh-CN'
+      language: localStorage.getItem('language') || 'zh-CN',
+      proxy: {
+        enabled: false,
+        host: '127.0.0.1',
+        port: 7890
+      }
     });
 
     // 初始化时设置语言
@@ -1198,7 +1206,7 @@ export default {
     }
 
     watch(siderCollapsed, () => {
-      // 添加延时以等待侧边栏过动画完成
+      // 添加延时以等待侧边栏过动画成
       setTimeout(() => {
         const activeTerminal = sshTerminals.value.find(
           terminal => terminal.sessionId === activeTab.value
@@ -1249,6 +1257,119 @@ export default {
     // 修改 getAvatarColor 函数
     const getAvatarColor = (folder) => {
       return folder.avatarColor || generateRandomColor()
+    }
+
+    const currentVersion = ref(require('../package.json').version)
+    const checkingUpdate = ref(false)
+
+    const checkUpdate = async () => {
+      if (checkingUpdate.value) return
+      
+      try {
+        checkingUpdate.value = true
+        Message.loading('正在检查更新...')
+        
+        const https = require('https')
+        const currentVer = currentVersion.value
+
+        // 创建一个版本号比较函数
+        const compareVersions = (v1, v2) => {
+          const normalize = v => v.replace(/^v/, '').split('.').map(Number)
+          const parts1 = normalize(v1)
+          const parts2 = normalize(v2)
+          
+          for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+            const num1 = parts1[i] || 0
+            const num2 = parts2[i] || 0
+            if (num1 > num2) return 1
+            if (num1 < num2) return -1
+          }
+          return 0
+        }
+
+        const checkLatestVersion = () => {
+          return new Promise((resolve, reject) => {
+            const options = {
+              hostname: 'api.github.com',
+              path: '/repos/funkpopo/simplessh/releases/latest',
+              headers: {
+                'User-Agent': 'SimpleSSH',
+                'Accept': 'application/vnd.github.v3+json'
+              }
+            }
+
+            const req = https.get(options, (res) => {
+              if (res.statusCode === 301 || res.statusCode === 302) {
+                // 处理重定向
+                reject(new Error('Redirect not supported'))
+                return
+              }
+
+              let data = ''
+              res.on('data', chunk => { data += chunk })
+              res.on('end', () => {
+                try {
+                  if (res.statusCode === 200) {
+                    resolve(JSON.parse(data))
+                  } else {
+                    reject(new Error(`HTTP ${res.statusCode}: ${data}`))
+                  }
+                } catch (e) {
+                  reject(e)
+                }
+              })
+            })
+
+            req.on('error', reject)
+            req.end()
+          })
+        }
+
+        const response = await checkLatestVersion()
+        const latestVersion = response.tag_name.replace('v', '')
+        
+        // 使用版本号比较函数
+        if (compareVersions(latestVersion, currentVer) > 0) {
+          Modal.info({
+            title: t('update.newVersion'),
+            content: h('div', {}, [
+              h('p', {}, t('update.newVersionAvailable', { version: latestVersion })),
+              h('p', {}, t('update.currentVersion', { version: currentVer }))
+            ]),
+            okText: t('update.download'),
+            cancelText: t('update.later'),
+            async onOk() {
+              try {
+                await shell.openExternal('https://github.com/funkpopo/simplessh/releases')
+              } catch (error) {
+                Message.error('打开下载页面失败')
+              }
+            }
+          })
+        } else {
+          Message.success('当前已是最新版本')
+        }
+      } catch (error) {
+        console.error('检查更新失败:', error)
+        let errorMessage = '检查更新失败'
+        
+        if (error.code === 'ENOTFOUND') {
+          errorMessage = '网络连接失败，请检查网络设置'
+        } else if (error.code === 'ETIMEDOUT') {
+          errorMessage = '连接超时，请检查网络设置'
+        } else if (error.response?.status === 403) {
+          errorMessage = 'API 请求次数超限，请稍后再试'
+        } else if (error.response?.status === 404) {
+          errorMessage = '未找到版本信息'
+        }
+        
+        Message.error({
+          content: errorMessage,
+          duration: 3000
+        })
+      } finally {
+        checkingUpdate.value = false
+      }
     }
 
     return {
@@ -1303,7 +1424,9 @@ export default {
       activeFolderId,
       showFolderMenu,
       hideFolderMenu,
-      openGithubLink
+      openGithubLink,
+      currentVersion,
+      checkUpdate,
     }
   }
 }
@@ -1318,7 +1441,8 @@ export default {
 }
 
 .layout {
-  height: 100vh;
+  height: calc(100vh - 4px);
+  margin-top: 4px;
   display: flex;
   flex-direction: column;
 }
@@ -1340,6 +1464,8 @@ export default {
 .arco-layout-header {
   background-color: var(--color-bg-2);
   color: var(--color-text-1);
+  padding: 8px 0;
+  margin-top: 4px;
 }
 
 .arco-layout-sider {
@@ -1611,7 +1737,7 @@ export default {
   transition: all 0.2s;
 }
 
-/* 修改折叠的样式 */
+/* 修折叠的样式 */
 .arco-layout-sider-collapsed {
   width: 64px !important;
   min-width: 64px !important;
@@ -1837,7 +1963,7 @@ export default {
   color: var(--color-text-1);
 }
 
-/* 连接控制按钮组 */
+/* 连接控制按组 */
 .connection-controls {
   display: flex;
   gap: 4px;
@@ -1901,7 +2027,7 @@ export default {
   pointer-events: all; /* 确保菜单可以接收事件 */
 }
 
-/* 收起侧边栏时的位置调整 */
+/* 收起侧边栏时的位置调 */
 .arco-layout-sider-collapsed .floating-menu {
   transform: translateX(64px);
 }
@@ -2142,10 +2268,12 @@ export default {
   align-items: center;
   gap: 8px;
   height: 32px;
+  padding: 4px;
 }
 
 /* 设置按钮样式 */
-.header-btn {
+.header-btn,
+.theme-switch {
   padding: 0;
   width: 32px;
   height: 32px;
@@ -2153,9 +2281,11 @@ export default {
   align-items: center;
   justify-content: center;
   border-radius: 4px;
+  margin: 2px;
 }
 
-.header-btn .arco-icon {
+.header-btn .arco-icon,
+.theme-switch .arco-icon {
   font-size: 16px;
 }
 
@@ -2223,5 +2353,37 @@ export default {
 .buttons {
   display: flex;
   gap: 8px;
+}
+
+.app-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.app-title:hover {
+  opacity: 0.8;
+}
+
+.app-title:active {
+  transform: scale(0.98);
+}
+
+.version {
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-left: 4px;
+  transition: color 0.2s ease;
+}
+
+.app-title:hover .version {
+  color: var(--color-text-2);
+}
+
+.app-title h3 {
+  margin: 0;
 }
 </style>

@@ -220,7 +220,21 @@ export default {
 
         socket.on('ssh_error', (error) => {
           console.error('SSH Error:', error)
-          writeToTerminal(`Error: ${error.message || error}\r\n`)
+          // 直接写入错误消息到终端，但不关闭会话
+          if (isTerminalReady.value && term) {
+            // 添加换行和颜色，使错误消息更醒目
+            term.write('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
+            term.write('\x1b[31m' + error.error + '\x1b[0m\r\n')
+            term.write('\x1b[31m=============\x1b[0m\r\n\r\n')
+            term.write('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
+            term.scrollToBottom()
+          } else {
+            // 如果终端还没准备好，将错误消息添加到缓冲区
+            outputBuffer.value.push('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
+            outputBuffer.value.push('\x1b[31m' + error.error + '\x1b[0m\r\n')
+            outputBuffer.value.push('\x1b[31m=============\x1b[0m\r\n\r\n')
+            outputBuffer.value.push('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
+          }
         })
 
         socket.on('ssh_closed', (data) => {
@@ -251,11 +265,18 @@ export default {
 
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
-        term.write(text);
-        term.scrollToBottom();
-        detectPathChange(text);
+        // 如果是错误消息，添加更醒目的格式
+        if (typeof text === 'string' && text.includes('Error:')) {
+          term.write('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
+          term.write('\x1b[31m' + text + '\x1b[0m\r\n')
+          term.write('\x1b[31m=============\x1b[0m\r\n\r\n')
+        } else {
+          term.write(text)
+        }
+        term.scrollToBottom()
+        detectPathChange(text)
       } else {
-        outputBuffer.value.push(text);
+        outputBuffer.value.push(text)
       }
     };
 
@@ -266,20 +287,12 @@ export default {
     })
 
     const closeConnection = () => {
-      if (socket) {
-        socket.emit('close_ssh', { session_id: props.sessionId })
-        socket.disconnect()
-        socket = null
-      }
-      if (term) {
-        term.dispose()
-        term = null
-      }
+      cleanup()
       emit('close', props.sessionId)
     }
 
     onUnmounted(() => {
-      closeConnection()
+      cleanup()
       window.removeEventListener('resize', handleResize)
     })
 

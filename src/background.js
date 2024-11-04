@@ -29,9 +29,10 @@ let mainWindow = null
 // 修改获取应用数据路径的函数
 function getAppDataPath() {
   if (isDevelopment) {
-    return path.join(__dirname, '..')
+    // 开发环境下使用 backend 目录
+    return path.join(__dirname, '..', 'backend')
   } else {
-    // 使用 resources 目录
+    // 生产环境使用 resources 目录
     return path.join(process.resourcesPath)
   }
 }
@@ -110,7 +111,11 @@ function startBackend() {
         TEMP: tempDir,
         TMP: tempDir,
         CONFIG_PATH: CONFIG_PATH,
-        LOG_PATH: LOG_PATH
+        LOG_PATH: LOG_PATH,
+        // 添加系统代理环境变量
+        HTTP_PROXY: process.env.HTTP_PROXY || '',
+        HTTPS_PROXY: process.env.HTTPS_PROXY || '',
+        NO_PROXY: process.env.NO_PROXY || ''
       }
     })
 
