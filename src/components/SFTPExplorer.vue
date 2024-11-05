@@ -683,27 +683,38 @@ export default {
       try {
         loading.value = true;
         
-        // 如果是目录，直接刷新整个文件树
-        if (currentDirectory.value === '/' || currentDirectory.value === 'root') {
+        // 获取当前选中的路径
+        let pathToRefresh = currentDirectory.value;
+        
+        // 如果当前路径指向一个文件，获取其父目录
+        const currentNode = findNodeByKey(pathToRefresh);
+        if (currentNode && currentNode.isLeaf) {
+          pathToRefresh = pathToRefresh.substring(0, pathToRefresh.lastIndexOf('/')) || '/';
+        }
+        
+        console.log('Refreshing path:', pathToRefresh);
+        
+        // 如果是根目录，直接刷新整个文件树
+        if (pathToRefresh === '/' || pathToRefresh === 'root') {
           await fetchRootDirectory();
         } else {
-          // 获取当前目录的内容
+          // 获取目录内容
           const response = await axios.post('http://localhost:5000/sftp_list_directory', {
             connection: props.connection,
-            path: currentDirectory.value
+            path: pathToRefresh
           });
 
           if (response.data.error) {
             throw new Error(response.data.error);
           }
 
-          // 更新当前目录的内容
+          // 更新目录内容
           const updateNode = (nodes) => {
             for (let i = 0; i < nodes.length; i++) {
-              if (nodes[i].key === currentDirectory.value) {
+              if (nodes[i].key === pathToRefresh) {
                 nodes[i].children = sortItems(response.data.map(item => ({
                   title: item.name,
-                  key: normalizePath(`${currentDirectory.value}/${item.name}`),
+                  key: normalizePath(`${pathToRefresh}/${item.name}`),
                   isLeaf: !item.isDirectory,
                   children: item.isDirectory ? [] : undefined
                 })));
@@ -716,9 +727,8 @@ export default {
             return false;
           };
 
-          // 如果找到并更新了节点，则不需刷新整个树
+          // 如果找不到节点，刷新整个文件树
           if (!updateNode(fileTree.value)) {
-            // 如果没找到节点，刷新整文件树
             await fetchRootDirectory();
           }
         }
@@ -737,9 +747,23 @@ export default {
         loading.value = true;
         console.log('Refreshing directory:', path);
         
+        // 如果传入的是文件路径，获取其父目录
+        let directoryPath = path;
+        if (typeof path === 'string') {
+          // 如果路径以 '/' 结尾或是根目录，直接使用该路径
+          if (path === '/' || path === 'root' || path.endsWith('/')) {
+            directoryPath = path === 'root' ? '/' : path;
+          } else {
+            // 否则获取父目录路径
+            directoryPath = path.substring(0, path.lastIndexOf('/')) || '/';
+          }
+        }
+        
+        console.log('Actual refresh path:', directoryPath);
+        
         const response = await axios.post('http://localhost:5000/sftp_list_directory', {
           connection: props.connection,
-          path: path === 'root' ? '/' : path
+          path: directoryPath === 'root' ? '/' : directoryPath
         });
 
         if (response.data.error) {
@@ -747,7 +771,7 @@ export default {
         }
 
         // 如果是根目录，直接更新整个文件树
-        if (path === '/' || path === 'root') {
+        if (directoryPath === '/' || directoryPath === 'root') {
           fileTree.value = sortItems(response.data.map(item => ({
             title: item.name,
             key: normalizePath('/' + item.name),
@@ -758,10 +782,10 @@ export default {
           // 更新特定目录
           const updateNode = (nodes) => {
             for (let i = 0; i < nodes.length; i++) {
-              if (nodes[i].key === path) {
+              if (nodes[i].key === directoryPath) {
                 nodes[i].children = sortItems(response.data.map(item => ({
                   title: item.name,
-                  key: normalizePath(`${path}/${item.name}`),
+                  key: normalizePath(`${directoryPath}/${item.name}`),
                   isLeaf: !item.isDirectory,
                   children: item.isDirectory ? [] : undefined
                 })));
@@ -773,7 +797,11 @@ export default {
             }
             return false;
           };
-          updateNode(fileTree.value);
+          
+          if (!updateNode(fileTree.value)) {
+            // 如果没找到节点，尝试刷新整个树
+            await fetchRootDirectory();
+          }
         }
 
         Message.success(t('sftp.refreshSuccess'));
@@ -831,7 +859,8 @@ export default {
 
       try {
         const oldPath = itemToRename.value.key;
-        const newPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + newName.value;
+        const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
+        const newPath = normalizePath(`${parentPath}/${newName.value}`);
 
         await axios.post('http://localhost:5000/sftp_rename_item', {
           connection: props.connection,
@@ -839,17 +868,29 @@ export default {
           newPath: newPath
         });
 
-        Message.success(`Renamed successfully`);
+        Message.success(t('sftp.renameSuccess'));
         renameModalVisible.value = false;
 
-        // Refresh the parent directory
-        const parentKey = oldPath.split('/').slice(0, -1).join('/') || '/';
-        await refreshDirectory({ key: parentKey });
+        // 修改刷新逻辑：直接刷新父目录
+        try {
+          // 获取父目录的节点
+          const parentNode = findNodeByKey(parentPath);
+          if (parentNode) {
+            // 如果找到父节点，刷新其内容
+            await loadMoreData(parentNode);
+          } else {
+            // 如果找不到父节点（比如在根目录），刷新整个文件树
+            await fetchRootDirectory();
+          }
+        } catch (refreshError) {
+          console.error('Directory refresh error:', refreshError);
+          // 即使刷新失败也不要显示错误消息，因为重命名已经成功了
+        }
 
         await logOperation('rename', `${oldPath} to ${newPath}`);
       } catch (error) {
         console.error('Failed to rename item:', error);
-        Message.error(`Failed to rename: ${error.message}`);
+        Message.error(t('sftp.renameFailed'));
       }
     };
 
@@ -1266,7 +1307,7 @@ export default {
       }
     };
 
-    // 在 setup 中添加进度相关的状态
+    //  setup 中添加进度相关的状态
     const downloadProgressVisible = ref(false);
     const downloadInfo = reactive({
       fileName: '',
@@ -1665,7 +1706,7 @@ export default {
   pointer-events: all;
 }
 
-/* 拖拽提示层���应该影响交互 */
+/* 拖拽提示层应该影响交互 */
 .sftp-explorer.drag-active::after {
   z-index: 0;
 }
