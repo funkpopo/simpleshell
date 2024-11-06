@@ -91,4 +91,4 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 
 ## 许可
 
-[MIT License](LICENSE)
+[GPL-3.0 License](LICENSE)
