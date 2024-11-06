@@ -42,7 +42,7 @@ def get_executable_dir():
         # 开发环境，使用 backend 目录
         return os.path.dirname(os.path.abspath(__file__))
 
-# 配置文件路径
+# 配置文件路
 CONFIG_PATH = os.path.join(get_executable_dir(), 'config.json')
 # 日志文件路径
 LOG_PATH = os.path.join(get_executable_dir(), 'sftp_log.log')
@@ -56,6 +56,7 @@ class SSHSession:
         self.read_thread = read_thread
         self.lock = threading.Lock()
         self.client_id = None  # 添加客户端ID
+        self.realtime_thread = None  # 添加实时线程属性
 
 # 修改会话存储结构
 ssh_sessions = {}
@@ -81,13 +82,7 @@ def handle_disconnect():
                 try:
                     if session_id in ssh_sessions:
                         session = ssh_sessions[session_id]
-                        session.active = False
-                        with session.lock:
-                            try:
-                                session.channel.close()
-                                session.ssh_client.close()
-                            except:
-                                pass
+                        cleanup_session(session)
                         del ssh_sessions[session_id]
                         client_sessions[client_id].remove(session_id)
                 except Exception as e:
@@ -205,11 +200,12 @@ def create_ssh_client(connection):
     except Exception as e:
         raise Exception(f'Connection failed: {str(e)}')
 
-# 添加 read_output 函数定义（放在 create_ssh_client 函数之后）
+# 修改 read_output 函数，优化输出处理机制
 def read_output(session_id, channel):
     try:
         buffer = ""
         last_output_time = time.time()
+        is_realtime_mode = False
         
         while True:
             with sessions_lock:
@@ -220,32 +216,60 @@ def read_output(session_id, channel):
                 if channel.recv_ready():
                     output = channel.recv(4096).decode('utf-8', errors='ignore')
                     if output:
-                        buffer += output
-                        last_output_time = time.time()
+                        # 检查是否是实时更新命令的输出
+                        if any(cmd in output.lower() for cmd in ['top -', 'htop', 'watch']):
+                            is_realtime_mode = True
                         
-                        # 立即发送包含换行符的输出
-                        if '\n' in buffer:
+                        # 检查是否包含特殊的终端控制序列
+                        has_control_seq = any(seq in output for seq in [
+                            '\x1b[H',  # 光标移到首位
+                            '\x1b[2J',  # 清屏
+                            '\x1b[K',   # 清除行
+                            '\x1b[?1049h',  # 切换到备用屏幕缓冲区
+                            '\x1b[?1049l',   # 切换回主屏幕缓冲区
+                            '\x1b[6n',  # 请求光标位置
+                            '\x1b[s',   # 保存光标位置
+                            '\x1b[u'    # 恢复光标位置
+                        ])
+                        
+                        # 如果是实时模式或有控制序列，立即发送
+                        if is_realtime_mode or has_control_seq:
+                            if buffer:
+                                socketio.emit('ssh_output', {
+                                    'session_id': session_id,
+                                    'output': buffer
+                                })
+                                buffer = ""
                             socketio.emit('ssh_output', {
                                 'session_id': session_id,
-                                'output': buffer
+                                'output': output
                             })
-                            buffer = ""
-                        # 或者当缓冲区达到一定大小时发送
-                        elif len(buffer) >= 1024:
-                            socketio.emit('ssh_output', {
-                                'session_id': session_id,
-                                'output': buffer
-                            })
-                            buffer = ""
+                            socketio.sleep(0.01)  # 减少延迟
+                        else:
+                            buffer += output
+                            if '\n' in buffer or len(buffer) >= 1024:
+                                socketio.emit('ssh_output', {
+                                    'session_id': session_id,
+                                    'output': buffer
+                                })
+                                buffer = ""
+                        
+                        last_output_time = time.time()
                 else:
-                    # 如果缓冲区中有数据且超过50ms没有新数据，发送剩余数据
-                    if buffer and (time.time() - last_output_time) > 0.05:
+                    # 如果是实时模式，使用更短的等待时间
+                    if is_realtime_mode:
+                        socketio.sleep(0.01)
+                    else:
+                        socketio.sleep(0.05)
+                        
+                    # 检查是否需要发送缓冲区数据
+                    if buffer and (time.time() - last_output_time) > (0.01 if is_realtime_mode else 0.05):
                         socketio.emit('ssh_output', {
                             'session_id': session_id,
                             'output': buffer
                         })
                         buffer = ""
-                    socketio.sleep(0.01)
+                        
             except socket.timeout:
                 continue
             except Exception as e:
@@ -262,7 +286,6 @@ def read_output(session_id, channel):
             'error': str(e)
         })
     finally:
-        # 发送剩余的缓冲区数据
         if buffer:
             socketio.emit('ssh_output', {
                 'session_id': session_id,
@@ -324,10 +347,99 @@ def handle_ssh_connection(data):
                 height=24,
                 environment={
                     'TERM': 'xterm-256color',
+                    'COLORTERM': 'truecolor',
+                    'TERM_PROGRAM': 'xterm',
                     'LANG': 'en_US.UTF-8',
-                    'LC_ALL': 'en_US.UTF-8'
+                    'LC_ALL': 'en_US.UTF-8',
+                    'FORCE_COLOR': 'true'
                 }
             )
+            
+            # 在创建 channel 后添加初始化命令
+            init_commands = [
+                # 清除屏幕，确保不显示任何命令
+                'clear >/dev/null 2>&1',
+                # 获取欢迎信息但不显示命令本身
+                'cat /etc/motd 2>/dev/null; true',
+                # 然后设置环境但不显示命令
+                'export TERM=xterm-256color >/dev/null 2>&1',
+                'export COLORTERM=truecolor >/dev/null 2>&1',
+                'export FORCE_COLOR=true >/dev/null 2>&1',
+                'export CLICOLOR=1 >/dev/null 2>&1',
+                # 配置 PS1 提示符以使用颜色，但不显示命令本身
+                'export PS1="\\[\\e[1;32m\\]\\u@\\h\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]\\$ " >/dev/null 2>&1',
+                # 为常用命令添加颜色别名，但不显示命令本身
+                'alias ls="ls --color=auto" >/dev/null 2>&1',
+                'alias grep="grep --color=auto" >/dev/null 2>&1',
+                'alias dir="dir --color=auto" >/dev/null 2>&1',
+                'alias vdir="vdir --color=auto" >/dev/null 2>&1',
+                # 加载 bashrc，但不显示任何输出
+                'source ~/.bashrc >/dev/null 2>&1 || true',
+                # 最后设置 PS1，这条命令的输出也不显示
+                'PS1="\\[\\e[1;32m\\]\\u@\\h\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]\\$ " >/dev/null 2>&1',
+                # 清除历史
+                'history -c >/dev/null 2>&1'
+            ]
+            
+            channel.settimeout(0.1)
+            channel.setblocking(0)
+
+            # 发送初始化命令并收集欢迎信息的输出
+            initial_output = ""
+            for cmd in init_commands:
+                channel.send(f'{cmd}\n')
+                socketio.sleep(0.1)  # 给每个命令一些执行时间
+                
+                # 只收集欢迎信息命令的输出
+                if 'cat /etc/motd' in cmd:
+                    attempts = 0
+                    while attempts < 20:  # 最多等待2秒
+                        if channel.recv_ready():
+                            output = channel.recv(4096).decode('utf-8', errors='ignore')
+                            if output:
+                                # 过滤掉命令本身和提示符
+                                filtered_output = '\n'.join([
+                                    line for line in output.splitlines()
+                                    if not line.strip().startswith('cat') and 
+                                       '$' not in line and 
+                                       '#' not in line
+                                ])
+                                if filtered_output.strip():
+                                    initial_output += filtered_output + '\n'
+                        socketio.sleep(0.1)
+                        attempts += 1
+            
+            # 清除任何可能的剩余输出
+            while channel.recv_ready():
+                channel.recv(4096)
+            
+            # 发送一个换行来获取新的提示符
+            channel.send('\n')
+            
+            # 等待并收集新的提示符
+            prompt_output = ""
+            max_attempts = 20
+            attempts = 0
+            last_output_time = time.time()
+            
+            while attempts < max_attempts:
+                if channel.recv_ready():
+                    output = channel.recv(4096).decode('utf-8', errors='ignore')
+                    if output:
+                        prompt_output += output
+                        last_output_time = time.time()
+                
+                if prompt_output and (time.time() - last_output_time) > 0.1:
+                    break
+                    
+                socketio.sleep(0.01)
+                attempts += 1
+            
+            # 组合欢迎信息和提示符
+            if initial_output.strip():
+                initial_output = f"\r\n{initial_output.strip()}\r\n\r\n"
+            initial_output += prompt_output
+        
         except Exception as e:
             socketio.emit('ssh_error', {
                 'session_id': session_id,
@@ -336,31 +448,6 @@ def handle_ssh_connection(data):
             ssh.close()
             return
 
-        channel.settimeout(0.1)
-        channel.setblocking(0)
-        
-        # 等待初始输出并发送
-        initial_output = ""
-        max_attempts = 50  # 增加等待时间到5秒
-        attempts = 0
-        last_output_time = time.time()
-        
-        while attempts < max_attempts:
-            if channel.recv_ready():
-                output = channel.recv(4096).decode('utf-8', errors='ignore')
-                if output:
-                    initial_output += output
-                    last_output_time = time.time()  # 更新最后输出时间
-            
-            # 如果已经有输出，且超过0.5秒没有新输出，认为初始输出完成
-            if initial_output and (time.time() - last_output_time) > 0.5:
-                break
-                
-            socketio.sleep(0.1)
-            attempts += 1
-        
-        print(f"Initial output collected: {initial_output}")
-        
         # 创建并启动读取线程
         read_thread = threading.Thread(
             target=read_output,
@@ -408,6 +495,7 @@ def handle_ssh_connection(data):
             'error': f'Connection error: {str(e)}'
         })
 
+# 修改 handle_ssh_input 函数中的实时命令处理部分
 @socketio.on('ssh_input')
 def handle_ssh_input(data):
     try:
@@ -423,40 +511,80 @@ def handle_ssh_input(data):
                 raise Exception('Session belongs to another client')
             
             with session.lock:
+                # 检查是否是实时更新命令
+                is_realtime_cmd = any(cmd in input_data.lower() for cmd in ['top', 'htop', 'watch', 'tail -f'])
+                
                 # 发送输入到SSH服务器
                 session.channel.send(input_data)
                 print(f"Input sent to SSH server for session {session_id}")
                 
-                # 立即尝试读取响应
-                max_attempts = 10  # 最多尝试10次
-                attempts = 0
-                output_buffer = ""
-                
-                while attempts < max_attempts:
-                    if session.channel.recv_ready():
-                        output = session.channel.recv(4096).decode('utf-8', errors='ignore')
-                        if output:
-                            output_buffer += output
-                            # 如果收到完整的响应（包含换行符）或缓冲区足够大，就发送
-                            if '\n' in output_buffer or len(output_buffer) >= 1024:
+                if is_realtime_cmd:
+                    # 设置通道为非阻塞模式
+                    session.channel.setblocking(0)
+                    
+                    # 给命令一点启动时间
+                    socketio.sleep(0.2)
+                    
+                    # 创建一个新的线程来持续读取实时输出
+                    def read_realtime_output():
+                        try:
+                            while session.active:
+                                try:
+                                    if session.channel.recv_ready():
+                                        output = session.channel.recv(4096).decode('utf-8', errors='ignore')
+                                        if output:
+                                            socketio.emit('ssh_output', {
+                                                'session_id': session_id,
+                                                'output': output
+                                            })
+                                    socketio.sleep(0.1)  # 每100ms检查一次新输出
+                                except socket.timeout:
+                                    continue
+                                except Exception as e:
+                                    print(f"Error in realtime output thread: {e}")
+                                    break
+                        except Exception as e:
+                            print(f"Realtime output thread error: {e}")
+                        finally:
+                            print("Realtime output thread ended")
+                    
+                    # 启动实时输出读取线程
+                    realtime_thread = threading.Thread(
+                        target=read_realtime_output,
+                        daemon=True
+                    )
+                    realtime_thread.start()
+                    
+                    # 将线程保存到会话对象中
+                    session.realtime_thread = realtime_thread
+                else:
+                    # 对于普通命令，使用原有的处理逻辑
+                    max_attempts = 10
+                    attempts = 0
+                    output_buffer = ""
+                    
+                    while attempts < max_attempts:
+                        if session.channel.recv_ready():
+                            output = session.channel.recv(4096).decode('utf-8', errors='ignore')
+                            if output:
+                                output_buffer += output
+                                if '\n' in output_buffer or len(output_buffer) >= 1024:
+                                    socketio.emit('ssh_output', {
+                                        'session_id': session_id,
+                                        'output': output_buffer
+                                    })
+                                    output_buffer = ""
+                        else:
+                            if output_buffer:
                                 socketio.emit('ssh_output', {
                                     'session_id': session_id,
                                     'output': output_buffer
                                 })
                                 output_buffer = ""
-                    else:
-                        # 如果没有更多数据且缓冲区不为空，发送剩余数据
-                        if output_buffer:
-                            socketio.emit('ssh_output', {
-                                'session_id': session_id,
-                                'output': output_buffer
-                            })
-                            output_buffer = ""
-                        # 如果已经有输出了，就不用继续等待
-                        if attempts > 0:
-                            break
-                    socketio.sleep(0.01)  # 短暂等待更多输出
-                    attempts += 1
+                            if attempts > 0:
+                                break
+                        socketio.sleep(0.01)
+                        attempts += 1
                 
     except Exception as e:
         print(f"Error handling SSH input: {e}")
@@ -737,6 +865,21 @@ requests_session = RequestsSession()
 @atexit.register
 def cleanup():
     requests_session.close()
+
+# 修改 cleanup 相关代码，确保实时线程也被正确清理
+def cleanup_session(session):
+    try:
+        session.active = False
+        if session.channel:
+            session.channel.close()
+        if session.ssh_client:
+            session.ssh_client.close()
+        if session.read_thread and session.read_thread.is_alive():
+            session.read_thread.join(timeout=1)
+        if session.realtime_thread and session.realtime_thread.is_alive():
+            session.realtime_thread.join(timeout=1)
+    except Exception as e:
+        print(f"Error in cleanup_session: {e}")
 
 if __name__ == '__main__':
     try:

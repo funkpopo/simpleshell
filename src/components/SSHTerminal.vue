@@ -64,6 +64,9 @@ export default {
     const getDarkTheme = () => ({
       background: '#1E1E1E',
       foreground: '#D4D4D4',
+      cursor: '#FFFFFF',
+      cursorAccent: '#000000',
+      selection: 'rgba(255, 255, 255, 0.3)',
       black: '#000000',
       brightBlack: '#666666',
       red: '#E06C75',
@@ -79,12 +82,16 @@ export default {
       cyan: '#56B6C2',
       brightCyan: '#80FFFF',
       white: '#D4D4D4',
-      brightWhite: '#FFFFFF'
+      brightWhite: '#FFFFFF',
+      extendedAnsi: true,
     })
 
     const getLightTheme = () => ({
       background: '#FFFFFF',
       foreground: '#333333',
+      cursor: '#333333',
+      cursorAccent: '#FFFFFF',
+      selection: 'rgba(0, 0, 0, 0.3)',
       black: '#000000',
       brightBlack: '#666666',
       red: '#CC0000',
@@ -100,7 +107,8 @@ export default {
       cyan: '#06989A',
       brightCyan: '#34E2E2',
       white: '#D3D7CF',
-      brightWhite: '#EEEEEC'
+      brightWhite: '#EEEEEC',
+      extendedAnsi: true,
     })
 
     const initializeTerminal = async () => {
@@ -118,6 +126,26 @@ export default {
         theme: isDarkMode.value ? getDarkTheme() : getLightTheme(),
         allowTransparency: true,
         scrollback: 10000,
+        convertEol: true,
+        termName: 'xterm-256color',
+        rendererType: 'canvas',
+        allowProposedApi: true,
+        cols: 80,
+        rows: 24,
+        windowsMode: false,
+        windowsPty: false,
+        smoothScrollDuration: 300,
+        fastScrollModifier: 'alt',
+        allowTransparency: true,
+        drawBoldTextInBrightColors: true,
+        minimumContrastRatio: 1,
+        screenReaderMode: false,
+        disableStdin: false,
+        cursorStyle: 'block',
+        fastScrollKey: 'Alt',
+        macOptionIsMeta: true,
+        scrollSensitivity: 1,
+        experimentalCharAtlas: 'dynamic',
       })
       
       term.open(terminal.value)
@@ -203,7 +231,16 @@ export default {
         
         socket.on('connect', () => {
           console.log('Socket connected')
-          socket.emit('open_ssh', { ...props.connection, session_id: props.sessionId })
+          socket.emit('open_ssh', { 
+            ...props.connection, 
+            session_id: props.sessionId,
+            term: 'xterm-256color',
+            env: {
+              TERM: 'xterm-256color',
+              COLORTERM: 'truecolor',
+              TERM_PROGRAM: 'xterm',
+            }
+          })
         })
 
         socket.on('ssh_connected', (data) => {
@@ -267,15 +304,25 @@ export default {
 
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
-        // 如果是错误消息，添加更醒目的格式
-        if (typeof text === 'string' && text.includes('Error:')) {
+        // 检查是否包含特殊的终端控制序列
+        const hasControlSeq = /\x1b\[[?]?(1049[hl]|2J|H|K)/.test(text)
+        
+        if (hasControlSeq) {
+          // 对于包含控制序列的输出，直接写入并立即刷新
+          term.write(text)
+          term.refresh(0, term.rows - 1)
+        } else if (text.includes('Error:')) {
           term.write('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
           term.write('\x1b[31m' + text + '\x1b[0m\r\n')
           term.write('\x1b[31m=============\x1b[0m\r\n\r\n')
         } else {
           term.write(text)
         }
-        term.scrollToBottom()
+        
+        // 只在非控制序列的情况下自动滚动
+        if (!hasControlSeq) {
+          term.scrollToBottom()
+        }
         detectPathChange(text)
       } else {
         outputBuffer.value.push(text)
