@@ -1,5 +1,10 @@
 # SSH Project
 
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Python](https://img.shields.io/badge/python-3.12.7-blue.svg)
+![Node.js](https://img.shields.io/badge/node-v20.12.1-green.svg)
+![Release](https://img.shields.io/github/v/release/funkpopo/simplessh)
+
 本项目前端基于Python3 + Vue3 + ArcoDesign + Xterm.js开发，实现一个SSH客户端工具，具有直观友好的用户界面。
 
 ![image](https://github.com/user-attachments/assets/a1b72c1b-802c-4ceb-85a1-d91415e24cdb)
