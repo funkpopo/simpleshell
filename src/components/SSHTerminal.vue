@@ -9,6 +9,7 @@ import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
 import 'xterm/css/xterm.css'
 import io from 'socket.io-client'
+import { debounce as _debounce } from 'lodash'
 
 export default {
   name: 'SSHTerminal',
@@ -33,6 +34,107 @@ export default {
     const isDarkMode = inject('isDarkMode', ref(false))
     const currentPath = ref('/')
     const contextMenu = ref(null)
+
+    const debouncedRefresh = _debounce(() => {
+      if (term) {
+        term.refresh(0, term.rows - 1)
+        term.scrollToBottom()
+      }
+    }, 16)
+
+    const handleSSHOutput = (data) => {
+      if (data.session_id === props.sessionId) {
+        console.log('Received SSH output')
+        writeToTerminal(data.output)
+        debouncedRefresh()
+      }
+    }
+
+    const initializeSocket = () => {
+      return new Promise((resolve) => {
+        socket = io('http://localhost:5000', {
+          transports: ['websocket'],
+          reconnection: true,
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
+          forceNew: true,
+          timeout: 5000,
+          perMessageDeflate: false,
+          pingInterval: 1000,
+          pingTimeout: 5000,
+          upgrade: false,
+          rememberUpgrade: false,
+          autoConnect: true,
+          reconnectionDelayMax: 5000,
+        })
+        
+        socket.on('connect', () => {
+          console.log('Socket connected')
+          socket.emit('open_ssh', { 
+            ...props.connection, 
+            session_id: props.sessionId,
+            term: 'xterm-256color',
+            env: {
+              TERM: 'xterm-256color',
+              COLORTERM: 'truecolor',
+              TERM_PROGRAM: 'xterm',
+            }
+          })
+        })
+
+        socket.on('connect_error', (error) => {
+          console.error('Socket connection error:', error)
+        })
+
+        socket.on('disconnect', (reason) => {
+          console.log('Socket disconnected:', reason)
+          if (reason === 'io server disconnect' || reason === 'transport close') {
+            socket.connect()
+          }
+        })
+
+        socket.on('ssh_connected', (data) => {
+          if (data.session_id === props.sessionId) {
+            console.log('SSH connected:', data.message)
+            if (!isTerminalReady.value) {
+              initializeTerminal()
+            }
+          }
+        })
+
+        socket.on('ssh_output', (data) => {
+          if (data.session_id === props.sessionId) {
+            console.log('Received SSH output')
+            writeToTerminal(data.output)
+          }
+        })
+
+        socket.on('ssh_error', (error) => {
+          console.error('SSH Error:', error)
+          if (isTerminalReady.value && term) {
+            term.write('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
+            term.write('\x1b[31m' + error.error + '\x1b[0m\r\n')
+            term.write('\x1b[31m=============\x1b[0m\r\n\r\n')
+            term.write('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
+            term.scrollToBottom()
+          } else {
+            outputBuffer.value.push('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
+            outputBuffer.value.push('\x1b[31m' + error.error + '\x1b[0m\r\n')
+            outputBuffer.value.push('\x1b[31m=============\x1b[0m\r\n\r\n')
+            outputBuffer.value.push('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
+          }
+        })
+
+        socket.on('ssh_closed', (data) => {
+          if (data.session_id === props.sessionId) {
+            console.log('SSH connection closed:', data.message)
+            writeToTerminal('SSH connection closed\r\n')
+          }
+        })
+
+        resolve()
+      })
+    }
 
     const handlePaste = (event) => {
       event.preventDefault()
@@ -134,7 +236,7 @@ export default {
         rows: 24,
         windowsMode: false,
         windowsPty: false,
-        smoothScrollDuration: 300,
+        smoothScrollDuration: 0,
         fastScrollModifier: 'alt',
         allowTransparency: true,
         drawBoldTextInBrightColors: true,
@@ -146,11 +248,15 @@ export default {
         macOptionIsMeta: true,
         scrollSensitivity: 1,
         experimentalCharAtlas: 'dynamic',
+        refreshRate: 60,
+        fastScrollSensitivity: 5,
+        scrollOnInput: true,
+        tabStopWidth: 8,
+        cancelEvents: false,
       })
       
       term.open(terminal.value)
 
-      // 等待终端完全加载
       await new Promise(resolve => setTimeout(resolve, 0))
 
       fitAddon = new FitAddon()
@@ -164,39 +270,43 @@ export default {
           handleCopy()
           return false
         }
+        if (event.type === 'keydown') {
+          return handleSpecialKeys(event)
+        }
         return true
+      })
+
+      term.onData((data) => {
+        if (!isTerminalReady.value || !socket) return
+        console.log('Sending SSH input')
+        
+        socket.emit('ssh_input', { session_id: props.sessionId, input: data })
+      })
+
+      term.onLineFeed(() => {
+        term.scrollToBottom()
       })
 
       isTerminalReady.value = true
       
-      // 处理缓冲的输出
       outputBuffer.value.forEach(output => {
         term.write(output)
       })
       outputBuffer.value = []
 
-      term.onData((data) => {
-        console.log('Sending SSH input')
-        socket.emit('ssh_input', { session_id: props.sessionId, input: data })
-      })
-
-      // 发送初始终端大小
-      socket.emit('resize', { 
-        session_id: props.sessionId, 
-        cols: term.cols, 
-        rows: term.rows 
-      })
-
-      // 添加自动滚动到底部的功能
-      term.onLineFeed(() => {
-        term.scrollToBottom()
-      })
+      if (socket) {
+        socket.emit('resize', { 
+          session_id: props.sessionId, 
+          cols: term.cols, 
+          rows: term.rows 
+        })
+      }
 
       window.addEventListener('resize', handleResize)
     }
 
     const handleResize = () => {
-      if (fitAddon && term && isTerminalReady.value) {
+      if (fitAddon && term && isTerminalReady.value && socket) {
         fitAddon.fit()
         term.scrollToBottom()
         socket.emit('resize', { 
@@ -223,73 +333,7 @@ export default {
       }
     }
 
-    const initializeSocket = () => {
-      return new Promise((resolve) => {
-        socket = io('http://localhost:5000', {
-          transports: ['websocket']
-        })
-        
-        socket.on('connect', () => {
-          console.log('Socket connected')
-          socket.emit('open_ssh', { 
-            ...props.connection, 
-            session_id: props.sessionId,
-            term: 'xterm-256color',
-            env: {
-              TERM: 'xterm-256color',
-              COLORTERM: 'truecolor',
-              TERM_PROGRAM: 'xterm',
-            }
-          })
-        })
-
-        socket.on('ssh_connected', (data) => {
-          if (data.session_id === props.sessionId) {
-            console.log('SSH connected:', data.message)
-            writeToTerminal('Connected to SSH server\r\n')
-          }
-        })
-
-        socket.on('ssh_output', (data) => {
-          if (data.session_id === props.sessionId) {
-            console.log('Received SSH output')
-            writeToTerminal(data.output)
-          }
-        })
-
-        socket.on('ssh_error', (error) => {
-          console.error('SSH Error:', error)
-          // 直接写入错误消息到终端，但不关闭会话
-          if (isTerminalReady.value && term) {
-            // 添加换行和颜色，使错误消息更醒目
-            term.write('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
-            term.write('\x1b[31m' + error.error + '\x1b[0m\r\n')
-            term.write('\x1b[31m=============\x1b[0m\r\n\r\n')
-            term.write('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
-            term.scrollToBottom()
-          } else {
-            // 如果终端还没准备好，将错误消息添加到缓冲区
-            outputBuffer.value.push('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
-            outputBuffer.value.push('\x1b[31m' + error.error + '\x1b[0m\r\n')
-            outputBuffer.value.push('\x1b[31m=============\x1b[0m\r\n\r\n')
-            outputBuffer.value.push('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
-          }
-        })
-
-        socket.on('ssh_closed', (data) => {
-          if (data.session_id === props.sessionId) {
-            console.log('SSH connection closed:', data.message)
-            writeToTerminal('SSH connection closed\r\n')
-            emit('close', props.sessionId)
-          }
-        })
-
-        resolve()
-      })
-    }
-
     const detectPathChange = (output) => {
-      // 使用正则表达式匹配路径
       const pathRegex = /^(.+?)\s*[\r\n]/;
       const match = output.match(pathRegex);
       if (match) {
@@ -304,39 +348,17 @@ export default {
 
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
-        // 检查是否包含特殊的终端控制序列
-        const hasControlSeq = /\x1b\[[?]?(1049[hl]|2J|H|K)/.test(text)
-        
-        // 检查是否是大量输出
-        const isLargeOutput = text.length > 4096 || (text.match(/\n/g) || []).length > 50
-        
-        if (hasControlSeq) {
-          // 对于包含控制序列的输出，直接写入并立即刷新
+        try {
           term.write(text)
-          term.refresh(0, term.rows - 1)
-        } else if (isLargeOutput) {
-          // 对于大量输出，分批写入
-          const chunkSize = 1024
-          for (let i = 0; i < text.length; i += chunkSize) {
-            const chunk = text.slice(i, i + chunkSize)
-            term.write(chunk)
-            // 每写入一块数据后让出一点时间给渲染线程
-            if (i + chunkSize < text.length) {
-              setTimeout(() => {}, 0)
-            }
+          
+          detectPathChange(text)
+        } catch (error) {
+          console.error('Error writing to terminal:', error)
+          if (!term || term.disposed) {
+            cleanup()
+            initializeTerminal()
           }
-          term.scrollToBottom()
-        } else if (text.includes('Error:')) {
-          term.write('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
-          term.write('\x1b[31m' + text + '\x1b[0m\r\n')
-          term.write('\x1b[31m=============\x1b[0m\r\n\r\n')
-          term.scrollToBottom()
-        } else {
-          term.write(text)
-          term.scrollToBottom()
         }
-        
-        detectPathChange(text)
       } else {
         outputBuffer.value.push(text)
       }
@@ -361,45 +383,36 @@ export default {
         </div>
       `
 
-      // 先显示菜单以获取其尺寸
       contextMenu.value.style.visibility = 'hidden'
       contextMenu.value.style.display = 'block'
 
-      // 获取菜单尺寸和视窗尺寸
       const menuRect = contextMenu.value.getBoundingClientRect()
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
 
-      // 计算最佳位置
       let left = event.pageX
       let top = event.pageY
 
-      // 检查右边界
       if (left + menuRect.width > viewportWidth) {
         left = viewportWidth - menuRect.width - 5
       }
 
-      // 检查下边界
       if (top + menuRect.height > viewportHeight) {
         top = viewportHeight - menuRect.height - 5
       }
 
-      // 确保不会超出左边和上边界
       left = Math.max(5, left)
       top = Math.max(5, top)
 
-      // 应用计算后的位置
       contextMenu.value.style.left = `${left}px`
       contextMenu.value.style.top = `${top}px`
       contextMenu.value.style.visibility = 'visible'
 
-      // 添加菜单项点击事件
       contextMenu.value.querySelectorAll('.menu-item').forEach(item => {
         item.addEventListener('click', handleMenuClick)
       })
     }
 
-    // 处理菜单项点击
     const handleMenuClick = (event) => {
       const action = event.target.dataset.action
       if (action === 'copy' && term && term.hasSelection()) {
@@ -414,7 +427,6 @@ export default {
       hideContextMenu()
     }
 
-    // 隐藏右键菜单
     const hideContextMenu = () => {
       if (contextMenu.value) {
         contextMenu.value.style.display = 'none'
@@ -423,12 +435,15 @@ export default {
 
     onMounted(async () => {
       console.log('Mounting SSHTerminal component')
-      await initializeSocket()
-      await initializeTerminal()
-      
-      // 添加右键菜单事件监听
-      terminal.value.addEventListener('contextmenu', handleContextMenu)
-      document.addEventListener('click', hideContextMenu)
+      try {
+        await initializeSocket()
+        await initializeTerminal()
+        
+        terminal.value.addEventListener('contextmenu', handleContextMenu)
+        document.addEventListener('click', hideContextMenu)
+      } catch (error) {
+        console.error('Error mounting SSHTerminal:', error)
+      }
     })
 
     const closeConnection = () => {
@@ -440,7 +455,6 @@ export default {
       cleanup()
       window.removeEventListener('resize', handleResize)
       
-      // 清理右键菜单相关
       terminal.value?.removeEventListener('contextmenu', handleContextMenu)
       document.removeEventListener('click', hideContextMenu)
       if (contextMenu.value) {
@@ -448,13 +462,13 @@ export default {
       }
     })
 
-    // 监听父组件的主题变化
     watch(() => isDarkMode.value, (newValue) => {
       setTheme(newValue ? 'dark' : 'light')
     })
 
     const cleanup = () => {
       if (socket) {
+        socket.emit('close_ssh', { session_id: props.sessionId })
         socket.disconnect()
         socket = null
       }
@@ -467,6 +481,29 @@ export default {
         fitAddon = null
       }
       isTerminalReady.value = false
+    }
+
+    const handleSpecialKeys = (event) => {
+      if (term && isTerminalReady.value) {
+        if (event.key.startsWith('Arrow')) {
+          const key = event.key.toLowerCase()
+          const sequences = {
+            arrowup: '\x1b[A',
+            arrowdown: '\x1b[B',
+            arrowright: '\x1b[C',
+            arrowleft: '\x1b[D'
+          }
+          if (sequences[key]) {
+            socket.emit('ssh_input', { session_id: props.sessionId, input: sequences[key] })
+            return false
+          }
+        }
+        
+        if (event.ctrlKey || event.altKey) {
+          return true
+        }
+      }
+      return true
     }
 
     return { 
@@ -501,7 +538,6 @@ export default {
   color: var(--color-text-1);
 }
 
-/* 自定义 xterm 滚动条样式 */
 :deep(.xterm-viewport) {
   scrollbar-width: thin;
   scrollbar-color: var(--color-text-4) transparent;

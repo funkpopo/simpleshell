@@ -1,6 +1,6 @@
 {
   "name": "simplessh",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "author": "Sunn",
   "description": "A simple SSH client",
@@ -26,6 +26,7 @@
     "electron-packager": "^17.1.2",
     "flask-cors": "^0.0.1",
     "jszip": "^3.10.1",
+    "lodash": "^4.17.21",
     "socket.io-client": "^4.7.2",
     "vue": "^3.5.12",
     "vuedraggable": "^4.1.0",
