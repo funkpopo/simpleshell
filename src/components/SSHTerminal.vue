@@ -170,22 +170,21 @@ export default {
       cursorAccent: '#000000',
       selection: 'rgba(255, 255, 255, 0.3)',
       black: '#000000',
-      brightBlack: '#666666',
       red: '#E06C75',
-      brightRed: '#FF7A80',
       green: '#98C379',
-      brightGreen: '#B5E890',
       yellow: '#E5C07B',
-      brightYellow: '#FFD780',
       blue: '#61AFEF',
-      brightBlue: '#80BAFF',
       magenta: '#C678DD',
-      brightMagenta: '#FF80FF',
       cyan: '#56B6C2',
-      brightCyan: '#80FFFF',
       white: '#D4D4D4',
-      brightWhite: '#FFFFFF',
-      extendedAnsi: true,
+      brightBlack: '#666666',
+      brightRed: '#FF7A80',
+      brightGreen: '#B5E890',
+      brightYellow: '#FFD780',
+      brightBlue: '#80BAFF',
+      brightMagenta: '#FF80FF',
+      brightCyan: '#80FFFF',
+      brightWhite: '#FFFFFF'
     })
 
     const getLightTheme = () => ({
@@ -195,22 +194,21 @@ export default {
       cursorAccent: '#FFFFFF',
       selection: 'rgba(0, 0, 0, 0.3)',
       black: '#000000',
-      brightBlack: '#666666',
       red: '#CC0000',
-      brightRed: '#FF0000',
       green: '#4E9A06',
-      brightGreen: '#73D216',
       yellow: '#C4A000',
-      brightYellow: '#FCE94F',
       blue: '#3465A4',
-      brightBlue: '#729FCF',
       magenta: '#75507B',
-      brightMagenta: '#AD7FA8',
       cyan: '#06989A',
-      brightCyan: '#34E2E2',
       white: '#D3D7CF',
-      brightWhite: '#EEEEEC',
-      extendedAnsi: true,
+      brightBlack: '#666666',
+      brightRed: '#EF2929',
+      brightGreen: '#8AE234',
+      brightYellow: '#FCE94F',
+      brightBlue: '#729FCF',
+      brightMagenta: '#AD7FA8',
+      brightCyan: '#34E2E2',
+      brightWhite: '#EEEEEC'
     })
 
     const initializeTerminal = async () => {
@@ -249,10 +247,6 @@ export default {
         scrollSensitivity: 1,
         experimentalCharAtlas: 'dynamic',
         refreshRate: 60,
-        fastScrollSensitivity: 5,
-        scrollOnInput: true,
-        tabStopWidth: 8,
-        cancelEvents: false,
       })
       
       term.open(terminal.value)
@@ -349,8 +343,82 @@ export default {
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
         try {
-          term.write(text)
-          
+          // 如果文本已经包含颜色控制序列，直接写入
+          if (text.includes('\x1b[')) {
+            term.write(text)
+            return
+          }
+
+          // 处理每一行文本
+          const lines = text.split('\n')
+          lines.forEach((line, index) => {
+            // 检查是否是命令提示符行
+            const isPrompt = /^.*?[@:].+[$#>]\s*$/.test(line)
+            
+            if (isPrompt) {
+              // 高亮提示符
+              const parts = line.match(/^(.*?)(@|:)(.+?)([$#>])\s*$/)
+              if (parts) {
+                term.write('\x1b[1;32m' + parts[1]) // 用户名为绿色
+                term.write('\x1b[1;37m' + parts[2]) // @ 或 : 为白色
+                term.write('\x1b[1;34m' + parts[3]) // 主机名/路径为蓝色
+                term.write('\x1b[1;37m' + parts[4]) // 提示符为白色
+                term.write('\x1b[0m') // 重置颜色
+              } else {
+                term.write(line)
+              }
+            } else {
+              // 对其他输出进行语法高亮
+              let coloredLine = line
+                // 高亮IP地址 (移到最前面，避免被其他规则干扰)
+                .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, (match) => {
+                  if (!/[a-zA-Z]/.test(match)) {  // 确保IP地址中没有字母
+                    const parts = match.split('.');
+                    const isValid = parts.every(part => {
+                      const num = parseInt(part, 10);
+                      return !isNaN(num) && num >= 0 && num <= 255 && part.length <= 3;
+                    });
+                    return isValid ? '\x1b[1;35m' + match + '\x1b[0m' : match;
+                  }
+                  return match;
+                })
+                // 高亮完整时间格式
+                .replace(/\b((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun))\s+((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))\s+(\d{1,2})\s+(\d{2}:\d{2}:\d{2})\s+(\d{4})\b/g, 
+                  (match, weekday, month, day, time, year) => {
+                    return '\x1b[1;36m' + weekday +
+                           '\x1b[0m ' +
+                           '\x1b[1;36m' + month +
+                           '\x1b[0m  ' +
+                           '\x1b[1;36m' + day +
+                           '\x1b[0m ' +
+                           '\x1b[1;36m' + time +
+                           '\x1b[0m ' +
+                           '\x1b[1;36m' + year +
+                           '\x1b[0m'
+                  })
+                // 高亮错误信息
+                .replace(/(error|failed|failure|warning)/gi, '\x1b[1;31m$1\x1b[0m')
+                // 高亮成功信息
+                .replace(/(success|succeeded|done|completed)/gi, '\x1b[1;32m$1\x1b[0m')
+                // 高亮路径
+                .replace(/(\/([\w.-]+\/)*[\w.-]+)/g, '\x1b[1;34m$1\x1b[0m')
+                // 高亮端口号
+                .replace(/(?<![:\d])\b:\d+\b/g, '\x1b[1;33m$&\x1b[0m')
+                // 高亮常见命令
+                .replace(/\b(ls|cd|pwd|mkdir|rm|cp|mv|cat|grep|ssh|sudo|apt|yum|docker|git)\b/g, '\x1b[1;36m$1\x1b[0m')
+                // 高亮选项参数
+                .replace(/(\s-\w+|\s--[\w-]+)/g, '\x1b[1;33m$1\x1b[0m')
+
+              term.write(coloredLine)
+            }
+
+            // 如果不是最后一行，添加换行符
+            if (index < lines.length - 1) {
+              term.write('\r\n')
+            }
+          })
+
+          // 检测路径变化
           detectPathChange(text)
         } catch (error) {
           console.error('Error writing to terminal:', error)
