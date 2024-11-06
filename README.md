@@ -2,7 +2,7 @@
 
 本项目前端基于Python3 + Vue3 + ArcoDesign + Xterm.js开发，实现一个SSH客户端工具，具有直观友好的用户界面。
 
-![image](https://github.com/user-attachments/assets/f6b7d2e5-28aa-4b74-8a33-a4210d7e4f5e)
+![image](https://github.com/user-attachments/assets/a1b72c1b-802c-4ceb-85a1-d91415e24cdb)
 
 - 通过Vue创建前端页面，使用ArcoDesign作为UI框架
 - 使用Xterm.js实现网页终端功能
