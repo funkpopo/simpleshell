@@ -32,11 +32,12 @@ export default {
     const outputBuffer = ref([])
     const isDarkMode = inject('isDarkMode', ref(false))
     const currentPath = ref('/')
+    const contextMenu = ref(null)
 
     const handlePaste = (event) => {
+      event.preventDefault()
       if (term && isTerminalReady.value) {
         const text = event.clipboardData.getData('text')
-        term.paste(text)
         socket.emit('ssh_input', { session_id: props.sessionId, input: text })
       }
     }
@@ -46,6 +47,7 @@ export default {
         const selection = term.getSelection()
         if (selection) {
           navigator.clipboard.writeText(selection)
+          term.clearSelection()
         }
       }
     }
@@ -112,7 +114,7 @@ export default {
         cursorBlink: true,
         fontSize: 14,
         fontFamily: 'Consolas, "Courier New", monospace',
-        copyOnSelect: true,
+        copyOnSelect: false,
         theme: isDarkMode.value ? getDarkTheme() : getLightTheme(),
         allowTransparency: true,
         scrollback: 10000,
@@ -280,10 +282,93 @@ export default {
       }
     };
 
+    const handleContextMenu = (event) => {
+      event.preventDefault()
+      if (!contextMenu.value) {
+        contextMenu.value = document.createElement('div')
+        contextMenu.value.className = 'terminal-context-menu'
+        document.body.appendChild(contextMenu.value)
+      }
+
+      const hasSelection = term && term.hasSelection()
+      
+      contextMenu.value.innerHTML = `
+        <div class="menu-item ${hasSelection ? '' : 'disabled'}" data-action="copy">
+          Copy
+        </div>
+        <div class="menu-item" data-action="paste">
+          Paste
+        </div>
+      `
+
+      // 先显示菜单以获取其尺寸
+      contextMenu.value.style.visibility = 'hidden'
+      contextMenu.value.style.display = 'block'
+
+      // 获取菜单尺寸和视窗尺寸
+      const menuRect = contextMenu.value.getBoundingClientRect()
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+
+      // 计算最佳位置
+      let left = event.pageX
+      let top = event.pageY
+
+      // 检查右边界
+      if (left + menuRect.width > viewportWidth) {
+        left = viewportWidth - menuRect.width - 5
+      }
+
+      // 检查下边界
+      if (top + menuRect.height > viewportHeight) {
+        top = viewportHeight - menuRect.height - 5
+      }
+
+      // 确保不会超出左边和上边界
+      left = Math.max(5, left)
+      top = Math.max(5, top)
+
+      // 应用计算后的位置
+      contextMenu.value.style.left = `${left}px`
+      contextMenu.value.style.top = `${top}px`
+      contextMenu.value.style.visibility = 'visible'
+
+      // 添加菜单项点击事件
+      contextMenu.value.querySelectorAll('.menu-item').forEach(item => {
+        item.addEventListener('click', handleMenuClick)
+      })
+    }
+
+    // 处理菜单项点击
+    const handleMenuClick = (event) => {
+      const action = event.target.dataset.action
+      if (action === 'copy' && term && term.hasSelection()) {
+        handleCopy()
+      } else if (action === 'paste') {
+        navigator.clipboard.readText().then(text => {
+          if (term && isTerminalReady.value) {
+            socket.emit('ssh_input', { session_id: props.sessionId, input: text })
+          }
+        })
+      }
+      hideContextMenu()
+    }
+
+    // 隐藏右键菜单
+    const hideContextMenu = () => {
+      if (contextMenu.value) {
+        contextMenu.value.style.display = 'none'
+      }
+    }
+
     onMounted(async () => {
       console.log('Mounting SSHTerminal component')
       await initializeSocket()
       await initializeTerminal()
+      
+      // 添加右键菜单事件监听
+      terminal.value.addEventListener('contextmenu', handleContextMenu)
+      document.addEventListener('click', hideContextMenu)
     })
 
     const closeConnection = () => {
@@ -294,12 +379,35 @@ export default {
     onUnmounted(() => {
       cleanup()
       window.removeEventListener('resize', handleResize)
+      
+      // 清理右键菜单相关
+      terminal.value?.removeEventListener('contextmenu', handleContextMenu)
+      document.removeEventListener('click', hideContextMenu)
+      if (contextMenu.value) {
+        document.body.removeChild(contextMenu.value)
+      }
     })
 
     // 监听父组件的主题变化
     watch(() => isDarkMode.value, (newValue) => {
       setTheme(newValue ? 'dark' : 'light')
     })
+
+    const cleanup = () => {
+      if (socket) {
+        socket.disconnect()
+        socket = null
+      }
+      if (term) {
+        term.dispose()
+        term = null
+      }
+      if (fitAddon) {
+        fitAddon.dispose()
+        fitAddon = null
+      }
+      isTerminalReady.value = false
+    }
 
     return { 
       terminal,
@@ -355,5 +463,38 @@ export default {
 
 :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
   background-color: var(--color-text-3);
+}
+</style>
+
+<style>
+.terminal-context-menu {
+  position: fixed;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 4px 0;
+  min-width: 120px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+.terminal-context-menu .menu-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--color-text-1);
+}
+
+.terminal-context-menu .menu-item:hover {
+  background-color: var(--color-fill-2);
+}
+
+.terminal-context-menu .menu-item.disabled {
+  color: var(--color-text-4);
+  cursor: not-allowed;
+}
+
+.terminal-context-menu .menu-item.disabled:hover {
+  background-color: transparent;
 }
 </style>
