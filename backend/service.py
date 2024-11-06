@@ -200,12 +200,13 @@ def create_ssh_client(connection):
     except Exception as e:
         raise Exception(f'Connection failed: {str(e)}')
 
-# 修改 read_output 函数，优化输出处理机制
+# 修改 read_output 函数，优化大量输出的处理
 def read_output(session_id, channel):
     try:
         buffer = ""
         last_output_time = time.time()
         is_realtime_mode = False
+        large_output_mode = False
         
         while True:
             with sessions_lock:
@@ -219,6 +220,11 @@ def read_output(session_id, channel):
                         # 检查是否是实时更新命令的输出
                         if any(cmd in output.lower() for cmd in ['top -', 'htop', 'watch']):
                             is_realtime_mode = True
+                            large_output_mode = False
+                        
+                        # 检查是否是大量输出
+                        if len(output) > 4096 or output.count('\n') > 50:
+                            large_output_mode = True
                         
                         # 检查是否包含特殊的终端控制序列
                         has_control_seq = any(seq in output for seq in [
@@ -232,8 +238,9 @@ def read_output(session_id, channel):
                             '\x1b[u'    # 恢复光标位置
                         ])
                         
-                        # 如果是实时模式或有控制序列，立即发送
+                        # 处理输出的逻辑
                         if is_realtime_mode or has_control_seq:
+                            # 实时模式或控制序列，立即发送
                             if buffer:
                                 socketio.emit('ssh_output', {
                                     'session_id': session_id,
@@ -244,8 +251,19 @@ def read_output(session_id, channel):
                                 'session_id': session_id,
                                 'output': output
                             })
-                            socketio.sleep(0.01)  # 减少延迟
+                            socketio.sleep(0.01)
+                        elif large_output_mode:
+                            # 大量输出模式，使用更大的缓冲区和更频繁的发送
+                            buffer += output
+                            if len(buffer) >= 8192 or buffer.count('\n') >= 100:
+                                socketio.emit('ssh_output', {
+                                    'session_id': session_id,
+                                    'output': buffer
+                                })
+                                buffer = ""
+                                socketio.sleep(0.01)  # 短暂暂停，让客户端有时间处理
                         else:
+                            # 普通输出模式
                             buffer += output
                             if '\n' in buffer or len(buffer) >= 1024:
                                 socketio.emit('ssh_output', {
@@ -256,19 +274,33 @@ def read_output(session_id, channel):
                         
                         last_output_time = time.time()
                 else:
-                    # 如果是实时模式，使用更短的等待时间
+                    current_time = time.time()
+                    elapsed_time = current_time - last_output_time
+                    
+                    # 根据不同模式设置不同的刷新间隔
                     if is_realtime_mode:
-                        socketio.sleep(0.01)
+                        wait_time = 0.01
+                    elif large_output_mode:
+                        wait_time = 0.02
                     else:
-                        socketio.sleep(0.05)
-                        
-                    # 检查是否需要发送缓冲区数据
-                    if buffer and (time.time() - last_output_time) > (0.01 if is_realtime_mode else 0.05):
+                        wait_time = 0.05
+                    
+                    # 如果缓冲区有数据且超过等待时间，发送数据
+                    if buffer and elapsed_time > wait_time:
                         socketio.emit('ssh_output', {
                             'session_id': session_id,
                             'output': buffer
                         })
                         buffer = ""
+                        
+                    # 根据模式设置不同的睡眠时间
+                    socketio.sleep(wait_time)
+                    
+                    # 如果一段时间没有输出，重置模式标志
+                    if elapsed_time > 1.0:  # 1秒没有输出
+                        large_output_mode = False
+                        if not is_realtime_mode:  # 保持实时模式不变
+                            is_realtime_mode = False
                         
             except socket.timeout:
                 continue
@@ -291,7 +323,6 @@ def read_output(session_id, channel):
                 'session_id': session_id,
                 'output': buffer
             })
-        print(f"Read thread ending for session {session_id}")
 
 @socketio.on('open_ssh')
 def handle_ssh_connection(data):

@@ -307,22 +307,35 @@ export default {
         // 检查是否包含特殊的终端控制序列
         const hasControlSeq = /\x1b\[[?]?(1049[hl]|2J|H|K)/.test(text)
         
+        // 检查是否是大量输出
+        const isLargeOutput = text.length > 4096 || (text.match(/\n/g) || []).length > 50
+        
         if (hasControlSeq) {
           // 对于包含控制序列的输出，直接写入并立即刷新
           term.write(text)
           term.refresh(0, term.rows - 1)
+        } else if (isLargeOutput) {
+          // 对于大量输出，分批写入
+          const chunkSize = 1024
+          for (let i = 0; i < text.length; i += chunkSize) {
+            const chunk = text.slice(i, i + chunkSize)
+            term.write(chunk)
+            // 每写入一块数据后让出一点时间给渲染线程
+            if (i + chunkSize < text.length) {
+              setTimeout(() => {}, 0)
+            }
+          }
+          term.scrollToBottom()
         } else if (text.includes('Error:')) {
           term.write('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
           term.write('\x1b[31m' + text + '\x1b[0m\r\n')
           term.write('\x1b[31m=============\x1b[0m\r\n\r\n')
+          term.scrollToBottom()
         } else {
           term.write(text)
-        }
-        
-        // 只在非控制序列的情况下自动滚动
-        if (!hasControlSeq) {
           term.scrollToBottom()
         }
+        
         detectPathChange(text)
       } else {
         outputBuffer.value.push(text)
