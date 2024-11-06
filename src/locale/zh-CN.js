@@ -15,7 +15,9 @@ export default {
     editFolder: '编辑文件夹',
     editConnection: '编辑连接',
     delete: '删除',
-    cancel: '取消'
+    cancel: '取消',
+    refresh: '刷新连接',
+    close: '关闭'
   },
   settings: {
     title: '设置',

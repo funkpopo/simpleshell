@@ -26,8 +26,8 @@ socketio = SocketIO(app,
                    async_mode='gevent',
                    logger=True,
                    engineio_logger=True,
-                   ping_timeout=60,  # 增加超时时间
-                   ping_interval=25)  # 增加心跳间隔
+                   ping_timeout=300,  # 增加到 300 秒
+                   ping_interval=25)  # 保持 25 秒的心跳间隔
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -255,17 +255,21 @@ def read_output(session_id, channel):
                                 'session_id': session_id,
                                 'output': text
                             })
-                            last_activity = time.time()
+                            last_activity = time.time()  # 更新最后活动时间
                         except Exception as e:
                             print(f"Error processing output: {e}")
                 else:
-                    # 检查通道状态和活动超时
+                    # 每 60 秒发送一次保活信号
                     current_time = time.time()
-                    if current_time - last_activity > 300:  # 5分钟无活动
-                        print(f"Session {session_id} inactive for too long")
-                        break
+                    if current_time - last_activity > 60:
+                        try:
+                            channel.send('\x00')  # 发送空字节作为保活信号
+                            last_activity = current_time
+                        except Exception as e:
+                            print(f"Error sending keepalive: {e}")
+                            break
                     
-                    socketio.sleep(0.01)
+                    socketio.sleep(0.1)  # 增加睡眠时间，减少 CPU 使用
                 
                 # 检查通道状态
                 if channel.closed or not channel.get_transport() or not channel.get_transport().is_active():

@@ -15,7 +15,9 @@ export default {
     editFolder: 'Edit Folder',
     editConnection: 'Edit Connection',
     delete: 'Delete',
-    cancel: 'Cancel'
+    cancel: 'Cancel',
+    refresh: 'Refresh Connection',
+    close: 'Close'
   },
   settings: {
     title: 'Settings',

@@ -154,6 +154,7 @@
                     class="tab-item"
                     :class="{ 'active': activeTab === element.id }"
                     @click="activeTab = element.id"
+                    @contextmenu.prevent="showTabContextMenu($event, element)"
                   >
                     <div class="tab-handle">
                       <span class="tab-title">{{ element.name }}</span>
@@ -1342,7 +1343,7 @@ export default {
               try {
                 await shell.openExternal('https://github.com/funkpopo/simplessh/releases')
               } catch (error) {
-                Message.error('打开下载页面失败')
+                Message.error('打���下载页面失败')
               }
             }
           })
@@ -1370,6 +1371,30 @@ export default {
       } finally {
         checkingUpdate.value = false
       }
+    }
+
+    // 在 setup 函数中添加标签页右键菜单处理
+    const showTabContextMenu = (event, tab) => {
+      event.preventDefault()
+      
+      const menu = new Menu()
+      menu.append(new MenuItem({
+        label: t('common.refresh'),
+        click: () => {
+          const terminal = sshTerminals.value.find(
+            term => term.sessionId === tab.id
+          )
+          if (terminal && terminal.reconnect) {
+            terminal.reconnect()
+          }
+        }
+      }))
+      menu.append(new MenuItem({ type: 'separator' }))
+      menu.append(new MenuItem({
+        label: t('common.close'),
+        click: () => closeTab(tab.id)
+      }))
+      menu.popup()
     }
 
     return {
@@ -1427,6 +1452,7 @@ export default {
       openGithubLink,
       currentVersion,
       checkUpdate,
+      showTabContextMenu,
     }
   }
 }

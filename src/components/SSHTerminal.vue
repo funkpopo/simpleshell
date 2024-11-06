@@ -3,6 +3,7 @@
 </template>
 
 <script>
+import { Message } from '@arco-design/web-vue'
 import { ref, onMounted, onUnmounted, watch, nextTick, inject } from 'vue'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
@@ -35,6 +36,12 @@ export default {
     const currentPath = ref('/')
     const contextMenu = ref(null)
 
+    const timestampPatterns = {
+      iso8601: /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/g,
+      unixTimestamp: /\b\d{10}\b|\b\d{13}\b/g,
+      rfc2822: /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{4}\s\d{2}:\d{2}:\d{2}\s(?:[+-]\d{4}|GMT|UTC|EST|EDT|CST|CDT|MST|MDT|PST|PDT)/g
+    }
+
     const debouncedRefresh = _debounce(() => {
       if (term) {
         term.refresh(0, term.rows - 1)
@@ -60,8 +67,8 @@ export default {
           forceNew: true,
           timeout: 5000,
           perMessageDeflate: false,
-          pingInterval: 1000,
-          pingTimeout: 5000,
+          pingInterval: 25000,
+          pingTimeout: 300000,
           upgrade: false,
           rememberUpgrade: false,
           autoConnect: true,
@@ -84,11 +91,16 @@ export default {
 
         socket.on('connect_error', (error) => {
           console.error('Socket connection error:', error)
+          setTimeout(() => {
+            console.log('Attempting to reconnect...')
+            socket.connect()
+          }, 1000)
         })
 
         socket.on('disconnect', (reason) => {
           console.log('Socket disconnected:', reason)
           if (reason === 'io server disconnect' || reason === 'transport close') {
+            console.log('Attempting to reconnect...')
             socket.connect()
           }
         })
@@ -328,14 +340,14 @@ export default {
     }
 
     const detectPathChange = (output) => {
-      const pathRegex = /^(.+?)\s*[\r\n]/;
+      const pathRegex = /^\[([^@\]]+@[^\]]+)\]/;
       const match = output.match(pathRegex);
       if (match) {
-        const newPath = match[1].trim();
-        if (newPath !== currentPath.value) {
-          currentPath.value = newPath;
-          emit('pathChange', newPath);
-          console.log('Path changed in SSHTerminal:', newPath);
+        const promptInfo = match[1].trim();
+        if (promptInfo !== currentPath.value) {
+          currentPath.value = promptInfo;
+          emit('pathChange', promptInfo);
+          console.log('Path changed in SSHTerminal:', promptInfo);
         }
       }
     };
@@ -352,64 +364,77 @@ export default {
           // 处理每一行文本
           const lines = text.split('\n')
           lines.forEach((line, index) => {
-            // 检查是否是命令提示符行
-            const isPrompt = /^.*?[@:].+[$#>]\s*$/.test(line)
+            // 修改提示符检测规则，使其更精确
+            const isPrompt = /^\[.*?@.*?\s+.*?\][$#>]\s*$/.test(line)
             
             if (isPrompt) {
-              // 高亮提示符
-              const parts = line.match(/^(.*?)(@|:)(.+?)([$#>])\s*$/)
+              // 修改提示符高亮规则
+              const parts = line.match(/^\[(.*?)@(.*?)\s+(.*?)\]([$#>])\s*$/)
               if (parts) {
-                term.write('\x1b[1;32m' + parts[1]) // 用户名为绿色
-                term.write('\x1b[1;37m' + parts[2]) // @ 或 : 为白色
-                term.write('\x1b[1;34m' + parts[3]) // 主机名/路径为蓝色
-                term.write('\x1b[1;37m' + parts[4]) // 提示符为白色
+                term.write('\x1b[1;32m[' + parts[1]) // 用户名为绿色
+                term.write('\x1b[1;37m@') // @ 为白色
+                term.write('\x1b[1;34m' + parts[2]) // 主机名为蓝色
+                term.write('\x1b[1;34m ' + parts[3]) // 路径为蓝色
+                term.write('\x1b[1;37m]' + parts[4]) // 提示符为白色
                 term.write('\x1b[0m') // 重置颜色
               } else {
                 term.write(line)
               }
             } else {
-              // 对其他输出进行语法高亮
-              let coloredLine = line
-                // 高亮IP地址 (移到最前面，避免被其他规则干扰)
-                .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, (match) => {
-                  if (!/[a-zA-Z]/.test(match)) {  // 确保IP地址中没有字母
-                    const parts = match.split('.');
-                    const isValid = parts.every(part => {
-                      const num = parseInt(part, 10);
-                      return !isNaN(num) && num >= 0 && num <= 255 && part.length <= 3;
-                    });
-                    return isValid ? '\x1b[1;35m' + match + '\x1b[0m' : match;
-                  }
-                  return match;
-                })
-                // 高亮完整时间格式
-                .replace(/\b((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun))\s+((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))\s+(\d{1,2})\s+(\d{2}:\d{2}:\d{2})\s+(\d{4})\b/g, 
-                  (match, weekday, month, day, time, year) => {
-                    return '\x1b[1;36m' + weekday +
-                           '\x1b[0m ' +
-                           '\x1b[1;36m' + month +
-                           '\x1b[0m  ' +
-                           '\x1b[1;36m' + day +
-                           '\x1b[0m ' +
-                           '\x1b[1;36m' + time +
-                           '\x1b[0m ' +
-                           '\x1b[1;36m' + year +
-                           '\x1b[0m'
-                  })
-                // 高亮错误信息
-                .replace(/(error|failed|failure|warning)/gi, '\x1b[1;31m$1\x1b[0m')
-                // 高亮成功信息
-                .replace(/(success|succeeded|done|completed)/gi, '\x1b[1;32m$1\x1b[0m')
-                // 高亮路径
-                .replace(/(\/([\w.-]+\/)*[\w.-]+)/g, '\x1b[1;34m$1\x1b[0m')
-                // 高亮端口号
-                .replace(/(?<![:\d])\b:\d+\b/g, '\x1b[1;33m$&\x1b[0m')
-                // 高亮常见命令
-                .replace(/\b(ls|cd|pwd|mkdir|rm|cp|mv|cat|grep|ssh|sudo|apt|yum|docker|git)\b/g, '\x1b[1;36m$1\x1b[0m')
-                // 高亮选项参数
-                .replace(/(\s-\w+|\s--[\w-]+)/g, '\x1b[1;33m$1\x1b[0m')
+              // Handle timestamp highlighting
+              let processedLine = line
+              let lastIndex = 0
+              let segments = []
 
-              term.write(coloredLine)
+              // Find all timestamp matches
+              let matches = []
+              for (const [format, pattern] of Object.entries(timestampPatterns)) {
+                let match
+                pattern.lastIndex = 0 // Reset regex state
+                while ((match = pattern.exec(line)) !== null) {
+                  matches.push({
+                    index: match.index,
+                    length: match[0].length,
+                    text: match[0],
+                    format
+                  })
+                }
+              }
+
+              // Sort matches by index
+              matches.sort((a, b) => a.index - b.index)
+
+              // Process line with timestamps
+              matches.forEach(match => {
+                if (match.index > lastIndex) {
+                  segments.push({
+                    text: line.substring(lastIndex, match.index),
+                    isTimestamp: false
+                  })
+                }
+                segments.push({
+                  text: match.text,
+                  isTimestamp: true
+                })
+                lastIndex = match.index + match.length
+              })
+
+              // Add remaining text
+              if (lastIndex < line.length) {
+                segments.push({
+                  text: line.substring(lastIndex),
+                  isTimestamp: false
+                })
+              }
+
+              // Write segments with appropriate colors
+              segments.forEach(segment => {
+                if (segment.isTimestamp) {
+                  term.write('\x1b[38;5;208m' + segment.text + '\x1b[0m') // Orange color for timestamps
+                } else {
+                  term.write(segment.text)
+                }
+              })
             }
 
             // 如果不是最后一行，添加换行符
@@ -574,6 +599,22 @@ export default {
       return true
     }
 
+    const reconnect = async () => {
+      try {
+        // 清理现有连接
+        cleanup()
+        
+        // 重新初始化连接
+        await initializeSocket()
+        await initializeTerminal()
+        
+        Message.success('Connection refreshed successfully')
+      } catch (error) {
+        console.error('Failed to refresh connection:', error)
+        Message.error('Failed to refresh connection')
+      }
+    }
+
     return { 
       terminal,
       closeConnection,
@@ -581,7 +622,8 @@ export default {
       setTheme,
       isDarkMode,
       manualResize,
-      currentPath
+      currentPath,
+      reconnect
     }
   }
 }
