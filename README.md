@@ -1,6 +1,6 @@
 # SSH Project
 
-![License](https://img.shields.io/badge/license-MIT-green.svg)
+![License](https://img.shields.io/badge/license-GPL3.0-green.svg)
 ![Python](https://img.shields.io/badge/python-3.12.7-blue.svg)
 ![Node.js](https://img.shields.io/badge/node-v20.12.1-green.svg)
 ![Release](https://img.shields.io/github/v/release/funkpopo/simplessh)
