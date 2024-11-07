@@ -10,6 +10,12 @@ files:
 extraResources:
   - from: "backend/dist/service.exe"
     to: "service.exe"
+    filter:
+      - "win32"
+  - from: "backend/dist/service"
+    to: "service"
+    filter:
+      - "linux"
 extraFiles:
   - from: "highlight.list"
     to: "highlight.list"
@@ -28,6 +34,13 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: false
   createStartMenuShortcut: false
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Network
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+  executableName: "simplessh"
 asar: true
 asarUnpack:
   - "resources/**/*"

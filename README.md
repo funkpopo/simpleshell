@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/badge/license-GPL3.0-green.svg)
 ![Python](https://img.shields.io/badge/python-3.12.7-blue.svg)
-![Node.js](https://img.shields.io/badge/node-v20.12.1-green.svg)
+![Node.js](https://img.shields.io/badge/node-v22.11.0-green.svg)
 ![Release](https://img.shields.io/github/v/release/funkpopo/simplessh)
 
 本项目前端基于Python3 + Vue3 + ArcoDesign + Xterm.js开发，实现一个SSH客户端工具，具有直观友好的用户界面。
@@ -77,7 +77,12 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 
 1. 编译前端
    ```
+   # 默认打包为win x64
    npm run electron:build
+   # Windows平台打包
+   npm run electron:build:win
+   # Linux平台打包
+   npm run electron:build:linux
    ```
 
 2. 编译后端
