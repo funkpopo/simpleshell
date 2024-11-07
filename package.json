@@ -15,8 +15,7 @@
     "postuninstall": "electron-builder install-app-deps",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "dev": "concurrently \"cd backend && python service.py\" \"npm run electron:serve\"",
-    "clean": "rimraf dist_electron",
-    "build:all": "node build-all.js"
+    "clean": "rimraf dist_electron"
   },
   "dependencies": {
     "@arco-design/web-vue": "^2.56.2",
