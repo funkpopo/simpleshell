@@ -28,7 +28,21 @@ export default {
     restartNow: '立即重启',
     restartLater: '稍后重启',
     restartReminder: '请重启应用程序以应用新的语言设置',
-    saveFailed: '保存设置失败'
+    saveFailed: '保存设置失败',
+    customHighlight: '自定义高亮规则',
+    highlightRules: '高亮规则配置',
+    addRule: '添加规则',
+    saveRules: '保存规则',
+    ruleName: '规则名称',
+    rulePattern: '正则表达式',
+    ruleColor: '颜色',
+    editPattern: '编辑正则表达式',
+    pattern: '正则表达式模式',
+    highlightRulesChanged: '高亮规则已更改',
+    restartRequired: '需要重启应用程序以应用新的高亮规则。',
+    restartNow: '立即重启',
+    restartLater: '稍后重启',
+    restartReminder: '请重启应用程序以应用新的高亮规则'
   },
   messages: {
     confirmDelete: '确认删除',

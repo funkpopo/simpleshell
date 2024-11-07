@@ -303,7 +303,18 @@
               <a-option value="en-US">English</a-option>
             </a-select>
           </a-form-item>
+          
+          <!-- 添加高亮规则配置按钮 -->
+          <a-form-item>
+            <a-button 
+              type="outline" 
+              @click="highlightRulesVisible = true"
+            >
+              {{ t('settings.customHighlight') }}
+            </a-button>
+          </a-form-item>
         </a-form>
+        
         <template #footer>
           <div class="settings-footer">
             <div class="footer-left">
@@ -328,6 +339,95 @@
       </a-modal>
     </a-layout>
   </a-config-provider>
+
+  <!-- 添加高亮规则配置对话框 -->
+  <a-modal
+    v-model:visible="highlightRulesVisible"
+    :title="t('settings.highlightRules')"
+    :width="700"
+    :mask-closable="false"
+    @ok="saveHighlightRules"
+    @cancel="highlightRulesVisible = false"
+  >
+    <div class="highlight-rules-container">
+      <a-button type="primary" @click="addHighlightRule" style="margin-bottom: 16px">
+        {{ t('settings.addRule') }}
+      </a-button>
+      
+      <div class="rules-table-container">
+        <a-table :data="customHighlightRules" :pagination="false">
+          <template #columns>
+            <a-table-column title="Name" data-index="name">
+              <template #cell="{ record }">
+                <a-input v-model="record.name" />
+              </template>
+            </a-table-column>
+            
+            <a-table-column title="Pattern" data-index="pattern">
+              <template #cell="{ record }">
+                <div class="pattern-cell">
+                  <a-input
+                    v-model="record.pattern"
+                    readonly
+                    :style="{ cursor: 'pointer' }"
+                    @click="editPattern(record)"
+                  />
+                </div>
+              </template>
+            </a-table-column>
+            
+            <a-table-column title="Color" data-index="color">
+              <template #cell="{ record }">
+                <a-input-group compact>
+                  <a-input v-model="record.color" style="width: calc(100% - 40px)" />
+                  <a-button
+                    :style="{ 
+                      backgroundColor: record.color,
+                      width: '40px',
+                      border: '1px solid var(--color-border)'
+                    }"
+                    @click="() => showColorPicker(record)"
+                  />
+                </a-input-group>
+              </template>
+            </a-table-column>
+            
+            <a-table-column title="Actions" align="center" width="80">
+              <template #cell="{ rowIndex }">
+                <a-button
+                  type="text"
+                  status="danger"
+                  @click="removeHighlightRule(rowIndex)"
+                >
+                  <icon-delete />
+                </a-button>
+              </template>
+            </a-table-column>
+          </template>
+        </a-table>
+      </div>
+    </div>
+  </a-modal>
+
+  <!-- 在 Highlight Rules Configuration 对话框后添加编辑正则表达式的弹窗 -->
+  <a-modal
+    v-model:visible="patternEditVisible"
+    :title="t('settings.editPattern')"
+    @ok="savePattern"
+    @cancel="patternEditVisible = false"
+    :mask-closable="false"
+  >
+    <a-form :model="editingPattern" layout="vertical">
+      <a-form-item :label="t('settings.pattern')">
+        <a-textarea
+          v-model="editingPattern.pattern"
+          :rows="6"
+          :style="{ width: '100%' }"
+          allow-clear
+        />
+      </a-form-item>
+    </a-form>
+  </a-modal>
 </template>
 
 <script>
@@ -575,6 +675,9 @@ export default {
       // 加系统主题变化的监听器
       const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
       darkModeMediaQuery.addListener(systemThemeChangeHandler)
+      
+      // 加载高亮规则
+      loadHighlightRules()
     })
 
     onUnmounted(() => {
@@ -820,7 +923,7 @@ export default {
         
         folder.connections.push(newConnection)
 
-        // 更新配置文
+        // 新配置文
         const config = await axios.get('http://localhost:5000/get_connections')
         const updatedConfig = config.data.map(item => {
           if (item.id === folder.id) {
@@ -1343,7 +1446,7 @@ export default {
               try {
                 await shell.openExternal('https://github.com/funkpopo/simplessh/releases')
               } catch (error) {
-                Message.error('打���下载页面失败')
+                Message.error('打下载页面失败')
               }
             }
           })
@@ -1395,6 +1498,146 @@ export default {
         click: () => closeTab(tab.id)
       }))
       menu.popup()
+    }
+
+    // 在 setup 中添加新的响应式变量
+    const highlightRulesVisible = ref(false)
+    const customHighlightRules = ref([])
+
+    // 添加加载和保存高亮规则的函数
+    const loadHighlightRules = async () => {
+      try {
+        const content = await fs.promises.readFile('highlight.list', 'utf-8')
+        const rules = []
+        let currentSection = ''
+        
+        content.split('\n').forEach(line => {
+          line = line.trim()
+          if (!line || line.startsWith('#')) return
+          
+          if (line === '[Regex]' || line === '[String]') {
+            currentSection = line.slice(1, -1).toLowerCase()
+            return
+          }
+          
+          const [name, pattern, color] = line.split('=')
+          if (name && pattern && color) {
+            rules.push({
+              name: name.trim(),
+              pattern: pattern.trim(),
+              color: color.trim(),
+              type: currentSection
+            })
+          }
+        })
+        customHighlightRules.value = rules
+      } catch (error) {
+        console.error('Error loading highlight rules:', error)
+        Message.error('Failed to load highlight rules')
+      }
+    }
+
+    const saveHighlightRules = async () => {
+      try {
+        let content = '# Format: name=pattern=#HEX_COLOR\n'
+        content += '# Colors should be in hexadecimal format like: #FF0000 (red), #00FF00 (green), #0000FF (blue)\n'
+        content += '# Each section uses different matching methods:\n'
+        content += '# [Regex] section uses regular expressions\n'
+        content += '# [String] section uses simple string matching\n\n'
+        
+        // Write Regex section
+        content += '[Regex]\n'
+        customHighlightRules.value
+          .filter(rule => rule.type === 'regex')
+          .forEach(rule => {
+            content += `${rule.name}=${rule.pattern}=${rule.color}\n`
+          })
+        
+        // Write String section
+        content += '\n[String]\n'
+        customHighlightRules.value
+          .filter(rule => rule.type === 'string')
+          .forEach(rule => {
+            content += `${rule.name}=${rule.pattern}=${rule.color}\n`
+          })
+        
+        await fs.promises.writeFile('highlight.list', content, 'utf-8')
+        
+        // 关闭高亮规则配置对话框
+        highlightRulesVisible.value = false
+        
+        // 显示重启提示对话框
+        Modal.info({
+          title: t('settings.highlightRulesChanged'),
+          content: t('settings.restartRequired'),
+          okText: t('settings.restartNow'),
+          cancelText: t('settings.restartLater'),
+          hideCancel: false,
+          onOk: () => {
+            // 用户选择立即重启
+            const { app } = require('@electron/remote')
+            app.relaunch()
+            app.exit(0)
+          },
+          onCancel: () => {
+            // 用户选择稍后重启
+            Message.success(t('settings.restartReminder'))
+          }
+        })
+      } catch (error) {
+        console.error('Error saving highlight rules:', error)
+        Message.error('Failed to save highlight rules')
+      }
+    }
+
+    // 添加编辑规则的方法
+    const addHighlightRule = () => {
+      customHighlightRules.value.unshift({  // 使用 unshift 替代 push
+        name: '',
+        pattern: '',
+        color: '#000000'
+      })
+    }
+
+    const removeHighlightRule = (index) => {
+      customHighlightRules.value.splice(index, 1)
+    }
+
+    const showColorPicker = (record) => {
+      // 创建一个隐藏的 input type="color" 元素
+      const input = document.createElement('input')
+      input.type = 'color'
+      input.value = record.color
+      input.style.position = 'absolute'
+      input.style.visibility = 'hidden'
+      
+      // 添加到文档中并触发点击
+      document.body.appendChild(input)
+      input.addEventListener('change', (e) => {
+        record.color = e.target.value
+        document.body.removeChild(input)
+      })
+      input.click()
+    }
+
+    const patternEditVisible = ref(false)
+    const editingPattern = reactive({
+      pattern: '',
+      index: -1
+    })
+
+    const editPattern = (record) => {
+      const index = customHighlightRules.value.findIndex(r => r === record)
+      editingPattern.pattern = record.pattern
+      editingPattern.index = index
+      patternEditVisible.value = true
+    }
+
+    const savePattern = () => {
+      if (editingPattern.index >= 0) {
+        customHighlightRules.value[editingPattern.index].pattern = editingPattern.pattern
+      }
+      patternEditVisible.value = false
     }
 
     return {
@@ -1453,6 +1696,16 @@ export default {
       currentVersion,
       checkUpdate,
       showTabContextMenu,
+      highlightRulesVisible,
+      customHighlightRules,
+      addHighlightRule,
+      removeHighlightRule,
+      saveHighlightRules,
+      showColorPicker,
+      editingPattern,
+      savePattern,
+      editPattern,
+      patternEditVisible,
     }
   }
 }
@@ -1668,7 +1921,7 @@ export default {
 }
 
 .arco-menu {
-  z-index: 1001;  /* 确保菜单最上层 */
+  z-index: 1001;  /* 确菜单最上层 */
   position: relative;
 }
 
@@ -1714,7 +1967,7 @@ export default {
   align-items: center;
   width: 100%;
   padding-right: 4px; /* 减小右侧内距 */
-  min-width: 0; /* 确保可以正确处理溢出 */
+  min-width: 0; /* 确保可以正确处理出 */
 }
 
 .folder-header > span {
@@ -1859,7 +2112,7 @@ export default {
   min-width: 64px !important;
 }
 
-/* 文件夹头像样式 */
+/* 文件夹头像样 */
 .folder-avatar {
   display: flex;
   justify-content: center;
@@ -2280,7 +2533,7 @@ export default {
   background-color: var(--color-bg-1);
 }
 
-/* 拖拽时的样式 */
+/* 拖拽时的式 */
 .sortable-ghost {
   opacity: 0.5;
   background-color: var(--color-fill-3);
@@ -2319,7 +2572,7 @@ export default {
   font-size: 16px;
 }
 
-/* 主题切换按钮样式 */
+/* 主题换按钮样式 */
 .theme-switch {
   width: 32px;
   height: 32px;
@@ -2415,5 +2668,80 @@ export default {
 
 .app-title h3 {
   margin: 0;
+}
+
+/* 高亮规则配置对话框样式 */
+.highlight-rules-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.rules-table-container {
+  flex: 1;
+  overflow-y: auto;
+  max-height: calc(70vh - 120px); /* 减去按钮和padding的高度 */
+}
+
+/* 确保表格头部固定 */
+.rules-table-container :deep(.arco-table-header) {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-bg-2);
+}
+
+/* 美化滚动条 */
+.rules-table-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.rules-table-container::-webkit-scrollbar-track {
+  background: var(--color-fill-2);
+  border-radius: 4px;
+}
+
+.rules-table-container::-webkit-scrollbar-thumb {
+  background: var(--color-fill-4);
+  border-radius: 4px;
+}
+
+.rules-table-container::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fill-5);
+}
+
+/* 确保表格内容不会被截断 */
+.rules-table-container :deep(.arco-table-body) {
+  overflow-y: visible;
+}
+
+/* 调整表格行高 */
+.rules-table-container :deep(.arco-table-tr) {
+  height: 54px;
+}
+
+/* 确保输入框在单元格内正确对齐 */
+.rules-table-container :deep(.arco-table-td) {
+  padding: 8px;
+}
+
+/* 调整颜色选择器按钮样式 */
+.rules-table-container :deep(.arco-input-group) {
+  display: flex;
+  align-items: center;
+}
+
+.pattern-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pattern-cell :deep(.arco-input) {
+  background-color: var(--color-bg-2);
+}
+
+.pattern-cell :deep(.arco-input:hover) {
+  background-color: var(--color-fill-2);
 }
 </style>

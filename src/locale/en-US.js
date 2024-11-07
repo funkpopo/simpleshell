@@ -28,7 +28,21 @@ export default {
     restartNow: 'Restart Now',
     restartLater: 'Restart Later',
     restartReminder: 'Please restart the application to apply the new language setting',
-    saveFailed: 'Failed to save settings'
+    saveFailed: 'Failed to save settings',
+    customHighlight: 'Custom Highlight Rules',
+    highlightRules: 'Highlight Rules Configuration',
+    addRule: 'Add Rule',
+    saveRules: 'Save Rules',
+    ruleName: 'Rule Name',
+    rulePattern: 'Regular Expression',
+    ruleColor: 'Color',
+    editPattern: 'Edit Regular Expression',
+    pattern: 'Regular Expression Pattern',
+    highlightRulesChanged: 'Highlight Rules Changed',
+    restartRequired: 'The application needs to restart to apply the new highlight rules.',
+    restartNow: 'Restart Now',
+    restartLater: 'Restart Later',
+    restartReminder: 'Please restart the application to apply the new highlight rules'
   },
   messages: {
     confirmDelete: 'Confirm Delete',

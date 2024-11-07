@@ -11,6 +11,8 @@ import { WebLinksAddon } from 'xterm-addon-web-links'
 import 'xterm/css/xterm.css'
 import io from 'socket.io-client'
 import { debounce as _debounce } from 'lodash'
+import fs from 'fs'
+import path from 'path'
 
 export default {
   name: 'SSHTerminal',
@@ -35,6 +37,7 @@ export default {
     const isDarkMode = inject('isDarkMode', ref(false))
     const currentPath = ref('/')
     const contextMenu = ref(null)
+    const regexPatterns = ref({})
 
     const timestampPatterns = {
       iso8601: /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/g,
@@ -355,95 +358,57 @@ export default {
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
         try {
-          // 如果文本已经包含颜色控制序列，直接写入
-          if (text.includes('\x1b[')) {
-            term.write(text)
-            return
-          }
-
-          // 处理每一行文本
           const lines = text.split('\n')
+          
           lines.forEach((line, index) => {
-            // 修改提示符检测规则，使其更精确
+            if (!line && index < lines.length - 1) {
+              term.write('\r\n')
+              return
+            }
+
             const isPrompt = /^\[.*?@.*?\s+.*?\][$#>]\s*$/.test(line)
             
             if (isPrompt) {
-              // 修改提示符高亮规则
+              // 处理提示符高亮...
               const parts = line.match(/^\[(.*?)@(.*?)\s+(.*?)\]([$#>])\s*$/)
               if (parts) {
-                term.write('\x1b[1;32m[' + parts[1]) // 用户名为绿色
-                term.write('\x1b[1;37m@') // @ 为白色
-                term.write('\x1b[1;34m' + parts[2]) // 主机名为蓝色
-                term.write('\x1b[1;34m ' + parts[3]) // 路径为蓝色
-                term.write('\x1b[1;37m]' + parts[4]) // 提示符为白色
-                term.write('\x1b[0m') // 重置颜色
+                term.write('\x1b[1;32m[' + parts[1])
+                term.write('\x1b[1;37m@')
+                term.write('\x1b[1;34m' + parts[2])
+                term.write('\x1b[1;34m ' + parts[3])
+                term.write('\x1b[1;37m]' + parts[4])
+                term.write('\x1b[0m')
               } else {
                 term.write(line)
               }
             } else {
-              // Handle timestamp highlighting
-              let processedLine = line
+              // 处理正则和字符串匹配的高亮
+              const matches = processLine(line)
               let lastIndex = 0
-              let segments = []
-
-              // Find all timestamp matches
-              let matches = []
-              for (const [format, pattern] of Object.entries(timestampPatterns)) {
-                let match
-                pattern.lastIndex = 0 // Reset regex state
-                while ((match = pattern.exec(line)) !== null) {
-                  matches.push({
-                    index: match.index,
-                    length: match[0].length,
-                    text: match[0],
-                    format
-                  })
+              
+              if (matches.length === 0) {
+                // 如果没有匹配，直接写入整行
+                term.write(line)
+              } else {
+                matches.forEach(match => {
+                  if (match.start > lastIndex) {
+                    term.write(line.substring(lastIndex, match.start))
+                  }
+                  term.write(match.color + match.text + '\x1b[0m')
+                  lastIndex = match.end
+                })
+                
+                if (lastIndex < line.length) {
+                  term.write(line.substring(lastIndex))
                 }
               }
-
-              // Sort matches by index
-              matches.sort((a, b) => a.index - b.index)
-
-              // Process line with timestamps
-              matches.forEach(match => {
-                if (match.index > lastIndex) {
-                  segments.push({
-                    text: line.substring(lastIndex, match.index),
-                    isTimestamp: false
-                  })
-                }
-                segments.push({
-                  text: match.text,
-                  isTimestamp: true
-                })
-                lastIndex = match.index + match.length
-              })
-
-              // Add remaining text
-              if (lastIndex < line.length) {
-                segments.push({
-                  text: line.substring(lastIndex),
-                  isTimestamp: false
-                })
-              }
-
-              // Write segments with appropriate colors
-              segments.forEach(segment => {
-                if (segment.isTimestamp) {
-                  term.write('\x1b[38;5;208m' + segment.text + '\x1b[0m') // Orange color for timestamps
-                } else {
-                  term.write(segment.text)
-                }
-              })
             }
 
-            // 如果不是最后一行，添加换行符
             if (index < lines.length - 1) {
               term.write('\r\n')
             }
           })
 
-          // 检测路径变化
           detectPathChange(text)
         } catch (error) {
           console.error('Error writing to terminal:', error)
@@ -455,7 +420,7 @@ export default {
       } else {
         outputBuffer.value.push(text)
       }
-    };
+    }
 
     const handleContextMenu = (event) => {
       event.preventDefault()
@@ -526,9 +491,97 @@ export default {
       }
     }
 
+    // 添加一个颜色转换函数
+    const hexToAnsi256 = (hex) => {
+      // 移除 # 号
+      hex = hex.replace('#', '')
+      
+      // 将hex转换为RGB
+      const r = parseInt(hex.substr(0, 2), 16)
+      const g = parseInt(hex.substr(2, 2), 16)
+      const b = parseInt(hex.substr(4, 2), 16)
+      
+      // 计算最接近的ANSI 256色值
+      if (r === g && g === b) {
+        if (r < 8) return 16
+        if (r > 248) return 231
+        return Math.round(((r - 8) / 247) * 24) + 232
+      }
+
+      const ansi = 16 +
+        (36 * Math.round(r / 255 * 5)) +
+        (6 * Math.round(g / 255 * 5)) +
+        Math.round(b / 255 * 5)
+        
+      return ansi
+    }
+
+    const loadHighlightPatterns = async () => {
+      try {
+        const highlightPath = path.join(process.cwd(), 'highlight.list')
+        console.log('Loading highlight patterns from:', highlightPath)
+        const content = await fs.promises.readFile(highlightPath, 'utf-8')
+        
+        let currentSection = ''
+        const patterns = {
+          regex: {},
+          string: {}
+        }
+        
+        // Parse highlight.list file
+        content.split('\n').forEach(line => {
+          line = line.trim()
+          if (!line || line.startsWith('#')) return
+          
+          // Check for section headers
+          if (line === '[Regex]') {
+            currentSection = 'regex'
+            console.log('Processing Regex section')
+            return
+          }
+          if (line === '[String]') {
+            currentSection = 'string'
+            console.log('Processing String section')
+            return
+          }
+          
+          // Parse patterns based on current section
+          const [name, pattern, color] = line.split('=')
+          if (name && pattern && color) {
+            const ansiColor = hexToAnsi256(color.trim())
+            const colorCode = `\x1b[38;5;${ansiColor}m`
+            
+            if (currentSection === 'regex') {
+              try {
+                patterns.regex[name.trim()] = {
+                  pattern: new RegExp(pattern.trim(), 'g'),
+                  color: colorCode
+                }
+                console.log(`Added regex pattern: ${name.trim()}`)
+              } catch (error) {
+                console.error(`Failed to compile regex pattern for ${name}:`, error)
+              }
+            } else if (currentSection === 'string') {
+              patterns.string[name.trim()] = {
+                keywords: pattern.trim().split(','),
+                color: colorCode
+              }
+              console.log(`Added string pattern: ${name.trim()}`)
+            }
+          }
+        })
+        
+        regexPatterns.value = patterns
+        console.log('Loaded highlight patterns:', patterns)
+      } catch (error) {
+        console.error('Error loading highlight patterns:', error)
+      }
+    }
+
     onMounted(async () => {
       console.log('Mounting SSHTerminal component')
       try {
+        await loadHighlightPatterns()
         await initializeSocket()
         await initializeTerminal()
         
@@ -613,6 +666,98 @@ export default {
         console.error('Failed to refresh connection:', error)
         Message.error('Failed to refresh connection')
       }
+    }
+
+    const processLine = (line) => {
+      let matches = []
+      
+      // 如果regexPatterns.value未初始化，直接返回空数组
+      if (!regexPatterns.value || (!regexPatterns.value.regex && !regexPatterns.value.string)) {
+        console.log('No highlight patterns loaded')
+        return matches
+      }
+
+      try {
+        // Process regex patterns
+        if (regexPatterns.value.regex) {
+          console.log('Processing regex patterns:', Object.keys(regexPatterns.value.regex))
+          for (const [name, config] of Object.entries(regexPatterns.value.regex)) {
+            const { pattern, color } = config
+            if (!pattern || !color) continue
+            
+            try {
+              pattern.lastIndex = 0 // Reset regex state
+              let match
+              while ((match = pattern.exec(line)) !== null) {
+                console.log(`Regex match found for ${name}:`, match[0])
+                matches.push({
+                  start: match.index,
+                  end: match.index + match[0].length,
+                  text: match[0],
+                  color: color,
+                  type: 'regex'
+                })
+              }
+            } catch (error) {
+              console.error(`Error processing regex pattern ${name}:`, error)
+            }
+          }
+        }
+        
+        // Process string patterns
+        if (regexPatterns.value.string) {
+          console.log('Processing string patterns:', Object.keys(regexPatterns.value.string))
+          for (const [name, config] of Object.entries(regexPatterns.value.string)) {
+            const { keywords, color } = config
+            if (!keywords || !color) continue
+            
+            keywords.forEach(keyword => {
+              if (!keyword) return
+              let index = line.indexOf(keyword)
+              while (index !== -1) {
+                console.log(`String match found for ${name}:`, keyword)
+                matches.push({
+                  start: index,
+                  end: index + keyword.length,
+                  text: keyword,
+                  color: color,
+                  type: 'string'
+                })
+                index = line.indexOf(keyword, index + 1)
+              }
+            })
+          }
+        }
+        
+        // Sort matches by start position and handle overlaps
+        matches.sort((a, b) => a.start - b.start)
+        matches = matches.reduce((acc, curr) => {
+          if (acc.length === 0) {
+            acc.push(curr)
+            return acc
+          }
+
+          const last = acc[acc.length - 1]
+          if (curr.start <= last.end) {
+            // If overlapping, keep the longer match
+            if (curr.end > last.end) {
+              last.end = curr.end
+              last.text = line.substring(last.start, curr.end)
+            }
+          } else {
+            acc.push(curr)
+          }
+          return acc
+        }, [])
+
+        console.log('Final matches:', matches)
+
+      } catch (error) {
+        console.error('Error processing line:', error)
+        return []
+      }
+
+      return matches
     }
 
     return { 
