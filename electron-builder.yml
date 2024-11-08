@@ -12,7 +12,7 @@ extraResources:
     to: "service.exe"
     filter:
       - "win32"
-  - from: "backend/service.py"
+  - from: "backend/dist/service"
     to: "service"
     filter:
       - "linux"

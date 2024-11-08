@@ -59,20 +59,12 @@ function getBackendPath() {
       cwd: path.join(__dirname, '..')
     }
   } else {
-    // 根据平台返回不同的可执行文件配置
-    if (process.platform === 'win32') {
-      return {
-        executable: path.join(process.resourcesPath, 'service.exe'),
-        args: [],
-        cwd: process.resourcesPath
-      }
-    } else {
-      // Linux 平台
-      return {
-        executable: path.join(process.resourcesPath, 'service.py'),
-        args: [],
-        cwd: process.resourcesPath
-      }
+    // 根据平台选择正确的可执行文件
+    const executableName = process.platform === 'win32' ? 'service.exe' : 'service';
+    return {
+      executable: path.join(process.resourcesPath, executableName),
+      args: [],
+      cwd: process.resourcesPath
     }
   }
 }
@@ -90,7 +82,7 @@ function startBackend() {
       throw new Error(`Backend executable not found at: ${executable}`)
     }
 
-    // Linux 平台设置可执行权限
+    // 在 Linux 平台上确保可执行文件有执行权限
     if (!isDevelopment && process.platform !== 'win32') {
       try {
         fs.chmodSync(executable, '755')
