@@ -12,16 +12,17 @@
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint",
-    "electron:build": "vue-cli-service electron:build",
+    "electron:build": "npm run build:backend:linux && vue-cli-service electron:build --linux",
     "electron:build:win": "vue-cli-service electron:build --win --x64",
-    "electron:build:linux": "vue-cli-service electron:build --linux",
+    "electron:build:linux": "npm run build:backend:linux && vue-cli-service electron:build --linux",
     "electron:build:all": "vue-cli-service electron:build -wl",
     "electron:serve": "vue-cli-service electron:serve",
     "postinstall": "electron-builder install-app-deps && electron-rebuild",
     "postuninstall": "electron-builder install-app-deps",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "dev": "concurrently \"cd backend && python service.py\" \"npm run electron:serve\"",
-    "clean": "rimraf dist_electron"
+    "clean": "rimraf dist_electron",
+    "build:backend:linux": "cd backend && bash build_linux.sh"
   },
   "dependencies": {
     "@arco-design/web-vue": "^2.56.2",
