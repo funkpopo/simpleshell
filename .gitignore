@@ -42,6 +42,7 @@ dist_electron
 # Config files that may contain sensitive information
 config.json
 electron-builder.env
+*.mpack
 
 # Python virtual environment
 venv/

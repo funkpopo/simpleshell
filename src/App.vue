@@ -319,7 +319,7 @@
           <div class="settings-footer">
             <div class="footer-left">
               <img 
-                src="@/assets/github-light.png" 
+                :src="githubIcon" 
                 alt="GitHub" 
                 class="github-icon"
                 @click="openGithubLink"
@@ -885,7 +885,7 @@ export default {
                 throw new Error(saveResponse.data.error);
               }
 
-              // 更新本地状态
+              // ��新本地状态
               const folderIndex = folders.value.findIndex(f => f.id === folder.id);
               if (folderIndex !== -1) {
                 folders.value[folderIndex].connections = folders.value[folderIndex].connections.filter(
@@ -1640,6 +1640,13 @@ export default {
       patternEditVisible.value = false
     }
 
+    // 在 setup 中添加计算属性
+    const githubIcon = computed(() => {
+      return isDarkMode.value ? 
+        require('@/assets/github-light.png') : 
+        require('@/assets/github-dark.png')
+    })
+
     return {
       connections,
       tabs,
@@ -1706,6 +1713,7 @@ export default {
       savePattern,
       editPattern,
       patternEditVisible,
+      githubIcon,
     }
   }
 }
@@ -2069,7 +2077,7 @@ export default {
   font-size: 20;
 }
 
-/* 调整子菜单项在折叠时的样式 */
+/* 调整子菜单项在折时的样式 */
 .arco-layout-sider-collapsed .arco-menu-item {
   padding: 8px 0;
   text-align: center;
@@ -2619,11 +2627,25 @@ export default {
   width: 20px;
   height: 20px;
   cursor: pointer;
-  transition: opacity 0.2s ease;
+  transition: all 0.2s ease;
+  filter: var(--github-icon-filter);
 }
 
 .github-icon:hover {
   opacity: 0.8;
+}
+
+/* 确保图标在不同主题下都清晰可见 */
+:root {
+  --github-icon-filter: none;
+}
+
+[arco-theme="dark"] {
+  --github-icon-filter: brightness(1);
+}
+
+[arco-theme="light"] {
+  --github-icon-filter: brightness(0.8);
 }
 
 /* Powered by 文本样式 */
@@ -2680,7 +2702,7 @@ export default {
 .rules-table-container {
   flex: 1;
   overflow-y: auto;
-  max-height: calc(70vh - 120px); /* 减去按钮和padding的高度 */
+  max-height: calc(70vh - 120px); /* 减按钮和padding的高度 */
 }
 
 /* 确保表格头部固定 */
