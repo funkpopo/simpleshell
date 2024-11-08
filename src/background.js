@@ -59,8 +59,10 @@ function getBackendPath() {
       cwd: path.join(__dirname, '..')
     }
   } else {
+    // 根据平台选择正确的可执行文件
+    const executableName = process.platform === 'win32' ? 'service.exe' : 'service';
     return {
-      executable: path.join(process.resourcesPath, 'service.exe'),
+      executable: path.join(process.resourcesPath, executableName),
       args: [],
       cwd: process.resourcesPath
     }
@@ -78,6 +80,15 @@ function startBackend() {
 
     if (!isDevelopment && !fs.existsSync(executable)) {
       throw new Error(`Backend executable not found at: ${executable}`)
+    }
+
+    // 如果是 Linux 平台，确保可执行文件有执行权限
+    if (process.platform !== 'win32' && !isDevelopment) {
+      try {
+        fs.chmodSync(executable, '755')
+      } catch (error) {
+        console.error('Error setting executable permissions:', error)
+      }
     }
 
     // 终止已存在的后端进程
