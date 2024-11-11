@@ -42,7 +42,10 @@ export default {
     restartRequired: 'The application needs to restart to apply the new highlight rules.',
     restartNow: 'Restart Now',
     restartLater: 'Restart Later',
-    restartReminder: 'Please restart the application to apply the new highlight rules'
+    restartReminder: 'Please restart the application to apply the new highlight rules',
+    maxRulesError: 'Maximum number of rules (1000) reached',
+    maxLineLengthError: 'Rule exceeds maximum length of 500 characters',
+    maxFileSizeError: 'Total highlight rules exceed maximum file size of 1MB'
   },
   messages: {
     confirmDelete: 'Confirm Delete',
@@ -97,5 +100,17 @@ export default {
     currentVersion: 'Current version: {version}',
     download: 'Download',
     later: 'Later'
+  },
+  lock: {
+    setPassword: 'Set Lock Password',
+    enterPassword: 'Enter Password',
+    confirmPassword: 'Confirm Password',
+    confirm: 'Confirm',
+    unlock: 'Unlock',
+    passwordRequired: 'Password is required',
+    passwordMismatch: 'Passwords do not match',
+    passwordSet: 'Password has been set',
+    unlocked: 'Screen unlocked',
+    wrongPassword: 'Wrong password',
   }
 }

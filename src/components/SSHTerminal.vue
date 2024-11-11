@@ -664,13 +664,28 @@ export default {
           history.unshift(command)
           
           // 限制历史记录数量
-          if (history.length > 50000) {
-            history = history.slice(0, 50000)
+          const maxHistoryItems = 50000 // 最大历史记录条数
+          if (history.length > maxHistoryItems) {
+            history = history.slice(0, maxHistoryItems)
+          }
+
+          // 计算编码后的数据大小
+          const encoded = msgpack.encode(history)
+          const maxFileSize = 10 * 1024 * 1024 // 10MB 限制
+          
+          if (encoded.length > maxFileSize) {
+            // 如果超过大小限制，删除旧的记录直到满足大小要求
+            while (history.length > 0) {
+              history.pop() // 移除最旧的记录
+              const newEncoded = msgpack.encode(history)
+              if (newEncoded.length <= maxFileSize) {
+                break
+              }
+            }
           }
           
           // 保存历史记录
-          const encoded = msgpack.encode(history)
-          await fsPromises.writeFile(historyPath, encoded)
+          await fsPromises.writeFile(historyPath, msgpack.encode(history))
           
           // 更新内存中的历史记录
           commandHistory.value = history
@@ -686,7 +701,19 @@ export default {
         
         try {
           const data = await fsPromises.readFile(historyPath)
-          commandHistory.value = msgpack.decode(data)
+          const decoded = msgpack.decode(data)
+          
+          // 验证数据格式
+          if (!Array.isArray(decoded)) {
+            console.warn('Invalid history data format')
+            commandHistory.value = []
+            return
+          }
+          
+          // 限制加载的历史记录数量
+          const maxHistoryItems = 50000
+          commandHistory.value = decoded.slice(0, maxHistoryItems)
+          
         } catch (error) {
           if (error.code !== 'ENOENT') {
             console.error('Error reading command history:', error)

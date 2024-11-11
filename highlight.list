@@ -15,10 +15,20 @@ timestamp_cst1=\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul
 timestamp_cst2=\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s\d{2}:\d{2}:\d{2}\s(AM|PM)\sCST\s\d{4}\b=#FFA500
 timestamp_cest1=\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s\d{2}:\d{2}:\d{2}\sCEST\s\d{4}\b=#FFA500
 timestamp_cest2=\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s\d{2}:\d{2}:\d{2}\s(AM|PM)\sCEST\s\d{4}\b=#FFA500
+process_info=\b\w+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\w+\s+[\w?]+\s+[\w:.]+\s+.*$=#B8860B
+memory_values=\b\d+([.]\d+)?(K|M|G|T|P)i?B\b=#4682B4
+permissions=\b[rwx-]{9}\b=#8B8B8B
+process_id=\bPID\s+\d+\b=#CD853F
+cpu_percentage=\b\d+[.]\d+%\s*(CPU|cpu)\b=#FF6347
+disk_usage=\b\d+%\s+(/[^/\s]*)+\b=#20B2AA
 
 [String]
 net_status=UP,BROADCAST,RUNNING,MULTICAST,PROMISC,DYNAMIC,STATUS=#00CED1
-error_words=error,Error,ERROR,FATAL,Fatal,fatal,failed,Failed,FAILED,failure,Failure,FAILURE,no longer,No longer,NO LONGER,deprecated,Deprecated,DEPRECATED=#FF0000
+error_words=error,Error,ERROR,FATAL,Fatal,fatal,failed,Failed,FAILED,failure,Failure,FAILURE,no longer,No longer,NO LONGER,deprecated,Deprecated,DEPRECATED,disabled,Disabled,DISABLED,dead,Dead,DEAD=#FF0000
 success_words=success,Success,SUCCESS,running,Running,RUNNING,active,Active,ACTIVE,enabled,Enabled,ENABLED,ready,Ready,READY,OK,surported,Supported,SUPPORTED=#00FF00
 warning_words=warning,Warning,WARNING,warn,Warn,WARN,notice,Notice,NOTICE,pending,Pending,PENDING,complete,Complete,COMPLETE,completed,Completed,COMPLETED=#FFD700
 info_words=starting,Starting,STARTING,stopping,Stopping,STOPPING,restarting,Restarting,RESTARTING,initializing,Initializing,INITIALIZING=#87CEEB
+process_status=sleeping,Sleeping,SLeeeping,zombie,Zombie,ZOMBIE,stopped,Stopped,STOPPED,traced,Traced,TRACED=#E6E600
+service_words=loaded,Loaded,LOADED,active,Active,ACTIVE,inactive,Inactive,INACTIVE,masked,Masked,MASKED=#B0C4DE
+memory_keywords=total,Total,TOTAL,used,Used,USED,free,Free,FREE,shared,Shared,SHARED,buff/cache,Buff/Cache,BUFF/CACHE,available,Available,AVAILABLE=#ADD8E6
+disk_keywords=Filesystem,Size,Used,Avail,Use%,Mounted=#98FB98

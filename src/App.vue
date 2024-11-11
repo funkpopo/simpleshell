@@ -12,6 +12,16 @@
               <a-button
                 type="text"
                 class="header-btn"
+                @click="lockScreen"
+              >
+                <template #icon>
+                  <icon-lock v-if="!isLocked" />
+                  <icon-unlock v-else />
+                </template>
+              </a-button>
+              <a-button
+                type="text"
+                class="header-btn"
                 @click="showSettings"
               >
                 <template #icon>
@@ -409,7 +419,7 @@
     </div>
   </a-modal>
 
-  <!-- 在 Highlight Rules Configuration 对话框后添加编辑正则表达式的弹窗 -->
+  <!-- 在 Highlight Rules Configuration 对话框后添加编辑则表达式的窗 -->
   <a-modal
     v-model:visible="patternEditVisible"
     :title="t('settings.editPattern')"
@@ -428,13 +438,61 @@
       </a-form-item>
     </a-form>
   </a-modal>
+
+  <!-- 在 template 末尾添加遮罩和密码输入对话框 -->
+  <div v-if="isLocked" class="screen-lock-overlay">
+    <div class="lock-content">
+      <template v-if="!hasPassword">
+        <h2>{{ t('lock.setPassword') }}</h2>
+        <a-form :model="lockForm" class="lock-form">
+          <a-form-item>
+            <a-input-password
+              v-model="lockForm.password"
+              :placeholder="t('lock.enterPassword')"
+              allow-clear
+            />
+          </a-form-item>
+          <a-form-item>
+            <a-input-password
+              v-model="lockForm.confirmPassword"
+              :placeholder="t('lock.confirmPassword')"
+              allow-clear
+            />
+          </a-form-item>
+          <a-form-item>
+            <a-button type="primary" @click="setPassword">
+              {{ t('lock.confirm') }}
+            </a-button>
+          </a-form-item>
+        </a-form>
+      </template>
+      <template v-else>
+        <h2>{{ t('lock.enterPassword') }}</h2>
+        <a-form :model="lockForm" class="lock-form">
+          <a-form-item>
+            <a-input-password
+              v-model="lockForm.password"
+              :placeholder="t('lock.enterPassword')"
+              allow-clear
+              @keyup.enter="unlock"
+            />
+          </a-form-item>
+          <a-form-item>
+            <a-button type="primary" @click="unlock">
+              {{ t('lock.unlock') }}
+            </a-button>
+          </a-form-item>
+        </a-form>
+      </template>
+    </div>
+  </div>
 </template>
 
 <script>
 import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed, inject, h } from 'vue'
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
-import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder } from '@arco-design/web-vue/es/icon'
+import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder, IconLock, IconUnlock } from '@arco-design/web-vue/es/icon'
 import { Message, Modal } from '@arco-design/web-vue' // 添加这行
 import axios from 'axios'
 import { dialog } from '@electron/remote'
@@ -462,6 +520,8 @@ export default {
     IconSettings,
     IconPlus,
     IconFolder,
+    IconLock,
+    IconUnlock,
     draggable,
   },
   setup() {
@@ -885,7 +945,7 @@ export default {
                 throw new Error(saveResponse.data.error);
               }
 
-              // ��新本地状态
+              // 新本地状态
               const folderIndex = folders.value.findIndex(f => f.id === folder.id);
               if (folderIndex !== -1) {
                 folders.value[folderIndex].connections = folders.value[folderIndex].connections.filter(
@@ -1213,12 +1273,12 @@ export default {
           }
         })
       } catch (error) {
-        // 有在实际保存设置失败时才显示错误
+        // 有在实际保存设置失败时才显错误
         console.error('Failed to save settings:', error)
         if (error.response) {
           Message.error(t('settings.saveFailed'))
         } else {
-          // 如果是网络错误但本地存储更新成功，仍然认为是成功的
+          // 如果网络错误但本地存储更新成功，仍然认为是成功的
           if (localStorage.getItem('language') === settings.language) {
             settingsVisible.value = false
             Message.success(t('settings.saved'))
@@ -1302,7 +1362,7 @@ export default {
     }
 
     const onDragStart = () => {
-      // 可以添加拖拽开始时的逻辑
+      // 可以添加拽开始时的逻辑
     }
 
     const onDragEnd = () => {
@@ -1451,7 +1511,7 @@ export default {
             }
           })
         } else {
-          Message.success('当前已是最新版本')
+          Message.success('当前已是最新本')
         }
       } catch (error) {
         console.error('检查更新失败:', error)
@@ -1550,7 +1610,12 @@ export default {
         customHighlightRules.value
           .filter(rule => rule.type === 'regex')
           .forEach(rule => {
-            content += `${rule.name}=${rule.pattern}=${rule.color}\n`
+            // 检查每个规则的长度
+            const ruleLine = `${rule.name}=${rule.pattern}=${rule.color}\n`
+            if (ruleLine.length > 500) { // 单行最大长度限制
+              throw new Error(`Rule "${rule.name}" exceeds maximum length of 500 characters`)
+            }
+            content += ruleLine
           })
         
         // Write String section
@@ -1558,8 +1623,25 @@ export default {
         customHighlightRules.value
           .filter(rule => rule.type === 'string')
           .forEach(rule => {
-            content += `${rule.name}=${rule.pattern}=${rule.color}\n`
+            // 检查每个规则的长度
+            const ruleLine = `${rule.name}=${rule.pattern}=${rule.color}\n`
+            if (ruleLine.length > 500) { // 单行最大长度限制
+              throw new Error(`Rule "${rule.name}" exceeds maximum length of 500 characters`)
+            }
+            content += ruleLine
           })
+
+        // 检查整个文件的大小
+        const maxFileSize = 8192 * 1024 // 8MB 限制
+        if (content.length > maxFileSize) {
+          throw new Error('Total highlight rules exceed maximum file size of 1MB')
+        }
+
+        // 检查规则数量
+        const maxRules = 10000 // 最大规则数量限制
+        if (customHighlightRules.value.length > maxRules) {
+          throw new Error(`Number of rules exceeds maximum limit of ${maxRules}`)
+        }
         
         await fs.promises.writeFile('highlight.list', content, 'utf-8')
         
@@ -1586,16 +1668,23 @@ export default {
         })
       } catch (error) {
         console.error('Error saving highlight rules:', error)
-        Message.error('Failed to save highlight rules')
+        Message.error(error.message || 'Failed to save highlight rules')
       }
     }
 
     // 添加编辑规则的方法
     const addHighlightRule = () => {
-      customHighlightRules.value.unshift({  // 使用 unshift 替代 push
+      // 检查规则数量限制
+      if (customHighlightRules.value.length >= 1000) {
+        Message.error('Maximum number of rules (1000) reached')
+        return
+      }
+      
+      customHighlightRules.value.unshift({
         name: '',
         pattern: '',
-        color: '#000000'
+        color: '#000000',
+        type: 'regex' // 默认为正则表达式类型
       })
     }
 
@@ -1646,6 +1735,52 @@ export default {
         require('@/assets/github-light.png') : 
         require('@/assets/github-dark.png')
     })
+
+    const isLocked = ref(false)
+    const hasPassword = ref(false)
+    const currentPassword = ref('')
+    const lockForm = reactive({
+      password: '',
+      confirmPassword: ''
+    })
+
+    const lockScreen = () => {
+      if (!hasPassword.value) {
+        isLocked.value = true
+      } else {
+        isLocked.value = true
+        lockForm.password = ''
+      }
+    }
+
+    const setPassword = () => {
+      if (!lockForm.password) {
+        Message.error(t('lock.passwordRequired'))
+        return
+      }
+      if (lockForm.password !== lockForm.confirmPassword) {
+        Message.error(t('lock.passwordMismatch'))
+        return
+      }
+      
+      currentPassword.value = lockForm.password
+      hasPassword.value = true
+      // 清空所有密码输入框
+      lockForm.password = ''
+      lockForm.confirmPassword = ''
+      Message.success(t('lock.passwordSet'))
+    }
+
+    const unlock = () => {
+      if (lockForm.password === currentPassword.value) {
+        isLocked.value = false
+        lockForm.password = ''
+        Message.success(t('lock.unlocked'))
+      } else {
+        Message.error(t('lock.wrongPassword'))
+        lockForm.password = ''
+      }
+    }
 
     return {
       connections,
@@ -1714,6 +1849,12 @@ export default {
       editPattern,
       patternEditVisible,
       githubIcon,
+      isLocked,
+      hasPassword,
+      lockForm,
+      lockScreen,
+      setPassword,
+      unlock,
     }
   }
 }
@@ -1998,7 +2139,7 @@ export default {
   opacity: 1;
 }
 
-/* 调整按钮样式 */
+/* 调按钮样式 */
 .folder-actions .arco-btn {
   padding: 0;
   width: 24px;
@@ -2541,7 +2682,7 @@ export default {
   background-color: var(--color-bg-1);
 }
 
-/* 拖拽时的式 */
+/* 拽时的式 */
 .sortable-ghost {
   opacity: 0.5;
   background-color: var(--color-fill-3);
@@ -2765,5 +2906,47 @@ export default {
 
 .pattern-cell :deep(.arco-input:hover) {
   background-color: var(--color-fill-2);
+}
+
+.screen-lock-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--color-bg-1);
+  opacity: 0.98;
+  z-index: 2000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(4px);
+}
+
+.lock-content {
+  background-color: var(--color-bg-2);
+  padding: 32px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+
+.lock-content h2 {
+  margin-bottom: 24px;
+  color: var(--color-text-1);
+}
+
+.lock-form {
+  width: 100%;
+}
+
+.lock-form .arco-form-item {
+  margin-bottom: 16px;
+}
+
+.lock-form .arco-form-item:last-child {
+  margin-bottom: 0;
 }
 </style>

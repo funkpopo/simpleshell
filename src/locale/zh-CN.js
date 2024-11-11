@@ -42,7 +42,10 @@ export default {
     restartRequired: '需要重启应用程序以应用新的高亮规则。',
     restartNow: '立即重启',
     restartLater: '稍后重启',
-    restartReminder: '请重启应用程序以应用新的高亮规则'
+    restartReminder: '请重启应用程序以应用新的高亮规则',
+    maxRulesError: '已达到最大规则数量限制（1000条）',
+    maxLineLengthError: '规则超过最大长度限制（500字符）',
+    maxFileSizeError: '高亮规则文件总大小超过限制（1MB）'
   },
   messages: {
     confirmDelete: '确认删除',
@@ -97,5 +100,17 @@ export default {
     currentVersion: '当前版本：{version}',
     download: '下载',
     later: '稍后'
+  },
+  lock: {
+    setPassword: '设置锁屏密码',
+    enterPassword: '请输入密码',
+    confirmPassword: '确认密码',
+    confirm: '确认',
+    unlock: '解锁',
+    passwordRequired: '请输入密码',
+    passwordMismatch: '两次输入的密码不一致',
+    passwordSet: '密码已设置',
+    unlocked: '已解锁',
+    wrongPassword: '密码错误',
   }
 }
