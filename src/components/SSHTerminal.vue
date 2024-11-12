@@ -1,10 +1,28 @@
 <template>
-  <div ref="terminal" class="terminal-container" :class="{ 'dark-mode': isDarkMode }" @paste.prevent="handlePaste"></div>
+  <div class="terminal-wrapper">
+    <div ref="terminal" class="terminal-container" :class="{ 'dark-mode': isDarkMode }" @paste.prevent="handlePaste"></div>
+    <div class="resource-monitor" v-if="showResourceMonitor">
+      <div class="monitor-item">
+        <span class="label">CPU</span>
+        <div class="progress-bar">
+          <div class="progress cpu-progress" :style="{ width: `${cpuUsage}%` }" :class="getCPUClass"></div>
+        </div>
+        <span class="value" v-show="showValues">{{ cpuUsage }}%</span>
+      </div>
+      <div class="monitor-item">
+        <span class="label">MEM</span>
+        <div class="progress-bar">
+          <div class="progress mem-progress" :style="{ width: `${memUsage}%` }"></div>
+        </div>
+        <span class="value" v-show="showValues">{{ memUsage }}%</span>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
 import { Message } from '@arco-design/web-vue'
-import { ref, onMounted, onUnmounted, watch, nextTick, inject } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, inject, computed } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -48,6 +66,12 @@ export default {
     const currentInput = ref('')
     const selectedSuggestionIndex = ref(-1)
     const suggestions = ref([])
+    const cpuUsage = ref(0)
+    const memUsage = ref(0)
+    const showResourceMonitor = ref(true)
+    let resourceMonitorInterval = null
+    let lastCPUInfo = null
+    const showValues = ref(false)
 
     const timestampPatterns = {
       iso8601: /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/g,
@@ -124,6 +148,7 @@ export default {
             if (!isTerminalReady.value) {
               initializeTerminal()
             }
+            updateResourceUsage()
           }
         })
 
@@ -154,6 +179,14 @@ export default {
           if (data.session_id === props.sessionId) {
             console.log('SSH connection closed:', data.message)
             writeToTerminal('SSH connection closed\r\n')
+          }
+        })
+
+        socket.on('resource_usage', (data) => {
+          if (data.session_id === props.sessionId) {
+            console.log('Received resource usage:', data.usage)
+            cpuUsage.value = data.usage.cpu
+            memUsage.value = data.usage.memory
           }
         })
 
@@ -710,7 +743,7 @@ export default {
             return
           }
           
-          // 限制加载的历史记录数量
+          // 限制加载的历史记录量
           const maxHistoryItems = 50000
           commandHistory.value = decoded.slice(0, maxHistoryItems)
           
@@ -855,6 +888,43 @@ export default {
       }
     }
 
+    const getCPUClass = computed(() => {
+      if (cpuUsage.value >= 90) return 'critical'
+      if (cpuUsage.value >= 70) return 'warning'
+      return 'normal'
+    })
+
+    const getMemClass = computed(() => {
+      if (memUsage.value >= 90) return 'critical'
+      if (memUsage.value >= 70) return 'warning'
+      return 'normal'
+    })
+
+    const updateResourceUsage = () => {
+      if (!socket || !isTerminalReady.value) return
+      
+      console.log('Requesting resource usage update...')
+      socket.emit('monitor_resources', { 
+        session_id: props.sessionId
+      })
+    }
+
+    const startResourceMonitoring = () => {
+      console.log('Starting resource monitoring...')
+      resourceMonitorInterval = setInterval(() => {
+        console.log('Resource monitoring interval triggered')
+        updateResourceUsage()
+      }, 60000)
+    }
+
+    const stopResourceMonitoring = () => {
+      console.log('Stopping resource monitoring...')
+      if (resourceMonitorInterval) {
+        clearInterval(resourceMonitorInterval)
+        resourceMonitorInterval = null
+      }
+    }
+
     onMounted(async () => {
       console.log('Mounting SSHTerminal component')
       try {
@@ -902,6 +972,13 @@ export default {
         terminal.value.addEventListener('contextmenu', handleContextMenu)
         document.addEventListener('click', hideContextMenu)
         loadHistory()
+        startResourceMonitoring()
+
+        const monitor = document.querySelector('.resource-monitor')
+        if (monitor) {
+          monitor.addEventListener('mouseenter', handleMouseEnter)
+          monitor.addEventListener('mouseleave', handleMouseLeave)
+        }
       } catch (error) {
         console.error('Error mounting SSHTerminal:', error)
       }
@@ -921,6 +998,13 @@ export default {
       if (contextMenu.value) {
         document.body.removeChild(contextMenu.value)
       }
+      stopResourceMonitoring()
+
+      const monitor = document.querySelector('.resource-monitor')
+      if (monitor) {
+        monitor.removeEventListener('mouseenter', handleMouseEnter)
+        monitor.removeEventListener('mouseleave', handleMouseLeave)
+      }
     })
 
     watch(() => isDarkMode.value, (newValue) => {
@@ -928,6 +1012,7 @@ export default {
     })
 
     const cleanup = () => {
+      stopResourceMonitoring()
       if (socket) {
         socket.emit('close_ssh', { session_id: props.sessionId })
         socket.disconnect()
@@ -1177,6 +1262,14 @@ export default {
       }
     }
 
+    const handleMouseEnter = () => {
+      showValues.value = true
+    }
+
+    const handleMouseLeave = () => {
+      showValues.value = false
+    }
+
     return { 
       terminal,
       closeConnection,
@@ -1185,7 +1278,13 @@ export default {
       isDarkMode,
       manualResize,
       currentPath,
-      reconnect
+      reconnect,
+      cpuUsage,
+      memUsage,
+      showResourceMonitor,
+      getCPUClass,
+      getMemClass,
+      showValues
     }
   }
 }
@@ -1301,7 +1400,7 @@ export default {
   --suggestion-item-height: 32px;
   /* 最大显示4行的高度 */
   max-height: calc(var(--suggestion-item-height) * 4);
-  /* 优化滚动行为 */
+  /* 优化滚动行 */
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -1384,5 +1483,146 @@ export default {
 
 .terminal-container.dark-mode .command-suggestions::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-fill-4);
+}
+
+.terminal-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.resource-monitor {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background-color: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  z-index: 1000;
+  opacity: 0.9;
+  backdrop-filter: blur(4px);
+  min-width: 140px;
+  transition: opacity 0.2s ease;
+}
+
+.monitor-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  height: 16px;
+}
+
+.monitor-item .label {
+  color: var(--color-text-2);
+  width: 28px;
+  text-align: right;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 4px;
+  background-color: var(--color-fill-2);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.value {
+  position: absolute;
+  right: -4px;
+  font-size: 10px;
+  color: var(--color-text-2);
+  min-width: 36px;
+  text-align: right;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  transform: translateY(-50%);
+  top: 50%;
+}
+
+.resource-monitor:hover .value {
+  opacity: 1;
+}
+
+/* CPU进度条样式 */
+.cpu-progress {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 2px;
+}
+
+.cpu-progress.normal {
+  background-color: var(--color-success-light-4);
+}
+
+.cpu-progress.warning {
+  background-color: var(--color-warning-light-4);
+}
+
+.cpu-progress.critical {
+  background-color: var(--color-danger-light-4);
+}
+
+/* MEM进度条样式 */
+.mem-progress {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 2px;
+  background-color: var(--color-primary-light-4);
+}
+
+/* 深色主题调整 */
+.terminal-container.dark-mode .cpu-progress.normal {
+  background-color: var(--color-success-light-3);
+}
+
+.terminal-container.dark-mode .cpu-progress.warning {
+  background-color: var(--color-warning-light-3);
+}
+
+.terminal-container.dark-mode .cpu-progress.critical {
+  background-color: var(--color-danger-light-3);
+}
+
+.terminal-container.dark-mode .mem-progress {
+  background-color: var(--color-primary-light-3);
+}
+
+.terminal-container.dark-mode .resource-monitor {
+  background-color: rgba(0, 0, 0, 0.7);
+  border-color: var(--color-border-2);
+}
+
+/* 优化进度条动画效果 */
+.progress::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-100%);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 </style>

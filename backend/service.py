@@ -17,6 +17,8 @@ import socket
 import sys
 import requests
 import atexit
+import re
+from typing import Dict, Tuple
 monkey.patch_all()
 
 app = Flask(__name__)
@@ -145,7 +147,7 @@ def update_config():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# 分离 SSH 和 SFTP 的连接创建函数
+# 分离 SSH SFTP 的连接创建函数
 def create_base_client(connection):
     """创建基础 SSH 客户端"""
     ssh = paramiko.SSHClient()
@@ -678,6 +680,145 @@ def cleanup_session(session):
             session.read_thread.join(timeout=1)
     except Exception as e:
         print(f"Error in cleanup_session: {e}")
+
+class SSHService:
+    # ... 现有代码 ...
+    
+    async def get_resource_usage(self, session_id: str) -> Dict[str, float]:
+        """获取目标服务器的资源使用情况"""
+        try:
+            if session_id not in self.ssh_clients:
+                return {"cpu": 0, "memory": 0}
+            
+            client = self.ssh_clients[session_id]
+            
+            # 获取内存使用情况
+            _, stdout, _ = await client.exec_command("free | grep Mem")
+            mem_info = stdout.read().decode().strip()
+            total_mem, used_mem = self._parse_memory_info(mem_info)
+            mem_usage = (used_mem / total_mem * 100) if total_mem > 0 else 0
+            
+            # 获取CPU使用情况
+            _, stdout, _ = await client.exec_command("top -bn1 | grep 'Cpu(s)'")
+            cpu_info = stdout.read().decode().strip()
+            cpu_usage = self._parse_cpu_info(cpu_info)
+            
+            return {
+                "cpu": round(cpu_usage, 1),
+                "memory": round(mem_usage, 1)
+            }
+        except Exception as e:
+            logger.error(f"Error getting resource usage: {str(e)}")
+            return {"cpu": 0, "memory": 0}
+    
+    def _parse_memory_info(self, mem_info: str) -> Tuple[float, float]:
+        """解析内存信息"""
+        try:
+            parts = mem_info.split()
+            total = float(parts[1])
+            used = float(parts[2])
+            return total, used
+        except (IndexError, ValueError):
+            return 0, 0
+    
+    def _parse_cpu_info(self, cpu_info: str) -> float:
+        """解析CPU信息"""
+        try:
+            # 提取CPU使用率
+            match = re.search(r'(\d+\.\d+)\s*id', cpu_info)
+            if match:
+                idle = float(match.group(1))
+                return 100.0 - idle
+            return 0
+        except (AttributeError, ValueError):
+            return 0
+
+# 在 SocketService 类中添加新的处理方法
+class SocketService:
+    # ... 现有代码 ...
+    
+    async def handle_resource_monitor(self, sid: str, data: dict):
+        """处理资源监控请求"""
+        try:
+            session_id = data.get('session_id')
+            if not session_id:
+                return
+                
+            usage = await self.ssh_service.get_resource_usage(session_id)
+            await self.sio.emit('resource_usage', {
+                'session_id': session_id,
+                'usage': usage
+            }, room=sid)
+            
+        except Exception as e:
+            logger.error(f"Error in resource monitoring: {str(e)}")
+    
+    def register_handlers(self):
+        # ... 现有的处理程序注册 ...
+        self.sio.on('monitor_resources', self.handle_resource_monitor)
+
+# 修改 handle_ssh_connection 函数，添加资源监控相关代码
+@socketio.on('monitor_resources')
+def handle_resource_monitor(data):
+    try:
+        session_id = data.get('session_id')
+        if not session_id or session_id not in ssh_sessions:
+            logger.warning(f"Invalid session for resource monitoring: {session_id}")
+            return
+            
+        session = ssh_sessions[session_id]
+        ssh_client = session.ssh_client
+        
+        logger.info(f"Getting resource usage for session {session_id}")
+        
+        try:
+            # 获取内存使用情况
+            stdin, stdout, stderr = ssh_client.exec_command("free | grep Mem")
+            mem_info = stdout.read().decode().strip()
+            mem_parts = mem_info.split()
+            if len(mem_parts) >= 3:
+                total_mem = float(mem_parts[1])
+                used_mem = float(mem_parts[2])
+                mem_usage = (used_mem / total_mem * 100) if total_mem > 0 else 0
+            else:
+                logger.warning("Invalid memory info format")
+                mem_usage = 0
+                
+            # 获取CPU使用情况
+            stdin, stdout, stderr = ssh_client.exec_command("top -bn1 | grep 'Cpu(s)'")
+            cpu_info = stdout.read().decode().strip()
+            cpu_match = re.search(r'(\d+\.\d+)\s*id', cpu_info)
+            if cpu_match:
+                idle = float(cpu_match.group(1))
+                cpu_usage = 100.0 - idle
+            else:
+                logger.warning("Invalid CPU info format")
+                cpu_usage = 0
+                
+            logger.info(f"Resource usage - CPU: {cpu_usage}%, Memory: {mem_usage}%")
+            
+            # 发送资源使用情况
+            socketio.emit('resource_usage', {
+                'session_id': session_id,
+                'usage': {
+                    'cpu': round(cpu_usage, 1),
+                    'memory': round(mem_usage, 1)
+                }
+            })
+                
+        except Exception as e:
+            logger.error(f"Error executing commands: {str(e)}")
+            raise
+            
+    except Exception as e:
+        logger.error(f"Error in resource monitoring: {str(e)}")
+        socketio.emit('resource_usage', {
+            'session_id': session_id,
+            'usage': {
+                'cpu': 0,
+                'memory': 0
+            }
+        })
 
 if __name__ == '__main__':
     try:
