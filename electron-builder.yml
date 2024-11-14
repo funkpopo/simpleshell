@@ -1,5 +1,5 @@
-appId: com.electron.simplessh
-productName: SimpleSSH
+appId: com.electron.simpleshell
+productName: SimpleShell
 directories:
   output: dist_electron
   buildResources: build
@@ -40,7 +40,7 @@ linux:
     - deb
   category: Network
   artifactName: "${productName}-${version}-${arch}.${ext}"
-  executableName: "simplessh"
+  executableName: "simpleshell"
 asar: true
 asarUnpack:
   - "resources/**/*"

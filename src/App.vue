@@ -4,7 +4,7 @@
       <a-layout-header>
         <div class="header-content">
           <div class="app-title" @click="checkUpdate" title="点击检查更新">
-            <h3>SimpleSSH</h3>
+            <h3>SimpleShell</h3>
             <span class="version">v{{ currentVersion }}</span>
           </div>
           <div class="header-actions">
@@ -505,7 +505,7 @@ import { ipcRenderer } from 'electron'
 import { shell } from '@electron/remote'
 
 export default {
-  name: 'SimpleSSH',
+  name: 'SimpleShell',
   components: {
     SSHTerminal,
     SFTPExplorer,
@@ -1455,9 +1455,9 @@ export default {
           return new Promise((resolve, reject) => {
             const options = {
               hostname: 'api.github.com',
-              path: '/repos/funkpopo/simplessh/releases/latest',
+              path: '/repos/funkpopo/simpleshell/releases/latest',
               headers: {
-                'User-Agent': 'SimpleSSH',
+                'User-Agent': 'SimpleShell',
                 'Accept': 'application/vnd.github.v3+json'
               }
             }
@@ -1504,7 +1504,7 @@ export default {
             cancelText: t('update.later'),
             async onOk() {
               try {
-                await shell.openExternal('https://github.com/funkpopo/simplessh/releases')
+                await shell.openExternal('https://github.com/funkpopo/simpleshell/releases')
               } catch (error) {
                 Message.error('打下载页面失败')
               }

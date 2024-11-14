@@ -625,7 +625,7 @@ class RequestsSession:
         self.session = requests.Session()
         self.headers = {
             'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'SimpleSSH'
+            'User-Agent': 'SimpleShell'
         }
         # 从环境变量获取代理设置
         self.proxies = {}

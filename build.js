@@ -19,7 +19,7 @@ function getCurrentPlatform() {
 // 清理进程函数
 function cleanupProcesses() {
   try {
-    execSync('taskkill /F /IM SimpleSSH.exe /T', { stdio: 'ignore' })
+    execSync('taskkill /F /IM SimpleShell.exe /T', { stdio: 'ignore' })
     execSync('taskkill /F /IM service.exe /T', { stdio: 'ignore' })
   } catch (error) {
     console.log('No processes to clean up')
@@ -34,8 +34,8 @@ async function build() {
     await builder.build({
       targets: getCurrentPlatform().createTarget(),
       config: {
-        appId: 'com.example.simplessh',
-        productName: 'SimpleSSH',
+        appId: 'com.example.simpleshell',
+        productName: 'SimpleShell',
         directories: {
           output: 'dist_electron'
         },
