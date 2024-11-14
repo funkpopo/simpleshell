@@ -1,6 +1,6 @@
 {
   "name": "simpleshell",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "author": {
     "name": "Sunn",
@@ -27,12 +27,19 @@
   "dependencies": {
     "@arco-design/web-vue": "^2.56.2",
     "@cypress/request": "^3.0.6",
+    "@electron/packager": "^18.3.5",
     "@electron/remote": "^2.1.2",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.5.0",
     "app-builder-lib": "^25.1.8",
+    "archiver": "^7.0.1",
     "axios": "^1.7.7",
     "braces": "^3.0.3",
     "core-js": "^3.38.1",
-    "@electron/packager": "^18.3.5",
+    "extract-zip": "^2.0.1",
     "flask-cors": "^0.0.1",
     "got": "^14.4.4",
     "jszip": "^3.10.1",
@@ -42,12 +49,7 @@
     "socket.io-client": "^4.7.2",
     "tough-cookie": "^5.0.0",
     "vue": "^3.5.12",
-    "vuedraggable": "^4.1.0",
-    "@xterm/xterm": "^5.5.0",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/addon-search": "^0.15.0",
-    "@xterm/addon-web-links": "^0.11.0",
-    "@xterm/addon-webgl": "^0.18.0"
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",

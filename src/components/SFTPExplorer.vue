@@ -1077,63 +1077,55 @@ export default {
         if (savePath.canceled) return;
 
         const targetDir = savePath.filePaths[0];
-        const folderPath = path.join(targetDir, nodeData.title);
+        
+        // 显示下载进度
+        downloadProgressVisible.value = true;
+        downloadInfo.fileName = nodeData.title;
+        downloadInfo.progress = 0;
+        downloadInfo.status = 'normal';
 
-        // 创建目标文件夹
-        if (!fs.existsSync(folderPath)) {
-          fs.mkdirSync(folderPath, { recursive: true });
-        }
-
-        // 显示进度提示
-        Message.loading({
-          content: t('sftp.downloadingFolder', { name: nodeData.title }),
-          duration: 0
+        // 从服务器下载压缩后的文件夹
+        const response = await axios.post('http://localhost:5000/sftp_download_folder', {
+          connection: props.connection,
+          path: nodeData.key
+        }, {
+          responseType: 'blob',
+          onDownloadProgress: (progressEvent) => {
+            updateDownloadProgress(
+              progressEvent.loaded,
+              progressEvent.total,
+              nodeData.title
+            );
+          }
         });
 
-        // 递归下载文件夹内容
-        const downloadFolderContent = async (remotePath, localPath) => {
-          try {
-            const response = await axios.post('http://localhost:5000/sftp_list_directory', {
-              connection: props.connection,
-              path: remotePath
-            });
+        // 保存压缩文件到临时目录
+        const tempDir = await ipcRenderer.invoke('create-temp-dir');
+        const zipPath = path.join(tempDir, `${nodeData.title}.zip`);
+        await fs.promises.writeFile(zipPath, Buffer.from(await response.data.arrayBuffer()));
 
-            for (const item of response.data) {
-              const remoteItemPath = normalizePath(`${remotePath}/${item.name}`);
-              const localItemPath = path.join(localPath, item.name);
+        // 解压文件到目标目录
+        await ipcRenderer.invoke('extract-folder', {
+          zipPath: zipPath,
+          targetPath: path.join(targetDir, nodeData.title)
+        });
 
-              if (item.isDirectory) {
-                // 如果是目录，创建本地目录并递归下载
-                fs.mkdirSync(localItemPath, { recursive: true });
-                await downloadFolderContent(remoteItemPath, localItemPath);
-              } else {
-                // 如果是文件，直接下载
-                const fileResponse = await axios.post('http://localhost:5000/sftp_download_file', {
-                  connection: props.connection,
-                  path: remoteItemPath
-                }, {
-                  responseType: 'blob'
-                });
+        // 清理临时文件
+        await ipcRenderer.invoke('cleanup-temp-dir', tempDir);
 
-                const buffer = Buffer.from(await fileResponse.data.arrayBuffer());
-                fs.writeFileSync(localItemPath, buffer);
-              }
-            }
-          } catch (error) {
-            throw new Error(`Failed to download folder content: ${error.message}`);
-          }
-        };
+        downloadInfo.status = 'success';
+        downloadInfo.progress = 100;
+        
+        setTimeout(() => {
+          downloadProgressVisible.value = false;
+          Message.success(t('sftp.downloadSuccess'));
+        }, 500);
 
-        // 开始下载
-        await downloadFolderContent(nodeData.key, folderPath);
-
-        Message.clear(); // 清除进度提示
-        Message.success(t('sftp.downloadFolderSuccess', { name: nodeData.title }));
         await logOperation('download_folder', nodeData.key);
       } catch (error) {
-        Message.clear(); // 清除进度提示
+        downloadInfo.status = 'error';
         console.error('Failed to download folder:', error);
-        Message.error(t('sftp.downloadFolderFailed', { name: nodeData.title }));
+        Message.error(t('sftp.downloadFailed'));
       }
     };
 
@@ -1253,35 +1245,91 @@ export default {
       }
     };
 
-    // 优化文件上传函数
+    // 修改 uploadFiles 函数
     const uploadFiles = async (files, targetPath) => {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const reader = new FileReader();
-        
-        try {
-          const base64Content = await new Promise((resolve, reject) => {
-            reader.onload = (e) => resolve(e.target.result.split(',')[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
+      try {
+        // 显示上传进度提示
+        Message.loading({
+          content: t('sftp.uploadingFiles'),
+          duration: 0
+        });
 
-          await axios.post('http://localhost:5000/sftp_upload_file', {
-            connection: props.connection,
-            path: targetPath,
-            filename: file.name,
-            content: base64Content
-          });
-
-          Message.success(`Uploaded ${file.name} successfully`);
-          await logOperation('upload', `${targetPath}/${file.name}`);
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
           
-          // 刷新目标目录
-          await refreshDirectoryKeepingState(targetPath);
-        } catch (error) {
-          console.error('Failed to upload file:', error);
-          Message.error(`Failed to upload ${file.name}: ${error.message}`);
+          // 检查是否是文件夹
+          if (file.webkitRelativePath || file.isDirectory) {
+            // 处理文件夹上传
+            await uploadFolder(file, targetPath);
+          } else {
+            // 处理单个文件上传
+            await uploadSingleFile(file, targetPath);
+          }
         }
+
+        Message.clear();
+        Message.success(t('sftp.uploadSuccess'));
+        await refreshDirectoryKeepingState(targetPath);
+      } catch (error) {
+        Message.clear();
+        console.error('Failed to upload:', error);
+        Message.error(t('sftp.uploadFailed'));
+      }
+    };
+
+    // 添加文件夹上传函数
+    const uploadFolder = async (folder, targetPath) => {
+      try {
+        // 创建临时目录用于存储要压缩的文件
+        const tempDir = await ipcRenderer.invoke('create-temp-dir');
+        
+        // 递归读取文件夹内容并保持目录结构
+        const processDirectory = async (entry, basePath) => {
+          const reader = entry.createReader();
+          const entries = await new Promise((resolve) => {
+            reader.readEntries(resolve);
+          });
+          
+          for (const entry of entries) {
+            if (entry.isDirectory) {
+              await processDirectory(entry, path.join(basePath, entry.name));
+            } else {
+              const file = await new Promise((resolve) => {
+                entry.file(resolve);
+              });
+              const filePath = path.join(basePath, file.name);
+              await fs.promises.writeFile(
+                path.join(tempDir, filePath),
+                await file.arrayBuffer()
+              );
+            }
+          }
+        };
+
+        await processDirectory(folder.webkitGetAsEntry(), '');
+
+        // 压缩文件夹
+        const zipPath = path.join(tempDir, `${folder.name}.zip`);
+        await ipcRenderer.invoke('compress-folder', {
+          sourcePath: tempDir,
+          targetPath: zipPath
+        });
+
+        // 上传压缩文件
+        const zipContent = await fs.promises.readFile(zipPath, { encoding: 'base64' });
+        
+        // 发送到服务器并在服务器端解压
+        await axios.post('http://localhost:5000/sftp_upload_folder', {
+          connection: props.connection,
+          path: targetPath,
+          folderName: folder.name,
+          content: zipContent
+        });
+
+        // 清理临时文件
+        await ipcRenderer.invoke('cleanup-temp-dir', tempDir);
+      } catch (error) {
+        throw new Error(`Failed to upload folder: ${error.message}`);
       }
     };
 
@@ -1660,7 +1708,7 @@ export default {
   text-align: center;
 }
 
-/* 添加拖拽相关样式 */
+/* 添加��拽相关样式 */
 .drag-over {
   background-color: var(--color-primary-light-1) !important;
   border: 2px dashed var(--color-primary) !important;

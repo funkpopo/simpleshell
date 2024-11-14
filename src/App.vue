@@ -459,10 +459,15 @@
               allow-clear
             />
           </a-form-item>
-          <a-form-item>
-            <a-button type="primary" @click="setPassword">
-              {{ t('lock.confirm') }}
-            </a-button>
+          <a-form-item class="form-buttons">
+            <a-space>
+              <a-button @click="cancelSetPassword">
+                {{ t('lock.cancel') }}
+              </a-button>
+              <a-button type="primary" @click="setPassword">
+                {{ t('lock.confirm') }}
+              </a-button>
+            </a-space>
           </a-form-item>
         </a-form>
       </template>
@@ -1536,7 +1541,7 @@ export default {
       }
     }
 
-    // 在 setup 函数中添加标签页右键菜单处理
+    // 在 setup 函数中添加标��页右键菜单处理
     const showTabContextMenu = (event, tab) => {
       event.preventDefault()
       
@@ -1782,6 +1787,12 @@ export default {
       }
     }
 
+    const cancelSetPassword = () => {
+      isLocked.value = false;
+      lockForm.password = '';
+      lockForm.confirmPassword = '';
+    }
+
     return {
       connections,
       tabs,
@@ -1855,6 +1866,7 @@ export default {
       lockScreen,
       setPassword,
       unlock,
+      cancelSetPassword,
     }
   }
 }
@@ -2079,7 +2091,7 @@ export default {
   position: relative;
 }
 
-/* 确保 Add Folder 按钮在上层 */
+/* 确保 Add Folder 钮在上层 */
 .arco-menu-item[key="add-folder"] {
   z-index: 1003;
 }
@@ -2908,6 +2920,7 @@ export default {
   background-color: var(--color-fill-2);
 }
 
+/* 修改锁屏相关样式 */
 .screen-lock-overlay {
   position: fixed;
   top: 0;
@@ -2930,23 +2943,69 @@ export default {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   width: 100%;
   max-width: 360px;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .lock-content h2 {
   margin-bottom: 24px;
   color: var(--color-text-1);
+  text-align: center;
+  width: 100%;
 }
 
 .lock-form {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .lock-form .arco-form-item {
   margin-bottom: 16px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .lock-form .arco-form-item:last-child {
   margin-bottom: 0;
+}
+
+/* 确保输入框和按钮容器宽度一致 */
+.lock-form .arco-input-wrapper,
+.lock-form .form-buttons {
+  width: 100%;
+  max-width: 280px;
+}
+
+/* 按钮容器样式 */
+.lock-form .form-buttons {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* 按钮组样式 */
+.lock-form .arco-space {
+  display: flex;
+  gap: 16px;
+}
+
+/* 按钮样式 */
+.lock-form .arco-btn {
+  min-width: 80px;
+}
+
+/* 解锁按钮容器样式 */
+.lock-form .arco-form-item:last-child:not(.form-buttons) {
+  margin-top: 8px;
+}
+
+/* 确保输入框内的文本居中 */
+.lock-form .arco-input {
+  text-align: center;
 }
 </style>
