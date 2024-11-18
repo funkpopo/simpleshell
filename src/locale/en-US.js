@@ -106,6 +106,7 @@ export default {
     enterPassword: 'Enter Password',
     confirmPassword: 'Confirm Password',
     confirm: 'Confirm',
+    cancel: 'Cancel',
     unlock: 'Unlock',
     passwordRequired: 'Password is required',
     passwordMismatch: 'Passwords do not match',

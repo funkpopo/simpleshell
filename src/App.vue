@@ -482,10 +482,15 @@
               allow-clear
             />
           </a-form-item>
-          <a-form-item>
-            <a-button type="primary" @click="setPassword">
-              {{ t('lock.confirm') }}
-            </a-button>
+          <a-form-item class="form-buttons">
+            <a-space>
+              <a-button @click="cancelSetPassword">
+                {{ t('lock.cancel') }}
+              </a-button>
+              <a-button type="primary" @click="setPassword">
+                {{ t('lock.confirm') }}
+              </a-button>
+            </a-space>
           </a-form-item>
         </a-form>
       </template>
@@ -1560,7 +1565,7 @@ export default {
       }
     }
 
-    // 在 setup 函数中添加标签页右键菜单处理
+    // 在 setup 函数中添加标��页右键菜单处理
     const showTabContextMenu = (event, tab) => {
       event.preventDefault()
       
@@ -2154,7 +2159,7 @@ export default {
   position: relative;
 }
 
-/* 确保 Add Folder 按钮在上层 */
+/* 确保 Add Folder 钮在上层 */
 .arco-menu-item[key="add-folder"] {
   z-index: 1003;
 }
@@ -2983,6 +2988,7 @@ export default {
   background-color: var(--color-fill-2);
 }
 
+/* 修改锁屏相关样式 */
 .screen-lock-overlay {
   position: fixed;
   top: 0;
@@ -3005,20 +3011,31 @@ export default {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   width: 100%;
   max-width: 360px;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .lock-content h2 {
   margin-bottom: 24px;
   color: var(--color-text-1);
+  text-align: center;
+  width: 100%;
 }
 
 .lock-form {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .lock-form .arco-form-item {
   margin-bottom: 16px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .lock-form .arco-form-item:last-child {

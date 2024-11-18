@@ -106,6 +106,7 @@ export default {
     enterPassword: '请输入密码',
     confirmPassword: '确认密码',
     confirm: '确认',
+    cancel: '取消',
     unlock: '解锁',
     passwordRequired: '请输入密码',
     passwordMismatch: '两次输入的密码不一致',
