@@ -65,85 +65,108 @@
             </a-menu-item>
 
             <!-- 文件夹列表 -->
-            <div 
-              v-for="folder in folders" 
-              :key="folder.id"
-              :data-id="folder.id"
-              class="folder-item"
-              @mouseenter="showFolderMenu(folder)"
-              @mouseleave="hideFolderMenu"
-              @contextmenu.prevent="showFolderContextMenu($event, folder)"
+            <draggable 
+              v-model="folders" 
+              :animation="200"
+              item-key="id"
+              handle=".folder-drag-handle"
+              @end="onFolderDragEnd"
             >
-              <a-menu-item :key="folder.id" class="folder-menu-item">
-                <template #icon>
-                  <a-avatar 
-                    v-if="siderCollapsed"
-                    shape="square"
-                    :style="{ backgroundColor: getAvatarColor(folder) }"
+              <template #item="{ element: folder }">
+                <div 
+                  :key="folder.id"
+                  :data-id="folder.id"
+                  class="folder-item"
+                  @mouseenter="showFolderMenu(folder)"
+                  @mouseleave="hideFolderMenu"
+                  @contextmenu.prevent="showFolderContextMenu($event, folder)"
+                >
+                  <a-menu-item :key="folder.id" class="folder-menu-item">
+                    <template #icon>
+                      <div class="folder-drag-handle">
+                        <a-avatar 
+                          v-if="siderCollapsed"
+                          shape="square"
+                          :style="{ backgroundColor: getAvatarColor(folder) }"
+                        >
+                          {{ folder.name.charAt(0).toUpperCase() }}
+                        </a-avatar>
+                        <icon-folder v-else class="folder-icon" />
+                      </div>
+                    </template>
+                    <template #default>
+                      <div class="folder-title-wrapper">
+                        <span class="folder-name">{{ folder.name }}</span>
+                      </div>
+                    </template>
+                  </a-menu-item>
+
+                  <!-- 漂浮菜单 -->
+                  <div 
+                    v-show="activeFolderId === folder.id"
+                    class="floating-menu"
+                    @mouseenter="showFolderMenu(folder)"
+                    @mouseleave="hideFolderMenu"
+                    @contextmenu.prevent
                   >
-                    {{ folder.name.charAt(0).toUpperCase() }}
-                  </a-avatar>
-                  <icon-folder v-else />
-                </template>
-                <template #default>
-                  <div class="folder-title-wrapper">
-                    <span class="folder-name">{{ folder.name }}</span>
-                  </div>
-                </template>
-              </a-menu-item>
-
-              <!-- 漂浮菜单 -->
-              <div 
-                v-show="activeFolderId === folder.id"
-                class="floating-menu"
-                @mouseenter="showFolderMenu(folder)"
-                @mouseleave="hideFolderMenu"
-                @contextmenu.prevent
-              >
-                <div class="floating-menu-content">
-                  <!-- 添加连接按钮 -->
-                  <div class="menu-section">
-                    <a-button 
-                      class="new-connection-btn" 
-                      @click.stop="showAddConnectionModal(folder.id)"
-                      @contextmenu.prevent
-                    >
-                      <template #icon><icon-plus /></template>
-                      {{ t('common.addConnection') }}
-                    </a-button>
-                  </div>
-
-                  <!-- 连接 -->
-                  <div class="menu-section connections" @contextmenu.prevent>
-                    <div
-                      v-for="connection in folder.connections"
-                      :key="connection.id"
-                      class="connection-entry"
-                      @click="openConnection(connection)"
-                      @contextmenu.prevent
-                    >
-                      <span class="connection-title">{{ connection.name }}</span>
-                      <div class="connection-controls">
+                    <div class="floating-menu-content">
+                      <!-- 添加连接按钮 -->
+                      <div class="menu-section">
                         <a-button 
-                          class="control-btn"
-                          @click.stop="editConnection(connection, folder)"
+                          class="new-connection-btn" 
+                          @click.stop="showAddConnectionModal(folder.id)"
                           @contextmenu.prevent
                         >
-                          <icon-edit />
+                          <template #icon><icon-plus /></template>
+                          {{ t('common.addConnection') }}
                         </a-button>
-                        <a-button 
-                          class="control-btn delete"
-                          @click.stop="deleteConnection(connection, folder)"
-                          @contextmenu.prevent
+                      </div>
+
+                      <!-- 连接 -->
+                      <div class="menu-section connections" @contextmenu.prevent>
+                        <draggable 
+                          v-model="folder.connections"
+                          :animation="200"
+                          item-key="id"
+                          handle=".connection-drag-handle"
+                          @end="onConnectionDragEnd(folder)"
                         >
-                          <icon-delete />
-                        </a-button>
+                          <template #item="{ element: connection }">
+                            <div
+                              :key="connection.id"
+                              class="connection-entry"
+                              @click="openConnection(connection)"
+                              @contextmenu.prevent
+                            >
+                              <div class="connection-drag-handle">
+                                <icon-drag-dot-vertical class="drag-icon" />
+                              </div>
+                              <span class="connection-title">{{ connection.name }}</span>
+                              <div class="connection-controls">
+                                <a-button 
+                                  class="control-btn"
+                                  @click.stop="editConnection(connection, folder)"
+                                  @contextmenu.prevent
+                                >
+                                  <icon-edit />
+                                </a-button>
+                                <a-button 
+                                  class="control-btn delete"
+                                  @click.stop="deleteConnection(connection, folder)"
+                                  @contextmenu.prevent
+                                >
+                                  <icon-delete />
+                                </a-button>
+                              </div>
+                            </div>
+                          </template>
+                        </draggable>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </template>
+            </draggable>
           </a-menu>
         </a-layout-sider>
 
@@ -492,7 +515,7 @@
 import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed, inject, h } from 'vue'
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
-import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder, IconLock, IconUnlock } from '@arco-design/web-vue/es/icon'
+import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder, IconLock, IconUnlock, IconDragDotVertical } from '@arco-design/web-vue/es/icon'
 import { Message, Modal } from '@arco-design/web-vue' // 添加这行
 import axios from 'axios'
 import { dialog } from '@electron/remote'
@@ -522,6 +545,7 @@ export default {
     IconFolder,
     IconLock,
     IconUnlock,
+    IconDragDotVertical,
     draggable,
   },
   setup() {
@@ -1273,7 +1297,7 @@ export default {
           }
         })
       } catch (error) {
-        // 有在实际保存设置失败时才显错误
+        // 有在实际保存设置失败时才���错误
         console.error('Failed to save settings:', error)
         if (error.response) {
           Message.error(t('settings.saveFailed'))
@@ -1344,7 +1368,7 @@ export default {
       ipcRenderer.removeAllListeners('config-updated')
     })
 
-    // 修改保存配置的方法
+    // 修改保存置的方法
     const saveConfig = async (config) => {
       try {
         await ipcRenderer.invoke('save-config', config)
@@ -1464,7 +1488,7 @@ export default {
 
             const req = https.get(options, (res) => {
               if (res.statusCode === 301 || res.statusCode === 302) {
-                // 处理重定向
+                // 处重定向
                 reject(new Error('Redirect not supported'))
                 return
               }
@@ -1564,7 +1588,7 @@ export default {
     const highlightRulesVisible = ref(false)
     const customHighlightRules = ref([])
 
-    // 添加加载和保存高亮规则的函数
+    // 添加加载和保存高亮规则函数
     const loadHighlightRules = async () => {
       try {
         const content = await fs.promises.readFile('highlight.list', 'utf-8')
@@ -1782,7 +1806,56 @@ export default {
       }
     }
 
-    return {
+    const onFolderDragEnd = async () => {
+      try {
+        // 获取当前配置
+        const response = await axios.get('http://localhost:5000/get_connections')
+        let currentConfig = response.data
+
+        // 更新文件夹顺序
+        const folderIds = folders.value.map(folder => folder.id)
+        currentConfig.sort((a, b) => {
+          if (a.type !== 'folder' || b.type !== 'folder') return 0
+          return folderIds.indexOf(a.id) - folderIds.indexOf(b.id)
+        })
+
+        // 保存更新后的配置
+        await axios.post('http://localhost:5000/update_config', currentConfig)
+      } catch (error) {
+        console.error('Failed to save folder order:', error)
+        // 如果保存失败，静默恢复原始顺序
+        await refreshConnections()
+      }
+    }
+
+    // 添加连接拖拽结束处理方法
+    const onConnectionDragEnd = async (folder) => {
+      try {
+        // 获取当前配置
+        const response = await axios.get('http://localhost:5000/get_connections')
+        let currentConfig = response.data
+
+        // 更新文件夹中的连接顺序
+        currentConfig = currentConfig.map(item => {
+          if (item.type === 'folder' && item.id === folder.id) {
+            return {
+              ...item,
+              connections: folder.connections
+            }
+          }
+          return item
+        })
+
+        // 保存更新后的配置
+        await axios.post('http://localhost:5000/update_config', currentConfig)
+      } catch (error) {
+        console.error('Failed to save connection order:', error)
+        // 如果保存失败，静默恢复原始顺序
+        await refreshConnections()
+      }
+    }
+
+            return {
       connections,
       tabs,
       activeTab,
@@ -1855,6 +1928,8 @@ export default {
       lockScreen,
       setPassword,
       unlock,
+      onFolderDragEnd,
+      onConnectionDragEnd,
     }
   }
 }
@@ -2948,5 +3023,154 @@ export default {
 
 .lock-form .arco-form-item:last-child {
   margin-bottom: 0;
+}
+
+/* 拖拽相关样式 */
+.folder-item {
+  transition: background-color 0.2s ease;
+}
+
+.folder-menu-item {
+  cursor: move; /* 指示可拖拽 */
+}
+
+/* 拖拽时的样式 */
+.sortable-ghost {
+  opacity: 0.5;
+  background-color: var(--color-fill-3);
+}
+
+.sortable-drag {
+  opacity: 0.9;
+  background-color: var(--color-bg-1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 确保拖拽时浮动菜单隐藏 */
+.sortable-ghost .floating-menu,
+.sortable-drag .floating-menu {
+  display: none !important;
+}
+
+/* 拖拽相关样式 */
+.folder-drag-handle {
+  cursor: move;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.folder-drag-handle .folder-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+
+/* 确保菜单项样式正确 */
+.folder-menu-item {
+  cursor: default;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+}
+
+/* 确保文件夹名称样式正确 */
+.folder-title-wrapper {
+  margin-left: 8px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 折叠状态下的样式 */
+.arco-layout-sider-collapsed .folder-drag-handle {
+  width: 24px;
+  height: 24px;
+}
+
+.arco-layout-sider-collapsed .folder-drag-handle .arco-avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+}
+
+/* 拖拽时的样式 */
+.sortable-ghost {
+  opacity: 0.5;
+  background-color: var(--color-fill-3);
+}
+
+.sortable-drag {
+  opacity: 0.9;
+  background-color: var(--color-bg-1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 确保拖拽时浮动菜单隐藏 */
+.sortable-ghost .floating-menu,
+.sortable-drag .floating-menu {
+  display: none !important;
+}
+
+/* 连接拖拽相关样式 */
+.connection-entry {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 2px;
+  height: 32px;
+}
+
+.connection-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  cursor: move;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.connection-entry:hover .connection-drag-handle {
+  opacity: 0.5;
+}
+
+.connection-entry:hover .connection-drag-handle:hover {
+  opacity: 1;
+}
+
+.drag-icon {
+  font-size: 16px;
+  color: var(--color-text-3);
+}
+
+/* 调整连接标题样式以适应拖拽图标 */
+.connection-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 8px;
+}
+
+/* 拖拽时的样式 */
+.connections .sortable-ghost {
+  opacity: 0.5;
+  background-color: var(--color-fill-3);
+}
+
+.connections .sortable-drag {
+  opacity: 0.9;
+  background-color: var(--color-bg-1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 </style>
