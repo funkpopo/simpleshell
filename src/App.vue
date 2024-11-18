@@ -4,8 +4,7 @@
       <a-layout-header>
         <div class="header-content">
           <div class="app-title" @click="checkUpdate" title="点击检查更新">
-            <h3>SimpleShell</h3>
-            <span class="version">v{{ currentVersion }}</span>
+            <h3>SimpleShell</h3><span class="version">v{{ currentVersion }}</span>
           </div>
           <div class="header-actions">
             <div class="header-buttons">
@@ -37,11 +36,14 @@
         </div>
       </a-layout-header>
       <a-layout class="main-content">
+        <!-- 主侧边栏 -->
         <a-layout-sider 
           :collapsed="siderCollapsed" 
           collapsible 
-          :width="240"
+          :width="siderWidth"
+          :min-width="180"
           @collapse="siderCollapsed = $event"
+          class="folder-sider"
         >
           <a-menu
             :style="{ width: '100%' }"
@@ -77,8 +79,8 @@
                   :key="folder.id"
                   :data-id="folder.id"
                   class="folder-item"
-                  @mouseenter="showFolderMenu(folder)"
-                  @mouseleave="hideFolderMenu"
+                  @click="selectFolder(folder)"
+                  :class="{ 'active': selectedFolderId === folder.id }"
                   @contextmenu.prevent="showFolderContextMenu($event, folder)"
                 >
                   <a-menu-item :key="folder.id" class="folder-menu-item">
@@ -100,74 +102,70 @@
                       </div>
                     </template>
                   </a-menu-item>
-
-                  <!-- 漂浮菜单 -->
-                  <div 
-                    v-show="activeFolderId === folder.id"
-                    class="floating-menu"
-                    @mouseenter="showFolderMenu(folder)"
-                    @mouseleave="hideFolderMenu"
-                    @contextmenu.prevent
-                  >
-                    <div class="floating-menu-content">
-                      <!-- 添加连接按钮 -->
-                      <div class="menu-section">
-                        <a-button 
-                          class="new-connection-btn" 
-                          @click.stop="showAddConnectionModal(folder.id)"
-                          @contextmenu.prevent
-                        >
-                          <template #icon><icon-plus /></template>
-                          {{ t('common.addConnection') }}
-                        </a-button>
-                      </div>
-
-                      <!-- 连接 -->
-                      <div class="menu-section connections" @contextmenu.prevent>
-                        <draggable 
-                          v-model="folder.connections"
-                          :animation="200"
-                          item-key="id"
-                          handle=".connection-drag-handle"
-                          @end="onConnectionDragEnd(folder)"
-                        >
-                          <template #item="{ element: connection }">
-                            <div
-                              :key="connection.id"
-                              class="connection-entry"
-                              @click="openConnection(connection)"
-                              @contextmenu.prevent
-                            >
-                              <div class="connection-drag-handle">
-                                <icon-drag-dot-vertical class="drag-icon" />
-                              </div>
-                              <span class="connection-title">{{ connection.name }}</span>
-                              <div class="connection-controls">
-                                <a-button 
-                                  class="control-btn"
-                                  @click.stop="editConnection(connection, folder)"
-                                  @contextmenu.prevent
-                                >
-                                  <icon-edit />
-                                </a-button>
-                                <a-button 
-                                  class="control-btn delete"
-                                  @click.stop="deleteConnection(connection, folder)"
-                                  @contextmenu.prevent
-                                >
-                                  <icon-delete />
-                                </a-button>
-                              </div>
-                            </div>
-                          </template>
-                        </draggable>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </template>
             </draggable>
           </a-menu>
+          
+          <!-- 添加拖拽调整宽度的区域 -->
+          <div 
+            class="sider-resizer"
+            v-show="!siderCollapsed"
+            @mousedown="startResize"
+          ></div>
+        </a-layout-sider>
+
+        <!-- 新增：SSH连接列表侧边栏 -->
+        <a-layout-sider
+          v-if="selectedFolderId"
+          :width="connectionsWidth"
+          class="connections-sider"
+        >
+          <div class="connections-sider-header">
+            <span class="connections-title">{{ selectedFolder?.name }}</span>
+            <a-button 
+              class="new-connection-btn" 
+              @click="showAddConnectionModal(selectedFolderId)"
+            >
+              <template #icon><icon-plus /></template>
+              {{ t('common.addConnection') }}
+            </a-button>
+          </div>
+
+          <div class="connections-list">
+            <draggable 
+              v-model="selectedFolder.connections"
+              :animation="200"
+              item-key="id"
+              handle=".connection-drag-handle"
+              @end="onConnectionDragEnd(selectedFolder)"
+            >
+              <template #item="{ element: connection }">
+                <div
+                  :key="connection.id"
+                  class="connection-entry"
+                  @click="openConnection(connection)"
+                  @contextmenu.prevent="showConnectionContextMenu($event, connection, selectedFolder)"
+                >
+                  <div class="connection-drag-handle">
+                    <icon-drag-dot-vertical class="drag-icon" />
+                  </div>
+                  <span 
+                    class="connection-title" 
+                    :title="connection.name"
+                  >
+                    {{ connection.name }}
+                  </span>
+                </div>
+              </template>
+            </draggable>
+          </div>
+          
+          <!-- 添加拖拽调整宽度的区域 -->
+          <div 
+            class="connections-resizer"
+            @mousedown="startConnectionsResize"
+          ></div>
         </a-layout-sider>
 
         <a-layout-content :class="{ 'dark-mode': isDarkMode }" class="content-wrapper">
@@ -653,7 +651,7 @@ export default {
         // 保存更新后的配置
         await axios.post('http://localhost:5000/update_config', currentConfig)
         
-        // 刷新连接列表
+        // 刷新连接表
         await refreshConnections()
         
         // 重置表单并关闭对话框
@@ -767,12 +765,15 @@ export default {
       
       // 加载高亮规则
       loadHighlightRules()
+      
+      // 加载度设置
+      loadWidthSettings()
     })
 
     onUnmounted(() => {
       window.removeEventListener('resize', resizeAllTerminals)
       
-      // 移除系统主题变化的监听
+      // 移除系统主题变化监听
       const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
       darkModeMediaQuery.removeListener(systemThemeChangeHandler)
     })
@@ -789,7 +790,7 @@ export default {
 
     // 生成随机颜色的函数
     const generateRandomColor = () => {
-      // 生成柔和的颜色
+      // 生成柔和的色
       const r = Math.floor(Math.random() * 156 + 100); // 100-255
       const g = Math.floor(Math.random() * 156 + 100); // 100-255
       const b = Math.floor(Math.random() * 156 + 100); // 100-255
@@ -842,7 +843,7 @@ export default {
     const toggleRightSidebar = () => {
       if (hasActiveConnection.value) {
         isRightSidebarOpen.value = !isRightSidebarOpen.value;
-        // 等待过渡动画完成后再调整终端大小
+        // 等待过渡动画完成后再调整终端小
         setTimeout(() => {
           const activeTerminal = sshTerminals.value.find(
             terminal => terminal.sessionId === activeTab.value
@@ -878,25 +879,37 @@ export default {
 
     const showConnectionContextMenu = (event, connection, folder) => {
       const menu = new Menu()
+      
+      // 打开连接选项
       menu.append(new MenuItem({
-        label: 'Edit',
+        label: t('common.open'),
+        click: () => openConnection(connection)
+      }))
+      
+      menu.append(new MenuItem({ type: 'separator' }))
+      
+      // 编辑选项
+      menu.append(new MenuItem({
+        label: t('common.edit'),
         click: () => editConnection(connection, folder)
       }))
+      
+      // 复制选项
       menu.append(new MenuItem({
-        label: 'Duplicate',
+        label: t('common.duplicate'),
         click: () => duplicateConnection(connection, folder)
       }))
+      
+      menu.append(new MenuItem({ type: 'separator' }))
+      
+      // 删除选项
       menu.append(new MenuItem({
-        type: 'separator'
+        label: t('common.delete'),
+        click: () => deleteConnection(connection, folder)
       }))
-      menu.append(new MenuItem({
-        label: 'Delete',
-        click: () => deleteConnection(connection, folder),
-        type: 'normal',
-        role: 'delete'
-      }))
+      
       menu.popup()
-    };
+    }
 
     const editConnection = (connection, folder) => {
       currentFolder.value = folder
@@ -1070,11 +1083,11 @@ export default {
             },
             async onOk() {
               try {
-                // 获取当前配置
+                // 取当前配置
                 const response = await axios.get('http://localhost:5000/get_connections')
                 const updatedConfig = response.data.filter(item => item.id !== folder.id)
                 
-                // 保存更新后的配置
+                // 保存更新后的置
                 await axios.post('http://localhost:5000/update_config', updatedConfig)
                 
                 // 更新本地状态
@@ -1153,7 +1166,7 @@ export default {
           }))
         }
         
-        // 更新新连接的 folderId
+        // 更新新连的 folderId
         newFolder.connections.forEach(conn => {
           conn.folderId = newFolder.id
         })
@@ -1291,7 +1304,7 @@ export default {
           cancelText: t('settings.restartLater'),
           hideCancel: false,
           onOk: () => {
-            // 用户选择立即重
+            // 用户选择立重
             const { app } = require('@electron/remote')
             app.relaunch()
             app.exit(0)
@@ -1302,7 +1315,7 @@ export default {
           }
         })
       } catch (error) {
-        // 有在实际保存设置失败时才���错误
+        // 有在实际保存设置失败时才错误
         console.error('Failed to save settings:', error)
         if (error.response) {
           Message.error(t('settings.saveFailed'))
@@ -1565,7 +1578,7 @@ export default {
       }
     }
 
-    // 在 setup 函数中添加标��页右键菜单处理
+    // 在 setup 函数中添加标页右键菜单处理
     const showTabContextMenu = (event, tab) => {
       event.preventDefault()
       
@@ -1703,7 +1716,7 @@ export default {
 
     // 添加编辑规则的方法
     const addHighlightRule = () => {
-      // 检查规则数量限制
+      // 检查规则数量限
       if (customHighlightRules.value.length >= 1000) {
         Message.error('Maximum number of rules (1000) reached')
         return
@@ -1860,7 +1873,197 @@ export default {
       }
     }
 
-            return {
+    const selectedFolderId = ref(null)
+    const selectedFolder = computed(() => 
+      folders.value.find(folder => folder.id === selectedFolderId.value)
+    )
+
+    // 修改选择文件夹的方法
+    const selectFolder = (folder) => {
+      // 如果点击的是当前选中的文件夹，则关闭连接列表
+      if (selectedFolderId.value === folder.id) {
+        selectedFolderId.value = null
+      } else {
+        // 否则切换到新的文件夹的连接列表
+        selectedFolderId.value = folder.id
+      }
+    }
+
+    const siderWidth = ref(180) // 修改 siderWidth 的初始值为 180
+    let isResizing = false
+    let startX = 0
+    let startWidth = 0
+
+    // 修改 startResize 方法，添加折叠状态检查
+    const startResize = (e) => {
+      // 如果侧边栏已折叠，则不允许调整宽度
+      if (siderCollapsed.value) return
+      
+      isResizing = true
+      startX = e.clientX
+      startWidth = siderWidth.value
+      
+      // 添加事件监听
+      document.addEventListener('mousemove', handleResize)
+      document.addEventListener('mouseup', stopResize)
+      
+      // 添加调整时的样式
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    }
+
+    // 修改 handleResize 方法，添加折叠状态查
+    const handleResize = (e) => {
+      if (!isResizing || siderCollapsed.value) return
+      
+      const diff = e.clientX - startX
+      const newWidth = Math.max(180, startWidth + diff)
+      
+      siderWidth.value = newWidth
+    }
+
+    const stopResize = () => {
+      isResizing = false
+      
+      // 移除事件监听
+      document.removeEventListener('mousemove', handleResize)
+      document.removeEventListener('mouseup', stopResize)
+      
+      // 恢复默认样式
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      
+      // 保存宽度设置
+      saveWidthSettings()
+    }
+
+    // 组件卸载时清理
+    onUnmounted(() => {
+      document.removeEventListener('mousemove', handleResize)
+      document.removeEventListener('mouseup', stopResize)
+    })
+
+    // 添加计算最大宽度的函数
+    const calculateConnectionsWidth = computed(() => {
+      if (!selectedFolder.value?.connections?.length) return 240;
+      
+      // 创建临时 span 元素来测量文本宽度
+      const span = document.createElement('span');
+      span.style.visibility = 'hidden';
+      span.style.position = 'absolute';
+      span.style.fontSize = '14px';
+      span.style.fontFamily = 'Avenir, Helvetica, Arial, sans-serif';
+      document.body.appendChild(span);
+      
+      // 计算最长连接名称的宽度
+      const maxWidth = selectedFolder.value.connections.reduce((max, conn) => {
+        span.innerText = conn.name;
+        const width = span.offsetWidth;
+        return Math.max(max, width);
+      }, 0);
+      
+      // 清理临时元素
+      document.body.removeChild(span);
+      
+      // 计算所需总宽度：
+      // 文本宽度 + 拖拽图标宽度(24px) + 内边距(24px) + 额外边距(40px)
+      const calculatedWidth = maxWidth + 24 + 24 + 40;
+      
+      // 确保最小宽度为 240px
+      return Math.max(240, calculatedWidth);
+    });
+
+    // 在 setup 中添加
+    const connectionsWidth = ref(240) // 默认宽度
+    let isConnectionsResizing = false
+    let connectionsStartX = 0
+    let connectionsStartWidth = 0
+
+    // 添加 SSH 连接列表宽度调整方法
+    const startConnectionsResize = (e) => {
+      isConnectionsResizing = true
+      connectionsStartX = e.clientX
+      connectionsStartWidth = connectionsWidth.value
+      
+      document.addEventListener('mousemove', handleConnectionsResize)
+      document.addEventListener('mouseup', stopConnectionsResize)
+      
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    }
+
+    const handleConnectionsResize = (e) => {
+      if (!isConnectionsResizing) return
+      
+      const diff = e.clientX - connectionsStartX
+      const newWidth = Math.max(100, Math.min(250, connectionsStartWidth + diff))
+      
+      connectionsWidth.value = newWidth
+    }
+
+    const stopConnectionsResize = () => {
+      isConnectionsResizing = false
+      
+      document.removeEventListener('mousemove', handleConnectionsResize)
+      document.removeEventListener('mouseup', stopConnectionsResize)
+      
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      
+      // 保存宽度设置
+      saveWidthSettings()
+    }
+
+    // 添加宽度设置的保存和加载方法
+    const saveWidthSettings = async () => {
+      try {
+        const config = await ipcRenderer.invoke('read-config')
+        const settingsIndex = config.findIndex(item => item.type === 'settings')
+        const widthSettings = {
+          folderWidth: siderWidth.value,
+          connectionsWidth: connectionsWidth.value
+        }
+        
+        if (settingsIndex !== -1) {
+          config[settingsIndex] = {
+            ...config[settingsIndex],
+            widthSettings
+          }
+        } else {
+          config.push({
+            type: 'settings',
+            widthSettings
+          })
+        }
+        
+        await ipcRenderer.invoke('save-config', config)
+      } catch (error) {
+        console.error('Failed to save width settings:', error)
+      }
+    }
+
+    const loadWidthSettings = async () => {
+      try {
+        const config = await ipcRenderer.invoke('read-config')
+        const settings = config.find(item => item.type === 'settings')
+        
+        if (settings?.widthSettings) {
+          siderWidth.value = settings.widthSettings.folderWidth || 180
+          connectionsWidth.value = settings.widthSettings.connectionsWidth || 240
+        }
+      } catch (error) {
+        console.error('Failed to load width settings:', error)
+      }
+    }
+
+    // 在 setup 中添加
+    const cancelSetPassword = () => {
+      isLocked.value = false;
+      lockForm.password = '';
+      lockForm.confirmPassword = '';
+    };
+
+    return {
       connections,
       tabs,
       activeTab,
@@ -1935,6 +2138,19 @@ export default {
       unlock,
       onFolderDragEnd,
       onConnectionDragEnd,
+      selectedFolderId,
+      selectedFolder,
+      selectFolder,
+      siderWidth,
+      startResize,
+      handleResize,
+      stopResize,
+      calculateConnectionsWidth,
+      connectionsWidth,
+      startConnectionsResize,
+      handleConnectionsResize,
+      stopConnectionsResize,
+      cancelSetPassword,
     }
   }
 }
@@ -2008,11 +2224,120 @@ export default {
 
 .content-header {
   flex: 0 0 auto;
+  background-color: var(--color-bg-2);
+  border-bottom: 1px solid var(--color-border);
+  padding: 4px 8px 0;
+}
+
+.tabs-container {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  height: 40px;
+}
+
+/* 隐藏滚动条但保持功能 */
+.tabs-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.tab-list {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+}
+
+/* 标签页样式 */
+.tab-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-right: 10px;
+  padding: 0 16px;
+  height: 36px;
   background-color: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  margin-right: 2px;
+}
+
+/* 活动标签页样式 */
+.tab-item.active {
+  background-color: var(--color-bg-1);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  z-index: 1;
+}
+
+.tab-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--color-primary);
+}
+
+/* 标签页内容样式 */
+.tab-handle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.tab-title {
+  font-size: 14px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 关闭按钮样式 */
+.close-icon {
+  margin-left: 8px;
+  font-size: 14px;
+  color: var(--color-text-3);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.close-icon:hover {
+  color: var(--color-text-1);
+  background-color: var(--color-fill-3);
+}
+
+/* 标签页悬停效果 */
+.tab-item:hover {
+  background-color: var(--color-fill-2);
+}
+
+.tab-item.active:hover {
+  background-color: var(--color-bg-1);
+}
+
+/* 拖拽时的样式 */
+.sortable-ghost {
+  opacity: 0.5;
+  background-color: var(--color-fill-3);
+}
+
+.sortable-drag {
+  opacity: 0.9;
+  background-color: var(--color-bg-1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .terminal-and-sidebar-container {
@@ -2062,29 +2387,6 @@ export default {
   background-color: var(--color-fill-3);
 }
 
-.tabs-container {
-  flex: 1;
-  overflow-x: auto;
-}
-
-.close-icon {
-  margin-left: 8px;
-  font-size: 12px;
-  color: var(--color-text-2);
-  cursor: pointer;
-}
-
-.close-icon:hover {
-  color: var(--color-text-1);
-}
-
-.terminal-container {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
 .add-connection-button {
   padding: 50px;
   cursor: pointer;
@@ -2101,12 +2403,12 @@ export default {
   padding-left: 24px;
 }
 
-/* 调整子菜单中的项目缩进 */
+/* 调整子菜单中的项缩进 */
 .arco-menu-inline .arco-menu-item {
   padding-left: 40px !important;
 }
 
-/* 添加下样式来调整添加文件夹图标按钮的外观 */
+/* 添加下样来调整添加文夹图标按钮的外观 */
 .arco-menu-item .arco-icon {
   font-size: 30;
   vertical-align: middle;
@@ -2243,7 +2545,7 @@ export default {
   background-color: rgb(var(--red-1));
 }
 
-/* 添加左侧边栏相关样 */
+/* 添加左侧栏相关样 */
 .arco-layout-sider {
   position: relative;
   transition: all 0.2s;
@@ -2255,7 +2557,7 @@ export default {
   min-width: 64px !important;
 }
 
-/* 调整折叠时的 Avatar 样式 */
+/* 整折叠时的 Avatar 样式 */
 .folder-avatar {
   display: flex;
   justify-content: center;
@@ -2328,7 +2630,7 @@ export default {
 
 /* 移除之前的折叠相关式，添加新的折叠布局样式 */
 
-/* 左侧边栏基础样式 */
+/* 左侧���栏基础样式 */
 .arco-layout-sider {
   position: relative;
   background-color: var(--color-bg-2);
@@ -2396,36 +2698,51 @@ export default {
 
 /* 文件夹悬浮菜单样式 */
 .folder-floating-menu {
-  position: fixed;
-  left: 240px;
+  position: absolute;
+  left: 100%; /* 改为相对定位，从父元素右侧开始 */
+  top: 0;
+  height: 100%; /* 占满整个高度 */
   min-width: 260px;
   background: var(--color-bg-2);
-  border-radius: 6px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-  z-index: 1100;
+  border-left: 1px solid var(--color-border);
+  box-shadow: 4px 0 8px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
   transition: all 0.2s ease;
 }
 
-/* 收起侧边栏时的位调整 */
-.arco-layout-sider-collapsed .folder-floating-menu {
-  left: 64px;
-}
-
-/* 菜单内容容器 */
+/* 修改菜单内容容器样式 */
 .floating-menu-content {
-  padding: 8px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
 }
 
-/* 菜单分区 */
-.menu-section {
-  padding: 4px;
+/* 修改连接列表区域样式 */
+.connections {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--color-bg-2);
+  border: none;
+  border-radius: 0;
+  margin-top: 12px;
 }
 
-.menu-section + .menu-section {
-  margin-top: 4px;
+/* 美化滚动条 */
+.connections::-webkit-scrollbar {
+  width: 4px;
 }
 
-/* 新建连接按钮 */
+.connections::-webkit-scrollbar-track {
+  background: var(--color-fill-2);
+}
+
+.connections::-webkit-scrollbar-thumb {
+  background: var(--color-fill-4);
+  border-radius: 2px;
+}
+
+/* 调整新建连接按钮样式 */
 .new-connection-btn {
   width: 100%;
   height: 36px;
@@ -2437,636 +2754,67 @@ export default {
   gap: 8px;
   background: var(--color-bg-2);
   transition: all 0.2s ease;
+  margin-bottom: 8px;
 }
 
 .new-connection-btn:hover {
   background: var(--color-fill-2);
-  border-color: var(--color-primary-light-2);
+  border-color: rgb(var(--primary-6));
+  color: rgb(var(--primary-6));
 }
 
-/* 连接列表区域 */
-.connections {
-  background: var(--color-bg-2);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-}
-
-/* 连接项 */
+/* 调整连接项样式 */
 .connection-entry {
+  position: relative; /* 添加相对定位 */
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 8px 12px;
-  cursor: pointer;
+  margin: 4px 0;
+  border-radius: 4px;
+  background: var(--color-bg-2);
   transition: all 0.2s ease;
-  border-radius: 2px;
+  height: 32px;
 }
 
 .connection-entry:hover {
   background: var(--color-fill-2);
 }
 
-/* 连接标题 */
-.connection-title {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-text-1);
-}
-
-/* 连接控制按组 */
-.connection-controls {
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.connection-entry:hover .connection-controls {
-  opacity: 1;
-}
-
-/* 控制按钮 */
-.control-btn {
-  padding: 2px;
-  height: 20px;
-  width: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  border-radius: 2px;
-  transition: all 0.2s ease;
-}
-
-/* 编辑按钮样式 */
-.control-btn:not(.delete) {
-  color: rgb(var(--primary-6));
-}
-
-.control-btn:not(.delete):hover {
-  background: var(--color-primary-light-1);
-  color: rgb(var(--primary-6));
-}
-
-/* 删除按钮样式 */
-.control-btn.delete {
-  color: rgb(var(--danger-6));
-}
-
-.control-btn.delete:hover {
-  background: var(--color-danger-light-1);
-  color: rgb(var(--danger-6));
-}
-
-/* 图标样式 */
-.control-btn .arco-icon {
-  font-size: 14px;
-}
-
-/* 漂浮菜单基础样式 */
-.floating-menu {
-  position: fixed;
-  min-width: 260px;
-  background: var(--color-bg-2);
-  border-radius: 6px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-  z-index: 1100;
-  transition: all 0.2s ease;
-  transform: translateX(240px); /* 使用 transform 定位 */
-  pointer-events: all; /* 确保菜单可以接收事件 */
-}
-
-/* 收起侧边栏时的位置调 */
+/* 收起侧边栏时的样式调整 */
 .arco-layout-sider-collapsed .floating-menu {
-  transform: translateX(64px);
+  left: 64px; /* 收起时调整位置 */
 }
 
-/* 修改文件夹项的定位 */
+/* 添加阴影效果 */
 .folder-item {
   position: relative;
-  cursor: pointer;
 }
 
-/* 菜单内容容器 */
-.floating-menu-content {
-  padding: 8px;
-  pointer-events: all; /* 确保内容可以接收事件 */
+.folder-item:hover .floating-menu {
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);
 }
 
-/* 连接列表区域 */
-.connections {
-  background: var(--color-bg-2);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  pointer-events: all; /* 确保连接列表可以接收事件 */
+/* 调整菜单分区样式 */
+.menu-section {
+  padding: 0;
 }
 
-/* 连接项样式调整 */
-.connection-entry {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px; /* 减小内边距 */
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-radius: 2px;
-  height: 32px; /* 固定高度 */
+.menu-section + .menu-section {
+  margin-top: 8px;
 }
 
-.connection-entry:hover {
-  background: var(--color-fill-2);
-}
-
-/* 连接标题样式 */
+/* 修改连接标题样式 */
 .connection-title {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--color-text-1);
+  padding-right: 0; /* 移除为按钮预留的空间 */
 }
 
-/* 连接控制按钮组样式 */
+/* 修改连接控制按钮容器样式 */
 .connection-controls {
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.connection-entry:hover .connection-controls {
-  opacity: 1;
-}
-
-/* 控制按钮样式 */
-.control-btn {
-  padding: 2px;
-  height: 20px;
-  width: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  border-radius: 2px;
-  color: var(--color-text-2);
-  transition: all 0.2s ease;
-}
-
-.control-btn:hover {
-  background: var(--color-fill-3);
-  color: var(--color-text-1);
-}
-
-.control-btn.delete:hover {
-  background: var(--color-danger-light-1);
-  color: var(--color-danger);
-}
-
-/* 图标样式 */
-.control-btn .arco-icon {
-  font-size: 14px;
-}
-
-/* 连接列表容器样式 */
-.connections {
-  background: var(--color-bg-2);
-  border: none; /* 移除边框 */
-  border-radius: 4px;
-  padding: 4px;
-}
-
-/* 确保按钮可以正常显示和交互 */
-.connection-controls .arco-btn {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 0 !important;
-  min-width: unset !important;
-}
-
-/* 修复按钮图标显示 */
-.connection-controls .arco-btn .arco-icon {
-  margin: 0;
-  font-size: 14px;
-}
-
-/* 标签页容器样式 */
-.content-header {
-  flex: 0 0 auto;
-  background-color: var(--color-bg-2);
-  border-bottom: 1px solid var(--color-border);
-  padding: 4px 8px 0;
-}
-
-.tabs-container {
-  display: flex;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
-  height: 40px;
-}
-
-/* 隐藏滚动条但保持功能 */
-.tabs-container::-webkit-scrollbar {
-  height: 0;
-  width: 0;
-}
-
-.tab-list {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 2px;
-  height: 100%;
-}
-
-/* 标签页样式 */
-.tab-item {
-  display: flex;
-  align-items: center;
-  padding: 0 16px;
-  height: 36px;
-  background-color: var(--color-bg-2);
-  border: 1px solid var(--color-border);
-  border-bottom: none;
-  border-radius: 4px 4px 0 0;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-  margin-right: 2px;
-}
-
-/* 活动标签页样式 */
-.tab-item.active {
-  background-color: var(--color-bg-1);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  z-index: 1;
-}
-
-.tab-item.active::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background-color: var(--color-primary);
-}
-
-/* 标签页内容样式 */
-.tab-handle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  user-select: none;
-}
-
-.tab-title {
-  font-size: 14px;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 关闭按钮样式 */
-.close-icon {
-  margin-left: 8px;
-  font-size: 14px;
-  color: var(--color-text-3);
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-}
-
-.close-icon:hover {
-  color: var(--color-text-1);
-  background-color: var(--color-fill-3);
-}
-
-/* 标签页悬停效果 */
-.tab-item:hover {
-  background-color: var(--color-fill-2);
-}
-
-.tab-item.active:hover {
-  background-color: var(--color-bg-1);
-}
-
-/* 拽时的式 */
-.sortable-ghost {
-  opacity: 0.5;
-  background-color: var(--color-fill-3);
-}
-
-.sortable-drag {
-  opacity: 0.9;
-  background-color: var(--color-bg-1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-/* 头部按钮容器样式 */
-.header-buttons {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 4px;
-}
-
-/* 设置按钮样式 */
-.header-btn,
-.theme-switch {
-  padding: 0;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  margin: 2px;
-}
-
-.header-btn .arco-icon,
-.theme-switch .arco-icon {
-  font-size: 16px;
-}
-
-/* 主题换按钮样式 */
-.theme-switch {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  background-color: var(--color-fill-2);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.theme-switch:hover {
-  background-color: var(--color-fill-3);
-}
-
-.theme-icon {
-  font-size: 16px;
-  color: var(--color-text-2);
-  transition: all 0.2s ease;
-}
-
-.theme-switch:hover .theme-icon {
-  color: var(--color-text-1);
-}
-
-/* 设置对话框底部样式 */
-.settings-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 0;
-}
-
-/* 左侧内容样式 */
-.footer-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* GitHub 图标样式 */
-.github-icon {
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  filter: var(--github-icon-filter);
-}
-
-.github-icon:hover {
-  opacity: 0.8;
-}
-
-/* 确保图标在不同主题下都清晰可见 */
-:root {
-  --github-icon-filter: none;
-}
-
-[arco-theme="dark"] {
-  --github-icon-filter: brightness(1);
-}
-
-[arco-theme="light"] {
-  --github-icon-filter: brightness(0.8);
-}
-
-/* Powered by 文本样式 */
-.powered-by {
-  color: var(--color-text-2);
-  font-size: 14px;
-}
-
-/* 按钮组样式 */
-.buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.app-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-}
-
-.app-title:hover {
-  opacity: 0.8;
-}
-
-.app-title:active {
-  transform: scale(0.98);
-}
-
-.version {
-  font-size: 12px;
-  color: var(--color-text-3);
-  margin-left: 4px;
-  transition: color 0.2s ease;
-}
-
-.app-title:hover .version {
-  color: var(--color-text-2);
-}
-
-.app-title h3 {
-  margin: 0;
-}
-
-/* 高亮规则配置对话框样式 */
-.highlight-rules-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.rules-table-container {
-  flex: 1;
-  overflow-y: auto;
-  max-height: calc(70vh - 120px); /* 减按钮和padding的高度 */
-}
-
-/* 确保表格头部固定 */
-.rules-table-container :deep(.arco-table-header) {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--color-bg-2);
-}
-
-/* 美化滚动条 */
-.rules-table-container::-webkit-scrollbar {
-  width: 8px;
-}
-
-.rules-table-container::-webkit-scrollbar-track {
-  background: var(--color-fill-2);
-  border-radius: 4px;
-}
-
-.rules-table-container::-webkit-scrollbar-thumb {
-  background: var(--color-fill-4);
-  border-radius: 4px;
-}
-
-.rules-table-container::-webkit-scrollbar-thumb:hover {
-  background: var(--color-fill-5);
-}
-
-/* 确保表格内容不会被截断 */
-.rules-table-container :deep(.arco-table-body) {
-  overflow-y: visible;
-}
-
-/* 调整表格行高 */
-.rules-table-container :deep(.arco-table-tr) {
-  height: 54px;
-}
-
-/* 确保输入框在单元格内正确对齐 */
-.rules-table-container :deep(.arco-table-td) {
-  padding: 8px;
-}
-
-/* 调整颜色选择器按钮样式 */
-.rules-table-container :deep(.arco-input-group) {
-  display: flex;
-  align-items: center;
-}
-
-.pattern-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pattern-cell :deep(.arco-input) {
-  background-color: var(--color-bg-2);
-}
-
-.pattern-cell :deep(.arco-input:hover) {
-  background-color: var(--color-fill-2);
-}
-
-/* 修改锁屏相关样式 */
-.screen-lock-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--color-bg-1);
-  opacity: 0.98;
-  z-index: 2000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  backdrop-filter: blur(4px);
-}
-
-.lock-content {
-  background-color: var(--color-bg-2);
-  padding: 32px;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  width: 100%;
-  max-width: 360px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.lock-content h2 {
-  margin-bottom: 24px;
-  color: var(--color-text-1);
-  text-align: center;
-  width: 100%;
-}
-
-.lock-form {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.lock-form .arco-form-item {
-  margin-bottom: 16px;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.lock-form .arco-form-item:last-child {
-  margin-bottom: 0;
-}
-
-/* 拖拽相关样式 */
-.folder-item {
-  transition: background-color 0.2s ease;
-}
-
-.folder-menu-item {
-  cursor: move; /* 指示可拖拽 */
-}
-
-/* 拖拽时的样式 */
-.sortable-ghost {
-  opacity: 0.5;
-  background-color: var(--color-fill-3);
-}
-
-.sortable-drag {
-  opacity: 0.9;
-  background-color: var(--color-bg-1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-/* 确保拖拽时浮动菜单隐藏 */
-.sortable-ghost .floating-menu,
-.sortable-drag .floating-menu {
-  display: none !important;
+  display: none; /* 隐藏原有的编辑和删除按钮 */
 }
 
 /* 拖拽相关样式 */
@@ -3165,29 +2913,419 @@ export default {
   opacity: 1;
 }
 
-.drag-icon {
-  font-size: 16px;
-  color: var(--color-text-3);
+/* 新增：SSH连接列表侧边栏样式 */
+.connections-sider {
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-2);
+  min-width: 100px !important; /* 设置最小宽度 */
+  max-width: 250px !important; /* 设置最大宽度 */
 }
 
-/* 调整连接标题样式以适应拖拽图标 */
+.connections-sider-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.connections-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-1);
+  margin-bottom: 12px;
+}
+
+.connections-list {
+  padding: 12px;
+  height: calc(100% - 100px);
+  overflow-y: auto;
+}
+
+.connections-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.connections-list::-webkit-scrollbar-track {
+  background: var(--color-fill-2);
+}
+
+.connections-list::-webkit-scrollbar-thumb {
+  background: var(--color-fill-4);
+  border-radius: 2px;
+}
+
+/* 修改文件夹选中状态样式 */
+.folder-item.active {
+  background: var(--color-fill-2);
+}
+
+.folder-item.active .folder-menu-item {
+  color: rgb(var(--primary-6));
+}
+
+/* 调整连接项样式 */
+.connection-entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 4px 0;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  height: 32px;
+}
+
+.connection-entry:hover {
+  background: var(--color-fill-2);
+}
+
+/* 新建连接按钮样式 */
+.new-connection-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* 添加新的样式 */
+.folder-sider {
+  transition: width 0.2s cubic-bezier(0.34, 0.69, 0.1, 1);
+  flex-shrink: 0; /* 防止侧边栏被压缩 */
+}
+
+/* 确保文件夹称可以完整显示 */
+.folder-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 调整菜单项内容布局 */
+.folder-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.folder-title-wrapper {
+  flex: 1;
+  min-width: 0; /* 确保文本可以正确截断 */
+  margin-right: 8px; /* 为折叠按钮留出空间 */
+}
+
+/* 添加拖拽调整宽度的区域 */
+.sider-resizer {
+  width: 10px;
+  height: 100%;
+  background-color: var(--color-bg-2);
+  cursor: col-resize;
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+/* 添加拖拽调整宽度的样式 */
+.folder-sider {
+  position: relative;
+  transition: none; /* 移除过渡动画以实现平滑拖动 */
+}
+
+.sider-resizer {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 100;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+/* 在折叠状态下隐藏拖拽区域 */
+.arco-layout-sider-collapsed .sider-resizer {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sider-resizer:hover {
+  background: rgba(var(--primary-6), 0.1);
+}
+
+/* 拖动时的样式 */
+.sider-resizer:active {
+  background: rgba(var(--primary-6), 0.2);
+}
+
+/* 确保折叠按钮在调整大小时保持位置 */
+.arco-layout-sider-trigger {
+  transition: none;
+}
+
+/* 调整菜单样式以适应宽度变化 */
+.folder-menu-item {
+  transition: none;
+}
+
+/* 确保内容不溢出 */
+.folder-title-wrapper {
+  min-width: 0;
+  margin-right: 24px; /* 为折叠按钮留出空间 */
+}
+
+/* 添加全局滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-fill-2);
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-fill-3);
+  border-radius: 4px;
+  border: 2px solid var(--color-fill-2);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-fill-4);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 确保所有元素都使用相同的滚动条样式 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-fill-3) var(--color-fill-2);
+}
+
+/* 添加 SSH 连接列表拖拽调整宽度的样式 */
+.connections-resizer {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 100;
+}
+
+.connections-resizer:hover {
+  background: rgba(var(--primary-6), 0.1);
+}
+
+.connections-resizer:active {
+  background: rgba(var(--primary-6), 0.2);
+}
+
+/* 修改连接标题样式 */
 .connection-title {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-right: 8px;
+  padding-right: 0;
 }
 
-/* 拖拽时的样式 */
-.connections .sortable-ghost {
-  opacity: 0.5;
+/* 添加标题提示样式 */
+.connection-title:hover::after {
+  content: attr(title);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: -30px;
+  padding: 4px 8px;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 修改 app-title 相关样式 */
+.app-title {
+  display: flex;
+  align-items: center; /* 垂直居中对齐 */
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.app-title h3 {
+  margin: 0; /* 移除默认边距 */
+  font-size: 18px; /* 设置标题大小 */
+  line-height: 1; /* 确保文字垂直居中 */
+}
+
+.version {
+  font-size: 14px; /* 调整版本号大小 */
+  color: var(--color-text-3);
+  line-height: 1; /* 确保文字垂直居中 */
+  transition: color 0.2s ease;
+}
+
+.app-title:hover {
+  opacity: 0.8;
+}
+
+.app-title:active {
+  transform: scale(0.98);
+}
+
+.app-title:hover .version {
+  color: var(--color-text-2);
+}
+
+/* 修改头部按钮容器样式 */
+.header-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+}
+
+/* 统一头部按钮样式 */
+.header-btn,
+.theme-switch {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+/* 主题切换按钮样式 */
+.theme-switch {
+  background-color: var(--color-fill-2);
+  cursor: pointer;
+}
+
+.theme-switch:hover {
   background-color: var(--color-fill-3);
 }
 
-.connections .sortable-drag {
-  opacity: 0.9;
+.theme-icon {
+  font-size: 16px;
+  color: var(--color-text-2);
+}
+
+.theme-switch:hover .theme-icon {
+  color: var(--color-text-1);
+}
+
+/* 修改设置对话框底部样式 */
+.settings-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+}
+
+/* 左侧内容样式 */
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* GitHub 图标样式 */
+.github-icon {
+  width: 14px; /* 调整为与文本相同大小 */
+  height: 14px; /* 调整为与文本相同大小 */
+  cursor: pointer;
+  transition: all 0.2s ease;
+  filter: var(--github-icon-filter);
+}
+
+.github-icon:hover {
+  opacity: 0.8;
+}
+
+/* Powered by 文本样式 */
+.powered-by {
+  color: var(--color-text-2);
+  font-size: 14px;
+}
+
+/* 确保图标在不同主题下都清晰可见 */
+:root {
+  --github-icon-filter: none;
+}
+
+[arco-theme="dark"] {
+  --github-icon-filter: brightness(1);
+}
+
+[arco-theme="light"] {
+  --github-icon-filter: brightness(0.8);
+}
+
+/* 添加锁定界面相关样式 */
+.screen-lock-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background-color: var(--color-bg-1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  opacity: 0.98;
+  z-index: 2000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(4px);
+}
+
+.lock-content {
+  background-color: var(--color-bg-2);
+  padding: 32px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.lock-content h2 {
+  margin-bottom: 24px;
+  color: var(--color-text-1);
+  text-align: center;
+  width: 100%;
+}
+
+.lock-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.lock-form .arco-form-item {
+  margin-bottom: 16px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.lock-form .arco-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.form-buttons {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
 }
 </style>

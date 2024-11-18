@@ -17,7 +17,10 @@ export default {
     delete: 'Delete',
     cancel: 'Cancel',
     refresh: 'Refresh Connection',
-    close: 'Close'
+    close: 'Close',
+    open: 'Open',
+    edit: 'Edit',
+    duplicate: 'Duplicate'
   },
   settings: {
     title: 'Settings',

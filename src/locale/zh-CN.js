@@ -17,7 +17,10 @@ export default {
     delete: '删除',
     cancel: '取消',
     refresh: '刷新连接',
-    close: '关闭'
+    close: '关闭',
+    open: '打开',
+    edit: '编辑',
+    duplicate: '复制'
   },
   settings: {
     title: '设置',
