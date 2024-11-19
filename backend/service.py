@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response, stream_with_context
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import paramiko
@@ -9,7 +9,6 @@ import logging
 import threading
 import time
 import tempfile
-import zipfile
 import io
 from datetime import datetime
 from gevent import monkey
@@ -19,6 +18,8 @@ import requests
 import atexit
 import re
 from typing import Dict, Tuple
+
+# 先执行 monkey patch
 monkey.patch_all()
 
 app = Flask(__name__)
@@ -28,8 +29,8 @@ socketio = SocketIO(app,
                    async_mode='gevent',
                    logger=True,
                    engineio_logger=True,
-                   ping_timeout=300,  # 增加到 300 秒
-                   ping_interval=25)  # 保持 25 秒的心跳间隔
+                   ping_timeout=300,
+                   ping_interval=25)
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -819,6 +820,134 @@ def handle_resource_monitor(data):
                 'memory': 0
             }
         })
+
+# AI 相关的路由和函数
+@app.route('/chat', methods=['POST'])
+def handle_chat():
+    try:
+        from importlib import import_module
+        from flask import Response, stream_with_context
+        
+        data = request.json
+        if not data.get('api_key'):
+            return jsonify({"error": "API key is required"}), 400
+
+        provider = data.get('provider', '').lower()
+        model_name = data.get('model')
+        messages = data.get('messages', [])
+        api_key = data.get('api_key')
+        api_url = data.get('api_url', '').rstrip('/')
+        temperature = float(data.get('temperature', 0.7))
+        max_tokens = int(data.get('max_tokens', 2048))
+
+        logger.info(f"Using temperature: {temperature}, max_tokens: {max_tokens}")
+
+        def generate_stream():
+            try:
+                if provider == 'openai':
+                    openai = import_module('openai')
+                    client = openai.OpenAI(
+                        api_key=api_key,
+                        base_url=api_url
+                    )
+                    
+                    stream = client.chat.completions.create(
+                        model=model_name,
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        stream=True  # 启用流式输出
+                    )
+                    
+                    for chunk in stream:
+                        if chunk.choices[0].delta.content is not None:
+                            yield f"data: {json.dumps({'content': chunk.choices[0].delta.content})}\n\n"
+
+                elif provider == 'zhipu':
+                    zhipuai = import_module('zhipuai')
+                    zhipuai.api_key = api_key
+                    response = zhipuai.model_api.invoke(
+                        model=model_name,
+                        prompt=messages,
+                        temperature=temperature,
+                        stream=True  # 启用流式输出
+                    )
+                    
+                    for chunk in response:
+                        if chunk['data'].get('choices', [{}])[0].get('content'):
+                            yield f"data: {json.dumps({'content': chunk['data']['choices'][0]['content']})}\n\n"
+
+                elif provider == 'qwen':
+                    dashscope = import_module('dashscope')
+                    Generation = dashscope.Generation
+                    response = Generation.call(
+                        model=model_name,
+                        api_key=api_key,
+                        messages=[{"role": msg["role"], "content": msg["content"]} for msg in messages],
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        stream=True  # 启用流式输出
+                    )
+                    
+                    for chunk in response:
+                        if chunk.output and chunk.output.text:
+                            yield f"data: {json.dumps({'content': chunk.output.text})}\n\n"
+
+                elif provider == 'gemini':
+                    genai = import_module('google.generativeai')
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel(model_name)
+                    chat = model.start_chat()
+                    
+                    for msg in messages[:-1]:  # 处理历史消息
+                        if msg["role"] == "user":
+                            chat.send_message(msg["content"])
+                    
+                    # 流式处理最后一条消息
+                    response = chat.send_message(
+                        messages[-1]["content"],
+                        temperature=temperature,
+                        max_output_tokens=max_tokens,
+                        stream=True  # 启用流式输出
+                    )
+                    
+                    for chunk in response:
+                        if chunk.text:
+                            yield f"data: {json.dumps({'content': chunk.text})}\n\n"
+
+                elif provider == 'ollama':
+                    ollama = import_module('ollama')
+                    response = ollama.chat(
+                        model=model_name,
+                        messages=[{"role": msg["role"], "content": msg["content"]} for msg in messages],
+                        temperature=temperature,
+                        stream=True  # 启用流式输出
+                    )
+                    
+                    for chunk in response:
+                        if chunk['message']['content']:
+                            yield f"data: {json.dumps({'content': chunk['message']['content']})}\n\n"
+
+                # 发送结束标记
+                yield "data: [DONE]\n\n"
+                
+            except Exception as e:
+                logger.error(f"Error in stream generation: {str(e)}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        return Response(
+            stream_with_context(generate_stream()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error in chat handler: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     try:

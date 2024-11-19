@@ -649,7 +649,7 @@ export default {
           type: 'connection'
         }
         
-        // 如果是密码认证，对进行 base64 编码
+        // 如果是密码认证，进行 base64 编码
         if (connection.authType === 'password' && connection.password) {
           connection.password = btoa(connection.password)
         }
@@ -1229,7 +1229,7 @@ export default {
           }))
         }
         
-        // 更新新连的 folderId
+        // 更新新建的 folderId
         newFolder.connections.forEach(conn => {
           conn.folderId = newFolder.id
         })
@@ -1394,7 +1394,7 @@ export default {
       }
     }
 
-    // 提供语言设给子组件
+    // 提供语言设置给子组件
     provide('locale', locale)
 
     const handleLanguageChange = (value) => {
@@ -1641,7 +1641,7 @@ export default {
       }
     }
 
-    // 在 setup 函数中添加标页右键菜单处理
+    // 在 setup 函数中添加标签页右键菜单处理
     const showTabContextMenu = (event, tab) => {
       event.preventDefault()
       
@@ -1889,7 +1889,7 @@ export default {
 
     const onFolderDragEnd = async () => {
       try {
-        // 获取当前配置
+        // 获取已保存的配置
         const response = await axios.get('http://localhost:5000/get_connections')
         let currentConfig = response.data
 
@@ -2239,6 +2239,8 @@ export default {
       closeAI,
       minimizeAI,
       aiIcon,
+      handleLanguageChange,
+      refreshConnections,
     }
   }
 }
