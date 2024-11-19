@@ -11,6 +11,15 @@
               <a-button
                 type="text"
                 class="header-btn"
+                @click="toggleAI"
+              >
+                <template #icon>
+                  <img :src="aiIcon" class="ai-icon" alt="AI" />
+                </template>
+              </a-button>
+              <a-button
+                type="text"
+                class="header-btn"
                 @click="lockScreen"
               >
                 <template #icon>
@@ -188,6 +197,7 @@
                     @contextmenu.prevent="showTabContextMenu($event, element)"
                   >
                     <div class="tab-handle">
+                      <span class="connection-status" :class="{ 'connected': element.connected }"></span>
                       <span class="tab-title">{{ element.name }}</span>
                     </div>
                     <icon-close
@@ -207,6 +217,7 @@
                 :connection="tab.connection" 
                 :sessionId="tab.id" 
                 @close="closeTab"
+                @connectionStatus="handleConnectionStatus"
                 ref="sshTerminals"
                 v-show="activeTab === tab.id"
               />
@@ -512,6 +523,13 @@
       </template>
     </div>
   </div>
+
+  <!-- 添加 AI 助手组件 -->
+  <AIAssistant
+    v-if="showAI"
+    @close="closeAI"
+    @minimize="minimizeAI"
+  />
 </template>
 
 <script>
@@ -529,6 +547,8 @@ import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
 import draggable from 'vuedraggable'
 import { ipcRenderer } from 'electron'
 import { shell } from '@electron/remote'
+import AIAssistant from './components/AIAssistant.vue'
+import aiIcon from './assets/aiicon.png'
 
 export default {
   name: 'SimpleShell',
@@ -550,6 +570,7 @@ export default {
     IconUnlock,
     IconDragDotVertical,
     draggable,
+    AIAssistant,
   },
   setup() {
     const connections = ref([])
@@ -623,9 +644,14 @@ export default {
     const addConnection = async () => {
       try {
         const connection = { 
-          ...newConnection, 
+          ...newConnection,
           id: Date.now(),
           type: 'connection'
+        }
+        
+        // 如果是密码认证，对进行 base64 编码
+        if (connection.authType === 'password' && connection.password) {
+          connection.password = btoa(connection.password)
         }
         
         // 获取当前配置
@@ -648,13 +674,9 @@ export default {
           return item
         })
 
-        // 保存更新后的配置
         await axios.post('http://localhost:5000/update_config', currentConfig)
-        
-        // 刷新连接表
         await refreshConnections()
         
-        // 重置表单并关闭对话框
         addConnectionModalVisible.value = false
         Object.assign(newConnection, {
           name: '',
@@ -675,12 +697,28 @@ export default {
       }
     }
 
+    // 修改打开连接的方法
     const openConnection = (connection) => {
       console.log('Opening connection:', connection)
+      // 创建连接配置的副本
+      const connectionConfig = { ...connection }
+      
+      // 如果是密认证，解码密码
+      if (connectionConfig.authType === 'password' && connectionConfig.password) {
+        try {
+          connectionConfig.password = atob(connectionConfig.password)
+        } catch (error) {
+          console.error('Failed to decode password:', error)
+          Message.error('Invalid password encoding')
+          return
+        }
+      }
+      
       const tab = {
         id: `${connection.name}-${Date.now()}`,
         name: connection.name,
-        connection
+        connection: connectionConfig,
+        connected: false // 添加连接状态标志
       }
       tabs.value.push(tab)
       activeTab.value = tab.id
@@ -692,9 +730,28 @@ export default {
       }
     }
 
+    // 添加更新连接状态的方法
+    const updateTabStatus = (tabId, isConnected) => {
+      const tab = tabs.value.find(t => t.id === tabId)
+      if (tab) {
+        tab.connected = isConnected
+      }
+    }
+
+    // 在 SSHTerminal 组件中监听连接状态变化
+    const handleConnectionStatus = (data) => {
+      console.log('Connection status changed:', data)
+      const tab = tabs.value.find(t => t.id === data.sessionId)
+      if (tab) {
+        tab.connected = data.type === 'connected'
+      }
+    }
+
+    // 在关闭标签页时重置状态
     const closeTab = (tabId) => {
       const index = tabs.value.findIndex(tab => tab.id === tabId)
       if (index !== -1) {
+        updateTabStatus(tabId, false) // 重置连接状态
         tabs.value.splice(index, 1)
         if (tabs.value.length > 0 && activeTab.value === tabId) {
           activeTab.value = tabs.value[tabs.value.length - 1].id
@@ -747,7 +804,7 @@ export default {
       })
     })
 
-    // 监听标签页数量的变化
+    // 监听标签页数量变化
     watch(() => tabs.value.length, () => {
       resizeAllTerminals()
     })
@@ -922,8 +979,14 @@ export default {
         const folder = currentFolder.value
         const index = folder.connections.findIndex(conn => conn.id === editingConnection.id)
         if (index !== -1) {
-          // 更新连接信息
+          // 创建更新连接的副本
           const updatedConnection = { ...editingConnection }
+          
+          // 如果是密码认证，对新密码进行编码
+          if (updatedConnection.authType === 'password' && updatedConnection.password) {
+            updatedConnection.password = btoa(updatedConnection.password)
+          }
+          
           folder.connections[index] = updatedConnection
 
           // 更新配置文件
@@ -1652,7 +1715,7 @@ export default {
         customHighlightRules.value
           .filter(rule => rule.type === 'regex')
           .forEach(rule => {
-            // 检查每个规则的长度
+            // 检查每规则的长度
             const ruleLine = `${rule.name}=${rule.pattern}=${rule.color}\n`
             if (ruleLine.length > 500) { // 单行最大长度限制
               throw new Error(`Rule "${rule.name}" exceeds maximum length of 500 characters`)
@@ -1846,7 +1909,7 @@ export default {
       }
     }
 
-    // 添加连接拖拽结束处理方法
+    // 添加连接拽结束处理方法
     const onConnectionDragEnd = async (folder) => {
       try {
         // 获取当前配置
@@ -1890,18 +1953,18 @@ export default {
     }
 
     const siderWidth = ref(180) // 修改 siderWidth 的初始值为 180
-    let isResizing = false
-    let startX = 0
-    let startWidth = 0
+    let isResizing = ref(false)
+    let startX = ref(0)
+    let startWidth = ref(0)
 
     // 修改 startResize 方法，添加折叠状态检查
     const startResize = (e) => {
-      // 如果侧边栏已折叠，则不允许调整宽度
+      // 如果侧边栏已折叠则不允许调宽度
       if (siderCollapsed.value) return
       
-      isResizing = true
-      startX = e.clientX
-      startWidth = siderWidth.value
+      isResizing.value = true
+      startX.value = e.clientX
+      startWidth.value = siderWidth.value
       
       // 添加事件监听
       document.addEventListener('mousemove', handleResize)
@@ -1914,16 +1977,16 @@ export default {
 
     // 修改 handleResize 方法，添加折叠状态查
     const handleResize = (e) => {
-      if (!isResizing || siderCollapsed.value) return
+      if (!isResizing.value || siderCollapsed.value) return
       
-      const diff = e.clientX - startX
-      const newWidth = Math.max(180, startWidth + diff)
+      const diff = e.clientX - startX.value
+      const newWidth = Math.max(180, startWidth.value + diff)
       
       siderWidth.value = newWidth
     }
 
     const stopResize = () => {
-      isResizing = false
+      isResizing.value = false
       
       // 移除事件监听
       document.removeEventListener('mousemove', handleResize)
@@ -1976,14 +2039,14 @@ export default {
     // 在 setup 中添加
     const connectionsWidth = ref(240) // 默认宽度
     let isConnectionsResizing = false
-    let connectionsStartX = 0
-    let connectionsStartWidth = 0
+    let connectionsStartX = ref(0)
+    let connectionsStartWidth = ref(0)
 
     // 添加 SSH 连接列表宽度调整方法
     const startConnectionsResize = (e) => {
       isConnectionsResizing = true
-      connectionsStartX = e.clientX
-      connectionsStartWidth = connectionsWidth.value
+      connectionsStartX.value = e.clientX
+      connectionsStartWidth.value = connectionsWidth.value
       
       document.addEventListener('mousemove', handleConnectionsResize)
       document.addEventListener('mouseup', stopConnectionsResize)
@@ -1995,8 +2058,8 @@ export default {
     const handleConnectionsResize = (e) => {
       if (!isConnectionsResizing) return
       
-      const diff = e.clientX - connectionsStartX
-      const newWidth = Math.max(100, Math.min(250, connectionsStartWidth + diff))
+      const diff = e.clientX - connectionsStartX.value
+      const newWidth = Math.max(100, Math.min(250, connectionsStartWidth.value + diff))
       
       connectionsWidth.value = newWidth
     }
@@ -2062,6 +2125,25 @@ export default {
       lockForm.password = '';
       lockForm.confirmPassword = '';
     };
+
+    // 在 setup 中添加 AI 相关方法
+    const showAI = ref(false)
+
+    const toggleAI = () => {
+      showAI.value = !showAI.value
+    }
+
+    const closeAI = () => {
+      showAI.value = false
+    }
+
+    const minimizeAI = () => {
+      // 不再修改 showAI 的值，只是让 AIAssistant 组件自己处理最小化状态
+      console.log('AI window minimized')
+    }
+
+    // 移除动态计算的 aiIcon
+    const aiIcon = require('@/assets/aiicon.png')
 
     return {
       connections,
@@ -2151,6 +2233,12 @@ export default {
       handleConnectionsResize,
       stopConnectionsResize,
       cancelSetPassword,
+      handleConnectionStatus,
+      showAI,
+      toggleAI,
+      closeAI,
+      minimizeAI,
+      aiIcon,
     }
   }
 }
@@ -2288,7 +2376,7 @@ export default {
 .tab-handle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   user-select: none;
 }
 
@@ -2319,7 +2407,7 @@ export default {
   background-color: var(--color-fill-3);
 }
 
-/* 标签页悬停效果 */
+/* 标签悬停效果 */
 .tab-item:hover {
   background-color: var(--color-fill-2);
 }
@@ -2466,7 +2554,7 @@ export default {
   z-index: 1003;
 }
 
-/* 添加连接项相样式 */
+/* 添连接项相样式 */
 .connection-item {
   padding: 8px 16px !important;
 }
@@ -2613,7 +2701,7 @@ export default {
   padding: 0;
 }
 
-/* 调整子菜单的样式 */
+/* 调整子菜单的式 */
 .arco-layout-sider-collapsed .arco-sub-menu {
   width: 100%;
 }
@@ -2630,7 +2718,7 @@ export default {
 
 /* 移除之前的折叠相关式，添加新的折叠布局样式 */
 
-/* 左侧���栏基础样式 */
+/* 左侧栏基础样式 */
 .arco-layout-sider {
   position: relative;
   background-color: var(--color-bg-2);
@@ -2718,7 +2806,7 @@ export default {
   padding: 12px;
 }
 
-/* 修改连接列表区域样式 */
+/* 修改连接表区域样式 */
 .connections {
   flex: 1;
   overflow-y: auto;
@@ -3327,5 +3415,37 @@ export default {
   display: flex;
   gap: 16px;
   margin-top: 8px;
+}
+
+.connection-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-danger-light-4);
+  margin-right: 6px;
+  transition: background-color 0.3s ease;
+}
+
+.connection-status.connected {
+  background-color: var(--color-success-light-4);
+}
+
+/* AI 图标样式 */
+.ai-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+/* 统一头部按钮样式 */
+.header-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  padding: 0;
 }
 </style>

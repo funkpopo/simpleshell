@@ -48,7 +48,7 @@ export default {
       required: true
     }
   },
-  emits: ['close', 'pathChange'],
+  emits: ['close', 'pathChange', 'connectionStatus'],
   setup(props, { emit }) {
     const terminal = ref(null)
     let term = null
@@ -145,6 +145,7 @@ export default {
         socket.on('ssh_connected', (data) => {
           if (data.session_id === props.sessionId) {
             console.log('SSH connected:', data.message)
+            emit('connectionStatus', { type: 'connected', sessionId: props.sessionId })
             if (!isTerminalReady.value) {
               initializeTerminal()
             }
@@ -178,6 +179,7 @@ export default {
         socket.on('ssh_closed', (data) => {
           if (data.session_id === props.sessionId) {
             console.log('SSH connection closed:', data.message)
+            emit('connectionStatus', { type: 'disconnected', sessionId: props.sessionId })
             writeToTerminal('SSH connection closed\r\n')
           }
         })
@@ -1476,7 +1478,7 @@ export default {
   background-color: var(--color-text-3);
 }
 
-/* 深色主题滚动条 */
+/* 深色题滚动条 */
 .terminal-container.dark-mode .command-suggestions::-webkit-scrollbar-thumb {
   background-color: var(--color-fill-3);
 }
