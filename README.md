@@ -87,7 +87,7 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 
 2. 编译后端
    ```
-   python -m PyInstaller --clean --noconfirm --onefile  --hidden-import=gevent.builtins  --hidden-import=gevent.signal  --hidden-import=gevent.libev.corecext  --hidden-import=gevent.libuv.loop  --hidden-import=gevent.socket  --hidden-import=gevent.threading  --hidden-import=gevent._threading  --hidden-import=gevent.time  --hidden-import=gevent.os  --hidden-import=gevent.select  --hidden-import=gevent.ssl  --hidden-import=gevent.subprocess  --hidden-import=gevent.thread  --hidden-import=gevent.resolver.thread  --hidden-import=gevent.resolver.blocking  --hidden-import=gevent.resolver.cares  --hidden-import=gevent.resolver.dnspython  --hidden-import=gevent._ssl3  --hidden-import=engineio.async_drivers.gevent  --collect-all gevent service.py
+   python -m PyInstaller --clean --noconfirm --onefile  --hidden-import=gevent.builtins  --hidden-import=gevent.signal  --hidden-import=gevent.libev.corecext  --hidden-import=gevent.libuv.loop  --hidden-import=gevent.socket  --hidden-import=gevent.threading  --hidden-import=gevent._threading  --hidden-import=gevent.time  --hidden-import=gevent.os  --hidden-import=gevent.select  --hidden-import=gevent.ssl  --hidden-import=gevent.subprocess  --hidden-import=gevent.thread  --hidden-import=gevent.resolver.thread  --hidden-import=gevent.resolver.blocking  --hidden-import=gevent.resolver.cares  --hidden-import=gevent.resolver.dnspython  --hidden-import=gevent._ssl3  --hidden-import=engineio.async_drivers.gevent --hidden-import=openai --hidden-import=ollama --hidden-import=zhipuai --hidden-import=numpy --hidden-import=pandas --collect-all gevent service.py
    ```
 
 ## 贡献
