@@ -77,6 +77,15 @@
             </div>
             <div class="message-time">{{ formatTime(message.timestamp) }}</div>
           </div>
+          
+          <!-- 添加加载动画 -->
+          <div v-if="isWaitingResponse" class="message assistant loading">
+            <div class="typing-indicator">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
         </div>
 
         <!-- 输入区域 -->
@@ -148,19 +157,41 @@
                 
                 <!-- 编辑状态 -->
                 <template v-if="model.isEditing">
-                  <a-form-item label="API URL">
-                    <a-input v-model="model.apiUrl" allow-clear />
-                  </a-form-item>
-                  <a-form-item label="API Key">
-                    <a-input-password v-model="model.apiKey" allow-clear />
-                  </a-form-item>
-                  <div class="model-edit-actions">
-                    <a-button type="primary" size="small" @click="saveModelEdit(index)">
-                      Save
-                    </a-button>
-                    <a-button size="small" @click="cancelModelEdit(index)">
-                      Cancel
-                    </a-button>
+                  <div class="model-edit-container">
+                    <a-form-item label="Model Name">
+                      <a-input v-model="model.name" allow-clear />
+                    </a-form-item>
+                    <a-form-item label="API URL">
+                      <a-input v-model="model.apiUrl" allow-clear />
+                    </a-form-item>
+                    <a-form-item label="API Key">
+                      <a-input-password v-model="model.apiKey" allow-clear />
+                    </a-form-item>
+                    <a-form-item label="Temperature">
+                      <a-slider
+                        v-model="model.temperature"
+                        :min="0"
+                        :max="2"
+                        :step="0.1"
+                        show-ticks
+                      />
+                    </a-form-item>
+                    <a-form-item label="Max Tokens">
+                      <a-input
+                        v-model="model.maxTokens"
+                        :min="1"
+                        :max="getMaxTokensLimit(model.provider)"
+                        :step="1"
+                      />
+                    </a-form-item>
+                    <div class="model-edit-actions">
+                      <a-button type="primary" size="small" @click="saveModelEdit(index)">
+                        Save
+                      </a-button>
+                      <a-button size="small" @click="cancelModelEdit(index)">
+                        Cancel
+                      </a-button>
+                    </div>
                   </div>
                 </template>
                 
@@ -221,27 +252,7 @@
           </a-select>
         </a-form-item>
 
-        <!-- 其他设置 -->
-        <a-form-item label="Temperature">
-          <a-slider
-            v-model="aiSettings.temperature"
-            :min="0"
-            :max="2"
-            :step="0.1"
-            show-ticks
-          />
-        </a-form-item>
-        
-        <a-form-item label="Max Tokens">
-          <a-input-number
-            v-model="aiSettings.maxTokens"
-            :min="1"
-            :max="32000"
-            :step="1"
-          />
-        </a-form-item>
-
-        <!-- 在设置对话框中添加上下文长度设置 -->
+        <!-- 只保留上下文长度设置 -->
         <a-form-item label="Max Context Length">
           <a-input-number
             v-model="aiSettings.maxContextLength"
@@ -272,6 +283,7 @@
             <a-option value="qwen">Qwen</a-option>
             <a-option value="gemini">Google Gemini</a-option>
             <a-option value="ollama">Ollama</a-option>
+            <a-option value="siliconflow">Siliconflow</a-option>
           </a-select>
         </a-form-item>
 
@@ -298,6 +310,46 @@
             placeholder="Enter API key"
             allow-clear
           />
+        </a-form-item>
+
+        <!-- 添加 Temperature 和 Max Tokens 配置 -->
+        <a-form-item label="Temperature">
+          <a-slider
+            v-model="newProvider.temperature"
+            :min="0"
+            :max="2"
+            :step="0.1"
+            show-ticks
+          />
+        </a-form-item>
+
+        <a-form-item label="Max Tokens">
+          <div class="max-tokens-input">
+            <a-input
+              v-model="newProvider.maxTokens"
+              :min="1"
+              :max="getMaxTokensLimit(newProvider.provider)"
+              :step="1"
+              placeholder="Enter max tokens"
+              class="token-number-input"
+              allow-clear
+              @change="handleMaxTokensChange"
+            />
+            <a-slider
+              v-model="newProvider.maxTokens"
+              :min="1"
+              :max="getMaxTokensLimit(newProvider.provider)"
+              :step="1"
+              show-ticks
+              class="token-slider"
+              @change="handleMaxTokensChange"
+            />
+          </div>
+          <template #help>
+            <span class="token-limit-hint">
+              Maximum: {{ getMaxTokensLimit(newProvider.provider).toLocaleString() }} tokens
+            </span>
+          </template>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -358,9 +410,7 @@ export default {
     const aiSettings = ref({
       models: [],
       currentModel: 'None',
-      temperature: 0.7,
-      maxTokens: 2048,
-      maxContextLength: 10  // 添加默认值
+      maxContextLength: 10
     })
     const newModel = ref({
       provider: '',
@@ -372,13 +422,18 @@ export default {
       provider: '',
       name: '',
       apiUrl: '',
-      apiKey: ''
+      apiKey: '',
+      temperature: 0.7,
+      maxTokens: 2048
     })
 
     // 添加聊天相关的响应式变量
     const messages = ref([])
     const currentMessage = ref('')
     const messagesContainer = ref(null)
+
+    // 在 setup 函数内添加
+    const isWaitingResponse = ref(false)
 
     // 发送消息
     const sendMessage = async () => {
@@ -396,6 +451,9 @@ export default {
 
       await nextTick()
       scrollToBottom()
+
+      // 设置等待状态为 true
+      isWaitingResponse.value = true
 
       try {
         const currentModelConfig = aiSettings.value.models.find(
@@ -420,8 +478,8 @@ export default {
           provider: currentModelConfig.provider,
           model: currentModelConfig.name,
           messages: contextMessages, // 发送包含历史消息的数组
-          temperature: aiSettings.value.temperature,
-          max_tokens: aiSettings.value.maxTokens,
+          temperature: currentModelConfig.temperature || aiSettings.value.temperature,
+          max_tokens: currentModelConfig.maxTokens || aiSettings.value.maxTokens,
           api_key: currentModelConfig.apiKey,
           api_url: currentModelConfig.apiUrl
         }
@@ -445,6 +503,9 @@ export default {
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
 
+        // 收到第一个响应时，移除加载动画
+        let isFirstChunk = true
+
         while (true) {
           const { value, done } = await reader.read()
           if (done) break
@@ -465,6 +526,10 @@ export default {
                   throw new Error(parsed.error)
                 }
                 if (parsed.content) {
+                  if (isFirstChunk) {
+                    isWaitingResponse.value = false
+                    isFirstChunk = false
+                  }
                   assistantMessage.content += parsed.content
                   messages.value = [...messages.value]
                   await nextTick()
@@ -499,6 +564,9 @@ export default {
 
         await nextTick()
         scrollToBottom()
+      } finally {
+        // 确保无论如何都关闭加载动画
+        isWaitingResponse.value = false
       }
     }
 
@@ -679,12 +747,12 @@ export default {
             provider: model.provider,
             name: model.name,
             apiUrl: model.apiUrl,
-            apiKey: model.apiKey
+            apiKey: model.apiKey,
+            temperature: model.temperature,
+            maxTokens: model.maxTokens
           })),
           currentModel: aiSettings.value.currentModel,
-          temperature: aiSettings.value.temperature,
-          maxTokens: aiSettings.value.maxTokens,
-          maxContextLength: aiSettings.value.maxContextLength  // 保存上下文长度设置
+          maxContextLength: aiSettings.value.maxContextLength
         }
         
         if (aiSettingsIndex !== -1) {
@@ -712,12 +780,12 @@ export default {
           aiSettings.value = {
             models: settings.models?.map(model => ({
               ...model,
-              isEditing: false
+              isEditing: false,
+              temperature: model.temperature || 0.7,
+              maxTokens: model.maxTokens || Math.min(2048, getMaxTokensLimit(model.provider))
             })) || [],
             currentModel: settings.currentModel || 'None',
-            temperature: settings.temperature || 0.7,
-            maxTokens: settings.maxTokens || 2048,
-            maxContextLength: settings.maxContextLength || 10  // 加载上下文长度设置
+            maxContextLength: settings.maxContextLength || 10
           }
         }
       } catch (error) {
@@ -849,7 +917,9 @@ export default {
         provider: '',
         name: '',
         apiUrl: '',
-        apiKey: ''
+        apiKey: '',
+        temperature: 0.7,
+        maxTokens: 2048
       }
       addProviderVisible.value = true
     }
@@ -860,7 +930,9 @@ export default {
         provider: '',
         name: '',
         apiUrl: '',
-        apiKey: ''
+        apiKey: '',
+        temperature: 0.7,
+        maxTokens: 2048
       }
       addProviderVisible.value = false
     }
@@ -878,12 +950,14 @@ export default {
         return
       }
 
-      // 添加新供应商
+      // 添加新供应商，包含模型特定设置
       aiSettings.value.models.push({
         provider: newProvider.value.provider,
         name: newProvider.value.name,
         apiUrl: newProvider.value.apiUrl,
-        apiKey: newProvider.value.apiKey
+        apiKey: newProvider.value.apiKey,
+        temperature: 0.7,  // 默认温度
+        maxTokens: Math.min(2048, getMaxTokensLimit(newProvider.value.provider))  // 默认 token 限制
       })
 
       Message.success('Provider added successfully')
@@ -908,6 +982,31 @@ export default {
       range.selectNodeContents(event.target)
       selection.removeAllRanges()
       selection.addRange(range)
+    }
+
+    // 在 setup 中添加或修改以下函数
+    const getMaxTokensLimit = (provider) => {
+      switch (provider?.toLowerCase()) {
+        case 'zhipu':
+        case 'qwen':
+        case 'gemini':
+          return 8192
+        default:
+          return 32000
+      }
+    }
+
+    // 在 setup 函数中添加
+    const handleMaxTokensChange = (value) => {
+      // 确保值在有效范围内
+      const maxLimit = getMaxTokensLimit(newProvider.value.provider)
+      if (value > maxLimit) {
+        newProvider.value.maxTokens = maxLimit
+      } else if (value < 1) {
+        newProvider.value.maxTokens = 1
+      } else {
+        newProvider.value.maxTokens = value
+      }
     }
 
     onMounted(() => {
@@ -967,7 +1066,9 @@ export default {
       getApiUrlPlaceholder,
       getProviderName,
       copyMessage,
-      selectText
+      selectText,
+      isWaitingResponse,
+      handleMaxTokensChange
     }
   }
 }
@@ -1405,5 +1506,117 @@ export default {
 ::selection {
   background: var(--color-primary-light-3);
   color: var(--color-text-1);
+}
+
+/* 在 style 部分添加 */
+.message.loading {
+  max-width: 60px;
+  padding: 8px 12px;
+  margin-bottom: 0;
+}
+
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  background-color: var(--color-text-3);
+  border-radius: 50%;
+  display: inline-block;
+  animation: bounce 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% { 
+    transform: scale(0);
+  } 
+  40% { 
+    transform: scale(1);
+  }
+}
+
+/* 在模���编辑状态的模板中添加滚动容器 */
+.model-edit-container {
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 12px;
+}
+
+.model-edit-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.model-edit-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.model-edit-container::-webkit-scrollbar-thumb {
+  background-color: var(--color-text-4);
+  border-radius: 3px;
+}
+
+.model-edit-container::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-3);
+}
+
+/* 调整模型卡片的最大高度 */
+.model-item {
+  max-height: 500px;
+  overflow: hidden;
+}
+
+/* 在 style 部分添加 */
+.max-tokens-input {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.token-number-input {
+  width: 120px !important;  /* 使用 !important 确保宽度生效 */
+  flex-shrink: 0;
+}
+
+.token-slider {
+  flex: 1;
+  margin: 0 !important;  /* 移除默认边距 */
+}
+
+.token-limit-hint {
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+/* 确保数字输入框和滑块对齐 */
+.max-tokens-input :deep(.arco-input-number) {
+  margin-bottom: 0;
+}
+
+/* 调整滑块的外观 */
+.max-tokens-input :deep(.arco-slider) {
+  margin: 11px 0;
+}
+
+/* 添加输入框的悬停和焦点效果 */
+.max-tokens-input :deep(.arco-input-number:hover) {
+  border-color: var(--color-primary-light-3);
+}
+
+.max-tokens-input :deep(.arco-input-number:focus) {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-light-2);
 }
 </style> 

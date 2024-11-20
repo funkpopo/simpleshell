@@ -17,6 +17,7 @@ import sys
 import requests
 import atexit
 import re
+import httpx
 from typing import Dict, Tuple
 
 # 先执行 monkey patch
@@ -878,20 +879,34 @@ def handle_chat():
                             yield f"data: {json.dumps({'content': chunk['data']['choices'][0]['content']})}\n\n"
 
                 elif provider == 'qwen':
-                    dashscope = import_module('dashscope')
-                    Generation = dashscope.Generation
-                    response = Generation.call(
-                        model=model_name,
-                        api_key=api_key,
-                        messages=[{"role": msg["role"], "content": msg["content"]} for msg in messages],
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        stream=True  # 启用流式输出
-                    )
-                    
-                    for chunk in response:
-                        if chunk.output and chunk.output.text:
-                            yield f"data: {json.dumps({'content': chunk.output.text})}\n\n"
+                    try:
+                        qwenai = import_module('openai')
+                        client = qwenai.OpenAI(
+                            api_key=api_key,
+                            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+                        )
+                        
+                        logger.info(f"Connecting to Qwen API with model: {model_name}")
+                        
+                        # 创建流式聊天完成
+                        stream = client.chat.completions.create(
+                            model=model_name,  # 例如: "qwen-plus"
+                            messages=messages,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            stream=True  # 启用流式输出
+                        )
+                        
+                        # 处理流式响应
+                        for chunk in stream:
+                            if chunk.choices[0].delta.content is not None:
+                                yield f"data: {json.dumps({'content': chunk.choices[0].delta.content})}\n\n"
+                                
+                    except Exception as e:
+                        error_msg = f"Qwen API error: {str(e)}"
+                        logger.error(error_msg)
+                        logger.error(f"Error type: {type(e)}")
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
 
                 elif provider == 'gemini':
                     genai = import_module('google.generativeai')
@@ -915,18 +930,127 @@ def handle_chat():
                         if chunk.text:
                             yield f"data: {json.dumps({'content': chunk.text})}\n\n"
 
-                elif provider == 'ollama':
-                    ollama = import_module('ollama')
-                    response = ollama.chat(
-                        model=model_name,
-                        messages=[{"role": msg["role"], "content": msg["content"]} for msg in messages],
-                        temperature=temperature,
-                        stream=True  # 启用流式输出
-                    )
-                    
-                    for chunk in response:
-                        if chunk['message']['content']:
-                            yield f"data: {json.dumps({'content': chunk['message']['content']})}\n\n"
+                elif provider == 'ollama':  
+                    ollama = import_module('ollama')                  
+                    try:
+                        # 配置客户端
+                        client = ollama.Client(
+                            host=api_url,
+                            timeout=httpx.Timeout(60.0, connect=30.0)
+                        )
+                        
+                        logger.info(f"Attempting to connect to Ollama server at {api_url}...")
+                        
+                        # 使用 stream=True 进行流式处理
+                        response = client.chat(
+                            model=model_name,
+                            messages=messages,
+                            options={
+                                "temperature": temperature,
+                                "num_predict": max_tokens
+                            },
+                            stream=True
+                        )
+                        
+                        # 处理流式响应
+                        for chunk in response:
+                            try:
+                                if chunk and 'message' in chunk:
+                                    content = chunk['message']['content']
+                                    if content.strip():  # 确保内容不为空
+                                        yield f"data: {json.dumps({'content': content})}\n\n"
+                            except Exception as e:
+                                logger.error(f"Error processing chunk: {e}")
+                                continue
+                                
+                    except httpx.ReadError as e:
+                        error_msg = f"Connection error: {e}"
+                        logger.error(error_msg)
+                        logger.error("Please check if the Ollama server is accessible and the URL is correct")
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                        
+                    except httpx.ConnectError as e:
+                        error_msg = f"Failed to connect to server: {e}"
+                        logger.error(error_msg)
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                        
+                    except Exception as e:
+                        error_msg = f"Unexpected error: {e}"
+                        logger.error(error_msg)
+                        logger.error(f"Error type: {type(e)}")
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+
+                elif provider == 'siliconflow':
+                    try:
+                        # 准备请求头
+                        headers = {
+                            'Authorization': f'Bearer {api_key}',
+                            'Content-Type': 'application/json'
+                        }
+                        
+                        # 准备请求数据
+                        request_data = {
+                            "model": model_name,
+                            "messages": messages,
+                            "temperature": temperature,
+                            "max_tokens": max_tokens,
+                            "stream": True
+                        }
+                        
+                        logger.info(f"Connecting to Siliconflow API at {api_url}")
+                        
+                        # 发送流式请求
+                        response = requests.post(
+                            api_url,
+                            headers=headers,
+                            json=request_data,
+                            stream=True,
+                            timeout=60
+                        )
+                        
+                        if response.status_code != 200:
+                            error_msg = f"Siliconflow API error: {response.text}"
+                            logger.error(error_msg)
+                            yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                            return
+                            
+                        # 处理流式响应
+                        for line in response.iter_lines():
+                            if not line:
+                                continue
+                                
+                            try:
+                                # 移除 "data: " 前缀（如果有）
+                                line = line.decode('utf-8')
+                                if line.startswith('data: '):
+                                    line = line[6:]
+                                    
+                                if line == '[DONE]':
+                                    continue
+                                    
+                                chunk = json.loads(line)
+                                if 'choices' in chunk and len(chunk['choices']) > 0:
+                                    content = chunk['choices'][0].get('delta', {}).get('content')
+                                    if content:
+                                        yield f"data: {json.dumps({'content': content})}\n\n"
+                                    
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Error decoding response: {e}")
+                                continue
+                            except Exception as e:
+                                logger.error(f"Error processing response: {e}")
+                                continue
+                                
+                    except requests.RequestException as e:
+                        error_msg = f"Connection error: {e}"
+                        logger.error(error_msg)
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                        
+                    except Exception as e:
+                        error_msg = f"Unexpected error: {str(e)}"
+                        logger.error(error_msg)
+                        logger.error(f"Error type: {type(e)}")
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
 
                 # 发送结束标记
                 yield "data: [DONE]\n\n"

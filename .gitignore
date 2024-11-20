@@ -80,3 +80,5 @@ sftp_log.log
 
 # Exclude potential backup files
 *.backup
+
+package-lock.json
