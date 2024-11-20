@@ -104,7 +104,7 @@ export default {
           forceNew: true,
           timeout: 5000,
           perMessageDeflate: false,
-          pingInterval: 25000,
+          pingInterval: 60000,
           pingTimeout: 300000,
           upgrade: false,
           rememberUpgrade: false,

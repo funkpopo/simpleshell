@@ -31,7 +31,7 @@ socketio = SocketIO(app,
                    logger=True,
                    engineio_logger=True,
                    ping_timeout=300,
-                   ping_interval=25)
+                   ping_interval=60)
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -736,9 +736,7 @@ class SSHService:
             return 0
 
 # 在 SocketService 类中添加新的处理方法
-class SocketService:
-    # ... 现有代码 ...
-    
+class SocketService:    
     async def handle_resource_monitor(self, sid: str, data: dict):
         """处理资源监控请求"""
         try:
@@ -756,7 +754,7 @@ class SocketService:
             logger.error(f"Error in resource monitoring: {str(e)}")
     
     def register_handlers(self):
-        # ... 现有的处理程序注册 ...
+        # ... 现有的处理程序���册 ...
         self.sio.on('monitor_resources', self.handle_resource_monitor)
 
 # 修改 handle_ssh_connection 函数，添加资源监控相关代码
@@ -893,7 +891,7 @@ def handle_chat():
                             model=model_name,  # 例如: "qwen-plus"
                             messages=messages,
                             temperature=temperature,
-                            max_tokens=max_tokens,
+                            max_tokens=4096,
                             stream=True  # 启用流式输出
                         )
                         
@@ -911,6 +909,8 @@ def handle_chat():
                 elif provider == 'gemini':
                     genai = import_module('google.generativeai')
                     genai.configure(api_key=api_key)
+                    
+                    # 使用用户指定的模型名称
                     model = genai.GenerativeModel(model_name)
                     chat = model.start_chat()
                     
@@ -919,11 +919,27 @@ def handle_chat():
                             chat.send_message(msg["content"])
                     
                     # 流式处理最后一条消息
+                    # 在创建模型时设置生成参数
+                    generation_config = {
+                        'temperature': temperature,
+                        'max_output_tokens': max_tokens,
+                    }
+                    
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        generation_config=generation_config
+                    )
+                    chat = model.start_chat()
+                    
+                    # 重新发送历史消息
+                    for msg in messages[:-1]:
+                        if msg["role"] == "user":
+                            chat.send_message(msg["content"])
+                    
+                    # 发送最后一条消息并获取流式响应
                     response = chat.send_message(
                         messages[-1]["content"],
-                        temperature=temperature,
-                        max_output_tokens=max_tokens,
-                        stream=True  # 启用流式输出
+                        stream=True  # 只保留 stream 参数
                     )
                     
                     for chunk in response:
@@ -981,79 +997,34 @@ def handle_chat():
                         yield f"data: {json.dumps({'error': error_msg})}\n\n"
 
                 elif provider == 'siliconflow':
+                    silicon = import_module('openai')
                     try:
-                        # 准备请求头
-                        headers = {
-                            'Authorization': f'Bearer {api_key}',
-                            'Content-Type': 'application/json'
-                        }
-                        
-                        # 准备请求数据
-                        request_data = {
-                            "model": model_name,
-                            "messages": messages,
-                            "temperature": temperature,
-                            "max_tokens": max_tokens,
-                            "stream": True
-                        }
-                        
-                        logger.info(f"Connecting to Siliconflow API at {api_url}")
-                        
-                        # 发送流式请求
-                        response = requests.post(
-                            api_url,
-                            headers=headers,
-                            json=request_data,
-                            stream=True,
-                            timeout=60
+                        client = silicon.OpenAI(
+                            base_url=api_url or "https://api.siliconflow.cn/v1",
+                            api_key=api_key
                         )
                         
-                        if response.status_code != 200:
-                            error_msg = f"Siliconflow API error: {response.text}"
-                            logger.error(error_msg)
-                            yield f"data: {json.dumps({'error': error_msg})}\n\n"
-                            return
-                            
-                        # 处理流式响应
-                        for line in response.iter_lines():
-                            if not line:
-                                continue
-                                
-                            try:
-                                # 移除 "data: " 前缀（如果有）
-                                line = line.decode('utf-8')
-                                if line.startswith('data: '):
-                                    line = line[6:]
-                                    
-                                if line == '[DONE]':
-                                    continue
-                                    
-                                chunk = json.loads(line)
-                                if 'choices' in chunk and len(chunk['choices']) > 0:
-                                    content = chunk['choices'][0].get('delta', {}).get('content')
-                                    if content:
-                                        yield f"data: {json.dumps({'content': content})}\n\n"
-                                    
-                            except json.JSONDecodeError as e:
-                                logger.error(f"Error decoding response: {e}")
-                                continue
-                            except Exception as e:
-                                logger.error(f"Error processing response: {e}")
-                                continue
-                                
-                    except requests.RequestException as e:
-                        error_msg = f"Connection error: {e}"
-                        logger.error(error_msg)
-                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                        # 创建流式聊天完成
+                        stream = client.chat.completions.create(
+                            model=model_name,
+                            messages=messages,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            stream=True
+                        )
                         
+                        # 处理流式响应
+                        for chunk in stream:
+                            if chunk.choices[0].delta.content is not None:
+                                yield f"data: {json.dumps({'content': chunk.choices[0].delta.content})}\n\n"
+                                
                     except Exception as e:
-                        error_msg = f"Unexpected error: {str(e)}"
+                        error_msg = f"SiliconFlow API error: {str(e)}"
                         logger.error(error_msg)
                         logger.error(f"Error type: {type(e)}")
+                        if "max_tokens" in str(e):
+                            error_msg = "Max Tokens value is too large. Please reduce it and try again."
                         yield f"data: {json.dumps({'error': error_msg})}\n\n"
-
-                # 发送结束标记
-                yield "data: [DONE]\n\n"
                 
             except Exception as e:
                 logger.error(f"Error in stream generation: {str(e)}")
@@ -1080,7 +1051,7 @@ if __name__ == '__main__':
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir)
             
-        # 确保配置文件目录存在
+        # 确认配置文件目录存在
         config_dir = os.path.dirname(CONFIG_PATH)
         if config_dir and not os.path.exists(config_dir):
             os.makedirs(config_dir)

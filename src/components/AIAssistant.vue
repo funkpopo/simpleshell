@@ -4,7 +4,7 @@
     class="ai-window"
     :style="{ 
       transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
-      transition: isDragging ? 'none' : 'transform 0.3s ease',
+      transition: isDragging ? 'none' : 'transform 0.2s ease',
       width: `${windowSize.width}px`,
       height: `${windowSize.height}px`
     }"
@@ -177,11 +177,12 @@
                       />
                     </a-form-item>
                     <a-form-item label="Max Tokens">
-                      <a-input
+                      <a-input-number
                         v-model="model.maxTokens"
                         :min="1"
-                        :max="getMaxTokensLimit(model.provider)"
+                        :max="32000"
                         :step="1"
+                        placeholder="Enter max tokens"
                       />
                     </a-form-item>
                     <div class="model-edit-actions">
@@ -312,7 +313,7 @@
           />
         </a-form-item>
 
-        <!-- 添加 Temperature 和 Max Tokens 配置 -->
+        <!-- 只保留 Temperature 配置 -->
         <a-form-item label="Temperature">
           <a-slider
             v-model="newProvider.temperature"
@@ -323,33 +324,15 @@
           />
         </a-form-item>
 
-        <a-form-item label="Max Tokens">
-          <div class="max-tokens-input">
-            <a-input
-              v-model="newProvider.maxTokens"
-              :min="1"
-              :max="getMaxTokensLimit(newProvider.provider)"
-              :step="1"
-              placeholder="Enter max tokens"
-              class="token-number-input"
-              allow-clear
-              @change="handleMaxTokensChange"
-            />
-            <a-slider
-              v-model="newProvider.maxTokens"
-              :min="1"
-              :max="getMaxTokensLimit(newProvider.provider)"
-              :step="1"
-              show-ticks
-              class="token-slider"
-              @change="handleMaxTokensChange"
-            />
-          </div>
-          <template #help>
-            <span class="token-limit-hint">
-              Maximum: {{ getMaxTokensLimit(newProvider.provider).toLocaleString() }} tokens
-            </span>
-          </template>
+        <!-- 在添加新供应商对话框中添加 Max Tokens 输入框 -->
+        <a-form-item label="Max Tokens" required>
+          <a-input-number
+            v-model="newProvider.maxTokens"
+            :min="1"
+            :max="32000"
+            :step="1"
+            placeholder="Enter max tokens"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -424,7 +407,7 @@ export default {
       apiUrl: '',
       apiKey: '',
       temperature: 0.7,
-      maxTokens: 2048
+      maxTokens: 32000
     })
 
     // 添加聊天相关的响应式变量
@@ -537,6 +520,7 @@ export default {
                 }
               } catch (e) {
                 console.error('Error parsing SSE data:', e)
+                Message.error(e.message)
               }
             }
           }
@@ -782,7 +766,7 @@ export default {
               ...model,
               isEditing: false,
               temperature: model.temperature || 0.7,
-              maxTokens: model.maxTokens || Math.min(2048, getMaxTokensLimit(model.provider))
+              maxTokens: model.maxTokens || 32000
             })) || [],
             currentModel: settings.currentModel || 'None',
             maxContextLength: settings.maxContextLength || 10
@@ -878,18 +862,19 @@ export default {
 
     // 添加处理供应商变化的法
     const handleProviderChange = (value) => {
-      newModel.value.name = ''
-      newModel.value.apiUrl = getDefaultApiUrl(value)
+      newProvider.value.name = ''
+      newProvider.value.apiUrl = getDefaultApiUrl(value)
     }
 
     // 获取默认 API URL
     const getDefaultApiUrl = (provider) => {
       const urls = {
-        openai: 'https://api.openai.com/v1/chat/completions',
+        openai: '',
         zhipu: 'https://open.bigmodel.cn/api/paas/v3/chat/completions',
-        qwen: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
-        gemini: 'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent',
-        ollama: 'http://localhost:11434/api/chat'
+        qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        gemini: 'https://generativelanguage.googleapis.com/v1beta/models',
+        ollama: '',
+        siliconflow: 'https://api.siliconflow.cn/v1'
       }
       return urls[provider] || ''
     }
@@ -906,7 +891,8 @@ export default {
         zhipu: 'ZhipuAI',
         qwen: 'Qwen',
         gemini: 'Google Gemini',
-        ollama: 'Ollama'
+        ollama: 'Ollama',
+        siliconflow: 'SiliconFlow'
       }
       return names[provider] || provider
     }
@@ -919,9 +905,16 @@ export default {
         apiUrl: '',
         apiKey: '',
         temperature: 0.7,
-        maxTokens: 2048
+        maxTokens: 32000
       }
       addProviderVisible.value = true
+
+      // 添加对 provider 的监听
+      watch(() => newProvider.value.provider, (newValue) => {
+        if (newValue) {
+          newProvider.value.apiUrl = getDefaultApiUrl(newValue)
+        }
+      })
     }
 
     // 关闭添加供应商对话框
@@ -932,7 +925,7 @@ export default {
         apiUrl: '',
         apiKey: '',
         temperature: 0.7,
-        maxTokens: 2048
+        maxTokens: 32000
       }
       addProviderVisible.value = false
     }
@@ -950,14 +943,14 @@ export default {
         return
       }
 
-      // 添加新供应商，包含模型特定设置
+      // 添加新供应商，使用固定的 maxTokens 值
       aiSettings.value.models.push({
         provider: newProvider.value.provider,
         name: newProvider.value.name,
         apiUrl: newProvider.value.apiUrl,
         apiKey: newProvider.value.apiKey,
-        temperature: 0.7,  // 默认温度
-        maxTokens: Math.min(2048, getMaxTokensLimit(newProvider.value.provider))  // 默认 token 限制
+        temperature: newProvider.value.temperature,
+        maxTokens: 4096
       })
 
       Message.success('Provider added successfully')
@@ -982,31 +975,6 @@ export default {
       range.selectNodeContents(event.target)
       selection.removeAllRanges()
       selection.addRange(range)
-    }
-
-    // 在 setup 中添加或修改以下函数
-    const getMaxTokensLimit = (provider) => {
-      switch (provider?.toLowerCase()) {
-        case 'zhipu':
-        case 'qwen':
-        case 'gemini':
-          return 8192
-        default:
-          return 32000
-      }
-    }
-
-    // 在 setup 函数中添加
-    const handleMaxTokensChange = (value) => {
-      // 确保值在有效范围内
-      const maxLimit = getMaxTokensLimit(newProvider.value.provider)
-      if (value > maxLimit) {
-        newProvider.value.maxTokens = maxLimit
-      } else if (value < 1) {
-        newProvider.value.maxTokens = 1
-      } else {
-        newProvider.value.maxTokens = value
-      }
     }
 
     onMounted(() => {
@@ -1067,8 +1035,7 @@ export default {
       getProviderName,
       copyMessage,
       selectText,
-      isWaitingResponse,
-      handleMaxTokensChange
+      isWaitingResponse
     }
   }
 }
@@ -1401,7 +1368,7 @@ export default {
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.5;
-  user-select: text;  /* 允许文本选择 */
+  user-select: text;  /* 许文本选择 */
   cursor: text;
 }
 
@@ -1547,7 +1514,7 @@ export default {
   }
 }
 
-/* 在模���编辑状态的模板中添加滚动容器 */
+/* 编辑状态的模板中添加滚动容器 */
 .model-edit-container {
   max-height: 400px;
   overflow-y: auto;
@@ -1575,48 +1542,5 @@ export default {
 .model-item {
   max-height: 500px;
   overflow: hidden;
-}
-
-/* 在 style 部分添加 */
-.max-tokens-input {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.token-number-input {
-  width: 120px !important;  /* 使用 !important 确保宽度生效 */
-  flex-shrink: 0;
-}
-
-.token-slider {
-  flex: 1;
-  margin: 0 !important;  /* 移除默认边距 */
-}
-
-.token-limit-hint {
-  color: var(--color-text-3);
-  font-size: 12px;
-}
-
-/* 确保数字输入框和滑块对齐 */
-.max-tokens-input :deep(.arco-input-number) {
-  margin-bottom: 0;
-}
-
-/* 调整滑块的外观 */
-.max-tokens-input :deep(.arco-slider) {
-  margin: 11px 0;
-}
-
-/* 添加输入框的悬停和焦点效果 */
-.max-tokens-input :deep(.arco-input-number:hover) {
-  border-color: var(--color-primary-light-3);
-}
-
-.max-tokens-input :deep(.arco-input-number:focus) {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-light-2);
 }
 </style> 

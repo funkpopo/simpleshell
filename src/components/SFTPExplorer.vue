@@ -884,7 +884,7 @@ export default {
           }
         } catch (refreshError) {
           console.error('Directory refresh error:', refreshError);
-          // 即使刷新失败也不要显示错误消息，因为重命名已经成功了
+          // 即使刷新失败也不要显示错误消息，因为重命已经成功了
         }
 
         await logOperation('rename', `${oldPath} to ${newPath}`);
@@ -1192,11 +1192,22 @@ export default {
       }, 100);
     };
 
-    const handleDrop = (event) => {
+    const handleDrop = async (event) => {
       event.preventDefault();
       isDragging.value = false;
-      // 如果没有特定目标文件夹，则上传到根目录
-      uploadFiles(event.dataTransfer.files, '/');
+      
+      try {
+        const files = Array.from(event.dataTransfer.files);
+        if (files.length === 0) {
+          return;
+        }
+        
+        console.log('Dropping files to root:', files.map(f => f.name));
+        await uploadFiles(files, '/');
+      } catch (error) {
+        console.error('Drop handling failed:', error);
+        Message.error(t('sftp.uploadFailed'));
+      }
     };
 
     // 处理文件夹的拖拽事件
@@ -1239,41 +1250,48 @@ export default {
 
       if (nodeData.isLeaf) return;
 
-      const files = event.dataTransfer.files;
-      if (files.length > 0) {
+      try {
+        const files = Array.from(event.dataTransfer.files);
+        if (files.length === 0) {
+          return;
+        }
+        
+        console.log('Dropping files to folder:', nodeData.key, files.map(f => f.name));
         await uploadFiles(files, nodeData.key);
+      } catch (error) {
+        console.error('Folder drop handling failed:', error);
+        Message.error(t('sftp.uploadFailed'));
       }
     };
 
     // 修改 uploadFiles 函数
     const uploadFiles = async (files, targetPath) => {
-      try {
-        // 显示上传进度提示
-        Message.loading({
-          content: t('sftp.uploadingFiles'),
-          duration: 0
-        });
+      const loadingMessage = Message.loading({
+        content: t('sftp.uploadingFiles'),
+        duration: 0
+      });
 
+      try {
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           
           // 检查是否是文件夹
           if (file.webkitRelativePath || file.isDirectory) {
-            // 处理文件夹上传
+            console.log('Uploading folder:', file.name);
             await uploadFolder(file, targetPath);
           } else {
-            // 处理单个文件上传
+            console.log('Uploading file:', file.name);
             await uploadSingleFile(file, targetPath);
           }
         }
 
-        Message.clear();
+        loadingMessage.close();
         Message.success(t('sftp.uploadSuccess'));
         await refreshDirectoryKeepingState(targetPath);
       } catch (error) {
-        Message.clear();
-        console.error('Failed to upload:', error);
-        Message.error(t('sftp.uploadFailed'));
+        loadingMessage.close();
+        console.error('Upload failed:', error);
+        Message.error(error.message || t('sftp.uploadFailed'));
       }
     };
 
@@ -1409,6 +1427,31 @@ export default {
       }
       const hours = Math.round(seconds / 3600);
       return t('sftp.remainingHours', { hours });
+    };
+
+    // 在 setup 函数中添加 uploadSingleFile 函数
+    const uploadSingleFile = async (file, targetPath) => {
+      try {
+        const reader = new FileReader();
+        const fileContent = await new Promise((resolve, reject) => {
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = (e) => reject(e);
+          reader.readAsDataURL(file);
+        });
+
+        const base64Content = fileContent.split(',')[1];
+        await axios.post('http://localhost:5000/sftp_upload_file', {
+          connection: props.connection,
+          path: targetPath,
+          filename: file.name,
+          content: base64Content
+        });
+
+        await logOperation('upload', `${targetPath}/${file.name}`);
+      } catch (error) {
+        console.error('Failed to upload file:', error);
+        throw new Error(`Failed to upload ${file.name}: ${error.message}`);
+      }
     };
 
     return {
@@ -1708,7 +1751,7 @@ export default {
   text-align: center;
 }
 
-/* 添加��拽相关样式 */
+/* 添加拽相关样式 */
 .drag-over {
   background-color: var(--color-primary-light-1) !important;
   border: 2px dashed var(--color-primary) !important;
