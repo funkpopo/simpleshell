@@ -14,7 +14,7 @@
       @mousedown="startDrag"
     >
       <div class="header-left">
-        <span class="ai-window-title">AI Assistant</span>
+        <span class="ai-window-title">{{ $t('aiAssistant.title') }}</span>
         <span class="current-model">{{ aiSettings.currentModel }}</span>
       </div>
       <div class="ai-window-controls">
@@ -92,7 +92,7 @@
         <div class="input-container">
           <a-textarea
             v-model="currentMessage"
-            :placeholder="`Chat with ${aiSettings.currentModel}...`"
+            :placeholder="$t('aiAssistant.chatPlaceholder', { model: aiSettings.currentModel })"
             :auto-size="{ minRows: 1, maxRows: 4 }"
             @keypress.enter.prevent="sendMessage"
           />
@@ -102,7 +102,7 @@
             :disabled="!currentMessage.trim()"
             @click="sendMessage"
           >
-            Send
+            {{ $t('aiAssistant.send') }}
           </a-button>
         </div>
       </div>
@@ -115,7 +115,7 @@
     <!-- AI 设置对话框 -->
     <a-modal
       v-model:visible="settingsVisible"
-      title="AI Assistant Settings"
+      :title="$t('aiAssistant.settings')"
       @cancel="closeSettings"
       @ok="saveSettings"
       :mask-closable="false"
@@ -124,7 +124,7 @@
     >
       <a-form :model="aiSettings" layout="vertical">
         <!-- 模型列表 -->
-        <a-form-item label="Models">
+        <a-form-item :label="$t('aiAssistant.models')">
           <div class="models-container">
             <!-- 只在有模型时显示模型列表 -->
             <template v-if="aiSettings.models && aiSettings.models.length > 0">
@@ -226,23 +226,21 @@
                 <template #icon>
                   <icon-plus />
                 </template>
-                Add Provider
+                {{ $t('aiAssistant.addProvider') }}
               </a-button>
             </div>
           </div>
         </a-form-item>
 
         <!-- 当前选择的模型 -->
-        <a-form-item label="Current Model">
+        <a-form-item :label="$t('aiAssistant.currentModel')">
           <a-select v-model="aiSettings.currentModel">
-            <!-- 只在没有其他模型时显示 None 选项 -->
             <a-option 
               v-if="!aiSettings.models?.length"
               value="None"
             >
-              None
+              {{ $t('aiAssistant.noModels') }}
             </a-option>
-            <!-- 显示所有可用模型 -->
             <a-option 
               v-for="model in aiSettings.models" 
               :key="model.name" 
@@ -253,8 +251,8 @@
           </a-select>
         </a-form-item>
 
-        <!-- 只保留上下文长度设置 -->
-        <a-form-item label="Max Context Length">
+        <!-- 上下文长度设置 -->
+        <a-form-item :label="$t('aiAssistant.maxContextLength')">
           <a-input-number
             v-model="aiSettings.maxContextLength"
             :min="1"
@@ -262,22 +260,22 @@
             :step="1"
           />
           <template #help>
-            Number of previous messages to remember
+            {{ $t('aiAssistant.maxContextLength') }}
           </template>
         </a-form-item>
       </a-form>
     </a-modal>
 
-    <!-- 修改添加新的供应商对话框 -->
+    <!-- 添加新的供应商对话框 -->
     <a-modal
       v-model:visible="addProviderVisible"
-      title="Add New Provider"
+      :title="$t('aiAssistant.addProvider')"
       @cancel="closeAddProviderModal"
       @ok="addNewProvider"
     >
       <a-form :model="newProvider" layout="vertical">
-        <!-- 保留供应商类型选择 -->
-        <a-form-item label="Provider" required>
+        <!-- 供应商类型选择 -->
+        <a-form-item :label="$t('aiAssistant.provider')" required>
           <a-select v-model="newProvider.provider">
             <a-option value="openai">OpenAI</a-option>
             <a-option value="zhipu">ZhipuAI</a-option>
@@ -288,33 +286,33 @@
           </a-select>
         </a-form-item>
 
-        <!-- 添加模型名称输入框 -->
-        <a-form-item label="Model Name" required>
+        <!-- 模型名称输入框 -->
+        <a-form-item :label="$t('aiAssistant.modelName')" required>
           <a-input 
             v-model="newProvider.name" 
-            placeholder="Enter model name (e.g. gpt-3.5-turbo, chatglm_turbo)"
+            :placeholder="$t('aiAssistant.modelName')"
           />
         </a-form-item>
 
-        <!-- 保留 API URL 输入框 -->
-        <a-form-item label="API URL" required>
+        <!-- API URL 输入框 -->
+        <a-form-item :label="$t('aiAssistant.apiUrl')" required>
           <a-input 
             v-model="newProvider.apiUrl" 
-            placeholder="Enter API URL"
+            :placeholder="$t('aiAssistant.apiUrl')"
           />
         </a-form-item>
 
-        <!-- 保留 API Key 输入框 -->
-        <a-form-item label="API Key" required>
+        <!-- API Key 输入框 -->
+        <a-form-item :label="$t('aiAssistant.apiKey')" required>
           <a-input-password 
             v-model="newProvider.apiKey" 
-            placeholder="Enter API key"
+            :placeholder="$t('aiAssistant.apiKey')"
             allow-clear
           />
         </a-form-item>
 
-        <!-- 只保留 Temperature 配置 -->
-        <a-form-item label="Temperature">
+        <!-- Temperature 配置 -->
+        <a-form-item :label="$t('aiAssistant.temperature')">
           <a-slider
             v-model="newProvider.temperature"
             :min="0"
@@ -324,14 +322,14 @@
           />
         </a-form-item>
 
-        <!-- 在添加新供应商对话框中添加 Max Tokens 输入框 -->
-        <a-form-item label="Max Tokens" required>
+        <!-- Max Tokens 输入框 -->
+        <a-form-item :label="$t('aiAssistant.maxTokens')" required>
           <a-input-number
             v-model="newProvider.maxTokens"
             :min="1"
             :max="32000"
             :step="1"
-            placeholder="Enter max tokens"
+            :placeholder="$t('aiAssistant.maxTokens')"
           />
         </a-form-item>
       </a-form>
@@ -746,7 +744,7 @@ export default {
         }
         
         await ipcRenderer.invoke('save-config', config)
-        Message.success('Settings saved successfully')
+        Message.success(this.$t('aiAssistant.settingsSaved'))
         settingsVisible.value = false
       } catch (error) {
         console.error('Failed to save AI settings:', error)
