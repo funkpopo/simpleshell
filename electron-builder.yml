@@ -20,6 +20,7 @@ extraFiles:
   - from: "highlight.list"
     to: "highlight.list"
 win:
+  icon: "src/assets/icon.ico"
   target:
     - target: portable
       arch:
@@ -35,6 +36,7 @@ nsis:
   createDesktopShortcut: false
   createStartMenuShortcut: false
 linux:
+  icon: "src/assets/icon.png"
   target:
     - AppImage
     - deb

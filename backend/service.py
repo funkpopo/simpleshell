@@ -1,3 +1,6 @@
+from gevent import monkey
+monkey.patch_all()
+
 from flask import Flask, request, jsonify, send_file, Response, stream_with_context
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
@@ -11,7 +14,6 @@ import time
 import tempfile
 import io
 from datetime import datetime
-from gevent import monkey
 import socket
 import sys
 import requests
@@ -19,9 +21,6 @@ import atexit
 import re
 import httpx
 from typing import Dict, Tuple
-
-# 先执行 monkey patch
-monkey.patch_all()
 
 app = Flask(__name__)
 CORS(app)
@@ -754,7 +753,6 @@ class SocketService:
             logger.error(f"Error in resource monitoring: {str(e)}")
     
     def register_handlers(self):
-        # ... 现有的处理程序���册 ...
         self.sio.on('monitor_resources', self.handle_resource_monitor)
 
 # 修改 handle_ssh_connection 函数，添加资源监控相关代码
