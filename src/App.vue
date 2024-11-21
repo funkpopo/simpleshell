@@ -2639,12 +2639,14 @@ export default {
 .arco-layout-sider {
   position: relative;
   transition: all 0.2s;
+  user-select: none;
 }
 
 /* 修折叠的样式 */
 .arco-layout-sider-collapsed {
   width: 64px !important;
   min-width: 64px !important;
+  user-select: none;
 }
 
 /* 整折叠时的 Avatar 样式 */
@@ -2654,6 +2656,7 @@ export default {
   align-items: center;
   padding: 4px 0;
   width: 100%;
+  user-select: none;
 }
 
 .arco-layout-sider-collapsed .folder-header {

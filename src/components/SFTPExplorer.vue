@@ -165,6 +165,29 @@
         </div>
       </div>
     </div>
+
+    <!-- 添加上传进度浮动通知 -->
+    <div 
+      v-if="uploadProgressVisible" 
+      class="upload-progress-float"
+    >
+      <div class="upload-progress">
+        <div class="progress-info">
+          <span class="file-name">{{ uploadInfo.fileName }}</span>
+          <span class="progress-percent">{{ uploadInfo.progress }}%</span>
+        </div>
+        <a-progress
+          :percent="uploadInfo.progress"
+          :status="uploadInfo.status"
+          :show-text="false"
+          size="small"
+        />
+        <div class="progress-details">
+          <span>{{ uploadInfo.speed }}</span>
+          <span>{{ uploadInfo.timeRemaining }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -349,12 +372,25 @@ export default {
           throw new Error(response.data.error);
         }
         console.log('Directory contents:', response.data);
-        node.children = sortItems(response.data.map(item => ({
-          title: item.name,
-          key: normalizePath(path + '/' + item.name),
-          isLeaf: !item.isDirectory,
-          children: item.isDirectory ? [] : undefined
-        })));
+        
+        // 保留已展开的子节点
+        const oldExpandedChildren = node.children ? 
+          node.children.filter(child => expandedKeys.value.includes(child.key)) : 
+          [];
+
+        node.children = sortItems(response.data.map(item => {
+          const existingChild = oldExpandedChildren.find(
+            oldChild => oldChild.title === item.name
+          );
+          
+          return {
+            title: item.name,
+            key: normalizePath(path + '/' + item.name),
+            isLeaf: !item.isDirectory,
+            children: item.isDirectory ? (existingChild ? existingChild.children : []) : undefined,
+            expanded: existingChild ? true : false
+          };
+        }));
       } catch (error) {
         console.error('Failed to fetch directory contents:', error);
         if (error.response) {
@@ -486,9 +522,32 @@ export default {
 
         const updateNode = (node, newChildren) => {
           if (node.key === path) {
-            node.children = newChildren;
+            // 保留原有的展开状态
+            const oldExpandedChildren = node.children.filter(child => 
+              expandedKeys.value.includes(child.key)
+            );
+
+            // 合并新的子节点，保留已展开节点的子节点
+            node.children = sortItems(newChildren.map(newChild => {
+              const existingChild = oldExpandedChildren.find(
+                oldChild => oldChild.title === newChild.title
+              );
+              
+              if (existingChild) {
+                // 如果是已展开的节点，保留其子节点和展开状态
+                return {
+                  ...newChild,
+                  children: existingChild.children,
+                  expanded: true
+                };
+              }
+              
+              return newChild;
+            }));
+
             return true;
           }
+          
           if (node.children) {
             for (let child of node.children) {
               if (updateNode(child, newChildren)) {
@@ -496,6 +555,7 @@ export default {
               }
             }
           }
+          
           return false;
         };
 
@@ -519,10 +579,13 @@ export default {
     };
 
     const onExpand = async (keys, { expanded, node }) => {
-      expandedKeys.value = keys;
+      // 如果是展开操作，且子节点为空，则加载子节点
       if (expanded && node.children.length === 0) {
         await loadMoreData(node);
       }
+
+      // 更新展开的 keys
+      expandedKeys.value = keys;
     };
 
     const showContextMenu = (event, nodeData) => {
@@ -1143,7 +1206,7 @@ export default {
       // 计算表格高度（窗口高度的60%，最小300）
       tableHeight.value = Math.max(windowHeight * 0.6, 300)
       
-      // 计算每页显示数量（根据表格高度）
+      // 计算每页显示数量（根据表格高）
       pageSize.value = Math.max(Math.floor((tableHeight.value - 100) / 40), 5)
     }
 
@@ -1272,6 +1335,11 @@ export default {
       });
 
       try {
+        uploadProgressVisible.value = true;
+        uploadInfo.status = 'normal';
+        uploadInfo.progress = 0;
+        uploadInfo.startTime = null;
+
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           
@@ -1291,6 +1359,7 @@ export default {
       } catch (error) {
         loadingMessage.close();
         console.error('Upload failed:', error);
+        uploadInfo.status = 'error';
         Message.error(error.message || t('sftp.uploadFailed'));
       }
     };
@@ -1298,9 +1367,12 @@ export default {
     // 添加文件夹上传函数
     const uploadFolder = async (folder, targetPath) => {
       try {
-        // 创建临时目录用于存储要压缩的文件
-        const tempDir = await ipcRenderer.invoke('create-temp-dir');
-        
+        uploadProgressVisible.value = true;
+        uploadInfo.fileName = folder.name;
+        uploadInfo.status = 'normal';
+        uploadInfo.progress = 0;
+        uploadInfo.startTime = null;
+
         // 递归读取文件夹内容并保持目录结构
         const processDirectory = async (entry, basePath) => {
           const reader = entry.createReader();
@@ -1347,6 +1419,7 @@ export default {
         // 清理临时文件
         await ipcRenderer.invoke('cleanup-temp-dir', tempDir);
       } catch (error) {
+        uploadInfo.status = 'error';
         throw new Error(`Failed to upload folder: ${error.message}`);
       }
     };
@@ -1440,18 +1513,68 @@ export default {
         });
 
         const base64Content = fileContent.split(',')[1];
+        
+        // 使用 axios 的上传进度追踪
         await axios.post('http://localhost:5000/sftp_upload_file', {
           connection: props.connection,
           path: targetPath,
           filename: file.name,
           content: base64Content
+        }, {
+          onUploadProgress: (progressEvent) => {
+            updateUploadProgress(
+              progressEvent.loaded, 
+              progressEvent.total, 
+              file.name
+            );
+          }
         });
 
         await logOperation('upload', `${targetPath}/${file.name}`);
       } catch (error) {
         console.error('Failed to upload file:', error);
+        uploadInfo.status = 'error';
         throw new Error(`Failed to upload ${file.name}: ${error.message}`);
+      } finally {
+        // 上传完成后隐藏进度条
+        setTimeout(() => {
+          uploadProgressVisible.value = false;
+        }, 500);
       }
+    };
+
+    // 添加上传进度相关的状态
+    const uploadProgressVisible = ref(false);
+    const uploadInfo = reactive({
+      fileName: '',
+      progress: 0,
+      status: 'normal',
+      speed: '',
+      timeRemaining: '',
+      startTime: null,
+      totalSize: 0,
+      uploadedSize: 0
+    });
+
+    // 更新上传进度的方法
+    const updateUploadProgress = (loaded, total, fileName) => {
+      if (!uploadInfo.startTime) {
+        uploadInfo.startTime = Date.now();
+      }
+
+      uploadInfo.fileName = fileName;
+      uploadInfo.uploadedSize = loaded;
+      uploadInfo.totalSize = total;
+      uploadInfo.progress = Math.round((loaded / total) * 100);
+
+      // 计算上传速度
+      const elapsedTime = (Date.now() - uploadInfo.startTime) / 1000;
+      const speed = loaded / elapsedTime;
+      uploadInfo.speed = formatSpeed(speed);
+
+      // 计算剩余时间
+      const remaining = (total - loaded) / speed;
+      uploadInfo.timeRemaining = formatTime(remaining);
     };
 
     return {
@@ -1517,6 +1640,8 @@ export default {
       handleNodeDoubleClick,
       downloadProgressVisible,
       downloadInfo,
+      uploadProgressVisible,
+      uploadInfo,
     };
   }
 };
@@ -1530,6 +1655,7 @@ export default {
   color: var(--color-text-1);
   position: relative;
   z-index: 9999;
+  user-select: none;
 }
 
 .sftp-header {
@@ -1952,6 +2078,20 @@ export default {
 :deep([arco-theme='dark']) .download-progress-float {
   background-color: var(--color-bg-3);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* 上传进度条样式（可以复用下载进度条的样式） */
+.upload-progress-float {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 300px;
+  background-color: var(--color-bg-2);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  padding: 12px;
+  z-index: 10000;
+  animation: slide-in 0.3s ease;
 }
 </style>
 
