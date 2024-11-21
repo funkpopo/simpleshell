@@ -1,8 +1,8 @@
 from gevent import monkey
 monkey.patch_all()
 
-from flask import Flask, request, jsonify, send_file, Response, stream_with_context
-from flask_socketio import SocketIO, emit
+from flask import Flask, request, jsonify, send_file
+from flask_socketio import SocketIO
 from flask_cors import CORS
 import paramiko
 import json
@@ -21,6 +21,7 @@ import atexit
 import re
 import httpx
 from typing import Dict, Tuple
+from functools import lru_cache
 
 app = Flask(__name__)
 CORS(app)
@@ -32,10 +33,14 @@ socketio = SocketIO(app,
                    ping_timeout=300,
                    ping_interval=60)
 
-# 配置日志
-logging.basicConfig(level=logging.INFO)
+# 配置更轻量的日志
+logging.basicConfig(
+    level=logging.WARNING,  # 只记录警告和错误
+    format='%(asctime)s - %(levelname)s: %(message)s'
+)
 logger = logging.getLogger(__name__)
 
+@lru_cache(maxsize=32)
 def get_executable_dir():
     # 获取可执行文件所在目录
     if getattr(sys, 'frozen', False):
@@ -822,6 +827,7 @@ def handle_resource_monitor(data):
 @app.route('/chat', methods=['POST'])
 def handle_chat():
     try:
+        # 仅在需要时导入
         from importlib import import_module
         from flask import Response, stream_with_context
         
@@ -917,7 +923,7 @@ def handle_chat():
                             chat.send_message(msg["content"])
                     
                     # 流式处理最后一条消息
-                    # 在创建模型时设置生成参数
+                    # 创建模型时设置生成参数
                     generation_config = {
                         'temperature': temperature,
                         'max_output_tokens': max_tokens,
@@ -1042,6 +1048,47 @@ def handle_chat():
         logger.error(f"Error in chat handler: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+def profile_startup():
+    import cProfile
+    import pstats
+    
+    profiler = cProfile.Profile()
+    profiler.enable()
+    
+    # 主启动逻辑
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    
+    profiler.disable()
+    stats = pstats.Stats(profiler).sort_stats('cumulative')
+    stats.print_stats()
+
+def minimal_startup_checks():
+    # 仅进行最小必要的启动检查
+    try:
+        # 快速检查目录是否存在，避免复杂的创建逻辑
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+    except Exception as e:
+        logger.warning(f"Startup directory check failed: {e}")
+
+def log_startup_performance():
+    import time
+    start_time = time.time()
+    
+    # 记录启动关键步骤的耗时
+    startup_steps = {
+        'config_load': 0,
+        'log_setup': 0,
+        'socket_init': 0
+    }
+    
+    # 在各步骤记录耗时
+    end_time = time.time()
+    total_startup_time = end_time - start_time
+    
+    logger.info(f"Total Startup Time: {total_startup_time:.2f} seconds")
+    logger.info(f"Startup Steps: {startup_steps}")
+
 if __name__ == '__main__':
     try:
         # 确保日志文件目录存在
@@ -1062,11 +1109,8 @@ if __name__ == '__main__':
         print(f"Config file: {CONFIG_PATH}")
         print(f"Log file: {LOG_PATH}")
         
-        socketio.run(app, 
-                    host='0.0.0.0', 
-                    port=5000, 
-                    debug=True,
-                    use_reloader=False)  # 禁用重载器
+        minimal_startup_checks()
+        profile_startup()
     except Exception as e:
         print(f"Failed to start server: {e}")
         raise 
