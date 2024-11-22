@@ -93,8 +93,8 @@
           <a-textarea
             v-model="currentMessage"
             :placeholder="$t('aiAssistant.chatPlaceholder', { model: aiSettings.currentModel })"
-            :auto-size="{ minRows: 1, maxRows: 4 }"
-            @keypress.enter.prevent="sendMessage"
+            :auto-size="{ minRows: 2, maxRows: 5 }"
+            @keydown="handleKeyDown"
           />
           <a-button 
             type="primary" 
@@ -379,7 +379,7 @@ export default {
       width: 400,
       height: 600,
       minWidth: 200,
-      minHeight: 40,
+      minHeight: 80,
       maxWidth: 800,
       maxHeight: window.innerHeight
     })

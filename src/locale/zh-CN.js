@@ -136,7 +136,7 @@ export default {
     minimize: '最小化',
     copy: '复制',
     send: '发送',
-    chatPlaceholder: '与 {model} 聊天...',
+    chatPlaceholder: '与 {model} 聊天... 使用 Shift+Enter 换行',
     noModels: '未配置模型',
     modelExists: '模型名称已存在',
     requiredFields: '请填写所有必填字段',

@@ -59,8 +59,8 @@ async function build() {
           ],
           requestedExecutionLevel: 'requireAdministrator',
           signAndEditExecutable: true,
-          publisherName: 'Sunn@github.com/funkpopo',
-          legalTrademarks: 'Copyright © 2024 Sunn@github.com/funkpopo'
+          publisherName: 'funkpopo@github.com',
+          legalTrademarks: 'Copyright © 2024 funkpopo@github.com'
         },
         portable: {
           splashImage: false

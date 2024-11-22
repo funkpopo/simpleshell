@@ -136,7 +136,7 @@ export default {
     minimize: 'Minimize',
     copy: 'Copy',
     send: 'Send',
-    chatPlaceholder: 'Chat with {model}...',
+    chatPlaceholder: 'Chat with {model}... Use Shift+Enter for new line',
     noModels: 'No models configured',
     modelExists: 'Model name already exists',
     requiredFields: 'Please fill in all required fields',
