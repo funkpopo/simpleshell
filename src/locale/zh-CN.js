@@ -99,7 +99,7 @@ export default {
     downloadSelected: '下载 {count} 个文件',
     deleteSelected: '删除 {count} 个文件',
     noFilesSelected: '未选择任何文件',
-    selectDownloadFolder: '选择下载文件���',
+    selectDownloadFolder: '选择下载文件',
     multiDownloadSuccess: '成功下载 {count} 个文件',
     multiDownloadFailed: '批量下载失败',
     deleteMultiple: '删除多个文件',
@@ -116,7 +116,11 @@ export default {
     filePreviewLimitMessage: '文件 {fileName} 大小为 {fileSize} KB，超过预览限制。是否下载？',
     unsupportedFileType: '不支持的文件类型',
     unsupportedFileTypeMessage: '无法预览文件 {fileName}。是否下载？',
-    filePreviewFailed: '文件预览失败'
+    filePreviewFailed: '文件预览失败',
+    copyModTime: '复制修改时间',
+    copySize: '复制文件大小',
+    timeCopied: '修改时间已复制: {time}',
+    sizeCopied: '文件大小已复制: {size}'
   },
   update: {
     newVersion: '发现新版本',
@@ -127,7 +131,7 @@ export default {
   },
   lock: {
     setPassword: '设置锁屏密码',
-    enterPassword: '请��入密码',
+    enterPassword: '请入密码',
     confirmPassword: '确认密码',
     confirm: '确认',
     cancel: '取消',

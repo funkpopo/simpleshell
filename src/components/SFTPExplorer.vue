@@ -1,12 +1,17 @@
 <template>
   <div 
     class="sftp-explorer"
+    :style="{ width: `${explorerWidth}px` }"
     :class="{ 'drag-active': isDragging }"
     @dragenter.prevent="handleDragEnter"
     @dragover.prevent="handleDragOver"
     @dragleave.prevent="handleDragLeave"
     @drop.prevent="handleDrop"
   >
+    <div 
+      class="sftp-explorer-resizer" 
+      @mousedown="startResize"
+    ></div>
     <div class="sftp-header">
       <div class="sftp-actions">
         <a-button-group>
@@ -62,6 +67,10 @@
                 @dblclick.stop="handleNodeDoubleClick(nodeData)"
               >
                 <span class="item-title">{{ nodeData.title }}</span>
+                <span class="item-details">
+                  <span class="item-mod-time">{{ formatModTime(nodeData.modTime) }}</span>
+                  <span class="item-size">{{ formatSize(nodeData.size) }}</span>
+                </span>
               </div>
             </template>
           </a-tree>
@@ -247,7 +256,7 @@ export default {
       required: true
     }
   },
-  setup(props) {
+  setup(props, { emit }) {
     const fileTree = ref([]);
     const loading = ref(false);
     const fileContentVisible = ref(false);
@@ -368,7 +377,10 @@ export default {
           key: normalizePath('/' + item.name),
           isLeaf: !item.isDirectory,
           children: item.isDirectory ? [] : undefined,
-          isHidden: item.name.startsWith('.')
+          isHidden: item.name.startsWith('.'),
+          // 添加 modTime 和 size 属性
+          modTime: item.modTime,
+          size: item.size
         })));
 
         // 重新加载之前展开的目录
@@ -421,7 +433,11 @@ export default {
             key: normalizePath(path + '/' + item.name),
             isLeaf: !item.isDirectory,
             children: item.isDirectory ? (existingChild ? existingChild.children : []) : undefined,
-            expanded: existingChild ? true : false
+            expanded: existingChild ? true : false,
+            // 添加 modTime 和 size 属性
+            modTime: item.modTime,
+            size: item.size,
+            isHidden: item.isHidden
           };
         }));
       } catch (error) {
@@ -663,6 +679,30 @@ export default {
       event.preventDefault();
       event.stopPropagation();
       const menu = new Menu();
+      
+      // 添加复制时间的菜单项
+      menu.append(new MenuItem({
+        label: t('sftp.copyModTime'),
+        click: () => {
+          const formattedTime = formatModTime(nodeData.modTime);
+          const { clipboard } = require('@electron/remote');
+          clipboard.writeText(formattedTime);
+          
+          Message.success(t('sftp.timeCopied', { time: formattedTime }));
+        }
+      }));
+
+      // 添加复制文件大小的菜单项
+      menu.append(new MenuItem({
+        label: t('sftp.copySize'),
+        click: () => {
+          const formattedSize = formatSize(nodeData.size);
+          const { clipboard } = require('@electron/remote');
+          clipboard.writeText(formattedSize);
+          
+          Message.success(t('sftp.sizeCopied', { size: formattedSize }));
+        }
+      }));
       
       // 添加复制路径的菜单项
       menu.append(new MenuItem({
@@ -1490,7 +1530,7 @@ export default {
           content: zipContent
         });
 
-        // 清理临时文��
+        // 清理临时文
         await ipcRenderer.invoke('cleanup-temp-dir', tempDir);
       } catch (error) {
         uploadInfo.status = 'error';
@@ -1753,7 +1793,7 @@ export default {
       }
     };
 
-    // 根�� keys 查找节点的辅助方法
+    // 根 keys 查找节点的辅助方法
     const findNodesByKeys = (keys) => {
       const findInNodes = (nodes) => {
         const foundNodes = [];
@@ -1769,6 +1809,104 @@ export default {
       };
       return findInNodes(fileTree.value);
     };
+
+    const formatModTime = (timestamp) => {
+      const date = new Date(timestamp * 1000);
+      return date.toLocaleString();
+    };
+
+    const formatSize = (size) => {
+      if (size < 1024) return `${size} B`;
+      if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
+      if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+      return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    };
+
+    // 添加响应式宽度变量，并设置最小值为300
+    const explorerWidth = ref(300)
+
+    // 修改宽度调整相关方法
+    const startResize = (e) => {
+      const startX = e.clientX
+      const startWidth = explorerWidth.value
+
+      const handleMouseMove = (moveEvent) => {
+        const diff = moveEvent.clientX - startX
+        // 确保最小宽度为300px
+        const newWidth = Math.max(300, startWidth - diff)
+        explorerWidth.value = newWidth
+        
+        // 触发宽度更新事件
+        emit('update:width', newWidth)
+      }
+
+      const handleMouseUp = () => {
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+        
+        // 保存宽度设置
+        saveWidthSettings()
+      }
+
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+    }
+
+    // 保存宽度设置的方法
+    const saveWidthSettings = async () => {
+      try {
+        // 使用 ipcRenderer 读取和保存配置
+        const config = await ipcRenderer.invoke('read-config')
+        const settingsIndex = config.findIndex(item => item.type === 'settings')
+        
+        // 确保宽度不小于300
+        const sftpWidth = Math.max(300, explorerWidth.value)
+        
+        const widthSettings = {
+          sftpWidth: sftpWidth
+        }
+        
+        if (settingsIndex !== -1) {
+          config[settingsIndex] = {
+            ...config[settingsIndex],
+            widthSettings
+          }
+        } else {
+          config.push({
+            type: 'settings',
+            widthSettings
+          })
+        }
+        
+        // 使用 ipcRenderer 保存配置
+        await ipcRenderer.invoke('save-config', config)
+        
+        // 更新当前宽度为保存的宽度（确保不小于300）
+        explorerWidth.value = sftpWidth
+      } catch (error) {
+        console.error('Failed to save SFTP explorer width:', error)
+      }
+    }
+
+    // 加载宽度设置的方法
+    const loadWidthSettings = async () => {
+      try {
+        const config = await ipcRenderer.invoke('read-config')
+        const settings = config.find(item => item.type === 'settings')
+        
+        if (settings?.widthSettings?.sftpWidth) {
+          // 确保加载的宽度不小于300
+          explorerWidth.value = Math.max(300, settings.widthSettings.sftpWidth)
+        }
+      } catch (error) {
+        console.error('Failed to load SFTP explorer width:', error)
+      }
+    }
+
+    // 在挂载时加载宽度设置
+    onMounted(() => {
+      loadWidthSettings()
+    })
 
     return {
       fileTree,
@@ -1840,6 +1978,10 @@ export default {
       downloadMultipleFiles,
       deleteMultipleFiles,
       findNodesByKeys,
+      formatModTime,
+      formatSize,
+      explorerWidth,
+      startResize,
     };
   }
 };
@@ -1854,6 +1996,8 @@ export default {
   position: relative;
   z-index: 9999;
   user-select: none;
+  min-width: 300px; /* 添加最小宽度限制 */
+  max-width: 600px; /* 可选：添加最大宽度限制 */
 }
 
 .sftp-header {
@@ -2161,6 +2305,7 @@ export default {
 .tree-node-content {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 4px 8px;
   width: 100%;
   min-height: 24px;
@@ -2297,6 +2442,42 @@ export default {
 /* 调整树节点图标的位置 */
 :deep(.arco-tree-node-title) {
   padding-left: 0 !important;
+}
+
+.item-details {
+  display: flex;
+  gap: 8px;
+  color: var(--color-text-2);
+}
+
+.item-mod-time,
+.item-size {
+  font-size: 12px;
+}
+
+/* 添加宽度调整���域的样式 */
+.sftp-explorer {
+  position: relative;
+  min-width: 300px;
+}
+
+.sftp-explorer-resizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 1000;
+}
+
+.sftp-explorer-resizer:hover {
+  background: rgba(var(--primary-6), 0.1);
+}
+
+.sftp-explorer-resizer:active {
+  background: rgba(var(--primary-6), 0.2);
 }
 </style>
 

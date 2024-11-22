@@ -479,12 +479,15 @@ def list_directory():
                 if not show_hidden and item.filename.startswith('.'):
                     continue
                     
+                # 转换时间戳为秒级时间戳
+                mod_time = int(item.st_mtime)
+                
                 items.append({
                     'name': item.filename,
                     'path': os.path.join(path, item.filename).replace('\\', '/'),
                     'isDirectory': stat.S_ISDIR(item.st_mode),
                     'size': item.st_size,
-                    'modTime': item.st_mtime,
+                    'modTime': mod_time,  # 使用秒级时间戳
                     'isHidden': item.filename.startswith('.')
                 })
             return jsonify(items)
@@ -936,7 +939,7 @@ def handle_chat():
                     genai = import_module('google.generativeai')
                     genai.configure(api_key=api_key)
                     
-                    # 使��用户指定的模型名称
+                    # 使用户指定的模型名称
                     model = genai.GenerativeModel(model_name)
                     chat = model.start_chat()
                     

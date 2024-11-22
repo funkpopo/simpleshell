@@ -114,7 +114,11 @@ export default {
     filePreviewLimitMessage: 'File {fileName} is {fileSize} KB, exceeding preview limit. Do you want to download?',
     unsupportedFileType: 'Unsupported File Type',
     unsupportedFileTypeMessage: 'Cannot preview file {fileName}. Do you want to download?',
-    filePreviewFailed: 'Failed to preview file'
+    filePreviewFailed: 'Failed to preview file',
+    copyModTime: 'Copy Modification Time',
+    copySize: 'Copy File Size',
+    timeCopied: 'Modification time copied: {time}',
+    sizeCopied: 'File size copied: {size}'
   },
   update: {
     newVersion: 'New Version Available',

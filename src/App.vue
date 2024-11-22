@@ -223,11 +223,16 @@
               />
             </div>
             <transition name="slide-fade">
-              <div v-if="isRightSidebarOpen && hasActiveConnection" class="right-sidebar">
+              <div 
+                v-if="isRightSidebarOpen && hasActiveConnection" 
+                class="right-sidebar"
+                :style="{ width: `${sftpExplorerWidth}px` }"
+              >
                 <SFTPExplorer 
                   v-if="activeConnection" 
                   :key="activeConnection.id" 
                   :connection="activeConnection" 
+                  @update:width="updateSFTPWidth"
                 />
               </div>
             </transition>
@@ -236,6 +241,7 @@
             v-if="hasActiveConnection"
             class="toggle-sidebar-button" 
             :class="{ 'open': isRightSidebarOpen }"
+            :style="{ right: isRightSidebarOpen ? `${sftpExplorerWidth}px` : '0' }"
             @click="toggleRightSidebar"
           >
             <icon-menu-unfold v-if="isRightSidebarOpen" />
@@ -649,7 +655,7 @@ export default {
           type: 'connection'
         }
         
-        // 如果是密码认证，进行 base64 编码
+        // 如果是密码认证，进��� base64 编码
         if (connection.authType === 'password' && connection.password) {
           connection.password = btoa(connection.password)
         }
@@ -1337,7 +1343,7 @@ export default {
         const response = await axios.get('http://localhost:5000/get_connections')
         let currentConfig = response.data
         
-        // 更新或添加设置
+        // 更新���添加设置
         const settingsIndex = currentConfig.findIndex(item => item.type === 'settings')
         const settingsData = {
           type: 'settings',
@@ -2119,7 +2125,7 @@ export default {
       }
     }
 
-    // 在 setup 中添加
+    // ��� setup 中添加
     const cancelSetPassword = () => {
       isLocked.value = false;
       lockForm.password = '';
@@ -2144,6 +2150,72 @@ export default {
 
     // 移除动态计算的 aiIcon
     const aiIcon = require('@/assets/aiicon.png')
+
+    // 添加 SFTP Explorer 宽度的响应式变量
+    const sftpExplorerWidth = ref(300)
+
+    // 更新 SFTP Explorer 宽度的方法
+    const updateSFTPWidth = async (width) => {
+      sftpExplorerWidth.value = width
+      await saveSFTPWidthSettings()
+    }
+
+    // 保存 SFTP Explorer 宽度设置的方法
+    const saveSFTPWidthSettings = async () => {
+      try {
+        const config = await ipcRenderer.invoke('read-config')
+        const settingsIndex = config.findIndex(item => item.type === 'settings')
+        
+        // 确保宽度不小于300
+        const width = Math.max(300, sftpExplorerWidth.value)
+        
+        if (settingsIndex !== -1) {
+          // 保留原有的 widthSettings，只更新 sftpWidth
+          const existingWidthSettings = config[settingsIndex].widthSettings || {}
+          config[settingsIndex] = {
+            ...config[settingsIndex],
+            widthSettings: {
+              ...existingWidthSettings,
+              sftpWidth: width
+            }
+          }
+        } else {
+          config.push({
+            type: 'settings',
+            widthSettings: {
+              sftpWidth: width
+            }
+          })
+        }
+        
+        await ipcRenderer.invoke('save-config', config)
+        
+        // 更新当前宽度为保存的宽度（确保不小于300）
+        sftpExplorerWidth.value = width
+      } catch (error) {
+        console.error('Failed to save SFTP explorer width:', error)
+      }
+    }
+
+    // 加载 SFTP Explorer 宽度设置的方法
+    const loadSFTPWidthSettings = async () => {
+      try {
+        const config = await ipcRenderer.invoke('read-config')
+        const settings = config.find(item => item.type === 'settings')
+        
+        if (settings?.widthSettings?.sftpWidth) {
+          // 确保加载的宽度不小于300
+          sftpExplorerWidth.value = Math.max(300, settings.widthSettings.sftpWidth)
+        }
+      } catch (error) {
+        console.error('Failed to load SFTP explorer width:', error)
+      }
+    }
+
+    // 在挂载时加载宽度设置
+    onMounted(() => {
+      loadSFTPWidthSettings()
+    })
 
     return {
       connections,
@@ -2241,6 +2313,8 @@ export default {
       aiIcon,
       handleLanguageChange,
       refreshConnections,
+      sftpExplorerWidth,
+      updateSFTPWidth,
     }
   }
 }
@@ -2447,18 +2521,18 @@ export default {
   position: absolute;
   top: 0;
   right: 0;
-  width: 300px;
   height: 100%;
   background-color: var(--color-bg-2);
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
   z-index: 100;
   overflow-y: auto;
+  min-width: 300px;
+  transition: width 0.3s ease;
 }
 
 .toggle-sidebar-button {
   position: absolute;
   top: 50%;
-  right: 0;
   transform: translateY(-50%);
   background-color: var(--color-fill-2);
   color: var(--color-text-1);
@@ -2588,7 +2662,7 @@ export default {
   align-items: center;
   width: 100%;
   padding-right: 4px; /* 减小右侧内距 */
-  min-width: 0; /* 确保可以正确处理出 */
+  min-width: 0; /* 确保可以正确处���出 */
 }
 
 .folder-header > span {
@@ -2789,7 +2863,7 @@ export default {
   opacity: 1;
 }
 
-/* 文件夹悬浮菜单样式 */
+/* ��件夹悬浮菜单样式 */
 .folder-floating-menu {
   position: absolute;
   left: 100%; /* 改为相对定位，从父元素右侧开始 */
@@ -2905,7 +2979,7 @@ export default {
   padding-right: 0; /* 移除为按钮预留的空间 */
 }
 
-/* 修改连接控制按钮容器样式 */
+/* 修改连接控制按���容器样式 */
 .connection-controls {
   display: none; /* 隐藏原有的编辑和删除按钮 */
 }
@@ -3055,7 +3129,7 @@ export default {
   color: rgb(var(--primary-6));
 }
 
-/* 调整连接项样式 */
+/* ���整连接项样式 */
 .connection-entry {
   position: relative;
   display: flex;
@@ -3253,7 +3327,7 @@ export default {
 .app-title h3 {
   margin: 0; /* 移除默认边距 */
   font-size: 18px; /* 设置标题大小 */
-  line-height: 1; /* 确保文字垂直居中 */
+  line-height: 1; /* 确���文字垂直居中 */
 }
 
 .version {
