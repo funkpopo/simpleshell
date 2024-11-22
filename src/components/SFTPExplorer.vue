@@ -8,16 +8,21 @@
     @drop.prevent="handleDrop"
   >
     <div class="sftp-header">
-      <h3>SFTP Explorer</h3>
       <div class="sftp-actions">
+        <a-button-group>
+          <a-button type="primary" @click="deleteMultipleFiles" status="danger">
+            <template #icon><icon-delete /></template>
+            {{ t('sftp.delete') }}
+          </a-button>
+        </a-button-group>
         <a-button-group>
           <a-button type="primary" @click="refreshCurrentDirectory">
             <template #icon><icon-refresh /></template>
-            Refresh
+            {{ t('sftp.refresh') }}
           </a-button>
           <a-button type="primary" @click="showHistory">
             <template #icon><icon-history /></template>
-            History
+            {{ t('sftp.history') }}
           </a-button>
         </a-button-group>
       </div>
@@ -31,6 +36,10 @@
             @select="onSelect"
             v-model:expandedKeys="expandedKeys"
             @expand="onExpand"
+            :checkable="true"
+            :multiple="true"
+            v-model:checkedKeys="selectedFiles"
+            @check="onMultiSelect"
           >
             <template #icon="nodeData">
               <icon-file v-if="nodeData.isLeaf" class="file-icon" />
@@ -64,7 +73,11 @@
     </div>
 
     <!-- 模态框 -->
-    <a-modal v-model:visible="fileContentVisible" title="File Content">
+    <a-modal 
+      v-model:visible="fileContentVisible" 
+      title="File Content"
+      :width="750"
+    >
       <pre>{{ fileContent }}</pre>
     </a-modal>
 
@@ -188,12 +201,30 @@
         </div>
       </div>
     </div>
+
+    <!-- 添加多选操作的上下文菜单 -->
+    <a-dropdown 
+      v-if="selectedFiles.length > 0" 
+      :popup-container="null"
+      trigger="contextmenu"
+    >
+      <template #content>
+        <a-doption @click="downloadMultipleFiles">
+          <template #icon><icon-download /></template>
+          {{ t('sftp.downloadSelected', { count: selectedFiles.length }) }}
+        </a-doption>
+        <a-doption @click="deleteMultipleFiles">
+          <template #icon><icon-delete /></template>
+          {{ t('sftp.deleteSelected', { count: selectedFiles.length }) }}
+        </a-doption>
+      </template>
+    </a-dropdown>
   </div>
 </template>
 
 <script>
 import { ref, onMounted, watch, inject, onUnmounted, reactive } from 'vue';
-import { IconFile, IconFolder, IconRefresh, IconHome } from '@arco-design/web-vue/es/icon';
+import { IconFile, IconFolder, IconRefresh, IconHome, IconDelete, IconHistory } from '@arco-design/web-vue/es/icon';
 import axios from 'axios';
 import { Message, Modal } from '@arco-design/web-vue';
 import { Menu, MenuItem, getCurrentWindow, shell, dialog } from '@electron/remote';
@@ -206,7 +237,9 @@ export default {
     IconFile,
     IconFolder,
     IconRefresh,
-    IconHome
+    IconHome,
+    IconDelete,
+    IconHistory
   },
   props: {
     connection: {
@@ -419,12 +452,50 @@ export default {
             connection: props.connection,
             path: normalizePath(data.key)
           });
-          fileContent.value = response.data;
-          fileContentVisible.value = true;
+
+          // 处理文件过大的情况
+          if (response.data.type === 'large') {
+            Modal.warning({
+              title: t('sftp.filePreviewLimit'),
+              content: t('sftp.filePreviewLimitMessage', { 
+                fileName: data.title, 
+                fileSize: (response.data.size / 1024).toFixed(2) 
+              }),
+              okText: t('sftp.download'),
+              cancelText: t('sftp.cancel'),
+              onOk: () => {
+                downloadItem(data);
+              }
+            });
+            return;
+          }
+
+          // 处理不同类型的文件
+          if (response.data.type === 'image') {
+            // 图片预览
+            fileContent.value = `data:image/${response.data.extension};base64,${response.data.content}`;
+            fileContentVisible.value = true;
+          } else if (response.data.type === 'text') {
+            // 文本预览
+            fileContent.value = response.data.content;
+            fileContentVisible.value = true;
+          } else {
+            // 不支持的文件类型
+            Modal.warning({
+              title: t('sftp.unsupportedFileType'),
+              content: t('sftp.unsupportedFileTypeMessage', { fileName: data.title }),
+              okText: t('sftp.download'),
+              cancelText: t('sftp.cancel'),
+              onOk: () => {
+                downloadItem(data);
+              }
+            });
+          }
+
           await logOperation('read', normalizePath(data.key));
         } catch (error) {
           console.error('Failed to read file:', error);
-          Message.error('Failed to read file');
+          Message.error(t('sftp.filePreviewFailed'));
         }
       }
     };
@@ -579,7 +650,7 @@ export default {
     };
 
     const onExpand = async (keys, { expanded, node }) => {
-      // 如果是展开操作，且子节点为空，则加载子节点
+      // 如果是展开作，且子节点为空则加载子节点
       if (expanded && node.children.length === 0) {
         await loadMoreData(node);
       }
@@ -593,6 +664,22 @@ export default {
       event.stopPropagation();
       const menu = new Menu();
       
+      // 添加复制路径的菜单项
+      menu.append(new MenuItem({
+        label: t('sftp.copyPath'),
+        click: () => {
+          // 获取完整路径
+          const fullPath = nodeData.key;
+          
+          // 使用 Electron 的剪贴板 API 复制路径
+          const { clipboard } = require('@electron/remote');
+          clipboard.writeText(fullPath);
+          
+          // 显示复制成功的消息
+          Message.success(t('sftp.pathCopied', { path: fullPath }));
+        }
+      }));
+
       // 刷新选项
       menu.append(new MenuItem({
         label: t('sftp.refresh'),
@@ -947,7 +1034,7 @@ export default {
           }
         } catch (refreshError) {
           console.error('Directory refresh error:', refreshError);
-          // 即使刷新失败也不要显示错误消息，因为重命已经成功了
+          // 即使刷新失败也不要显示错误消息，因重命已经成功了
         }
 
         await logOperation('rename', `${oldPath} to ${newPath}`);
@@ -959,34 +1046,21 @@ export default {
 
     const onItemDoubleClick = async (nodeData) => {
       if (nodeData.isLeaf) {
-        try {
-          const response = await axios.post('http://localhost:5000/sftp/download', {
-            connection: props.connection,
-            path: nodeData.key,
-            isDirectory: false
-          }, {
-            responseType: 'blob'
-          });
-
-          const url = window.URL.createObjectURL(new Blob([response.data]));
-          const link = document.createElement('a');
-          link.href = url;
-          link.setAttribute('download', nodeData.title);
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          window.URL.revokeObjectURL(url);
-
-          Message.success('File downloaded successfully');
-          await logOperation('download', nodeData.key);
-        } catch (error) {
-          console.error('Failed to download file:', error);
-          Message.error('Failed to download file');
-        }
+        // 对于文件，执行预览
+        await onItemClick(nodeData);
       } else {
-        // 如果是文件夹，展开它
-        if (nodeData.children && nodeData.children.length === 0) {
-          await refreshDirectory(nodeData.key);
+        // 对于文件夹，切换展开状态
+        const index = expandedKeys.value.indexOf(nodeData.key);
+        if (index === -1) {
+          // 展开文件夹
+          expandedKeys.value = [...expandedKeys.value, nodeData.key];
+          // 如果子节点还没有加载，加载子节点
+          if (!nodeData.children || nodeData.children.length === 0) {
+            await loadMoreData(nodeData);
+          }
+        } else {
+          // 收起文件夹
+          expandedKeys.value = expandedKeys.value.filter(key => key !== nodeData.key);
         }
       }
     };
@@ -1246,7 +1320,7 @@ export default {
 
     const handleDragLeave = (event) => {
       event.preventDefault();
-      // 使用定时器避免子元素触发的 dragleave 事件
+      // 使用定时器避免子元素触发的 dragleave 事
       if (dragLeaveTimer.value) {
         clearTimeout(dragLeaveTimer.value);
       }
@@ -1293,7 +1367,7 @@ export default {
     const handleFolderDragLeave = (event, nodeData) => {
       event.preventDefault();
       event.stopPropagation();
-      // 检查是否真的离开了节点区域
+      // 查是否真的离开了节点区域
       const rect = event.currentTarget.getBoundingClientRect();
       const x = event.clientX;
       const y = event.clientY;
@@ -1408,7 +1482,7 @@ export default {
         // 上传压缩文件
         const zipContent = await fs.promises.readFile(zipPath, { encoding: 'base64' });
         
-        // 发送到服务器并在服务器端解压
+        // 发送到服务器并在务器端解压
         await axios.post('http://localhost:5000/sftp_upload_folder', {
           connection: props.connection,
           path: targetPath,
@@ -1416,7 +1490,7 @@ export default {
           content: zipContent
         });
 
-        // 清理临时文件
+        // 清理临时文��
         await ipcRenderer.invoke('cleanup-temp-dir', tempDir);
       } catch (error) {
         uploadInfo.status = 'error';
@@ -1427,10 +1501,10 @@ export default {
     // 添加双击处理函数
     const handleNodeDoubleClick = async (nodeData) => {
       if (nodeData.isLeaf) {
-        // 如果是文件，执行原来的双击操作（下载）
-        await onItemDoubleClick(nodeData);
+        // 对于文件，执行预览
+        await onItemClick(nodeData);
       } else {
-        // 如果是文件夹，切换展开状态
+        // 对于文件夹，切换展开状态
         const index = expandedKeys.value.indexOf(nodeData.key);
         if (index === -1) {
           // 展开文件夹
@@ -1446,7 +1520,7 @@ export default {
       }
     };
 
-    //  setup 中添加进度相关的状态
+    //  setup 中添加度相关的状态
     const downloadProgressVisible = ref(false);
     const downloadInfo = reactive({
       fileName: '',
@@ -1577,6 +1651,125 @@ export default {
       uploadInfo.timeRemaining = formatTime(remaining);
     };
 
+    // 添加多选文件的状态
+    const selectedFiles = ref([]);
+
+    // 多选事件处理
+    const onMultiSelect = (checkedKeys, { checkedNodes }) => {
+      selectedFiles.value = checkedKeys;
+    };
+
+    // 下载多个文件的方法
+    const downloadMultipleFiles = async () => {
+      try {
+        const selectedNodes = findNodesByKeys(selectedFiles.value);
+        const fileNodes = selectedNodes.filter(node => node.isLeaf);
+
+        if (fileNodes.length === 0) {
+          Message.warning(t('sftp.noFilesSelected'));
+          return;
+        }
+
+        const savePath = await dialog.showOpenDialog({
+          title: t('sftp.selectDownloadFolder'),
+          properties: ['openDirectory', 'createDirectory']
+        });
+
+        if (savePath.canceled) return;
+
+        for (const node of fileNodes) {
+          await downloadItem(node, savePath.filePaths[0]);
+        }
+
+        Message.success(t('sftp.multiDownloadSuccess', { count: fileNodes.length }));
+      } catch (error) {
+        console.error('Failed to download multiple files:', error);
+        Message.error(t('sftp.multiDownloadFailed'));
+      }
+    };
+
+    // 删除多个文件的方法
+    const deleteMultipleFiles = async () => {
+      try {
+        const selectedNodes = findNodesByKeys(selectedFiles.value);
+        
+        // 分离文件和文件夹
+        const fileNodes = selectedNodes.filter(node => node.isLeaf);
+        const folderNodes = selectedNodes.filter(node => !node.isLeaf);
+
+        // 如果没有选择任何文件或文件夹
+        if (selectedNodes.length === 0) {
+          Message.warning(t('sftp.noItemsSelected'));
+          return;
+        }
+
+        // 按照路径深度排序文件夹，确保从最深层开始删除
+        const sortedFolderNodes = folderNodes.sort((a, b) => 
+          b.key.split('/').length - a.key.split('/').length
+        );
+
+        Modal.warning({
+          title: t('sftp.deleteMultiple'),
+          content: t('sftp.confirmDeleteMultipleItems', { 
+            fileCount: fileNodes.length, 
+            folderCount: folderNodes.length 
+          }),
+          okText: t('sftp.delete'),
+          cancelText: t('sftp.cancel'),
+          okButtonProps: {
+            status: 'danger'
+          },
+          onOk: async () => {
+            try {
+              // 先删除文件
+              for (const node of fileNodes) {
+                await deleteItem(node.key);
+              }
+
+              // 再删除文件夹（从最深层开始）
+              for (const node of sortedFolderNodes) {
+                await deleteItem(node.key);
+              }
+              
+              // 清空选择
+              selectedFiles.value = [];
+              
+              // 刷新当前目录
+              await refreshCurrentDirectory();
+              
+              Message.success(t('sftp.multiDeleteSuccess', { 
+                fileCount: fileNodes.length, 
+                folderCount: folderNodes.length 
+              }));
+            } catch (error) {
+              console.error('Failed to delete multiple items:', error);
+              Message.error(t('sftp.multiDeleteFailed'));
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Failed to prepare multiple deletion:', error);
+        Message.error(t('sftp.multiDeleteFailed'));
+      }
+    };
+
+    // 根�� keys 查找节点的辅助方法
+    const findNodesByKeys = (keys) => {
+      const findInNodes = (nodes) => {
+        const foundNodes = [];
+        for (const node of nodes) {
+          if (keys.includes(node.key)) {
+            foundNodes.push(node);
+          }
+          if (node.children) {
+            foundNodes.push(...findInNodes(node.children));
+          }
+        }
+        return foundNodes;
+      };
+      return findInNodes(fileTree.value);
+    };
+
     return {
       fileTree,
       loading,
@@ -1642,6 +1835,11 @@ export default {
       downloadInfo,
       uploadProgressVisible,
       uploadInfo,
+      selectedFiles,
+      onMultiSelect,
+      downloadMultipleFiles,
+      deleteMultipleFiles,
+      findNodesByKeys,
     };
   }
 };
@@ -1780,7 +1978,7 @@ export default {
   opacity: 0.6;
 }
 
-/* 右键菜单中删除选项的样式 */
+/* 右键菜单中删除选的样式 */
 :deep(.danger-menu-item) {
   color: #f5222d !important;
 }
@@ -1870,11 +2068,6 @@ export default {
 
 :deep(.arco-table-tr:hover) {
   background-color: var(--color-fill-2);
-}
-
-:deep(.arco-tag) {
-  min-width: 80px;
-  text-align: center;
 }
 
 /* 添加拽相关样式 */
@@ -2092,6 +2285,18 @@ export default {
   padding: 12px;
   z-index: 10000;
   animation: slide-in 0.3s ease;
+}
+
+/* 隐藏树节点的展开按钮 */
+:deep(.arco-tree-node-switcher) {
+  width: 0 !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 调整树节点图标的位置 */
+:deep(.arco-tree-node-title) {
+  padding-left: 0 !important;
 }
 </style>
 

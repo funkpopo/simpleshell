@@ -406,6 +406,13 @@ export default {
           cols: term.cols, 
           rows: term.rows 
         })
+
+        // 添加重新定位建议菜单的逻辑
+        if (suggestionMenu.value && showSuggestions.value) {
+          nextTick(() => {
+            positionSuggestionMenu()
+          })
+        }
       }
     }
 
@@ -916,7 +923,7 @@ export default {
       resourceMonitorInterval = setInterval(() => {
         console.log('Resource monitoring interval triggered')
         updateResourceUsage()
-      }, 60000)
+      }, 30000)
     }
 
     const stopResourceMonitoring = () => {
@@ -926,6 +933,8 @@ export default {
         resourceMonitorInterval = null
       }
     }
+
+    const debouncedResize = _debounce(handleResize, 100)
 
     onMounted(async () => {
       console.log('Mounting SSHTerminal component')
@@ -978,9 +987,18 @@ export default {
 
         const monitor = document.querySelector('.resource-monitor')
         if (monitor) {
-          monitor.addEventListener('mouseenter', handleMouseEnter)
-          monitor.addEventListener('mouseleave', handleMouseLeave)
+          monitor.addEventListener('mouseenter', () => {
+            showValues.value = true;
+          })
+          monitor.addEventListener('mouseleave', () => {
+            showValues.value = false;
+          })
         }
+
+        window.addEventListener('resize', debouncedResize)
+
+        // 添加鼠标中键粘贴事件
+        terminal.value.addEventListener('mousedown', handleMouseDown)
       } catch (error) {
         console.error('Error mounting SSHTerminal:', error)
       }
@@ -993,7 +1011,7 @@ export default {
 
     onUnmounted(() => {
       cleanup()
-      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('resize', debouncedResize)
       
       terminal.value?.removeEventListener('contextmenu', handleContextMenu)
       document.removeEventListener('click', hideContextMenu)
@@ -1004,9 +1022,16 @@ export default {
 
       const monitor = document.querySelector('.resource-monitor')
       if (monitor) {
-        monitor.removeEventListener('mouseenter', handleMouseEnter)
-        monitor.removeEventListener('mouseleave', handleMouseLeave)
+        monitor.removeEventListener('mouseenter', () => {
+          showValues.value = true;
+        })
+        monitor.removeEventListener('mouseleave', () => {
+          showValues.value = false;
+        })
       }
+
+      // 移除鼠标中键事件监听
+      terminal.value?.removeEventListener('mousedown', handleMouseDown)
     })
 
     watch(() => isDarkMode.value, (newValue) => {
@@ -1265,11 +1290,30 @@ export default {
     }
 
     const handleMouseEnter = () => {
-      showValues.value = true
-    }
+      showValues.value = true;
+    };
 
     const handleMouseLeave = () => {
-      showValues.value = false
+      showValues.value = false;
+    };
+
+    // 添加鼠标中键处理函数
+    const handleMouseDown = (event) => {
+      // 检查是否是鼠标中键（button 1）
+      if (event.button === 1 && term && isTerminalReady.value) {
+        event.preventDefault()
+        navigator.clipboard.readText().then(text => {
+          if (text) {
+            socket.emit('ssh_input', { 
+              session_id: props.sessionId, 
+              input: text 
+            })
+          }
+        }).catch(err => {
+          console.error('Failed to read clipboard:', err)
+          Message.error('Failed to paste text')
+        })
+      }
     }
 
     return { 

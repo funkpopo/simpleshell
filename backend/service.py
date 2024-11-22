@@ -552,19 +552,41 @@ def delete_item():
 
         ssh, sftp = create_sftp_client(connection)
         try:
-            try:
-                # 尝试作为文件删除
-                sftp.remove(path)
-            except IOError:
-                # 果失败，尝试作为目录删除
-                sftp.rmdir(path)
+            def remove_recursive(sftp_client, remote_path):
+                """递归删除文件或目录"""
+                try:
+                    # 获取文件/目录属性
+                    stat_info = sftp_client.stat(remote_path)
+                    
+                    # 如果是目录，递归删除其内容
+                    if stat.S_ISDIR(stat_info.st_mode):
+                        for item in sftp_client.listdir_attr(remote_path):
+                            item_path = os.path.join(remote_path, item.filename).replace('\\', '/')
+                            remove_recursive(sftp_client, item_path)
+                        
+                        # 删除空目录
+                        sftp_client.rmdir(remote_path)
+                    else:
+                        # 如果是文件，直接删除
+                        sftp_client.remove(remote_path)
+                
+                except IOError as e:
+                    # 处理权限或其他删除错误
+                    logging.error(f"Error deleting {remote_path}: {e}")
+                    raise
+
+            # 执行递归删除
+            remove_recursive(sftp, path)
             
             log_sftp_operation('delete', path)
             return jsonify({"status": "success"})
+        
         finally:
             sftp.close()
             ssh.close()
+    
     except Exception as e:
+        logging.error(f"Error in delete_item: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/sftp_rename_item', methods=['POST'])
@@ -914,7 +936,7 @@ def handle_chat():
                     genai = import_module('google.generativeai')
                     genai.configure(api_key=api_key)
                     
-                    # 使用用户指定的模型名称
+                    # 使��用户指定的模型名称
                     model = genai.GenerativeModel(model_name)
                     chat = model.start_chat()
                     
@@ -1088,6 +1110,62 @@ def log_startup_performance():
     
     logger.info(f"Total Startup Time: {total_startup_time:.2f} seconds")
     logger.info(f"Startup Steps: {startup_steps}")
+
+
+@app.route('/sftp_read_file', methods=['POST'])
+def read_file():
+    try:
+        data = request.json
+        connection = data['connection']
+        path = data['path']
+
+        ssh, sftp = create_sftp_client(connection)
+        try:
+            # 获取文件属性
+            stat_info = sftp.stat(path)
+            
+            # 限制文件大小，防止读取过大文件
+            max_file_size = 3 * 1024 * 1024  # 3MB
+
+            if stat_info.st_size > max_file_size:
+                return jsonify({
+                    "error": "File too large to preview",
+                    "size": stat_info.st_size,
+                    "type": "large"
+                }), 413  # Payload Too Large
+
+            # 读取文件内容
+            with sftp.file(path, 'r') as remote_file:
+                content = remote_file.read().decode('utf-8', errors='replace')
+                
+            # 如果是图片，返回 Base64 编码
+            file_extension = path.split('.')[-1].lower()
+            image_extensions = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg']
+            
+            if file_extension in image_extensions:
+                # 对于图片，重新读取并转换为 Base64
+                with sftp.file(path, 'rb') as img_file:
+                    import base64
+                    base64_content = base64.b64encode(img_file.read()).decode('utf-8')
+                    return jsonify({
+                        "content": base64_content,
+                        "type": "image",
+                        "size": stat_info.st_size,
+                        "extension": file_extension
+                    })
+            
+            return jsonify({
+                "content": content,
+                "type": "text",
+                "size": stat_info.st_size,
+                "extension": file_extension
+            })
+        finally:
+            sftp.close()
+            ssh.close()
+    except Exception as e:
+        logging.error(f"Error reading file {path}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     try:
