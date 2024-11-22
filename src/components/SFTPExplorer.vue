@@ -1421,42 +1421,113 @@ export default {
 
     // 处理整体拖拽事件
     const handleDragEnter = (event) => {
-      event.preventDefault();
-      isDragging.value = true;
-    };
+      event.preventDefault()
+      event.stopPropagation()
+      
+      // 检查是否是文件拖拽
+      if (event.dataTransfer.types.includes('Files')) {
+        isDragging.value = true
+      }
+    }
 
     const handleDragOver = (event) => {
-      event.preventDefault();
-    };
+      event.preventDefault()
+      event.stopPropagation()
+      
+      // 设置拖拽效果为复制
+      event.dataTransfer.dropEffect = 'copy'
+    }
 
     const handleDragLeave = (event) => {
-      event.preventDefault();
-      // 使用定时器避免子元素触发的 dragleave 事
-      if (dragLeaveTimer.value) {
-        clearTimeout(dragLeaveTimer.value);
+      event.preventDefault()
+      event.stopPropagation()
+      
+      // 检查鼠标是否离开了拖拽区域
+      const rect = event.currentTarget.getBoundingClientRect()
+      if (
+        event.clientX < rect.left || 
+        event.clientX >= rect.right || 
+        event.clientY < rect.top || 
+        event.clientY >= rect.bottom
+      ) {
+        isDragging.value = false
       }
-      dragLeaveTimer.value = setTimeout(() => {
-        isDragging.value = false;
-      }, 100);
-    };
+    }
 
     const handleDrop = async (event) => {
-      event.preventDefault();
-      isDragging.value = false;
-      
-      try {
-        const files = Array.from(event.dataTransfer.files);
-        if (files.length === 0) {
-          return;
-        }
-        
-        console.log('Dropping files to root:', files.map(f => f.name));
-        await uploadFiles(files, '/');
-      } catch (error) {
-        console.error('Drop handling failed:', error);
-        Message.error(t('sftp.uploadFailed'));
+      event.preventDefault()
+      event.stopPropagation()
+
+      // 检查是否有文件
+      const files = event.dataTransfer.files
+      if (files.length === 0) return
+
+      // 获取目标节点
+      const targetNode = findDropTargetNode(event)
+      if (!targetNode || targetNode.isLeaf) {
+        Message.error(this.$t('sftp.dropOnFolder'))
+        return
       }
-    };
+
+      try {
+        // 遍历并上传文件
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          
+          // 使用 FileReader 读取文件内容
+          const reader = new FileReader()
+          reader.onload = async (e) => {
+            try {
+              // 获取 Base64 编码的文件内容
+              const base64Content = e.target.result.split(',')[1]
+              
+              // 上传文件
+              await axios.post('http://localhost:5000/sftp_upload_file', {
+                connection: props.connection,
+                path: normalizePath(targetNode.key === 'root' ? '/' : targetNode.key),
+                filename: file.name,
+                content: base64Content
+              })
+              
+              Message.success(`Uploaded ${file.name} successfully`)
+              
+              // 刷新目标目录
+              await loadMoreData(targetNode)
+            } catch (error) {
+              console.error('Failed to upload file:', error)
+              Message.error(`Failed to upload ${file.name}`)
+            }
+          }
+          
+          // 读取文件内容
+          reader.readAsDataURL(file)
+        }
+      } catch (error) {
+        console.error('Error in file drop:', error)
+        Message.error('Failed to upload files')
+      }
+    }
+
+    // 添加一个辅助函数来找到放置目标节点
+    const findDropTargetNode = (event) => {
+      // 遍历树节点，找到最近的文件夹节点
+      const findNearestFolder = (nodes) => {
+        for (const node of nodes) {
+          const element = document.elementFromPoint(event.clientX, event.clientY)
+          if (element && element.closest(`[data-key="${node.key}"]`)) {
+            return !node.isLeaf ? node : null
+          }
+          
+          if (node.children) {
+            const childResult = findNearestFolder(node.children)
+            if (childResult) return childResult
+          }
+        }
+        return null
+      }
+
+      return findNearestFolder(fileTree.value)
+    }
 
     // 处理文件夹的拖拽事件
     const handleFolderDragEnter = (event, nodeData) => {

@@ -325,6 +325,7 @@ async function createWindow() {
         experimentalFeatures: true,
         additionalArguments: ['--enable-features=WebSocketStream'],
         nativeWindowOpen: true,
+        navigateOnDragDrop: true,
         sandbox: false
       }
     })
