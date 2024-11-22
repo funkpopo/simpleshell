@@ -1137,10 +1137,10 @@ def read_file():
                     "type": "large"
                 }), 413  # Payload Too Large
 
-            # 读取文件内容
+            # 读取文件内容，使用 'replace' 处理无法解码的字符
             with sftp.file(path, 'r') as remote_file:
                 content = remote_file.read().decode('utf-8', errors='replace')
-                
+            
             # 如果是图片，返回 Base64 编码
             file_extension = path.split('.')[-1].lower()
             image_extensions = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg']

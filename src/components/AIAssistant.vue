@@ -276,13 +276,46 @@
       <a-form :model="newProvider" layout="vertical">
         <!-- 供应商类型选择 -->
         <a-form-item :label="$t('aiAssistant.provider')" required>
-          <a-select v-model="newProvider.provider">
-            <a-option value="openai">OpenAI</a-option>
-            <a-option value="zhipu">ZhipuAI</a-option>
-            <a-option value="qwen">Qwen</a-option>
-            <a-option value="gemini">Google Gemini</a-option>
-            <a-option value="ollama">Ollama</a-option>
-            <a-option value="siliconflow">Siliconflow</a-option>
+          <a-select 
+            v-model="newProvider.provider" 
+            @change="handleProviderChange"
+          >
+            <a-option value="openai">
+              <template #icon>
+                <img :src="getProviderLogo('openai')" class="provider-logo" />
+              </template>
+              OpenAI
+            </a-option>
+            <a-option value="zhipu">
+              <template #icon>
+                <img :src="getProviderLogo('zhipu')" class="provider-logo" />
+              </template>
+              ZhipuAI
+            </a-option>
+            <a-option value="qwen">
+              <template #icon>
+                <img :src="getProviderLogo('qwen')" class="provider-logo" />
+              </template>
+              Qwen
+            </a-option>
+            <a-option value="gemini">
+              <template #icon>
+                <img :src="getProviderLogo('gemini')" class="provider-logo" />
+              </template>
+              Google Gemini
+            </a-option>
+            <a-option value="ollama">
+              <template #icon>
+                <img :src="getProviderLogo('ollama')" class="provider-logo" />
+              </template>
+              Ollama
+            </a-option>
+            <a-option value="siliconflow">
+              <template #icon>
+                <img :src="getProviderLogo('siliconflow')" class="provider-logo" />
+              </template>
+              SiliconFlow
+            </a-option>
           </a-select>
         </a-form-item>
 
@@ -352,6 +385,14 @@ import { IconMinus, IconClose, IconSettings, IconDelete, IconPlus, IconEdit, Ico
 import { Message } from '@arco-design/web-vue'
 import aiIcon from '@/assets/aiicon.png'
 import { ipcRenderer } from 'electron'
+
+// 导入服务提供商的图标
+import openaiLogo from '@/assets/openai_s.svg'
+import zhipuLogo from '@/assets/zhipu_s.svg'
+import qwenLogo from '@/assets/qwen_s.svg'
+import geminiLogo from '@/assets/gemini_s.svg'
+import ollamaLogo from '@/assets/ollama_s.svg'
+import siliconflowLogo from '@/assets/siliconflow_s.svg'
 
 export default {
   name: 'AIAssistant',
@@ -975,6 +1016,19 @@ export default {
       selection.addRange(range)
     }
 
+    // 添加一个方法来获取服务提供商的图标
+    const getProviderLogo = (provider) => {
+      const logos = {
+        openai: openaiLogo,
+        zhipu: zhipuLogo,
+        qwen: qwenLogo,
+        gemini: geminiLogo,
+        ollama: ollamaLogo,
+        siliconflow: siliconflowLogo
+      }
+      return logos[provider] || null
+    }
+
     onMounted(() => {
       loadSettings()
       // 初始化窗口位置在可视区域内
@@ -1033,7 +1087,8 @@ export default {
       getProviderName,
       copyMessage,
       selectText,
-      isWaitingResponse
+      isWaitingResponse,
+      getProviderLogo
     }
   }
 }
@@ -1540,5 +1595,19 @@ export default {
 .model-item {
   max-height: 500px;
   overflow: hidden;
+}
+
+/* 添加图标样式 */
+.provider-logo {
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  object-fit: contain;
+}
+
+/* 调整 a-select 选项的样式，使图标和文字对齐 */
+:deep(.arco-select-option) {
+  display: flex;
+  align-items: center;
 }
 </style> 

@@ -231,8 +231,8 @@
                 <SFTPExplorer 
                   v-if="activeConnection" 
                   :key="activeConnection.id" 
-                  :connection="activeConnection" 
-                  @update:width="updateSFTPWidth"
+                  :connection="activeConnection"
+                  class="sftp-explorer-component" 
                 />
               </div>
             </transition>
@@ -1986,7 +1986,7 @@ export default {
       if (!isResizing.value || siderCollapsed.value) return
       
       const diff = e.clientX - startX.value
-      const newWidth = Math.max(180, startWidth.value + diff)
+      const newWidth = Math.max(180, Math.min(400, startWidth.value + diff)) // 限制最大宽度为400px
       
       siderWidth.value = newWidth
     }
@@ -2151,68 +2151,55 @@ export default {
     // 移除动态计算的 aiIcon
     const aiIcon = require('@/assets/aiicon.png')
 
-    // 添加 SFTP Explorer 宽度的响应式变量
-    const sftpExplorerWidth = ref(300)
+    // 在 setup 函数中
+    const sftpExplorerWidth = ref(300) // 默认值
 
-    // 更新 SFTP Explorer 宽度的方法
-    const updateSFTPWidth = async (width) => {
-      sftpExplorerWidth.value = width
-      await saveSFTPWidthSettings()
-    }
-
-    // 保存 SFTP Explorer 宽度设置的方法
-    const saveSFTPWidthSettings = async () => {
-      try {
-        const config = await ipcRenderer.invoke('read-config')
-        const settingsIndex = config.findIndex(item => item.type === 'settings')
-        
-        // 确保宽度不小于300
-        const width = Math.max(300, sftpExplorerWidth.value)
-        
-        if (settingsIndex !== -1) {
-          // 保留原有的 widthSettings，只更新 sftpWidth
-          const existingWidthSettings = config[settingsIndex].widthSettings || {}
-          config[settingsIndex] = {
-            ...config[settingsIndex],
-            widthSettings: {
-              ...existingWidthSettings,
-              sftpWidth: width
-            }
-          }
-        } else {
-          config.push({
-            type: 'settings',
-            widthSettings: {
-              sftpWidth: width
-            }
-          })
-        }
-        
-        await ipcRenderer.invoke('save-config', config)
-        
-        // 更新当前宽度为保存的宽度（确保不小于300）
-        sftpExplorerWidth.value = width
-      } catch (error) {
-        console.error('Failed to save SFTP explorer width:', error)
-      }
-    }
-
-    // 加载 SFTP Explorer 宽度设置的方法
+    // 添加加载 SFTP 宽度设置的方法
     const loadSFTPWidthSettings = async () => {
       try {
         const config = await ipcRenderer.invoke('read-config')
         const settings = config.find(item => item.type === 'settings')
         
         if (settings?.widthSettings?.sftpWidth) {
-          // 确保加载的宽度不小于300
-          sftpExplorerWidth.value = Math.max(300, settings.widthSettings.sftpWidth)
+          // 确保加载的宽度不小于300，不大于600
+          sftpExplorerWidth.value = Math.max(300, Math.min(600, settings.widthSettings.sftpWidth))
         }
       } catch (error) {
         console.error('Failed to load SFTP explorer width:', error)
       }
     }
 
-    // 在挂载时加载宽度设置
+    // 添加保存 SFTP 宽度设置的方法
+    const saveSFTPWidthSettings = async () => {
+      try {
+        const config = await ipcRenderer.invoke('read-config')
+        const settingsIndex = config.findIndex(item => item.type === 'settings')
+        
+        // 确保宽度不小于300，不大于600
+        const width = Math.max(300, Math.min(600, sftpExplorerWidth.value))
+        
+        if (settingsIndex !== -1) {
+          config[settingsIndex] = {
+            ...config[settingsIndex],
+            widthSettings: {
+              ...(config[settingsIndex].widthSettings || {}),
+              sftpWidth: width
+            }
+          }
+        } else {
+          config.push({
+            type: 'settings',
+            widthSettings: { sftpWidth: width }
+          })
+        }
+        
+        await ipcRenderer.invoke('save-config', config)
+      } catch (error) {
+        console.error('Failed to save SFTP explorer width:', error)
+      }
+    }
+
+    // 在 onMounted 中调用加载方法
     onMounted(() => {
       loadSFTPWidthSettings()
     })
@@ -2313,8 +2300,7 @@ export default {
       aiIcon,
       handleLanguageChange,
       refreshConnections,
-      sftpExplorerWidth,
-      updateSFTPWidth,
+      sftpExplorerWidth
     }
   }
 }
@@ -2525,9 +2511,11 @@ export default {
   background-color: var(--color-bg-2);
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
   z-index: 100;
-  overflow-y: auto;
+  overflow: hidden; /* 修改为 hidden */
   min-width: 300px;
   transition: width 0.3s ease;
+  display: flex; /* 添加 flex 布局 */
+  flex-direction: column; /* 垂直方向排列 */
 }
 
 .toggle-sidebar-button {
@@ -2616,7 +2604,7 @@ export default {
 }
 
 .arco-menu {
-  z-index: 1001;  /* 确菜单最上层 */
+  z-index: 1001;  /* 确菜单最��层 */
   position: relative;
 }
 
@@ -2662,7 +2650,7 @@ export default {
   align-items: center;
   width: 100%;
   padding-right: 4px; /* 减小右侧内距 */
-  min-width: 0; /* 确保可以正确处���出 */
+  min-width: 0; /* 确保可以���确处���出 */
 }
 
 .folder-header > span {
@@ -3153,6 +3141,7 @@ export default {
 
 /* 添加新的样式 */
 .folder-sider {
+  max-width: 400px; /* 添加最大宽度限制 */
   transition: width 0.2s cubic-bezier(0.34, 0.69, 0.1, 1);
   flex-shrink: 0; /* 防止侧边栏被压缩 */
 }
@@ -3325,7 +3314,7 @@ export default {
 }
 
 .app-title h3 {
-  margin: 0; /* 移除默认边距 */
+  margin: 0; /* 移除默���边距 */
   font-size: 18px; /* 设置标题大小 */
   line-height: 1; /* 确���文字垂直居中 */
 }
@@ -3407,7 +3396,7 @@ export default {
 /* GitHub 图标样式 */
 .github-icon {
   width: 14px; /* 调整为与文本相同大小 */
-  height: 14px; /* 调整为与文本相同大小 */
+  height: 14px; /* 调整为与���本相同大小 */
   cursor: pointer;
   transition: all 0.2s ease;
   filter: var(--github-icon-filter);
@@ -3423,7 +3412,7 @@ export default {
   font-size: 14px;
 }
 
-/* 确保图标在不同主题下都清晰可见 */
+/* 确保图标在��同主题下都清晰可见 */
 :root {
   --github-icon-filter: none;
 }
@@ -3526,5 +3515,13 @@ export default {
   border-radius: 4px;
   transition: all 0.2s ease;
   padding: 0;
+}
+
+.sftp-explorer-component {
+  width: 100%;
+  height: 100%;
+  overflow: hidden; /* 添加溢出隐藏 */
+  display: flex;
+  flex-direction: column;
 }
 </style>

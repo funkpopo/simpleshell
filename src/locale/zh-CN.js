@@ -144,7 +144,7 @@ export default {
   },
   aiAssistant: {
     title: 'AI 助手',
-    settings: '设',
+    settings: 'AI 设置',
     currentModel: '当前模型',
     addProvider: '添加服务提供商',
     models: '模型',

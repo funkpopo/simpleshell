@@ -1,238 +1,239 @@
 <template>
-  <div 
-    class="sftp-explorer"
-    :style="{ width: `${explorerWidth}px` }"
-    :class="{ 'drag-active': isDragging }"
-    @dragenter.prevent="handleDragEnter"
-    @dragover.prevent="handleDragOver"
-    @dragleave.prevent="handleDragLeave"
-    @drop.prevent="handleDrop"
-  >
-    <div 
-      class="sftp-explorer-resizer" 
-      @mousedown="startResize"
-    ></div>
-    <div class="sftp-header">
-      <div class="sftp-actions">
-        <a-button-group>
-          <a-button type="primary" @click="deleteMultipleFiles" status="danger">
-            <template #icon><icon-delete /></template>
-            {{ t('sftp.delete') }}
-          </a-button>
-        </a-button-group>
-        <a-button-group>
-          <a-button type="primary" @click="refreshCurrentDirectory">
-            <template #icon><icon-refresh /></template>
-            {{ t('sftp.refresh') }}
-          </a-button>
-          <a-button type="primary" @click="showHistory">
-            <template #icon><icon-history /></template>
-            {{ t('sftp.history') }}
-          </a-button>
-        </a-button-group>
-      </div>
-    </div>
-    <div class="sftp-content">
-      <a-spin :loading="loading">
-        <template v-if="fileTree && fileTree.length > 0">
-          <a-tree
-            :data="fileTree"
-            :loadMore="loadMoreData"
-            @select="onSelect"
-            v-model:expandedKeys="expandedKeys"
-            @expand="onExpand"
-            :checkable="true"
-            :multiple="true"
-            v-model:checkedKeys="selectedFiles"
-            @check="onMultiSelect"
-          >
-            <template #icon="nodeData">
-              <icon-file v-if="nodeData.isLeaf" class="file-icon" />
-              <icon-folder v-else class="folder-icon" />
-            </template>
-            <template #title="nodeData">
-              <div
-                :class="{
-                  'tree-node-content': true,
-                  'folder-item': !nodeData.isLeaf,
-                  'file-item': nodeData.isLeaf,
-                  'hidden-file': nodeData.isHidden,
-                  'drag-over': !nodeData.isLeaf && dragTargetKey === nodeData.key
-                }"
-                @dragenter.prevent="(e) => handleFolderDragEnter(e, nodeData)"
-                @dragover.prevent="(e) => handleFolderDragOver(e, nodeData)"
-                @dragleave.prevent="(e) => handleFolderDragLeave(e, nodeData)"
-                @drop.prevent="(e) => handleFolderDrop(e, nodeData)"
-                @contextmenu.prevent.stop="(e) => showContextMenu(e, nodeData)"
-                @dblclick.stop="handleNodeDoubleClick(nodeData)"
+  <div class="sftp-explorer-container">
+    <div class="sftp-explorer">
+      <div 
+        class="sftp-explorer"
+        :style="{ width: '100%' }"
+        :class="{ 'drag-active': isDragging }"
+        @dragenter.prevent="handleDragEnter"
+        @dragover.prevent="handleDragOver"
+        @dragleave.prevent="handleDragLeave"
+        @drop.prevent="handleDrop"
+      >
+        <div class="sftp-header">
+          <div class="sftp-actions">
+            <a-button-group>
+              <a-button type="primary" @click="deleteMultipleFiles" status="danger">
+                <template #icon><icon-delete /></template>
+                {{ t('sftp.delete') }}
+              </a-button>
+            </a-button-group>
+            <a-button-group>
+              <a-button type="primary" @click="refreshCurrentDirectory">
+                <template #icon><icon-refresh /></template>
+                {{ t('sftp.refresh') }}
+              </a-button>
+              <a-button type="primary" @click="showHistory">
+                <template #icon><icon-history /></template>
+                {{ t('sftp.history') }}
+              </a-button>
+            </a-button-group>
+          </div>
+        </div>
+        <div class="sftp-content">
+          <a-spin :loading="loading">
+            <template v-if="fileTree && fileTree.length > 0">
+              <a-tree
+                :data="fileTree"
+                :loadMore="loadMoreData"
+                @select="onSelect"
+                v-model:expandedKeys="expandedKeys"
+                @expand="onExpand"
+                :checkable="true"
+                :multiple="true"
+                v-model:checkedKeys="selectedFiles"
+                @check="onMultiSelect"
               >
-                <span class="item-title">{{ nodeData.title }}</span>
-                <span class="item-details">
-                  <span class="item-mod-time">{{ formatModTime(nodeData.modTime) }}</span>
-                  <span class="item-size">{{ formatSize(nodeData.size) }}</span>
-                </span>
-              </div>
+                <template #icon="nodeData">
+                  <icon-file v-if="nodeData.isLeaf" class="file-icon" />
+                  <icon-folder v-else class="folder-icon" />
+                </template>
+                <template #title="nodeData">
+                  <div
+                    :class="{
+                      'tree-node-content': true,
+                      'folder-item': !nodeData.isLeaf,
+                      'file-item': nodeData.isLeaf,
+                      'hidden-file': nodeData.isHidden,
+                      'drag-over': !nodeData.isLeaf && dragTargetKey === nodeData.key
+                    }"
+                    @dragenter.prevent="(e) => handleFolderDragEnter(e, nodeData)"
+                    @dragover.prevent="(e) => handleFolderDragOver(e, nodeData)"
+                    @dragleave.prevent="(e) => handleFolderDragLeave(e, nodeData)"
+                    @drop.prevent="(e) => handleFolderDrop(e, nodeData)"
+                    @contextmenu.prevent.stop="(e) => showContextMenu(e, nodeData)"
+                    @dblclick.stop="handleNodeDoubleClick(nodeData)"
+                  >
+                    <span class="item-title">{{ nodeData.title }}</span>
+                    <span class="item-details">
+                      <span class="item-mod-time">{{ formatModTime(nodeData.modTime) }}</span>
+                      <span class="item-size">{{ formatSize(nodeData.size) }}</span>
+                    </span>
+                  </div>
+                </template>
+              </a-tree>
             </template>
-          </a-tree>
-        </template>
-        <div v-else-if="!loading" class="empty-state">
-          No files or directories found.
+            <div v-else-if="!loading" class="empty-state">
+              No files or directories found.
+            </div>
+          </a-spin>
         </div>
-      </a-spin>
-    </div>
 
-    <!-- 模态框 -->
-    <a-modal 
-      v-model:visible="fileContentVisible" 
-      title="File Content"
-      :width="750"
-    >
-      <pre>{{ fileContent }}</pre>
-    </a-modal>
+        <!-- 模态框 -->
+        <a-modal 
+          v-model:visible="fileContentVisible" 
+          title="File Content"
+          :width="750"
+          class="file-preview-modal"
+        >
+          <pre class="file-preview-content">{{ fileContent }}</pre>
+        </a-modal>
 
-    <a-modal 
-      v-model:visible="historyVisible" 
-      :title="t('sftp.historyTitle')"
-      :width="modalWidth"
-      :mask-closable="true"
-      :footer="null"
-      class="history-modal"
-    >
-      <div class="history-container">
-        <div class="history-toolbar">
-          <a-button type="primary" size="small" @click="refreshHistory">
-            <template #icon><icon-refresh /></template>
-            {{ t('sftp.refresh') }}
-          </a-button>
-          <a-button type="primary" size="small" @click="clearHistory">
-            <template #icon><icon-delete /></template>
-            {{ t('sftp.clearHistory') }}
-          </a-button>
+        <a-modal 
+          v-model:visible="historyVisible" 
+          :title="t('sftp.historyTitle')"
+          :width="modalWidth"
+          :mask-closable="true"
+          :footer="null"
+          class="history-modal"
+        >
+          <div class="history-container">
+            <div class="history-toolbar">
+              <a-button type="primary" size="small" @click="refreshHistory">
+                <template #icon><icon-refresh /></template>
+                {{ t('sftp.refresh') }}
+              </a-button>
+              <a-button type="primary" size="small" @click="clearHistory">
+                <template #icon><icon-delete /></template>
+                {{ t('sftp.clearHistory') }}
+              </a-button>
+            </div>
+            <div class="history-content">
+              <a-table
+                :columns="historyColumns"
+                :data="parsedHistory"
+                :pagination="{
+                  pageSize: pageSize,
+                  total: parsedHistory.length,
+                  showTotal: true
+                }"
+                :bordered="false"
+                :stripe="true"
+                size="small"
+                :scroll="{ y: tableHeight, x: '100%' }"
+              >
+                <template #cell="{ column, record }">
+                  <template v-if="column.dataIndex === 'time'">
+                    {{ formatHistoryTime(record.time) }}
+                  </template>
+                  <template v-else-if="column.dataIndex === 'operation'">
+                    <a-tag :color="getOperationColor(record.operation)">
+                      {{ record.operation }}
+                    </a-tag>
+                  </template>
+                  <template v-else>
+                    {{ record[column.dataIndex] }}
+                  </template>
+                </template>
+              </a-table>
+            </div>
+          </div>
+        </a-modal>
+
+        <input
+          type="file"
+          ref="fileInput"
+          style="display: none;"
+          @change="handleFileUpload"
+          multiple
+        >
+
+        <a-modal v-model:visible="renameModalVisible" :title="t('sftp.rename')">
+          <a-input v-model="newName" :placeholder="t('sftp.enterNewName')" />
+          <template #footer>
+            <a-button @click="renameModalVisible = false">{{ t('sftp.cancel') }}</a-button>
+            <a-button type="primary" @click="confirmRename">{{ t('sftp.confirm') }}</a-button>
+          </template>
+        </a-modal>
+
+        <a-modal v-model:visible="newFolderModalVisible" :title="t('sftp.newFolder')">
+          <a-input v-model="newFolderName" :placeholder="t('sftp.enterFolderName')" />
+          <template #footer>
+            <a-button @click="newFolderModalVisible = false">{{ t('sftp.cancel') }}</a-button>
+            <a-button type="primary" @click="confirmCreateFolder">{{ t('sftp.createFolder') }}</a-button>
+          </template>
+        </a-modal>
+
+        <!-- 替换原有的进度条模态框为浮动通知 -->
+        <div 
+          v-if="downloadProgressVisible" 
+          class="download-progress-float"
+        >
+          <div class="download-progress">
+            <div class="progress-info">
+              <span class="file-name">{{ downloadInfo.fileName }}</span>
+              <span class="progress-percent">{{ downloadInfo.progress }}%</span>
+            </div>
+            <a-progress
+              :percent="downloadInfo.progress"
+              :status="downloadInfo.status"
+              :show-text="false"
+              size="small"
+            />
+            <div class="progress-details">
+              <span>{{ downloadInfo.speed }}</span>
+              <span>{{ downloadInfo.timeRemaining }}</span>
+            </div>
+          </div>
         </div>
-        <div class="history-content">
-          <a-table
-            :columns="historyColumns"
-            :data="parsedHistory"
-            :pagination="{
-              pageSize: pageSize,
-              total: parsedHistory.length,
-              showTotal: true
-            }"
-            :bordered="false"
-            :stripe="true"
-            size="small"
-            :scroll="{ y: tableHeight, x: '100%' }"
-          >
-            <template #cell="{ column, record }">
-              <template v-if="column.dataIndex === 'time'">
-                {{ formatHistoryTime(record.time) }}
-              </template>
-              <template v-else-if="column.dataIndex === 'operation'">
-                <a-tag :color="getOperationColor(record.operation)">
-                  {{ record.operation }}
-                </a-tag>
-              </template>
-              <template v-else>
-                {{ record[column.dataIndex] }}
-              </template>
-            </template>
-          </a-table>
+
+        <!-- 添加上传进度浮动通知 -->
+        <div 
+          v-if="uploadProgressVisible" 
+          class="upload-progress-float"
+        >
+          <div class="upload-progress">
+            <div class="progress-info">
+              <span class="file-name">{{ uploadInfo.fileName }}</span>
+              <span class="progress-percent">{{ uploadInfo.progress }}%</span>
+            </div>
+            <a-progress
+              :percent="uploadInfo.progress"
+              :status="uploadInfo.status"
+              :show-text="false"
+              size="small"
+            />
+            <div class="progress-details">
+              <span>{{ uploadInfo.speed }}</span>
+              <span>{{ uploadInfo.timeRemaining }}</span>
+            </div>
+          </div>
         </div>
+
+        <!-- 添加多选操作的上下文菜单 -->
+        <a-dropdown 
+          v-if="selectedFiles.length > 0" 
+          :popup-container="null"
+          trigger="contextmenu"
+        >
+          <template #content>
+            <a-doption @click="downloadMultipleFiles">
+              <template #icon><icon-download /></template>
+              {{ t('sftp.downloadSelected', { count: selectedFiles.length }) }}
+            </a-doption>
+            <a-doption @click="deleteMultipleFiles">
+              <template #icon><icon-delete /></template>
+              {{ t('sftp.deleteSelected', { count: selectedFiles.length }) }}
+            </a-doption>
+          </template>
+        </a-dropdown>
       </div>
-    </a-modal>
-
-    <input
-      type="file"
-      ref="fileInput"
-      style="display: none;"
-      @change="handleFileUpload"
-      multiple
-    >
-
-    <a-modal v-model:visible="renameModalVisible" :title="t('sftp.rename')">
-      <a-input v-model="newName" :placeholder="t('sftp.enterNewName')" />
-      <template #footer>
-        <a-button @click="renameModalVisible = false">{{ t('sftp.cancel') }}</a-button>
-        <a-button type="primary" @click="confirmRename">{{ t('sftp.confirm') }}</a-button>
-      </template>
-    </a-modal>
-
-    <a-modal v-model:visible="newFolderModalVisible" :title="t('sftp.newFolder')">
-      <a-input v-model="newFolderName" :placeholder="t('sftp.enterFolderName')" />
-      <template #footer>
-        <a-button @click="newFolderModalVisible = false">{{ t('sftp.cancel') }}</a-button>
-        <a-button type="primary" @click="confirmCreateFolder">{{ t('sftp.createFolder') }}</a-button>
-      </template>
-    </a-modal>
-
-    <!-- 替换原有的进度条模态框为浮动通知 -->
-    <div 
-      v-if="downloadProgressVisible" 
-      class="download-progress-float"
-    >
-      <div class="download-progress">
-        <div class="progress-info">
-          <span class="file-name">{{ downloadInfo.fileName }}</span>
-          <span class="progress-percent">{{ downloadInfo.progress }}%</span>
-        </div>
-        <a-progress
-          :percent="downloadInfo.progress"
-          :status="downloadInfo.status"
-          :show-text="false"
-          size="small"
-        />
-        <div class="progress-details">
-          <span>{{ downloadInfo.speed }}</span>
-          <span>{{ downloadInfo.timeRemaining }}</span>
-        </div>
-      </div>
     </div>
-
-    <!-- 添加上传进度浮动通知 -->
-    <div 
-      v-if="uploadProgressVisible" 
-      class="upload-progress-float"
-    >
-      <div class="upload-progress">
-        <div class="progress-info">
-          <span class="file-name">{{ uploadInfo.fileName }}</span>
-          <span class="progress-percent">{{ uploadInfo.progress }}%</span>
-        </div>
-        <a-progress
-          :percent="uploadInfo.progress"
-          :status="uploadInfo.status"
-          :show-text="false"
-          size="small"
-        />
-        <div class="progress-details">
-          <span>{{ uploadInfo.speed }}</span>
-          <span>{{ uploadInfo.timeRemaining }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 添加多选操作的上下文菜单 -->
-    <a-dropdown 
-      v-if="selectedFiles.length > 0" 
-      :popup-container="null"
-      trigger="contextmenu"
-    >
-      <template #content>
-        <a-doption @click="downloadMultipleFiles">
-          <template #icon><icon-download /></template>
-          {{ t('sftp.downloadSelected', { count: selectedFiles.length }) }}
-        </a-doption>
-        <a-doption @click="deleteMultipleFiles">
-          <template #icon><icon-delete /></template>
-          {{ t('sftp.deleteSelected', { count: selectedFiles.length }) }}
-        </a-doption>
-      </template>
-    </a-dropdown>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, watch, inject, onUnmounted, reactive } from 'vue';
+import { ref, onMounted, watch, inject, onUnmounted, reactive, nextTick } from 'vue';
 import { IconFile, IconFolder, IconRefresh, IconHome, IconDelete, IconHistory } from '@arco-design/web-vue/es/icon';
 import axios from 'axios';
 import { Message, Modal } from '@arco-design/web-vue';
@@ -451,12 +452,39 @@ export default {
       }
     };
 
-    const onSelect = (selectedKeys, { selectedNodes }) => {
+    const onSelect = async (selectedKeys, { selectedNodes }) => {
       if (selectedNodes.length > 0) {
         const node = selectedNodes[0];
         currentDirectory.value = normalizePath(node.key === 'root' ? '/' : node.key);
+        
         if (!node.isLeaf) {
-          loadMoreData(node);
+          await loadMoreData(node);
+        } else {
+          // 对于文件，确保 modTime 和 size 属性存在
+          if (!node.modTime || node.modTime === 0) {
+            try {
+              // 如果 modTime 或 size 不存在，重新获取文件信息
+              const response = await axios.post('http://localhost:5000/sftp_list_directory', {
+                connection: props.connection,
+                path: currentDirectory.value
+              });
+
+              const fileInfo = response.data.find(item => 
+                normalizePath(currentDirectory.value) === normalizePath(item.path)
+              );
+
+              if (fileInfo) {
+                // 更新节点的 modTime 和 size
+                node.modTime = fileInfo.modTime || 0;
+                node.size = fileInfo.size || 0;
+              }
+            } catch (error) {
+              console.error('Failed to refresh file info:', error);
+              // 设置默认值
+              node.modTime = 0;
+              node.size = 0;
+            }
+          }
         }
       }
     };
@@ -492,8 +520,24 @@ export default {
             fileContent.value = `data:image/${response.data.extension};base64,${response.data.content}`;
             fileContentVisible.value = true;
           } else if (response.data.type === 'text') {
-            // 文本预览
-            fileContent.value = response.data.content;
+            // 文本预览，使用自定义字体
+            const arialFontPath = path.join(__dirname, '../utils/arial.ttf');
+            
+            // 检查字体文件是否存在
+            if (fs.existsSync(arialFontPath)) {
+              // 如果字体文件存在，应用自定义字体样式
+              fileContent.value = response.data.content;
+              nextTick(() => {
+                const preElement = document.querySelector('.file-preview-content');
+                if (preElement) {
+                  preElement.style.fontFamily = 'Arial, sans-serif';
+                }
+              });
+            } else {
+              // 如果字体文件不存在，使用默认字体
+              fileContent.value = response.data.content;
+            }
+            
             fileContentVisible.value = true;
           } else {
             // 不支持的文件类型
@@ -692,7 +736,7 @@ export default {
         }
       }));
 
-      // 添加复制文件大小的菜单项
+      // 添加复制文件���小的菜单项
       menu.append(new MenuItem({
         label: t('sftp.copySize'),
         click: () => {
@@ -715,7 +759,7 @@ export default {
           const { clipboard } = require('@electron/remote');
           clipboard.writeText(fullPath);
           
-          // 显示复制成功的消息
+          // ��示复制成功的消息
           Message.success(t('sftp.pathCopied', { path: fullPath }));
         }
       }));
@@ -898,16 +942,28 @@ export default {
             throw new Error(response.data.error);
           }
 
-          // 更新目录内容
+          // 更新目录内容，确保更新文件的详细信息
           const updateNode = (nodes) => {
             for (let i = 0; i < nodes.length; i++) {
               if (nodes[i].key === pathToRefresh) {
-                nodes[i].children = sortItems(response.data.map(item => ({
-                  title: item.name,
-                  key: normalizePath(`${pathToRefresh}/${item.name}`),
-                  isLeaf: !item.isDirectory,
-                  children: item.isDirectory ? [] : undefined
-                })));
+                nodes[i].children = sortItems(response.data.map(item => {
+                  // 查找原有节点，保留子节点和展开状态
+                  const existingNode = nodes[i].children 
+                    ? nodes[i].children.find(child => child.title === item.name)
+                    : null;
+
+                  return {
+                    title: item.name,
+                    key: normalizePath(`${pathToRefresh}/${item.name}`),
+                    isLeaf: !item.isDirectory,
+                    children: item.isDirectory ? (existingNode ? existingNode.children : []) : undefined,
+                    expanded: existingNode ? existingNode.expanded : false,
+                    // 更新 modTime 和 size，确保总是使用最新的值
+                    modTime: item.modTime || 0,
+                    size: item.size || 0,
+                    isHidden: item.isHidden
+                  };
+                }));
                 return true;
               }
               if (nodes[i].children && updateNode(nodes[i].children)) {
@@ -966,19 +1022,34 @@ export default {
             title: item.name,
             key: normalizePath('/' + item.name),
             isLeaf: !item.isDirectory,
-            children: item.isDirectory ? [] : undefined
+            children: item.isDirectory ? [] : undefined,
+            // 确保更新 modTime 和 size
+            modTime: item.modTime || 0,
+            size: item.size || 0
           })));
         } else {
           // 更新特定目录
           const updateNode = (nodes) => {
             for (let i = 0; i < nodes.length; i++) {
               if (nodes[i].key === directoryPath) {
-                nodes[i].children = sortItems(response.data.map(item => ({
-                  title: item.name,
-                  key: normalizePath(`${directoryPath}/${item.name}`),
-                  isLeaf: !item.isDirectory,
-                  children: item.isDirectory ? [] : undefined
-                })));
+                nodes[i].children = sortItems(response.data.map(item => {
+                  // 查找原有节点，保留子节点和展开状态
+                  const existingNode = nodes[i].children 
+                    ? nodes[i].children.find(child => child.title === item.name)
+                    : null;
+
+                  return {
+                    title: item.name,
+                    key: normalizePath(`${directoryPath}/${item.name}`),
+                    isLeaf: !item.isDirectory,
+                    children: item.isDirectory ? (existingNode ? existingNode.children : []) : undefined,
+                    expanded: existingNode ? existingNode.expanded : false,
+                    // 更新 modTime 和 size，确保总是使用最新的值
+                    modTime: item.modTime || 0,
+                    size: item.size || 0,
+                    isHidden: item.isHidden
+                  };
+                }));
                 return true;
               }
               if (nodes[i].children && updateNode(nodes[i].children)) {
@@ -1549,7 +1620,7 @@ export default {
         if (index === -1) {
           // 展开文件夹
           expandedKeys.value = [...expandedKeys.value, nodeData.key];
-          // 如果子节点还没有加载，加载子节点
+          // ���果子节点还没有加载，加载子节点
           if (!nodeData.children || nodeData.children.length === 0) {
             await loadMoreData(nodeData);
           }
@@ -1650,7 +1721,7 @@ export default {
         uploadInfo.status = 'error';
         throw new Error(`Failed to upload ${file.name}: ${error.message}`);
       } finally {
-        // 上传完成后隐藏进度条
+        // 上传完成��隐藏进度条
         setTimeout(() => {
           uploadProgressVisible.value = false;
         }, 500);
@@ -1811,102 +1882,39 @@ export default {
     };
 
     const formatModTime = (timestamp) => {
-      const date = new Date(timestamp * 1000);
-      return date.toLocaleString();
+      if (!timestamp || timestamp === 0) {
+        return 'Unknown Date';
+      }
+      
+      try {
+        const date = new Date(timestamp * 1000);
+        return date.toLocaleString();
+      } catch (error) {
+        console.error('Error formatting timestamp:', timestamp, error);
+        return 'Invalid Date';
+      }
     };
 
     const formatSize = (size) => {
-      if (size < 1024) return `${size} B`;
-      if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
-      if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
-      return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      if (!size || size === 0) {
+        return '0 B';
+      }
+      
+      try {
+        const sizeNum = Number(size);
+        if (isNaN(sizeNum)) {
+          return '0 B';
+        }
+        
+        if (sizeNum < 1024) return `${sizeNum} B`;
+        if (sizeNum < 1024 * 1024) return `${(sizeNum / 1024).toFixed(2)} KB`;
+        if (sizeNum < 1024 * 1024 * 1024) return `${(sizeNum / (1024 * 1024)).toFixed(2)} MB`;
+        return `${(sizeNum / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      } catch (error) {
+        console.error('Error formatting size:', size, error);
+        return '0 B';
+      }
     };
-
-    // 添加响应式宽度变量，并设置最小值为300
-    const explorerWidth = ref(300)
-
-    // 修改宽度调整相关方法
-    const startResize = (e) => {
-      const startX = e.clientX
-      const startWidth = explorerWidth.value
-
-      const handleMouseMove = (moveEvent) => {
-        const diff = moveEvent.clientX - startX
-        // 确保最小宽度为300px
-        const newWidth = Math.max(300, startWidth - diff)
-        explorerWidth.value = newWidth
-        
-        // 触发宽度更新事件
-        emit('update:width', newWidth)
-      }
-
-      const handleMouseUp = () => {
-        document.removeEventListener('mousemove', handleMouseMove)
-        document.removeEventListener('mouseup', handleMouseUp)
-        
-        // 保存宽度设置
-        saveWidthSettings()
-      }
-
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
-    }
-
-    // 保存宽度设置的方法
-    const saveWidthSettings = async () => {
-      try {
-        // 使用 ipcRenderer 读取和保存配置
-        const config = await ipcRenderer.invoke('read-config')
-        const settingsIndex = config.findIndex(item => item.type === 'settings')
-        
-        // 确保宽度不小于300
-        const sftpWidth = Math.max(300, explorerWidth.value)
-        
-        const widthSettings = {
-          sftpWidth: sftpWidth
-        }
-        
-        if (settingsIndex !== -1) {
-          config[settingsIndex] = {
-            ...config[settingsIndex],
-            widthSettings
-          }
-        } else {
-          config.push({
-            type: 'settings',
-            widthSettings
-          })
-        }
-        
-        // 使用 ipcRenderer 保存配置
-        await ipcRenderer.invoke('save-config', config)
-        
-        // 更新当前宽度为保存的宽度（确保不小于300）
-        explorerWidth.value = sftpWidth
-      } catch (error) {
-        console.error('Failed to save SFTP explorer width:', error)
-      }
-    }
-
-    // 加载宽度设置的方法
-    const loadWidthSettings = async () => {
-      try {
-        const config = await ipcRenderer.invoke('read-config')
-        const settings = config.find(item => item.type === 'settings')
-        
-        if (settings?.widthSettings?.sftpWidth) {
-          // 确保加载的宽度不小于300
-          explorerWidth.value = Math.max(300, settings.widthSettings.sftpWidth)
-        }
-      } catch (error) {
-        console.error('Failed to load SFTP explorer width:', error)
-      }
-    }
-
-    // 在挂载时加载宽度设置
-    onMounted(() => {
-      loadWidthSettings()
-    })
 
     return {
       fileTree,
@@ -1980,24 +1988,29 @@ export default {
       findNodesByKeys,
       formatModTime,
       formatSize,
-      explorerWidth,
-      startResize,
     };
   }
-};
+}
 </script>
 
 <style scoped>
+@font-face {
+  font-family: 'Arial';
+  src: url('../utils/arial.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
 .sftp-explorer {
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
   color: var(--color-text-1);
   position: relative;
   z-index: 9999;
   user-select: none;
-  min-width: 300px; /* 添加最小宽度限制 */
-  max-width: 600px; /* 可选：添加最大宽度限制 */
+  overflow: hidden;
 }
 
 .sftp-header {
@@ -2009,6 +2022,14 @@ export default {
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 0 10px;
+}
+
+.sftp-explorer-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .folder-drop-target {
@@ -2478,6 +2499,15 @@ export default {
 
 .sftp-explorer-resizer:active {
   background: rgba(var(--primary-6), 0.2);
+}
+
+/* 添加自定义字体预览样式 */
+.file-preview-modal .file-preview-content {
+  font-family: 'Arial', sans-serif;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 500px;
+  overflow-y: auto;
 }
 </style>
 
