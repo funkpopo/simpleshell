@@ -8,13 +8,10 @@
           v-model="searchText" 
           @input="performSearch"
           @keyup.enter="performSearch"
-          placeholder="Search in terminal"
+          :placeholder="t('terminal.search.placeholder')"
           class="search-input"
           size="small"
         >
-          <template #prefix>
-            <icon-search />
-          </template>
         </a-input>
       </div>
       
@@ -25,21 +22,21 @@
             @change="performSearch"
             size="small"
           >
-            Case Sensitive
+            {{ t('terminal.search.caseSensitive') }}
           </a-checkbox>
           <a-checkbox 
             v-model="searchOptions.wholeWord" 
             @change="performSearch"
             size="small"
           >
-            Whole Word
+            {{ t('terminal.search.wholeWord') }}
           </a-checkbox>
           <a-checkbox 
             v-model="searchOptions.regex" 
             @change="performSearch"
             size="small"
           >
-            Regex
+            {{ t('terminal.search.regex') }}
           </a-checkbox>
         </div>
         
@@ -50,14 +47,14 @@
               size="small" 
               @click="findPrevious"
             >
-              Previous
+              {{ t('terminal.search.previous') }}
             </a-button>
             <a-button 
               type="primary" 
               size="small" 
               @click="performSearch"
             >
-              Next
+              {{ t('terminal.search.next') }}
             </a-button>
           </a-button-group>
           <a-button 
@@ -73,20 +70,30 @@
         </div>
       </div>
     </div>
-    <div class="resource-monitor" v-if="showResourceMonitor">
-      <div class="monitor-item">
-        <span class="label">CPU</span>
-        <div class="progress-bar">
-          <div class="progress cpu-progress" :style="{ width: `${cpuUsage}%` }" :class="getCPUClass"></div>
+    <div 
+      class="resource-monitor" 
+      :class="{ 'collapsed': isResourceMonitorCollapsed }"
+      @click="toggleResourceMonitor"
+    >
+      <div v-if="!isResourceMonitorCollapsed" class="monitor-content">
+        <div class="monitor-item">
+          <span class="label">CPU</span>
+          <div class="progress-bar">
+            <div class="progress cpu-progress" :style="{ width: `${cpuUsage}%` }" :class="getCPUClass"></div>
+          </div>
+          <span class="value" v-show="showValues">{{ cpuUsage }}%</span>
         </div>
-        <span class="value" v-show="showValues">{{ cpuUsage }}%</span>
+        <div class="monitor-item">
+          <span class="label">MEM</span>
+          <div class="progress-bar">
+            <div class="progress mem-progress" :style="{ width: `${memUsage}%` }"></div>
+          </div>
+          <span class="value" v-show="showValues">{{ memUsage }}%</span>
+        </div>
       </div>
-      <div class="monitor-item">
-        <span class="label">MEM</span>
-        <div class="progress-bar">
-          <div class="progress mem-progress" :style="{ width: `${memUsage}%` }"></div>
-        </div>
-        <span class="value" v-show="showValues">{{ memUsage }}%</span>
+      <div class="monitor-collapse-indicator">
+        <icon-right v-if="isResourceMonitorCollapsed" />
+        <icon-left v-else />
       </div>
     </div>
   </div>
@@ -94,7 +101,7 @@
 
 <script>
 import { Message } from '@arco-design/web-vue'
-import { ref, onMounted, onUnmounted, watch, nextTick, inject, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, inject, computed, getCurrentInstance } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -103,14 +110,15 @@ import io from 'socket.io-client'
 import { debounce as _debounce } from 'lodash'
 import fs from 'fs'
 import path from 'path'
-import { app } from 'electron'
 import { join } from 'path'
 import { promises as fsPromises } from 'fs'
 import msgpack from 'msgpack-lite'
 import { SearchAddon } from '@xterm/addon-search'
 import { 
   IconSearch, 
-  IconClose 
+  IconClose, 
+  IconRight, 
+  IconLeft 
 } from '@arco-design/web-vue/es/icon'
 
 export default {
@@ -128,7 +136,9 @@ export default {
   emits: ['close', 'pathChange', 'connectionStatus'],
   components: {
     IconSearch,
-    IconClose
+    IconClose,
+    IconRight,
+    IconLeft
   },
   setup(props, { emit }) {
     const terminal = ref(null)
@@ -1484,6 +1494,15 @@ export default {
       })
     }
 
+    const isResourceMonitorCollapsed = ref(false)
+    
+    const toggleResourceMonitor = () => {
+      isResourceMonitorCollapsed.value = !isResourceMonitorCollapsed.value
+    }
+
+    // 从 Vue 实例中获取 $t 方法
+    const t = getCurrentInstance()?.proxy?.$t || ((key) => key)
+
     return { 
       terminal,
       closeConnection,
@@ -1505,7 +1524,10 @@ export default {
       openSearchBar,
       closeSearchBar,
       performSearch,
-      findPrevious
+      findPrevious,
+      isResourceMonitorCollapsed,
+      toggleResourceMonitor,
+      t
     }
   }
 }
@@ -1719,16 +1741,46 @@ export default {
   background-color: var(--color-bg-2);
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  padding: 6px;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  align-items: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
   z-index: 1000;
   opacity: 0.9;
   backdrop-filter: blur(4px);
-  min-width: 140px;
-  transition: opacity 0.2s ease;
+}
+
+.resource-monitor.collapsed {
+  width: 30px;
+  min-width: 30px;
+}
+
+.monitor-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  transition: opacity 0.3s ease;
+}
+
+.resource-monitor.collapsed .monitor-content {
+  opacity: 0;
+  width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.monitor-collapse-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 100%;
+  background-color: var(--color-fill-2);
+}
+
+.monitor-collapse-indicator .arco-icon {
+  color: var(--color-text-2);
 }
 
 .monitor-item {

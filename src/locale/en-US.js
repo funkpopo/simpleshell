@@ -166,5 +166,16 @@ export default {
     modelAdded: 'Model added successfully',
     modelUpdated: 'Model settings updated',
     settingsSaved: 'Settings saved successfully'
+  },
+  terminal: {
+    search: {
+      title: 'Search in Terminal',
+      placeholder: 'Search in terminal',
+      caseSensitive: 'Case Sensitive',
+      wholeWord: 'Whole Word',
+      regex: 'Regex',
+      previous: 'Previous',
+      next: 'Next'
+    }
   }
 }

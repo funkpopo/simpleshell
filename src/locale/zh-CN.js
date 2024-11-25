@@ -168,5 +168,16 @@ export default {
     modelAdded: '模型添加成功',
     modelUpdated: '模型设置已更新',
     settingsSaved: '设置保存成功'
+  },
+  terminal: {
+    search: {
+      title: '终端搜索',
+      placeholder: '在终端中搜索',
+      caseSensitive: '区分大小写',
+      wholeWord: '全词匹配',
+      regex: '正则表达式',
+      previous: '上一个',
+      next: '下一个'
+    }
   }
 }
