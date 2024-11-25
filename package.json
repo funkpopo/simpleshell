@@ -1,9 +1,9 @@
 {
   "name": "simpleshell",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "private": true,
   "author": {
-    "name": "Sunn",
+    "name": "funkpopo",
     "email": "s767609509@gmail.com"
   },
   "description": "A simple SSH client",
