@@ -433,11 +433,6 @@ export default {
               Message.error(`Unable to open link: ${uri}`)
             }
           }
-        },
-        {
-          // 配置更精确的链接匹配规则
-          urlRegex: /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-z0-9.-]+\.[a-z]{2,}\b)/i,
-          matchProtocol: true
         }
       )
 
