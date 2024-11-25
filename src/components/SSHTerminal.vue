@@ -1,6 +1,78 @@
 <template>
   <div class="terminal-wrapper">
     <div ref="terminal" class="terminal-container" :class="{ 'dark-mode': isDarkMode }" @paste.prevent="handlePaste"></div>
+    <div v-if="showSearchBar" class="terminal-search-bar terminal-search-bar-bottom">
+      <div class="search-input-container">
+        <a-input 
+          id="terminal-search-input"
+          v-model="searchText" 
+          @input="performSearch"
+          @keyup.enter="performSearch"
+          placeholder="Search in terminal"
+          class="search-input"
+          size="small"
+        >
+          <template #prefix>
+            <icon-search />
+          </template>
+        </a-input>
+      </div>
+      
+      <div class="search-options-container">
+        <div class="search-options">
+          <a-checkbox 
+            v-model="searchOptions.caseSensitive" 
+            @change="performSearch"
+            size="small"
+          >
+            Case Sensitive
+          </a-checkbox>
+          <a-checkbox 
+            v-model="searchOptions.wholeWord" 
+            @change="performSearch"
+            size="small"
+          >
+            Whole Word
+          </a-checkbox>
+          <a-checkbox 
+            v-model="searchOptions.regex" 
+            @change="performSearch"
+            size="small"
+          >
+            Regex
+          </a-checkbox>
+        </div>
+        
+        <div class="search-actions">
+          <a-button-group>
+            <a-button 
+              type="primary" 
+              size="small" 
+              @click="findPrevious"
+            >
+              Previous
+            </a-button>
+            <a-button 
+              type="primary" 
+              size="small" 
+              @click="performSearch"
+            >
+              Next
+            </a-button>
+          </a-button-group>
+          <a-button 
+            type="text" 
+            size="small" 
+            @click="closeSearchBar"
+            class="close-btn"
+          >
+            <template #icon>
+              <icon-close />
+            </template>
+          </a-button>
+        </div>
+      </div>
+    </div>
     <div class="resource-monitor" v-if="showResourceMonitor">
       <div class="monitor-item">
         <span class="label">CPU</span>
@@ -35,6 +107,11 @@ import { app } from 'electron'
 import { join } from 'path'
 import { promises as fsPromises } from 'fs'
 import msgpack from 'msgpack-lite'
+import { SearchAddon } from '@xterm/addon-search'
+import { 
+  IconSearch, 
+  IconClose 
+} from '@arco-design/web-vue/es/icon'
 
 export default {
   name: 'SSHTerminal',
@@ -49,6 +126,10 @@ export default {
     }
   },
   emits: ['close', 'pathChange', 'connectionStatus'],
+  components: {
+    IconSearch,
+    IconClose
+  },
   setup(props, { emit }) {
     const terminal = ref(null)
     let term = null
@@ -72,6 +153,16 @@ export default {
     let resourceMonitorInterval = null
     let lastCPUInfo = null
     const showValues = ref(false)
+    let searchAddon = null
+
+    // 搜索相关的响应式变量
+    const showSearchBar = ref(false)
+    const searchText = ref('')
+    const searchOptions = ref({
+      caseSensitive: false,
+      wholeWord: false,
+      regex: false
+    })
 
     const timestampPatterns = {
       iso8601: /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/g,
@@ -356,7 +447,7 @@ export default {
         if (data >= ' ' && data <= '~') {
           currentInput.value += data
           // 从第一个字符开始就显示建议
-          if (currentInput.value.length > 0 && commandHistory.value) { // 确保 commandHistory 已初始化
+          if (currentInput.value.length > 0 && commandHistory.value) { // 确保 commandHistory 已始化
             showSuggestionMenu()
           }
           socket.emit('ssh_input', { session_id: props.sessionId, input: data })
@@ -395,6 +486,10 @@ export default {
       }
 
       window.addEventListener('resize', handleResize)
+
+      // 初始化 SearchAddon
+      searchAddon = new SearchAddon()
+      term.loadAddon(searchAddon)
     }
 
     const handleResize = () => {
@@ -787,7 +882,7 @@ export default {
         }
       }
 
-      // 过滤命令，添加空值检查
+      // 过滤命令添加空值检查
       const filteredCommands = commandHistory.value
         .filter(cmd => {
           // 确保命令和当前输入都是有效的字符串
@@ -1030,7 +1125,7 @@ export default {
         })
       }
 
-      // 移除鼠标中键事件监听
+      // 移除鼠标中键事监听
       terminal.value?.removeEventListener('mousedown', handleMouseDown)
     })
 
@@ -1072,6 +1167,21 @@ export default {
 
       const hasSuggestions = Array.isArray(suggestions.value) && suggestions.value.length > 0
       
+      // 添加搜索快捷键 Ctrl+F 的切换逻辑
+      if (event.ctrlKey && event.key === 'f') {
+        event.preventDefault()
+        
+        // 如果搜索栏已经打开，则关闭；否则打开
+        if (showSearchBar.value) {
+          closeSearchBar()
+        } else {
+          openSearchBar()
+        }
+        
+        return false
+      }
+
+      // 原有的建议菜单处理逻辑
       if (showSuggestions.value && hasSuggestions) {
         if (event.key === 'Escape') {
           event.preventDefault()
@@ -1142,7 +1252,7 @@ export default {
         }
       }
       
-      // 如果没有显示命令提示窗口或没有建议，处理普通的终端方向键
+      // 如果没有显示命令提示窗口或没有建议理普通的终方向键
       if (event.key.startsWith('Arrow')) {
         const key = event.key.toLowerCase()
         const sequences = {
@@ -1160,6 +1270,7 @@ export default {
           return false
         }
       }
+
       return true
     }
 
@@ -1316,6 +1427,63 @@ export default {
       }
     }
 
+    // 打开搜索栏
+    const openSearchBar = () => {
+      showSearchBar.value = true
+      searchText.value = '' // 清空上一次的搜索内容
+      
+      // 使用 findNext 并传递空字符串来清除之前的搜索结果
+      if (searchAddon && term) {
+        searchAddon.findNext('', {
+          caseSensitive: false,
+          wholeWord: false,
+          regex: false
+        })
+      }
+      
+      nextTick(() => {
+        const searchInput = document.getElementById('terminal-search-input')
+        searchInput?.focus()
+      })
+    }
+
+    // 关闭搜索栏
+    const closeSearchBar = () => {
+      showSearchBar.value = false
+      searchText.value = ''
+      
+      // 使用 findNext 并传递空字符串来清除之前的搜索结果
+      if (searchAddon && term) {
+        searchAddon.findNext('', {
+          caseSensitive: false,
+          wholeWord: false,
+          regex: false
+        })
+      }
+    }
+
+    // 执行搜索
+    const performSearch = () => {
+      if (!searchAddon || !term || !searchText.value) return
+
+      searchAddon.findNext(searchText.value, {
+        caseSensitive: searchOptions.value.caseSensitive,
+        wholeWord: searchOptions.value.wholeWord,
+        regex: searchOptions.value.regex
+      })
+    }
+
+    // 查找上一个匹配项
+    const findPrevious = () => {
+      if (!searchAddon || !term || !searchText.value) return
+
+      searchAddon.findPrevious(searchText.value, {
+        caseSensitive: searchOptions.value.caseSensitive,
+        wholeWord: searchOptions.value.wholeWord,
+        regex: searchOptions.value.regex
+      })
+    }
+
     return { 
       terminal,
       closeConnection,
@@ -1330,7 +1498,14 @@ export default {
       showResourceMonitor,
       getCPUClass,
       getMemClass,
-      showValues
+      showValues,
+      showSearchBar,
+      searchText,
+      searchOptions,
+      openSearchBar,
+      closeSearchBar,
+      performSearch,
+      findPrevious
     }
   }
 }
@@ -1442,7 +1617,7 @@ export default {
   white-space: normal;
   transform-origin: bottom left;
   
-  /* 设置单个命令项的高度 */
+  /* 设置单个命令项的度 */
   --suggestion-item-height: 32px;
   /* 最大显示4行的高度 */
   max-height: calc(var(--suggestion-item-height) * 4);
@@ -1669,6 +1844,106 @@ export default {
 @keyframes shimmer {
   100% {
     transform: translateX(100%);
+  }
+}
+
+.terminal-search-bar-bottom {
+  position: absolute;
+  bottom: 60px; /* 调整位置，避免遮挡源监控 */
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 40px); /* 减去一些边距 */
+  max-width: 600px; /* 限制最大宽度 */
+  z-index: 1000;
+  background-color: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: slide-up 0.3s ease;
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.resource-monitor {
+  bottom: 10px; /* 调整资源监控的位置 */
+}
+
+/* 深色主题适配 */
+.terminal-container.dark-mode .terminal-search-bar-bottom {
+  background-color: var(--color-bg-3);
+  border-color: var(--color-border-2);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.terminal-search-bar-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-input-container {
+  width: 100%;
+}
+
+.search-options-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.search-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 确保复选框和按钮高度一致 */
+.search-options .arco-checkbox,
+.search-actions .arco-btn {
+  height: 24px;
+  line-height: 24px;
+}
+
+.close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  width: 24px;
+  padding: 0;
+}
+
+/* 响应式调整 */
+@media (max-width: 480px) {
+  .search-options-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .search-options,
+  .search-actions {
+    justify-content: center;
   }
 }
 </style>
