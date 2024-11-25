@@ -120,6 +120,7 @@ import {
   IconRight, 
   IconLeft 
 } from '@arco-design/web-vue/es/icon'
+import { shell } from '@electron/remote'
 
 export default {
   name: 'SSHTerminal',
@@ -416,7 +417,31 @@ export default {
 
       fitAddon = new FitAddon()
       term.loadAddon(fitAddon)
-      term.loadAddon(new WebLinksAddon())
+
+      // 自定义链接处理器
+      const webLinksAddon = new WebLinksAddon(
+        (event, uri) => {
+          event.preventDefault()
+          
+          // 检查是否按下 Ctrl 键
+          if (event.ctrlKey) {
+            try {
+              // 使用 Electron 的 shell 打开链接
+              shell.openExternal(uri)
+            } catch (error) {
+              console.error('Failed to open link:', error)
+              Message.error(`Unable to open link: ${uri}`)
+            }
+          }
+        },
+        {
+          // 配置更精确的链接匹配规则
+          urlRegex: /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-z0-9.-]+\.[a-z]{2,}\b)/i,
+          matchProtocol: true
+        }
+      )
+
+      term.loadAddon(webLinksAddon)
 
       fitAddon.fit()
 
