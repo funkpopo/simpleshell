@@ -46,7 +46,7 @@ async function build() {
         ],
         extraResources: [
           {
-            from: 'backend/dist/service.exe',
+            from: 'backend/dist/service/service.exe',
             to: '.'
           }
         ],

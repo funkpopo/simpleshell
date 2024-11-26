@@ -156,42 +156,65 @@ def update_config():
 # 分离 SSH SFTP 的连接创建函数
 def create_base_client(connection):
     """创建基础 SSH 客户端"""
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
-    connect_kwargs = {
-        'hostname': connection['host'],
-        'port': int(connection['port']),
-        'username': connection['username'],
-        'timeout': 30
-    }
-    
-    if connection.get('authType') == 'password':
-        connect_kwargs['password'] = connection['password']
-    else:
-        try:
-            if connection.get('privateKey'):
-                pkey = paramiko.RSAKey.from_private_key(
-                    io.StringIO(connection['privateKey'])
-                )
-                connect_kwargs['pkey'] = pkey
-            elif connection.get('privateKeyPath'):
-                pkey = paramiko.RSAKey.from_private_key_file(
-                    connection['privateKeyPath']
-                )
-                connect_kwargs['pkey'] = pkey
-        except paramiko.ssh_exception.SSHException:
-            raise Exception('Invalid private key format or passphrase required')
-        except IOError:
-            raise Exception('Failed to read private key file')
-    
-    print(f"Attempting SSH connection to {connection['host']}:{connection['port']}")
-    ssh.connect(**connect_kwargs)
-    print("SSH connection successful")
-    return ssh
+    ssh = None  # 初始化 ssh 为 None
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        connect_kwargs = {
+            'hostname': connection['host'],
+            'port': int(connection['port']),
+            'username': connection['username'],
+            'timeout': 30
+        }
+        
+        if connection.get('authType') == 'password':
+            # 解密 base64 编码的密码
+            import base64
+            try:
+                # 尝试添加填充
+                password = connection['password']
+                # 添加 '=' 填充，确保 base64 解码正确
+                password += '=' * ((4 - len(password) % 4) % 4)
+                decoded_password = base64.b64decode(password).decode('utf-8')
+                connect_kwargs['password'] = decoded_password
+            except Exception as e:
+                # 如果解码失败，尝试原始密码
+                print(f"Base64 decryption failed: {e}")
+                connect_kwargs['password'] = connection['password']
+        else:
+            try:
+                if connection.get('privateKey'):
+                    pkey = paramiko.RSAKey.from_private_key(
+                        io.StringIO(connection['privateKey'])
+                    )
+                    connect_kwargs['pkey'] = pkey
+                elif connection.get('privateKeyPath'):
+                    pkey = paramiko.RSAKey.from_private_key_file(
+                        connection['privateKeyPath']
+                    )
+                    connect_kwargs['pkey'] = pkey
+            except paramiko.ssh_exception.SSHException:
+                raise Exception('Invalid private key format or passphrase required')
+            except IOError:
+                raise Exception('Failed to read private key file')
+        
+        print(f"Attempting SSH connection to {connection['host']}:{connection['port']}")
+        ssh.connect(**connect_kwargs)
+        print("SSH connection successful")
+        return ssh
+    except Exception as e:
+        # 如果 SSH 连接失败，确保关闭连接
+        if ssh:
+            try:
+                ssh.close()
+            except:
+                pass
+        raise  # 重新抛出原始异常
 
 def create_ssh_client(connection):
     """创建用于终端的 SSH 客户端"""
+    ssh = None  # 初始化 ssh 为 None
     try:
         ssh = create_base_client(connection)
         
@@ -227,19 +250,29 @@ def create_ssh_client(connection):
         return ssh, channel
         
     except Exception as e:
+        # 如果 SSH 连接失败，确保关闭连接
         if ssh:
-            ssh.close()
-        raise e
+            try:
+                ssh.close()
+            except:
+                pass
+        raise  # 重新抛出原始异常
 
 def create_sftp_client(connection):
     """创建用于文件传输的 SFTP 客户端"""
-    ssh = create_base_client(connection)
+    ssh = None  # 初始化 ssh 为 None
     try:
+        ssh = create_base_client(connection)
         sftp = ssh.open_sftp()
         return ssh, sftp
     except Exception as e:
-        ssh.close()
-        raise e
+        # 如果 SFTP 连接失败，确保关闭连接
+        if ssh:
+            try:
+                ssh.close()
+            except:
+                pass
+        raise  # 重新抛出原始异常
 
 # 修改 read_output 函数
 def read_output(session_id, channel):
