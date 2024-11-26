@@ -175,7 +175,6 @@ export default {
       placeholder: '在终端中搜索',
       caseSensitive: '区分大小写',
       wholeWord: '全词匹配',
-      regex: '正则表达式',
       previous: '上一个',
       next: '下一个'
     }

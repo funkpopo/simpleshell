@@ -1,21 +1,50 @@
 <template>
   <div class="terminal-wrapper">
     <div ref="terminal" class="terminal-container" :class="{ 'dark-mode': isDarkMode }" @paste.prevent="handlePaste"></div>
-    <div v-if="showSearchBar" class="terminal-search-bar terminal-search-bar-bottom">
-      <div class="search-input-container">
-        <a-input 
-          id="terminal-search-input"
-          v-model="searchText" 
-          @input="performSearch"
-          @keyup.enter="performSearch"
-          :placeholder="t('terminal.search.placeholder')"
-          class="search-input"
-          size="small"
-        >
-        </a-input>
-      </div>
-      
-      <div class="search-options-container">
+    <div 
+      v-if="showSearchBar" 
+      class="terminal-search-bar terminal-search-bar-top-right"
+    >
+      <div class="search-bar-content">
+        <div class="search-input-wrapper">
+          <a-input 
+            id="terminal-search-input"
+            v-model="searchText" 
+            @input="performSearch"
+            @keyup.enter="performSearch"
+            :placeholder="t('terminal.search.placeholder')"
+            class="search-input"
+            size="small"
+            allow-clear
+          >
+            <template #prefix>
+              <icon-search />
+            </template>
+          </a-input>
+          <div class="search-navigation">
+            <a-button 
+              type="text" 
+              size="small" 
+              @click="findPrevious"
+              class="nav-btn"
+            >
+              <template #icon>
+                <icon-arrow-up />
+              </template>
+            </a-button>
+            <a-button 
+              type="text" 
+              size="small" 
+              @click="findNext"
+              class="nav-btn"
+            >
+              <template #icon>
+                <icon-arrow-down />
+              </template>
+            </a-button>
+          </div>
+        </div>
+        
         <div class="search-options">
           <a-checkbox 
             v-model="searchOptions.caseSensitive" 
@@ -31,42 +60,6 @@
           >
             {{ t('terminal.search.wholeWord') }}
           </a-checkbox>
-          <a-checkbox 
-            v-model="searchOptions.regex" 
-            @change="performSearch"
-            size="small"
-          >
-            {{ t('terminal.search.regex') }}
-          </a-checkbox>
-        </div>
-        
-        <div class="search-actions">
-          <a-button-group>
-            <a-button 
-              type="primary" 
-              size="small" 
-              @click="findPrevious"
-            >
-              {{ t('terminal.search.previous') }}
-            </a-button>
-            <a-button 
-              type="primary" 
-              size="small" 
-              @click="performSearch"
-            >
-              {{ t('terminal.search.next') }}
-            </a-button>
-          </a-button-group>
-          <a-button 
-            type="text" 
-            size="small" 
-            @click="closeSearchBar"
-            class="close-btn"
-          >
-            <template #icon>
-              <icon-close />
-            </template>
-          </a-button>
         </div>
       </div>
     </div>
@@ -118,7 +111,10 @@ import {
   IconSearch, 
   IconClose, 
   IconRight, 
-  IconLeft 
+  IconLeft, 
+  IconDrag,
+  IconArrowUp,
+  IconArrowDown 
 } from '@arco-design/web-vue/es/icon'
 import { shell } from '@electron/remote'
 
@@ -139,7 +135,10 @@ export default {
     IconSearch,
     IconClose,
     IconRight,
-    IconLeft
+    IconLeft,
+    IconDrag,
+    IconArrowUp,
+    IconArrowDown
   },
   setup(props, { emit }) {
     const terminal = ref(null)
@@ -171,8 +170,7 @@ export default {
     const searchText = ref('')
     const searchOptions = ref({
       caseSensitive: false,
-      wholeWord: false,
-      regex: false
+      wholeWord: false
     })
 
     const timestampPatterns = {
@@ -532,7 +530,7 @@ export default {
           rows: term.rows 
         })
 
-        // 添加重新定位建议菜单的逻辑
+        // 添加重新定建议菜单的逻辑
         if (suggestionMenu.value && showSuggestions.value) {
           nextTick(() => {
             positionSuggestionMenu()
@@ -1499,7 +1497,7 @@ export default {
       searchAddon.findNext(searchText.value, {
         caseSensitive: searchOptions.value.caseSensitive,
         wholeWord: searchOptions.value.wholeWord,
-        regex: searchOptions.value.regex
+        regex: false // 取消正则表达式匹配
       })
     }
 
@@ -1510,8 +1508,13 @@ export default {
       searchAddon.findPrevious(searchText.value, {
         caseSensitive: searchOptions.value.caseSensitive,
         wholeWord: searchOptions.value.wholeWord,
-        regex: searchOptions.value.regex
+        regex: false // 取消正则表达式匹配
       })
+    }
+
+    // 查找下一个匹配项
+    const findNext = () => {
+      performSearch()
     }
 
     const isResourceMonitorCollapsed = ref(false)
@@ -1545,6 +1548,7 @@ export default {
       closeSearchBar,
       performSearch,
       findPrevious,
+      findNext,
       isResourceMonitorCollapsed,
       toggleResourceMonitor,
       t
@@ -1919,103 +1923,77 @@ export default {
   }
 }
 
-.terminal-search-bar-bottom {
+.terminal-search-bar-top-right {
   position: absolute;
-  bottom: 60px; /* 调整位置，避免遮挡源监控 */
-  left: 50%;
-  transform: translateX(-50%);
-  width: calc(100% - 40px); /* 减去一些边距 */
-  max-width: 600px; /* 限制最大宽度 */
-  z-index: 1000;
+  top: 10px;
+  right: 10px;
+  z-index: 2000;
+  width: 280px; /* 压缩窗口大小 */
   background-color: var(--color-bg-2);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
-  padding: 10px;
+  border-radius: 6px;
+  padding: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  animation: slide-up 0.3s ease;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
 }
 
-@keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 20px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-.resource-monitor {
-  bottom: 10px; /* 调整资源监控的位置 */
-}
-
-/* 深色主题适配 */
-.terminal-container.dark-mode .terminal-search-bar-bottom {
+.terminal-container.dark-mode .terminal-search-bar-top-right {
   background-color: var(--color-bg-3);
   border-color: var(--color-border-2);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.terminal-search-bar-bottom {
+.search-bar-content {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-.search-input-container {
-  width: 100%;
-}
-
-.search-options-container {
+.search-input-wrapper {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
+}
+
+.search-navigation {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
 }
 
 .search-options {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.search-actions {
-  display: flex;
-  align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  user-select: none;
 }
 
-/* 确保复选框和按钮高度一致 */
-.search-options .arco-checkbox,
-.search-actions .arco-btn {
-  height: 24px;
-  line-height: 24px;
-}
-
-.close-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 24px;
-  width: 24px;
-  padding: 0;
+.search-options .arco-checkbox {
+  user-select: none;
 }
 
 /* 响应式调整 */
 @media (max-width: 480px) {
-  .search-options-container {
-    flex-direction: column;
-    align-items: stretch;
+  .terminal-search-bar-top-right {
+    width: 250px;
+    right: 5px;
+    top: 5px;
   }
-  
-  .search-options,
-  .search-actions {
-    justify-content: center;
+
+  .search-options {
+    gap: 6px;
   }
 }
 </style>
