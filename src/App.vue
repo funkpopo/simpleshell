@@ -51,7 +51,6 @@
           collapsible 
           :width="siderWidth"
           :min-width="180"
-          @click="toggleSider"
           @collapse="siderCollapsed = $event"
           class="folder-sider"
         >
@@ -544,7 +543,7 @@ import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, comput
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
 import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder, IconLock, IconUnlock, IconDragDotVertical } from '@arco-design/web-vue/es/icon'
-import { Message, Modal } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue' // 添加这行
 import axios from 'axios'
 import { dialog } from '@electron/remote'
 import fs from 'fs'
@@ -1308,17 +1307,13 @@ export default {
 
     const siderCollapsed = ref(false);
     
-    const toggleSider = (event) => {
-      // 检查点击的目标是否是侧边栏的空白区域或子元素
-      const isBlankArea = 
-        event.target.closest('.arco-layout-sider') && 
-        (!event.target.closest('.arco-menu-item') || 
-         event.target.closest('.arco-layout-sider-children'))
-
-      if (isBlankArea) {
-        siderCollapsed.value = !siderCollapsed.value
-      }
-    }
+    const toggleSider = () => {
+      siderCollapsed.value = !siderCollapsed.value;
+      // 在状态改变后重新调整终端大小
+      nextTick(() => {
+        resizeAllTerminals();
+      });
+    };
 
     // 添加语言设相的代码
     const locale = ref(zhCN)
@@ -3528,12 +3523,5 @@ export default {
   overflow: hidden; /* 添加溢出隐藏 */
   display: flex;
   flex-direction: column;
-}
-
-.arco-menu-item .arco-icon {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin: 0 auto;
 }
 </style>

@@ -8,14 +8,8 @@ files:
   - "!node_modules/**/*"
   - "package.json"
 extraResources:
-  - from: "backend/dist/service.exe"
-    to: "service.exe"
-    filter:
-      - "win32"
   - from: "backend/dist/service"
-    to: "service"
-    filter:
-      - "linux"
+    to: "."
 extraFiles:
   - from: "highlight.list"
     to: "highlight.list"

@@ -95,6 +95,11 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
    python -m PyInstaller --clean --noconfirm --onefile --hidden-import=gevent.monkey --hidden-import=gevent.builtins --hidden-import=gevent.signal --hidden-import=gevent.libev.corecext --hidden-import=gevent.libuv.loop --hidden-import=gevent.socket --hidden-import=gevent.threading --hidden-import=gevent._threading --hidden-import=gevent.time --hidden-import=gevent.os --hidden-import=gevent.select --hidden-import=gevent.ssl --hidden-import=gevent.subprocess --hidden-import=gevent.thread --hidden-import=gevent.resolver.thread --hidden-import=gevent.resolver.blocking --hidden-import=gevent.resolver.cares --hidden-import=gevent.resolver.dnspython --hidden-import=gevent._ssl3 --hidden-import=engineio.async_drivers.gevent --hidden-import=openai --hidden-import=ollama --hidden-import=zhipuai --hidden-import=numpy --hidden-import=pandas --hidden-import=aiohttp --hidden-import=urllib3 --hidden-import=ssl --collect-all gevent --collect-all aiohttp --collect-all urllib3 service.py --upx-dir "UPX路径"
    ```
 
+   ## 如果需要更快的启动速度（牺牲打包体积，但仍可以选择使用upx压缩）
+   ```
+   python -m PyInstaller --clean --noconfirm --hidden-import=gevent.monkey --hidden-import=gevent.builtins --hidden-import=gevent.signal --hidden-import=gevent.libev.corecext --hidden-import=gevent.libuv.loop --hidden-import=gevent.socket --hidden-import=gevent.threading --hidden-import=gevent._threading --hidden-import=gevent.time --hidden-import=gevent.os --hidden-import=gevent.select --hidden-import=gevent.ssl --hidden-import=gevent.subprocess --hidden-import=gevent.thread --hidden-import=gevent.resolver.thread --hidden-import=gevent.resolver.blocking --hidden-import=gevent.resolver.cares --hidden-import=gevent.resolver.dnspython --hidden-import=gevent._ssl3 --hidden-import=engineio.async_drivers.gevent --hidden-import=openai --hidden-import=ollama --hidden-import=zhipuai --hidden-import=numpy --hidden-import=pandas --hidden-import=aiohttp --hidden-import=urllib3 --hidden-import=ssl --collect-all gevent --collect-all aiohttp --collect-all urllib3 service.py --upx-dir "UPX路径"
+   ```
+
 ## 贡献
 
 欢迎提交问题和拉取请求以改进这个项目。

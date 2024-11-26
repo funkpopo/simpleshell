@@ -161,7 +161,6 @@ export default {
     const memUsage = ref(0)
     const showResourceMonitor = ref(true)
     let resourceMonitorInterval = null
-    let lastCPUInfo = null
     const showValues = ref(false)
     let searchAddon = null
 
@@ -172,27 +171,6 @@ export default {
       caseSensitive: false,
       wholeWord: false
     })
-
-    const timestampPatterns = {
-      iso8601: /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/g,
-      unixTimestamp: /\b\d{10}\b|\b\d{13}\b/g,
-      rfc2822: /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{4}\s\d{2}:\d{2}:\d{2}\s(?:[+-]\d{4}|GMT|UTC|EST|EDT|CST|CDT|MST|MDT|PST|PDT)/g
-    }
-
-    const debouncedRefresh = _debounce(() => {
-      if (term) {
-        term.refresh(0, term.rows - 1)
-        term.scrollToBottom()
-      }
-    }, 16)
-
-    const handleSSHOutput = (data) => {
-      if (data.session_id === props.sessionId) {
-        console.log('Received SSH output')
-        writeToTerminal(data.output)
-        debouncedRefresh()
-      }
-    }
 
     const initializeSocket = () => {
       return new Promise((resolve) => {
