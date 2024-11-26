@@ -168,6 +168,16 @@ def create_base_client(connection):
             'timeout': 30
         }
         
+        
+        # 处理DNS解析问题
+        try:
+            # 尝试使用 socket 预先解析主机名
+            socket.gethostbyname(connection['host'])
+        except socket.gaierror as dns_error:
+            logger.error(f"DNS resolution failed for {connection['host']}: {dns_error}")
+            raise ConnectionError(f"Cannot resolve hostname: {connection['host']}") from dns_error
+        
+        # 身份验证配置（保持原有逻辑）
         if connection.get('authType') == 'password':
             # 解密 base64 编码的密码
             import base64
@@ -203,6 +213,15 @@ def create_base_client(connection):
         ssh.connect(**connect_kwargs)
         print("SSH connection successful")
         return ssh
+    
+    except socket.error as sock_err:
+        logger.error(f"Socket error during connection: {sock_err}")
+        raise ConnectionError(f"Network error: {sock_err}") from sock_err
+    
+    except paramiko.SSHException as ssh_err:
+        logger.error(f"SSH connection error: {ssh_err}")
+        raise ConnectionError(f"SSH connection failed: {ssh_err}") from ssh_err
+    
     except Exception as e:
         # 如果 SSH 连接失败，确保关闭连接
         if ssh:
@@ -345,16 +364,25 @@ def handle_ssh_connection(data):
         try:
             # 创建新的 SSH 客户端和通道
             ssh, channel = create_ssh_client(data)
+        except ConnectionError as conn_err:
+            socketio.emit('ssh_error', {
+                'session_id': session_id,
+                'error': f'Network Connection Failed: {str(conn_err)}',
+                'type': 'network'
+            }, room=client_id)
+            return
         except paramiko.AuthenticationException:
             socketio.emit('ssh_error', {
                 'session_id': session_id,
-                'error': 'Authentication Failed: Invalid username, password or key'
+                'error': 'Authentication Failed: Invalid username, password or key',
+                'type': 'auth'
             }, room=client_id)
             return
         except Exception as e:
             socketio.emit('ssh_error', {
                 'session_id': session_id,
-                'error': f'Connection failed: {str(e)}'
+                'error': f'Connection failed: {str(e)}',
+                'type': 'unknown'
             }, room=client_id)
             return
         
@@ -917,7 +945,7 @@ def handle_chat():
                         messages=messages,
                         temperature=temperature,
                         max_tokens=max_tokens,
-                        stream=True  # 启用流式输出
+                        stream=True  # 启流式输出
                     )
                     
                     for chunk in stream:
