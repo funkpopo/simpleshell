@@ -128,10 +128,6 @@ export default {
     sessionId: {
       type: String,
       required: true
-    },
-    fontSize: {
-      type: Number,
-      default: 14
     }
   },
   emits: ['close', 'pathChange', 'connectionStatus'],
@@ -155,6 +151,12 @@ export default {
     const currentPath = ref('/')
     const contextMenu = ref(null)
     const regexPatterns = ref({})
+    const commandHistory = ref([])
+    const suggestionMenu = ref(null)
+    const showSuggestions = ref(false)
+    const currentInput = ref('')
+    const selectedSuggestionIndex = ref(-1)
+    const suggestions = ref([])
     const cpuUsage = ref(0)
     const memUsage = ref(0)
     const showResourceMonitor = ref(true)
@@ -365,33 +367,6 @@ export default {
       brightWhite: '#EEEEEC'
     })
 
-    const calculateTerminalSize = () => {
-      if (!terminal.value) return { cols: 80, rows: 24 }
-
-      // 获取终端容器的实际尺寸（减去padding）
-      const container = terminal.value
-      const containerWidth = container.clientWidth - 20  // 减去左右padding各10px
-      const containerHeight = container.clientHeight - 20 // 减去上下padding各10px
-
-      // 使用更精确的字符尺寸计算
-      const fontSize = props.fontSize
-      const charWidth = fontSize * 0.6  // 更精确的字符宽度比例
-      const charHeight = fontSize * 1.2 // 更精确的字符高度比例
-
-      // 计算可容纳的列数和行数（向下取整以确保完整显示）
-      const cols = Math.floor(containerWidth / charWidth)
-      const rows = Math.floor(containerHeight / charHeight)
-
-      // 调整最小值，确保旧版终端程序也能正常显示
-      const minCols = 80
-      const minRows = 24
-
-      return {
-        cols: Math.max(minCols, cols),
-        rows: Math.max(minRows, rows)
-      }
-    }
-
     const initializeTerminal = async () => {
       await nextTick()
       if (!terminal.value) {
@@ -399,12 +374,42 @@ export default {
         return
       }
 
+      // 动态计算终端大小的函数
+      const calculateTerminalSize = () => {
+        if (!terminal.value) return { cols: 80, rows: 24 }
+
+        // 获取终端容器的实际尺寸
+        const container = terminal.value
+        const containerWidth = container.clientWidth
+        const containerHeight = container.clientHeight
+
+        // 使用 xterm 的字体和大小设置
+        const fontSize = 14
+        const charWidth = Math.ceil(fontSize * 0.6)  // 近似字符宽度
+        const charHeight = Math.ceil(fontSize * 1.2)  // 近似字符高度
+
+        // 计算可容纳的列数和行数
+        const cols = Math.floor(containerWidth / charWidth)
+        const rows = Math.floor(containerHeight / charHeight)
+
+        // 设置最小和最大值限制
+        const minCols = 80
+        const maxCols = 240
+        const minRows = 24
+        const maxRows = 100
+
+        return {
+          cols: Math.max(minCols, Math.min(cols, maxCols)),
+          rows: Math.max(minRows, Math.min(rows, maxRows))
+        }
+      }
+
       // 计算初始终端大小
       const { cols, rows } = calculateTerminalSize()
 
       term = new Terminal({
         cursorBlink: true,
-        fontSize: props.fontSize,
+        fontSize: 14,
         fontFamily: 'Consolas, "Courier New", monospace',
         copyOnSelect: false,
         theme: isDarkMode.value ? getDarkTheme() : getLightTheme(),
@@ -431,8 +436,6 @@ export default {
         scrollSensitivity: 1,
         experimentalCharAtlas: 'dynamic',
         refreshRate: 60,
-        letterSpacing: 0, // 添加字符间距设置
-        lineHeight: 1, // 添加行高设置
       })
       
       term.open(terminal.value)
@@ -502,14 +505,55 @@ export default {
       term.onData((data) => {
         if (!isTerminalReady.value || !socket) return
 
+        // 检查是否处于 vim 或编辑器模式
         const inEditor = isinEditor()
 
+        // 如果在 vim 或他编辑器中直接发送输入，不处理命令补全
         if (inEditor) {
           socket.emit('ssh_input', { session_id: props.sessionId, input: data })
           return
         }
 
-        socket.emit('ssh_input', { session_id: props.sessionId, input: data })
+        // 处理 Enter 键
+        if (data === '\r') {
+          // 如果命令提示窗口显示且有选中项，不处理这个 Enter 事件
+          if (showSuggestions.value && selectedSuggestionIndex.value >= 0) {
+            return
+          }
+
+          // 正常处理 Enter 键事件
+          if (currentInput.value.trim()) {
+            addToHistory(currentInput.value.trim())
+          }
+          currentInput.value = ''
+          if (showSuggestions.value) {
+            hideSuggestionMenu()
+          }
+          socket.emit('ssh_input', { session_id: props.sessionId, input: '\r' })
+          return
+        }
+
+        // 记录普通输入
+        if (data >= ' ' && data <= '~') {
+          currentInput.value += data
+          // 从第一个字符开始就显示建议
+          if (currentInput.value.length > 0 && commandHistory.value) { // 确保 commandHistory 已始化
+            showSuggestionMenu()
+          }
+          socket.emit('ssh_input', { session_id: props.sessionId, input: data })
+        } else if (data === '\x7f') { // Backspace
+          if (currentInput.value.length > 0) {
+            currentInput.value = currentInput.value.slice(0, -1)
+            if (currentInput.value.length > 0 && commandHistory.value) { // 确保 commandHistory 已初始化
+              showSuggestionMenu()
+            } else {
+              hideSuggestionMenu()
+            }
+          }
+          socket.emit('ssh_input', { session_id: props.sessionId, input: data })
+        } else {
+          socket.emit('ssh_input', { session_id: props.sessionId, input: data })
+        }
       })
 
       term.onLineFeed(() => {
@@ -540,26 +584,20 @@ export default {
 
     const handleResize = () => {
       if (fitAddon && term && isTerminalReady.value && socket) {
-        // 添加短暂延迟以确保容器尺寸已更新
-        setTimeout(() => {
-          // 重新计算终端大小
-          const { cols, rows } = calculateTerminalSize()
-          
-          // 调整终端大小
-          term.resize(cols, rows)
-          fitAddon.fit()
-          
-          // 发送终端大小到服务器
-          socket.emit('resize', { 
-            session_id: props.sessionId, 
-            cols: cols, 
-            rows: rows 
-          })
+        fitAddon.fit()
+        term.scrollToBottom()
+        socket.emit('resize', { 
+          session_id: props.sessionId, 
+          cols: term.cols, 
+          rows: term.rows 
+        })
 
-          // 确保内容显示正确
-          term.refresh(0, term.rows - 1)
-          term.scrollToBottom()
-        }, 50)
+        // 添加重新定建议菜单的逻辑
+        if (suggestionMenu.value && showSuggestions.value) {
+          nextTick(() => {
+            positionSuggestionMenu()
+          })
+        }
       }
     }
 
@@ -815,6 +853,252 @@ export default {
       }
     }
 
+    const getHistoryPath = () => {
+      const isProd = process.env.NODE_ENV === 'production'
+      const basePath = isProd 
+        ? join(process.resourcesPath, '..')
+        : join(process.cwd(), 'backend')
+      
+      return fsPromises.mkdir(basePath, { recursive: true })
+        .then(() => join(basePath, 'command_history.mpack'))
+    }
+
+    const addToHistory = async (command) => {
+      if (!command || typeof command !== 'string') {
+        console.warn('Invalid command input')
+        return
+      }
+
+      try {
+        let history = []
+        const historyPath = await getHistoryPath()
+        
+        try {
+          const data = await fsPromises.readFile(historyPath)
+          history = msgpack.decode(data)
+          // 确保历史记录是数组
+          if (!Array.isArray(history)) {
+            history = []
+          }
+        } catch (error) {
+          if (error.code !== 'ENOENT') {
+            console.error('Error reading history:', error)
+          }
+        }
+        
+        // 检查是否存在重复命令
+        if (!history.includes(command)) {
+          history.unshift(command)
+          
+          // 限制历史记录数量
+          const maxHistoryItems = 50000 // 最大历史记录条数
+          if (history.length > maxHistoryItems) {
+            history = history.slice(0, maxHistoryItems)
+          }
+
+          // 计算编码后的数据大小
+          const encoded = msgpack.encode(history)
+          const maxFileSize = 10 * 1024 * 1024 // 10MB 限制
+          
+          if (encoded.length > maxFileSize) {
+            // 如果超过大小限制，删除旧的记录直到满足大小要求
+            while (history.length > 0) {
+              history.pop() // 移除最旧的记录
+              const newEncoded = msgpack.encode(history)
+              if (newEncoded.length <= maxFileSize) {
+                break
+              }
+            }
+          }
+          
+          // 保存历史记录
+          await fsPromises.writeFile(historyPath, msgpack.encode(history))
+          
+          // 更新内存中的历史记录
+          commandHistory.value = history
+        }
+      } catch (error) {
+        console.error('Error saving command history:', error)
+      }
+    }
+
+    const loadHistory = async () => {
+      try {
+        const historyPath = await getHistoryPath()
+        
+        try {
+          const data = await fsPromises.readFile(historyPath)
+          const decoded = msgpack.decode(data)
+          
+          // 验证数据格式
+          if (!Array.isArray(decoded)) {
+            console.warn('Invalid history data format')
+            commandHistory.value = []
+            return
+          }
+          
+          // 限制加载的历史记录量
+          const maxHistoryItems = 50000
+          commandHistory.value = decoded.slice(0, maxHistoryItems)
+          
+        } catch (error) {
+          if (error.code !== 'ENOENT') {
+            console.error('Error reading command history:', error)
+          }
+          commandHistory.value = []
+        }
+      } catch (error) {
+        console.error('Error loading command history:', error)
+        commandHistory.value = []
+      }
+    }
+
+    const showSuggestionMenu = () => {
+      // 首先检查是否处于 vim 或编辑器模式
+      if (isinEditor()) {
+        return
+      }
+
+      if (!commandHistory.value || !currentInput.value) {
+        console.warn('Command history or current input not initialized')
+        return
+      }
+
+      if (!suggestionMenu.value) {
+        suggestionMenu.value = document.createElement('div')
+        suggestionMenu.value.className = 'command-suggestions'
+        const xtermRows = terminal.value.querySelector('.xterm-screen .xterm-rows')
+        if (xtermRows && xtermRows.children && xtermRows.children.length >= 2) {
+          const lastRow = xtermRows.lastElementChild
+          xtermRows.insertBefore(suggestionMenu.value, lastRow)
+        } else {
+          console.error('Could not find appropriate position for suggestions menu')
+          return
+        }
+      }
+
+      // 过滤命令添加空值检查
+      const filteredCommands = commandHistory.value
+        .filter(cmd => {
+          // 确保命令和当前输入都是有效的字符串
+          return cmd && typeof cmd === 'string' && 
+                 currentInput.value && typeof currentInput.value === 'string' &&
+                 cmd.toLowerCase().startsWith(currentInput.value.toLowerCase())
+        })
+        .slice(0, 8)
+
+      suggestions.value = filteredCommands
+      
+      if (suggestions.value && suggestions.value.length > 0) {
+        suggestionMenu.value.innerHTML = suggestions.value
+          .map((cmd, index) => `
+            <div class="suggestion-item ${index === selectedSuggestionIndex.value ? 'selected' : ''}"
+                 data-index="${index}">
+              ${cmd}
+            </div>
+          `)
+          .join('')
+        
+        // 添加点击事件监听
+        suggestionMenu.value.querySelectorAll('.suggestion-item').forEach(item => {
+          item.addEventListener('click', handleSuggestionClick)
+        })
+        
+        showSuggestions.value = true
+        suggestionMenu.value.style.display = 'block'
+        suggestionMenu.value.style.visibility = 'visible'
+        
+        // 根据命令数量调整高度
+        const itemHeight = 32
+        const maxVisibleItems = 4
+        const actualItems = Math.min(suggestions.value.length, maxVisibleItems)
+        suggestionMenu.value.style.height = `${actualItems * itemHeight}px`
+        
+        // 确保滚动容器可以正常工作
+        suggestionMenu.value.style.overflowY = 'auto'
+        suggestionMenu.value.style.overscrollBehavior = 'contain'
+        
+        nextTick(() => {
+          positionSuggestionMenu()
+          // 如果有选中项，确保它可见
+          if (selectedSuggestionIndex.value >= 0) {
+            const selectedItem = suggestionMenu.value.querySelector('.suggestion-item.selected')
+            if (selectedItem) {
+              selectedItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+            }
+          }
+        })
+      } else {
+        hideSuggestionMenu()
+      }
+    }
+
+    const positionSuggestionMenu = () => {
+      if (!term || !suggestionMenu.value) return
+      
+      try {
+        // 获取光标位置和终端尺寸
+        const buffer = term.buffer.active
+        const cursorCol = buffer.cursorX
+        const cursorRow = buffer.cursorY
+        const terminalRows = term.rows
+        
+        // 获取终端的渲染服务以计算字符尺寸
+        const renderService = term._core._renderService
+        const charWidth = Math.ceil(renderService.dimensions.actualCellWidth)
+        const charHeight = Math.ceil(renderService.dimensions.actualCellHeight)
+        
+        // 获取 xterm-rows 容器
+        const xtermRows = terminal.value.querySelector('.xterm-screen .xterm-rows')
+        if (!xtermRows) return
+        
+        // 应用位置
+        Object.assign(suggestionMenu.value.style, {
+          position: 'absolute',
+          left: `${cursorCol * charWidth}px`,
+          // 将菜单放置在光标上方一行
+          bottom: `${(terminalRows - cursorRow + 1) * charHeight}px`,
+          zIndex: '9999',
+          transform: 'translateY(-100%)',
+        })
+        
+        // 处理水平溢出
+        const menuRect = suggestionMenu.value.getBoundingClientRect()
+        const containerRect = terminal.value.querySelector('.xterm-screen').getBoundingClientRect()
+        
+        if (cursorCol * charWidth + menuRect.width > containerRect.width) {
+          // 如果菜单超出右边界，将其左对齐到可见区域内
+          suggestionMenu.value.style.left = `${Math.max(0, containerRect.width - menuRect.width - 10)}px`
+        }
+
+        // 处理垂直溢出
+        if (cursorRow <= 1) {
+          // 如果光标在第一行或第二行，将菜单显示在光标下方
+          suggestionMenu.value.style.bottom = `${(terminalRows - cursorRow - 1) * charHeight}px`
+          suggestionMenu.value.style.transform = 'none'
+        }
+
+        // 确保菜单在终端可见区域内
+        const menuTop = containerRect.top + (cursorRow - 1) * charHeight
+        if (menuTop < 0) {
+          // 如果菜单会超出顶部，调整位置到可见区域
+          suggestionMenu.value.style.bottom = `${(terminalRows - cursorRow - 1) * charHeight}px`
+          suggestionMenu.value.style.transform = 'none'
+        }
+      } catch (error) {
+        console.error('Error positioning suggestion menu:', error)
+      }
+    }
+
+    const hideSuggestionMenu = () => {
+      showSuggestions.value = false
+      selectedSuggestionIndex.value = -1
+      if (suggestionMenu.value) {
+        suggestionMenu.value.style.display = 'none'
+        suggestionMenu.value.style.visibility = 'hidden'
+      }
+    }
+
     const getCPUClass = computed(() => {
       if (cpuUsage.value >= 90) return 'critical'
       if (cpuUsage.value >= 70) return 'warning'
@@ -857,12 +1141,50 @@ export default {
     onMounted(async () => {
       console.log('Mounting SSHTerminal component')
       try {
+        const styles = `
+          .command-suggestions {
+            position: absolute;
+            background-color: rgba(var(--color-bg-2-rgb), 0.8);
+            backdrop-filter: blur(4px);
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+            padding: 4px 0;
+            min-width: 200px;
+            max-width: 400px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 9999;
+            max-height: 200px;
+            overflow-y: auto;
+            pointer-events: auto;
+            user-select: none;
+            opacity: 1;
+            transition: opacity 0.1s ease;
+            box-sizing: border-box;
+            word-break: break-all;
+            white-space: normal;
+            transform-origin: bottom left;
+          }
+
+          :deep(.xterm-rows) {
+            position: relative !important;
+          }
+
+          .terminal-container {
+            position: relative;
+          }
+        `
+
+        const styleSheet = document.createElement('style')
+        styleSheet.textContent = styles
+        document.head.appendChild(styleSheet)
+
         await loadHighlightPatterns()
         await initializeSocket()
         await initializeTerminal()
         
         terminal.value.addEventListener('contextmenu', handleContextMenu)
         document.addEventListener('click', hideContextMenu)
+        loadHistory()
         startResourceMonitoring()
 
         const monitor = document.querySelector('.resource-monitor')
@@ -939,6 +1261,17 @@ export default {
         fitAddon = null
       }
       isTerminalReady.value = false
+      
+      // 清理建议菜单
+      if (suggestionMenu.value) {
+        suggestionMenu.value.querySelectorAll('.suggestion-item').forEach(item => {
+          item.removeEventListener('click', handleSuggestionClick)
+        })
+        if (suggestionMenu.value.parentNode) {
+          suggestionMenu.value.parentNode.removeChild(suggestionMenu.value)
+        }
+        suggestionMenu.value = null
+      }
     }
 
     const isinEditor = () => {
@@ -954,12 +1287,6 @@ export default {
         const currentLine = buffer.getLine(buffer.cursorY)
         const currentLineText = currentLine ? currentLine.translateToString(true) : ''
 
-        // 检查是否是命令提示符
-        const promptPattern = /^.*?[$#>]\s*$/
-        if (promptPattern.test(currentLineText)) {
-          return false  // 如果是命令提示符，不是编辑器模式
-        }
-
         // 检查最后几行的内容
         for (let i = Math.max(0, totalRows - visibleRows); i < totalRows; i++) {
           const line = buffer.getLine(i)
@@ -972,7 +1299,7 @@ export default {
             /^~+$/,  // vim 空行标识
             /^~.*?(?:\[New File\]|\[.+?\]).*?$/,  // vim 文件信息行
             /^:.*$/,  // vim 命令模式
-            /^-- (INSERT|VISUAL|REPLACE|SELECT) --$/,  // vim 式提示
+            /^-- (INSERT|VISUAL|REPLACE|SELECT) --$/,  // vim 模式提示
             /^[0-9]+ lines? (?:yanked|deleted|changed)$/,  // vim 操作提示
             /^".+" \d+L, \d+C written$/,  // vim 写入提示
             /^".+" \d+L, \d+C$/,  // vim 文件信息
@@ -992,19 +1319,17 @@ export default {
           }
         }
 
-        // 检查当前行是否包含命令提示符特征
-        const hasPromptCharacters = currentLineText.includes('$') || 
-                                   currentLineText.includes('#') || 
-                                   currentLineText.includes('>')
-
-        // 如果当前行包含命令示符特征，则不是编辑器模式
-        if (hasPromptCharacters) {
+        // 检查是否是命令提示符
+        const promptPattern = /^.*?[$#>]\s*$/
+        if (promptPattern.test(currentLineText)) {
           return false
         }
 
         // 检查是否在编辑器中
-        // 如果不包含命令提示符特征且不在最后一行，可能在编辑器中
-        const isInEditor = !hasPromptCharacters && buffer.cursorY < buffer.length - 1
+        const isInEditor = !currentLineText.includes('$') && 
+                            !currentLineText.includes('#') && 
+                            !currentLineText.includes('>') &&
+                            buffer.cursorY < buffer.length - 1
 
         return isInEditor
       } catch (error) {
@@ -1016,11 +1341,17 @@ export default {
     const handleSpecialKeys = (event) => {
       if (!term || !isTerminalReady.value) return true
 
+      const hasSuggestions = Array.isArray(suggestions.value) && suggestions.value.length > 0
+      
       // 使用更可靠的 vim/编辑器检测
       const inEditor = isinEditor()
 
-      // 如果在 vim 或编辑器中，直接返回true
+      // 如果在 vim 或编辑器中，禁用命令补全
       if (inEditor) {
+        // 强制关闭建议菜单
+        if (showSuggestions.value) {
+          hideSuggestionMenu()
+        }
         return true
       }
 
@@ -1038,7 +1369,78 @@ export default {
         return false
       }
 
-      // 处理方向键
+      // 原有的建议菜单处理逻辑
+      if (showSuggestions.value && hasSuggestions) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          hideSuggestionMenu()
+          return false
+        }
+        
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault()
+          
+          if (event.key === 'ArrowUp') {
+            // 如果没有选中项或在第一项，则移动到最后一项
+            if (selectedSuggestionIndex.value <= 0) {
+              selectedSuggestionIndex.value = suggestions.value.length - 1
+            } else {
+              selectedSuggestionIndex.value--
+            }
+          } else { // ArrowDown
+            // 如果没有选中项，选择第一项
+            if (selectedSuggestionIndex.value === -1) {
+              selectedSuggestionIndex.value = 0
+            } 
+            // 如果在最后一项，循环到第一项
+            else if (selectedSuggestionIndex.value >= suggestions.value.length - 1) {
+              selectedSuggestionIndex.value = 0
+            } else {
+              selectedSuggestionIndex.value++
+            }
+          }
+          
+          // 更新高亮显示并滚动到选中项
+          if (suggestionMenu.value) {
+            const items = suggestionMenu.value.querySelectorAll('.suggestion-item')
+            items.forEach((item, index) => {
+              if (index === selectedSuggestionIndex.value) {
+                item.classList.add('selected')
+                // 确保选中项可见
+                item.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+              } else {
+                item.classList.remove('selected')
+              }
+            })
+          }
+          return false
+        }
+
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          // 如果有选中的建议，填充命令但不执行
+          if (selectedSuggestionIndex.value >= 0 && selectedSuggestionIndex.value < suggestions.value.length) {
+            const selectedCommand = suggestions.value[selectedSuggestionIndex.value]
+            if (selectedCommand) {
+              // 清除当前输入
+              const backspaces = '\b'.repeat(currentInput.value.length)
+              // 填充新命令
+              socket.emit('ssh_input', { 
+                session_id: props.sessionId, 
+                input: backspaces + selectedCommand
+              })
+              currentInput.value = selectedCommand
+              hideSuggestionMenu()
+              return false // 阻止事件继续传播
+            }
+          }
+          // 如果没有选中的建议，关闭提示窗口
+          hideSuggestionMenu()
+          return true // 让 Enter 事件继续传播
+        }
+      }
+      
+      // 如果没有显示命令提示窗口或没有建议理普通的终方向键
       if (event.key.startsWith('Arrow')) {
         const key = event.key.toLowerCase()
         const sequences = {
@@ -1048,6 +1450,10 @@ export default {
           arrowleft: '\x1b[D'
         }
         if (sequences[key]) {
+          // 如果命令提示窗口显示但没有建议，先关闭它
+          if (showSuggestions.value) {
+            hideSuggestionMenu()
+          }
           socket.emit('ssh_input', { session_id: props.sessionId, input: sequences[key] })
           return false
         }
@@ -1055,6 +1461,7 @@ export default {
 
       return true
     }
+
     const reconnect = async () => {
       try {
         // 清理现有连接
@@ -1163,6 +1570,24 @@ export default {
       return matches
     }
 
+    const handleSuggestionClick = (event) => {
+      const item = event.target.closest('.suggestion-item')
+      if (item) {
+        const index = parseInt(item.dataset.index)
+        if (!isNaN(index) && index >= 0 && index < suggestions.value.length) {
+          const selectedCommand = suggestions.value[index]
+          // 清除当前输入并填充选中的命令
+          const backspaces = '\b'.repeat(currentInput.value.length)
+          socket.emit('ssh_input', { 
+            session_id: props.sessionId, 
+            input: backspaces + selectedCommand
+          })
+          currentInput.value = selectedCommand
+          hideSuggestionMenu()
+        }
+      }
+    }
+
     const handleMouseEnter = () => {
       showValues.value = true;
     };
@@ -1261,27 +1686,6 @@ export default {
     // 从 Vue 实例中获取 $t 方法
     const t = getCurrentInstance()?.proxy?.$t || ((key) => key)
 
-    // 在 setup 函数中添加对 fontSize prop 的监听
-    watch(() => props.fontSize, (newSize) => {
-      if (term) {
-        term.options.fontSize = newSize
-        // 调整终端大小以适应新的字号
-        nextTick(() => {
-          if (fitAddon) {
-            fitAddon.fit()
-            // 发送新的终端大小到服务器
-            if (socket && isTerminalReady.value) {
-              socket.emit('resize', { 
-                session_id: props.sessionId, 
-                cols: term.cols, 
-                rows: term.rows 
-              })
-            }
-          }
-        })
-      }
-    })
-
     return { 
       terminal,
       closeConnection,
@@ -1320,32 +1724,16 @@ export default {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  position: relative; /* 添加相对定位 */
 }
 
 :deep(.xterm) {
   flex: 1;
   padding: 10px;
-  position: absolute; /* 使用绝对定位 */
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
 }
 
 .terminal-container.dark-mode {
   background-color: var(--color-bg-5);
   color: var(--color-text-1);
-}
-
-:deep(.xterm-viewport) {
-  width: 100% !important; /* 确保视口宽度填满容器 */
-  height: 100% !important; /* 确保视口高度填满容器 */
-}
-
-:deep(.xterm-screen) {
-  width: 100% !important; /* 确保屏幕宽度填满容器 */
-  height: 100% !important; /* 确保屏幕高度填满容器 */
 }
 
 :deep(.xterm-viewport) {
@@ -1402,6 +1790,126 @@ export default {
 
 .terminal-context-menu .menu-item.disabled:hover {
   background-color: transparent;
+}
+
+.command-suggestions {
+  position: absolute;
+  /* 深色主题 */
+  --dark-bg-color: rgba(36, 36, 36, 0.85);
+  --dark-border-color: rgba(78, 78, 78, 0.6);
+  --dark-hover-color: rgba(70, 70, 70, 0.8);
+  /* 浅色主题 */
+  --light-bg-color: rgba(255, 255, 255, 0.85);
+  --light-border-color: rgba(229, 230, 235, 0.8);
+  --light-hover-color: rgba(242, 243, 245, 0.9);
+  
+  background-color: var(--light-bg-color);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--light-border-color);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 200px;
+  max-width: 400px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 9999;
+  overflow-y: auto;
+  pointer-events: auto;
+  user-select: none;
+  opacity: 1;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  word-break: break-all;
+  white-space: normal;
+  transform-origin: bottom left;
+  
+  /* 设置单个命令项的度 */
+  --suggestion-item-height: 32px;
+  /* 最大显示4行的高度 */
+  max-height: calc(var(--suggestion-item-height) * 4);
+  /* 优化滚动行 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  
+  /* 确保内容不会溢出 */
+  max-height: calc(var(--suggestion-item-height) * 4);
+  min-height: var(--suggestion-item-height);
+}
+
+.suggestion-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text-1);
+  line-height: 20px;
+  font-size: 14px;
+  transition: all 0.15s ease;
+  margin: 0 4px;
+  border-radius: 4px;
+  height: var(--suggestion-item-height);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  /* 确保项目高度固定 */
+  height: var(--suggestion-item-height);
+  min-height: var(--suggestion-item-height);
+  /* 改进选中和悬停状态的视觉效果 */
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+/* 浅色主题选中状态 */
+.suggestion-item.selected {
+  background-color: var(--light-hover-color);
+  color: var(--color-text-1);
+}
+
+/* 深色主题选中状态 */
+.terminal-container.dark-mode .suggestion-item.selected {
+  background-color: var(--dark-hover-color);
+  color: var(--color-text-1);
+}
+
+/* 悬停效果 */
+.suggestion-item:hover {
+  background-color: var(--light-hover-color);
+}
+
+.terminal-container.dark-mode .suggestion-item:hover {
+  background-color: var(--dark-hover-color);
+}
+
+/* Arco Design 滚动条样式 */
+.command-suggestions::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.command-suggestions::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.command-suggestions::-webkit-scrollbar-thumb {
+  background-color: var(--color-text-4);
+  border-radius: 3px;
+  border: none;
+}
+
+.command-suggestions::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-3);
+}
+
+/* 深色主题滚动条 */
+.terminal-container.dark-mode .command-suggestions::-webkit-scrollbar-thumb {
+  background-color: var(--color-fill-3);
+}
+
+.terminal-container.dark-mode .command-suggestions::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-fill-4);
 }
 
 .terminal-wrapper {
@@ -1649,4 +2157,3 @@ export default {
   }
 }
 </style>
-
