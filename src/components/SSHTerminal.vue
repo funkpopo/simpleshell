@@ -176,6 +176,9 @@ export default {
       wholeWord: false
     })
 
+    // 在 setup 中添加编辑器模式的检测变量
+    const isInEditorMode = ref(false)
+
     // 监听 fontSize 的变化
     watch(() => props.fontSize, (newSize) => {
       if (term) {
@@ -457,6 +460,12 @@ export default {
 
         // 处理 Enter 键
         if (data === '\r') {
+          // 如果在编辑器模式下，直接发送输入
+          if (isInEditorMode.value) {
+            socket.emit('ssh_input', { session_id: props.sessionId, input: '\r' })
+            return
+          }
+
           // 如果命令提示窗口显示且有选中项，不处理这个 Enter 事件
           if (showSuggestions.value && selectedSuggestionIndex.value >= 0) {
             return
@@ -475,26 +484,15 @@ export default {
         }
 
         // 记录普通输入
-        if (data >= ' ' && data <= '~') {
+        if (!isInEditorMode.value && data >= ' ' && data <= '~') {
           currentInput.value += data
-          // 从第一个字符开始就显示建议
-          if (currentInput.value.length > 0 && commandHistory.value) { // 确保 commandHistory 已始化
+          if (currentInput.value.length > 0 && commandHistory.value) {
             showSuggestionMenu()
           }
-          socket.emit('ssh_input', { session_id: props.sessionId, input: data })
-        } else if (data === '\x7f') { // Backspace
-          if (currentInput.value.length > 0) {
-            currentInput.value = currentInput.value.slice(0, -1)
-            if (currentInput.value.length > 0 && commandHistory.value) { // 确保 commandHistory 已初始化
-              showSuggestionMenu()
-            } else {
-              hideSuggestionMenu()
-            }
-          }
-          socket.emit('ssh_input', { session_id: props.sessionId, input: data })
-        } else {
-          socket.emit('ssh_input', { session_id: props.sessionId, input: data })
         }
+
+        // 发送输入到服务器
+        socket.emit('ssh_input', { session_id: props.sessionId, input: data })
       })
 
       term.onLineFeed(() => {
@@ -574,6 +572,20 @@ export default {
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
         try {
+          // 修改编辑器模式检测逻辑
+          if (text.includes('\u001b[?1049h')) {  // vim 进入全屏模式的标志
+            isInEditorMode.value = true
+          } else if (text.includes('GNU nano')) {  // nano 编辑器标志
+            isInEditorMode.value = true
+          } else if (text.includes('\u001b[?1049l')) {  // vim 退出全屏模式的标志
+            isInEditorMode.value = false
+          }
+
+          // 如果检测到命令提示符，说明已退出编辑器模式
+          if (/\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text)) {
+            isInEditorMode.value = false
+          }
+
           const lines = text.split('\n')
           
           lines.forEach((line, index) => {
@@ -895,6 +907,11 @@ export default {
     }
 
     const showSuggestionMenu = () => {
+      // 如果在编辑器模式下，不显示建议菜单
+      if (isInEditorMode.value) {
+        return
+      }
+
       if (!commandHistory.value || !currentInput.value) {
         console.warn('Command history or current input not initialized')
         return
@@ -1279,7 +1296,7 @@ export default {
           }
           // 如果没有选中的建议，关闭提示窗口
           hideSuggestionMenu()
-          return true // 让 Enter 事件继续传播
+          return true // ��� Enter 事件继续传播
         }
       }
       
