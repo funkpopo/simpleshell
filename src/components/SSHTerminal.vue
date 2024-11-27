@@ -224,9 +224,27 @@ export default {
           if (data.session_id === props.sessionId) {
             console.log('SSH connected:', data.message)
             emit('connectionStatus', { type: 'connected', sessionId: props.sessionId })
+            
             if (!isTerminalReady.value) {
-              initializeTerminal()
+              initializeTerminal().then(() => {
+                // 确保终端完全初始化后调整大小
+                nextTick(() => {
+                  if (fitAddon) {
+                    fitAddon.fit()
+                  }
+                  
+                  // 发送精确的终端大小
+                  if (socket && term) {
+                    socket.emit('resize', { 
+                      session_id: props.sessionId, 
+                      cols: term.cols, 
+                      rows: term.rows 
+                    })
+                  }
+                })
+              })
             }
+            
             updateResourceUsage()
           }
         })
@@ -356,6 +374,39 @@ export default {
         return
       }
 
+      // 动态计算终端大小的函数
+      const calculateTerminalSize = () => {
+        if (!terminal.value) return { cols: 80, rows: 24 }
+
+        // 获取终端容器的实际尺寸
+        const container = terminal.value
+        const containerWidth = container.clientWidth
+        const containerHeight = container.clientHeight
+
+        // 使用 xterm 的字体和大小设置
+        const fontSize = 14
+        const charWidth = Math.ceil(fontSize * 0.6)  // 近似字符宽度
+        const charHeight = Math.ceil(fontSize * 1.2)  // 近似字符高度
+
+        // 计算可容纳的列数和行数
+        const cols = Math.floor(containerWidth / charWidth)
+        const rows = Math.floor(containerHeight / charHeight)
+
+        // 设置最小和最大值限制
+        const minCols = 80
+        const maxCols = 240
+        const minRows = 24
+        const maxRows = 100
+
+        return {
+          cols: Math.max(minCols, Math.min(cols, maxCols)),
+          rows: Math.max(minRows, Math.min(rows, maxRows))
+        }
+      }
+
+      // 计算初始终端大小
+      const { cols, rows } = calculateTerminalSize()
+
       term = new Terminal({
         cursorBlink: true,
         fontSize: 14,
@@ -368,8 +419,8 @@ export default {
         termName: 'xterm-256color',
         rendererType: 'canvas',
         allowProposedApi: true,
-        cols: 80,
-        rows: 24,
+        cols: cols,
+        rows: rows,
         windowsMode: false,
         windowsPty: false,
         smoothScrollDuration: 0,
@@ -393,6 +444,30 @@ export default {
 
       fitAddon = new FitAddon()
       term.loadAddon(fitAddon)
+
+      // 添加窗口大小变化监听器
+      const resizeObserver = new ResizeObserver(() => {
+        if (fitAddon && term) {
+          const { cols, rows } = calculateTerminalSize()
+          
+          // 调整终端大小
+          term.resize(cols, rows)
+          
+          // 发送终端大小调整事件
+          if (socket && isTerminalReady.value) {
+            socket.emit('resize', { 
+              session_id: props.sessionId, 
+              cols: cols, 
+              rows: rows 
+            })
+          }
+        }
+      })
+
+      // 监听终端容器的大小变化
+      if (terminal.value) {
+        resizeObserver.observe(terminal.value)
+      }
 
       // 自定义链接处理器
       const webLinksAddon = new WebLinksAddon(
@@ -429,6 +504,15 @@ export default {
 
       term.onData((data) => {
         if (!isTerminalReady.value || !socket) return
+
+        // 检查是否处于 vim 或编辑器模式
+        const inEditor = isinEditor()
+
+        // 如果在 vim 或其他编辑器中，直接发送输入，不处理命令补全
+        if (inEditor) {
+          socket.emit('ssh_input', { session_id: props.sessionId, input: data })
+          return
+        }
 
         // 处理 Enter 键
         if (data === '\r') {
@@ -870,6 +954,11 @@ export default {
     }
 
     const showSuggestionMenu = () => {
+      // 首先检查是否处于 vim 或编辑器模式
+      if (isinEditor()) {
+        return
+      }
+
       if (!commandHistory.value || !currentInput.value) {
         console.warn('Command history or current input not initialized')
         return
@@ -1133,6 +1222,11 @@ export default {
 
       // 移除鼠标中键事监听
       terminal.value?.removeEventListener('mousedown', handleMouseDown)
+
+      // 如果存在 ResizeObserver，确保取消监听
+      if (resizeObserver) {
+        resizeObserver.disconnect()
+      }
     })
 
     watch(() => isDarkMode.value, (newValue) => {
@@ -1168,11 +1262,87 @@ export default {
       }
     }
 
+    const isinEditor = () => {
+      if (!term) return false
+
+      try {
+        // 获取终端的完整缓冲区内容
+        const buffer = term.buffer.active
+        const totalRows = buffer.length
+        const visibleRows = term.rows
+
+        // 检查最后几行的内容
+        for (let i = Math.max(0, totalRows - visibleRows); i < totalRows; i++) {
+          const line = buffer.getLine(i)
+          if (!line) continue
+
+          const lineText = line.translateToString(true)
+          
+          // Vim、Nano 和其他编辑器的特征模式
+          const editorPatterns = [
+            /^~?[\/\w\-]+\s*\(([0-9]+%)\)$/,  // vim 文件浏览器
+            /^:\w*$/,  // vim 命令模式
+            /^-- \w+ mode --$/,  // vim 模式提示
+            /^[0-9]+ lines? selected$/,  // 选择模式
+            /^[0-9]+ lines? yanked$/,  // 复制模式
+            /^\[No Name\]$/,  // 未命名文件
+            /^-- INSERT --$/,  // vim 插入模式
+            /^-- VISUAL --$/,  // vim 可视模式
+            /^-- REPLACE --$/,  // vim 替换模式
+            /^\s*\d+\s*$/, // 行号
+            
+            // Nano 编辑器特征
+            /^GNU nano \d+\.\d+/, // Nano 版本信息
+            /^New Buffer$/, // 新建缓冲区
+            /^Modified$/, // 文件已修改
+            /^Save modified buffer\?$/, // 保存修改提示
+            /^File Name to Write:$/, // 文件保存提示
+            /^Wrote \d+ lines$/, // 写入行数提示
+            /^[ ]*\^[GOKRVX]/, // Nano 快捷键提示行
+            /^(Read|Wrote) \d+ lines?$/, // 读写行数提示
+          ]
+
+          // 检查是否匹配编辑器特征
+          if (editorPatterns.some(pattern => pattern.test(lineText.trim()))) {
+            return true
+          }
+        }
+
+        // 检查光标位置和最后一行的特征
+        const lastLine = buffer.getLine(totalRows - 1)
+        const lastLineText = lastLine ? lastLine.translateToString(true) : ''
+        const cursorX = buffer.cursorX
+        const cursorY = buffer.cursorY
+
+        // 额外的光标和最后一行检查
+        const cursorAtLastLine = cursorY === visibleRows - 1
+        const isCommandLineOrStatus = /^[:/]/.test(lastLineText.trim()) || 
+                                      /^(Save modified buffer\?|File Name to Write:)$/.test(lastLineText.trim())
+
+        return cursorAtLastLine || isCommandLineOrStatus
+      } catch (error) {
+        console.error('Error in isinEditor:', error)
+        return false
+      }
+    }
+
     const handleSpecialKeys = (event) => {
       if (!term || !isTerminalReady.value) return true
 
       const hasSuggestions = Array.isArray(suggestions.value) && suggestions.value.length > 0
       
+      // 使用更可靠的 vim/编辑器检测
+      const inEditor = isinEditor()
+
+      // 如果在 vim 或编辑器中，禁用命令补全
+      if (inEditor) {
+        // 强制关闭建议菜单
+        if (showSuggestions.value) {
+          hideSuggestionMenu()
+        }
+        return true
+      }
+
       // 添加搜索快捷键 Ctrl+F 的切换逻辑
       if (event.ctrlKey && event.key === 'f') {
         event.preventDefault()
@@ -1721,7 +1891,7 @@ export default {
   background-color: var(--color-text-3);
 }
 
-/* 深色题滚动条 */
+/* 深色主题滚动条 */
 .terminal-container.dark-mode .command-suggestions::-webkit-scrollbar-thumb {
   background-color: var(--color-fill-3);
 }

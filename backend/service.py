@@ -232,7 +232,7 @@ def create_base_client(connection):
         raise  # 重新抛出原始异常
 
 def create_ssh_client(connection):
-    """创建用于终端的 SSH 客户端"""
+    """创建 SSH 客户端"""
     ssh = None  # 初始化 ssh 为 None
     try:
         ssh = create_base_client(connection)
@@ -506,23 +506,19 @@ def handle_ssh_close(data):
 
 @socketio.on('resize')
 def handle_resize(data):
-    try:
-        client_id = request.sid
-        session_id = data['session_id']
-        
-        with sessions_lock:
-            session = ssh_sessions.get(session_id)
-            if session and session.active and session.client_id == client_id:
-                with session.lock:
-                    session.channel.resize_pty(
-                        width=int(data['cols']),
-                        height=int(data['rows'])
-                    )
-    except Exception as e:
-        socketio.emit('ssh_error', {
-            'session_id': session_id,
-            'error': str(e)
-        })
+    session_id = data.get('session_id')
+    cols = max(80, min(data.get('cols', 80), 240))  # 限制列数范围
+    rows = max(24, min(data.get('rows', 24), 100))  # 限制行数范围
+    
+    # 确保会话存在
+    if session_id in ssh_sessions:
+        try:
+            # 调整伪终端大小
+            channel = ssh_sessions[session_id].channel
+            channel.resize_pty(width=cols, height=rows)
+            print(f"Resized terminal for session {session_id} to {cols}x{rows}")
+        except Exception as e:
+            print(f"Error resizing terminal: {e}")
 
 # SFTP相关路由
 @app.route('/sftp_list_directory', methods=['POST'])
