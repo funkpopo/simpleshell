@@ -508,7 +508,7 @@ export default {
         // 检查是否处于 vim 或编辑器模式
         const inEditor = isinEditor()
 
-        // 如果在 vim 或其他编辑器中，直接发送输入，不处理命令补全
+        // 如果在 vim 或他编辑器中直接发送输入，不处理命令补全
         if (inEditor) {
           socket.emit('ssh_input', { session_id: props.sessionId, input: data })
           return
@@ -1036,45 +1036,57 @@ export default {
     const positionSuggestionMenu = () => {
       if (!term || !suggestionMenu.value) return
       
-      // 获取光标位置
-      const cursorCol = term.buffer.active.cursorX
-      const charWidth = Math.ceil(term._core._renderService.dimensions.actualCellWidth)
-      const charHeight = Math.ceil(term._core._renderService.dimensions.actualCellHeight)
-      
-      // 获取 xterm-rows 容器
-      const xtermRows = terminal.value.querySelector('.xterm-screen .xterm-rows')
-      if (!xtermRows) return
-      
-      // 获取最后一行的位置
-      const lastRow = xtermRows.lastElementChild
-      if (!lastRow) return
-      
-      // 应用位置
-      Object.assign(suggestionMenu.value.style, {
-        position: 'absolute',
-        left: `${cursorCol * charWidth}px`,
-        bottom: `${charHeight * 2}px`, // 确保在倒数第二行上方
-        zIndex: '9999',
-        transform: 'translateY(-100%)', // 向上移动菜单的高度
-      })
-      
-      // 获取菜单尺寸和容器尺寸
-      const menuRect = suggestionMenu.value.getBoundingClientRect()
-      const containerRect = terminal.value.querySelector('.xterm-screen').getBoundingClientRect()
-      
-      // 处理水平溢出
-      if (cursorCol * charWidth + menuRect.width > containerRect.width) {
-        suggestionMenu.value.style.left = `${Math.max(0, containerRect.width - menuRect.width)}px`
-      }
-      
-      // 确保菜单完全可见
-      const menuHeight = menuRect.height
-      const availableSpace = lastRow.offsetTop - charHeight // 减去一行高度，给最后一行留出空间
-      
-      if (menuHeight > availableSpace) {
-        // 如果菜单高度超过可用空间，调整位置和大小
-        suggestionMenu.value.style.maxHeight = `${Math.max(100, availableSpace)}px`
-        suggestionMenu.value.style.bottom = `${charHeight * 2}px`
+      try {
+        // 获取光标位置和终端尺寸
+        const buffer = term.buffer.active
+        const cursorCol = buffer.cursorX
+        const cursorRow = buffer.cursorY
+        const terminalRows = term.rows
+        
+        // 获取终端的渲染服务以计算字符尺寸
+        const renderService = term._core._renderService
+        const charWidth = Math.ceil(renderService.dimensions.actualCellWidth)
+        const charHeight = Math.ceil(renderService.dimensions.actualCellHeight)
+        
+        // 获取 xterm-rows 容器
+        const xtermRows = terminal.value.querySelector('.xterm-screen .xterm-rows')
+        if (!xtermRows) return
+        
+        // 应用位置
+        Object.assign(suggestionMenu.value.style, {
+          position: 'absolute',
+          left: `${cursorCol * charWidth}px`,
+          // 将菜单放置在光标上方一行
+          bottom: `${(terminalRows - cursorRow + 1) * charHeight}px`,
+          zIndex: '9999',
+          transform: 'translateY(-100%)',
+        })
+        
+        // 处理水平溢出
+        const menuRect = suggestionMenu.value.getBoundingClientRect()
+        const containerRect = terminal.value.querySelector('.xterm-screen').getBoundingClientRect()
+        
+        if (cursorCol * charWidth + menuRect.width > containerRect.width) {
+          // 如果菜单超出右边界，将其左对齐到可见区域内
+          suggestionMenu.value.style.left = `${Math.max(0, containerRect.width - menuRect.width - 10)}px`
+        }
+
+        // 处理垂直溢出
+        if (cursorRow <= 1) {
+          // 如果光标在第一行或第二行，将菜单显示在光标下方
+          suggestionMenu.value.style.bottom = `${(terminalRows - cursorRow - 1) * charHeight}px`
+          suggestionMenu.value.style.transform = 'none'
+        }
+
+        // 确保菜单在终端可见区域内
+        const menuTop = containerRect.top + (cursorRow - 1) * charHeight
+        if (menuTop < 0) {
+          // 如果菜单会超出顶部，调整位置到可见区域
+          suggestionMenu.value.style.bottom = `${(terminalRows - cursorRow - 1) * charHeight}px`
+          suggestionMenu.value.style.transform = 'none'
+        }
+      } catch (error) {
+        console.error('Error positioning suggestion menu:', error)
       }
     }
 
@@ -1271,6 +1283,10 @@ export default {
         const totalRows = buffer.length
         const visibleRows = term.rows
 
+        // 获取当前行的文本
+        const currentLine = buffer.getLine(buffer.cursorY)
+        const currentLineText = currentLine ? currentLine.translateToString(true) : ''
+
         // 检查最后几行的内容
         for (let i = Math.max(0, totalRows - visibleRows); i < totalRows; i++) {
           const line = buffer.getLine(i)
@@ -1278,48 +1294,44 @@ export default {
 
           const lineText = line.translateToString(true)
           
-          // Vim、Nano 和其他编辑器的特征模式
+          // 检查是否匹配编辑器特征
           const editorPatterns = [
-            /^~?[\/\w\-]+\s*\(([0-9]+%)\)$/,  // vim 文件浏览器
-            /^:\w*$/,  // vim 命令模式
-            /^-- \w+ mode --$/,  // vim 模式提示
-            /^[0-9]+ lines? selected$/,  // 选择模式
-            /^[0-9]+ lines? yanked$/,  // 复制模式
-            /^\[No Name\]$/,  // 未命名文件
-            /^-- INSERT --$/,  // vim 插入模式
-            /^-- VISUAL --$/,  // vim 可视模式
-            /^-- REPLACE --$/,  // vim 替换模式
-            /^\s*\d+\s*$/, // 行号
+            /^~+$/,  // vim 空行标识
+            /^~.*?(?:\[New File\]|\[.+?\]).*?$/,  // vim 文件信息行
+            /^:.*$/,  // vim 命令模式
+            /^-- (INSERT|VISUAL|REPLACE|SELECT) --$/,  // vim 模式提示
+            /^[0-9]+ lines? (?:yanked|deleted|changed)$/,  // vim 操作提示
+            /^".+" \d+L, \d+C written$/,  // vim 写入提示
+            /^".+" \d+L, \d+C$/,  // vim 文件信息
+            /^Press ENTER or type command to continue$/,  // vim 提示
+            /^E\d+: /,  // vim 错误信息
             
             // Nano 编辑器特征
-            /^GNU nano \d+\.\d+/, // Nano 版本信息
-            /^New Buffer$/, // 新建缓冲区
-            /^Modified$/, // 文件已修改
-            /^Save modified buffer\?$/, // 保存修改提示
-            /^File Name to Write:$/, // 文件保存提示
-            /^Wrote \d+ lines$/, // 写入行数提示
-            /^[ ]*\^[GOKRVX]/, // Nano 快捷键提示行
-            /^(Read|Wrote) \d+ lines?$/, // 读写行数提示
+            /^GNU nano \d+\.\d+/,  // Nano 版本信息
+            /^\s*\^G Get Help\s*\^O Write Out/,  // Nano 帮助行
+            /^File: .+$/,  // Nano 文件名显示
+            /^\[ .+ \]/,  // Nano 状态信息
+            /^\s*\[ (line|col) \d+\]/,  // Nano 位置信息
           ]
 
-          // 检查是否匹配编辑器特征
           if (editorPatterns.some(pattern => pattern.test(lineText.trim()))) {
             return true
           }
         }
 
-        // 检查光标位置和最后一行的特征
-        const lastLine = buffer.getLine(totalRows - 1)
-        const lastLineText = lastLine ? lastLine.translateToString(true) : ''
-        const cursorX = buffer.cursorX
-        const cursorY = buffer.cursorY
+        // 检查是否是命令提示符
+        const promptPattern = /^.*?[$#>]\s*$/
+        if (promptPattern.test(currentLineText)) {
+          return false
+        }
 
-        // 额外的光标和最后一行检查
-        const cursorAtLastLine = cursorY === visibleRows - 1
-        const isCommandLineOrStatus = /^[:/]/.test(lastLineText.trim()) || 
-                                      /^(Save modified buffer\?|File Name to Write:)$/.test(lastLineText.trim())
+        // 检查是否在编辑器中
+        const isInEditor = !currentLineText.includes('$') && 
+                            !currentLineText.includes('#') && 
+                            !currentLineText.includes('>') &&
+                            buffer.cursorY < buffer.length - 1
 
-        return cursorAtLastLine || isCommandLineOrStatus
+        return isInEditor
       } catch (error) {
         console.error('Error in isinEditor:', error)
         return false
