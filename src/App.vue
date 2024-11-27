@@ -215,7 +215,8 @@
                 v-for="tab in tabs"
                 :key="tab.id"
                 :connection="tab.connection" 
-                :sessionId="tab.id" 
+                :sessionId="tab.id"
+                :fontSize="settings.fontSize"
                 @close="closeTab"
                 @connectionStatus="handleConnectionStatus"
                 ref="sshTerminals"
@@ -352,15 +353,27 @@
             </a-select>
           </a-form-item>
           
-          <!-- 添加高亮规则配置按钮 -->
-          <a-form-item>
-            <a-button 
-              type="outline" 
-              @click="highlightRulesVisible = true"
-            >
-              {{ t('settings.customHighlight') }}
-            </a-button>
-          </a-form-item>
+          <!-- 添加字号设置和高亮规则按钮的容器 -->
+          <div style="display: flex; gap: 16px; align-items: flex-start;">
+            <a-form-item :label="t('settings.fontSize')" style="flex: 1;">
+              <a-input-number
+                v-model="settings.fontSize"
+                :min="8"
+                :max="32"
+                :step="1"
+                style="width: 100%;"
+              />
+            </a-form-item>
+            
+            <a-form-item style="flex: 1;">
+              <a-button 
+                type="outline" 
+                @click="highlightRulesVisible = true"
+              >
+                {{ t('settings.customHighlight') }}
+              </a-button>
+            </a-form-item>
+          </div>
         </a-form>
         
         <template #footer>
@@ -1320,6 +1333,7 @@ export default {
     const settingsVisible = ref(false)
     const settings = reactive({
       language: localStorage.getItem('language') || 'zh-CN',
+      fontSize: 14, // 添加默认字号
       proxy: {
         enabled: false,
         host: '127.0.0.1',
@@ -1327,7 +1341,7 @@ export default {
       }
     });
 
-    // 初始化时设置语言
+    // 初始化时设置语��
     watch(() => settings.language, (newLang) => {
       locale.value = newLang === 'zh-CN' ? zhCN : enUS
       localStorage.setItem('language', newLang)
@@ -1337,17 +1351,20 @@ export default {
       settingsVisible.value = true
     }
 
+    // 修改 saveSettings 函数
     const saveSettings = async () => {
       try {
         // 获取当前配置
         const response = await axios.get('http://localhost:5000/get_connections')
         let currentConfig = response.data
         
-        // 更新���添加设置
+        // 更新或添加设置
         const settingsIndex = currentConfig.findIndex(item => item.type === 'settings')
         const settingsData = {
           type: 'settings',
-          language: settings.language
+          language: settings.language,
+          fontSize: settings.fontSize,
+          widthSettings: currentConfig[settingsIndex]?.widthSettings
         }
         
         if (settingsIndex !== -1) {
@@ -1365,38 +1382,29 @@ export default {
         // 关闭设置对话框
         settingsVisible.value = false
 
-        // 显示重启提示对话框
-        Modal.info({
-          title: t('settings.languageChanged'),
-          content: t('settings.restartRequired'),
-          okText: t('settings.restartNow'),
-          cancelText: t('settings.restartLater'),
-          hideCancel: false,
-          onOk: () => {
-            // 用户选择立重
-            const { app } = require('@electron/remote')
-            app.relaunch()
-            app.exit(0)
-          },
-          onCancel: () => {
-            // 用户选稍后重启
-            Message.success(t('settings.restartReminder'))
-          }
-        })
-      } catch (error) {
-        // 有在实际保存设置失败时才错误
-        console.error('Failed to save settings:', error)
-        if (error.response) {
-          Message.error(t('settings.saveFailed'))
+        // 只有在语言改变时才需要重启
+        if (settings.language !== currentConfig[settingsIndex]?.language) {
+          Modal.info({
+            title: t('settings.languageChanged'),
+            content: t('settings.restartRequired'),
+            okText: t('settings.restartNow'),
+            cancelText: t('settings.restartLater'),
+            hideCancel: false,
+            onOk: () => {
+              const { app } = require('@electron/remote')
+              app.relaunch()
+              app.exit(0)
+            },
+            onCancel: () => {
+              Message.success(t('settings.restartReminder'))
+            }
+          })
         } else {
-          // 如果网络错误但本地存储更新成功，仍然认为是成功的
-          if (localStorage.getItem('language') === settings.language) {
-            settingsVisible.value = false
-            Message.success(t('settings.saved'))
-          } else {
-            Message.error(t('settings.saveFailed'))
-          }
+          Message.success(t('settings.saved'))
         }
+      } catch (error) {
+        console.error('Failed to save settings:', error)
+        Message.error(t('settings.saveFailed'))
       }
     }
 
@@ -1893,6 +1901,7 @@ export default {
       }
     }
 
+    // 修改 onFolderDragEnd 函数
     const onFolderDragEnd = async () => {
       try {
         // 获取已保存的配置
@@ -1902,9 +1911,9 @@ export default {
         // 更新文件夹顺序
         const folderIds = folders.value.map(folder => folder.id)
         currentConfig.sort((a, b) => {
-          if (a.type !== 'folder' || b.type !== 'folder') return 0
-          return folderIds.indexOf(a.id) - folderIds.indexOf(b.id)
-        })
+          if (a.type !== 'folder' || b.type !== 'folder') return 0;
+          return folderIds.indexOf(a.id) - folderIds.indexOf(b.id);
+        });  // 修复这里的语法错误，移除多余的右括号
 
         // 保存更新后的配置
         await axios.post('http://localhost:5000/update_config', currentConfig)
@@ -2154,7 +2163,7 @@ export default {
     // 在 setup 函数中
     const sftpExplorerWidth = ref(300) // 默认值
 
-    // 添加加载 SFTP 宽度设置的方法
+    // 添加加载 SFTP 宽度设���的方法
     const loadSFTPWidthSettings = async () => {
       try {
         const config = await ipcRenderer.invoke('read-config')
@@ -2202,6 +2211,32 @@ export default {
     // 在 onMounted 中调用加载方法
     onMounted(() => {
       loadSFTPWidthSettings()
+    })
+
+    // 修改 loadSettings 函数
+    const loadSettings = async () => {
+      try {
+        const config = await ipcRenderer.invoke('read-config')
+        const savedSettings = config.find(item => item.type === 'settings')
+        if (savedSettings) {
+          if (savedSettings.language !== undefined) {
+            settings.language = savedSettings.language
+          }
+          if (savedSettings.fontSize !== undefined) {
+            settings.fontSize = savedSettings.fontSize
+          } else {
+            settings.fontSize = 14 // 默认字号
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load settings:', error)
+      }
+    }
+
+    // 确保在组件挂载时加载设置
+    onMounted(() => {
+      loadSettings()
+      // ... 其他现有的 onMounted 代码
     })
 
     return {

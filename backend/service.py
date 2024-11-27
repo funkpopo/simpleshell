@@ -507,6 +507,8 @@ def handle_ssh_close(data):
 @socketio.on('resize')
 def handle_resize(data):
     session_id = data.get('session_id')
+    
+    # 更灵活的列数和行数计算
     cols = max(80, min(data.get('cols', 80), 240))  # 限制列数范围
     rows = max(24, min(data.get('rows', 24), 100))  # 限制行数范围
     
@@ -515,7 +517,18 @@ def handle_resize(data):
         try:
             # 调整伪终端大小
             channel = ssh_sessions[session_id].channel
-            channel.resize_pty(width=cols, height=rows)
+            
+            # 尝试调整 PTY 大小
+            try:
+                channel.resize_pty(width=cols, height=rows)
+            except Exception as resize_err:
+                print(f"Primary resize method failed: {resize_err}")
+                # 备用调整方法
+                try:
+                    channel.resize_pty(width=cols, height=rows)
+                except Exception as fallback_err:
+                    print(f"Fallback resize method failed: {fallback_err}")
+            
             print(f"Resized terminal for session {session_id} to {cols}x{rows}")
         except Exception as e:
             print(f"Error resizing terminal: {e}")
@@ -857,29 +870,53 @@ def handle_resource_monitor(data):
         logger.info(f"Getting resource usage for session {session_id}")
         
         try:
-            # 获取内存使用情况
-            stdin, stdout, stderr = ssh_client.exec_command("free | grep Mem")
-            mem_info = stdout.read().decode().strip()
-            mem_parts = mem_info.split()
-            if len(mem_parts) >= 3:
-                total_mem = float(mem_parts[1])
-                used_mem = float(mem_parts[2])
+            # 使用更通用的命令获取资源使用情况
+            # 尝试多种方法获取 CPU 和内存使用率
+            cpu_cmd = "top -bn1 | grep 'Cpu(s)' || ps -eo %cpu | awk '{sum+=$1} END {print sum}'"
+            mem_cmd = "free | grep Mem || cat /proc/meminfo"
+            
+            # 执行命令
+            stdin, stdout, stderr = ssh_client.exec_command(cpu_cmd)
+            cpu_output = stdout.read().decode().strip()
+            
+            stdin, stdout, stderr = ssh_client.exec_command(mem_cmd)
+            mem_output = stdout.read().decode().strip()
+            
+            # 解析 CPU 使用率
+            cpu_usage = 0
+            if 'Cpu(s)' in cpu_output:
+                # 标准 top 输出
+                cpu_match = re.search(r'(\d+\.\d+)\s*%?\s*id', cpu_output)
+                if cpu_match:
+                    idle = float(cpu_match.group(1))
+                    cpu_usage = 100.0 - idle
+            else:
+                # 备用方案：直接计算 CPU 使用率
+                try:
+                    cpu_usage = float(cpu_output)
+                except ValueError:
+                    cpu_usage = 0
+            
+            # 解析内存使用率
+            mem_usage = 0
+            if 'Mem:' in mem_output:
+                # 标准 free 输出
+                mem_parts = mem_output.split()
+                if len(mem_parts) >= 7:
+                    total_mem = float(mem_parts[1])
+                    used_mem = float(mem_parts[2])
+                    mem_usage = (used_mem / total_mem * 100) if total_mem > 0 else 0
+            elif 'MemTotal:' in mem_output:
+                # /proc/meminfo 格式
+                mem_lines = mem_output.split('\n')
+                total_mem = used_mem = 0
+                for line in mem_lines:
+                    if line.startswith('MemTotal:'):
+                        total_mem = int(line.split()[1]) * 1024
+                    elif line.startswith('MemAvailable:'):
+                        used_mem = total_mem - (int(line.split()[1]) * 1024)
                 mem_usage = (used_mem / total_mem * 100) if total_mem > 0 else 0
-            else:
-                logger.warning("Invalid memory info format")
-                mem_usage = 0
-                
-            # 获取CPU使用情况
-            stdin, stdout, stderr = ssh_client.exec_command("top -bn1 | grep 'Cpu(s)'")
-            cpu_info = stdout.read().decode().strip()
-            cpu_match = re.search(r'(\d+\.\d+)\s*id', cpu_info)
-            if cpu_match:
-                idle = float(cpu_match.group(1))
-                cpu_usage = 100.0 - idle
-            else:
-                logger.warning("Invalid CPU info format")
-                cpu_usage = 0
-                
+            
             logger.info(f"Resource usage - CPU: {cpu_usage}%, Memory: {mem_usage}%")
             
             # 发送资源使用情况

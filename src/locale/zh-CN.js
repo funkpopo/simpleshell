@@ -48,7 +48,8 @@ export default {
     restartReminder: '请重启应用程序以应用新的高亮规则',
     maxRulesError: '已达到最大规则数量限制（1000条）',
     maxLineLengthError: '规则超过最大长度限制（500字符）',
-    maxFileSizeError: '高亮规则文件总大小超过限制（1MB）'
+    maxFileSizeError: '高亮规则文件总大小超过限制（1MB）',
+    fontSize: '字体大小'
   },
   messages: {
     confirmDelete: '确认删除',

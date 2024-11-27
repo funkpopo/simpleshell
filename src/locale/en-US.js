@@ -48,7 +48,8 @@ export default {
     restartReminder: 'Please restart the application to apply the new highlight rules',
     maxRulesError: 'Maximum number of rules (1000) reached',
     maxLineLengthError: 'Rule exceeds maximum length of 500 characters',
-    maxFileSizeError: 'Total highlight rules exceed maximum file size of 1MB'
+    maxFileSizeError: 'Total highlight rules exceed maximum file size of 1MB',
+    fontSize: 'Font Size'
   },
   messages: {
     confirmDelete: 'Confirm Delete',
