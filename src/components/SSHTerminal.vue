@@ -128,6 +128,10 @@ export default {
     sessionId: {
       type: String,
       required: true
+    },
+    fontSize: {
+      type: Number,
+      default: 14
     }
   },
   emits: ['close', 'pathChange', 'connectionStatus'],
@@ -171,6 +175,27 @@ export default {
       caseSensitive: false,
       wholeWord: false
     })
+
+    // 监听 fontSize 的变化
+    watch(() => props.fontSize, (newSize) => {
+      if (term) {
+        term.options.fontSize = newSize;
+        // 调整终端大小以适应新的字号
+        nextTick(() => {
+          if (fitAddon) {
+            fitAddon.fit();
+            // 通知服务器终端大小变化
+            if (socket && isTerminalReady.value) {
+              socket.emit('resize', { 
+                session_id: props.sessionId, 
+                cols: term.cols, 
+                rows: term.rows 
+              });
+            }
+          }
+        });
+      }
+    });
 
     const initializeSocket = () => {
       return new Promise((resolve) => {
@@ -358,7 +383,7 @@ export default {
 
       term = new Terminal({
         cursorBlink: true,
-        fontSize: 14,
+        fontSize: props.fontSize,
         fontFamily: 'Consolas, "Courier New", monospace',
         copyOnSelect: false,
         theme: isDarkMode.value ? getDarkTheme() : getLightTheme(),
