@@ -1737,16 +1737,25 @@ export default {
       total: '',
     });
 
-    // 添加下载进度处理函数
+    // 修改 updateDownloadProgress 函数
     const updateDownloadProgress = (loaded, total, fileName) => {
       if (!downloadInfo.startTime) {
         downloadInfo.startTime = Date.now();
       }
 
       downloadInfo.fileName = fileName;
-      downloadInfo.transferred = loaded;
-      downloadInfo.total = total;
-      downloadInfo.progress = Math.round((loaded / total) * 100);
+      downloadInfo.transferred = formatSize(loaded);
+      downloadInfo.total = formatSize(total);
+      const progress = Math.round((loaded / total) * 100);
+      downloadInfo.progress = progress;
+
+      // 更新进度条宽度
+      nextTick(() => {
+        const progressBar = document.querySelector('.download-progress .arco-progress-line-bar');
+        if (progressBar) {
+          progressBar.style.setProperty('--progress-width', `${progress}%`);
+        }
+      });
 
       // 计算下载速度
       const elapsedTime = (Date.now() - downloadInfo.startTime) / 1000;
@@ -1807,16 +1816,25 @@ export default {
         const totalChunks = Math.ceil(file.size / chunkSize);
         let tempFileId = null;
 
-        // 创建进度更新定时器
+        // 修改上传进度更新的逻辑
         const progressTimer = setInterval(async () => {
           try {
             const response = await axios.get(`http://localhost:5000/transfer_progress/${transferId}`);
             if (response.data) {
-              uploadInfo.progress = response.data.progress;
+              const progress = response.data.progress;
+              uploadInfo.progress = progress;
               uploadInfo.speed = response.data.speed;
               uploadInfo.timeRemaining = response.data.estimated_time;
               uploadInfo.transferred = response.data.transferred;
               uploadInfo.total = response.data.total;
+
+              // 更新进度条宽度
+              nextTick(() => {
+                const progressBar = document.querySelector('.upload-progress .arco-progress-line-bar');
+                if (progressBar) {
+                  progressBar.style.setProperty('--progress-width', `${progress}%`);
+                }
+              });
             }
           } catch (error) {
             console.error('Failed to get upload progress:', error);
@@ -2631,6 +2649,7 @@ export default {
 .progress-bar-wrapper {
   width: 100%;
   margin: 8px 0;
+  position: relative;
 }
 
 :deep(.arco-progress) {
@@ -2643,6 +2662,10 @@ export default {
 
 :deep(.arco-progress-line-bar) {
   transition: width 0.3s ease;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--progress-width) !important; /* 使用CSS变量控制宽度 */
 }
 
 .upload-progress-float,
