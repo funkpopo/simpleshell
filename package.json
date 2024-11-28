@@ -1,6 +1,6 @@
 {
   "name": "simpleshell",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "private": true,
   "author": {
     "name": "funkpopo",
@@ -67,7 +67,7 @@
     "eslint-plugin-vue": "^8.0.3",
     "rimraf": "^3.0.2",
     "typescript": "^5.6.3",
-    "vite": "^5.4.10",
+    "vite": "^6.0.1",
     "vue-cli-plugin-electron-builder": "^2.1.1",
     "vue-tsc": "^2.1.10"
   },
