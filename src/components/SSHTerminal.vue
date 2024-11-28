@@ -306,7 +306,15 @@ export default {
       event.preventDefault()
       if (term && isTerminalReady.value) {
         const text = event.clipboardData.getData('text')
-        socket.emit('ssh_input', { session_id: props.sessionId, input: text })
+        // 规范化换行符，移除多余的空行
+        const normalizedText = text
+          .replace(/\r\n/g, '\n') // 将 CRLF 转换为 LF
+          .replace(/\r/g, '\n')   // 将剩余的 CR 转换为 LF
+          .replace(/\n\n+/g, '\n') // 将多个连续换行替换为单个换行
+          .trim() // 移除首尾空白
+
+        // 发送处理后的文本
+        socket.emit('ssh_input', { session_id: props.sessionId, input: normalizedText })
       }
     }
 
@@ -1107,7 +1115,12 @@ export default {
           }
 
           :deep(.xterm-rows) {
-            position: relative !important;
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
           }
 
           .terminal-container {
@@ -1296,7 +1309,7 @@ export default {
           }
           // 如果没有选中的建议，关闭提示窗口
           hideSuggestionMenu()
-          return true // ��� Enter 事件继续传播
+          return true //  Enter 事件继续传播
         }
       }
       
@@ -1584,11 +1597,13 @@ export default {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 :deep(.xterm) {
   flex: 1;
   padding: 10px;
+  overflow: hidden;
 }
 
 .terminal-container.dark-mode {
@@ -1599,6 +1614,14 @@ export default {
 :deep(.xterm-viewport) {
   scrollbar-width: thin;
   scrollbar-color: var(--color-text-4) transparent;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: calc(100% + 20px) !important;
+}
+
+:deep(.xterm-viewport) {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar) {
