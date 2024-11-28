@@ -156,7 +156,7 @@ def update_config():
 # 分离 SSH SFTP 的连接创建函数
 def create_base_client(connection):
     """创建基础 SSH 客户端"""
-    ssh = None  # 初始化 ssh 为 None
+    ssh = None
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -168,68 +168,40 @@ def create_base_client(connection):
             'timeout': 30
         }
         
-        
-        # 处理DNS解析问题
-        try:
-            # 尝试使用 socket 预先解析主机名
-            socket.gethostbyname(connection['host'])
-        except socket.gaierror as dns_error:
-            logger.error(f"DNS resolution failed for {connection['host']}: {dns_error}")
-            raise ConnectionError(f"Cannot resolve hostname: {connection['host']}") from dns_error
-        
-        # 身份验证配置（保持原有逻辑）
+        # 身份验证配置
         if connection.get('authType') == 'password':
             # 解密 base64 编码的密码
             import base64
             try:
-                # 尝试添加填充
                 password = connection['password']
-                # 添加 '=' 填充，确保 base64 解码正确
                 password += '=' * ((4 - len(password) % 4) % 4)
                 decoded_password = base64.b64decode(password).decode('utf-8')
                 connect_kwargs['password'] = decoded_password
             except Exception as e:
-                # 如果解码失败，尝试原始密码
                 print(f"Base64 decryption failed: {e}")
                 connect_kwargs['password'] = connection['password']
         else:
-            try:
-                if connection.get('privateKey'):
-                    pkey = paramiko.RSAKey.from_private_key(
-                        io.StringIO(connection['privateKey'])
-                    )
-                    connect_kwargs['pkey'] = pkey
-                elif connection.get('privateKeyPath'):
+            # 使用私钥文件路径
+            if connection.get('privateKeyPath'):
+                try:
                     pkey = paramiko.RSAKey.from_private_key_file(
                         connection['privateKeyPath']
                     )
                     connect_kwargs['pkey'] = pkey
-            except paramiko.ssh_exception.SSHException:
-                raise Exception('Invalid private key format or passphrase required')
-            except IOError:
-                raise Exception('Failed to read private key file')
+                except paramiko.ssh_exception.SSHException:
+                    raise Exception('Invalid private key format or passphrase required')
+                except IOError:
+                    raise Exception('Failed to read private key file')
+            else:
+                raise Exception('Private key path is required for key authentication')
         
-        print(f"Attempting SSH connection to {connection['host']}:{connection['port']}")
         ssh.connect(**connect_kwargs)
-        print("SSH connection successful")
         return ssh
-    
-    except socket.error as sock_err:
-        logger.error(f"Socket error during connection: {sock_err}")
-        raise ConnectionError(f"Network error: {sock_err}") from sock_err
-    
-    except paramiko.SSHException as ssh_err:
-        logger.error(f"SSH connection error: {ssh_err}")
-        raise ConnectionError(f"SSH connection failed: {ssh_err}") from ssh_err
-    
+        
     except Exception as e:
-        # 如果 SSH 连接失败，确保关闭连接
         if ssh:
-            try:
-                ssh.close()
-            except:
-                pass
-        raise  # 重新抛出原始异常
+            ssh.close()
+        raise
 
 def create_ssh_client(connection):
     """创建 SSH 客户端"""

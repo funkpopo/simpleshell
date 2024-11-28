@@ -645,20 +645,22 @@ export default {
         filters: [
           { name: 'All Files', extensions: ['*'] }
         ]
-      })
+      });
 
       if (!result.canceled && result.filePaths.length > 0) {
-        const filePath = result.filePaths[0]
-        newConnection.privateKeyPath = filePath
-        try {
-          const privateKeyContent = fs.readFileSync(filePath, 'utf-8')
-          newConnection.privateKey = privateKeyContent
-        } catch (error) {
-          console.error('Failed to read private key file:', error)
-          Message.error('Failed to read private key file')
+        const filePath = result.filePaths[0];
+        // 只保存文件路径，不读取私钥内容
+        if (editConnectionModalVisible.value) {
+          editingConnection.privateKeyPath = filePath;
+          // 清除可能存在的 privateKey 字段
+          editingConnection.privateKey = undefined;
+        } else {
+          newConnection.privateKeyPath = filePath;
+          // 清除可能存在的 privateKey 字段
+          newConnection.privateKey = undefined;
         }
       }
-    }
+    };
 
     const addConnection = async () => {
       try {
@@ -666,20 +668,31 @@ export default {
           ...newConnection,
           id: Date.now(),
           type: 'connection'
+        };
+        
+        // 如果是密码认证，进行 base64 编码
+        if (connection.authType === 'password' && connection.password) {
+          connection.password = btoa(connection.password);
         }
         
-        // 如果是密码认证，进��� base64 编码
-        if (connection.authType === 'password' && connection.password) {
-          connection.password = btoa(connection.password)
+        // 如果是私钥认证，确保只保存路径
+        if (connection.authType === 'key') {
+          // 确保删除 privateKey 字段
+          delete connection.privateKey;
+          // 验证是否选择了私钥文件
+          if (!connection.privateKeyPath) {
+            Message.error('Please select a private key file');
+            return;
+          }
         }
         
         // 获取当前配置
-        const response = await axios.get('http://localhost:5000/get_connections')
-        let currentConfig = response.data
+        const response = await axios.get('http://localhost:5000/get_connections');
+        let currentConfig = response.data;
 
         if (!connection.folderId) {
-          Message.error('Please select a folder first')
-          return
+          Message.error('Please select a folder first');
+          return;
         }
 
         // 找到目标文件夹并添加连接
@@ -688,15 +701,15 @@ export default {
             return {
               ...item,
               connections: [...(item.connections || []), connection]
-            }
+            };
           }
-          return item
-        })
+          return item;
+        });
 
-        await axios.post('http://localhost:5000/update_config', currentConfig)
-        await refreshConnections()
+        await axios.post('http://localhost:5000/update_config', currentConfig);
+        await refreshConnections();
         
-        addConnectionModalVisible.value = false
+        addConnectionModalVisible.value = false;
         Object.assign(newConnection, {
           name: '',
           host: '',
@@ -707,14 +720,14 @@ export default {
           privateKeyPath: '',
           privateKey: '',
           folderId: null
-        })
+        });
 
-        Message.success('Connection added successfully')
+        Message.success('Connection added successfully');
       } catch (error) {
-        console.error('Failed to add connection:', error)
-        Message.error('Failed to add connection')
+        console.error('Failed to add connection:', error);
+        Message.error('Failed to add connection');
       }
-    }
+    };
 
     // 修改打开连接的方法
     const openConnection = (connection) => {
@@ -995,41 +1008,52 @@ export default {
 
     const updateConnection = async () => {
       try {
-        const folder = currentFolder.value
-        const index = folder.connections.findIndex(conn => conn.id === editingConnection.id)
+        const folder = currentFolder.value;
+        const index = folder.connections.findIndex(conn => conn.id === editingConnection.id);
         if (index !== -1) {
-          // 创建更新连接的副本
-          const updatedConnection = { ...editingConnection }
+          // 创建更新后的连接配置
+          const updatedConnection = { ...editingConnection };
           
           // 如果是密码认证，对新密码进行编码
           if (updatedConnection.authType === 'password' && updatedConnection.password) {
-            updatedConnection.password = btoa(updatedConnection.password)
+            updatedConnection.password = btoa(updatedConnection.password);
           }
           
-          folder.connections[index] = updatedConnection
+          // 如果是私钥认证，确保只保存路径
+          if (updatedConnection.authType === 'key') {
+            // 确保删除 privateKey 字段
+            delete updatedConnection.privateKey;
+            // 保留 privateKeyPath
+            if (!updatedConnection.privateKeyPath) {
+              Message.error('Please select a private key file');
+              return;
+            }
+          }
+          
+          folder.connections[index] = updatedConnection;
 
           // 更新配置文件
-          const config = await axios.get('http://localhost:5000/get_connections')
+          const config = await axios.get('http://localhost:5000/get_connections');
           const updatedConfig = config.data.map(item => {
             if (item.id === folder.id) {
               return {
                 ...item,
                 connections: folder.connections
-              }
+              };
             }
-            return item
-          })
+            return item;
+          });
 
-          await axios.post('http://localhost:5000/update_config', updatedConfig)
-          await refreshConnections()
-          Message.success('Connection updated successfully')
-          editConnectionModalVisible.value = false
+          await axios.post('http://localhost:5000/update_config', updatedConfig);
+          await refreshConnections();
+          Message.success('Connection updated successfully');
+          editConnectionModalVisible.value = false;
         }
       } catch (error) {
-        console.error('Failed to update connection:', error)
-        Message.error('Failed to update connection')
+        console.error('Failed to update connection:', error);
+        Message.error('Failed to update connection');
       }
-    }
+    };
 
     const deleteConnection = async (connection, folder) => {
       try {
