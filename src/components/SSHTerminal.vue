@@ -997,46 +997,23 @@ export default {
     const positionSuggestionMenu = () => {
       if (!term || !suggestionMenu.value) return
       
-      // 获取光标位置
-      const cursorCol = term.buffer.active.cursorX
-      const charWidth = Math.ceil(term._core._renderService.dimensions.actualCellWidth)
-      const charHeight = Math.ceil(term._core._renderService.dimensions.actualCellHeight)
-      
       // 获取 xterm-rows 容器
       const xtermRows = terminal.value.querySelector('.xterm-screen .xterm-rows')
       if (!xtermRows) return
       
-      // 获取最后一行的位置
-      const lastRow = xtermRows.lastElementChild
-      if (!lastRow) return
+      // 获取字符尺寸
+      const charWidth = Math.ceil(term._core._renderService.dimensions.actualCellWidth)
+      const charHeight = Math.ceil(term._core._renderService.dimensions.actualCellHeight)
       
-      // 应用位置
+      // 设置固定位置在左上角
       Object.assign(suggestionMenu.value.style, {
         position: 'absolute',
-        left: `${cursorCol * charWidth}px`,
-        bottom: `${charHeight * 2}px`, // 确保在倒数第二行上方
+        left: '10px', // 左边留出10px的间距
+        top: '10px',  // 顶部留出10px的间距
         zIndex: '9999',
-        transform: 'translateY(-100%)', // 向上移动菜单的高度
+        maxHeight: `${Math.min(200, xtermRows.clientHeight - 20)}px`, // 确保不超出终端高度
+        maxWidth: `${Math.min(400, xtermRows.clientWidth - 20)}px`,  // 确保不超出终端宽度
       })
-      
-      // 获取菜单尺寸和容器尺寸
-      const menuRect = suggestionMenu.value.getBoundingClientRect()
-      const containerRect = terminal.value.querySelector('.xterm-screen').getBoundingClientRect()
-      
-      // 处理水平溢出
-      if (cursorCol * charWidth + menuRect.width > containerRect.width) {
-        suggestionMenu.value.style.left = `${Math.max(0, containerRect.width - menuRect.width)}px`
-      }
-      
-      // 确保菜单完全可见
-      const menuHeight = menuRect.height
-      const availableSpace = lastRow.offsetTop - charHeight // 减去一行高度，给最后一行留出空间
-      
-      if (menuHeight > availableSpace) {
-        // 如果菜单高度超过可用空间，调整位置和大小
-        suggestionMenu.value.style.maxHeight = `${Math.max(100, availableSpace)}px`
-        suggestionMenu.value.style.bottom = `${charHeight * 2}px`
-      }
     }
 
     const hideSuggestionMenu = () => {
@@ -1232,7 +1209,7 @@ export default {
       if (event.ctrlKey && event.key === 'f') {
         event.preventDefault()
         
-        // 如果搜索栏已经打开，则关闭；否则打开
+        // 如果搜索栏已经打开，关闭；否则打开
         if (showSearchBar.value) {
           closeSearchBar()
         } else {
@@ -1677,48 +1654,28 @@ export default {
 
 .command-suggestions {
   position: absolute;
-  /* 深色主题 */
-  --dark-bg-color: rgba(36, 36, 36, 0.85);
-  --dark-border-color: rgba(78, 78, 78, 0.6);
-  --dark-hover-color: rgba(70, 70, 70, 0.8);
-  /* 浅色主题 */
-  --light-bg-color: rgba(255, 255, 255, 0.85);
-  --light-border-color: rgba(229, 230, 235, 0.8);
-  --light-hover-color: rgba(242, 243, 245, 0.9);
-  
-  background-color: var(--light-bg-color);
+  left: 10px;
+  top: 10px;
+  max-width: calc(100% - 20px);
+  width: auto;
+  min-width: 200px;
+  max-height: 200px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px 0;
+  background-color: var(--color-bg-2);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--light-border-color);
-  border-radius: 6px;
-  padding: 4px 0;
-  min-width: 200px;
-  max-width: 400px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  overflow: auto;
   z-index: 9999;
-  overflow-y: auto;
-  pointer-events: auto;
-  user-select: none;
-  opacity: 1;
-  transition: all 0.2s ease;
-  box-sizing: border-box;
-  word-break: break-all;
-  white-space: normal;
-  transform-origin: bottom left;
-  
-  /* 设置单个命令项的度 */
-  --suggestion-item-height: 32px;
-  /* 最大显示4行的高度 */
-  max-height: calc(var(--suggestion-item-height) * 4);
-  /* 优化滚动行 */
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  scroll-behavior: smooth;
-  
-  /* 确保内容不会溢出 */
-  max-height: calc(var(--suggestion-item-height) * 4);
-  min-height: var(--suggestion-item-height);
+}
+
+.terminal-container.dark-mode .command-suggestions {
+  background-color: var(--dark-bg-color);
+  border-color: var(--dark-border-color);
 }
 
 .suggestion-item {
@@ -1737,27 +1694,18 @@ export default {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  /* 确保项目高度固定 */
   height: var(--suggestion-item-height);
   min-height: var(--suggestion-item-height);
-  /* 改进选中和悬停状态的视觉效果 */
   position: relative;
   transition: all 0.2s ease;
+  background-color: transparent;
 }
 
-/* 浅色主题选中状态 */
-.suggestion-item.selected {
-  background-color: var(--light-hover-color);
-  color: var(--color-text-1);
-}
-
-/* 深色主题选中状态 */
-.terminal-container.dark-mode .suggestion-item.selected {
+.terminal-container.dark-mode .suggestion-item {
   background-color: var(--dark-hover-color);
   color: var(--color-text-1);
 }
 
-/* 悬停效果 */
 .suggestion-item:hover {
   background-color: var(--light-hover-color);
 }
@@ -2038,5 +1986,39 @@ export default {
   .search-options {
     gap: 6px;
   }
+}
+
+.suggestion-item.selected {
+  background-color: var(--color-primary-light-2);
+  color: var(--color-white);
+  font-weight: 500;
+}
+
+.terminal-container.dark-mode .suggestion-item.selected {
+  background-color: var(--color-primary-light-2);
+  color: var(--color-white);
+}
+
+.suggestion-item:hover:not(.selected) {
+  background-color: var(--color-fill-2);
+}
+
+.terminal-container.dark-mode .suggestion-item:hover:not(.selected) {
+  background-color: var(--color-fill-3);
+}
+
+.suggestion-item.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--color-primary-light-3);
+  border-radius: 0 2px 2px 0;
+}
+
+.terminal-container.dark-mode .suggestion-item.selected::before {
+  background-color: var(--color-primary-light-3);
 }
 </style>
