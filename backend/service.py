@@ -1,7 +1,7 @@
 from gevent import monkey
 monkey.patch_all()
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 from flask_socketio import SocketIO
 from flask_cors import CORS
 import paramiko
@@ -20,8 +20,10 @@ import requests
 import atexit
 import re
 import httpx
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 from functools import lru_cache
+import uuid
+import base64
 
 app = Flask(__name__)
 CORS(app)
@@ -539,6 +541,122 @@ def list_directory():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# 添加传输进度跟踪类
+class TransferProgress:
+    def __init__(self, total_size: int, operation: str):
+        self.total_size = total_size
+        self.current_size = 0
+        self.start_time = time.time()
+        self.operation = operation  # 'upload' or 'download'
+        self._lock = threading.Lock()
+        
+        # 添加新的属性用于计算速度
+        self._last_update_time = time.time()
+        self._last_size = 0
+        self._speed_samples = []  # 用于计算平均速度
+        self.speed = 0.0
+        self.progress = 0.0
+        self.estimated_time = 0
+
+    def update(self, bytes_transferred: int):
+        """更新传输进度"""
+        with self._lock:
+            current_time = time.time()
+            self.current_size = bytes_transferred
+            
+            # 计算速度
+            time_diff = current_time - self._last_update_time
+            if time_diff > 0:
+                # 计算瞬时速度
+                size_diff = self.current_size - self._last_size
+                instant_speed = size_diff / time_diff 
+                
+                # 添加到速度样本中
+                self._speed_samples.append(instant_speed)
+                if len(self._speed_samples) > 10:  # 保留最近10个样本
+                    self._speed_samples.pop(0)
+                
+                # 计算平均速度
+                self.speed = sum(self._speed_samples) / len(self._speed_samples) / 2
+                
+                # 更新进度
+                self.progress = (self.current_size / self.total_size) * 100 if self.total_size > 0 else 0
+                
+                # 计算剩余时间
+                remaining_bytes = self.total_size - self.current_size
+                self.estimated_time = remaining_bytes / self.speed if self.speed > 0 else 0
+                
+                # 更新最后一次记录的值
+                self._last_update_time = current_time
+                self._last_size = self.current_size
+
+    def get_status(self) -> Dict:
+        """获取当前传输状态"""
+        with self._lock:
+            return {
+                'progress': round(self.progress, 2),
+                'speed': self.format_speed(self.speed),
+                'estimated_time': self.format_time(self.estimated_time),
+                'transferred': self.format_size(self.current_size),
+                'total': self.format_size(self.total_size)
+            }
+
+    @staticmethod
+    def format_speed(speed: float) -> str:
+        """格式化速度显示"""
+        if speed >= 1024 * 1024 * 1024:
+            return f"{speed / (1024 * 1024 * 1024):.2f} GB/s"
+        elif speed >= 1024 * 1024:
+            return f"{speed / (1024 * 1024):.2f} MB/s"
+        elif speed >= 1024:
+            return f"{speed / 1024:.2f} KB/s"
+        return f"{speed:.2f} B/s"
+
+    @staticmethod
+    def format_time(seconds: float) -> str:
+        """格式化时间显示"""
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        elif seconds < 3600:
+            return f"{seconds / 60:.0f}m {seconds % 60:.0f}s"
+        else:
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            return f"{hours:.0f}h {minutes:.0f}m"
+
+    @staticmethod
+    def format_size(size: int) -> str:
+        """格式化文件大小显示"""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024:
+                return f"{size:.2f} {unit}"
+            size /= 1024
+        return f"{size:.2f} PB"
+
+# 添加传输管理器
+class TransferManager:
+    def __init__(self):
+        self._transfers = {}
+        self._lock = threading.Lock()
+
+    def create_transfer(self, transfer_id: str, total_size: int, operation: str) -> TransferProgress:
+        with self._lock:
+            progress = TransferProgress(total_size, operation)
+            self._transfers[transfer_id] = progress
+            return progress
+
+    def get_transfer(self, transfer_id: str) -> Optional[TransferProgress]:
+        with self._lock:
+            return self._transfers.get(transfer_id)
+
+    def remove_transfer(self, transfer_id: str):
+        with self._lock:
+            self._transfers.pop(transfer_id, None)
+
+# 创建全局传输管理器实例
+transfer_manager = TransferManager()
+
+# 修改上传文件的路由
 @app.route('/sftp_upload_file', methods=['POST'])
 def upload_file():
     try:
@@ -546,45 +664,171 @@ def upload_file():
         connection = data['connection']
         path = data['path']
         filename = data['filename']
-        content = data['content']
+        content = data.get('content')
+        chunk_index = data.get('chunkIndex', 0)
+        is_last_chunk = data.get('isLastChunk', True)
+        temp_file_id = data.get('tempFileId')
+        transfer_id = data.get('transferId')
+        total_size = data.get('totalSize', 0)
 
-        ssh, sftp = create_sftp_client(connection)
+        # 创建临时目录（如果不存在）
+        temp_dir = os.path.join(tempfile.gettempdir(), 'sftp_uploads')
+        os.makedirs(temp_dir, exist_ok=True)
+
+        # 获取或创建传输进度跟踪器
+        if chunk_index == 0:
+            transfer_progress = transfer_manager.create_transfer(transfer_id, total_size, 'upload')
+        else:
+            transfer_progress = transfer_manager.get_transfer(transfer_id)
+
         try:
-            import base64
-            file_content = base64.b64decode(content)
-            remote_path = os.path.join(path, filename).replace('\\', '/')
+            ssh, sftp = create_sftp_client(connection)
             
-            with sftp.file(remote_path, 'wb') as f:
-                f.write(file_content)
-            
-            log_sftp_operation('upload', remote_path)
-            return jsonify({"status": "success"})
-        finally:
-            sftp.close()
-            ssh.close()
+            try:
+                if chunk_index == 0:
+                    # 为新上传创建临时文件
+                    temp_file_id = str(uuid.uuid4())
+                    temp_file_path = os.path.join(temp_dir, temp_file_id)
+                else:
+                    # 使用现有的临时文件
+                    temp_file_path = os.path.join(temp_dir, temp_file_id)
+
+                # 解码并写入当前块
+                if content:
+                    chunk_data = base64.b64decode(content)
+                    with open(temp_file_path, 'ab') as f:
+                        f.write(chunk_data)
+                    
+                    # 更新进度
+                    if transfer_progress:
+                        current_size = os.path.getsize(temp_file_path)
+                        transfer_progress.update(current_size)
+
+                # 如果是最后一个块，执行上传
+                if is_last_chunk:
+                    remote_path = os.path.join(path, filename).replace('\\', '/')
+                    
+                    # 定义进度回调
+                    def progress_callback(transferred, total):
+                        if transfer_progress:
+                            transfer_progress.update(transferred)
+                    
+                    # 上传文件
+                    with open(temp_file_path, 'rb') as f:
+                        sftp.putfo(f, remote_path, callback=progress_callback)
+                    
+                    # 记录操作
+                    log_sftp_operation('upload', remote_path)
+                    
+                    # 清理临时文件
+                    try:
+                        os.unlink(temp_file_path)
+                    except:
+                        pass
+                    
+                    # 移除传输进度跟踪器
+                    transfer_manager.remove_transfer(transfer_id)
+                    
+                    return jsonify({"status": "success"})
+                
+                # 如果不是最后一个块，返回临时文件ID
+                return jsonify({
+                    "status": "chunk_uploaded",
+                    "tempFileId": temp_file_id
+                })
+
+            finally:
+                sftp.close()
+                ssh.close()
+
+        except Exception as e:
+            logger.error(f"Upload error: {str(e)}")
+            # 清理临时文件
+            if temp_file_id:
+                try:
+                    temp_file_path = os.path.join(temp_dir, temp_file_id)
+                    os.unlink(temp_file_path)
+                except:
+                    pass
+            # 移除传输进度跟踪器
+            if transfer_id:
+                transfer_manager.remove_transfer(transfer_id)
+            raise
+
     except Exception as e:
+        logger.error(f"Upload failed: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+# 修改下载文件的路由
 @app.route('/sftp_download_file', methods=['POST'])
 def download_file():
     try:
         data = request.json
         connection = data['connection']
         path = data['path']
+        transfer_id = data.get('transferId')
 
         ssh, sftp = create_sftp_client(connection)
         try:
-            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                sftp.get(path, temp_file.name)
-                log_sftp_operation('download', path)
-                return send_file(
-                    temp_file.name,
-                    as_attachment=True,
-                    download_name=os.path.basename(path)
-                )
-        finally:
+            file_size = sftp.stat(path).st_size
+            transfer_progress = transfer_manager.create_transfer(transfer_id, file_size, 'download')
+
+            def generate():
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                        network_bytes = [0]  # 使用列表存储网络传输字节数
+
+                        def progress_callback(transferred, total):
+                            network_bytes[0] += transferred
+                            if transfer_progress:
+                                transfer_progress.update(transferred, network_bytes[0])
+                        
+                        sftp.get(path, temp_file.name, callback=progress_callback)
+                        
+                        chunk_size = 8192
+                        with open(temp_file.name, 'rb') as f:
+                            while True:
+                                chunk = f.read(chunk_size)
+                                if not chunk:
+                                    break
+                                yield chunk
+                finally:
+                    try:
+                        os.unlink(temp_file.name)
+                    except:
+                        pass
+                    transfer_manager.remove_transfer(transfer_id)
+                    sftp.close()
+                    ssh.close()
+
+            response = Response(
+                generate(),
+                mimetype='application/octet-stream',
+                headers={
+                    'Content-Disposition': f'attachment; filename={os.path.basename(path)}',
+                    'Content-Length': str(file_size)
+                }
+            )
+            return response
+
+        except Exception as e:
             sftp.close()
             ssh.close()
+            if transfer_id:
+                transfer_manager.remove_transfer(transfer_id)
+            raise
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 添加获取传输进度的路由
+@app.route('/transfer_progress/<transfer_id>', methods=['GET'])
+def get_transfer_progress(transfer_id):
+    try:
+        transfer = transfer_manager.get_transfer(transfer_id)
+        if transfer:
+            return jsonify(transfer.get_status())
+        return jsonify({"error": "Transfer not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

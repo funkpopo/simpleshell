@@ -119,7 +119,8 @@ export default {
     copyModTime: 'Copy Modification Time',
     copySize: 'Copy File Size',
     timeCopied: 'Modification time copied: {time}',
-    sizeCopied: 'File size copied: {size}'
+    sizeCopied: 'File size copied: {size}',
+    fileTooLarge: 'File is too large. Maximum allowed size is {maxSize}'
   },
   update: {
     newVersion: 'New Version Available',

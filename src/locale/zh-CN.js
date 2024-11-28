@@ -121,7 +121,8 @@ export default {
     copyModTime: '复制修改时间',
     copySize: '复制文件大小',
     timeCopied: '修改时间已复制: {time}',
-    sizeCopied: '文件大小已复制: {size}'
+    sizeCopied: '文件大小已复制: {size}',
+    fileTooLarge: '文件过大。最大允许大小为 {maxSize}'
   },
   update: {
     newVersion: '发现新版本',

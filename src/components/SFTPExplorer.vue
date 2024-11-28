@@ -164,7 +164,7 @@
           </template>
         </a-modal>
 
-        <!-- 替换原有的进度条模态框为浮动通知 -->
+        <!-- 修改下载进度浮动通知 -->
         <div 
           v-if="downloadProgressVisible" 
           class="download-progress-float"
@@ -174,15 +174,19 @@
               <span class="file-name">{{ downloadInfo.fileName }}</span>
               <span class="progress-percent">{{ downloadInfo.progress }}%</span>
             </div>
-            <a-progress
-              :percent="downloadInfo.progress"
-              :status="downloadInfo.status"
-              :show-text="false"
-              size="small"
-            />
+            <div class="progress-bar-wrapper">
+              <a-progress
+                :percent="Number(downloadInfo.progress)"
+                :status="downloadInfo.status"
+                :show-text="false"
+                size="small"
+                :stroke-width="4"
+              />
+            </div>
             <div class="progress-details">
               <span>{{ downloadInfo.speed }}</span>
               <span>{{ downloadInfo.timeRemaining }}</span>
+              <span>{{ downloadInfo.transferred }} / {{ downloadInfo.total }}</span>
             </div>
           </div>
         </div>
@@ -197,15 +201,19 @@
               <span class="file-name">{{ uploadInfo.fileName }}</span>
               <span class="progress-percent">{{ uploadInfo.progress }}%</span>
             </div>
-            <a-progress
-              :percent="uploadInfo.progress"
-              :status="uploadInfo.status"
-              :show-text="false"
-              size="small"
-            />
+            <div class="progress-bar-wrapper">
+              <a-progress
+                :percent="Number(uploadInfo.progress)"
+                :status="uploadInfo.status"
+                :show-text="false"
+                size="small"
+                :stroke-width="4"
+              />
+            </div>
             <div class="progress-details">
               <span>{{ uploadInfo.speed }}</span>
               <span>{{ uploadInfo.timeRemaining }}</span>
+              <span>{{ uploadInfo.transferred }} / {{ uploadInfo.total }}</span>
             </div>
           </div>
         </div>
@@ -1145,7 +1153,7 @@ export default {
           }
         } catch (refreshError) {
           console.error('Directory refresh error:', refreshError);
-          // 即使刷新失败也不要显示错误消息，因重命已经成功了
+          // 即使���新失败也不要显示错误消息，因重命已经成功了
         }
 
         await logOperation('rename', `${oldPath} to ${newPath}`);
@@ -1234,42 +1242,57 @@ export default {
 
         if (savePath.canceled) return;
 
-        // 显示进度条
         downloadProgressVisible.value = true;
         downloadInfo.fileName = nodeData.title;
         downloadInfo.progress = 0;
         downloadInfo.status = 'normal';
-        downloadInfo.startTime = null;
-        downloadInfo.downloadedSize = 0;
-        downloadInfo.totalSize = 0;
+        downloadInfo.speed = '';
+        downloadInfo.timeRemaining = '';
 
-        const response = await axios.post('http://localhost:5000/sftp_download_file', {
-          connection: props.connection,
-          path: nodeData.key
-        }, {
-          responseType: 'blob',
-          onDownloadProgress: (progressEvent) => {
-            updateDownloadProgress(
-              progressEvent.loaded,
-              progressEvent.total,
-              nodeData.title
-            );
+        const transferId = `download_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+        const progressTimer = setInterval(async () => {
+          try {
+            const response = await axios.get(`http://localhost:5000/transfer_progress/${transferId}`);
+            if (response.data) {
+              downloadInfo.progress = response.data.progress;
+              downloadInfo.speed = response.data.speed;
+              downloadInfo.timeRemaining = response.data.estimated_time;
+              
+              const progressElement = document.querySelector('.download-progress .arco-progress-line-bar');
+              if (progressElement) {
+                progressElement.style.width = `${response.data.progress}%`;
+              }
+            }
+          } catch (error) {
+            console.error('Failed to get download progress:', error);
           }
-        });
+        }, 1000);
 
-        const buffer = Buffer.from(await response.data.arrayBuffer());
-        fs.writeFileSync(savePath.filePath, buffer);
+        try {
+          const response = await axios.post('http://localhost:5000/sftp_download_file', {
+            connection: props.connection,
+            path: nodeData.key,
+            transferId: transferId
+          }, {
+            responseType: 'blob'
+          });
 
-        // 完成后更新状态
-        downloadInfo.status = 'success';
-        downloadInfo.progress = 100;
-        
-        setTimeout(() => {
-          downloadProgressVisible.value = false;
-          Message.success(`${nodeData.title} downloaded successfully`);
-        }, 500);
+          const buffer = Buffer.from(await response.data.arrayBuffer());
+          fs.writeFileSync(savePath.filePath, buffer);
 
-        await logOperation('download', nodeData.key);
+          downloadInfo.status = 'success';
+          downloadInfo.progress = 100;
+          
+          setTimeout(() => {
+            downloadProgressVisible.value = false;
+            Message.success(`${nodeData.title} downloaded successfully`);
+          }, 500);
+
+          await logOperation('download', nodeData.key);
+        } finally {
+          clearInterval(progressTimer);
+        }
       } catch (error) {
         downloadInfo.status = 'error';
         console.error('Failed to download item:', error);
@@ -1661,7 +1684,7 @@ export default {
           targetPath: zipPath
         });
 
-        // 上传压缩文件
+        // 上���压缩文件
         const zipContent = await fs.promises.readFile(zipPath, { encoding: 'base64' });
         
         // 发送到服务器并在务器端解压
@@ -1710,9 +1733,8 @@ export default {
       status: 'normal',
       speed: '',
       timeRemaining: '',
-      startTime: null,
-      totalSize: 0,
-      downloadedSize: 0
+      transferred: '',
+      total: '',
     });
 
     // 添加下载进度处理函数
@@ -1722,8 +1744,8 @@ export default {
       }
 
       downloadInfo.fileName = fileName;
-      downloadInfo.downloadedSize = loaded;
-      downloadInfo.totalSize = total;
+      downloadInfo.transferred = loaded;
+      downloadInfo.total = total;
       downloadInfo.progress = Math.round((loaded / total) * 100);
 
       // 计算下载速度
@@ -1758,44 +1780,109 @@ export default {
       return t('sftp.remainingHours', { hours });
     };
 
-    // 在 setup 函数中添加 uploadSingleFile 函数
+    // 修改 uploadSingleFile 函数
     const uploadSingleFile = async (file, targetPath) => {
       try {
-        const reader = new FileReader();
-        const fileContent = await new Promise((resolve, reject) => {
-          reader.onload = (e) => resolve(e.target.result);
-          reader.onerror = (e) => reject(e);
-          reader.readAsDataURL(file);
-        });
+        // 检查文件大小限制
+        const maxFileSize = 1024 * 1024 * 10240; // 10GB
+        if (file.size > maxFileSize) {
+          throw new Error(t('sftp.fileTooLarge', { maxSize: '10GB' }));
+        }
 
-        const base64Content = fileContent.split(',')[1];
+        // 显示上传进度
+        uploadProgressVisible.value = true;
+        uploadInfo.fileName = file.name;
+        uploadInfo.status = 'normal';
+        uploadInfo.progress = 0;
+        uploadInfo.speed = '';
+        uploadInfo.timeRemaining = '';
+        uploadInfo.transferred = '0 B';
+        uploadInfo.total = formatSize(file.size);
+
+        // 生成传输ID
+        const transferId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
-        // 使用 axios 的上传进度追踪
-        await axios.post('http://localhost:5000/sftp_upload_file', {
-          connection: props.connection,
-          path: targetPath,
-          filename: file.name,
-          content: base64Content
-        }, {
-          onUploadProgress: (progressEvent) => {
-            updateUploadProgress(
-              progressEvent.loaded, 
-              progressEvent.total, 
-              file.name
-            );
-          }
-        });
+        // 分块大小设置为 5MB
+        const chunkSize = 5 * 1024 * 1024;
+        const totalChunks = Math.ceil(file.size / chunkSize);
+        let tempFileId = null;
 
-        await logOperation('upload', `${targetPath}/${file.name}`);
+        // 创建进度更新定时器
+        const progressTimer = setInterval(async () => {
+          try {
+            const response = await axios.get(`http://localhost:5000/transfer_progress/${transferId}`);
+            if (response.data) {
+              uploadInfo.progress = response.data.progress;
+              uploadInfo.speed = response.data.speed;
+              uploadInfo.timeRemaining = response.data.estimated_time;
+              uploadInfo.transferred = response.data.transferred;
+              uploadInfo.total = response.data.total;
+            }
+          } catch (error) {
+            console.error('Failed to get upload progress:', error);
+          }
+        }, 1000);
+
+        try {
+          for (let i = 0; i < totalChunks; i++) {
+            const start = i * chunkSize;
+            const end = Math.min(start + chunkSize, file.size);
+            const chunk = file.slice(start, end);
+            const isLastChunk = i === totalChunks - 1;
+
+            // 读取块数据
+            const chunkBase64 = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+              reader.onerror = reject;
+              reader.readAsDataURL(chunk);
+            });
+
+            // 上传块
+            const response = await axios.post('http://localhost:5000/sftp_upload_file', {
+              connection: props.connection,
+              path: targetPath,
+              filename: file.name,
+              content: chunkBase64,
+              chunkIndex: i,
+              isLastChunk: isLastChunk,
+              tempFileId: tempFileId,
+              transferId: transferId,
+              totalSize: file.size
+            }, {
+              timeout: 0,
+              maxContentLength: Infinity,
+              maxBodyLength: Infinity
+            });
+
+            if (!isLastChunk) {
+              tempFileId = response.data.tempFileId;
+            }
+          }
+
+          uploadInfo.status = 'success';
+          uploadInfo.progress = 100;
+          
+          // 记录上传操作
+          await logOperation('upload', `${targetPath}/${file.name}`);
+          
+          setTimeout(() => {
+            uploadProgressVisible.value = false;
+          }, 1000);
+
+          Message.success(t('sftp.uploadSuccess'));
+          
+          // 刷新目录
+          await refreshDirectoryKeepingState(targetPath);
+
+        } finally {
+          clearInterval(progressTimer);
+        }
       } catch (error) {
         console.error('Failed to upload file:', error);
         uploadInfo.status = 'error';
-        throw new Error(`Failed to upload ${file.name}: ${error.message}`);
-      } finally {
-        // 上传完成��隐藏进度条
-        setTimeout(() => {
-          uploadProgressVisible.value = false;
-        }, 500);
+        Message.error(`Failed to upload ${file.name}: ${error.message}`);
+        throw error;
       }
     };
 
@@ -1811,27 +1898,6 @@ export default {
       totalSize: 0,
       uploadedSize: 0
     });
-
-    // 更新上传进度的方法
-    const updateUploadProgress = (loaded, total, fileName) => {
-      if (!uploadInfo.startTime) {
-        uploadInfo.startTime = Date.now();
-      }
-
-      uploadInfo.fileName = fileName;
-      uploadInfo.uploadedSize = loaded;
-      uploadInfo.totalSize = total;
-      uploadInfo.progress = Math.round((loaded / total) * 100);
-
-      // 计算上传速度
-      const elapsedTime = (Date.now() - uploadInfo.startTime) / 1000;
-      const speed = loaded / elapsedTime;
-      uploadInfo.speed = formatSpeed(speed);
-
-      // 计算剩余时间
-      const remaining = (total - loaded) / speed;
-      uploadInfo.timeRemaining = formatTime(remaining);
-    };
 
     // 添加多选文件的状态
     const selectedFiles = ref([]);
@@ -2135,7 +2201,7 @@ export default {
   margin-right: 4px;
 }
 
-/* 自定义滚动条样式 */
+/* 自定���滚动条样式 */
 .sftp-content::-webkit-scrollbar {
   width: 8px;
 }
@@ -2441,7 +2507,8 @@ export default {
 }
 
 /* 添加进度条相关样式 */
-.download-progress-float {
+.download-progress-float,
+.upload-progress-float {
   position: fixed;
   bottom: 20px;
   right: 20px;
@@ -2463,10 +2530,6 @@ export default {
     transform: translateX(0);
     opacity: 1;
   }
-}
-
-.download-progress {
-  width: 100%;
 }
 
 .progress-info {
@@ -2492,36 +2555,19 @@ export default {
   flex-shrink: 0;
 }
 
-:deep(.arco-progress) {
-  margin: 4px 0;
-}
-
 .progress-details {
   display: flex;
   justify-content: space-between;
-  margin-top: 4px;
+  margin-top: 8px;
   font-size: 12px;
   color: var(--color-text-3);
 }
 
 /* 深色模式适配 */
-:deep([arco-theme='dark']) .download-progress-float {
+:deep([arco-theme='dark']) .download-progress-float,
+:deep([arco-theme='dark']) .upload-progress-float {
   background-color: var(--color-bg-3);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-/* 上传进度条样式（可以复用下载进度条的样式） */
-.upload-progress-float {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 300px;
-  background-color: var(--color-bg-2);
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  padding: 12px;
-  z-index: 10000;
-  animation: slide-in 0.3s ease;
 }
 
 /* 隐藏树节点的展开按钮 */
@@ -2572,13 +2618,75 @@ export default {
   background: rgba(var(--primary-6), 0.2);
 }
 
-/* 添加自定义字体预览样式 */
+/* 添��自定义字体��览样式 */
 .file-preview-modal .file-preview-content {
   font-family: 'Arial', sans-serif;
   white-space: pre-wrap;
   word-wrap: break-word;
   max-height: 500px;
   overflow-y: auto;
+}
+
+/* 添加或修改样式 */
+.progress-bar-wrapper {
+  width: 100%;
+  margin: 8px 0;
+}
+
+:deep(.arco-progress) {
+  width: 100%;
+}
+
+:deep(.arco-progress-line) {
+  width: 100%;
+}
+
+:deep(.arco-progress-line-bar) {
+  transition: width 0.3s ease;
+}
+
+.upload-progress-float,
+.download-progress-float {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 300px;
+  background-color: var(--color-bg-2);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  padding: 12px;
+  z-index: 10000;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.file-name {
+  font-size: 13px;
+  color: var(--color-text-1);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 8px;
+}
+
+.progress-percent {
+  font-size: 13px;
+  color: var(--color-text-2);
+  flex-shrink: 0;
+}
+
+.progress-details {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-3);
 }
 </style>
 
