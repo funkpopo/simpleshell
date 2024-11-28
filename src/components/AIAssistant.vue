@@ -380,7 +380,7 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch, inject } from 'vue'
 import { IconMinus, IconClose, IconSettings, IconDelete, IconPlus, IconEdit, IconCopy } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue'
 import aiIcon from '@/assets/aiicon.png'
@@ -407,6 +407,9 @@ export default {
   },
   emits: ['close', 'minimize'],
   setup(props, { emit }) {
+    const i18n = inject('i18n')
+    const t = (key, params) => i18n.t(key, params)
+    
     const position = ref({ x: 100, y: 100 })
     const isMinimized = ref(false)
     const isDragging = ref(false)
@@ -785,11 +788,12 @@ export default {
         }
         
         await ipcRenderer.invoke('save-config', config)
-        Message.success(this.$t('aiAssistant.settingsSaved'))
+        
+        Message.success(t('aiAssistant.settingsSaved'))
         settingsVisible.value = false
       } catch (error) {
         console.error('Failed to save AI settings:', error)
-        Message.error('Failed to save settings')
+        Message.error(error.message || 'Failed to save settings')
       }
     }
 
@@ -1088,7 +1092,8 @@ export default {
       copyMessage,
       selectText,
       isWaitingResponse,
-      getProviderLogo
+      getProviderLogo,
+      t
     }
   }
 }

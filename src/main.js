@@ -86,6 +86,6 @@ app.config.errorHandler = (err, vm, info) => {
 }
 
 app.mount('#app')
-
 // 导出 i18n 实例以供其他组件使用
 export { i18n }
+
