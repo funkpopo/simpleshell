@@ -1908,13 +1908,15 @@ export default {
   min-width: 36px;
   text-align: right;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
   transform: translateY(-50%);
   top: 50%;
+  pointer-events: none;
 }
 
 .resource-monitor:hover .value {
   opacity: 1;
+  transform: translateY(-50%) translateX(-8px);
 }
 
 /* CPU进度条样式 */
@@ -2062,5 +2064,20 @@ export default {
   .search-options {
     gap: 6px;
   }
+}
+
+/* 优化悬停效果 */
+.resource-monitor {
+  transition: all 0.3s ease, background-color 0.2s ease;
+}
+
+.resource-monitor:hover {
+  background-color: var(--color-bg-3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 深色模式下的悬停效果 */
+.terminal-container.dark-mode .resource-monitor:hover {
+  background-color: var(--color-bg-4);
 }
 </style>
