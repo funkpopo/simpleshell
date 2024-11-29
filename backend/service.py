@@ -86,7 +86,7 @@ def handle_disconnect():
     print(f"Client disconnected: {client_id}")
     with sessions_lock:
         if client_id in client_sessions:
-            # 不要立即清理会话，只记录客户端断��
+            # 不要立即清理会话，只记录客户端断
             print(f"Client {client_id} disconnected but keeping sessions")
             return
 
@@ -172,7 +172,7 @@ def create_base_client(connection):
         
         # 身份验证配置
         if connection.get('authType') == 'password':
-            # 解密 base64 编码的密��
+            # 解密 base64 编码
             import base64
             try:
                 password = connection['password']
@@ -206,7 +206,7 @@ def create_base_client(connection):
         raise
 
 def create_ssh_client(connection):
-    """��建 SSH 客户端"""
+    """SSH 客户端"""
     ssh = None  # 初始化 ssh 为 None
     try:
         ssh = create_base_client(connection)
@@ -557,6 +557,8 @@ class TransferProgress:
         self.speed = 0.0
         self.progress = 0.0
         self.estimated_time = 0
+        self.status = 'normal'  # 添加状态字段：normal, cancelled, error
+        self._cancelled = threading.Event()  # 添加取消事件
 
     def update(self, bytes_transferred: int):
         """更新传输进度"""
@@ -590,16 +592,28 @@ class TransferProgress:
                 self._last_update_time = current_time
                 self._last_size = self.current_size
 
+    def cancel(self):
+        """标记传输为已取消状态"""
+        with self._lock:
+            self.status = 'cancelled'
+            self._cancelled.set()  # 设置取消事件
+
+    def is_cancelled(self) -> bool:
+        """检查传输是否被取消"""
+        return self._cancelled.is_set()
+
     def get_status(self) -> Dict:
         """获取当前传输状态"""
         with self._lock:
-            return {
+            status_data = {
                 'progress': round(self.progress, 2),
                 'speed': self.format_speed(self.speed),
                 'estimated_time': self.format_time(self.estimated_time),
                 'transferred': self.format_size(self.current_size),
-                'total': self.format_size(self.total_size)
+                'total': self.format_size(self.total_size),
+                'status': self.status  # 添加状态信息
             }
+            return status_data
 
     @staticmethod
     def format_speed(speed: float) -> str:
@@ -640,10 +654,12 @@ class TransferManager:
         self._lock = threading.Lock()
         self._cancel_flags = {}  # 添加取消标志字典
 
-    def cancel_transfer(self, transfer_id: str):
+    def cancel_transfer(self, transfer_id: str) -> bool:
         """取消指定的传输任务"""
         with self._lock:
-            if transfer_id in self._transfers:
+            transfer = self._transfers.get(transfer_id)
+            if transfer:
+                transfer.cancel()
                 self._cancel_flags[transfer_id] = True
                 return True
             return False
@@ -675,6 +691,7 @@ transfer_manager = TransferManager()
 # 修改上传文件的路由
 @app.route('/sftp_upload_file', methods=['POST'])
 def upload_file():
+    temp_file_path = None
     try:
         data = request.json
         connection = data['connection']
@@ -687,26 +704,26 @@ def upload_file():
         transfer_id = data.get('transferId')
         total_size = data.get('totalSize', 0)
 
-        # 创建临时目录（如果不存在）
-        temp_dir = os.path.join(tempfile.gettempdir(), 'sftp_uploads')
-        os.makedirs(temp_dir, exist_ok=True)
-
         # 获取或创建传输进度跟踪器
         if chunk_index == 0:
             transfer_progress = transfer_manager.create_transfer(transfer_id, total_size, 'upload')
         else:
             transfer_progress = transfer_manager.get_transfer(transfer_id)
 
+        if transfer_progress and transfer_progress.is_cancelled():
+            # 如果传输已被取消，立即返回
+            return jsonify({"status": "cancelled", "message": "Transfer cancelled"}), 200
+
+        temp_dir = os.path.join(tempfile.gettempdir(), 'sftp_uploads')
+        os.makedirs(temp_dir, exist_ok=True)
+
         try:
             ssh, sftp = create_sftp_client(connection)
-            
             try:
                 if chunk_index == 0:
-                    # 为新上传创建临时文件
                     temp_file_id = str(uuid.uuid4())
                     temp_file_path = os.path.join(temp_dir, temp_file_id)
                 else:
-                    # 使用现有的临时文件
                     temp_file_path = os.path.join(temp_dir, temp_file_id)
 
                 # 解码并写入当前块
@@ -715,19 +732,23 @@ def upload_file():
                     with open(temp_file_path, 'ab') as f:
                         f.write(chunk_data)
                     
-                    # 更新进度
+                    # 更新进度并检查是否取消
                     if transfer_progress:
                         current_size = os.path.getsize(temp_file_path)
                         transfer_progress.update(current_size)
+                        if transfer_progress.is_cancelled():
+                            raise Exception("Transfer cancelled")
 
                 # 如果是最后一个块，执行上传
                 if is_last_chunk:
                     remote_path = os.path.join(path, filename).replace('\\', '/')
                     
-                    # 定义进度回调
                     def progress_callback(transferred, total):
                         if transfer_progress:
                             transfer_progress.update(transferred)
+                            # 检查是否取消
+                            if transfer_progress.is_cancelled():
+                                raise Exception("Transfer cancelled")
                     
                     # 上传文件
                     with open(temp_file_path, 'rb') as f:
@@ -758,26 +779,28 @@ def upload_file():
                 ssh.close()
 
         except Exception as e:
-            logger.error(f"Upload error: {str(e)}")
-            # 清理临时文件
-            if temp_file_id:
-                try:
-                    temp_file_path = os.path.join(temp_dir, temp_file_id)
-                    os.unlink(temp_file_path)
-                except:
-                    pass
-            # 移除传输进度跟踪器
-            if transfer_id:
-                transfer_manager.remove_transfer(transfer_id)
+            if "Transfer cancelled" in str(e):
+                # 传输被取消的情况
+                return jsonify({"status": "cancelled", "message": "Transfer cancelled"}), 200
             raise
 
     except Exception as e:
-        logger.error(f"Upload failed: {str(e)}")
+        logger.error(f"Upload error: {str(e)}")
+        # 清理临时文件
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
+        # 移除传输进度跟踪器
+        if transfer_id:
+            transfer_manager.remove_transfer(transfer_id)
         return jsonify({"error": str(e)}), 500
 
 # 修改下载文件的路由
 @app.route('/sftp_download_file', methods=['POST'])
 def download_file():
+    temp_file = None
     try:
         data = request.json
         connection = data['connection']
@@ -790,30 +813,45 @@ def download_file():
             transfer_progress = transfer_manager.create_transfer(transfer_id, file_size, 'download')
 
             def generate():
+                nonlocal temp_file
                 try:
-                    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                        network_bytes = [0]
+                    temp_file = tempfile.NamedTemporaryFile(delete=False)
+                    network_bytes = [0]
 
-                        def progress_callback(transferred, total):
-                            # 检查是否取消
-                            if transfer_id and transfer_manager.is_cancelled(transfer_id):
-                                raise Exception("Transfer cancelled")
-                            
-                            network_bytes[0] += transferred
-                            if transfer_progress:
-                                transfer_progress.update(transferred)
-                        
+                    def progress_callback(transferred, total):
+                        # 检查是否取消
+                        if transfer_progress.is_cancelled():
+                            raise Exception("Transfer cancelled")
+                        network_bytes[0] += transferred
+                        if transfer_progress:
+                            transfer_progress.update(transferred)
+
+                    try:
                         sftp.get(path, temp_file.name, callback=progress_callback)
-                        
-                        chunk_size = 8192
-                        with open(temp_file.name, 'rb') as f:
-                            while True:
-                                chunk = f.read(chunk_size)
-                                if not chunk:
-                                    break
-                                yield chunk
+                    except Exception as e:
+                        if transfer_progress.is_cancelled():
+                            raise Exception("Transfer cancelled")
+                        raise e
+
+                    chunk_size = 8192
+                    with open(temp_file.name, 'rb') as f:
+                        while True:
+                            if transfer_progress.is_cancelled():
+                                raise Exception("Transfer cancelled")
+                            chunk = f.read(chunk_size)
+                            if not chunk:
+                                break
+                            yield chunk
+
+                except Exception as e:
+                    if "Transfer cancelled" in str(e):
+                        # 传输被取消的情况
+                        yield b''  # 发送空字节以结束响应
+                    else:
+                        raise
                 finally:
                     try:
+                        temp_file.close()
                         os.unlink(temp_file.name)
                     except:
                         pass
@@ -839,6 +877,8 @@ def download_file():
             raise
 
     except Exception as e:
+        if "Transfer cancelled" in str(e):
+            return jsonify({"status": "cancelled", "message": "Transfer cancelled"}), 200
         return jsonify({"error": str(e)}), 500
 
 # 添加获取传输进度的路由

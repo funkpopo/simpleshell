@@ -165,10 +165,7 @@
         </a-modal>
 
         <!-- 修改下载进度浮动通知 -->
-        <div 
-          v-if="downloadProgressVisible" 
-          class="download-progress-float"
-        >
+        <div v-if="downloadProgressVisible" class="download-progress-float">
           <div class="download-progress">
             <div class="progress-header">
               <span class="file-name">{{ downloadInfo.fileName }}</span>
@@ -970,7 +967,7 @@ export default {
             for (let i = 0; i < nodes.length; i++) {
               if (nodes[i].key === pathToRefresh) {
                 nodes[i].children = sortItems(response.data.map(item => {
-                  // 查找原有节点，保留子节点和展开状态
+                  // 查找原有节点，保留子节点和展开状���
                   const existingNode = nodes[i].children 
                     ? nodes[i].children.find(child => child.title === item.name)
                     : null;
@@ -1259,27 +1256,36 @@ export default {
 
         // 生成传输 ID
         const transferId = `download_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        downloadInfo.transferId = transferId;  // 保存传输 ID 到 downloadInfo 中
-
-        downloadProgressVisible.value = true;
+        downloadInfo.transferId = transferId;
         downloadInfo.fileName = nodeData.title;
         downloadInfo.progress = 0;
         downloadInfo.status = 'normal';
-        downloadInfo.speed = '';
-        downloadInfo.timeRemaining = '';
+        downloadInfo.startTime = null;
+        downloadInfo.totalSize = 0;
+        downloadInfo.currentSize = 0;
+        downloadProgressVisible.value = true;
 
         const progressTimer = setInterval(async () => {
           try {
             const response = await axios.get(`http://localhost:5000/transfer_progress/${transferId}`);
             if (response.data) {
-              downloadInfo.progress = response.data.progress;
+              if (response.data.status === 'cancelled') {
+                clearInterval(progressTimer);
+                downloadProgressVisible.value = false;
+                return;
+              }
+
+              // 使用服务器返回的进度信息更新UI
+              const progress = response.data.progress;
+              downloadInfo.progress = progress;
               downloadInfo.speed = response.data.speed;
               downloadInfo.timeRemaining = response.data.estimated_time;
-              
-              const progressElement = document.querySelector('.download-progress .arco-progress-line-bar');
-              if (progressElement) {
-                progressElement.style.width = `${response.data.progress}%`;
-              }
+              downloadInfo.transferred = response.data.transferred;
+              downloadInfo.total = response.data.total;
+              downloadInfo.status = response.data.status;
+
+              // 更新进度条
+              updateProgressBar('download', progress);
             }
           } catch (error) {
             console.error('Failed to get download progress:', error);
@@ -1290,9 +1296,19 @@ export default {
           const response = await axios.post('http://localhost:5000/sftp_download_file', {
             connection: props.connection,
             path: nodeData.key,
-            transferId: transferId  // 添加传输 ID
+            transferId: transferId
           }, {
-            responseType: 'blob'
+            responseType: 'blob',
+            onDownloadProgress: (progressEvent) => {
+              // 使用 progressEvent 的 loaded 和 total 属性更新进度
+              if (progressEvent.total) {
+                updateDownloadProgress(
+                  progressEvent.loaded,
+                  progressEvent.total,
+                  nodeData.title
+                );
+              }
+            }
           });
 
           const buffer = Buffer.from(await response.data.arrayBuffer());
@@ -1300,6 +1316,7 @@ export default {
 
           downloadInfo.status = 'success';
           downloadInfo.progress = 100;
+          updateProgressBar('download', 100);
           
           setTimeout(() => {
             downloadProgressVisible.value = false;
@@ -1307,13 +1324,21 @@ export default {
           }, 500);
 
           await logOperation('download', nodeData.key);
+
         } finally {
           clearInterval(progressTimer);
         }
+
       } catch (error) {
         downloadInfo.status = 'error';
         console.error('Failed to download item:', error);
         Message.error(`Failed to download ${nodeData.title}: ${error.message}`);
+      } finally {
+        if (downloadInfo.status !== 'cancelled') {
+          setTimeout(() => {
+            downloadProgressVisible.value = false;
+          }, 1000);
+        }
       }
     };
 
@@ -1414,6 +1439,13 @@ export default {
         downloadInfo.status = 'error';
         console.error('Failed to download folder:', error);
         Message.error(t('sftp.downloadFailed'));
+      } finally {
+        // 如果不是因为取消而结束，才自动隐藏进度条
+        if (downloadInfo.status !== 'cancelled') {
+          setTimeout(() => {
+            downloadProgressVisible.value = false;
+          }, 1000);
+        }
       }
     };
 
@@ -1625,12 +1657,16 @@ export default {
 
     // 修改 uploadFiles 函数
     const uploadFiles = async (files, targetPath) => {
-      const loadingMessage = Message.loading({
-        content: t('sftp.uploadingFiles'),
-        duration: 0
-      });
+      let loadingMessage = null;
+      let successCount = 0;
+      let failCount = 0;
 
       try {
+        loadingMessage = Message.loading({
+          content: t('sftp.uploadingFiles'),
+          duration: 0
+        });
+
         uploadProgressVisible.value = true;
         uploadInfo.status = 'normal';
         uploadInfo.progress = 0;
@@ -1639,24 +1675,55 @@ export default {
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           
-          // 检查是否是文件夹
-          if (file.webkitRelativePath || file.isDirectory) {
-            console.log('Uploading folder:', file.name);
-            await uploadFolder(file, targetPath);
-          } else {
-            console.log('Uploading file:', file.name);
-            await uploadSingleFile(file, targetPath);
+          try {
+            // 检查是否是文件夹
+            if (file.webkitRelativePath || file.isDirectory) {
+              console.log('Uploading folder:', file.name);
+              await uploadFolder(file, targetPath);
+              successCount++;
+            } else {
+              console.log('Uploading file:', file.name);
+              await uploadSingleFile(file, targetPath);
+              successCount++;
+            }
+          } catch (error) {
+            if (error.message === 'Transfer cancelled') {
+              // 如果是取消操作，停止后续文件的上传
+              break;
+            }
+            // 其他错误继续上传下一个文件
+            console.error(`Error uploading ${file.name}:`, error);
+            failCount++;
           }
         }
 
-        loadingMessage.close();
-        Message.success(t('sftp.uploadSuccess'));
+        // 刷新目录
         await refreshDirectoryKeepingState(targetPath);
+
+        // 显示最终结果
+        if (successCount > 0 || failCount > 0) {
+          if (failCount === 0) {
+            Message.success(t('sftp.uploadSuccess'));
+          } else if (successCount === 0) {
+            Message.error(t('sftp.uploadFailed'));
+          } else {
+            Message.warning(t('sftp.uploadPartialSuccess', {
+              success: successCount,
+              fail: failCount
+            }));
+          }
+        }
+
       } catch (error) {
-        loadingMessage.close();
         console.error('Upload failed:', error);
         uploadInfo.status = 'error';
-        Message.error(error.message || t('sftp.uploadFailed'));
+        if (error.message !== 'Transfer cancelled') {
+          Message.error(t('sftp.uploadFailed'));
+        }
+      } finally {
+        if (loadingMessage) {
+          loadingMessage.close();
+        }
       }
     };
 
@@ -1752,28 +1819,30 @@ export default {
       timeRemaining: '',
       transferred: '',
       total: '',
-      transferId: null  // 添加 transferId 字段
+      transferId: null,
+      startTime: null,
+      totalSize: 0,    // 添加总大小字段
+      currentSize: 0   // 添加当前下载大小字段
     });
 
-    // 修改 updateDownloadProgress 函数
+    // 修改下载进度更新函数
     const updateDownloadProgress = (loaded, total, fileName) => {
       if (!downloadInfo.startTime) {
         downloadInfo.startTime = Date.now();
+        downloadInfo.totalSize = total;
       }
 
       downloadInfo.fileName = fileName;
+      downloadInfo.currentSize = loaded;
       downloadInfo.transferred = formatSize(loaded);
       downloadInfo.total = formatSize(total);
-      const progress = Math.round((loaded / total) * 100);
+
+      // 使用实际的字节数计算进度
+      const progress = total > 0 ? Math.round((loaded / total) * 100) : 0;
       downloadInfo.progress = progress;
 
-      // 更新进度条宽度
-      nextTick(() => {
-        const progressBar = document.querySelector('.download-progress .arco-progress-line-bar');
-        if (progressBar) {
-          progressBar.style.setProperty('--progress-width', `${progress}%`);
-        }
-      });
+      // 更新进度条
+      updateProgressBar('download', progress);
 
       // 计算下载速度
       const elapsedTime = (Date.now() - downloadInfo.startTime) / 1000;
@@ -1781,7 +1850,7 @@ export default {
       downloadInfo.speed = formatSpeed(speed);
 
       // 计算剩余时间
-      const remaining = (total - loaded) / speed;
+      const remaining = speed > 0 ? (total - loaded) / speed : 0;
       downloadInfo.timeRemaining = formatTime(remaining);
     };
 
@@ -1809,16 +1878,12 @@ export default {
 
     // 修改 uploadSingleFile 函数
     const uploadSingleFile = async (file, targetPath) => {
+      let loadingMessage = null;
+      
       try {
         // 生成传输 ID
         const transferId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        uploadInfo.transferId = transferId;  // 保存传输 ID 到 uploadInfo 中
-
-        // 检查文件大小限制
-        const maxFileSize = 1024 * 1024 * 10240; // 10GB
-        if (file.size > maxFileSize) {
-          throw new Error(t('sftp.fileTooLarge', { maxSize: '10GB' }));
-        }
+        uploadInfo.transferId = transferId;
 
         // 显示上传进度
         uploadProgressVisible.value = true;
@@ -1834,26 +1899,30 @@ export default {
         const chunkSize = 5 * 1024 * 1024;
         const totalChunks = Math.ceil(file.size / chunkSize);
         let tempFileId = null;
+        let isCancelled = false;
 
         // 修改上传进度更新的逻辑
         const progressTimer = setInterval(async () => {
           try {
             const response = await axios.get(`http://localhost:5000/transfer_progress/${transferId}`);
             if (response.data) {
-              const progress = response.data.progress;
-              uploadInfo.progress = progress;
+              // 检查传输状态
+              if (response.data.status === 'cancelled') {
+                isCancelled = true;
+                clearInterval(progressTimer);
+                uploadProgressVisible.value = false;
+                return;
+              }
+
+              uploadInfo.progress = response.data.progress;
               uploadInfo.speed = response.data.speed;
               uploadInfo.timeRemaining = response.data.estimated_time;
               uploadInfo.transferred = response.data.transferred;
               uploadInfo.total = response.data.total;
+              uploadInfo.status = response.data.status;
 
-              // 更新进度条宽度
-              nextTick(() => {
-                const progressBar = document.querySelector('.upload-progress .arco-progress-line-bar');
-                if (progressBar) {
-                  progressBar.style.setProperty('--progress-width', `${progress}%`);
-                }
-              });
+              // 更新进度条
+              updateProgressBar('upload', uploadInfo.progress);
             }
           } catch (error) {
             console.error('Failed to get upload progress:', error);
@@ -1884,42 +1953,56 @@ export default {
               chunkIndex: i,
               isLastChunk: isLastChunk,
               tempFileId: tempFileId,
-              transferId: transferId,  // 添加传输 ID
+              transferId: transferId,
               totalSize: file.size
-            }, {
-              timeout: 0,
-              maxContentLength: Infinity,
-              maxBodyLength: Infinity
             });
+
+            // 检查响应状态
+            if (response.data.status === 'cancelled') {
+              isCancelled = true;
+              throw new Error('Transfer cancelled');
+            }
 
             if (!isLastChunk) {
               tempFileId = response.data.tempFileId;
             }
           }
 
-          uploadInfo.status = 'success';
-          uploadInfo.progress = 100;
-          
-          // 记录上传操作
-          await logOperation('upload', `${targetPath}/${file.name}`);
-          
-          setTimeout(() => {
-            uploadProgressVisible.value = false;
-          }, 1000);
-
-          Message.success(t('sftp.uploadSuccess'));
-          
-          // 刷新目录
-          await refreshDirectoryKeepingState(targetPath);
+          // 上传成功
+          if (!isCancelled) {
+            uploadInfo.status = 'success';
+            uploadInfo.progress = 100;
+            await logOperation('upload', `${targetPath}/${file.name}`);
+            await refreshDirectoryKeepingState(targetPath);
+          }
 
         } finally {
           clearInterval(progressTimer);
         }
+
       } catch (error) {
         console.error('Failed to upload file:', error);
         uploadInfo.status = 'error';
-        Message.error(`Failed to upload ${file.name}: ${error.message}`);
+
+        if (error.message === 'Transfer cancelled') {
+          if (!isCancelled) {
+            Message.info(t('sftp.uploadCancelled'));
+          }
+        } else {
+          Message.error(`Failed to upload ${file.name}: ${error.message}`);
+        }
         throw error;
+
+      } finally {
+        if (loadingMessage) {
+          loadingMessage.close();
+        }
+        // 根据状态决定是否隐藏进度条
+        if (uploadInfo.status !== 'cancelled') {
+          setTimeout(() => {
+            uploadProgressVisible.value = false;
+          }, 1000);
+        }
       }
     };
 
@@ -2097,12 +2180,25 @@ export default {
         if (uploadInfo.transferId) {
           const response = await axios.post(`http://localhost:5000/cancel_transfer/${uploadInfo.transferId}`);
           if (response.data.status === 'success') {
+            // 立即更新状态
+            uploadInfo.status = 'cancelled';
+            // 立即隐藏进度条
             uploadProgressVisible.value = false;
+            // 清除上传信息
+            uploadInfo.fileName = '';
+            uploadInfo.progress = 0;
+            uploadInfo.speed = '';
+            uploadInfo.timeRemaining = '';
+            uploadInfo.transferred = '';
+            uploadInfo.total = '';
+            uploadInfo.transferId = null;
+            // 显示取消消息（只显示一次）
             Message.info(t('sftp.uploadCancelled'));
           }
         }
       } catch (error) {
         console.error('Failed to cancel upload:', error);
+        Message.error(t('sftp.cancelFailed'));
       }
     };
 
@@ -2111,13 +2207,46 @@ export default {
         if (downloadInfo.transferId) {
           const response = await axios.post(`http://localhost:5000/cancel_transfer/${downloadInfo.transferId}`);
           if (response.data.status === 'success') {
+            // 立即隐藏进度条
             downloadProgressVisible.value = false;
+            // 清除下载信息
+            downloadInfo.fileName = '';
+            downloadInfo.progress = 0;
+            downloadInfo.status = 'normal';
+            downloadInfo.speed = '';
+            downloadInfo.timeRemaining = '';
+            downloadInfo.transferred = '';
+            downloadInfo.total = '';
+            downloadInfo.transferId = null;
+            downloadInfo.startTime = null;
+            // 显示取消消息
             Message.info(t('sftp.downloadCancelled'));
           }
         }
       } catch (error) {
         console.error('Failed to cancel download:', error);
+        Message.error(t('sftp.cancelFailed'));
       }
+    };
+
+    // 修改进度条更新逻辑
+    const updateProgressBar = (type, progress) => {
+      nextTick(() => {
+        const progressBar = document.querySelector(
+          `.${type}-progress .arco-progress-line-bar`
+        );
+        if (progressBar) {
+          // 使用 CSS 变量设置宽度
+          progressBar.style.setProperty('--progress-width', `${progress}%`);
+          
+          // 根据进度设置状态类
+          if (progress === 100) {
+            progressBar.classList.add('status-success');
+          } else if (progress === 0) {
+            progressBar.classList.remove('status-success', 'status-error');
+          }
+        }
+      });
     };
 
     return {
@@ -2541,7 +2670,7 @@ export default {
   border: 2px solid transparent;
 }
 
-/* 选中状态样式调整 */
+/* 选中状���样式调整 */
 :deep(.arco-tree-node-selected) {
   background-color: var(--color-primary-light-1);
 }
@@ -2701,8 +2830,10 @@ export default {
   width: 100%;
   margin: 8px 0;
   position: relative;
+  overflow: hidden;
 }
 
+/* 修改 Arco Design 进度条样式 */
 :deep(.arco-progress) {
   width: 100%;
 }
@@ -2713,10 +2844,25 @@ export default {
 
 :deep(.arco-progress-line-bar) {
   transition: width 0.3s ease;
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: var(--progress-width) !important; /* 使用CSS变量控制宽度 */
+}
+
+/* 确保进度条容器和进度条本身的宽度一致 */
+.upload-progress,
+.download-progress {
+  width: 100%;
+}
+
+:deep(.arco-progress-line-bar) {
+  width: var(--progress-width, 0%) !important;
+}
+
+/* 修改进度条颜色状态 */
+:deep(.arco-progress-line-bar.status-success) {
+  background-color: var(--color-success-light-4);
+}
+
+:deep(.arco-progress-line-bar.status-error) {
+  background-color: var(--color-danger-light-4);
 }
 
 .upload-progress-float,

@@ -122,7 +122,8 @@ export default {
     sizeCopied: 'File size copied: {size}',
     fileTooLarge: 'File is too large. Maximum allowed size is {maxSize}',
     uploadCancelled: 'Upload cancelled',
-    downloadCancelled: 'Download cancelled'
+    downloadCancelled: 'Download cancelled',
+    uploadPartialSuccess: 'Upload completed: {success} succeeded, {fail} failed'
   },
   update: {
     newVersion: 'New Version Available',
