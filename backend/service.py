@@ -207,30 +207,32 @@ def create_base_client(connection):
 
 def create_ssh_client(connection):
     """SSH 客户端"""
-    ssh = None  # 初始化 ssh 为 None
+    ssh = None
     try:
         ssh = create_base_client(connection)
         
-        # 创建并配置通道
+        # 创建并配置通道，使用更大的初始终端大小
         channel = ssh.invoke_shell(
             term='xterm-256color',
-            width=80,
-            height=24,
+            width=132,  # 更大的初始宽度
+            height=43,  # 更大的初始高度
             environment={
                 'TERM': 'xterm-256color',
                 'COLORTERM': 'truecolor',
                 'TERM_PROGRAM': 'xterm',
                 'LANG': 'en_US.UTF-8',
                 'LC_ALL': 'en_US.UTF-8',
-                'FORCE_COLOR': 'true'
+                'FORCE_COLOR': 'true',
+                'COLUMNS': '132',  # 设置环境变量
+                'LINES': '43'
             }
         )
         
-        # 配置通道为非阻塞模式，超时时间非常短
+        # 配置通道
         channel.settimeout(0.001)
         channel.setblocking(0)
         
-        # 配置传输层
+        # 配置传输层以提高性能
         transport = ssh.get_transport()
         if transport:
             transport.set_keepalive(60)
@@ -243,13 +245,12 @@ def create_ssh_client(connection):
         return ssh, channel
         
     except Exception as e:
-        # 如果 SSH 连接失败，确保关闭连接
         if ssh:
             try:
                 ssh.close()
             except:
                 pass
-        raise  # 重新抛出原始异常
+        raise
 
 def create_sftp_client(connection):
     """创建用于文件传输的 SFTP 客户端"""
@@ -480,32 +481,33 @@ def handle_ssh_close(data):
 
 @socketio.on('resize')
 def handle_resize(data):
-    session_id = data.get('session_id')
-    
-    # 更灵活的列数和行数计算
-    cols = max(80, min(data.get('cols', 80), 240))  # 限制列数范围
-    rows = max(24, min(data.get('rows', 24), 100))  # 限制行数范围
-    
-    # 确保会话存在
-    if session_id in ssh_sessions:
+    """处理终端大小调整请求"""
+    try:
+        session_id = data.get('session_id')
+        if not session_id or session_id not in ssh_sessions:
+            return
+            
+        # 获取新的终端大小
+        cols = max(80, min(data.get('cols', 80), 500))  # 限制列范围
+        rows = max(24, min(data.get('rows', 24), 200))  # 限制行范围
+        
+        session = ssh_sessions[session_id]
+        channel = session.channel
+        
+        # 调整终端大小
         try:
-            # 调整伪终端大小
-            channel = ssh_sessions[session_id].channel
-            
-            # 尝试调整 PTY 大小
-            try:
-                channel.resize_pty(width=cols, height=rows)
-            except Exception as resize_err:
-                print(f"Primary resize method failed: {resize_err}")
-                # 备用调整方法
-                try:
-                    channel.resize_pty(width=cols, height=rows)
-                except Exception as fallback_err:
-                    print(f"Fallback resize method failed: {fallback_err}")
-            
-            print(f"Resized terminal for session {session_id} to {cols}x{rows}")
+            channel.resize_pty(width=cols, height=rows)
+            # 同时更新环境变量
+            channel.update_environment({
+                'COLUMNS': str(cols),
+                'LINES': str(rows)
+            })
+            logger.info(f"Resized terminal for session {session_id} to {cols}x{rows}")
         except Exception as e:
-            print(f"Error resizing terminal: {e}")
+            logger.error(f"Error resizing terminal: {e}")
+            
+    except Exception as e:
+        logger.error(f"Error in handle_resize: {e}")
 
 # SFTP相关路由
 @app.route('/sftp_list_directory', methods=['POST'])

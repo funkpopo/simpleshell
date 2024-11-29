@@ -392,6 +392,19 @@ export default {
         return
       }
 
+      // 计算初始终端大小
+      const terminalElement = terminal.value
+      const computedStyle = window.getComputedStyle(terminalElement)
+      const padding = parseInt(computedStyle.padding || '0')
+      const availableWidth = terminalElement.clientWidth - 2 * padding
+      const availableHeight = terminalElement.clientHeight - 2 * padding
+
+      // 使用字符尺寸计算合适的列数和行数
+      const charWidth = 9 // 假设每个字符的平均宽度为9像素
+      const charHeight = 17 // 假设每个字符的高度为17像素
+      const cols = Math.floor(availableWidth / charWidth)
+      const rows = Math.floor(availableHeight / charHeight)
+
       term = new Terminal({
         cursorBlink: true,
         fontSize: props.fontSize,
@@ -399,16 +412,16 @@ export default {
         copyOnSelect: false,
         theme: isDarkMode.value ? getDarkTheme() : getLightTheme(),
         allowTransparency: true,
-        scrollback: 10000,
+        scrollback: 10000, // 增加回滚缓冲区大小
         convertEol: true,
         termName: 'xterm-256color',
         rendererType: 'canvas',
         allowProposedApi: true,
-        cols: 80,
-        rows: 24,
+        cols: cols,
+        rows: rows,
         windowsMode: false,
         windowsPty: false,
-        smoothScrollDuration: 0,
+        smoothScrollDuration: 300, // 添加平滑滚动
         fastScrollModifier: 'alt',
         allowTransparency: true,
         drawBoldTextInBrightColors: true,
@@ -463,9 +476,19 @@ export default {
         return true
       })
 
+      // 修改滚动行为
+      term.onLineFeed(() => {
+        // 检查是否在底部
+        const isScrolledToBottom = term.element.scrollTop + term.element.clientHeight >= term.element.scrollHeight
+        if (isScrolledToBottom) {
+          setTimeout(() => term.scrollToBottom(), 0)
+        }
+      })
+
+      // 添加数据处理事件
       term.onData((data) => {
         if (!isTerminalReady.value || !socket) return
-
+        
         // 处理 Enter 键
         if (data === '\r') {
           // 如果在编辑器模式下，直接发送输入
@@ -474,9 +497,20 @@ export default {
             return
           }
 
-          // 如果命令提示窗口显示且有选中项，不处理这个 Enter 事件
+          // 如果命令提示窗口显示且有选中项，使用选中的建议
           if (showSuggestions.value && selectedSuggestionIndex.value >= 0) {
-            return
+            const selectedCommand = suggestions.value[selectedSuggestionIndex.value]
+            if (selectedCommand) {
+              // 清除当前输入
+              const backspaces = '\b'.repeat(currentInput.value.length)
+              socket.emit('ssh_input', { 
+                session_id: props.sessionId, 
+                input: backspaces + selectedCommand + '\r'
+              })
+              currentInput.value = ''
+              hideSuggestionMenu()
+              return
+            }
           }
 
           // 正常处理 Enter 键事件
@@ -491,6 +525,18 @@ export default {
           return
         }
 
+        // 处理退格键
+        if (data === '\x7f') {
+          if (currentInput.value.length > 0) {
+            currentInput.value = currentInput.value.slice(0, -1)
+            if (currentInput.value.length > 0) {
+              showSuggestionMenu()
+            } else {
+              hideSuggestionMenu()
+            }
+          }
+        }
+        
         // 记录普通输入
         if (!isInEditorMode.value && data >= ' ' && data <= '~') {
           currentInput.value += data
@@ -503,8 +549,28 @@ export default {
         socket.emit('ssh_input', { session_id: props.sessionId, input: data })
       })
 
-      term.onLineFeed(() => {
-        term.scrollToBottom()
+      // 添加终端大小变化处理
+      const updateTerminalSize = () => {
+        if (fitAddon) {
+          fitAddon.fit()
+          const dimensions = term.options
+          if (socket && isTerminalReady.value) {
+            socket.emit('resize', { 
+              session_id: props.sessionId, 
+              cols: dimensions.cols, 
+              rows: dimensions.rows 
+            })
+          }
+        }
+      }
+
+      // 监听窗口大小变化
+      const debouncedResize = _debounce(updateTerminalSize, 100)
+      window.addEventListener('resize', debouncedResize)
+
+      // 在组件卸载时移除事件监听
+      onUnmounted(() => {
+        window.removeEventListener('resize', debouncedResize)
       })
 
       isTerminalReady.value = true
@@ -539,7 +605,7 @@ export default {
           rows: term.rows 
         })
 
-        // 添加重新定建议菜单的逻辑
+        // 重新定位建议菜单
         if (suggestionMenu.value && showSuggestions.value) {
           nextTick(() => {
             positionSuggestionMenu()
@@ -928,20 +994,12 @@ export default {
       if (!suggestionMenu.value) {
         suggestionMenu.value = document.createElement('div')
         suggestionMenu.value.className = 'command-suggestions'
-        const xtermRows = terminal.value.querySelector('.xterm-screen .xterm-rows')
-        if (xtermRows && xtermRows.children && xtermRows.children.length >= 2) {
-          const lastRow = xtermRows.lastElementChild
-          xtermRows.insertBefore(suggestionMenu.value, lastRow)
-        } else {
-          console.error('Could not find appropriate position for suggestions menu')
-          return
-        }
+        terminal.value.appendChild(suggestionMenu.value)
       }
 
-      // 过滤命令添加空值检查
+      // 过滤命令并限制数量
       const filteredCommands = commandHistory.value
         .filter(cmd => {
-          // 确保命令和当前输入都是有效的字符串
           return cmd && typeof cmd === 'string' && 
                  currentInput.value && typeof currentInput.value === 'string' &&
                  cmd.toLowerCase().startsWith(currentInput.value.toLowerCase())
@@ -966,28 +1024,10 @@ export default {
         })
         
         showSuggestions.value = true
-        suggestionMenu.value.style.display = 'block'
-        suggestionMenu.value.style.visibility = 'visible'
-        
-        // 根据命令数量调整高度
-        const itemHeight = 32
-        const maxVisibleItems = 4
-        const actualItems = Math.min(suggestions.value.length, maxVisibleItems)
-        suggestionMenu.value.style.height = `${actualItems * itemHeight}px`
-        
-        // 确保滚动容器可以正常工作
-        suggestionMenu.value.style.overflowY = 'auto'
-        suggestionMenu.value.style.overscrollBehavior = 'contain'
+        suggestionMenu.value.classList.add('visible')
         
         nextTick(() => {
           positionSuggestionMenu()
-          // 如果有选中项，确保它可见
-          if (selectedSuggestionIndex.value >= 0) {
-            const selectedItem = suggestionMenu.value.querySelector('.suggestion-item.selected')
-            if (selectedItem) {
-              selectedItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-            }
-          }
         })
       } else {
         hideSuggestionMenu()
@@ -997,31 +1037,52 @@ export default {
     const positionSuggestionMenu = () => {
       if (!term || !suggestionMenu.value) return
       
-      // 获取 xterm-rows 容器
-      const xtermRows = terminal.value.querySelector('.xterm-screen .xterm-rows')
-      if (!xtermRows) return
+      // 获取终端容器的位置和大小
+      const terminalRect = terminal.value.getBoundingClientRect()
+      const suggestionRect = suggestionMenu.value.getBoundingClientRect()
       
-      // 获取字符尺寸
-      const charWidth = Math.ceil(term._core._renderService.dimensions.actualCellWidth)
-      const charHeight = Math.ceil(term._core._renderService.dimensions.actualCellHeight)
+      // 获取当前光标位置
+      const cursorElement = terminal.value.querySelector('.xterm-cursor')
+      let cursorRect = cursorElement ? cursorElement.getBoundingClientRect() : null
       
-      // 设置固定位置在左上角
-      Object.assign(suggestionMenu.value.style, {
-        position: 'absolute',
-        left: '10px', // 左边留出10px的间距
-        top: '10px',  // 顶部留出10px的间距
-        zIndex: '9999',
-        maxHeight: `${Math.min(200, xtermRows.clientHeight - 20)}px`, // 确保不超出终端高度
-        maxWidth: `${Math.min(400, xtermRows.clientWidth - 20)}px`,  // 确保不超出终端宽度
-      })
+      // 如果找不到光标，使用默认位置
+      if (!cursorRect) {
+        suggestionMenu.value.style.left = '10px'
+        suggestionMenu.value.style.bottom = '40px'
+        return
+      }
+      
+      // 计算建议菜单的位置
+      let left = cursorRect.left - terminalRect.left
+      let bottom = terminalRect.bottom - cursorRect.bottom + 5
+      
+      // 确保菜单不会超出终端边界
+      if (left + suggestionRect.width > terminalRect.width - 10) {
+        left = terminalRect.width - suggestionRect.width - 10
+      }
+      if (left < 10) left = 10
+      
+      if (bottom < 10) bottom = 10
+      if (bottom + suggestionRect.height > terminalRect.height - 10) {
+        bottom = terminalRect.height - suggestionRect.height - 10
+      }
+      
+      // 设置菜单位置
+      suggestionMenu.value.style.left = `${left}px`
+      suggestionMenu.value.style.bottom = `${bottom}px`
+      
+      // 确保菜单在视图内
+      if (suggestionMenu.value.offsetTop < 0) {
+        suggestionMenu.value.style.top = '10px'
+        suggestionMenu.value.style.bottom = 'auto'
+      }
     }
 
     const hideSuggestionMenu = () => {
       showSuggestions.value = false
       selectedSuggestionIndex.value = -1
       if (suggestionMenu.value) {
-        suggestionMenu.value.style.display = 'none'
-        suggestionMenu.value.style.visibility = 'hidden'
+        suggestionMenu.value.classList.remove('visible')
       }
     }
 
@@ -1522,7 +1583,7 @@ export default {
       })
     }
 
-    // 查找下一个匹配项
+    // 查找一个匹配项
     const findNext = () => {
       performSearch()
     }
@@ -1568,55 +1629,81 @@ export default {
 </script>
 
 <style scoped>
+.terminal-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 .terminal-container {
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  padding: 4px;
+  box-sizing: border-box;
   overflow: hidden;
-  position: relative;
 }
 
 :deep(.xterm) {
-  flex: 1;
-  padding: 10px;
-  overflow: hidden;
-}
-
-.terminal-container.dark-mode {
-  background-color: var(--color-bg-5);
-  color: var(--color-text-1);
+  height: 100%;
+  padding: 4px;
 }
 
 :deep(.xterm-viewport) {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  width: calc(100%) !important;
   scrollbar-width: thin;
   scrollbar-color: var(--color-text-4) transparent;
-  overflow-y: auto;
-  overflow-x: hidden;
-  width: calc(100% + 20px) !important;
-}
-
-:deep(.xterm-viewport) {
-  scroll-behavior: smooth;
-  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar) {
-  width: 8px;
+  width: 12px;
+  height: 12px;
+  background-color: transparent;
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar-track) {
   background: transparent;
+  border-radius: 6px;
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
-  background-color: var(--color-text-4);
+  background-color: var(--color-fill-3);
   border-radius: 4px;
-  border: 2px solid var(--color-bg-1);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  min-height: 50px;
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
-  background-color: var(--color-text-3);
+  background-color: var(--color-fill-4);
+}
+
+/* 深色模式下的滚动条样式 */
+.terminal-container.dark-mode :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
+  background-color: var(--color-fill-4);
+}
+
+.terminal-container.dark-mode :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
+  background-color: var(--color-fill-5);
+}
+
+/* Firefox 滚动条样式 */
+@supports (scrollbar-color: auto) {
+  :deep(.xterm-viewport) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-fill-3) transparent;
+  }
+  
+  .terminal-container.dark-mode :deep(.xterm-viewport) {
+    scrollbar-color: var(--color-fill-4) transparent;
+  }
+}
+
+:deep(.xterm-screen) {
+  position: relative;
 }
 </style>
 
@@ -1655,7 +1742,7 @@ export default {
 .command-suggestions {
   position: absolute;
   left: 10px;
-  top: 10px;
+  bottom: 40px;  /* 使用 CSS 注释格式 */
   max-width: calc(100% - 20px);
   width: auto;
   min-width: 200px;
@@ -1671,6 +1758,26 @@ export default {
   border-radius: 4px;
   overflow: auto;
   z-index: 9999;
+  display: none;  /* 使用 CSS 注释格式 */
+}
+
+.command-suggestions.visible {
+  display: block;  /* 使用 CSS 注释格式 */
+}
+
+.suggestion-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text-1);
+  transition: background-color 0.2s;
+}
+
+.suggestion-item:hover,
+.suggestion-item.selected {
+  background-color: var(--color-fill-2);
 }
 
 .terminal-container.dark-mode .command-suggestions {
@@ -1678,69 +1785,38 @@ export default {
   border-color: var(--dark-border-color);
 }
 
-.suggestion-item {
-  padding: 6px 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--color-text-1);
-  line-height: 20px;
-  font-size: 14px;
-  transition: all 0.15s ease;
-  margin: 0 4px;
-  border-radius: 4px;
-  height: var(--suggestion-item-height);
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  height: var(--suggestion-item-height);
-  min-height: var(--suggestion-item-height);
-  position: relative;
-  transition: all 0.2s ease;
-  background-color: transparent;
+.suggestion-item.selected {
+  background-color: var(--color-primary-light-2);
+  color: var(--color-white);
+  font-weight: 500;
 }
 
-.terminal-container.dark-mode .suggestion-item {
-  background-color: var(--dark-hover-color);
-  color: var(--color-text-1);
+.terminal-container.dark-mode .suggestion-item.selected {
+  background-color: var(--color-primary-light-2);
+  color: var(--color-white);
 }
 
-.suggestion-item:hover {
-  background-color: var(--light-hover-color);
+.suggestion-item:hover:not(.selected) {
+  background-color: var(--color-fill-2);
 }
 
-.terminal-container.dark-mode .suggestion-item:hover {
-  background-color: var(--dark-hover-color);
-}
-
-/* Arco Design 滚动条样式 */
-.command-suggestions::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.command-suggestions::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.command-suggestions::-webkit-scrollbar-thumb {
-  background-color: var(--color-text-4);
-  border-radius: 3px;
-  border: none;
-}
-
-.command-suggestions::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-text-3);
-}
-
-/* 深色题滚动条 */
-.terminal-container.dark-mode .command-suggestions::-webkit-scrollbar-thumb {
+.terminal-container.dark-mode .suggestion-item:hover:not(.selected) {
   background-color: var(--color-fill-3);
 }
 
-.terminal-container.dark-mode .command-suggestions::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-fill-4);
+.suggestion-item.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--color-primary-light-3);
+  border-radius: 0 2px 2px 0;
+}
+
+.terminal-container.dark-mode .suggestion-item.selected::before {
+  background-color: var(--color-primary-light-3);
 }
 
 .terminal-wrapper {
@@ -1986,39 +2062,5 @@ export default {
   .search-options {
     gap: 6px;
   }
-}
-
-.suggestion-item.selected {
-  background-color: var(--color-primary-light-2);
-  color: var(--color-white);
-  font-weight: 500;
-}
-
-.terminal-container.dark-mode .suggestion-item.selected {
-  background-color: var(--color-primary-light-2);
-  color: var(--color-white);
-}
-
-.suggestion-item:hover:not(.selected) {
-  background-color: var(--color-fill-2);
-}
-
-.terminal-container.dark-mode .suggestion-item:hover:not(.selected) {
-  background-color: var(--color-fill-3);
-}
-
-.suggestion-item.selected::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background-color: var(--color-primary-light-3);
-  border-radius: 0 2px 2px 0;
-}
-
-.terminal-container.dark-mode .suggestion-item.selected::before {
-  background-color: var(--color-primary-light-3);
 }
 </style>
