@@ -86,7 +86,7 @@ def handle_disconnect():
     print(f"Client disconnected: {client_id}")
     with sessions_lock:
         if client_id in client_sessions:
-            # 不要立即清理会话，只记录客户端断开
+            # 不要立即清理会话，只记录客户端断��
             print(f"Client {client_id} disconnected but keeping sessions")
             return
 
@@ -172,7 +172,7 @@ def create_base_client(connection):
         
         # 身份验证配置
         if connection.get('authType') == 'password':
-            # 解密 base64 编码的密码
+            # 解密 base64 编码的密��
             import base64
             try:
                 password = connection['password']
@@ -206,7 +206,7 @@ def create_base_client(connection):
         raise
 
 def create_ssh_client(connection):
-    """创建 SSH 客户端"""
+    """��建 SSH 客户端"""
     ssh = None  # 初始化 ssh 为 None
     try:
         ssh = create_base_client(connection)
@@ -638,11 +638,26 @@ class TransferManager:
     def __init__(self):
         self._transfers = {}
         self._lock = threading.Lock()
+        self._cancel_flags = {}  # 添加取消标志字典
+
+    def cancel_transfer(self, transfer_id: str):
+        """取消指定的传输任务"""
+        with self._lock:
+            if transfer_id in self._transfers:
+                self._cancel_flags[transfer_id] = True
+                return True
+            return False
+
+    def is_cancelled(self, transfer_id: str) -> bool:
+        """检查传输是否被取消"""
+        with self._lock:
+            return self._cancel_flags.get(transfer_id, False)
 
     def create_transfer(self, transfer_id: str, total_size: int, operation: str) -> TransferProgress:
         with self._lock:
             progress = TransferProgress(total_size, operation)
             self._transfers[transfer_id] = progress
+            self._cancel_flags[transfer_id] = False  # 初始化取消标志
             return progress
 
     def get_transfer(self, transfer_id: str) -> Optional[TransferProgress]:
@@ -652,6 +667,7 @@ class TransferManager:
     def remove_transfer(self, transfer_id: str):
         with self._lock:
             self._transfers.pop(transfer_id, None)
+            self._cancel_flags.pop(transfer_id, None)
 
 # 创建全局传输管理器实例
 transfer_manager = TransferManager()
@@ -776,12 +792,16 @@ def download_file():
             def generate():
                 try:
                     with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                        network_bytes = [0]  # 使用列表存储网络传输字节数
+                        network_bytes = [0]
 
                         def progress_callback(transferred, total):
+                            # 检查是否取消
+                            if transfer_id and transfer_manager.is_cancelled(transfer_id):
+                                raise Exception("Transfer cancelled")
+                            
                             network_bytes[0] += transferred
                             if transfer_progress:
-                                transfer_progress.update(transferred, network_bytes[0])
+                                transfer_progress.update(transferred)
                         
                         sftp.get(path, temp_file.name, callback=progress_callback)
                         
@@ -1478,6 +1498,16 @@ def read_file():
             ssh.close()
     except Exception as e:
         logging.error(f"Error reading file {path}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# 添加取消传输的路由
+@app.route('/cancel_transfer/<transfer_id>', methods=['POST'])
+def cancel_transfer(transfer_id):
+    try:
+        if transfer_manager.cancel_transfer(transfer_id):
+            return jsonify({"status": "success", "message": "Transfer cancelled"})
+        return jsonify({"status": "error", "message": "Transfer not found"}), 404
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':

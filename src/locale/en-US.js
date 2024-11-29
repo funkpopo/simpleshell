@@ -120,7 +120,9 @@ export default {
     copySize: 'Copy File Size',
     timeCopied: 'Modification time copied: {time}',
     sizeCopied: 'File size copied: {size}',
-    fileTooLarge: 'File is too large. Maximum allowed size is {maxSize}'
+    fileTooLarge: 'File is too large. Maximum allowed size is {maxSize}',
+    uploadCancelled: 'Upload cancelled',
+    downloadCancelled: 'Download cancelled'
   },
   update: {
     newVersion: 'New Version Available',

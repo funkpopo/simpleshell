@@ -104,7 +104,7 @@ export default {
     multiDownloadSuccess: '成功下载 {count} 个文件',
     multiDownloadFailed: '批量下载失败',
     deleteMultiple: '删除多个文件',
-    confirmDeleteMultiple: '确定要删除这 {count} 个文件吗？',
+    confirmDeleteMultiple: '确��要删除这 {count} 个文件吗？',
     multiDeleteSuccess: '成功删除 {count} 个文件',
     multiDeleteFailed: '批量删除失败',
     noItemsSelected: '未选择任何项目',
@@ -122,7 +122,9 @@ export default {
     copySize: '复制文件大小',
     timeCopied: '修改时间已复制: {time}',
     sizeCopied: '文件大小已复制: {size}',
-    fileTooLarge: '文件过大。最大允许大小为 {maxSize}'
+    fileTooLarge: '文件过大。最大允许大小为 {maxSize}',
+    uploadCancelled: '上传已取消',
+    downloadCancelled: '下载已取消'
   },
   update: {
     newVersion: '发现新版本',

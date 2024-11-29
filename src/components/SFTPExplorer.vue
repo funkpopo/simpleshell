@@ -170,9 +170,16 @@
           class="download-progress-float"
         >
           <div class="download-progress">
-            <div class="progress-info">
+            <div class="progress-header">
               <span class="file-name">{{ downloadInfo.fileName }}</span>
-              <span class="progress-percent">{{ downloadInfo.progress }}%</span>
+              <a-button
+                class="close-button"
+                type="text"
+                size="mini"
+                @click="cancelDownload"
+              >
+                <template #icon><icon-close /></template>
+              </a-button>
             </div>
             <div class="progress-bar-wrapper">
               <a-progress
@@ -197,9 +204,16 @@
           class="upload-progress-float"
         >
           <div class="upload-progress">
-            <div class="progress-info">
+            <div class="progress-header">
               <span class="file-name">{{ uploadInfo.fileName }}</span>
-              <span class="progress-percent">{{ uploadInfo.progress }}%</span>
+              <a-button
+                class="close-button"
+                type="text"
+                size="mini"
+                @click="cancelUpload"
+              >
+                <template #icon><icon-close /></template>
+              </a-button>
             </div>
             <div class="progress-bar-wrapper">
               <a-progress
@@ -242,7 +256,7 @@
 
 <script>
 import { ref, onMounted, watch, inject, onUnmounted, reactive, nextTick } from 'vue';
-import { IconFile, IconFolder, IconRefresh, IconHome, IconDelete, IconHistory } from '@arco-design/web-vue/es/icon';
+import { IconFile, IconFolder, IconRefresh, IconHome, IconDelete, IconHistory, IconClose } from '@arco-design/web-vue/es/icon';
 import axios from 'axios';
 import { Message, Modal } from '@arco-design/web-vue';
 import { Menu, MenuItem, getCurrentWindow, shell, dialog } from '@electron/remote';
@@ -257,7 +271,8 @@ export default {
     IconRefresh,
     IconHome,
     IconDelete,
-    IconHistory
+    IconHistory,
+    IconClose
   },
   props: {
     connection: {
@@ -1242,14 +1257,16 @@ export default {
 
         if (savePath.canceled) return;
 
+        // 生成传输 ID
+        const transferId = `download_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        downloadInfo.transferId = transferId;  // 保存传输 ID 到 downloadInfo 中
+
         downloadProgressVisible.value = true;
         downloadInfo.fileName = nodeData.title;
         downloadInfo.progress = 0;
         downloadInfo.status = 'normal';
         downloadInfo.speed = '';
         downloadInfo.timeRemaining = '';
-
-        const transferId = `download_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
         const progressTimer = setInterval(async () => {
           try {
@@ -1273,7 +1290,7 @@ export default {
           const response = await axios.post('http://localhost:5000/sftp_download_file', {
             connection: props.connection,
             path: nodeData.key,
-            transferId: transferId
+            transferId: transferId  // 添加传输 ID
           }, {
             responseType: 'blob'
           });
@@ -1735,6 +1752,7 @@ export default {
       timeRemaining: '',
       transferred: '',
       total: '',
+      transferId: null  // 添加 transferId 字段
     });
 
     // 修改 updateDownloadProgress 函数
@@ -1792,6 +1810,10 @@ export default {
     // 修改 uploadSingleFile 函数
     const uploadSingleFile = async (file, targetPath) => {
       try {
+        // 生成传输 ID
+        const transferId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        uploadInfo.transferId = transferId;  // 保存传输 ID 到 uploadInfo 中
+
         // 检查文件大小限制
         const maxFileSize = 1024 * 1024 * 10240; // 10GB
         if (file.size > maxFileSize) {
@@ -1808,9 +1830,6 @@ export default {
         uploadInfo.transferred = '0 B';
         uploadInfo.total = formatSize(file.size);
 
-        // 生成传输ID
-        const transferId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
         // 分块大小设置为 5MB
         const chunkSize = 5 * 1024 * 1024;
         const totalChunks = Math.ceil(file.size / chunkSize);
@@ -1865,7 +1884,7 @@ export default {
               chunkIndex: i,
               isLastChunk: isLastChunk,
               tempFileId: tempFileId,
-              transferId: transferId,
+              transferId: transferId,  // 添加传输 ID
               totalSize: file.size
             }, {
               timeout: 0,
@@ -1914,7 +1933,8 @@ export default {
       timeRemaining: '',
       startTime: null,
       totalSize: 0,
-      uploadedSize: 0
+      uploadedSize: 0,
+      transferId: null  // 添加 transferId 字段
     });
 
     // 添加多选文件的状态
@@ -1954,7 +1974,7 @@ export default {
       }
     };
 
-    // 删除多个文件的方法
+    // 删除多个文件的方���
     const deleteMultipleFiles = async () => {
       try {
         const selectedNodes = findNodesByKeys(selectedFiles.value);
@@ -2071,6 +2091,35 @@ export default {
       }
     };
 
+    // 添加取消传输的方法
+    const cancelUpload = async () => {
+      try {
+        if (uploadInfo.transferId) {
+          const response = await axios.post(`http://localhost:5000/cancel_transfer/${uploadInfo.transferId}`);
+          if (response.data.status === 'success') {
+            uploadProgressVisible.value = false;
+            Message.info(t('sftp.uploadCancelled'));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to cancel upload:', error);
+      }
+    };
+
+    const cancelDownload = async () => {
+      try {
+        if (downloadInfo.transferId) {
+          const response = await axios.post(`http://localhost:5000/cancel_transfer/${downloadInfo.transferId}`);
+          if (response.data.status === 'success') {
+            downloadProgressVisible.value = false;
+            Message.info(t('sftp.downloadCancelled'));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to cancel download:', error);
+      }
+    };
+
     return {
       fileTree,
       loading,
@@ -2143,6 +2192,8 @@ export default {
       findNodesByKeys,
       formatModTime,
       formatSize,
+      cancelUpload,
+      cancelDownload,
     };
   }
 }
@@ -2710,6 +2761,23 @@ export default {
   margin-top: 4px;
   font-size: 12px;
   color: var(--color-text-3);
+}
+
+/* 添加关闭按钮样式 */
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.close-button {
+  padding: 2px;
+  margin-left: 8px;
+}
+
+.close-button:hover {
+  background-color: var(--color-fill-3);
 }
 </style>
 
