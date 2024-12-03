@@ -474,6 +474,7 @@ export default {
       const messageToSend = currentMessage.value
       currentMessage.value = ''
 
+      // 在添加用户消息后滚动到底部
       await nextTick()
       scrollToBottom()
 
@@ -557,6 +558,7 @@ export default {
                   }
                   assistantMessage.content += parsed.content
                   messages.value = [...messages.value]
+                  // 在每次更新消息后滚动到底部
                   await nextTick()
                   scrollToBottom()
                 }
@@ -588,6 +590,7 @@ export default {
           timestamp: Date.now()
         })
 
+        // 在添加错误消息后也滚动到底部
         await nextTick()
         scrollToBottom()
       } finally {
@@ -605,9 +608,28 @@ export default {
     // 滚动到底部
     const scrollToBottom = () => {
       if (messagesContainer.value) {
-        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+        // 使用 requestAnimationFrame 确保在下一帧渲染时滚动
+        requestAnimationFrame(() => {
+          messagesContainer.value.scrollTo({
+            top: messagesContainer.value.scrollHeight,
+            behavior: 'smooth'
+          })
+        })
       }
     }
+
+    // 添加一个监听器来观察消息列表的变化
+    watch(() => messages.value.length, () => {
+      nextTick(() => scrollToBottom())
+    })
+
+    // 添加一个监听器来观察最后一条消息的内容变化
+    watch(
+      () => messages.value[messages.value.length - 1]?.content,
+      () => {
+        nextTick(() => scrollToBottom())
+      }
+    )
 
     // 监听窗口大小变化，调整滚动位置
     watch(() => windowSize.value, () => {
@@ -1033,6 +1055,19 @@ export default {
       return logos[provider] || null
     }
 
+    // 在 setup 函数中添加 handleKeyDown 方法
+    const handleKeyDown = (e) => {
+      // 如果按下 Enter 且没有按下 Shift
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault() // 阻止默认的换行行为
+        if (currentMessage.value.trim()) {
+          sendMessage()
+        }
+      }
+      // 如果按下 Shift + Enter，让它正常换行
+      // 不需要特殊处理，因为这是 textarea 的默认行为
+    }
+
     onMounted(() => {
       loadSettings()
       // 初始化窗口位置在可视区域内
@@ -1044,6 +1079,9 @@ export default {
 
       // 监听窗口大小变化
       window.addEventListener('resize', updateMaxDimensions)
+      
+      // 初始滚动到底部
+      nextTick(() => scrollToBottom())
     })
 
     onUnmounted(() => {
@@ -1093,7 +1131,8 @@ export default {
       selectText,
       isWaitingResponse,
       getProviderLogo,
-      t
+      t,
+      handleKeyDown
     }
   }
 }

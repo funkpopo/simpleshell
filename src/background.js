@@ -25,6 +25,7 @@ protocol.registerSchemesAsPrivileged([
 
 let backendProcess = null
 let mainWindow = null
+let splashWindow = null
 
 // 修改获取应用数据路径的函数
 function getAppDataPath() {
@@ -213,6 +214,7 @@ app.on('will-quit', () => {
 
 // 确保在所有窗口关闭时清理后端进程
 app.on('window-all-closed', () => {
+  if (splashWindow) splashWindow.close()
   cleanupBackend()
   if (process.platform !== 'darwin') {
     app.quit()
@@ -288,10 +290,49 @@ async function waitForBackend() {
   throw new Error('Backend failed to start within 30 seconds')
 }
 
+// 添加创建启动窗口的函数
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 300,
+    height: 320,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    },
+    center: true
+  });
+
+  // 在开发环境中加载
+  if (process.env.WEBPACK_DEV_SERVER_URL) {
+    splashWindow.loadURL(process.env.WEBPACK_DEV_SERVER_URL + 'splash.html')
+  } else {
+    // 在生产环境中加载
+    createProtocol('app')
+    splashWindow.loadURL('app://./splash.html')
+  }
+
+  // 防止闪烁
+  splashWindow.once('ready-to-show', () => {
+    splashWindow.show()
+  })
+
+  // 禁用启动窗口的鼠标事件
+  splashWindow.setIgnoreMouseEvents(true)
+}
+
+// 修改 createWindow 函数
 async function createWindow() {
   try {
+    // 创建并显示启动窗口
+    createSplashWindow();
+    
     // 启动后端前先等待一下
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 800));
     
     const backendStarted = startBackend()
     if (!backendStarted) {
@@ -304,16 +345,23 @@ async function createWindow() {
     } catch (error) {
       console.error('Backend startup timeout:', error)
       dialog.showErrorBox('Backend Error', 'Backend service failed to start in time')
-      cleanupBackend() // 添加这行，确保在超时时清理后端进程
+      cleanupBackend()
+      if (splashWindow) {
+        splashWindow.close()
+        splashWindow = null
+      }
       app.quit()
       return
     }
 
+    // 创建主窗口但不立即显示
     mainWindow = new BrowserWindow({
       width: 1024,
       height: 768,
       minWidth: 800,
       minHeight: 600,
+      title: 'SimpleShell',
+      show: false, // 初始不显示主窗口
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
@@ -328,6 +376,18 @@ async function createWindow() {
         navigateOnDragDrop: true,
         sandbox: false
       }
+    })
+
+    // 等待主窗口加载完成
+    mainWindow.once('ready-to-show', () => {
+      // 添加延迟以确保平滑过渡
+      setTimeout(() => {
+        if (splashWindow) {
+          splashWindow.close()
+          splashWindow = null
+        }
+        mainWindow.show()
+      }, 500)
     })
 
     require("@electron/remote/main").enable(mainWindow.webContents)
@@ -394,6 +454,10 @@ async function createWindow() {
     })
   } catch (error) {
     console.error('Error in createWindow:', error)
+    if (splashWindow) {
+      splashWindow.close()
+      splashWindow = null
+    }
     showError('Application Error', `Failed to start application: ${error.message}`)
     app.quit()
   }
@@ -413,6 +477,7 @@ if (!gotTheLock) {
   })
 
   app.on('window-all-closed', () => {
+    if (splashWindow) splashWindow.close()
     cleanupBackend()
     if (process.platform !== 'darwin') {
       app.quit()
