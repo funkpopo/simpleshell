@@ -140,6 +140,10 @@ export default {
     fontSize: {
       type: Number,
       default: 14
+    },
+    active: {
+      type: Boolean,
+      default: false
     }
   },
   emits: ['close', 'pathChange', 'connectionStatus'],
@@ -604,6 +608,10 @@ export default {
     }
 
     const handleResize = () => {
+      if (!props.active) {
+        return;
+      }
+
       if (fitAddon && term && isTerminalReady.value && socket) {
         fitAddon.fit()
         term.scrollToBottom()
@@ -623,6 +631,10 @@ export default {
     }
 
     const manualResize = () => {
+      if (!props.active) {
+        return;
+      }
+
       if (fitAddon && term) {
         nextTick(() => {
           fitAddon.fit()
@@ -1604,6 +1616,16 @@ export default {
 
     // 从 Vue 实例中获取 $t 方法
     const t = getCurrentInstance()?.proxy?.$t || ((key) => key)
+
+    // 监听 active 变化
+    watch(() => props.active, (newActive) => {
+      if (newActive) {
+        // 标签页激活时重新适配大小
+        nextTick(() => {
+          manualResize();
+        });
+      }
+    });
 
     return { 
       terminal,
