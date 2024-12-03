@@ -1,6 +1,14 @@
 <template>
   <div class="terminal-wrapper">
-    <div ref="terminal" class="terminal-container" :class="{ 'dark-mode': isDarkMode }" @paste.prevent="handlePaste"></div>
+    <div ref="terminal" class="terminal-container" :class="{ 'dark-mode': isDarkMode }" @paste.prevent="handlePaste">
+      <div 
+        v-if="showSuggestions" 
+        class="command-suggestions"
+        :class="{ 'visible': showSuggestions }"
+      >
+        <!-- suggestions content -->
+      </div>
+    </div>
     <div 
       v-if="showSearchBar" 
       class="terminal-search-bar terminal-search-bar-top-right"
@@ -491,7 +499,7 @@ export default {
         
         // 处理 Enter 键
         if (data === '\r') {
-          // 如果在编辑器模式下，直接发送输入
+          // 如果在编辑器模下，直接输入
           if (isInEditorMode.value) {
             socket.emit('ssh_input', { session_id: props.sessionId, input: '\r' })
             return
@@ -1004,7 +1012,7 @@ export default {
                  currentInput.value && typeof currentInput.value === 'string' &&
                  cmd.toLowerCase().startsWith(currentInput.value.toLowerCase())
         })
-        .slice(0, 8)
+        .slice(0, 20)
 
       suggestions.value = filteredCommands
       
@@ -1140,7 +1148,7 @@ export default {
             max-width: 400px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
             z-index: 9999;
-            max-height: 200px;
+            max-height: 128px;
             overflow-y: auto;
             pointer-events: auto;
             user-select: none;
@@ -1634,19 +1642,25 @@ export default {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  margin: 0;
+  padding: 0;
 }
 
 .terminal-container {
-  width: 100%;
-  height: 100%;
-  padding: 4px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0;
+  margin: 0;
   box-sizing: border-box;
   overflow: hidden;
 }
 
 :deep(.xterm) {
   height: 100%;
-  padding: 4px;
+  padding: 0;         /* 移除多余的内边距 */
 }
 
 :deep(.xterm-viewport) {
@@ -1742,11 +1756,11 @@ export default {
 .command-suggestions {
   position: absolute;
   left: 10px;
-  bottom: 40px;  /* 使用 CSS 注释格式 */
+  bottom: 40px;
   max-width: calc(100% - 20px);
   width: auto;
   min-width: 200px;
-  max-height: 200px;
+  max-height: 128px;
   box-sizing: border-box;
   margin: 0;
   padding: 4px 0;
@@ -1758,15 +1772,17 @@ export default {
   border-radius: 4px;
   overflow: auto;
   z-index: 9999;
-  display: none;  /* 使用 CSS 注释格式 */
+  display: none;
 }
 
 .command-suggestions.visible {
-  display: block;  /* 使用 CSS 注释格式 */
+  display: block;
 }
 
 .suggestion-item {
-  padding: 8px 12px;
+  padding: 4px 12px;
+  height: 16px;
+  line-height: 16px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -1817,12 +1833,6 @@ export default {
 
 .terminal-container.dark-mode .suggestion-item.selected::before {
   background-color: var(--color-primary-light-3);
-}
-
-.terminal-wrapper {
-  position: relative;
-  width: 100%;
-  height: 100%;
 }
 
 .resource-monitor {
