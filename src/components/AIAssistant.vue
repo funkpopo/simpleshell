@@ -86,22 +86,6 @@
               <span></span>
             </div>
           </div>
-          
-          <!-- 添加 Cancel 按钮 -->
-          <div 
-            v-if="isGenerating"
-            class="cancel-button-container"
-          >
-            <a-button
-              class="cancel-button"
-              type="secondary"
-              status="danger"
-              size="small"
-              @click="cancelGeneration"
-            >
-              Cancel
-            </a-button>
-          </div>
         </div>
 
         <!-- 输入区域 -->
@@ -113,12 +97,22 @@
             @keydown="handleKeyDown"
           />
           <a-button 
+            v-if="!isGenerating"
             type="primary" 
             class="send-button"
             :disabled="!currentMessage.trim()"
             @click="sendMessage"
           >
             {{ $t('aiAssistant.send') }}
+          </a-button>
+          <a-button
+            v-else
+            class="cancel-button"
+            type="outline"
+            status="danger"
+            @click="cancelGeneration"
+          >
+            {{ $t('aiAssistant.cancel') }}
           </a-button>
         </div>
       </div>
@@ -1663,9 +1657,22 @@ export default {
   flex: 1;
 }
 
-.send-button {
+.send-button,
+.cancel-button {
   height: 32px;
   padding: 0 16px;
+  transition: all 0.3s ease;
+}
+
+.cancel-button {
+  background: var(--color-danger-light-1);
+  color: var(--color-danger);
+  border-color: var(--color-danger-light-1);
+}
+
+.cancel-button:hover {
+  background: var(--color-danger-light-2);
+  border-color: var(--color-danger-light-2);
 }
 
 /* 自定义滚动条样式 */
@@ -1807,14 +1814,6 @@ export default {
 :deep(.arco-select-option) {
   display: flex;
   align-items: center;
-}
-
-/* 添加 Cancel 按钮的样式 */
-.cancel-button-container {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  z-index: 1000;
 }
 
 .cancel-button {
