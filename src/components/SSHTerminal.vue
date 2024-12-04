@@ -404,19 +404,35 @@ export default {
         return
       }
 
-      // 计算初始终端大小
+      // 获取终端容器元素
       const terminalElement = terminal.value
       const computedStyle = window.getComputedStyle(terminalElement)
+      
+      // 计算可用空间
       const padding = parseInt(computedStyle.padding || '0')
       const availableWidth = terminalElement.clientWidth - 2 * padding
       const availableHeight = terminalElement.clientHeight - 2 * padding
 
-      // 使用字符尺寸计算合适的列数和行数
-      const charWidth = 9 // 假设每个字符的平均宽度为9像素
-      const charHeight = 17 // 假设每个字符的高度为17像素
+      // 创建临时的span元素来测量字符尺寸
+      const span = document.createElement('span')
+      span.style.fontFamily = 'Consolas, "Courier New", monospace'
+      span.style.fontSize = `${props.fontSize}px`
+      span.style.position = 'absolute'
+      span.style.visibility = 'hidden'
+      span.textContent = 'X'
+      document.body.appendChild(span)
+
+      // 获取实际字符尺寸
+      const charSize = span.getBoundingClientRect()
+      const charWidth = charSize.width
+      const charHeight = charSize.height
+      document.body.removeChild(span)
+
+      // 计算终端的列数和行数
       const cols = Math.floor(availableWidth / charWidth)
       const rows = Math.floor(availableHeight / charHeight)
 
+      // 创建终端实例
       term = new Terminal({
         cursorBlink: true,
         fontSize: props.fontSize,
@@ -447,7 +463,7 @@ export default {
         experimentalCharAtlas: 'dynamic',
         refreshRate: 60,
       })
-      
+
       term.open(terminal.value)
 
       await new Promise(resolve => setTimeout(resolve, 0))
@@ -488,12 +504,26 @@ export default {
         return true
       })
 
-      // 修改滚动行为
+      // 修改滚动行为��添加安全检查
       term.onLineFeed(() => {
-        // 检查是否在底部
-        const isScrolledToBottom = term.element.scrollTop + term.element.clientHeight >= term.element.scrollHeight
-        if (isScrolledToBottom) {
-          setTimeout(() => term.scrollToBottom(), 0)
+        // 确保 term.element 存在
+        if (term && term.element) {
+          try {
+            const isScrolledToBottom = 
+              term.element.scrollTop + term.element.clientHeight >= term.element.scrollHeight
+            if (isScrolledToBottom) {
+              // 使用 requestAnimationFrame 来确保在下一帧执行滚动
+              requestAnimationFrame(() => {
+                try {
+                  term.scrollToBottom()
+                } catch (error) {
+                  console.error('Error scrolling to bottom:', error)
+                }
+              })
+            }
+          } catch (error) {
+            console.error('Error checking scroll position:', error)
+          }
         }
       })
 
@@ -501,6 +531,27 @@ export default {
       term.onData((data) => {
         if (!isTerminalReady.value || !socket) return
         
+        // 检测 Ctrl+C（ASCII 码 3）
+        if (data === '\x03' && isInEditorMode.value) {
+          // 发送 Ctrl+C 到服务器
+          socket.emit('ssh_input', { session_id: props.sessionId, input: data })
+          return
+        }
+
+        // 记录输入命令
+        if (!isInEditorMode.value && data >= ' ' && data <= '~') {
+          currentInput.value += data
+        }
+
+        // 检测是否输入了 top 命令
+        if (data === '\r' && currentInput.value.trim() === 'top') {
+          // 清除当前输入
+          currentInput.value = ''
+          // 发送命令到服务器
+          socket.emit('ssh_input', { session_id: props.sessionId, input: 'top\r' })
+          return
+        }
+
         // 处理 Enter 键
         if (data === '\r') {
           // 如果在编辑器模下，直接输入
@@ -607,18 +658,53 @@ export default {
       term.loadAddon(searchAddon)
     }
 
+    // 添加一个安全的滚动函数
+    const safeScrollToBottom = () => {
+      if (term && term.element) {
+        try {
+          term.scrollToBottom()
+        } catch (error) {
+          console.error('Error in safeScrollToBottom:', error)
+        }
+      }
+    }
+
     const handleResize = () => {
       if (!props.active) {
         return;
       }
 
       if (fitAddon && term && isTerminalReady.value && socket) {
-        fitAddon.fit()
-        term.scrollToBottom()
+        // 获取新的终端尺寸
+        const terminalElement = terminal.value
+        const computedStyle = window.getComputedStyle(terminalElement)
+        const padding = parseInt(computedStyle.padding || '0')
+        
+        // 计算可用空间
+        const availableWidth = terminalElement.clientWidth - 2 * padding
+        const availableHeight = terminalElement.clientHeight - 2 * padding
+
+        // 使用当前字体大小计算字符尺寸
+        const charWidth = Math.ceil(term.options.fontSize * 0.6)  // 估算字符宽度
+        const charHeight = Math.ceil(term.options.fontSize * 1.2) // 估算字符高度
+
+        // 计算新的列数和行数
+        const newCols = Math.max(80, Math.floor(availableWidth / charWidth))
+        const newRows = Math.max(24, Math.floor(availableHeight / charHeight))
+
+        // 调整终端大小
+        term.resize(newCols, newRows)
+        
+        // 通知服务器新的终端尺寸
         socket.emit('resize', { 
           session_id: props.sessionId, 
-          cols: term.cols, 
-          rows: term.rows 
+          cols: newCols, 
+          rows: newRows 
+        })
+
+        // 使用安全的滚动函数
+        nextTick(() => {
+          safeScrollToBottom()
         })
 
         // 重新定位建议菜单
@@ -637,13 +723,31 @@ export default {
 
       if (fitAddon && term) {
         nextTick(() => {
-          fitAddon.fit()
-          term.scrollToBottom()
+          // 获取新的终端尺寸
+          const terminalElement = terminal.value
+          const computedStyle = window.getComputedStyle(terminalElement)
+          const padding = parseInt(computedStyle.padding || '0')
+          
+          // 计算可用空间
+          const availableWidth = terminalElement.clientWidth - 2 * padding
+          const availableHeight = terminalElement.clientHeight - 2 * padding
+
+          // 使用当前字体大小计算字符尺寸
+          const charWidth = Math.ceil(term.options.fontSize * 0.6)
+          const charHeight = Math.ceil(term.options.fontSize * 1.2)
+
+          // 计算新的列数和行数
+          const newCols = Math.max(80, Math.floor(availableWidth / charWidth))
+          const newRows = Math.max(24, Math.floor(availableHeight / charHeight))
+
+          // 调整终端大小
+          term.resize(newCols, newRows)
+          
           if (socket && isTerminalReady.value) {
             socket.emit('resize', { 
               session_id: props.sessionId, 
-              cols: term.cols, 
-              rows: term.rows 
+              cols: newCols, 
+              rows: newRows 
             })
           }
         })
@@ -666,13 +770,120 @@ export default {
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
         try {
-          // 修改编辑器模式检测逻辑
-          if (text.includes('\u001b[?1049h')) {  // vim 进入全屏模式的标志
+          // 检测是否进入 top 界面
+          if (text.includes('top - ') && text.includes('Tasks:')) {
             isInEditorMode.value = true
-          } else if (text.includes('GNU nano')) {  // nano 编辑器标志
-            isInEditorMode.value = true
-          } else if (text.includes('\u001b[?1049l')) {  // vim 退出全屏模式的标志
+            // top 命令界面调整
+            nextTick(() => {
+              const terminalElement = terminal.value
+              const computedStyle = window.getComputedStyle(terminalElement)
+              const padding = parseInt(computedStyle.padding || '0')
+              
+              // 计算可用空间
+              const availableWidth = terminalElement.clientWidth - 2 * padding
+              const availableHeight = terminalElement.clientHeight - 2 * padding
+
+              // 使用更精确的字符尺寸计算
+              const span = document.createElement('span')
+              span.style.fontFamily = term.options.fontFamily
+              span.style.fontSize = `${term.options.fontSize}px`
+              span.style.position = 'absolute'
+              span.style.visibility = 'hidden'
+              span.textContent = 'X'
+              document.body.appendChild(span)
+
+              const charSize = span.getBoundingClientRect()
+              const charWidth = charSize.width
+              const charHeight = charSize.height
+              document.body.removeChild(span)
+
+              // 计算新的列数和行数，为 top 界面预留空间
+              const newCols = Math.max(80, Math.floor(availableWidth / charWidth))
+              // 为 top 界面预留合适的空间，减去4行（顶部信息、任务信息、CPU信息和底部提示）
+              const newRows = Math.max(24, Math.floor(availableHeight / charHeight) - 2)
+
+              // 调整终端大小
+              term.resize(newCols, newRows)
+              
+              // 通知服务器新的终端大小
+              if (socket && isTerminalReady.value) {
+                socket.emit('resize', { 
+                  session_id: props.sessionId, 
+                  cols: newCols, 
+                  rows: newRows,
+                  isTop: true
+                })
+              }
+            })
+          } 
+          // 检测是否退出 top 界面（按 q 键退出或 Ctrl+C）
+          else if (isInEditorMode.value && (
+            /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text) || // 检测命令提示符
+            text.includes('^C') || // 检测 Ctrl+C
+            text.includes('Terminated') // 检测终止信息
+          )) {
             isInEditorMode.value = false
+            // 退出 top 界面时恢复正常终端大小
+            nextTick(() => {
+              handleResize()
+            })
+          }
+
+          // 原有的编辑器模式检测逻辑
+          if (text.includes('\u001b[?1049h') || // vim 进入全屏模式
+              text.includes('\u001b[?47h') ||   // 备用全屏模式
+              text.includes('GNU nano')) {       // nano 编辑器
+            isInEditorMode.value = true
+            // 编辑器模式下立即重新计算并调整终端大小
+            nextTick(() => {
+              const terminalElement = terminal.value
+              const computedStyle = window.getComputedStyle(terminalElement)
+              const padding = parseInt(computedStyle.padding || '0')
+              
+              // 计算可用空间
+              const availableWidth = terminalElement.clientWidth - 2 * padding
+              const availableHeight = terminalElement.clientHeight - 2 * padding
+
+              // 使用更精确的字符尺寸计算
+              const span = document.createElement('span')
+              span.style.fontFamily = term.options.fontFamily
+              span.style.fontSize = `${term.options.fontSize}px`
+              span.style.position = 'absolute'
+              span.style.visibility = 'hidden'
+              span.textContent = 'X'
+              document.body.appendChild(span)
+
+              const charSize = span.getBoundingClientRect()
+              const charWidth = charSize.width
+              const charHeight = charSize.height
+              document.body.removeChild(span)
+
+              // 计算新的列数和行数，考虑编辑器边框和状态栏
+              const newCols = Math.max(80, Math.floor(availableWidth / charWidth))
+              // 为状态栏和边框预留空间
+              const newRows = Math.max(24, Math.floor(availableHeight / charHeight) - 2)
+
+              // 调整终端大小
+              term.resize(newCols, newRows)
+              
+              // 通知服务器新的终端大小
+              if (socket && isTerminalReady.value) {
+                socket.emit('resize', { 
+                  session_id: props.sessionId, 
+                  cols: newCols, 
+                  rows: newRows,
+                  isEditor: true // 标记这是编辑器模式的调整
+                })
+              }
+            })
+          } else if (text.includes('\u001b[?1049l') || // vim 退出全屏模式
+                     text.includes('\u001b[?47l') ||    // 备用全屏模式退出
+                     /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text)) { // 命令提示符
+            isInEditorMode.value = false
+            // 退出编辑器模式时恢复正常终端大小
+            nextTick(() => {
+              handleResize()
+            })
           }
 
           // 如果检测到命令提示符，说明已退出编辑器模式
@@ -732,6 +943,11 @@ export default {
           })
 
           detectPathChange(text)
+
+          // 在写入完成后安全滚动
+          nextTick(() => {
+            safeScrollToBottom()
+          })
         } catch (error) {
           console.error('Error writing to terminal:', error)
           if (!term || term.disposed) {

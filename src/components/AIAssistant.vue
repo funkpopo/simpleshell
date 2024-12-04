@@ -86,6 +86,22 @@
               <span></span>
             </div>
           </div>
+          
+          <!-- 添加 Cancel 按钮 -->
+          <div 
+            v-if="isGenerating"
+            class="cancel-button-container"
+          >
+            <a-button
+              class="cancel-button"
+              type="secondary"
+              status="danger"
+              size="small"
+              @click="cancelGeneration"
+            >
+              Cancel
+            </a-button>
+          </div>
         </div>
 
         <!-- 输入区域 -->
@@ -459,29 +475,40 @@ export default {
 
     // 在 setup 函数内添加
     const isWaitingResponse = ref(false)
+    const isGenerating = ref(false)
+    const abortController = ref(null)
 
     // 发送消息
     const sendMessage = async () => {
       if (!currentMessage.value.trim()) return
 
-      const userMessage = {
-        role: 'user',
-        content: currentMessage.value,
-        timestamp: Date.now()
-      }
-
-      messages.value.push(userMessage)
-      const messageToSend = currentMessage.value
-      currentMessage.value = ''
-
-      // 在添加用户消息后滚动到底部
-      await nextTick()
-      scrollToBottom()
-
-      // 设置等待状态为 true
-      isWaitingResponse.value = true
+      // 创建新的 AbortController
+      abortController.value = new AbortController()
+      isGenerating.value = true
 
       try {
+        const userMessage = {
+          role: 'user',
+          content: currentMessage.value,
+          timestamp: Date.now()
+        }
+
+        messages.value.push(userMessage)
+        const messageToSend = currentMessage.value
+        currentMessage.value = ''
+
+        // 用户发送消息时总是滚动到底部
+        await nextTick()
+        if (messagesContainer.value) {
+          messagesContainer.value.scrollTo({
+            top: messagesContainer.value.scrollHeight,
+            behavior: 'smooth'
+          })
+        }
+
+        // 设置等待状态为 true
+        isWaitingResponse.value = true
+
         const currentModelConfig = aiSettings.value.models.find(
           model => model.name === aiSettings.value.currentModel
         )
@@ -523,7 +550,8 @@ export default {
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(requestData)
+          body: JSON.stringify(requestData),
+          signal: abortController.value.signal // 添加 signal
         })
 
         const reader = response.body.getReader()
@@ -558,7 +586,7 @@ export default {
                   }
                   assistantMessage.content += parsed.content
                   messages.value = [...messages.value]
-                  // 在每次更新消息后滚动到底部
+                  // 根据滚动位置决定是否滚动到底部
                   await nextTick()
                   scrollToBottom()
                 }
@@ -571,6 +599,10 @@ export default {
         }
 
       } catch (error) {
+        if (error.name === 'AbortError') {
+          console.log('Response generation cancelled')
+          return
+        }
         console.error('Failed to get AI response:', error)
         let errorMessage = 'Failed to get AI response'
         
@@ -590,12 +622,13 @@ export default {
           timestamp: Date.now()
         })
 
-        // 在添加错误消息后也滚动到底部
+        // 错误消息显示时也遵循相同的滚动逻辑
         await nextTick()
         scrollToBottom()
       } finally {
-        // 确保无论如何都关闭加载动画
+        isGenerating.value = false
         isWaitingResponse.value = false
+        abortController.value = null
       }
     }
 
@@ -606,28 +639,51 @@ export default {
     }
 
     // 滚动到底部
-    const scrollToBottom = () => {
-      if (messagesContainer.value) {
-        // 使用 requestAnimationFrame 确保在下一帧渲染时滚动
-        requestAnimationFrame(() => {
-          messagesContainer.value.scrollTo({
-            top: messagesContainer.value.scrollHeight,
-            behavior: 'smooth'
+    const scrollToBottom = (force = false) => {
+      // 确保 messagesContainer 存在且已挂载
+      if (!messagesContainer.value) {
+        return
+      }
+
+      try {
+        const container = messagesContainer.value
+        // 如果是强制滚动或者在底部附近，则执行滚动
+        const isNearBottom = 
+          container.scrollHeight - 
+          container.scrollTop - 
+          container.clientHeight < 50
+
+        if (force || isNearBottom) {
+          requestAnimationFrame(() => {
+            try {
+              container.scrollTo({
+                top: container.scrollHeight,
+                behavior: 'smooth'
+              })
+            } catch (error) {
+              console.error('Error during scroll:', error)
+            }
           })
-        })
+        }
+      } catch (error) {
+        console.error('Error checking scroll position:', error)
       }
     }
 
     // 添加一个监听器来观察消息列表的变化
     watch(() => messages.value.length, () => {
-      nextTick(() => scrollToBottom())
+      if (messagesContainer.value) {
+        nextTick(() => scrollToBottom())
+      }
     })
 
     // 添加一个监听器来观察最后一条消息的内容变化
     watch(
       () => messages.value[messages.value.length - 1]?.content,
       () => {
-        nextTick(() => scrollToBottom())
+        if (messagesContainer.value) {
+          nextTick(() => scrollToBottom())
+        }
       }
     )
 
@@ -648,10 +704,52 @@ export default {
     // 确保窗口在可视区域内
     const keepInBounds = (x, y, width, height) => {
       const bounds = getWindowBounds()
-      return {
-        x: Math.min(Math.max(0, x), bounds.width - width),
-        y: Math.min(Math.max(0, y), bounds.height - height)
+      const newX = Math.min(Math.max(0, x), bounds.width - width)
+      const newY = Math.min(Math.max(0, y), bounds.height - height)
+      
+      // 如果窗口大小超过了应用窗口大小，调整窗口大小
+      const newWidth = Math.min(width, bounds.width)
+      const newHeight = Math.min(height, bounds.height)
+      
+      // 更新窗口大小
+      if (newWidth !== width || newHeight !== height) {
+        windowSize.value = {
+          ...windowSize.value,
+          width: newWidth,
+          height: newHeight
+        }
       }
+      
+      return { x: newX, y: newY }
+    }
+
+    // 添加窗口大小变化监听
+    const handleWindowResize = () => {
+      const bounds = getWindowBounds()
+      
+      // 更新最大尺寸
+      windowSize.value = {
+        ...windowSize.value,
+        maxWidth: bounds.width,
+        maxHeight: bounds.height
+      }
+      
+      // 如果当前尺寸超过新的最大值，调整尺寸
+      if (windowSize.value.width > bounds.width) {
+        windowSize.value.width = bounds.width
+      }
+      if (windowSize.value.height > bounds.height) {
+        windowSize.value.height = bounds.height
+      }
+      
+      // 确保窗口位置在可视范围内
+      const newPos = keepInBounds(
+        position.value.x,
+        position.value.y,
+        windowSize.value.width,
+        windowSize.value.height
+      )
+      position.value = newPos
     }
 
     const startDrag = (e) => {
@@ -705,6 +803,7 @@ export default {
     const handleResize = (e) => {
       if (!isResizing.value) return
       requestAnimationFrame(() => {
+        const bounds = getWindowBounds()
         const dx = e.clientX - (startPos.x + startSize.width)
         const dy = e.clientY - (startPos.y + startSize.height)
         
@@ -714,14 +813,14 @@ export default {
         if (resizeType.value === 'right' || resizeType.value === 'corner') {
           newWidth = Math.min(
             Math.max(windowSize.value.minWidth, startSize.width + dx),
-            Math.min(windowSize.value.maxWidth, window.innerWidth - position.value.x)
+            bounds.width - position.value.x
           )
         }
         
         if (resizeType.value === 'bottom' || resizeType.value === 'corner') {
           newHeight = Math.min(
             Math.max(windowSize.value.minHeight, startSize.height + dy),
-            Math.min(windowSize.value.maxHeight, window.innerHeight - position.value.y)
+            bounds.height - position.value.y
           )
         }
 
@@ -730,6 +829,15 @@ export default {
           width: newWidth,
           height: newHeight
         }
+        
+        // 确保窗口位置在可视范围内
+        const newPos = keepInBounds(
+          position.value.x,
+          position.value.y,
+          newWidth,
+          newHeight
+        )
+        position.value = newPos
       })
     }
 
@@ -755,6 +863,17 @@ export default {
         windowSize.value.height
       )
       position.value = newPos
+
+      // 等待 DOM 更新后滚动到底部
+      nextTick(() => {
+        if (messagesContainer.value) {
+          // 强制滚动到底部，忽略滚动位置检查
+          messagesContainer.value.scrollTo({
+            top: messagesContainer.value.scrollHeight,
+            behavior: 'smooth'
+          })
+        }
+      })
     }
 
     const close = () => {
@@ -1068,24 +1187,56 @@ export default {
       // 不需要特殊处理，因为这是 textarea 的默认行为
     }
 
+    // 添加取消生成的函数
+    const cancelGeneration = () => {
+      if (abortController.value) {
+        abortController.value.abort()
+        abortController.value = null
+        isGenerating.value = false
+        isWaitingResponse.value = false
+      }
+    }
+
     onMounted(() => {
       loadSettings()
+      
       // 初始化窗口位置在可视区域内
       const bounds = getWindowBounds()
+      windowSize.value = {
+        ...windowSize.value,
+        maxWidth: bounds.width,
+        maxHeight: bounds.height
+      }
+      
       position.value = {
         x: (bounds.width - windowSize.value.width) / 2,
         y: (bounds.height - windowSize.value.height) / 2
       }
 
       // 监听窗口大小变化
-      window.addEventListener('resize', updateMaxDimensions)
+      window.addEventListener('resize', handleWindowResize)
       
-      // 初始滚动到底部
-      nextTick(() => scrollToBottom())
+      // 等待 DOM 更新后再尝试滚动
+      nextTick(() => {
+        if (messagesContainer.value) {
+          // 初始化时强制滚动到底部
+          scrollToBottom(true)
+          
+          // 添加滚动事件监听
+          messagesContainer.value.addEventListener('scroll', () => {
+            // 可以在这里添加滚动位置相关的逻辑
+          })
+        }
+      })
     })
 
     onUnmounted(() => {
-      window.removeEventListener('resize', updateMaxDimensions)
+      window.removeEventListener('resize', handleWindowResize)
+      
+      // 安全地移除滚动事件监听
+      if (messagesContainer.value) {
+        messagesContainer.value.removeEventListener('scroll')
+      }
     })
 
     return {
@@ -1132,7 +1283,9 @@ export default {
       isWaitingResponse,
       getProviderLogo,
       t,
-      handleKeyDown
+      handleKeyDown,
+      isGenerating,
+      cancelGeneration
     }
   }
 }
@@ -1412,6 +1565,7 @@ export default {
 }
 
 .messages-container {
+  position: relative;
   flex: 1;
   overflow-y: auto;
   padding: 16px;
@@ -1653,5 +1807,22 @@ export default {
 :deep(.arco-select-option) {
   display: flex;
   align-items: center;
+}
+
+/* 添加 Cancel 按钮的样式 */
+.cancel-button-container {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 1000;
+}
+
+.cancel-button {
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.cancel-button:hover {
+  opacity: 1;
 }
 </style> 
