@@ -504,7 +504,7 @@ export default {
         return true
       })
 
-      // 修改滚动行为��添加安全检查
+      // 修改滚动行为添加安全检查
       term.onLineFeed(() => {
         // 确保 term.element 存在
         if (term && term.element) {
@@ -832,7 +832,8 @@ export default {
           // 原有的编辑器模式检测逻辑
           if (text.includes('\u001b[?1049h') || // vim 进入全屏模式
               text.includes('\u001b[?47h') ||   // 备用全屏模式
-              text.includes('GNU nano')) {       // nano 编辑器
+              text.includes('GNU nano') ||       // nano 编辑器
+              text.includes('-- INSERT --')) {   // vim 插入模式
             isInEditorMode.value = true
             // 编辑器模式下立即重新计算并调整终端大小
             nextTick(() => {
@@ -878,7 +879,8 @@ export default {
             })
           } else if (text.includes('\u001b[?1049l') || // vim 退出全屏模式
                      text.includes('\u001b[?47l') ||    // 备用全屏模式退出
-                     /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text)) { // 命令提示符
+                     /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text) || // 命令提示符
+                     text.includes('-- NORMAL --')) {    // vim 普通模式
             isInEditorMode.value = false
             // 退出编辑器模式时恢复正常终端大小
             nextTick(() => {
@@ -1506,7 +1508,6 @@ export default {
       if (event.ctrlKey && event.key === 'f') {
         event.preventDefault()
         
-        // 如果搜索栏已经打开，关闭；否则打开
         if (showSearchBar.value) {
           closeSearchBar()
         } else {
@@ -1587,21 +1588,74 @@ export default {
         }
       }
       
-      // 如果没有显示命令提示窗口或没有建议理普通的终方向键
+      // 处理方向键
       if (event.key.startsWith('Arrow')) {
         const key = event.key.toLowerCase()
+        
+        // 定义不同模式下的按键序列
         const sequences = {
-          arrowup: '\x1b[A',
-          arrowdown: '\x1b[B',
-          arrowright: '\x1b[C',
-          arrowleft: '\x1b[D'
+          // 普通终端模式
+          normal: {
+            arrowup: '\x1b[A',
+            arrowdown: '\x1b[B',
+            arrowright: '\x1b[C',
+            arrowleft: '\x1b[D'
+          },
+          // vim 插入模式
+          vimInsert: {
+            arrowup: '\x1bOA',
+            arrowdown: '\x1bOB',
+            arrowright: '\x1bOC',
+            arrowleft: '\x1bOD'
+          },
+          // vim 普通模式 (包含旧版本 vim 的兼容序列)
+          vimNormal: {
+            arrowup: ['\x1b[A', '\x1bOA'],
+            arrowdown: ['\x1b[B', '\x1bOB'],
+            arrowright: ['\x1b[C', '\x1bOC'],
+            arrowleft: ['\x1b[D', '\x1bOD']
+          }
         }
-        if (sequences[key]) {
+
+        if (sequences.normal[key]) {
           // 如果命令提示窗口显示但没有建议，先关闭它
           if (showSuggestions.value) {
             hideSuggestionMenu()
           }
-          socket.emit('ssh_input', { session_id: props.sessionId, input: sequences[key] })
+
+          // 根据当前状态选择合适的序列
+          let sequence
+          if (isInEditorMode.value) {
+            // 检测是否在 vim 插入模式
+            const isVimInsertMode = term.buffer.active.getLine(term.buffer.active.length - 1)?.translateToString().includes('-- INSERT --')
+            if (isVimInsertMode) {
+              sequence = sequences.vimInsert[key]
+            } else {
+              // 在 vim 普通模式下，尝试所有可能的序列
+              const normalSequences = sequences.vimNormal[key]
+              if (Array.isArray(normalSequences)) {
+                // 依次发送所有可能的序列
+                normalSequences.forEach(seq => {
+                  socket.emit('ssh_input', { 
+                    session_id: props.sessionId, 
+                    input: seq 
+                  })
+                })
+                return false
+              }
+            }
+          } else {
+            sequence = sequences.normal[key]
+          }
+
+          // 如果有单个序列要发送
+          if (sequence) {
+            socket.emit('ssh_input', { 
+              session_id: props.sessionId, 
+              input: sequence 
+            })
+          }
+
           return false
         }
       }
