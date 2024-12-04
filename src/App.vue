@@ -159,6 +159,10 @@
                   <div class="connection-drag-handle">
                     <icon-drag-dot-vertical class="drag-icon" />
                   </div>
+                  <div 
+                    class="connection-color-block"
+                    :style="{ backgroundColor: connection.color || generateRandomColor() }"
+                  ></div>
                   <span 
                     class="connection-title" 
                     :title="connection.name"
@@ -662,12 +666,21 @@ export default {
       }
     };
 
+    const generateRandomColor = () => {
+      // 生成柔和的颜色
+      const r = Math.floor(Math.random() * 156 + 100); // 100-255
+      const g = Math.floor(Math.random() * 156 + 100); // 100-255
+      const b = Math.floor(Math.random() * 156 + 100); // 100-255
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
     const addConnection = async () => {
       try {
         const connection = { 
           ...newConnection,
           id: Date.now(),
-          type: 'connection'
+          type: 'connection',
+          color: generateRandomColor() // 添加随机颜色
         };
         
         // 如果是密码认证，进行 base64 编码
@@ -875,15 +888,6 @@ export default {
 
     const showAddFolderModal = () => {
       addFolderModalVisible.value = true
-    }
-
-    // 生成随机颜色的函数
-    const generateRandomColor = () => {
-      // 生成柔和的色
-      const r = Math.floor(Math.random() * 156 + 100); // 100-255
-      const g = Math.floor(Math.random() * 156 + 100); // 100-255
-      const b = Math.floor(Math.random() * 156 + 100); // 100-255
-      return `rgb(${r}, ${g}, ${b})`;
     }
 
     const addFolder = async () => {
@@ -2359,7 +2363,8 @@ export default {
       aiIcon,
       handleLanguageChange,
       refreshConnections,
-      sftpExplorerWidth
+      sftpExplorerWidth,
+      generateRandomColor
     }
   }
 }
@@ -3176,16 +3181,17 @@ export default {
   color: rgb(var(--primary-6));
 }
 
-/* ���整连接项样式 */
+/* 调整连接项样式 */
 .connection-entry {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 8px 12px;
-  margin: 4px 0;
+  padding: 4px 8px; /* 减小padding */
+  margin: 2px 0; /* 减小margin */
   border-radius: 4px;
   transition: all 0.2s ease;
-  height: 32px;
+  height: 28px; /* 减小高度 */
+  cursor: pointer;
 }
 
 .connection-entry:hover {
@@ -3582,5 +3588,27 @@ export default {
   overflow: hidden; /* 添加溢出隐藏 */
   display: flex;
   flex-direction: column;
+}
+
+/* 增大拖拽区域 */
+.connection-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; /* 增大宽度 */
+  height: 24px; /* 增大高度 */
+  margin-right: 8px;
+  cursor: move;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+/* 添加颜色块样式 */
+.connection-color-block {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 8px;
+  flex-shrink: 0;
 }
 </style>
