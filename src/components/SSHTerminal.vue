@@ -1133,6 +1133,14 @@ export default {
         return
       }
 
+      // 检查是否有回显
+      const hasEcho = checkCommandEcho(command)
+      if (!hasEcho) {
+        // 如果没有回显(如密码输入),则不记录
+        console.log('Command has no echo, skipping history record')
+        return
+      }
+
       try {
         let history = []
         const historyPath = await getHistoryPath()
@@ -1895,6 +1903,64 @@ export default {
         });
       }
     });
+
+    // 修改检查命令回显的函数
+    const checkCommandEcho = (command) => {
+      if (!term || !term.buffer) {
+        return false
+      }
+
+      try {
+        // 获取当前行的内容
+        const currentLine = term.buffer.active.getLine(term.buffer.active.cursorY)
+        if (!currentLine) {
+          return false
+        }
+
+        // 获取当前行的文本内容
+        const lineContent = currentLine.translateToString()
+
+        // 检查是否是密码输入
+        const isPasswordPrompt = /password.*:|密码.*:|passphrase.*:/i.test(lineContent)
+        if (isPasswordPrompt) {
+          return false
+        }
+
+        // 获取最近的几行内容来检查命令回显
+        const lineCount = term.buffer.active.length
+        const startLine = Math.max(0, term.buffer.active.cursorY - 3)
+        const endLine = term.buffer.active.cursorY
+        
+        let recentLines = []
+        for (let i = startLine; i <= endLine; i++) {
+          const line = term.buffer.active.getLine(i)
+          if (line) {
+            recentLines.push(line.translateToString())
+          }
+        }
+        
+        // 将最近几行合并成一个字符串
+        const recentContent = recentLines.join('\n')
+
+        // 检查是否包含命令本身
+        // 1. 移除ANSI转义序列以进行纯文本比较
+        const cleanContent = recentContent.replace(/\x1b\[[0-9;]*[mGKH]/g, '')
+        const cleanCommand = command.trim()
+
+        // 2. 检查命令是否出现在最近的输出中
+        const hasCommand = cleanContent.includes(cleanCommand)
+
+        // 3. 检查是否有命令提示符
+        const hasPrompt = /\[.*?@.*?\s+.*?\][$#>]\s*/.test(cleanContent)
+
+        // 如果找到提示符和命令，说明这是一个正常的命令输入
+        return hasPrompt || hasCommand
+
+      } catch (error) {
+        console.error('Error checking command echo:', error)
+        return false
+      }
+    }
 
     return { 
       terminal,
