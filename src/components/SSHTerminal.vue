@@ -538,9 +538,28 @@ export default {
           return
         }
 
-        // 记录输入命令
-        if (!isInEditorMode.value && data >= ' ' && data <= '~') {
-          currentInput.value += data
+        // 记录输入命令 - 修改这部分逻辑
+        if (!isInEditorMode.value) {
+          // 只对可打印字符进行记录
+          if (data >= ' ' && data <= '~') {
+            // 直接添加字符,不需要额外处理
+            currentInput.value += data
+            // 添加这行来显示建议菜单
+            if (currentInput.value.length > 0 && commandHistory.value) {
+              showSuggestionMenu()
+            }
+          }
+          // 处理退格键
+          else if (data === '\x7f') {
+            if (currentInput.value.length > 0) {
+              currentInput.value = currentInput.value.slice(0, -1)
+              if (currentInput.value.length > 0) {
+                showSuggestionMenu()
+              } else {
+                hideSuggestionMenu()
+              }
+            }
+          }
         }
 
         // 检测是否输入了 top 命令
@@ -586,26 +605,6 @@ export default {
           }
           socket.emit('ssh_input', { session_id: props.sessionId, input: '\r' })
           return
-        }
-
-        // 处理退格键
-        if (data === '\x7f') {
-          if (currentInput.value.length > 0) {
-            currentInput.value = currentInput.value.slice(0, -1)
-            if (currentInput.value.length > 0) {
-              showSuggestionMenu()
-            } else {
-              hideSuggestionMenu()
-            }
-          }
-        }
-        
-        // 记录普通输入
-        if (!isInEditorMode.value && data >= ' ' && data <= '~') {
-          currentInput.value += data
-          if (currentInput.value.length > 0 && commandHistory.value) {
-            showSuggestionMenu()
-          }
         }
 
         // 发送输入到服务器
