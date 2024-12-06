@@ -141,6 +141,10 @@ export default {
       type: Number,
       default: 14
     },
+    settings: {
+      type: Object,
+      required: true
+    },
     active: {
       type: Boolean,
       default: false
@@ -190,6 +194,60 @@ export default {
 
     // 在 setup 中添加编辑器模式的检测变量
     const isInEditorMode = ref(false)
+
+    // 在 setup 函数中添加定时器相关的变量和函数
+    const resizeInterval = ref(null)
+
+    // 添加启动定时resize的函数
+    const startResizeInterval = () => {
+      if (resizeInterval.value) {
+        clearInterval(resizeInterval.value)
+      }
+      
+      resizeInterval.value = setInterval(() => {
+        // 复用 top 命令的终端尺寸调整逻辑
+        const terminalElement = terminal.value
+        const computedStyle = window.getComputedStyle(terminalElement)
+        const padding = parseInt(computedStyle.padding || '0')
+        
+        // 计算可用空间
+        const availableWidth = terminalElement.clientWidth - 2 * padding
+        const availableHeight = terminalElement.clientHeight - 2 * padding
+
+        // 使用更精确的字符尺寸计算
+        const span = document.createElement('span')
+        span.style.fontFamily = term.options.fontFamily
+        span.style.fontSize = `${term.options.fontSize}px`
+        span.style.position = 'absolute'
+        span.style.visibility = 'hidden'
+        span.textContent = 'X'
+        document.body.appendChild(span)
+
+        const charSize = span.getBoundingClientRect()
+        const charWidth = charSize.width
+        const charHeight = charSize.height
+        document.body.removeChild(span)
+
+        // 计算新的列数和行数
+        const newCols = Math.max(80, Math.floor(availableWidth / charWidth))
+        // 为界面预留合适的空间，减去2行
+        const newRows = Math.max(24, Math.floor(availableHeight / charHeight) - 2)
+
+        // 调整终端大小
+        if (term) {
+          term.resize(newCols, newRows)
+          
+          // 通知服务器新的终端大小
+          if (socket && isTerminalReady.value) {
+            socket.emit('resize', { 
+              session_id: props.sessionId, 
+              cols: newCols, 
+              rows: newRows
+            })
+          }
+        }
+      }, 1000) // 每秒执行一次
+    }
 
     // 监听 fontSize 的变化
     watch(() => props.fontSize, (newSize) => {
@@ -443,7 +501,12 @@ export default {
         scrollback: 10000, // 增加回滚缓冲区大小
         convertEol: true,
         termName: 'xterm-256color',
-        rendererType: 'canvas',
+        rendererType: props.settings.useGPU ? 'webgl' : 'canvas',
+        webglAddon: props.settings.useGPU ? {
+          preserveDrawingBuffer: true,
+          antialias: true,
+          transparent: true
+        } : undefined,
         allowProposedApi: true,
         cols: cols,
         rows: rows,
@@ -476,7 +539,7 @@ export default {
         (event, uri) => {
           event.preventDefault()
           
-          // 检查���否按下 Ctrl 键
+          // 检查是否按下 Ctrl 键
           if (event.ctrlKey) {
             try {
               // 使用 Electron 的 shell 打开链接
@@ -880,7 +943,7 @@ export default {
             /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text) || // 命令提示符
             text.includes('-- NORMAL --'))) {    // vim 普通模式
             isInEditorMode.value = false
-            // 退出编辑器模式时恢复正常终端大小
+            // 退出编辑器模式时恢复正常终端大���
             nextTick(() => {
               handleResize()
             })
@@ -1131,7 +1194,7 @@ export default {
       // 检查是否有回显
       const hasEcho = checkCommandEcho(command)
       if (!hasEcho) {
-        // 如果没有回显(如密码输入),则不记录
+        // 如果没有回显(如密��输入),则不记录
         console.log('Command has no echo, skipping history record')
         return
       }
@@ -1433,6 +1496,8 @@ export default {
 
         // 添加鼠标中键粘贴事件
         terminal.value.addEventListener('mousedown', handleMouseDown)
+        
+        startResizeInterval() // 启动定时resize
       } catch (error) {
         console.error('Error mounting SSHTerminal:', error)
       }
@@ -1466,6 +1531,11 @@ export default {
 
       // 移除鼠标中键事监听
       terminal.value?.removeEventListener('mousedown', handleMouseDown)
+      
+      if (resizeInterval.value) {
+        clearInterval(resizeInterval.value)
+        resizeInterval.value = null
+      }
     })
 
     watch(() => isDarkMode.value, (newValue) => {
@@ -1757,7 +1827,7 @@ export default {
         const index = parseInt(item.dataset.index)
         if (!isNaN(index) && index >= 0 && index < suggestions.value.length) {
           const selectedCommand = suggestions.value[index]
-          // 清除当前输入并填充选中的命令
+          // 清除��前输入并填充选中的命令
           const backspaces = '\b'.repeat(currentInput.value.length)
           socket.emit('ssh_input', { 
             session_id: props.sessionId, 

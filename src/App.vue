@@ -221,6 +221,7 @@
                 :connection="tab.connection" 
                 :sessionId="tab.id"
                 :fontSize="settings.fontSize"
+                :settings="settings"
                 @close="closeTab"
                 @connectionStatus="handleConnectionStatus"
                 ref="sshTerminals"
@@ -366,6 +367,14 @@
                 :max="32"
                 :step="1"
                 style="width: 100%;"
+              />
+            </a-form-item>
+            
+            <a-form-item :label="t('settings.useGPU')" style="flex: 1;">
+              <a-switch
+                v-model="settings.useGPU"
+                :checked-text="t('settings.enabled')"
+                :unchecked-text="t('settings.disabled')"
               />
             </a-form-item>
             
@@ -1362,6 +1371,7 @@ export default {
     const settings = reactive({
       language: localStorage.getItem('language') || 'zh-CN',
       fontSize: 14, // 添加默认字号
+      useGPU: false, // 添加 GPU 渲染设置
       proxy: {
         enabled: false,
         host: '127.0.0.1',
@@ -1392,6 +1402,7 @@ export default {
           type: 'settings',
           language: settings.language,
           fontSize: settings.fontSize,
+          useGPU: settings.useGPU, // 添加 GPU 设置
           widthSettings: currentConfig[settingsIndex]?.widthSettings
         }
         
@@ -1410,10 +1421,11 @@ export default {
         // 关闭设置对话框
         settingsVisible.value = false
 
-        // 只有在语言改变时才需要重启
-        if (settings.language !== currentConfig[settingsIndex]?.language) {
+        // 检查是否需要重启
+        if (settings.language !== currentConfig[settingsIndex]?.language ||
+            settings.useGPU !== currentConfig[settingsIndex]?.useGPU) {
           Modal.info({
-            title: t('settings.languageChanged'),
+            title: t('settings.settingsChanged'),
             content: t('settings.restartRequired'),
             okText: t('settings.restartNow'),
             cancelText: t('settings.restartLater'),
@@ -1461,6 +1473,9 @@ export default {
         if (globalSettings.language !== undefined) {
           settings.language = globalSettings.language
         }
+        if (globalSettings.useGPU !== undefined) {
+          settings.useGPU = globalSettings.useGPU
+        }
       } catch (error) {
         console.error('Failed to refresh connections:', error)
         Message.error('Failed to refresh connections')
@@ -1482,6 +1497,9 @@ export default {
         const globalSettings = newConfig.find(item => item.type === 'settings') || {}
         if (globalSettings.language !== undefined) {
           settings.language = globalSettings.language
+        }
+        if (globalSettings.useGPU !== undefined) {
+          settings.useGPU = globalSettings.useGPU
         }
       })
     })
@@ -2254,6 +2272,9 @@ export default {
             settings.fontSize = savedSettings.fontSize
           } else {
             settings.fontSize = 14 // 默认字号
+          }
+          if (savedSettings.useGPU !== undefined) {
+            settings.useGPU = savedSettings.useGPU
           }
         }
       } catch (error) {

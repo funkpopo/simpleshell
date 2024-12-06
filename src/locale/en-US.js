@@ -49,7 +49,11 @@ export default {
     maxRulesError: 'Maximum number of rules (1000) reached',
     maxLineLengthError: 'Rule exceeds maximum length of 500 characters',
     maxFileSizeError: 'Total highlight rules exceed maximum file size of 1MB',
-    fontSize: 'Font Size'
+    fontSize: 'Font Size',
+    useGPU: 'GPU Rendering',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    settingsChanged: 'Settings Changed'
   },
   messages: {
     confirmDelete: 'Confirm Delete',
