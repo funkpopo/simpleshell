@@ -476,7 +476,7 @@ export default {
         (event, uri) => {
           event.preventDefault()
           
-          // 检查是否按下 Ctrl 键
+          // 检查���否按下 Ctrl 键
           if (event.ctrlKey) {
             try {
               // 使用 Electron 的 shell 打开链接
@@ -531,21 +531,57 @@ export default {
       term.onData((data) => {
         if (!isTerminalReady.value || !socket) return
         
+        // 忽略NUL字符(^@)
+        if (data === '\x00') return
+        
         // 检测 Ctrl+C（ASCII 码 3）
         if (data === '\x03' && isInEditorMode.value) {
-          // 发送 Ctrl+C 到服务器
           socket.emit('ssh_input', { session_id: props.sessionId, input: data })
           return
         }
 
         // 记录输入命令 - 修改这部分逻辑
         if (!isInEditorMode.value) {
+          // 处理 Enter 键
+          if (data === '\r') {
+            // 如果命令提示窗口显示且有选中项，使用选中的建议
+            if (showSuggestions.value && selectedSuggestionIndex.value >= 0) {
+              const selectedCommand = suggestions.value[selectedSuggestionIndex.value]
+              if (selectedCommand) {
+                // 清除当前输入
+                const backspaces = '\b'.repeat(currentInput.value.length)
+                socket.emit('ssh_input', { 
+                  session_id: props.sessionId, 
+                  input: backspaces + selectedCommand + '\r'
+                })
+                // 记录到历史后清除当前输入
+                if (selectedCommand.trim()) {
+                  addToHistory(selectedCommand.trim())
+                }
+                currentInput.value = ''
+                hideSuggestionMenu()
+                return
+              }
+            }
+
+            // 正常处理 Enter 键事件
+            const command = currentInput.value.trim()
+            if (command) {
+              addToHistory(command)
+            }
+            // 发送命令前清除当前输入
+            currentInput.value = ''
+            if (showSuggestions.value) {
+              hideSuggestionMenu()
+            }
+            socket.emit('ssh_input', { session_id: props.sessionId, input: '\r' })
+            return
+          }
+
           // 只对可打印字符进行记录
           if (data >= ' ' && data <= '~') {
-            // 直接添加字符,不需要额外处理
             currentInput.value += data
-            // 添加这行来显示建议菜单
-            if (currentInput.value.length > 0 && commandHistory.value) {
+            if (currentInput.value.length > 0) {
               showSuggestionMenu()
             }
           }
@@ -560,51 +596,6 @@ export default {
               }
             }
           }
-        }
-
-        // 检测是否输入了 top 命令
-        if (data === '\r' && currentInput.value.trim() === 'top') {
-          // 清除当前输入
-          currentInput.value = ''
-          // 发送命令到服务器
-          socket.emit('ssh_input', { session_id: props.sessionId, input: 'top\r' })
-          return
-        }
-
-        // 处理 Enter 键
-        if (data === '\r') {
-          // 如果在编辑器模下，直接输入
-          if (isInEditorMode.value) {
-            socket.emit('ssh_input', { session_id: props.sessionId, input: '\r' })
-            return
-          }
-
-          // 如果命令提示窗口显示且有选中项，使用选中的建议
-          if (showSuggestions.value && selectedSuggestionIndex.value >= 0) {
-            const selectedCommand = suggestions.value[selectedSuggestionIndex.value]
-            if (selectedCommand) {
-              // 清除当前输入
-              const backspaces = '\b'.repeat(currentInput.value.length)
-              socket.emit('ssh_input', { 
-                session_id: props.sessionId, 
-                input: backspaces + selectedCommand + '\r'
-              })
-              currentInput.value = ''
-              hideSuggestionMenu()
-              return
-            }
-          }
-
-          // 正常处理 Enter 键事件
-          if (currentInput.value.trim()) {
-            addToHistory(currentInput.value.trim())
-          }
-          currentInput.value = ''
-          if (showSuggestions.value) {
-            hideSuggestionMenu()
-          }
-          socket.emit('ssh_input', { session_id: props.sessionId, input: '\r' })
-          return
         }
 
         // 发送输入到服务器
@@ -834,6 +825,7 @@ export default {
               text.includes('GNU nano') ||       // nano 编辑器
               text.includes('-- INSERT --')) {   // vim 插入模式
             isInEditorMode.value = true
+            
             // 编辑器模式下立即重新计算并调整终端大小
             nextTick(() => {
               const terminalElement = terminal.value
@@ -876,10 +868,17 @@ export default {
                 })
               }
             })
-          } else if (text.includes('\u001b[?1049l') || // vim 退出全屏模式
-                     text.includes('\u001b[?47l') ||    // 备用全屏模式退出
-                     /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text) || // 命令提示符
-                     text.includes('-- NORMAL --')) {    // vim 普通模式
+
+            // 在编辑器模式下直接写入内容，不做处理
+            term.write(text)
+            return
+          } 
+          // 检测是否退出编辑器模式
+          else if (isInEditorMode.value && (
+            text.includes('\u001b[?1049l') || // vim 退出全屏模式
+            text.includes('\u001b[?47l') ||    // 备用全屏模式退出
+            /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text) || // 命令提示符
+            text.includes('-- NORMAL --'))) {    // vim 普通模式
             isInEditorMode.value = false
             // 退出编辑器模式时恢复正常终端大小
             nextTick(() => {
@@ -887,19 +886,14 @@ export default {
             })
           }
 
-          // 如果检测到命令提示符，说明已退出编辑器模式
-          if (/\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text)) {
-            isInEditorMode.value = false
+          // 如果在编辑器模式下，直接写入内容
+          if (isInEditorMode.value) {
+            term.write(text)
+            return
           }
 
           const lines = text.split('\n')
-          
           lines.forEach((line, index) => {
-            if (!line && index < lines.length - 1) {
-              term.write('\r\n')
-              return
-            }
-
             const isPrompt = /^\[.*?@.*?\s+.*?\][$#>]\s*$/.test(line)
             
             if (isPrompt) {
@@ -949,6 +943,7 @@ export default {
           nextTick(() => {
             safeScrollToBottom()
           })
+
         } catch (error) {
           console.error('Error writing to terminal:', error)
           if (!term || term.disposed) {
@@ -1614,13 +1609,6 @@ export default {
             arrowdown: '\x1bOB',
             arrowright: '\x1bOC',
             arrowleft: '\x1bOD'
-          },
-          // vim 普通模式 (包含旧版本 vim 的兼容序列)
-          vimNormal: {
-            arrowup: ['\x1b[A', '\x1bOA'],
-            arrowdown: ['\x1b[B', '\x1bOB'],
-            arrowright: ['\x1b[C', '\x1bOC'],
-            arrowleft: ['\x1b[D', '\x1bOD']
           }
         }
 
@@ -1635,27 +1623,12 @@ export default {
           if (isInEditorMode.value) {
             // 检测是否在 vim 插入模式
             const isVimInsertMode = term.buffer.active.getLine(term.buffer.active.length - 1)?.translateToString().includes('-- INSERT --')
-            if (isVimInsertMode) {
-              sequence = sequences.vimInsert[key]
-            } else {
-              // 在 vim 普通模式下，尝试所有可能的序列
-              const normalSequences = sequences.vimNormal[key]
-              if (Array.isArray(normalSequences)) {
-                // 依次发送所有可能的序列
-                normalSequences.forEach(seq => {
-                  socket.emit('ssh_input', { 
-                    session_id: props.sessionId, 
-                    input: seq 
-                  })
-                })
-                return false
-              }
-            }
+            sequence = isVimInsertMode ? sequences.vimInsert[key] : sequences.normal[key]
           } else {
             sequence = sequences.normal[key]
           }
 
-          // 如果有单个序列要发送
+          // 发送单个序列
           if (sequence) {
             socket.emit('ssh_input', { 
               session_id: props.sessionId, 

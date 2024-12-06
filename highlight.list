@@ -26,7 +26,7 @@ url=(http|https)?:[/]{2}[^\s"'!*(){}|\\\^<>`]*[^\s"':,.!?{}|\\\^~\[\]`()<>]=#20B
 
 [String]
 net_status=UP,BROADCAST,RUNNING,MULTICAST,PROMISC,DYNAMIC,STATUS=#00CED1
-error_words=error,Error,ERROR,FATAL,Fatal,fatal,failed,Failed,FAILED,failure,Failure,FAILURE,no longer,No longer,NO LONGER,deprecated,Deprecated,DEPRECATED,disabled,Disabled,DISABLED,dead,Dead,DEAD=#FF0000
+error_words=closed,Closed,CLOSED,error,Error,ERROR,FATAL,Fatal,fatal,failed,Failed,FAILED,failure,Failure,FAILURE,no longer,No longer,NO LONGER,deprecated,Deprecated,DEPRECATED,disabled,Disabled,DISABLED,dead,Dead,DEAD=#FF0000
 success_words=success,Success,SUCCESS,running,Running,RUNNING,active,Active,ACTIVE,enabled,Enabled,ENABLED,ready,Ready,READY,OK,surported,Supported,SUPPORTED=#00FF00
 warning_words=warning,Warning,WARNING,warn,Warn,WARN,notice,Notice,NOTICE,pending,Pending,PENDING,complete,Complete,COMPLETE,completed,Completed,COMPLETED=#FFD700
 info_words=starting,Starting,STARTING,stopping,Stopping,STOPPING,restarting,Restarting,RESTARTING,initializing,Initializing,INITIALIZING=#87CEEB
