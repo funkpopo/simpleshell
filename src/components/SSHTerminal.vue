@@ -1574,6 +1574,13 @@ export default {
     const handleSpecialKeys = (event) => {
       if (!term || !isTerminalReady.value) return true
 
+      // 处理 ALT+F4 关闭程序
+      if (event.altKey && event.key === 'F4') {
+        const { app } = require('@electron/remote')
+        app.quit()
+        return false
+      }
+
       const hasSuggestions = Array.isArray(suggestions.value) && suggestions.value.length > 0
       
       // 添加搜索快捷键 Ctrl+F 的切换逻辑
@@ -2196,6 +2203,7 @@ export default {
   background-color: var(--color-fill-2);
 }
 
+/* 深色模式下的建议菜单样式 */
 .terminal-container.dark-mode .command-suggestions {
   background-color: var(--dark-bg-color);
   border-color: var(--dark-border-color);

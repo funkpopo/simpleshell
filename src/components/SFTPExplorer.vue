@@ -1013,14 +1013,14 @@ export default {
         loading.value = true;
         console.log('Refreshing directory:', path);
         
+        // 保存当前展开的节点状态
+        const currentExpandedKeys = [...expandedKeys.value];
+        
         // 如果传入的是文件路径，获取其父目录
         let directoryPath = path;
         if (typeof path === 'string') {
-          // 如果路径以 '/' 结尾或是根目录，直接使用该路径
-          if (path === '/' || path === 'root' || path.endsWith('/')) {
-            directoryPath = path === 'root' ? '/' : path;
-          } else {
-            // 否则获取父目录路径
+          const node = findNodeByKey(path);
+          if (node && node.isLeaf) {
             directoryPath = path.substring(0, path.lastIndexOf('/')) || '/';
           }
         }
@@ -1043,33 +1043,42 @@ export default {
             key: normalizePath('/' + item.name),
             isLeaf: !item.isDirectory,
             children: item.isDirectory ? [] : undefined,
-            // 确保更新 modTime 和 size
             modTime: item.modTime || 0,
-            size: item.size || 0
+            size: item.size || 0,
+            isHidden: item.name.startsWith('.')
           })));
         } else {
           // 更新特定目录
           const updateNode = (nodes) => {
             for (let i = 0; i < nodes.length; i++) {
               if (nodes[i].key === directoryPath) {
-                nodes[i].children = sortItems(response.data.map(item => {
-                  // 查找原有节点，保留子节点和展开状态
-                  const existingNode = nodes[i].children 
-                    ? nodes[i].children.find(child => child.title === item.name)
-                    : null;
+                // 保存原有展开的子节点信息
+                const oldExpandedChildren = nodes[i].children
+                  ? nodes[i].children.filter(child => currentExpandedKeys.includes(child.key))
+                  : [];
 
+                // 更新节点的子节点
+                nodes[i].children = sortItems(response.data.map(item => {
+                  const existingChild = oldExpandedChildren.find(
+                    oldChild => oldChild.title === item.name
+                  );
+                  
                   return {
                     title: item.name,
                     key: normalizePath(`${directoryPath}/${item.name}`),
                     isLeaf: !item.isDirectory,
-                    children: item.isDirectory ? (existingNode ? existingNode.children : []) : undefined,
-                    expanded: existingNode ? existingNode.expanded : false,
-                    // 更新 modTime 和 size，确保总是使用最新的值
+                    children: item.isDirectory 
+                      ? (existingChild ? existingChild.children : []) 
+                      : undefined,
+                    expanded: existingChild ? existingChild.expanded : false,
                     modTime: item.modTime || 0,
                     size: item.size || 0,
-                    isHidden: item.isHidden
+                    isHidden: item.name.startsWith('.')
                   };
                 }));
+
+                // 恢复展开状态
+                expandedKeys.value = currentExpandedKeys;
                 return true;
               }
               if (nodes[i].children && updateNode(nodes[i].children)) {
@@ -1079,8 +1088,8 @@ export default {
             return false;
           };
           
+          // 如果找不到节点，尝试刷新整个树
           if (!updateNode(fileTree.value)) {
-            // 如果没找到节点，尝试刷新整个树
             await fetchRootDirectory();
           }
         }
