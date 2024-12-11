@@ -1026,6 +1026,8 @@ export default {
       try {
         const config = await ipcRenderer.invoke('read-config')
         const aiSettingsIndex = config.findIndex(item => item.type === 'aisettings')
+        // 获取现有的prompt,如果不存在则使用当前的aiPrompt
+        const existingPrompt = aiSettingsIndex !== -1 ? config[aiSettingsIndex].prompt : aiPrompt.value
         
         const aiSettingsData = {
           type: 'aisettings',
@@ -1038,7 +1040,8 @@ export default {
             maxTokens: model.maxTokens
           })),
           currentModel: aiSettings.value.currentModel,
-          maxContextLength: aiSettings.value.maxContextLength
+          maxContextLength: aiSettings.value.maxContextLength,
+          prompt: existingPrompt // 添加prompt字段
         }
         
         if (aiSettingsIndex !== -1) {
