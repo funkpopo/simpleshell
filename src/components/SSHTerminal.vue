@@ -943,7 +943,7 @@ export default {
             /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text) || // 命令提示符
             text.includes('-- NORMAL --'))) {    // vim 普通模式
             isInEditorMode.value = false
-            // 退出编辑器模式时恢复正常终端大���
+            // 退出编辑器模式时恢复正常终端大小
             nextTick(() => {
               handleResize()
             })
@@ -1178,7 +1178,7 @@ export default {
     const getHistoryPath = () => {
       const isProd = process.env.NODE_ENV === 'production'
       const basePath = isProd 
-        ? join(process.resourcesPath, '..')
+        ? join(process.resourcesPath, '.')
         : join(process.cwd(), 'backend')
       
       return fsPromises.mkdir(basePath, { recursive: true })
@@ -1194,7 +1194,7 @@ export default {
       // 检查是否有回显
       const hasEcho = checkCommandEcho(command)
       if (!hasEcho) {
-        // 如果没有回显(如密��输入),则不记录
+        // 如果没有回显(如密码输入),则不记录
         console.log('Command has no echo, skipping history record')
         return
       }
