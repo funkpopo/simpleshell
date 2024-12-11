@@ -129,7 +129,10 @@ export default {
     fileTooLarge: '文件过大。最大允许大小为 {maxSize}',
     uploadCancelled: '上传已取消',
     downloadCancelled: '下载已取消',
-    uploadPartialSuccess: '上传完成：{success} 个成功，{fail} 个失败'
+    uploadPartialSuccess: '上传完成：{success} 个成功，{fail} 个失败',
+    pageSizeOptions: '每页显示',
+    pageSizeSaved: '分页设置已保存',
+    pageSizeSaveFailed: '分页设置保存失败'
   },
   update: {
     newVersion: '发现新版本',
@@ -176,7 +179,11 @@ export default {
     requiredFields: '请填写所有必填字段',
     modelAdded: '模型添加成功',
     modelUpdated: '模型设置已更新',
-    settingsSaved: '设置保存成功'
+    settingsSaved: '设置保存成功',
+    editPrompt: '编辑提示词',
+    promptLabel: '系统提示词',
+    promptPlaceholder: '在此输入系统提示词，用于指导 AI 助手的行为...',
+    promptSaved: '提示词保存成功'
   },
   terminal: {
     search: {

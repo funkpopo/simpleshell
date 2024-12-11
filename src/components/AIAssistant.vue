@@ -73,7 +73,15 @@
                   </a-button>
                 </div>
               </div>
-              <div class="message-text" @click="selectText">{{ message.content }}</div>
+              <div 
+                v-if="message.role === 'assistant'"
+                class="message-text markdown-body"
+                v-html="renderMarkdown(message.content)"
+              ></div>
+              <div 
+                v-else
+                class="message-text"
+              >{{ message.content }}</div>
             </div>
             <div class="message-time">{{ formatTime(message.timestamp) }}</div>
           </div>
@@ -206,7 +214,7 @@
                   </div>
                 </template>
                 
-                <!-- 显示状 -->
+                <!-- 显示信息 -->
                 <template v-else>
                   <div class="model-info">
                     <div class="info-item">
@@ -237,6 +245,16 @@
                   <icon-plus />
                 </template>
                 {{ $t('aiAssistant.addProvider') }}
+              </a-button>
+              <a-button
+                type="outline"
+                class="edit-prompt-btn"
+                @click="showPromptModal"
+              >
+                <template #icon>
+                  <icon-edit />
+                </template>
+                {{ $t('aiAssistant.editPrompt') }}
               </a-button>
             </div>
           </div>
@@ -377,6 +395,27 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 添加 Prompt 编辑对话框 -->
+    <a-modal
+      v-model:visible="promptVisible"
+      :title="$t('aiAssistant.editPrompt')"
+      @cancel="closePromptModal"
+      @ok="savePrompt"
+      :mask-closable="false"
+      :closable="true"
+      class="prompt-modal"
+    >
+      <a-form layout="vertical">
+        <a-form-item :label="$t('aiAssistant.promptLabel')">
+          <a-textarea
+            v-model="aiPrompt"
+            :placeholder="$t('aiAssistant.promptPlaceholder')"
+            :auto-size="{ minRows: 10, maxRows: 20 }"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 
   <!-- 最小后的浮动按钮 -->
@@ -394,7 +433,10 @@ import { ref, onMounted, onUnmounted, nextTick, watch, inject } from 'vue'
 import { IconMinus, IconClose, IconSettings, IconDelete, IconPlus, IconEdit, IconCopy } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue'
 import aiIcon from '@/assets/aiicon.png'
-import { ipcRenderer } from 'electron'
+import { ipcRenderer, shell } from 'electron'
+import MarkdownIt from 'markdown-it'
+import MarkdownItHighlight from 'markdown-it-highlightjs'
+import 'highlight.js/styles/github-dark.css'
 
 // 导入服务提供商的图标
 import openaiLogo from '@/assets/openai_s.svg'
@@ -472,6 +514,79 @@ export default {
     const isGenerating = ref(false)
     const abortController = ref(null)
 
+    // 在 setup 函数内初始化 markdown-it
+    const md = new MarkdownIt({
+      html: true,
+      linkify: true,
+      typographer: true,
+      breaks: true,
+      replaceLink: true
+    }).use(MarkdownItHighlight)
+
+    // 添加链接点击处理函数
+    const handleLinkClick = (event) => {
+      const target = event.target
+      if (target.tagName === 'A' && target.href) {
+        event.preventDefault()
+        shell.openExternal(target.href)
+      }
+    }
+
+    // 修改渲染markdown的方法
+    const renderMarkdown = (content) => {
+      return md.render(content)
+    }
+
+    // 添加 prompt 相关的响应式变量
+    const promptVisible = ref(false)
+    const aiPrompt = ref('')
+    
+    // 加载 prompt
+    const loadPrompt = async () => {
+      try {
+        const config = await ipcRenderer.invoke('read-config')
+        const aiConfig = config.find(item => item.type === 'aisettings')
+        if (aiConfig && aiConfig.prompt) {
+          aiPrompt.value = aiConfig.prompt
+        }
+      } catch (error) {
+        console.error('Failed to load prompt:', error)
+      }
+    }
+    
+    // 保存 prompt
+    const savePrompt = async () => {
+      try {
+        const config = await ipcRenderer.invoke('read-config')
+        const aiSettingsIndex = config.findIndex(item => item.type === 'aisettings')
+        
+        if (aiSettingsIndex !== -1) {
+          config[aiSettingsIndex].prompt = aiPrompt.value
+        } else {
+          config.push({
+            type: 'aisettings',
+            prompt: aiPrompt.value
+          })
+        }
+        
+        await ipcRenderer.invoke('save-config', config)
+        Message.success(t('aiAssistant.promptSaved'))
+        promptVisible.value = false
+      } catch (error) {
+        Message.error(error.message || 'Failed to save prompt')
+      }
+    }
+    
+    // 显示 prompt 编辑对话框
+    const showPromptModal = () => {
+      promptVisible.value = true
+    }
+    
+    // 关闭 prompt 编辑对话框
+    const closePromptModal = () => {
+      promptVisible.value = false
+    }
+
     // 发送消息
     const sendMessage = async () => {
       if (!currentMessage.value.trim()) return
@@ -511,20 +626,30 @@ export default {
           throw new Error('No model selected')
         }
 
-        // 获取历史消息，但限制数量
-        const contextMessages = messages.value
-          .slice(-aiSettings.value.maxContextLength * 2) // 乘2是因为每轮对话包含用户和助手两条消息
-          .filter(msg => msg.role !== 'error') // 过滤掉错误消息
-          .map(msg => ({
-            role: msg.role,
-            content: msg.content
-          }))
+        // 获取历史消息时添加 prompt
+        let contextMessages = []
+        if (aiPrompt.value) {
+          contextMessages.push({
+            role: 'system',
+            content: aiPrompt.value
+          })
+        }
+        
+        contextMessages = contextMessages.concat(
+          messages.value
+            .slice(-aiSettings.value.maxContextLength * 2)
+            .filter(msg => msg.role !== 'error')
+            .map(msg => ({
+              role: msg.role,
+              content: msg.content
+            }))
+        )
 
         // 准备发送到 API 的数据
         const requestData = {
           provider: currentModelConfig.provider,
           model: currentModelConfig.name,
-          messages: contextMessages, // 发送包含历史消息的数组
+          messages: contextMessages, // 现在包含了 prompt
           temperature: currentModelConfig.temperature || aiSettings.value.temperature,
           max_tokens: currentModelConfig.maxTokens || aiSettings.value.maxTokens,
           api_key: currentModelConfig.apiKey,
@@ -1193,6 +1318,7 @@ export default {
 
     onMounted(() => {
       loadSettings()
+      loadPrompt()
       
       // 初始化窗口位置在可视区域内
       const bounds = getWindowBounds()
@@ -1222,6 +1348,9 @@ export default {
           })
         }
       })
+
+      // 添加链接点击事件监听
+      document.addEventListener('click', handleLinkClick)
     })
 
     onUnmounted(() => {
@@ -1231,6 +1360,9 @@ export default {
       if (messagesContainer.value) {
         messagesContainer.value.removeEventListener('scroll')
       }
+
+      // 移除链接点击事件监听
+      document.removeEventListener('click', handleLinkClick)
     })
 
     return {
@@ -1279,13 +1411,26 @@ export default {
       t,
       handleKeyDown,
       isGenerating,
-      cancelGeneration
+      cancelGeneration,
+      renderMarkdown,
+      promptVisible,
+      aiPrompt,
+      showPromptModal,
+      closePromptModal,
+      savePrompt
     }
   }
 }
 </script>
 
 <style scoped>
+@font-face {
+  font-family: 'Arial Custom';
+  src: url('../utils/arial.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
 .ai-window {
   position: fixed;
   background: var(--color-bg-2);
@@ -1300,6 +1445,7 @@ export default {
   transform-style: preserve-3d;
   touch-action: none;
   resize: none;
+  font-family: 'Arial Custom', sans-serif;
 }
 
 .ai-window-header {
@@ -1615,6 +1761,7 @@ export default {
   line-height: 1.5;
   user-select: text;  /* 许文本选择 */
   cursor: text;
+  font-family: 'Arial Custom', sans-serif;
 }
 
 .message.user {
@@ -1823,5 +1970,143 @@ export default {
 
 .cancel-button:hover {
   opacity: 1;
+}
+
+/* 添加markdown相关样式 */
+.markdown-body {
+  color: inherit;
+  line-height: 1.6;
+  font-family: 'Arial Custom', sans-serif;
+}
+
+.markdown-body pre {
+  background-color: var(--color-bg-1);
+  border-radius: 4px;
+  padding: 16px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.markdown-body code {
+  font-family: 'Arial Custom', monospace;
+  font-size: 0.9em;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  background-color: var(--color-fill-2);
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background-color: transparent;
+}
+
+.markdown-body p {
+  margin: 8px 0;
+}
+
+.markdown-body ul, 
+.markdown-body ol {
+  padding-left: 24px;
+  margin: 8px 0;
+}
+
+.markdown-body blockquote {
+  margin: 8px 0;
+  padding-left: 1em;
+  border-left: 4px solid var(--color-border);
+  color: var(--color-text-2);
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--color-border);
+  padding: 6px 12px;
+}
+
+.markdown-body th {
+  background-color: var(--color-fill-2);
+}
+
+/* 修改消息文本样式,允许选择 */
+.message-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  user-select: text;
+  cursor: text;
+  font-family: 'Arial Custom', sans-serif;
+}
+
+/* 优化代码块样式 */
+.hljs {
+  background: var(--color-bg-1) !important;
+  color: var(--color-text-1) !important;
+}
+
+/* 调整消息内容的最大宽度 */
+.message-content {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* 优化复制按钮样式 */
+.message-actions {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.message:hover .message-actions {
+  opacity: 1;
+}
+
+.copy-button {
+  padding: 2px;
+  color: var(--color-text-3);
+}
+
+.copy-button:hover {
+  color: var(--color-text-1);
+  background: var(--color-fill-3);
+  border-radius: 4px;
+}
+
+/* 添加链接样式 */
+.markdown-body a {
+  color: var(--color-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+/* 确保链接在暗色主题下也清晰可见 */
+.markdown-body a:visited {
+  color: var(--color-primary-light-2);
+}
+
+/* 添加 prompt 按钮样式 */
+.edit-prompt-btn {
+  margin-left: 8px;
+  height: 40px;
+}
+
+/* prompt 编辑对话框样式 */
+.prompt-modal {
+  width: 800px;
+}
+
+.prompt-modal :deep(.arco-textarea-wrapper) {
+  font-family: 'Arial Custom', monospace;
 }
 </style> 

@@ -115,7 +115,10 @@
                 :pagination="{
                   pageSize: pageSize,
                   total: parsedHistory.length,
-                  showTotal: true
+                  showTotal: true,
+                  pageSizeOptions: ['10', '20', '50', '100'],
+                  showPageSize: true,
+                  onPageSizeChange: handlePageSizeChange
                 }"
                 :bordered="false"
                 :stripe="true"
@@ -1807,7 +1810,7 @@ export default {
         if (index === -1) {
           // 展开文件夹
           expandedKeys.value = [...expandedKeys.value, nodeData.key];
-          // ���果子节点还没有加载，加载子节点
+          // 如果子节点还没有加载，加载子节点
           if (!nodeData.children || nodeData.children.length === 0) {
             await loadMoreData(nodeData);
           }
@@ -2258,6 +2261,76 @@ export default {
       });
     };
 
+    const handlePageSizeChange = async (size) => {
+      pageSize.value = size;
+      try {
+        // 获取当前配置
+        const response = await axios.get('http://localhost:5000/get_connections');
+        let config = response.data;
+        
+        // 查找或创建 settings 对象
+        const settingsIndex = config.findIndex(item => item.type === 'settings');
+        if (settingsIndex !== -1) {
+          config[settingsIndex] = {
+            ...config[settingsIndex],
+            historyPageSize: size
+          };
+        } else {
+          config.push({
+            type: 'settings',
+            historyPageSize: size
+          });
+        }
+        
+        // 保存更新后的配置
+        await axios.post('http://localhost:5000/update_config', config);
+        Message.success(t('sftp.pageSizeSaved'));
+      } catch (error) {
+        console.error('Failed to save page size setting:', error);
+        Message.error(t('sftp.pageSizeSaveFailed'));
+      }
+    };
+
+    // 修改 loadSettings 函数
+    const loadSettings = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/get_connections');
+        const settings = response.data.find(item => item.type === 'settings');
+        if (settings?.historyPageSize) {
+          pageSize.value = parseInt(settings.historyPageSize) || 10;
+        } else {
+          // 如果没有设置，创建默认设置
+          const config = response.data;
+          const settingsIndex = config.findIndex(item => item.type === 'settings');
+          
+          if (settingsIndex !== -1) {
+            config[settingsIndex] = {
+              ...config[settingsIndex],
+              historyPageSize: 10
+            };
+          } else {
+            config.push({
+              type: 'settings',
+              historyPageSize: 10
+            });
+          }
+          
+          // 保存默认设置
+          await axios.post('http://localhost:5000/update_config', config);
+        }
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+        // 出错时使用默认值
+        pageSize.value = 10;
+      }
+    };
+
+    // 在 onMounted 中调用 loadSettings
+    onMounted(async () => {
+      await loadSettings();
+      // ... 其他现有的 onMounted 代码
+    });
+
     return {
       fileTree,
       loading,
@@ -2332,6 +2405,8 @@ export default {
       formatSize,
       cancelUpload,
       cancelDownload,
+      handlePageSizeChange,
+      pageSize
     };
   }
 }

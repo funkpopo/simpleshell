@@ -127,7 +127,10 @@ export default {
     fileTooLarge: 'File is too large. Maximum allowed size is {maxSize}',
     uploadCancelled: 'Upload cancelled',
     downloadCancelled: 'Download cancelled',
-    uploadPartialSuccess: 'Upload completed: {success} succeeded, {fail} failed'
+    uploadPartialSuccess: 'Upload completed: {success} succeeded, {fail} failed',
+    pageSizeOptions: 'Items per page',
+    pageSizeSaved: 'Page size setting saved',
+    pageSizeSaveFailed: 'Failed to save page size setting'
   },
   update: {
     newVersion: 'New Version Available',

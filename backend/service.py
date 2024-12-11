@@ -94,11 +94,36 @@ def load_config():
     try:
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return []
+                config = json.load(f)
+                
+                # 查找或创建 settings 对象
+                settings = next((item for item in config if item.get('type') == 'settings'), None)
+                
+                if settings:
+                    # 确保 historyPageSize 存在且为有效值
+                    if not settings.get('historyPageSize'):
+                        settings['historyPageSize'] = 10
+                else:
+                    # 如果没有 settings 对象，创建一个
+                    config.append({
+                        'type': 'settings',
+                        'historyPageSize': 10
+                    })
+                
+                return config
+        
+        # 如果配置文件不存在，返回包含默认设置的配置
+        return [{
+            'type': 'settings',
+            'historyPageSize': 10
+        }]
     except Exception as e:
         logger.error(f"Error loading config: {e}")
-        return []
+        # 发生错误时返回默认配置
+        return [{
+            'type': 'settings',
+            'historyPageSize': 10
+        }]
 
 def save_config(config):
     try:
@@ -1462,7 +1487,7 @@ def profile_startup():
 def minimal_startup_checks():
     # 仅进行最小必要的启动检查
     try:
-        # 快速检查目录是否存在，避免复杂的创建逻辑
+        # 快速检查目录否存在，避免复杂的创建逻辑
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     except Exception as e:
