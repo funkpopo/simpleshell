@@ -405,7 +405,7 @@ def handle_ssh_connection(data):
                     client_sessions[client_id] = set()
                 client_sessions[client_id].add(session_id)
             
-            # 先启动读取线程
+            # 先读取线程
             read_thread.start()
             
             # 等待一小段时间确保通道准备就绪
@@ -513,7 +513,7 @@ def handle_resize(data):
             return
             
         # 获取新的终端大小
-        cols = max(80, min(data.get('cols', 80), 500))  # 限制列范围
+        cols = max(80, min(data.get('cols', 80), 500))  # 限制范围
         rows = max(24, min(data.get('rows', 24), 200))  # 限制行范围
         
         session = ssh_sessions[session_id]
@@ -568,7 +568,7 @@ def list_directory():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# 添加传输进度跟踪类
+# 添加传输度跟踪类
 class TransferProgress:
     def __init__(self, total_size: int, operation: str):
         self.total_size = total_size
@@ -1086,7 +1086,6 @@ def cleanup_session(session):
         print(f"Error in cleanup_session: {e}")
 
 class SSHService:
-    # ... 现有代码 ...
     
     async def get_resource_usage(self, session_id: str) -> Dict[str, float]:
         """获取目标服务器的资源使用情况"""
@@ -1261,7 +1260,7 @@ def handle_chat():
         model_name = data.get('model')
         messages = data.get('messages', [])
         api_key = data.get('api_key')
-        api_url = data.get('api_url', '').rstrip('/')
+        api_url = data.get('api_url', '').rstrip('/')  # 恢复这行
         temperature = float(data.get('temperature', 0.7))
         max_tokens = int(data.get('max_tokens', 2048))
 
@@ -1451,7 +1450,108 @@ def handle_chat():
                         if "max_tokens" in str(e):
                             error_msg = "Max Tokens value is too large. Please reduce it and try again."
                         yield f"data: {json.dumps({'error': error_msg})}\n\n"
-                
+
+                elif provider == 'dify':
+                    try:
+                        # 规范化 API URL
+                        api_url_dify = api_url.rstrip('/')
+                            
+                        # 准备请求头
+                        headers = {
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json"
+                        }
+                        
+                        # 转换消息格式为 Dify 格式
+                        conversation_messages = []
+                        for msg in messages[:-1]:  # 除了最后一条消息
+                            if msg["role"] == "system":
+                                continue  # Dify 不支持 system 消息
+                            if msg["role"] in ["user", "assistant"]:
+                                conversation_messages.append({
+                                    "role": msg["role"],
+                                    "content": msg["content"]
+                                })
+                        
+                        # 准备请求数据,对齐 dify_client 格式
+                        data = {
+                            "inputs": {},
+                            "query": messages[-1]["content"],  # 最后一条消息作为query
+                            "response_mode": "streaming",
+                            "conversation_id": "",  # 可选的会话ID
+                            "user": "default",
+                            "files": []  # 可选的文件列表
+                        }
+                        
+                        # 如果有历史消息,添加到 inputs
+                        if conversation_messages:
+                            data["inputs"]["history"] = conversation_messages
+                            
+                        # 添加温度参数
+                        if temperature is not None:
+                            data["temperature"] = temperature
+                            
+                        logger.info(f"Sending request to Dify API: {api_url_dify}/chat-messages")
+                        logger.debug(f"Request data: {json.dumps(data)}")
+                        
+                        # 使用 requests 进行流式请求
+                        with requests.post(
+                            f"{api_url_dify}/chat-messages",
+                            headers=headers,
+                            json=data,
+                            stream=True,
+                            timeout=60
+                        ) as response:
+                            response.raise_for_status()
+                            
+                            # 逐行读取响应
+                            for line in response.iter_lines():
+                                if line:
+                                    try:
+                                        line_text = line.decode('utf-8')
+                                        logger.debug(f"Received line: {line_text}")
+                                        
+                                        # 跳过心跳消息
+                                        if line_text == "data: <HEARTBEAT>":
+                                            continue
+                                            
+                                        # 处理数据行
+                                        if line_text.startswith("data: "):
+                                            try:
+                                                event_data = json.loads(line_text[6:])
+                                                logger.debug(f"Parsed event data: {event_data}")
+                                                
+                                                # 处理错误
+                                                if "error" in event_data:
+                                                    yield f"data: {json.dumps({'error': event_data['error']})}\n\n"
+                                                    continue
+                                                
+                                                # 处理文本内容
+                                                if "answer" in event_data:
+                                                    content = event_data["answer"]
+                                                    if content:
+                                                        yield f"data: {json.dumps({'content': content})}\n\n"
+                                                elif "event" in event_data and event_data["event"] == "done":
+                                                    break
+                                                    
+                                            except json.JSONDecodeError as e:
+                                                logger.error(f"Failed to parse event data: {line_text}, error: {e}")
+                                                continue
+                                                
+                                    except Exception as e:
+                                        logger.error(f"Error processing line: {e}")
+                                        continue
+                                            
+                    except requests.exceptions.RequestException as e:
+                        error_msg = f"Dify API connection error: {str(e)}"
+                        logger.error(error_msg)
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                        
+                    except Exception as e:
+                        error_msg = f"Dify API error: {str(e)}"
+                        logger.error(error_msg)
+                        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+
             except Exception as e:
                 logger.error(f"Error in stream generation: {str(e)}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"

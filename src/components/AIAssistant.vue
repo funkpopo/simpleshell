@@ -344,6 +344,9 @@
               </template>
               SiliconFlow
             </a-option>
+            <a-option value="dify">
+              Dify
+            </a-option>
           </a-select>
         </a-form-item>
 
@@ -1180,7 +1183,8 @@ export default {
         qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         gemini: 'https://generativelanguage.googleapis.com/v1beta/models',
         ollama: '',
-        siliconflow: 'https://api.siliconflow.cn/v1'
+        siliconflow: 'https://api.siliconflow.cn/v1',
+        dify: 'https://api.dify.ai/v1/chat-messages'
       }
       return urls[provider] || ''
     }
@@ -1198,7 +1202,8 @@ export default {
         qwen: 'Qwen',
         gemini: 'Google Gemini',
         ollama: 'Ollama',
-        siliconflow: 'SiliconFlow'
+        siliconflow: 'SiliconFlow',
+        dify: 'Dify'
       }
       return names[provider] || provider
     }
@@ -1291,7 +1296,8 @@ export default {
         qwen: qwenLogo,
         gemini: geminiLogo,
         ollama: ollamaLogo,
-        siliconflow: siliconflowLogo
+        siliconflow: siliconflowLogo,
+        dify: "Dify"
       }
       return logos[provider] || null
     }
