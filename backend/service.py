@@ -1677,6 +1677,87 @@ def cancel_transfer(transfer_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# 修改IP查询路由
+@app.route('/query_ip', methods=['POST'])
+def query_ip():
+    try:
+        data = request.get_json()
+        ip = data.get('ip', '').strip()
+        
+        # 构建请求URL，如果没有提供IP则查询自身IP
+        url = f'https://ipapi.co/{ip}/json' if ip else 'https://ipapi.co/json'
+        
+        # 添加请求头，避免被封禁
+        headers = {
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': 'application/json'
+        }
+        
+        # 发送请求
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()  # 抛出非200状态码的错误
+        
+        data = response.json()
+        
+        # 检查是否返回错误
+        if data.get('error'):
+            logger.error(f"IP API error: {data.get('reason')}")
+            return jsonify({
+                'success': False,
+                'error': data.get('reason', 'Failed to query IP information')
+            })
+            
+        # 检查是否达到请求限制
+        if data.get('error_code') == 429:
+            return jsonify({
+                'success': False,
+                'error': 'rate limit'
+            })
+            
+        # 检查返回的数据是否完整
+        required_fields = ['ip', 'country_name', 'region', 'city', 'org']
+        if not all(field in data for field in required_fields):
+            logger.error(f"Incomplete IP data received: {data}")
+            return jsonify({
+                'success': False,
+                'error': 'Incomplete IP information'
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'ip': data.get('ip'),
+                'country': data.get('country_name'),
+                'region': data.get('region'),
+                'city': data.get('city'),
+                'isp': data.get('org'),
+                'timezone': data.get('timezone'),
+                'country_code': data.get('country_code'),
+                'postal': data.get('postal'),
+                'latitude': data.get('latitude'),
+                'longitude': data.get('longitude')
+            }
+        })
+        
+    except requests.exceptions.Timeout:
+        logger.error("IP query timeout")
+        return jsonify({
+            'success': False,
+            'error': 'timeout'
+        })
+    except requests.exceptions.RequestException as e:
+        logger.error(f"IP query network error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Network error: {str(e)}'
+        })
+    except Exception as e:
+        logger.error(f"IP query error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
 if __name__ == '__main__':
     try:
         # 确保日志文件目录存在

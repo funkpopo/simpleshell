@@ -20,6 +20,15 @@
               <a-button
                 type="text"
                 class="header-btn"
+                @click="toggleTools"
+              >
+                <template #icon>
+                  <icon-tool />
+                </template>
+              </a-button>
+              <a-button
+                type="text"
+                class="header-btn"
                 @click="lockScreen"
               >
                 <template #icon>
@@ -556,11 +565,21 @@
     </div>
   </div>
 
-  <!-- 添加 AI 助手组件 -->
+  <!-- 修改 AI 助手组件 -->
   <AIAssistant
     v-if="showAI"
     @close="closeAI"
     @minimize="minimizeAI"
+    :isMinimized="isAIMinimized"
+  />
+
+  <!-- 修改工具窗口组件 -->
+  <ToolsWindow
+    v-if="showTools"
+    @close="closeTools"
+    @minimize="minimizeTools"
+    :isMinimized="isToolsMinimized"
+    :positionIndex="1"
   />
 </template>
 
@@ -568,7 +587,7 @@
 import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed, inject, h } from 'vue'
 import SSHTerminal from './components/SSHTerminal.vue'
 import SFTPExplorer from './components/SFTPExplorer.vue'
-import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder, IconLock, IconUnlock, IconDragDotVertical } from '@arco-design/web-vue/es/icon'
+import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder, IconLock, IconUnlock, IconDragDotVertical, IconTool } from '@arco-design/web-vue/es/icon'
 import { Message, Modal } from '@arco-design/web-vue' // 添加这行
 import axios from 'axios'
 import { dialog } from '@electron/remote'
@@ -580,6 +599,7 @@ import draggable from 'vuedraggable'
 import { ipcRenderer } from 'electron'
 import { shell } from '@electron/remote'
 import AIAssistant from './components/AIAssistant.vue'
+import ToolsWindow from './components/ToolsWindow.vue'
 import aiIcon from './assets/aiicon.png'
 
 export default {
@@ -601,8 +621,10 @@ export default {
     IconLock,
     IconUnlock,
     IconDragDotVertical,
+    IconTool,
     draggable,
     AIAssistant,
+    ToolsWindow,
   },
   setup() {
     const connections = ref([])
@@ -2180,7 +2202,7 @@ export default {
       }
     }
 
-    // ��� setup 中添加
+    //  setup 中添加
     const cancelSetPassword = () => {
       isLocked.value = false;
       lockForm.password = '';
@@ -2189,18 +2211,94 @@ export default {
 
     // 在 setup 中添加 AI 相关方法
     const showAI = ref(false)
+    const isAIMinimized = ref(false)
+    const showTools = ref(false)
+    const isToolsMinimized = ref(false)
 
+    // 修改全局快捷键监听
+    onMounted(() => {
+      console.log('Setting up shortcut listeners...')
+      
+      // 移除旧的监听器
+      window.electronAPI.ipcRenderer.removeAllListeners('toggle-ai-assistant')
+      window.electronAPI.ipcRenderer.removeAllListeners('toggle-tools')
+      
+      // 添加新的监听器
+      const cleanupAI = window.electronAPI.onToggleAIAssistant(() => {
+        console.log('AI Assistant shortcut triggered in renderer')
+        // 直接修改状态，不使用 nextTick
+        if (!showAI.value) {
+          showAI.value = true
+          isAIMinimized.value = false
+        } else {
+          isAIMinimized.value = !isAIMinimized.value
+        }
+        console.log('AI state after toggle:', { showAI: showAI.value, isAIMinimized: isAIMinimized.value })
+      })
+
+      const cleanupTools = window.electronAPI.onToggleTools(() => {
+        console.log('Tools shortcut triggered in renderer')
+        // 直接修改状态，不使用 nextTick
+        if (!showTools.value) {
+          showTools.value = true
+          isToolsMinimized.value = false
+        } else {
+          isToolsMinimized.value = !isToolsMinimized.value
+        }
+        console.log('Tools state after toggle:', { showTools: showTools.value, isToolsMinimized: isToolsMinimized.value })
+      })
+
+      // 组件卸载时清理监听器
+      onUnmounted(() => {
+        console.log('Cleaning up shortcut listeners...')
+        if (cleanupAI) cleanupAI()
+        if (cleanupTools) cleanupTools()
+        window.electronAPI.ipcRenderer.removeAllListeners('toggle-ai-assistant')
+        window.electronAPI.ipcRenderer.removeAllListeners('toggle-tools')
+      })
+    })
+
+    // 修改切换函数，使用同步方式
     const toggleAI = () => {
-      showAI.value = !showAI.value
+      console.log('Toggling AI Assistant - before:', { showAI: showAI.value, isAIMinimized: isAIMinimized.value })
+      if (!showAI.value) {
+        showAI.value = true
+        isAIMinimized.value = false
+      } else {
+        isAIMinimized.value = !isAIMinimized.value
+      }
+      console.log('Toggling AI Assistant - after:', { showAI: showAI.value, isAIMinimized: isAIMinimized.value })
+    }
+
+    const toggleTools = () => {
+      console.log('Toggling Tools - before:', { showTools: showTools.value, isToolsMinimized: isToolsMinimized.value })
+      if (!showTools.value) {
+        showTools.value = true
+        isToolsMinimized.value = false
+      } else {
+        isToolsMinimized.value = !isToolsMinimized.value
+      }
+      console.log('Toggling Tools - after:', { showTools: showTools.value, isToolsMinimized: isToolsMinimized.value })
+    }
+
+    // 处理 AI 助手的最小化和关闭
+    const minimizeAI = () => {
+      isAIMinimized.value = true
     }
 
     const closeAI = () => {
       showAI.value = false
+      isAIMinimized.value = false
     }
 
-    const minimizeAI = () => {
-      // 不再修改 showAI 的值，只是让 AIAssistant 组件自己处理最小化状态
-      console.log('AI window minimized')
+    // 处理工具窗口的最小化和关闭
+    const minimizeTools = () => {
+      isToolsMinimized.value = true
+    }
+
+    const closeTools = () => {
+      showTools.value = false
+      isToolsMinimized.value = false
     }
 
     // 移除动态计算的 aiIcon
@@ -2209,7 +2307,7 @@ export default {
     // 在 setup 函数中
     const sftpExplorerWidth = ref(300) // 默认值
 
-    // 添加加载 SFTP 宽度设���的方法
+    // 添加加载 SFTP 宽度设的方法
     const loadSFTPWidthSettings = async () => {
       try {
         const config = await ipcRenderer.invoke('read-config')
@@ -2378,14 +2476,26 @@ export default {
       cancelSetPassword,
       handleConnectionStatus,
       showAI,
+      isAIMinimized,
       toggleAI,
-      closeAI,
+      toggleTools,
       minimizeAI,
+      closeAI,
+      minimizeTools,
+      closeTools,
       aiIcon,
       handleLanguageChange,
       refreshConnections,
       sftpExplorerWidth,
-      generateRandomColor
+      generateRandomColor,
+      showTools,
+      isToolsMinimized,
+      handleLanguageChange,
+      sftpExplorerWidth,
+      loadSFTPWidthSettings,
+      saveSFTPWidthSettings,
+      loadWidthSettings,
+      saveWidthSettings,
     }
   }
 }
@@ -2400,6 +2510,31 @@ export default {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  user-select: text;  /* 允许文字选择 */
+}
+
+/* 只在特定区域禁用文字选择 */
+.header-content,
+.arco-layout-header,
+.tab-item,
+.folder-item,
+.connection-entry {
+  user-select: none;
+}
+
+/* 允许连接信息区域的文字选择 */
+.connection-info,
+.terminal-container,
+.sftp-explorer-component {
+  user-select: text;
+}
+
+/* 允许对话框内容的文字选择 */
+.arco-modal-content,
+.arco-form-item-label,
+.arco-descriptions-item-label,
+.arco-descriptions-item-value {
+  user-select: text;
 }
 
 .layout {
@@ -3631,5 +3766,29 @@ export default {
   border-radius: 2px;
   margin-right: 8px;
   flex-shrink: 0;
+}
+
+/* 调整浮动按钮的位置,使其与 AI 助手按钮并列 */
+.tools-float-button {
+  position: fixed;
+  left: 20px;
+  bottom: 80px; /* 位于 AI 助手按钮上方 */
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--color-bg-2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1000;
+  transition: all 0.3s ease;
+  border: 1px solid var(--color-border);
+}
+
+.tools-float-button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 </style>

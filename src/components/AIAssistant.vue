@@ -460,13 +460,18 @@ export default {
     IconEdit,
     IconCopy
   },
+  props: {
+    isMinimized: {
+      type: Boolean,
+      default: false
+    }
+  },
   emits: ['close', 'minimize'],
   setup(props, { emit }) {
     const i18n = inject('i18n')
     const t = (key, params) => i18n.t(key, params)
     
     const position = ref({ x: 100, y: 100 })
-    const isMinimized = ref(false)
     const isDragging = ref(false)
     const isResizing = ref(false)
     const resizeType = ref('')
@@ -971,12 +976,10 @@ export default {
     }
 
     const minimize = () => {
-      isMinimized.value = true
       emit('minimize')
     }
 
     const restore = () => {
-      isMinimized.value = false
       // 确保窗口在可视区域内
       const newPos = keepInBounds(
         position.value.x,
@@ -999,7 +1002,6 @@ export default {
     }
 
     const close = () => {
-      isMinimized.value = false
       emit('close')
     }
 
@@ -1376,7 +1378,6 @@ export default {
 
     return {
       position,
-      isMinimized,
       isDragging,
       windowSize,
       startDrag,

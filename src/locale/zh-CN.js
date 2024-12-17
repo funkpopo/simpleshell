@@ -194,5 +194,47 @@ export default {
       previous: '上一个',
       next: '下一个'
     }
+  },
+  tools: {
+    title: '工具',
+    ipQuery: {
+      title: 'IP查询',
+      placeholder: '请输入IP地址（留空查询当前IP）',
+      query: '查询',
+      ip: 'IP地址',
+      country: '国家',
+      region: '地区',
+      city: '城市',
+      isp: '运营商',
+      timezone: '时区',
+      postal: '邮政编码',
+      location: '地理位置',
+      error: {
+        failed: 'IP信息查询失败',
+        invalid: '无效的IP地址',
+        network: '网络错误，请检查网络连接',
+        timeout: '请求超时，请重试',
+        rateLimit: '请求过于频繁，请稍后再试',
+        incomplete: '获取到的IP信息不完整'
+      }
+    },
+    passwordGen: {
+      title: '密码生成器',
+      length: '密码长度',
+      uppercase: '包含大写字母 (A-Z)',
+      lowercase: '包含小写字母 (a-z)',
+      numbers: '包含数字 (0-9)',
+      symbols: '包含特殊字符 (!@#$...)',
+      generate: '生成密码',
+      copy: '复制密码',
+      success: {
+        copy: '密码已复制到剪贴板',
+        generate: '密码生成成功'
+      },
+      error: {
+        copy: '复制密码失败',
+        empty: '请至少选择一种字符类型'
+      }
+    }
   }
 }

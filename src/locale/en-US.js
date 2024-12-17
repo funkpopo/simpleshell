@@ -188,5 +188,47 @@ export default {
       previous: 'Previous',
       next: 'Next'
     }
+  },
+  tools: {
+    title: 'Tools',
+    ipQuery: {
+      title: 'IP Query',
+      placeholder: 'Enter IP address (leave empty for current IP)',
+      query: 'Query',
+      ip: 'IP Address',
+      country: 'Country',
+      region: 'Region',
+      city: 'City',
+      isp: 'ISP',
+      timezone: 'Timezone',
+      postal: 'Postal Code',
+      location: 'Location',
+      error: {
+        failed: 'Failed to query IP information',
+        invalid: 'Invalid IP address',
+        network: 'Network error, please check your connection',
+        timeout: 'Request timeout, please try again',
+        rateLimit: 'Too many requests, please try again later',
+        incomplete: 'Received incomplete IP information'
+      }
+    },
+    passwordGen: {
+      title: 'Password Generator',
+      length: 'Password Length',
+      uppercase: 'Include Uppercase Letters (A-Z)',
+      lowercase: 'Include Lowercase Letters (a-z)',
+      numbers: 'Include Numbers (0-9)',
+      symbols: 'Include Special Characters (!@#$...)',
+      generate: 'Generate',
+      copy: 'Copy Password',
+      success: {
+        copy: 'Password copied to clipboard',
+        generate: 'Password generated successfully'
+      },
+      error: {
+        copy: 'Failed to copy password',
+        empty: 'Please select at least one character type'
+      }
+    }
   }
 }
