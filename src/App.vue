@@ -565,20 +565,18 @@
     </div>
   </div>
 
-  <!-- 修改 AI 助手组件 -->
+  <!-- 添加 AI 助手组件 -->
   <AIAssistant
     v-if="showAI"
     @close="closeAI"
     @minimize="minimizeAI"
-    :isMinimized="isAIMinimized"
   />
 
-  <!-- 修改工具窗口组件 -->
+  <!-- 在 AIAssistant 组件后添加 ToolsWindow -->
   <ToolsWindow
     v-if="showTools"
     @close="closeTools"
     @minimize="minimizeTools"
-    :isMinimized="isToolsMinimized"
     :positionIndex="1"
   />
 </template>
@@ -2202,7 +2200,7 @@ export default {
       }
     }
 
-    //  setup 中添加
+    // ��� setup 中添加
     const cancelSetPassword = () => {
       isLocked.value = false;
       lockForm.password = '';
@@ -2211,94 +2209,18 @@ export default {
 
     // 在 setup 中添加 AI 相关方法
     const showAI = ref(false)
-    const isAIMinimized = ref(false)
-    const showTools = ref(false)
-    const isToolsMinimized = ref(false)
 
-    // 修改全局快捷键监听
-    onMounted(() => {
-      console.log('Setting up shortcut listeners...')
-      
-      // 移除旧的监听器
-      window.electronAPI.ipcRenderer.removeAllListeners('toggle-ai-assistant')
-      window.electronAPI.ipcRenderer.removeAllListeners('toggle-tools')
-      
-      // 添加新的监听器
-      const cleanupAI = window.electronAPI.onToggleAIAssistant(() => {
-        console.log('AI Assistant shortcut triggered in renderer')
-        // 直接修改状态，不使用 nextTick
-        if (!showAI.value) {
-          showAI.value = true
-          isAIMinimized.value = false
-        } else {
-          isAIMinimized.value = !isAIMinimized.value
-        }
-        console.log('AI state after toggle:', { showAI: showAI.value, isAIMinimized: isAIMinimized.value })
-      })
-
-      const cleanupTools = window.electronAPI.onToggleTools(() => {
-        console.log('Tools shortcut triggered in renderer')
-        // 直接修改状态，不使用 nextTick
-        if (!showTools.value) {
-          showTools.value = true
-          isToolsMinimized.value = false
-        } else {
-          isToolsMinimized.value = !isToolsMinimized.value
-        }
-        console.log('Tools state after toggle:', { showTools: showTools.value, isToolsMinimized: isToolsMinimized.value })
-      })
-
-      // 组件卸载时清理监听器
-      onUnmounted(() => {
-        console.log('Cleaning up shortcut listeners...')
-        if (cleanupAI) cleanupAI()
-        if (cleanupTools) cleanupTools()
-        window.electronAPI.ipcRenderer.removeAllListeners('toggle-ai-assistant')
-        window.electronAPI.ipcRenderer.removeAllListeners('toggle-tools')
-      })
-    })
-
-    // 修改切换函数，使用同步方式
     const toggleAI = () => {
-      console.log('Toggling AI Assistant - before:', { showAI: showAI.value, isAIMinimized: isAIMinimized.value })
-      if (!showAI.value) {
-        showAI.value = true
-        isAIMinimized.value = false
-      } else {
-        isAIMinimized.value = !isAIMinimized.value
-      }
-      console.log('Toggling AI Assistant - after:', { showAI: showAI.value, isAIMinimized: isAIMinimized.value })
-    }
-
-    const toggleTools = () => {
-      console.log('Toggling Tools - before:', { showTools: showTools.value, isToolsMinimized: isToolsMinimized.value })
-      if (!showTools.value) {
-        showTools.value = true
-        isToolsMinimized.value = false
-      } else {
-        isToolsMinimized.value = !isToolsMinimized.value
-      }
-      console.log('Toggling Tools - after:', { showTools: showTools.value, isToolsMinimized: isToolsMinimized.value })
-    }
-
-    // 处理 AI 助手的最小化和关闭
-    const minimizeAI = () => {
-      isAIMinimized.value = true
+      showAI.value = !showAI.value
     }
 
     const closeAI = () => {
       showAI.value = false
-      isAIMinimized.value = false
     }
 
-    // 处理工具窗口的最小化和关闭
-    const minimizeTools = () => {
-      isToolsMinimized.value = true
-    }
-
-    const closeTools = () => {
-      showTools.value = false
-      isToolsMinimized.value = false
+    const minimizeAI = () => {
+      // 不再修改 showAI 的值，只是让 AIAssistant 组件自己处理最小化状态
+      console.log('AI window minimized')
     }
 
     // 移除动态计算的 aiIcon
@@ -2307,7 +2229,7 @@ export default {
     // 在 setup 函数中
     const sftpExplorerWidth = ref(300) // 默认值
 
-    // 添加加载 SFTP 宽度设的方法
+    // 添加加载 SFTP 宽度设���的方法
     const loadSFTPWidthSettings = async () => {
       try {
         const config = await ipcRenderer.invoke('read-config')
@@ -2384,6 +2306,60 @@ export default {
     onMounted(() => {
       loadSettings()
       // ... 其他现有的 onMounted 代码
+    })
+
+    // 添加工具窗口相关的状态
+    const showTools = ref(false)
+    const isToolsMinimized = ref(false)
+
+    // 添加工具窗口相关的方法
+    const toggleTools = () => {
+      if (isToolsMinimized.value) {
+        isToolsMinimized.value = false
+      }
+      showTools.value = !showTools.value
+    }
+
+    const closeTools = () => {
+      showTools.value = false
+      isToolsMinimized.value = false
+    }
+
+    const minimizeTools = () => {
+      isToolsMinimized.value = true
+    }
+
+    // 添加快捷键处理
+    const handleKeyDown = (e) => {
+      // AI助手快捷键 (Ctrl+Shift+A)
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault() // 阻止默认行为
+        if (showAI.value) {
+          minimizeAI()
+        } else {
+          showAI.value = true
+        }
+      }
+      
+      // 工具窗口快捷键 (Ctrl+Shift+T)
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 't') {
+        e.preventDefault() // 阻止默认行为
+        if (showTools.value) {
+          minimizeTools()
+        } else {
+          showTools.value = true
+        }
+      }
+    }
+
+    // 在组件挂载时添加事件监听
+    onMounted(() => {
+      window.addEventListener('keydown', handleKeyDown)
+    })
+
+    // 在组件卸载时移除事件监听
+    onUnmounted(() => {
+      window.removeEventListener('keydown', handleKeyDown)
     })
 
     return {
@@ -2476,13 +2452,9 @@ export default {
       cancelSetPassword,
       handleConnectionStatus,
       showAI,
-      isAIMinimized,
       toggleAI,
-      toggleTools,
-      minimizeAI,
       closeAI,
-      minimizeTools,
-      closeTools,
+      minimizeAI,
       aiIcon,
       handleLanguageChange,
       refreshConnections,
@@ -2490,12 +2462,10 @@ export default {
       generateRandomColor,
       showTools,
       isToolsMinimized,
-      handleLanguageChange,
-      sftpExplorerWidth,
-      loadSFTPWidthSettings,
-      saveSFTPWidthSettings,
-      loadWidthSettings,
-      saveWidthSettings,
+      toggleTools,
+      closeTools,
+      minimizeTools,
+      handleKeyDown,
     }
   }
 }
@@ -2510,31 +2480,6 @@ export default {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  user-select: text;  /* 允许文字选择 */
-}
-
-/* 只在特定区域禁用文字选择 */
-.header-content,
-.arco-layout-header,
-.tab-item,
-.folder-item,
-.connection-entry {
-  user-select: none;
-}
-
-/* 允许连接信息区域的文字选择 */
-.connection-info,
-.terminal-container,
-.sftp-explorer-component {
-  user-select: text;
-}
-
-/* 允许对话框内容的文字选择 */
-.arco-modal-content,
-.arco-form-item-label,
-.arco-descriptions-item-label,
-.arco-descriptions-item-value {
-  user-select: text;
 }
 
 .layout {

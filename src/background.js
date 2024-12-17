@@ -1,6 +1,6 @@
 'use strict'
 
-import { app, protocol, BrowserWindow, dialog, Menu, ipcMain, globalShortcut } from 'electron'
+import { app, protocol, BrowserWindow, dialog, Menu, ipcMain } from 'electron'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer'
 import { initialize, enable } from '@electron/remote/main'
@@ -325,55 +325,6 @@ function createSplashWindow() {
   splashWindow.setIgnoreMouseEvents(true)
 }
 
-// 修改 registerShortcuts 函数
-const registerShortcuts = () => {
-  try {
-    globalShortcut.unregisterAll()
-
-    const shortcuts = [
-      {
-        key: 'CommandOrControl+Shift+A',
-        action: 'toggle-ai-assistant',
-        description: 'Toggle AI Assistant'
-      },
-      {
-        key: 'CommandOrControl+Shift+T',
-        action: 'toggle-tools',
-        description: 'Toggle Tools'
-      }
-    ]
-
-    shortcuts.forEach(({ key, action, description }) => {
-      const success = globalShortcut.register(key, () => {
-        if (!mainWindow) return
-        console.log(`Shortcut triggered: ${description}`)
-        try {
-          mainWindow.webContents.send(action)
-          // 确保窗口在前台
-          if (mainWindow.isMinimized()) mainWindow.restore()
-          mainWindow.focus()
-        } catch (error) {
-          console.error(`Error sending ${description} event:`, error)
-        }
-      })
-
-      if (!success) {
-        console.error(`Failed to register shortcut: ${description}`)
-      } else {
-        console.log(`Registered shortcut: ${description}`)
-      }
-    })
-
-    // 验证注册状态
-    shortcuts.forEach(({ key, description }) => {
-      const isRegistered = globalShortcut.isRegistered(key)
-      console.log(`Shortcut ${description} registered: ${isRegistered}`)
-    })
-  } catch (error) {
-    console.error('Error registering shortcuts:', error)
-  }
-}
-
 // 修改 createWindow 函数
 async function createWindow() {
   try {
@@ -500,29 +451,6 @@ async function createWindow() {
           console.error('Failed to create test WebSocket:', error);
         }
       `)
-    })
-
-    // 等待窗口完全加载后再注册快捷键
-    mainWindow.webContents.on('did-finish-load', () => {
-      console.log('Window loaded, registering shortcuts...')
-      registerShortcuts()
-    })
-
-    // 监听窗口焦点变化
-    mainWindow.on('focus', () => {
-      console.log('Window focused, re-registering shortcuts...')
-      registerShortcuts()
-    })
-
-    mainWindow.on('blur', () => {
-      console.log('Window blurred, unregistering shortcuts...')
-      globalShortcut.unregisterAll()
-    })
-
-    // 确保在应用退出时清理快捷键
-    app.on('will-quit', () => {
-      console.log('Application quitting, unregistering shortcuts...')
-      globalShortcut.unregisterAll()
     })
   } catch (error) {
     console.error('Error in createWindow:', error)

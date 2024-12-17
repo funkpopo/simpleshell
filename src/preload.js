@@ -39,43 +39,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   process: {
     platform: process.platform,
     env: process.env
-  },
-  // 添加快捷键事件监听器
-  onToggleAIAssistant: (callback) => {
-    const handler = (event) => {
-      console.log('AI Assistant toggle event received in preload')
-      try {
-        setTimeout(() => {
-          callback()
-        }, 0)
-      } catch (error) {
-        console.error('Error in AI Assistant toggle handler:', error)
-      }
-    }
-    ipcRenderer.removeAllListeners('toggle-ai-assistant')
-    ipcRenderer.on('toggle-ai-assistant', handler)
-    return () => {
-      console.log('Removing AI Assistant toggle listener')
-      ipcRenderer.removeListener('toggle-ai-assistant', handler)
-    }
-  },
-  onToggleTools: (callback) => {
-    const handler = (event) => {
-      console.log('Tools toggle event received in preload')
-      try {
-        setTimeout(() => {
-          callback()
-        }, 0)
-      } catch (error) {
-        console.error('Error in Tools toggle handler:', error)
-      }
-    }
-    ipcRenderer.removeAllListeners('toggle-tools')
-    ipcRenderer.on('toggle-tools', handler)
-    return () => {
-      console.log('Removing Tools toggle listener')
-      ipcRenderer.removeListener('toggle-tools', handler)
-    }
   }
 })
 

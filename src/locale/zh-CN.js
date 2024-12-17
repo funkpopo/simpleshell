@@ -156,6 +156,7 @@ export default {
   },
   aiAssistant: {
     title: 'AI 助手',
+    shortcut: 'Ctrl+Shift+A',
     settings: 'AI 设置',
     currentModel: '当前模型',
     addProvider: '添加服务提供商',
@@ -197,6 +198,7 @@ export default {
   },
   tools: {
     title: '工具',
+    shortcut: 'Ctrl+Shift+T',
     ipQuery: {
       title: 'IP查询',
       placeholder: '请输入IP地址（留空查询当前IP）',

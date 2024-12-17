@@ -1574,6 +1574,30 @@ export default {
     const handleSpecialKeys = (event) => {
       if (!term || !isTerminalReady.value) return true
 
+      // 处理 AI 助手快捷键 (Ctrl+Shift+A)
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        // 发送自定义事件到父组件
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'a',
+          ctrlKey: true,
+          shiftKey: true
+        }))
+        return false
+      }
+
+      // 处理工具窗口快捷键 (Ctrl+Shift+T)
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 't') {
+        event.preventDefault()
+        // 发送自定义事件到父组件
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 't',
+          ctrlKey: true,
+          shiftKey: true
+        }))
+        return false
+      }
+
       // 处理 ALT+F4 关闭程序
       if (event.altKey && event.key === 'F4') {
         const { app } = require('@electron/remote')

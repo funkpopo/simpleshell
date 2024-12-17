@@ -154,6 +154,7 @@ export default {
   },
   aiAssistant: {
     title: 'AI Assistant',
+    shortcut: 'Ctrl+Shift+A',
     settings: 'Settings',
     currentModel: 'Current Model',
     addProvider: 'Add Provider',
@@ -191,6 +192,7 @@ export default {
   },
   tools: {
     title: 'Tools',
+    shortcut: 'Ctrl+Shift+T',
     ipQuery: {
       title: 'IP Query',
       placeholder: 'Enter IP address (leave empty for current IP)',

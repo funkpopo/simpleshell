@@ -14,7 +14,10 @@
       @mousedown="startDrag"
     >
       <div class="header-left">
-        <span class="ai-window-title">{{ $t('aiAssistant.title') }}</span>
+        <span class="ai-window-title">
+          {{ $t('aiAssistant.title') }}
+          <span class="shortcut-hint">(Ctrl+Shift+A)</span>
+        </span>
         <span class="current-model">{{ aiSettings.currentModel }}</span>
       </div>
       <div class="ai-window-controls">
@@ -460,18 +463,13 @@ export default {
     IconEdit,
     IconCopy
   },
-  props: {
-    isMinimized: {
-      type: Boolean,
-      default: false
-    }
-  },
   emits: ['close', 'minimize'],
   setup(props, { emit }) {
     const i18n = inject('i18n')
     const t = (key, params) => i18n.t(key, params)
     
     const position = ref({ x: 100, y: 100 })
+    const isMinimized = ref(false)
     const isDragging = ref(false)
     const isResizing = ref(false)
     const resizeType = ref('')
@@ -976,10 +974,12 @@ export default {
     }
 
     const minimize = () => {
+      isMinimized.value = true
       emit('minimize')
     }
 
     const restore = () => {
+      isMinimized.value = false
       // 确保窗口在可视区域内
       const newPos = keepInBounds(
         position.value.x,
@@ -1002,6 +1002,7 @@ export default {
     }
 
     const close = () => {
+      isMinimized.value = false
       emit('close')
     }
 
@@ -1378,6 +1379,7 @@ export default {
 
     return {
       position,
+      isMinimized,
       isDragging,
       windowSize,
       startDrag,
@@ -2118,5 +2120,13 @@ export default {
 
 .prompt-modal :deep(.arco-textarea-wrapper) {
   font-family: 'Arial Custom', monospace;
+}
+
+/* 添加快捷键提示样式 */
+.shortcut-hint {
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-left: 8px;
+  font-weight: normal;
 }
 </style> 

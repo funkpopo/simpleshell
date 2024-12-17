@@ -15,7 +15,10 @@
       @mousedown="startDrag"
     >
       <div class="header-left">
-        <span class="tools-window-title">{{ $t('tools.title') }}</span>
+        <span class="tools-window-title">
+          {{ $t('tools.title') }}
+          <span class="shortcut-hint">(Ctrl+Shift+T)</span>
+        </span>
       </div>
       <div class="tools-window-controls">
         <a-button
@@ -202,10 +205,6 @@ export default {
     positionIndex: {
       type: Number,
       default: 0
-    },
-    isMinimized: {
-      type: Boolean,
-      default: false
     }
   },
   setup(props, { emit }) {
@@ -213,6 +212,7 @@ export default {
     const t = (key, params) => i18n.t(key, params)
 
     const position = ref({ x: 150, y: 150 })
+    const isMinimized = ref(false)
     const isDragging = ref(false)
     const isResizing = ref(false)
     const resizeType = ref('')
@@ -432,10 +432,12 @@ export default {
 
     // 窗口控制函数
     const minimize = () => {
+      isMinimized.value = true
       emit('minimize')
     }
 
     const restore = () => {
+      isMinimized.value = false
       const newPos = keepInBounds(
         position.value.x,
         position.value.y,
@@ -446,6 +448,7 @@ export default {
     }
 
     const close = () => {
+      isMinimized.value = false
       emit('close')
     }
 
@@ -484,6 +487,7 @@ export default {
 
     return {
       position,
+      isMinimized,
       windowSize,
       activeTab,
       ipAddress,
@@ -716,5 +720,12 @@ export default {
   padding: 2px 6px;
   background-color: var(--color-fill-2);
   border-radius: 4px;
+}
+
+.shortcut-hint {
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-left: 8px;
+  font-weight: normal;
 }
 </style> 
