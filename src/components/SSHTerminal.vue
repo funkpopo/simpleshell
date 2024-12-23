@@ -237,7 +237,7 @@ export default {
         if (term) {
           term.resize(newCols, newRows)
           
-          // 通知服务器新的终端������
+          // 通知服务器新的终端大���
           if (socket && isTerminalReady.value) {
             socket.emit('resize', { 
               session_id: props.sessionId, 
@@ -1685,28 +1685,14 @@ export default {
       if (event.key.startsWith('Arrow')) {
         const key = event.key.toLowerCase()
         
-        // 定义不同组合键的序列
+        // 定义不同模式下的按键序列
         const sequences = {
-          // 普通方向键
+          // 普通终端模式
           normal: {
             arrowup: '\x1b[A',
             arrowdown: '\x1b[B',
             arrowright: '\x1b[C',
             arrowleft: '\x1b[D'
-          },
-          // Shift + 方向键
-          shift: {
-            arrowup: '\x1b[1;2A',    // 向上选择
-            arrowdown: '\x1b[1;2B',  // 向下选择
-            arrowright: '\x1b[1;2C', // 向右选择
-            arrowleft: '\x1b[1;2D'   // 向左选择
-          },
-          // Ctrl + 方向键
-          ctrl: {
-            arrowup: '\x1b[1;5A',    // 向上跳转
-            arrowdown: '\x1b[1;5B',  // 向下跳转
-            arrowright: '\x1b[1;5C', // 向右跳转一个单词
-            arrowleft: '\x1b[1;5D'   // 向左跳转一个单词
           },
           // vim 插入模式
           vimInsert: {
@@ -1723,33 +1709,17 @@ export default {
             hideSuggestionMenu()
           }
 
-          // 根据当前状态和组合键选择合适的序列
+          // 根据当前状态选择合适的序列
           let sequence
           if (isInEditorMode.value) {
             // 检测是否在 vim 插入模式
             const isVimInsertMode = term.buffer.active.getLine(term.buffer.active.length - 1)?.translateToString().includes('-- INSERT --')
-            
-            if (isVimInsertMode) {
-              sequence = sequences.vimInsert[key]
-            } else if (event.shiftKey) {
-              sequence = sequences.shift[key]
-            } else if (event.ctrlKey) {
-              sequence = sequences.ctrl[key]
-            } else {
-              sequence = sequences.normal[key]
-            }
+            sequence = isVimInsertMode ? sequences.vimInsert[key] : sequences.normal[key]
           } else {
-            // 非编辑器模式下的组合键处理
-            if (event.shiftKey) {
-              sequence = sequences.shift[key]
-            } else if (event.ctrlKey) {
-              sequence = sequences.ctrl[key]
-            } else {
-              sequence = sequences.normal[key]
-            }
+            sequence = sequences.normal[key]
           }
 
-          // 发送序列
+          // 发送单个序列
           if (sequence) {
             socket.emit('ssh_input', { 
               session_id: props.sessionId, 
@@ -1981,7 +1951,7 @@ export default {
       isResourceMonitorCollapsed.value = !isResourceMonitorCollapsed.value
     }
 
-    // �� Vue 实例中获取 $t 方法
+    // 在 Vue 实例中获取 $t 方法
     const t = getCurrentInstance()?.proxy?.$t || ((key) => key)
 
     // 监听 active 变化
