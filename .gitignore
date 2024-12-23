@@ -62,6 +62,9 @@ temp/
 # SFTP log
 sftp_log.log
 
+# AI_chat_history
+chat_history.json
+
 # Electron-builder output
 /dist_electron
 /userdata

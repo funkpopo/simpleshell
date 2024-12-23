@@ -181,12 +181,22 @@ export default {
     settingsSaved: 'Settings saved successfully',
     chatHistory: 'Chat History',
     restore: 'Restore',
-    delete: 'Delete', 
+    delete: 'Delete',
     noHistory: 'No history',
     noContent: 'No content',
     historyRestored: 'Chat history restored',
     historyDeleted: 'History deleted',
-    messages: 'messages'
+    messages: 'messages',
+    history: 'Chat History',
+    noHistory: 'No history',
+    restore: 'Restore',
+    delete: 'Delete',
+    historyRestored: 'Chat history restored',
+    historyDeleted: 'History deleted',
+    loadHistoryError: 'Failed to load history',
+    saveHistoryError: 'Failed to save history',
+    deleteHistoryError: 'Failed to delete history',
+    noContent: 'No content'
   },
   terminal: {
     search: {
