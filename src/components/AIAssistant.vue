@@ -24,6 +24,15 @@
         <a-button
           type="text"
           class="control-btn"
+          @click="showHistory"
+        >
+          <template #icon>
+            <icon-history />
+          </template>
+        </a-button>
+        <a-button
+          type="text"
+          class="control-btn"
           @click="showSettings"
         >
           <template #icon>
@@ -422,6 +431,63 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 修改历史记录对话框 -->
+    <a-modal
+      v-model:visible="historyVisible"
+      :title="$t('aiAssistant.history')"
+      @cancel="closeHistory"
+      class="history-modal"
+      :footer="false"
+      :mask-closable="true"
+    >
+      <div class="history-list">
+        <a-empty v-if="!chatHistories.length" :description="$t('aiAssistant.noHistory')" />
+        <a-list v-else>
+          <a-list-item 
+            v-for="history in chatHistories" 
+            :key="history.id"
+            class="history-list-item"
+          >
+            <div class="history-item">
+              <div class="history-header">
+                <div class="history-info">
+                  <span class="history-time">{{ formatHistoryTime(history.timestamp) }}</span>
+                  <a-tag size="small" class="model-tag">{{ history.model }}</a-tag>
+                </div>
+              </div>
+              <div class="history-content">
+                <div class="message-count">
+                  {{ history.messages.length }} {{ $t('aiAssistant.messages') }}
+                </div>
+                <div class="history-preview">
+                  {{ getHistoryPreview(history.messages) }}
+                </div>
+              </div>
+              <div class="history-actions">
+                <a-button
+                  type="text"
+                  size="mini"
+                  @click.stop="restoreHistory(history)"
+                >
+                  <template #icon><icon-history /></template>
+                  {{ $t('aiAssistant.restore') }}
+                </a-button>
+                <a-button
+                  type="text"
+                  size="mini"
+                  status="danger"
+                  @click.stop="deleteHistory(history.id)"
+                >
+                  <template #icon><icon-delete /></template>
+                  {{ $t('aiAssistant.delete') }}
+                </a-button>
+              </div>
+            </div>
+          </a-list-item>
+        </a-list>
+      </div>
+    </a-modal>
   </div>
 
   <!-- 最小后的浮动按钮 -->
@@ -436,7 +502,7 @@
 
 <script>
 import { ref, onMounted, onUnmounted, nextTick, watch, inject } from 'vue'
-import { IconMinus, IconClose, IconSettings, IconDelete, IconPlus, IconEdit, IconCopy } from '@arco-design/web-vue/es/icon'
+import { IconMinus, IconClose, IconSettings, IconDelete, IconPlus, IconEdit, IconCopy, IconHistory } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue'
 import aiIcon from '@/assets/aiicon.png'
 import { ipcRenderer, shell } from 'electron'
@@ -461,7 +527,8 @@ export default {
     IconDelete,
     IconPlus,
     IconEdit,
-    IconCopy
+    IconCopy,
+    IconHistory
   },
   emits: ['close', 'minimize'],
   setup(props, { emit }) {
@@ -973,7 +1040,7 @@ export default {
       document.body.style.cursor = ''
     }
 
-    const minimize = () => {
+    const minimize = async () => {
       isMinimized.value = true
       emit('minimize')
     }
@@ -1001,8 +1068,15 @@ export default {
       })
     }
 
-    const close = () => {
-      isMinimized.value = false
+    const close = async () => {
+      if (messages.value.length > 0) {
+        try {
+          await saveCurrentChat()
+        } catch (error) {
+          console.error('Failed to save chat history:', error)
+        }
+      }
+      
       emit('close')
     }
 
@@ -1328,6 +1402,107 @@ export default {
       }
     }
 
+    // 添加历史记录对话框
+    const historyVisible = ref(false)
+    const chatHistories = ref([])
+
+    // 格式化历史记录时间
+    const formatHistoryTime = (timestamp) => {
+      const date = new Date(timestamp)
+      return date.toLocaleTimeString()
+    }
+
+    // 获取历史记录预览
+    const getHistoryPreview = (messages) => {
+      // 获取最后一条用户消息作为预览
+      const lastUserMessage = messages
+        .filter(m => m.role === 'user')
+        .pop()
+      if (!lastUserMessage) {
+        return t('aiAssistant.noContent')
+      }
+      // 截取前50个字符作为预览
+      const preview = lastUserMessage.content
+      return preview.length > 50 ? preview.slice(0, 50) + '...' : preview
+    }
+
+    // 恢复历史记录
+    const restoreHistory = (history) => {
+      messages.value = history.messages
+      historyVisible.value = false
+      Message.success(t('aiAssistant.historyRestored'))
+      
+      // 等待 DOM 更新后滚动到底部
+      nextTick(() => {
+        if (messagesContainer.value) {
+          messagesContainer.value.scrollTo({
+            top: messagesContainer.value.scrollHeight,
+            behavior: 'smooth'
+          })
+        }
+      })
+    }
+
+    // 加载历史记录
+    const loadHistories = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/get_chat_histories')
+        const data = await response.json()
+        chatHistories.value = data.sort((a, b) => 
+          new Date(b.timestamp) - new Date(a.timestamp)
+        )
+      } catch (error) {
+        console.error('Failed to load chat histories:', error)
+        Message.error(t('aiAssistant.loadHistoryError'))
+      }
+    }
+
+    // 保存当前会话
+    const saveCurrentChat = async () => {
+      try {
+        if (!messages.value.length) return
+        
+        await fetch('http://localhost:5000/save_chat_history', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            messages: messages.value,
+            model: aiSettings.value.currentModel
+          })
+        })
+      } catch (error) {
+        console.error('Failed to save chat history:', error)
+        Message.error(t('aiAssistant.saveHistoryError'))
+      }
+    }
+
+    // 删除历史记录
+    const deleteHistory = async (historyId) => {
+      try {
+        await fetch(`http://localhost:5000/delete_chat_history/${historyId}`, {
+          method: 'DELETE'
+        })
+        await loadHistories()
+        Message.success(t('aiAssistant.historyDeleted'))
+      } catch (error) {
+        console.error('Failed to delete history:', error)
+        Message.error(t('aiAssistant.deleteHistoryError'))
+      }
+    }
+
+    // 显示历史记录对话框
+    const showHistory = async () => {
+      historyVisible.value = true
+      await loadHistories()
+    }
+
+    // 关闭历史记录对话框
+    const closeHistory = () => {
+      historyVisible.value = false
+    }
+
     onMounted(() => {
       loadSettings()
       loadPrompt()
@@ -1365,7 +1540,7 @@ export default {
       document.addEventListener('click', handleLinkClick)
     })
 
-    onUnmounted(() => {
+    onUnmounted(async () => {
       window.removeEventListener('resize', handleWindowResize)
       
       // 安全地移除滚动事件监听
@@ -1375,6 +1550,15 @@ export default {
 
       // 移除链接点击事件监听
       document.removeEventListener('click', handleLinkClick)
+
+      // 在组件卸载时保存历史记录
+      if (messages.value.length > 0) {
+        try {
+          await saveCurrentChat()
+        } catch (error) {
+          console.error('Failed to save chat history:', error)
+        }
+      }
     })
 
     return {
@@ -1429,7 +1613,17 @@ export default {
       aiPrompt,
       showPromptModal,
       closePromptModal,
-      savePrompt
+      savePrompt,
+      historyVisible,
+      chatHistories,
+      formatHistoryTime,
+      getHistoryPreview,
+      restoreHistory,
+      deleteHistory,
+      loadHistories,
+      saveCurrentChat,
+      showHistory,
+      closeHistory
     }
   }
 }
@@ -2045,7 +2239,7 @@ export default {
   background-color: var(--color-fill-2);
 }
 
-/* 修改消息文本样式,允许选择 */
+/* 修改消息本样式,允许选择 */
 .message-text {
   white-space: pre-wrap;
   word-break: break-word;
@@ -2128,5 +2322,143 @@ export default {
   color: var(--color-text-3);
   margin-left: 8px;
   font-weight: normal;
+}
+
+/* 添加历史记录对话框样式 */
+.history-modal {
+  width: 600px;
+}
+
+.history-modal :deep(.arco-modal-body) {
+  padding: 0;
+}
+
+.history-list {
+  max-height: 500px;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.history-list-item {
+  margin-bottom: 8px;
+}
+
+.history-list-item:last-child {
+  margin-bottom: 0;
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.history-item:hover {
+  background: var(--color-fill-2);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  gap: 16px;
+}
+
+.history-info {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0; /* 允许内容收缩 */
+}
+
+.history-time {
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.model-tag {
+  font-size: 12px;
+  padding: 0 8px;
+  background: var(--color-primary-light-1);
+  color: var(--color-primary-dark-1);
+  border-radius: 4px;
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-actions {
+  display: flex;
+  flex-shrink: 0; /* 防止按钮被压缩 */
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.history-item:hover .history-actions {
+  opacity: 1;
+}
+
+.history-actions .arco-btn {
+  padding: 0 4px;
+  white-space: nowrap; /* 防止按钮文字换行 */
+}
+
+/* 确保按钮图标和文字对齐 */
+.history-actions .arco-btn :deep(.arco-icon) {
+  vertical-align: -0.125em;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+  background-color: var(--color-text-4);
+  border-radius: 3px;
+}
+
+.history-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-3);
+}
+
+/* 在 style 部分添加 */
+.history-modal :deep(.arco-list-content) {
+  border: none;
+}
+
+/* 可选：如果还想移除内边距 */
+.history-modal :deep(.arco-list-content) {
+  padding: 0;
+}
+
+/* 如果有分割线也想移除 */
+.history-modal :deep(.arco-list-item) {
+  border-bottom: none;
+  padding: 0;
+}
+
+/* 调整列表项之间的间距 */
+.history-list-item {
+  margin-bottom: 8px;
+}
+
+.history-list-item:last-child {
+  margin-bottom: 0;
 }
 </style> 

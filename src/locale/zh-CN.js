@@ -192,7 +192,17 @@ export default {
     noContent: '无内容',
     historyRestored: '已恢复历史会话',
     historyDeleted: '已删除历史记录',
-    messages: '条消息'
+    messages: '条消息',
+    history: '会话历史',
+    noHistory: '暂无历史记录',
+    restore: '恢复',
+    delete: '删除',
+    historyRestored: '已恢复历史会话',
+    historyDeleted: '已删除历史记录',
+    loadHistoryError: '加载历史记录失败',
+    saveHistoryError: '保存历史记录失败',
+    deleteHistoryError: '删除历史记录失败',
+    noContent: '无内容'
   },
   terminal: {
     search: {
