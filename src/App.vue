@@ -3736,4 +3736,28 @@ export default {
   transform: scale(1.05);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
+
+/* 隐藏 arco-layout-sider-children 的滚动条 */
+.arco-layout-sider-children::-webkit-scrollbar {
+  display: none;
+}
+
+.arco-layout-sider-children {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* 保持 connections-list 的滚动条样式 */
+.connections-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.connections-list::-webkit-scrollbar-track {
+  background: var(--color-fill-2);
+}
+
+.connections-list::-webkit-scrollbar-thumb {
+  background: var(--color-fill-4);
+  border-radius: 2px;
+}
 </style>

@@ -237,7 +237,7 @@ export default {
         if (term) {
           term.resize(newCols, newRows)
           
-          // 通知服务器新的终端大���
+          // 通知服务器新的终端大小
           if (socket && isTerminalReady.value) {
             socket.emit('resize', { 
               session_id: props.sessionId, 
@@ -376,7 +376,8 @@ export default {
       event.preventDefault()
       if (term && isTerminalReady.value) {
         const text = event.clipboardData.getData('text')
-        handlePastedText(text)
+        // 使用统一的粘贴处理函数
+        handlePastedText(text);
       }
     }
 
@@ -988,7 +989,7 @@ export default {
             }
 
             if (index < lines.length - 1) {
-              term.write('\r')
+              term.write('\r\n')
             }
           })
 
@@ -1067,7 +1068,7 @@ export default {
       } else if (action === 'paste') {
         navigator.clipboard.readText().then(text => {
           if (term && isTerminalReady.value) {
-            handlePastedText(text)  // 使用统一的粘贴处理函数
+            socket.emit('ssh_input', { session_id: props.sessionId, input: text })
           }
         })
       }
@@ -1097,10 +1098,12 @@ export default {
         return Math.round(((r - 8) / 247) * 24) + 232
       }
 
-      return 16 +
+      const ansi = 16 +
         (36 * Math.round(r / 255 * 5)) +
         (6 * Math.round(g / 255 * 5)) +
         Math.round(b / 255 * 5)
+        
+      return ansi
     }
 
     const loadHighlightPatterns = async () => {
@@ -1848,7 +1851,7 @@ export default {
         const index = parseInt(item.dataset.index)
         if (!isNaN(index) && index >= 0 && index < suggestions.value.length) {
           const selectedCommand = suggestions.value[index]
-          // 清除前输入并填充选中的命令
+          // 清除��前输入并填充选中的命令
           const backspaces = '\b'.repeat(currentInput.value.length)
           socket.emit('ssh_input', { 
             session_id: props.sessionId, 
@@ -1870,11 +1873,13 @@ export default {
 
     // 添加鼠标中键处理函数
     const handleMouseDown = (event) => {
+      // 检查是否是鼠标中键（button 1）
       if (event.button === 1 && term && isTerminalReady.value) {
         event.preventDefault()
         navigator.clipboard.readText().then(text => {
           if (text) {
-            handlePastedText(text)  // 使用统一的粘贴处理函数
+            // 使用统一的粘贴处理函数
+            handlePastedText(text);
           }
         }).catch(err => {
           console.error('Failed to read clipboard:', err)
@@ -1951,7 +1956,7 @@ export default {
       isResourceMonitorCollapsed.value = !isResourceMonitorCollapsed.value
     }
 
-    // 在 Vue 实例中获取 $t 方法
+    // 从 Vue 实例中获取 $t 方法
     const t = getCurrentInstance()?.proxy?.$t || ((key) => key)
 
     // 监听 active 变化
