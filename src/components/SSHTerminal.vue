@@ -237,7 +237,7 @@ export default {
         if (term) {
           term.resize(newCols, newRows)
           
-          // 通知服务器新的终端大小
+          // 通知服务器新的终端������
           if (socket && isTerminalReady.value) {
             socket.emit('resize', { 
               session_id: props.sessionId, 
@@ -376,15 +376,7 @@ export default {
       event.preventDefault()
       if (term && isTerminalReady.value) {
         const text = event.clipboardData.getData('text')
-        // 规范化换行符，移除多余的空行
-        const normalizedText = text
-          .replace(/\r\n/g, '\n') // 将 CRLF 转换为 LF
-          .replace(/\r/g, '\n')   // 将剩余的 CR 转换为 LF
-          .replace(/\n\n+/g, '\n') // 将多个连续换行替换为单个换行
-          .trim() // 移除首尾空白
-
-        // 发送处理后的文本
-        socket.emit('ssh_input', { session_id: props.sessionId, input: normalizedText })
+        handlePastedText(text)
       }
     }
 
@@ -996,7 +988,7 @@ export default {
             }
 
             if (index < lines.length - 1) {
-              term.write('\r\n')
+              term.write('\r')
             }
           })
 
@@ -1075,7 +1067,7 @@ export default {
       } else if (action === 'paste') {
         navigator.clipboard.readText().then(text => {
           if (term && isTerminalReady.value) {
-            socket.emit('ssh_input', { session_id: props.sessionId, input: text })
+            handlePastedText(text)  // 使用统一的粘贴处理函数
           }
         })
       }
@@ -1105,12 +1097,10 @@ export default {
         return Math.round(((r - 8) / 247) * 24) + 232
       }
 
-      const ansi = 16 +
+      return 16 +
         (36 * Math.round(r / 255 * 5)) +
         (6 * Math.round(g / 255 * 5)) +
         Math.round(b / 255 * 5)
-        
-      return ansi
     }
 
     const loadHighlightPatterns = async () => {
@@ -1695,14 +1685,28 @@ export default {
       if (event.key.startsWith('Arrow')) {
         const key = event.key.toLowerCase()
         
-        // 定义不同模式下的按键序列
+        // 定义不同组合键的序列
         const sequences = {
-          // 普通终端模式
+          // 普通方向键
           normal: {
             arrowup: '\x1b[A',
             arrowdown: '\x1b[B',
             arrowright: '\x1b[C',
             arrowleft: '\x1b[D'
+          },
+          // Shift + 方向键
+          shift: {
+            arrowup: '\x1b[1;2A',    // 向上选择
+            arrowdown: '\x1b[1;2B',  // 向下选择
+            arrowright: '\x1b[1;2C', // 向右选择
+            arrowleft: '\x1b[1;2D'   // 向左选择
+          },
+          // Ctrl + 方向键
+          ctrl: {
+            arrowup: '\x1b[1;5A',    // 向上跳转
+            arrowdown: '\x1b[1;5B',  // 向下跳转
+            arrowright: '\x1b[1;5C', // 向右跳转一个单词
+            arrowleft: '\x1b[1;5D'   // 向左跳转一个单词
           },
           // vim 插入模式
           vimInsert: {
@@ -1719,17 +1723,33 @@ export default {
             hideSuggestionMenu()
           }
 
-          // 根据当前状态选择合适的序列
+          // 根据当前状态和组合键选择合适的序列
           let sequence
           if (isInEditorMode.value) {
             // 检测是否在 vim 插入模式
             const isVimInsertMode = term.buffer.active.getLine(term.buffer.active.length - 1)?.translateToString().includes('-- INSERT --')
-            sequence = isVimInsertMode ? sequences.vimInsert[key] : sequences.normal[key]
+            
+            if (isVimInsertMode) {
+              sequence = sequences.vimInsert[key]
+            } else if (event.shiftKey) {
+              sequence = sequences.shift[key]
+            } else if (event.ctrlKey) {
+              sequence = sequences.ctrl[key]
+            } else {
+              sequence = sequences.normal[key]
+            }
           } else {
-            sequence = sequences.normal[key]
+            // 非编辑器模式下的组合键处理
+            if (event.shiftKey) {
+              sequence = sequences.shift[key]
+            } else if (event.ctrlKey) {
+              sequence = sequences.ctrl[key]
+            } else {
+              sequence = sequences.normal[key]
+            }
           }
 
-          // 发送单个序列
+          // 发送序列
           if (sequence) {
             socket.emit('ssh_input', { 
               session_id: props.sessionId, 
@@ -1858,7 +1878,7 @@ export default {
         const index = parseInt(item.dataset.index)
         if (!isNaN(index) && index >= 0 && index < suggestions.value.length) {
           const selectedCommand = suggestions.value[index]
-          // 清除��前输入并填充选中的命令
+          // 清除前输入并填充选中的命令
           const backspaces = '\b'.repeat(currentInput.value.length)
           socket.emit('ssh_input', { 
             session_id: props.sessionId, 
@@ -1880,15 +1900,11 @@ export default {
 
     // 添加鼠标中键处理函数
     const handleMouseDown = (event) => {
-      // 检查是否是鼠标中键（button 1）
       if (event.button === 1 && term && isTerminalReady.value) {
         event.preventDefault()
         navigator.clipboard.readText().then(text => {
           if (text) {
-            socket.emit('ssh_input', { 
-              session_id: props.sessionId, 
-              input: text 
-            })
+            handlePastedText(text)  // 使用统一的粘贴处理函数
           }
         }).catch(err => {
           console.error('Failed to read clipboard:', err)
@@ -1965,7 +1981,7 @@ export default {
       isResourceMonitorCollapsed.value = !isResourceMonitorCollapsed.value
     }
 
-    // 从 Vue 实例中获取 $t 方法
+    // �� Vue 实例中获取 $t 方法
     const t = getCurrentInstance()?.proxy?.$t || ((key) => key)
 
     // 监听 active 变化
@@ -2033,6 +2049,70 @@ export default {
       } catch (error) {
         console.error('Error checking command echo:', error)
         return false
+      }
+    }
+
+    // 添加统一的粘贴文本处理函数
+    const handlePastedText = async (text) => {
+      if (!text || !socket) return
+      
+      // 规范化换行符
+      const normalizedText = text
+        .replace(/\r\n/g, '\n')  // 将 CRLF 转换为 LF
+        .replace(/\r/g, '\n')    // 将剩余的 CR 转换为 LF
+      
+      // 分割成行，但不进行 trim()，以保留缩进
+      const lines = normalizedText.split('\n')
+      const buffer = []
+      
+      // 处理每一行，保留有效的空白字符
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        const trimmedLine = line.trim()
+        
+        // 如果是非空行，保留原始格式（包括缩进）
+        // 如果是空行，仅在有效内容行之间保留
+        if (trimmedLine !== '' || 
+           (i > 0 && lines[i-1].trim() !== '' && 
+            i < lines.length-1 && lines[i+1].trim() !== '')) {
+          // 保留原始行（包括缩进）
+          buffer.push(line)
+        }
+      }
+      
+      // 移除首尾的空行
+      while (buffer.length > 0 && buffer[0].trim() === '') {
+        buffer.shift()
+      }
+      while (buffer.length > 0 && buffer[buffer.length - 1].trim() === '') {
+        buffer.pop()
+      }
+      
+      // 逐行发送文本
+      for (let i = 0; i < buffer.length; i++) {
+        const line = buffer[i]
+        const isLastLine = i === buffer.length - 1
+        
+        // 发送当前行
+        socket.emit('ssh_input', {
+          session_id: props.sessionId,
+          input: line,
+          isPasted: true,
+          isLastLine: isLastLine
+        })
+        
+        // 如果不是最后一行，发送换行符
+        if (!isLastLine) {
+          await new Promise(resolve => setTimeout(resolve, 5))
+          socket.emit('ssh_input', {
+            session_id: props.sessionId,
+            input: '',
+            isPasted: true
+          })
+        }
+        
+        // 添加小延迟确保顺序
+        await new Promise(resolve => setTimeout(resolve, 5))
       }
     }
 

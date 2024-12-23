@@ -443,6 +443,8 @@ def handle_ssh_input(data):
         client_id = request.sid
         session_id = data['session_id']
         input_data = data['input']
+        is_pasted = data.get('isPasted', False)
+        is_last_line = data.get('isLastLine', False)
         
         print(f"Received input for session {session_id}: {input_data.encode()}")
         
@@ -454,8 +456,23 @@ def handle_ssh_input(data):
                 raise Exception('Session belongs to another client')
             
             with session.lock:
-                # 直接发送输入到服务器，让服务器处理回显
-                session.channel.send(input_data)
+                if is_pasted:
+                    # 处理粘贴的内容
+                    if input_data == '\n':
+                        # 对于粘贴内容的换行符，直接发送不做处理
+                        session.channel.send(input_data)
+                    else:
+                        # 对于粘贴的文本行，去除可能的尾部空白
+                        cleaned_input = input_data.rstrip()
+                        if cleaned_input:
+                            session.channel.send(cleaned_input)
+                            # 如果不是最后一行，添加换行符
+                            if not is_last_line:
+                                session.channel.send('\n')
+                else:
+                    # 非粘贴内容，保持原有行为
+                    session.channel.send(input_data)
+                
                 print(f"Input sent to channel for session {session_id}")
                 
     except Exception as e:
