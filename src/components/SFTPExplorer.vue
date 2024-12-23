@@ -723,7 +723,6 @@ export default {
         updateNode(fileTree.value[0], newChildren);
 
         console.log('Directory refreshed:', path);
-        Message.success(`Refreshed ${path}`);
       } catch (error) {
         console.error('Failed to refresh directory:', error);
         Message.error('Failed to refresh directory');
