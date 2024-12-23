@@ -1775,6 +1775,83 @@ def query_ip():
             'error': str(e)
         })
 
+# 添加历史记录相关的路由
+@app.route('/save_chat_history', methods=['POST'])
+def save_chat_history():
+    try:
+        data = request.json
+        history_file = os.path.join(get_executable_dir(), 'chat_history.json')
+        
+        # 生成唯一ID和时间戳
+        history_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        
+        history_entry = {
+            'id': history_id,
+            'timestamp': timestamp,
+            'messages': data['messages'],
+            'model': data.get('model', 'Unknown')
+        }
+        
+        # 读取现有历史记录
+        histories = []
+        if os.path.exists(history_file):
+            with open(history_file, 'r', encoding='utf-8') as f:
+                histories = json.load(f)
+                
+        # 添加新记录
+        histories.append(history_entry)
+        
+        # 保存历史记录
+        with open(history_file, 'w', encoding='utf-8') as f:
+            json.dump(histories, f, ensure_ascii=False, indent=2)
+            
+        return jsonify({
+            'status': 'success',
+            'history_id': history_id
+        })
+    except Exception as e:
+        logger.error(f"Error saving chat history: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_chat_histories', methods=['GET'])
+def get_chat_histories():
+    try:
+        history_file = os.path.join(get_executable_dir(), 'chat_history.json')
+        if not os.path.exists(history_file):
+            return jsonify([])
+            
+        with open(history_file, 'r', encoding='utf-8') as f:
+            histories = json.load(f)
+            
+        return jsonify(histories)
+    except Exception as e:
+        logger.error(f"Error getting chat histories: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/delete_chat_history/<history_id>', methods=['DELETE'])
+def delete_chat_history(history_id):
+    try:
+        history_file = os.path.join(get_executable_dir(), 'chat_history.json')
+        if not os.path.exists(history_file):
+            return jsonify({'status': 'success'})
+            
+        # 读取现有历史记录
+        with open(history_file, 'r', encoding='utf-8') as f:
+            histories = json.load(f)
+            
+        # 过滤掉要删除的记录
+        histories = [h for h in histories if h['id'] != history_id]
+        
+        # 保存更新后的历史记录
+        with open(history_file, 'w', encoding='utf-8') as f:
+            json.dump(histories, f, ensure_ascii=False, indent=2)
+            
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        logger.error(f"Error deleting chat history: {e}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     try:
         # 确保日志文件目录存在

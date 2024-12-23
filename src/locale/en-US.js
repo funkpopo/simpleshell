@@ -178,7 +178,15 @@ export default {
     requiredFields: 'Please fill in all required fields',
     modelAdded: 'Model added successfully',
     modelUpdated: 'Model settings updated',
-    settingsSaved: 'Settings saved successfully'
+    settingsSaved: 'Settings saved successfully',
+    chatHistory: 'Chat History',
+    restore: 'Restore',
+    delete: 'Delete', 
+    noHistory: 'No history',
+    noContent: 'No content',
+    historyRestored: 'Chat history restored',
+    historyDeleted: 'History deleted',
+    messages: 'messages'
   },
   terminal: {
     search: {

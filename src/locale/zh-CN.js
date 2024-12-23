@@ -184,7 +184,15 @@ export default {
     editPrompt: '编辑提示词',
     promptLabel: '系统提示词',
     promptPlaceholder: '在此输入系统提示词，用于指导 AI 助手的行为...',
-    promptSaved: '提示词保存成功'
+    promptSaved: '提示词保存成功',
+    chatHistory: '会话历史',
+    restore: '恢复',
+    delete: '删除',
+    noHistory: '暂无历史记录',
+    noContent: '无内容',
+    historyRestored: '已恢复历史会话',
+    historyDeleted: '已删除历史记录',
+    messages: '条消息'
   },
   terminal: {
     search: {

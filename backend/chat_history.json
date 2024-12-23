@@ -1,0 +1,19 @@
+[
+  {
+    "id": "fe0b279d-da09-4ada-ac2e-7e3987c5253a",
+    "timestamp": "2024-12-23T12:54:51.031078",
+    "messages": [
+      {
+        "content": "你好啊",
+        "role": "user",
+        "timestamp": 1734929060894
+      },
+      {
+        "content": "你好！有什么我可以帮助你的吗？",
+        "role": "assistant",
+        "timestamp": 1734929060905
+      }
+    ],
+    "model": "gpt-4o"
+  }
+]
