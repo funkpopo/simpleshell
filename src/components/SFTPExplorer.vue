@@ -829,12 +829,6 @@ export default {
           label: t('sftp.newFolder'),
           click: () => createNewFolder(nodeData)
         }));
-
-        // 添加文件下载选项
-        menu.append(new MenuItem({
-          label: t('sftp.downloadFolder'),
-          click: () => downloadFolder(nodeData)
-        }));
       } else {
         // 文件下载选项
         menu.append(new MenuItem({
