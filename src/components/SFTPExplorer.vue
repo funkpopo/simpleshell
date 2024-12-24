@@ -829,6 +829,12 @@ export default {
           label: t('sftp.newFolder'),
           click: () => createNewFolder(nodeData)
         }));
+
+        // 添加文件夹下载选项
+        menu.append(new MenuItem({
+          label: t('sftp.downloadFolder'),
+          click: () => downloadFolder(nodeData)
+        }));
       } else {
         // 文件下载选项
         menu.append(new MenuItem({
@@ -1396,61 +1402,79 @@ export default {
 
         const targetDir = savePath.filePaths[0];
         
+        // 生成传输 ID
+        const transferId = `download_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
         // 显示下载进度
         downloadProgressVisible.value = true;
         downloadInfo.fileName = nodeData.title;
         downloadInfo.progress = 0;
         downloadInfo.status = 'normal';
+        downloadInfo.transferId = transferId;
+        downloadInfo.startTime = null;
+        downloadInfo.totalSize = 0;
+        downloadInfo.currentSize = 0;
+        downloadInfo.speed = '0 B/s';
+        downloadInfo.timeRemaining = t('sftp.calculating');
+        downloadInfo.transferred = '0 B';
+        downloadInfo.total = t('sftp.calculating');
 
-        // 从服务器下载压缩后的文件夹
-        const response = await axios.post('http://localhost:5000/sftp_download_folder', {
-          connection: props.connection,
-          path: nodeData.key
-        }, {
-          responseType: 'blob',
-          onDownloadProgress: (progressEvent) => {
-            updateDownloadProgress(
-              progressEvent.loaded,
-              progressEvent.total,
-              nodeData.title
-            );
+        // 设置进度更新定时器
+        const progressTimer = setInterval(async () => {
+          try {
+            const response = await axios.get(`http://localhost:5000/transfer_progress/${transferId}`);
+            if (response.data) {
+              if (response.data.status === 'cancelled') {
+                clearInterval(progressTimer);
+                downloadProgressVisible.value = false;
+                return;
+              }
+
+              // 更新下载信息
+              downloadInfo.progress = response.data.progress;
+              downloadInfo.speed = response.data.speed;
+              downloadInfo.timeRemaining = response.data.estimated_time;
+              downloadInfo.transferred = response.data.transferred;
+              downloadInfo.total = response.data.total;
+              downloadInfo.status = response.data.status;
+
+              // 更新进度条
+              updateProgressBar('download', downloadInfo.progress);
+            }
+          } catch (error) {
+            console.error('Failed to get download progress:', error);
           }
-        });
+        }, 1000);
 
-        // 保存压缩文件到临时目录
-        const tempDir = await ipcRenderer.invoke('create-temp-dir');
-        const zipPath = path.join(tempDir, `${nodeData.title}.zip`);
-        await fs.promises.writeFile(zipPath, Buffer.from(await response.data.arrayBuffer()));
+        try {
+          // 从服务器下载并解压文件夹
+          const response = await axios.post('http://localhost:5000/sftp_download_folder', {
+            connection: props.connection,
+            path: nodeData.key,
+            target_dir: targetDir,
+            transfer_id: transferId
+          });
 
-        // 解压文件到目标目录
-        await ipcRenderer.invoke('extract-folder', {
-          zipPath: zipPath,
-          targetPath: path.join(targetDir, nodeData.title)
-        });
+          if (response.data.status === 'success') {
+            downloadInfo.status = 'success';
+            downloadInfo.progress = 100;
+            Message.success(t('sftp.downloadFolderSuccess', { name: nodeData.title }));
+            await logOperation('download_folder', nodeData.key);
+          }
 
-        // 清理临时文件
-        await ipcRenderer.invoke('cleanup-temp-dir', tempDir);
+        } finally {
+          clearInterval(progressTimer);
+          if (downloadInfo.status !== 'cancelled') {
+            setTimeout(() => {
+              downloadProgressVisible.value = false;
+            }, 1000);
+          }
+        }
 
-        downloadInfo.status = 'success';
-        downloadInfo.progress = 100;
-        
-        setTimeout(() => {
-          downloadProgressVisible.value = false;
-          Message.success(t('sftp.downloadSuccess'));
-        }, 500);
-
-        await logOperation('download_folder', nodeData.key);
       } catch (error) {
         downloadInfo.status = 'error';
         console.error('Failed to download folder:', error);
-        Message.error(t('sftp.downloadFailed'));
-      } finally {
-        // 如果不是因为取消而结束，才自动隐藏进度条
-        if (downloadInfo.status !== 'cancelled') {
-          setTimeout(() => {
-            downloadProgressVisible.value = false;
-          }, 1000);
-        }
+        Message.error(t('sftp.downloadFolderFailed', { name: nodeData.title }));
       }
     };
 
@@ -1773,7 +1797,7 @@ export default {
           targetPath: zipPath
         });
 
-        // 上���压缩文件
+        // 上压缩文件
         const zipContent = await fs.promises.readFile(zipPath, { encoding: 'base64' });
         
         // 发送到服务器并在务器端解压
@@ -1842,21 +1866,30 @@ export default {
       downloadInfo.transferred = formatSize(loaded);
       downloadInfo.total = formatSize(total);
 
-      // 使用实际的字节数计算进度
-      const progress = total > 0 ? Math.round((loaded / total) * 100) : 0;
+      // 使用实际的字节数计算进度，并确保不超过100%
+      const progress = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
       downloadInfo.progress = progress;
 
       // 更新进度条
       updateProgressBar('download', progress);
 
-      // 计算下载速度
+      // 计算下载速度 - 使用移动平均
       const elapsedTime = (Date.now() - downloadInfo.startTime) / 1000;
-      const speed = loaded / elapsedTime;
-      downloadInfo.speed = formatSpeed(speed);
+      if (elapsedTime > 0) {
+        const speed = loaded / elapsedTime;
+        // 使用指数移动平均来平滑速度显示
+        if (!downloadInfo.avgSpeed) {
+          downloadInfo.avgSpeed = speed;
+        } else {
+          const alpha = 0.2; // 平滑因子
+          downloadInfo.avgSpeed = alpha * speed + (1 - alpha) * downloadInfo.avgSpeed;
+        }
+        downloadInfo.speed = formatSpeed(downloadInfo.avgSpeed);
 
-      // 计算剩余时间
-      const remaining = speed > 0 ? (total - loaded) / speed : 0;
-      downloadInfo.timeRemaining = formatTime(remaining);
+        // 计算剩余时间
+        const remaining = downloadInfo.avgSpeed > 0 ? Math.max(0, (total - loaded) / downloadInfo.avgSpeed) : 0;
+        downloadInfo.timeRemaining = formatTime(remaining);
+      }
     };
 
     // 格式化速度显示
@@ -2241,13 +2274,15 @@ export default {
           `.${type}-progress .arco-progress-line-bar`
         );
         if (progressBar) {
+          // 确保进度不超过100%
+          const clampedProgress = Math.min(100, Math.max(0, progress));
           // 使用 CSS 变量设置宽度
-          progressBar.style.setProperty('--progress-width', `${progress}%`);
+          progressBar.style.setProperty('--progress-width', `${clampedProgress}%`);
           
           // 根据进度设置状态类
-          if (progress === 100) {
+          if (clampedProgress === 100) {
             progressBar.classList.add('status-success');
-          } else if (progress === 0) {
+          } else if (clampedProgress === 0) {
             progressBar.classList.remove('status-success', 'status-error');
           }
         }

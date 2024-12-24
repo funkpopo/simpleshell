@@ -24,6 +24,7 @@ from typing import Dict, Tuple, Optional
 from functools import lru_cache
 import uuid
 import base64
+import shutil
 
 app = Flask(__name__)
 CORS(app)
@@ -619,17 +620,17 @@ class TransferProgress:
                 
                 # 添加到速度样本中
                 self._speed_samples.append(instant_speed)
-                if len(self._speed_samples) > 10:  # 保留最近10个样本
+                if len(self._speed_samples) > 5:  # 减少样本数量以提高响应性
                     self._speed_samples.pop(0)
                 
-                # 计算平均速度
-                self.speed = sum(self._speed_samples) / len(self._speed_samples) / 2
+                # 计算平均速度 - 移除除以2的操作
+                self.speed = sum(self._speed_samples) / len(self._speed_samples)
                 
-                # 更新进度
-                self.progress = (self.current_size / self.total_size) * 100 if self.total_size > 0 else 0
+                # 更新进度 - 确保不会超过100%
+                self.progress = min(100, (self.current_size / self.total_size) * 100) if self.total_size > 0 else 0
                 
                 # 计算剩余时间
-                remaining_bytes = self.total_size - self.current_size
+                remaining_bytes = max(0, self.total_size - self.current_size)
                 self.estimated_time = remaining_bytes / self.speed if self.speed > 0 else 0
                 
                 # 更新最后一次记录的值
@@ -1851,6 +1852,115 @@ def delete_chat_history(history_id):
     except Exception as e:
         logger.error(f"Error deleting chat history: {e}")
         return jsonify({'error': str(e)}), 500
+
+def calculate_folder_size(sftp, remote_path):
+    """递归计算文件夹总大小"""
+    total_size = 0
+    try:
+        for attr in sftp.listdir_attr(remote_path):
+            item_path = os.path.join(remote_path, attr.filename).replace('\\', '/')
+            if stat.S_ISDIR(attr.st_mode):
+                total_size += calculate_folder_size(sftp, item_path)
+            else:
+                total_size += attr.st_size
+    except Exception as e:
+        logger.error(f"Error calculating size for {remote_path}: {e}")
+        raise
+    return total_size
+
+@app.route('/sftp_download_folder', methods=['POST'])
+def download_folder():
+    temp_dir = None
+    try:
+        data = request.json
+        connection = data['connection']
+        path = data['path']
+        target_dir = data['target_dir']
+        transfer_id = data.get('transfer_id')
+
+        ssh, sftp = create_sftp_client(connection)
+        try:
+            # 创建临时目录
+            temp_dir = tempfile.mkdtemp()
+            folder_name = os.path.basename(path)
+            local_folder = os.path.join(temp_dir, folder_name)
+
+            # 首先计算总文件大小
+            total_size = calculate_folder_size(sftp, path)
+            
+            # 创建传输进度跟踪器
+            transfer_progress = transfer_manager.create_transfer(transfer_id, total_size, 'download')
+            current_size = [0]
+
+            # 递归下载文件夹
+            def download_recursive(sftp, remote_path, local_path):
+                try:
+                    os.makedirs(local_path, exist_ok=True)
+                    for attr in sftp.listdir_attr(remote_path):
+                        if transfer_manager.is_cancelled(transfer_id):
+                            raise Exception("Transfer cancelled")
+                            
+                        remote_item = os.path.join(remote_path, attr.filename).replace('\\', '/')
+                        local_item = os.path.join(local_path, attr.filename)
+                        
+                        if stat.S_ISDIR(attr.st_mode):
+                            download_recursive(sftp, remote_item, local_item)
+                        else:
+                            def progress_callback(transferred, _):
+                                if transfer_manager.is_cancelled(transfer_id):
+                                    raise Exception("Transfer cancelled")
+                                current_size[0] += transferred
+                                if transfer_progress:
+                                    # 使用累计的总大小更新进度
+                                    transfer_progress.update(min(total_size, current_size[0]))
+
+                            sftp.get(remote_item, local_item, callback=progress_callback)
+                except Exception as e:
+                    if "Transfer cancelled" in str(e):
+                        raise
+                    logger.error(f"Error downloading {remote_path}: {e}")
+                    raise
+
+            # 下载文件夹内容
+            try:
+                download_recursive(sftp, path, local_folder)
+            except Exception as e:
+                if "Transfer cancelled" in str(e):
+                    return jsonify({"status": "cancelled", "message": "Transfer cancelled"}), 200
+                raise
+
+            # 将文件夹复制到目标目录
+            target_folder = os.path.join(target_dir, folder_name)
+            if os.path.exists(target_folder):
+                shutil.rmtree(target_folder)  # 如果目标文件夹已存在，先删除
+            shutil.copytree(local_folder, target_folder)
+
+            return jsonify({"status": "success"})
+
+        finally:
+            sftp.close()
+            ssh.close()
+            # 清理临时文件
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except:
+                    pass
+            # 移除传输进度跟踪器
+            if transfer_id:
+                transfer_manager.remove_transfer(transfer_id)
+
+    except Exception as e:
+        logger.error(f"Error downloading folder: {e}")
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                pass
+        # 移除传输进度跟踪器
+        if transfer_id:
+            transfer_manager.remove_transfer(transfer_id)
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     try:
