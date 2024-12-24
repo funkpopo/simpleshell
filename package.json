@@ -42,16 +42,17 @@
     "extract-zip": "^2.0.1",
     "flask-cors": "^0.0.1",
     "got": "^14.4.5",
+    "highlight.js": "^11.11.0",
     "jszip": "^3.10.1",
     "lodash": "^4.17.21",
+    "markdown-it": "^14.1.0",
+    "markdown-it-highlightjs": "^4.2.0",
     "msgpack-lite": "^0.1.26",
     "postcss": "^8.4.49",
     "socket.io-client": "^4.8.1",
     "tough-cookie": "^5.0.0",
     "vue": "^3.5.13",
-    "vuedraggable": "^4.1.0",
-    "markdown-it": "^14.1.0",
-    "markdown-it-highlightjs": "^4.2.0"
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
