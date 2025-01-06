@@ -1,12 +1,12 @@
 <template>
   <div 
-    v-if="!isMinimized"
+    v-if="!isMinimized && position"
     class="tools-window"
     :style="{ 
-      transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
+      transform: position ? `translate3d(${position.x}px, ${position.y}px, 0)` : 'none',
       transition: isDragging ? 'none' : 'transform 0.2s ease',
-      width: `${windowSize.width}px`,
-      height: `${windowSize.height}px`
+      width: '400px',
+      height: '500px'
     }"
   >
     <!-- 窗口标题栏 -->
@@ -65,9 +65,14 @@
             </a-input>
             
             <div v-if="ipInfo" class="ip-info">
-              <a-descriptions :column="1" bordered>
+              <a-descriptions :column="1" bordered size="small">
                 <a-descriptions-item :label="$t('tools.ipQuery.ip')">
-                  {{ ipInfo.ip }}
+                  <div class="ip-address">
+                    <span>{{ ipInfo.ip }}</span>
+                    <a-tag v-if="ipInfo.version" size="small" :color="ipInfo.version === 'IPv6' ? 'arcoblue' : 'green'">
+                      {{ ipInfo.version }}
+                    </a-tag>
+                  </div>
                 </a-descriptions-item>
                 <a-descriptions-item :label="$t('tools.ipQuery.country')">
                   {{ ipInfo.country }} ({{ ipInfo.country_code }})
@@ -163,13 +168,154 @@
             </div>
           </div>
         </a-tab-pane>
+
+        <!-- Crontab生成器 -->
+        <a-tab-pane key="crontab" :title="$t('tools.crontab.title')">
+          <div class="tool-content">
+            <!-- Cron表达式输入和结果 -->
+            <div class="crontab-expression">
+              <a-input-group compact>
+                <a-input
+                  v-model="cronExpression"
+                  :placeholder="$t('tools.crontab.expressionPlaceholder')"
+                  :style="{ width: 'calc(100% - 90px)' }"
+                  @input="handleExpressionInput"
+                  allow-clear
+                />
+                <a-button type="outline" @click="copyCronExpression">
+                  {{ $t('tools.crontab.copy') }}
+                </a-button>
+              </a-input-group>
+              <div class="expression-result" v-if="cronDescription">
+                <div class="result-header">
+                  <icon-info-circle />
+                  <span>{{ $t('tools.crontab.parseResult') }}</span>
+                </div>
+                <div class="result-content">
+                  <div class="time-parts">
+                    <div class="time-part" v-for="(part, index) in cronParts" :key="index">
+                      <span class="part-label">{{ $t(`tools.crontab.${index}`) }}</span>
+                      <span class="part-value">{{ part }}</span>
+                    </div>
+                  </div>
+                  <div class="description">
+                    {{ cronDescription }}
+                  </div>
+                </div>
+                <div class="next-executions" v-if="nextExecutions && nextExecutions.length">
+                  <div class="next-title">{{ $t('tools.crontab.nextExecutions') }}</div>
+                  <div class="execution-times">
+                    <div v-for="(time, index) in nextExecutions" :key="index" class="execution-time">
+                      {{ time }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="crontab-content">
+              <!-- 左侧选择器 -->
+              <div class="crontab-selectors">
+                <!-- 常用模板 -->
+                <a-form-item :label="$t('tools.crontab.template')" class="template-select">
+                  <a-select
+                    v-model="selectedTemplate"
+                    :placeholder="$t('tools.crontab.selectTemplate')"
+                    @change="applyTemplate"
+                    size="small"
+                  >
+                    <a-option value="every_minute" label="每分钟 (* * * * *)"></a-option>
+                    <a-option value="every_hour" label="每小时 (0 * * * *)"></a-option>
+                    <a-option value="every_day" label="每天午夜 (0 0 * * *)"></a-option>
+                    <a-option value="every_week" label="每周日午夜 (0 0 * * 0)"></a-option>
+                    <a-option value="every_month" label="每月1号午夜 (0 0 1 * *)"></a-option>
+                    <a-option value="every_year" label="每年1月1日午夜 (0 0 1 1 *)"></a-option>
+                  </a-select>
+                </a-form-item>
+
+                <!-- Cron表达式各部分 -->
+                <a-form :model="cronParts" layout="vertical" size="small" class="cron-form">
+                  <a-form-item :label="$t('tools.crontab.minute')">
+                    <a-select
+                      v-model="cronParts.minute"
+                      :placeholder="$t('tools.crontab.minutePlaceholder')"
+                      allow-search
+                      allow-clear
+                    >
+                      <a-option value="*" label="每分钟 (*)"></a-option>
+                      <a-option value="*/5" label="每5分钟 (*/5)"></a-option>
+                      <a-option value="*/15" label="每15分钟 (*/15)"></a-option>
+                      <a-option value="*/30" label="每30分钟 (*/30)"></a-option>
+                      <a-option value="0" label="整点 (0)"></a-option>
+                    </a-select>
+                  </a-form-item>
+
+                  <a-form-item :label="$t('tools.crontab.hour')">
+                    <a-select
+                      v-model="cronParts.hour"
+                      :placeholder="$t('tools.crontab.hourPlaceholder')"
+                      allow-search
+                      allow-clear
+                    >
+                      <a-option value="*" label="每小时 (*)"></a-option>
+                      <a-option value="*/2" label="每2小时 (*/2)"></a-option>
+                      <a-option value="*/4" label="每4小时 (*/4)"></a-option>
+                      <a-option value="*/6" label="每6小时 (*/6)"></a-option>
+                      <a-option value="*/12" label="每12小时 (*/12)"></a-option>
+                      <a-option value="0" label="0点 (0)"></a-option>
+                    </a-select>
+                  </a-form-item>
+
+                  <a-form-item :label="$t('tools.crontab.day')">
+                    <a-select
+                      v-model="cronParts.day"
+                      :placeholder="$t('tools.crontab.dayPlaceholder')"
+                      allow-search
+                      allow-clear
+                    >
+                      <a-option value="*" label="每天 (*)"></a-option>
+                      <a-option value="1" label="1号 (1)"></a-option>
+                      <a-option value="15" label="15号 (15)"></a-option>
+                      <a-option value="L" label="最后一天 (L)"></a-option>
+                    </a-select>
+                  </a-form-item>
+
+                  <a-form-item :label="$t('tools.crontab.month')">
+                    <a-select
+                      v-model="cronParts.month"
+                      :placeholder="$t('tools.crontab.monthPlaceholder')"
+                      allow-search
+                      allow-clear
+                    >
+                      <a-option value="*" label="每月 (*)"></a-option>
+                      <a-option value="*/3" label="每季度 (*/3)"></a-option>
+                      <a-option value="*/6" label="每半年 (*/6)"></a-option>
+                      <a-option value="1" label="一月 (1)"></a-option>
+                    </a-select>
+                  </a-form-item>
+
+                  <a-form-item :label="$t('tools.crontab.week')">
+                    <a-select
+                      v-model="cronParts.week"
+                      :placeholder="$t('tools.crontab.weekPlaceholder')"
+                      allow-search
+                      allow-clear
+                    >
+                      <a-option value="*" label="每天 (*)"></a-option>
+                      <a-option value="0" label="周日 (0)"></a-option>
+                      <a-option value="1-5" label="工作日 (1-5)"></a-option>
+                      <a-option value="6,0" label="周末 (6,0)"></a-option>
+                    </a-select>
+                  </a-form-item>
+                </a-form>
+              </div>
+            </div>
+          </div>
+        </a-tab-pane>
       </a-tabs>
     </div>
 
-    <!-- 调整大小的手柄 -->
-    <div class="resize-handle resize-right" @mousedown.stop="startResize('right')"></div>
-    <div class="resize-handle resize-bottom" @mousedown.stop="startResize('bottom')"></div>
-    <div class="resize-handle resize-corner" @mousedown.stop="startResize('corner')"></div>
+    <!-- 移除调整大小的手柄 -->
   </div>
 
   <!-- 最小化后的浮动按钮 -->
@@ -186,9 +332,9 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, watch, inject } from 'vue'
+import { ref, onMounted, watch, inject } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { IconMinus, IconClose, IconTool, IconCopy } from '@arco-design/web-vue/es/icon'
+import { IconMinus, IconClose, IconTool, IconCopy, IconInfoCircle } from '@arco-design/web-vue/es/icon'
 import axios from 'axios'
 import { shell } from '@electron/remote'
 
@@ -198,7 +344,8 @@ export default {
     IconMinus,
     IconClose,
     IconTool,
-    IconCopy
+    IconCopy,
+    IconInfoCircle
   },
   emits: ['close', 'minimize'],
   props: {
@@ -211,23 +358,26 @@ export default {
     const i18n = inject('i18n')
     const t = (key, params) => i18n.t(key, params)
 
-    const position = ref({ x: 150, y: 150 })
+    // 初始化位置状态
+    const position = ref(null)
     const isMinimized = ref(false)
     const isDragging = ref(false)
-    const isResizing = ref(false)
-    const resizeType = ref('')
     let dragOffset = { x: 0, y: 0 }
-    let startSize = { width: 0, height: 0 }
-    let startPos = { x: 0, y: 0 }
 
-    const windowSize = ref({
-      width: 400,
-      height: 500,
-      minWidth: 300,
-      minHeight: 400,
-      maxWidth: 800,
-      maxHeight: window.innerHeight
-    })
+    // 初始化窗口位置
+    const initPosition = () => {
+      const width = 400
+      const height = 500
+      const bounds = {
+        width: window.innerWidth,
+        height: window.innerHeight
+      }
+      
+      position.value = {
+        x: Math.max(0, Math.min((bounds.width - width) / 2, bounds.width - width)),
+        y: Math.max(0, Math.min((bounds.height - height) / 2, bounds.height - height))
+      }
+    }
 
     // 标签页相关
     const activeTab = ref('ipQuery')
@@ -247,6 +397,18 @@ export default {
       symbols: true
     })
     const generatedPassword = ref('')
+
+    // Crontab生成器相关
+    const selectedTemplate = ref('')
+    const cronParts = ref({
+      minute: '*',
+      hour: '*',
+      day: '*',
+      month: '*',
+      week: '*'
+    })
+    const cronExpression = ref('* * * * *')
+    const cronDescription = ref('')
 
     // 监听标签页变化和组件挂载
     onMounted(() => {
@@ -275,12 +437,16 @@ export default {
         
         if (response.data.success) {
           ipInfo.value = response.data.data
+          // 确保version字段存在
+          if (!ipInfo.value.version) {
+            ipInfo.value.version = ipInfo.value.ip.includes(':') ? 'IPv6' : 'IPv4'
+          }
         } else {
           let errorKey = 'failed'
           const errorMsg = response.data.error.toLowerCase()
           
           if (errorMsg.includes('timeout')) {
-            errorKey = 'timeout'
+            errorKey = 'network'  // 将timeout错误改为network错误
           } else if (errorMsg.includes('rate limit')) {
             errorKey = 'rateLimit'
           } else if (errorMsg.includes('network error')) {
@@ -348,6 +514,7 @@ export default {
 
     // 窗口拖拽相关函数
     const startDrag = (e) => {
+      if (!position.value) return
       isDragging.value = true
       dragOffset = {
         x: e.clientX - position.value.x,
@@ -358,12 +525,12 @@ export default {
     }
 
     const handleDrag = (e) => {
-      if (!isDragging.value) return
+      if (!isDragging.value || !position.value) return
       const newPos = keepInBounds(
         e.clientX - dragOffset.x,
         e.clientY - dragOffset.y,
-        windowSize.value.width,
-        windowSize.value.height
+        400,
+        500
       )
       position.value = newPos
     }
@@ -374,62 +541,6 @@ export default {
       document.removeEventListener('mouseup', stopDrag)
     }
 
-    // 窗口大小调整相关函数
-    const startResize = (type) => {
-      isResizing.value = true
-      resizeType.value = type
-      startSize = {
-        width: windowSize.value.width,
-        height: windowSize.value.height
-      }
-      startPos = {
-        x: position.value.x,
-        y: position.value.y
-      }
-      document.addEventListener('mousemove', handleResize)
-      document.addEventListener('mouseup', stopResize)
-      document.body.style.cursor = 
-        type === 'right' ? 'ew-resize' :
-        type === 'bottom' ? 'ns-resize' :
-        'nwse-resize'
-    }
-
-    const handleResize = (e) => {
-      if (!isResizing.value) return
-      const dx = e.clientX - (startPos.x + startSize.width)
-      const dy = e.clientY - (startPos.y + startSize.height)
-      
-      let newWidth = startSize.width
-      let newHeight = startSize.height
-
-      if (resizeType.value === 'right' || resizeType.value === 'corner') {
-        newWidth = Math.min(
-          Math.max(windowSize.value.minWidth, startSize.width + dx),
-          windowSize.value.maxWidth
-        )
-      }
-      
-      if (resizeType.value === 'bottom' || resizeType.value === 'corner') {
-        newHeight = Math.min(
-          Math.max(windowSize.value.minHeight, startSize.height + dy),
-          windowSize.value.maxHeight
-        )
-      }
-
-      windowSize.value = {
-        ...windowSize.value,
-        width: newWidth,
-        height: newHeight
-      }
-    }
-
-    const stopResize = () => {
-      isResizing.value = false
-      document.removeEventListener('mousemove', handleResize)
-      document.removeEventListener('mouseup', stopResize)
-      document.body.style.cursor = ''
-    }
-
     // 窗口控制函数
     const minimize = () => {
       isMinimized.value = true
@@ -438,11 +549,14 @@ export default {
 
     const restore = () => {
       isMinimized.value = false
+      if (!position.value) {
+        initPosition()
+      }
       const newPos = keepInBounds(
         position.value.x,
         position.value.y,
-        windowSize.value.width,
-        windowSize.value.height
+        400,
+        500
       )
       position.value = newPos
     }
@@ -455,8 +569,8 @@ export default {
     // 辅助函数
     const keepInBounds = (x, y, width, height) => {
       const bounds = {
-        width: document.documentElement.clientWidth,
-        height: document.documentElement.clientHeight
+        width: window.innerWidth,
+        height: window.innerHeight
       }
       
       const maxX = bounds.width - width
@@ -470,14 +584,7 @@ export default {
 
     // 生命周期钩子
     onMounted(() => {
-      const bounds = {
-        width: window.innerWidth,
-        height: window.innerHeight
-      }
-      position.value = {
-        x: (bounds.width - windowSize.value.width) / 2,
-        y: (bounds.height - windowSize.value.height) / 2
-      }
+      initPosition()
     })
 
     const openMap = (lat, lng) => {
@@ -485,26 +592,179 @@ export default {
       shell.openExternal(url)
     }
 
+    // 监听cron parts变化，更新表达式
+    watch(cronParts, (newParts) => {
+      const expression = `${newParts.minute} ${newParts.hour} ${newParts.day} ${newParts.month} ${newParts.week}`
+      cronExpression.value = expression
+      // 不在这里更新描述，让输入框的值变化时触发更新
+    }, { deep: true })
+
+    // 监听表达式输入框的值变化
+    watch(cronExpression, (newValue) => {
+      parseCronExpression(newValue, false)
+    })
+
+    // 处理表达式输入变化
+    const handleExpressionInput = (value) => {
+      // 直接更新表达式值，让watch处理解析
+      cronExpression.value = value
+    }
+
+    // 解析cron表达式
+    const parseCronExpression = (value, showMessage = false) => {
+      // 获取要解析的表达式
+      const expression = value.trim()
+      
+      // 如果表达式为空，不进行解析
+      if (!expression) {
+        cronDescription.value = ''
+        cronParts.value = { minute: '*', hour: '*', day: '*', month: '*', week: '*' }
+        return
+      }
+
+      const parts = expression.split(/\s+/)
+      if (parts.length === 5) {
+        // 验证每个部分的格式
+        const isValid = parts.every((part, index) => {
+          const patterns = {
+            minute: /^(\*|([0-9]|[1-5][0-9])(\-[0-9]|[1-5][0-9])?)(\/\d+)?$/,
+            hour: /^(\*|([0-9]|1[0-9]|2[0-3])(\-([0-9]|1[0-9]|2[0-3]))?)(\/\d+)?$/,
+            day: /^(\*|([1-9]|[12][0-9]|3[01])|L)$/,
+            month: /^(\*|([1-9]|1[0-2]))(\/\d+)?$/,
+            week: /^(\*|([0-6])(\-[0-6])?|[1-5]\-[1-5]|[0,6])$/
+          }
+          const types = ['minute', 'hour', 'day', 'month', 'week']
+          return patterns[types[index]].test(part)
+        })
+
+        if (isValid) {
+          // 更新各个部分
+          cronParts.value = {
+            minute: parts[0],
+            hour: parts[1],
+            day: parts[2],
+            month: parts[3],
+            week: parts[4]
+          }
+          
+          // 更新描述
+          updateCronDescription(parts)
+        } else {
+          cronDescription.value = ''
+        }
+      } else {
+        cronDescription.value = ''
+      }
+    }
+
+    // 更新cron表达式描述
+    const updateCronDescription = (parts) => {
+      if (!Array.isArray(parts)) {
+        parts = cronExpression.value.split(' ')
+      }
+      
+      let desc = []
+
+      // 分钟
+      if (parts[0] === '*') desc.push('每分钟')
+      else if (parts[0].startsWith('*/')) desc.push(`每${parts[0].split('/')[1]}分钟`)
+      else if (parts[0].includes('-')) {
+        const [start, end] = parts[0].split('-')
+        desc.push(`从第${start}分钟到第${end}分钟`)
+      } else desc.push(`第${parts[0]}分钟`)
+
+      // 小时
+      if (parts[1] === '*') desc.push('每小时')
+      else if (parts[1].startsWith('*/')) desc.push(`每${parts[1].split('/')[1]}小时`)
+      else if (parts[1].includes('-')) {
+        const [start, end] = parts[1].split('-')
+        desc.push(`从${start}点到${end}点`)
+      } else desc.push(`${parts[1]}点`)
+
+      // 日期
+      if (parts[2] === '*') desc.push('每天')
+      else if (parts[2] === 'L') desc.push('最后一天')
+      else desc.push(`${parts[2]}号`)
+
+      // 月份
+      if (parts[3] === '*') desc.push('每月')
+      else if (parts[3].startsWith('*/')) desc.push(`每${parts[3].split('/')[1]}个月`)
+      else if (parts[3].includes('-')) {
+        const [start, end] = parts[3].split('-')
+        desc.push(`从${start}月到${end}月`)
+      } else desc.push(`${parts[3]}月`)
+
+      // 星期
+      if (parts[4] === '*') desc.push('')
+      else if (parts[4] === '1-5') desc.push('工作日')
+      else if (parts[4] === '6,0') desc.push('周末')
+      else if (parts[4].includes('-')) {
+        const [start, end] = parts[4].split('-')
+        desc.push(`从星期${start}到星期${end}`)
+      } else desc.push(`星期${parts[4]}`)
+
+      cronDescription.value = desc.filter(d => d).join('，') + '执行'
+    }
+
+    // 应用模板
+    const applyTemplate = (template) => {
+      switch (template) {
+        case 'every_minute':
+          cronExpression.value = '* * * * *'
+          break
+        case 'every_hour':
+          cronExpression.value = '0 * * * *'
+          break
+        case 'every_day':
+          cronExpression.value = '0 0 * * *'
+          break
+        case 'every_week':
+          cronExpression.value = '0 0 * * 0'
+          break
+        case 'every_month':
+          cronExpression.value = '0 0 1 * *'
+          break
+        case 'every_year':
+          cronExpression.value = '0 0 1 1 *'
+          break
+      }
+      // watch会自动触发解析
+    }
+
+    // 复制cron表达式
+    const copyCronExpression = () => {
+      navigator.clipboard.writeText(cronExpression.value)
+      Message.success(t('tools.crontab.copied'))
+    }
+
     return {
       position,
       isMinimized,
-      windowSize,
+      isDragging,
       activeTab,
       ipAddress,
       ipInfo,
       passwordOptions,
       generatedPassword,
+      // Crontab相关
+      selectedTemplate,
+      cronParts,
+      cronExpression,
+      cronDescription,
+      // 方法
+      applyTemplate,
+      copyCronExpression,
       startDrag,
       minimize,
       restore,
       close,
-      startResize,
       queryIP,
       generatePassword,
       copyPassword,
       isQuerying,
       openMap,
       hasAutoQueried,
+      handleExpressionInput,
       t
     }
   }
@@ -572,39 +832,41 @@ export default {
   flex: 1;
   padding: 16px;
   overflow: auto;
-}
+  height: calc(100% - 32px);
 
-.tool-content {
-  padding: 16px;
-}
+  .tool-content {
+    height: 100%;
+  }
 
-.resize-handle {
-  position: absolute;
-  background: transparent;
-}
+  .crontab-options {
+    margin-bottom: 24px;
 
-.resize-right {
-  right: -4px;
-  top: 0;
-  width: 8px;
-  height: 100%;
-  cursor: ew-resize;
-}
+    .arco-form {
+      max-width: 100%;
+    }
 
-.resize-bottom {
-  bottom: -4px;
-  left: 0;
-  height: 8px;
-  width: 100%;
-  cursor: ns-resize;
-}
+    .arco-form-item {
+      margin-bottom: 16px;
+    }
 
-.resize-corner {
-  right: -4px;
-  bottom: -4px;
-  width: 16px;
-  height: 16px;
-  cursor: nwse-resize;
+    .arco-select {
+      width: 100%;
+    }
+  }
+
+  .crontab-result {
+    .arco-typography {
+      margin-bottom: 8px;
+    }
+
+    .arco-input-group {
+      margin-bottom: 16px;
+    }
+
+    .arco-alert {
+      margin-top: 8px;
+    }
+  }
 }
 
 .tools-float-button {
@@ -671,6 +933,21 @@ export default {
 .ip-info {
   margin-top: 16px;
   animation: fade-in 0.3s ease;
+
+  :deep(.arco-descriptions-item-label) {
+    width: 100px;
+  }
+
+  :deep(.arco-descriptions-item-value) {
+    word-break: break-all;
+  }
+}
+
+.ip-address {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  word-break: break-all;
 }
 
 .ip-info :deep(.arco-link) {
@@ -727,5 +1004,148 @@ export default {
   color: var(--color-text-3);
   margin-left: 8px;
   font-weight: normal;
+}
+
+.crontab-expression {
+  margin-bottom: 16px;
+}
+
+.expression-description {
+  margin-top: 8px;
+}
+
+.crontab-content {
+  display: flex;
+  gap: 16px;
+}
+
+.crontab-selectors {
+  flex: 1;
+}
+
+.template-select {
+  margin-bottom: 16px;
+}
+
+.cron-form {
+  .arco-form-item {
+    margin-bottom: 12px;
+  }
+
+  .arco-form-item-label {
+    padding-bottom: 4px;
+  }
+
+  :deep(.arco-select) {
+    width: 100%;
+  }
+}
+
+.arco-form-item-label {
+  font-size: 13px;
+}
+
+:deep(.arco-select-view) {
+  padding: 2px 8px;
+}
+
+:deep(.arco-btn) {
+  padding: 0 16px;
+  height: 32px;
+  line-height: 32px;
+}
+
+:deep(.arco-input-wrapper) {
+  padding: 2px 8px;
+}
+
+.expression-result {
+  margin-top: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-1);
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-fill-2);
+  color: var(--color-text-1);
+  font-weight: 500;
+}
+
+.result-header :deep(.arco-icon) {
+  color: var(--color-primary);
+  font-size: 16px;
+}
+
+.result-content {
+  padding: 12px;
+}
+
+.time-parts {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.time-part {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.part-label {
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.part-value {
+  font-family: monospace;
+  color: var(--color-text-1);
+  background: var(--color-fill-2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+.description {
+  color: var(--color-text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.next-executions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.next-title {
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-bottom: 8px;
+}
+
+.execution-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.execution-time {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--color-text-2);
+  background: var(--color-fill-2);
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 </style> 

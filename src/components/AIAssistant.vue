@@ -547,7 +547,7 @@ export default {
     const windowSize = ref({
       width: 400,
       height: 600,
-      minWidth: 200,
+      minWidth: 300,
       minHeight: 80,
       maxWidth: 800,
       maxHeight: window.innerHeight

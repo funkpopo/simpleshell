@@ -48,6 +48,10 @@ async function build() {
           {
             from: 'backend/dist/service/service.exe',
             to: '.'
+          },
+          {
+            from: 'backend/dist/service/_internal',
+            to: '.'
           }
         ],
         win: {

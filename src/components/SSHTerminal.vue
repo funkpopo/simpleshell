@@ -372,12 +372,33 @@ export default {
       })
     }
 
-    const handlePaste = (event) => {
-      event.preventDefault()
-      if (term && isTerminalReady.value) {
-        const text = event.clipboardData.getData('text')
-        // 使用统一的粘贴处理函数
-        handlePastedText(text);
+    const handlePaste = async (event) => {
+      event.preventDefault();
+      const text = event.clipboardData.getData('text');
+      
+      const lines = text.split('\n');
+      
+      // 如果只有一行，直接写入
+      if (lines.length === 1) {
+        await term.write(text);
+        return;
+      }
+
+      // 获取第一个非空行的缩进级别作为基准
+      const baseIndent = lines.find(line => line.trim())?.match(/^\s*/)[0].length || 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const currentIndent = line.match(/^\s*/)[0].length;
+        // 保持相对缩进
+        const relativeIndent = ' '.repeat(Math.max(0, currentIndent - baseIndent));
+        
+        if (line.trim()) {  // 非空行
+          await term.write(relativeIndent + line.trim());
+          if (i < lines.length - 1) {
+            await term.write('\r\n');
+          }
+        }
       }
     }
 

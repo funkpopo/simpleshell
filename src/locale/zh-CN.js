@@ -215,46 +215,61 @@ export default {
     }
   },
   tools: {
-    title: '工具',
+    title: '工具箱',
     shortcut: 'Ctrl+Shift+T',
     ipQuery: {
       title: 'IP查询',
-      placeholder: '请输入IP地址（留空查询当前IP）',
+      placeholder: '输入IP地址 (支持IPv4/IPv6)',
       query: '查询',
       ip: 'IP地址',
-      country: '国家',
+      version: 'IP版本',
+      country: '国家/地区',
       region: '地区',
       city: '城市',
+      postal: '邮编',
       isp: '运营商',
       timezone: '时区',
-      postal: '邮政编码',
       location: '地理位置',
       error: {
         failed: 'IP信息查询失败',
-        invalid: '无效的IP地址',
         network: '网络错误，请检查网络连接',
-        timeout: '请求超时，请重试',
-        rateLimit: '请求过于频繁，请稍后再试',
-        incomplete: '获取到的IP信息不完整'
+        rateLimit: '请求过于频繁，请稍后再试'
       }
     },
     passwordGen: {
       title: '密码生成器',
       length: '密码长度',
-      uppercase: '包含大写字母 (A-Z)',
-      lowercase: '包含小写字母 (a-z)',
-      numbers: '包含数字 (0-9)',
-      symbols: '包含特殊字符 (!@#$...)',
-      generate: '生成密码',
-      copy: '复制密码',
-      success: {
-        copy: '密码已复制到剪贴板',
-        generate: '密码生成成功'
-      },
-      error: {
-        copy: '复制密码失败',
-        empty: '请至少选择一种字符类型'
-      }
+      uppercase: '大写字母 (A-Z)',
+      lowercase: '小写字母 (a-z)',
+      numbers: '数字 (0-9)',
+      symbols: '特殊字符 (!@#$%^&*)',
+      generate: '生成',
+      copy: '复制'
+    },
+    crontab: {
+      title: 'Crontab生成器',
+      template: '常用模板',
+      selectTemplate: '选择模板',
+      minute: '分钟',
+      minutePlaceholder: '选择分钟',
+      hour: '小时',
+      hourPlaceholder: '选择小时',
+      day: '日期',
+      dayPlaceholder: '选择日期',
+      month: '月份',
+      monthPlaceholder: '选择月份',
+      week: '星期',
+      weekPlaceholder: '选择星期',
+      expression: 'Cron表达式',
+      expressionPlaceholder: '输入cron表达式 (例如: * * * * *)',
+      description: '表达式说明',
+      parse: '解析',
+      parseSuccess: '解析成功',
+      parseResult: '解析结果',
+      nextExecutions: '接下来的执行时间',
+      copy: '复制',
+      copied: '已复制到剪贴板',
+      invalidExpression: '无效的cron表达式'
     }
   }
 }
