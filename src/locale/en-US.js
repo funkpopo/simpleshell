@@ -213,42 +213,57 @@ export default {
     shortcut: 'Ctrl+Shift+T',
     ipQuery: {
       title: 'IP Query',
-      placeholder: 'Enter IP address (leave empty for current IP)',
+      placeholder: 'Enter IP address (IPv4/IPv6)',
       query: 'Query',
       ip: 'IP Address',
+      version: 'IP Version',
       country: 'Country',
       region: 'Region',
       city: 'City',
+      postal: 'Postal Code',
       isp: 'ISP',
       timezone: 'Timezone',
-      postal: 'Postal Code',
       location: 'Location',
       error: {
         failed: 'Failed to query IP information',
-        invalid: 'Invalid IP address',
         network: 'Network error, please check your connection',
-        timeout: 'Request timeout, please try again',
-        rateLimit: 'Too many requests, please try again later',
-        incomplete: 'Received incomplete IP information'
+        rateLimit: 'Too many requests, please try again later'
       }
     },
     passwordGen: {
       title: 'Password Generator',
       length: 'Password Length',
-      uppercase: 'Include Uppercase Letters (A-Z)',
-      lowercase: 'Include Lowercase Letters (a-z)',
-      numbers: 'Include Numbers (0-9)',
-      symbols: 'Include Special Characters (!@#$...)',
+      uppercase: 'Uppercase (A-Z)',
+      lowercase: 'Lowercase (a-z)',
+      numbers: 'Numbers (0-9)',
+      symbols: 'Symbols (!@#$%^&*)',
       generate: 'Generate',
-      copy: 'Copy Password',
-      success: {
-        copy: 'Password copied to clipboard',
-        generate: 'Password generated successfully'
-      },
-      error: {
-        copy: 'Failed to copy password',
-        empty: 'Please select at least one character type'
-      }
+      copy: 'Copy'
+    },
+    crontab: {
+      title: 'Crontab Generator',
+      template: 'Common Templates',
+      selectTemplate: 'Select Template',
+      minute: 'Minute',
+      minutePlaceholder: 'Select Minute',
+      hour: 'Hour',
+      hourPlaceholder: 'Select Hour',
+      day: 'Day',
+      dayPlaceholder: 'Select Day',
+      month: 'Month',
+      monthPlaceholder: 'Select Month',
+      week: 'Week',
+      weekPlaceholder: 'Select Week',
+      expression: 'Cron Expression',
+      expressionPlaceholder: 'Enter cron expression (e.g. * * * * *)',
+      description: 'Expression Description',
+      parse: 'Parse',
+      parseSuccess: 'Parse successful',
+      parseResult: 'Parse Result',
+      nextExecutions: 'Next Execution Times',
+      copy: 'Copy',
+      copied: 'Copied to clipboard',
+      invalidExpression: 'Invalid cron expression'
     }
   }
 }

@@ -1,7 +1,7 @@
 from gevent import monkey
 monkey.patch_all()
 
-from flask import Flask, request, jsonify, send_file, Response
+from flask import Flask, request, jsonify, Response
 from flask_socketio import SocketIO
 from flask_cors import CORS
 import paramiko
@@ -12,7 +12,6 @@ import logging
 import threading
 import time
 import tempfile
-import io
 from datetime import datetime
 import socket
 import sys
@@ -1702,8 +1701,9 @@ def query_ip():
         data = request.get_json()
         ip = data.get('ip', '').strip()
         
-        # 构建请求URL，如果没有提供IP则查询自身IP
-        url = f'https://ipapi.co/{ip}/json' if ip else 'https://ipapi.co/json'
+        # 构建主API和备用API的URL
+        primary_url = f'https://ipapi.co/{ip}/json' if ip else 'https://ipapi.co/json'
+        backup_url = f'http://ip-api.com/json/{ip}' if ip else 'http://ip-api.com/json'
         
         # 添加请求头，避免被封禁
         headers = {
@@ -1711,39 +1711,25 @@ def query_ip():
             'Accept': 'application/json'
         }
         
-        # 发送请求
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()  # 抛出非200状态码的错误
-        
-        data = response.json()
-        
-        # 检查是否返回错误
-        if data.get('error'):
-            logger.error(f"IP API error: {data.get('reason')}")
-            return jsonify({
-                'success': False,
-                'error': data.get('reason', 'Failed to query IP information')
-            })
+        def query_primary_api():
+            response = requests.get(primary_url, headers=headers, timeout=8)
+            response.raise_for_status()
+            data = response.json()
             
-        # 检查是否达到请求限制
-        if data.get('error_code') == 429:
-            return jsonify({
-                'success': False,
-                'error': 'rate limit'
-            })
+            # 检查是否返回错误
+            if data.get('error'):
+                raise Exception(data.get('reason', 'Failed to query IP information'))
+                
+            # 检查是否达到请求限制
+            if data.get('error_code') == 429:
+                raise Exception('rate limit')
+                
+            # 检查返回的数据是否完整
+            required_fields = ['ip', 'country_name', 'region', 'city', 'org']
+            if not all(field in data for field in required_fields):
+                raise Exception('Incomplete IP information')
             
-        # 检查返回的数据是否完整
-        required_fields = ['ip', 'country_name', 'region', 'city', 'org']
-        if not all(field in data for field in required_fields):
-            logger.error(f"Incomplete IP data received: {data}")
-            return jsonify({
-                'success': False,
-                'error': 'Incomplete IP information'
-            })
-        
-        return jsonify({
-            'success': True,
-            'data': {
+            return {
                 'ip': data.get('ip'),
                 'country': data.get('country_name'),
                 'region': data.get('region'),
@@ -1755,6 +1741,45 @@ def query_ip():
                 'latitude': data.get('latitude'),
                 'longitude': data.get('longitude')
             }
+            
+        def query_backup_api():
+            response = requests.get(backup_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            # 检查是否返回错误
+            if data.get('status') == 'fail':
+                raise Exception(data.get('message', 'Failed to query IP information'))
+            
+            # 转换数据格式以匹配主API
+            return {
+                'ip': data.get('query'),
+                'country': data.get('country'),
+                'region': data.get('regionName'),
+                'city': data.get('city'),
+                'isp': data.get('isp'),
+                'timezone': data.get('timezone'),
+                'country_code': data.get('countryCode'),
+                'postal': data.get('zip'),
+                'latitude': data.get('lat'),
+                'longitude': data.get('lon')
+            }
+        
+        try:
+            # 首先尝试使用主API
+            result = query_primary_api()
+        except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
+            logger.warning(f"Primary API failed, trying backup API: {str(e)}")
+            try:
+                # 如果主API超时或失败，使用备用API
+                result = query_backup_api()
+            except Exception as backup_error:
+                logger.error(f"Backup API also failed: {str(backup_error)}")
+                raise backup_error
+        
+        return jsonify({
+            'success': True,
+            'data': result
         })
         
     except requests.exceptions.Timeout:
