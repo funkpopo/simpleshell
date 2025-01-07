@@ -2668,6 +2668,15 @@ export default {
   overflow: hidden;
 }
 
+/* 移除之前添加的 .terminal 相关样式，改为直接设置在 SSHTerminal 组件上 */
+.terminal-container :deep(.xterm-viewport) {
+  white-space: pre-wrap;       /* 保留空格和换行,但允许自动换行 */
+  word-wrap: break-word;       /* 允许长单词断行 */
+  overflow-x: hidden;          /* 隐藏水平滚动条 */
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
 .right-sidebar {
   position: absolute;
   top: 0;
