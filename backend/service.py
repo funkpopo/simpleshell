@@ -451,9 +451,19 @@ def handle_ssh_input(data):
         with sessions_lock:
             session = ssh_sessions.get(session_id)
             if not session or not session.active:
-                raise Exception('Session not found or inactive')
+                # 修改：只向对应的客户端发送错误消息
+                socketio.emit('ssh_error', {
+                    'session_id': session_id,
+                    'error': 'Session not found or inactive'
+                }, room=client_id)  # 添加 room 参数
+                return
             if session.client_id != client_id:
-                raise Exception('Session belongs to another client')
+                # 修改：只向对应的客户端发送错误消息
+                socketio.emit('ssh_error', {
+                    'session_id': session_id,
+                    'error': 'Session belongs to another client'
+                }, room=client_id)  # 添加 room 参数
+                return
             
             with session.lock:
                 if is_pasted:
