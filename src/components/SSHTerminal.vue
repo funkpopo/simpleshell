@@ -331,8 +331,22 @@ export default {
 
         socket.on('ssh_output', (data) => {
           if (data.session_id === props.sessionId) {
-            console.log('Received SSH output')
-            writeToTerminal(data.output)
+            const output = data.output
+            if (isTerminalReady.value && term) {
+              // 直接写入原始输出，不做额外处理
+              term.write(output)
+              
+              // 如果需要滚动到底部，使用 requestAnimationFrame 确保平滑滚动
+              requestAnimationFrame(() => {
+                try {
+                  term.scrollToBottom()
+                } catch (error) {
+                  console.error('Error scrolling to bottom:', error)
+                }
+              })
+            } else {
+              outputBuffer.value.push(output)
+            }
           }
         })
 
@@ -542,6 +556,13 @@ export default {
         scrollSensitivity: 1,
         experimentalCharAtlas: 'dynamic',
         refreshRate: 60,
+        parser: {
+          validateEscapeSequences: false,  // 允许所有转义序列
+          utf8: {
+            isValidUTF8: true,
+            skipInvalid: true
+          }
+        }
       })
 
       term.open(terminal.value)
