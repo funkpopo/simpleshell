@@ -337,18 +337,21 @@ export default {
         })
 
         socket.on('ssh_error', (error) => {
-          console.error('SSH Error:', error)
-          if (isTerminalReady.value && term) {
-            term.write('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
-            term.write('\x1b[31m' + error.error + '\x1b[0m\r\n')
-            term.write('\x1b[31m=============\x1b[0m\r\n\r\n')
-            term.write('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
-            term.scrollToBottom()
-          } else {
-            outputBuffer.value.push('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
-            outputBuffer.value.push('\x1b[31m' + error.error + '\x1b[0m\r\n')
-            outputBuffer.value.push('\x1b[31m=============\x1b[0m\r\n\r\n')
-            outputBuffer.value.push('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
+          // 添加会话ID检查，只处理属于当前终端的错误消息
+          if (error.session_id === props.sessionId) {
+            console.error('SSH Error:', error)
+            if (isTerminalReady.value && term) {
+              term.write('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
+              term.write('\x1b[31m' + error.error + '\x1b[0m\r\n')
+              term.write('\x1b[31m=============\x1b[0m\r\n\r\n')
+              term.write('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
+              term.scrollToBottom()
+            } else {
+              outputBuffer.value.push('\r\n\x1b[31m=== Error ===\x1b[0m\r\n')
+              outputBuffer.value.push('\x1b[31m' + error.error + '\x1b[0m\r\n')
+              outputBuffer.value.push('\x1b[31m=============\x1b[0m\r\n\r\n')
+              outputBuffer.value.push('Press Ctrl+W or click the close button (×) to close this terminal.\r\n')
+            }
           }
         })
 
