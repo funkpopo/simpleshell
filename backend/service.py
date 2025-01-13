@@ -298,6 +298,7 @@ def read_output(session_id, channel):
     try:
         print(f"Starting read thread for session {session_id}")
         last_activity = time.time()
+        buffer = bytearray()
         
         while True:
             with sessions_lock:
@@ -306,30 +307,40 @@ def read_output(session_id, channel):
             
             try:
                 if channel.recv_ready():
+                    # 读取数据
                     data = channel.recv(1024)
                     if data:
+                        # 将数据添加到缓冲区
+                        buffer.extend(data)
+                        
+                        # 尝试解码完整的输出
                         try:
-                            text = data.decode('utf-8', errors='ignore')
-                            print(f"Sending output for session {session_id}: {text[:100]}")
+                            # 使用 'utf-8' 解码，忽略错误
+                            text = buffer.decode('utf-8', errors='ignore')
+                            # 清空缓冲区
+                            buffer.clear()
+                            
+                            # 发送输出到客户端，保持所有控制字符
                             socketio.emit('ssh_output', {
                                 'session_id': session_id,
                                 'output': text
                             })
-                            last_activity = time.time()  # 更新最后活动时间
-                        except Exception as e:
-                            print(f"Error processing output: {e}")
+                            last_activity = time.time()
+                        except UnicodeDecodeError:
+                            # 如果解码失败，保留数据在缓冲区中
+                            continue
                 else:
-                    # 每 60 秒发送一次保活信号
+                    # 处理保活信号
                     current_time = time.time()
                     if current_time - last_activity > 60:
                         try:
-                            channel.send('\x00')  # 发送空字节作为保活信号
+                            channel.send('\x00')
                             last_activity = current_time
                         except Exception as e:
                             print(f"Error sending keepalive: {e}")
                             break
                     
-                    socketio.sleep(0.1)  # 增加睡眠时间，减少 CPU 使用
+                    socketio.sleep(0.1)
                 
                 # 检查通道状态
                 if channel.closed or not channel.get_transport() or not channel.get_transport().is_active():
