@@ -1957,26 +1957,89 @@ export default {
     const closeSearchBar = () => {
       showSearchBar.value = false
       searchText.value = ''
+      isSearching.value = false
+      searchMarkers.value = []
       
-      // 使用 findNext 并传递空字符串来清除之前的搜索结果
+      if (terminal.value) {
+        terminal.value.style.removeProperty('--search-marker-start')
+        terminal.value.style.removeProperty('--search-marker-end')
+      }
+      
+      // 清除搜索高亮
       if (searchAddon && term) {
-        searchAddon.findNext('', {
-          caseSensitive: false,
-          wholeWord: false,
-          regex: false
-        })
+        searchAddon.clearDecorations()
       }
     }
 
     // 执行搜索
     const performSearch = () => {
-      if (!searchAddon || !term || !searchText.value) return
+      if (!searchAddon || !term || !searchText.value) {
+        isSearching.value = false
+        searchMarkers.value = []
+        return
+      }
 
-      searchAddon.findNext(searchText.value, {
-        caseSensitive: searchOptions.value.caseSensitive,
-        wholeWord: searchOptions.value.wholeWord,
-        regex: false // 取消正则表达式匹配
-      })
+      isSearching.value = true
+      
+      try {
+        // 使用 findNext 进行搜索
+        const found = searchAddon.findNext(searchText.value, {
+          caseSensitive: searchOptions.value.caseSensitive,
+          wholeWord: searchOptions.value.wholeWord,
+          regex: false,
+          decorations: {
+            // 使用十六进制颜色代替 CSS 变量
+            matchBackground: '#4C9EFF33', // 浅蓝色带透明度
+            matchBorder: '#4C9EFF',      // 蓝色边框
+            activeMatchBackground: '#4C9EFF66', // 更深的蓝色带透明度
+            activeMatchBorder: '#2B7DE9'  // 深蓝色边框
+          }
+        })
+
+        // 如果找到匹配项，计算匹配行的位置
+        if (found && term.buffer && terminal.value) {
+          // 获取当前视口信息
+          const viewportElement = terminal.value.querySelector('.xterm-viewport')
+          const buffer = term.buffer.active
+          
+          // 获取当前激活的匹配行
+          const activeRow = buffer.cursorY
+          const totalRows = buffer.length
+          
+          // 计算实际的行位置（考虑滚动位置）
+          const scrollTop = viewportElement.scrollTop
+          const lineHeight = term.options.fontSize * term.options.lineHeight
+          const scrollPosition = Math.floor(scrollTop / lineHeight)
+          
+          // 计算匹配行在整个缓冲区中的相对位置（百分比）
+          const matchPosition = ((scrollPosition + activeRow) / totalRows) * 100
+          
+          // 更新标记位置 - 只需要起始位置
+          searchMarkers.value = [{
+            start: Math.max(0, Math.min(100, matchPosition))
+          }]
+
+          // 更新 CSS 变量 - 只设置起始位置
+          terminal.value.style.setProperty('--search-marker-start', `${searchMarkers.value[0].start}`)
+
+          // 确保匹配行在视口中可见
+          const targetScrollPosition = Math.max(0, (activeRow * lineHeight) - (viewportElement.clientHeight / 2))
+          viewportElement.scrollTo({
+            top: targetScrollPosition,
+            behavior: 'smooth'
+          })
+        } else {
+          // 如果没有找到匹配项，清除标记
+          searchMarkers.value = []
+          if (terminal.value) {
+            terminal.value.style.removeProperty('--search-marker-start')
+          }
+        }
+      } catch (error) {
+        console.error('Search error:', error)
+        isSearching.value = false
+        searchMarkers.value = []
+      }
     }
 
     // 查找上一个匹配项
@@ -1986,12 +2049,24 @@ export default {
       searchAddon.findPrevious(searchText.value, {
         caseSensitive: searchOptions.value.caseSensitive,
         wholeWord: searchOptions.value.wholeWord,
-        regex: false // 取消正则表达式匹配
+        regex: false
       })
+      
+      // 更新标记位置
+      performSearch()
     }
 
     // 查找一个匹配项
     const findNext = () => {
+      if (!searchAddon || !term || !searchText.value) return
+
+      searchAddon.findNext(searchText.value, {
+        caseSensitive: searchOptions.value.caseSensitive,
+        wholeWord: searchOptions.value.wholeWord,
+        regex: false
+      })
+      
+      // 更新标记位置
       performSearch()
     }
 
@@ -2136,6 +2211,21 @@ export default {
       }
     }
 
+    // 在 setup 中添加搜索相关的响应式变量
+    const searchMarkers = ref([])
+    const isSearching = ref(false)
+
+    // 监听搜索状态变化
+    watch(isSearching, (newValue) => {
+      if (terminal.value) {
+        if (newValue) {
+          terminal.value.classList.add('searching')
+        } else {
+          terminal.value.classList.remove('searching')
+        }
+      }
+    })
+
     return { 
       terminal,
       closeConnection,
@@ -2191,48 +2281,141 @@ export default {
 
 :deep(.xterm) {
   height: 100%;
-  padding: 0;         /* 移除多余的内边距 */
+  padding: 0;
+  position: relative; /* 添加相对定位 */
 }
 
 :deep(.xterm-viewport) {
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  width: calc(100%) !important;
+  width: 100% !important; /* 移除 calc */
+  height: 100% !important;
   scrollbar-width: thin;
   scrollbar-color: var(--color-text-4) transparent;
-  padding-right: 4px;
+  position: absolute; /* 改为绝对定位 */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transition: scrollbar-width 0.2s ease;
 }
 
-:deep(.xterm-viewport::-webkit-scrollbar) {
-  width: 12px;
-  height: 12px;
-  background-color: transparent;
-}
-
+/* 添加滚动条轨道区域 */
 :deep(.xterm-viewport::-webkit-scrollbar-track) {
   background: transparent;
   border-radius: 6px;
+  margin: 4px 0;
+  transition: background-color 0.2s ease;
 }
 
+/* 基础滚动条样式 */
+:deep(.xterm-viewport::-webkit-scrollbar) {
+  position: absolute;
+  right: 0;
+  width: 12px;
+  background-color: transparent;
+  transition: width 0.2s ease;
+}
+
+/* 滚动条滑块样式 */
 :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
   background-color: var(--color-fill-3);
-  border-radius: 4px;
+  border-radius: 6px;
   border: 3px solid transparent;
   background-clip: padding-box;
   min-height: 50px;
+  transition: all 0.2s ease;
 }
 
-:deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
+/* 滚动条悬停效果 */
+:deep(.xterm-viewport:hover::-webkit-scrollbar) {
+  width: 16px;
+}
+
+:deep(.xterm-viewport:hover::-webkit-scrollbar-track) {
+  background-color: rgba(var(--color-fill-2-rgb), 0.1);
+}
+
+:deep(.xterm-viewport:hover::-webkit-scrollbar-thumb) {
   background-color: var(--color-fill-4);
+  border-width: 2px;
 }
 
-/* 深色模式下的滚动条样式 */
-.terminal-container.dark-mode :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
-  background-color: var(--color-fill-4);
-}
-
-.terminal-container.dark-mode :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
+/* 滚动条激活状态 */
+:deep(.xterm-viewport::-webkit-scrollbar-thumb:active) {
   background-color: var(--color-fill-5);
+}
+
+/* 搜索结果高亮区域 */
+:deep(.xterm-viewport::after) {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+}
+
+/* 搜索模式下显示高亮区域 */
+.terminal-container.searching :deep(.xterm-viewport::after) {
+  opacity: 1;
+}
+
+/* 搜索结果标记样式 */
+.terminal-container.searching :deep(.xterm-viewport)::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  width: 8px;
+  height: 2px;
+  background-color: var(--color-primary-light-4);
+  top: calc(var(--search-marker-start) * 1%);
+  opacity: 0.8;
+  transition: all 0.2s ease;
+  pointer-events: none;
+  z-index: 11;
+}
+
+/* 深色模式下的搜索标记 */
+.terminal-container.dark-mode.searching :deep(.xterm-viewport)::after {
+  background-color: var(--color-primary-light-3);
+}
+
+/* 滚动条悬停时调整标记 */
+.terminal-container.searching :deep(.xterm-viewport:hover)::after {
+  width: 12px;
+  right: 2px;
+}
+
+/* 深色模式下的搜索标记 */
+.terminal-container.dark-mode.searching :deep(.xterm-viewport::after) {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent var(--search-marker-start),
+    var(--color-primary-light-3) var(--search-marker-start),
+    var(--color-primary-light-3) var(--search-marker-end),
+    transparent var(--search-marker-end),
+    transparent 100%
+  );
+  box-shadow: inset -1px 0 0 0 var(--color-primary-light-1);
+}
+
+/* 深色模式适配 */
+.terminal-container.dark-mode :deep(.xterm-viewport:hover::-webkit-scrollbar-track) {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.terminal-container.dark-mode :deep(.xterm-viewport:hover::-webkit-scrollbar-thumb) {
+  background-color: var(--color-fill-5);
+}
+
+.terminal-container.dark-mode :deep(.xterm-viewport::-webkit-scrollbar-thumb:active) {
+  background-color: var(--color-fill-6);
 }
 
 /* Firefox 滚动条样式 */
@@ -2242,13 +2425,22 @@ export default {
     scrollbar-color: var(--color-fill-3) transparent;
   }
   
-  .terminal-container.dark-mode :deep(.xterm-viewport) {
-    scrollbar-color: var(--color-fill-4) transparent;
+  :deep(.xterm-viewport:hover) {
+    scrollbar-width: auto;
+    scrollbar-color: var(--color-fill-4) rgba(var(--color-fill-2-rgb), 0.1);
+  }
+  
+  .terminal-container.dark-mode :deep(.xterm-viewport:hover) {
+    scrollbar-color: var(--color-fill-5) rgba(255, 255, 255, 0.05);
   }
 }
 
 :deep(.xterm-screen) {
-  position: relative;
+  position: absolute; /* 改为绝对定位 */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
 </style>
 
