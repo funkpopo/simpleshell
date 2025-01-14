@@ -331,22 +331,8 @@ export default {
 
         socket.on('ssh_output', (data) => {
           if (data.session_id === props.sessionId) {
-            const output = data.output
-            if (isTerminalReady.value && term) {
-              // 直接写入原始输出，不做额外处理
-              term.write(output)
-              
-              // 如果需要滚动到底部，使用 requestAnimationFrame 确保平滑滚动
-              requestAnimationFrame(() => {
-                try {
-                  term.scrollToBottom()
-                } catch (error) {
-                  console.error('Error scrolling to bottom:', error)
-                }
-              })
-            } else {
-              outputBuffer.value.push(output)
-            }
+            console.log('Received SSH output')
+            writeToTerminal(data.output)
           }
         })
 
@@ -556,13 +542,6 @@ export default {
         scrollSensitivity: 1,
         experimentalCharAtlas: 'dynamic',
         refreshRate: 60,
-        parser: {
-          validateEscapeSequences: false,  // 允许所有转义序列
-          utf8: {
-            isValidUTF8: true,
-            skipInvalid: true
-          }
-        }
       })
 
       term.open(terminal.value)
@@ -861,188 +840,87 @@ export default {
     const writeToTerminal = (text) => {
       if (isTerminalReady.value && term) {
         try {
-          // 检测是否进入 top 界面
-          if (text.includes('top - ') && text.includes('Tasks:')) {
+          // 检测是否进入特殊界面模式
+          if (text.includes('\u001b[?1049h') || // vim 全屏模式
+              text.includes('\u001b[?47h') ||   // 备用屏幕
+              text.includes('top - ') ||        // top 命令
+              text.includes('htop') ||          // htop 命令
+              text.includes('nano') ||          // nano 编辑器
+              text.includes('mc')) {            // midnight commander
             isInEditorMode.value = true
-            // top 命令界面调整
-            nextTick(() => {
-              const terminalElement = terminal.value
-              const computedStyle = window.getComputedStyle(terminalElement)
-              const padding = parseInt(computedStyle.padding || '0')
-              
-              // 计算可用空间
-              const availableWidth = terminalElement.clientWidth - 2 * padding
-              const availableHeight = terminalElement.clientHeight - 2 * padding
-
-              // 使用更精确的字符尺寸计算
-              const span = document.createElement('span')
-              span.style.fontFamily = term.options.fontFamily
-              span.style.fontSize = `${term.options.fontSize}px`
-              span.style.position = 'absolute'
-              span.style.visibility = 'hidden'
-              span.textContent = 'X'
-              document.body.appendChild(span)
-
-              const charSize = span.getBoundingClientRect()
-              const charWidth = charSize.width
-              const charHeight = charSize.height
-              document.body.removeChild(span)
-
-              // 计算新的列数和行数，为 top 界面预留空间
-              const newCols = Math.max(80, Math.floor(availableWidth / charWidth))
-              // 为 top 界面预留合适的空间，减去4行（顶部信息、任务信息、CPU信息和底部提示）
-              const newRows = Math.max(24, Math.floor(availableHeight / charHeight) - 2)
-
-              // 调整终端大小
-              term.resize(newCols, newRows)
-              
-              // 通知服务器新的终端大小
-              if (socket && isTerminalReady.value) {
-                socket.emit('resize', { 
-                  session_id: props.sessionId, 
-                  cols: newCols, 
-                  rows: newRows,
-                  isTop: true
-                })
-              }
-            })
-          } 
-          // 检测是否退出 top 界面（按 q 键退出或 Ctrl+C）
-          else if (isInEditorMode.value && (
-            /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text) || // 检测命令提示符
-            text.includes('^C') || // 检测 Ctrl+C
-            text.includes('Terminated') // 检测终止信息
-          )) {
-            isInEditorMode.value = false
-            // 退出 top 界面时恢复正常终端大小
-            nextTick(() => {
-              handleResize()
-            })
-          }
-
-          // 原有的编辑器模式检测逻辑
-          if (text.includes('\u001b[?1049h') || // vim 进入全屏模式
-              text.includes('\u001b[?47h') ||   // 备用全屏模式
-              text.includes('GNU nano') ||       // nano 编辑器
-              text.includes('-- INSERT --')) {   // vim 插入模式
-            isInEditorMode.value = true
-            
-            // 编辑器模式下立即重新计算并调整终端大小
-            nextTick(() => {
-              const terminalElement = terminal.value
-              const computedStyle = window.getComputedStyle(terminalElement)
-              const padding = parseInt(computedStyle.padding || '0')
-              
-              // 计算可用空间
-              const availableWidth = terminalElement.clientWidth - 2 * padding
-              const availableHeight = terminalElement.clientHeight - 2 * padding
-
-              // 使用更精确的字符尺寸计算
-              const span = document.createElement('span')
-              span.style.fontFamily = term.options.fontFamily
-              span.style.fontSize = `${term.options.fontSize}px`
-              span.style.position = 'absolute'
-              span.style.visibility = 'hidden'
-              span.textContent = 'X'
-              document.body.appendChild(span)
-
-              const charSize = span.getBoundingClientRect()
-              const charWidth = charSize.width
-              const charHeight = charSize.height
-              document.body.removeChild(span)
-
-              // 计算新的列数和行数，考虑编辑器边框和状态栏
-              const newCols = Math.max(80, Math.floor(availableWidth / charWidth))
-              // 为状态栏和边框预留空间
-              const newRows = Math.max(24, Math.floor(availableHeight / charHeight) - 2)
-
-              // 调整终端大小
-              term.resize(newCols, newRows)
-              
-              // 通知服务器新的终端大小
-              if (socket && isTerminalReady.value) {
-                socket.emit('resize', { 
-                  session_id: props.sessionId, 
-                  cols: newCols, 
-                  rows: newRows,
-                  isEditor: true // 标记这是编辑器模式的调整
-                })
-              }
-            })
-
-            // 在编辑器模式下直接写入内容，不做处理
-            term.write(text)
-            return
-          } 
-          // 检测是否退出编辑器模式
-          else if (isInEditorMode.value && (
-            text.includes('\u001b[?1049l') || // vim 退出全屏模式
-            text.includes('\u001b[?47l') ||    // 备用全屏模式退出
-            /\[.*?@.*?\s+.*?\][$#>]\s*$/.test(text) || // 命令提示符
-            text.includes('-- NORMAL --'))) {    // vim 普通模式
-            isInEditorMode.value = false
-            // 退出编辑器模式时恢复正常终端大小
-            nextTick(() => {
-              handleResize()
-            })
-          }
-
-          // 如果在编辑器模式下，直接写入内容
-          if (isInEditorMode.value) {
+            // 直接写入，不做处理
             term.write(text)
             return
           }
 
-          const lines = text.split('\n')
-          lines.forEach((line, index) => {
-            const isPrompt = /^\[.*?@.*?\s+.*?\][$#>]\s*$/.test(line)
-            
-            if (isPrompt) {
-              // 处理提示符高亮...
-              const parts = line.match(/^\[(.*?)@(.*?)\s+(.*?)\]([$#>])\s*$/)
-              if (parts) {
-                term.write('\x1b[1;32m[' + parts[1])
-                term.write('\x1b[1;37m@')
-                term.write('\x1b[1;34m' + parts[2])
-                term.write('\x1b[1;34m ' + parts[3])
-                term.write('\x1b[1;37m]' + parts[4])
-                term.write('\x1b[0m')
-              } else {
-                term.write(line)
-              }
-            } else {
-              // 处理正则和字符串匹配的高亮
-              const matches = processLine(line)
-              let lastIndex = 0
-              
-              if (matches.length === 0) {
-                // 如果没有匹配，直接写入整行
-                term.write(line)
-              } else {
-                matches.forEach(match => {
-                  if (match.start > lastIndex) {
-                    term.write(line.substring(lastIndex, match.start))
-                  }
-                  term.write(match.color + match.text + '\x1b[0m')
-                  lastIndex = match.end
-                })
+          // 处理 CSI 序列
+          const chunks = text.split(/(\x1b\[[0-9;]*[A-Za-z])/g)
+          for (const chunk of chunks) {
+            if (chunk.startsWith('\x1b[')) {
+              // 直接写入控制序列
+              term.write(chunk)
+            } else if (chunk) {
+              // 处理普通文本
+              const lines = chunk.split('\n')
+              lines.forEach((line, index) => {
+                // 检查是否是提示符
+                const isPrompt = /^\[.*?@.*?\s+.*?\][$#>]\s*$/.test(line)
                 
-                if (lastIndex < line.length) {
-                  term.write(line.substring(lastIndex))
+                if (isPrompt) {
+                  // 处理提示符高亮
+                  const parts = line.match(/^\[(.*?)@(.*?)\s+(.*?)\]([$#>])\s*$/)
+                  if (parts) {
+                    term.write('\x1b[1;32m[' + parts[1])  // 用户名
+                    term.write('\x1b[1;37m@')             // @ 符号
+                    term.write('\x1b[1;34m' + parts[2])   // 主机名
+                    term.write('\x1b[1;34m ' + parts[3])  // 路径
+                    term.write('\x1b[1;37m]' + parts[4])  // 提示符
+                    term.write('\x1b[0m')                 // 重置样式
+                  } else {
+                    term.write(line)
+                  }
+                } else {
+                  // 处理普通文本和高亮
+                  const matches = processLine(line)
+                  let lastIndex = 0
+                  
+                  if (matches.length === 0) {
+                    term.write(line)
+                  } else {
+                    matches.forEach(match => {
+                      if (match.start > lastIndex) {
+                        term.write(line.substring(lastIndex, match.start))
+                      }
+                      term.write(match.color + match.text + '\x1b[0m')
+                      lastIndex = match.end
+                    })
+                    
+                    if (lastIndex < line.length) {
+                      term.write(line.substring(lastIndex))
+                    }
+                  }
                 }
-              }
-            }
 
-            if (index < lines.length - 1) {
-              term.write('\r\n')
+                // 添加换行符，除非是最后一行
+                if (index < lines.length - 1) {
+                  term.write('\r\n')
+                }
+              })
             }
-          })
+          }
 
+          // 检测路径变化
           detectPathChange(text)
 
-          // 在写入完成后安全滚动
-          nextTick(() => {
-            safeScrollToBottom()
+          // 使用 requestAnimationFrame 进行滚动
+          requestAnimationFrame(() => {
+            if (term && term.element) {
+              const isScrolledToBottom = 
+                term.element.scrollTop + term.element.clientHeight >= term.element.scrollHeight
+              if (isScrolledToBottom) {
+                safeScrollToBottom()
+              }
+            }
           })
 
         } catch (error) {
@@ -2049,9 +1927,8 @@ export default {
       searchAddon.findPrevious(searchText.value, {
         caseSensitive: searchOptions.value.caseSensitive,
         wholeWord: searchOptions.value.wholeWord,
-        regex: false
+        regex: false // 取消正则表达式匹配
       })
-      
       // 更新标记位置
       performSearch()
     }
