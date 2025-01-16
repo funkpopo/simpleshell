@@ -130,7 +130,12 @@ export default {
     uploadPartialSuccess: 'Upload completed: {success} succeeded, {fail} failed',
     pageSizeOptions: 'Items per page',
     pageSizeSaved: 'Page size setting saved',
-    pageSizeSaveFailed: 'Failed to save page size setting'
+    pageSizeSaveFailed: 'Failed to save page size setting',
+    inputPath: 'Enter path to navigate',
+    emptyPath: 'Please enter a path',
+    pathNotFound: 'Path not found: {path}',
+    pathNavigated: 'Navigated to: {path}',
+    invalidPath: 'Invalid path'
   },
   update: {
     newVersion: 'New Version Available',
