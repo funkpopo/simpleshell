@@ -132,7 +132,12 @@ export default {
     uploadPartialSuccess: '上传完成：{success} 个成功，{fail} 个失败',
     pageSizeOptions: '每页显示',
     pageSizeSaved: '分页设置已保存',
-    pageSizeSaveFailed: '分页设置保存失败'
+    pageSizeSaveFailed: '分页设置保存失败',
+    inputPath: '输入路径以快速导航',
+    emptyPath: '请输入路径',
+    pathNotFound: '找不到路径：{path}',
+    pathNavigated: '已导航到：{path}',
+    invalidPath: '无效的路径'
   },
   update: {
     newVersion: '发现新版本',

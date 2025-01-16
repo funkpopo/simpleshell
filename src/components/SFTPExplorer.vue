@@ -30,6 +30,18 @@
             </a-button-group>
           </div>
         </div>
+        <div class="path-input-container">
+          <a-input
+            v-model="pathInput"
+            :placeholder="t('sftp.inputPath')"
+            allow-clear
+            @press-enter="navigateToPath"
+          >
+            <template #prefix>
+              <icon-folder />
+            </template>
+          </a-input>
+        </div>
         <div class="sftp-content">
           <a-spin :loading="loading">
             <template v-if="fileTree && fileTree.length > 0">
@@ -57,6 +69,7 @@
                       'hidden-file': nodeData.isHidden,
                       'drag-over': !nodeData.isLeaf && dragTargetKey === nodeData.key
                     }"
+                    :data-key="nodeData.key"
                     @dragenter.prevent="(e) => handleFolderDragEnter(e, nodeData)"
                     @dragover.prevent="(e) => handleFolderDragOver(e, nodeData)"
                     @dragleave.prevent="(e) => handleFolderDragLeave(e, nodeData)"
@@ -259,7 +272,7 @@ import { ref, onMounted, watch, inject, onUnmounted, reactive, nextTick } from '
 import { IconFile, IconFolder, IconRefresh, IconHome, IconDelete, IconHistory, IconClose } from '@arco-design/web-vue/es/icon';
 import axios from 'axios';
 import { Message, Modal } from '@arco-design/web-vue';
-import { Menu, MenuItem, getCurrentWindow, shell, dialog } from '@electron/remote';
+import { Menu, MenuItem, dialog } from '@electron/remote';
 import path from 'path';
 import fs from 'fs';
 
@@ -298,6 +311,7 @@ export default {
     const newFolderName = ref('');
     const currentFolderPath = ref('');
     const i18n = inject('i18n');
+    const pathInput = ref('');
 
     const historyColumns = [
       {
@@ -2359,6 +2373,73 @@ export default {
       // ... 其他现有的 onMounted 代码
     });
 
+    const navigateToPath = async () => {
+      if (!pathInput.value) {
+        Message.warning(t('sftp.emptyPath'));
+        return;
+      }
+      
+      try {
+        loading.value = true;
+        const normalizedPath = pathInput.value.replace(/\\/g, '/');
+        
+        // 获取路径的所有部分
+        const pathParts = normalizedPath.split('/').filter(Boolean);
+        let currentPath = '';
+        
+        // 重置文件树展开状态
+        if (pathParts[0]) {
+          await fetchRootDirectory();
+        }
+        
+        // 逐级展开路径
+        for (const part of pathParts) {
+          currentPath += '/' + part;
+          const node = findNodeByKey(currentPath);
+          
+          if (!node) {
+            throw new Error(t('sftp.pathNotFound', { path: currentPath }));
+          }
+          
+          // 加载并展开当前节点
+          await loadMoreData(node);
+          if (!expandedKeys.value.includes(node.key)) {
+            expandedKeys.value = [...expandedKeys.value, node.key];
+          }
+        }
+        
+        // 更新当前路径
+        currentDirectory.value = normalizedPath;
+        
+        // 等待DOM更新完成后滚动到目标位置并高亮
+        await nextTick();
+        const targetNode = document.querySelector(`[data-key="${normalizedPath}"]`);
+        if (targetNode) {
+          // 找到目标节点的父级 arco-tree-node
+          const treeNode = targetNode.closest('.arco-tree-node');
+          if (treeNode) {
+            // 滚动到目标位置
+            treeNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // 添加高亮动画类
+            treeNode.classList.add('highlight-animation');
+            
+            // 动画结束后移除类
+            setTimeout(() => {
+              treeNode.classList.remove('highlight-animation');
+            }, 3000);
+          }
+        }
+        
+        Message.success(t('sftp.pathNavigated', { path: normalizedPath }));
+      } catch (error) {
+        console.error('Navigation failed:', error);
+        Message.error(error.message || t('sftp.invalidPath'));
+      } finally {
+        loading.value = false;
+      }
+    };
+
     return {
       fileTree,
       loading,
@@ -2434,7 +2515,9 @@ export default {
       cancelUpload,
       cancelDownload,
       handlePageSizeChange,
-      pageSize
+      pageSize,
+      pathInput,
+      navigateToPath
     };
   }
 }
@@ -3036,6 +3119,88 @@ export default {
 
 .close-button:hover {
   background-color: var(--color-fill-3);
+}
+
+.sftp-header {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  gap: 8px;
+}
+
+.path-input {
+  flex: 1;
+  margin-right: 8px;
+}
+
+.sftp-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.path-input-container {
+  padding: 0 8px 8px 8px;
+}
+
+.sftp-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px;
+}
+
+.sftp-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 添加高亮动画样式 */
+@keyframes highlight-folder {
+  0% {
+    background-color: transparent;
+  }
+  30% {
+    background-color: var(--color-primary-light-2);
+  }
+  70% {
+    background-color: var(--color-primary-light-2);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.highlight-animation {
+  animation: highlight-folder 3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 修改高亮动画样式 */
+@keyframes highlight-folder {
+  0% {
+    background-color: transparent;
+  }
+  30% {
+    background-color: var(--color-primary-light-2);
+  }
+  70% {
+    background-color: var(--color-primary-light-2);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* 高亮动画只作用于树节点 */
+:deep(.arco-tree-node.highlight-animation) {
+  animation: highlight-folder 3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 确保高亮效果不会被其他样式覆盖 */
+:deep(.arco-tree-node.highlight-animation) .tree-node-content {
+  background-color: transparent;
+}
+
+:deep(.arco-tree-node.highlight-animation:hover) {
+  background-color: var(--color-primary-light-2);
 }
 </style>
 
