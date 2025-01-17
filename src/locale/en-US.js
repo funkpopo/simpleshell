@@ -269,7 +269,13 @@ export default {
       nextExecutions: 'Next Execution Times',
       copy: 'Copy',
       copied: 'Copied to clipboard',
-      invalidExpression: 'Invalid cron expression'
+      invalidExpression: 'Invalid cron expression',
+      everyMinute: 'Every Minute (0 * * * *)',
+      everyHour: 'Every Hour (0 0 * * *)',
+      everyDay: 'Every Day at Midnight (0 0 * * *)',
+      everyWeek: 'Every Sunday at Midnight (0 0 * * 0)',
+      everyMonth: 'Every 1st at Midnight (0 0 1 * *)',
+      everyYear: 'Every January 1st at Midnight (0 0 1 1 *)'
     }
   }
 }

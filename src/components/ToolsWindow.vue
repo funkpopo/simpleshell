@@ -224,12 +224,12 @@
                     @change="applyTemplate"
                     size="small"
                   >
-                    <a-option value="every_minute" label="每分钟 (* * * * *)"></a-option>
-                    <a-option value="every_hour" label="每小时 (0 * * * *)"></a-option>
-                    <a-option value="every_day" label="每天午夜 (0 0 * * *)"></a-option>
-                    <a-option value="every_week" label="每周日午夜 (0 0 * * 0)"></a-option>
-                    <a-option value="every_month" label="每月1号午夜 (0 0 1 * *)"></a-option>
-                    <a-option value="every_year" label="每年1月1日午夜 (0 0 1 1 *)"></a-option>
+                    <a-option value="every_minute" :label="$t('tools.crontab.everyMinute')"></a-option>
+                    <a-option value="every_hour" :label="$t('tools.crontab.everyHour')"></a-option>
+                    <a-option value="every_day" :label="$t('tools.crontab.everyDay')"></a-option>
+                    <a-option value="every_week" :label="$t('tools.crontab.everyWeek')"></a-option>
+                    <a-option value="every_month" :label="$t('tools.crontab.everyMonth')"></a-option>
+                    <a-option value="every_year" :label="$t('tools.crontab.everyYear')"></a-option>
                   </a-select>
                 </a-form-item>
 
