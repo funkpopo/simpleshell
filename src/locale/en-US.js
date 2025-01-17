@@ -86,6 +86,7 @@ export default {
     createFolder: 'Create',
     cancel: 'Cancel',
     confirm: 'Confirm',
+    uploadingFiles: 'Uploading files...',
     uploadSuccess: 'Uploaded successfully',
     downloadSuccess: 'Downloaded successfully',
     deleteSuccess: 'Deleted successfully',

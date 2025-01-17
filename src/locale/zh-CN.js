@@ -86,6 +86,7 @@ export default {
     createFolder: '创建',
     cancel: '取消',
     confirm: '确认',
+    uploadingFiles: '正在上传文件...',
     uploadSuccess: '上传成功',
     downloadSuccess: '下载成功',
     deleteSuccess: '删除成功',
