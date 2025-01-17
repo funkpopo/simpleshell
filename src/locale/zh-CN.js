@@ -275,7 +275,13 @@ export default {
       nextExecutions: '接下来的执行时间',
       copy: '复制',
       copied: '已复制到剪贴板',
-      invalidExpression: '无效的cron表达式'
+      invalidExpression: '无效的cron表达式',
+      everyMinute: '每分钟 (0 * * * *)',
+      everyHour: '每小时 (0 0 * * *)',
+      everyDay: '每天午夜 (0 0 * * *)',
+      everyWeek: '每周日午夜 (0 0 * * 0)',
+      everyMonth: '每月1号午夜 (0 0 1 * *)',
+      everyYear: '每年1月1日午夜 (0 0 1 1 *)'
     }
   }
 }
