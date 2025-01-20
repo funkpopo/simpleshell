@@ -728,7 +728,8 @@ export default {
           cronExpression.value = '0 0 1 1 *'
           break
       }
-      // watch会自动触发解析
+      // 手动触发表达式解析
+      parseCronExpression(cronExpression.value)
     }
 
     // 复制cron表达式

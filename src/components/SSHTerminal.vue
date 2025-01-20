@@ -74,6 +74,8 @@
     <div 
       class="resource-monitor" 
       :class="{ 'collapsed': isResourceMonitorCollapsed }"
+      @mouseenter="handleMouseEnter"
+      @mouseleave="handleMouseLeave"
       @click="toggleResourceMonitor"
     >
       <div v-if="!isResourceMonitorCollapsed" class="monitor-content">
@@ -82,14 +84,14 @@
           <div class="progress-bar">
             <div class="progress cpu-progress" :style="{ width: `${cpuUsage}%` }" :class="getCPUClass"></div>
           </div>
-          <span class="value" v-show="showValues">{{ cpuUsage }}%</span>
+          <span class="value">{{ cpuUsage }}%</span>
         </div>
         <div class="monitor-item">
           <span class="label">MEM</span>
           <div class="progress-bar">
             <div class="progress mem-progress" :style="{ width: `${memUsage}%` }"></div>
           </div>
-          <span class="value" v-show="showValues">{{ memUsage }}%</span>
+          <span class="value">{{ memUsage }}%</span>
         </div>
       </div>
       <div class="monitor-collapse-indicator">
@@ -1331,7 +1333,7 @@ export default {
       resourceMonitorInterval = setInterval(() => {
         console.log('Resource monitoring interval triggered')
         updateResourceUsage()
-      }, 30000)
+      }, 10000)
     }
 
     const stopResourceMonitoring = () => {
@@ -2463,6 +2465,8 @@ export default {
   gap: 4px;
   padding: 6px;
   transition: opacity 0.3s ease;
+  opacity: 1;
+  width: auto;
 }
 
 .resource-monitor.collapsed .monitor-content {
@@ -2518,15 +2522,20 @@ export default {
   color: var(--color-text-2);
   min-width: 36px;
   text-align: right;
-  opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: all 0.2s ease;
   transform: translateY(-50%);
   top: 50%;
   pointer-events: none;
+  display: block !important;
+}
+
+.monitor-item:hover .value {
+  opacity: 1 !important;
+  transform: translateY(-50%) translateX(-8px);
 }
 
 .resource-monitor:hover .value {
-  opacity: 1;
+  opacity: 1 !important;
   transform: translateY(-50%) translateX(-8px);
 }
 
