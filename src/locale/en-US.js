@@ -20,7 +20,10 @@ export default {
     close: 'Close',
     open: 'Open',
     edit: 'Edit',
-    duplicate: 'Duplicate'
+    duplicate: 'Duplicate',
+    search: 'Search',
+    searchConnections: 'Search connections...',
+    noSearchResults: 'No matching connections found'
   },
   settings: {
     title: 'Settings',
