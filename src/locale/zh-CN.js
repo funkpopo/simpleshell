@@ -20,7 +20,10 @@ export default {
     close: '关闭',
     open: '打开',
     edit: '编辑',
-    duplicate: '复制'
+    duplicate: '复制',
+    search: '搜索',
+    searchConnections: '搜索连接...',
+    noSearchResults: '没有找到匹配的连接'
   },
   settings: {
     title: '设置',

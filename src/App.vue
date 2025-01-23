@@ -141,6 +141,13 @@
         >
           <div class="connections-sider-header">
             <span class="connections-title">{{ selectedFolder?.name }}</span>
+            <!-- Add search box -->
+            <a-input-search
+              v-model="searchQuery"
+              :placeholder="t('common.searchConnections')"
+              class="connection-search"
+              allow-clear
+            />
             <a-button 
               class="new-connection-btn" 
               @click="showAddConnectionModal(selectedFolderId)"
@@ -152,7 +159,7 @@
 
           <div class="connections-list">
             <draggable 
-              v-model="selectedFolder.connections"
+              v-model="filteredConnections"
               :animation="200"
               item-key="id"
               handle=".connection-drag-handle"
@@ -181,6 +188,10 @@
                 </div>
               </template>
             </draggable>
+            <!-- Add no results message -->
+            <div v-if="searchQuery && filteredConnections.length === 0" class="no-results">
+              {{ t('common.noSearchResults') }}
+            </div>
           </div>
           
           <!-- 添加拖拽调整宽度的区域 -->
@@ -2362,6 +2373,22 @@ export default {
       window.removeEventListener('keydown', handleKeyDown)
     })
 
+    const searchQuery = ref('')
+    
+    // Add computed property for filtered connections
+    const filteredConnections = computed(() => {
+      if (!searchQuery.value) {
+        return selectedFolder.value?.connections || []
+      }
+      
+      const query = searchQuery.value.toLowerCase()
+      return selectedFolder.value?.connections.filter(connection => {
+        return connection.name.toLowerCase().includes(query) ||
+               connection.host.toLowerCase().includes(query) ||
+               connection.username.toLowerCase().includes(query)
+      }) || []
+    })
+
     return {
       connections,
       tabs,
@@ -2466,6 +2493,8 @@ export default {
       closeTools,
       minimizeTools,
       handleKeyDown,
+      searchQuery,
+      filteredConnections,
     }
   }
 }
@@ -3768,5 +3797,34 @@ export default {
 .connections-list::-webkit-scrollbar-thumb {
   background: var(--color-fill-4);
   border-radius: 2px;
+}
+
+/* Add search box styles */
+.connection-search {
+  margin: 8px 0;
+  width: 100%;
+}
+
+.connections-sider-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+}
+
+.connections-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-1);
+  margin-bottom: 8px;
+}
+
+/* Add no results message style */
+.no-results {
+  padding: 16px;
+  text-align: center;
+  color: var(--color-text-3);
+  font-size: 14px;
 }
 </style>
