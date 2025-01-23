@@ -3598,6 +3598,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 16px 0;
+  user-select: none;
 }
 
 /* 左侧内容样式 */
@@ -3605,12 +3606,13 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
+  user-select: none;
 }
 
 /* GitHub 图标样式 */
 .github-icon {
   width: 14px; /* 调整为与文本相同大小 */
-  height: 14px; /* 调整为与���本相同大小 */
+  height: 14px; /* 调整为相同大小 */
   cursor: pointer;
   transition: all 0.2s ease;
   filter: var(--github-icon-filter);
@@ -3626,7 +3628,7 @@ export default {
   font-size: 14px;
 }
 
-/* 确保图标在��同主题下都清晰可见 */
+/* 确保图标在同主题下都清晰可见 */
 :root {
   --github-icon-filter: none;
 }
@@ -3872,5 +3874,30 @@ export default {
   background: var(--color-bg-2);
   opacity: 0.7;
   pointer-events: none;
+}
+
+/* 添加设置窗口相关样式 */
+.arco-modal-content {
+  user-select: none;
+}
+
+.arco-form-item-label {
+  user-select: none;
+}
+
+.arco-select-view {
+  user-select: none;
+}
+
+.arco-input-number {
+  user-select: none;
+}
+
+.arco-switch {
+  user-select: none;
+}
+
+.arco-btn {
+  user-select: none;
 }
 </style>
