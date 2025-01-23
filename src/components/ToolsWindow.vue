@@ -786,6 +786,7 @@ export default {
   backface-visibility: hidden;
   perspective: 1000;
   will-change: transform;
+  user-select: none;
 }
 
 .gpu-accelerated {
@@ -975,6 +976,11 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 8px;
+
+  :deep(.arco-input-wrapper) {
+    user-select: text;
+    padding: 2px 8px;
+  }
 }
 
 .copy-button {
@@ -1051,10 +1057,6 @@ export default {
   padding: 0 16px;
   height: 32px;
   line-height: 32px;
-}
-
-:deep(.arco-input-wrapper) {
-  padding: 2px 8px;
 }
 
 .expression-result {
