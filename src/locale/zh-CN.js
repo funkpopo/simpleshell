@@ -257,34 +257,62 @@ export default {
     },
     crontab: {
       title: 'Crontab生成器',
-      template: '常用模板',
-      selectTemplate: '选择模板',
-      minute: '分钟',
-      minutePlaceholder: '选择分钟',
-      hour: '小时',
-      hourPlaceholder: '选择小时',
-      day: '日期',
-      dayPlaceholder: '选择日期',
-      month: '月份',
-      monthPlaceholder: '选择月份',
-      week: '星期',
-      weekPlaceholder: '选择星期',
-      expression: 'Cron表达式',
-      expressionPlaceholder: '输入cron表达式 (例如: * * * * *)',
-      description: '表达式说明',
-      parse: '解析',
-      parseSuccess: '解析成功',
+      expressionPlaceholder: '输入cron表达式',
       parseResult: '解析结果',
-      nextExecutions: '接下来的执行时间',
+      nextExecutions: '下次执行时间',
       copy: '复制',
       copied: '已复制到剪贴板',
-      invalidExpression: '无效的cron表达式',
-      everyMinute: '每分钟 (0 * * * *)',
-      everyHour: '每小时 (0 0 * * *)',
-      everyDay: '每天午夜 (0 0 * * *)',
-      everyWeek: '每周日午夜 (0 0 * * 0)',
-      everyMonth: '每月1号午夜 (0 0 1 * *)',
-      everyYear: '每年1月1日午夜 (0 0 1 1 *)'
+      template: '模板',
+      selectTemplate: '选择模板',
+      everyMinute: '每分钟 (*)',
+      everyHour: '每小时 (0 *)',
+      everyDay: '每天 (0 0 *)',
+      everyWeek: '每周 (0 0 * * 0)',
+      everyMonth: '每月 (0 0 1 *)',
+      everyYear: '每年 (0 0 1 1 *)',
+      minute: '分钟',
+      hour: '小时',
+      day: '日期',
+      month: '月份',
+      week: '星期',
+      minutePlaceholder: '选择分钟',
+      hourPlaceholder: '选择小时',
+      dayPlaceholder: '选择日期',
+      monthPlaceholder: '选择月份',
+      weekPlaceholder: '选择星期',
+      options: {
+        minute: {
+          everyMinute: '每分钟 (*)',
+          every5Minutes: '每5分钟 (*/5)',
+          every15Minutes: '每15分钟 (*/15)',
+          every30Minutes: '每30分钟 (*/30)',
+          onTheHour: '整点 (0)'
+        },
+        hour: {
+          everyHour: '每小时 (*)',
+          every2Hours: '每2小时 (*/2)',
+          every4Hours: '每4小时 (*/4)',
+          every6Hours: '每6小时 (*/6)',
+          every12Hours: '每12小时 (*/12)',
+          atMidnight: '零点 (0)'
+        },
+        day: {
+          everyDay: '每天 (*)',
+          first: '1号 (1)',
+          fifteenth: '15号 (15)'
+        },
+        month: {
+          everyMonth: '每月 (*)',
+          everyQuarter: '每季度 (*/3)',
+          everySixMonths: '每半年 (*/6)',
+          january: '一月 (1)'
+        },
+        week: {
+          everyDay: '每天 (*)',
+          weekdays: '工作日 (1-5)',
+          weekends: '周末 (6,0)'
+        }
+      }
     }
   }
 }

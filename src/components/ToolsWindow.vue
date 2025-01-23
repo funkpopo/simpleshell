@@ -235,76 +235,74 @@
 
                 <!-- Cron表达式各部分 -->
                 <a-form :model="cronParts" layout="vertical" size="small" class="cron-form">
-                  <a-form-item :label="$t('tools.crontab.minute')">
+                  <a-form-item :label="t('tools.crontab.minute')">
                     <a-select
                       v-model="cronParts.minute"
-                      :placeholder="$t('tools.crontab.minutePlaceholder')"
+                      :placeholder="t('tools.crontab.minutePlaceholder')"
                       allow-search
                       allow-clear
                     >
-                      <a-option value="*" label="每分钟 (*)"></a-option>
-                      <a-option value="*/5" label="每5分钟 (*/5)"></a-option>
-                      <a-option value="*/15" label="每15分钟 (*/15)"></a-option>
-                      <a-option value="*/30" label="每30分钟 (*/30)"></a-option>
-                      <a-option value="0" label="整点 (0)"></a-option>
+                      <a-option value="*" :label="t('tools.crontab.options.minute.everyMinute')"></a-option>
+                      <a-option value="*/5" :label="t('tools.crontab.options.minute.every5Minutes')"></a-option>
+                      <a-option value="*/15" :label="t('tools.crontab.options.minute.every15Minutes')"></a-option>
+                      <a-option value="*/30" :label="t('tools.crontab.options.minute.every30Minutes')"></a-option>
+                      <a-option value="0" :label="t('tools.crontab.options.minute.onTheHour')"></a-option>
                     </a-select>
                   </a-form-item>
 
-                  <a-form-item :label="$t('tools.crontab.hour')">
+                  <a-form-item :label="t('tools.crontab.hour')">
                     <a-select
                       v-model="cronParts.hour"
-                      :placeholder="$t('tools.crontab.hourPlaceholder')"
+                      :placeholder="t('tools.crontab.hourPlaceholder')"
                       allow-search
                       allow-clear
                     >
-                      <a-option value="*" label="每小时 (*)"></a-option>
-                      <a-option value="*/2" label="每2小时 (*/2)"></a-option>
-                      <a-option value="*/4" label="每4小时 (*/4)"></a-option>
-                      <a-option value="*/6" label="每6小时 (*/6)"></a-option>
-                      <a-option value="*/12" label="每12小时 (*/12)"></a-option>
-                      <a-option value="0" label="0点 (0)"></a-option>
+                      <a-option value="*" :label="t('tools.crontab.options.hour.everyHour')"></a-option>
+                      <a-option value="*/2" :label="t('tools.crontab.options.hour.every2Hours')"></a-option>
+                      <a-option value="*/4" :label="t('tools.crontab.options.hour.every4Hours')"></a-option>
+                      <a-option value="*/6" :label="t('tools.crontab.options.hour.every6Hours')"></a-option>
+                      <a-option value="*/12" :label="t('tools.crontab.options.hour.every12Hours')"></a-option>
+                      <a-option value="0" :label="t('tools.crontab.options.hour.atMidnight')"></a-option>
                     </a-select>
                   </a-form-item>
 
-                  <a-form-item :label="$t('tools.crontab.day')">
+                  <a-form-item :label="t('tools.crontab.day')">
                     <a-select
                       v-model="cronParts.day"
-                      :placeholder="$t('tools.crontab.dayPlaceholder')"
+                      :placeholder="t('tools.crontab.dayPlaceholder')"
                       allow-search
                       allow-clear
                     >
-                      <a-option value="*" label="每天 (*)"></a-option>
-                      <a-option value="1" label="1号 (1)"></a-option>
-                      <a-option value="15" label="15号 (15)"></a-option>
-                      <a-option value="L" label="最后一天 (L)"></a-option>
+                      <a-option value="*" :label="t('tools.crontab.options.day.everyDay')"></a-option>
+                      <a-option value="1" :label="t('tools.crontab.options.day.first')"></a-option>
+                      <a-option value="15" :label="t('tools.crontab.options.day.fifteenth')"></a-option>
                     </a-select>
                   </a-form-item>
 
-                  <a-form-item :label="$t('tools.crontab.month')">
+                  <a-form-item :label="t('tools.crontab.month')">
                     <a-select
                       v-model="cronParts.month"
-                      :placeholder="$t('tools.crontab.monthPlaceholder')"
+                      :placeholder="t('tools.crontab.monthPlaceholder')"
                       allow-search
                       allow-clear
                     >
-                      <a-option value="*" label="每月 (*)"></a-option>
-                      <a-option value="*/3" label="每季度 (*/3)"></a-option>
-                      <a-option value="*/6" label="每半年 (*/6)"></a-option>
-                      <a-option value="1" label="一月 (1)"></a-option>
+                      <a-option value="*" :label="t('tools.crontab.options.month.everyMonth')"></a-option>
+                      <a-option value="*/3" :label="t('tools.crontab.options.month.everyQuarter')"></a-option>
+                      <a-option value="*/6" :label="t('tools.crontab.options.month.everySixMonths')"></a-option>
+                      <a-option value="1" :label="t('tools.crontab.options.month.january')"></a-option>
                     </a-select>
                   </a-form-item>
 
-                  <a-form-item :label="$t('tools.crontab.week')">
+                  <a-form-item :label="t('tools.crontab.week')">
                     <a-select
                       v-model="cronParts.week"
-                      :placeholder="$t('tools.crontab.weekPlaceholder')"
+                      :placeholder="t('tools.crontab.weekPlaceholder')"
                       allow-search
                       allow-clear
                     >
-                      <a-option value="*" label="每天 (*)"></a-option>
-                      <a-option value="0" label="周日 (0)"></a-option>
-                      <a-option value="1-5" label="工作日 (1-5)"></a-option>
-                      <a-option value="6,0" label="周末 (6,0)"></a-option>
+                      <a-option value="*" :label="t('tools.crontab.options.week.everyDay')"></a-option>
+                      <a-option value="1-5" :label="t('tools.crontab.options.week.weekdays')"></a-option>
+                      <a-option value="6,0" :label="t('tools.crontab.options.week.weekends')"></a-option>
                     </a-select>
                   </a-form-item>
                 </a-form>
@@ -683,7 +681,6 @@ export default {
 
       // 日期
       if (parts[2] === '*') desc.push('每天')
-      else if (parts[2] === 'L') desc.push('最后一天')
       else desc.push(`${parts[2]}号`)
 
       // 月份
@@ -696,8 +693,8 @@ export default {
 
       // 星期
       if (parts[4] === '*') desc.push('')
-      else if (parts[4] === '1-5') desc.push('工作日')
-      else if (parts[4] === '6,0') desc.push('周末')
+      else if (parts[4] === '1-5') desc.push('工作日1-5')
+      else if (parts[4] === '6,0') desc.push('周六,周日')
       else if (parts[4].includes('-')) {
         const [start, end] = parts[4].split('-')
         desc.push(`从星期${start}到星期${end}`)

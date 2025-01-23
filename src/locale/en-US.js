@@ -251,34 +251,62 @@ export default {
     },
     crontab: {
       title: 'Crontab Generator',
-      template: 'Common Templates',
-      selectTemplate: 'Select Template',
-      minute: 'Minute',
-      minutePlaceholder: 'Select Minute',
-      hour: 'Hour',
-      hourPlaceholder: 'Select Hour',
-      day: 'Day',
-      dayPlaceholder: 'Select Day',
-      month: 'Month',
-      monthPlaceholder: 'Select Month',
-      week: 'Week',
-      weekPlaceholder: 'Select Week',
-      expression: 'Cron Expression',
-      expressionPlaceholder: 'Enter cron expression (e.g. * * * * *)',
-      description: 'Expression Description',
-      parse: 'Parse',
-      parseSuccess: 'Parse successful',
+      expressionPlaceholder: 'Enter cron expression',
       parseResult: 'Parse Result',
       nextExecutions: 'Next Execution Times',
       copy: 'Copy',
       copied: 'Copied to clipboard',
-      invalidExpression: 'Invalid cron expression',
-      everyMinute: 'Every Minute (0 * * * *)',
-      everyHour: 'Every Hour (0 0 * * *)',
-      everyDay: 'Every Day at Midnight (0 0 * * *)',
-      everyWeek: 'Every Sunday at Midnight (0 0 * * 0)',
-      everyMonth: 'Every 1st at Midnight (0 0 1 * *)',
-      everyYear: 'Every January 1st at Midnight (0 0 1 1 *)'
+      template: 'Template',
+      selectTemplate: 'Select a template',
+      everyMinute: 'Every Minute (*)',
+      everyHour: 'Every Hour (0 *)',
+      everyDay: 'Every Day (0 0 *)',
+      everyWeek: 'Every Week (0 0 * * 0)',
+      everyMonth: 'Every Month (0 0 1 *)',
+      everyYear: 'Every Year (0 0 1 1 *)',
+      minute: 'Minute',
+      hour: 'Hour',
+      day: 'Day',
+      month: 'Month',
+      week: 'Week',
+      minutePlaceholder: 'Select minute',
+      hourPlaceholder: 'Select hour',
+      dayPlaceholder: 'Select day',
+      monthPlaceholder: 'Select month',
+      weekPlaceholder: 'Select week',
+      options: {
+        minute: {
+          everyMinute: 'Every minute (*)',
+          every5Minutes: 'Every 5 minutes (*/5)',
+          every15Minutes: 'Every 15 minutes (*/15)',
+          every30Minutes: 'Every 30 minutes (*/30)',
+          onTheHour: 'On the hour (0)'
+        },
+        hour: {
+          everyHour: 'Every hour (*)',
+          every2Hours: 'Every 2 hours (*/2)',
+          every4Hours: 'Every 4 hours (*/4)',
+          every6Hours: 'Every 6 hours (*/6)',
+          every12Hours: 'Every 12 hours (*/12)',
+          atMidnight: 'At midnight (0)'
+        },
+        day: {
+          everyDay: 'Every day (*)',
+          first: '1st of month (1)',
+          fifteenth: '15th of month (15)'
+        },
+        month: {
+          everyMonth: 'Every month (*)',
+          everyQuarter: 'Every quarter (*/3)',
+          everySixMonths: 'Every six months (*/6)',
+          january: 'January (1)'
+        },
+        week: {
+          everyDay: 'Every day (*)',
+          weekdays: 'Weekdays (1-5)',
+          weekends: 'Weekends (6,0)'
+        }
+      }
     }
   }
 }
