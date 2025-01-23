@@ -593,11 +593,9 @@
 </template>
 
 <script>
-import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed, inject, h } from 'vue'
-import SSHTerminal from './components/SSHTerminal.vue'
-import SFTPExplorer from './components/SFTPExplorer.vue'
+import { ref, reactive, provide, onMounted, watch, onUnmounted, nextTick, computed, inject, h, defineAsyncComponent } from 'vue'
 import { IconMoonFill, IconSunFill, IconClose, IconFolderAdd, IconMenuFold, IconMenuUnfold, IconEdit, IconDelete, IconSettings, IconPlus, IconFolder, IconLock, IconUnlock, IconDragDotVertical, IconTool } from '@arco-design/web-vue/es/icon'
-import { Message, Modal } from '@arco-design/web-vue' // 添加这行
+import { Message, Modal } from '@arco-design/web-vue'
 import axios from 'axios'
 import { dialog } from '@electron/remote'
 import fs from 'fs'
@@ -607,13 +605,27 @@ import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
 import draggable from 'vuedraggable'
 import { ipcRenderer } from 'electron'
 import { shell } from '@electron/remote'
-import AIAssistant from './components/AIAssistant.vue'
-import ToolsWindow from './components/ToolsWindow.vue'
 import aiIcon from './assets/aiicon.png'
+
+// 懒加载组件
+const AIAssistant = defineAsyncComponent(() => 
+  import('./components/AIAssistant.vue')
+)
+const ToolsWindow = defineAsyncComponent(() => 
+  import('./components/ToolsWindow.vue')
+)
+const SSHTerminal = defineAsyncComponent(() => 
+  import('./components/SSHTerminal.vue')
+)
+const SFTPExplorer = defineAsyncComponent(() => 
+  import('./components/SFTPExplorer.vue')
+)
 
 export default {
   name: 'SimpleShell',
   components: {
+    AIAssistant,
+    ToolsWindow,
     SSHTerminal,
     SFTPExplorer,
     IconMoonFill,
@@ -631,9 +643,7 @@ export default {
     IconUnlock,
     IconDragDotVertical,
     IconTool,
-    draggable,
-    AIAssistant,
-    ToolsWindow,
+    draggable
   },
   setup() {
     const connections = ref([])
@@ -3826,5 +3836,41 @@ export default {
   text-align: center;
   color: var(--color-text-3);
   font-size: 14px;
+}
+
+/* 添加性能优化相关样式 */
+.layout {
+  contain: layout style;
+}
+
+.header-content {
+  contain: layout;
+  will-change: contents;
+}
+
+/* 优化动画性能 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 添加内容预加载提示 */
+[data-loading] {
+  position: relative;
+}
+
+[data-loading]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--color-bg-2);
+  opacity: 0.7;
+  pointer-events: none;
 }
 </style>
