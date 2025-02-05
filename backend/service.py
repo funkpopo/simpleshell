@@ -1090,7 +1090,24 @@ requests_session = RequestsSession()
 # 在应用退出时关闭 session
 @atexit.register
 def cleanup():
-    requests_session.close()
+    """应用退出时的清理工作"""
+    try:
+        # 关闭 requests session
+        requests_session.close()
+        
+        # 清理所有会话
+        with sessions_lock:
+            for session_id, session in ssh_sessions.items():
+                try:
+                    cleanup_session(session)
+                except Exception as e:
+                    logger.error(f"Error cleaning up session {session_id}: {e}")
+        
+        # 清理临时文件
+        cleanup_temp_files()
+        
+    except Exception as e:
+        logger.error(f"Error in cleanup: {e}")
 
 # 修改 cleanup 相关代码，确保实时线程也被正确清理
 def cleanup_session(session):
@@ -1113,6 +1130,16 @@ def cleanup_session(session):
             session.read_thread.join(timeout=1)
     except Exception as e:
         print(f"Error in cleanup_session: {e}")
+
+def cleanup_temp_files():
+    """清理临时文件夹"""
+    try:
+        temp_dir = os.path.join(tempfile.gettempdir(), 'sftp_uploads')
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+            logger.info(f"Cleaned up temp directory: {temp_dir}")
+    except Exception as e:
+        logger.error(f"Error cleaning up temp files: {e}")
 
 class SSHService:
     
