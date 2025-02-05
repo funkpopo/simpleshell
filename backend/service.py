@@ -462,34 +462,25 @@ def handle_ssh_input(data):
         with sessions_lock:
             session = ssh_sessions.get(session_id)
             if not session or not session.active:
-                # 修改：只向对应的客户端发送错误消息
                 socketio.emit('ssh_error', {
                     'session_id': session_id,
                     'error': 'Session not found or inactive'
-                }, room=client_id)  # 添加 room 参数
+                }, room=client_id)
                 return
             if session.client_id != client_id:
-                # 修改：只向对应的客户端发送错误消息
                 socketio.emit('ssh_error', {
                     'session_id': session_id,
                     'error': 'Session belongs to another client'
-                }, room=client_id)  # 添加 room 参数
+                }, room=client_id)
                 return
             
             with session.lock:
                 if is_pasted:
-                    # 处理粘贴的内容
-                    if input_data == '\n':
-                        # 对于粘贴内容的换行符，直接发送不做处理
-                        session.channel.send(input_data)
-                    else:
-                        # 对于粘贴的文本行，去除可能的尾部空白
-                        cleaned_input = input_data.rstrip()
-                        if cleaned_input:
-                            session.channel.send(cleaned_input)
-                            # 如果不是最后一行，添加换行符
-                            if not is_last_line:
-                                session.channel.send('\n')
+                    # 对于粘贴的内容，保持原始格式，包括缩进
+                    session.channel.send(input_data)
+                    # 如果不是最后一行，添加换行符
+                    if not is_last_line:
+                        session.channel.send('\n')
                 else:
                     # 非粘贴内容，保持原有行为
                     session.channel.send(input_data)
