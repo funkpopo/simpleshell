@@ -1502,11 +1502,19 @@ export default {
       try {
         const config = await ipcRenderer.invoke('read-config')
         
-        // 更新文件夹和连接
-        folders.value = config.filter(item => item.type === 'folder').map(folder => ({
-          ...folder,
-          connections: folder.connections || []
-        }))
+        // 获取文件夹并按 order 排序
+        const sortedFolders = config
+          .filter(item => item.type === 'folder')
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map(folder => ({
+            ...folder,
+            connections: (folder.connections || []).sort((a, b) => (a.order || 0) - (b.order || 0))
+          }))
+        
+        // 更新 folders ref
+        folders.value = sortedFolders
+        
+        // 更新连接列表
         connections.value = config.filter(item => item.type === 'connection' && !item.folderId)
         
         // 更新全局设置
@@ -1516,6 +1524,23 @@ export default {
         }
         if (globalSettings.useGPU !== undefined) {
           settings.useGPU = globalSettings.useGPU
+        }
+
+        // 如果有选中的文件夹，更新过滤后的连接列表
+        if (selectedFolderId.value) {
+          const currentFolder = sortedFolders.find(f => f.id === selectedFolderId.value)
+          if (currentFolder) {
+            if (!searchQuery.value) {
+              filteredConnections.value = [...currentFolder.connections]
+            } else {
+              const q = searchQuery.value.toLowerCase()
+              filteredConnections.value = currentFolder.connections.filter(connection => {
+                return connection.name.toLowerCase().includes(q) ||
+                       connection.host.toLowerCase().includes(q) ||
+                       connection.username.toLowerCase().includes(q)
+              })
+            }
+          }
         }
       } catch (error) {
         console.error('Failed to refresh connections:', error)
@@ -1995,18 +2020,35 @@ export default {
         const response = await axios.get('http://localhost:5000/get_connections')
         let currentConfig = response.data
 
+        // 创建新的文件夹顺序数组
+        const updatedFolders = folders.value.map(folder => ({
+          ...folder,
+          order: folders.value.indexOf(folder)
+        }))
+
         // 更新文件夹顺序
-        const folderIds = folders.value.map(folder => folder.id)
-        currentConfig.sort((a, b) => {
-          if (a.type !== 'folder' || b.type !== 'folder') return 0;
-          return folderIds.indexOf(a.id) - folderIds.indexOf(b.id);
-        });  // 修复这里的语法错误，移除多余的右括号
+        currentConfig = currentConfig.map(item => {
+          if (item.type === 'folder') {
+            const updatedFolder = updatedFolders.find(f => f.id === item.id)
+            if (updatedFolder) {
+              return {
+                ...item,
+                order: updatedFolder.order
+              }
+            }
+          }
+          return item
+        })
 
         // 保存更新后的配置
         await axios.post('http://localhost:5000/update_config', currentConfig)
+        
+        // 重新加载文件夹列表
+        await refreshConnections()
       } catch (error) {
         console.error('Failed to save folder order:', error)
-        // 如果保存失败，静默恢复原始顺序
+        Message.error('Failed to save folder order')
+        // 如果保存失败，重新加载原始顺序
         await refreshConnections()
       }
     }
@@ -2023,7 +2065,10 @@ export default {
           if (item.type === 'folder' && item.id === folder.id) {
             return {
               ...item,
-              connections: folder.connections
+              connections: filteredConnections.value.map((conn, index) => ({
+                ...conn,
+                order: index
+              }))
             }
           }
           return item
@@ -2031,9 +2076,13 @@ export default {
 
         // 保存更新后的配置
         await axios.post('http://localhost:5000/update_config', currentConfig)
+        
+        // 重新加载连接列表
+        await refreshConnections()
       } catch (error) {
         console.error('Failed to save connection order:', error)
-        // 如果保存失败，静默恢复原始顺序
+        Message.error('Failed to save connection order')
+        // 如果保存失败，重新加载原始顺序
         await refreshConnections()
       }
     }
@@ -2386,18 +2435,27 @@ export default {
     const searchQuery = ref('')
     
     // Add computed property for filtered connections
-    const filteredConnections = computed(() => {
-      if (!searchQuery.value) {
-        return selectedFolder.value?.connections || []
+    const filteredConnections = ref([])
+
+    // 添加 watch 来更新 filteredConnections
+    watch([selectedFolder, searchQuery], ([folder, query]) => {
+      if (!folder) {
+        filteredConnections.value = []
+        return
       }
       
-      const query = searchQuery.value.toLowerCase()
-      return selectedFolder.value?.connections.filter(connection => {
-        return connection.name.toLowerCase().includes(query) ||
-               connection.host.toLowerCase().includes(query) ||
-               connection.username.toLowerCase().includes(query)
-      }) || []
-    })
+      if (!query) {
+        filteredConnections.value = [...folder.connections]
+        return
+      }
+      
+      const q = query.toLowerCase()
+      filteredConnections.value = folder.connections.filter(connection => {
+        return connection.name.toLowerCase().includes(q) ||
+               connection.host.toLowerCase().includes(q) ||
+               connection.username.toLowerCase().includes(q)
+      })
+    }, { immediate: true })
 
     return {
       connections,
@@ -2685,12 +2743,12 @@ export default {
 /* 拖拽时的样式 */
 .sortable-ghost {
   opacity: 0.5;
-  background-color: var(--color-fill-3);
+  background-color: var(--color-fill-3) !important;
 }
 
 .sortable-drag {
   opacity: 0.9;
-  background-color: var(--color-bg-1);
+  background-color: var(--color-bg-1) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
@@ -2812,18 +2870,19 @@ export default {
 
 /* 添加菜相关的 z-index */
 .arco-layout-sider {
-  z-index: 1000;  /* 确保侧边栏在最上层 */
-  position: relative;
+  z-index: 10;
 }
 
 .arco-menu {
-  z-index: 1001;  /* 确菜单最��层 */
-  position: relative;
+  z-index: 11;
 }
 
-.arco-menu-item {
-  z-index: 1002;  /* 确保菜单项在最上层 */
-  position: relative;
+.folder-item {
+  z-index: 12;
+}
+
+.sortable-drag {
+  z-index: 9999;
 }
 
 /* 确保 Add Folder 钮在上层 */
@@ -3191,10 +3250,16 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  padding: 4px;
   margin: 0;
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+.folder-drag-handle:hover {
+  opacity: 1;
 }
 
 .folder-drag-handle .folder-icon {
@@ -3209,6 +3274,7 @@ export default {
   display: flex;
   align-items: center;
   padding: 0 16px;
+  user-select: none;
 }
 
 /* 确保文件夹名称样式正确 */
@@ -3235,12 +3301,12 @@ export default {
 /* 拖拽时的样式 */
 .sortable-ghost {
   opacity: 0.5;
-  background-color: var(--color-fill-3);
+  background-color: var(--color-fill-3) !important;
 }
 
 .sortable-drag {
   opacity: 0.9;
-  background-color: var(--color-bg-1);
+  background-color: var(--color-bg-1) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
