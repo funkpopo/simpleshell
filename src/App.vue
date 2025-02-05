@@ -730,35 +730,29 @@ export default {
           ...newConnection,
           id: Date.now(),
           type: 'connection',
-          color: generateRandomColor() // 添加随机颜色
+          color: generateRandomColor()
         };
         
-        // 如果是密码认证，进行 base64 编码
         if (connection.authType === 'password' && connection.password) {
           connection.password = btoa(connection.password);
         }
         
-        // 如果是私钥认证，确保只保存路径
         if (connection.authType === 'key') {
-          // 确保删除 privateKey 字段
           delete connection.privateKey;
-          // 验证是否选择了私钥文件
           if (!connection.privateKeyPath) {
             Message.error('Please select a private key file');
             return;
           }
         }
         
-        // 获取当前配置
-        const response = await axios.get('http://localhost:5000/get_connections');
-        let currentConfig = response.data;
-
         if (!connection.folderId) {
           Message.error('Please select a folder first');
           return;
         }
 
-        // 找到目标文件夹并添加连接
+        const response = await axios.get('http://localhost:5000/get_connections');
+        let currentConfig = response.data;
+
         currentConfig = currentConfig.map(item => {
           if (item.type === 'folder' && item.id === connection.folderId) {
             return {
@@ -770,7 +764,25 @@ export default {
         });
 
         await axios.post('http://localhost:5000/update_config', currentConfig);
-        await refreshConnections();
+        
+        // 更新本地状态
+        const folder = folders.value.find(f => f.id === connection.folderId);
+        if (folder) {
+          folder.connections = [...(folder.connections || []), connection];
+          // 如果当前选中的文件夹是新连接的目标文件夹，更新 filteredConnections
+          if (selectedFolderId.value === connection.folderId) {
+            if (!searchQuery.value) {
+              filteredConnections.value = [...folder.connections];
+            } else {
+              const q = searchQuery.value.toLowerCase();
+              filteredConnections.value = folder.connections.filter(conn => {
+                return conn.name.toLowerCase().includes(q) ||
+                       conn.host.toLowerCase().includes(q) ||
+                       conn.username.toLowerCase().includes(q);
+              });
+            }
+          }
+        }
         
         addConnectionModalVisible.value = false;
         Object.assign(newConnection, {
@@ -1123,11 +1135,9 @@ export default {
           },
           async onOk() {
             try {
-              // 获取整的当前配置
               const response = await axios.get('http://localhost:5000/get_connections');
               let currentConfig = response.data;
 
-              // 找到并更新对的文件夹
               currentConfig = currentConfig.map(item => {
                 if (item.type === 'folder' && item.id === folder.id) {
                   return {
@@ -1140,22 +1150,30 @@ export default {
                 return item;
               });
 
-              // 发送更新后的完整配置到后端
-              const saveResponse = await axios.post('http://localhost:5000/update_config', currentConfig);
+              await axios.post('http://localhost:5000/update_config', currentConfig);
               
-              if (saveResponse.data.error) {
-                throw new Error(saveResponse.data.error);
-              }
-
-              // 新本地状态
+              // 更新本地状态
               const folderIndex = folders.value.findIndex(f => f.id === folder.id);
               if (folderIndex !== -1) {
                 folders.value[folderIndex].connections = folders.value[folderIndex].connections.filter(
                   conn => conn.id !== connection.id
                 );
+                
+                // 如果当前选中的文件夹是被删除连接所在的文件夹，更新 filteredConnections
+                if (selectedFolderId.value === folder.id) {
+                  if (!searchQuery.value) {
+                    filteredConnections.value = [...folders.value[folderIndex].connections];
+                  } else {
+                    const q = searchQuery.value.toLowerCase();
+                    filteredConnections.value = folders.value[folderIndex].connections.filter(conn => {
+                      return conn.name.toLowerCase().includes(q) ||
+                             conn.host.toLowerCase().includes(q) ||
+                             conn.username.toLowerCase().includes(q);
+                    });
+                  }
+                }
               }
 
-              // 关闭相关的标签页
               const tabIndex = tabs.value.findIndex(tab => tab.connection.id === connection.id);
               if (tabIndex !== -1) {
                 closeTab(tabs.value[tabIndex].id);
