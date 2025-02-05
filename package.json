@@ -56,15 +56,15 @@
     "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.26.0",
+    "@babel/core": "^7.26.7",
     "@babel/eslint-parser": "^7.26.5",
-    "@types/node": "^22.10.9",
+    "@types/node": "^22.13.1",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/cli-plugin-babel": "~5.0.8",
     "@vue/cli-plugin-eslint": "~5.0.8",
     "@vue/cli-service": "^5.0.8",
     "concurrently": "^9.1.2",
-    "electron": "^34.0.1",
+    "electron": "^34.0.2",
     "electron-builder": "^25.1.8",
     "electron-devtools-installer": "4.0.0",
     "eslint": "^7.32.0",

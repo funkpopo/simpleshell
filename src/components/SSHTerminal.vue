@@ -2035,58 +2035,34 @@ export default {
         .replace(/\r\n/g, '\n')  // 将 CRLF 转换为 LF
         .replace(/\r/g, '\n')    // 将剩余的 CR 转换为 LF
       
-      // 分割成行，但不进行 trim()，以保留缩进
+      // 分割成行
       const lines = normalizedText.split('\n')
-      const buffer = []
-      
-      // 处理每一行，保留有效的空白字符
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-        const trimmedLine = line.trim()
-        
-        // 如果是非空行，保留原始格式（包括缩进）
-        // 如果是空行，仅在有效内容行之间保留
-        if (trimmedLine !== '' || 
-           (i > 0 && lines[i-1].trim() !== '' && 
-            i < lines.length-1 && lines[i+1].trim() !== '')) {
-          // 保留原始行（包括缩进）
-          buffer.push(line)
-        }
-      }
       
       // 移除首尾的空行
-      while (buffer.length > 0 && buffer[0].trim() === '') {
-        buffer.shift()
+      while (lines.length > 0 && lines[0].trim() === '') {
+        lines.shift()
       }
-      while (buffer.length > 0 && buffer[buffer.length - 1].trim() === '') {
-        buffer.pop()
+      while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+        lines.pop()
       }
       
       // 逐行发送文本
-      for (let i = 0; i < buffer.length; i++) {
-        const line = buffer[i]
-        const isLastLine = i === buffer.length - 1
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        const isLastLine = i === lines.length - 1
         
-        // 发送当前行
+        // 发送当前行，保持原始格式（包括缩进）
         socket.emit('ssh_input', {
           session_id: props.sessionId,
-          input: line,
+          input: line + (isLastLine ? '' : ''),
           isPasted: true,
           isLastLine: isLastLine
         })
         
-        // 如果不是最后一行，发送换行符
+        // 仅在行之间添加最小延迟
         if (!isLastLine) {
-          await new Promise(resolve => setTimeout(resolve, 5))
-          socket.emit('ssh_input', {
-            session_id: props.sessionId,
-            input: '',
-            isPasted: true
-          })
+          await new Promise(resolve => setTimeout(resolve, 1))
         }
-        
-        // 添加小延迟确保顺序
-        await new Promise(resolve => setTimeout(resolve, 5))
       }
     }
 
