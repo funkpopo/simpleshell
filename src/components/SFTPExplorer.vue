@@ -2381,7 +2381,11 @@ export default {
       
       try {
         loading.value = true;
-        const normalizedPath = pathInput.value.replace(/\\/g, '/');
+        // 规范化路径，移除末尾斜杠（除非是根路径）
+        let normalizedPath = pathInput.value.replace(/\\/g, '/');
+        if (normalizedPath !== '/' && normalizedPath.endsWith('/')) {
+          normalizedPath = normalizedPath.slice(0, -1);
+        }
         
         // 获取路径的所有部分
         const pathParts = normalizedPath.split('/').filter(Boolean);
