@@ -1,6 +1,6 @@
 {
   "name": "simpleshell",
-  "version": "0.6.4-pre",
+  "version": "0.6.5",
   "private": true,
   "author": {
     "name": "funkpopo",
@@ -12,68 +12,43 @@
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint",
-    "electron:build": "vue-cli-service electron:build --win --x64",
-    "electron:build:win": "vue-cli-service electron:build --win --x64",
-    "electron:build:linux": "npm run build:backend:linux && vue-cli-service electron:build --linux",
-    "electron:build:all": "vue-cli-service electron:build -wl",
+    "electron:build": "vue-cli-service electron:build",
     "electron:serve": "vue-cli-service electron:serve",
-    "postinstall": "electron-builder install-app-deps && electron-rebuild",
-    "postuninstall": "electron-builder install-app-deps",
-    "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "dev": "concurrently \"cd backend && python service.py\" \"npm run electron:serve\"",
-    "clean": "rimraf dist_electron",
-    "build:backend:linux": "cd backend && bash build_linux.sh"
+    "postinstall": "electron-builder install-app-deps",
+    "postuninstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@arco-design/web-vue": "^2.56.3",
-    "@cypress/request": "^3.0.7",
-    "@electron/packager": "^18.3.6",
     "@electron/remote": "^2.1.2",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",
     "@xterm/addon-web-links": "^0.11.0",
-    "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",
-    "app-builder-lib": "^25.1.8",
-    "archiver": "^7.0.1",
-    "axios": "^1.7.9",
-    "braces": "^3.0.3",
-    "core-js": "^3.40.0",
-    "extract-zip": "^2.0.1",
-    "flask-cors": "^0.0.1",
-    "got": "^14.4.5",
+    "axios": "^1.6.7",
+    "core-js": "^3.8.3",
+    "electron-devtools-installer": "^4.0.0",
     "highlight.js": "^11.11.1",
-    "jszip": "^3.10.1",
-    "lodash": "^4.17.21",
-    "lodash-es": "^4.17.21",
     "markdown-it": "^14.1.0",
     "markdown-it-highlightjs": "^4.2.0",
     "msgpack-lite": "^0.1.26",
-    "postcss": "^8.5.1",
     "socket.io-client": "^4.8.1",
-    "tough-cookie": "^5.1.0",
     "vue": "^3.5.13",
-    "vuedraggable": "^4.1.0"
+    "vuedraggable": "^4.1.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
+    "xterm-addon-web-links": "^0.9.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.26.7",
-    "@babel/eslint-parser": "^7.26.5",
-    "@types/node": "^22.13.1",
-    "@vitejs/plugin-vue": "^5.2.1",
+    "@babel/core": "^7.12.16",
+    "@babel/eslint-parser": "^7.12.16",
     "@vue/cli-plugin-babel": "~5.0.8",
     "@vue/cli-plugin-eslint": "~5.0.8",
-    "@vue/cli-service": "^5.0.8",
-    "concurrently": "^9.1.2",
-    "electron": "^34.0.2",
-    "electron-builder": "^25.1.8",
-    "electron-devtools-installer": "4.0.0",
+    "@vue/cli-service": "~5.0.8",
+    "electron": "^34.2.0",
+    "electron-devtools-installer": "^4.0.0",
     "eslint": "^7.32.0",
     "eslint-plugin-vue": "^8.0.3",
-    "rimraf": "^6.0.1",
-    "typescript": "^5.7.3",
-    "vite": "^6.0.11",
-    "vue-cli-plugin-electron-builder": "^2.1.1",
-    "vue-tsc": "^2.2.0"
+    "vue-cli-plugin-electron-builder": "~2.1.1"
   },
   "eslintConfig": {
     "root": true,
@@ -87,10 +62,7 @@
     "parserOptions": {
       "parser": "@babel/eslint-parser"
     },
-    "rules": {
-      "no-unused-vars": "warn",
-      "vue/no-unused-components": "warn"
-    }
+    "rules": {}
   },
   "browserslist": [
     "> 1%",

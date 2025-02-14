@@ -2034,14 +2034,20 @@ export default {
     // 修改 onFolderDragEnd 函数
     const onFolderDragEnd = async () => {
       try {
-        // 获取已保存的配置
+        // 获取当前配置
         const response = await axios.get('http://localhost:5000/get_connections')
         let currentConfig = response.data
 
+        // 验证配置数据
+        if (!Array.isArray(currentConfig)) {
+          throw new Error('Invalid configuration data')
+        }
+
         // 创建新的文件夹顺序数组
-        const updatedFolders = folders.value.map(folder => ({
+        const updatedFolders = folders.value.map((folder, index) => ({
           ...folder,
-          order: folders.value.indexOf(folder)
+          order: index,
+          connections: Array.isArray(folder.connections) ? folder.connections : []
         }))
 
         // 更新文件夹顺序
@@ -2051,7 +2057,8 @@ export default {
             if (updatedFolder) {
               return {
                 ...item,
-                order: updatedFolder.order
+                order: updatedFolder.order,
+                connections: updatedFolder.connections
               }
             }
           }
@@ -2059,13 +2066,37 @@ export default {
         })
 
         // 保存更新后的配置
-        await axios.post('http://localhost:5000/update_config', currentConfig)
+        const saveResponse = await axios.post('http://localhost:5000/update_config', currentConfig)
         
+        if (saveResponse.status !== 200) {
+          throw new Error(`Failed to save configuration: ${saveResponse.statusText}`)
+        }
+
         // 重新加载文件夹列表
         await refreshConnections()
+        
+        Message.success('保存成功')
       } catch (error) {
-        console.error('Failed to save folder order:', error)
-        Message.error('Failed to save folder order')
+        console.error('保存失败:', error)
+        
+        // 显示详细错误信息
+        let errorMessage = '保存失败'
+        if (error.response) {
+          // 服务器响应错误
+          errorMessage += `: ${error.response.status} - ${error.response.data}`
+        } else if (error.request) {
+          // 请求发送失败
+          errorMessage += ': 无法连接到服务器'
+        } else {
+          // 其他错误
+          errorMessage += `: ${error.message}`
+        }
+        
+        Message.error({
+          content: errorMessage,
+          duration: 5000
+        })
+
         // 如果保存失败，重新加载原始顺序
         await refreshConnections()
       }
