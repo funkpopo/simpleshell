@@ -12,16 +12,35 @@ initialize()
 
 const isDevelopment = process.env.NODE_ENV !== 'production'
 
-// 禁用硬件加速
+// 在应用启动前注册协议
+protocol.registerSchemesAsPrivileged([
+  { 
+    scheme: 'app', 
+    privileges: { 
+      secure: true, 
+      standard: true,
+      supportFetchAPI: true,
+      stream: true
+    } 
+  }
+])
+
+// 禁用硬件加速以减少内存使用
 app.disableHardwareAcceleration()
+
+// 优化应用启动
+app.commandLine.appendSwitch('disable-http-cache')
+app.commandLine.appendSwitch('disable-gpu-vsync')
+app.commandLine.appendSwitch('disable-software-rasterizer')
+app.commandLine.appendSwitch('disable-gpu-compositing')
+app.commandLine.appendSwitch('enable-tcp-fast-open')
+app.commandLine.appendSwitch('enable-zero-copy')
 
 // 设置空菜单
 Menu.setApplicationMenu(null)
 
-// Scheme must be registered before the app is ready
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { secure: true, standard: true } }
-])
+// 添加性能监控
+let startupTime = Date.now()
 
 let backendProcess = null
 let mainWindow = null
@@ -68,6 +87,20 @@ function getBackendPath() {
       cwd: process.resourcesPath
     }
   }
+}
+
+// 添加获取后端端口的函数
+function getBackendPort() {
+  const portFile = path.join(getAppDataPath(), 'service_port.txt')
+  try {
+    if (fs.existsSync(portFile)) {
+      const port = parseInt(fs.readFileSync(portFile, 'utf8').trim())
+      return port
+    }
+  } catch (error) {
+    console.error('Error reading port file:', error)
+  }
+  return null
 }
 
 // 修改后端进程启动函数
@@ -268,16 +301,26 @@ function showError(title, message) {
   dialog.showErrorBox(title, message)
 }
 
-// 添加等待后端服务就绪的函数
+// 修改等待后端服务就绪的函数
 async function waitForBackend() {
   const maxAttempts = 30
   let attempts = 0
 
   while (attempts < maxAttempts) {
     try {
-      const response = await fetch('http://localhost:5000/health')
+      const port = getBackendPort()
+      if (!port) {
+        console.log('Waiting for port file...')
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        attempts++
+        continue
+      }
+
+      const response = await fetch(`http://localhost:${port}/health`)
       if (response.ok) {
-        console.log('Backend is ready')
+        console.log('Backend is ready on port:', port)
+        // 将端口号保存到全局变量
+        global.backendPort = port
         return true
       }
     } catch (error) {
@@ -329,10 +372,10 @@ function createSplashWindow() {
 async function createWindow() {
   try {
     // 创建并显示启动窗口
-    createSplashWindow();
+    createSplashWindow()
     
     // 启动后端前先等待一下
-    await new Promise(resolve => setTimeout(resolve, 800));
+    await new Promise(resolve => setTimeout(resolve, 500))
     
     const backendStarted = startBackend()
     if (!backendStarted) {
@@ -361,21 +404,31 @@ async function createWindow() {
       minWidth: 800,
       minHeight: 600,
       title: 'SimpleShell',
-      show: false, // 初始不显示主窗口
+      show: false,
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
         enableRemoteModule: true,
-        webSecurity: false,
-        allowRunningInsecureContent: true,
-        webviewTag: true,
-        webSockets: true,
-        experimentalFeatures: true,
-        additionalArguments: ['--enable-features=WebSocketStream'],
-        nativeWindowOpen: true,
-        navigateOnDragDrop: true,
-        sandbox: false
+        // 优化渲染性能
+        backgroundThrottling: false,
+        spellcheck: false,
+        // 启用硬件加速
+        webgl: true,
+        // 优化内存使用
+        enableBlinkFeatures: 'MemoryCache',
+        // 优化页面加载
+        preload: path.join(__dirname, 'preload.js')
       }
+    })
+
+    // 优化窗口加载性能
+    mainWindow.webContents.on('did-start-loading', () => {
+      mainWindow.webContents.setZoomFactor(1.0)
+    })
+
+    mainWindow.webContents.on('did-finish-load', () => {
+      const loadTime = Date.now() - startupTime
+      console.log(`Application loaded in ${loadTime}ms`)
     })
 
     // 等待主窗口加载完成
@@ -387,7 +440,8 @@ async function createWindow() {
           splashWindow = null
         }
         mainWindow.show()
-      }, 500)
+        mainWindow.focus()
+      }, 300)
     })
 
     require("@electron/remote/main").enable(mainWindow.webContents)
@@ -411,7 +465,7 @@ async function createWindow() {
       callback({
         responseHeaders: {
           ...details.responseHeaders,
-          'Content-Security-Policy': ["default-src 'self' 'unsafe-inline' 'unsafe-eval' ws://localhost:5000 http://localhost:5000"]
+          'Content-Security-Policy': [`default-src 'self' 'unsafe-inline' 'unsafe-eval' ws://localhost:* http://localhost:*`]
         }
       })
     })
@@ -485,35 +539,40 @@ if (!gotTheLock) {
   })
 
   app.on('activate', () => {
-    if (mainWindow === null) createWindow()
+    if (mainWindow === null) {
+      startupTime = Date.now()
+      createWindow()
+    } else {
+      mainWindow.show()
+    }
   })
 
   app.on('ready', async () => {
-    const appPath = app.getPath('exe')
-    const appDir = path.dirname(appPath)
+    startupTime = Date.now()
     
-    // 确保必要的目录和文件存在
-    const tempDir = path.join(appDir, 'temp')
-    
-    try {
-      // 创建 temp 目录
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir)
-      }
+    // 预热V8引擎
+    require('v8').setFlagsFromString('--expose_gc')
+    global.gc && global.gc()
 
-      if (isDevelopment && !process.env.IS_TEST) {
-        try {
-          await installExtension(VUEJS3_DEVTOOLS)
-        } catch (e) {
-          console.error('Vue Devtools failed to install:', e.toString())
-        }
+    if (isDevelopment && !process.env.IS_TEST) {
+      // 修复 Vue Devtools 安装
+      try {
+        const { default: installExtension, VUEJS3_DEVTOOLS } = require('electron-devtools-installer')
+        await installExtension(VUEJS3_DEVTOOLS.id)
+      } catch (e) {
+        console.error('Vue Devtools failed to install:', e.toString())
       }
-      
+    }
+    
+    // 创建协议
+    if (isDevelopment) {
+      if (process.env.WEBPACK_DEV_SERVER_URL) {
+        // 开发模式使用现有的服务器
+        await createWindow()
+      }
+    } else {
+      createProtocol('app')
       await createWindow()
-    } catch (error) {
-      console.error('Error during app ready:', error)
-      showError('Initialization Error', `Failed to initialize application: ${error.message}`)
-      app.quit()
     }
   })
 
@@ -557,4 +616,11 @@ process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error)
   cleanupBackend()
   process.exit(1)
+})
+
+// 优化内存使用
+app.on('web-contents-created', (event, contents) => {
+  contents.on('will-navigate', (event, navigationUrl) => {
+    event.preventDefault()
+  })
 })

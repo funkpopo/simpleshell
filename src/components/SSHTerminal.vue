@@ -128,6 +128,87 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { shell } from '@electron/remote'
 
+// 添加粘贴模式检测和处理
+const PASTE_MODE_PATTERNS = {
+  VIM_INSERT: /(\x1b\[\d*[a-zA-Z])*\x1b\[.*?[a-zA-Z]/,  // vim插入模式的ANSI转义序列
+  PROMPT: /[$#%>] *$/,  // 命令提示符
+}
+
+// 添加智能粘贴处理函数
+function handleSmartPaste(term, data) {
+  // 检测当前终端状态
+  const lastLine = term.buffer.active.getLine(term.buffer.active.length - 1)
+  const currentLineContent = lastLine ? lastLine.translateToString() : ''
+  
+  // 检查是否在vim中
+  const isInVim = PASTE_MODE_PATTERNS.VIM_INSERT.test(currentLineContent)
+  // 检查是否在命令提示符
+  const isAtPrompt = PASTE_MODE_PATTERNS.PROMPT.test(currentLineContent)
+  
+  // 处理多行文本
+  const lines = data.split(/\r?\n/)
+  const totalLines = lines.length
+  
+  if (isInVim) {
+    // vim中的粘贴处理
+    return handleVimPaste(term, data, lines)
+  } else if (isAtPrompt) {
+    // 命令行中的粘贴处理
+    return handleShellPaste(term, data, lines)
+  } else {
+    // 默认粘贴处理
+    return handleDefaultPaste(term, data, lines)
+  }
+}
+
+// vim粘贴处理
+function handleVimPaste(term, data, lines) {
+  // 检测是否需要进入vim粘贴模式
+  const needsPasteMode = lines.length > 1
+  
+  if (needsPasteMode) {
+    // 1. 先退出插入模式（如果在的话）
+    term.write('\x1b')  // ESC键
+    
+    // 2. 进入命令模式并设置paste
+    term.write(':set paste\r')
+    
+    // 3. 重新进入插入模式
+    term.write('i')
+    
+    // 4. 发送实际内容
+    term.write(data)
+    
+    // 5. 再次退出插入模式
+    term.write('\x1b')
+    
+    // 6. 关闭paste模式
+    term.write(':set nopaste\r')
+    
+    // 7. 回到插入模式
+    term.write('i')
+  } else {
+    // 单行直接粘贴
+    term.write(data)
+  }
+}
+
+// shell命令行粘贴处理
+function handleShellPaste(term, data, lines) {
+  // 使用 bracketed paste mode 来保持原始格式
+  term.write('\x1b[200~') // 开始 bracketed paste mode
+  term.write(data)
+  term.write('\x1b[201~') // 结束 bracketed paste mode
+}
+
+// 默认粘贴处理
+function handleDefaultPaste(term, data, lines) {
+  // 使用bracketed paste mode
+  term.write('\x1b[200~') // 开始
+  term.write(data)
+  term.write('\x1b[201~') // 结束
+}
+
 export default {
   name: 'SSHTerminal',
   props: {
@@ -377,33 +458,17 @@ export default {
       })
     }
 
-    const handlePaste = async (event) => {
-      event.preventDefault();
-      const text = event.clipboardData.getData('text');
+    const handlePaste = (event) => {
+      event.preventDefault()
       
-      const lines = text.split('\n');
-      
-      // 如果只有一行，直接写入
-      if (lines.length === 1) {
-        await term.write(text);
-        return;
-      }
-
-      // 获取第一个非空行的缩进级别作为基准
-      const baseIndent = lines.find(line => line.trim())?.match(/^\s*/)[0].length || 0;
-      
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const currentIndent = line.match(/^\s*/)[0].length;
-        // 保持相对缩进
-        const relativeIndent = ' '.repeat(Math.max(0, currentIndent - baseIndent));
+      if (term && props.sessionId) {
+        let data = event.clipboardData.getData('text')
         
-        if (line.trim()) {  // 非空行
-          await term.write(relativeIndent + line.trim());
-          if (i < lines.length - 1) {
-            await term.write('\r\n');
-          }
-        }
+        // 规范化换行符
+        data = data.replace(/\r\n/g, '\n')
+        
+        // 使用智能粘贴处理
+        handleSmartPaste(term, data)
       }
     }
 
@@ -529,8 +594,10 @@ export default {
         allowProposedApi: true,
         cols: cols,
         rows: rows,
-        windowsMode: false,
-        windowsPty: false,
+        windowsMode: process.platform === 'win32',
+        windowsPty: {
+          backend: 'conpty'
+        },
         smoothScrollDuration: 300, // 添加平滑滚动
         fastScrollModifier: 'alt',
         allowTransparency: true,
@@ -544,6 +611,7 @@ export default {
         scrollSensitivity: 1,
         experimentalCharAtlas: 'dynamic',
         refreshRate: 60,
+        bracketedPasteMode: true,
       })
 
       term.open(terminal.value)
@@ -993,7 +1061,8 @@ export default {
       } else if (action === 'paste') {
         navigator.clipboard.readText().then(text => {
           if (term && isTerminalReady.value) {
-            socket.emit('ssh_input', { session_id: props.sessionId, input: text })
+            // 使用统一的粘贴处理函数
+            handleSmartPaste(term, text)
           }
         })
       }
@@ -1804,7 +1873,7 @@ export default {
         navigator.clipboard.readText().then(text => {
           if (text) {
             // 使用统一的粘贴处理函数
-            handlePastedText(text);
+            handleSmartPaste(term, text);
           }
         }).catch(err => {
           console.error('Failed to read clipboard:', err)

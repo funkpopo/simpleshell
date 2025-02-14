@@ -25,16 +25,6 @@ import uuid
 import base64
 import shutil
 
-app = Flask(__name__)
-CORS(app)
-socketio = SocketIO(app, 
-                   cors_allowed_origins="*",
-                   async_mode='gevent',
-                   logger=True,
-                   engineio_logger=True,
-                   ping_timeout=300,
-                   ping_interval=60)
-
 # 配置更轻量的日志
 logging.basicConfig(
     level=logging.WARNING,  # 只记录警告和错误
@@ -44,18 +34,51 @@ logger = logging.getLogger(__name__)
 
 @lru_cache(maxsize=32)
 def get_executable_dir():
-    # 获取可执行文件所在目录
-    if getattr(sys, 'frozen', False):
-        # 生产环境
-        return os.path.dirname(sys.executable)
-    else:
-        # 开发环境，使用 backend 目录
-        return os.path.dirname(os.path.abspath(__file__))
+    """获取可执行文件所在目录"""
+    try:
+        if getattr(sys, 'frozen', False):
+            # 生产环境
+            return os.path.dirname(sys.executable)
+        else:
+            # 开发环境，使用当前文件所在目录
+            return os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        # 如果 __file__ 未定义，使用当前工作目录
+        return os.getcwd()
 
-# 配置文件路
+# 配置文件和日志路径
 CONFIG_PATH = os.path.join(get_executable_dir(), 'config.json')
-# 日志文件路径
 LOG_PATH = os.path.join(get_executable_dir(), 'sftp_log.log')
+
+def find_free_port(start_port=5000, max_attempts=100):
+    """查找可用的端口号"""
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('', port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError(f"无法找到可用端口(尝试范围: {start_port}-{start_port + max_attempts - 1})")
+
+# 获取空闲端口
+PORT = find_free_port()
+
+# 创建Flask应用
+app = Flask(__name__)
+CORS(app)
+
+# 优化SocketIO配置
+socketio = SocketIO(app, 
+    cors_allowed_origins="*",
+    async_mode='gevent',
+    logger=False,  # 禁用SocketIO日志
+    engineio_logger=False,  # 禁用Engine.IO日志
+    ping_timeout=300,
+    ping_interval=60,
+    max_http_buffer_size=1024 * 1024,  # 限制HTTP缓冲区大小
+    async_handlers=True  # 启用异步处理
+)
 
 # 修改会话管理相关代码
 class SSHSession:
@@ -73,22 +96,48 @@ ssh_sessions = {}
 client_sessions = {}  # 添加客户端会话映射
 sessions_lock = threading.Lock()
 
-@socketio.on('connect')
-def handle_connect():
-    client_id = request.sid
-    print(f"Client connected: {client_id}")
-    with sessions_lock:
-        client_sessions[client_id] = set()
+# 将端口号写入临时文件，供主进程读取
+def write_port_file():
+    try:
+        temp_dir = get_executable_dir()
+        port_file = os.path.join(temp_dir, 'service_port.txt')
+        with open(port_file, 'w') as f:
+            f.write(str(PORT))
+    except Exception as e:
+        logger.error(f"Error writing port file: {e}")
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    client_id = request.sid
-    print(f"Client disconnected: {client_id}")
-    with sessions_lock:
-        if client_id in client_sessions:
-            # 不要立即清理会话，只记录客户端断
-            print(f"Client {client_id} disconnected but keeping sessions")
-            return
+# 在退出时删除端口文件
+def cleanup_port_file():
+    try:
+        temp_dir = get_executable_dir()
+        port_file = os.path.join(temp_dir, 'service_port.txt')
+        if os.path.exists(port_file):
+            os.remove(port_file)
+    except Exception as e:
+        logger.error(f"Error removing port file: {e}")
+
+# 在退出时清理资源
+def cleanup():
+    try:
+        with sessions_lock:
+            for session_id, session in ssh_sessions.items():
+                try:
+                    if session.channel:
+                        session.channel.close()
+                    if session.ssh_client:
+                        session.ssh_client.close()
+                except:
+                    pass
+    except Exception as e:
+        logger.error(f"Error in cleanup: {e}")
+    finally:
+        cleanup_port_file()
+
+atexit.register(cleanup)
+
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "healthy"})
 
 def load_config():
     try:
@@ -140,45 +189,6 @@ def log_sftp_operation(operation, path):
             f.write(f"{timestamp},{operation},{path}\n")
     except Exception as e:
         logger.error(f"Error logging SFTP operation: {e}")
-
-@app.route('/health')
-def health_check():
-    return jsonify({"status": "healthy"})
-
-@app.route('/get_connections', methods=['GET'])
-def get_connections():
-    return jsonify(load_config())
-
-@app.route('/add_connection', methods=['POST'])
-def add_connection():
-    try:
-        connection = request.json
-        config = load_config()
-        config.append(connection)
-        save_config(config)
-        return jsonify({"status": "success"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/add_folder', methods=['POST'])
-def add_folder():
-    try:
-        folder = request.json
-        config = load_config()
-        config.append(folder)
-        save_config(config)
-        return jsonify({"status": "success"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/update_config', methods=['POST'])
-def update_config():
-    try:
-        new_config = request.json
-        save_config(new_config)
-        return jsonify({"status": "success"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 # 分离 SSH SFTP 的连接创建函数
 def create_base_client(connection):
@@ -1634,7 +1644,7 @@ def profile_startup():
     profiler.enable()
     
     # 主启动逻辑
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    socketio.run(app, host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
     
     profiler.disable()
     stats = pstats.Stats(profiler).sort_stats('cumulative')
@@ -2026,23 +2036,39 @@ def download_folder():
             transfer_manager.remove_transfer(transfer_id)
         return jsonify({"error": str(e)}), 500
 
+@app.route('/get_connections', methods=['GET'])
+def get_connections():
+    try:
+        config = load_config()
+        return jsonify(config)
+    except Exception as e:
+        logger.error(f"Error getting connections: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/update_config', methods=['POST'])
+def update_config():
+    try:
+        new_config = request.json
+        if not isinstance(new_config, list):
+            return jsonify({"error": "Invalid configuration format"}), 400
+            
+        save_config(new_config)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        logger.error(f"Error updating config: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     try:
-        # 确保日志文件目录存在
-        log_dir = os.path.dirname(LOG_PATH)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-            
-        # 确认配置文件目录存在
-        config_dir = os.path.dirname(CONFIG_PATH)
-        if config_dir and not os.path.exists(config_dir):
-            os.makedirs(config_dir)
-            
-        if not os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-                json.dump([], f)
-                
-        print(f"Starting server on port 5000...")
+        # 确保必要的目录存在
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        
+        # 写入端口文件
+        write_port_file()
+        
+        # 启动服务器
+        print(f"Starting server on port {PORT}...")
         print(f"Config file: {CONFIG_PATH}")
         print(f"Log file: {LOG_PATH}")
         
