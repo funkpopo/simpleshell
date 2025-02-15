@@ -28,6 +28,7 @@
     "core-js": "^3.40.0",
     "electron-devtools-installer": "^4.0.0",
     "highlight.js": "^11.11.1",
+    "lodash-es": "^4.17.21",
     "markdown-it": "^14.1.0",
     "markdown-it-highlightjs": "^4.2.0",
     "msgpack-lite": "^0.1.26",
