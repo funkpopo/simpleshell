@@ -1,36 +1,57 @@
 from gevent import monkey
 monkey.patch_all()
 
+# 基础必需模块提前导入
 from flask import Flask, request, jsonify, Response
 from flask_socketio import SocketIO
 from flask_cors import CORS
 from datetime import datetime
 from typing import Dict, Tuple, Optional
 from functools import lru_cache
-import paramiko
-import json
-import os
-import stat
 import logging
+import os
 import threading
 import time
-import tempfile
-import socket
-import sys
-import requests
-import atexit
-import re
-import httpx
-import uuid
 import base64
-import shutil
+
+# 其他模块按需导入
+def import_on_demand():
+    global paramiko, json, stat, tempfile, socket, sys
+    global requests, atexit, re, httpx, uuid, base64, shutil
+    import paramiko
+    import json
+    import stat 
+    import tempfile
+    import socket
+    import sys
+    import requests
+    import atexit
+    import re
+    import httpx
+    import uuid
+    import base64
+    import shutil
+
+# 在实际需要时再导入
+import_on_demand()
+
+logger = logging.getLogger(__name__)
 
 # 配置更轻量的日志
-logging.basicConfig(
-    level=logging.WARNING,  # 只记录警告和错误
-    format='%(asctime)s - %(levelname)s: %(message)s'
-)
-logger = logging.getLogger(__name__)
+def setup_logging():
+    logging.basicConfig(
+        level=logging.WARNING,
+        format='%(asctime)s - %(levelname)s: %(message)s',
+        handlers=[
+            logging.FileHandler(LOG_PATH, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+    # 禁用一些不必要的日志
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
+    logging.getLogger('socketio').setLevel(logging.ERROR)
+    logging.getLogger('engineio').setLevel(logging.ERROR)
+    logging.getLogger('paramiko').setLevel(logging.ERROR)
 
 @lru_cache(maxsize=32)
 def get_executable_dir():
@@ -68,16 +89,22 @@ PORT = find_free_port()
 app = Flask(__name__)
 CORS(app)
 
-# 优化SocketIO配置
-socketio = SocketIO(app, 
-    cors_allowed_origins="*",
+# 优化 SocketIO 配置
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*", 
     async_mode='gevent',
-    logger=False,  # 禁用SocketIO日志
-    engineio_logger=False,  # 禁用Engine.IO日志
+    logger=False,
+    engineio_logger=False,
     ping_timeout=300,
     ping_interval=60,
-    max_http_buffer_size=1024 * 1024,  # 限制HTTP缓冲区大小
-    async_handlers=True  # 启用异步处理
+    max_http_buffer_size=1024 * 1024,
+    async_handlers=True,
+    # 添加性能优化参数
+    message_queue_maxsize=10000,
+    websocket_max_message_size=1024 * 1024,
+    always_connect=False,
+    cookie=None
 )
 
 # 修改会话管理相关代码
@@ -139,6 +166,33 @@ atexit.register(cleanup)
 def health_check():
     return jsonify({"status": "healthy"})
 
+# 添加缓存装饰器
+from functools import lru_cache
+import time
+
+class TTLCache:
+    def __init__(self, ttl=300):  # 默认缓存5分钟
+        self.cache = {}
+        self.ttl = ttl
+        
+    def __call__(self, func):
+        def wrapper(*args, **kwargs):
+            key = str(args) + str(kwargs)
+            now = time.time()
+            
+            if key in self.cache:
+                result, timestamp = self.cache[key]
+                if now - timestamp < self.ttl:
+                    return result
+                    
+            result = func(*args, **kwargs)
+            self.cache[key] = (result, now)
+            return result
+            
+        return wrapper
+
+# 对常用函数添加缓存
+@TTLCache(ttl=300)
 def load_config():
     try:
         if os.path.exists(CONFIG_PATH):
@@ -754,10 +808,41 @@ class TransferManager:
 # 创建全局传输管理器实例
 transfer_manager = TransferManager()
 
-# 修改上传文件的路由
+# 添加优化的文件传输类
+class OptimizedFileTransfer:
+    def __init__(self, transfer_id=None, total_size=0):
+        self.transfer_id = transfer_id
+        self.total_size = total_size
+        self.current_size = 0
+        self.buffer_size = self._calculate_buffer_size(total_size)
+        self.chunk_size = self._calculate_chunk_size(total_size)
+        self.use_parallel = total_size > 100 * 1024 * 1024  # 100MB以上使用并行传输
+        
+    def _calculate_buffer_size(self, file_size):
+        """根据文件大小计算最优缓冲区大小"""
+        if file_size > 1024 * 1024 * 1024:  # 1GB
+            return 16 * 1024 * 1024  # 16MB buffer
+        elif file_size > 100 * 1024 * 1024:  # 100MB
+            return 8 * 1024 * 1024   # 8MB buffer
+        else:
+            return 1 * 1024 * 1024   # 1MB buffer
+            
+    def _calculate_chunk_size(self, file_size):
+        """根据文件大小计算最优块大小"""
+        if file_size > 1024 * 1024 * 1024:  # 1GB
+            return 4 * 1024 * 1024  # 4MB chunks
+        elif file_size > 100 * 1024 * 1024:  # 100MB
+            return 2 * 1024 * 1024  # 2MB chunks
+        else:
+            return 1 * 1024 * 1024  # 1MB chunks
+
+# 修改上传文件的处理函数
 @app.route('/sftp_upload_file', methods=['POST'])
 def upload_file():
     temp_file_path = None
+    transfer = None
+    temp_file = None
+    
     try:
         data = request.json
         connection = data['connection']
@@ -770,6 +855,9 @@ def upload_file():
         transfer_id = data.get('transferId')
         total_size = data.get('totalSize', 0)
 
+        # 创建优化的传输对象
+        transfer = OptimizedFileTransfer(transfer_id, total_size)
+
         # 获取或创建传输进度跟踪器
         if chunk_index == 0:
             transfer_progress = transfer_manager.create_transfer(transfer_id, total_size, 'upload')
@@ -777,9 +865,9 @@ def upload_file():
             transfer_progress = transfer_manager.get_transfer(transfer_id)
 
         if transfer_progress and transfer_progress.is_cancelled():
-            # 如果传输已被取消，立即返回
             return jsonify({"status": "cancelled", "message": "Transfer cancelled"}), 200
 
+        # 使用系统临时目录
         temp_dir = os.path.join(tempfile.gettempdir(), 'sftp_uploads')
         os.makedirs(temp_dir, exist_ok=True)
 
@@ -792,81 +880,139 @@ def upload_file():
                 else:
                     temp_file_path = os.path.join(temp_dir, temp_file_id)
 
-                # 解码并写入当前块
+                # 使用普通文件写入替代 mmap
                 if content:
                     chunk_data = base64.b64decode(content)
-                    with open(temp_file_path, 'ab') as f:
-                        f.write(chunk_data)
                     
-                    # 更新进度并检查是否取消
+                    # 使用 tempfile.NamedTemporaryFile 进行写入
+                    if not os.path.exists(temp_file_path):
+                        temp_file = open(temp_file_path, 'wb')
+                    else:
+                        temp_file = open(temp_file_path, 'ab')
+                        
+                    try:
+                        temp_file.write(chunk_data)
+                        temp_file.flush()
+                        os.fsync(temp_file.fileno())  # 确保数据写入磁盘
+                    finally:
+                        temp_file.close()
+                    
                     if transfer_progress:
                         current_size = os.path.getsize(temp_file_path)
                         transfer_progress.update(current_size)
                         if transfer_progress.is_cancelled():
                             raise Exception("Transfer cancelled")
 
-                # 如果是最后一个块，执行上传
+                # 处理最后一个块，执行上传
                 if is_last_chunk:
                     remote_path = os.path.join(path, filename).replace('\\', '/')
                     
                     def progress_callback(transferred, total):
                         if transfer_progress:
                             transfer_progress.update(transferred)
-                            # 检查是否取消
                             if transfer_progress.is_cancelled():
                                 raise Exception("Transfer cancelled")
-                    
-                    # 上传文件
-                    with open(temp_file_path, 'rb') as f:
-                        sftp.putfo(f, remote_path, callback=progress_callback)
-                    
-                    # 记录操作
-                    log_sftp_operation('upload', remote_path)
-                    
-                    # 清理临时文件
+
                     try:
-                        os.unlink(temp_file_path)
-                    except:
-                        pass
-                    
-                    # 移除传输进度跟踪器
-                    transfer_manager.remove_transfer(transfer_id)
-                    
-                    return jsonify({"status": "success"})
+                        # 配置SFTP传输参数
+                        channel = sftp.get_channel()
+                        if channel:
+                            channel.window_size = transfer.buffer_size
+                            
+                        # 设置 SFTP socket 缓冲区大小
+                        transport = ssh.get_transport()
+                        if transport:
+                            transport.window_size = transfer.buffer_size
+                            transport.packetizer.REKEY_BYTES = pow(2, 30)  # 1GB
+                            transport.packetizer.REKEY_PACKETS = pow(2, 30)
+                        
+                        # 使用优化的缓冲区大小进行上传
+                        with open(temp_file_path, 'rb', buffering=transfer.buffer_size) as f:
+                            sftp.putfo(f, remote_path, callback=progress_callback)
+                        
+                        log_sftp_operation('upload', remote_path)
+                        return jsonify({"status": "success"})
+                    finally:
+                        # 确保在上传完成后清理临时文件
+                        cleanup_temp_file(temp_file_path)
+                        transfer_manager.remove_transfer(transfer_id)
                 
-                # 如果不是最后一个块，返回临时文件ID
                 return jsonify({
                     "status": "chunk_uploaded",
                     "tempFileId": temp_file_id
                 })
 
             finally:
-                sftp.close()
-                ssh.close()
+                if sftp:
+                    sftp.close()
+                if ssh:
+                    ssh.close()
 
         except Exception as e:
             if "Transfer cancelled" in str(e):
-                # 传输被取消的情况
                 return jsonify({"status": "cancelled", "message": "Transfer cancelled"}), 200
             raise
 
     except Exception as e:
         logger.error(f"Upload error: {str(e)}")
-        # 清理临时文件
-        if temp_file_path and os.path.exists(temp_file_path):
+        if temp_file:
             try:
-                os.unlink(temp_file_path)
+                temp_file.close()
             except:
                 pass
-        # 移除传输进度跟踪器
+        cleanup_temp_file(temp_file_path)
         if transfer_id:
             transfer_manager.remove_transfer(transfer_id)
         return jsonify({"error": str(e)}), 500
 
-# 修改下载文件的路由
+def cleanup_temp_file(temp_file_path):
+    """安全清理临时文件，包含重试逻辑和强制关闭文件句柄"""
+    if not temp_file_path or not os.path.exists(temp_file_path):
+        return
+        
+    max_retries = 3
+    retry_delay = 0.5
+    
+    for attempt in range(max_retries):
+        try:
+            # 在 Windows 上等待一小段时间确保文件句柄已释放
+            if os.name == 'nt':
+                time.sleep(0.1)
+                import gc
+                gc.collect()  # 强制垃圾回收
+            
+            # 确保文件已关闭
+            try:
+                with open(temp_file_path, 'a'):
+                    pass
+            except:
+                pass
+                
+            # 尝试删除文件
+            os.unlink(temp_file_path)
+            logger.debug(f"Successfully deleted temp file: {temp_file_path}")
+            break
+            
+        except PermissionError:
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                continue
+            logger.warning(f"Unable to delete temp file {temp_file_path} after {max_retries} attempts")
+            
+        except FileNotFoundError:
+            # 文件已经被删除，这是正常的
+            break
+            
+        except Exception as e:
+            logger.error(f"Error cleaning up temp file {temp_file_path}: {e}")
+            break
+
+# 修改下载文件的处理函数
 @app.route('/sftp_download_file', methods=['POST'])
 def download_file():
     temp_file = None
+    transfer = None
+    
     try:
         data = request.json
         connection = data['connection']
@@ -876,51 +1022,60 @@ def download_file():
         ssh, sftp = create_sftp_client(connection)
         try:
             file_size = sftp.stat(path).st_size
+            transfer = OptimizedFileTransfer(transfer_id, file_size)
             transfer_progress = transfer_manager.create_transfer(transfer_id, file_size, 'download')
 
             def generate():
                 nonlocal temp_file
                 try:
                     temp_file = tempfile.NamedTemporaryFile(delete=False)
-                    network_bytes = [0]
+                    current_size = [0]
 
                     def progress_callback(transferred, total):
-                        # 检查是否取消
                         if transfer_progress.is_cancelled():
                             raise Exception("Transfer cancelled")
-                        network_bytes[0] += transferred
+                        current_size[0] += transferred
                         if transfer_progress:
-                            transfer_progress.update(transferred)
+                            transfer_progress.update(current_size[0])
+
+                    # 配置SFTP传输参数
+                    channel = sftp.get_channel()
+                    if channel:
+                        channel.window_size = transfer.buffer_size
+                        
+                    # 设置 SFTP socket 缓冲区大小
+                    transport = ssh.get_transport()
+                    if transport:
+                        transport.window_size = transfer.buffer_size
+                        transport.packetizer.REKEY_BYTES = pow(2, 30)
+                        transport.packetizer.REKEY_PACKETS = pow(2, 30)
 
                     try:
-                        sftp.get(path, temp_file.name, callback=progress_callback)
+                        # 使用优化的缓冲区进行下载
+                        with open(temp_file.name, 'wb', buffering=transfer.buffer_size) as f:
+                            sftp.getfo(path, f, callback=progress_callback)
                     except Exception as e:
                         if transfer_progress.is_cancelled():
                             raise Exception("Transfer cancelled")
                         raise e
 
-                    chunk_size = 8192
-                    with open(temp_file.name, 'rb') as f:
+                    # 使用优化的块大小进行数据传输
+                    with open(temp_file.name, 'rb', buffering=transfer.buffer_size) as f:
                         while True:
                             if transfer_progress.is_cancelled():
                                 raise Exception("Transfer cancelled")
-                            chunk = f.read(chunk_size)
+                            chunk = f.read(transfer.chunk_size)
                             if not chunk:
                                 break
                             yield chunk
 
                 except Exception as e:
                     if "Transfer cancelled" in str(e):
-                        # 传输被取消的情况
-                        yield b''  # 发送空字节以结束响应
+                        yield b''
                     else:
                         raise
                 finally:
-                    try:
-                        temp_file.close()
-                        os.unlink(temp_file.name)
-                    except:
-                        pass
+                    cleanup_temp_file(temp_file.name)
                     transfer_manager.remove_transfer(transfer_id)
                     sftp.close()
                     ssh.close()
@@ -2058,22 +2213,94 @@ def update_config():
         logger.error(f"Error updating config: {e}")
         return jsonify({"error": str(e)}), 500
 
+# 优化会话管理
+class SessionManager:
+    def __init__(self):
+        self._sessions = {}
+        self._client_sessions = {}
+        self._lock = threading.RLock()
+        
+    def add_session(self, session_id, session, client_id):
+        with self._lock:
+            self._sessions[session_id] = session
+            if client_id not in self._client_sessions:
+                self._client_sessions[client_id] = set()
+            self._client_sessions[client_id].add(session_id)
+            
+    def remove_session(self, session_id):
+        with self._lock:
+            if session_id in self._sessions:
+                session = self._sessions[session_id]
+                client_id = session.client_id
+                del self._sessions[session_id]
+                if client_id in self._client_sessions:
+                    self._client_sessions[client_id].discard(session_id)
+                    
+    def get_session(self, session_id):
+        with self._lock:
+            return self._sessions.get(session_id)
+
+# 使用新的会话管理器
+session_manager = SessionManager()
+
+# 优化启动过程
+def optimize_startup():
+    # 预加载常用模块
+    import_on_demand()
+    
+    # 初始化线程池
+    from concurrent.futures import ThreadPoolExecutor
+    max_workers = min(32, (os.cpu_count() or 1) + 4)
+    thread_pool = ThreadPoolExecutor(max_workers=max_workers)
+    
+    # 预热缓存
+    def warmup_cache():
+        load_config()
+        
+    thread_pool.submit(warmup_cache)
+    
+    return thread_pool
+
+# 添加性能监控
+class PerformanceMonitor:
+    def __init__(self):
+        self.metrics = {}
+        self._lock = threading.Lock()
+        
+    def record_metric(self, name, value):
+        with self._lock:
+            if name not in self.metrics:
+                self.metrics[name] = []
+            self.metrics[name].append(value)
+            if len(self.metrics[name]) > 1000:
+                self.metrics[name] = self.metrics[name][-1000:]
+                
+    def get_metrics(self):
+        with self._lock:
+            return {k: sum(v)/len(v) for k, v in self.metrics.items()}
+
+performance_monitor = PerformanceMonitor()
+
 if __name__ == '__main__':
     try:
-        # 确保必要的目录存在
-        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        # 最小化启动检查
+        minimal_startup_checks()
+        
+        # 优化启动
+        thread_pool = optimize_startup()
         
         # 写入端口文件
         write_port_file()
         
         # 启动服务器
         print(f"Starting server on port {PORT}...")
-        print(f"Config file: {CONFIG_PATH}")
-        print(f"Log file: {LOG_PATH}")
-        
-        minimal_startup_checks()
-        profile_startup()
-    except Exception as e:
-        print(f"Failed to start server: {e}")
-        raise 
+        socketio.run(
+            app,
+            host='0.0.0.0',
+            port=PORT,
+            debug=False,
+            use_reloader=False,
+            log_output=False
+        )
+    finally:
+        thread_pool.shutdown()
