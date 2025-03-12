@@ -82,126 +82,131 @@ interface API {
   getSystemInfo(): Promise<SystemInfo>
   loadConnections(): Promise<Organization[]>
   saveConnections(organizations: Organization[]): Promise<boolean>
-  openFileDialog(options?: { 
-    title?: string; 
-    buttonLabel?: string; 
-    defaultPath?: string;
-    filters?: Array<{ name: string; extensions: string[] }>;
-    properties?: string[];
+  openFileDialog(options?: {
+    title?: string
+    buttonLabel?: string
+    defaultPath?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+    properties?: string[]
   }): Promise<{
-    canceled: boolean;
-    filePath?: string;
-    filePaths?: string[];
-    fileContent?: string;
-    error?: string;
+    canceled: boolean
+    filePath?: string
+    filePaths?: string[]
+    fileContent?: string
+    error?: string
   }>
   sshConnect(connectionInfo: Connection): Promise<SSHConnectResult>
-  sshCreateShell(params: { connectionId: string, cols: number, rows: number }): Promise<SSHShellResult>
-  sshSendInput(params: { connectionId: string, shellId: string, data: string }): void
-  sshResizeTerminal(params: { connectionId: string, shellId: string, cols: number, rows: number }): void
-  sshCloseShell(params: { connectionId: string, shellId: string }): void
+  sshCreateShell(params: {
+    connectionId: string
+    cols: number
+    rows: number
+  }): Promise<SSHShellResult>
+  sshSendInput(params: { connectionId: string; shellId: string; data: string }): void
+  sshResizeTerminal(params: {
+    connectionId: string
+    shellId: string
+    cols: number
+    rows: number
+  }): void
+  sshCloseShell(params: { connectionId: string; shellId: string }): void
   sshDisconnect(params: { connectionId: string }): void
-  sshExec(params: { connectionId: string, command: string }): Promise<{
+  sshExec(params: { connectionId: string; command: string }): Promise<{
     success: boolean
     output?: string
     error?: string
   }>
-  createLocalTerminal(params: { cols: number, rows: number }): Promise<TerminalResult>
-  sendTerminalInput(params: { id: string, data: string }): void
-  resizeTerminal(params: { id: string, cols: number, rows: number }): void
+  createLocalTerminal(params: { cols: number; rows: number }): Promise<TerminalResult>
+  sendTerminalInput(params: { id: string; data: string }): void
+  resizeTerminal(params: { id: string; cols: number; rows: number }): void
   closeTerminal(params: { id: string }): void
   onSshData(callback: (data: SSHDataEvent) => void): () => void
   onSshClose(callback: (data: SSHCloseEvent) => void): () => void
   onTerminalData(callback: (data: TerminalDataEvent) => void): () => void
   sftpReadDir(params: { connectionId: string; path: string }): Promise<{
-    success: boolean;
+    success: boolean
     files?: Array<{
-      name: string;
-      type: 'file' | 'directory';
-      size: number;
-      modifyTime: string;
-      permissions: string;
-      owner: string;
-      group: string;
-    }>;
-    error?: string;
-  }>;
-  
+      name: string
+      type: 'file' | 'directory'
+      size: number
+      modifyTime: string
+      permissions: string
+      owner: string
+      group: string
+    }>
+    error?: string
+  }>
+
   sftpDownloadFile(params: { connectionId: string; remotePath: string }): Promise<{
-    success: boolean;
-    error?: string;
-  }>;
-  
+    success: boolean
+    error?: string
+  }>
+
   sftpUploadFile(params: { connectionId: string; localPath: string; remotePath: string }): Promise<{
-    success: boolean;
-    error?: string;
-  }>;
-  
+    success: boolean
+    error?: string
+  }>
+
   sftpMkdir(params: { connectionId: string; path: string }): Promise<{
-    success: boolean;
-    error?: string;
-  }>;
-  
+    success: boolean
+    error?: string
+  }>
+
   sftpDelete(params: { connectionId: string; path: string }): Promise<{
-    success: boolean;
-    error?: string;
-  }>;
-  
+    success: boolean
+    error?: string
+  }>
+
   sftpGetFileInfo(params: { connectionId: string; path: string }): Promise<{
-    success: boolean;
+    success: boolean
     fileInfo?: {
-      name: string;
-      path: string;
-      type: string;
-      size: number;
-      modifyTime: Date;
-      accessTime: Date;
-      rights: any;
-      owner: string | number;
-      group: string | number;
-      isSymbolicLink: boolean;
-      items?: number;
-    };
-    error?: string;
-  }>;
-  
+      name: string
+      path: string
+      type: string
+      size: number
+      modifyTime: Date
+      accessTime: Date
+      rights: {
+        user: string
+        group: string
+        other: string
+      }
+      owner: string | number
+      group: string | number
+      isSymbolicLink: boolean
+      items?: number
+    }
+    error?: string
+  }>
+
   cancelTransfer(params: { transferId: string }): Promise<{
-    success: boolean;
-    error?: string;
-  }>;
-  
+    success: boolean
+    error?: string
+  }>
+
   loadSettings: () => Promise<GlobalSettings>
   saveSettings: (settings: GlobalSettings) => Promise<boolean>
-  
+
   // 文件传输事件监听
-  onTransferStart: (callback: (data: {
-    id: string;
-    type: 'upload' | 'download';
-    filename: string;
-    path: string;
-    size: number;
-    connectionId: string;
-  }) => void) => () => void;
-  
-  onTransferProgress: (callback: (data: {
-    id: string;
-    transferred: number;
-    progress: number;
-  }) => void) => () => void;
-  
-  onTransferComplete: (callback: (data: {
-    id: string;
-    success: boolean;
-  }) => void) => () => void;
-  
-  onTransferError: (callback: (data: {
-    id: string;
-    error: string;
-  }) => void) => () => void;
-  
-  onTransferCancelled: (callback: (data: {
-    id: string;
-  }) => void) => () => void;
+  onTransferStart: (
+    callback: (data: {
+      id: string
+      type: 'upload' | 'download'
+      filename: string
+      path: string
+      size: number
+      connectionId: string
+    }) => void
+  ) => () => void
+
+  onTransferProgress: (
+    callback: (data: { id: string; transferred: number; progress: number }) => void
+  ) => () => void
+
+  onTransferComplete: (callback: (data: { id: string; success: boolean }) => void) => () => void
+
+  onTransferError: (callback: (data: { id: string; error: string }) => void) => () => void
+
+  onTransferCancelled: (callback: (data: { id: string }) => void) => () => void
 }
 
 declare global {

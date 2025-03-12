@@ -29,12 +29,15 @@ interface GlobalSettings {
 }
 
 // 防抖工具函数
-function debounce<T extends (...args: any[]) => any>(fn: T, delay: number): (...args: Parameters<T>) => void {
+function debounce(
+  fn: (settings: GlobalSettings) => Promise<void>,
+  delay: number
+): (settings: GlobalSettings) => void {
   let timer: NodeJS.Timeout | null = null
-  return function(this: any, ...args: Parameters<T>) {
+  return function (settings: GlobalSettings) {
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
-      fn.apply(this, args)
+      fn(settings)
       timer = null
     }, delay)
   }
@@ -119,12 +122,12 @@ const saveSettingsRealtime = async (newSettings: GlobalSettings) => {
       terminalFontFamily: newSettings.terminalFontFamily,
       terminalFontSize: newSettings.terminalFontSize
     }
-    
+
     console.log('实时保存设置:', JSON.stringify(cleanSettings))
     const result = await window.api.saveSettings(cleanSettings)
     if (result) {
       console.log('设置已实时保存并应用')
-      
+
       // 如果语言发生变化，更新i18n状态
       if (cleanSettings.language !== language.value) {
         setLanguage(cleanSettings.language)
@@ -132,8 +135,8 @@ const saveSettingsRealtime = async (newSettings: GlobalSettings) => {
     } else {
       console.error('实时保存设置失败：返回结果为false')
     }
-  } catch (error: any) {
-    console.error('实时保存设置出错:', error?.message || error)
+  } catch (error: Error | unknown) {
+    console.error('实时保存设置出错:', error instanceof Error ? error.message : error)
   }
 }
 
@@ -151,19 +154,19 @@ const saveSettings = async () => {
       terminalFontFamily: formData.value.terminalFontFamily,
       terminalFontSize: formData.value.terminalFontSize
     }
-    
+
     console.log('开始保存设置:', JSON.stringify(cleanSettings))
     // 直接保存，不使用防抖
     const result = await window.api.saveSettings(cleanSettings)
-    
+
     if (result) {
       console.log('设置保存成功')
-      
+
       // 如果语言发生变化，更新i18n状态
       if (cleanSettings.language !== language.value) {
         setLanguage(cleanSettings.language)
       }
-      
+
       // 通知父组件
       emit('save', cleanSettings)
       // 关闭对话框
@@ -172,9 +175,11 @@ const saveSettings = async () => {
       console.error('设置保存失败：返回结果为false')
       alert(t('settings.saveError'))
     }
-  } catch (error: any) {
+  } catch (error: Error | unknown) {
     console.error('保存设置出错:', error)
-    alert(`${t('settings.saveError')}: ${error?.message || t('common.unknown')}`)
+    alert(
+      `${t('settings.saveError')}: ${error instanceof Error ? error.message : t('common.unknown')}`
+    )
   }
 }
 
@@ -185,16 +190,23 @@ const cancelSettings = () => {
 }
 
 // 监听设置变更
-watch(() => formData.value, (newValue) => {
-  debouncedSaveSettings(newValue)
-}, { deep: true })
+watch(
+  () => formData.value,
+  (newValue) => {
+    debouncedSaveSettings(newValue)
+  },
+  { deep: true }
+)
 
 // 监听visible变化
-watch(() => props.visible, (newValue) => {
-  if (newValue) {
-    loadSettings()
+watch(
+  () => props.visible,
+  (newValue) => {
+    if (newValue) {
+      loadSettings()
+    }
   }
-})
+)
 
 // 组件挂载时加载设置
 onMounted(() => {
@@ -206,98 +218,83 @@ onMounted(() => {
 
 <template>
   <teleport to="body">
-    <div class="dialog-overlay" v-if="visible" :class="{ 'dark-theme': isDarkTheme }" @click.self="cancelSettings">
+    <div
+      v-if="visible"
+      class="dialog-overlay"
+      :class="{ 'dark-theme': isDarkTheme }"
+      @click.self="cancelSettings"
+    >
       <div class="dialog-container" :class="{ 'dark-theme': isDarkTheme }">
         <div class="dialog-header">
           <h3>{{ t('settings.title') }}</h3>
           <button class="close-button" @click="cancelSettings">&times;</button>
         </div>
-        
+
         <div class="dialog-body">
           <div class="form">
             <!-- 语言设置 -->
             <div class="form-input">
               <label for="language">{{ t('settings.language') }}</label>
-              <select 
-                id="language" 
-                v-model="formData.language"
-                class="settings-select"
-              >
-                <option 
-                  v-for="option in languageOptions" 
-                  :key="option.value" 
-                  :value="option.value"
-                >
+              <select id="language" v-model="formData.language" class="settings-select">
+                <option v-for="option in languageOptions" :key="option.value" :value="option.value">
                   {{ option.label }}
                 </option>
               </select>
             </div>
-            
+
             <!-- 字体大小设置 -->
             <div class="form-input">
               <label for="fontSize">{{ t('settings.fontSize') }}</label>
-              <select 
-                id="fontSize" 
-                v-model="formData.fontSize"
-                class="settings-select"
-              >
-                <option 
-                  v-for="option in fontSizeOptions" 
-                  :key="option.value" 
-                  :value="option.value"
-                >
+              <select id="fontSize" v-model="formData.fontSize" class="settings-select">
+                <option v-for="option in fontSizeOptions" :key="option.value" :value="option.value">
                   {{ option.label }} ({{ option.value }}px)
                 </option>
               </select>
             </div>
-            
+
             <!-- 字体设置 -->
             <div class="form-input">
               <label for="fontFamily">{{ t('settings.fontFamily') }}</label>
-              <select 
-                id="fontFamily" 
-                v-model="formData.fontFamily"
-                class="settings-select"
-              >
-                <option 
-                  v-for="option in fontFamilyOptions" 
-                  :key="option.value" 
+              <select id="fontFamily" v-model="formData.fontFamily" class="settings-select">
+                <option
+                  v-for="option in fontFamilyOptions"
+                  :key="option.value"
                   :value="option.value"
                 >
                   {{ option.label }}
                 </option>
               </select>
             </div>
-            
+
             <!-- 终端字体大小设置 -->
             <div class="form-input">
               <label for="terminalFontSize">{{ t('settings.terminalFontSize') }}</label>
-              <select 
-                id="terminalFontSize" 
+              <select
+                id="terminalFontSize"
                 v-model="formData.terminalFontSize"
                 class="settings-select"
               >
-                <option 
-                  v-for="option in terminalFontSizeOptions" 
-                  :key="option.value" 
+                <option
+                  v-for="option in terminalFontSizeOptions"
+                  :key="option.value"
                   :value="option.value"
                 >
                   {{ option.label }} ({{ option.value }}px)
                 </option>
               </select>
             </div>
-            
+
             <!-- 终端字体设置 -->
             <div class="form-input">
               <label for="terminalFontFamily">{{ t('settings.terminalFontFamily') }}</label>
-              <select 
-                id="terminalFontFamily" 
+              <select
+                id="terminalFontFamily"
                 v-model="formData.terminalFontFamily"
                 class="settings-select"
               >
-                <option 
-                  v-for="option in terminalFontFamilyOptions" 
-                  :key="option.value" 
+                <option
+                  v-for="option in terminalFontFamilyOptions"
+                  :key="option.value"
                   :value="option.value"
                 >
                   {{ option.label }}
@@ -306,7 +303,7 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        
+
         <div class="dialog-footer">
           <button class="cancel-button" @click="cancelSettings">{{ t('common.cancel') }}</button>
           <button class="save-button" @click="saveSettings">{{ t('common.save') }}</button>
@@ -474,7 +471,7 @@ onMounted(() => {
   box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
 }
 
-.cancel-button, 
+.cancel-button,
 .save-button {
   padding: 8px 16px;
   border-radius: 4px;
@@ -521,4 +518,4 @@ onMounted(() => {
 .dark-theme .save-button:hover {
   background-color: #1967d2;
 }
-</style> 
+</style>

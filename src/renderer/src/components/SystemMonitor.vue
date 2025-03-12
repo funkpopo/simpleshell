@@ -86,7 +86,7 @@ const updateRemoteSystemInfo = async () => {
       connectionId: props.sshConnection.connectionId,
       command: osInfoCmd
     })
-    
+
     if (osInfoResult.success && osInfoResult.output) {
       const [platform, release, arch] = osInfoResult.output.trim().split(' ')
       systemInfo.value.osInfo = {
@@ -97,21 +97,22 @@ const updateRemoteSystemInfo = async () => {
     }
 
     // 获取CPU信息
-    const cpuInfoCmd = "cat /proc/cpuinfo | grep 'model name' | head -n1 && grep -c '^processor' /proc/cpuinfo && cat /proc/stat | grep '^cpu '"
+    const cpuInfoCmd =
+      "cat /proc/cpuinfo | grep 'model name' | head -n1 && grep -c '^processor' /proc/cpuinfo && cat /proc/stat | grep '^cpu '"
     const cpuInfoResult = await window.api.sshExec({
       connectionId: props.sshConnection.connectionId,
       command: cpuInfoCmd
     })
-    
+
     if (cpuInfoResult.success && cpuInfoResult.output) {
       const [modelLine, cores, statLine] = cpuInfoResult.output.trim().split('\n')
       const model = modelLine.split(':')[1]?.trim() || 'Unknown CPU'
-      
+
       // 解析CPU统计信息
       const cpuStats = statLine.split(/\s+/).slice(1).map(Number)
       const idle = cpuStats[3]
       const total = cpuStats.reduce((a, b) => a + b, 0)
-      
+
       // 计算CPU使用率
       let usage = 0
       if (lastCpuInfo.value) {
@@ -119,14 +120,14 @@ const updateRemoteSystemInfo = async () => {
         const totalDiff = total - lastCpuInfo.value.total
         usage = 100 - (idleDiff / totalDiff) * 100
       }
-      
+
       // 更新CPU信息
       systemInfo.value.cpuInfo = {
         model,
         cores: parseInt(cores) || 1,
         usage: Math.round(usage * 100) / 100
       }
-      
+
       // 保存当前统计信息用于下次计算
       lastCpuInfo.value = { idle, total }
     }
@@ -137,20 +138,20 @@ const updateRemoteSystemInfo = async () => {
       connectionId: props.sshConnection.connectionId,
       command: memInfoCmd
     })
-    
+
     if (memInfoResult.success && memInfoResult.output) {
       const memLines = memInfoResult.output.trim().split('\n')
       const memInfo: Record<string, number> = {}
-      
-      memLines.forEach(line => {
+
+      memLines.forEach((line) => {
         const [key, value] = line.split(':')
         memInfo[key.trim()] = parseInt(value.trim().split(' ')[0]) * 1024 // 转换为字节
       })
-      
+
       const total = memInfo.MemTotal
       const free = memInfo.MemFree + (memInfo.Buffers || 0) + (memInfo.Cached || 0)
       const used = total - free
-      
+
       systemInfo.value.memoryInfo = {
         total,
         free,
@@ -183,7 +184,8 @@ const handleVisibilityChange = () => {
   } else {
     // 页面重新可见时，如果自上次更新已过去较长时间，立即执行更新
     const timeSinceLastUpdate = Date.now() - lastUpdateTime
-    if (timeSinceLastUpdate > 3000) { // 如果超过3秒未更新
+    if (timeSinceLastUpdate > 3000) {
+      // 如果超过3秒未更新
       console.log('页面重新可见，立即更新数据')
       updateSystemInfo()
       lastUpdateTime = Date.now()
@@ -238,14 +240,18 @@ const memoryProgressStyle = computed(() => ({
 }))
 
 // 监听SSH连接状态变化
-watch(() => props.sshConnection, (newConn, oldConn) => {
-  if (newConn?.connectionId !== oldConn?.connectionId) {
-    // 重置lastCpuInfo
-    lastCpuInfo.value = null
-    // 立即更新系统信息
-    updateSystemInfo()
-  }
-}, { immediate: true })
+watch(
+  () => props.sshConnection,
+  (newConn, oldConn) => {
+    if (newConn?.connectionId !== oldConn?.connectionId) {
+      // 重置lastCpuInfo
+      lastCpuInfo.value = null
+      // 立即更新系统信息
+      updateSystemInfo()
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -253,12 +259,12 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
     <!-- 迷你监控 -->
     <div class="mini-monitor">
       <!-- CPU 迷你进度条 -->
-      <div 
-        class="mini-progress cpu" 
+      <div
+        class="mini-progress cpu"
         data-type="CPU"
         :title="`${t('system.cpu')}: ${formatPercentage(systemInfo.cpuInfo.usage)}%\n${t('system.model')}: ${systemInfo.cpuInfo.model}\n${t('system.cores')}: ${systemInfo.cpuInfo.cores}`"
       >
-        <div 
+        <div
           class="mini-progress-bar"
           :style="{
             height: `${systemInfo.cpuInfo.usage}%`,
@@ -269,19 +275,21 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
       </div>
 
       <!-- 内存迷你进度条 -->
-      <div 
-        class="mini-progress memory" 
+      <div
+        class="mini-progress memory"
         data-type="MEM"
         :title="`${t('system.memory')}: ${formatPercentage(systemInfo.memoryInfo.usedPercentage)}%\n${t('system.used')}: ${formatBytes(systemInfo.memoryInfo.used)}\n${t('system.total')}: ${formatBytes(systemInfo.memoryInfo.total)}`"
       >
-        <div 
+        <div
           class="mini-progress-bar"
           :style="{
             height: `${systemInfo.memoryInfo.usedPercentage}%`,
             background: 'var(--progress-gradient)'
           }"
         ></div>
-        <span class="mini-progress-text">{{ formatPercentage(systemInfo.memoryInfo.usedPercentage) }}%</span>
+        <span class="mini-progress-text"
+          >{{ formatPercentage(systemInfo.memoryInfo.usedPercentage) }}%</span
+        >
       </div>
     </div>
 
@@ -316,10 +324,7 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
         <div class="info-item">
           <span>{{ t('system.usage') }}：</span>
           <div class="progress-bar">
-            <div
-              class="progress"
-              :style="cpuProgressStyle"
-            ></div>
+            <div class="progress" :style="cpuProgressStyle"></div>
             <span class="progress-text">{{ formatPercentage(systemInfo.cpuInfo.usage) }}%</span>
           </div>
         </div>
@@ -338,11 +343,10 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
         <div class="info-item">
           <span>{{ t('system.usage') }}：</span>
           <div class="progress-bar">
-            <div
-              class="progress"
-              :style="memoryProgressStyle"
-            ></div>
-            <span class="progress-text">{{ formatPercentage(systemInfo.memoryInfo.usedPercentage) }}%</span>
+            <div class="progress" :style="memoryProgressStyle"></div>
+            <span class="progress-text"
+              >{{ formatPercentage(systemInfo.memoryInfo.usedPercentage) }}%</span
+            >
           </div>
         </div>
       </div>
@@ -432,7 +436,7 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
   width: 32px;
   height: 80px;
   border-radius: 16px;
-  box-shadow: 
+  box-shadow:
     inset 0 2px 4px rgba(0, 0, 0, 0.3),
     0 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -467,14 +471,14 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
   left: 0;
   width: 100%;
   transition: height 0.3s ease;
-  box-shadow: 
+  box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.3) inset,
     0 -1px 0 rgba(0, 0, 0, 0.1) inset;
 }
 
 /* 折叠状态下优化进度条样式 */
 .right-sidebar-collapsed .mini-progress-bar {
-  box-shadow: 
+  box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.4) inset,
     0 -1px 0 rgba(0, 0, 0, 0.2) inset;
 }
@@ -505,8 +509,9 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
 }
 
 .mini-progress.cpu {
-  --progress-color: #4CAF50;
-  --progress-gradient: linear-gradient(180deg, 
+  --progress-color: #4caf50;
+  --progress-gradient: linear-gradient(
+    180deg,
     color-mix(in srgb, var(--progress-color) 90%, white) 0%,
     var(--progress-color) 50%,
     color-mix(in srgb, var(--progress-color) 90%, black) 100%
@@ -514,8 +519,9 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
 }
 
 .mini-progress.memory {
-  --progress-color: #2196F3;
-  --progress-gradient: linear-gradient(180deg,
+  --progress-color: #2196f3;
+  --progress-gradient: linear-gradient(
+    180deg,
     color-mix(in srgb, var(--progress-color) 90%, white) 0%,
     var(--progress-color) 50%,
     color-mix(in srgb, var(--progress-color) 90%, black) 100%
@@ -524,7 +530,7 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
 
 /* 暗色主题下的迷你监控样式 */
 .dark-theme .mini-progress {
-  box-shadow: 
+  box-shadow:
     inset 0 2px 4px rgba(0, 0, 0, 0.4),
     0 1px 0 rgba(255, 255, 255, 0.05);
 }
@@ -538,8 +544,7 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
 }
 
 .dark-theme .mini-progress-bar {
-  box-shadow: 
-    0 1px 0 rgba(255, 255, 255, 0.2) inset
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset;
 }
 
 /* 隐藏折叠状态下的常规监控内容 */
@@ -635,7 +640,7 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
 .progress {
   height: 100%;
   transition: all 0.3s ease;
-  box-shadow: 
+  box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.3) inset,
     0 -1px 0 rgba(0, 0, 0, 0.1) inset;
   min-width: 0;
@@ -647,19 +652,31 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
 
 @property --progress-color {
   syntax: '<color>';
-  initial-value: #4CAF50;
+  initial-value: #4caf50;
   inherits: false;
 }
 
 .progress {
-  --progress-color: #4CAF50;
-  background: linear-gradient(to right, var(--progress-color), color-mix(in srgb, var(--progress-color), white 20%));
+  --progress-color: #4caf50;
+  background: linear-gradient(
+    to right,
+    var(--progress-color),
+    color-mix(in srgb, var(--progress-color), white 20%)
+  );
 }
 
-.progress[style*="width: 6"] { --progress-color: #FFA726; }
-.progress[style*="width: 7"] { --progress-color: #FF7043; }
-.progress[style*="width: 8"] { --progress-color: #ff4757; }
-.progress[style*="width: 9"] { --progress-color: #ff4757; }
+.progress[style*='width: 6'] {
+  --progress-color: #ffa726;
+}
+.progress[style*='width: 7'] {
+  --progress-color: #ff7043;
+}
+.progress[style*='width: 8'] {
+  --progress-color: #ff4757;
+}
+.progress[style*='width: 9'] {
+  --progress-color: #ff4757;
+}
 
 .progress-text {
   position: absolute;
@@ -704,4 +721,4 @@ watch(() => props.sshConnection, (newConn, oldConn) => {
   height: 100%;
   padding: 0;
 }
-</style> 
+</style>

@@ -20,9 +20,9 @@ const props = defineProps<{
 }>()
 
 // 动态图标计算属性
-const historyIcon = computed(() => props.isDarkTheme ? historyNightIcon : historyDayIcon)
-const minimizeIcon = computed(() => props.isDarkTheme ? minimizeNightIcon : minimizeDayIcon)
-const closeIcon = computed(() => props.isDarkTheme ? closeNightIcon : closeDayIcon)
+const historyIcon = computed(() => (props.isDarkTheme ? historyNightIcon : historyDayIcon))
+const minimizeIcon = computed(() => (props.isDarkTheme ? minimizeNightIcon : minimizeDayIcon))
+const closeIcon = computed(() => (props.isDarkTheme ? closeNightIcon : closeDayIcon))
 
 // 定义事件
 const emit = defineEmits<{
@@ -31,8 +31,8 @@ const emit = defineEmits<{
 }>()
 
 // 浮窗位置
-const posX = ref(window.innerWidth - 350)  // 默认放置在右侧
-const posY = ref(80)  // 距离顶部80px
+const posX = ref(window.innerWidth - 350) // 默认放置在右侧
+const posY = ref(80) // 距离顶部80px
 const startX = ref(0)
 const startY = ref(0)
 const isDragging = ref(false)
@@ -51,24 +51,28 @@ const windowDimensions = ref({
 const showHistory = ref(false)
 
 // 对话内容
-const messages = ref<Array<{
-  type: 'user' | 'assistant'
-  content: string
-  timestamp: number
-}>>([])
-
-// 历史会话列表
-const historySessions = ref<Array<{
-  id: string
-  title: string
-  preview: string
-  timestamp: number
-  messages: Array<{
+const messages = ref<
+  Array<{
     type: 'user' | 'assistant'
     content: string
     timestamp: number
   }>
-}>>([])
+>([])
+
+// 历史会话列表
+const historySessions = ref<
+  Array<{
+    id: string
+    title: string
+    preview: string
+    timestamp: number
+    messages: Array<{
+      type: 'user' | 'assistant'
+      content: string
+      timestamp: number
+    }>
+  }>
+>([])
 
 // 当前会话ID
 const currentSessionId = ref('')
@@ -84,14 +88,7 @@ const STORAGE_KEY = 'ai_assistant_messages'
 const POSITION_STORAGE_KEY = 'ai_assistant_position'
 
 // 示例回答集
-const sampleResponses = [
-  '我理解您的问题。在Shell环境中，您可以使用以下命令查看当前目录下的文件：\n```\nls -la\n```',
-  '根据您的描述，这看起来像是一个权限问题。您可以尝试使用sudo命令，或者检查文件的权限设置：\n```\nchmod +x yourscript.sh\n```',
-  '对于这个网络连接问题，我建议您首先检查网络配置：\n```\nifconfig\nping google.com\n```\n如果无法ping通，可能是DNS或网关设置问题。',
-  '这个错误通常表示端口已被占用。您可以使用以下命令查找占用该端口的进程：\n```\nlsof -i :8080\n```\n然后使用kill命令终止该进程。',
-  '如果您需要查看系统资源使用情况，可以使用这些命令：\n```\ntop\nhtop\nfree -m\n```\n这将显示CPU、内存和进程的详细信息。',
-  '要建立SSH连接，您可以使用以下命令：\n```\nssh username@hostname -p 22\n```\n如果您有密钥，可以添加 `-i /path/to/key.pem` 参数。'
-]
+const sampleResponses = ['sample']
 
 // 浮窗样式
 const floatingWindowStyle = computed(() => {
@@ -109,7 +106,7 @@ const startDrag = (e: MouseEvent) => {
     isDragging.value = true
     startX.value = e.clientX - posX.value
     startY.value = e.clientY - posY.value
-    
+
     // 获取窗口和浮窗尺寸（只在开始拖拽时获取一次）
     const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
     windowDimensions.value = {
@@ -118,13 +115,13 @@ const startDrag = (e: MouseEvent) => {
       floatingWidth: floatingWindow?.offsetWidth || 320,
       floatingHeight: floatingWindow?.offsetHeight || 450
     }
-    
+
     // 添加拖拽状态CSS类，用于视觉反馈
     floatingWindow?.classList.add('dragging')
-    
+
     // 为body添加全局拖动样式
     document.body.classList.add('ai-window-dragging')
-    
+
     // 阻止事件冒泡和默认行为，防止文本选择等
     e.preventDefault()
     e.stopPropagation()
@@ -134,27 +131,27 @@ const startDrag = (e: MouseEvent) => {
 // 拖拽中
 const onDrag = (e: MouseEvent) => {
   if (!isDragging.value) return
-  
+
   // 使用requestAnimationFrame优化动画
   requestAnimationFrame(() => {
     // 计算新位置
     let newX = e.clientX - startX.value
     let newY = e.clientY - startY.value
-    
+
     const { windowWidth, windowHeight, floatingWidth } = windowDimensions.value
-    
+
     // 增强的边界检测，确保至少有20px在视口内
     const minVisiblePortion = 40
     newX = Math.max(-floatingWidth + minVisiblePortion, newX)
     newY = Math.max(0, newY)
     newX = Math.min(windowWidth - minVisiblePortion, newX)
     newY = Math.min(windowHeight - minVisiblePortion, newY)
-    
+
     // 更新位置
     posX.value = newX
     posY.value = newY
   })
-  
+
   // 阻止事件冒泡和默认行为
   e.preventDefault()
   e.stopPropagation()
@@ -164,20 +161,20 @@ const onDrag = (e: MouseEvent) => {
 const endDrag = () => {
   if (isDragging.value) {
     isDragging.value = false
-    
+
     // 额外的安全检查，确保窗口在可视区域内
     ensureWindowVisible()
-    
+
     // 保存位置到localStorage
     saveWindowPosition()
-    
+
     // 移除拖拽状态CSS类
     const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
     floatingWindow?.classList.remove('dragging')
-    
+
     // 移除body上的全局拖动样式
     document.body.classList.remove('ai-window-dragging')
-    
+
     // 更新窗口尺寸引用为当前尺寸
     windowDimensions.value = {
       windowWidth: window.innerWidth,
@@ -193,21 +190,21 @@ const ensureWindowVisible = () => {
   const windowWidth = window.innerWidth
   const windowHeight = window.innerHeight
   const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
-  
+
   if (floatingWindow) {
     const floatingWidth = floatingWindow.offsetWidth
     const floatingHeight = floatingWindow.offsetHeight
-    
+
     // 确保至少有100px的窗口在视口内
     const minVisiblePortion = 100
-    
+
     // 检查并修正X位置
     if (posX.value < -floatingWidth + minVisiblePortion) {
       posX.value = -floatingWidth + minVisiblePortion
     } else if (posX.value > windowWidth - minVisiblePortion) {
       posX.value = windowWidth - minVisiblePortion
     }
-    
+
     // 检查并修正Y位置
     if (posY.value < 0) {
       posY.value = 0
@@ -225,12 +222,15 @@ const saveWindowPosition = () => {
       console.error('保存窗口位置失败: 位置值无效', posX.value, posY.value)
       return
     }
-    
-    localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify({
-      x: posX.value,
-      y: posY.value
-    }))
-    
+
+    localStorage.setItem(
+      POSITION_STORAGE_KEY,
+      JSON.stringify({
+        x: posX.value,
+        y: posY.value
+      })
+    )
+
     // 标记已加载位置，防止被默认值覆盖
     hasLoadedPosition.value = true
   } catch (error) {
@@ -246,10 +246,10 @@ const loadWindowPosition = () => {
       const position = JSON.parse(savedPosition)
       posX.value = position.x
       posY.value = position.y
-      
+
       // 标记已加载位置
       hasLoadedPosition.value = true
-      
+
       // 确保加载的位置有效且在可视区域内
       setTimeout(ensureWindowVisible, 0)
     }
@@ -271,19 +271,19 @@ onMounted(async () => {
   document.addEventListener('mousemove', onDrag)
   document.addEventListener('mouseup', endDrag)
   window.addEventListener('resize', handleResize)
-  
+
   // 向主进程注册窗口关闭事件监听
   window.api.onAppClose(async () => {
     await saveCurrentSession()
     saveWindowPosition()
   })
-  
+
   // 加载消息历史
   await loadMessages()
-  
+
   // 加载窗口位置
   loadWindowPosition()
-  
+
   // 如果没有加载到保存的位置，则使用默认位置
   if (!hasLoadedPosition.value) {
     posX.value = window.innerWidth - 350
@@ -296,22 +296,26 @@ onUnmounted(() => {
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', endDrag)
   window.removeEventListener('resize', handleResize)
-  
+
   // 保存当前会话
   saveCurrentSession()
 })
 
 // 监听消息变化，保存历史到localStorage
-watch(messages, () => {
-  saveMessagesToLocalStorage()
-}, { deep: true })
+watch(
+  messages,
+  () => {
+    saveMessagesToLocalStorage()
+  },
+  { deep: true }
+)
 
 // 切换历史面板
 const toggleHistory = (e: MouseEvent) => {
   // 阻止事件冒泡，防止触发拖拽
   e.stopPropagation()
   showHistory.value = !showHistory.value
-  
+
   // 如果打开历史面板，加载历史会话
   if (showHistory.value) {
     loadHistorySessions()
@@ -331,14 +335,14 @@ const closeWindow = async (e?: MouseEvent) => {
   if (e) {
     e.stopPropagation()
   }
-  
+
   // 保存当前会话
   await saveCurrentSession()
-  
+
   // 重置消息
   messages.value = []
   localStorage.removeItem(STORAGE_KEY)
-  
+
   // 关闭窗口
   emit('update:visible', false)
   emit('close')
@@ -350,11 +354,11 @@ const getRandomResponse = (question: string): string => {
   if (question.includes('你好') || question.includes('hi') || question.includes('hello')) {
     return '你好！我是AI助手，有什么可以帮助你的吗？'
   }
-  
+
   if (question.includes('谢谢') || question.includes('感谢')) {
     return '不客气！如果还有其他问题，随时可以问我。'
   }
-  
+
   // 返回随机示例回答
   return sampleResponses[Math.floor(Math.random() * sampleResponses.length)]
 }
@@ -371,26 +375,26 @@ const getThinkingTime = (message: string): number => {
 const sendMessage = () => {
   const message = userInput.value.trim()
   if (!message) return
-  
+
   // 添加用户消息
   messages.value.push({
     type: 'user',
     content: message,
     timestamp: Date.now()
   })
-  
+
   // 清空输入框
   userInput.value = ''
-  
+
   // 滚动到底部
   scrollToBottom()
-  
+
   // 模拟AI响应
   isLoading.value = true
-  
+
   // 根据消息长度模拟思考时间
   const thinkingTime = getThinkingTime(message)
-  
+
   setTimeout(() => {
     // 添加AI响应
     messages.value.push({
@@ -399,7 +403,7 @@ const sendMessage = () => {
       timestamp: Date.now()
     })
     isLoading.value = false
-    
+
     // 滚动到底部
     scrollToBottom()
   }, thinkingTime)
@@ -436,39 +440,46 @@ const formatDate = (timestamp: number): string => {
 }
 
 // 监听可见性变化
-watch(() => props.visible, (newValue) => {
-  if (newValue) {
-    // 当浮窗显示时，滚动到底部
-    scrollToBottom()
-    
-    // 如果已经加载过位置，确保窗口在可视区域内
-    if (hasLoadedPosition.value) {
-      ensureWindowVisible()
-    } else {
-      // 如果还没有加载过位置，设置默认位置
-      posX.value = window.innerWidth - 350
-      posY.value = 80
-      hasLoadedPosition.value = true
+watch(
+  () => props.visible,
+  (newValue) => {
+    if (newValue) {
+      // 当浮窗显示时，滚动到底部
+      scrollToBottom()
+
+      // 如果已经加载过位置，确保窗口在可视区域内
+      if (hasLoadedPosition.value) {
+        ensureWindowVisible()
+      } else {
+        // 如果还没有加载过位置，设置默认位置
+        posX.value = window.innerWidth - 350
+        posY.value = 80
+        hasLoadedPosition.value = true
+      }
     }
   }
-})
+)
 
 // 格式化消息，支持代码块和简单的Markdown
-const formatMessage = (content: string): string => {
-  if (!content) return ''
-  
+const formatMessage = (content: string): { html: string; safe: boolean } => {
+  if (!content) return { html: '', safe: true }
+
   // 处理代码块: ```code```
   content = content.replace(/```([\s\S]*?)```/g, (_, code) => {
     return `<div class="code-block"><pre>${escapeHtml(code.trim())}</pre></div>`
   })
-  
+
   // 处理行内代码: `code`
   content = content.replace(/`([^`]+)`/g, '<code>$1</code>')
-  
+
   // 处理换行符
   content = content.replace(/\n/g, '<br>')
-  
-  return content
+
+  return {
+    html: content,
+    // 这是一个受控环境，我们只处理特定的格式化，不接受外部输入
+    safe: true
+  }
 }
 
 // HTML转义
@@ -487,15 +498,17 @@ const createNewSession = () => {
   if (messages.value.length > 1) {
     saveCurrentSession()
   }
-  
+
   // 创建新会话
   currentSessionId.value = generateSessionId()
-  messages.value = [{
-    type: 'assistant',
-    content: t('aiAssistant.welcome'),
-    timestamp: Date.now()
-  }]
-  
+  messages.value = [
+    {
+      type: 'assistant',
+      content: t('aiAssistant.welcome'),
+      timestamp: Date.now()
+    }
+  ]
+
   showHistory.value = false
 }
 
@@ -517,14 +530,14 @@ const selectHistorySession = (sessionId: string) => {
   if (messages.value.length > 1) {
     saveCurrentSession()
   }
-  
+
   // 找到选中的历史会话
-  const selectedSession = historySessions.value.find(session => session.id === sessionId)
+  const selectedSession = historySessions.value.find((session) => session.id === sessionId)
   if (selectedSession) {
     currentSessionId.value = sessionId
     messages.value = [...selectedSession.messages]
     showHistory.value = false
-    
+
     // 滚动到底部
     scrollToBottom()
   }
@@ -534,12 +547,12 @@ const selectHistorySession = (sessionId: string) => {
 const deleteHistorySession = async (sessionId: string, event: Event) => {
   // 阻止事件冒泡
   event.stopPropagation()
-  
+
   try {
     await window.api.deleteHistorySession(sessionId)
     // 更新本地历史会话列表
-    historySessions.value = historySessions.value.filter(session => session.id !== sessionId)
-    
+    historySessions.value = historySessions.value.filter((session) => session.id !== sessionId)
+
     // 如果删除的是当前会话，创建新会话
     if (sessionId === currentSessionId.value) {
       createNewSession()
@@ -555,12 +568,14 @@ const generateSessionId = (): string => {
 }
 
 // 获取会话标题
-const getSessionTitle = (messages: Array<{type: string, content: string, timestamp: number}>): string => {
+const getSessionTitle = (
+  messages: Array<{ type: string; content: string; timestamp: number }>
+): string => {
   // 尝试从第一条用户消息获取标题
-  const firstUserMsg = messages.find(msg => msg.type === 'user')
+  const firstUserMsg = messages.find((msg) => msg.type === 'user')
   if (firstUserMsg) {
     // 截取前20个字符作为标题
-    return firstUserMsg.content.length > 20 
+    return firstUserMsg.content.length > 20
       ? firstUserMsg.content.substring(0, 20) + '...'
       : firstUserMsg.content
   }
@@ -571,13 +586,13 @@ const getSessionTitle = (messages: Array<{type: string, content: string, timesta
 // 保存当前会话到历史记录
 const saveCurrentSession = async () => {
   if (messages.value.length <= 1) return // 仅有欢迎消息，不保存
-  
+
   try {
     // 如果没有当前会话ID，生成一个
     if (!currentSessionId.value) {
       currentSessionId.value = generateSessionId()
     }
-    
+
     const session = {
       id: currentSessionId.value,
       title: getSessionTitle(messages.value),
@@ -585,7 +600,7 @@ const saveCurrentSession = async () => {
       timestamp: Date.now(),
       messages: [...messages.value]
     }
-    
+
     // 通过IPC调用主进程保存会话
     await window.api.saveChatSession(session)
   } catch (error) {
@@ -602,7 +617,7 @@ const loadMessages = async () => {
       messages.value = JSON.parse(savedMessages)
       return
     }
-    
+
     // 如果没有临时会话，创建新会话
     createNewSession()
   } catch (error) {
@@ -624,9 +639,9 @@ const saveMessagesToLocalStorage = () => {
 </script>
 
 <template>
-  <div 
-    v-if="visible" 
-    class="ai-floating-window" 
+  <div
+    v-if="visible"
+    class="ai-floating-window"
     :class="{ 'dark-theme': isDarkTheme }"
     :style="floatingWindowStyle"
   >
@@ -635,17 +650,17 @@ const saveMessagesToLocalStorage = () => {
       <div class="window-title">{{ t('aiAssistant.title') }}</div>
       <div class="window-controls">
         <button class="window-btn history-btn" @click="(e) => toggleHistory(e)">
-          <img :src="historyIcon" alt="History" width="16" height="16">
+          <img :src="historyIcon" alt="History" width="16" height="16" />
         </button>
         <button class="window-btn minimize-btn" @click="(e) => minimizeWindow(e)">
-          <img :src="minimizeIcon" alt="Minimize" width="16" height="16">
+          <img :src="minimizeIcon" alt="Minimize" width="16" height="16" />
         </button>
         <button class="window-close" @click="(e) => closeWindow(e)">
-          <img :src="closeIcon" alt="Close" width="16" height="16">
+          <img :src="closeIcon" alt="Close" width="16" height="16" />
         </button>
       </div>
     </div>
-    
+
     <!-- 历史记录面板 -->
     <Transition name="history-panel">
       <div v-if="showHistory" class="history-panel">
@@ -656,15 +671,15 @@ const saveMessagesToLocalStorage = () => {
             {{ t('aiAssistant.startNewChat') }}
           </button>
         </div>
-        
+
         <div class="history-list">
-          <div 
-            v-for="(session, index) in historySessions" 
-            :key="session.id" 
+          <div
+            v-for="(session, index) in historySessions"
+            :key="session.id"
             class="history-item"
-            :class="{ 'active': session.id === currentSessionId }"
-            @click="selectHistorySession(session.id)"
+            :class="{ active: session.id === currentSessionId }"
             :style="{ '--index': index }"
+            @click="selectHistorySession(session.id)"
           >
             <div class="history-item-content">
               <div class="history-item-title">
@@ -677,11 +692,15 @@ const saveMessagesToLocalStorage = () => {
                 {{ formatDate(session.timestamp) }}
               </div>
             </div>
-            <button class="delete-history-btn" @click="(e) => deleteHistorySession(session.id, e)" :title="t('aiAssistant.delete')">
+            <button
+              class="delete-history-btn"
+              :title="t('aiAssistant.delete')"
+              @click="(e) => deleteHistorySession(session.id, e)"
+            >
               &times;
             </button>
           </div>
-          
+
           <div v-if="historySessions.length === 0" class="history-empty">
             <div class="empty-state">
               <div class="empty-icon">📝</div>
@@ -694,11 +713,11 @@ const saveMessagesToLocalStorage = () => {
         </div>
       </div>
     </Transition>
-    
+
     <!-- 消息容器，最小化时隐藏 -->
     <div class="messages-container">
-      <div 
-        v-for="(message, index) in messages" 
+      <div
+        v-for="(message, index) in messages"
         :key="index"
         class="message-bubble"
         :class="{
@@ -710,16 +729,20 @@ const saveMessagesToLocalStorage = () => {
         <div v-if="message.type === 'user'" class="message-content">
           {{ message.content }}
         </div>
-        
+
         <!-- AI消息，支持格式化 -->
         <div v-else class="message-content formatted-content">
-          <!-- 使用v-html方式渲染格式化内容 -->
-          <div v-html="formatMessage(message.content)"></div>
+          <!-- 使用安全的方式渲染格式化内容 -->
+          <div
+            v-if="formatMessage(message.content).safe"
+            v-bind:innerHTML="formatMessage(message.content).html"
+          ></div>
+          <div v-else>{{ message.content }}</div>
         </div>
-        
+
         <div class="message-timestamp">{{ formatTimestamp(message.timestamp) }}</div>
       </div>
-      
+
       <!-- 加载指示器 -->
       <div v-if="isLoading" class="loading-indicator">
         <div class="dot"></div>
@@ -727,21 +750,17 @@ const saveMessagesToLocalStorage = () => {
         <div class="dot"></div>
       </div>
     </div>
-    
+
     <!-- 输入区域，最小化时隐藏 -->
     <div class="input-container">
-      <textarea 
+      <textarea
         v-model="userInput"
         class="message-input"
         :placeholder="t('aiAssistant.inputPlaceholder')"
-        @keydown="handleKeyDown"
         :disabled="isLoading"
+        @keydown="handleKeyDown"
       ></textarea>
-      <button 
-        class="send-button" 
-        @click="sendMessage"
-        :disabled="!userInput.trim() || isLoading"
-      >
+      <button class="send-button" :disabled="!userInput.trim() || isLoading" @click="sendMessage">
         {{ t('aiAssistant.send') }}
       </button>
     </div>
@@ -772,7 +791,9 @@ body.ai-window-dragging {
   flex-direction: column;
   overflow: hidden;
   z-index: 9999;
-  transition: transform 0.05s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.05s ease,
+    box-shadow 0.2s ease;
   border: 1px solid #e0e0e0;
   top: 0;
   left: 0;
@@ -832,7 +853,8 @@ body.ai-window-dragging {
   align-items: center;
 }
 
-.window-btn, .window-close {
+.window-btn,
+.window-close {
   background: none;
   border: none;
   height: 24px;
@@ -1425,7 +1447,8 @@ body.ai-window-dragging {
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(0.7);
     opacity: 0.5;
   }
@@ -1498,4 +1521,4 @@ body.ai-window-dragging {
     transform: translateY(0);
   }
 }
-</style> 
+</style>

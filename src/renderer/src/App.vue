@@ -16,8 +16,14 @@ import AIAssistant from './components/AIAssistant.vue'
 // 定义TerminalView组件实例的类型
 interface TerminalViewInstance {
   addLocalTerminal: () => void
-  addSshConnection: (connection: any) => void
+  addSshConnection: (connection: Connection) => void
   hasAnyTabs: boolean
+}
+
+interface GlobalSettings {
+  language: string
+  fontSize: number
+  fontFamily: string
 }
 
 // 主题状态
@@ -63,20 +69,20 @@ const toggleLeftSidebar = () => {
 const handleMouseDown = () => {
   if (!isLeftSidebarExpanded.value) return
   isDragging.value = true
-  
+
   // 在拖动开始时禁用过渡动画，使拖动更流畅
   const sidebar = document.querySelector('.left-sidebar') as HTMLElement
   if (sidebar) {
     sidebar.classList.add('dragging')
   }
-  
+
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
 }
 
 const handleMouseMove = (e: MouseEvent) => {
   if (!isDragging.value) return
-  
+
   // 使用requestAnimationFrame减少不必要的渲染
   window.requestAnimationFrame(() => {
     const newWidth = e.clientX
@@ -90,7 +96,7 @@ const handleMouseUp = () => {
   isDragging.value = false
   document.removeEventListener('mousemove', handleMouseMove)
   document.removeEventListener('mouseup', handleMouseUp)
-  
+
   // 恢复过渡动画
   const sidebar = document.querySelector('.left-sidebar') as HTMLElement
   if (sidebar) {
@@ -111,20 +117,20 @@ const toggleRightSidebar = () => {
 const handleRightMouseDown = () => {
   if (!isRightSidebarExpanded.value) return
   isRightDragging.value = true
-  
+
   // 在拖动开始时禁用过渡动画，使拖动更流畅
   const sidebar = document.querySelector('.right-sidebar') as HTMLElement
   if (sidebar) {
     sidebar.classList.add('dragging')
   }
-  
+
   document.addEventListener('mousemove', handleRightMouseMove)
   document.addEventListener('mouseup', handleRightMouseUp)
 }
 
 const handleRightMouseMove = (e: MouseEvent) => {
   if (!isRightDragging.value) return
-  
+
   // 使用requestAnimationFrame减少不必要的渲染
   window.requestAnimationFrame(() => {
     const newWidth = window.innerWidth - e.clientX
@@ -138,7 +144,7 @@ const handleRightMouseUp = () => {
   isRightDragging.value = false
   document.removeEventListener('mousemove', handleRightMouseMove)
   document.removeEventListener('mouseup', handleRightMouseUp)
-  
+
   // 恢复过渡动画
   const sidebar = document.querySelector('.right-sidebar') as HTMLElement
   if (sidebar) {
@@ -150,28 +156,28 @@ const handleRightMouseUp = () => {
 const handleRightSplitMouseDown = (e: MouseEvent) => {
   e.preventDefault()
   isRightSplitDragging.value = true
-  
+
   // 在拖动开始时禁用过渡动画
   const monitorSection = document.querySelector('.monitor-section') as HTMLElement
   const connectionSection = document.querySelector('.connection-section') as HTMLElement
   if (monitorSection) monitorSection.classList.add('dragging')
   if (connectionSection) connectionSection.classList.add('dragging')
-  
+
   document.addEventListener('mousemove', handleRightSplitMouseMove)
   document.addEventListener('mouseup', handleRightSplitMouseUp)
 }
 
 const handleRightSplitMouseMove = (e: MouseEvent) => {
   if (!isRightSplitDragging.value) return
-  
+
   // 使用requestAnimationFrame减少不必要的渲染
   window.requestAnimationFrame(() => {
     const sidebarRect = document.querySelector('.right-sidebar-content')?.getBoundingClientRect()
     if (!sidebarRect) return
-    
+
     const offsetY = e.clientY - sidebarRect.top
     const percentage = Math.round((offsetY / sidebarRect.height) * 100)
-    
+
     // 限制拖动范围在20%-80%之间
     if (percentage >= 20 && percentage <= 80) {
       rightSidebarSplitPosition.value = percentage
@@ -183,7 +189,7 @@ const handleRightSplitMouseUp = () => {
   isRightSplitDragging.value = false
   document.removeEventListener('mousemove', handleRightSplitMouseMove)
   document.removeEventListener('mouseup', handleRightSplitMouseUp)
-  
+
   // 恢复过渡动画
   const monitorSection = document.querySelector('.monitor-section') as HTMLElement
   const connectionSection = document.querySelector('.connection-section') as HTMLElement
@@ -201,44 +207,44 @@ const handleTabsChange = (hasTabs: boolean) => {
 
 // 处理本地终端请求
 const handleOpenLocalTerminal = () => {
-  console.log('打开本地终端请求');
-  
+  console.log('打开本地终端请求')
+
   // 检查是否已经有终端标签页
   if (hasConnections.value && TerminalViewRef.value?.hasAnyTabs) {
-    console.log('已有终端存在，直接添加新标签页');
-    TerminalViewRef.value.addLocalTerminal();
-    return;
+    console.log('已有终端存在，直接添加新标签页')
+    TerminalViewRef.value.addLocalTerminal()
+    return
   }
-  
+
   // 首次创建终端 - 先添加标记，防止组件onMounted时重复创建
-  console.log('首次创建终端，设置本地终端模式');
+  console.log('首次创建终端，设置本地终端模式')
   // 添加正在创建的标记，防止TerminalView的onMounted钩子重复创建
-  window.localStorage.setItem('terminal_creating', 'true');
-  
-  isLocalTerminalMode.value = true;
-  hasConnections.value = true;
-  
+  window.localStorage.setItem('terminal_creating', 'true')
+
+  isLocalTerminalMode.value = true
+  hasConnections.value = true
+
   // 确保TerminalView组件已加载并初始化后再创建终端
   setTimeout(() => {
     if (TerminalViewRef.value) {
-      console.log('TerminalView组件已初始化，创建新的本地终端标签页');
-      TerminalViewRef.value.addLocalTerminal();
+      console.log('TerminalView组件已初始化，创建新的本地终端标签页')
+      TerminalViewRef.value.addLocalTerminal()
       // 创建后清除标记
-      window.localStorage.removeItem('terminal_creating');
+      window.localStorage.removeItem('terminal_creating')
     } else {
-      console.warn('TerminalView组件未初始化，无法创建本地终端标签页');
+      console.warn('TerminalView组件未初始化，无法创建本地终端标签页')
       // 清除标记，避免残留
-      window.localStorage.removeItem('terminal_creating');
+      window.localStorage.removeItem('terminal_creating')
     }
-  }, 50); // 给予足够的时间让组件挂载和初始化
+  }, 50) // 给予足够的时间让组件挂载和初始化
 }
 
 // 处理SSH连接请求
-const handleConnectToServer = async (connection: any) => {
+const handleConnectToServer = async (connection: Connection) => {
   console.log('处理SSH连接请求:', connection.id)
-  
+
   // 不再直接设置activeConnectionId，依赖TerminalView的事件通知
-  
+
   if (!TerminalViewRef.value) {
     hasConnections.value = true
     await new Promise<void>((resolve) => {
@@ -276,20 +282,20 @@ const handleActiveConnectionChange = (connectionId: string | null) => {
 const settingsDialogVisible = ref(false)
 
 // 处理设置保存
-const handleSaveSettings = async (settings: any) => {
+const handleSaveSettings = async (settings: GlobalSettings) => {
   try {
     const result = await window.api.saveSettings(settings)
     if (result) {
       // 应用设置到当前界面 - 实际应用通过ipcRenderer.on('settings-saved')完成
       console.log('设置保存成功:', settings)
-      
+
       // 显示保存成功提示
       // 这里可以添加一个临时提示元素或使用toast组件
       const toast = document.createElement('div')
       toast.className = 'settings-toast'
       toast.innerText = '设置已保存并应用'
       document.body.appendChild(toast)
-      
+
       // 2秒后移除提示
       setTimeout(() => {
         if (document.body.contains(toast)) {
@@ -299,13 +305,13 @@ const handleSaveSettings = async (settings: any) => {
     }
   } catch (error) {
     console.error('保存设置失败:', error)
-    
+
     // 显示保存失败提示
     const toast = document.createElement('div')
     toast.className = 'settings-toast error'
     toast.innerText = '设置保存失败'
     document.body.appendChild(toast)
-    
+
     // 2秒后移除提示
     setTimeout(() => {
       if (document.body.contains(toast)) {
@@ -329,17 +335,17 @@ onMounted(() => {
     if (e.ctrlKey && e.key === 't') {
       toggleTheme()
     }
-    
+
     // Ctrl+L 打开新的本地终端
     if (e.ctrlKey && e.key === 'l') {
       handleOpenLocalTerminal()
     }
-    
+
     // Ctrl+S 打开设置
     if (e.ctrlKey && e.key === 's') {
       settingsDialogVisible.value = true
     }
-    
+
     // Ctrl+A 打开/关闭AI助手
     if (e.ctrlKey && e.key === 'a') {
       toggleAIAssistant()
@@ -359,19 +365,19 @@ onMounted(() => {
       <div class="left-sidebar-toggle" @click="toggleLeftSidebar">
         {{ isLeftSidebarExpanded ? '' : '' }}
       </div>
-      
+
       <!-- 分割线 -->
       <div class="sidebar-separator"></div>
-      
+
       <div class="left-sidebar-content">
         <transition name="fade-slide">
           <div v-show="isLeftSidebarExpanded" class="left-sidebar-items">
             <!-- 文件管理器 -->
             <FileManager
               v-if="activeConnectionId"
+              key="file-manager"
               :connection-id="activeConnectionId"
               :is-dark-theme="isDarkTheme"
-              key="file-manager"
             />
             <!-- 未连接时的提示 -->
             <div v-else class="no-connection-message">
@@ -380,9 +386,9 @@ onMounted(() => {
           </div>
         </transition>
       </div>
-      
+
       <div v-show="isLeftSidebarExpanded" class="resize-handle" @mousedown="handleMouseDown"></div>
-      
+
       <!-- 按钮容器 -->
       <div class="sidebar-buttons">
         <!-- 主题切换按钮 -->
@@ -395,11 +401,7 @@ onMounted(() => {
         </div>
         <!-- AI助手按钮 -->
         <div class="ai-toggle" @click="toggleAIAssistant">
-          <img
-            :src="BrainIcon"
-            alt="AI助手"
-            class="ai-icon"
-          />
+          <img :src="BrainIcon" alt="AI助手" class="ai-icon" />
         </div>
         <!-- 设置按钮 -->
         <div class="settings-toggle" @click="settingsDialogVisible = true">
@@ -415,12 +417,12 @@ onMounted(() => {
     <!-- 主要内容区域 -->
     <div class="main-area">
       <!-- 没有连接时显示欢迎页 -->
-      <Welcome 
-        v-if="!hasConnections" 
+      <Welcome
+        v-if="!hasConnections"
         :is-dark-theme="isDarkTheme"
         @open-local-terminal="handleOpenLocalTerminal"
       />
-      
+
       <!-- 有连接时显示终端内容 -->
       <TerminalView
         v-else
@@ -444,32 +446,30 @@ onMounted(() => {
       <div class="right-sidebar-content">
         <div class="right-sidebar-items">
           <!-- 上半部分：系统监控 -->
-          <div 
-            class="monitor-section"
-            :style="{ height: rightSidebarSplitPosition + '%' }"
-          >
-            <SystemMonitor 
-              :ssh-connection="activeConnectionId ? {
-                id: activeConnectionId,
-                name: '',
-                connectionId: activeConnectionId
-              } : null"
+          <div class="monitor-section" :style="{ height: rightSidebarSplitPosition + '%' }">
+            <SystemMonitor
+              :ssh-connection="
+                activeConnectionId
+                  ? {
+                      id: activeConnectionId,
+                      name: '',
+                      connectionId: activeConnectionId
+                    }
+                  : null
+              "
             />
           </div>
-          
+
           <!-- 分隔线 -->
-          <div 
-            class="right-sidebar-splitter"
-            @mousedown="handleRightSplitMouseDown"
-          ></div>
-          
+          <div class="right-sidebar-splitter" @mousedown="handleRightSplitMouseDown"></div>
+
           <!-- 下半部分：连接管理 -->
-          <div 
+          <div
             class="connection-section"
-            :style="{ height: (100 - rightSidebarSplitPosition) + '%' }"
+            :style="{ height: 100 - rightSidebarSplitPosition + '%' }"
           >
-            <ConnectionManager 
-              :is-dark-theme="isDarkTheme" 
+            <ConnectionManager
+              :is-dark-theme="isDarkTheme"
               @connect-to-server="handleConnectToServer"
             />
           </div>
@@ -489,7 +489,7 @@ onMounted(() => {
       :is-dark-theme="isDarkTheme"
       @save="handleSaveSettings"
     />
-    
+
     <!-- AI助手浮窗 -->
     <AIAssistant
       v-model:visible="isAIAssistantVisible"
