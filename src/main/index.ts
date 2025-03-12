@@ -10,6 +10,7 @@ import * as pty from 'node-pty'
 import SftpClient from 'ssh2-sftp-client'
 import { encryptConnection, decryptConnection, decryptString } from './crypto-utils'
 import { spawn } from 'child_process'
+import OpenAI from 'openai'
 
 // 主窗口实例
 let mainWindow: BrowserWindow | null = null
@@ -32,26 +33,6 @@ interface Organization {
   connections: Connection[]
 }
 
-// 聊天会话相关接口
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp: number
-}
-
-interface ChatSession {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  createdAt: number
-  updatedAt: number
-}
-
-interface ChatHistory {
-  sessions: ChatSession[]
-}
-
 // 定义设置接口
 interface AppSettings {
   language: string
@@ -59,6 +40,11 @@ interface AppSettings {
   fontFamily: string
   terminalFontFamily: string
   terminalFontSize: number
+  aiSettings?: {
+    apiUrl?: string
+    apiKey?: string
+    modelName?: string
+  }
 }
 
 // 连接配置文件路径
@@ -71,17 +57,11 @@ const settingsPath = is.dev
   ? path.join(process.cwd(), 'config.json')
   : path.join(getAppPath(), 'config.json')
 
-// 聊天历史记录文件路径
-const chatHistoryPath = is.dev
-  ? path.join(process.cwd(), 'chathistory.json')
-  : path.join(getAppPath(), 'chathistory.json')
-
 // 输出环境信息
 console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
 console.log('应用路径:', getAppPath())
 console.log('连接配置文件路径:', connectionsFilePath)
 console.log('设置文件路径:', settingsPath)
-console.log('聊天历史记录文件路径:', chatHistoryPath)
 
 // 加载连接配置
 function loadConnections(): Organization[] {
@@ -173,91 +153,6 @@ function saveConnections(organizations: Organization[]): boolean {
   } catch (error) {
     console.error('保存连接配置失败，错误详情:', error)
     return false
-  }
-}
-
-// 加载聊天历史记录
-function loadChatHistory(): ChatHistory {
-  try {
-    if (fs.existsSync(chatHistoryPath)) {
-      const data = fs.readFileSync(chatHistoryPath, 'utf-8')
-      return JSON.parse(data)
-    } else {
-      // 如果文件不存在，创建一个空的历史记录
-      const emptyHistory: ChatHistory = { sessions: [] }
-
-      // 确保目录存在
-      const dirPath = path.dirname(chatHistoryPath)
-      if (!fs.existsSync(dirPath)) {
-        console.log('创建聊天历史目录:', dirPath)
-        fs.mkdirSync(dirPath, { recursive: true })
-      }
-
-      console.log('创建空聊天历史文件:', chatHistoryPath)
-      fs.writeFileSync(chatHistoryPath, JSON.stringify(emptyHistory, null, 2), 'utf-8')
-      return emptyHistory
-    }
-  } catch (error) {
-    console.error('加载聊天历史失败:', error)
-    return { sessions: [] }
-  }
-}
-
-// 保存聊天会话
-function saveChatSession(session: ChatSession) {
-  try {
-    const history = loadChatHistory()
-
-    // 找到现有会话的索引
-    const existingIndex = history.sessions.findIndex((s) => s.id === session.id)
-
-    if (existingIndex !== -1) {
-      // 更新现有会话
-      history.sessions[existingIndex] = session
-    } else {
-      // 添加新会话
-      history.sessions.push(session)
-    }
-
-    // 确保目录存在
-    const dirPath = path.dirname(chatHistoryPath)
-    if (!fs.existsSync(dirPath)) {
-      console.log('创建聊天历史目录:', dirPath)
-      fs.mkdirSync(dirPath, { recursive: true })
-    }
-
-    console.log('保存聊天会话到:', chatHistoryPath)
-    // 保存回文件
-    fs.writeFileSync(chatHistoryPath, JSON.stringify(history, null, 2), 'utf-8')
-    return { success: true }
-  } catch (error) {
-    console.error('保存聊天会话失败:', error)
-    return { success: false, error: (error as Error).message }
-  }
-}
-
-// 删除聊天会话
-function deleteHistorySession(sessionId: string) {
-  try {
-    const history = loadChatHistory()
-
-    // 过滤掉要删除的会话
-    history.sessions = history.sessions.filter((s) => s.id !== sessionId)
-
-    // 确保目录存在
-    const dirPath = path.dirname(chatHistoryPath)
-    if (!fs.existsSync(dirPath)) {
-      console.log('创建聊天历史目录:', dirPath)
-      fs.mkdirSync(dirPath, { recursive: true })
-    }
-
-    console.log('删除聊天会话，保存到:', chatHistoryPath)
-    // 保存回文件
-    fs.writeFileSync(chatHistoryPath, JSON.stringify(history, null, 2), 'utf-8')
-    return { success: true }
-  } catch (error) {
-    console.error('删除聊天会话失败:', error)
-    return { success: false, error: (error as Error).message }
   }
 }
 
@@ -825,7 +720,7 @@ function closeTerminal(options: { id: string }): void {
   }
 }
 
-function createWindow(): void {
+function createWindow(): void {  
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 900,
@@ -861,6 +756,31 @@ function createWindow(): void {
       // 通知渲染进程窗口状态变化
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('window:state-change', { isFocused: true })
+      }
+    })
+
+    // 处理窗口关闭事件
+    mainWindow.on('close', (e) => {
+      console.log('窗口关闭事件触发')
+      
+      // 阻止窗口立即关闭
+      e.preventDefault()
+      
+      // 通知渲染进程窗口即将关闭
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        console.log('发送应用关闭通知到渲染进程')
+        mainWindow.webContents.send('app:before-close')
+        
+        // 给渲染进程一些时间来保存数据
+        setTimeout(() => {
+          console.log('延时结束，允许应用关闭')
+          if (mainWindow) {
+            mainWindow.destroy()
+          }
+        }, 500) // 给500毫秒的时间保存数据
+      } else {
+        // 如果窗口已经销毁，直接关闭
+        app.quit()
       }
     })
 
@@ -1347,19 +1267,6 @@ app.whenReady().then(() => {
       }
     })
 
-    // AI聊天历史记录处理
-    ipcMain.handle('chat:load-history', async () => {
-      return loadChatHistory()
-    })
-
-    ipcMain.handle('chat:save-session', async (_event, session) => {
-      return saveChatSession(session)
-    })
-
-    ipcMain.handle('chat:delete-session', async (_event, sessionId) => {
-      return deleteHistorySession(sessionId)
-    })
-
     // 获取lexer规则文件内容
     ipcMain.handle('get-lexer-file', async (_, lexerName) => {
       try {
@@ -1421,6 +1328,11 @@ app.whenReady().then(() => {
         console.error('执行SSH命令失败:', err)
         return { success: false, error: err.message || '执行命令失败' }
       }
+    })
+
+    // 处理AI请求
+    ipcMain.handle('ai:request', async (_event, params) => {
+      return await handleAIRequest(params)
     })
   }
 
@@ -1561,7 +1473,12 @@ function saveSettings(settings: AppSettings): boolean {
       fontSize: settings.fontSize || 14,
       fontFamily: settings.fontFamily || 'system-ui',
       terminalFontFamily: settings.terminalFontFamily || 'Consolas, "Courier New", monospace',
-      terminalFontSize: settings.terminalFontSize || 14
+      terminalFontSize: settings.terminalFontSize || 14,
+      aiSettings: settings.aiSettings ? {
+        apiUrl: settings.aiSettings.apiUrl || '',
+        apiKey: settings.aiSettings.apiKey || '',
+        modelName: settings.aiSettings.modelName || ''
+      } : undefined
     }
 
     const dirPath = path.dirname(settingsPath)
@@ -1603,7 +1520,12 @@ function getDefaultSettings(): AppSettings {
     fontSize: 14,
     fontFamily: 'system-ui',
     terminalFontFamily: 'Consolas, "Courier New", monospace',
-    terminalFontSize: 14
+    terminalFontSize: 14,
+    aiSettings: {
+      apiUrl: '',
+      apiKey: '',
+      modelName: ''
+    }
   }
 }
 
@@ -1640,7 +1562,12 @@ ipcMain.handle('save-settings', async (_event, settings) => {
       fontSize: settings.fontSize || 14,
       fontFamily: settings.fontFamily || 'system-ui',
       terminalFontFamily: settings.terminalFontFamily || 'Consolas, "Courier New", monospace',
-      terminalFontSize: settings.terminalFontSize || 14
+      terminalFontSize: settings.terminalFontSize || 14,
+      aiSettings: settings.aiSettings ? {
+        apiUrl: settings.aiSettings.apiUrl || '',
+        apiKey: settings.aiSettings.apiKey || '',
+        modelName: settings.aiSettings.modelName || ''
+      } : undefined
     }
 
     const success = saveSettings(cleanSettings)
@@ -1690,4 +1617,102 @@ function getLexerFilePath(lexerName: string) {
 
   // 开发环境和生产环境使用不同路径
   return is.dev ? devPath : prodPath
+}
+
+// 处理AI请求
+async function handleAIRequest(params: {
+  prompt: string
+  messages: Array<{ role: string; content: string }>
+  apiKey?: string
+  apiUrl?: string
+  modelName?: string
+}) {
+  try {
+    console.log('收到AI请求:', { ...params, apiKey: params.apiKey ? '' : undefined })
+
+    // 获取设置
+    const settings = loadSettings()
+    
+    // 使用传入的参数或从设置中获取
+    const apiKey = params.apiKey || settings.aiSettings?.apiKey
+    const apiUrl = params.apiUrl || settings.aiSettings?.apiUrl
+    let modelName = params.modelName || settings.aiSettings?.modelName
+    
+    // 验证必要参数
+    if (!apiKey) {
+      console.error('AI请求失败: 未提供API密钥')
+      return { success: false, error: '未提供API密钥' }
+    }
+    
+    if (!modelName) {
+      console.error('AI请求失败: 未提供模型名称')
+      return { success: false, error: '未提供模型名称' }
+    }
+    
+    // 创建OpenAI客户端
+    const configuration: any = {
+      apiKey: apiKey
+    }
+    
+    // 如果设置了自定义API URL，则使用它
+    if (apiUrl) {
+      configuration.baseURL = apiUrl
+    }
+    
+    const openai = new OpenAI(configuration)
+    
+    console.log(`使用模型 ${modelName} 发送请求`)
+    
+    // 转换消息格式以符合OpenAI API要求
+    const apiMessages: {role: 'system' | 'user' | 'assistant', content: string}[] = [];
+    
+    for (const msg of params.messages) {
+      const role = msg.role.toLowerCase();
+      
+      if (role === 'system') {
+        apiMessages.push({ role: 'system', content: msg.content });
+      } else if (role === 'user') {
+        apiMessages.push({ role: 'user', content: msg.content });
+      } else if (role === 'assistant') {
+        apiMessages.push({ role: 'assistant', content: msg.content });
+      } else {
+        // 默认为用户消息
+        apiMessages.push({ role: 'user', content: msg.content });
+      }
+    }
+    
+    try {
+      // 调用OpenAI API
+      const response = await openai.chat.completions.create({
+        model: modelName,
+        messages: apiMessages as any, // 使用any类型暂时绕过类型检查
+        temperature: 0.7,
+        max_tokens: 16384
+      })
+      
+      // 提取回答
+      const aiResponse = response.choices[0]?.message?.content || '抱歉，我无法生成回答。'
+      console.log('收到AI回答')
+      
+      return {
+        success: true,
+        content: aiResponse
+      }
+    } catch (apiError: any) {
+      // 处理API错误
+      console.error('API调用失败:', apiError)
+      
+      // 其他API错误
+      return {
+        success: false,
+        error: `API调用失败: ${apiError.message || '未知错误'} (状态码: ${apiError.status || 'N/A'})`
+      }
+    }
+  } catch (error) {
+    console.error('AI请求失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '未知错误'
+    }
+  }
 }

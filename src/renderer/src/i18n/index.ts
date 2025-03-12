@@ -25,7 +25,7 @@ const zhCN = {
     welcome: '您好！我是您的AI助手，有什么可以帮助您的吗？',
     inputPlaceholder: '请输入您的问题...',
     send: '发送',
-    response: '这是模拟的AI响应，实际项目中可以接入OpenAI等AI服务。',
+    response: '回应内容',
     thinking: '思考中...',
     historyTitle: '历史记录',
     noHistory: '没有历史记录',
@@ -34,7 +34,15 @@ const zhCN = {
     deleteConfirm: '确定要删除所有历史记录吗？',
     deleteSuccess: '历史记录已删除',
     deleteError: '删除历史记录失败',
-    deleteCancel: '取消删除'
+    deleteCancel: '取消删除',
+    settingsTitle: '设置',
+    save: '保存设置',
+    apiUrl: 'API URL',
+    apiKey: 'API Key',
+    apiUrlPlaceholder: '请输入API URL',
+    apiKeyPlaceholder: '请输入API Key',
+    customModel: '自定义模型',
+    customModelPlaceholder: '请输入自定义模型名称'
   },
   settings: {
     title: '全局设置',
