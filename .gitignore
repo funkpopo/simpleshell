@@ -14,3 +14,9 @@ out
 # 配置文件
 config.json
 connections.json
+
+# vscode
+.vscode
+
+# 忽略所有.vscode文件夹
+.vscode/*
