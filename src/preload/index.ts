@@ -111,16 +111,18 @@ interface TransferData {
 interface ChatSession {
   id: string
   title: string
+  preview?: string
+  timestamp?: number
   messages: ChatMessage[]
-  createdAt: string
-  updatedAt: string
+  createdAt?: number
+  updatedAt?: number
 }
 
 interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
-  timestamp: string
+  timestamp: number
 }
 
 interface ChatHistoryResult {
@@ -152,6 +154,12 @@ interface TerminalData {
 
 interface WindowState {
   isFocused: boolean
+}
+
+interface AIRequestResult {
+  success: boolean
+  content?: string
+  error?: string
 }
 
 // Custom APIs for renderer
@@ -410,19 +418,38 @@ const api = {
     return await ipcRenderer.invoke('chat:save-session', session)
   },
 
-  deleteHistorySession: async (sessionId: string): Promise<boolean> => {
-    return await ipcRenderer.invoke('chat:delete-session', sessionId)
+  // 发送AI请求
+  sendAIRequest: async (params: {
+    prompt: string
+    messages: Array<{ role: string; content: string }>
+    apiKey?: string
+    apiUrl?: string
+    modelName?: string
+  }): Promise<AIRequestResult> => {
+    return await ipcRenderer.invoke('ai:request', params)
   },
 
   // 注册窗口关闭事件监听
   onAppClose: (callback: () => Promise<void>): void => {
     // 创建一个函数，用于在窗口关闭前触发回调
-    const handleBeforeUnload = async () => {
-      await callback()
+    const handleBeforeClose = async (_event?: unknown) => {
+      console.log('收到应用关闭事件')
+      try {
+        await callback()
+        console.log('应用关闭前回调执行完成')
+      } catch (error) {
+        console.error('应用关闭前回调执行失败:', error)
+      }
     }
 
-    // 添加窗口关闭前的事件监听
-    window.addEventListener('beforeunload', handleBeforeUnload)
+    // 监听来自主进程的关闭事件
+    ipcRenderer.on('app:before-close', handleBeforeClose)
+
+    // 同时监听窗口的beforeunload事件作为备份
+    window.addEventListener('beforeunload', () => {
+      console.log('触发beforeunload事件')
+      handleBeforeClose()
+    })
 
     // 不需要返回取消函数，因为这个是应用级别的事件
   },

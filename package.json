@@ -32,7 +32,8 @@
     "os": "^0.1.2",
     "ssh2": "^1.16.0",
     "ssh2-sftp-client": "^11.0.0",
-    "vuedraggable": "^4.1.0"
+    "vuedraggable": "^4.1.0",
+    "openai": "^4.87.3"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^1.0.2",

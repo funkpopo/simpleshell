@@ -130,11 +130,21 @@ declare interface API {
     language: string
     fontSize: number
     fontFamily: string
+    aiSettings?: {
+      apiUrl?: string
+      apiKey?: string
+      modelName?: string
+    }
   }>
   saveSettings: (settings: {
     language: string
     fontSize: number
     fontFamily: string
+    aiSettings?: {
+      apiUrl?: string
+      apiKey?: string
+      modelName?: string
+    }
   }) => Promise<boolean>
 
   // 文件传输事件监听
@@ -187,7 +197,20 @@ declare interface API {
       timestamp: number
     }>
   }) => Promise<{ success: boolean; error?: string }>
-  deleteHistorySession: (sessionId: string) => Promise<{ success: boolean; error?: string }>
+  
+  // 发送AI请求
+  sendAIRequest: (params: {
+    prompt: string
+    messages: Array<{ role: string; content: string }>
+    apiKey?: string
+    apiUrl?: string
+    modelName?: string
+  }) => Promise<{
+    success: boolean
+    content?: string
+    error?: string
+  }>
+  
   onAppClose: (callback: () => Promise<void>) => void
 }
 

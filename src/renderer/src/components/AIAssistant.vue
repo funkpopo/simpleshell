@@ -3,12 +3,12 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from '../i18n'
 
 // 导入图标资源
-import historyDayIcon from '../assets/history-day.svg'
-import historyNightIcon from '../assets/history-night.svg'
 import minimizeDayIcon from '../assets/minimize-day.svg'
 import minimizeNightIcon from '../assets/minimize-night.svg'
 import closeDayIcon from '../assets/close-day.svg'
 import closeNightIcon from '../assets/close-night.svg'
+import settingsDayIcon from '../assets/settings-day.svg'
+import settingsNightIcon from '../assets/settings-night.svg'
 
 // 使用i18n
 const { t } = useI18n()
@@ -20,9 +20,9 @@ const props = defineProps<{
 }>()
 
 // 动态图标计算属性
-const historyIcon = computed(() => (props.isDarkTheme ? historyNightIcon : historyDayIcon))
 const minimizeIcon = computed(() => (props.isDarkTheme ? minimizeNightIcon : minimizeDayIcon))
 const closeIcon = computed(() => (props.isDarkTheme ? closeNightIcon : closeDayIcon))
+const settingsIcon = computed(() => (props.isDarkTheme ? settingsNightIcon : settingsDayIcon))
 
 // 定义事件
 const emit = defineEmits<{
@@ -49,33 +49,32 @@ const windowDimensions = ref({
 
 // 浮窗状态
 const showHistory = ref(false)
+const showSettings = ref(false)
 
 // 对话内容
 const messages = ref<
   Array<{
+    id?: string
     type: 'user' | 'assistant'
     content: string
     timestamp: number
   }>
 >([])
 
-// 历史会话列表
-const historySessions = ref<
-  Array<{
-    id: string
-    title: string
-    preview: string
-    timestamp: number
-    messages: Array<{
-      type: 'user' | 'assistant'
-      content: string
-      timestamp: number
-    }>
-  }>
->([])
+// AI设置
+const aiSettings = ref({
+  apiUrl: '',
+  apiKey: '',
+  modelName: ''
+})
 
-// 当前会话ID
-const currentSessionId = ref('')
+// 自定义模型名称
+const customModelName = ref('')
+
+// 是否使用OpenAI
+const isUsingOpenAI = computed(() => {
+  return !!aiSettings.value.apiKey && !!aiSettings.value.modelName
+})
 
 // 用户输入
 const userInput = ref('')
@@ -86,9 +85,6 @@ const isLoading = ref(false)
 // 本地存储密钥
 const STORAGE_KEY = 'ai_assistant_messages'
 const POSITION_STORAGE_KEY = 'ai_assistant_position'
-
-// 示例回答集
-const sampleResponses = ['sample']
 
 // 浮窗样式
 const floatingWindowStyle = computed(() => {
@@ -266,26 +262,33 @@ const handleResize = () => {
   }
 }
 
-// 添加全局事件监听
+// 组件挂载时加载AI设置
 onMounted(async () => {
+  console.log('组件挂载，初始化事件监听')
+  
+  // 优先加载AI设置
+  console.log('加载AI设置')
+  await loadAISettings()
+  
+  // 其他初始化
   document.addEventListener('mousemove', onDrag)
   document.addEventListener('mouseup', endDrag)
   window.addEventListener('resize', handleResize)
-
+  
   // 向主进程注册窗口关闭事件监听
+  console.log('注册窗口关闭事件监听')
   window.api.onAppClose(async () => {
-    await saveCurrentSession()
+    console.log('应用关闭，保存窗口位置')
     saveWindowPosition()
   })
 
-  // 加载消息历史
-  await loadMessages()
-
   // 加载窗口位置
+  console.log('加载窗口位置')
   loadWindowPosition()
 
   // 如果没有加载到保存的位置，则使用默认位置
   if (!hasLoadedPosition.value) {
+    console.log('使用默认窗口位置')
     posX.value = window.innerWidth - 350
     posY.value = 80
   }
@@ -293,32 +296,22 @@ onMounted(async () => {
 
 // 清理全局事件
 onUnmounted(() => {
+  console.log('组件卸载，清理事件监听')
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', endDrag)
   window.removeEventListener('resize', handleResize)
-
-  // 保存当前会话
-  saveCurrentSession()
 })
 
-// 监听消息变化，保存历史到localStorage
-watch(
-  messages,
-  () => {
-    saveMessagesToLocalStorage()
-  },
-  { deep: true }
-)
-
-// 切换历史面板
-const toggleHistory = (e: MouseEvent) => {
+// 切换设置面板
+const toggleSettings = (e: MouseEvent) => {
   // 阻止事件冒泡，防止触发拖拽
   e.stopPropagation()
-  showHistory.value = !showHistory.value
-
-  // 如果打开历史面板，加载历史会话
-  if (showHistory.value) {
-    loadHistorySessions()
+  showSettings.value = !showSettings.value
+  
+  // 如果打开设置面板，关闭历史面板
+  if (showSettings.value) {
+    showHistory.value = false
+    loadAISettings()
   }
 }
 
@@ -330,54 +323,89 @@ const minimizeWindow = (e: MouseEvent) => {
 }
 
 // 关闭窗口
-const closeWindow = async (e?: MouseEvent) => {
-  // 如果是通过点击事件触发，阻止事件冒泡
-  if (e) {
-    e.stopPropagation()
-  }
-
-  // 保存当前会话
-  await saveCurrentSession()
-
+const closeWindow = async (e: MouseEvent) => {
+  // 阻止事件冒泡，防止触发拖拽
+  e.stopPropagation()
+  
   // 重置消息
   messages.value = []
   localStorage.removeItem(STORAGE_KEY)
-
-  // 关闭窗口
+  
+  // 发送关闭事件
   emit('update:visible', false)
   emit('close')
 }
 
-// 获取随机回答
-const getRandomResponse = (question: string): string => {
-  // 简单关键词匹配
-  if (question.includes('你好') || question.includes('hi') || question.includes('hello')) {
-    return '你好！我是AI助手，有什么可以帮助你的吗？'
+// 调用OpenAI 兼容API获取回答 - 使用主进程的API
+const getAIResponse = async (prompt: string): Promise<string> => {
+  try {
+    // 从config.json重新加载设置
+    await loadAISettings()
+    
+    // 检查设置是否有效
+    if (!aiSettings.value.apiKey || !aiSettings.value.modelName) {
+      const errorMsg = '请在设置中配置API密钥和模型名称。'
+      console.error('AI设置无效:', {
+        apiKey: aiSettings.value.apiKey ? '已设置' : '未设置',
+        modelName: aiSettings.value.modelName || '未设置',
+        error: errorMsg
+      })
+      return errorMsg
+    }
+
+    console.log('使用config.json中的设置发送请求:', {
+      apiUrl: aiSettings.value.apiUrl || '未设置',
+      apiKeySet: aiSettings.value.apiKey || '未设置',
+      modelName: aiSettings.value.modelName || '未设置'
+    })
+
+    // 准备消息历史
+    const messageHistory = messages.value.map(msg => ({
+      role: msg.type === 'user' ? 'user' : 'assistant',
+      content: msg.content
+    }))
+
+    // 添加系统消息和当前用户消息
+    const apiMessages = [
+      { role: 'system', content: '' },
+      ...messageHistory,
+      { role: 'user', content: prompt }
+    ]
+
+    // 调用主进程的AI请求接口
+    const response = await window.api.sendAIRequest({
+      prompt,
+      messages: apiMessages,
+      apiKey: aiSettings.value.apiKey,
+      apiUrl: aiSettings.value.apiUrl,
+      modelName: aiSettings.value.modelName
+    })
+
+    if (!response.success) {
+      console.error('AI请求失败:', {
+        error: response.error,
+        apiUrl: aiSettings.value.apiUrl,
+        modelName: aiSettings.value.modelName
+      })
+      return `调用AI服务失败: ${response.error || '未知错误'}`
+    }
+
+    console.log('收到AI回答')
+    return response.content || '抱歉，我无法生成回答。'
+  } catch (error) {
+    console.error('调用AI API失败:', error)
+    return `调用AI服务失败: ${error instanceof Error ? error.message : '未知错误'}`
   }
-
-  if (question.includes('谢谢') || question.includes('感谢')) {
-    return '不客气！如果还有其他问题，随时可以问我。'
-  }
-
-  // 返回随机示例回答
-  return sampleResponses[Math.floor(Math.random() * sampleResponses.length)]
-}
-
-// 模拟AI思考时间
-const getThinkingTime = (message: string): number => {
-  // 根据消息长度计算思考时间
-  const baseTime = 800
-  const charTime = 15 // 每个字符增加的时间（毫秒）
-  return Math.min(baseTime + message.length * charTime, 3000) // 最长3秒
 }
 
 // 发送消息
-const sendMessage = () => {
+const sendMessage = async () => {
   const message = userInput.value.trim()
   if (!message) return
 
   // 添加用户消息
   messages.value.push({
+    id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
     type: 'user',
     content: message,
     timestamp: Date.now()
@@ -389,24 +417,51 @@ const sendMessage = () => {
   // 滚动到底部
   scrollToBottom()
 
-  // 模拟AI响应
+  // 设置加载状态
   isLoading.value = true
 
-  // 根据消息长度模拟思考时间
-  const thinkingTime = getThinkingTime(message)
-
-  setTimeout(() => {
-    // 添加AI响应
+  try {
+    // 检查是否配置了OpenAI
+    if (!isUsingOpenAI.value) {
+      // 尝试重新加载设置
+      await loadAISettings()
+    }
+    
+    // 再次检查是否配置了OpenAI
+    if (isUsingOpenAI.value) {
+      // 调用OpenAI API获取回答
+      const aiResponse = await getAIResponse(message)
+      
+      // 添加AI响应
+      messages.value.push({
+        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+        type: 'assistant',
+        content: aiResponse,
+        timestamp: Date.now()
+      })
+    } else {
+      // 添加错误消息
+      messages.value.push({
+        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+        type: 'assistant',
+        content: '请在设置中配置API密钥和模型名称。',
+        timestamp: Date.now()
+      })
+    }
+  } catch (error) {
+    console.error('获取AI回答失败:', error)
+    // 添加错误消息
     messages.value.push({
+      id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
       type: 'assistant',
-      content: getRandomResponse(message),
+      content: `抱歉，发生了错误: ${error instanceof Error ? error.message : '未知错误'}`,
       timestamp: Date.now()
     })
+  } finally {
     isLoading.value = false
-
     // 滚动到底部
     scrollToBottom()
-  }, thinkingTime)
+  }
 }
 
 // 按键事件处理
@@ -431,12 +486,6 @@ const scrollToBottom = () => {
 const formatTimestamp = (timestamp: number): string => {
   const date = new Date(timestamp)
   return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
-}
-
-// 格式化日期
-const formatDate = (timestamp: number): string => {
-  const date = new Date(timestamp)
-  return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
 }
 
 // 监听可见性变化
@@ -492,149 +541,98 @@ const escapeHtml = (unsafe: string): string => {
     .replace(/'/g, '&#039;')
 }
 
-// 创建新会话
-const createNewSession = () => {
-  // 保存当前会话
-  if (messages.value.length > 1) {
-    saveCurrentSession()
+// 更新自定义模型
+const updateCustomModel = () => {
+  if (customModelName.value) {
+    console.log(`更新自定义模型名称: ${customModelName.value}`);
   }
-
-  // 创建新会话
-  currentSessionId.value = generateSessionId()
-  messages.value = [
-    {
-      type: 'assistant',
-      content: t('aiAssistant.welcome'),
-      timestamp: Date.now()
-    }
-  ]
-
-  showHistory.value = false
 }
 
-// 加载会话历史记录
-const loadHistorySessions = async () => {
+// 加载AI设置
+const loadAISettings = async () => {
   try {
-    // 通过IPC从主进程获取历史会话列表
-    const history = await window.api.loadChatHistory()
-    historySessions.value = history.sessions || []
-  } catch (error) {
-    console.error('加载历史会话失败:', error)
-    historySessions.value = []
-  }
-}
-
-// 选择历史会话
-const selectHistorySession = (sessionId: string) => {
-  // 保存当前会话
-  if (messages.value.length > 1) {
-    saveCurrentSession()
-  }
-
-  // 找到选中的历史会话
-  const selectedSession = historySessions.value.find((session) => session.id === sessionId)
-  if (selectedSession) {
-    currentSessionId.value = sessionId
-    messages.value = [...selectedSession.messages]
-    showHistory.value = false
-
-    // 滚动到底部
-    scrollToBottom()
-  }
-}
-
-// 删除历史会话
-const deleteHistorySession = async (sessionId: string, event: Event) => {
-  // 阻止事件冒泡
-  event.stopPropagation()
-
-  try {
-    await window.api.deleteHistorySession(sessionId)
-    // 更新本地历史会话列表
-    historySessions.value = historySessions.value.filter((session) => session.id !== sessionId)
-
-    // 如果删除的是当前会话，创建新会话
-    if (sessionId === currentSessionId.value) {
-      createNewSession()
-    }
-  } catch (error) {
-    console.error('删除历史会话失败:', error)
-  }
-}
-
-// 生成会话ID
-const generateSessionId = (): string => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
-}
-
-// 获取会话标题
-const getSessionTitle = (
-  messages: Array<{ type: string; content: string; timestamp: number }>
-): string => {
-  // 尝试从第一条用户消息获取标题
-  const firstUserMsg = messages.find((msg) => msg.type === 'user')
-  if (firstUserMsg) {
-    // 截取前20个字符作为标题
-    return firstUserMsg.content.length > 20
-      ? firstUserMsg.content.substring(0, 20) + '...'
-      : firstUserMsg.content
-  }
-  // 默认标题
-  return '新对话'
-}
-
-// 保存当前会话到历史记录
-const saveCurrentSession = async () => {
-  if (messages.value.length <= 1) return // 仅有欢迎消息，不保存
-
-  try {
-    // 如果没有当前会话ID，生成一个
-    if (!currentSessionId.value) {
-      currentSessionId.value = generateSessionId()
-    }
-
-    const session = {
-      id: currentSessionId.value,
-      title: getSessionTitle(messages.value),
-      preview: messages.value[messages.value.length - 1].content.substring(0, 50),
-      timestamp: Date.now(),
-      messages: [...messages.value]
-    }
-
-    // 通过IPC调用主进程保存会话
-    await window.api.saveChatSession(session)
-  } catch (error) {
-    console.error('保存会话失败:', error)
-  }
-}
-
-// 加载消息历史
-const loadMessages = async () => {
-  try {
-    // 尝试从本地存储恢复临时会话
-    const savedMessages = localStorage.getItem(STORAGE_KEY)
-    if (savedMessages) {
-      messages.value = JSON.parse(savedMessages)
+    // 通过IPC从主进程获取设置
+    const settingsArray = await window.api.loadSettings()
+    console.log('从主进程获取到的完整设置:', JSON.stringify(settingsArray, (key, value) => {
+      if (key === 'apiKey' && value) return '***'
+      return value
+    }, 2))
+    
+    // 获取第一个配置对象
+    const settings = Array.isArray(settingsArray) ? settingsArray[0] : settingsArray
+    if (!settings) {
+      console.warn('未找到有效的设置配置')
       return
     }
-
-    // 如果没有临时会话，创建新会话
-    createNewSession()
+    
+    // 从settings中获取aiSettings
+    const { aiSettings: configAiSettings } = settings
+    
+    if (configAiSettings) {
+      // 更新本地设置
+      aiSettings.value = {
+        apiUrl: configAiSettings.apiUrl || '',
+        apiKey: configAiSettings.apiKey || '',
+        modelName: configAiSettings.modelName || ''
+      }
+      
+      console.log('从config.json加载的AI设置:', {
+        apiUrl: configAiSettings.apiUrl || '未设置',
+        apiKey: configAiSettings.apiKey ? '已设置' : '未设置',
+        modelName: configAiSettings.modelName || '未设置'
+      })
+    } else {
+      console.warn('未找到AI设置配置')
+    }
   } catch (error) {
-    console.error('加载AI对话历史失败:', error)
-    // 添加欢迎消息
-    createNewSession()
+    console.error('加载AI设置失败:', error)
   }
 }
 
-// 保存临时消息历史到localStorage
-const saveMessagesToLocalStorage = () => {
+// 保存AI设置
+const saveAISettings = async () => {
   try {
-    // 保存临时会话到localStorage
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.value))
+    // 获取当前设置
+    const currentSettings = await window.api.loadSettings()
+    
+    // 准备新的设置对象
+    const settings: AppSettings = {
+      ...(Array.isArray(currentSettings) ? currentSettings[0] : currentSettings || {}),
+      language: 'zh-CN',
+      fontSize: 14,
+      fontFamily: 'Roboto',
+      terminalFontFamily: 'Consolas, "Courier New", monospace',
+      terminalFontSize: 14,
+      aiSettings: {
+        apiUrl: aiSettings.value.apiUrl || '',
+        apiKey: aiSettings.value.apiKey || '',
+        modelName: aiSettings.value.modelName || ''
+      }
+    }
+    
+    // 保存到config.json
+    await window.api.saveSettings(settings)
+    
+    console.log('AI设置已成功保存到config.json')
+    showSettings.value = false
   } catch (error) {
-    console.error('保存AI对话历史到localStorage失败:', error)
+    console.error('保存AI设置失败:', error)
   }
+}
+
+interface AISettings {
+  apiUrl?: string
+  apiKey?: string
+  modelName?: string
+}
+
+interface AppSettings {
+  language: string
+  fontSize: number
+  fontFamily: string
+  terminalFontFamily: string
+  terminalFontSize: number
+  aiSettings?: AISettings
 }
 </script>
 
@@ -649,8 +647,8 @@ const saveMessagesToLocalStorage = () => {
     <div class="window-header" @mousedown="startDrag">
       <div class="window-title">{{ t('aiAssistant.title') }}</div>
       <div class="window-controls">
-        <button class="window-btn history-btn" @click="(e) => toggleHistory(e)">
-          <img :src="historyIcon" alt="History" width="16" height="16" />
+        <button class="window-btn settings-btn" @click="(e) => toggleSettings(e)">
+          <img :src="settingsIcon" alt="Settings" width="16" height="16" />
         </button>
         <button class="window-btn minimize-btn" @click="(e) => minimizeWindow(e)">
           <img :src="minimizeIcon" alt="Minimize" width="16" height="16" />
@@ -661,54 +659,57 @@ const saveMessagesToLocalStorage = () => {
       </div>
     </div>
 
-    <!-- 历史记录面板 -->
-    <Transition name="history-panel">
-      <div v-if="showHistory" class="history-panel">
-        <div class="history-header">
-          <h3>{{ t('aiAssistant.historyTitle') }}</h3>
-          <button class="new-chat-btn" @click="createNewSession">
-            <span class="icon-plus">+</span>
-            {{ t('aiAssistant.startNewChat') }}
-          </button>
+    <!-- 设置面板 -->
+    <Transition name="settings-panel">
+      <div v-if="showSettings" class="settings-panel">
+        <div class="settings-header">
+          <h3>{{ t('aiAssistant.settingsTitle') || 'AI设置' }}</h3>
         </div>
 
-        <div class="history-list">
-          <div
-            v-for="(session, index) in historySessions"
-            :key="session.id"
-            class="history-item"
-            :class="{ active: session.id === currentSessionId }"
-            :style="{ '--index': index }"
-            @click="selectHistorySession(session.id)"
-          >
-            <div class="history-item-content">
-              <div class="history-item-title">
-                <span class="history-icon">💬</span>
-                {{ session.title }}
-              </div>
-              <div class="history-item-preview">{{ session.preview }}</div>
-              <div class="history-item-date">
-                <span class="date-icon">🕒</span>
-                {{ formatDate(session.timestamp) }}
-              </div>
-            </div>
-            <button
-              class="delete-history-btn"
-              :title="t('aiAssistant.delete')"
-              @click="(e) => deleteHistorySession(session.id, e)"
-            >
-              &times;
-            </button>
+        <div class="settings-content">
+          <div class="settings-group">
+            <label for="api-url">{{ t('aiAssistant.apiUrl') || 'API URL' }}</label>
+            <input
+              id="api-url"
+              v-model="aiSettings.apiUrl"
+              type="text"
+              class="settings-input"
+              :placeholder="t('aiAssistant.apiUrlPlaceholder') || '请输入API URL'"
+            />
           </div>
 
-          <div v-if="historySessions.length === 0" class="history-empty">
-            <div class="empty-state">
-              <div class="empty-icon">📝</div>
-              <div>{{ t('aiAssistant.noHistory') }}</div>
-              <button class="start-btn" @click="createNewSession">
-                {{ t('aiAssistant.startNewChat') }}
-              </button>
-            </div>
+          <div class="settings-group">
+            <label for="api-key">{{ t('aiAssistant.apiKey') || 'API Key' }}</label>
+            <input
+              id="api-key"
+              v-model="aiSettings.apiKey"
+              type="password"
+              class="settings-input"
+              :placeholder="t('aiAssistant.apiKeyPlaceholder') || '请输入API Key'"
+            />
+          </div>
+          
+          <div class="settings-group">
+            <label for="custom-model">{{ t('aiAssistant.customModel') || '自定义模型名称' }}</label>
+            <input
+              id="custom-model"
+              v-model="aiSettings.modelName"
+              type="text"
+              class="settings-input"
+              :placeholder="t('aiAssistant.customModelPlaceholder') || '请输入自定义模型名称'"
+              @input="updateCustomModel"
+            />
+          </div>
+
+          <div class="openai-status">
+            <div class="status-indicator" :class="{ active: isUsingOpenAI }"></div>
+            <span>{{ isUsingOpenAI ? 'AI接口已配置' : 'AI接口未配置' }}</span>
+          </div>
+
+          <div class="settings-actions">
+            <button class="settings-save-btn" @click="saveAISettings">
+              {{ t('aiAssistant.save') || '保存' }}
+            </button>
           </div>
         </div>
       </div>
@@ -1213,63 +1214,6 @@ body.ai-window-dragging {
   color: #aaa;
 }
 
-.delete-history-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: transparent;
-  border: none;
-  font-size: 18px;
-  line-height: 1;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #999;
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-  transform: scale(0.8);
-}
-
-.history-item:hover .delete-history-btn {
-  opacity: 0.7;
-  transform: scale(1);
-}
-
-.delete-history-btn:hover {
-  opacity: 1 !important;
-  background-color: rgba(244, 67, 54, 0.1);
-  color: #f44336;
-  transform: scale(1.1);
-}
-
-.dark-theme .delete-history-btn {
-  color: #777;
-}
-
-.dark-theme .delete-history-btn:hover {
-  background-color: rgba(244, 67, 54, 0.2);
-  color: #ff5252;
-}
-
-.history-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 20px;
-  color: #999;
-  font-size: 13px;
-  text-align: center;
-  font-style: italic;
-}
-
-.dark-theme .history-empty {
-  color: #777;
-}
-
 .messages-container {
   flex: 1;
   overflow-y: auto;
@@ -1503,6 +1447,18 @@ body.ai-window-dragging {
   transform: translateY(-20px);
 }
 
+/* 设置面板过渡效果 */
+.settings-panel-enter-active,
+.settings-panel-leave-active {
+  transition: all 0.25s ease-out;
+}
+
+.settings-panel-enter-from,
+.settings-panel-leave-to {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
 /* 历史记录项目动画 */
 .history-list .history-item {
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1520,5 +1476,253 @@ body.ai-window-dragging {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* 设置面板样式 */
+.settings-panel {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: white;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideIn 0.2s ease-out;
+  border-top: 1px solid #e0e0e0;
+}
+
+.dark-theme .settings-panel {
+  background-color: #272727;
+  border-top: 1px solid #444;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.settings-header {
+  padding: 12px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.dark-theme .settings-header {
+  border-bottom: 1px solid #444;
+}
+
+.settings-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.dark-theme .settings-header h3 {
+  color: #eee;
+}
+
+.settings-content {
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.settings-group label {
+  font-weight: 500;
+  font-size: 12px;
+  color: #333;
+}
+
+.dark-theme .settings-group label {
+  color: #eee;
+}
+
+.settings-input {
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 14px;
+  resize: none;
+  height: 40px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.settings-input:focus {
+  border-color: #2196f3;
+}
+
+.dark-theme .settings-input {
+  background-color: #333;
+  border-color: #555;
+  color: #eee;
+}
+
+.settings-input:focus {
+  border-color: #1a73e8;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-save-btn {
+  padding: 8px 15px;
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.settings-save-btn:hover:not(:disabled) {
+  background-color: #1976d2;
+}
+
+.settings-save-btn:disabled {
+  background-color: #bbdefb;
+  cursor: not-allowed;
+}
+
+.dark-theme .settings-save-btn {
+  background-color: #1a73e8;
+}
+
+.dark-theme .settings-save-btn:hover:not(:disabled) {
+  background-color: #1565c0;
+}
+
+.dark-theme .settings-save-btn:disabled {
+  background-color: #444;
+  opacity: 0.6;
+}
+
+.history-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 20px;
+  color: #999;
+  font-size: 13px;
+  text-align: center;
+  font-style: italic;
+}
+
+.dark-theme .history-empty {
+  color: #777;
+}
+
+/* 添加OpenAI状态指示器样式 */
+.openai-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #666;
+}
+
+.dark-theme .openai-status {
+  color: #aaa;
+}
+
+.status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #ccc;
+  transition: all 0.3s ease;
+}
+
+.status-indicator.active {
+  background-color: #4caf50;
+  box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+}
+
+.dark-theme .status-indicator {
+  background-color: #555;
+}
+
+.dark-theme .status-indicator.active {
+  background-color: #4caf50;
+  box-shadow: 0 0 5px rgba(76, 175, 80, 0.7);
+}
+
+.openai-badge {
+  padding: 3px 6px;
+  background-color: #4caf50;
+  color: white;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 8px;
+  align-self: center;
+}
+
+.dark-theme .openai-badge {
+  background-color: #2e7d32;
+}
+
+/* 添加下拉菜单样式 */
+.settings-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: white;
+  height: 40px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.settings-select:focus {
+  border-color: #2196f3;
+}
+
+.dark-theme .settings-select {
+  background-color: #333;
+  border-color: #555;
+  color: #eee;
+}
+
+.dark-theme .settings-select:focus {
+  border-color: #1a73e8;
+}
+
+.settings-hint {
+  font-size: 12px;
+  color: #777;
+  margin-top: 4px;
+}
+
+.dark-theme .settings-hint {
+  color: #aaa;
 }
 </style>
