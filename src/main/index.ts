@@ -720,7 +720,7 @@ function closeTerminal(options: { id: string }): void {
   }
 }
 
-function createWindow(): void {  
+function createWindow(): void {
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 900,
@@ -762,15 +762,15 @@ function createWindow(): void {
     // 处理窗口关闭事件
     mainWindow.on('close', (e) => {
       console.log('窗口关闭事件触发')
-      
+
       // 阻止窗口立即关闭
       e.preventDefault()
-      
+
       // 通知渲染进程窗口即将关闭
       if (mainWindow && !mainWindow.isDestroyed()) {
         console.log('发送应用关闭通知到渲染进程')
         mainWindow.webContents.send('app:before-close')
-        
+
         // 给渲染进程一些时间来保存数据
         setTimeout(() => {
           console.log('延时结束，允许应用关闭')
@@ -1474,11 +1474,13 @@ function saveSettings(settings: AppSettings): boolean {
       fontFamily: settings.fontFamily || 'system-ui',
       terminalFontFamily: settings.terminalFontFamily || 'Consolas, "Courier New", monospace',
       terminalFontSize: settings.terminalFontSize || 14,
-      aiSettings: settings.aiSettings ? {
-        apiUrl: settings.aiSettings.apiUrl || '',
-        apiKey: settings.aiSettings.apiKey || '',
-        modelName: settings.aiSettings.modelName || ''
-      } : undefined
+      aiSettings: settings.aiSettings
+        ? {
+            apiUrl: settings.aiSettings.apiUrl || '',
+            apiKey: settings.aiSettings.apiKey || '',
+            modelName: settings.aiSettings.modelName || ''
+          }
+        : undefined
     }
 
     const dirPath = path.dirname(settingsPath)
@@ -1563,11 +1565,13 @@ ipcMain.handle('save-settings', async (_event, settings) => {
       fontFamily: settings.fontFamily || 'system-ui',
       terminalFontFamily: settings.terminalFontFamily || 'Consolas, "Courier New", monospace',
       terminalFontSize: settings.terminalFontSize || 14,
-      aiSettings: settings.aiSettings ? {
-        apiUrl: settings.aiSettings.apiUrl || '',
-        apiKey: settings.aiSettings.apiKey || '',
-        modelName: settings.aiSettings.modelName || ''
-      } : undefined
+      aiSettings: settings.aiSettings
+        ? {
+            apiUrl: settings.aiSettings.apiUrl || '',
+            apiKey: settings.aiSettings.apiKey || '',
+            modelName: settings.aiSettings.modelName || ''
+          }
+        : undefined
     }
 
     const success = saveSettings(cleanSettings)
@@ -1626,86 +1630,141 @@ async function handleAIRequest(params: {
   apiKey?: string
   apiUrl?: string
   modelName?: string
+  stream?: boolean
 }) {
   try {
-    console.log('收到AI请求:', { ...params, apiKey: params.apiKey ? '' : undefined })
+    console.log('收到AI请求:', {
+      ...params,
+      apiKey: params.apiKey ? '***' : undefined,
+      stream: params.stream
+    })
 
     // 获取设置
     const settings = loadSettings()
-    
+
     // 使用传入的参数或从设置中获取
     const apiKey = params.apiKey || settings.aiSettings?.apiKey
     const apiUrl = params.apiUrl || settings.aiSettings?.apiUrl
-    let modelName = params.modelName || settings.aiSettings?.modelName
-    
+    const modelName = params.modelName || settings.aiSettings?.modelName
+    const useStream = params.stream === true
+
     // 验证必要参数
     if (!apiKey) {
       console.error('AI请求失败: 未提供API密钥')
       return { success: false, error: '未提供API密钥' }
     }
-    
+
     if (!modelName) {
       console.error('AI请求失败: 未提供模型名称')
       return { success: false, error: '未提供模型名称' }
     }
-    
+
     // 创建OpenAI客户端
-    const configuration: any = {
+    interface OpenAIConfig {
+      apiKey: string
+      baseURL?: string
+    }
+
+    const configuration: OpenAIConfig = {
       apiKey: apiKey
     }
-    
+
     // 如果设置了自定义API URL，则使用它
     if (apiUrl) {
       configuration.baseURL = apiUrl
     }
-    
+
     const openai = new OpenAI(configuration)
-    
-    console.log(`使用模型 ${modelName} 发送请求`)
-    
+
+    console.log(`使用模型 ${modelName} 发送请求${useStream ? '(流式)' : ''}`)
+
     // 转换消息格式以符合OpenAI API要求
-    const apiMessages: {role: 'system' | 'user' | 'assistant', content: string}[] = [];
-    
+    const apiMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = []
+
     for (const msg of params.messages) {
-      const role = msg.role.toLowerCase();
-      
+      const role = msg.role.toLowerCase()
+
       if (role === 'system') {
-        apiMessages.push({ role: 'system', content: msg.content });
+        apiMessages.push({ role: 'system', content: msg.content })
       } else if (role === 'user') {
-        apiMessages.push({ role: 'user', content: msg.content });
+        apiMessages.push({ role: 'user', content: msg.content })
       } else if (role === 'assistant') {
-        apiMessages.push({ role: 'assistant', content: msg.content });
-      } else {
-        // 默认为用户消息
-        apiMessages.push({ role: 'user', content: msg.content });
+        apiMessages.push({ role: 'assistant', content: msg.content })
       }
     }
-    
+
     try {
-      // 调用OpenAI API
-      const response = await openai.chat.completions.create({
-        model: modelName,
-        messages: apiMessages as any, // 使用any类型暂时绕过类型检查
-        temperature: 0.7,
-        max_tokens: 16384
-      })
-      
-      // 提取回答
-      const aiResponse = response.choices[0]?.message?.content || '抱歉，我无法生成回答。'
-      console.log('收到AI回答')
-      
-      return {
-        success: true,
-        content: aiResponse
+      // 流式输出模式
+      if (useStream && mainWindow && !mainWindow.isDestroyed()) {
+        // 创建流式请求
+        const stream = await openai.chat.completions.create({
+          model: modelName,
+          messages: apiMessages,
+          temperature: 0.7,
+          max_tokens: 16384,
+          stream: true
+        })
+
+        let fullContent = ''
+
+        // 处理流式响应
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || ''
+          if (content) {
+            fullContent += content
+
+            // 发送块到渲染进程
+            mainWindow.webContents.send('ai:stream-update', {
+              chunk: content
+            })
+          }
+        }
+
+        console.log('流式AI回答完成')
+
+        return {
+          success: true,
+          content: fullContent
+        }
+      } else {
+        // 非流式模式
+        const response = await openai.chat.completions.create({
+          model: modelName,
+          messages: apiMessages,
+          temperature: 0.7,
+          max_tokens: 16384
+        })
+
+        // 提取回答
+        const aiResponse = response.choices[0]?.message?.content || '抱歉，我无法生成回答。'
+        console.log('收到AI回答')
+
+        return {
+          success: true,
+          content: aiResponse
+        }
       }
-    } catch (apiError: any) {
+    } catch (apiError: unknown) {
       // 处理API错误
       console.error('API调用失败:', apiError)
-      
+
+      // 获取错误消息
+      const errorMessage = apiError instanceof Error ? apiError.message : '未知错误'
+
+      // 尝试获取状态码（如果存在）
+      const statusCode =
+        typeof apiError === 'object' && apiError !== null && 'status' in apiError
+          ? (
+              apiError as {
+                status?: string | number
+              }
+            ).status
+          : 'N/A'
+
       // 其他API错误
       return {
         success: false,
-        error: `API调用失败: ${apiError.message || '未知错误'} (状态码: ${apiError.status || 'N/A'})`
+        error: `API调用失败: ${errorMessage} (状态码: ${statusCode})`
       }
     }
   } catch (error) {

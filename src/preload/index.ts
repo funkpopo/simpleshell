@@ -425,14 +425,22 @@ const api = {
     apiKey?: string
     apiUrl?: string
     modelName?: string
+    stream?: boolean
   }): Promise<AIRequestResult> => {
     return await ipcRenderer.invoke('ai:request', params)
+  },
+
+  // 流式输出事件监听
+  onAIStreamUpdate: (callback: (data: { chunk: string }) => void) => {
+    const handler = (_: unknown, data: { chunk: string }) => callback(data)
+    ipcRenderer.on('ai:stream-update', handler)
+    return () => ipcRenderer.removeListener('ai:stream-update', handler)
   },
 
   // 注册窗口关闭事件监听
   onAppClose: (callback: () => Promise<void>): void => {
     // 创建一个函数，用于在窗口关闭前触发回调
-    const handleBeforeClose = async (_event?: unknown) => {
+    const handleBeforeClose = async () => {
       console.log('收到应用关闭事件')
       try {
         await callback()
