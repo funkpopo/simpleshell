@@ -1,74 +1,57 @@
 {
   "name": "simpleshell",
-  "version": "0.6.5",
-  "private": true,
-  "author": {
-    "name": "funkpopo",
-    "email": "s767609509@gmail.com"
-  },
-  "description": "A simple SSH client",
-  "main": "background.js",
+  "version": "0.1.0",
+  "description": "A Simple Shell powered by Electron and Vue",
+  "main": "./out/main/index.js",
+  "author": "funkpopo",
+  "homepage": "https://github.com/funkpopo/oshell",
   "scripts": {
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint",
-    "electron:build": "vue-cli-service electron:build",
-    "electron:serve": "vue-cli-service electron:serve",
+    "format": "prettier --write .",
+    "lint": "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts,.vue --fix",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "start": "electron-vite preview",
+    "dev": "electron-vite dev --watch",
+    "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
-    "postuninstall": "electron-builder install-app-deps"
+    "build:unpack": "npm run build && electron-builder --dir",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
-    "@arco-design/web-vue": "^2.56.3",
-    "@electron/remote": "^2.1.2",
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^4.0.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
-    "axios": "^1.7.9",
-    "core-js": "^3.40.0",
-    "electron-devtools-installer": "^4.0.0",
-    "highlight.js": "^11.11.1",
-    "lodash-es": "^4.17.21",
-    "markdown-it": "^14.1.0",
-    "markdown-it-highlightjs": "^4.2.0",
-    "msgpack-lite": "^0.1.26",
-    "socket.io-client": "^4.8.1",
-    "vue": "^3.5.13",
-    "vuedraggable": "^4.1.0",
-    "xterm": "^5.3.0",
-    "xterm-addon-fit": "^0.8.0",
-    "xterm-addon-web-links": "^0.9.0"
+    "node-machine-id": "^1.1.12",
+    "node-pty": "^1.1.0-beta30",
+    "os": "^0.1.2",
+    "ssh2": "^1.16.0",
+    "ssh2-sftp-client": "^11.0.0",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.12.16",
-    "@babel/eslint-parser": "^7.12.16",
-    "@vue/cli-plugin-babel": "~5.0.8",
-    "@vue/cli-plugin-eslint": "~5.0.8",
-    "@vue/cli-service": "~5.0.8",
-    "electron": "^34.2.0",
-    "electron-devtools-installer": "^4.0.0",
-    "eslint": "^7.32.0",
-    "eslint-plugin-vue": "^8.0.3",
-    "vue-cli-plugin-electron-builder": "~2.1.1"
-  },
-  "eslintConfig": {
-    "root": true,
-    "env": {
-      "node": true
-    },
-    "extends": [
-      "plugin:vue/vue3-essential",
-      "eslint:recommended"
-    ],
-    "parserOptions": {
-      "parser": "@babel/eslint-parser"
-    },
-    "rules": {}
-  },
-  "browserslist": [
-    "> 1%",
-    "last 2 versions",
-    "not dead",
-    "not ie 11"
-  ]
+    "@electron-toolkit/eslint-config": "^1.0.2",
+    "@electron-toolkit/eslint-config-ts": "^1.0.1",
+    "@electron-toolkit/tsconfig": "^1.0.1",
+    "@rushstack/eslint-patch": "^1.10.5",
+    "@types/node": "^22.13.10",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/eslint-config-prettier": "^9.0.0",
+    "@vue/eslint-config-typescript": "^12.0.0",
+    "electron": "^35.0.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.0.0",
+    "eslint": "^8.56.0",
+    "eslint-plugin-vue": "^9.20.1",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.1",
+    "vue": "^3.5.13",
+    "vue-tsc": "^2.2.8"
+  }
 }

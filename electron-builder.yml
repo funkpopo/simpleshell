@@ -1,44 +1,49 @@
-appId: com.electron.simpleshell
+appId: com.SimpleShell.app
 productName: SimpleShell
 directories:
-  output: dist_electron
   buildResources: build
 files:
-  - "dist_electron/**/*"
-  - "!node_modules/**/*"
-  - "package.json"
-extraResources:
-  - from: "backend/dist/service"
-    to: "."
-extraFiles:
-  - from: "highlight.list"
-    to: "highlight.list"
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+asarUnpack:
+  - resources/**
+icon: src/renderer/src/assets/SimpleShell-icon.png
 win:
-  icon: "src/assets/icon.ico"
-  target:
-    - target: portable
-      arch:
-        - x64
-  requestedExecutionLevel: requireAdministrator
-  compression: maximum
-  artifactName: "${productName}-portable-${version}-${arch}.${ext}"
-portable:
-  splashImage: false
+  executableName: SimpleShell
+  icon: src/renderer/src/assets/SimpleShell-icon.png
 nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: false
-  createStartMenuShortcut: false
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+mac:
+  icon: src/renderer/src/assets/SimpleShell-icon.png
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    - NSCameraUsageDescription: Application requests access to the device's camera.
+    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+  notarize: false
+dmg:
+  artifactName: ${name}-${version}.${ext}
 linux:
-  icon: "src/assets/icon.png"
+  icon: src/renderer/src/assets/SimpleShell-icon.png
   target:
     - AppImage
+    - snap
     - deb
-  category: Network
-  artifactName: "${productName}-${version}-${arch}.${ext}"
-  executableName: "simpleshell"
-asar: true
-asarUnpack:
-  - "resources/**/*"
-  - "dist_electron/preload.js"
-npmRebuild: true
+  maintainer: electronjs.org
+  category: Utility
+appImage:
+  artifactName: ${name}-${version}.${ext}
+npmRebuild: false
+publish:
+  provider: generic
+  url: https://example.com/auto-updates
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

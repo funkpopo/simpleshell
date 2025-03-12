@@ -1,87 +1,16 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Dependencies
 node_modules
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Vue.js / Electron build output
-dist
-dist_electron
-
-# Local env files
-.env
-.env.local
-.env.*.local
-
-# Config files that may contain sensitive information
-config.json
-electron-builder.env
-*.mpack
-
-# Python virtual environment
-venv/
-*.pyc
-__pycache__/
-
-# Backend build output
-backend/build/
-backend/dist/
-backend/*.spec
-
-# Temporary files
-temp/
-*.tmp
-*.bak
-
-# SFTP log
-sftp_log.log
-
-# AI_chat_history
-chat_history.json
-
-# Electron-builder output
-/dist_electron
-/userdata
-
-# Exclude any potential database files
-*.db
-*.sqlite
-
-# Exclude potential key files
-*.pem
-*.key
-
-# Exclude potential token or secret files
-*token*
-*secret*
-
-# Exclude potential backup files
-*.backup
-
 package-lock.json
+dist
+out
+.DS_Store
+*.log*
+
+# 忽略所有.env文件
+.env*
+
+# 忽略所有.env.local文件
+.env.local*
+
+config.json
+connections.json
+chathistory.json
