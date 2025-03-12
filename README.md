@@ -1,109 +1,85 @@
-# SimpleShell
+# SimpleShell-V2
 
-![License](https://img.shields.io/badge/license-GPL3.0-green.svg)
-![Python](https://img.shields.io/badge/python-3.12.7-blue.svg)
-![Node.js](https://img.shields.io/badge/node-v22.11.0-green.svg)
-![Release](https://img.shields.io/github/v/release/funkpopo/simpleshell)
+本项目前端基于Vue3 + Xterm.js + node-pty + Electron开发，实现一个Windows平台的SSH客户端GUI应用程序，具有直观友好的用户界面。
 
-This project is an SSH client tool developed with Python3 + Vue3 + ArcoDesign + Xterm.js, featuring an intuitive and user-friendly interface.
+- 通过Vue + Typescript实现显示页面
+- 使用Xterm.js + node-pty实现网页终端功能
+- 可以文件夹式管理多个安全可靠的SSH连接
 
-![simpleshell](https://github.com/user-attachments/assets/ec5a637d-34a1-46f1-97c0-b08266be473b)
+## 使用说明
+使用左侧边栏菜单添加和管理SSH连接。左侧边栏可以管理当前连接目标服务器的文件。
 
-- Frontend created with Vue and ArcoDesign UI framework
-- Web terminal functionality implemented using Xterm.js
-- Backend server built with Python3 + FastAPI + Uvicorn
-- Supports text copy and paste operations
-- Folder-style management of multiple secure SSH connections
+使用右侧边栏连接项触发打开新的终端标签页。
 
-## Features
-- Intuitive user interface, easy to use
-- Support for multiple SSH connection management
-- SFTP file transfer support
-- Real-time terminal interaction
-- Built-in AI assistant functionality
-- SSH password and key authentication
-- Other configuration saving and loading
+在终端界面与远程服务器实时交互。
 
-## Usage Instructions
-Use the left menu to add and manage SSH connections
-Click on a connection to open a new terminal tab
-Interact with remote servers in real-time through the terminal interface
+## 配置文件
 
-## Configuration File
+全局设置保存在`config.json`文件中。该文件包含了界面字体、字号、主题语言配置。
 
-SSH connection configurations are stored in the `config.json` file. This file contains all saved SSH connection information. For security reasons, this file is not committed to version control.
+SSH连接配置保存在 `connections.json` 文件中。该文件包含了所有保存的SSH连接信息。
 
-If the file doesn't exist, the application will create it automatically.
+出于安全考虑，配置文件不会被提交到版本控制系统。
 
-Frontend files are stored in the project root directory
+如果配置文件不存在，应用程序会自动创建它。
 
-Backend program is stored in the `backend` folder under the project root
+## 开发
 
-## Development
+- Vue + Xterm.js + node-pty + Electron
 
-- Frontend: Vue 3 + ArcoDesign + Xterm.js
-- Backend: Python 3.12
+## 安装依赖
 
-## Installing Dependencies
-
-1. Install frontend dependencies:
+1. 安装前端依赖：
    ```
    npm install
    ```
 
-2. Install backend dependencies:
-   ```
-   pip install -r backend/requirements.txt
-   ```
+## 运行项目（测试）
 
-## Running the Project (Testing)
-
-1. Start the backend server:
+1. 测试electron
    ```
-   python backend/main.py
-   ```
-
-2. Start the frontend development server:
-   ```
-   npm run serve
-   ```
-
-3. Test electron (automatically starts backend):
-   ```
-   npm run electron:serve
+   npm run dev
    ```
 
 ---
 
-## Building and Packaging
+## 编译打包
 
-1. Build frontend
+1. 编译前端
    ```
-   # Default build for win x64
-   npm run electron:build
-   # Build for Windows platform
-   npm run electron:build:win
-   # Build for Linux platform
-   npm run electron:build:linux
+   # Windows平台打包
+   npm run build:win
+   # Linux平台打包
+   npm run build:linux
    ```
 
-2. Build backend
-   ```
-   python -m PyInstaller --clean --noconfirm --onefile --hidden-import=gevent.monkey --hidden-import=gevent.builtins --hidden-import=gevent.signal --hidden-import=gevent.libev.corecext --hidden-import=gevent.libuv.loop --hidden-import=gevent.socket --hidden-import=gevent.threading --hidden-import=gevent._threading --hidden-import=gevent.time --hidden-import=gevent.os --hidden-import=gevent.select --hidden-import=gevent.ssl --hidden-import=gevent.subprocess --hidden-import=gevent.thread --hidden-import=gevent.resolver.thread --hidden-import=gevent.resolver.blocking --hidden-import=gevent.resolver.cares --hidden-import=gevent.resolver.dnspython --hidden-import=gevent._ssl3 --hidden-import=engineio.async_drivers.gevent --hidden-import=openai --hidden-import=ollama --hidden-import=zhipuai --hidden-import=numpy --hidden-import=pandas --hidden-import=aiohttp --hidden-import=urllib3 --hidden-import=ssl --collect-all gevent --collect-all aiohttp --collect-all urllib3 service.py
+## 图标包
 
-   ## If UPX compression is needed
-   python -m PyInstaller --clean --noconfirm --onefile --hidden-import=gevent.monkey --hidden-import=gevent.builtins --hidden-import=gevent.signal --hidden-import=gevent.libev.corecext --hidden-import=gevent.libuv.loop --hidden-import=gevent.socket --hidden-import=gevent.threading --hidden-import=gevent._threading --hidden-import=gevent.time --hidden-import=gevent.os --hidden-import=gevent.select --hidden-import=gevent.ssl --hidden-import=gevent.subprocess --hidden-import=gevent.thread --hidden-import=gevent.resolver.thread --hidden-import=gevent.resolver.blocking --hidden-import=gevent.resolver.cares --hidden-import=gevent.resolver.dnspython --hidden-import=gevent._ssl3 --hidden-import=engineio.async_drivers.gevent --hidden-import=openai --hidden-import=ollama --hidden-import=zhipuai --hidden-import=numpy --hidden-import=pandas --hidden-import=aiohttp --hidden-import=urllib3 --hidden-import=ssl --collect-all gevent --collect-all aiohttp --collect-all urllib3 service.py --upx-dir "UPX_PATH"
-   ```
+Ui Oval Interface Icons Collection
 
-   ## For faster startup speed (sacrificing package size, but UPX compression is still optional)
-   ```
-   python -m PyInstaller --clean --noconfirm --onedir --hidden-import=gevent.monkey --hidden-import=gevent.builtins --hidden-import=gevent.signal --hidden-import=gevent.libev.corecext --hidden-import=gevent.libuv.loop --hidden-import=gevent.socket --hidden-import=gevent.threading --hidden-import=gevent._threading --hidden-import=gevent.time --hidden-import=gevent.os --hidden-import=gevent.select --hidden-import=gevent.ssl --hidden-import=gevent.subprocess --hidden-import=gevent.thread --hidden-import=gevent.resolver.thread --hidden-import=gevent.resolver.blocking --hidden-import=gevent.resolver.cares --hidden-import=gevent.resolver.dnspython --hidden-import=gevent._ssl3 --hidden-import=engineio.async_drivers.gevent --hidden-import=openai --hidden-import=ollama --hidden-import=zhipuai --hidden-import=numpy --hidden-import=pandas --hidden-import=aiohttp --hidden-import=urllib3 --hidden-import=ssl --collect-all gevent --collect-all aiohttp --collect-all urllib3 service.py --upx-dir "UPX_PATH"
-   ```
+## TODO
+[√] 连接信息加密解密机制
 
-## Contributing
+[√] 文件传输浮窗自动删除item机制
 
-Issues and pull requests are welcome to improve this project.
+[√] 右键菜单文件信息查看支持
 
-## License
+[√] 连接信息拖拽排序分组
 
-[GPL-3.0 License](LICENSE)
+[√] 应用图标
+
+[√] xterm中的鼠标事件、快捷键、搜索机制
+
+[√] 鼠标移出应用窗口后的freeze处理，添加高亮规则
+
+[ ] AI历史记录，配置自定义API
+
+[√] 目标服务器资源监控
+
+[√] 连接项图标优化显示
+
+[√] 文件管理右键菜单添加刷新项
+
+[√] json文件生产环境存储路径指定
+
+[√] 终端字体和字号设置
