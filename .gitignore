@@ -4,6 +4,12 @@ dist
 out
 .DS_Store
 *.log*
+.editorconfig
+.eslintrc.cjs
+.eslintignore
+.npmrc
+.prettierrc.yaml
+.prettierignore
 
 # 忽略所有.env文件
 .env*
