@@ -11,6 +11,7 @@ out
 # 忽略所有.env.local文件
 .env.local*
 
+# 配置文件
 config.json
 connections.json
 chathistory.json
