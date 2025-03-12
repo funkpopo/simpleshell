@@ -25,13 +25,13 @@ const openLocalTerminal = () => {
     console.log('点击太频繁，已忽略')
     return
   }
-  
+
   // 设置点击禁用标志
   isClickDisabled.value = true
-  
+
   // 触发事件
   emit('open-local-terminal')
-  
+
   // 一段时间后恢复点击
   setTimeout(() => {
     isClickDisabled.value = false
@@ -42,18 +42,14 @@ const openLocalTerminal = () => {
 <template>
   <div class="welcome-section" :class="{ 'dark-theme': props.isDarkTheme }">
     <h1>{{ t('app.welcome') }}</h1>
-    
+
     <div class="quick-actions">
-      <div 
-        class="action-card" 
-        @click="openLocalTerminal"
-        :class="{ 'disabled': isClickDisabled }"
-      >
+      <div class="action-card" :class="{ disabled: isClickDisabled }" @click="openLocalTerminal">
         <div class="action-icon local-terminal-icon"></div>
         <h3>{{ t('terminal.openLocalTerminal') }}</h3>
         <p>{{ t('terminal.localDescription') }}</p>
       </div>
-      
+
       <div class="action-card info-card">
         <div class="action-icon info-icon"></div>
         <h3>{{ t('terminal.ssh') }}</h3>
@@ -180,4 +176,4 @@ const openLocalTerminal = () => {
   --card-bg: #272727;
   --border-color: #444;
 }
-</style> 
+</style>

@@ -84,7 +84,31 @@ const deleteProgress = ref({
 
 // 文件信息对话框
 const showFileInfoDialog = ref(false)
-const fileInfo = ref<any>(null)
+
+interface FileRights {
+  user: string
+  group: string
+  other: string
+  [key: string]: string | unknown
+}
+
+interface FileInfo {
+  name: string
+  path?: string
+  size: number
+  modifyTime?: Date
+  accessTime?: Date
+  rights?: FileRights
+  owner?: string | number
+  group?: string | number
+  type: string
+  isSymbolicLink?: boolean
+  items?: number
+  permissions?: string
+  [key: string]: string | number | boolean | Date | FileRights | undefined | unknown
+}
+
+const fileInfo = ref<FileInfo | null>(null)
 
 // 文件传输进度状态
 const transferProgress = ref<TransferItem[]>([])
@@ -99,9 +123,15 @@ const dragStartPosition = ref({ x: 0, y: 0, windowX: 0, windowY: 0 })
 // 传输浮窗是否折叠
 const isTransferWindowCollapsed = ref(false)
 // 最近传输的文件历史
-const recentTransfers = ref<{id: string, filename: string, type: TransferType, status: string}[]>([])
+const recentTransfers = ref<{ id: string; filename: string; type: TransferType; status: string }[]>(
+  []
+)
 // 在没有显示传输窗口时显示的最新传输提示
-const latestTransferNotification = ref<{message: string, type: 'success' | 'error' | 'info', visible: boolean}>({
+const latestTransferNotification = ref<{
+  message: string
+  type: 'success' | 'error' | 'info'
+  visible: boolean
+}>({
   message: '',
   type: 'info',
   visible: false
@@ -145,63 +175,78 @@ const loadCurrentDirectory = async () => {
     console.log('当前路径:', currentPath.value)
     isLoading.value = true
     error.value = ''
-    
+
     if (!props.connectionId) {
       console.error('无效的连接ID')
       error.value = '连接ID无效'
       return
     }
-    
+
     // 清除之前的选中和高亮状态
     selectedFiles.value.clear()
     selectedItemTypes.value.clear()
-    
+
     // 添加加载超时控制
     const timeoutPromise = new Promise<void>((_, reject) => {
       setTimeout(() => reject(new Error('加载目录超时，请稍后再试')), LOADING_TIMEOUT)
     })
-    
+
     // 添加重试机制
-    let retryCount = 0;
-    const maxRetries = 3;
-    const retryDelay = 1000; // 1秒
-    
+    let retryCount = 0
+    const maxRetries = 3
+    const retryDelay = 1000 // 1秒
+
     while (retryCount < maxRetries) {
       try {
         // 使用Promise.race在超时和正常请求之间竞争
-        const result = await Promise.race([
+        interface ReadDirResult {
+          success: boolean
+          files?: FileInfo[]
+          error?: string
+        }
+
+        const result = (await Promise.race([
           window.api.sftpReadDir({
             connectionId: props.connectionId,
             path: currentPath.value
           }),
           timeoutPromise
-        ]) as any
-        
+        ])) as ReadDirResult
+
         if (result.success && result.files) {
           console.log('目录加载成功，文件数量:', result.files.length)
-          fileList.value = result.files as FileItem[]
-          
+          // Convert FileInfo[] to FileItem[] with proper type conversion
+          fileList.value = result.files.map((file) => ({
+            name: file.name,
+            type: file.type === 'directory' ? 'directory' : 'file',
+            size: file.size,
+            modifyTime: file.modifyTime ? file.modifyTime.toLocaleString() : '',
+            permissions: file.permissions || '',
+            owner: String(file.owner || ''),
+            group: String(file.group || '')
+          })) as FileItem[]
+
           // 如果存在高亮项，滚动到该项
           if (highlightedItem.value) {
             await scrollToHighlightedItem()
           }
-          
+
           return // 成功后直接返回
         } else {
           console.error(`目录加载失败 (尝试 ${retryCount + 1}/${maxRetries}):`, result.error)
           error.value = result.error || '加载目录失败'
           fileList.value = []
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(`加载目录时发生错误 (尝试 ${retryCount + 1}/${maxRetries}):`, err)
-        error.value = err.message || '加载目录时发生错误'
+        error.value = err instanceof Error ? err.message : '加载目录时发生错误'
         fileList.value = []
       }
-      
+
       retryCount++
       if (retryCount < maxRetries) {
         console.log(`等待 ${retryDelay}ms 后重试...`)
-        await new Promise(resolve => setTimeout(resolve, retryDelay))
+        await new Promise((resolve) => setTimeout(resolve, retryDelay))
       }
     }
   } finally {
@@ -213,10 +258,12 @@ const loadCurrentDirectory = async () => {
 const scrollToHighlightedItem = async () => {
   await nextTick()
   if (highlightedItem.value) {
-    const highlightedElement = document.querySelector(`.file-list-row[data-name="${highlightedItem.value}"]`)
+    const highlightedElement = document.querySelector(
+      `.file-list-row[data-name="${highlightedItem.value}"]`
+    )
     if (highlightedElement) {
       highlightedElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      
+
       // 3秒后取消高亮
       setTimeout(() => {
         highlightedItem.value = null
@@ -227,44 +274,42 @@ const scrollToHighlightedItem = async () => {
 
 // 进入目录
 const enterDirectory = async (dirName: string) => {
-  const newPath = currentPath.value === '/' 
-    ? `/${dirName}` 
-    : `${currentPath.value}/${dirName}`
-  
+  const newPath = currentPath.value === '/' ? `/${dirName}` : `${currentPath.value}/${dirName}`
+
   currentPath.value = newPath
 }
 
 // 通过路径输入框跳转
 const navigateToPath = (event: Event) => {
   event.preventDefault()
-  
+
   if (!pathInputRef.value) return
-  
+
   let inputPath = pathInputRef.value.value.trim()
-  
+
   // 格式化路径
   if (!inputPath.startsWith('/')) {
     inputPath = `/${inputPath}`
   }
-  
+
   // 如果路径最后有斜杠且不是根路径，则删除
   if (inputPath.length > 1 && inputPath.endsWith('/')) {
     inputPath = inputPath.slice(0, -1)
   }
-  
+
   // 解析目标目录和可能的高亮文件/文件夹
   let targetDir = inputPath
   let targetItem: string | null = null
-  
+
   const lastSlashIndex = inputPath.lastIndexOf('/')
   const lastSegment = inputPath.substring(lastSlashIndex + 1)
-  
+
   if (lastSegment && lastSlashIndex !== 0) {
     // 检查最后一段是否是文件/文件夹名
     targetDir = inputPath.substring(0, lastSlashIndex) || '/'
     targetItem = lastSegment
   }
-  
+
   // 设置当前路径和高亮项
   highlightedItem.value = targetItem
   currentPath.value = targetDir
@@ -273,19 +318,23 @@ const navigateToPath = (event: Event) => {
 // 返回上级目录
 const goToParentDirectory = () => {
   if (currentPath.value === '/') return
-  
+
   const parentPath = currentPath.value.split('/').slice(0, -1).join('/')
   currentPath.value = parentPath || '/'
 }
 
 // 选择文件
-const toggleFileSelection = (fileName: string, fileType: 'file' | 'directory', event?: MouseEvent) => {
+const toggleFileSelection = (
+  fileName: string,
+  fileType: 'file' | 'directory',
+  event?: MouseEvent
+) => {
   // 如果有按住Ctrl键，则不清除之前的选择
   if (event && !event.ctrlKey && !event.metaKey) {
     selectedFiles.value.clear()
     selectedItemTypes.value.clear()
   }
-  
+
   if (selectedFiles.value.has(fileName)) {
     selectedFiles.value.delete(fileName)
     selectedItemTypes.value.delete(fileName)
@@ -309,7 +358,7 @@ const downloadSelectedFiles = async () => {
         connectionId: props.connectionId,
         remotePath: `${currentPath.value}/${fileName}`
       })
-      
+
       if (!result.success) {
         error.value = `下载文件 ${fileName} 失败: ${result.error}`
         break
@@ -317,8 +366,8 @@ const downloadSelectedFiles = async () => {
     }
     clearSelection()
     // 成功通知由传输事件处理，此处不再显示
-  } catch (err: any) {
-    error.value = err.message || '下载文件时发生错误'
+  } catch (err: unknown) {
+    error.value = err instanceof Error ? err.message : '下载文件时发生错误'
   }
 }
 
@@ -328,16 +377,14 @@ const uploadFiles = async (targetPath?: string) => {
     const result = await window.api.openFileDialog({
       title: '选择要上传的文件',
       buttonLabel: '上传',
-      filters: [
-        { name: '所有文件', extensions: ['*'] }
-      ],
+      filters: [{ name: '所有文件', extensions: ['*'] }],
       properties: ['openFile', 'multiSelections']
     })
-    
+
     if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
       // 使用传入的目标路径或当前路径
       const uploadPath = targetPath || currentPath.value
-      
+
       // 启动所有文件上传
       for (const filePath of result.filePaths) {
         try {
@@ -347,13 +394,13 @@ const uploadFiles = async (targetPath?: string) => {
             remotePath: uploadPath
           })
           // 成功通知由传输事件处理，此处不再显示
-        } catch (err) {
+        } catch (err: unknown) {
           console.error(`上传文件 ${filePath} 时发生错误:`, err)
         }
       }
     }
-  } catch (err: any) {
-    error.value = err.message || '上传文件时发生错误'
+  } catch (err: unknown) {
+    error.value = err instanceof Error ? err.message : '上传文件时发生错误'
   }
 }
 
@@ -370,13 +417,13 @@ const handleUploadToFolder = async (e: MouseEvent) => {
 const createNewDirectory = async () => {
   const dirName = prompt('请输入文件夹名称:')
   if (!dirName) return
-  
+
   try {
     const result = await window.api.sftpMkdir({
       connectionId: props.connectionId,
       path: `${currentPath.value}/${dirName}`
     })
-    
+
     if (result.success) {
       await loadCurrentDirectory()
       // 创建成功后高亮新文件夹
@@ -384,8 +431,8 @@ const createNewDirectory = async () => {
     } else {
       error.value = result.error || '创建文件夹失败'
     }
-  } catch (err: any) {
-    error.value = err.message || '创建文件夹时发生错误'
+  } catch (err: unknown) {
+    error.value = err instanceof Error ? err.message : '创建文件夹时发生错误'
   }
 }
 
@@ -393,12 +440,12 @@ const createNewDirectory = async () => {
 const getSelectedItemsCount = () => {
   let files = 0
   let directories = 0
-  
+
   selectedItemTypes.value.forEach((type) => {
     if (type === 'file') files++
     else directories++
   })
-  
+
   return { files, directories }
 }
 
@@ -408,10 +455,10 @@ const showSuccessMessage = (message: string) => {
   if (successMessageTimer !== null) {
     clearTimeout(successMessageTimer)
   }
-  
+
   // 设置新消息
   successMessage.value = message
-  
+
   // 3秒后自动清除
   successMessageTimer = window.setTimeout(() => {
     successMessage.value = ''
@@ -422,7 +469,7 @@ const showSuccessMessage = (message: string) => {
 // 删除选中的文件/文件夹
 const deleteSelectedItems = async () => {
   const { files, directories } = getSelectedItemsCount()
-  
+
   let confirmMessage = ''
   if (files > 0 && directories > 0) {
     confirmMessage = `确定要删除选中的 ${files} 个文件和 ${directories} 个文件夹吗？此操作不可恢复。`
@@ -433,12 +480,12 @@ const deleteSelectedItems = async () => {
   } else {
     return // 没有选中任何项目
   }
-  
+
   if (!confirm(confirmMessage)) return
-  
+
   // 清除之前的成功消息
   successMessage.value = ''
-  
+
   // 设置删除进度状态
   deleteProgress.value = {
     isDeleting: true,
@@ -446,36 +493,38 @@ const deleteSelectedItems = async () => {
     completed: 0,
     currentItem: ''
   }
-  
+
   try {
     // 转换为数组以便按顺序处理
     const itemsToDelete = Array.from(selectedFiles.value)
-    
+
     for (const fileName of itemsToDelete) {
       deleteProgress.value.currentItem = fileName
-      
+
       const fileType = selectedItemTypes.value.get(fileName) || 'file'
-      
+
       try {
         // 构建完整路径
         const fullPath = `${currentPath.value}/${fileName}`
-        
+
         // 执行删除操作
         const result = await window.api.sftpDelete({
           connectionId: props.connectionId,
           path: fullPath
         })
-        
+
         if (!result.success) {
-          throw new Error(result.error || `删除${fileType === 'file' ? '文件' : '文件夹'} ${fileName} 失败`)
+          throw new Error(
+            result.error || `删除${fileType === 'file' ? '文件' : '文件夹'} ${fileName} 失败`
+          )
         }
-        
+
         // 更新完成数量
         deleteProgress.value.completed++
-      } catch (itemError: any) {
+      } catch (itemError: unknown) {
         console.error(`删除 ${fileName} 失败:`, itemError)
-        error.value = itemError.message || `删除 ${fileName} 时发生错误`
-        
+        error.value = itemError instanceof Error ? itemError.message : `删除 ${fileName} 时发生错误`
+
         // 如果不是最后一个项目，提示是否继续
         if (deleteProgress.value.completed < deleteProgress.value.total - 1) {
           if (!confirm(`删除 ${fileName} 失败: ${error.value}\n\n是否继续删除其他项目？`)) {
@@ -484,28 +533,31 @@ const deleteSelectedItems = async () => {
         }
       }
     }
-    
+
     // 清除选择
     clearSelection()
-    
+
     // 刷新当前目录
     await loadCurrentDirectory()
-    
+
     // 显示成功消息
     if (deleteProgress.value.completed === deleteProgress.value.total) {
       // 所有项目都成功删除
-      const message = deleteProgress.value.total === 1 
-        ? `已成功删除 1 个项目` 
-        : `已成功删除 ${deleteProgress.value.completed} 个项目`
-      
+      const message =
+        deleteProgress.value.total === 1
+          ? `已成功删除 1 个项目`
+          : `已成功删除 ${deleteProgress.value.completed} 个项目`
+
       showSuccessMessage(message)
     } else if (deleteProgress.value.completed > 0) {
       // 部分项目删除成功
-      showSuccessMessage(`已删除 ${deleteProgress.value.completed}/${deleteProgress.value.total} 个项目`)
+      showSuccessMessage(
+        `已删除 ${deleteProgress.value.completed}/${deleteProgress.value.total} 个项目`
+      )
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('删除操作失败:', err)
-    error.value = err.message || '删除文件时发生错误'
+    error.value = err instanceof Error ? err.message : '删除文件时发生错误'
   } finally {
     // 重置删除进度状态
     deleteProgress.value.isDeleting = false
@@ -519,7 +571,7 @@ const sortFiles = () => {
     if (a.type !== b.type) {
       return a.type === 'directory' ? -1 : 1
     }
-    
+
     let comparison = 0
     switch (sortBy.value) {
       case 'name':
@@ -532,7 +584,7 @@ const sortFiles = () => {
         comparison = new Date(a.modifyTime).getTime() - new Date(b.modifyTime).getTime()
         break
     }
-    
+
     return sortOrder.value === 'asc' ? comparison : -comparison
   })
 }
@@ -548,21 +600,25 @@ const toggleSort = (field: 'name' | 'size' | 'modifyTime') => {
 }
 
 // 显示右键菜单
-const showMenu = (e: MouseEvent, target: 'file' | 'directory' | 'background', itemName?: string) => {
+const showMenu = (
+  e: MouseEvent,
+  target: 'file' | 'directory' | 'background',
+  itemName?: string
+) => {
   e.preventDefault()
-  
+
   // 设置右键菜单目标类型和点击的项目
   contextMenuTarget.value = target
   clickedItem.value = itemName || null
-  
+
   // 如果点击了特定项目且该项目未被选中
   if (itemName) {
     // 获取项目类型
-    const fileItem = fileList.value.find(f => f.name === itemName)
+    const fileItem = fileList.value.find((f) => f.name === itemName)
     if (fileItem) {
       // 根据实际的文件类型设置contextMenuTarget
       contextMenuTarget.value = fileItem.type
-      
+
       if (!selectedFiles.value.has(itemName)) {
         if (!e.ctrlKey && !e.metaKey) {
           selectedFiles.value.clear()
@@ -573,80 +629,80 @@ const showMenu = (e: MouseEvent, target: 'file' | 'directory' | 'background', it
       }
     }
   }
-  
+
   // 获取窗口尺寸
   const windowWidth = window.innerWidth
   const windowHeight = window.innerHeight
-  
+
   // 初始设置菜单位置为鼠标位置
   let posX = e.clientX
   let posY = e.clientY
-  
+
   // 菜单估计尺寸 - 宽和高的初始估计值，但会在渲染后重新调整
-  const estimatedMenuWidth = 220  // 增加一些余量
+  const estimatedMenuWidth = 220 // 增加一些余量
   const estimatedMenuHeight = 230
-  
+
   // 确保菜单在可视区域内的初步调整
   if (posX + estimatedMenuWidth > windowWidth) {
     // 如果右侧空间不足，则显示在鼠标左侧
     posX = posX - estimatedMenuWidth
   }
-  
+
   if (posY + estimatedMenuHeight > windowHeight) {
     // 如果底部空间不足，则显示在鼠标上方
     posY = posY - estimatedMenuHeight
   }
-  
+
   // 确保不超出左边界
   if (posX < 0) posX = 10
-  
+
   // 确保不超出上边界
   if (posY < 0) posY = 10
-  
+
   // 设置菜单位置
   menuPosition.value = { x: posX, y: posY }
   showContextMenu.value = true
-  
+
   // 添加一次性的点击事件监听，点击其他地方关闭菜单
   setTimeout(() => {
     window.addEventListener('click', closeMenu, { once: true })
     // 确保点击ESC也能关闭菜单
     window.addEventListener('keydown', handleMenuKeydown, { once: true })
-    
+
     // 在下一个渲染周期，根据实际菜单尺寸进行位置微调
     nextTick(() => {
       const menuElement = document.querySelector('.context-menu') as HTMLElement
       if (menuElement) {
         const menuRect = menuElement.getBoundingClientRect()
-        
+
         // 获取菜单实际尺寸
         const actualMenuWidth = menuRect.width
         const actualMenuHeight = menuRect.height
-        
+
         // 再次检查并调整位置
         let adjustedX = menuPosition.value.x
         let adjustedY = menuPosition.value.y
-        
+
         // 右侧边界检查
         if (adjustedX + actualMenuWidth > windowWidth) {
           adjustedX = windowWidth - actualMenuWidth - 10 // 10px边距
         }
-        
+
         // 左侧边界检查
         if (adjustedX < 0) {
           adjustedX = 10
         }
-        
+
         // 底部边界检查
         if (adjustedY + actualMenuHeight > windowHeight) {
           adjustedY = windowHeight - actualMenuHeight - 10
         }
-        
+
         // 顶部边界检查
         if (adjustedY < 0) {
           adjustedY = 10
         }
-        
+
         // 如果位置有调整，应用新位置
         if (adjustedX !== menuPosition.value.x || adjustedY !== menuPosition.value.y) {
           menuPosition.value = { x: adjustedX, y: adjustedY }
@@ -686,46 +742,61 @@ watch(currentPath, () => {
 })
 
 // 监听文件列表变化，自动排序
-watch([fileList, sortBy, sortOrder], () => {
-  sortFiles()
-}, { deep: true })
+watch(
+  [fileList, sortBy, sortOrder],
+  () => {
+    sortFiles()
+  },
+  { deep: true }
+)
 
 // 监听传输进度变化，确保上传完成后刷新文件列表
-watch(transferProgress, (newProgress, oldProgress) => {
-  // 检查是否有新完成的上传
-  for (let i = 0; i < newProgress.length; i++) {
-    const newItem = newProgress[i]
-    const oldItem = oldProgress[i]
-    
-    // 如果是上传项，且状态从transferring变为completed或verifying
-    if (newItem && oldItem && 
-        newItem.type === 'upload' && 
-        oldItem.status === 'transferring' && 
-        (newItem.status === 'completed' || newItem.status === 'verifying')) {
-      console.log('检测到上传完成状态变化，刷新文件列表')
-      loadCurrentDirectory()
-      break
+watch(
+  transferProgress,
+  (newProgress, oldProgress) => {
+    // 检查是否有新完成的上传
+    for (let i = 0; i < newProgress.length; i++) {
+      const newItem = newProgress[i]
+      const oldItem = oldProgress[i]
+
+      // 如果是上传项，且状态从transferring变为completed或verifying
+      if (
+        newItem &&
+        oldItem &&
+        newItem.type === 'upload' &&
+        oldItem.status === 'transferring' &&
+        (newItem.status === 'completed' || newItem.status === 'verifying')
+      ) {
+        console.log('检测到上传完成状态变化，刷新文件列表')
+        loadCurrentDirectory()
+        break
+      }
     }
-  }
-}, { deep: true })
+  },
+  { deep: true }
+)
 
 // 监听连接ID变化
-watch(() => props.connectionId, (newId, oldId) => {
-  console.log('连接ID变化:', { oldId, newId })
-  if (newId) {
-    console.log('检测到新的连接ID，重置路径并加载目录')
-    currentPath.value = '/'
-    highlightedItem.value = null
-    // 延迟加载目录，确保SFTP连接已经完全建立
-    setTimeout(() => {
-      loadCurrentDirectory()
-    }, 2000) // 增加延迟到2秒
-  } else {
-    console.log('连接ID被清除，清空文件列表')
-    fileList.value = []
-    error.value = ''
-  }
-}, { immediate: true })
+watch(
+  () => props.connectionId,
+  (newId, oldId) => {
+    console.log('连接ID变化:', { oldId, newId })
+    if (newId) {
+      console.log('检测到新的连接ID，重置路径并加载目录')
+      currentPath.value = '/'
+      highlightedItem.value = null
+      // 延迟加载目录，确保SFTP连接已经完全建立
+      setTimeout(() => {
+        loadCurrentDirectory()
+      }, 2000) // 增加延迟到2秒
+    } else {
+      console.log('连接ID被清除，清空文件列表')
+      fileList.value = []
+      error.value = ''
+    }
+  },
+  { immediate: true }
+)
 
 // 处理窗口大小变化时调整菜单位置
 const handleWindowResize = () => {
@@ -733,48 +804,48 @@ const handleWindowResize = () => {
     // 获取当前窗口尺寸
     const windowWidth = window.innerWidth
     const windowHeight = window.innerHeight
-    
+
     // 获取菜单元素
     const menuElement = document.querySelector('.context-menu') as HTMLElement
     if (menuElement) {
       const menuRect = menuElement.getBoundingClientRect()
-      
+
       // 检查是否超出可视区域
       let needsAdjustment = false
       let newX = menuPosition.value.x
       let newY = menuPosition.value.y
-      
+
       // 右侧检查
       if (newX + menuRect.width > windowWidth) {
         newX = windowWidth - menuRect.width - 10
         needsAdjustment = true
       }
-      
+
       // 左侧检查
       if (newX < 0) {
         newX = 10
         needsAdjustment = true
       }
-      
+
       // 底部检查
       if (newY + menuRect.height > windowHeight) {
         newY = windowHeight - menuRect.height - 10
         needsAdjustment = true
       }
-      
+
       // 顶部检查
       if (newY < 0) {
         newY = 10
         needsAdjustment = true
       }
-      
+
       // 更新位置
       if (needsAdjustment) {
         menuPosition.value = { x: newX, y: newY }
       }
     }
   }
-  
+
   // 确保传输浮窗在可视区域内
   if (showTransferProgress.value) {
     adjustTransferWindowPosition()
@@ -785,46 +856,50 @@ const handleWindowResize = () => {
 const adjustTransferWindowPosition = () => {
   const container = document.querySelector('.file-list-container') as HTMLElement
   if (!container) return
-  
+
   const containerRect = container.getBoundingClientRect()
   const transferWindow = document.querySelector('.transfer-progress-modal') as HTMLElement
   if (!transferWindow) return
-  
+
   const transferRect = transferWindow.getBoundingClientRect()
-  
+
   let newX = transferWindowPosition.value.x
   let newY = transferWindowPosition.value.y
-  
+
   // 确保不超出右边界
   if (newX + transferRect.width > containerRect.width) {
     newX = containerRect.width - transferRect.width - 10
   }
-  
+
   // 确保不超出左边界
   if (newX < 10) {
     newX = 10
   }
-  
+
   // 确保不超出下边界
   if (newY + transferRect.height > containerRect.height) {
     newY = containerRect.height - transferRect.height - 10
   }
-  
+
   // 确保不超出上边界
   if (newY < 10) {
     newY = 10
   }
-  
+
   transferWindowPosition.value = { x: newX, y: newY }
 }
 
 // 开始拖动传输浮窗
 const startDragTransferWindow = (e: MouseEvent) => {
   // 如果点击的是按钮等控件，不启动拖动
-  if ((e.target as HTMLElement).closest('.transfer-close-btn, .transfer-toggle-btn, .transfer-cancel-btn')) {
+  if (
+    (e.target as HTMLElement).closest(
+      '.transfer-close-btn, .transfer-toggle-btn, .transfer-cancel-btn'
+    )
+  ) {
     return
   }
-  
+
   isDraggingTransferWindow.value = true
   dragStartPosition.value = {
     x: e.clientX,
@@ -832,10 +907,10 @@ const startDragTransferWindow = (e: MouseEvent) => {
     windowX: transferWindowPosition.value.x,
     windowY: transferWindowPosition.value.y
   }
-  
+
   document.addEventListener('mousemove', dragTransferWindow)
   document.addEventListener('mouseup', stopDragTransferWindow)
-  
+
   // 防止选中文本
   e.preventDefault()
 }
@@ -843,15 +918,15 @@ const startDragTransferWindow = (e: MouseEvent) => {
 // 拖动传输浮窗
 const dragTransferWindow = (e: MouseEvent) => {
   if (!isDraggingTransferWindow.value) return
-  
+
   const deltaX = e.clientX - dragStartPosition.value.x
   const deltaY = e.clientY - dragStartPosition.value.y
-  
+
   transferWindowPosition.value = {
     x: dragStartPosition.value.windowX + deltaX,
     y: dragStartPosition.value.windowY + deltaY
   }
-  
+
   // 边界检查
   adjustTransferWindowPosition()
 }
@@ -872,19 +947,19 @@ const toggleTransferWindowCollapse = () => {
 const showTransferNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
   // 如果传输窗口已显示，则不显示额外通知
   if (showTransferProgress.value) return
-  
+
   // 清除之前的计时器
   if (latestTransferNotificationTimer !== null) {
     clearTimeout(latestTransferNotificationTimer)
   }
-  
+
   // 设置新通知
   latestTransferNotification.value = {
     message,
     type,
     visible: true
   }
-  
+
   // 5秒后自动清除
   latestTransferNotificationTimer = window.setTimeout(() => {
     latestTransferNotification.value.visible = false
@@ -900,37 +975,43 @@ const initFileTransferHandlers = () => {
     transferProgress.value.push({
       id: data.id,
       filename: data.filename,
-      path: data.path, 
+      path: data.path,
       type: data.type,
       size: data.size,
       transferred: 0,
       progress: 0,
       status: 'transferring'
     })
-    
+
     // 显示传输进度浮窗
     showTransferProgress.value = true
   })
-  
+
   // 传输进度更新事件
   const unsubTransferProgress = window.api.onTransferProgress((data) => {
     // 查找对应的传输项
-    const transferItem = transferProgress.value.find(item => item.id === data.id)
+    const transferItem = transferProgress.value.find((item) => item.id === data.id)
     if (transferItem) {
       transferItem.transferred = data.transferred
       transferItem.progress = data.progress
-      
+
       // 当上传进度达到100%时立即刷新文件列表
-      if (transferItem.type === 'upload' && data.progress === 100 && transferItem.status === 'transferring') {
+      if (
+        transferItem.type === 'upload' &&
+        data.progress === 100 &&
+        transferItem.status === 'transferring'
+      ) {
         console.log('上传进度达到100%，立即刷新文件列表')
         loadCurrentDirectory()
-        
+
         // 添加：如果进度达到100%但状态仍为transferring，设置为verifying并准备验证
         // 这是为了解决某些情况下状态没有正确更新的问题
         if (transferItem.status === 'transferring') {
-          console.log(`上传进度达到100%，但状态仍为transferring，手动设置为verifying: ${transferItem.filename}`)
+          console.log(
+            `上传进度达到100%，但状态仍为transferring，手动设置为verifying: ${transferItem.filename}`
+          )
           transferItem.status = 'verifying'
-          
+
           // 延迟一段时间后进行验证，确保文件系统已更新
           setTimeout(async () => {
             const success = await verifyTransferSuccess(transferItem)
@@ -940,25 +1021,27 @@ const initFileTransferHandlers = () => {
       }
     }
   })
-  
+
   // 传输完成事件
   const unsubTransferComplete = window.api.onTransferComplete((data) => {
     // 查找对应的传输项
-    const transferItem = transferProgress.value.find(item => item.id === data.id)
+    const transferItem = transferProgress.value.find((item) => item.id === data.id)
     if (transferItem) {
-      console.log(`收到传输完成事件: ${transferItem.filename}, ID: ${data.id}, 成功: ${data.success}`)
-      
+      console.log(
+        `收到传输完成事件: ${transferItem.filename}, ID: ${data.id}, 成功: ${data.success}`
+      )
+
       if (data.success) {
         // 设置为验证中状态
         transferItem.status = 'verifying'
         transferItem.progress = 100
         transferItem.transferred = transferItem.size // 确保进度显示为100%
-        
+
         // 对于上传操作，立即刷新文件列表，不等待验证完成
         if (transferItem.type === 'upload') {
           console.log('上传完成，立即刷新文件列表')
           loadCurrentDirectory()
-          
+
           // 延迟一段时间后进行验证，确保文件系统已更新
           setTimeout(async () => {
             const success = await verifyTransferSuccess(transferItem)
@@ -966,7 +1049,7 @@ const initFileTransferHandlers = () => {
           }, 1000)
         } else {
           // 下载操作立即验证
-          verifyTransferSuccess(transferItem).then(success => {
+          verifyTransferSuccess(transferItem).then((success) => {
             handleTransferVerificationResult(transferItem, success)
           })
         }
@@ -977,65 +1060,68 @@ const initFileTransferHandlers = () => {
     } else {
       console.error(`收到未知传输项 ID: ${data.id} 的完成事件`)
     }
-    
+
     // 检查是否所有传输都已完成
     checkTransferComplete()
   })
-  
+
   // 传输错误事件
   const unsubTransferError = window.api.onTransferError((data) => {
     // 查找对应的传输项
-    const transferItem = transferProgress.value.find(item => item.id === data.id)
+    const transferItem = transferProgress.value.find((item) => item.id === data.id)
     if (transferItem) {
       transferItem.status = 'error'
       transferItem.error = data.error
       transferItem.completedAt = Date.now() // 设置完成时间戳
-      
+
       // 显示错误消息
       error.value = `${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 失败: ${data.error}`
-      
+
       // 添加到最近传输历史
       addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'error')
-      
+
       // 刷新当前目录，以防文件状态不一致
       loadCurrentDirectory()
-      
+
       // 如果传输窗口没有显示，则显示通知
       if (!showTransferProgress.value) {
-        showTransferNotification(`${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 失败`, 'error')
+        showTransferNotification(
+          `${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 失败`,
+          'error'
+        )
       }
-      
+
       // 设置自动移除计时器，错误状态保留较长时间（8秒）以便用户查看
       scheduleItemRemoval(transferItem, 8000)
     }
-    
+
     // 检查是否所有传输都已完成
     checkTransferComplete()
   })
-  
+
   // 传输取消事件
   const unsubTransferCancelled = window.api.onTransferCancelled((data) => {
     // 查找对应的传输项
-    const transferItem = transferProgress.value.find(item => item.id === data.id)
+    const transferItem = transferProgress.value.find((item) => item.id === data.id)
     if (transferItem) {
       transferItem.status = 'cancelled'
       transferItem.error = '用户取消传输'
       transferItem.completedAt = Date.now() // 设置完成时间戳
-      
+
       // 添加到最近传输历史
       addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'cancelled')
-      
+
       // 刷新当前目录，以防文件状态不一致
       loadCurrentDirectory()
-      
+
       // 设置自动移除计时器，取消状态保留较短时间（2秒）
       scheduleItemRemoval(transferItem, 2000)
     }
-    
+
     // 检查是否所有传输都已完成
     checkTransferComplete()
   })
-  
+
   // 返回清理函数
   return () => {
     unsubTransferStart()
@@ -1052,7 +1138,7 @@ const addToRecentTransfers = (id: string, filename: string, type: TransferType, 
   if (recentTransfers.value.length >= 10) {
     recentTransfers.value.shift() // 移除最旧的记录
   }
-  
+
   // 添加新记录
   recentTransfers.value.push({
     id,
@@ -1069,36 +1155,38 @@ const scheduleItemRemoval = (item: TransferItem, delay = 5000) => {
     clearTimeout(item.removeTimer)
     item.removeTimer = undefined
   }
-  
+
   console.log(`安排移除传输项：${item.filename}，状态：${item.status}，延迟：${delay}ms`)
-  
+
   // 使用window.setTimeout而不是setTimeout，确保在所有环境中正常工作
   const timerId = window.setTimeout(() => {
     console.log(`执行移除传输项：${item.filename}，状态：${item.status}`)
-    
+
     // 先将计时器ID置空，防止重复清除
     item.removeTimer = undefined
-    
+
     // 更新项目状态，标记为准备删除
     item.pendingRemoval = true
-    
+
     // 使用Vue的nextTick确保DOM更新完成后再执行移除
     nextTick(() => {
       // 移除该项（使用函数式更新以确保基于最新状态）
-      transferProgress.value = transferProgress.value.filter(i => i.id !== item.id || (i.id === item.id && !i.pendingRemoval))
+      transferProgress.value = transferProgress.value.filter(
+        (i) => i.id !== item.id || (i.id === item.id && !i.pendingRemoval)
+      )
       console.log(`移除后剩余传输项数量: ${transferProgress.value.length}`)
-      
+
       // 如果没有正在进行的传输，隐藏浮窗
       const hasActiveTransfers = transferProgress.value.some(
-        i => i.status === 'pending' || i.status === 'transferring' || i.status === 'verifying'
+        (i) => i.status === 'pending' || i.status === 'transferring' || i.status === 'verifying'
       )
-      
+
       console.log(`还有活跃传输: ${hasActiveTransfers}, 总数: ${transferProgress.value.length}`)
-      
+
       // 如果无正在传输的项，且所有项目都已移除，隐藏传输窗口
       if (!hasActiveTransfers && transferProgress.value.length === 0) {
         console.log('所有传输项已完成，隐藏传输窗口')
-        
+
         // 使用nextTick确保Vue状态更新完成后再隐藏窗口
         nextTick(() => {
           window.setTimeout(() => {
@@ -1108,22 +1196,22 @@ const scheduleItemRemoval = (item: TransferItem, delay = 5000) => {
       }
     })
   }, delay)
-  
+
   // 确保保存计时器ID
   item.removeTimer = timerId
   console.log(`为传输项 ${item.id} 设置了移除计时器 ID: ${timerId}`)
-  
+
   // 设置备用计时器，防止主计时器失效（多一层保障）
   window.setTimeout(() => {
     // 检查项目是否仍然存在
-    const stillExists = transferProgress.value.some(i => i.id === item.id)
+    const stillExists = transferProgress.value.some((i) => i.id === item.id)
     if (stillExists) {
       console.log(`备用计时器检测到传输项 ${item.id} 仍未被移除，强制移除`)
-      transferProgress.value = transferProgress.value.filter(i => i.id !== item.id)
-      
+      transferProgress.value = transferProgress.value.filter((i) => i.id !== item.id)
+
       // 如果没有活跃传输且列表为空，隐藏窗口
       const hasActiveTransfers = transferProgress.value.some(
-        i => i.status === 'pending' || i.status === 'transferring' || i.status === 'verifying'
+        (i) => i.status === 'pending' || i.status === 'transferring' || i.status === 'verifying'
       )
       if (!hasActiveTransfers && transferProgress.value.length === 0) {
         console.log('备用计时器: 所有传输项已完成，隐藏传输窗口')
@@ -1135,7 +1223,7 @@ const scheduleItemRemoval = (item: TransferItem, delay = 5000) => {
 
 // 清除所有传输项的计时器
 const clearAllRemovalTimers = () => {
-  transferProgress.value.forEach(item => {
+  transferProgress.value.forEach((item) => {
     if (item.removeTimer) {
       clearTimeout(item.removeTimer)
       item.removeTimer = undefined
@@ -1147,75 +1235,84 @@ const clearAllRemovalTimers = () => {
 const checkTransferComplete = () => {
   // 检查是否所有传输都已完成（没有处于进行中状态的传输）
   const allCompleted = !transferProgress.value.some(
-    item => item.status === 'pending' || item.status === 'transferring' || item.status === 'verifying'
+    (item) =>
+      item.status === 'pending' || item.status === 'transferring' || item.status === 'verifying'
   )
-  
+
   // 如果全部完成，显示总结性消息
   if (allCompleted && transferProgress.value.length > 0) {
     // 计算成功、失败和取消的数量
-    const completedCount = transferProgress.value.filter(item => item.status === 'completed').length
-    const errorCount = transferProgress.value.filter(item => item.status === 'error').length
-    const cancelledCount = transferProgress.value.filter(item => item.status === 'cancelled').length
-    
+    const completedCount = transferProgress.value.filter(
+      (item) => item.status === 'completed'
+    ).length
+    const errorCount = transferProgress.value.filter((item) => item.status === 'error').length
+    const cancelledCount = transferProgress.value.filter(
+      (item) => item.status === 'cancelled'
+    ).length
+
     // 清理所有已完成但未删除的传输项（停留过久的项）
     const now = Date.now()
-    const completedItems = transferProgress.value.filter(item => 
-      item.status === 'completed' || item.status === 'error' || item.status === 'cancelled'
+    const completedItems = transferProgress.value.filter(
+      (item) =>
+        item.status === 'completed' || item.status === 'error' || item.status === 'cancelled'
     )
-    
+
     // 对于已完成状态超过10秒的项目，强制移除
     const forceCleanupDelay = 10000 // 10秒
-    completedItems.forEach(item => {
+    completedItems.forEach((item) => {
       // 如果项目没有完成时间戳，设置一个
       if (!item.completedAt) {
         item.completedAt = now
       }
-      
+
       // 如果已经完成了超过指定时间，且没有正在进行的删除，强制删除
       if (now - item.completedAt > forceCleanupDelay && !item.pendingRemoval) {
         console.log(`强制清理长时间停留的已完成传输项: ${item.filename}`)
         item.pendingRemoval = true
-        
+
         // 使用nextTick确保DOM更新
         nextTick(() => {
-          transferProgress.value = transferProgress.value.filter(i => 
-            i.id !== item.id || (i.id === item.id && !i.pendingRemoval)
+          transferProgress.value = transferProgress.value.filter(
+            (i) => i.id !== item.id || (i.id === item.id && !i.pendingRemoval)
           )
         })
       }
     })
-    
+
     // 添加：检查是否有传输中状态停留时间过长的项目（可能卡住）
-    const stuckTransfers = transferProgress.value.filter(item => 
-      (item.status === 'transferring' || item.status === 'verifying') && 
-      item.progress === 100 && // 进度100%但状态未更新
-      item.completedAt === undefined // 未设置完成时间戳
+    const stuckTransfers = transferProgress.value.filter(
+      (item) =>
+        (item.status === 'transferring' || item.status === 'verifying') &&
+        item.progress === 100 && // 进度100%但状态未更新
+        item.completedAt === undefined // 未设置完成时间戳
     )
-    
+
     // 处理可能卡住的传输项
     const stuckTransferTimeout = 20000 // 20秒无状态更新视为卡住
-    stuckTransfers.forEach(item => {
+    stuckTransfers.forEach((item) => {
       // 如果没有上次更新时间，设置当前时间作为参考
       if (!item._lastUpdateTime) {
         item._lastUpdateTime = now
         return
       }
-      
+
       // 如果已经卡住超过指定时间，尝试恢复
       if (now - item._lastUpdateTime > stuckTransferTimeout) {
-        console.log(`检测到可能卡住的传输项: ${item.filename}, 状态: ${item.status}, 进度: ${item.progress}%`)
-        
+        console.log(
+          `检测到可能卡住的传输项: ${item.filename}, 状态: ${item.status}, 进度: ${item.progress}%`
+        )
+
         // 对于上传项目，尝试验证并更新状态
         if (item.type === 'upload' && item.status === 'transferring' && item.progress === 100) {
           console.log(`尝试恢复卡住的上传项: ${item.filename}`)
           item.status = 'verifying'
-          
+
           // 延迟验证
           setTimeout(async () => {
             const success = await verifyTransferSuccess(item)
             handleTransferVerificationResult(item, success)
           }, 1000)
-        } 
+        }
         // 对于验证中状态卡住的项目，强制设置为完成
         else if (item.status === 'verifying') {
           console.log(`验证状态卡住，强制设置为完成: ${item.filename}`)
@@ -1223,27 +1320,29 @@ const checkTransferComplete = () => {
           item.completedAt = now
           scheduleItemRemoval(item, 2000)
         }
-        
+
         // 更新上次处理时间，避免重复处理
         item._lastUpdateTime = now
       }
     })
-    
+
     // 如果所有项目都已经完成并且没有剩余项目，隐藏传输窗口
-    if (transferProgress.value.length === 0 || 
-        (completedItems.length === transferProgress.value.length && 
-         completedItems.every(item => item.pendingRemoval))) {
+    if (
+      transferProgress.value.length === 0 ||
+      (completedItems.length === transferProgress.value.length &&
+        completedItems.every((item) => item.pendingRemoval))
+    ) {
       console.log('所有传输已完成并准备删除，隐藏传输窗口')
       setTimeout(() => {
         showTransferProgress.value = false
       }, 300)
     }
-    
+
     // 如果有完成的项目，显示提示消息
     if (completedCount > 0 || errorCount > 0 || cancelledCount > 0) {
       const message = `文件传输结果: ${completedCount}个成功, ${errorCount}个失败, ${cancelledCount}个取消`
       console.log(message)
-      
+
       // 只有有成功项时才显示成功提示
       if (completedCount > 0) {
         showSuccessMessage(message)
@@ -1273,69 +1372,75 @@ const handleBackgroundUpload = async (e: MouseEvent) => {
 const cancelTransfer = async (transferId: string) => {
   try {
     // 查找对应的传输项
-    const transferItem = transferProgress.value.find(item => item.id === transferId)
+    const transferItem = transferProgress.value.find((item) => item.id === transferId)
     if (!transferItem || transferItem.status !== 'transferring') {
       return
     }
-    
+
     // 调用API取消传输
     const result = await window.api.cancelTransfer({
       transferId
     })
-    
+
     if (result.success) {
       // 更新状态为已取消
       transferItem.status = 'cancelled'
       transferItem.error = '用户取消传输'
       transferItem.completedAt = Date.now() // 设置完成时间戳
-      
+
       // 显示提示
-      showSuccessMessage(`已取消${transferItem.type === 'upload' ? '上传' : '下载'}文件: ${transferItem.filename}`)
-      
+      showSuccessMessage(
+        `已取消${transferItem.type === 'upload' ? '上传' : '下载'}文件: ${transferItem.filename}`
+      )
+
       // 刷新文件列表
       loadCurrentDirectory()
-      
+
       // 设置自动移除计时器
       scheduleItemRemoval(transferItem, 2000)
     } else {
       // 显示错误
       error.value = `取消传输失败: ${result.error || '未知错误'}`
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('取消传输失败:', err)
-    error.value = `取消传输失败: ${err.message || '未知错误'}`
+    error.value = `取消传输失败: ${err instanceof Error ? err.message : '未知错误'}`
   }
 }
 
 // 直接清除传输项
 const clearTransferItem = (transferId: string) => {
-  const transferItem = transferProgress.value.find(item => item.id === transferId)
+  const transferItem = transferProgress.value.find((item) => item.id === transferId)
   if (transferItem) {
     console.log(`手动清除传输项: ${transferItem.filename}, ID: ${transferId}`)
-    
+
     // 清除可能存在的定时器
     if (transferItem.removeTimer) {
       clearTimeout(transferItem.removeTimer)
       transferItem.removeTimer = undefined
       console.log(`清除了传输项 ${transferId} 的自动移除计时器`)
     }
-    
+
     // 标记为准备删除
     transferItem.pendingRemoval = true
-    
+
     // 使用nextTick确保DOM更新后再移除
     nextTick(() => {
       // 立即从列表中移除
-      transferProgress.value = transferProgress.value.filter(item => item.id !== transferId || (item.id === transferId && !item.pendingRemoval))
+      transferProgress.value = transferProgress.value.filter(
+        (item) => item.id !== transferId || (item.id === transferId && !item.pendingRemoval)
+      )
       console.log(`手动移除后剩余传输项数量: ${transferProgress.value.length}`)
-      
+
       // 如果没有正在进行的传输和剩余项，隐藏传输窗口
       const hasActiveTransfers = transferProgress.value.some(
-        i => i.status === 'pending' || i.status === 'transferring' || i.status === 'verifying'
+        (i) => i.status === 'pending' || i.status === 'transferring' || i.status === 'verifying'
       )
-      
-      console.log(`手动清除后，还有活跃传输: ${hasActiveTransfers}, 总数: ${transferProgress.value.length}`)
-      
+
+      console.log(
+        `手动清除后，还有活跃传输: ${hasActiveTransfers}, 总数: ${transferProgress.value.length}`
+      )
+
       if (!hasActiveTransfers && transferProgress.value.length === 0) {
         console.log('手动清除后，所有传输项已完成，隐藏传输窗口')
         nextTick(() => {
@@ -1353,24 +1458,24 @@ const clearTransferItem = (transferId: string) => {
 // 组件挂载时加载目录
 onMounted(async () => {
   console.log('FileManager组件挂载，当前连接ID:', props.connectionId)
-  
+
   // 添加键盘事件监听
   window.addEventListener('keydown', handleKeyDown)
-  
+
   // 添加窗口大小变化监听
   window.addEventListener('resize', handleWindowResize)
-  
+
   if (props.connectionId) {
     // 显示加载状态
     isLoading.value = true
-    
+
     // 初始化传输事件处理
     const cleanupTransferHandlers = initFileTransferHandlers()
-    
+
     // 获取目录内容
     if (currentPath.value) {
       loadCurrentDirectory()
-        .catch(err => {
+        .catch((err) => {
           console.error('初始加载目录失败:', err)
           error.value = `加载目录失败: ${err.message || '未知错误'}`
         })
@@ -1378,27 +1483,29 @@ onMounted(async () => {
           isLoading.value = false
         })
     }
-    
+
     // 设置定期检查传输状态的定时器
     transferStatusCheckTimer = window.setInterval(() => {
       // 调用检查函数
       checkTransferComplete()
-      
+
       // 检查是否有进度为100%但状态未更新为completed的项目
       const now = Date.now()
-      const stuckItems = transferProgress.value.filter(item => 
-        (item.status === 'transferring' && item.progress === 100) || 
-        (item.status === 'verifying' && (!item._lastVerifyTime || now - item._lastVerifyTime > 10000))
+      const stuckItems = transferProgress.value.filter(
+        (item) =>
+          (item.status === 'transferring' && item.progress === 100) ||
+          (item.status === 'verifying' &&
+            (!item._lastVerifyTime || now - item._lastVerifyTime > 10000))
       )
-      
+
       if (stuckItems.length > 0) {
         console.log(`定期检查：发现 ${stuckItems.length} 个可能卡住的传输项`)
-        stuckItems.forEach(item => {
+        stuckItems.forEach((item) => {
           // 为卡在transferring状态的项目触发状态更新
           if (item.status === 'transferring' && item.progress === 100) {
             console.log(`定期检查：修复卡在transferring的项目: ${item.filename}`)
             item.status = 'verifying'
-            
+
             // 延迟验证
             setTimeout(async () => {
               // 记录开始验证的时间
@@ -1408,37 +1515,40 @@ onMounted(async () => {
             }, 1000)
           }
           // 处理验证时间过长的项目
-          else if (item.status === 'verifying' && (!item._lastVerifyTime || now - item._lastVerifyTime > 10000)) {
+          else if (
+            item.status === 'verifying' &&
+            (!item._lastVerifyTime || now - item._lastVerifyTime > 10000)
+          ) {
             console.log(`定期检查：验证时间过长，手动完成: ${item.filename}`)
             item.status = 'completed'
             item.completedAt = now
-            
+
             // 添加到最近传输历史
             addToRecentTransfers(item.id, item.filename, item.type, 'completed')
-            
+
             // 设置自动移除计时器
             scheduleItemRemoval(item, 2000)
           }
         })
       }
     }, 5000) // 每5秒检查一次
-    
+
     // 组件卸载时清理监听器
     onBeforeUnmount(() => {
       // 移除键盘事件监听
       window.removeEventListener('keydown', handleKeyDown)
-      
+
       // 移除窗口大小变化监听
       window.removeEventListener('resize', handleWindowResize)
-      
+
       cleanupTransferHandlers()
-      
+
       // 清除定期检查定时器
       if (transferStatusCheckTimer !== null) {
         clearInterval(transferStatusCheckTimer)
         transferStatusCheckTimer = null
       }
-      
+
       // 清除所有传输项的自动移除计时器
       clearAllRemovalTimers()
     })
@@ -1449,16 +1559,16 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('resize', handleWindowResize)
-  
+
   // 清除计时器
   if (successMessageTimer !== null) {
     clearTimeout(successMessageTimer)
   }
-  
+
   if (latestTransferNotificationTimer !== null) {
     clearTimeout(latestTransferNotificationTimer)
   }
-  
+
   // 清除所有传输项的计时器
   clearAllRemovalTimers()
 })
@@ -1467,17 +1577,17 @@ onBeforeUnmount(() => {
 const verifyTransferSuccess = async (item: TransferItem): Promise<boolean> => {
   try {
     console.log(`验证传输项: ${item.filename}, 类型: ${item.type}`)
-    
+
     if (item.type === 'upload') {
       // 对于上传，验证文件是否存在于当前目录
       const result = await window.api.sftpReadDir({
         connectionId: props.connectionId,
         path: currentPath.value
       })
-      
+
       if (result.success && result.files) {
         // 检查文件是否存在且大小正确
-        const uploadedFile = result.files.find(f => f.name === item.filename)
+        const uploadedFile = result.files.find((f) => f.name === item.filename)
         if (uploadedFile && uploadedFile.size === item.size) {
           console.log(`上传验证成功: ${item.filename}, 大小匹配: ${uploadedFile.size}`)
           return true
@@ -1492,11 +1602,13 @@ const verifyTransferSuccess = async (item: TransferItem): Promise<boolean> => {
         console.log(`下载验证成功: ${item.filename}, 传输大小等于文件大小`)
         return true
       } else {
-        console.error(`下载验证失败: ${item.filename}, 传输大小(${item.transferred}) != 文件大小(${item.size})`)
+        console.error(
+          `下载验证失败: ${item.filename}, 传输大小(${item.transferred}) != 文件大小(${item.size})`
+        )
         return false
       }
     }
-    
+
     return false
   } catch (err) {
     console.error(`验证传输失败: ${err}`)
@@ -1510,18 +1622,21 @@ const handleTransferVerificationResult = (item: TransferItem, success: boolean) 
     // 更新为完成状态
     item.status = 'completed'
     item.completedAt = Date.now()
-    
+
     // 显示成功消息
     showSuccessMessage(`${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 成功`)
-    
+
     // 添加到最近传输历史
     addToRecentTransfers(item.id, item.filename, item.type, 'completed')
-    
+
     // 如果传输窗口没有显示，则显示通知
     if (!showTransferProgress.value) {
-      showTransferNotification(`${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 成功`, 'success')
+      showTransferNotification(
+        `${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 成功`,
+        'success'
+      )
     }
-    
+
     // 设置自动移除计时器，完成后2秒移除
     scheduleItemRemoval(item, 2000)
   } else {
@@ -1535,21 +1650,24 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
   item.status = 'error'
   item.error = errorMessage
   item.completedAt = Date.now()
-  
+
   // 显示错误消息
   error.value = `${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 失败: ${errorMessage}`
-  
+
   // 添加到最近传输历史
   addToRecentTransfers(item.id, item.filename, item.type, 'error')
-  
+
   // 如果传输窗口没有显示，则显示通知
   if (!showTransferProgress.value) {
-    showTransferNotification(`${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 失败`, 'error')
+    showTransferNotification(
+      `${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 失败`,
+      'error'
+    )
   }
-  
+
   // 设置自动移除计时器，错误状态保留较长时间供用户查看
   scheduleItemRemoval(item, 8000)
-  
+
   // 刷新当前目录
   loadCurrentDirectory()
 }
@@ -1557,35 +1675,35 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
 // 查看文件/文件夹信息
 const viewFileInfo = async () => {
   if (!clickedItem.value) return
-  
+
   try {
     const path = `${currentPath.value}/${clickedItem.value}`
     const result = await window.api.sftpGetFileInfo({
       connectionId: props.connectionId,
       path: path
     })
-    
+
     if (result.success && result.fileInfo) {
       fileInfo.value = result.fileInfo
       showFileInfoDialog.value = true
     } else {
       error.value = result.error || '获取文件信息失败'
     }
-  } catch (err: any) {
-    error.value = err.message || '获取文件信息时发生错误'
+  } catch (err: unknown) {
+    error.value = err instanceof Error ? err.message : '获取文件信息时发生错误'
   } finally {
     closeMenu()
   }
 }
 
 // 格式化文件权限信息
-const formatPermissions = (rights: any) => {
+const formatPermissions = (rights: FileRights | undefined) => {
   if (!rights) return '未知'
   return `${rights.user}${rights.group}${rights.other}`
 }
 
 // 格式化日期时间
-const formatDateTime = (date: Date) => {
+const formatDateTime = (date: Date | undefined) => {
   if (!date) return '未知'
   return new Date(date).toLocaleString()
 }
@@ -1593,21 +1711,21 @@ const formatDateTime = (date: Date) => {
 // 获取权限的可读性描述
 const getReadablePermissions = (permStr: string) => {
   if (!permStr || permStr.length !== 3) return '未知'
-  
+
   const types = ['所有者', '用户组', '其他用户']
   const result: string[] = []
-  
+
   for (let i = 0; i < 3; i++) {
     const perm = parseInt(permStr[i])
     const readable: string[] = []
-    
+
     if (perm & 4) readable.push('读')
     if (perm & 2) readable.push('写')
     if (perm & 1) readable.push('执行')
-    
+
     result.push(`${types[i]}: ${readable.join('、') || '无权限'}`)
   }
-  
+
   return result.join('；')
 }
 
@@ -1623,89 +1741,84 @@ const closeInfoDialog = () => {
     <!-- 路径导航栏 -->
     <div class="path-navigation">
       <div class="path-breadcrumb">
-        <button @click="goToParentDirectory" :disabled="currentPath === '/'">
+        <button :disabled="currentPath === '/'" @click="goToParentDirectory">
           <span class="nav-icon">↑</span>
         </button>
       </div>
-      <form @submit="navigateToPath" class="path-form">
-        <input 
-          type="text"
+      <form class="path-form" @submit="navigateToPath">
+        <input
           ref="pathInputRef"
+          type="text"
           class="path-input"
           :value="currentPath"
-          placeholder="输入路径后按Enter跳转" 
+          placeholder="输入路径后按Enter跳转"
         />
       </form>
     </div>
-    
+
     <!-- 错误提示 -->
     <div v-if="error" class="error-message">
       {{ error }}
       <button class="close-error" @click="error = ''">×</button>
     </div>
-    
+
     <!-- 成功提示 -->
     <div v-if="successMessage" class="success-message">
       {{ successMessage }}
       <button class="close-success" @click="successMessage = ''">×</button>
     </div>
-    
+
     <!-- 传输完成提示（当传输窗口未显示时） -->
-    <div 
-      v-if="latestTransferNotification.visible" 
+    <div
+      v-if="latestTransferNotification.visible"
       class="transfer-notification"
-      :class="{ 
-        'success': latestTransferNotification.type === 'success',
-        'error': latestTransferNotification.type === 'error',
-        'dark-theme': isDarkTheme 
+      :class="{
+        success: latestTransferNotification.type === 'success',
+        error: latestTransferNotification.type === 'error',
+        'dark-theme': isDarkTheme
       }"
     >
       {{ latestTransferNotification.message }}
-      <button class="close-notification" @click="latestTransferNotification.visible = false">×</button>
+      <button class="close-notification" @click="latestTransferNotification.visible = false">
+        ×
+      </button>
     </div>
-    
+
     <!-- 文件列表 -->
     <div class="file-list-container" @contextmenu="showMenu($event, 'background')">
       <!-- 表头 -->
       <div class="file-list-header">
         <div class="file-list-row">
           <div class="checkbox-cell">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               :checked="selectedFiles.size === fileList.length && fileList.length > 0"
               :indeterminate="selectedFiles.size > 0 && selectedFiles.size < fileList.length"
-              @change="(e) => {
-                const target = e.target as HTMLInputElement
-                if (target.checked) {
-                  fileList.forEach(f => selectedFiles.add(f.name))
-                } else {
-                  clearSelection()
+              @change="
+                (e) => {
+                  const target = e.target as HTMLInputElement
+                  if (target.checked) {
+                    fileList.forEach((f) => selectedFiles.add(f.name))
+                  } else {
+                    clearSelection()
+                  }
                 }
-              }"
-            >
+              "
+            />
           </div>
-          <div 
-            class="name-cell sortable" 
-            @click="toggleSort('name')"
-          >
+          <div class="name-cell sortable" @click="toggleSort('name')">
             文件名
             <span v-if="sortBy === 'name'" class="sort-indicator">
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
             </span>
           </div>
-          <div 
-            class="size-cell sortable" 
-            @click="toggleSort('size')"
-          >
+          <div class="size-cell sortable" @click="toggleSort('size')">
             大小
             <span v-if="sortBy === 'size'" class="sort-indicator">
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
             </span>
           </div>
-          <div 
-            class="time-cell sortable" 
-            @click="toggleSort('modifyTime')"
-          >
+          <div class="time-cell sortable" @click="toggleSort('modifyTime')">
             修改时间
             <span v-if="sortBy === 'modifyTime'" class="sort-indicator">
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
@@ -1715,22 +1828,20 @@ const closeInfoDialog = () => {
           <div class="owner-cell">所有者</div>
         </div>
       </div>
-      
+
       <!-- 加载中提示 -->
-      <div v-if="isLoading" class="loading">
-        加载中...
-      </div>
-      
+      <div v-if="isLoading" class="loading">加载中...</div>
+
       <!-- 文件列表内容 -->
       <div v-else class="file-list">
-        <div 
-          v-for="file in fileList" 
+        <div
+          v-for="file in fileList"
           :key="file.name"
           class="file-list-row"
           :class="{
-            'selected': selectedFiles.has(file.name),
+            selected: selectedFiles.has(file.name),
             'is-directory': file.type === 'directory',
-            'highlighted': highlightedItem === file.name
+            highlighted: highlightedItem === file.name
           }"
           :data-name="file.name"
           @click="toggleFileSelection(file.name, file.type, $event)"
@@ -1738,12 +1849,12 @@ const closeInfoDialog = () => {
           @contextmenu.stop="showMenu($event, file.type, file.name)"
         >
           <div class="checkbox-cell">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               :checked="selectedFiles.has(file.name)"
               @click.stop
               @change="toggleFileSelection(file.name, file.type)"
-            >
+            />
           </div>
           <div class="name-cell">
             <span class="file-icon">
@@ -1761,29 +1872,29 @@ const closeInfoDialog = () => {
           <div class="owner-cell">{{ file.owner }}</div>
         </div>
       </div>
-      
+
       <!-- 空状态提示 -->
-      <div v-if="!isLoading && fileList.length === 0" class="empty-state">
-        当前目录为空
-      </div>
-      
+      <div v-if="!isLoading && fileList.length === 0" class="empty-state">当前目录为空</div>
+
       <!-- 删除进度条 -->
       <div v-if="deleteProgress.isDeleting" class="delete-progress">
         <div class="progress-info">
           正在删除: {{ deleteProgress.currentItem }}
-          <span class="progress-counter">{{ deleteProgress.completed }}/{{ deleteProgress.total }}</span>
+          <span class="progress-counter"
+            >{{ deleteProgress.completed }}/{{ deleteProgress.total }}</span
+          >
         </div>
         <div class="progress-bar-container">
-          <div 
-            class="progress-bar" 
+          <div
+            class="progress-bar"
             :style="{ width: `${(deleteProgress.completed / deleteProgress.total) * 100}%` }"
           ></div>
         </div>
       </div>
-      
+
       <!-- 右键菜单 -->
-      <div 
-        v-if="showContextMenu" 
+      <div
+        v-if="showContextMenu"
         class="context-menu"
         :class="{ 'dark-menu': props.isDarkTheme }"
         :style="{ top: `${menuPosition.y}px`, left: `${menuPosition.x}px` }"
@@ -1791,10 +1902,7 @@ const closeInfoDialog = () => {
         <!-- 文件右键菜单 -->
         <template v-if="contextMenuTarget === 'file'">
           <div class="menu-item" @click="viewFileInfo">
-            <img
-              :src="props.isDarkTheme ? InfoNightIcon : InfoDayIcon"
-              class="info-icon"
-            />
+            <img :src="props.isDarkTheme ? InfoNightIcon : InfoDayIcon" class="info-icon" />
             查看文件信息
           </div>
           <div class="menu-item" @click="loadCurrentDirectory">
@@ -1812,20 +1920,14 @@ const closeInfoDialog = () => {
             {{ selectedFiles.size > 1 ? `下载 ${selectedFiles.size} 个文件` : '下载文件' }}
           </div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
-            <img
-              :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
-              class="delete-icon"
-            />
+            <img :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon" class="delete-icon" />
             {{ selectedFiles.size > 1 ? `删除 ${selectedFiles.size} 个文件` : '删除文件' }}
           </div>
         </template>
-        
+
         <!-- 文件夹右键菜单 -->
         <template v-else-if="contextMenuTarget === 'directory'">
-          <div 
-            class="menu-item" 
-            @click="clickedItem && enterDirectory(clickedItem)"
-          >
+          <div class="menu-item" @click="clickedItem && enterDirectory(clickedItem)">
             <img
               :src="props.isDarkTheme ? OpenFolderNightIcon : OpenFolderDayIcon"
               class="openfolder-icon"
@@ -1833,17 +1935,11 @@ const closeInfoDialog = () => {
             打开文件夹
           </div>
           <div class="menu-item" @click="handleUploadToFolder">
-            <img
-              :src="props.isDarkTheme ? UploadNightIcon : UploadDayIcon"
-              class="upload-icon"
-            />
+            <img :src="props.isDarkTheme ? UploadNightIcon : UploadDayIcon" class="upload-icon" />
             上传到该文件夹
           </div>
           <div class="menu-item" @click="viewFileInfo">
-            <img
-              :src="props.isDarkTheme ? InfoNightIcon : InfoDayIcon"
-              class="info-icon"
-            />
+            <img :src="props.isDarkTheme ? InfoNightIcon : InfoDayIcon" class="info-icon" />
             查看文件夹信息
           </div>
           <div class="menu-item" @click="loadCurrentDirectory">
@@ -1854,35 +1950,27 @@ const closeInfoDialog = () => {
             刷新
           </div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
-            <img
-              :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
-              class="delete-icon"
-            /> 
+            <img :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon" class="delete-icon" />
             {{ selectedFiles.size > 1 ? `删除 ${selectedFiles.size} 个文件夹` : '删除文件夹' }}
           </div>
         </template>
-        
+
         <!-- 背景右键菜单 -->
         <template v-else>
           <div class="menu-item" @click="handleBackgroundUpload">
-            <img
-              :src="props.isDarkTheme ? UploadNightIcon : UploadDayIcon"
-              class="upload-icon"
-            />
+            <img :src="props.isDarkTheme ? UploadNightIcon : UploadDayIcon" class="upload-icon" />
             上传文件
           </div>
           <div class="menu-item" @click="createNewDirectory">
-            <img
-              :src="props.isDarkTheme ? PlusNightIcon : PlusDayIcon"
-              class="plus-icon"
-            />
+            <img :src="props.isDarkTheme ? PlusNightIcon : PlusDayIcon" class="plus-icon" />
             新建文件夹
           </div>
-          <div class="menu-item" @click="goToParentDirectory" :class="{ 'disabled': currentPath === '/' }">
-            <img
-              :src="props.isDarkTheme ? BackNightIcon : BackDayIcon"
-              class="back-icon"
-            />
+          <div
+            class="menu-item"
+            :class="{ disabled: currentPath === '/' }"
+            @click="goToParentDirectory"
+          >
+            <img :src="props.isDarkTheme ? BackNightIcon : BackDayIcon" class="back-icon" />
             返回上级
           </div>
           <div class="menu-item" @click="loadCurrentDirectory">
@@ -1894,152 +1982,156 @@ const closeInfoDialog = () => {
           </div>
           <template v-if="selectedFiles.size > 0">
             <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
-              <img
-                :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
-                class="delete-icon"
-              />
+              <img :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon" class="delete-icon" />
               {{ `删除选中的 ${selectedFiles.size} 个项目` }}
             </div>
           </template>
         </template>
       </div>
     </div>
-    
+
     <!-- 传输进度窗口 -->
-    <div 
-      v-if="showTransferProgress && transferProgress.length > 0" 
+    <div
+      v-if="showTransferProgress && transferProgress.length > 0"
       class="transfer-progress-modal"
-      :class="{ 
+      :class="{
         'dark-theme': props.isDarkTheme,
-        'collapsed': isTransferWindowCollapsed
+        collapsed: isTransferWindowCollapsed
       }"
-      :style="{ 
-        left: `${transferWindowPosition.x}px`, 
-        top: `${transferWindowPosition.y}px` 
+      :style="{
+        left: `${transferWindowPosition.x}px`,
+        top: `${transferWindowPosition.y}px`
       }"
     >
-      <div 
-        class="transfer-header"
-        @mousedown="startDragTransferWindow"
-      >
+      <div class="transfer-header" @mousedown="startDragTransferWindow">
         <span class="transfer-title">文件传输</span>
         <div class="transfer-header-right">
-          <button 
-            class="transfer-toggle-btn" 
-            @click="toggleTransferWindowCollapse"
+          <button
+            class="transfer-toggle-btn"
             :title="isTransferWindowCollapsed ? '展开' : '折叠'"
+            @click="toggleTransferWindowCollapse"
           >
             {{ isTransferWindowCollapsed ? '＋' : '－' }}
           </button>
-          <span v-if="!isTransferWindowCollapsed" class="transfer-count">{{ transferProgress.length }}个任务</span>
+          <span v-if="!isTransferWindowCollapsed" class="transfer-count"
+            >{{ transferProgress.length }}个任务</span
+          >
           <button class="transfer-close-btn" @click="closeTransferProgress">×</button>
         </div>
       </div>
-      
+
       <div v-if="!isTransferWindowCollapsed" class="transfer-items">
-        <div 
-          v-for="item in transferProgress" 
-          :key="item.id" 
+        <div
+          v-for="item in transferProgress"
+          :key="item.id"
           class="transfer-item"
           :class="{
-            'completed': item.status === 'completed',
-            'error': item.status === 'error',
-            'cancelled': item.status === 'cancelled'
+            completed: item.status === 'completed',
+            error: item.status === 'error',
+            cancelled: item.status === 'cancelled'
           }"
         >
           <div class="transfer-item-header">
             <span class="transfer-filename" :title="item.filename">{{ item.filename }}</span>
             <div class="transfer-actions">
               <span class="transfer-type">{{ item.type === 'upload' ? '上传' : '下载' }}</span>
-              <button 
-                v-if="item.status === 'transferring'" 
+              <button
+                v-if="item.status === 'transferring'"
                 class="transfer-cancel-btn"
-                @click="cancelTransfer(item.id)"
                 title="取消传输"
+                @click="cancelTransfer(item.id)"
               >
                 ✕
               </button>
-              <span 
-                v-else-if="item.status === 'completed'" 
+              <span
+                v-else-if="item.status === 'completed'"
                 class="transfer-status-indicator completed"
                 title="传输完成"
               >
                 ✓
               </span>
-              <span 
-                v-else-if="item.status === 'verifying'" 
+              <span
+                v-else-if="item.status === 'verifying'"
                 class="transfer-status-indicator verifying"
                 title="正在验证"
               >
                 ⟳
               </span>
-              <span 
-                v-else-if="item.status === 'error'" 
+              <span
+                v-else-if="item.status === 'error'"
                 class="transfer-status-indicator error"
                 title="传输失败"
               >
                 !
               </span>
-              <span 
-                v-else-if="item.status === 'cancelled'" 
+              <span
+                v-else-if="item.status === 'cancelled'"
                 class="transfer-status-indicator cancelled"
                 title="已取消"
               >
                 -
               </span>
               <!-- 添加清除按钮，仅对于非传输中和非验证中状态显示 -->
-              <button 
-                v-if="item.status !== 'transferring' && item.status !== 'verifying'" 
+              <button
+                v-if="item.status !== 'transferring' && item.status !== 'verifying'"
                 class="transfer-clear-btn"
-                @click="clearTransferItem(item.id)"
                 title="清除此项"
+                @click="clearTransferItem(item.id)"
               >
                 X
               </button>
             </div>
           </div>
-          
+
           <div class="transfer-info">
             <span class="transfer-size">
               {{ formatFileSize(item.transferred) }} / {{ formatFileSize(item.size) }}
             </span>
-            <span class="transfer-progress-text" :class="{ 
-              'completed': item.status === 'completed',
-              'verifying': item.status === 'verifying'
-            }">
-              {{ item.status === 'completed' ? '已完成' : 
-                 (item.status === 'verifying' ? '验证中' : 
-                  (item.status === 'error' ? '失败' : 
-                   (item.status === 'cancelled' ? '已取消' : `${item.progress}%`))) }}
+            <span
+              class="transfer-progress-text"
+              :class="{
+                completed: item.status === 'completed',
+                verifying: item.status === 'verifying'
+              }"
+            >
+              {{
+                item.status === 'completed'
+                  ? '已完成'
+                  : item.status === 'verifying'
+                    ? '验证中'
+                    : item.status === 'error'
+                      ? '失败'
+                      : item.status === 'cancelled'
+                        ? '已取消'
+                        : `${item.progress}%`
+              }}
             </span>
           </div>
-          
+
           <div class="progress-bar-container">
-            <div 
-              class="progress-bar" 
+            <div
+              class="progress-bar"
               :style="{ width: `${item.progress}%` }"
               :class="{
-                'completed': item.status === 'completed',
-                'verifying': item.status === 'verifying',
-                'error': item.status === 'error',
-                'cancelled': item.status === 'cancelled',
+                completed: item.status === 'completed',
+                verifying: item.status === 'verifying',
+                error: item.status === 'error',
+                cancelled: item.status === 'cancelled',
                 'progress-animation': item.progress === 100 && item.status === 'completed',
                 'verifying-animation': item.status === 'verifying'
               }"
             ></div>
           </div>
-          
+
           <div v-if="item.status === 'error'" class="transfer-error">
             {{ item.error }}
           </div>
-          
-          <div v-if="item.status === 'cancelled'" class="transfer-cancelled">
-            已取消传输
-          </div>
+
+          <div v-if="item.status === 'cancelled'" class="transfer-cancelled">已取消传输</div>
         </div>
       </div>
     </div>
-    
+
     <!-- 使用teleport将文件信息对话框移动到body -->
     <teleport to="body">
       <!-- 文件信息对话框 -->
@@ -2060,7 +2152,9 @@ const closeInfoDialog = () => {
             </div>
             <div class="info-row">
               <span class="info-label">类型:</span>
-              <span class="info-value">{{ fileInfo.type === 'directory' ? '文件夹' : '文件' }}</span>
+              <span class="info-value">{{
+                fileInfo.type === 'directory' ? '文件夹' : '文件'
+              }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">大小:</span>
@@ -2084,7 +2178,9 @@ const closeInfoDialog = () => {
             </div>
             <div class="info-row">
               <span class="info-label">权限详情:</span>
-              <span class="info-value">{{ getReadablePermissions(formatPermissions(fileInfo.rights)) }}</span>
+              <span class="info-value">{{
+                getReadablePermissions(formatPermissions(fileInfo.rights))
+              }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">所有者:</span>
@@ -2463,13 +2559,23 @@ const closeInfoDialog = () => {
 }
 
 @keyframes highlight-pulse {
-  0%, 100% { background-color: #fff9c4; }
-  50% { background-color: #ffeb3b; }
+  0%,
+  100% {
+    background-color: #fff9c4;
+  }
+  50% {
+    background-color: #ffeb3b;
+  }
 }
 
 @keyframes highlight-pulse-dark {
-  0%, 100% { background-color: #5d4037; }
-  50% { background-color: #8d6e63; }
+  0%,
+  100% {
+    background-color: #5d4037;
+  }
+  50% {
+    background-color: #8d6e63;
+  }
 }
 
 .checkbox-cell {
@@ -2542,7 +2648,9 @@ const closeInfoDialog = () => {
   border: 1px solid rgba(0, 0, 0, 0.2);
   overflow: hidden;
   padding: 4px 0;
-  transition: top 0.1s ease, left 0.1s ease;
+  transition:
+    top 0.1s ease,
+    left 0.1s ease;
   max-height: 80vh; /* 防止在极端情况下菜单太长 */
   overflow-y: auto; /* 如果内容太多则显示滚动条 */
 }
@@ -2687,7 +2795,9 @@ const closeInfoDialog = () => {
   flex-direction: column;
   overflow: hidden;
   z-index: 10000;
-  transition: width 0.3s, height 0.3s;
+  transition:
+    width 0.3s,
+    height 0.3s;
 }
 
 .dark-theme .transfer-progress-modal {
@@ -3017,9 +3127,15 @@ const closeInfoDialog = () => {
 }
 
 @keyframes pulse-success {
-  0% { background-color: #4caf50; }
-  50% { background-color: #81c784; }
-  100% { background-color: #4caf50; }
+  0% {
+    background-color: #4caf50;
+  }
+  50% {
+    background-color: #81c784;
+  }
+  100% {
+    background-color: #4caf50;
+  }
 }
 
 .dark-theme .progress-bar.progress-animation {
@@ -3027,9 +3143,15 @@ const closeInfoDialog = () => {
 }
 
 @keyframes pulse-success-dark {
-  0% { background-color: #2e7d32; }
-  50% { background-color: #4caf50; }
-  100% { background-color: #2e7d32; }
+  0% {
+    background-color: #2e7d32;
+  }
+  50% {
+    background-color: #4caf50;
+  }
+  100% {
+    background-color: #2e7d32;
+  }
 }
 
 .transfer-progress-text.completed {
@@ -3054,8 +3176,12 @@ const closeInfoDialog = () => {
 }
 
 @keyframes rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 添加验证中进度条的样式 */
@@ -3076,8 +3202,12 @@ const closeInfoDialog = () => {
 }
 
 @keyframes pulse-verifying {
-  0% { background-position: 100% 0%; }
-  100% { background-position: 0% 0%; }
+  0% {
+    background-position: 100% 0%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
 }
 
 .dark-theme .progress-bar.verifying {
@@ -3219,4 +3349,4 @@ const closeInfoDialog = () => {
   border-color: #555;
   color: #eee;
 }
-</style> 
+</style>

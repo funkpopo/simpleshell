@@ -23,6 +23,17 @@ interface Organization {
   connections: Connection[]
 }
 
+interface ConnectionFormData {
+  name: string
+  host?: string
+  port?: number
+  username?: string
+  password?: string
+  privateKey?: string
+  privateKeyPath?: string
+  description?: string
+}
+
 const props = defineProps<{
   visible: boolean
   editType: 'organization' | 'connection'
@@ -34,21 +45,19 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
-  (e: 'save', data: { organizationId: string | null; connectionId: string | null; formData: any }): void
+  (
+    e: 'save',
+    data: {
+      organizationId: string | null
+      connectionId: string | null
+      formData: ConnectionFormData
+    }
+  ): void
   (e: 'cancel'): void
 }>()
 
 // 表单数据
-const formData = ref<{
-  name: string
-  host?: string
-  port?: number
-  username?: string
-  password?: string
-  privateKey?: string
-  privateKeyPath?: string
-  description?: string
-}>({
+const formData = ref<ConnectionFormData>({
   name: '',
   host: '',
   port: 22,
@@ -91,15 +100,15 @@ const selectPrivateKeyFile = async () => {
   try {
     isLoadingFile.value = true
     fileSelectError.value = ''
-    
+
     const result = await window.api.openFileDialog({
       title: '选择SSH私钥文件',
       buttonLabel: '选择私钥'
     })
-    
+
     if (!result.canceled && result.filePath) {
       privateKeyFilename.value = result.filePath.split(/[/\\]/).pop() || '未知文件'
-      
+
       if (result.fileContent) {
         formData.value.privateKey = result.fileContent
         formData.value.privateKeyPath = result.filePath
@@ -107,8 +116,8 @@ const selectPrivateKeyFile = async () => {
         fileSelectError.value = result.error
       }
     }
-  } catch (error: any) {
-    fileSelectError.value = `文件选择错误: ${error.message}`
+  } catch (error: unknown) {
+    fileSelectError.value = `文件选择错误: ${error instanceof Error ? error.message : '未知错误'}`
     console.error('选择私钥文件失败:', error)
   } finally {
     isLoadingFile.value = false
@@ -136,39 +145,44 @@ const initFormData = () => {
     privateKeyPath: '',
     description: ''
   }
-  
+
   // 重置文件选择状态
   privateKeyFilename.value = ''
   fileSelectError.value = ''
-  
+
   // 重置表单错误
   formErrors.value = {}
-  
+
   // 根据编辑类型设置对话框标题
   if (props.editType === 'organization') {
-    dialogTitle.value = isCreating.value ? t('connection.newOrganization') : t('connection.editOrganization')
-    
+    dialogTitle.value = isCreating.value
+      ? t('connection.newOrganization')
+      : t('connection.editOrganization')
+
     // 如果是编辑现有组织
     if (!isCreating.value && props.organizationId) {
-      const org = props.organizations.find(o => o.id === props.organizationId)
+      const org = props.organizations.find((o) => o.id === props.organizationId)
       if (org) {
         formData.value.name = org.name
       }
     }
   } else {
-    dialogTitle.value = isCreating.value ? t('connection.newConnection') : t('connection.editConnection')
-    
+    dialogTitle.value = isCreating.value
+      ? t('connection.newConnection')
+      : t('connection.editConnection')
+
     // 如果是编辑现有连接
     if (!isCreating.value && props.organizationId && props.connectionId) {
-      const org = props.organizations.find(o => o.id === props.organizationId)
+      const org = props.organizations.find((o) => o.id === props.organizationId)
       if (org) {
-        const conn = org.connections.find(c => c.id === props.connectionId)
+        const conn = org.connections.find((c) => c.id === props.connectionId)
         if (conn) {
           formData.value = { ...conn }
-          
+
           // 如果有私钥，设置文件名显示
           if (conn.privateKey && conn.privateKeyPath) {
-            privateKeyFilename.value = conn.privateKeyPath.split(/[/\\]/).pop() || t('connection.savedPrivateKey')
+            privateKeyFilename.value =
+              conn.privateKeyPath.split(/[/\\]/).pop() || t('connection.savedPrivateKey')
           } else if (conn.privateKey) {
             privateKeyFilename.value = t('connection.savedPrivateKey')
           }
@@ -182,31 +196,31 @@ const initFormData = () => {
 const validateForm = (): boolean => {
   formErrors.value = {}
   let isValid = true
-  
+
   // 名称是必填的
   if (!formData.value.name.trim()) {
     formErrors.value.name = `${t('connection.name')}${t('connection.required')}`
     isValid = false
   }
-  
+
   // 如果是连接表单，还需要验证其他字段
   if (props.editType === 'connection') {
     if (!formData.value.host?.trim()) {
       formErrors.value.host = `${t('connection.host')}${t('connection.required')}`
       isValid = false
     }
-    
+
     if (!formData.value.port || formData.value.port <= 0 || formData.value.port > 65535) {
       formErrors.value.port = t('connection.portRange')
       isValid = false
     }
-    
+
     if (!formData.value.username?.trim()) {
       formErrors.value.username = `${t('connection.username')}${t('connection.required')}`
       isValid = false
     }
   }
-  
+
   return isValid
 }
 
@@ -216,21 +230,21 @@ const saveForm = () => {
     console.log('表单验证失败')
     return
   }
-  
+
   console.log('表单验证成功，准备保存:', {
     organizationId: props.organizationId,
     connectionId: props.connectionId,
     formData: { ...formData.value }
   })
-  
+
   emit('save', {
     organizationId: props.organizationId,
     connectionId: props.connectionId,
     formData: { ...formData.value }
   })
-  
+
   console.log('已触发save事件')
-  
+
   emit('update:visible', false)
 }
 
@@ -241,24 +255,27 @@ const cancelForm = () => {
 }
 
 // 监听visible属性变化
-watch(() => props.visible, (newValue) => {
-  if (newValue) {
-    // 对话框显示时初始化表单
-    isCreating.value = !(
-      (props.editType === 'organization' && props.organizationId) ||
-      (props.editType === 'connection' && props.connectionId)
-    )
-    initFormData()
-    
-    // 在下一个DOM更新周期聚焦第一个输入框
-    nextTick(() => {
-      const firstInput = document.querySelector('.form-input:first-child input')
-      if (firstInput instanceof HTMLInputElement) {
-        firstInput.focus()
-      }
-    })
+watch(
+  () => props.visible,
+  (newValue) => {
+    if (newValue) {
+      // 对话框显示时初始化表单
+      isCreating.value = !(
+        (props.editType === 'organization' && props.organizationId) ||
+        (props.editType === 'connection' && props.connectionId)
+      )
+      initFormData()
+
+      // 在下一个DOM更新周期聚焦第一个输入框
+      nextTick(() => {
+        const firstInput = document.querySelector('.form-input:first-child input')
+        if (firstInput instanceof HTMLInputElement) {
+          firstInput.focus()
+        }
+      })
+    }
   }
-})
+)
 
 // 组件挂载时初始化表单
 onMounted(() => {
@@ -274,142 +291,150 @@ onMounted(() => {
 
 <template>
   <teleport to="body">
-    <div class="dialog-overlay" v-if="visible" :class="{ 'dark-theme': isDarkTheme }" @click.self="cancelForm">
-      <div class="dialog-container" :class="{ 'dark-theme': isDarkTheme, 'dialog-large': editType === 'connection' }">
+    <div
+      v-if="visible"
+      class="dialog-overlay"
+      :class="{ 'dark-theme': isDarkTheme }"
+      @click.self="cancelForm"
+    >
+      <div
+        class="dialog-container"
+        :class="{ 'dark-theme': isDarkTheme, 'dialog-large': editType === 'connection' }"
+      >
         <div class="dialog-header">
           <h3>{{ dialogTitle }}</h3>
           <button class="close-button" @click="cancelForm">&times;</button>
         </div>
-        
+
         <div class="dialog-body">
           <!-- 组织表单 -->
           <div v-if="editType === 'organization'" class="form">
             <div class="form-input">
               <label for="name">组织名称 <span class="required">*</span></label>
-              <input 
-                id="name" 
-                type="text" 
-                v-model="formData.name" 
-                :class="{ 'error': formErrors.name }"
+              <input
+                id="name"
+                v-model="formData.name"
+                type="text"
+                :class="{ error: formErrors.name }"
                 placeholder="请输入组织名称"
               />
-              <div class="error-message" v-if="formErrors.name">{{ formErrors.name }}</div>
+              <div v-if="formErrors.name" class="error-message">{{ formErrors.name }}</div>
             </div>
           </div>
-          
+
           <!-- 连接表单 -->
           <div v-else class="form">
             <div class="form-input">
               <label for="name">连接名称 <span class="required">*</span></label>
-              <input 
-                id="name" 
-                type="text" 
-                v-model="formData.name" 
-                :class="{ 'error': formErrors.name }"
+              <input
+                id="name"
+                v-model="formData.name"
+                type="text"
+                :class="{ error: formErrors.name }"
                 placeholder="请输入连接名称"
               />
-              <div class="error-message" v-if="formErrors.name">{{ formErrors.name }}</div>
+              <div v-if="formErrors.name" class="error-message">{{ formErrors.name }}</div>
             </div>
-            
+
             <div class="form-input">
               <label for="host">主机地址 <span class="required">*</span></label>
-              <input 
-                id="host" 
-                type="text" 
-                v-model="formData.host" 
-                :class="{ 'error': formErrors.host }"
+              <input
+                id="host"
+                v-model="formData.host"
+                type="text"
+                :class="{ error: formErrors.host }"
                 placeholder="例如: 127.0.0.1 或 example.com"
               />
-              <div class="error-message" v-if="formErrors.host">{{ formErrors.host }}</div>
+              <div v-if="formErrors.host" class="error-message">{{ formErrors.host }}</div>
             </div>
-            
+
             <div class="form-input">
               <label for="port">端口 <span class="required">*</span></label>
-              <input 
-                id="port" 
-                type="number" 
-                v-model.number="formData.port" 
-                :class="{ 'error': formErrors.port }"
-                min="1" 
+              <input
+                id="port"
+                v-model.number="formData.port"
+                type="number"
+                :class="{ error: formErrors.port }"
+                min="1"
                 max="65535"
                 placeholder="SSH默认端口为22"
               />
-              <div class="error-message" v-if="formErrors.port">{{ formErrors.port }}</div>
+              <div v-if="formErrors.port" class="error-message">{{ formErrors.port }}</div>
             </div>
-            
+
             <div class="form-input">
               <label for="username">用户名 <span class="required">*</span></label>
-              <input 
-                id="username" 
-                type="text" 
-                v-model="formData.username" 
-                :class="{ 'error': formErrors.username }"
+              <input
+                id="username"
+                v-model="formData.username"
+                type="text"
+                :class="{ error: formErrors.username }"
                 placeholder="例如: root"
               />
-              <div class="error-message" v-if="formErrors.username">{{ formErrors.username }}</div>
+              <div v-if="formErrors.username" class="error-message">{{ formErrors.username }}</div>
             </div>
-            
+
             <div class="form-input password-input">
               <label for="password">密码</label>
               <div class="password-container">
-                <input 
-                  id="password" 
-                  :type="passwordType" 
+                <input
+                  id="password"
                   v-model="formData.password"
+                  :type="passwordType"
                   placeholder="密码和密钥至少填写一个"
                 />
-                <button 
-                  type="button" 
-                  class="toggle-password" 
-                  @click="togglePasswordVisibility"
-                >
+                <button type="button" class="toggle-password" @click="togglePasswordVisibility">
                   {{ passwordType === 'password' ? '显示' : '隐藏' }}
                 </button>
               </div>
             </div>
-            
+
             <div class="form-input">
               <label>私钥文件</label>
               <div class="file-selector">
                 <div class="file-input-container">
                   <div class="file-info" :class="{ 'has-file': !!privateKeyFilename }">
-                    <span v-if="privateKeyFilename" class="file-name" :title="formData.privateKeyPath">
+                    <span
+                      v-if="privateKeyFilename"
+                      class="file-name"
+                      :title="formData.privateKeyPath"
+                    >
                       {{ privateKeyFilename }}
                     </span>
                     <span v-else class="placeholder">选择或拖放私钥文件</span>
                   </div>
-                  
+
                   <div class="file-actions">
-                    <button 
-                      type="button" 
-                      class="file-button" 
-                      @click="selectPrivateKeyFile"
+                    <button
+                      type="button"
+                      class="file-button"
                       :disabled="isLoadingFile"
+                      @click="selectPrivateKeyFile"
                     >
                       {{ isLoadingFile ? '加载中...' : '选择文件' }}
                     </button>
-                    
-                    <button 
-                      v-if="formData.privateKey" 
-                      type="button" 
-                      class="file-button clear-button" 
+
+                    <button
+                      v-if="formData.privateKey"
+                      type="button"
+                      class="file-button clear-button"
                       @click="clearPrivateKey"
                     >
                       清除
                     </button>
                   </div>
                 </div>
-                
+
                 <div v-if="fileSelectError" class="error-message file-error">
                   {{ fileSelectError }}
                 </div>
               </div>
             </div>
-            
+
             <div class="form-input">
               <label for="description">描述</label>
-              <textarea 
-                id="description" 
+              <textarea
+                id="description"
                 v-model="formData.description"
                 placeholder="可选，添加对此连接的描述"
                 rows="2"
@@ -417,7 +442,7 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        
+
         <div class="dialog-footer">
           <button class="cancel-button" @click="cancelForm">取消</button>
           <button class="save-button" @click="saveForm">保存</button>
@@ -561,7 +586,7 @@ onMounted(() => {
   color: #ccc;
 }
 
-.form-input input, 
+.form-input input,
 .form-input textarea {
   padding: 8px 10px;
   border: 1px solid #d0d0d0;
@@ -570,32 +595,32 @@ onMounted(() => {
   transition: all 0.2s;
 }
 
-.dark-theme .form-input input, 
+.dark-theme .form-input input,
 .dark-theme .form-input textarea {
   background-color: #333;
   border: 1px solid #555;
   color: #eee;
 }
 
-.form-input input:focus, 
+.form-input input:focus,
 .form-input textarea:focus {
   border-color: #4d90fe;
   outline: none;
   box-shadow: 0 0 0 2px rgba(77, 144, 254, 0.2);
 }
 
-.dark-theme .form-input input:focus, 
+.dark-theme .form-input input:focus,
 .dark-theme .form-input textarea:focus {
   border-color: #1a73e8;
   box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
 }
 
-.form-input input.error, 
+.form-input input.error,
 .form-input textarea.error {
   border-color: #f44336;
 }
 
-.form-input input.error:focus, 
+.form-input input.error:focus,
 .form-input textarea.error:focus {
   box-shadow: 0 0 0 2px rgba(244, 67, 54, 0.2);
 }
@@ -610,7 +635,7 @@ onMounted(() => {
   margin-top: 4px;
 }
 
-.cancel-button, 
+.cancel-button,
 .save-button {
   padding: 8px 16px;
   border-radius: 4px;
@@ -812,4 +837,4 @@ onMounted(() => {
 .file-error {
   margin-top: 4px;
 }
-</style> 
+</style>

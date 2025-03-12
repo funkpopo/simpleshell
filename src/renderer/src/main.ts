@@ -10,10 +10,10 @@ async function initApp() {
     // 从设置中加载语言
     const settings = await window.api.loadSettings()
     const language = settings?.language || 'zh-CN'
-    
+
     // 初始化i18n
     initI18n(language)
-    
+
     // 创建应用并挂载
     createApp(App).mount('#app')
   } catch (error) {

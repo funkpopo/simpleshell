@@ -273,7 +273,7 @@ export function getLanguage() {
 export function t(key: string, params?: Record<string, string>): string {
   const lang = currentLanguage.value
   const path = key.split('.')
-  
+
   let result = messages[lang]
   for (const segment of path) {
     if (result && typeof result === 'object' && segment in result) {
@@ -283,26 +283,26 @@ export function t(key: string, params?: Record<string, string>): string {
       return key
     }
   }
-  
+
   if (typeof result !== 'string') {
     console.warn(`[i18n] 翻译键 "${key}" 无效，期望字符串但获得 ${typeof result}`)
     return key
   }
-  
+
   // 替换参数
   if (params) {
     return result.replace(/\{(\w+)\}/g, (_, name) => {
       return params[name] ?? `{${name}}`
     })
   }
-  
+
   return result
 }
 
 // Vue 组合式API钩子
 export function useI18n() {
   const language = computed(() => currentLanguage.value)
-  
+
   return {
     language,
     t,
@@ -315,4 +315,4 @@ export function initI18n(initialLang?: string) {
   if (initialLang && messages[initialLang]) {
     currentLanguage.value = initialLang
   }
-} 
+}
