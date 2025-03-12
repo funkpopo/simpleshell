@@ -295,7 +295,6 @@ onMounted(() => {
       v-if="visible"
       class="dialog-overlay"
       :class="{ 'dark-theme': isDarkTheme }"
-      @click.self="cancelForm"
     >
       <div
         class="dialog-container"
