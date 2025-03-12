@@ -205,11 +205,15 @@ declare interface API {
     apiKey?: string
     apiUrl?: string
     modelName?: string
+    stream?: boolean
   }) => Promise<{
     success: boolean
     content?: string
     error?: string
   }>
+  
+  // 流式输出事件监听
+  onAIStreamUpdate?: (callback: (data: { chunk: string }) => void) => () => void
   
   onAppClose: (callback: () => Promise<void>) => void
 }

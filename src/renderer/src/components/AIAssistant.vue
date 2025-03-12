@@ -81,6 +81,8 @@ const userInput = ref('')
 
 // 加载状态
 const isLoading = ref(false)
+// 当前流式响应的消息ID
+const streamingMessageId = ref<string | null>(null)
 
 // 本地存储密钥
 const STORAGE_KEY = 'ai_assistant_messages'
@@ -265,16 +267,22 @@ const handleResize = () => {
 // 组件挂载时加载AI设置
 onMounted(async () => {
   console.log('组件挂载，初始化事件监听')
-  
+
   // 优先加载AI设置
   console.log('加载AI设置')
   await loadAISettings()
-  
+
   // 其他初始化
   document.addEventListener('mousemove', onDrag)
   document.addEventListener('mouseup', endDrag)
   window.addEventListener('resize', handleResize)
-  
+
+  // 注册流式输出事件监听
+  window.api.onAIStreamUpdate &&
+    window.api.onAIStreamUpdate((data) => {
+      handleStreamUpdate(data.chunk)
+    })
+
   // 向主进程注册窗口关闭事件监听
   console.log('注册窗口关闭事件监听')
   window.api.onAppClose(async () => {
@@ -307,7 +315,7 @@ const toggleSettings = (e: MouseEvent) => {
   // 阻止事件冒泡，防止触发拖拽
   e.stopPropagation()
   showSettings.value = !showSettings.value
-  
+
   // 如果打开设置面板，关闭历史面板
   if (showSettings.value) {
     showHistory.value = false
@@ -326,22 +334,22 @@ const minimizeWindow = (e: MouseEvent) => {
 const closeWindow = async (e: MouseEvent) => {
   // 阻止事件冒泡，防止触发拖拽
   e.stopPropagation()
-  
+
   // 重置消息
   messages.value = []
   localStorage.removeItem(STORAGE_KEY)
-  
+
   // 发送关闭事件
   emit('update:visible', false)
   emit('close')
 }
 
 // 调用OpenAI 兼容API获取回答 - 使用主进程的API
-const getAIResponse = async (prompt: string): Promise<string> => {
+const getAIResponse = async (): Promise<string> => {
   try {
     // 从config.json重新加载设置
     await loadAISettings()
-    
+
     // 检查设置是否有效
     if (!aiSettings.value.apiKey || !aiSettings.value.modelName) {
       const errorMsg = '请在设置中配置API密钥和模型名称。'
@@ -360,26 +368,41 @@ const getAIResponse = async (prompt: string): Promise<string> => {
     })
 
     // 准备消息历史
-    const messageHistory = messages.value.map(msg => ({
+    const messageHistory = messages.value.map((msg) => ({
       role: msg.type === 'user' ? 'user' : 'assistant',
       content: msg.content
     }))
 
-    // 添加系统消息和当前用户消息
-    const apiMessages = [
-      { role: 'system', content: '' },
-      ...messageHistory,
-      { role: 'user', content: prompt }
-    ]
+    // 添加系统消息，但不重复添加用户消息（因为已经在前端添加过了）
+    const apiMessages = [{ role: 'system', content: '' }, ...messageHistory]
 
-    // 调用主进程的AI请求接口
+    // 创建一个空的助手消息用于流式更新
+    const assistantMessageId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
+    messages.value.push({
+      id: assistantMessageId,
+      type: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    })
+
+    // 设置当前流式消息ID
+    streamingMessageId.value = assistantMessageId
+
+    // 滚动到底部
+    scrollToBottom()
+
+    // 调用主进程的AI请求接口，使用流式模式
     const response = await window.api.sendAIRequest({
-      prompt,
+      prompt: '', // 不再传递prompt，因为用户消息已经包含在messageHistory中
       messages: apiMessages,
       apiKey: aiSettings.value.apiKey,
       apiUrl: aiSettings.value.apiUrl,
-      modelName: aiSettings.value.modelName
+      modelName: aiSettings.value.modelName,
+      stream: true // 启用流式输出
     })
+
+    // 流式输出完成后
+    streamingMessageId.value = null
 
     if (!response.success) {
       console.error('AI请求失败:', {
@@ -387,6 +410,13 @@ const getAIResponse = async (prompt: string): Promise<string> => {
         apiUrl: aiSettings.value.apiUrl,
         modelName: aiSettings.value.modelName
       })
+
+      // 更新错误消息
+      const errorIndex = messages.value.findIndex((msg) => msg.id === assistantMessageId)
+      if (errorIndex !== -1) {
+        messages.value[errorIndex].content = `调用AI服务失败: ${response.error || '未知错误'}`
+      }
+
       return `调用AI服务失败: ${response.error || '未知错误'}`
     }
 
@@ -394,7 +424,33 @@ const getAIResponse = async (prompt: string): Promise<string> => {
     return response.content || '抱歉，我无法生成回答。'
   } catch (error) {
     console.error('调用AI API失败:', error)
+
+    // 如果有流式消息ID，更新错误
+    if (streamingMessageId.value) {
+      const errorIndex = messages.value.findIndex((msg) => msg.id === streamingMessageId.value)
+      if (errorIndex !== -1) {
+        messages.value[errorIndex].content =
+          `调用AI服务失败: ${error instanceof Error ? error.message : '未知错误'}`
+      }
+      streamingMessageId.value = null
+    }
+
     return `调用AI服务失败: ${error instanceof Error ? error.message : '未知错误'}`
+  }
+}
+
+// 处理流式输出更新
+const handleStreamUpdate = (chunk: string) => {
+  if (!streamingMessageId.value) return
+
+  // 查找当前流式消息
+  const messageIndex = messages.value.findIndex((msg) => msg.id === streamingMessageId.value)
+  if (messageIndex !== -1) {
+    // 追加内容
+    messages.value[messageIndex].content += chunk
+
+    // 滚动到底部
+    scrollToBottom()
   }
 }
 
@@ -426,19 +482,11 @@ const sendMessage = async () => {
       // 尝试重新加载设置
       await loadAISettings()
     }
-    
+
     // 再次检查是否配置了OpenAI
     if (isUsingOpenAI.value) {
       // 调用OpenAI API获取回答
-      const aiResponse = await getAIResponse(message)
-      
-      // 添加AI响应
-      messages.value.push({
-        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-        type: 'assistant',
-        content: aiResponse,
-        timestamp: Date.now()
-      })
+      await getAIResponse()
     } else {
       // 添加错误消息
       messages.value.push({
@@ -544,7 +592,7 @@ const escapeHtml = (unsafe: string): string => {
 // 更新自定义模型
 const updateCustomModel = () => {
   if (customModelName.value) {
-    console.log(`更新自定义模型名称: ${customModelName.value}`);
+    console.log(`更新自定义模型名称: ${customModelName.value}`)
   }
 }
 
@@ -553,21 +601,28 @@ const loadAISettings = async () => {
   try {
     // 通过IPC从主进程获取设置
     const settingsArray = await window.api.loadSettings()
-    console.log('从主进程获取到的完整设置:', JSON.stringify(settingsArray, (key, value) => {
-      if (key === 'apiKey' && value) return '***'
-      return value
-    }, 2))
-    
+    console.log(
+      '从主进程获取到的完整设置:',
+      JSON.stringify(
+        settingsArray,
+        (key, value) => {
+          if (key === 'apiKey' && value) return '***'
+          return value
+        },
+        2
+      )
+    )
+
     // 获取第一个配置对象
     const settings = Array.isArray(settingsArray) ? settingsArray[0] : settingsArray
     if (!settings) {
       console.warn('未找到有效的设置配置')
       return
     }
-    
+
     // 从settings中获取aiSettings
     const { aiSettings: configAiSettings } = settings
-    
+
     if (configAiSettings) {
       // 更新本地设置
       aiSettings.value = {
@@ -575,7 +630,7 @@ const loadAISettings = async () => {
         apiKey: configAiSettings.apiKey || '',
         modelName: configAiSettings.modelName || ''
       }
-      
+
       console.log('从config.json加载的AI设置:', {
         apiUrl: configAiSettings.apiUrl || '未设置',
         apiKey: configAiSettings.apiKey ? '已设置' : '未设置',
@@ -594,7 +649,7 @@ const saveAISettings = async () => {
   try {
     // 获取当前设置
     const currentSettings = await window.api.loadSettings()
-    
+
     // 准备新的设置对象
     const settings: AppSettings = {
       ...(Array.isArray(currentSettings) ? currentSettings[0] : currentSettings || {}),
@@ -609,10 +664,10 @@ const saveAISettings = async () => {
         modelName: aiSettings.value.modelName || ''
       }
     }
-    
+
     // 保存到config.json
     await window.api.saveSettings(settings)
-    
+
     console.log('AI设置已成功保存到config.json')
     showSettings.value = false
   } catch (error) {
@@ -688,7 +743,7 @@ interface AppSettings {
               :placeholder="t('aiAssistant.apiKeyPlaceholder') || '请输入API Key'"
             />
           </div>
-          
+
           <div class="settings-group">
             <label for="custom-model">{{ t('aiAssistant.customModel') || '自定义模型名称' }}</label>
             <input
@@ -736,7 +791,7 @@ interface AppSettings {
           <!-- 使用安全的方式渲染格式化内容 -->
           <div
             v-if="formatMessage(message.content).safe"
-            v-bind:innerHTML="formatMessage(message.content).html"
+            :innerHTML="formatMessage(message.content).html"
           ></div>
           <div v-else>{{ message.content }}</div>
         </div>
