@@ -1,6 +1,6 @@
 # 创建新文件
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, onMounted, watch, nextTick, onBeforeUnmount, computed } from 'vue'
 import DeleteDayIcon from '../assets/delete-day.svg'
 import DeleteNightIcon from '../assets/delete-night.svg'
 import UploadDayIcon from '../assets/upload-day.svg'
@@ -54,6 +54,7 @@ interface TransferItem {
 const props = defineProps<{
   connectionId: string
   isDarkTheme: boolean
+  sidebarWidth?: number
 }>()
 
 // 当前路径
@@ -1553,6 +1554,9 @@ onMounted(async () => {
       clearAllRemovalTimers()
     })
   }
+
+  // 在组件挂载时加载保存的列宽
+  loadColumnWidths()
 })
 
 // 组件卸载时移除事件监听
@@ -1734,6 +1738,153 @@ const closeInfoDialog = () => {
   showFileInfoDialog.value = false
   fileInfo.value = null
 }
+
+// 列宽配置
+interface ColumnWidths {
+  checkbox: number
+  name: number
+  size: number
+  time: number
+  permissions: number
+  owner: number
+}
+
+// 列宽状态
+const columnWidths = ref<ColumnWidths>({
+  checkbox: 40,
+  name: 300,
+  size: 100,
+  time: 200,
+  permissions: 100,
+  owner: 100
+})
+
+// 列拖拽状态
+const isDraggingColumn = ref(false)
+const currentDraggingColumn = ref<keyof ColumnWidths | null>(null)
+const startDragX = ref(0)
+const startColumnWidth = ref(0)
+
+// 处理列宽拖拽开始
+const handleColumnDragStart = (e: MouseEvent, column: keyof ColumnWidths) => {
+  e.preventDefault()
+  e.stopPropagation() // 阻止事件冒泡，防止触发排序
+  isDraggingColumn.value = true
+  currentDraggingColumn.value = column
+  startDragX.value = e.clientX
+  startColumnWidth.value = columnWidths.value[column]
+  
+  // 添加全局事件监听
+  document.addEventListener('mousemove', handleColumnDragMove)
+  document.addEventListener('mouseup', handleColumnDragEnd)
+  
+  // 添加拖拽样式
+  document.body.classList.add('column-resizing')
+}
+
+// 处理列宽拖拽移动
+const handleColumnDragMove = (e: MouseEvent) => {
+  if (!isDraggingColumn.value || !currentDraggingColumn.value) return
+  
+  // 阻止默认行为和事件冒泡
+  e.preventDefault()
+  e.stopPropagation()
+  
+  const deltaX = e.clientX - startDragX.value
+  const newWidth = Math.max(50, startColumnWidth.value + deltaX)
+  
+  // 更新列宽
+  columnWidths.value[currentDraggingColumn.value] = newWidth
+  
+  // 添加拖动指示器
+  const indicator = document.getElementById('column-resize-indicator') || createResizeIndicator()
+  indicator.style.left = `${e.clientX}px`
+}
+
+// 创建拖动指示器
+const createResizeIndicator = () => {
+  const indicator = document.createElement('div')
+  indicator.id = 'column-resize-indicator'
+  indicator.className = 'column-resize-indicator'
+  // 如果是暗色主题，添加对应的类
+  if (props.isDarkTheme) {
+    indicator.classList.add('dark-theme')
+  }
+  document.body.appendChild(indicator)
+  return indicator
+}
+
+// 处理列宽拖拽结束
+const handleColumnDragEnd = () => {
+  isDraggingColumn.value = false
+  currentDraggingColumn.value = null
+  
+  // 移除全局事件监听
+  document.removeEventListener('mousemove', handleColumnDragMove)
+  document.removeEventListener('mouseup', handleColumnDragEnd)
+  
+  // 移除拖拽样式
+  document.body.classList.remove('column-resizing')
+  
+  // 移除拖动指示器
+  const indicator = document.getElementById('column-resize-indicator')
+  if (indicator && indicator.parentNode) {
+    indicator.parentNode.removeChild(indicator)
+  }
+  
+  // 保存列宽到本地存储
+  saveColumnWidths()
+}
+
+// 保存列宽到本地存储
+const saveColumnWidths = () => {
+  try {
+    localStorage.setItem('file-manager-column-widths', JSON.stringify(columnWidths.value))
+  } catch (error) {
+    console.error('保存列宽失败:', error)
+  }
+}
+
+// 从本地存储加载列宽
+const loadColumnWidths = () => {
+  try {
+    const savedWidths = localStorage.getItem('file-manager-column-widths')
+    if (savedWidths) {
+      const parsedWidths = JSON.parse(savedWidths)
+      // 确保所有必要的列都存在
+      const requiredColumns: (keyof ColumnWidths)[] = ['checkbox', 'name', 'size', 'time', 'permissions', 'owner']
+      const isValid = requiredColumns.every(col => typeof parsedWidths[col] === 'number')
+      
+      if (isValid) {
+        columnWidths.value = parsedWidths
+      }
+    }
+  } catch (error) {
+    console.error('加载列宽失败:', error)
+  }
+}
+
+// 计算总列宽
+const totalColumnsWidth = computed(() => {
+  return Object.values(columnWidths.value).reduce((sum, width) => sum + width, 0)
+})
+
+// 监听左侧边栏宽度变化
+watch(() => props.sidebarWidth, (newWidth) => {
+  if (newWidth && newWidth < totalColumnsWidth.value) {
+    // 如果边栏宽度小于总列宽，按比例缩小各列宽度
+    const ratio = newWidth / totalColumnsWidth.value
+    const newWidths = { ...columnWidths.value }
+    
+    // 按比例调整各列宽度，但保持最小宽度
+    Object.keys(newWidths).forEach(key => {
+      const col = key as keyof ColumnWidths
+      newWidths[col] = Math.max(50, Math.floor(newWidths[col] * ratio))
+    })
+    
+    columnWidths.value = newWidths
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -1788,8 +1939,8 @@ const closeInfoDialog = () => {
     <div class="file-list-container" @contextmenu="showMenu($event, 'background')">
       <!-- 表头 -->
       <div class="file-list-header">
-        <div class="file-list-row">
-          <div class="checkbox-cell">
+        <div class="file-list-row" :style="{ gridTemplateColumns: `${columnWidths.checkbox}px ${columnWidths.name}px ${columnWidths.size}px ${columnWidths.time}px ${columnWidths.permissions}px ${columnWidths.owner}px` }">
+          <div class="checkbox-cell" :style="{ width: `${columnWidths.checkbox}px` }">
             <input
               type="checkbox"
               :checked="selectedFiles.size === fileList.length && fileList.length > 0"
@@ -1806,26 +1957,34 @@ const closeInfoDialog = () => {
               "
             />
           </div>
-          <div class="name-cell sortable" @click="toggleSort('name')">
+          <div class="name-cell sortable" @click="toggleSort('name')" :style="{ width: `${columnWidths.name}px` }">
             文件名
             <span v-if="sortBy === 'name'" class="sort-indicator">
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
             </span>
+            <div class="column-resize-handle" @mousedown="(e) => handleColumnDragStart(e, 'name')"></div>
           </div>
-          <div class="size-cell sortable" @click="toggleSort('size')">
+          <div class="size-cell sortable" @click="toggleSort('size')" :style="{ width: `${columnWidths.size}px` }">
             大小
             <span v-if="sortBy === 'size'" class="sort-indicator">
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
             </span>
+            <div class="column-resize-handle" @mousedown="(e) => handleColumnDragStart(e, 'size')"></div>
           </div>
-          <div class="time-cell sortable" @click="toggleSort('modifyTime')">
+          <div class="time-cell sortable" @click="toggleSort('modifyTime')" :style="{ width: `${columnWidths.time}px` }">
             修改时间
             <span v-if="sortBy === 'modifyTime'" class="sort-indicator">
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
             </span>
+            <div class="column-resize-handle" @mousedown="(e) => handleColumnDragStart(e, 'time')"></div>
           </div>
-          <div class="permissions-cell">权限</div>
-          <div class="owner-cell">所有者</div>
+          <div class="permissions-cell" :style="{ width: `${columnWidths.permissions}px` }">
+            权限
+            <div class="column-resize-handle" @mousedown="(e) => handleColumnDragStart(e, 'permissions')"></div>
+          </div>
+          <div class="owner-cell" :style="{ width: `${columnWidths.owner}px` }">
+            所有者
+          </div>
         </div>
       </div>
 
@@ -1838,6 +1997,7 @@ const closeInfoDialog = () => {
           v-for="file in fileList"
           :key="file.name"
           class="file-list-row"
+          :style="{ gridTemplateColumns: `${columnWidths.checkbox}px ${columnWidths.name}px ${columnWidths.size}px ${columnWidths.time}px ${columnWidths.permissions}px ${columnWidths.owner}px` }"
           :class="{
             selected: selectedFiles.has(file.name),
             'is-directory': file.type === 'directory',
@@ -1848,7 +2008,7 @@ const closeInfoDialog = () => {
           @dblclick="file.type === 'directory' && enterDirectory(file.name)"
           @contextmenu.stop="showMenu($event, file.type, file.name)"
         >
-          <div class="checkbox-cell">
+          <div class="checkbox-cell" :style="{ width: `${columnWidths.checkbox}px` }">
             <input
               type="checkbox"
               :checked="selectedFiles.has(file.name)"
@@ -1856,20 +2016,24 @@ const closeInfoDialog = () => {
               @change="toggleFileSelection(file.name, file.type)"
             />
           </div>
-          <div class="name-cell">
+          <div class="name-cell" :style="{ width: `${columnWidths.name}px` }">
             <span class="file-icon">
               {{ file.type === 'directory' ? '📁' : '📄' }}
             </span>
             <span class="file-name-text" :title="file.name">{{ file.name }}</span>
           </div>
-          <div class="size-cell">
+          <div class="size-cell" :style="{ width: `${columnWidths.size}px` }">
             {{ file.type === 'directory' ? '-' : formatFileSize(file.size) }}
           </div>
-          <div class="time-cell">
+          <div class="time-cell" :style="{ width: `${columnWidths.time}px` }">
             {{ formatModifyTime(file.modifyTime) }}
           </div>
-          <div class="permissions-cell">{{ file.permissions }}</div>
-          <div class="owner-cell">{{ file.owner }}</div>
+          <div class="permissions-cell" :style="{ width: `${columnWidths.permissions}px` }">
+            {{ file.permissions }}
+          </div>
+          <div class="owner-cell" :style="{ width: `${columnWidths.owner}px` }">
+            {{ file.owner }}
+          </div>
         </div>
       </div>
 
@@ -2463,17 +2627,34 @@ const closeInfoDialog = () => {
 }
 
 .file-list-container {
+  overflow-x: auto; /* 允许水平滚动 */
+  overflow-y: auto;
   flex: 1;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: white;
 }
 
 .dark-theme .file-list-container {
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  border-color: #444444;
+  background-color: #1a1a1a;
+}
+
+/* 确保左侧边栏内容在宽度不足时能够正确显示 */
+.left-sidebar-content {
+  overflow-x: auto; /* 允许水平滚动 */
+}
+
+/* 调整左侧边栏最小宽度 */
+.left-sidebar {
+  min-width: 150px;
+}
+
+/* 当左侧边栏宽度不足时的样式 */
+@media (max-width: 600px) {
+  .file-list-row {
+    min-width: 100%; /* 确保行宽度至少是容器宽度 */
+  }
 }
 
 .file-list-container::-webkit-scrollbar {
@@ -2515,6 +2696,26 @@ const closeInfoDialog = () => {
   border-bottom-color: #444444;
 }
 
+/* 添加列宽调整提示 */
+.file-list-header .column-resize-handle {
+  opacity: 0.7; /* 在表头中使调整手柄更明显 */
+}
+
+.file-list-header .column-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.dark-theme .file-list-header .column-resize-handle::before {
+  color: rgba(255, 255, 255, 0.5);
+}
+
 .file-list {
   flex: 1;
 }
@@ -2526,6 +2727,8 @@ const closeInfoDialog = () => {
   padding: 8px;
   border-bottom: 1px solid #e0e0e0;
   cursor: pointer;
+  min-width: fit-content; /* 确保内容不会被截断 */
+  position: relative; /* 为调整手柄定位 */
 }
 
 .dark-theme .file-list-row {
@@ -3348,5 +3551,121 @@ const closeInfoDialog = () => {
   background-color: #444;
   border-color: #555;
   color: #eee;
+}
+
+.column-resizing {
+  user-select: none;
+}
+
+.column-resizing::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.column-resizing .column-handle {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.5);
+  cursor: col-resize;
+  z-index: 10000;
+}
+
+.column-resizing .column-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background-color: #fff;
+  transform: translateY(-50%);
+}
+
+.column-resizing .column-handle:hover::after {
+  background-color: #aaa;
+}
+
+/* 列调整手柄样式 */
+.column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px; /* 增加宽度 */
+  height: 100%;
+  cursor: col-resize;
+  background-color: rgba(0, 0, 0, 0.05); /* 默认状态下轻微可见 */
+  transition: background-color 0.2s;
+  z-index: 2;
+}
+
+.column-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 2px;
+  width: 2px;
+  background-color: rgba(0, 0, 0, 0.2); /* 添加中间线 */
+}
+
+.dark-theme .column-resize-handle::after {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.column-resize-handle:hover {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+.dark-theme .column-resize-handle:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.column-resize-handle:active {
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+.dark-theme .column-resize-handle:active {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* 确保单元格内容不会被截断 */
+.checkbox-cell,
+.name-cell,
+.size-cell,
+.time-cell,
+.permissions-cell,
+.owner-cell {
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 10px; /* 为调整手柄留出更多空间 */
+}
+
+/* 列宽调整指示器 */
+.column-resize-indicator {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: #2196f3;
+  z-index: 10000;
+  pointer-events: none;
+  box-shadow: 0 0 4px rgba(33, 150, 243, 0.5);
+}
+
+.dark-theme .column-resize-indicator {
+  background-color: #64b5f6;
+  box-shadow: 0 0 4px rgba(100, 181, 246, 0.5);
 }
 </style>

@@ -378,6 +378,7 @@ onMounted(() => {
               key="file-manager"
               :connection-id="activeConnectionId"
               :is-dark-theme="isDarkTheme"
+              :sidebar-width="sidebarWidth"
             />
             <!-- 未连接时的提示 -->
             <div v-else class="no-connection-message">
@@ -961,7 +962,7 @@ onMounted(() => {
 
 /* 调整左侧边栏最小宽度 */
 .left-sidebar {
-  min-width: 300px;
+  min-width: 150px;
 }
 
 /* 确保文件管理器占满可用空间 */
