@@ -430,6 +430,11 @@ const api = {
     return await ipcRenderer.invoke('ai:request', params)
   },
 
+  // 停止AI请求
+  stopAIRequest: async (): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('ai:stop-request')
+  },
+
   // 流式输出事件监听
   onAIStreamUpdate: (callback: (data: { chunk: string }) => void) => {
     const handler = (_: unknown, data: { chunk: string }) => callback(data)

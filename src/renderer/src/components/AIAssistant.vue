@@ -115,6 +115,8 @@ const isRenderingLargeContent = ref(false)
 const CONTENT_CHUNK_THRESHOLD = 5000
 // 分段大小，每段最大字符数
 const SEGMENT_SIZE = 2000
+// 是否正在接收AI回复
+const isReceivingResponse = ref(false)
 
 // 本地存储密钥
 const STORAGE_KEY = 'ai_assistant_messages'
@@ -272,36 +274,12 @@ const onResize = (e: MouseEvent) => {
     const deltaX = e.clientX - resizeStartX.value
     const deltaY = e.clientY - resizeStartY.value
     
-    // 根据调整方向计算新尺寸
-    if (resizeDirection.value.includes('right')) {
-      const newWidth = Math.max(minWidth, Math.min(maxWidth, resizeStartWidth.value + deltaX))
-      windowWidth.value = newWidth
-    }
+    // 只处理右下角调整
+    const newWidth = Math.max(minWidth, Math.min(maxWidth, resizeStartWidth.value + deltaX))
+    const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight.value + deltaY))
     
-    if (resizeDirection.value.includes('bottom')) {
-      const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight.value + deltaY))
-      windowHeight.value = newHeight
-    }
-    
-    // 如果是左侧调整，需要同时更新位置
-    if (resizeDirection.value.includes('left')) {
-      const newWidth = Math.max(minWidth, Math.min(maxWidth, resizeStartWidth.value - deltaX))
-      const widthDiff = newWidth - windowWidth.value
-      if (widthDiff !== 0) {
-        posX.value -= widthDiff
-        windowWidth.value = newWidth
-      }
-    }
-    
-    // 如果是顶部调整，需要同时更新位置
-    if (resizeDirection.value.includes('top')) {
-      const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight.value - deltaY))
-      const heightDiff = newHeight - windowHeight.value
-      if (heightDiff !== 0) {
-        posY.value -= heightDiff
-        windowHeight.value = newHeight
-      }
-    }
+    windowWidth.value = newWidth
+    windowHeight.value = newHeight
   })
   
   // 阻止事件冒泡和默认行为
@@ -525,6 +503,8 @@ const getAIResponse = async (): Promise<string> => {
 
     // 设置当前流式消息ID
     streamingMessageId.value = assistantMessageId
+    // 设置正在接收响应状态
+    isReceivingResponse.value = true
 
     // 滚动到底部
     scrollToBottom()
@@ -547,6 +527,7 @@ const getAIResponse = async (): Promise<string> => {
 
     // 流式输出完成后
     streamingMessageId.value = null
+    isReceivingResponse.value = false
 
     // 确保最后一次完整渲染
     const messageIndex = messages.value.findIndex((msg) => msg.id === assistantMessageId)
@@ -592,8 +573,36 @@ const getAIResponse = async (): Promise<string> => {
       }
       streamingMessageId.value = null
     }
-
+    
+    isReceivingResponse.value = false
     return `调用AI服务失败: ${error instanceof Error ? error.message : '未知错误'}`
+  }
+}
+
+// 停止AI回复
+const stopAIResponse = async () => {
+  if (!isReceivingResponse.value) return
+  
+  try {
+    // 调用主进程的停止AI请求接口
+    await (window.api as any).stopAIRequest()
+    
+    // 更新状态
+    isReceivingResponse.value = false
+    
+    // 如果有流式消息ID，添加中断提示
+    if (streamingMessageId.value) {
+      const messageIndex = messages.value.findIndex((msg) => msg.id === streamingMessageId.value)
+      if (messageIndex !== -1) {
+        messages.value[messageIndex].content += '\n\n[用户已中断回复]'
+        messages.value[messageIndex].rendered = false
+      }
+      streamingMessageId.value = null
+    }
+    
+    console.log('已中断AI回复')
+  } catch (error) {
+    console.error('中断AI回复失败:', error)
   }
 }
 
@@ -1103,14 +1112,9 @@ const segmentContent = (content: string): Array<{ content: string, html?: string
     </div>
 
     <!-- 添加调整大小的边缘处理器 -->
-    <div class="resize-handle resize-handle-right" @mousedown="(e) => startResize(e, 'right')"></div>
-    <div class="resize-handle resize-handle-bottom" @mousedown="(e) => startResize(e, 'bottom')"></div>
-    <div class="resize-handle resize-handle-left" @mousedown="(e) => startResize(e, 'left')"></div>
-    <div class="resize-handle resize-handle-top" @mousedown="(e) => startResize(e, 'top')"></div>
-    <div class="resize-handle resize-handle-bottom-right" @mousedown="(e) => startResize(e, 'bottom-right')"></div>
-    <div class="resize-handle resize-handle-bottom-left" @mousedown="(e) => startResize(e, 'bottom-left')"></div>
-    <div class="resize-handle resize-handle-top-right" @mousedown="(e) => startResize(e, 'top-right')"></div>
-    <div class="resize-handle resize-handle-top-left" @mousedown="(e) => startResize(e, 'top-left')"></div>
+    <div class="resize-handle resize-handle-bottom-right" @mousedown="(e) => startResize(e, 'bottom-right')">
+      <div class="resize-icon"></div>
+    </div>
 
     <!-- 设置面板 -->
     <Transition name="settings-panel">
@@ -1242,9 +1246,14 @@ const segmentContent = (content: string): Array<{ content: string, html?: string
         :disabled="isLoading"
         @keydown="handleKeyDown"
       ></textarea>
-      <button class="send-button" :disabled="!userInput.trim() || isLoading" @click="sendMessage">
-        {{ t('aiAssistant.send') }}
-      </button>
+      <div class="button-container">
+        <button v-if="isReceivingResponse" class="stop-button" @click="stopAIResponse">
+          {{ t('aiAssistant.stop') || '停止' }}
+        </button>
+        <button class="send-button" :disabled="!userInput.trim() || isLoading" @click="sendMessage">
+          {{ t('aiAssistant.send') || '发送' }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -1346,11 +1355,24 @@ body.ai-window-resizing {
 }
 
 .resize-handle-bottom-right {
-  bottom: 0;
-  right: 0;
-  width: 12px;
-  height: 12px;
+  bottom: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
   cursor: var(--resize-cursor-nwse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: background-color 0.2s;
+}
+
+.resize-handle-bottom-right:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark-theme .resize-handle-bottom-right:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .resize-handle-bottom-left {
@@ -1892,8 +1914,14 @@ body.ai-window-resizing {
   border-color: #1a73e8;
 }
 
-.send-button {
+.button-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   align-self: flex-end;
+}
+
+.send-button {
   background-color: #2196f3;
   color: white;
   border: none;
@@ -1914,6 +1942,22 @@ body.ai-window-resizing {
   cursor: not-allowed;
 }
 
+.stop-button {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 15px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  height: 34px;
+}
+
+.stop-button:hover {
+  background-color: #d32f2f;
+}
+
 .dark-theme .send-button {
   background-color: #1a73e8;
 }
@@ -1925,6 +1969,14 @@ body.ai-window-resizing {
 .dark-theme .send-button:disabled {
   background-color: #444;
   opacity: 0.6;
+}
+
+.dark-theme .stop-button {
+  background-color: #d32f2f;
+}
+
+.dark-theme .stop-button:hover {
+  background-color: #b71c1c;
 }
 
 /* 加载指示器 */
@@ -2353,5 +2405,79 @@ body.ai-window-resizing {
 .message-content {
   position: relative;
   padding-right: 30px;
+}
+
+/* 调整大小的边缘处理器 */
+.resize-handle {
+  position: absolute;
+  z-index: 10;
+}
+
+.resize-handle-bottom-right {
+  bottom: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  cursor: var(--resize-cursor-nwse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: background-color 0.2s;
+}
+
+.resize-handle-bottom-right:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark-theme .resize-handle-bottom-right:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 添加调整大小图标 */
+.resize-icon {
+  width: 12px;
+  height: 12px;
+  position: relative;
+}
+
+.resize-icon:before, .resize-icon:after {
+  content: "";
+  position: absolute;
+}
+
+/* 创建调整大小图标的三条对角线 */
+.resize-icon:before {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #888;
+  border-bottom: 2px solid #888;
+  bottom: 0;
+  right: 0;
+}
+
+.resize-icon:after {
+  width: 4px;
+  height: 4px;
+  border-right: 2px solid #888;
+  border-bottom: 2px solid #888;
+  bottom: 4px;
+  right: 4px;
+}
+
+.dark-theme .resize-icon:before,
+.dark-theme .resize-icon:after {
+  border-color: #aaa;
+}
+
+/* 隐藏其他调整大小的处理器 */
+.resize-handle-right,
+.resize-handle-bottom,
+.resize-handle-left,
+.resize-handle-top,
+.resize-handle-bottom-left,
+.resize-handle-top-right,
+.resize-handle-top-left {
+  display: none;
 }
 </style>

@@ -207,6 +207,29 @@ interface API {
   onTransferError: (callback: (data: { id: string; error: string }) => void) => () => void
 
   onTransferCancelled: (callback: (data: { id: string }) => void) => () => void
+
+  // AI相关方法
+  sendAIRequest: (params: {
+    prompt: string
+    messages: Array<{ role: string; content: string }>
+    apiKey?: string
+    apiUrl?: string
+    modelName?: string
+    stream?: boolean
+  }) => Promise<{
+    success: boolean
+    content?: string
+    error?: string
+  }>
+
+  // 停止AI请求
+  stopAIRequest: () => Promise<{
+    success: boolean
+    error?: string
+  }>
+
+  // AI流式输出事件监听
+  onAIStreamUpdate: (callback: (data: { chunk: string }) => void) => () => void
 }
 
 declare global {
