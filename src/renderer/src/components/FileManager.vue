@@ -1,6 +1,6 @@
 # 创建新文件
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, watch, nextTick, onBeforeUnmount, onUnmounted } from 'vue'
 import DeleteDayIcon from '../assets/delete-day.svg'
 import DeleteNightIcon from '../assets/delete-night.svg'
 import UploadDayIcon from '../assets/upload-day.svg'
@@ -442,13 +442,329 @@ const getSelectedItemsCount = () => {
   let files = 0
   let directories = 0
 
-  selectedItemTypes.value.forEach((type) => {
+  selectedItemTypes.value.forEach((type: 'file' | 'directory') => {
     if (type === 'file') files++
     else directories++
   })
 
   return { files, directories }
 }
+
+// 拖拽状态
+const isDraggingOver = ref(false)
+const dragTargetItem = ref<string | null>(null)
+const dragTargetType = ref<'file' | 'directory' | 'background'>('background')
+
+// 处理拖拽开始
+const handleDragOver = (e: DragEvent, targetType: 'file' | 'directory' | 'background' = 'background', targetName?: string) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 设置拖拽状态
+  isDraggingOver.value = true
+  
+  // 记录拖拽目标
+  if (targetType && targetType !== 'background') {
+    dragTargetItem.value = targetName || null
+    dragTargetType.value = targetType
+  } else {
+    dragTargetItem.value = null
+    dragTargetType.value = 'background'
+  }
+  
+  // 设置拖拽效果
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+// 处理拖拽离开
+const handleDragLeave = (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 检查是否真的离开了容器
+  // 有时拖拽在子元素之间移动也会触发离开事件
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const x = e.clientX
+  const y = e.clientY
+  
+  // 如果鼠标仍在容器内，不处理离开事件
+  if (
+    x >= rect.left &&
+    x <= rect.right &&
+    y >= rect.top &&
+    y <= rect.bottom
+  ) {
+    return
+  }
+  
+  // 重置拖拽状态
+  isDraggingOver.value = false
+  dragTargetItem.value = null
+}
+
+// 处理文件拖放
+const handleDrop = async (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 重置拖拽状态
+  isDraggingOver.value = false
+  
+  // 注意: 这里我们处理的是从外部拖入应用的文件
+  // 对于从应用拖出到其他应用的情况，应该使用 Electron 的 webContents.startDrag API
+  
+  // 检查是否有文件被拖放
+  if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) {
+    console.log('没有文件被拖放')
+    return
+  }
+  
+  try {
+    // 确定上传目标路径
+    let targetPath = currentPath.value
+    
+    // 如果拖放到文件夹上，使用该文件夹作为目标
+    if (dragTargetType.value === 'directory' && dragTargetItem.value) {
+      targetPath = `${currentPath.value}/${dragTargetItem.value}`
+    }
+    
+    console.log(`准备上传文件到: ${targetPath}`)
+    
+    // 获取拖放的文件列表
+    const files = Array.from(e.dataTransfer.files)
+    
+    // 显示上传进度窗口
+    showTransferProgress.value = true
+    
+    // 上传所有文件
+    for (const file of files) {
+      try {
+        // 检查文件对象是否有效
+        if (!file) {
+          console.error('无效的文件对象')
+          continue
+        }
+        
+        // 获取文件名
+        const fileName = file.name
+        
+        // 获取文件路径，如果file.path不存在，则需要读取文件内容并保存到临时文件
+        let filePath = (file as any).path
+        let tempFilePath = null
+        
+        if (!filePath) {
+          console.log(`文件 ${fileName} 没有路径信息，将使用FileReader读取内容`)
+          
+          // 使用FileReader读取文件内容
+          const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as ArrayBuffer)
+            reader.onerror = reject
+            reader.readAsArrayBuffer(file)
+          })
+          
+          // 将文件内容发送到主进程保存为临时文件
+          const result = await window.electron.ipcRenderer.invoke('save-file-content', {
+            name: fileName,
+            content: fileContent
+          })
+          
+          if (!result) {
+            throw new Error(`无法保存文件内容: ${fileName}`)
+          }
+          
+          tempFilePath = result.path
+          filePath = tempFilePath
+        }
+        
+        // 使用SFTP上传文件 - 与右键菜单选择文件上传一致
+        await window.api.sftpUploadFile({
+          connectionId: props.connectionId,
+          localPath: filePath,
+          remotePath: targetPath
+        })
+        
+        console.log(`文件 ${fileName} 上传请求已发送`)
+        
+        // 如果使用了临时文件，上传完成后删除
+        if (tempFilePath) {
+          try {
+            await window.electron.ipcRenderer.invoke('delete-temp-file', tempFilePath)
+            console.log(`临时文件已删除: ${tempFilePath}`)
+          } catch (deleteError) {
+            console.error(`删除临时文件失败: ${tempFilePath}`, deleteError)
+          }
+        }
+      } catch (fileError) {
+        console.error(`上传文件 ${file.name} 时发生错误:`, fileError)
+        error.value = fileError instanceof Error ? fileError.message : `上传文件 ${file.name} 时发生错误`
+      }
+    }
+    
+    // 重置拖拽目标
+    dragTargetItem.value = null
+    dragTargetType.value = 'background'
+    
+    // 上传完成后清空临时文件夹
+    await clearTempDirectory()
+    
+  } catch (err) {
+    console.error('处理拖放文件时发生错误:', err)
+    error.value = err instanceof Error ? err.message : '处理拖放文件时发生错误'
+  }
+}
+
+// 处理文件夹项目的拖拽事件
+const handleFolderDragOver = (e: DragEvent, folderName: string) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 设置拖拽状态
+  isDraggingOver.value = true
+  
+  // 记录拖拽目标
+  dragTargetItem.value = folderName
+  dragTargetType.value = 'directory'
+  
+  // 设置拖拽效果
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+// 处理文件夹的拖拽离开
+const handleFolderDragLeave = (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 重置拖拽目标，但保持整体拖拽状态
+  dragTargetItem.value = null
+  // 不重置isDraggingOver，因为文件可能仍在文件管理器内
+}
+
+// 处理文件夹的拖放
+const handleFolderDrop = async (e: DragEvent, folderName: string) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 重置拖拽状态
+  isDraggingOver.value = false
+  dragTargetItem.value = null
+  
+  // 检查是否有文件被拖放
+  if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) {
+    console.log('没有文件被拖放到文件夹')
+    return
+  }
+  
+  try {
+    // 构建目标路径
+    const targetPath = `${currentPath.value}/${folderName}`
+    
+    console.log(`准备上传文件到文件夹: ${targetPath}`)
+    
+    // 获取拖放的文件列表
+    const files = Array.from(e.dataTransfer.files)
+    
+    // 显示上传进度窗口
+    showTransferProgress.value = true
+    
+    // 上传所有文件
+    for (const file of files) {
+      try {
+        // 检查文件对象是否有效
+        if (!file) {
+          console.error('无效的文件对象')
+          continue
+        }
+        
+        // 获取文件名
+        const fileName = file.name
+        
+        // 获取文件路径，如果file.path不存在，则需要读取文件内容并保存到临时文件
+        let filePath = (file as any).path
+        let tempFilePath = null
+        
+        if (!filePath) {
+          console.log(`文件 ${fileName} 没有路径信息，将使用FileReader读取内容`)
+          
+          // 使用FileReader读取文件内容
+          const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as ArrayBuffer)
+            reader.onerror = reject
+            reader.readAsArrayBuffer(file)
+          })
+          
+          // 将文件内容发送到主进程保存为临时文件
+          const result = await window.electron.ipcRenderer.invoke('save-file-content', {
+            name: fileName,
+            content: fileContent
+          })
+          
+          if (!result) {
+            throw new Error(`无法保存文件内容: ${fileName}`)
+          }
+          
+          tempFilePath = result.path
+          filePath = tempFilePath
+        }
+        
+        // 使用SFTP上传文件 - 与右键菜单选择文件上传一致
+        await window.api.sftpUploadFile({
+          connectionId: props.connectionId,
+          localPath: filePath,
+          remotePath: targetPath
+        })
+        
+        console.log(`文件 ${fileName} 上传请求已发送到文件夹 ${folderName}`)
+        
+        // 如果使用了临时文件，上传完成后删除
+        if (tempFilePath) {
+          try {
+            await window.electron.ipcRenderer.invoke('delete-temp-file', tempFilePath)
+            console.log(`临时文件已删除: ${tempFilePath}`)
+          } catch (deleteError) {
+            console.error(`删除临时文件失败: ${tempFilePath}`, deleteError)
+          }
+        }
+      } catch (fileError) {
+        console.error(`上传文件 ${file.name} 到文件夹 ${folderName} 时发生错误:`, fileError)
+        error.value = fileError instanceof Error ? fileError.message : `上传文件 ${file.name} 时发生错误`
+      }
+    }
+    
+    // 上传完成后清空临时文件夹
+    await clearTempDirectory()
+    
+  } catch (err) {
+    console.error('处理拖放文件到文件夹时发生错误:', err)
+    error.value = err instanceof Error ? err.message : '处理拖放文件时发生错误'
+  }
+}
+
+// 清空临时文件夹
+const clearTempDirectory = async () => {
+  try {
+    // 获取临时文件夹路径
+    const tempDir = await window.electron.ipcRenderer.invoke('get-temp-dir')
+    console.log('清空临时文件夹:', tempDir)
+    
+    // 调用主进程清空临时文件夹
+    await window.electron.ipcRenderer.invoke('clear-temp-directory')
+    
+    console.log('临时文件夹清空完成')
+  } catch (error) {
+    console.error('清空临时文件夹失败:', error)
+  }
+}
+
+// 组件卸载前清空临时文件夹
+onBeforeUnmount(async () => {
+  await clearTempDirectory()
+})
 
 // 显示成功消息
 const showSuccessMessage = (message: string) => {
@@ -1557,6 +1873,12 @@ onMounted(async () => {
 
   // 在组件挂载时加载保存的列宽
   loadColumnWidths()
+  setupResizeObserver()
+  
+  // 初始调整列宽
+  nextTick(() => {
+    adjustColumnsToFitContainer()
+  })
 })
 
 // 组件卸载时移除事件监听
@@ -1864,27 +2186,164 @@ const loadColumnWidths = () => {
   }
 }
 
-// 计算总列宽
-const totalColumnsWidth = computed(() => {
-  return Object.values(columnWidths.value).reduce((sum, width) => sum + width, 0)
-})
+// 文件列表容器的引用
+const fileListContainerRef = ref<HTMLElement | null>(null)
+
+// 调整列宽以适应容器宽度
+const adjustColumnsToFitContainer = () => {
+  if (!fileListContainerRef.value) return
+  
+  const containerWidth = fileListContainerRef.value.clientWidth
+  
+  // 如果容器宽度大于0，进行列宽调整
+  if (containerWidth > 0) {
+    // 定义各列的最小宽度
+    const minWidths = {
+      checkbox: 20,    // 保持固定
+      name: 100,       // 文件名列最低需要保证这个宽度
+      size: 80,        // 大小列最小宽度
+      time: 120,       // 时间列最小宽度
+      permissions: 70, // 权限列最小宽度
+      owner: 70        // 所有者列最小宽度
+    };
+    
+    // 计算所有非name列所需的总宽度
+    const otherColumnsMinWidth = minWidths.checkbox + minWidths.size + 
+                                 minWidths.time + minWidths.permissions + minWidths.owner;
+    
+    // 给name列分配剩余的所有空间
+    let nameWidth = Math.max(minWidths.name, containerWidth - otherColumnsMinWidth);
+    
+    // 如果空间不足，需要按优先级缩减其他列宽度
+    const newWidths = { ...columnWidths.value };
+    
+    if (containerWidth < otherColumnsMinWidth + minWidths.name) {
+      // 情况非常紧张，空间不够显示所有列的最小宽度
+      // 保证文件名列有最小宽度，其他列按比例减少
+      nameWidth = minWidths.name;
+      
+      // 剩余空间
+      const remainingWidth = containerWidth - nameWidth - minWidths.checkbox;
+      
+      // 计算其他列（除checkbox和name列）的总最小宽度
+      const otherColumnsMinTotal = minWidths.size + minWidths.time + 
+                                   minWidths.permissions + minWidths.owner;
+      
+      // 其他列按比例分配剩余空间
+      newWidths.size = Math.max(30, Math.floor(remainingWidth * (minWidths.size / otherColumnsMinTotal)));
+      newWidths.time = Math.max(30, Math.floor(remainingWidth * (minWidths.time / otherColumnsMinTotal)));
+      newWidths.permissions = Math.max(30, Math.floor(remainingWidth * (minWidths.permissions / otherColumnsMinTotal)));
+      newWidths.owner = Math.max(30, Math.floor(remainingWidth * (minWidths.owner / otherColumnsMinTotal)));
+    } else {
+      // 空间足够，保持其他列的最小宽度
+      newWidths.size = minWidths.size;
+      newWidths.time = minWidths.time;
+      newWidths.permissions = minWidths.permissions;
+      newWidths.owner = minWidths.owner;
+    }
+    
+    // 设置checkbox固定宽度
+    newWidths.checkbox = minWidths.checkbox;
+    
+    // 设置name列宽度
+    newWidths.name = nameWidth;
+    
+    // 微调，确保总宽度正好等于容器宽度
+    let totalWidth = Object.values(newWidths).reduce((sum, w) => sum + w, 0);
+    const diff = containerWidth - totalWidth;
+    
+    // 将差值添加到name列
+    newWidths.name += diff;
+    
+    // 更新列宽
+    columnWidths.value = newWidths;
+  }
+}
+
+// 监听窗口大小变化
+const setupResizeObserver = () => {
+  // 确保在客户端环境下执行
+  if (typeof window === 'undefined' || !fileListContainerRef.value) return
+  
+  // 使用ResizeObserver监听容器大小变化
+  const resizeObserver = new ResizeObserver(() => {
+    adjustColumnsToFitContainer()
+  })
+  
+  resizeObserver.observe(fileListContainerRef.value)
+  
+  // 组件卸载时清理
+  onUnmounted(() => {
+    resizeObserver.disconnect()
+  })
+}
 
 // 监听左侧边栏宽度变化
-watch(() => props.sidebarWidth, (newWidth) => {
-  if (newWidth && newWidth < totalColumnsWidth.value) {
-    // 如果边栏宽度小于总列宽，按比例缩小各列宽度
-    const ratio = newWidth / totalColumnsWidth.value
-    const newWidths = { ...columnWidths.value }
+watch(() => props.sidebarWidth, () => {
+  // 当侧边栏宽度变化时，触发列宽调整
+  nextTick(() => {
+    adjustColumnsToFitContainer()
+  })
+}, { immediate: true })
+
+// 处理文件拖动开始
+const handleFileDragStart = async (e: DragEvent, fileName: string, fileType: 'file' | 'directory') => {
+  // 只允许拖动文件，不允许拖动文件夹
+  if (fileType !== 'file') {
+    e.preventDefault()
+    return
+  }
+  
+  // 阻止默认行为，我们将使用自定义拖动
+  e.preventDefault()
+  
+  try {
+    // 构建完整的文件路径
+    const filePath = `${currentPath.value}/${fileName}`
     
-    // 按比例调整各列宽度，但保持最小宽度
-    Object.keys(newWidths).forEach(key => {
-      const col = key as keyof ColumnWidths
-      newWidths[col] = Math.max(50, Math.floor(newWidths[col] * ratio))
+    // 首先需要下载文件到本地临时目录
+    const tempFilePath = await window.electron.ipcRenderer.invoke('prepare-file-for-drag', {
+      connectionId: props.connectionId,
+      remotePath: filePath,
+      fileName
     })
     
-    columnWidths.value = newWidths
+    if (!tempFilePath) {
+      console.error('准备拖动文件失败')
+      return
+    }
+    
+    // 设置拖动图标 - 使用文件图标而不是下载图标
+    const dragIcon = document.createElement('img')
+    // 根据主题选择合适的文件图标
+    dragIcon.src = props.isDarkTheme ? 
+      new URL('../assets/file-night.svg', import.meta.url).href : 
+      new URL('../assets/file-day.svg', import.meta.url).href
+    dragIcon.style.width = '32px'
+    dragIcon.style.height = '32px'
+    document.body.appendChild(dragIcon)
+    e.dataTransfer?.setDragImage(dragIcon, 16, 16)
+    
+    // 使用setTimeout移除图标元素
+    setTimeout(() => {
+      if (document.body.contains(dragIcon)) {
+        document.body.removeChild(dragIcon)
+      }
+    }, 0)
+    
+    // 调用Electron的startDrag API
+    window.electron.ipcRenderer.invoke('start-drag', {
+      filePath: tempFilePath,
+      fileName,
+      isDarkTheme: props.isDarkTheme // 传递主题信息
+    })
+    
+    console.log(`开始拖动文件: ${fileName}`)
+  } catch (err) {
+    console.error('处理文件拖动失败:', err)
+    error.value = err instanceof Error ? err.message : '处理文件拖动失败'
   }
-}, { immediate: true })
+}
 </script>
 
 <template>
@@ -1936,7 +2395,15 @@ watch(() => props.sidebarWidth, (newWidth) => {
     </div>
 
     <!-- 文件列表 -->
-    <div class="file-list-container" @contextmenu="showMenu($event, 'background')">
+    <div 
+      class="file-list-container" 
+      ref="fileListContainerRef"
+      @contextmenu="showMenu($event, 'background')"
+      @dragover="handleDragOver($event)"
+      @dragleave="handleDragLeave($event)"
+      @drop="handleDrop($event)"
+      :class="{ 'drag-over': isDraggingOver && !dragTargetItem }"
+    >
       <!-- 表头 -->
       <div class="file-list-header">
         <div class="file-list-row" :style="{ gridTemplateColumns: `${columnWidths.checkbox}px ${columnWidths.name}px ${columnWidths.size}px ${columnWidths.time}px ${columnWidths.permissions}px ${columnWidths.owner}px` }">
@@ -1980,10 +2447,6 @@ watch(() => props.sidebarWidth, (newWidth) => {
           </div>
           <div class="permissions-cell" :style="{ width: `${columnWidths.permissions}px` }">
             权限
-            <div class="column-resize-handle" @mousedown="(e) => handleColumnDragStart(e, 'permissions')"></div>
-          </div>
-          <div class="owner-cell" :style="{ width: `${columnWidths.owner}px` }">
-            所有者
           </div>
         </div>
       </div>
@@ -2001,12 +2464,18 @@ watch(() => props.sidebarWidth, (newWidth) => {
           :class="{
             selected: selectedFiles.has(file.name),
             'is-directory': file.type === 'directory',
-            highlighted: highlightedItem === file.name
+            highlighted: highlightedItem === file.name,
+            'drag-target': dragTargetItem === file.name && isDraggingOver
           }"
           :data-name="file.name"
           @click="toggleFileSelection(file.name, file.type, $event)"
           @dblclick="file.type === 'directory' && enterDirectory(file.name)"
           @contextmenu.stop="showMenu($event, file.type, file.name)"
+          @dragover.stop="file.type === 'directory' && handleFolderDragOver($event, file.name)"
+          @dragleave.stop="file.type === 'directory' && handleFolderDragLeave($event)"
+          @drop.stop="file.type === 'directory' && handleFolderDrop($event, file.name)"
+          draggable="true"
+          @dragstart="(e) => handleFileDragStart(e, file.name, file.type)"
         >
           <div class="checkbox-cell" :style="{ width: `${columnWidths.checkbox}px` }">
             <input
@@ -2030,9 +2499,6 @@ watch(() => props.sidebarWidth, (newWidth) => {
           </div>
           <div class="permissions-cell" :style="{ width: `${columnWidths.permissions}px` }">
             {{ file.permissions }}
-          </div>
-          <div class="owner-cell" :style="{ width: `${columnWidths.owner}px` }">
-            {{ file.owner }}
           </div>
         </div>
       </div>
@@ -2807,8 +3273,7 @@ watch(() => props.sidebarWidth, (newWidth) => {
 
 .size-cell,
 .time-cell,
-.permissions-cell,
-.owner-cell {
+.permissions-cell {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3643,8 +4108,7 @@ watch(() => props.sidebarWidth, (newWidth) => {
 .name-cell,
 .size-cell,
 .time-cell,
-.permissions-cell,
-.owner-cell {
+.permissions-cell {
   position: relative;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3667,5 +4131,70 @@ watch(() => props.sidebarWidth, (newWidth) => {
 .dark-theme .column-resize-indicator {
   background-color: #64b5f6;
   box-shadow: 0 0 4px rgba(100, 181, 246, 0.5);
+}
+
+/* 拖拽相关样式 */
+.file-list-container.drag-over {
+  border: 2px dashed #4caf50;
+  background-color: rgba(76, 175, 80, 0.05);
+  position: relative;
+}
+
+.file-list-container.drag-over::after {
+  content: "释放文件以上传到当前文件夹";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(76, 175, 80, 0.9);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-weight: bold;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .file-list-container.drag-over {
+  border: 2px dashed #81c784;
+  background-color: rgba(129, 199, 132, 0.1);
+}
+
+.dark-theme .file-list-container.drag-over::after {
+  background-color: rgba(129, 199, 132, 0.9);
+  color: #000;
+}
+
+.file-list-row.drag-target {
+  background-color: rgba(76, 175, 80, 0.2);
+  border: 1px dashed #4caf50;
+  position: relative;
+}
+
+.file-list-row.drag-target::after {
+  content: "释放文件以上传到此文件夹";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(76, 175, 80, 0.9);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  z-index: 10;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .file-list-row.drag-target {
+  background-color: rgba(129, 199, 132, 0.2);
+  border: 1px dashed #81c784;
+}
+
+.dark-theme .file-list-row.drag-target::after {
+  background-color: rgba(129, 199, 132, 0.9);
+  color: #000;
 }
 </style>

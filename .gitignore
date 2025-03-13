@@ -20,6 +20,8 @@ out
 # 配置文件
 config.json
 connections.json
+temp
+temp/*
 
 # vscode
 .vscode
