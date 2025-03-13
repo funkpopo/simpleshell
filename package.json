@@ -1,10 +1,10 @@
 {
   "name": "simpleshell",
-  "version": "0.1.0",
+  "version": "v1.0.0",
   "description": "A Simple Shell powered by Electron and Vue",
   "main": "./out/main/index.js",
   "author": "funkpopo",
-  "homepage": "https://github.com/funkpopo/oshell",
+  "homepage": "https://github.com/funkpopo/simpleshell",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts,.vue --fix",
