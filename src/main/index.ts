@@ -223,6 +223,9 @@ const activeTransfers = new Map<
   }
 >()
 
+// 全局变量，用于存储当前的流式请求控制器
+let currentStreamController: AbortController | null = null;
+
 // SSH会话管理
 ipcMain.handle('ssh:connect', async (_, connectionInfo: Connection) => {
   let originalInfo: Partial<Connection> = {}
@@ -1331,8 +1334,13 @@ app.whenReady().then(() => {
     })
 
     // 处理AI请求
-    ipcMain.handle('ai:request', async (_event, params) => {
-      return await handleAIRequest(params)
+    ipcMain.handle('ai:request', async (_, params) => {
+      return handleAIRequest(params)
+    })
+
+    // 停止AI请求
+    ipcMain.handle('ai:stop-request', () => {
+      return stopAIRequest()
     })
   }
 
@@ -1709,6 +1717,10 @@ async function handleAIRequest(params: {
     try {
       // 流式输出模式
       if (useStream && mainWindow && !mainWindow.isDestroyed()) {
+        // 创建中断控制器
+        const controller = new AbortController();
+        currentStreamController = controller;
+        
         // 创建流式请求
         const stream = await openai.chat.completions.create({
           model: modelName,
@@ -1716,34 +1728,53 @@ async function handleAIRequest(params: {
           temperature: 0.7,
           max_tokens: 16384, // 减小token数量以降低内存使用
           stream: true
-        })
+        }, { signal: controller.signal });
 
         // 优化：使用字符串块而不是完整内容，减少内存使用
         let contentChunks: string[] = []
         let totalLength = 0
         const MAX_BUFFER_SIZE = 1024 * 50 // 50KB 缓冲区限制
 
-        // 处理流式响应
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || ''
-          if (content) {
-            contentChunks.push(content)
-            totalLength += content.length
-            
-            // 发送块到渲染进程
-            mainWindow.webContents.send('ai:stream-update', {
-              chunk: content
-            })
-            
-            // 当缓冲区达到一定大小时，合并并清空以节省内存
-            if (totalLength > MAX_BUFFER_SIZE) {
-              contentChunks = [contentChunks.join('')]
-              totalLength = contentChunks[0].length
+        try {
+          // 处理流式响应
+          for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content || ''
+            if (content) {
+              contentChunks.push(content)
+              totalLength += content.length
+              
+              // 发送块到渲染进程
+              mainWindow.webContents.send('ai:stream-update', {
+                chunk: content
+              })
+              
+              // 当缓冲区达到一定大小时，合并并清空以节省内存
+              if (totalLength > MAX_BUFFER_SIZE) {
+                contentChunks = [contentChunks.join('')]
+                totalLength = contentChunks[0].length
+              }
             }
           }
-        }
 
-        console.log('流式AI回答完成')
+          console.log('流式AI回答完成')
+        } catch (streamError) {
+          // 检查是否是因为中断导致的错误
+          if (streamError instanceof Error && streamError.name === 'AbortError') {
+            console.log('流式AI回答已被用户中断')
+            // 清除当前控制器
+            currentStreamController = null;
+            return {
+              success: true,
+              content: contentChunks.join(''),
+              interrupted: true
+            }
+          }
+          // 其他错误则抛出
+          throw streamError;
+        }
+        
+        // 清除当前控制器
+        currentStreamController = null;
         
         // 只在最后合并一次，减少字符串连接操作
         const fullContent = contentChunks.join('')
@@ -1800,4 +1831,14 @@ async function handleAIRequest(params: {
       error: error instanceof Error ? error.message : '未知错误'
     }
   }
+}
+
+// 处理停止AI请求
+function stopAIRequest() {
+  if (currentStreamController) {
+    console.log('中断AI流式请求')
+    currentStreamController.abort()
+    return { success: true }
+  }
+  return { success: false, error: '没有正在进行的AI请求' }
 }

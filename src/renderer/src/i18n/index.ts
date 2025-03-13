@@ -25,6 +25,7 @@ const zhCN = {
     welcome: '您好！我是您的AI助手，有什么可以帮助您的吗？',
     inputPlaceholder: '请输入您的问题...',
     send: '发送',
+    stop: '停止',
     response: '回应内容',
     thinking: '思考中...',
     historyTitle: '历史记录',
