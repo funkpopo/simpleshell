@@ -57,11 +57,28 @@ const settingsPath = is.dev
   ? path.join(process.cwd(), 'config.json')
   : path.join(getAppPath(), 'config.json')
 
+// 临时文件路径
+let tempDir = is.dev
+  ? path.join(process.cwd(), 'temp')
+  : path.join(getAppPath(), 'temp')
+
+// 确保临时目录存在
+if (!fs.existsSync(tempDir)) {
+  try {
+    fs.mkdirSync(tempDir, { recursive: true })
+  } catch (error) {
+    console.error('创建临时目录失败:', error)
+    // 如果创建失败，使用系统临时目录
+    tempDir = app.getPath('temp')
+  }
+}
+
 // 输出环境信息
 console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
 console.log('应用路径:', getAppPath())
 console.log('连接配置文件路径:', connectionsFilePath)
 console.log('设置文件路径:', settingsPath)
+console.log('临时文件路径:', tempDir)
 
 // 加载连接配置
 function loadConnections(): Organization[] {
@@ -774,6 +791,9 @@ function createWindow(): void {
         console.log('发送应用关闭通知到渲染进程')
         mainWindow.webContents.send('app:before-close')
 
+        // 清理临时文件夹
+        clearTempDirectory()
+
         // 给渲染进程一些时间来保存数据
         setTimeout(() => {
           console.log('延时结束，允许应用关闭')
@@ -905,6 +925,152 @@ app.whenReady().then(() => {
       }
     })
 
+    // 获取临时文件夹路径
+    ipcMain.handle('get-temp-dir', () => {
+      return tempDir
+    })
+
+    // 处理拖拽文件
+    ipcMain.handle('save-drag-file', async (_event, fileInfo: { name: string; path: string }) => {
+      try {
+        console.log('处理拖拽文件:', fileInfo.name, fileInfo.path)
+        
+        // 检查文件是否存在
+        if (!fs.existsSync(fileInfo.path)) {
+          console.error('拖拽的文件不存在:', fileInfo.path)
+          return null
+        }
+        
+        // 提取原始文件名（不包含路径）
+        const originalFileName = path.basename(fileInfo.name)
+        
+        // 对于大多数情况，我们可以直接使用原始文件路径
+        // 但为了安全起见，我们可以选择复制到临时目录
+        
+        // 检查是否需要复制文件（例如，如果文件在网络驱动器上或是特殊格式）
+        const needsCopy = false // 这里可以添加逻辑来决定是否需要复制
+        
+        if (needsCopy) {
+          // 创建临时文件路径，使用原始文件名
+          const tempFilePath = path.join(tempDir, originalFileName)
+          
+          // 复制文件
+          fs.copyFileSync(fileInfo.path, tempFilePath)
+          console.log('文件已复制到临时位置:', tempFilePath)
+          
+          // 记录临时文件，以便后续删除
+          tempFiles.set(tempFilePath, originalFileName)
+          
+          return { path: tempFilePath, originalName: originalFileName }
+        }
+        
+        // 直接返回原始路径和文件名
+        return { path: fileInfo.path, originalName: originalFileName }
+      } catch (error) {
+        console.error('处理拖拽文件失败:', error)
+        return null
+      }
+    })
+    
+    // 保存文件内容到临时文件
+    ipcMain.handle('save-file-content', async (_event, fileInfo: { name: string; content: ArrayBuffer }) => {
+      try {
+        console.log('保存文件内容到临时文件:', fileInfo.name)
+        
+        // 提取原始文件名（不包含路径）
+        const originalFileName = path.basename(fileInfo.name)
+        
+        // 创建临时文件路径，使用原始文件名
+        const tempFilePath = path.join(tempDir, originalFileName)
+        
+        // 将ArrayBuffer转换为Buffer
+        const buffer = Buffer.from(fileInfo.content)
+        
+        // 写入文件
+        fs.writeFileSync(tempFilePath, buffer)
+        console.log('文件内容已保存到临时位置:', tempFilePath)
+        
+        // 记录临时文件，以便后续删除
+        tempFiles.set(tempFilePath, originalFileName)
+        
+        return { path: tempFilePath, originalName: originalFileName }
+      } catch (error) {
+        console.error('保存文件内容失败:', error)
+        return null
+      }
+    })
+
+    // 准备文件用于拖拽（从SFTP下载到临时位置）
+    ipcMain.handle('prepare-file-for-drag', async (_event, params: { connectionId: string; remotePath: string; fileName: string }) => {
+      try {
+        console.log('准备文件用于拖拽:', params.fileName)
+        
+        const sftp = activeSftpConnections.get(params.connectionId)
+        if (!sftp) {
+          console.error('SFTP连接不存在，ID:', params.connectionId)
+          return null
+        }
+        
+        // 提取原始文件名（不包含路径）
+        const originalFileName = path.basename(params.fileName)
+        
+        // 创建临时文件路径，使用原始文件名
+        const tempFilePath = path.join(tempDir, originalFileName)
+        
+        // 下载文件到临时位置
+        await sftp.fastGet(params.remotePath, tempFilePath)
+        console.log('文件已下载到临时位置:', tempFilePath)
+        
+        // 记录临时文件，以便后续删除
+        tempFiles.set(tempFilePath, originalFileName)
+        
+        return tempFilePath
+      } catch (error) {
+        console.error('准备拖拽文件失败:', error)
+        return null
+      }
+    })
+    
+    // 启动拖拽操作
+    ipcMain.handle('start-drag', (_event, params: { filePath: string; fileName: string; isDarkTheme: boolean }) => {
+      try {
+        console.log('启动拖拽操作:', params.fileName)
+        
+        // 确保文件存在
+        if (!fs.existsSync(params.filePath)) {
+          console.error('拖拽的文件不存在:', params.filePath)
+          return { success: false, error: '文件不存在' }
+        }
+        
+        // 获取发送事件的窗口
+        const webContents = _event.sender
+        
+        // 根据主题选择图标
+        const iconName = params.isDarkTheme ? 'file-night.svg' : 'file-day.svg'
+        
+        // 创建拖拽项
+        const dragItem = {
+          file: params.filePath,
+          icon: path.join(__dirname, '../renderer/assets', iconName) // 根据主题选择图标
+        }
+        
+        // 根据文件扩展名选择合适的图标
+        const ext = path.extname(params.fileName).toLowerCase()
+        if (['.jpg', '.jpeg', '.png', '.gif', '.bmp'].includes(ext)) {
+          // 对于图片文件，可以使用文件本身作为图标
+          dragItem.icon = params.filePath
+        }
+        
+        // 启动拖拽操作
+        webContents.startDrag(dragItem)
+        
+        return { success: true }
+      } catch (error) {
+        console.error('启动拖拽操作失败:', error)
+        return { success: false, error: '启动拖拽失败' }
+      }
+    })
+
     // SFTP相关处理程序
     ipcMain.handle('sftp:readDir', async (_, { connectionId, path }) => {
       try {
@@ -921,15 +1087,42 @@ app.whenReady().then(() => {
         const list = await sftp.list(path)
         console.log('目录读取成功，文件数量:', list.length)
 
-        const files = list.map((item) => ({
-          name: item.name,
-          type: item.type === 'd' ? 'directory' : 'file',
-          size: item.size,
-          modifyTime: item.modifyTime,
-          permissions: item.rights.user + item.rights.group + item.rights.other,
-          owner: item.owner,
-          group: item.group
-        }))
+        const files = list.map((item) => {
+          // 确保modifyTime是有效的Date对象
+          let modifyTime = item.modifyTime;
+          
+          // 检查是否为有效Date对象，如不是则尝试转换
+          if (!(modifyTime instanceof Date) || isNaN(modifyTime.getTime())) {
+            try {
+              // 如果是时间戳（数字）
+              if (typeof modifyTime === 'number') {
+                modifyTime = new Date(modifyTime);
+              } 
+              // 如果是字符串
+              else if (typeof modifyTime === 'string') {
+                modifyTime = new Date(modifyTime);
+              } 
+              // 其他情况，使用当前时间
+              else {
+                console.warn('无法识别的modifyTime格式:', modifyTime);
+                modifyTime = new Date(); // 使用当前时间作为后备
+              }
+            } catch (error) {
+              console.error('转换modifyTime失败:', error);
+              modifyTime = new Date(); // 使用当前时间作为后备
+            }
+          }
+
+          return {
+            name: item.name,
+            type: item.type === 'd' ? 'directory' : 'file',
+            size: item.size,
+            modifyTime: modifyTime, // 使用处理后的时间
+            permissions: item.rights.user + item.rights.group + item.rights.other,
+            owner: item.owner,
+            group: item.group
+          };
+        })
 
         return { success: true, files }
       } catch (error: unknown) {
@@ -1077,7 +1270,7 @@ app.whenReady().then(() => {
           transferred += chunk.length
 
           // 发送进度更新
-          if (mainWindow) {
+          if (mainWindow && fileSize > 0) {
             mainWindow.webContents.send('sftp:transferProgress', {
               id: uploadId,
               transferred,
@@ -1106,6 +1299,17 @@ app.whenReady().then(() => {
 
             // 移除传输任务
             activeTransfers.delete(uploadId)
+
+            // 如果是临时文件，上传完成后删除
+            if (tempFiles.has(localPath)) {
+              try {
+                fs.unlinkSync(localPath)
+                tempFiles.delete(localPath)
+                console.log('上传完成后删除临时文件:', localPath)
+              } catch (deleteError) {
+                console.error('删除临时文件失败:', deleteError)
+              }
+            }
 
             resolve({ success: true, transferId: uploadId })
           })
@@ -1180,6 +1384,44 @@ app.whenReady().then(() => {
         // 获取文件/文件夹的基本信息
         const stat = await sftp.stat(path)
 
+        // 确保时间字段是有效的Date对象
+        let modifyTime = stat.modifyTime;
+        let accessTime = stat.accessTime;
+        
+        // 处理modifyTime
+        if (!(modifyTime instanceof Date) || isNaN(modifyTime.getTime())) {
+          try {
+            if (typeof modifyTime === 'number') {
+              modifyTime = new Date(modifyTime);
+            } else if (typeof modifyTime === 'string') {
+              modifyTime = new Date(modifyTime);
+            } else {
+              console.warn('无法识别的modifyTime格式:', modifyTime);
+              modifyTime = new Date();
+            }
+          } catch (error) {
+            console.error('转换modifyTime失败:', error);
+            modifyTime = new Date();
+          }
+        }
+        
+        // 处理accessTime
+        if (!(accessTime instanceof Date) || isNaN(accessTime.getTime())) {
+          try {
+            if (typeof accessTime === 'number') {
+              accessTime = new Date(accessTime);
+            } else if (typeof accessTime === 'string') {
+              accessTime = new Date(accessTime);
+            } else {
+              console.warn('无法识别的accessTime格式:', accessTime);
+              accessTime = new Date();
+            }
+          } catch (error) {
+            console.error('转换accessTime失败:', error);
+            accessTime = new Date();
+          }
+        }
+
         // 构建详细信息对象
         const fileInfo: {
           name: string
@@ -1202,8 +1444,8 @@ app.whenReady().then(() => {
           path: path,
           type: stat.isDirectory ? 'directory' : 'file',
           size: stat.size,
-          modifyTime: stat.modifyTime,
-          accessTime: stat.accessTime,
+          modifyTime: modifyTime,
+          accessTime: accessTime,
           rights: stat.rights,
           owner: stat.uid,
           group: stat.gid,
@@ -1410,6 +1652,15 @@ app.whenReady().then(() => {
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+
+  // 清空临时文件夹
+  clearTempDirectory()
+  
+  // 设置定期清理临时文件夹的定时器（每小时清理一次）
+  setInterval(() => {
+    console.log('定期清理临时文件夹...')
+    clearTempDirectory()
+  }, 60 * 60 * 1000) // 60分钟 * 60秒 * 1000毫秒
 })
 
 // 加载全局设置
@@ -1631,6 +1882,9 @@ function getLexerFilePath(lexerName: string) {
   return is.dev ? devPath : prodPath
 }
 
+// 临时文件映射表，用于跟踪需要删除的文件
+const tempFiles = new Map<string, string>() // key: 临时文件路径, value: 原始文件名
+
 // 处理AI请求
 async function handleAIRequest(params: {
   prompt: string
@@ -1842,3 +2096,61 @@ function stopAIRequest() {
   }
   return { success: false, error: '没有正在进行的AI请求' }
 }
+
+// 删除临时文件
+ipcMain.handle('delete-temp-file', async (_event, filePath: string) => {
+  try {
+    if (fs.existsSync(filePath) && tempFiles.has(filePath)) {
+      fs.unlinkSync(filePath)
+      tempFiles.delete(filePath)
+      console.log('临时文件已删除:', filePath)
+      return { success: true }
+    }
+    return { success: false, error: '文件不存在或不是临时文件' }
+  } catch (error) {
+    console.error('删除临时文件失败:', error)
+    return { success: false, error: '删除临时文件失败' }
+  }
+})
+
+// 清空临时文件夹
+function clearTempDirectory() {
+  try {
+    console.log('清空临时文件夹:', tempDir)
+    
+    // 确保临时目录存在
+    if (!fs.existsSync(tempDir)) {
+      console.log('临时目录不存在，无需清空')
+      return
+    }
+    
+    // 读取目录中的所有文件
+    const files = fs.readdirSync(tempDir)
+    
+    // 删除每个文件
+    for (const file of files) {
+      const filePath = path.join(tempDir, file)
+      
+      // 检查是否是文件
+      if (fs.statSync(filePath).isFile()) {
+        fs.unlinkSync(filePath)
+        console.log('删除临时文件:', filePath)
+      }
+    }
+    
+    console.log('临时文件夹清空完成')
+  } catch (error) {
+    console.error('清空临时文件夹失败:', error)
+  }
+}
+
+// 清空临时文件夹
+ipcMain.handle('clear-temp-directory', async () => {
+  try {
+    clearTempDirectory()
+    return { success: true }
+  } catch (error) {
+    console.error('清空临时文件夹失败:', error)
+    return { success: false, error: '清空临时文件夹失败' }
+  }
+})
