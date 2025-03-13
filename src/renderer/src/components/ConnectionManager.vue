@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
 import draggable from 'vuedraggable'
+import { useVirtualList } from '@vueuse/core'
 import CollectionNightIcon from '../assets/collection-night.svg'
 import CollectionDayIcon from '../assets/collection-day.svg'
 import AddCollectionNightIcon from '../assets/plus-night.svg'
@@ -78,21 +79,102 @@ const dragOptionsOrg = {
   group: 'organizations',
   ghostClass: 'ghost-org',
   dragClass: 'dragging-org',
-  handle: '.organization-header'
+  handle: '.organization-header',
+  delay: 50,
+  delayOnTouchOnly: true,
+  chosenClass: 'chosen-org',
+  forceFallback: false,
+  fallbackOnBody: false,
+  onMove: () => {
+    return !isDragging.value || organizations.value.length < 10
+  }
 }
 
 const dragOptionsConn = {
   animation: 150,
   group: 'connections',
   ghostClass: 'ghost-conn',
-  dragClass: 'dragging-conn'
+  dragClass: 'dragging-conn',
+  delay: 50,
+  delayOnTouchOnly: true,
+  chosenClass: 'chosen-conn',
+  forceFallback: false,
+  fallbackOnBody: false,
+  onMove: () => {
+    const org = organizations.value.find(o => o.id === currentExpandedOrgId.value)
+    return !isDraggingConn.value || (org && org.connections.length < 30)
+  }
+}
+
+// 保存防抖计时器
+let saveDebounceTimer: number | null = null
+
+// 虚拟滚动相关
+const itemHeight = 32 // 每个连接项的高度，根据CSS调整
+
+// 当前展开的组织ID
+const currentExpandedOrgId = ref<string | null>(null)
+
+// 监听展开状态变化，更新当前展开的组织
+watch(expandedOrganizations, (newVal) => {
+  // 找到第一个展开的组织
+  const expandedOrgId = Object.entries(newVal).find(([_, isExpanded]) => isExpanded)?.[0] || null
+  currentExpandedOrgId.value = expandedOrgId
+})
+
+// 获取当前展开组织的连接列表
+const currentConnections = computed(() => {
+  if (!currentExpandedOrgId.value) return []
+  const org = organizations.value.find(o => o.id === currentExpandedOrgId.value)
+  return org?.connections || []
+})
+
+// 设置虚拟列表
+const { list: virtualConnections, containerProps, wrapperProps } = useVirtualList(
+  currentConnections,
+  {
+    itemHeight,
+    overscan: 10 // 预渲染的项数
+  }
+)
+
+// 拖拽优化 - 记录拖拽状态
+const isDraggingConn = ref(false)
+const handleDragStartConn = () => {
+  isDraggingConn.value = true
+}
+const handleDragEndConn = () => {
+  isDraggingConn.value = false
+}
+
+// 性能优化 - 检测连接数量是否过多
+const isConnectionCountHigh = computed(() => {
+  let totalConnections = 0
+  organizations.value.forEach(org => {
+    totalConnections += org.connections.length
+  })
+  return totalConnections > 100
+})
+
+// 性能优化 - 检测当前组织的连接数量
+const getConnectionCount = (orgId: string) => {
+  const org = organizations.value.find(o => o.id === orgId)
+  return org?.connections.length || 0
+}
+
+// 性能优化 - 判断是否应该使用虚拟滚动
+const shouldUseVirtualScroll = (orgId: string) => {
+  return currentExpandedOrgId.value === orgId && getConnectionCount(orgId) > 30
 }
 
 // 处理组织排序变化
 const handleOrgChange = async (evt) => {
   console.log('组织排序变更:', evt)
   if (evt.moved) {
-    await saveConnections()
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+    saveDebounceTimer = setTimeout(async () => {
+      await saveConnections()
+    }, 1000) as unknown as number
   }
 }
 
@@ -100,7 +182,11 @@ const handleOrgChange = async (evt) => {
 const handleConnChange = async (evt) => {
   console.log('连接排序变更:', evt)
   if (evt.moved || evt.added || evt.removed) {
-    await saveConnections()
+    // 使用防抖延迟保存，避免频繁保存
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+    saveDebounceTimer = setTimeout(async () => {
+      await saveConnections()
+    }, 1000) as unknown as number
   }
 }
 
@@ -108,12 +194,21 @@ const handleConnChange = async (evt) => {
 const onDragStart = (orgId) => {
   isDragging.value = true
   dragSourceOrg.value = orgId
+  
+  document.body.classList.add('dragging-active')
 }
 
 // 拖拽结束
 const onDragEnd = () => {
   isDragging.value = false
   dragSourceOrg.value = null
+  
+  document.body.classList.remove('dragging-active')
+  
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+  saveDebounceTimer = setTimeout(async () => {
+    await saveConnections()
+  }, 500) as unknown as number
 }
 
 // 加载连接配置
@@ -168,7 +263,22 @@ const saveConnections = async () => {
 
 // 切换组织展开/折叠状态
 const toggleOrganization = (orgId: string) => {
+  // 先关闭所有已展开的组织
+  Object.keys(expandedOrganizations.value).forEach(id => {
+    if (id !== orgId && expandedOrganizations.value[id]) {
+      expandedOrganizations.value[id] = false
+    }
+  })
+  
+  // 切换当前组织的展开状态
   expandedOrganizations.value[orgId] = !expandedOrganizations.value[orgId]
+  
+  // 如果展开了，更新当前展开的组织ID
+  if (expandedOrganizations.value[orgId]) {
+    currentExpandedOrgId.value = orgId
+  } else {
+    currentExpandedOrgId.value = null
+  }
 }
 
 // 右键菜单数据
@@ -178,18 +288,25 @@ const menuPosition = ref({ x: 0, y: 0 })
 const selectedOrganizationId = ref<string | null>(null)
 const selectedConnectionId = ref<string | null>(null)
 
+// 颜色缓存，避免重复计算
+const connectionColorCache = ref<Record<string, string>>({})
+
 // 为连接生成随机颜色
 const getConnectionColor = (connId: string) => {
-  // 使用连接ID作为种子，确保相同ID总是得到相同颜色
+  if (connectionColorCache.value[connId]) {
+    return connectionColorCache.value[connId]
+  }
+
   let hash = 0
   for (let i = 0; i < connId.length; i++) {
     hash = connId.charCodeAt(i) + ((hash << 5) - hash)
   }
 
-  // 生成HSL颜色，固定饱和度和亮度，只改变色相
-  // 这样可以确保颜色鲜艳但不会太暗
   const hue = Math.abs(hash) % 360
-  return `hsl(${hue}, 70%, 60%)`
+  const color = `hsl(${hue}, 70%, 60%)`
+  
+  connectionColorCache.value[connId] = color
+  return color
 }
 
 // 显示右键菜单
@@ -439,12 +556,17 @@ onMounted(async () => {
   // 加载连接配置
   await loadConnections()
 
-  // 添加自动保存功能 - 每当organizations发生深度变化时保存
+  // 添加自动保存功能 - 使用防抖优化，避免频繁保存
   watch(
     organizations,
     async () => {
-      console.log('检测到organizations数据变化，自动保存')
-      await saveConnections()
+      console.log('检测到organizations数据变化')
+      // 使用防抖延迟保存
+      if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+      saveDebounceTimer = setTimeout(async () => {
+        console.log('执行延迟保存')
+        await saveConnections()
+      }, 2000) as unknown as number
     },
     { deep: true }
   )
@@ -452,6 +574,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('click', closeMenu)
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
 })
 </script>
 
@@ -460,6 +583,11 @@ onUnmounted(() => {
     <!-- 仅在展开状态显示标题和连接列表 -->
     <div class="connection-manager-content">
       <h3>连接管理</h3>
+      
+      <!-- 性能提示 -->
+      <div v-if="isConnectionCountHigh" class="performance-tip">
+        <span>连接数量较多，已启用性能优化</span>
+      </div>
 
       <div class="connection-list">
         <draggable
@@ -486,35 +614,68 @@ onUnmounted(() => {
                     class="collection-icon"
                   />
                   {{ org.name }}
+                  <!-- 显示连接数量 -->
+                  <span class="connection-count" v-if="org.connections.length > 0">
+                    ({{ org.connections.length }})
+                  </span>
                 </div>
               </div>
 
-              <!-- 连接列表 -->
+              <!-- 连接列表 - 使用虚拟滚动优化大量连接的渲染 -->
               <div v-show="expandedOrganizations[org.id]" class="connection-items">
-                <draggable
-                  v-model="org.connections"
-                  item-key="id"
-                  v-bind="dragOptionsConn"
-                  class="connection-draggable"
-                  @change="handleConnChange"
-                >
-                  <template #item="{ element: conn }">
-                    <div
-                      class="connection-item"
-                      @dblclick="connectToServer(org.id, conn.id)"
-                      @contextmenu.stop="showMenu($event, 'connection', org.id, conn.id)"
-                    >
-                      <div class="connection-name">
-                        <span class="drag-handle-conn">⋮⋮</span>
-                        <div
-                          class="connection-color-block"
-                          :style="{ backgroundColor: getConnectionColor(conn.id) }"
-                        ></div>
-                        {{ conn.name }}
+                <!-- 当前组织是展开的组织时使用虚拟滚动 -->
+                <template v-if="shouldUseVirtualScroll(org.id)">
+                  <div v-bind="containerProps" class="virtual-list-container">
+                    <div v-bind="wrapperProps" class="virtual-list-wrapper">
+                      <div
+                        v-for="{ data: conn } in virtualConnections"
+                        :key="conn.id"
+                        class="connection-item"
+                        @dblclick="connectToServer(org.id, conn.id)"
+                        @contextmenu.stop="showMenu($event, 'connection', org.id, conn.id)"
+                        :style="{ height: `${itemHeight}px` }"
+                      >
+                        <div class="connection-name">
+                          <span class="drag-handle-conn">⋮⋮</span>
+                          <div
+                            class="connection-color-block"
+                            :style="{ backgroundColor: getConnectionColor(conn.id) }"
+                          ></div>
+                          {{ conn.name }}
+                        </div>
                       </div>
                     </div>
-                  </template>
-                </draggable>
+                  </div>
+                </template>
+                <!-- 当连接数量较少时使用普通拖拽列表 -->
+                <template v-else>
+                  <draggable
+                    v-model="org.connections"
+                    item-key="id"
+                    v-bind="dragOptionsConn"
+                    class="connection-draggable"
+                    @change="handleConnChange"
+                    @start="handleDragStartConn"
+                    @end="handleDragEndConn"
+                  >
+                    <template #item="{ element: conn }">
+                      <div
+                        class="connection-item"
+                        @dblclick="connectToServer(org.id, conn.id)"
+                        @contextmenu.stop="showMenu($event, 'connection', org.id, conn.id)"
+                      >
+                        <div class="connection-name">
+                          <span class="drag-handle-conn">⋮⋮</span>
+                          <div
+                            class="connection-color-block"
+                            :style="{ backgroundColor: getConnectionColor(conn.id) }"
+                          ></div>
+                          {{ conn.name }}
+                        </div>
+                      </div>
+                    </template>
+                  </draggable>
+                </template>
               </div>
             </div>
           </template>
@@ -1019,5 +1180,69 @@ h3 {
   opacity: 0.8;
   background-color: var(--menu-hover-bg);
   z-index: 1;
+}
+
+/* 虚拟滚动相关样式 */
+.virtual-list-container {
+  height: 100%;
+  max-height: 300px; /* 限制最大高度 */
+  overflow-y: auto;
+  position: relative;
+}
+
+.virtual-list-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+/* 性能提示样式 */
+.performance-tip {
+  font-size: 12px;
+  color: var(--text-color-light);
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.dark-menu .performance-tip {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 连接数量样式 */
+.connection-count {
+  font-size: 12px;
+  color: var(--text-color-light);
+  margin-left: 5px;
+  opacity: 0.7;
+}
+
+/* 拖拽优化相关样式 */
+.chosen-org {
+  background-color: var(--section-bg-color);
+}
+
+.chosen-conn {
+  background-color: var(--section-bg-color);
+}
+
+/* 拖拽时禁用动画和过渡效果 */
+:global(.dragging-active) * {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* 拖拽时的性能优化 */
+:global(.dragging-active) .connection-item:not(.dragging-conn):not(.ghost-conn) {
+  transform: none !important;
+  transition: none !important;
+}
+
+:global(.dragging-active) .organization:not(.dragging-org):not(.ghost-org) {
+  transform: none !important;
+  transition: none !important;
 }
 </style>
