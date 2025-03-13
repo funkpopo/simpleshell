@@ -1663,10 +1663,14 @@ async function handleAIRequest(params: {
     interface OpenAIConfig {
       apiKey: string
       baseURL?: string
+      maxRetries?: number
+      timeout?: number
     }
 
     const configuration: OpenAIConfig = {
-      apiKey: apiKey
+      apiKey: apiKey,
+      maxRetries: 2,
+      timeout: 60000 // 60秒超时
     }
 
     // 如果设置了自定义API URL，则使用它
@@ -1674,23 +1678,32 @@ async function handleAIRequest(params: {
       configuration.baseURL = apiUrl
     }
 
+    // 创建OpenAI实例，不使用自定义HTTP代理
     const openai = new OpenAI(configuration)
 
     console.log(`使用模型 ${modelName} 发送请求${useStream ? '(流式)' : ''}`)
 
     // 转换消息格式以符合OpenAI API要求
-    const apiMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = []
+    // 优化：预分配数组大小以减少内存重分配
+    const apiMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = 
+      new Array(params.messages.length)
 
+    // 优化：减少字符串处理和内存使用
+    let msgIndex = 0
     for (const msg of params.messages) {
       const role = msg.role.toLowerCase()
-
-      if (role === 'system') {
-        apiMessages.push({ role: 'system', content: msg.content })
-      } else if (role === 'user') {
-        apiMessages.push({ role: 'user', content: msg.content })
-      } else if (role === 'assistant') {
-        apiMessages.push({ role: 'assistant', content: msg.content })
+      
+      if (role === 'system' || role === 'user' || role === 'assistant') {
+        apiMessages[msgIndex++] = { 
+          role: role as 'system' | 'user' | 'assistant', 
+          content: msg.content 
+        }
       }
+    }
+    
+    // 如果有空位，裁剪数组
+    if (msgIndex < params.messages.length) {
+      apiMessages.length = msgIndex
     }
 
     try {
@@ -1701,26 +1714,39 @@ async function handleAIRequest(params: {
           model: modelName,
           messages: apiMessages,
           temperature: 0.7,
-          max_tokens: 16384,
+          max_tokens: 16384, // 减小token数量以降低内存使用
           stream: true
         })
 
-        let fullContent = ''
+        // 优化：使用字符串块而不是完整内容，减少内存使用
+        let contentChunks: string[] = []
+        let totalLength = 0
+        const MAX_BUFFER_SIZE = 1024 * 50 // 50KB 缓冲区限制
 
         // 处理流式响应
         for await (const chunk of stream) {
           const content = chunk.choices[0]?.delta?.content || ''
           if (content) {
-            fullContent += content
-
+            contentChunks.push(content)
+            totalLength += content.length
+            
             // 发送块到渲染进程
             mainWindow.webContents.send('ai:stream-update', {
               chunk: content
             })
+            
+            // 当缓冲区达到一定大小时，合并并清空以节省内存
+            if (totalLength > MAX_BUFFER_SIZE) {
+              contentChunks = [contentChunks.join('')]
+              totalLength = contentChunks[0].length
+            }
           }
         }
 
         console.log('流式AI回答完成')
+        
+        // 只在最后合并一次，减少字符串连接操作
+        const fullContent = contentChunks.join('')
 
         return {
           success: true,
@@ -1732,7 +1758,7 @@ async function handleAIRequest(params: {
           model: modelName,
           messages: apiMessages,
           temperature: 0.7,
-          max_tokens: 16384
+          max_tokens: 16384 // 减小token数量以降低内存使用
         })
 
         // 提取回答

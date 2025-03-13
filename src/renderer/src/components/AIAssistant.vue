@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useI18n } from '../i18n'
+import { marked } from 'marked'
+import { markedHighlight } from 'marked-highlight'
+import hljs from 'highlight.js'
 
 // 导入图标资源
 import minimizeDayIcon from '../assets/minimize-day.svg'
@@ -9,6 +12,8 @@ import closeDayIcon from '../assets/close-day.svg'
 import closeNightIcon from '../assets/close-night.svg'
 import settingsDayIcon from '../assets/settings-day.svg'
 import settingsNightIcon from '../assets/settings-night.svg'
+import copyDayIcon from '../assets/copy-day.svg'
+import copyNightIcon from '../assets/copy-night.svg'
 
 // 使用i18n
 const { t } = useI18n()
@@ -23,6 +28,7 @@ const props = defineProps<{
 const minimizeIcon = computed(() => (props.isDarkTheme ? minimizeNightIcon : minimizeDayIcon))
 const closeIcon = computed(() => (props.isDarkTheme ? closeNightIcon : closeDayIcon))
 const settingsIcon = computed(() => (props.isDarkTheme ? settingsNightIcon : settingsDayIcon))
+const copyIcon = computed(() => (props.isDarkTheme ? copyNightIcon : copyDayIcon))
 
 // 定义事件
 const emit = defineEmits<{
@@ -47,6 +53,20 @@ const windowDimensions = ref({
   floatingHeight: 450
 })
 
+// 添加窗口大小调整相关变量
+const isResizing = ref(false)
+const resizeDirection = ref('')
+const windowWidth = ref(320)
+const windowHeight = ref(450)
+const minWidth = 280
+const maxWidth = 500
+const minHeight = 350
+const maxHeight = 700
+const resizeStartX = ref(0)
+const resizeStartY = ref(0)
+const resizeStartWidth = ref(0)
+const resizeStartHeight = ref(0)
+
 // 浮窗状态
 const showHistory = ref(false)
 const showSettings = ref(false)
@@ -58,6 +78,10 @@ const messages = ref<
     type: 'user' | 'assistant'
     content: string
     timestamp: number
+    rendered?: boolean // 是否已渲染
+    html?: string // 缓存解析后的HTML
+    segments?: Array<{ content: string, html?: string }> // 分段内容，用于长消息
+    isLongContent?: boolean // 是否是长内容
   }>
 >([])
 
@@ -83,6 +107,14 @@ const userInput = ref('')
 const isLoading = ref(false)
 // 当前流式响应的消息ID
 const streamingMessageId = ref<string | null>(null)
+// 渲染节流计时器
+const renderThrottleTimer = ref<number | null>(null)
+// 是否正在渲染大量内容
+const isRenderingLargeContent = ref(false)
+// 内容长度阈值，超过此长度将分块渲染
+const CONTENT_CHUNK_THRESHOLD = 5000
+// 分段大小，每段最大字符数
+const SEGMENT_SIZE = 2000
 
 // 本地存储密钥
 const STORAGE_KEY = 'ai_assistant_messages'
@@ -93,7 +125,9 @@ const floatingWindowStyle = computed(() => {
   return {
     transform: `translate3d(${posX.value}px, ${posY.value}px, 0)`,
     // 添加一个过渡效果，但仅在非拖动状态下生效
-    transition: isDragging.value ? 'none' : 'transform 0.05s ease'
+    transition: isDragging.value || isResizing.value ? 'none' : 'transform 0.05s ease',
+    width: `${windowWidth.value}px`,
+    height: `${windowHeight.value}px`
   }
 })
 
@@ -185,29 +219,118 @@ const endDrag = () => {
 
 // 确保窗口可见
 const ensureWindowVisible = () => {
-  const windowWidth = window.innerWidth
-  const windowHeight = window.innerHeight
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+
+  // 确保至少有100px的窗口在视口内
+  const minVisiblePortion = 100
+
+  // 检查并修正X位置
+  if (posX.value < -windowWidth.value + minVisiblePortion) {
+    posX.value = -windowWidth.value + minVisiblePortion
+  } else if (posX.value > viewportWidth - minVisiblePortion) {
+    posX.value = viewportWidth - minVisiblePortion
+  }
+
+  // 检查并修正Y位置
+  if (posY.value < 0) {
+    posY.value = 0
+  } else if (posY.value > viewportHeight - windowHeight.value + minVisiblePortion) {
+    posY.value = viewportHeight - windowHeight.value + minVisiblePortion
+  }
+}
+
+// 开始调整大小
+const startResize = (e: MouseEvent, direction: string) => {
+  if (isDragging.value) return
+  
+  isResizing.value = true
+  resizeDirection.value = direction
+  resizeStartX.value = e.clientX
+  resizeStartY.value = e.clientY
+  resizeStartWidth.value = windowWidth.value
+  resizeStartHeight.value = windowHeight.value
+  
+  // 添加调整大小状态CSS类，用于视觉反馈
   const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
+  floatingWindow?.classList.add('resizing')
+  
+  // 为body添加全局调整大小样式
+  document.body.classList.add('ai-window-resizing')
+  
+  // 阻止事件冒泡和默认行为
+  e.preventDefault()
+  e.stopPropagation()
+}
 
-  if (floatingWindow) {
-    const floatingWidth = floatingWindow.offsetWidth
-    const floatingHeight = floatingWindow.offsetHeight
-
-    // 确保至少有100px的窗口在视口内
-    const minVisiblePortion = 100
-
-    // 检查并修正X位置
-    if (posX.value < -floatingWidth + minVisiblePortion) {
-      posX.value = -floatingWidth + minVisiblePortion
-    } else if (posX.value > windowWidth - minVisiblePortion) {
-      posX.value = windowWidth - minVisiblePortion
+// 调整大小中
+const onResize = (e: MouseEvent) => {
+  if (!isResizing.value) return
+  
+  // 使用requestAnimationFrame优化动画
+  requestAnimationFrame(() => {
+    const deltaX = e.clientX - resizeStartX.value
+    const deltaY = e.clientY - resizeStartY.value
+    
+    // 根据调整方向计算新尺寸
+    if (resizeDirection.value.includes('right')) {
+      const newWidth = Math.max(minWidth, Math.min(maxWidth, resizeStartWidth.value + deltaX))
+      windowWidth.value = newWidth
     }
+    
+    if (resizeDirection.value.includes('bottom')) {
+      const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight.value + deltaY))
+      windowHeight.value = newHeight
+    }
+    
+    // 如果是左侧调整，需要同时更新位置
+    if (resizeDirection.value.includes('left')) {
+      const newWidth = Math.max(minWidth, Math.min(maxWidth, resizeStartWidth.value - deltaX))
+      const widthDiff = newWidth - windowWidth.value
+      if (widthDiff !== 0) {
+        posX.value -= widthDiff
+        windowWidth.value = newWidth
+      }
+    }
+    
+    // 如果是顶部调整，需要同时更新位置
+    if (resizeDirection.value.includes('top')) {
+      const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight.value - deltaY))
+      const heightDiff = newHeight - windowHeight.value
+      if (heightDiff !== 0) {
+        posY.value -= heightDiff
+        windowHeight.value = newHeight
+      }
+    }
+  })
+  
+  // 阻止事件冒泡和默认行为
+  e.preventDefault()
+  e.stopPropagation()
+}
 
-    // 检查并修正Y位置
-    if (posY.value < 0) {
-      posY.value = 0
-    } else if (posY.value > windowHeight - floatingHeight + minVisiblePortion) {
-      posY.value = windowHeight - floatingHeight + minVisiblePortion
+// 结束调整大小
+const endResize = () => {
+  if (isResizing.value) {
+    isResizing.value = false
+    resizeDirection.value = ''
+    
+    // 保存位置和尺寸到localStorage
+    saveWindowPosition()
+    
+    // 移除调整大小状态CSS类
+    const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
+    floatingWindow?.classList.remove('resizing')
+    
+    // 移除body上的全局调整大小样式
+    document.body.classList.remove('ai-window-resizing')
+    
+    // 更新窗口尺寸引用为当前尺寸
+    windowDimensions.value = {
+      windowWidth: window.innerWidth,
+      windowHeight: window.innerHeight,
+      floatingWidth: windowWidth.value,
+      floatingHeight: windowHeight.value
     }
   }
 }
@@ -225,7 +348,9 @@ const saveWindowPosition = () => {
       POSITION_STORAGE_KEY,
       JSON.stringify({
         x: posX.value,
-        y: posY.value
+        y: posY.value,
+        width: windowWidth.value,
+        height: windowHeight.value
       })
     )
 
@@ -244,6 +369,10 @@ const loadWindowPosition = () => {
       const position = JSON.parse(savedPosition)
       posX.value = position.x
       posY.value = position.y
+      
+      // 加载保存的窗口尺寸
+      if (position.width) windowWidth.value = position.width
+      if (position.height) windowHeight.value = position.height
 
       // 标记已加载位置
       hasLoadedPosition.value = true
@@ -259,7 +388,7 @@ const loadWindowPosition = () => {
 // 监听窗口大小变化，确保浮窗位置有效
 const handleResize = () => {
   // 如果不是正在拖拽，才执行自动调整
-  if (!isDragging.value) {
+  if (!isDragging.value && !isResizing.value) {
     ensureWindowVisible()
   }
 }
@@ -275,6 +404,9 @@ onMounted(async () => {
   // 其他初始化
   document.addEventListener('mousemove', onDrag)
   document.addEventListener('mouseup', endDrag)
+  // 添加调整大小事件监听
+  document.addEventListener('mousemove', onResize)
+  document.addEventListener('mouseup', endResize)
   window.addEventListener('resize', handleResize)
 
   // 注册流式输出事件监听
@@ -299,6 +431,8 @@ onMounted(async () => {
     console.log('使用默认窗口位置')
     posX.value = window.innerWidth - 350
     posY.value = 80
+    windowWidth.value = 320
+    windowHeight.value = 450
   }
 })
 
@@ -307,6 +441,9 @@ onUnmounted(() => {
   console.log('组件卸载，清理事件监听')
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', endDrag)
+  // 移除调整大小事件监听
+  document.removeEventListener('mousemove', onResize)
+  document.removeEventListener('mouseup', endResize)
   window.removeEventListener('resize', handleResize)
 })
 
@@ -382,7 +519,8 @@ const getAIResponse = async (): Promise<string> => {
       id: assistantMessageId,
       type: 'assistant',
       content: '',
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      rendered: false
     })
 
     // 设置当前流式消息ID
@@ -390,6 +528,12 @@ const getAIResponse = async (): Promise<string> => {
 
     // 滚动到底部
     scrollToBottom()
+
+    // 清除可能存在的节流定时器
+    if (renderThrottleTimer.value !== null) {
+      clearTimeout(renderThrottleTimer.value)
+      renderThrottleTimer.value = null
+    }
 
     // 调用主进程的AI请求接口，使用流式模式
     const response = await window.api.sendAIRequest({
@@ -404,6 +548,18 @@ const getAIResponse = async (): Promise<string> => {
     // 流式输出完成后
     streamingMessageId.value = null
 
+    // 确保最后一次完整渲染
+    const messageIndex = messages.value.findIndex((msg) => msg.id === assistantMessageId)
+    if (messageIndex !== -1) {
+      // 强制重新渲染一次，确保内容完整显示
+      messages.value[messageIndex].rendered = false
+      
+      // 使用nextTick确保DOM更新后再滚动
+      nextTick(() => {
+        scrollToBottom()
+      })
+    }
+
     if (!response.success) {
       console.error('AI请求失败:', {
         error: response.error,
@@ -415,6 +571,7 @@ const getAIResponse = async (): Promise<string> => {
       const errorIndex = messages.value.findIndex((msg) => msg.id === assistantMessageId)
       if (errorIndex !== -1) {
         messages.value[errorIndex].content = `调用AI服务失败: ${response.error || '未知错误'}`
+        messages.value[errorIndex].rendered = false
       }
 
       return `调用AI服务失败: ${response.error || '未知错误'}`
@@ -431,6 +588,7 @@ const getAIResponse = async (): Promise<string> => {
       if (errorIndex !== -1) {
         messages.value[errorIndex].content =
           `调用AI服务失败: ${error instanceof Error ? error.message : '未知错误'}`
+        messages.value[errorIndex].rendered = false
       }
       streamingMessageId.value = null
     }
@@ -448,9 +606,36 @@ const handleStreamUpdate = (chunk: string) => {
   if (messageIndex !== -1) {
     // 追加内容
     messages.value[messageIndex].content += chunk
-
-    // 滚动到底部
-    scrollToBottom()
+    
+    // 检查是否需要分段处理
+    const content = messages.value[messageIndex].content
+    if (content.length > CONTENT_CHUNK_THRESHOLD) {
+      // 标记为长内容
+      if (!messages.value[messageIndex].isLongContent) {
+        messages.value[messageIndex].isLongContent = true
+        // 初始分段
+        messages.value[messageIndex].segments = segmentContent(content)
+      } else {
+        // 更新最后一个分段或添加新分段
+        const segments = segmentContent(content)
+        messages.value[messageIndex].segments = segments
+      }
+      
+      // 对于长内容，使用节流来减少渲染频率
+      if (renderThrottleTimer.value === null) {
+        renderThrottleTimer.value = window.setTimeout(() => {
+          // 滚动到底部
+          scrollToBottom()
+          // 清除定时器
+          renderThrottleTimer.value = null
+        }, 300) // 300ms节流
+      }
+    } else {
+      // 对于短内容，标记为未渲染，确保内容更新后会重新渲染
+      messages.value[messageIndex].rendered = false
+      // 每次更新都滚动
+      scrollToBottom()
+    }
   }
 }
 
@@ -464,7 +649,8 @@ const sendMessage = async () => {
     id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
     type: 'user',
     content: message,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    rendered: false
   })
 
   // 清空输入框
@@ -493,7 +679,8 @@ const sendMessage = async () => {
         id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
         type: 'assistant',
         content: '请在设置中配置API密钥和模型名称。',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        rendered: false
       })
     }
   } catch (error) {
@@ -503,7 +690,8 @@ const sendMessage = async () => {
       id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
       type: 'assistant',
       content: `抱歉，发生了错误: ${error instanceof Error ? error.message : '未知错误'}`,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      rendered: false
     })
   } finally {
     isLoading.value = false
@@ -557,26 +745,154 @@ watch(
   }
 )
 
-// 格式化消息，支持代码块和简单的Markdown
-const formatMessage = (content: string): { html: string; safe: boolean } => {
+// 格式化消息，支持完整的Markdown
+const formatMessage = (content: string, messageId?: string, segmentIndex?: number): { html: string; safe: boolean } => {
   if (!content) return { html: '', safe: true }
+  
+  // 如果是长内容且提供了分段索引
+  if (messageId && segmentIndex !== undefined) {
+    const messageIndex = messages.value.findIndex(msg => msg.id === messageId);
+    if (messageIndex !== -1 && 
+        messages.value[messageIndex].isLongContent && 
+        messages.value[messageIndex].segments && 
+        messages.value[messageIndex].segments[segmentIndex]) {
+      
+      const segment = messages.value[messageIndex].segments[segmentIndex];
+      
+      // 如果分段已经有缓存的HTML，直接返回
+      if (segment.html) {
+        return { 
+          html: segment.html, 
+          safe: true 
+        };
+      }
+      
+      // 否则渲染这个分段
+      try {
+        // 配置marked
+        marked.use(
+          markedHighlight({
+            langPrefix: 'hljs language-',
+            highlight(code, lang) {
+              const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+              return hljs.highlight(code, { language }).value;
+            }
+          })
+        );
 
+        // 使用marked解析Markdown
+        const html = marked.parse(segment.content) as string;
+        
+        // 缓存渲染结果
+        segment.html = html;
+        
+        return {
+          html,
+          safe: true
+        };
+      } catch (error) {
+        console.error('Markdown解析错误:', error);
+        
+        // 降级处理
+        let safeContent = escapeHtml(segment.content);
+        safeContent = processSimpleMarkdown(safeContent);
+        
+        return {
+          html: safeContent,
+          safe: true
+        };
+      }
+    }
+  }
+  
+  // 如果消息ID存在，尝试使用缓存的HTML（非分段模式）
+  if (messageId && segmentIndex === undefined) {
+    const messageIndex = messages.value.findIndex(msg => msg.id === messageId);
+    if (messageIndex !== -1 && messages.value[messageIndex].html && messages.value[messageIndex].rendered) {
+      return { 
+        html: messages.value[messageIndex].html as string, 
+        safe: true 
+      };
+    }
+  }
+
+  try {
+    // 对于超长内容，设置渲染状态标记
+    if (content.length > CONTENT_CHUNK_THRESHOLD) {
+      isRenderingLargeContent.value = true;
+    }
+
+    // 配置marked
+    marked.use(
+      markedHighlight({
+        langPrefix: 'hljs language-',
+        highlight(code, lang) {
+          const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+          return hljs.highlight(code, { language }).value;
+        }
+      })
+    );
+
+    // 使用marked解析Markdown，不使用额外选项
+    const html = marked.parse(content) as string;
+    
+    // 如果消息ID存在，缓存解析后的HTML
+    if (messageId && segmentIndex === undefined) {
+      const messageIndex = messages.value.findIndex(msg => msg.id === messageId);
+      if (messageIndex !== -1) {
+        messages.value[messageIndex].html = html;
+        messages.value[messageIndex].rendered = true;
+      }
+    }
+    
+    // 重置渲染状态
+    isRenderingLargeContent.value = false;
+    
+    return {
+      html,
+      safe: true
+    };
+  } catch (error) {
+    console.error('Markdown解析错误:', error);
+    isRenderingLargeContent.value = false;
+    
+    // 降级处理，使用简单的格式化
+    let safeContent = escapeHtml(content);
+    safeContent = processSimpleMarkdown(safeContent);
+    
+    return {
+      html: safeContent,
+      safe: true
+    };
+  }
+}
+
+// 简单的Markdown处理
+const processSimpleMarkdown = (content: string): string => {
   // 处理代码块: ```code```
-  content = content.replace(/```([\s\S]*?)```/g, (_, code) => {
-    return `<div class="code-block"><pre>${escapeHtml(code.trim())}</pre></div>`
-  })
+  let processed = content.replace(/```([\s\S]*?)```/g, (_, code) => {
+    return `<div class="code-block"><pre>${code.trim()}</pre></div>`;
+  });
 
   // 处理行内代码: `code`
-  content = content.replace(/`([^`]+)`/g, '<code>$1</code>')
+  processed = processed.replace(/`([^`]+)`/g, '<code>$1</code>');
 
   // 处理换行符
-  content = content.replace(/\n/g, '<br>')
+  processed = processed.replace(/\n/g, '<br>');
+  
+  return processed;
+}
 
-  return {
-    html: content,
-    // 这是一个受控环境，我们只处理特定的格式化，不接受外部输入
-    safe: true
-  }
+// 复制消息内容
+const copyMessageContent = (content: string) => {
+  navigator.clipboard.writeText(content)
+    .then(() => {
+      // 可以添加复制成功的提示
+      console.log('内容已复制到剪贴板');
+    })
+    .catch(err => {
+      console.error('复制失败:', err);
+    });
 }
 
 // HTML转义
@@ -689,6 +1005,78 @@ interface AppSettings {
   terminalFontSize: number
   aiSettings?: AISettings
 }
+
+// 将长内容分段处理
+const segmentContent = (content: string): Array<{ content: string, html?: string }> => {
+  if (content.length <= SEGMENT_SIZE) {
+    return [{ content }];
+  }
+  
+  const segments: Array<{ content: string, html?: string }> = [];
+  
+  // 尝试在段落边界分段
+  const paragraphs = content.split('\n\n');
+  let currentSegment = '';
+  
+  for (const paragraph of paragraphs) {
+    // 如果当前段落加上当前分段内容超过了分段大小
+    if (currentSegment.length + paragraph.length + 2 > SEGMENT_SIZE) {
+      // 如果当前分段不为空，添加到分段列表
+      if (currentSegment.length > 0) {
+        segments.push({ content: currentSegment });
+        currentSegment = '';
+      }
+      
+      // 如果单个段落超过分段大小，需要进一步分割
+      if (paragraph.length > SEGMENT_SIZE) {
+        // 按句子分割
+        const sentences = paragraph.split(/(?<=[.!?])\s+/);
+        let sentenceSegment = '';
+        
+        for (const sentence of sentences) {
+          if (sentenceSegment.length + sentence.length + 1 > SEGMENT_SIZE) {
+            if (sentenceSegment.length > 0) {
+              segments.push({ content: sentenceSegment });
+              sentenceSegment = '';
+            }
+            
+            // 如果单个句子超过分段大小，按字符分割
+            if (sentence.length > SEGMENT_SIZE) {
+              let i = 0;
+              while (i < sentence.length) {
+                segments.push({ 
+                  content: sentence.substring(i, Math.min(i + SEGMENT_SIZE, sentence.length)) 
+                });
+                i += SEGMENT_SIZE;
+              }
+            } else {
+              sentenceSegment = sentence;
+            }
+          } else {
+            sentenceSegment += (sentenceSegment ? ' ' : '') + sentence;
+          }
+        }
+        
+        if (sentenceSegment.length > 0) {
+          segments.push({ content: sentenceSegment });
+        }
+      } else {
+        // 段落没有超过分段大小，直接添加
+        segments.push({ content: paragraph });
+      }
+    } else {
+      // 添加段落到当前分段
+      currentSegment += (currentSegment ? '\n\n' : '') + paragraph;
+    }
+  }
+  
+  // 添加最后一个分段
+  if (currentSegment.length > 0) {
+    segments.push({ content: currentSegment });
+  }
+  
+  return segments;
+}
 </script>
 
 <template>
@@ -713,6 +1101,16 @@ interface AppSettings {
         </button>
       </div>
     </div>
+
+    <!-- 添加调整大小的边缘处理器 -->
+    <div class="resize-handle resize-handle-right" @mousedown="(e) => startResize(e, 'right')"></div>
+    <div class="resize-handle resize-handle-bottom" @mousedown="(e) => startResize(e, 'bottom')"></div>
+    <div class="resize-handle resize-handle-left" @mousedown="(e) => startResize(e, 'left')"></div>
+    <div class="resize-handle resize-handle-top" @mousedown="(e) => startResize(e, 'top')"></div>
+    <div class="resize-handle resize-handle-bottom-right" @mousedown="(e) => startResize(e, 'bottom-right')"></div>
+    <div class="resize-handle resize-handle-bottom-left" @mousedown="(e) => startResize(e, 'bottom-left')"></div>
+    <div class="resize-handle resize-handle-top-right" @mousedown="(e) => startResize(e, 'top-right')"></div>
+    <div class="resize-handle resize-handle-top-left" @mousedown="(e) => startResize(e, 'top-left')"></div>
 
     <!-- 设置面板 -->
     <Transition name="settings-panel">
@@ -783,17 +1181,45 @@ interface AppSettings {
       >
         <!-- 用户消息 -->
         <div v-if="message.type === 'user'" class="message-content">
-          {{ message.content }}
+          <div class="message-actions">
+            <button class="copy-btn" @click="copyMessageContent(message.content)" title="复制内容">
+              <img :src="copyIcon" alt="Copy" width="16" height="16" />
+            </button>
+          </div>
+          <div class="selectable-text">{{ message.content }}</div>
         </div>
 
         <!-- AI消息，支持格式化 -->
         <div v-else class="message-content formatted-content">
-          <!-- 使用安全的方式渲染格式化内容 -->
-          <div
-            v-if="formatMessage(message.content).safe"
-            :innerHTML="formatMessage(message.content).html"
-          ></div>
-          <div v-else>{{ message.content }}</div>
+          <div class="message-actions">
+            <button class="copy-btn" @click="copyMessageContent(message.content)" title="复制内容">
+              <img :src="copyIcon" alt="Copy" width="16" height="16" />
+            </button>
+          </div>
+          
+          <!-- 长内容分段渲染 -->
+          <template v-if="message.isLongContent && message.segments && message.segments.length > 0">
+            <div 
+              v-for="(segment, idx) in message.segments" 
+              :key="`${message.id}-segment-${idx}`"
+              class="message-segment"
+            >
+              <div 
+                :innerHTML="formatMessage(segment.content, message.id, idx).html"
+                class="selectable-text markdown-body"
+              ></div>
+            </div>
+          </template>
+          
+          <!-- 短内容直接渲染 -->
+          <template v-else>
+            <div
+              v-if="message.content"
+              :innerHTML="formatMessage(message.content, message.id).html"
+              class="selectable-text markdown-body"
+            ></div>
+            <div v-else class="selectable-text">{{ message.content }}</div>
+          </template>
         </div>
 
         <div class="message-timestamp">{{ formatTimestamp(message.timestamp) }}</div>
@@ -828,10 +1254,18 @@ interface AppSettings {
 :root {
   /* 拖动过程中应用的全局样式 */
   --dragging-cursor: move;
+  --resize-cursor-ew: ew-resize;
+  --resize-cursor-ns: ns-resize;
+  --resize-cursor-nwse: nwse-resize;
+  --resize-cursor-nesw: nesw-resize;
 }
 
 body.ai-window-dragging {
   cursor: var(--dragging-cursor) !important;
+  user-select: none !important;
+}
+
+body.ai-window-resizing {
   user-select: none !important;
 }
 
@@ -865,6 +1299,84 @@ body.ai-window-dragging {
   user-select: none; /* 防止文本选择 */
 }
 
+/* 调整大小状态样式 */
+.ai-floating-window.resizing {
+  transition: none !important;
+  opacity: 0.95;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  user-select: none;
+}
+
+/* 调整大小的边缘处理器 */
+.resize-handle {
+  position: absolute;
+  z-index: 10;
+}
+
+.resize-handle-right {
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: var(--resize-cursor-ew);
+}
+
+.resize-handle-bottom {
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  cursor: var(--resize-cursor-ns);
+}
+
+.resize-handle-left {
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: var(--resize-cursor-ew);
+}
+
+.resize-handle-top {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  cursor: var(--resize-cursor-ns);
+}
+
+.resize-handle-bottom-right {
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: var(--resize-cursor-nwse);
+}
+
+.resize-handle-bottom-left {
+  bottom: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  cursor: var(--resize-cursor-nesw);
+}
+
+.resize-handle-top-right {
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: var(--resize-cursor-nesw);
+}
+
+.resize-handle-top-left {
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  cursor: var(--resize-cursor-nwse);
+}
+
 .ai-floating-window.dark-theme {
   background-color: #272727;
   border: 1px solid #444;
@@ -873,6 +1385,10 @@ body.ai-window-dragging {
 
 .ai-floating-window.dark-theme.dragging {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4); /* 暗色主题下的增强阴影 */
+}
+
+.ai-floating-window.dark-theme.resizing {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
 }
 
 .window-header {
@@ -1779,5 +2295,63 @@ body.ai-window-dragging {
 
 .dark-theme .settings-hint {
   color: #aaa;
+}
+
+/* 优化复制按钮样式 */
+.message-actions {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.message-bubble:hover .message-actions {
+  opacity: 1;
+}
+
+.copy-btn {
+  background: rgba(255, 255, 255, 0.8);
+  border: none;
+  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.copy-btn:hover {
+  background: rgba(255, 255, 255, 0.95);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+.dark-theme .copy-btn {
+  background: rgba(60, 60, 60, 0.8);
+}
+
+.dark-theme .copy-btn:hover {
+  background: rgba(70, 70, 70, 0.95);
+}
+
+.copy-btn img {
+  width: 14px;
+  height: 14px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.copy-btn:hover img {
+  opacity: 1;
+}
+
+/* 调整消息内容的padding，为复制按钮留出空间 */
+.message-content {
+  position: relative;
+  padding-right: 30px;
 }
 </style>
