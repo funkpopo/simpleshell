@@ -27,13 +27,16 @@
     "@xterm/addon-search": "^0.15.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.7",
+    "marked-highlight": "^2.2.1",
     "node-machine-id": "^1.1.12",
     "node-pty": "^1.1.0-beta30",
+    "openai": "^4.87.3",
     "os": "^0.1.2",
     "ssh2": "^1.16.0",
     "ssh2-sftp-client": "^11.0.0",
-    "vuedraggable": "^4.1.0",
-    "openai": "^4.87.3"
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^1.0.2",
