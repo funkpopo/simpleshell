@@ -72,7 +72,7 @@ Ui Oval Interface Icons Collection
 
 [√] 鼠标移出应用窗口后的freeze处理，添加高亮规则
 
-[ ] AI历史记录，配置自定义API
+[√] AI配置自定义API
 
 [√] 目标服务器资源监控
 
@@ -83,3 +83,5 @@ Ui Oval Interface Icons Collection
 [√] json文件生产环境存储路径指定
 
 [√] 终端字体和字号设置
+
+[ ] 添加便捷小工具
