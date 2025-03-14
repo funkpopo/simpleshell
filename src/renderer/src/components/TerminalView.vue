@@ -6,8 +6,6 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import { ITerminalAddon } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { LexerHighlightAddon } from '../utils/LexerHighlightAddon'
-import { lexerService } from '../services/LexerService'
 import CopyDayIcon from '../assets/copy-day.svg'
 import CopyNightIcon from '../assets/copy-night.svg'
 import SearchDayIcon from '../assets/search-day.svg'
@@ -86,11 +84,6 @@ const dragOverTabId = ref<string | null>(null)
 // 用于追踪最后一次创建终端的时间，避免频繁创建
 const lastTerminalCreationTime = ref<number>(0)
 const TERMINAL_CREATION_DEBOUNCE_MS = 300 // 防抖时间（毫秒）
-
-// lexer规则加载状态
-const isLoadingLexer = ref(false)
-const lexerLoaded = ref(false)
-const lexerError = ref<string | null>(null)
 
 // 搜索相关状态
 const showSearchBar = ref(false)
@@ -316,29 +309,6 @@ const initializeTerminal = async (tab: TerminalTab) => {
     disposeTerminal(tab)
   }
 
-  // 尝试加载lexer规则文件
-  if (!lexerLoaded.value && !isLoadingLexer.value) {
-    isLoadingLexer.value = true
-    try {
-      // 加载Linux lexer规则
-      const lexerContent = await lexerService.loadLexerFile('linux')
-      if (lexerContent) {
-        lexerLoaded.value = true
-        console.log('成功加载lexer规则')
-      } else {
-        // 使用默认规则
-        console.log('使用默认lexer规则')
-        lexerService.setLexerContent('linux', lexerService.getDefaultLinuxLexer())
-        lexerLoaded.value = true
-      }
-    } catch (error) {
-      console.error('加载lexer规则失败:', error)
-      lexerError.value = '无法加载语法高亮规则'
-    } finally {
-      isLoadingLexer.value = false
-    }
-  }
-
   // 创建一个新的终端
   tab.terminal = new Terminal({
     fontFamily: terminalSettings.value.terminalFontFamily,
@@ -363,18 +333,6 @@ const initializeTerminal = async (tab: TerminalTab) => {
   // 添加搜索插件
   tab.searchAddon = new SearchAddon()
   tab.terminal.loadAddon(tab.searchAddon)
-
-  // 添加高亮插件
-  if (lexerLoaded.value) {
-    try {
-      const lexerContent = await lexerService.loadLexerFile('linux')
-      tab.highlightAddon = new LexerHighlightAddon(props.isDarkTheme, lexerContent)
-      tab.terminal.loadAddon(tab.highlightAddon)
-      console.log(`为终端 ${tab.id} 加载了语法高亮插件`)
-    } catch (error) {
-      console.error('加载语法高亮插件失败:', error)
-    }
-  }
 
   // 在DOM挂载后打开终端
   nextTick(() => {
@@ -818,17 +776,6 @@ const disposeTerminal = (tab: TerminalTab) => {
       // 先取消输入监听，防止在dispose过程中触发
       tab.terminal.onData(() => {})
 
-      // 清理插件
-      if (tab.highlightAddon) {
-        console.log(`清理高亮插件，标签ID: ${tab.id}`)
-        try {
-          tab.highlightAddon.dispose()
-          tab.highlightAddon = undefined
-        } catch (error) {
-          console.error(`高亮插件清理失败，标签ID: ${tab.id}，错误:`, error)
-        }
-      }
-
       // 清理搜索插件
       if (tab.searchAddon) {
         console.log(`清理搜索插件，标签ID: ${tab.id}`)
@@ -1113,6 +1060,7 @@ watchEffect(() => {
   if (activeTab.value?.terminal) {
     activeTab.value.terminal.options.theme = currentTheme.value
 
+    /*
     // 更新高亮插件的主题
     if (activeTab.value.highlightAddon) {
       const typedAddon = activeTab.value.highlightAddon as LexerHighlightAddon
@@ -1120,6 +1068,7 @@ watchEffect(() => {
         typedAddon.setTheme(props.isDarkTheme)
       }
     }
+    */
   }
 })
 
