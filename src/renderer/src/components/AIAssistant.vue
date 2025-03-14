@@ -2161,6 +2161,41 @@ body.ai-window-resizing {
   display: flex;
   flex-direction: column;
   gap: 15px;
+  overflow-y: auto; /* 添加垂直滚动条 */
+  flex: 1; /* 让内容区域占据剩余空间 */
+  scrollbar-width: thin; /* 细滚动条 */
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent; /* 滚动条颜色 */
+}
+
+/* 为暗色主题设置滚动条颜色 */
+.dark-theme .settings-content {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+/* 为Webkit浏览器设置滚动条样式 */
+.settings-content::-webkit-scrollbar {
+  width: 5px;
+}
+
+.settings-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-content::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.settings-content::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.4);
+}
+
+.dark-theme .settings-content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.dark-theme .settings-content::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
 }
 
 .settings-group {
