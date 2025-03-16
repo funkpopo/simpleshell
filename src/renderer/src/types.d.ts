@@ -130,21 +130,39 @@ declare interface API {
     language: string
     fontSize: number
     fontFamily: string
+    terminalFontFamily?: string
+    terminalFontSize?: number
     aiSettings?: {
       apiUrl?: string
       apiKey?: string
       modelName?: string
     }
+    aiApis?: Array<{
+      id: string
+      name: string
+      apiUrl: string
+      apiKey: string
+      modelName: string
+    }>
   }>
   saveSettings: (settings: {
     language: string
     fontSize: number
     fontFamily: string
+    terminalFontFamily?: string
+    terminalFontSize?: number
     aiSettings?: {
       apiUrl?: string
       apiKey?: string
       modelName?: string
     }
+    aiApis?: Array<{
+      id: string
+      name: string
+      apiUrl: string
+      apiKey: string
+      modelName: string
+    }>
   }) => Promise<boolean>
 
   // 文件传输事件监听

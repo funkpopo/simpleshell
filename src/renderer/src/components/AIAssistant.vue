@@ -10,8 +10,6 @@ import minimizeDayIcon from '../assets/minimize-day.svg'
 import minimizeNightIcon from '../assets/minimize-night.svg'
 import closeDayIcon from '../assets/close-day.svg'
 import closeNightIcon from '../assets/close-night.svg'
-import settingsDayIcon from '../assets/settings-day.svg'
-import settingsNightIcon from '../assets/settings-night.svg'
 import copyDayIcon from '../assets/copy-day.svg'
 import copyNightIcon from '../assets/copy-night.svg'
 
@@ -27,7 +25,6 @@ const props = defineProps<{
 // 动态图标计算属性
 const minimizeIcon = computed(() => (props.isDarkTheme ? minimizeNightIcon : minimizeDayIcon))
 const closeIcon = computed(() => (props.isDarkTheme ? closeNightIcon : closeDayIcon))
-const settingsIcon = computed(() => (props.isDarkTheme ? settingsNightIcon : settingsDayIcon))
 const copyIcon = computed(() => (props.isDarkTheme ? copyNightIcon : copyDayIcon))
 
 // 定义事件
@@ -67,10 +64,6 @@ const resizeStartY = ref(0)
 const resizeStartWidth = ref(0)
 const resizeStartHeight = ref(0)
 
-// 浮窗状态
-const showHistory = ref(false)
-const showSettings = ref(false)
-
 // 对话内容
 const messages = ref<
   Array<{
@@ -92,12 +85,31 @@ const aiSettings = ref({
   modelName: ''
 })
 
-// 自定义模型名称
-const customModelName = ref('')
+// 可用的AI API配置列表
+const availableApiConfigs = ref<Array<{
+  id: string
+  name: string
+  apiUrl: string
+  apiKey: string
+  modelName: string
+}>>([])
+
+// 当前选择的API配置ID
+const selectedApiId = ref<string | null>(null)
+
+// 是否显示API选择下拉菜单
+const showApiSelector = ref(false)
 
 // 是否使用OpenAI
 const isUsingOpenAI = computed(() => {
   return !!aiSettings.value.apiKey && !!aiSettings.value.modelName
+})
+
+// 当前选择的API名称
+const selectedApiName = computed(() => {
+  if (!selectedApiId.value) return 'AI接口'
+  const api = availableApiConfigs.value.find(api => api.id === selectedApiId.value)
+  return api ? api.name : 'AI接口'
 })
 
 // 用户输入
@@ -117,6 +129,8 @@ const CONTENT_CHUNK_THRESHOLD = 5000
 const SEGMENT_SIZE = 2000
 // 是否正在接收AI回复
 const isReceivingResponse = ref(false)
+// 配置检查定时器
+const configCheckInterval = ref<number | null>(null)
 
 // 本地存储密钥
 const STORAGE_KEY = 'ai_assistant_messages'
@@ -400,6 +414,11 @@ onMounted(async () => {
     saveWindowPosition()
   })
 
+  // 添加配置变化监听，每隔5秒检查一次配置是否有变化
+  configCheckInterval.value = window.setInterval(async () => {
+    await refreshApiConfigs()
+  }, 5000)
+
   // 加载窗口位置
   console.log('加载窗口位置')
   loadWindowPosition()
@@ -423,19 +442,25 @@ onUnmounted(() => {
   document.removeEventListener('mousemove', onResize)
   document.removeEventListener('mouseup', endResize)
   window.removeEventListener('resize', handleResize)
+  
+  // 清除配置检查定时器
+  if (configCheckInterval.value) {
+    clearInterval(configCheckInterval.value)
+    configCheckInterval.value = null
+  }
 })
 
-// 切换设置面板
-const toggleSettings = (e: MouseEvent) => {
+// 切换API选择器
+const toggleApiSelector = (e: MouseEvent) => {
   // 阻止事件冒泡，防止触发拖拽
   e.stopPropagation()
-  showSettings.value = !showSettings.value
-
-  // 如果打开设置面板，关闭历史面板
-  if (showSettings.value) {
-    showHistory.value = false
-    loadAISettings()
+  
+  // 在显示下拉菜单前刷新API配置列表
+  if (!showApiSelector.value) {
+    refreshApiConfigs()
   }
+  
+  showApiSelector.value = !showApiSelector.value
 }
 
 // 最小化窗口
@@ -476,9 +501,9 @@ const getAIResponse = async (): Promise<string> => {
       return errorMsg
     }
 
-    console.log('使用config.json中的设置发送请求:', {
+    console.log('使用当前选择的API配置发送请求:', {
       apiUrl: aiSettings.value.apiUrl || '未设置',
-      apiKeySet: aiSettings.value.apiKey || '未设置',
+      apiKeySet: aiSettings.value.apiKey ? '已设置' : '未设置',
       modelName: aiSettings.value.modelName || '未设置'
     })
 
@@ -914,13 +939,6 @@ const escapeHtml = (unsafe: string): string => {
     .replace(/'/g, '&#039;')
 }
 
-// 更新自定义模型
-const updateCustomModel = () => {
-  if (customModelName.value) {
-    console.log(`更新自定义模型名称: ${customModelName.value}`)
-  }
-}
-
 // 加载AI设置
 const loadAISettings = async () => {
   try {
@@ -945,58 +963,66 @@ const loadAISettings = async () => {
       return
     }
 
-    // 从settings中获取aiSettings
-    const { aiSettings: configAiSettings } = settings
-
-    if (configAiSettings) {
-      // 更新本地设置
-      aiSettings.value = {
-        apiUrl: configAiSettings.apiUrl || '',
-        apiKey: configAiSettings.apiKey || '',
-        modelName: configAiSettings.modelName || ''
+    // 加载API配置列表
+    if (Array.isArray(settings.aiApis)) {
+      availableApiConfigs.value = settings.aiApis
+      console.log(`已加载 ${availableApiConfigs.value.length} 个AI API配置`)
+      
+      // 如果有配置，选择第一个作为默认
+      if (availableApiConfigs.value.length > 0) {
+        const firstApi = availableApiConfigs.value[0]
+        selectedApiId.value = firstApi.id
+        
+        // 更新当前使用的API设置
+        aiSettings.value = {
+          apiUrl: firstApi.apiUrl || '',
+          apiKey: firstApi.apiKey || '',
+          modelName: firstApi.modelName || ''
+        }
+        
+        console.log('已选择默认API配置:', firstApi.name)
       }
-
-      console.log('从config.json加载的AI设置:', {
-        apiUrl: configAiSettings.apiUrl || '未设置',
-        apiKey: configAiSettings.apiKey ? '已设置' : '未设置',
-        modelName: configAiSettings.modelName || '未设置'
-      })
     } else {
-      console.warn('未找到AI设置配置')
+      console.log('未找到API配置列表，尝试使用旧版aiSettings')
+    }
+
+    // 兼容旧版配置：如果没有aiApis或者aiApis为空，但有aiSettings，则使用aiSettings
+    if ((!settings.aiApis || settings.aiApis.length === 0) && settings.aiSettings) {
+      const { aiSettings: configAiSettings } = settings
+      
+      if (configAiSettings) {
+        // 更新本地设置
+        aiSettings.value = {
+          apiUrl: configAiSettings.apiUrl || '',
+          apiKey: configAiSettings.apiKey || '',
+          modelName: configAiSettings.modelName || ''
+        }
+
+        console.log('从config.json加载的旧版AI设置:', {
+          apiUrl: configAiSettings.apiUrl || '未设置',
+          apiKey: configAiSettings.apiKey ? '已设置' : '未设置',
+          modelName: configAiSettings.modelName || '未设置'
+        })
+      } else {
+        console.warn('未找到AI设置配置')
+      }
     }
   } catch (error) {
     console.error('加载AI设置失败:', error)
   }
 }
 
-// 保存AI设置
-const saveAISettings = async () => {
-  try {
-    // 获取当前设置
-    const currentSettings = await window.api.loadSettings()
-
-    // 准备新的设置对象
-    const settings: AppSettings = {
-      ...(Array.isArray(currentSettings) ? currentSettings[0] : currentSettings || {}),
-      language: 'zh-CN',
-      fontSize: 14,
-      fontFamily: 'Roboto',
-      terminalFontFamily: 'Consolas, "Courier New", monospace',
-      terminalFontSize: 14,
-      aiSettings: {
-        apiUrl: aiSettings.value.apiUrl || '',
-        apiKey: aiSettings.value.apiKey || '',
-        modelName: aiSettings.value.modelName || ''
-      }
+// 切换选择的API配置
+const selectApiConfig = (apiId: string) => {
+  const selectedApi = availableApiConfigs.value.find(api => api.id === apiId)
+  if (selectedApi) {
+    selectedApiId.value = apiId
+    aiSettings.value = {
+      apiUrl: selectedApi.apiUrl || '',
+      apiKey: selectedApi.apiKey || '',
+      modelName: selectedApi.modelName || ''
     }
-
-    // 保存到config.json
-    await window.api.saveSettings(settings)
-
-    console.log('AI设置已成功保存到config.json')
-    showSettings.value = false
-  } catch (error) {
-    console.error('保存AI设置失败:', error)
+    console.log('已切换到API配置:', selectedApi.name)
   }
 }
 
@@ -1013,6 +1039,13 @@ interface AppSettings {
   terminalFontFamily: string
   terminalFontSize: number
   aiSettings?: AISettings
+  aiApis?: Array<{
+    id: string
+    name: string
+    apiUrl: string
+    apiKey: string
+    modelName: string
+  }>
 }
 
 // 将长内容分段处理
@@ -1086,6 +1119,56 @@ const segmentContent = (content: string): Array<{ content: string, html?: string
   
   return segments;
 }
+
+// 刷新API配置列表
+const refreshApiConfigs = async () => {
+  try {
+    // 通过IPC从主进程获取设置
+    const settingsArray = await window.api.loadSettings()
+    
+    // 获取第一个配置对象
+    const settings = Array.isArray(settingsArray) ? settingsArray[0] : settingsArray
+    if (!settings) return
+    
+    // 检查API配置列表是否有变化
+    if (Array.isArray(settings.aiApis)) {
+      // 检查是否有变化
+      const currentApiIds = availableApiConfigs.value.map(api => api.id).sort().join(',')
+      const newApiIds = settings.aiApis.map(api => api.id).sort().join(',')
+      
+      // 检查API列表是否有变化
+      const hasChanges = currentApiIds !== newApiIds || 
+                         JSON.stringify(availableApiConfigs.value) !== JSON.stringify(settings.aiApis)
+      
+      if (hasChanges) {
+        console.log('检测到API配置变化，更新配置列表')
+        availableApiConfigs.value = settings.aiApis
+        
+        // 如果当前选择的API在新列表中，更新其配置
+        if (selectedApiId.value) {
+          const updatedApi = settings.aiApis.find(api => api.id === selectedApiId.value)
+          if (updatedApi) {
+            // 更新当前使用的API设置
+            aiSettings.value = {
+              apiUrl: updatedApi.apiUrl || '',
+              apiKey: updatedApi.apiKey || '',
+              modelName: updatedApi.modelName || ''
+            }
+            console.log('已更新当前API配置:', updatedApi.name)
+          } else if (settings.aiApis.length > 0) {
+            // 如果当前选择的API不在新列表中，选择第一个
+            selectApiConfig(settings.aiApis[0].id)
+          }
+        } else if (settings.aiApis.length > 0) {
+          // 如果没有选择API，选择第一个
+          selectApiConfig(settings.aiApis[0].id)
+        }
+      }
+    }
+  } catch (error) {
+    console.error('刷新API配置列表失败:', error)
+  }
+}
 </script>
 
 <template>
@@ -1099,9 +1182,24 @@ const segmentContent = (content: string): Array<{ content: string, html?: string
     <div class="window-header" @mousedown="startDrag">
       <div class="window-title">{{ t('aiAssistant.title') }}</div>
       <div class="window-controls">
-        <button class="window-btn settings-btn" @click="(e) => toggleSettings(e)">
-          <img :src="settingsIcon" alt="Settings" width="16" height="16" />
-        </button>
+        <!-- API选择下拉菜单 -->
+        <div class="api-selector-container">
+          <button class="api-selector-btn" @click="(e) => toggleApiSelector(e)">
+            {{ selectedApiName }}
+            <span class="dropdown-arrow">▼</span>
+          </button>
+          <div v-if="showApiSelector" class="api-selector-dropdown">
+            <div 
+              v-for="api in availableApiConfigs" 
+              :key="api.id" 
+              class="api-option"
+              :class="{ 'selected': selectedApiId === api.id }"
+              @click="selectApiConfig(api.id); showApiSelector = false;"
+            >
+              {{ api.name }}
+            </div>
+          </div>
+        </div>
         <button class="window-btn minimize-btn" @click="(e) => minimizeWindow(e)">
           <img :src="minimizeIcon" alt="Minimize" width="16" height="16" />
         </button>
@@ -1115,62 +1213,6 @@ const segmentContent = (content: string): Array<{ content: string, html?: string
     <div class="resize-handle resize-handle-bottom-right" @mousedown="(e) => startResize(e, 'bottom-right')">
       <div class="resize-icon"></div>
     </div>
-
-    <!-- 设置面板 -->
-    <Transition name="settings-panel">
-      <div v-if="showSettings" class="settings-panel">
-        <div class="settings-header">
-          <h3>{{ t('aiAssistant.settingsTitle') || 'AI设置' }}</h3>
-        </div>
-
-        <div class="settings-content">
-          <div class="settings-group">
-            <label for="api-url">{{ t('aiAssistant.apiUrl') || 'API URL' }}</label>
-            <input
-              id="api-url"
-              v-model="aiSettings.apiUrl"
-              type="text"
-              class="settings-input"
-              :placeholder="t('aiAssistant.apiUrlPlaceholder') || '请输入API URL'"
-            />
-          </div>
-
-          <div class="settings-group">
-            <label for="api-key">{{ t('aiAssistant.apiKey') || 'API Key' }}</label>
-            <input
-              id="api-key"
-              v-model="aiSettings.apiKey"
-              type="password"
-              class="settings-input"
-              :placeholder="t('aiAssistant.apiKeyPlaceholder') || '请输入API Key'"
-            />
-          </div>
-
-          <div class="settings-group">
-            <label for="custom-model">{{ t('aiAssistant.customModel') || '自定义模型名称' }}</label>
-            <input
-              id="custom-model"
-              v-model="aiSettings.modelName"
-              type="text"
-              class="settings-input"
-              :placeholder="t('aiAssistant.customModelPlaceholder') || '请输入自定义模型名称'"
-              @input="updateCustomModel"
-            />
-          </div>
-
-          <div class="openai-status">
-            <div class="status-indicator" :class="{ active: isUsingOpenAI }"></div>
-            <span>{{ isUsingOpenAI ? 'AI接口已配置' : 'AI接口未配置' }}</span>
-          </div>
-
-          <div class="settings-actions">
-            <button class="settings-save-btn" @click="saveAISettings">
-              {{ t('aiAssistant.save') || '保存' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
 
     <!-- 消息容器，最小化时隐藏 -->
     <div class="messages-container">
@@ -2514,5 +2556,89 @@ body.ai-window-resizing {
 .resize-handle-top-right,
 .resize-handle-top-left {
   display: none;
+}
+
+/* 添加下拉菜单样式 */
+.api-selector-container {
+  position: relative;
+}
+
+.api-selector-btn {
+  background: none;
+  border: none;
+  color: #333;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.dark-theme .api-selector-btn {
+  color: #eee;
+}
+
+.api-selector-btn:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme .api-selector-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-arrow {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.api-selector-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  min-width: 150px;
+  margin-top: 5px;
+}
+
+.dark-theme .api-selector-dropdown {
+  background-color: #333;
+  border-color: #555;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.api-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  font-size: 14px;
+  color: #333;
+}
+
+.dark-theme .api-option {
+  color: #eee;
+}
+
+.api-option:hover {
+  background-color: #f0f0f0;
+}
+
+.dark-theme .api-option:hover {
+  background-color: #444;
+}
+
+.api-option.selected {
+  background-color: #e0e0e0;
+  font-weight: 500;
+}
+
+.dark-theme .api-option.selected {
+  background-color: #444;
 }
 </style>
