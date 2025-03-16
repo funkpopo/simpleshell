@@ -1026,28 +1026,6 @@ const selectApiConfig = (apiId: string) => {
   }
 }
 
-interface AISettings {
-  apiUrl?: string
-  apiKey?: string
-  modelName?: string
-}
-
-interface AppSettings {
-  language: string
-  fontSize: number
-  fontFamily: string
-  terminalFontFamily: string
-  terminalFontSize: number
-  aiSettings?: AISettings
-  aiApis?: Array<{
-    id: string
-    name: string
-    apiUrl: string
-    apiKey: string
-    modelName: string
-  }>
-}
-
 // 将长内容分段处理
 const segmentContent = (content: string): Array<{ content: string, html?: string }> => {
   if (content.length <= SEGMENT_SIZE) {
