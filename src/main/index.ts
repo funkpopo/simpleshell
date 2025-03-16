@@ -45,6 +45,13 @@ interface AppSettings {
     apiKey?: string
     modelName?: string
   }
+  aiApis?: Array<{
+    id: string
+    name: string
+    apiUrl: string
+    apiKey: string
+    modelName: string
+  }>
 }
 
 // 连接配置文件路径
@@ -1720,53 +1727,53 @@ function loadSettings(): AppSettings {
 // 保存全局设置
 function saveSettings(settings: AppSettings): boolean {
   try {
-    // 确保设置对象格式正确
-    if (!settings || typeof settings !== 'object') {
-      console.error('保存设置失败: 无效的设置对象', settings)
-      return false
+    // 创建一个干净的对象副本，避免循环引用
+    const cleanSettings: any = {
+      language: settings.language,
+      fontSize: settings.fontSize,
+      fontFamily: settings.fontFamily,
+      terminalFontFamily: settings.terminalFontFamily,
+      terminalFontSize: settings.terminalFontSize
+    }
+    
+    // 处理 aiApis 数组
+    if (Array.isArray(settings.aiApis)) {
+      cleanSettings.aiApis = settings.aiApis.map(api => ({
+        id: api.id,
+        name: api.name,
+        apiUrl: api.apiUrl,
+        apiKey: api.apiKey,
+        modelName: api.modelName
+      }))
+    }
+    
+    // 处理旧版 aiSettings
+    if (settings.aiSettings) {
+      cleanSettings.aiSettings = {
+        apiUrl: settings.aiSettings.apiUrl,
+        apiKey: settings.aiSettings.apiKey,
+        modelName: settings.aiSettings.modelName
+      }
     }
 
-    // 提取仅需的属性，避免序列化复杂对象可能引起的问题
-    const cleanSettings: AppSettings = {
-      language: settings.language || 'zh-CN',
-      fontSize: settings.fontSize || 14,
-      fontFamily: settings.fontFamily || 'system-ui',
-      terminalFontFamily: settings.terminalFontFamily || 'Consolas, "Courier New", monospace',
-      terminalFontSize: settings.terminalFontSize || 14,
-      aiSettings: settings.aiSettings
-        ? {
-            apiUrl: settings.aiSettings.apiUrl || '',
-            apiKey: settings.aiSettings.apiKey || '',
-            modelName: settings.aiSettings.modelName || ''
-          }
-        : undefined
-    }
-
-    const dirPath = path.dirname(settingsPath)
-
+    // 获取配置文件路径
+    const configPath = settingsPath
+    
     // 确保目录存在
+    const dirPath = path.dirname(configPath)
     if (!fs.existsSync(dirPath)) {
-      console.log('创建设置目录:', dirPath)
       fs.mkdirSync(dirPath, { recursive: true })
     }
-
-    // 在开发环境中，额外打印路径信息
-    console.log('保存设置到:', settingsPath)
-    console.log('设置内容:', JSON.stringify(cleanSettings))
-
-    // 始终使用数组格式保存，以保持与config.json格式一致
-    const jsonContent = JSON.stringify([cleanSettings], null, 2)
-
-    // 以同步方式写入文件
-    fs.writeFileSync(settingsPath, jsonContent, { encoding: 'utf-8', flag: 'w' })
-
-    console.log('设置保存成功')
-
-    // 通知所有窗口设置已更改
+    
+    // 将设置写入文件
+    fs.writeFileSync(configPath, JSON.stringify([cleanSettings], null, 2))
+    
+    
+    // 通知渲染进程设置已更新
     if (mainWindow) {
       mainWindow.webContents.send('settings-saved', cleanSettings)
     }
-
+    
     return true
   } catch (error) {
     console.error('保存设置失败:', error)
@@ -1786,7 +1793,8 @@ function getDefaultSettings(): AppSettings {
       apiUrl: '',
       apiKey: '',
       modelName: ''
-    }
+    },
+    aiApis: []
   }
 }
 
@@ -1830,7 +1838,16 @@ ipcMain.handle('save-settings', async (_event, settings) => {
             apiKey: settings.aiSettings.apiKey || '',
             modelName: settings.aiSettings.modelName || ''
           }
-        : undefined
+        : undefined,
+      aiApis: Array.isArray(settings.aiApis)
+        ? settings.aiApis.map(api => ({
+            id: api.id || Date.now().toString(),
+            name: api.name || '',
+            apiUrl: api.apiUrl || '',
+            apiKey: api.apiKey || '',
+            modelName: api.modelName || ''
+          }))
+        : []
     }
 
     const success = saveSettings(cleanSettings)

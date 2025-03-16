@@ -67,7 +67,25 @@ const zhCN = {
       source: '思源黑体',
       roboto: 'Roboto'
     },
-    saveError: '设置保存失败，请重试'
+    saveError: '设置保存失败，请重试',
+    aiApi: {
+      title: 'AI接口设置',
+      add: '添加接口',
+      edit: '编辑接口',
+      delete: '删除接口',
+      deleteConfirm: '确定要删除此接口配置吗？',
+      noApis: '暂无配置的AI接口，点击"添加接口"按钮添加',
+      name: '接口名称',
+      namePlaceholder: '请输入接口名称（如：OpenAI、Claude等）',
+      nameRequired: '接口名称不能为空',
+      url: 'API地址',
+      urlPlaceholder: '请输入API地址',
+      key: 'API密钥',
+      keyPlaceholder: '请输入API密钥',
+      model: '模型名称',
+      modelPlaceholder: '请输入模型名称（如：gpt-4-turbo）',
+      select: '选择API配置'
+    }
   },
   terminal: {
     local: '本地终端',
@@ -157,6 +175,31 @@ const enUS = {
     title: 'SimpleShell',
     welcome: 'Welcome to SimpleShell'
   },
+  aiAssistant: {
+    title: 'AI Assistant',
+    welcome: 'Hello! I am your AI assistant. How can I help you?',
+    inputPlaceholder: 'Type your question...',
+    send: 'Send',
+    stop: 'Stop',
+    response: 'Response',
+    thinking: 'Thinking...',
+    historyTitle: 'History',
+    noHistory: 'No history',
+    startNewChat: 'Start new chat',
+    deleteHistory: 'Delete history',
+    deleteConfirm: 'Are you sure you want to delete all history?',
+    deleteSuccess: 'History deleted',
+    deleteError: 'Failed to delete history',
+    deleteCancel: 'Cancel deletion',
+    settingsTitle: 'Settings',
+    save: 'Save settings',
+    apiUrl: 'API URL',
+    apiKey: 'API Key',
+    apiUrlPlaceholder: 'Enter API URL',
+    apiKeyPlaceholder: 'Enter API Key',
+    customModel: 'Custom Model',
+    customModelPlaceholder: 'Enter custom model name'
+  },
   settings: {
     title: 'Global Settings',
     language: 'Interface Language',
@@ -179,7 +222,25 @@ const enUS = {
       source: 'Noto Sans SC',
       roboto: 'Roboto'
     },
-    saveError: 'Failed to save settings, please try again'
+    saveError: 'Failed to save settings, please try again',
+    aiApi: {
+      title: 'AI API Settings',
+      add: 'Add API',
+      edit: 'Edit API',
+      delete: 'Delete API',
+      deleteConfirm: 'Are you sure you want to delete this API configuration?',
+      noApis: 'No AI APIs configured. Click "Add API" button to add one.',
+      name: 'API Name',
+      namePlaceholder: 'Enter API name (e.g., OpenAI, Claude)',
+      nameRequired: 'API name is required',
+      url: 'API URL',
+      urlPlaceholder: 'Enter API URL',
+      key: 'API Key',
+      keyPlaceholder: 'Enter API key',
+      model: 'Model Name',
+      modelPlaceholder: 'Enter model name (e.g., gpt-4-turbo)',
+      select: 'Select API Configuration'
+    }
   },
   terminal: {
     local: 'Local Terminal',

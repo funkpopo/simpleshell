@@ -116,8 +116,8 @@ export function decryptString(encryptedText: string): string {
 export function encryptConnection<T extends { password?: string; privateKey?: string }>(conn: T): T {
   if (!conn) return conn
 
-  // 创建深拷贝
-  const encryptedConn = { ...conn }
+  // 创建深拷贝，避免修改原对象
+  const encryptedConn = JSON.parse(JSON.stringify(conn)) as T
 
   // 加密敏感字段
   if (encryptedConn.password) {
@@ -135,8 +135,8 @@ export function encryptConnection<T extends { password?: string; privateKey?: st
 export function decryptConnection<T extends { password?: string; privateKey?: string }>(conn: T): T {
   if (!conn) return conn
 
-  // 创建深拷贝
-  const decryptedConn = { ...conn }
+  // 创建深拷贝，避免修改原对象
+  const decryptedConn = JSON.parse(JSON.stringify(conn)) as T
 
   // 解密敏感字段
   if (decryptedConn.password) {
