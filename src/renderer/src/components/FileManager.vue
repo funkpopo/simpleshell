@@ -2344,6 +2344,154 @@ const handleFileDragStart = async (e: DragEvent, fileName: string, fileType: 'fi
     error.value = err instanceof Error ? err.message : '处理文件拖动失败'
   }
 }
+
+// 处理文件项目的拖拽事件
+const handleFileDragOver = (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 设置拖拽状态
+  isDraggingOver.value = true
+  
+  // 记录拖拽目标 - 当拖动到文件上时，目标是当前文件夹
+  dragTargetItem.value = null
+  dragTargetType.value = 'background'
+  
+  // 设置拖拽效果
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+// 处理文件的拖拽离开
+const handleFileDragLeave = (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 检查是否真的离开了元素
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const x = e.clientX
+  const y = e.clientY
+  
+  // 如果鼠标仍在元素内，不处理离开事件
+  if (
+    x >= rect.left &&
+    x <= rect.right &&
+    y >= rect.top &&
+    y <= rect.bottom
+  ) {
+    return
+  }
+  
+  // 不重置isDraggingOver，因为文件可能仍在文件管理器内
+}
+
+// 处理文件的拖放 - 拖放到文件上时，上传到当前文件夹
+const handleFileDrop = async (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 重置拖拽状态
+  isDraggingOver.value = false
+  
+  // 检查是否有文件被拖放
+  if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) {
+    console.log('没有文件被拖放')
+    return
+  }
+  
+  try {
+    // 拖放到文件上时，上传到当前文件夹
+    const targetPath = currentPath.value
+    
+    console.log(`准备上传文件到当前文件夹: ${targetPath}`)
+    
+    // 获取拖放的文件列表
+    const files = Array.from(e.dataTransfer.files)
+    
+    // 显示上传进度窗口
+    showTransferProgress.value = true
+    
+    // 上传所有文件
+    for (const file of files) {
+      try {
+        // 检查文件对象是否有效
+        if (!file) {
+          console.error('无效的文件对象')
+          continue
+        }
+        
+        // 获取文件名
+        const fileName = file.name
+        
+        // 获取文件路径，如果file.path不存在，则需要读取文件内容并保存到临时文件
+        let filePath = (file as any).path
+        let tempFilePath = null
+        
+        if (!filePath) {
+          console.log(`文件 ${fileName} 没有路径信息，将使用FileReader读取内容`)
+          
+          // 使用FileReader读取文件内容
+          const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as ArrayBuffer)
+            reader.onerror = reject
+            reader.readAsArrayBuffer(file)
+          })
+          
+          // 将文件内容发送到主进程保存为临时文件
+          const result = await window.electron.ipcRenderer.invoke('save-file-content', {
+            name: fileName,
+            content: fileContent
+          })
+          
+          if (!result) {
+            throw new Error(`无法保存文件内容: ${fileName}`)
+          }
+          
+          tempFilePath = result.path
+          filePath = tempFilePath
+        }
+        
+        console.log(`准备上传文件: ${fileName} 从 ${filePath} 到 ${targetPath}`)
+        
+        // 上传文件
+        const result = await window.api.sftpUploadFile({
+          connectionId: props.connectionId,
+          localPath: filePath,
+          remotePath: targetPath // 直接使用当前目录路径，不需要再拼接文件名
+        })
+        
+        if (!result.success) {
+          throw new Error(result.error || `上传文件 ${fileName} 失败`)
+        }
+        
+        // 上传成功后刷新文件列表
+        await loadCurrentDirectory()
+        
+        // 清理临时文件
+        if (tempFilePath) {
+          try {
+            await window.electron.ipcRenderer.invoke('delete-temp-file', tempFilePath)
+            console.log(`临时文件已删除: ${tempFilePath}`)
+          } catch (deleteError) {
+            console.error(`删除临时文件失败: ${tempFilePath}`, deleteError)
+          }
+        }
+      } catch (fileError) {
+        console.error(`上传文件 ${file.name} 时发生错误:`, fileError)
+        error.value = fileError instanceof Error ? fileError.message : `上传文件 ${file.name} 时发生错误`
+      }
+    }
+    
+    // 上传完成后清空临时文件夹
+    await clearTempDirectory()
+    
+  } catch (err) {
+    console.error('处理拖放文件时发生错误:', err)
+    error.value = err instanceof Error ? err.message : '处理拖放文件时发生错误'
+  }
+}
 </script>
 
 <template>
@@ -2464,6 +2612,7 @@ const handleFileDragStart = async (e: DragEvent, fileName: string, fileType: 'fi
           :class="{
             selected: selectedFiles.has(file.name),
             'is-directory': file.type === 'directory',
+            'is-file': file.type === 'file',
             highlighted: highlightedItem === file.name,
             'drag-target': dragTargetItem === file.name && isDraggingOver
           }"
@@ -2471,9 +2620,9 @@ const handleFileDragStart = async (e: DragEvent, fileName: string, fileType: 'fi
           @click="toggleFileSelection(file.name, file.type, $event)"
           @dblclick="file.type === 'directory' && enterDirectory(file.name)"
           @contextmenu.stop="showMenu($event, file.type, file.name)"
-          @dragover.stop="file.type === 'directory' && handleFolderDragOver($event, file.name)"
-          @dragleave.stop="file.type === 'directory' && handleFolderDragLeave($event)"
-          @drop.stop="file.type === 'directory' && handleFolderDrop($event, file.name)"
+          @dragover.stop="file.type === 'directory' ? handleFolderDragOver($event, file.name) : handleFileDragOver($event)"
+          @dragleave.stop="file.type === 'directory' ? handleFolderDragLeave($event) : handleFileDragLeave($event)"
+          @drop.stop="file.type === 'directory' ? handleFolderDrop($event, file.name) : handleFileDrop($event)"
           draggable="true"
           @dragstart="(e) => handleFileDragStart(e, file.name, file.type)"
         >
@@ -4196,5 +4345,25 @@ const handleFileDragStart = async (e: DragEvent, fileName: string, fileType: 'fi
 .dark-theme .file-list-row.drag-target::after {
   background-color: rgba(129, 199, 132, 0.9);
   color: #000;
+}
+
+/* 文件类型拖拽样式 */
+.file-list-row.is-file.drag-target {
+  background-color: rgba(33, 150, 243, 0.2);
+  border: 1px dashed #2196f3;
+}
+
+.file-list-row.is-file.drag-target::after {
+  content: "释放文件以上传到当前文件夹";
+  background-color: rgba(33, 150, 243, 0.9);
+}
+
+.dark-theme .file-list-row.is-file.drag-target {
+  background-color: rgba(66, 165, 245, 0.2);
+  border: 1px dashed #42a5f5;
+}
+
+.dark-theme .file-list-row.is-file.drag-target::after {
+  background-color: rgba(66, 165, 245, 0.9);
 }
 </style>
