@@ -315,6 +315,11 @@ const api = {
     return await ipcRenderer.invoke(channel, ...args)
   },
 
+  // 开始文件拖动
+  startDrag: async (params: { filePath: string; fileName: string; isDarkTheme: boolean }): Promise<boolean> => {
+    return await ipcRenderer.invoke('start-drag', params)
+  },
+
   // 窗口状态监听（焦点变化等）
   onWindowStateChange: (callback: (data: WindowState) => void): (() => void) => {
     const handler = (_: unknown, data: WindowState) => callback(data)
