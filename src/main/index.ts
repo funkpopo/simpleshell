@@ -348,7 +348,7 @@ ipcMain.handle('ssh:connect', async (_, connectionInfo: Connection) => {
           host,
           port,
           username,
-          readyTimeout: 10000 // 10秒超时
+          readyTimeout: 30000 // 10秒超时
         }
 
         // 添加认证方式
@@ -375,10 +375,10 @@ ipcMain.handle('ssh:connect', async (_, connectionInfo: Connection) => {
               username: connectionInfo.username,
               password: connectionInfo.password,
               privateKey: connectionInfo.privateKey,
-              readyTimeout: 20000,
+              readyTimeout: 30000,
               retries: 3,
               retry_factor: 2,
-              retry_minTimeout: 2000
+              retry_minTimeout: 5000
             }
 
             console.log('开始SFTP连接...')
