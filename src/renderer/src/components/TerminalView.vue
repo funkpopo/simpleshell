@@ -1154,28 +1154,59 @@ const contextMenu = ref<{
   x: number
   y: number
   selectedText: string
+  tabId: string | null
 }>({
   visible: false,
   x: 0,
   y: 0,
-  selectedText: ''
+  selectedText: '',
+  tabId: null
 })
 
 // 处理右键菜单
 const handleContextMenu = (event: MouseEvent, terminal: Terminal) => {
   event.preventDefault()
 
+  // 找到对应的标签页
+  const tabElement = (event.target as HTMLElement).closest('.terminal-instance') as HTMLElement
+  const tabId = tabElement?.dataset?.tabId || null
+  
   // 获取选中的文本
   const selection = terminal.getSelection()
 
-  // 如果有选中文本，显示右键菜单
-  if (selection) {
-    contextMenu.value = {
-      visible: true,
-      x: event.clientX,
-      y: event.clientY,
-      selectedText: selection
-    }
+  // 获取窗口尺寸
+  const windowWidth = window.innerWidth
+  const windowHeight = window.innerHeight
+
+  // 估算菜单尺寸
+  const menuWidth = 160
+  const menuHeight = 80
+
+  // 计算位置，确保在窗口内
+  let posX = event.clientX
+  let posY = event.clientY
+
+  // 检查右边界
+  if (posX + menuWidth > windowWidth) {
+    posX = windowWidth - menuWidth
+  }
+
+  // 检查下边界
+  if (posY + menuHeight > windowHeight) {
+    posY = windowHeight - menuHeight
+  }
+
+  // 确保不超出左边界和上边界
+  if (posX < 0) posX = 0
+  if (posY < 0) posY = 0
+
+  // 显示右键菜单
+  contextMenu.value = {
+    visible: true,
+    x: posX,
+    y: posY,
+    selectedText: selection || '',
+    tabId: tabId
   }
 }
 
@@ -1611,6 +1642,27 @@ onMounted(async () => {
     mutationObserver.disconnect()
   })
 })
+
+// 处理刷新终端
+const refreshTerminal = () => {
+  if (!contextMenu.value.tabId) return
+
+  const tab = tabs.value.find(tab => tab.id === contextMenu.value.tabId)
+  if (!tab) return
+
+  // 断开当前连接
+  disconnectTerminal(tab)
+  
+  // 重新连接
+  if (tab.isLocalTerminal) {
+    connectToLocalTerminal(tab)
+  } else if (tab.connection) {
+    connectToSSH(tab)
+  }
+  
+  // 隐藏菜单
+  contextMenu.value.visible = false
+}
 </script>
 
 <template>
@@ -1761,13 +1813,17 @@ onMounted(async () => {
         }"
         @click.stop
       >
-        <div class="menu-item" @click="copySelectedText">
+        <div v-if="contextMenu.selectedText" class="menu-item" @click="copySelectedText">
           <img
             :src="props.isDarkTheme ? CopyNightIcon : CopyDayIcon"
             class="menu-icon"
             alt="复制"
           />
           <span class="menu-text">复制</span>
+        </div>
+        <div class="menu-item" @click="refreshTerminal">
+          <span class="menu-icon refresh-icon">🔄</span>
+          <span class="menu-text">刷新</span>
         </div>
       </div>
     </div>
@@ -2355,5 +2411,9 @@ onMounted(async () => {
 .dark-theme .hint-content {
   background-color: rgba(40, 40, 40, 0.8);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.refresh-icon {
+  margin-right: 8px;
 }
 </style>
