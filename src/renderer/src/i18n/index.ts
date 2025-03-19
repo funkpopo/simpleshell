@@ -119,7 +119,16 @@ const zhCN = {
     atLeastOne: '密码和密钥至少填写一个',
     portRange: '端口号必须在1-65535之间',
     loadingFile: '加载中...',
-    savedPrivateKey: '已保存的私钥'
+    savedPrivateKey: '已保存的私钥',
+    advancedSettings: '高级设置',
+    proxySettings: '代理设置',
+    enableProxy: '启用代理',
+    proxyType: '代理类型',
+    proxyHost: '代理主机',
+    proxyPort: '代理端口',
+    proxyAuthRequired: '代理需要认证',
+    proxyUsername: '代理用户名',
+    proxyPassword: '代理密码'
   },
   fileManager: {
     title: '文件管理',
@@ -274,7 +283,16 @@ const enUS = {
     atLeastOne: 'Provide either password or private key',
     portRange: 'Port must be between 1-65535',
     loadingFile: 'Loading...',
-    savedPrivateKey: 'Saved Private Key'
+    savedPrivateKey: 'Saved Private Key',
+    advancedSettings: 'Advanced Settings',
+    proxySettings: 'Proxy Settings',
+    enableProxy: 'Enable Proxy',
+    proxyType: 'Proxy Type',
+    proxyHost: 'Proxy Host',
+    proxyPort: 'Proxy Port',
+    proxyAuthRequired: 'Proxy Authentication Required',
+    proxyUsername: 'Proxy Username',
+    proxyPassword: 'Proxy Password'
   },
   fileManager: {
     title: 'File Manager',

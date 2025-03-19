@@ -230,6 +230,11 @@ interface API {
 
   // AI流式输出事件监听
   onAIStreamUpdate: (callback: (data: { chunk: string }) => void) => () => void
+
+  // 代理管理
+  setManualProxy(params: { host: string; port: number; type: 'http' | 'socks' }): Promise<{ success: boolean; error?: string }>
+  clearManualProxy(): Promise<{ success: boolean; error?: string }>
+  getManualProxy(): Promise<{ proxy: { host: string; port: number; type: string } | null }>
 }
 
 declare global {

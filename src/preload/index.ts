@@ -169,6 +169,19 @@ const api = {
     return await ipcRenderer.invoke('get-system-info')
   },
 
+  // 手动代理管理
+  setManualProxy: async (params: { host: string; port: number; type: 'http' | 'socks' }): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('set-manual-proxy', params)
+  },
+
+  clearManualProxy: async (): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('clear-manual-proxy')
+  },
+
+  getManualProxy: async (): Promise<{ proxy: { host: string; port: number; type: string } | null }> => {
+    return await ipcRenderer.invoke('get-manual-proxy')
+  },
+
   // 加载连接配置
   loadConnections: async (): Promise<ConnectionsData> => {
     return await ipcRenderer.invoke('load-connections')
