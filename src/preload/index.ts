@@ -362,6 +362,18 @@ const api = {
     return await ipcRenderer.invoke('sftp:uploadFile', params)
   },
 
+  sftpUploadFiles: async (params: {
+    connectionId: string
+    localPaths: string[]
+    remotePath: string
+  }): Promise<{
+    success: boolean
+    failedFiles?: string[]
+    error?: string
+  }> => {
+    return await ipcRenderer.invoke('sftp:uploadFiles', params)
+  },
+
   sftpMkdir: async (params: { connectionId: string; path: string }): Promise<SFTPResult> => {
     return await ipcRenderer.invoke('sftp:mkdir', params)
   },

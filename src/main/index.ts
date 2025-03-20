@@ -1342,6 +1342,189 @@ app.whenReady().then(() => {
       }
     })
 
+    ipcMain.handle('sftp:uploadFiles', async (_, { connectionId, localPaths, remotePath }) => {
+      try {
+        const sftp = activeSftpConnections.get(connectionId)
+        if (!sftp) {
+          console.error('SFTP连接不存在，ID:', connectionId)
+          return { success: false, error: 'SFTP连接不存在' }
+        }
+
+        // 记录失败的文件和成功的文件
+        const failedFiles: string[] = []
+        const successFiles: string[] = []
+        
+        // 创建上传队列
+        const uploadQueue = localPaths.map(localPath => ({
+          localPath,
+          fileName: path.basename(localPath),
+          retryCount: 0,
+          maxRetries: 3
+        }))
+
+        // 处理单个文件上传
+        const processUpload = async (queueItem: typeof uploadQueue[0]): Promise<boolean> => {
+          const { localPath, fileName, retryCount } = queueItem
+          const remoteFilePath = remotePath === '/' ? `/${fileName}` : `${remotePath}/${fileName}`
+          
+          try {
+            // 创建唯一的传输ID
+            const uploadId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            
+            // 获取文件信息以获取大小
+            const stats = fs.statSync(localPath)
+            const fileSize = stats.size
+            
+            // 发送开始传输事件
+            if (mainWindow) {
+              mainWindow.webContents.send('sftp:transferStart', {
+                id: uploadId,
+                type: 'upload',
+                filename: fileName,
+                path: localPath,
+                size: fileSize,
+                connectionId
+              })
+            }
+
+            // 创建读写流
+            const readStream = fs.createReadStream(localPath)
+            const writeStream = await sftp.createWriteStream(remoteFilePath)
+            
+            let transferred = 0
+            let lastProgressUpdate = Date.now()
+
+            // 监听数据传输进度
+            readStream.on('data', (chunk) => {
+              transferred += chunk.length
+              
+              // 控制进度更新频率，避免过多事件
+              const now = Date.now()
+              if (now - lastProgressUpdate > 100 || transferred === fileSize) {
+                lastProgressUpdate = now
+                
+                if (mainWindow && fileSize > 0) {
+                  const progress = Math.min(100, Math.round((transferred / fileSize) * 100))
+                  mainWindow.webContents.send('sftp:transferProgress', {
+                    id: uploadId,
+                    transferred,
+                    progress
+                  })
+                }
+              }
+            })
+
+            // 存储传输任务信息
+            activeTransfers.set(uploadId, {
+              readStream,
+              writeStream,
+              connectionId
+            })
+
+            // 等待上传完成
+            await new Promise((resolve, reject) => {
+              let isCompleted = false
+
+              const cleanup = () => {
+                if (!isCompleted) {
+                  isCompleted = true
+                  activeTransfers.delete(uploadId)
+                  readStream.removeAllListeners()
+                  writeStream.removeAllListeners()
+                  readStream.destroy()
+                  writeStream.end()
+                }
+              }
+
+              writeStream.on('finish', () => {
+                if (!isCompleted) {
+                  if (mainWindow) {
+                    mainWindow.webContents.send('sftp:transferComplete', {
+                      id: uploadId,
+                      success: true
+                    })
+                  }
+                  cleanup()
+                  resolve(true)
+                }
+              })
+
+              writeStream.on('error', (err) => {
+                if (!isCompleted) {
+                  if (mainWindow) {
+                    mainWindow.webContents.send('sftp:transferError', {
+                      id: uploadId,
+                      error: err.message
+                    })
+                  }
+                  cleanup()
+                  reject(err)
+                }
+              })
+
+              readStream.on('error', (err) => {
+                if (!isCompleted) {
+                  if (mainWindow) {
+                    mainWindow.webContents.send('sftp:transferError', {
+                      id: uploadId,
+                      error: err.message
+                    })
+                  }
+                  cleanup()
+                  reject(err)
+                }
+              })
+
+              readStream.pipe(writeStream)
+            })
+
+            return true
+          } catch (error) {
+            console.error(`上传文件失败: ${fileName}`, error)
+            if (mainWindow) {
+              mainWindow.webContents.send('sftp:transferError', {
+                id: `upload-${Date.now()}`,
+                error: error instanceof Error ? error.message : '未知错误'
+              })
+            }
+            return false
+          }
+        }
+
+        // 并发处理上传队列，最多同时处理3个文件
+        const concurrentLimit = 3
+        const chunks: typeof uploadQueue[] = []
+        for (let i = 0; i < uploadQueue.length; i += concurrentLimit) {
+          chunks.push(uploadQueue.slice(i, i + concurrentLimit))
+        }
+
+        for (const chunk of chunks) {
+          const results = await Promise.all(
+            chunk.map(async (item) => {
+              const success = await processUpload(item)
+              if (!success) {
+                failedFiles.push(item.localPath)
+              }
+              return success
+            })
+          )
+
+          // 检查结果
+          console.log(`当前批次上传结果: 成功=${results.filter(r => r).length}, 失败=${results.filter(r => !r).length}`)
+        }
+
+        // 返回最终结果
+        return {
+          success: failedFiles.length === 0,
+          failedFiles: failedFiles.length > 0 ? failedFiles : undefined
+        }
+      } catch (error: unknown) {
+        const err = error as Error
+        console.error('批量上传文件失败:', err)
+        return { success: false, error: err.message }
+      }
+    })
+
     ipcMain.handle('sftp:mkdir', async (_, { connectionId, path }) => {
       try {
         const sftp = activeSftpConnections.get(connectionId)
