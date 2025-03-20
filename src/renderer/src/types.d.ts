@@ -87,6 +87,16 @@ declare interface API {
     error?: string
   }>
 
+  sftpUploadFiles: (params: {
+    connectionId: string
+    localPaths: string[]
+    remotePath: string
+  }) => Promise<{
+    success: boolean
+    failedFiles?: string[]
+    error?: string
+  }>
+
   sftpMkdir: (params: { connectionId: string; path: string }) => Promise<{
     success: boolean
     error?: string

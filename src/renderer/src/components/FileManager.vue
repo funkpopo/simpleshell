@@ -1,6 +1,7 @@
 # 创建新文件
 <script setup lang="ts">
 import { ref, onMounted, watch, nextTick, onBeforeUnmount, onUnmounted } from 'vue'
+import path from 'path'
 import DeleteDayIcon from '../assets/delete-day.svg'
 import DeleteNightIcon from '../assets/delete-night.svg'
 import UploadDayIcon from '../assets/upload-day.svg'
@@ -378,30 +379,55 @@ const uploadFiles = async (targetPath?: string) => {
     const result = await window.api.openFileDialog({
       title: '选择要上传的文件',
       buttonLabel: '上传',
-      filters: [{ name: '所有文件', extensions: ['*'] }],
-      properties: ['openFile', 'multiSelections']
+      properties: ['openFile', 'multiSelections']  // 确保允许多选
     })
 
     if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-      // 使用传入的目标路径或当前路径
       const uploadPath = targetPath || currentPath.value
+      showTransferProgress.value = true
 
-      // 启动所有文件上传
-      for (const filePath of result.filePaths) {
-        try {
-          await window.api.sftpUploadFile({
-            connectionId: props.connectionId,
-            localPath: filePath,
-            remotePath: uploadPath
-          })
-          // 成功通知由传输事件处理，此处不再显示
-        } catch (err: unknown) {
-          console.error(`上传文件 ${filePath} 时发生错误:`, err)
+      console.log(`准备上传 ${result.filePaths.length} 个文件到 ${uploadPath}`)
+      
+      try {
+        // 直接使用批量上传API
+        const uploadResult = await window.api.sftpUploadFiles({
+          connectionId: props.connectionId,
+          localPaths: result.filePaths,
+          remotePath: uploadPath
+        })
+
+        // 上传完成后刷新文件列表
+        await loadCurrentDirectory()
+
+        if (!uploadResult.success) {
+          if (uploadResult.failedFiles && uploadResult.failedFiles.length > 0) {
+            const failedCount = uploadResult.failedFiles.length
+            const totalCount = result.filePaths.length
+            const successCount = totalCount - failedCount
+            
+            error.value = `上传完成，${successCount}个成功，${failedCount}个失败`
+            console.error('上传失败的文件:', uploadResult.failedFiles.map(f => path.basename(f)).join(', '))
+          } else if (uploadResult.error) {
+            error.value = uploadResult.error
+          }
+        } else {
+          successMessage.value = `成功上传 ${result.filePaths.length} 个文件`
+          if (successMessageTimer) {
+            clearTimeout(successMessageTimer)
+          }
+          successMessageTimer = window.setTimeout(() => {
+            successMessage.value = ''
+            successMessageTimer = null
+          }, 3000)
         }
+      } catch (err) {
+        console.error('批量上传文件时发生错误:', err)
+        error.value = err instanceof Error ? err.message : '批量上传文件时发生错误'
       }
     }
-  } catch (err: unknown) {
-    error.value = err instanceof Error ? err.message : '上传文件时发生错误'
+  } catch (err) {
+    console.error('选择文件时发生错误:', err)
+    error.value = err instanceof Error ? err.message : '选择文件时发生错误'
   }
 }
 
@@ -538,24 +564,14 @@ const handleDrop = async (e: DragEvent) => {
     // 显示上传进度窗口
     showTransferProgress.value = true
     
-    // 上传所有文件
-    for (const file of files) {
-      try {
-        // 检查文件对象是否有效
-        if (!file) {
-          console.error('无效的文件对象')
-          continue
-        }
-        
-        // 获取文件名
-        const fileName = file.name
-        
+    if (files.length > 1) {
+      // 批量处理文件上传
+      const filePathPromises = files.map(async (file) => {
         // 获取文件路径，如果file.path不存在，则需要读取文件内容并保存到临时文件
         let filePath = (file as any).path
-        let tempFilePath = null
         
         if (!filePath) {
-          console.log(`文件 ${fileName} 没有路径信息，将使用FileReader读取内容`)
+          console.log(`文件 ${file.name} 没有路径信息，将使用FileReader读取内容`)
           
           // 使用FileReader读取文件内容
           const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
@@ -567,39 +583,118 @@ const handleDrop = async (e: DragEvent) => {
           
           // 将文件内容发送到主进程保存为临时文件
           const result = await window.electron.ipcRenderer.invoke('save-file-content', {
-            name: fileName,
+            name: file.name,
             content: fileContent
           })
           
           if (!result) {
-            throw new Error(`无法保存文件内容: ${fileName}`)
+            throw new Error(`无法保存文件内容: ${file.name}`)
           }
           
-          tempFilePath = result.path
-          filePath = tempFilePath
+          return result.path
         }
         
-        // 使用SFTP上传文件 - 与右键菜单选择文件上传一致
-        await window.api.sftpUploadFile({
+        return filePath
+      })
+      
+      try {
+        // 等待所有文件路径处理完成
+        const filePaths = await Promise.all(filePathPromises)
+        
+        // 批量上传所有文件
+        const uploadResult = await window.api.sftpUploadFiles({
           connectionId: props.connectionId,
-          localPath: filePath,
+          localPaths: filePaths,
           remotePath: targetPath
         })
         
-        console.log(`文件 ${fileName} 上传请求已发送`)
+        if (!uploadResult.success && uploadResult.failedFiles && uploadResult.failedFiles.length > 0) {
+          const failedCount = uploadResult.failedFiles.length
+          error.value = `${failedCount} 个文件上传失败`
+        }
         
-        // 如果使用了临时文件，上传完成后删除
-        if (tempFilePath) {
+        // 上传完成后刷新文件列表
+        await loadCurrentDirectory()
+        
+        // 清理临时文件
+        const tempFilePaths = filePaths.filter(path => !(files.some(file => (file as any).path === path)))
+        for (const tempPath of tempFilePaths) {
           try {
-            await window.electron.ipcRenderer.invoke('delete-temp-file', tempFilePath)
-            console.log(`临时文件已删除: ${tempFilePath}`)
+            await window.electron.ipcRenderer.invoke('delete-temp-file', tempPath)
+            console.log(`临时文件已删除: ${tempPath}`)
           } catch (deleteError) {
-            console.error(`删除临时文件失败: ${tempFilePath}`, deleteError)
+            console.error(`删除临时文件失败: ${tempPath}`, deleteError)
           }
         }
-      } catch (fileError) {
-        console.error(`上传文件 ${file.name} 时发生错误:`, fileError)
-        error.value = fileError instanceof Error ? fileError.message : `上传文件 ${file.name} 时发生错误`
+      } catch (err) {
+        console.error('批量上传文件时发生错误:', err)
+        error.value = err instanceof Error ? err.message : '批量上传文件时发生错误'
+      }
+    } else {
+      // 单文件上传，使用原有逻辑
+      // 上传所有文件
+      for (const file of files) {
+        try {
+          // 检查文件对象是否有效
+          if (!file) {
+            console.error('无效的文件对象')
+            continue
+          }
+          
+          // 获取文件名
+          const fileName = file.name
+          
+          // 获取文件路径，如果file.path不存在，则需要读取文件内容并保存到临时文件
+          let filePath = (file as any).path
+          let tempFilePath = null
+          
+          if (!filePath) {
+            console.log(`文件 ${fileName} 没有路径信息，将使用FileReader读取内容`)
+            
+            // 使用FileReader读取文件内容
+            const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(reader.result as ArrayBuffer)
+              reader.onerror = reject
+              reader.readAsArrayBuffer(file)
+            })
+            
+            // 将文件内容发送到主进程保存为临时文件
+            const result = await window.electron.ipcRenderer.invoke('save-file-content', {
+              name: fileName,
+              content: fileContent
+            })
+            
+            if (!result) {
+              throw new Error(`无法保存文件内容: ${fileName}`)
+            }
+            
+            tempFilePath = result.path
+            filePath = tempFilePath
+          }
+          
+          // 使用SFTP上传文件 - 与右键菜单选择文件上传一致
+          await window.api.sftpUploadFile({
+            connectionId: props.connectionId,
+            localPath: filePath,
+            remotePath: targetPath
+          })
+          
+          console.log(`文件 ${fileName} 上传请求已发送`)
+          
+          // 如果使用了临时文件，上传完成后删除
+          if (tempFilePath) {
+            try {
+              await window.electron.ipcRenderer.invoke('delete-temp-file', tempFilePath)
+              console.log(`临时文件已删除: ${tempFilePath}`)
+            } catch (deleteError) {
+              console.error(`删除临时文件失败: ${tempFilePath}`, deleteError)
+            }
+          }
+        } catch (fileError) {
+          console.error(`上传文件 ${file.name} 时发生错误:`, fileError)
+          error.value = fileError instanceof Error ? fileError.message : `上传文件 ${file.name} 时发生错误`
+        }
       }
     }
     
@@ -671,24 +766,14 @@ const handleFolderDrop = async (e: DragEvent, folderName: string) => {
     // 显示上传进度窗口
     showTransferProgress.value = true
     
-    // 上传所有文件
-    for (const file of files) {
-      try {
-        // 检查文件对象是否有效
-        if (!file) {
-          console.error('无效的文件对象')
-          continue
-        }
-        
-        // 获取文件名
-        const fileName = file.name
-        
+    if (files.length > 1) {
+      // 批量处理文件上传
+      const filePathPromises = files.map(async (file) => {
         // 获取文件路径，如果file.path不存在，则需要读取文件内容并保存到临时文件
         let filePath = (file as any).path
-        let tempFilePath = null
         
         if (!filePath) {
-          console.log(`文件 ${fileName} 没有路径信息，将使用FileReader读取内容`)
+          console.log(`文件 ${file.name} 没有路径信息，将使用FileReader读取内容`)
           
           // 使用FileReader读取文件内容
           const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
@@ -700,39 +785,118 @@ const handleFolderDrop = async (e: DragEvent, folderName: string) => {
           
           // 将文件内容发送到主进程保存为临时文件
           const result = await window.electron.ipcRenderer.invoke('save-file-content', {
-            name: fileName,
+            name: file.name,
             content: fileContent
           })
           
           if (!result) {
-            throw new Error(`无法保存文件内容: ${fileName}`)
+            throw new Error(`无法保存文件内容: ${file.name}`)
           }
           
-          tempFilePath = result.path
-          filePath = tempFilePath
+          return result.path
         }
         
-        // 使用SFTP上传文件 - 与右键菜单选择文件上传一致
-        await window.api.sftpUploadFile({
+        return filePath
+      })
+      
+      try {
+        // 等待所有文件路径处理完成
+        const filePaths = await Promise.all(filePathPromises)
+        
+        // 批量上传所有文件
+        const uploadResult = await window.api.sftpUploadFiles({
           connectionId: props.connectionId,
-          localPath: filePath,
+          localPaths: filePaths,
           remotePath: targetPath
         })
         
-        console.log(`文件 ${fileName} 上传请求已发送到文件夹 ${folderName}`)
+        if (!uploadResult.success && uploadResult.failedFiles && uploadResult.failedFiles.length > 0) {
+          const failedCount = uploadResult.failedFiles.length
+          error.value = `${failedCount} 个文件上传失败`
+        }
         
-        // 如果使用了临时文件，上传完成后删除
-        if (tempFilePath) {
+        // 上传完成后刷新文件列表
+        await loadCurrentDirectory()
+        
+        // 清理临时文件
+        const tempFilePaths = filePaths.filter(path => !(files.some(file => (file as any).path === path)))
+        for (const tempPath of tempFilePaths) {
           try {
-            await window.electron.ipcRenderer.invoke('delete-temp-file', tempFilePath)
-            console.log(`临时文件已删除: ${tempFilePath}`)
+            await window.electron.ipcRenderer.invoke('delete-temp-file', tempPath)
+            console.log(`临时文件已删除: ${tempPath}`)
           } catch (deleteError) {
-            console.error(`删除临时文件失败: ${tempFilePath}`, deleteError)
+            console.error(`删除临时文件失败: ${tempPath}`, deleteError)
           }
         }
-      } catch (fileError) {
-        console.error(`上传文件 ${file.name} 到文件夹 ${folderName} 时发生错误:`, fileError)
-        error.value = fileError instanceof Error ? fileError.message : `上传文件 ${file.name} 时发生错误`
+      } catch (err) {
+        console.error('批量上传文件时发生错误:', err)
+        error.value = err instanceof Error ? err.message : '批量上传文件时发生错误'
+      }
+    } else {
+      // 单文件上传，使用原有逻辑
+      // 上传所有文件
+      for (const file of files) {
+        try {
+          // 检查文件对象是否有效
+          if (!file) {
+            console.error('无效的文件对象')
+            continue
+          }
+          
+          // 获取文件名
+          const fileName = file.name
+          
+          // 获取文件路径，如果file.path不存在，则需要读取文件内容并保存到临时文件
+          let filePath = (file as any).path
+          let tempFilePath = null
+          
+          if (!filePath) {
+            console.log(`文件 ${fileName} 没有路径信息，将使用FileReader读取内容`)
+            
+            // 使用FileReader读取文件内容
+            const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(reader.result as ArrayBuffer)
+              reader.onerror = reject
+              reader.readAsArrayBuffer(file)
+            })
+            
+            // 将文件内容发送到主进程保存为临时文件
+            const result = await window.electron.ipcRenderer.invoke('save-file-content', {
+              name: fileName,
+              content: fileContent
+            })
+            
+            if (!result) {
+              throw new Error(`无法保存文件内容: ${fileName}`)
+            }
+            
+            tempFilePath = result.path
+            filePath = tempFilePath
+          }
+          
+          // 使用SFTP上传文件 - 与右键菜单选择文件上传一致
+          await window.api.sftpUploadFile({
+            connectionId: props.connectionId,
+            localPath: filePath,
+            remotePath: targetPath
+          })
+          
+          console.log(`文件 ${fileName} 上传请求已发送到文件夹 ${folderName}`)
+          
+          // 如果使用了临时文件，上传完成后删除
+          if (tempFilePath) {
+            try {
+              await window.electron.ipcRenderer.invoke('delete-temp-file', tempFilePath)
+              console.log(`临时文件已删除: ${tempFilePath}`)
+            } catch (deleteError) {
+              console.error(`删除临时文件失败: ${tempFilePath}`, deleteError)
+            }
+          }
+        } catch (fileError) {
+          console.error(`上传文件 ${file.name} 到文件夹 ${folderName} 时发生错误:`, fileError)
+          error.value = fileError instanceof Error ? fileError.message : `上传文件 ${file.name} 时发生错误`
+        }
       }
     }
     
@@ -2412,24 +2576,14 @@ const handleFileDrop = async (e: DragEvent) => {
     // 显示上传进度窗口
     showTransferProgress.value = true
     
-    // 上传所有文件
-    for (const file of files) {
-      try {
-        // 检查文件对象是否有效
-        if (!file) {
-          console.error('无效的文件对象')
-          continue
-        }
-        
-        // 获取文件名
-        const fileName = file.name
-        
+    if (files.length > 1) {
+      // 批量处理文件上传
+      const filePathPromises = files.map(async (file) => {
         // 获取文件路径，如果file.path不存在，则需要读取文件内容并保存到临时文件
         let filePath = (file as any).path
-        let tempFilePath = null
         
         if (!filePath) {
-          console.log(`文件 ${fileName} 没有路径信息，将使用FileReader读取内容`)
+          console.log(`文件 ${file.name} 没有路径信息，将使用FileReader读取内容`)
           
           // 使用FileReader读取文件内容
           const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
@@ -2441,46 +2595,124 @@ const handleFileDrop = async (e: DragEvent) => {
           
           // 将文件内容发送到主进程保存为临时文件
           const result = await window.electron.ipcRenderer.invoke('save-file-content', {
-            name: fileName,
+            name: file.name,
             content: fileContent
           })
           
           if (!result) {
-            throw new Error(`无法保存文件内容: ${fileName}`)
+            throw new Error(`无法保存文件内容: ${file.name}`)
           }
           
-          tempFilePath = result.path
-          filePath = tempFilePath
+          return result.path
         }
         
-        console.log(`准备上传文件: ${fileName} 从 ${filePath} 到 ${targetPath}`)
+        return filePath
+      })
+      
+      try {
+        // 等待所有文件路径处理完成
+        const filePaths = await Promise.all(filePathPromises)
         
-        // 上传文件
-        const result = await window.api.sftpUploadFile({
+        // 批量上传所有文件
+        const uploadResult = await window.api.sftpUploadFiles({
           connectionId: props.connectionId,
-          localPath: filePath,
-          remotePath: targetPath // 直接使用当前目录路径，不需要再拼接文件名
+          localPaths: filePaths,
+          remotePath: targetPath
         })
         
-        if (!result.success) {
-          throw new Error(result.error || `上传文件 ${fileName} 失败`)
+        if (!uploadResult.success && uploadResult.failedFiles && uploadResult.failedFiles.length > 0) {
+          const failedCount = uploadResult.failedFiles.length
+          error.value = `${failedCount} 个文件上传失败`
         }
         
-        // 上传成功后刷新文件列表
+        // 上传完成后刷新文件列表
         await loadCurrentDirectory()
         
         // 清理临时文件
-        if (tempFilePath) {
+        const tempFilePaths = filePaths.filter(path => !(files.some(file => (file as any).path === path)))
+        for (const tempPath of tempFilePaths) {
           try {
-            await window.electron.ipcRenderer.invoke('delete-temp-file', tempFilePath)
-            console.log(`临时文件已删除: ${tempFilePath}`)
+            await window.electron.ipcRenderer.invoke('delete-temp-file', tempPath)
+            console.log(`临时文件已删除: ${tempPath}`)
           } catch (deleteError) {
-            console.error(`删除临时文件失败: ${tempFilePath}`, deleteError)
+            console.error(`删除临时文件失败: ${tempPath}`, deleteError)
           }
         }
-      } catch (fileError) {
-        console.error(`上传文件 ${file.name} 时发生错误:`, fileError)
-        error.value = fileError instanceof Error ? fileError.message : `上传文件 ${file.name} 时发生错误`
+      } catch (err) {
+        console.error('批量上传文件时发生错误:', err)
+        error.value = err instanceof Error ? err.message : '批量上传文件时发生错误'
+      }
+    } else {
+      // 单文件上传，使用原有逻辑
+      for (const file of files) {
+        try {
+          // 检查文件对象是否有效
+          if (!file) {
+            console.error('无效的文件对象')
+            continue
+          }
+          
+          // 获取文件名
+          const fileName = file.name
+          
+          // 获取文件路径，如果file.path不存在，则需要读取文件内容并保存到临时文件
+          let filePath = (file as any).path
+          let tempFilePath = null
+          
+          if (!filePath) {
+            console.log(`文件 ${fileName} 没有路径信息，将使用FileReader读取内容`)
+            
+            // 使用FileReader读取文件内容
+            const fileContent = await new Promise<ArrayBuffer>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(reader.result as ArrayBuffer)
+              reader.onerror = reject
+              reader.readAsArrayBuffer(file)
+            })
+            
+            // 将文件内容发送到主进程保存为临时文件
+            const result = await window.electron.ipcRenderer.invoke('save-file-content', {
+              name: fileName,
+              content: fileContent
+            })
+            
+            if (!result) {
+              throw new Error(`无法保存文件内容: ${fileName}`)
+            }
+            
+            tempFilePath = result.path
+            filePath = tempFilePath
+          }
+          
+          console.log(`准备上传文件: ${fileName} 从 ${filePath} 到 ${targetPath}`)
+          
+          // 上传文件
+          const result = await window.api.sftpUploadFile({
+            connectionId: props.connectionId,
+            localPath: filePath,
+            remotePath: targetPath // 直接使用当前目录路径，不需要再拼接文件名
+          })
+          
+          if (!result.success) {
+            throw new Error(result.error || `上传文件 ${fileName} 失败`)
+          }
+          
+          // 上传成功后刷新文件列表
+          await loadCurrentDirectory()
+          
+          // 清理临时文件
+          if (tempFilePath) {
+            try {
+              await window.electron.ipcRenderer.invoke('delete-temp-file', tempFilePath)
+              console.log(`临时文件已删除: ${tempFilePath}`)
+            } catch (deleteError) {
+              console.error(`删除临时文件失败: ${tempFilePath}`, deleteError)
+            }
+          }
+        } catch (fileError) {
+          console.error(`上传文件 ${file.name} 时发生错误:`, fileError)
+          error.value = fileError instanceof Error ? fileError.message : `上传文件 ${file.name} 时发生错误`
+        }
       }
     }
     
