@@ -1071,13 +1071,24 @@ const sortFiles = () => {
 }
 
 // 切换排序方式
-const toggleSort = (field: 'name' | 'size' | 'modifyTime') => {
-  if (sortBy.value === field) {
+const toggleSort = (column: 'name' | 'size' | 'modifyTime') => {
+  // 检查是否在列宽调整后的安全时间窗口内，如果是则不响应排序操作
+  if (Date.now() - lastColumnResizeTime.value < SORT_PREVENTION_WINDOW_MS) {
+    console.log('排序操作被忽略：刚刚调整过列宽')
+    return
+  }
+  
+  if (sortBy.value === column) {
+    // 同一列，切换排序顺序
     sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
   } else {
-    sortBy.value = field
+    // 不同列，设置新的排序列并默认升序
+    sortBy.value = column
     sortOrder.value = 'asc'
   }
+  
+  // 重新排序
+  sortFiles()
 }
 
 // 显示右键菜单
@@ -2037,6 +2048,7 @@ onMounted(async () => {
 
   // 在组件挂载时加载保存的列宽
   loadColumnWidths()
+  
   setupResizeObserver()
   
   // 初始调整列宽
@@ -2245,11 +2257,26 @@ const columnWidths = ref<ColumnWidths>({
   owner: 100
 })
 
+// 跟踪鼠标是否在文件列表上方
+const isHoveringFileList = ref(false)
+
+// 获取列宽格式字符串
+const getColumnTemplate = () => {
+  return `${columnWidths.value.checkbox}px ${columnWidths.value.name}px ${columnWidths.value.size}px ${columnWidths.value.time}px ${columnWidths.value.permissions}px ${columnWidths.value.owner}px`
+}
+
 // 列拖拽状态
 const isDraggingColumn = ref(false)
 const currentDraggingColumn = ref<keyof ColumnWidths | null>(null)
 const startDragX = ref(0)
 const startColumnWidth = ref(0)
+// 记录最后一次列宽调整的时间，用于阻止误触发排序
+const lastColumnResizeTime = ref(0)
+// 定义拖拽后阻止排序的时间窗口（毫秒）
+const SORT_PREVENTION_WINDOW_MS = 300
+
+// 记录用户是否手动调整过列宽
+const userAdjustedColumns = ref(false)
 
 // 处理列宽拖拽开始
 const handleColumnDragStart = (e: MouseEvent, column: keyof ColumnWidths) => {
@@ -2259,6 +2286,7 @@ const handleColumnDragStart = (e: MouseEvent, column: keyof ColumnWidths) => {
   currentDraggingColumn.value = column
   startDragX.value = e.clientX
   startColumnWidth.value = columnWidths.value[column]
+  userAdjustedColumns.value = true // 标记用户已手动调整
   
   // 添加全局事件监听
   document.addEventListener('mousemove', handleColumnDragMove)
@@ -2301,7 +2329,11 @@ const createResizeIndicator = () => {
 }
 
 // 处理列宽拖拽结束
-const handleColumnDragEnd = () => {
+const handleColumnDragEnd = (e: MouseEvent) => {
+  // 阻止可能的点击事件
+  e.preventDefault()
+  e.stopPropagation()
+  
   isDraggingColumn.value = false
   currentDraggingColumn.value = null
   
@@ -2318,6 +2350,9 @@ const handleColumnDragEnd = () => {
     indicator.parentNode.removeChild(indicator)
   }
   
+  // 记录列宽调整结束时间
+  lastColumnResizeTime.value = Date.now()
+  
   // 保存列宽到本地存储
   saveColumnWidths()
 }
@@ -2329,6 +2364,19 @@ const saveColumnWidths = () => {
   } catch (error) {
     console.error('保存列宽失败:', error)
   }
+}
+
+// 处理鼠标进入文件列表容器
+const handleMouseEnterFileList = () => {
+  isHoveringFileList.value = true
+}
+
+// 处理鼠标离开文件列表容器
+const handleMouseLeaveFileList = () => {
+  isHoveringFileList.value = false
+  
+  // 不管是否手动调整过列宽，都保存当前状态
+  saveColumnWidths() // 保存当前列宽
 }
 
 // 从本地存储加载列宽
@@ -2343,6 +2391,7 @@ const loadColumnWidths = () => {
       
       if (isValid) {
         columnWidths.value = parsedWidths
+        userAdjustedColumns.value = true // 标记为用户已调整，因为这是从用户的保存设置加载的
       }
     }
   } catch (error) {
@@ -2356,6 +2405,11 @@ const fileListContainerRef = ref<HTMLElement | null>(null)
 // 调整列宽以适应容器宽度
 const adjustColumnsToFitContainer = () => {
   if (!fileListContainerRef.value) return
+  
+  // 如果用户已手动调整过列宽，不要自动调整
+  if (userAdjustedColumns.value) {
+    return
+  }
   
   const containerWidth = fileListContainerRef.value.clientWidth
   
@@ -2783,10 +2837,12 @@ const handleFileDrop = async (e: DragEvent) => {
       @dragleave="handleDragLeave($event)"
       @drop="handleDrop($event)"
       :class="{ 'drag-over': isDraggingOver && !dragTargetItem }"
+      @mouseenter="handleMouseEnterFileList"
+      @mouseleave="handleMouseLeaveFileList"
     >
       <!-- 表头 -->
       <div class="file-list-header">
-        <div class="file-list-row" :style="{ gridTemplateColumns: `${columnWidths.checkbox}px ${columnWidths.name}px ${columnWidths.size}px ${columnWidths.time}px ${columnWidths.permissions}px ${columnWidths.owner}px` }">
+        <div class="file-list-row" :style="{ gridTemplateColumns: getColumnTemplate() }">
           <div class="checkbox-cell" :style="{ width: `${columnWidths.checkbox}px` }">
             <input
               type="checkbox"
@@ -2809,21 +2865,21 @@ const handleFileDrop = async (e: DragEvent) => {
             <span v-if="sortBy === 'name'" class="sort-indicator">
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
             </span>
-            <div class="column-resize-handle" @mousedown="(e) => handleColumnDragStart(e, 'name')"></div>
+            <div class="column-resize-handle" @mousedown.stop="(e) => handleColumnDragStart(e, 'name')"></div>
           </div>
           <div class="size-cell sortable" @click="toggleSort('size')" :style="{ width: `${columnWidths.size}px` }">
             大小
             <span v-if="sortBy === 'size'" class="sort-indicator">
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
             </span>
-            <div class="column-resize-handle" @mousedown="(e) => handleColumnDragStart(e, 'size')"></div>
+            <div class="column-resize-handle" @mousedown.stop="(e) => handleColumnDragStart(e, 'size')"></div>
           </div>
           <div class="time-cell sortable" @click="toggleSort('modifyTime')" :style="{ width: `${columnWidths.time}px` }">
             修改时间
             <span v-if="sortBy === 'modifyTime'" class="sort-indicator">
               {{ sortOrder === 'asc' ? '↑' : '↓' }}
             </span>
-            <div class="column-resize-handle" @mousedown="(e) => handleColumnDragStart(e, 'time')"></div>
+            <div class="column-resize-handle" @mousedown.stop="(e) => handleColumnDragStart(e, 'time')"></div>
           </div>
           <div class="permissions-cell" :style="{ width: `${columnWidths.permissions}px` }">
             权限
@@ -2840,7 +2896,7 @@ const handleFileDrop = async (e: DragEvent) => {
           v-for="file in fileList"
           :key="file.name"
           class="file-list-row"
-          :style="{ gridTemplateColumns: `${columnWidths.checkbox}px ${columnWidths.name}px ${columnWidths.size}px ${columnWidths.time}px ${columnWidths.permissions}px ${columnWidths.owner}px` }"
+          :style="{ gridTemplateColumns: getColumnTemplate() }"
           :class="{
             selected: selectedFiles.has(file.name),
             'is-directory': file.type === 'directory',
@@ -2857,6 +2913,7 @@ const handleFileDrop = async (e: DragEvent) => {
           @drop.stop="file.type === 'directory' ? handleFolderDrop($event, file.name) : handleFileDrop($event)"
           draggable="true"
           @dragstart="(e) => handleFileDragStart(e, file.name, file.type)"
+          @mouseenter="handleMouseEnterFileList"
         >
           <div class="checkbox-cell" :style="{ width: `${columnWidths.checkbox}px` }">
             <input
@@ -3568,14 +3625,15 @@ const handleFileDrop = async (e: DragEvent) => {
 }
 
 .file-list-row {
+  position: relative;
   display: grid;
-  grid-template-columns: 40px 3fr 1fr 2fr 1fr 1fr;
+  grid-template-columns: 40px 300px 100px 200px 100px 100px;
   align-items: center;
-  padding: 8px;
-  border-bottom: 1px solid #e0e0e0;
+  min-height: 32px;
+  border-bottom: 1px solid var(--border-color);
   cursor: pointer;
-  min-width: fit-content; /* 确保内容不会被截断 */
-  position: relative; /* 为调整手柄定位 */
+  transition: background-color 0.2s ease;
+  user-select: none; /* 防止文本选择 */
 }
 
 .dark-theme .file-list-row {
@@ -4446,12 +4504,37 @@ const handleFileDrop = async (e: DragEvent) => {
   position: absolute;
   top: 0;
   right: 0;
-  width: 6px; /* 增加宽度 */
   height: 100%;
+  width: 8px; /* 增加宽度使其更容易点击 */
   cursor: col-resize;
-  background-color: rgba(0, 0, 0, 0.05); /* 默认状态下轻微可见 */
-  transition: background-color 0.2s;
-  z-index: 2;
+  background-color: transparent;
+  user-select: none; /* 防止文本选择 */
+  z-index: 10; /* 确保在其他元素之上 */
+}
+
+/* 拖拽中的样式 */
+body.column-resizing {
+  cursor: col-resize !important;
+  user-select: none !important; /* 防止拖拽时选择文本 */
+}
+
+body.column-resizing .file-list-container * {
+  cursor: col-resize !important;
+}
+
+.column-resize-indicator {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--primary-color);
+  opacity: 0.7;
+  z-index: 99999;
+  pointer-events: none;
+}
+
+.dark-theme .column-resize-indicator {
+  background-color: var(--primary-color-dark);
 }
 
 .column-resize-handle::after {
@@ -4495,23 +4578,6 @@ const handleFileDrop = async (e: DragEvent) => {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-right: 10px; /* 为调整手柄留出更多空间 */
-}
-
-/* 列宽调整指示器 */
-.column-resize-indicator {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background-color: #2196f3;
-  z-index: 10000;
-  pointer-events: none;
-  box-shadow: 0 0 4px rgba(33, 150, 243, 0.5);
-}
-
-.dark-theme .column-resize-indicator {
-  background-color: #64b5f6;
-  box-shadow: 0 0 4px rgba(100, 181, 246, 0.5);
 }
 
 /* 拖拽相关样式 */
