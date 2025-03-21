@@ -3622,6 +3622,7 @@ const handleFileDrop = async (e: DragEvent) => {
 
 .file-list {
   flex: 1;
+  padding-left: 5px;
 }
 
 .file-list-row {
@@ -3631,6 +3632,7 @@ const handleFileDrop = async (e: DragEvent) => {
   align-items: center;
   min-height: 32px;
   border-bottom: 1px solid var(--border-color);
+  padding-left: 5px;
   cursor: pointer;
   transition: background-color 0.2s ease;
   user-select: none; /* 防止文本选择 */
@@ -3690,6 +3692,7 @@ const handleFileDrop = async (e: DragEvent) => {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-left: 2px;
 }
 
 .name-cell {

@@ -52,6 +52,10 @@ interface AppSettings {
     apiKey: string
     modelName: string
   }>
+  sshKeepAlive?: {
+    enabled: boolean
+    interval: number
+  }
 }
 
 // 连接配置文件路径
@@ -250,6 +254,29 @@ const activeTransfers = new Map<
 // 全局变量，用于存储当前的流式请求控制器
 let currentStreamController: AbortController | null = null;
 
+// 保持连接活跃的时间间隔 (毫秒) - 默认2分钟
+const DEFAULT_KEEP_ALIVE_INTERVAL = 120000;
+
+// 存储每个连接的keep-alive定时器
+const keepAliveTimers = new Map<string, NodeJS.Timeout>();
+
+// 获取保持连接活跃的时间间隔 (毫秒)
+function getKeepAliveInterval(): number {
+  try {
+    const settings = loadSettings();
+    // 从设置中获取interval值，如果启用并设置了有效值则使用，否则使用默认值
+    if (settings.sshKeepAlive?.enabled !== false && 
+        settings.sshKeepAlive?.interval && 
+        settings.sshKeepAlive.interval >= 30000) {
+      return settings.sshKeepAlive.interval;
+    }
+    return DEFAULT_KEEP_ALIVE_INTERVAL;
+  } catch (error) {
+    console.error('获取保持活跃间隔设置失败，使用默认值:', error);
+    return DEFAULT_KEEP_ALIVE_INTERVAL;
+  }
+}
+
 // SSH会话管理
 ipcMain.handle('ssh:connect', async (_, connectionInfo: Connection) => {
   let originalInfo: Partial<Connection> = {}
@@ -365,6 +392,41 @@ ipcMain.handle('ssh:connect', async (_, connectionInfo: Connection) => {
           console.log(`SSH连接 ${id} 已就绪`)
 
           try {
+            // 获取保持连接活跃设置
+            const settings = loadSettings();
+            const enableKeepAlive = settings.sshKeepAlive?.enabled !== false;
+            
+            // 设置保持连接活跃的定时器
+            if (enableKeepAlive) {
+              const keepAliveTimer = setInterval(() => {
+                try {
+                  // 发送SSH保持活跃包
+                  if (conn && conn.exec) {
+                    conn.exec('echo keepalive', (err, stream) => {
+                      if (err) {
+                        console.error(`保持活跃命令失败 (${id}):`, err);
+                        return;
+                      }
+                      
+                      // 处理响应但不进行任何操作
+                      stream.on('close', () => {
+                        // Keep-alive命令已执行完毕
+                      });
+                    });
+                    console.log(`发送保持活跃请求 (${id})`);
+                  }
+                } catch (keepAliveError) {
+                  console.error(`保持活跃请求失败 (${id}):`, keepAliveError);
+                }
+              }, getKeepAliveInterval());
+              
+              // 存储定时器以便以后清理
+              keepAliveTimers.set(id, keepAliveTimer);
+              console.log(`已为连接 ${id} 设置保持活跃定时器，间隔: ${getKeepAliveInterval()}毫秒`);
+            } else {
+              console.log(`连接 ${id} 未启用保持活跃功能`);
+            }
+            
             // 创建SFTP连接
             const sftp = new SftpClient()
 
@@ -578,6 +640,14 @@ ipcMain.on('ssh:close-shell', (_, { connectionId, shellId }) => {
 ipcMain.on('ssh:disconnect', (_, { connectionId }) => {
   ;(async () => {
     try {
+      // 清除keep-alive定时器
+      const timer = keepAliveTimers.get(connectionId);
+      if (timer) {
+        clearInterval(timer);
+        keepAliveTimers.delete(connectionId);
+        console.log(`已清除 ${connectionId} 的保持活跃定时器`);
+      }
+
       // 断开SFTP连接
       const sftp = activeSftpConnections.get(connectionId)
       if (sftp) {
@@ -800,6 +870,9 @@ function createWindow(): void {
 
         // 清理临时文件夹
         clearTempDirectory()
+        
+        // 清理所有keep-alive定时器
+        cleanupKeepAliveTimers()
 
         // 给渲染进程一些时间来保存数据
         setTimeout(() => {
@@ -1364,7 +1437,7 @@ app.whenReady().then(() => {
 
         // 处理单个文件上传
         const processUpload = async (queueItem: typeof uploadQueue[0]): Promise<boolean> => {
-          const { localPath, fileName, retryCount } = queueItem
+          const { localPath, fileName } = queueItem
           const remoteFilePath = remotePath === '/' ? `/${fileName}` : `${remotePath}/${fileName}`
           
           try {
@@ -1504,6 +1577,8 @@ app.whenReady().then(() => {
               const success = await processUpload(item)
               if (!success) {
                 failedFiles.push(item.localPath)
+              } else {
+                successFiles.push(item.localPath)
               }
               return success
             })
@@ -1516,7 +1591,8 @@ app.whenReady().then(() => {
         // 返回最终结果
         return {
           success: failedFiles.length === 0,
-          failedFiles: failedFiles.length > 0 ? failedFiles : undefined
+          failedFiles: failedFiles.length > 0 ? failedFiles : undefined,
+          successFiles: successFiles.length > 0 ? successFiles : undefined
         }
       } catch (error: unknown) {
         const err = error as Error
@@ -1938,6 +2014,14 @@ function saveSettings(settings: AppSettings): boolean {
         modelName: settings.aiSettings.modelName
       }
     }
+    
+    // 处理 SSH 保持连接设置
+    if (settings.sshKeepAlive) {
+      cleanSettings.sshKeepAlive = {
+        enabled: settings.sshKeepAlive.enabled,
+        interval: settings.sshKeepAlive.interval
+      }
+    }
 
     // 获取配置文件路径
     const configPath = settingsPath
@@ -1977,7 +2061,11 @@ function getDefaultSettings(): AppSettings {
       apiKey: '',
       modelName: ''
     },
-    aiApis: []
+    aiApis: [],
+    sshKeepAlive: {
+      enabled: true,
+      interval: 120000 // 默认2分钟
+    }
   }
 }
 
@@ -1985,6 +2073,9 @@ function getDefaultSettings(): AppSettings {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
+  // 确保清理所有keep-alive定时器
+  cleanupKeepAliveTimers();
+  
   if (process.platform !== 'darwin') {
     app.quit()
   }
@@ -2030,7 +2121,13 @@ ipcMain.handle('save-settings', async (_event, settings) => {
             apiKey: api.apiKey || '',
             modelName: api.modelName || ''
           }))
-        : []
+        : [],
+      sshKeepAlive: settings.sshKeepAlive
+        ? {
+            enabled: settings.sshKeepAlive.enabled !== false,
+            interval: settings.sshKeepAlive.interval || 120000
+          }
+        : { enabled: true, interval: 120000 }
     }
 
     const success = saveSettings(cleanSettings)
@@ -2049,6 +2146,11 @@ ipcMain.handle('save-settings', async (_event, settings) => {
       })
 
       console.log('设置更新通知已发送')
+      
+      // 更新保持连接活跃的定时器
+      if (settings.sshKeepAlive) {
+        updateKeepAliveTimers();
+      }
     } else {
       console.error('保存设置失败')
     }
@@ -2354,3 +2456,59 @@ ipcMain.handle('clear-temp-directory', async () => {
     return { success: false, error: '清空临时文件夹失败' }
   }
 })
+
+// 清理所有keep-alive定时器
+function cleanupKeepAliveTimers() {
+  console.log(`清理 ${keepAliveTimers.size} 个保持活跃定时器`);
+  for (const [connectionId, timer] of keepAliveTimers.entries()) {
+    clearInterval(timer);
+    console.log(`已清除 ${connectionId} 的保持活跃定时器`);
+  }
+  keepAliveTimers.clear();
+}
+
+// 处理保持连接活跃的设置变化
+function updateKeepAliveTimers() {
+  const interval = getKeepAliveInterval();
+  console.log(`更新所有保持活跃定时器，新间隔: ${interval}毫秒`);
+
+  // 遍历所有活跃连接
+  for (const [connectionId, timer] of keepAliveTimers.entries()) {
+    // 清除旧定时器
+    clearInterval(timer);
+    
+    // 获取连接信息
+    const connInfo = activeConnections.get(connectionId);
+    if (!connInfo || !connInfo.connection) {
+      // 如果连接不存在，则删除定时器记录
+      keepAliveTimers.delete(connectionId);
+      continue;
+    }
+    
+    // 创建新定时器
+    const newTimer = setInterval(() => {
+      try {
+        // 发送SSH保持活跃包
+        if (connInfo.connection && connInfo.connection.exec) {
+          connInfo.connection.exec('echo keepalive', (err, stream) => {
+            if (err) {
+              console.error(`保持活跃命令失败 (${connectionId}):`, err);
+              return;
+            }
+            
+            // 处理响应但不进行任何操作
+            stream.on('close', () => {
+              // Keep-alive命令已执行完毕
+            });
+          });
+          console.log(`发送保持活跃请求 (${connectionId})`);
+        }
+      } catch (keepAliveError) {
+        console.error(`保持活跃请求失败 (${connectionId}):`, keepAliveError);
+      }
+    }, interval);
+    
+    // 更新定时器记录
+    keepAliveTimers.set(connectionId, newTimer);
+  }
+}

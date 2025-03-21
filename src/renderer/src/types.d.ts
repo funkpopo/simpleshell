@@ -154,6 +154,10 @@ declare interface API {
       apiKey: string
       modelName: string
     }>
+    sshKeepAlive?: {
+      enabled: boolean
+      interval: number
+    }
   }>
   saveSettings: (settings: {
     language: string
@@ -173,6 +177,10 @@ declare interface API {
       apiKey: string
       modelName: string
     }>
+    sshKeepAlive?: {
+      enabled: boolean
+      interval: number
+    }
   }) => Promise<boolean>
 
   // 文件传输事件监听

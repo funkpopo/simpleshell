@@ -128,7 +128,12 @@ const zhCN = {
     proxyPort: '代理端口',
     proxyAuthRequired: '代理需要认证',
     proxyUsername: '代理用户名',
-    proxyPassword: '代理密码'
+    proxyPassword: '代理密码',
+    keepAliveSettings: '连接保活设置',
+    enableKeepAlive: '启用连接保活',
+    keepAliveInterval: '保活间隔',
+    seconds: '秒',
+    keepAliveIntervalHint: '每隔指定时间发送保活命令以防止连接超时断开，建议设置为120秒'
   },
   fileManager: {
     title: '文件管理',
@@ -292,7 +297,12 @@ const enUS = {
     proxyPort: 'Proxy Port',
     proxyAuthRequired: 'Proxy Authentication Required',
     proxyUsername: 'Proxy Username',
-    proxyPassword: 'Proxy Password'
+    proxyPassword: 'Proxy Password',
+    keepAliveSettings: 'Keep-Alive Settings',
+    enableKeepAlive: 'Enable Keep-Alive',
+    keepAliveInterval: 'Keep-Alive Interval',
+    seconds: 'seconds',
+    keepAliveIntervalHint: 'Send keep-alive commands at this interval to prevent connection timeout, recommended: 120 seconds'
   },
   fileManager: {
     title: 'File Manager',

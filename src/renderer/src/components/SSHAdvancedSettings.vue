@@ -31,6 +31,33 @@
       </div>
     </div>
     
+    <div class="settings-section">
+      <h4>{{ t('connection.keepAliveSettings') }}</h4>
+      
+      <div class="checkbox-container">
+        <input type="checkbox" id="enable-keep-alive" v-model="enableKeepAlive" @change="updateKeepAliveStatus">
+        <label for="enable-keep-alive">{{ t('connection.enableKeepAlive') }}</label>
+      </div>
+      
+      <div class="settings-form" v-if="enableKeepAlive">
+        <div class="form-group">
+          <label for="keep-alive-interval">{{ t('connection.keepAliveInterval') }}</label>
+          <div class="interval-input-container">
+            <input 
+              type="number" 
+              id="keep-alive-interval" 
+              v-model.number="keepAliveInterval" 
+              min="30" 
+              max="3600" 
+              @input="updateKeepAliveInterval"
+            >
+            <span class="interval-unit">{{ t('connection.seconds') }}</span>
+          </div>
+          <small class="form-hint">{{ t('connection.keepAliveIntervalHint') }}</small>
+        </div>
+      </div>
+    </div>
+    
     <div class="settings-actions">
       <button class="btn btn-primary" @click="applySettings">{{ t('common.apply') }}</button>
       <button class="btn btn-secondary" @click="resetSettings">{{ t('common.reset') }}</button>
@@ -50,9 +77,14 @@ const proxyType = ref<'http' | 'socks'>('http')
 const proxyHost = ref('127.0.0.1')
 const proxyPort = ref(8080)
 
-// 组件挂载时检查是否有已设置的代理
+// 保持连接活跃设置
+const enableKeepAlive = ref(true)
+const keepAliveInterval = ref(120)
+
+// 组件挂载时检查是否有已设置的代理和活跃连接设置
 onMounted(async () => {
   try {
+    // 加载代理设置
     const { proxy } = await window.api.getManualProxy()
     if (proxy) {
       enableProxy.value = true
@@ -60,8 +92,17 @@ onMounted(async () => {
       proxyHost.value = proxy.host
       proxyPort.value = proxy.port
     }
+    
+    // 加载保持连接设置
+    const settings = await window.api.loadSettings()
+    if (settings && settings.sshKeepAlive !== undefined) {
+      enableKeepAlive.value = settings.sshKeepAlive.enabled !== false
+      if (settings.sshKeepAlive.interval && settings.sshKeepAlive.interval >= 30) {
+        keepAliveInterval.value = Math.floor(settings.sshKeepAlive.interval / 1000) // 转换毫秒为秒
+      }
+    }
   } catch (error) {
-    console.error('获取代理设置失败:', error)
+    console.error('获取设置失败:', error)
   }
 })
 
@@ -100,6 +141,48 @@ const updateProxy = async () => {
   }
 }
 
+// 更新保持连接状态
+const updateKeepAliveStatus = async () => {
+  try {
+    const settings = await window.api.loadSettings()
+    const updatedSettings = {
+      ...settings,
+      sshKeepAlive: {
+        enabled: enableKeepAlive.value,
+        interval: keepAliveInterval.value * 1000 // 转换秒为毫秒
+      }
+    }
+    await window.api.saveSettings(updatedSettings)
+    console.log('已更新保持连接设置:', enableKeepAlive.value, keepAliveInterval.value)
+  } catch (error) {
+    console.error('更新保持连接设置失败:', error)
+  }
+}
+
+// 更新保持连接间隔
+const updateKeepAliveInterval = async () => {
+  if (!enableKeepAlive.value) return
+  
+  // 确保值在合理范围内
+  if (keepAliveInterval.value < 30) keepAliveInterval.value = 30
+  if (keepAliveInterval.value > 3600) keepAliveInterval.value = 3600
+  
+  try {
+    const settings = await window.api.loadSettings()
+    const updatedSettings = {
+      ...settings,
+      sshKeepAlive: {
+        enabled: true,
+        interval: keepAliveInterval.value * 1000 // 转换秒为毫秒
+      }
+    }
+    await window.api.saveSettings(updatedSettings)
+    console.log('已更新保持连接间隔:', keepAliveInterval.value)
+  } catch (error) {
+    console.error('更新保持连接间隔失败:', error)
+  }
+}
+
 // 应用设置
 const applySettings = async () => {
   if (enableProxy.value) {
@@ -107,6 +190,9 @@ const applySettings = async () => {
   } else {
     await window.api.clearManualProxy()
   }
+  
+  // 更新保持连接设置
+  await updateKeepAliveStatus()
 }
 
 // 重置设置
@@ -116,6 +202,11 @@ const resetSettings = async () => {
   proxyHost.value = '127.0.0.1'
   proxyPort.value = 8080
   await window.api.clearManualProxy()
+  
+  // 重置保持连接设置为默认值
+  enableKeepAlive.value = true
+  keepAliveInterval.value = 120
+  await updateKeepAliveStatus()
 }
 </script>
 
@@ -207,6 +298,24 @@ h4 {
   color: var(--text-color);
 }
 
+.interval-input-container {
+  display: flex;
+  align-items: center;
+}
+
+.interval-unit {
+  margin-left: 8px;
+  color: var(--text-color);
+}
+
+.form-hint {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--hint-color);
+  font-style: italic;
+}
+
 :root {
   --border-color: #e0e0e0;
   --heading-color: #333;
@@ -215,6 +324,7 @@ h4 {
   --input-bg: white;
   --primary-color: #1976d2;
   --secondary-color: #e0e0e0;
+  --hint-color: #777;
 }
 
 :root .dark-theme {
@@ -225,5 +335,6 @@ h4 {
   --input-bg: #222;
   --primary-color: #1976d2;
   --secondary-color: #444;
+  --hint-color: #999;
 }
 </style> 
