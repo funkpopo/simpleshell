@@ -15,7 +15,6 @@
     "dev": "electron-vite dev --watch",
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
-    "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux"
@@ -34,11 +33,11 @@
     "marked-highlight": "^2.2.1",
     "node-machine-id": "^1.1.12",
     "node-pty": "^1.1.0-beta30",
-    "openai": "^4.87.3",
+    "openai": "^4.89.0",
     "os": "^0.1.2",
     "socks-proxy-agent": "^8.0.5",
     "ssh2": "^1.16.0",
-    "ssh2-sftp-client": "^11.0.0",
+    "ssh2-sftp-client": "^12.0.0",
     "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
@@ -57,7 +56,7 @@
     "eslint-plugin-vue": "^9.20.1",
     "prettier": "^3.5.3",
     "typescript": "^5.8.2",
-    "vite": "^6.2.1",
+    "vite": "^6.2.2",
     "vue": "^3.5.13",
     "vue-tsc": "^2.2.8"
   }
