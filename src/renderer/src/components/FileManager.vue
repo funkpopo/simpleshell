@@ -18,6 +18,7 @@ import OpenFolderDayIcon from '../assets/openfolder-day.svg'
 import OpenFolderNightIcon from '../assets/openfolder-night.svg'
 import InfoDayIcon from '../assets/info-day.svg'
 import InfoNightIcon from '../assets/info-night.svg'
+import FileViewer from './FileViewer.vue'
 
 // 定义文件/文件夹项的接口
 interface FileItem {
@@ -2778,6 +2779,90 @@ const handleFileDrop = async (e: DragEvent) => {
     error.value = err instanceof Error ? err.message : '处理拖放文件时发生错误'
   }
 }
+
+// 文件查看器状态
+const showFileViewer = ref(false)
+const viewerData = ref({
+  fileName: '',
+  fileContent: '',
+  fileType: '',
+  fileSize: 0,
+  isText: false,
+  isImage: false,
+  tempFilePath: '',
+  isTruncated: false,
+  remotePath: ''
+})
+
+// 处理文件双击事件
+const handleFileDoubleClick = async (fileName: string, fileType: 'file' | 'directory') => {
+  // 如果是文件夹，进入该文件夹
+  if (fileType === 'directory') {
+    enterDirectory(fileName)
+    return
+  }
+  
+  // 如果是文件，尝试预览
+  try {
+    // 构建完整的文件路径
+    const filePath = `${currentPath.value}/${fileName}`
+    
+    // 获取文件内容用于预览
+    const result = await window.api.sftpReadFileContent({
+      connectionId: props.connectionId,
+      remotePath: filePath,
+      fileName
+    })
+    
+    if (result.success) {
+      // 设置查看器数据
+      viewerData.value = {
+        fileName,
+        fileContent: result.content || '',
+        fileType: result.fileType || '未知',
+        fileSize: result.fileSize || 0,
+        isText: result.isText || false,
+        isImage: result.isImage || false,
+        tempFilePath: result.tempFilePath || '',
+        isTruncated: result.isTruncated || false,
+        remotePath: filePath
+      }
+      
+      // 显示文件查看器
+      showFileViewer.value = true
+      
+      console.log(`打开文件查看器: ${fileName}`)
+    } else {
+      error.value = result.error || '无法预览文件'
+    }
+  } catch (err) {
+    console.error('处理文件预览失败:', err)
+    error.value = err instanceof Error ? err.message : '处理文件预览失败'
+  }
+}
+
+// 关闭文件查看器
+const closeFileViewer = () => {
+  showFileViewer.value = false
+}
+
+// 从文件查看器下载文件
+const downloadFromViewer = () => {
+  // 直接调用下载方法，先选中当前查看的文件
+  selectedFiles.value.clear()
+  selectedFiles.value.add(viewerData.value.fileName)
+  selectedItemTypes.value.set(viewerData.value.fileName, 'file')
+  
+  // 调用下载方法
+  downloadSelectedFiles()
+}
+
+// 组件卸载时关闭文件查看器
+onBeforeUnmount(() => {
+  if (showFileViewer.value) {
+    closeFileViewer()
+  }
+})
 </script>
 
 <template>
@@ -2906,7 +2991,7 @@ const handleFileDrop = async (e: DragEvent) => {
           }"
           :data-name="file.name"
           @click="toggleFileSelection(file.name, file.type, $event)"
-          @dblclick="file.type === 'directory' && enterDirectory(file.name)"
+          @dblclick="file.type === 'directory' ? enterDirectory(file.name) : handleFileDoubleClick(file.name, file.type)"
           @contextmenu.stop="showMenu($event, file.type, file.name)"
           @dragover.stop="file.type === 'directory' ? handleFolderDragOver($event, file.name) : handleFileDragOver($event)"
           @dragleave.stop="file.type === 'directory' ? handleFolderDragLeave($event) : handleFileDragLeave($event)"
@@ -3269,6 +3354,25 @@ const handleFileDrop = async (e: DragEvent) => {
         </div>
       </div>
     </teleport>
+
+    <!-- 文件查看器 -->
+    <FileViewer
+      v-if="showFileViewer"
+      :show="showFileViewer"
+      :fileName="viewerData.fileName"
+      :fileContent="viewerData.fileContent"
+      :fileType="viewerData.fileType"
+      :fileSize="viewerData.fileSize"
+      :isText="viewerData.isText"
+      :isImage="viewerData.isImage"
+      :tempFilePath="viewerData.tempFilePath"
+      :isTruncated="viewerData.isTruncated"
+      :connectionId="props.connectionId"
+      :remotePath="viewerData.remotePath"
+      :isDarkTheme="props.isDarkTheme"
+      @close="closeFileViewer"
+      @download="downloadFromViewer"
+    />
   </div>
 </template>
 

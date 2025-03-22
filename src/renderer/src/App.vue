@@ -500,6 +500,18 @@ onMounted(() => {
   </div>
 </template>
 
+<style>
+/* 全局CSS，确保文件查看器始终在最上层 */
+.file-viewer-overlay {
+  position: fixed !important;
+  z-index: 2147483647 !important; /* 最大可能的z-index值 */
+}
+
+.file-viewer-container {
+  z-index: 2147483647 !important;
+}
+</style>
+
 <style scoped>
 .app-container {
   display: flex;
@@ -564,6 +576,7 @@ onMounted(() => {
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
+  z-index: 9998;
 }
 
 /* 按钮容器样式 */

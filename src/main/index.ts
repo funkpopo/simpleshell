@@ -2512,3 +2512,116 @@ function updateKeepAliveTimers() {
     keepAliveTimers.set(connectionId, newTimer);
   }
 }
+
+// 读取文件内容用于预览
+ipcMain.handle('sftp:readFileContent', async (_, { connectionId, remotePath, fileName, maxSize = 1024 * 1024 * 5 }) => {
+  try {
+    console.log('读取文件内容用于预览:', fileName)
+    
+    const sftp = activeSftpConnections.get(connectionId)
+    if (!sftp) {
+      return { success: false, error: 'SFTP连接不存在' }
+    }
+    
+    // 获取文件信息以获取大小
+    const stats = await sftp.stat(remotePath)
+    
+    // 检查文件大小，对于过大的文件，仅返回前5MB内容
+    const fileSize = stats.size
+    if (fileSize > maxSize) {
+      console.log(`文件太大(${fileSize} 字节)，将只读取前 ${maxSize} 字节用于预览`)
+    }
+    
+    // 创建临时文件路径，使用原始文件名
+    const tempFilePath = path.join(tempDir, fileName)
+    
+    // 对于小文件，直接下载
+    if (fileSize <= maxSize) {
+      await sftp.fastGet(remotePath, tempFilePath)
+      
+      // 读取文件内容
+      const content = fs.readFileSync(tempFilePath, 'utf8')
+      
+      // 记录临时文件，以便后续删除
+      tempFiles.set(tempFilePath, fileName)
+      
+      // 尝试检测文件类型
+      const fileExt = path.extname(fileName).toLowerCase()
+      const isText = isTextFile(fileExt)
+      const isImage = isImageFile(fileExt)
+      
+      return {
+        success: true,
+        tempFilePath,
+        content: isText ? content : null, // 仅对文本文件返回内容
+        isText,
+        isImage,
+        fileSize,
+        fileType: fileExt.slice(1) || 'unknown',
+        isTruncated: false
+      }
+    } else {
+      // 对于大文件，仅下载部分内容
+      // 创建部分读取流
+      const readStream = await sftp.createReadStream(remotePath, { start: 0, end: maxSize - 1 })
+      const writeStream = fs.createWriteStream(tempFilePath)
+      
+      // 等待下载完成
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on('finish', () => resolve())
+        writeStream.on('error', reject)
+        readStream.pipe(writeStream)
+      })
+      
+      // 读取部分文件内容
+      const content = fs.readFileSync(tempFilePath, 'utf8')
+      
+      // 记录临时文件，以便后续删除
+      tempFiles.set(tempFilePath, fileName)
+      
+      // 尝试检测文件类型
+      const fileExt = path.extname(fileName).toLowerCase()
+      const isText = isTextFile(fileExt)
+      const isImage = isImageFile(fileExt)
+      
+      return {
+        success: true,
+        tempFilePath,
+        content: isText ? content : null, // 仅对文本文件返回内容
+        isText,
+        isImage,
+        fileSize,
+        fileType: fileExt.slice(1) || 'unknown',
+        isTruncated: true
+      }
+    }
+  } catch (error: unknown) {
+    const err = error as Error
+    console.error('读取文件内容失败:', err)
+    return { success: false, error: err.message }
+  }
+})
+
+// 检查是否是文本文件
+function isTextFile(fileExt: string): boolean {
+  const textExtensions = [
+    '.txt', '.log', '.ini', '.conf', '.cfg', '.config',
+    '.json', '.xml', '.yaml', '.yml', '.toml',
+    '.md', '.markdown', '.rst',
+    '.html', '.htm', '.css', '.scss', '.less',
+    '.js', '.ts', '.jsx', '.tsx', '.vue',
+    '.c', '.cpp', '.h', '.hpp', '.cs', '.java', '.py', '.rb', '.php',
+    '.sh', '.bash', '.ps1', '.bat', '.cmd',
+    '.properties', '.env'
+  ]
+  return textExtensions.includes(fileExt.toLowerCase())
+}
+
+// 检查是否是图片文件
+function isImageFile(fileExt: string): boolean {
+  const imageExtensions = [
+    '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp',
+    '.svg', '.ico'
+  ]
+  return imageExtensions.includes(fileExt.toLowerCase())
+}

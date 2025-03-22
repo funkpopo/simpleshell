@@ -130,6 +130,24 @@ declare interface API {
     error?: string
   }>
 
+  // 读取文件内容用于预览
+  sftpReadFileContent: (params: {
+    connectionId: string
+    remotePath: string
+    fileName: string
+    maxSize?: number
+  }) => Promise<{
+    success: boolean
+    tempFilePath?: string
+    content?: string
+    isText?: boolean
+    isImage?: boolean
+    fileSize?: number
+    fileType?: string
+    isTruncated?: boolean
+    error?: string
+  }>
+
   cancelTransfer: (params: { transferId: string }) => Promise<{
     success: boolean
     error?: string
