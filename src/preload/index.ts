@@ -390,6 +390,26 @@ const api = {
     return await ipcRenderer.invoke('sftp:getFileInfo', params)
   },
 
+  // 读取文件内容用于预览
+  sftpReadFileContent: async (params: {
+    connectionId: string
+    remotePath: string
+    fileName: string
+    maxSize?: number
+  }): Promise<{
+    success: boolean
+    tempFilePath?: string
+    content?: string
+    isText?: boolean
+    isImage?: boolean
+    fileSize?: number
+    fileType?: string
+    isTruncated?: boolean
+    error?: string
+  }> => {
+    return await ipcRenderer.invoke('sftp:readFileContent', params)
+  },
+
   // 取消文件传输
   cancelTransfer: async (params: { transferId: string }): Promise<SFTPResult> => {
     return await ipcRenderer.invoke('sftp:cancelTransfer', params)

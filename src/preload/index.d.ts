@@ -184,6 +184,23 @@ interface API {
     error?: string
   }>
 
+  sftpReadFileContent(params: {
+    connectionId: string
+    remotePath: string
+    fileName: string
+    maxSize?: number
+  }): Promise<{
+    success: boolean
+    tempFilePath?: string
+    content?: string
+    isText?: boolean
+    isImage?: boolean
+    fileSize?: number
+    fileType?: string
+    isTruncated?: boolean
+    error?: string
+  }>
+
   cancelTransfer(params: { transferId: string }): Promise<{
     success: boolean
     error?: string
