@@ -1,154 +1,162 @@
 <!-- 全局设置对话框 -->
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
-import { useI18n } from '../i18n'
+import { ref, onMounted, watch, computed } from "vue";
+import { useI18n } from "../i18n";
 
 // 使用i18n
-const { t, language, setLanguage } = useI18n()
+const { t, language, setLanguage } = useI18n();
 
 // 定义props
 const props = defineProps<{
-  visible: boolean
-  isDarkTheme: boolean
-}>()
+  visible: boolean;
+  isDarkTheme: boolean;
+}>();
 
 // 定义事件
 const emit = defineEmits<{
-  (e: 'update:visible', value: boolean): void
-  (e: 'save', settings: GlobalSettings): void
-  (e: 'cancel'): void
-}>()
+  (e: "update:visible", value: boolean): void;
+  (e: "save", settings: GlobalSettings): void;
+  (e: "cancel"): void;
+}>();
 
 // AI API接口配置
 interface AIApiConfig {
-  id: string
-  name: string
-  apiUrl: string
-  apiKey: string
-  modelName: string
+  id: string;
+  name: string;
+  apiUrl: string;
+  apiKey: string;
+  modelName: string;
 }
 
 // 全局设置接口
 interface GlobalSettings {
-  language: string
-  fontSize: number
-  fontFamily: string
-  terminalFontFamily: string
-  terminalFontSize: number
-  aiApis?: AIApiConfig[]
+  language: string;
+  fontSize: number;
+  fontFamily: string;
+  terminalFontFamily: string;
+  terminalFontSize: number;
+  aiApis?: AIApiConfig[];
 }
 
 // 防抖工具函数
 function debounce(
   fn: (settings: GlobalSettings) => Promise<void>,
-  delay: number
+  delay: number,
 ): (settings: GlobalSettings) => void {
-  let timer: NodeJS.Timeout | null = null
+  let timer: NodeJS.Timeout | null = null;
   return function (settings: GlobalSettings) {
-    if (timer) clearTimeout(timer)
+    if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      fn(settings)
-      timer = null
-    }, delay)
-  }
+      fn(settings);
+      timer = null;
+    }, delay);
+  };
 }
 
 // 表单数据
 const formData = ref<GlobalSettings>({
-  language: 'zh-CN',
+  language: "zh-CN",
   fontSize: 14,
-  fontFamily: 'system-ui',
+  fontFamily: "system-ui",
   terminalFontFamily: 'Consolas, "Courier New", monospace',
   terminalFontSize: 14,
-  aiApis: []
-})
+  aiApis: [],
+});
 
 // 当前编辑的API配置
-const currentApiConfig = ref<AIApiConfig | null>(null)
-const showApiConfigDialog = ref(false)
-const isEditingApi = ref(false)
+const currentApiConfig = ref<AIApiConfig | null>(null);
+const showApiConfigDialog = ref(false);
+const isEditingApi = ref(false);
 
 // 安全的API配置属性访问
 const apiName = computed({
-  get: () => currentApiConfig.value?.name || '',
-  set: (value) => { if (currentApiConfig.value) currentApiConfig.value.name = value }
-})
+  get: () => currentApiConfig.value?.name || "",
+  set: (value) => {
+    if (currentApiConfig.value) currentApiConfig.value.name = value;
+  },
+});
 
 const apiUrl = computed({
-  get: () => currentApiConfig.value?.apiUrl || '',
-  set: (value) => { if (currentApiConfig.value) currentApiConfig.value.apiUrl = value }
-})
+  get: () => currentApiConfig.value?.apiUrl || "",
+  set: (value) => {
+    if (currentApiConfig.value) currentApiConfig.value.apiUrl = value;
+  },
+});
 
 const apiKey = computed({
-  get: () => currentApiConfig.value?.apiKey || '',
-  set: (value) => { if (currentApiConfig.value) currentApiConfig.value.apiKey = value }
-})
+  get: () => currentApiConfig.value?.apiKey || "",
+  set: (value) => {
+    if (currentApiConfig.value) currentApiConfig.value.apiKey = value;
+  },
+});
 
 const modelName = computed({
-  get: () => currentApiConfig.value?.modelName || '',
-  set: (value) => { if (currentApiConfig.value) currentApiConfig.value.modelName = value }
-})
+  get: () => currentApiConfig.value?.modelName || "",
+  set: (value) => {
+    if (currentApiConfig.value) currentApiConfig.value.modelName = value;
+  },
+});
 
 // 字体大小选项
 const fontSizeOptions = [
-  { label: t('settings.fontSizes.small'), value: 12 },
-  { label: t('settings.fontSizes.medium'), value: 14 },
-  { label: t('settings.fontSizes.large'), value: 16 },
-  { label: t('settings.fontSizes.extraLarge'), value: 18 }
-]
+  { label: t("settings.fontSizes.small"), value: 12 },
+  { label: t("settings.fontSizes.medium"), value: 14 },
+  { label: t("settings.fontSizes.large"), value: 16 },
+  { label: t("settings.fontSizes.extraLarge"), value: 18 },
+];
 
 // 终端字体大小选项
 const terminalFontSizeOptions = [
-  { label: t('settings.fontSizes.small'), value: 12 },
-  { label: t('settings.fontSizes.medium'), value: 14 },
-  { label: t('settings.fontSizes.large'), value: 16 },
-  { label: t('settings.fontSizes.extraLarge'), value: 18 },
-  { label: t('settings.fontSizes.huge'), value: 20 },
-  { label: t('settings.fontSizes.extraHuge'), value: 24 }
-]
+  { label: t("settings.fontSizes.small"), value: 12 },
+  { label: t("settings.fontSizes.medium"), value: 14 },
+  { label: t("settings.fontSizes.large"), value: 16 },
+  { label: t("settings.fontSizes.extraLarge"), value: 18 },
+  { label: t("settings.fontSizes.huge"), value: 20 },
+  { label: t("settings.fontSizes.extraHuge"), value: 24 },
+];
 
 // 语言选项
 const languageOptions = [
-  { label: '简体中文', value: 'zh-CN' },
-  { label: 'English', value: 'en-US' }
-]
+  { label: "简体中文", value: "zh-CN" },
+  { label: "English", value: "en-US" },
+];
 
 // 常用字体选项
 const fontFamilyOptions = [
-  { label: t('settings.fontFamilies.system'), value: 'system-ui' },
-  { label: t('settings.fontFamilies.arial'), value: 'Arial' },
-  { label: t('settings.fontFamilies.yahei'), value: 'Microsoft YaHei' },
-  { label: t('settings.fontFamilies.source'), value: 'Noto Sans SC' },
-  { label: t('settings.fontFamilies.roboto'), value: 'Roboto' }
-]
+  { label: t("settings.fontFamilies.system"), value: "system-ui" },
+  { label: t("settings.fontFamilies.arial"), value: "Arial" },
+  { label: t("settings.fontFamilies.yahei"), value: "Microsoft YaHei" },
+  { label: t("settings.fontFamilies.source"), value: "Noto Sans SC" },
+  { label: t("settings.fontFamilies.roboto"), value: "Roboto" },
+];
 
 // 终端字体选项
 const terminalFontFamilyOptions = [
-  { label: 'Consolas', value: 'Consolas, "Courier New", monospace' },
-  { label: 'Courier New', value: '"Courier New", monospace' },
-  { label: 'Menlo', value: 'Menlo, Monaco, "Courier New", monospace' },
-  { label: 'Monaco', value: 'Monaco, "Courier New", monospace' },
-  { label: 'Source Code Pro', value: '"Source Code Pro", monospace' },
-  { label: 'Fira Code', value: '"Fira Code", monospace' },
-  { label: 'JetBrains Mono', value: '"JetBrains Mono", monospace' }
-]
+  { label: "Consolas", value: 'Consolas, "Courier New", monospace' },
+  { label: "Courier New", value: '"Courier New", monospace' },
+  { label: "Menlo", value: 'Menlo, Monaco, "Courier New", monospace' },
+  { label: "Monaco", value: 'Monaco, "Courier New", monospace' },
+  { label: "Source Code Pro", value: '"Source Code Pro", monospace' },
+  { label: "Fira Code", value: '"Fira Code", monospace' },
+  { label: "JetBrains Mono", value: '"JetBrains Mono", monospace' },
+];
 
 // 加载设置
 const loadSettings = async () => {
   try {
-    const settings = await window.api.loadSettings()
+    const settings = await window.api.loadSettings();
     if (settings) {
       formData.value = {
         ...formData.value,
         ...settings,
         // 确保aiApis是数组
-        aiApis: Array.isArray(settings.aiApis) ? settings.aiApis : []
-      }
+        aiApis: Array.isArray(settings.aiApis) ? settings.aiApis : [],
+      };
     }
   } catch (error) {
-    console.error('加载设置失败:', error)
+    console.error("加载设置失败:", error);
   }
-}
+};
 
 // 实时保存设置
 const saveSettingsRealtime = async (newSettings: GlobalSettings) => {
@@ -159,41 +167,44 @@ const saveSettingsRealtime = async (newSettings: GlobalSettings) => {
       fontSize: newSettings.fontSize,
       fontFamily: newSettings.fontFamily,
       terminalFontFamily: newSettings.terminalFontFamily,
-      terminalFontSize: newSettings.terminalFontSize
-    }
+      terminalFontSize: newSettings.terminalFontSize,
+    };
 
     // 单独处理 aiApis 数组，确保每个对象都是纯数据对象
     if (Array.isArray(newSettings.aiApis)) {
-      cleanSettings.aiApis = newSettings.aiApis.map(api => ({
+      cleanSettings.aiApis = newSettings.aiApis.map((api) => ({
         id: api.id,
         name: api.name,
         apiUrl: api.apiUrl,
         apiKey: api.apiKey,
-        modelName: api.modelName
-      }))
+        modelName: api.modelName,
+      }));
     } else {
-      cleanSettings.aiApis = []
+      cleanSettings.aiApis = [];
     }
 
-    console.log('实时保存设置:', JSON.stringify(cleanSettings))
-    const result = await window.api.saveSettings(cleanSettings)
+    console.log("实时保存设置:", JSON.stringify(cleanSettings));
+    const result = await window.api.saveSettings(cleanSettings);
     if (result) {
-      console.log('设置已实时保存并应用')
+      console.log("设置已实时保存并应用");
 
       // 如果语言发生变化，更新i18n状态
       if (cleanSettings.language !== language.value) {
-        setLanguage(cleanSettings.language)
+        setLanguage(cleanSettings.language);
       }
     } else {
-      console.error('实时保存设置失败：返回结果为false')
+      console.error("实时保存设置失败：返回结果为false");
     }
   } catch (error: Error | unknown) {
-    console.error('实时保存设置出错:', error instanceof Error ? error.message : error)
+    console.error(
+      "实时保存设置出错:",
+      error instanceof Error ? error.message : error,
+    );
   }
-}
+};
 
 // 创建防抖版本的保存函数
-const debouncedSaveSettings = debounce(saveSettingsRealtime, 500)
+const debouncedSaveSettings = debounce(saveSettingsRealtime, 500);
 
 // 保存设置并关闭对话框
 const saveSettings = async () => {
@@ -204,144 +215,147 @@ const saveSettings = async () => {
       fontSize: formData.value.fontSize,
       fontFamily: formData.value.fontFamily,
       terminalFontFamily: formData.value.terminalFontFamily,
-      terminalFontSize: formData.value.terminalFontSize
-    }
+      terminalFontSize: formData.value.terminalFontSize,
+    };
 
     // 单独处理 aiApis 数组，确保每个对象都是纯数据对象
     if (Array.isArray(formData.value.aiApis)) {
-      cleanSettings.aiApis = formData.value.aiApis.map(api => ({
+      cleanSettings.aiApis = formData.value.aiApis.map((api) => ({
         id: api.id,
         name: api.name,
         apiUrl: api.apiUrl,
         apiKey: api.apiKey,
-        modelName: api.modelName
-      }))
+        modelName: api.modelName,
+      }));
     } else {
-      cleanSettings.aiApis = []
+      cleanSettings.aiApis = [];
     }
 
-    console.log('开始保存设置:', JSON.stringify(cleanSettings))
+    console.log("开始保存设置:", JSON.stringify(cleanSettings));
     // 直接保存，不使用防抖
-    const result = await window.api.saveSettings(cleanSettings)
+    const result = await window.api.saveSettings(cleanSettings);
 
     if (result) {
-      console.log('设置保存成功')
+      console.log("设置保存成功");
 
       // 如果语言发生变化，更新i18n状态
       if (cleanSettings.language !== language.value) {
-        setLanguage(cleanSettings.language)
+        setLanguage(cleanSettings.language);
       }
 
       // 通知父组件
-      emit('save', cleanSettings)
+      emit("save", cleanSettings);
       // 关闭对话框
-      emit('update:visible', false)
+      emit("update:visible", false);
     } else {
-      console.error('设置保存失败：返回结果为false')
-      alert(t('settings.saveError'))
+      console.error("设置保存失败：返回结果为false");
+      alert(t("settings.saveError"));
     }
   } catch (error: Error | unknown) {
-    console.error('保存设置出错:', error)
+    console.error("保存设置出错:", error);
     alert(
-      `${t('settings.saveError')}: ${error instanceof Error ? error.message : t('common.unknown')}`
-    )
+      `${t("settings.saveError")}: ${error instanceof Error ? error.message : t("common.unknown")}`,
+    );
   }
-}
+};
 
 // 取消
 const cancelSettings = () => {
-  emit('cancel')
-  emit('update:visible', false)
-}
+  emit("cancel");
+  emit("update:visible", false);
+};
 
 // 添加新的API配置
 const addApiConfig = () => {
   currentApiConfig.value = {
     id: Date.now().toString(),
-    name: '',
-    apiUrl: '',
-    apiKey: '',
-    modelName: ''
-  }
-  isEditingApi.value = false
-  showApiConfigDialog.value = true
-}
+    name: "",
+    apiUrl: "",
+    apiKey: "",
+    modelName: "",
+  };
+  isEditingApi.value = false;
+  showApiConfigDialog.value = true;
+};
 
 // 编辑API配置
 const editApiConfig = (api: AIApiConfig) => {
-  currentApiConfig.value = { ...api }
-  isEditingApi.value = true
-  showApiConfigDialog.value = true
-}
+  currentApiConfig.value = { ...api };
+  isEditingApi.value = true;
+  showApiConfigDialog.value = true;
+};
 
 // 删除API配置
 const deleteApiConfig = (id: string) => {
-  if (confirm(t('settings.aiApi.deleteConfirm'))) {
-    formData.value.aiApis = formData.value.aiApis?.filter(api => api.id !== id) || []
-    debouncedSaveSettings(formData.value)
+  if (confirm(t("settings.aiApi.deleteConfirm"))) {
+    formData.value.aiApis =
+      formData.value.aiApis?.filter((api) => api.id !== id) || [];
+    debouncedSaveSettings(formData.value);
   }
-}
+};
 
 // 保存API配置
 const saveApiConfig = () => {
-  if (!currentApiConfig.value) return
-  
+  if (!currentApiConfig.value) return;
+
   if (!currentApiConfig.value.name.trim()) {
-    alert(t('settings.aiApi.nameRequired'))
-    return
+    alert(t("settings.aiApi.nameRequired"));
+    return;
   }
 
   if (!formData.value.aiApis) {
-    formData.value.aiApis = []
+    formData.value.aiApis = [];
   }
 
   if (isEditingApi.value) {
     // 更新现有配置
-    const index = formData.value.aiApis.findIndex(api => api.id === currentApiConfig.value?.id)
+    const index = formData.value.aiApis.findIndex(
+      (api) => api.id === currentApiConfig.value?.id,
+    );
     if (index !== -1) {
-      formData.value.aiApis[index] = { ...currentApiConfig.value }
+      formData.value.aiApis[index] = { ...currentApiConfig.value };
     }
   } else {
     // 添加新配置
-    formData.value.aiApis.push({ ...currentApiConfig.value })
+    formData.value.aiApis.push({ ...currentApiConfig.value });
   }
 
-  showApiConfigDialog.value = false
-  currentApiConfig.value = null
-  debouncedSaveSettings(formData.value)
-}
+  showApiConfigDialog.value = false;
+  currentApiConfig.value = null;
+  debouncedSaveSettings(formData.value);
+};
 
 // 取消API配置编辑
 const cancelApiConfig = () => {
-  showApiConfigDialog.value = false
-  currentApiConfig.value = null
-}
+  showApiConfigDialog.value = false;
+  currentApiConfig.value = null;
+};
 
 // 监听设置变更
 watch(
   () => formData.value,
   (newValue) => {
-    debouncedSaveSettings(newValue)
+    debouncedSaveSettings(newValue);
   },
-  { deep: true }
-)
+  { deep: true },
+);
 
 // 监听visible变化
 watch(
   () => props.visible,
   (newValue) => {
     if (newValue) {
-      loadSettings()
+      loadSettings();
     }
-  }
-)
+  },
+);
 
 // 组件挂载时加载设置
 onMounted(() => {
   if (props.visible) {
-    loadSettings()
+    loadSettings();
   }
-})
+});
 </script>
 
 <template>
@@ -354,7 +368,7 @@ onMounted(() => {
     >
       <div class="dialog-container" :class="{ 'dark-theme': isDarkTheme }">
         <div class="dialog-header">
-          <h3>{{ t('settings.title') }}</h3>
+          <h3>{{ t("settings.title") }}</h3>
           <button class="close-button" @click="cancelSettings">&times;</button>
         </div>
 
@@ -362,9 +376,17 @@ onMounted(() => {
           <div class="form">
             <!-- 语言设置 -->
             <div class="form-input">
-              <label for="language">{{ t('settings.language') }}</label>
-              <select id="language" v-model="formData.language" class="settings-select">
-                <option v-for="option in languageOptions" :key="option.value" :value="option.value">
+              <label for="language">{{ t("settings.language") }}</label>
+              <select
+                id="language"
+                v-model="formData.language"
+                class="settings-select"
+              >
+                <option
+                  v-for="option in languageOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
                   {{ option.label }}
                 </option>
               </select>
@@ -372,9 +394,17 @@ onMounted(() => {
 
             <!-- 字体大小设置 -->
             <div class="form-input">
-              <label for="fontSize">{{ t('settings.fontSize') }}</label>
-              <select id="fontSize" v-model="formData.fontSize" class="settings-select">
-                <option v-for="option in fontSizeOptions" :key="option.value" :value="option.value">
+              <label for="fontSize">{{ t("settings.fontSize") }}</label>
+              <select
+                id="fontSize"
+                v-model="formData.fontSize"
+                class="settings-select"
+              >
+                <option
+                  v-for="option in fontSizeOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
                   {{ option.label }} ({{ option.value }}px)
                 </option>
               </select>
@@ -382,8 +412,12 @@ onMounted(() => {
 
             <!-- 字体设置 -->
             <div class="form-input">
-              <label for="fontFamily">{{ t('settings.fontFamily') }}</label>
-              <select id="fontFamily" v-model="formData.fontFamily" class="settings-select">
+              <label for="fontFamily">{{ t("settings.fontFamily") }}</label>
+              <select
+                id="fontFamily"
+                v-model="formData.fontFamily"
+                class="settings-select"
+              >
                 <option
                   v-for="option in fontFamilyOptions"
                   :key="option.value"
@@ -396,7 +430,9 @@ onMounted(() => {
 
             <!-- 终端字体大小设置 -->
             <div class="form-input">
-              <label for="terminalFontSize">{{ t('settings.terminalFontSize') }}</label>
+              <label for="terminalFontSize">{{
+                t("settings.terminalFontSize")
+              }}</label>
               <select
                 id="terminalFontSize"
                 v-model="formData.terminalFontSize"
@@ -414,7 +450,9 @@ onMounted(() => {
 
             <!-- 终端字体设置 -->
             <div class="form-input">
-              <label for="terminalFontFamily">{{ t('settings.terminalFontFamily') }}</label>
+              <label for="terminalFontFamily">{{
+                t("settings.terminalFontFamily")
+              }}</label>
               <select
                 id="terminalFontFamily"
                 v-model="formData.terminalFontFamily"
@@ -433,22 +471,39 @@ onMounted(() => {
             <!-- AI API配置列表 -->
             <div class="form-section">
               <div class="section-header">
-                <h4>{{ t('settings.aiApi.title') }}</h4>
-                <button class="add-button" @click="addApiConfig">{{ t('settings.aiApi.add') }}</button>
+                <h4>{{ t("settings.aiApi.title") }}</h4>
+                <button class="add-button" @click="addApiConfig">
+                  {{ t("settings.aiApi.add") }}
+                </button>
               </div>
-              
+
               <div class="api-list">
-                <div v-if="!formData.aiApis || formData.aiApis.length === 0" class="no-apis">
-                  {{ t('settings.aiApi.noApis') }}
+                <div
+                  v-if="!formData.aiApis || formData.aiApis.length === 0"
+                  class="no-apis"
+                >
+                  {{ t("settings.aiApi.noApis") }}
                 </div>
-                <div v-else v-for="api in formData.aiApis" :key="api.id" class="api-item">
+                <div
+                  v-else
+                  v-for="api in formData.aiApis"
+                  :key="api.id"
+                  class="api-item"
+                >
                   <div class="api-info">
                     <div class="api-name">{{ api.name }}</div>
                     <div class="api-url">{{ api.apiUrl }}</div>
                   </div>
                   <div class="api-actions">
-                    <button class="edit-button" @click="editApiConfig(api)">{{ t('common.edit') }}</button>
-                    <button class="delete-button" @click="deleteApiConfig(api.id)">{{ t('common.delete') }}</button>
+                    <button class="edit-button" @click="editApiConfig(api)">
+                      {{ t("common.edit") }}
+                    </button>
+                    <button
+                      class="delete-button"
+                      @click="deleteApiConfig(api.id)"
+                    >
+                      {{ t("common.delete") }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -457,8 +512,12 @@ onMounted(() => {
         </div>
 
         <div class="dialog-footer">
-          <button class="cancel-button" @click="cancelSettings">{{ t('common.cancel') }}</button>
-          <button class="save-button" @click="saveSettings">{{ t('common.save') }}</button>
+          <button class="cancel-button" @click="cancelSettings">
+            {{ t("common.cancel") }}
+          </button>
+          <button class="save-button" @click="saveSettings">
+            {{ t("common.save") }}
+          </button>
         </div>
       </div>
     </div>
@@ -472,14 +531,18 @@ onMounted(() => {
     >
       <div class="api-dialog-container" :class="{ 'dark-theme': isDarkTheme }">
         <div class="dialog-header">
-          <h3>{{ isEditingApi ? t('settings.aiApi.edit') : t('settings.aiApi.add') }}</h3>
+          <h3>
+            {{
+              isEditingApi ? t("settings.aiApi.edit") : t("settings.aiApi.add")
+            }}
+          </h3>
           <button class="close-button" @click="cancelApiConfig">&times;</button>
         </div>
 
         <div class="dialog-body">
           <div class="form">
             <div class="form-input">
-              <label for="api-name">{{ t('settings.aiApi.name') }}</label>
+              <label for="api-name">{{ t("settings.aiApi.name") }}</label>
               <input
                 id="api-name"
                 v-model="apiName"
@@ -490,7 +553,7 @@ onMounted(() => {
             </div>
 
             <div class="form-input">
-              <label for="api-url">{{ t('settings.aiApi.url') }}</label>
+              <label for="api-url">{{ t("settings.aiApi.url") }}</label>
               <input
                 id="api-url"
                 v-model="apiUrl"
@@ -501,7 +564,7 @@ onMounted(() => {
             </div>
 
             <div class="form-input">
-              <label for="api-key">{{ t('settings.aiApi.key') }}</label>
+              <label for="api-key">{{ t("settings.aiApi.key") }}</label>
               <input
                 id="api-key"
                 v-model="apiKey"
@@ -512,7 +575,7 @@ onMounted(() => {
             </div>
 
             <div class="form-input">
-              <label for="model-name">{{ t('settings.aiApi.model') }}</label>
+              <label for="model-name">{{ t("settings.aiApi.model") }}</label>
               <input
                 id="model-name"
                 v-model="modelName"
@@ -525,8 +588,12 @@ onMounted(() => {
         </div>
 
         <div class="dialog-footer">
-          <button class="cancel-button" @click="cancelApiConfig">{{ t('common.cancel') }}</button>
-          <button class="save-button" @click="saveApiConfig">{{ t('common.save') }}</button>
+          <button class="cancel-button" @click="cancelApiConfig">
+            {{ t("common.cancel") }}
+          </button>
+          <button class="save-button" @click="saveApiConfig">
+            {{ t("common.save") }}
+          </button>
         </div>
       </div>
     </div>
@@ -897,4 +964,3 @@ onMounted(() => {
   gap: 5px;
 }
 </style>
-

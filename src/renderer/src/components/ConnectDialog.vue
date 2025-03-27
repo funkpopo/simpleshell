@@ -1,258 +1,268 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue'
-import { useI18n } from '../i18n'
+import { ref, watch, onMounted, nextTick } from "vue";
+import { useI18n } from "../i18n";
 
 // 使用i18n
-const { t } = useI18n()
+const { t } = useI18n();
 
 interface Connection {
-  id: string
-  name: string
-  host: string
-  port: number
-  username: string
-  password?: string
-  privateKey?: string
-  privateKeyPath?: string
-  description?: string
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  privateKey?: string;
+  privateKeyPath?: string;
+  description?: string;
 }
 
 interface Organization {
-  id: string
-  name: string
-  connections: Connection[]
+  id: string;
+  name: string;
+  connections: Connection[];
 }
 
 interface ConnectionFormData {
-  name: string
-  host?: string
-  port?: number
-  username?: string
-  password?: string
-  privateKey?: string
-  privateKeyPath?: string
-  description?: string
+  name: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  privateKey?: string;
+  privateKeyPath?: string;
+  description?: string;
 }
 
 const props = defineProps<{
-  visible: boolean
-  editType: 'organization' | 'connection'
-  organizationId: string | null
-  connectionId: string | null
-  organizations: Organization[]
-  isDarkTheme: boolean
-}>()
+  visible: boolean;
+  editType: "organization" | "connection";
+  organizationId: string | null;
+  connectionId: string | null;
+  organizations: Organization[];
+  isDarkTheme: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'update:visible', value: boolean): void
+  (e: "update:visible", value: boolean): void;
   (
-    e: 'save',
+    e: "save",
     data: {
-      organizationId: string | null
-      connectionId: string | null
-      formData: ConnectionFormData
-    }
-  ): void
-  (e: 'cancel'): void
-}>()
+      organizationId: string | null;
+      connectionId: string | null;
+      formData: ConnectionFormData;
+    },
+  ): void;
+  (e: "cancel"): void;
+}>();
 
 // 表单数据
 const formData = ref<ConnectionFormData>({
-  name: '',
-  host: '',
+  name: "",
+  host: "",
   port: 22,
-  username: '',
-  password: '',
-  privateKey: '',
-  privateKeyPath: '',
-  description: ''
-})
+  username: "",
+  password: "",
+  privateKey: "",
+  privateKeyPath: "",
+  description: "",
+});
 
 // 表单验证状态
 const formErrors = ref<{
-  name?: string
-  host?: string
-  port?: string
-  username?: string
-}>({})
+  name?: string;
+  host?: string;
+  port?: string;
+  username?: string;
+}>({});
 
 // 对话框标题
-const dialogTitle = ref('')
+const dialogTitle = ref("");
 
 // 当前操作是新建还是编辑
-const isCreating = ref(true)
+const isCreating = ref(true);
 
 // 密码输入框类型（明文/密文）
-const passwordType = ref('password')
+const passwordType = ref("password");
 
 // 私钥文件选择状态
-const privateKeyFilename = ref('')
-const fileSelectError = ref('')
-const isLoadingFile = ref(false)
+const privateKeyFilename = ref("");
+const fileSelectError = ref("");
+const isLoadingFile = ref(false);
 
 // 切换密码显示/隐藏
 const togglePasswordVisibility = () => {
-  passwordType.value = passwordType.value === 'password' ? 'text' : 'password'
-}
+  passwordType.value = passwordType.value === "password" ? "text" : "password";
+};
 
 // 选择私钥文件
 const selectPrivateKeyFile = async () => {
   try {
-    isLoadingFile.value = true
-    fileSelectError.value = ''
+    isLoadingFile.value = true;
+    fileSelectError.value = "";
 
     const result = await window.api.openFileDialog({
-      title: '选择SSH私钥文件',
-      buttonLabel: '选择私钥'
-    })
+      title: "选择SSH私钥文件",
+      buttonLabel: "选择私钥",
+    });
 
     if (!result.canceled && result.filePath) {
-      privateKeyFilename.value = result.filePath.split(/[/\\]/).pop() || '未知文件'
+      privateKeyFilename.value =
+        result.filePath.split(/[/\\]/).pop() || "未知文件";
 
       if (result.fileContent) {
-        formData.value.privateKey = result.fileContent
-        formData.value.privateKeyPath = result.filePath
+        formData.value.privateKey = result.fileContent;
+        formData.value.privateKeyPath = result.filePath;
       } else if (result.error) {
-        fileSelectError.value = result.error
+        fileSelectError.value = result.error;
       }
     }
   } catch (error: unknown) {
-    fileSelectError.value = `文件选择错误: ${error instanceof Error ? error.message : '未知错误'}`
-    console.error('选择私钥文件失败:', error)
+    fileSelectError.value = `文件选择错误: ${error instanceof Error ? error.message : "未知错误"}`;
+    console.error("选择私钥文件失败:", error);
   } finally {
-    isLoadingFile.value = false
+    isLoadingFile.value = false;
   }
-}
+};
 
 // 清除私钥
 const clearPrivateKey = () => {
-  formData.value.privateKey = ''
-  formData.value.privateKeyPath = ''
-  privateKeyFilename.value = ''
-  fileSelectError.value = ''
-}
+  formData.value.privateKey = "";
+  formData.value.privateKeyPath = "";
+  privateKeyFilename.value = "";
+  fileSelectError.value = "";
+};
 
 // 初始化表单数据
 const initFormData = () => {
   // 重置表单数据
   formData.value = {
-    name: '',
-    host: '',
+    name: "",
+    host: "",
     port: 22,
-    username: '',
-    password: '',
-    privateKey: '',
-    privateKeyPath: '',
-    description: ''
-  }
+    username: "",
+    password: "",
+    privateKey: "",
+    privateKeyPath: "",
+    description: "",
+  };
 
   // 重置文件选择状态
-  privateKeyFilename.value = ''
-  fileSelectError.value = ''
+  privateKeyFilename.value = "";
+  fileSelectError.value = "";
 
   // 重置表单错误
-  formErrors.value = {}
+  formErrors.value = {};
 
   // 根据编辑类型设置对话框标题
-  if (props.editType === 'organization') {
+  if (props.editType === "organization") {
     dialogTitle.value = isCreating.value
-      ? t('connection.newOrganization')
-      : t('connection.editOrganization')
+      ? t("connection.newOrganization")
+      : t("connection.editOrganization");
 
     // 如果是编辑现有组织
     if (!isCreating.value && props.organizationId) {
-      const org = props.organizations.find((o) => o.id === props.organizationId)
+      const org = props.organizations.find(
+        (o) => o.id === props.organizationId,
+      );
       if (org) {
-        formData.value.name = org.name
+        formData.value.name = org.name;
       }
     }
   } else {
     dialogTitle.value = isCreating.value
-      ? t('connection.newConnection')
-      : t('connection.editConnection')
+      ? t("connection.newConnection")
+      : t("connection.editConnection");
 
     // 如果是编辑现有连接
     if (!isCreating.value && props.organizationId && props.connectionId) {
-      const org = props.organizations.find((o) => o.id === props.organizationId)
+      const org = props.organizations.find(
+        (o) => o.id === props.organizationId,
+      );
       if (org) {
-        const conn = org.connections.find((c) => c.id === props.connectionId)
+        const conn = org.connections.find((c) => c.id === props.connectionId);
         if (conn) {
-          formData.value = { ...conn }
+          formData.value = { ...conn };
 
           // 如果有私钥，设置文件名显示
           if (conn.privateKey && conn.privateKeyPath) {
             privateKeyFilename.value =
-              conn.privateKeyPath.split(/[/\\]/).pop() || t('connection.savedPrivateKey')
+              conn.privateKeyPath.split(/[/\\]/).pop() ||
+              t("connection.savedPrivateKey");
           } else if (conn.privateKey) {
-            privateKeyFilename.value = t('connection.savedPrivateKey')
+            privateKeyFilename.value = t("connection.savedPrivateKey");
           }
         }
       }
     }
   }
-}
+};
 
 // 验证表单
 const validateForm = (): boolean => {
-  formErrors.value = {}
-  let isValid = true
+  formErrors.value = {};
+  let isValid = true;
 
   // 名称是必填的
   if (!formData.value.name.trim()) {
-    formErrors.value.name = `${t('connection.name')}${t('connection.required')}`
-    isValid = false
+    formErrors.value.name = `${t("connection.name")}${t("connection.required")}`;
+    isValid = false;
   }
 
   // 如果是连接表单，还需要验证其他字段
-  if (props.editType === 'connection') {
+  if (props.editType === "connection") {
     if (!formData.value.host?.trim()) {
-      formErrors.value.host = `${t('connection.host')}${t('connection.required')}`
-      isValid = false
+      formErrors.value.host = `${t("connection.host")}${t("connection.required")}`;
+      isValid = false;
     }
 
-    if (!formData.value.port || formData.value.port <= 0 || formData.value.port > 65535) {
-      formErrors.value.port = t('connection.portRange')
-      isValid = false
+    if (
+      !formData.value.port ||
+      formData.value.port <= 0 ||
+      formData.value.port > 65535
+    ) {
+      formErrors.value.port = t("connection.portRange");
+      isValid = false;
     }
 
     if (!formData.value.username?.trim()) {
-      formErrors.value.username = `${t('connection.username')}${t('connection.required')}`
-      isValid = false
+      formErrors.value.username = `${t("connection.username")}${t("connection.required")}`;
+      isValid = false;
     }
   }
 
-  return isValid
-}
+  return isValid;
+};
 
 // 保存表单
 const saveForm = () => {
   if (!validateForm()) {
-    console.log('表单验证失败')
-    return
+    console.log("表单验证失败");
+    return;
   }
 
-  console.log('表单验证成功，准备保存:', {
+  console.log("表单验证成功，准备保存:", {
     organizationId: props.organizationId,
     connectionId: props.connectionId,
-    formData: { ...formData.value }
-  })
+    formData: { ...formData.value },
+  });
 
-  emit('save', {
+  emit("save", {
     organizationId: props.organizationId,
     connectionId: props.connectionId,
-    formData: { ...formData.value }
-  })
+    formData: { ...formData.value },
+  });
 
-  console.log('已触发save事件')
+  console.log("已触发save事件");
 
-  emit('update:visible', false)
-}
+  emit("update:visible", false);
+};
 
 // 取消
 const cancelForm = () => {
-  emit('cancel')
-  emit('update:visible', false)
-}
+  emit("cancel");
+  emit("update:visible", false);
+};
 
 // 监听visible属性变化
 watch(
@@ -261,32 +271,34 @@ watch(
     if (newValue) {
       // 对话框显示时初始化表单
       isCreating.value = !(
-        (props.editType === 'organization' && props.organizationId) ||
-        (props.editType === 'connection' && props.connectionId)
-      )
-      initFormData()
+        (props.editType === "organization" && props.organizationId) ||
+        (props.editType === "connection" && props.connectionId)
+      );
+      initFormData();
 
       // 在下一个DOM更新周期聚焦第一个输入框
       nextTick(() => {
-        const firstInput = document.querySelector('.form-input:first-child input')
+        const firstInput = document.querySelector(
+          ".form-input:first-child input",
+        );
         if (firstInput instanceof HTMLInputElement) {
-          firstInput.focus()
+          firstInput.focus();
         }
-      })
+      });
     }
-  }
-)
+  },
+);
 
 // 组件挂载时初始化表单
 onMounted(() => {
   if (props.visible) {
     isCreating.value = !(
-      (props.editType === 'organization' && props.organizationId) ||
-      (props.editType === 'connection' && props.connectionId)
-    )
-    initFormData()
+      (props.editType === "organization" && props.organizationId) ||
+      (props.editType === "connection" && props.connectionId)
+    );
+    initFormData();
   }
-})
+});
 </script>
 
 <template>
@@ -298,7 +310,10 @@ onMounted(() => {
     >
       <div
         class="dialog-container"
-        :class="{ 'dark-theme': isDarkTheme, 'dialog-large': editType === 'connection' }"
+        :class="{
+          'dark-theme': isDarkTheme,
+          'dialog-large': editType === 'connection',
+        }"
       >
         <div class="dialog-header">
           <h3>{{ dialogTitle }}</h3>
@@ -317,7 +332,9 @@ onMounted(() => {
                 :class="{ error: formErrors.name }"
                 placeholder="请输入组织名称"
               />
-              <div v-if="formErrors.name" class="error-message">{{ formErrors.name }}</div>
+              <div v-if="formErrors.name" class="error-message">
+                {{ formErrors.name }}
+              </div>
             </div>
           </div>
 
@@ -332,7 +349,9 @@ onMounted(() => {
                 :class="{ error: formErrors.name }"
                 placeholder="请输入连接名称"
               />
-              <div v-if="formErrors.name" class="error-message">{{ formErrors.name }}</div>
+              <div v-if="formErrors.name" class="error-message">
+                {{ formErrors.name }}
+              </div>
             </div>
 
             <div class="form-input">
@@ -344,7 +363,9 @@ onMounted(() => {
                 :class="{ error: formErrors.host }"
                 placeholder="例如: 127.0.0.1 或 example.com"
               />
-              <div v-if="formErrors.host" class="error-message">{{ formErrors.host }}</div>
+              <div v-if="formErrors.host" class="error-message">
+                {{ formErrors.host }}
+              </div>
             </div>
 
             <div class="form-input">
@@ -358,11 +379,15 @@ onMounted(() => {
                 max="65535"
                 placeholder="SSH默认端口为22"
               />
-              <div v-if="formErrors.port" class="error-message">{{ formErrors.port }}</div>
+              <div v-if="formErrors.port" class="error-message">
+                {{ formErrors.port }}
+              </div>
             </div>
 
             <div class="form-input">
-              <label for="username">用户名 <span class="required">*</span></label>
+              <label for="username"
+                >用户名 <span class="required">*</span></label
+              >
               <input
                 id="username"
                 v-model="formData.username"
@@ -370,7 +395,9 @@ onMounted(() => {
                 :class="{ error: formErrors.username }"
                 placeholder="例如: root"
               />
-              <div v-if="formErrors.username" class="error-message">{{ formErrors.username }}</div>
+              <div v-if="formErrors.username" class="error-message">
+                {{ formErrors.username }}
+              </div>
             </div>
 
             <div class="form-input password-input">
@@ -382,8 +409,12 @@ onMounted(() => {
                   :type="passwordType"
                   placeholder="密码和密钥至少填写一个"
                 />
-                <button type="button" class="toggle-password" @click="togglePasswordVisibility">
-                  {{ passwordType === 'password' ? '显示' : '隐藏' }}
+                <button
+                  type="button"
+                  class="toggle-password"
+                  @click="togglePasswordVisibility"
+                >
+                  {{ passwordType === "password" ? "显示" : "隐藏" }}
                 </button>
               </div>
             </div>
@@ -392,7 +423,10 @@ onMounted(() => {
               <label>私钥文件</label>
               <div class="file-selector">
                 <div class="file-input-container">
-                  <div class="file-info" :class="{ 'has-file': !!privateKeyFilename }">
+                  <div
+                    class="file-info"
+                    :class="{ 'has-file': !!privateKeyFilename }"
+                  >
                     <span
                       v-if="privateKeyFilename"
                       class="file-name"
@@ -410,7 +444,7 @@ onMounted(() => {
                       :disabled="isLoadingFile"
                       @click="selectPrivateKeyFile"
                     >
-                      {{ isLoadingFile ? '加载中...' : '选择文件' }}
+                      {{ isLoadingFile ? "加载中..." : "选择文件" }}
                     </button>
 
                     <button

@@ -1,339 +1,367 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
-import { useI18n } from '../i18n'
-import { marked } from 'marked'
-import { markedHighlight } from 'marked-highlight'
-import hljs from 'highlight.js'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from "vue";
+import { useI18n } from "../i18n";
+import { marked } from "marked";
+import { markedHighlight } from "marked-highlight";
+import hljs from "highlight.js";
 
 // 导入图标资源
-import minimizeDayIcon from '../assets/minimize-day.svg'
-import minimizeNightIcon from '../assets/minimize-night.svg'
-import closeDayIcon from '../assets/close-day.svg'
-import closeNightIcon from '../assets/close-night.svg'
-import copyDayIcon from '../assets/copy-day.svg'
-import copyNightIcon from '../assets/copy-night.svg'
+import minimizeDayIcon from "../assets/minimize-day.svg";
+import minimizeNightIcon from "../assets/minimize-night.svg";
+import closeDayIcon from "../assets/close-day.svg";
+import closeNightIcon from "../assets/close-night.svg";
+import copyDayIcon from "../assets/copy-day.svg";
+import copyNightIcon from "../assets/copy-night.svg";
 
 // 使用i18n
-const { t } = useI18n()
+const { t } = useI18n();
 
 // 定义Props
 const props = defineProps<{
-  visible: boolean
-  isDarkTheme: boolean
-}>()
+  visible: boolean;
+  isDarkTheme: boolean;
+}>();
 
 // 动态图标计算属性
-const minimizeIcon = computed(() => (props.isDarkTheme ? minimizeNightIcon : minimizeDayIcon))
-const closeIcon = computed(() => (props.isDarkTheme ? closeNightIcon : closeDayIcon))
-const copyIcon = computed(() => (props.isDarkTheme ? copyNightIcon : copyDayIcon))
+const minimizeIcon = computed(() =>
+  props.isDarkTheme ? minimizeNightIcon : minimizeDayIcon,
+);
+const closeIcon = computed(() =>
+  props.isDarkTheme ? closeNightIcon : closeDayIcon,
+);
+const copyIcon = computed(() =>
+  props.isDarkTheme ? copyNightIcon : copyDayIcon,
+);
 
 // 定义事件
 const emit = defineEmits<{
-  (e: 'update:visible', value: boolean): void
-  (e: 'close'): void
-}>()
+  (e: "update:visible", value: boolean): void;
+  (e: "close"): void;
+}>();
 
 // 浮窗位置
-const posX = ref(window.innerWidth - 350) // 默认放置在右侧
-const posY = ref(80) // 距离顶部80px
-const startX = ref(0)
-const startY = ref(0)
-const isDragging = ref(false)
+const posX = ref(window.innerWidth - 350); // 默认放置在右侧
+const posY = ref(80); // 距离顶部80px
+const startX = ref(0);
+const startY = ref(0);
+const isDragging = ref(false);
 // 标记是否已经加载过位置
-const hasLoadedPosition = ref(false)
+const hasLoadedPosition = ref(false);
 
 // 窗口尺寸（仅在开始拖拽时获取一次）
 const windowDimensions = ref({
   windowWidth: 0,
   windowHeight: 0,
   floatingWidth: 320,
-  floatingHeight: 450
-})
+  floatingHeight: 450,
+});
 
 // 添加窗口大小调整相关变量
-const isResizing = ref(false)
-const resizeDirection = ref('')
-const windowWidth = ref(320)
-const windowHeight = ref(450)
-const minWidth = 280
-const maxWidth = 500
-const minHeight = 350
-const maxHeight = 700
-const resizeStartX = ref(0)
-const resizeStartY = ref(0)
-const resizeStartWidth = ref(0)
-const resizeStartHeight = ref(0)
+const isResizing = ref(false);
+const resizeDirection = ref("");
+const windowWidth = ref(320);
+const windowHeight = ref(450);
+const minWidth = 280;
+const maxWidth = 500;
+const minHeight = 350;
+const maxHeight = 700;
+const resizeStartX = ref(0);
+const resizeStartY = ref(0);
+const resizeStartWidth = ref(0);
+const resizeStartHeight = ref(0);
 
 // 对话内容
 const messages = ref<
   Array<{
-    id?: string
-    type: 'user' | 'assistant'
-    content: string
-    timestamp: number
-    rendered?: boolean // 是否已渲染
-    html?: string // 缓存解析后的HTML
-    segments?: Array<{ content: string, html?: string }> // 分段内容，用于长消息
-    isLongContent?: boolean // 是否是长内容
+    id?: string;
+    type: "user" | "assistant";
+    content: string;
+    timestamp: number;
+    rendered?: boolean; // 是否已渲染
+    html?: string; // 缓存解析后的HTML
+    segments?: Array<{ content: string; html?: string }>; // 分段内容，用于长消息
+    isLongContent?: boolean; // 是否是长内容
   }>
->([])
+>([]);
 
 // AI设置
 const aiSettings = ref({
-  apiUrl: '',
-  apiKey: '',
-  modelName: ''
-})
+  apiUrl: "",
+  apiKey: "",
+  modelName: "",
+});
 
 // 可用的AI API配置列表
-const availableApiConfigs = ref<Array<{
-  id: string
-  name: string
-  apiUrl: string
-  apiKey: string
-  modelName: string
-}>>([])
+const availableApiConfigs = ref<
+  Array<{
+    id: string;
+    name: string;
+    apiUrl: string;
+    apiKey: string;
+    modelName: string;
+  }>
+>([]);
 
 // 当前选择的API配置ID
-const selectedApiId = ref<string | null>(null)
+const selectedApiId = ref<string | null>(null);
 
 // 是否显示API选择下拉菜单
-const showApiSelector = ref(false)
+const showApiSelector = ref(false);
 
 // 是否使用OpenAI
 const isUsingOpenAI = computed(() => {
-  return !!aiSettings.value.apiKey && !!aiSettings.value.modelName
-})
+  return !!aiSettings.value.apiKey && !!aiSettings.value.modelName;
+});
 
 // 当前选择的API名称
 const selectedApiName = computed(() => {
-  if (!selectedApiId.value) return 'AI接口'
-  const api = availableApiConfigs.value.find(api => api.id === selectedApiId.value)
-  return api ? api.name : 'AI接口'
-})
+  if (!selectedApiId.value) return "AI接口";
+  const api = availableApiConfigs.value.find(
+    (api) => api.id === selectedApiId.value,
+  );
+  return api ? api.name : "AI接口";
+});
 
 // 用户输入
-const userInput = ref('')
+const userInput = ref("");
 
 // 加载状态
-const isLoading = ref(false)
+const isLoading = ref(false);
 // 当前流式响应的消息ID
-const streamingMessageId = ref<string | null>(null)
+const streamingMessageId = ref<string | null>(null);
 // 渲染节流计时器
-const renderThrottleTimer = ref<number | null>(null)
+const renderThrottleTimer = ref<number | null>(null);
 // 是否正在渲染大量内容
-const isRenderingLargeContent = ref(false)
+const isRenderingLargeContent = ref(false);
 // 内容长度阈值，超过此长度将分块渲染
-const CONTENT_CHUNK_THRESHOLD = 5000
+const CONTENT_CHUNK_THRESHOLD = 5000;
 // 分段大小，每段最大字符数
-const SEGMENT_SIZE = 2000
+const SEGMENT_SIZE = 2000;
 // 是否正在接收AI回复
-const isReceivingResponse = ref(false)
+const isReceivingResponse = ref(false);
 // 配置检查定时器
-const configCheckInterval = ref<number | null>(null)
+const configCheckInterval = ref<number | null>(null);
 
 // 本地存储密钥
-const STORAGE_KEY = 'ai_assistant_messages'
-const POSITION_STORAGE_KEY = 'ai_assistant_position'
+const STORAGE_KEY = "ai_assistant_messages";
+const POSITION_STORAGE_KEY = "ai_assistant_position";
 
 // 浮窗样式
 const floatingWindowStyle = computed(() => {
   return {
     transform: `translate3d(${posX.value}px, ${posY.value}px, 0)`,
     // 添加一个过渡效果，但仅在非拖动状态下生效
-    transition: isDragging.value || isResizing.value ? 'none' : 'transform 0.05s ease',
+    transition:
+      isDragging.value || isResizing.value ? "none" : "transform 0.05s ease",
     width: `${windowWidth.value}px`,
-    height: `${windowHeight.value}px`
-  }
-})
+    height: `${windowHeight.value}px`,
+  };
+});
 
 // 开始拖拽
 const startDrag = (e: MouseEvent) => {
   // 仅允许通过标题栏拖拽
-  if ((e.target as HTMLElement).closest('.window-header')) {
-    isDragging.value = true
-    startX.value = e.clientX - posX.value
-    startY.value = e.clientY - posY.value
+  if ((e.target as HTMLElement).closest(".window-header")) {
+    isDragging.value = true;
+    startX.value = e.clientX - posX.value;
+    startY.value = e.clientY - posY.value;
 
     // 获取窗口和浮窗尺寸（只在开始拖拽时获取一次）
-    const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
+    const floatingWindow = document.querySelector(
+      ".ai-floating-window",
+    ) as HTMLElement;
     windowDimensions.value = {
       windowWidth: window.innerWidth,
       windowHeight: window.innerHeight,
       floatingWidth: floatingWindow?.offsetWidth || 320,
-      floatingHeight: floatingWindow?.offsetHeight || 450
-    }
+      floatingHeight: floatingWindow?.offsetHeight || 450,
+    };
 
     // 添加拖拽状态CSS类，用于视觉反馈
-    floatingWindow?.classList.add('dragging')
+    floatingWindow?.classList.add("dragging");
 
     // 为body添加全局拖动样式
-    document.body.classList.add('ai-window-dragging')
+    document.body.classList.add("ai-window-dragging");
 
     // 阻止事件冒泡和默认行为，防止文本选择等
-    e.preventDefault()
-    e.stopPropagation()
+    e.preventDefault();
+    e.stopPropagation();
   }
-}
+};
 
 // 拖拽中
 const onDrag = (e: MouseEvent) => {
-  if (!isDragging.value) return
+  if (!isDragging.value) return;
 
   // 使用requestAnimationFrame优化动画
   requestAnimationFrame(() => {
     // 计算新位置
-    let newX = e.clientX - startX.value
-    let newY = e.clientY - startY.value
+    let newX = e.clientX - startX.value;
+    let newY = e.clientY - startY.value;
 
-    const { windowWidth, windowHeight, floatingWidth } = windowDimensions.value
+    const { windowWidth, windowHeight, floatingWidth } = windowDimensions.value;
 
     // 增强的边界检测，确保至少有20px在视口内
-    const minVisiblePortion = 40
-    newX = Math.max(-floatingWidth + minVisiblePortion, newX)
-    newY = Math.max(0, newY)
-    newX = Math.min(windowWidth - minVisiblePortion, newX)
-    newY = Math.min(windowHeight - minVisiblePortion, newY)
+    const minVisiblePortion = 40;
+    newX = Math.max(-floatingWidth + minVisiblePortion, newX);
+    newY = Math.max(0, newY);
+    newX = Math.min(windowWidth - minVisiblePortion, newX);
+    newY = Math.min(windowHeight - minVisiblePortion, newY);
 
     // 更新位置
-    posX.value = newX
-    posY.value = newY
-  })
+    posX.value = newX;
+    posY.value = newY;
+  });
 
   // 阻止事件冒泡和默认行为
-  e.preventDefault()
-  e.stopPropagation()
-}
+  e.preventDefault();
+  e.stopPropagation();
+};
 
 // 结束拖拽
 const endDrag = () => {
   if (isDragging.value) {
-    isDragging.value = false
+    isDragging.value = false;
 
     // 额外的安全检查，确保窗口在可视区域内
-    ensureWindowVisible()
+    ensureWindowVisible();
 
     // 保存位置到localStorage
-    saveWindowPosition()
+    saveWindowPosition();
 
     // 移除拖拽状态CSS类
-    const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
-    floatingWindow?.classList.remove('dragging')
+    const floatingWindow = document.querySelector(
+      ".ai-floating-window",
+    ) as HTMLElement;
+    floatingWindow?.classList.remove("dragging");
 
     // 移除body上的全局拖动样式
-    document.body.classList.remove('ai-window-dragging')
+    document.body.classList.remove("ai-window-dragging");
 
     // 更新窗口尺寸引用为当前尺寸
     windowDimensions.value = {
       windowWidth: window.innerWidth,
       windowHeight: window.innerHeight,
       floatingWidth: floatingWindow?.offsetWidth || 320,
-      floatingHeight: floatingWindow?.offsetHeight || 450
-    }
+      floatingHeight: floatingWindow?.offsetHeight || 450,
+    };
   }
-}
+};
 
 // 确保窗口可见
 const ensureWindowVisible = () => {
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
 
   // 确保至少有100px的窗口在视口内
-  const minVisiblePortion = 100
+  const minVisiblePortion = 100;
 
   // 检查并修正X位置
   if (posX.value < -windowWidth.value + minVisiblePortion) {
-    posX.value = -windowWidth.value + minVisiblePortion
+    posX.value = -windowWidth.value + minVisiblePortion;
   } else if (posX.value > viewportWidth - minVisiblePortion) {
-    posX.value = viewportWidth - minVisiblePortion
+    posX.value = viewportWidth - minVisiblePortion;
   }
 
   // 检查并修正Y位置
   if (posY.value < 0) {
-    posY.value = 0
-  } else if (posY.value > viewportHeight - windowHeight.value + minVisiblePortion) {
-    posY.value = viewportHeight - windowHeight.value + minVisiblePortion
+    posY.value = 0;
+  } else if (
+    posY.value >
+    viewportHeight - windowHeight.value + minVisiblePortion
+  ) {
+    posY.value = viewportHeight - windowHeight.value + minVisiblePortion;
   }
-}
+};
 
 // 开始调整大小
 const startResize = (e: MouseEvent, direction: string) => {
-  if (isDragging.value) return
-  
-  isResizing.value = true
-  resizeDirection.value = direction
-  resizeStartX.value = e.clientX
-  resizeStartY.value = e.clientY
-  resizeStartWidth.value = windowWidth.value
-  resizeStartHeight.value = windowHeight.value
-  
+  if (isDragging.value) return;
+
+  isResizing.value = true;
+  resizeDirection.value = direction;
+  resizeStartX.value = e.clientX;
+  resizeStartY.value = e.clientY;
+  resizeStartWidth.value = windowWidth.value;
+  resizeStartHeight.value = windowHeight.value;
+
   // 添加调整大小状态CSS类，用于视觉反馈
-  const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
-  floatingWindow?.classList.add('resizing')
-  
+  const floatingWindow = document.querySelector(
+    ".ai-floating-window",
+  ) as HTMLElement;
+  floatingWindow?.classList.add("resizing");
+
   // 为body添加全局调整大小样式
-  document.body.classList.add('ai-window-resizing')
-  
+  document.body.classList.add("ai-window-resizing");
+
   // 阻止事件冒泡和默认行为
-  e.preventDefault()
-  e.stopPropagation()
-}
+  e.preventDefault();
+  e.stopPropagation();
+};
 
 // 调整大小中
 const onResize = (e: MouseEvent) => {
-  if (!isResizing.value) return
-  
+  if (!isResizing.value) return;
+
   // 使用requestAnimationFrame优化动画
   requestAnimationFrame(() => {
-    const deltaX = e.clientX - resizeStartX.value
-    const deltaY = e.clientY - resizeStartY.value
-    
+    const deltaX = e.clientX - resizeStartX.value;
+    const deltaY = e.clientY - resizeStartY.value;
+
     // 只处理右下角调整
-    const newWidth = Math.max(minWidth, Math.min(maxWidth, resizeStartWidth.value + deltaX))
-    const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight.value + deltaY))
-    
-    windowWidth.value = newWidth
-    windowHeight.value = newHeight
-  })
-  
+    const newWidth = Math.max(
+      minWidth,
+      Math.min(maxWidth, resizeStartWidth.value + deltaX),
+    );
+    const newHeight = Math.max(
+      minHeight,
+      Math.min(maxHeight, resizeStartHeight.value + deltaY),
+    );
+
+    windowWidth.value = newWidth;
+    windowHeight.value = newHeight;
+  });
+
   // 阻止事件冒泡和默认行为
-  e.preventDefault()
-  e.stopPropagation()
-}
+  e.preventDefault();
+  e.stopPropagation();
+};
 
 // 结束调整大小
 const endResize = () => {
   if (isResizing.value) {
-    isResizing.value = false
-    resizeDirection.value = ''
-    
+    isResizing.value = false;
+    resizeDirection.value = "";
+
     // 保存位置和尺寸到localStorage
-    saveWindowPosition()
-    
+    saveWindowPosition();
+
     // 移除调整大小状态CSS类
-    const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
-    floatingWindow?.classList.remove('resizing')
-    
+    const floatingWindow = document.querySelector(
+      ".ai-floating-window",
+    ) as HTMLElement;
+    floatingWindow?.classList.remove("resizing");
+
     // 移除body上的全局调整大小样式
-    document.body.classList.remove('ai-window-resizing')
-    
+    document.body.classList.remove("ai-window-resizing");
+
     // 更新窗口尺寸引用为当前尺寸
     windowDimensions.value = {
       windowWidth: window.innerWidth,
       windowHeight: window.innerHeight,
       floatingWidth: windowWidth.value,
-      floatingHeight: windowHeight.value
-    }
+      floatingHeight: windowHeight.value,
+    };
   }
-}
+};
 
 // 保存窗口位置
 const saveWindowPosition = () => {
   try {
     // 确保位置值是有效的数字
     if (isNaN(posX.value) || isNaN(posY.value)) {
-      console.error('保存窗口位置失败: 位置值无效', posX.value, posY.value)
-      return
+      console.error("保存窗口位置失败: 位置值无效", posX.value, posY.value);
+      return;
     }
 
     localStorage.setItem(
@@ -342,421 +370,433 @@ const saveWindowPosition = () => {
         x: posX.value,
         y: posY.value,
         width: windowWidth.value,
-        height: windowHeight.value
-      })
-    )
+        height: windowHeight.value,
+      }),
+    );
 
     // 标记已加载位置，防止被默认值覆盖
-    hasLoadedPosition.value = true
+    hasLoadedPosition.value = true;
   } catch (error) {
-    console.error('保存窗口位置失败:', error)
+    console.error("保存窗口位置失败:", error);
   }
-}
+};
 
 // 加载窗口位置
 const loadWindowPosition = () => {
   try {
-    const savedPosition = localStorage.getItem(POSITION_STORAGE_KEY)
+    const savedPosition = localStorage.getItem(POSITION_STORAGE_KEY);
     if (savedPosition) {
-      const position = JSON.parse(savedPosition)
-      posX.value = position.x
-      posY.value = position.y
-      
+      const position = JSON.parse(savedPosition);
+      posX.value = position.x;
+      posY.value = position.y;
+
       // 加载保存的窗口尺寸
-      if (position.width) windowWidth.value = position.width
-      if (position.height) windowHeight.value = position.height
+      if (position.width) windowWidth.value = position.width;
+      if (position.height) windowHeight.value = position.height;
 
       // 标记已加载位置
-      hasLoadedPosition.value = true
+      hasLoadedPosition.value = true;
 
       // 确保加载的位置有效且在可视区域内
-      setTimeout(ensureWindowVisible, 0)
+      setTimeout(ensureWindowVisible, 0);
     }
   } catch (error) {
-    console.error('加载窗口位置失败:', error)
+    console.error("加载窗口位置失败:", error);
   }
-}
+};
 
 // 监听窗口大小变化，确保浮窗位置有效
 const handleResize = () => {
   // 如果不是正在拖拽，才执行自动调整
   if (!isDragging.value && !isResizing.value) {
-    ensureWindowVisible()
+    ensureWindowVisible();
   }
-}
+};
 
 // 组件挂载时加载AI设置
 onMounted(async () => {
-  console.log('组件挂载，初始化事件监听')
+  console.log("组件挂载，初始化事件监听");
 
   // 优先加载AI设置
-  console.log('加载AI设置')
-  await loadAISettings()
+  console.log("加载AI设置");
+  await loadAISettings();
 
   // 其他初始化
-  document.addEventListener('mousemove', onDrag)
-  document.addEventListener('mouseup', endDrag)
+  document.addEventListener("mousemove", onDrag);
+  document.addEventListener("mouseup", endDrag);
   // 添加调整大小事件监听
-  document.addEventListener('mousemove', onResize)
-  document.addEventListener('mouseup', endResize)
-  window.addEventListener('resize', handleResize)
+  document.addEventListener("mousemove", onResize);
+  document.addEventListener("mouseup", endResize);
+  window.addEventListener("resize", handleResize);
 
   // 注册流式输出事件监听
   window.api.onAIStreamUpdate &&
     window.api.onAIStreamUpdate((data) => {
-      handleStreamUpdate(data.chunk)
-    })
+      handleStreamUpdate(data.chunk);
+    });
 
   // 向主进程注册窗口关闭事件监听
-  console.log('注册窗口关闭事件监听')
+  console.log("注册窗口关闭事件监听");
   window.api.onAppClose(async () => {
-    console.log('应用关闭，保存窗口位置')
-    saveWindowPosition()
-  })
+    console.log("应用关闭，保存窗口位置");
+    saveWindowPosition();
+  });
 
   // 添加配置变化监听，每隔5秒检查一次配置是否有变化
   configCheckInterval.value = window.setInterval(async () => {
-    await refreshApiConfigs()
-  }, 5000)
+    await refreshApiConfigs();
+  }, 5000);
 
   // 加载窗口位置
-  console.log('加载窗口位置')
-  loadWindowPosition()
+  console.log("加载窗口位置");
+  loadWindowPosition();
 
   // 如果没有加载到保存的位置，则使用默认位置
   if (!hasLoadedPosition.value) {
-    console.log('使用默认窗口位置')
-    posX.value = window.innerWidth - 350
-    posY.value = 80
-    windowWidth.value = 320
-    windowHeight.value = 450
+    console.log("使用默认窗口位置");
+    posX.value = window.innerWidth - 350;
+    posY.value = 80;
+    windowWidth.value = 320;
+    windowHeight.value = 450;
   }
-})
+});
 
 // 清理全局事件
 onUnmounted(() => {
-  console.log('组件卸载，清理事件监听')
-  document.removeEventListener('mousemove', onDrag)
-  document.removeEventListener('mouseup', endDrag)
+  console.log("组件卸载，清理事件监听");
+  document.removeEventListener("mousemove", onDrag);
+  document.removeEventListener("mouseup", endDrag);
   // 移除调整大小事件监听
-  document.removeEventListener('mousemove', onResize)
-  document.removeEventListener('mouseup', endResize)
-  window.removeEventListener('resize', handleResize)
-  
+  document.removeEventListener("mousemove", onResize);
+  document.removeEventListener("mouseup", endResize);
+  window.removeEventListener("resize", handleResize);
+
   // 清除配置检查定时器
   if (configCheckInterval.value) {
-    clearInterval(configCheckInterval.value)
-    configCheckInterval.value = null
+    clearInterval(configCheckInterval.value);
+    configCheckInterval.value = null;
   }
-})
+});
 
 // 切换API选择器
 const toggleApiSelector = (e: MouseEvent) => {
   // 阻止事件冒泡，防止触发拖拽
-  e.stopPropagation()
-  
+  e.stopPropagation();
+
   // 在显示下拉菜单前刷新API配置列表
   if (!showApiSelector.value) {
-    refreshApiConfigs()
+    refreshApiConfigs();
   }
-  
-  showApiSelector.value = !showApiSelector.value
-}
+
+  showApiSelector.value = !showApiSelector.value;
+};
 
 // 最小化窗口
 const minimizeWindow = (e: MouseEvent) => {
   // 阻止事件冒泡，防止触发拖拽
-  e.stopPropagation()
-  emit('update:visible', false)
-}
+  e.stopPropagation();
+  emit("update:visible", false);
+};
 
 // 关闭窗口
 const closeWindow = async (e: MouseEvent) => {
   // 阻止事件冒泡，防止触发拖拽
-  e.stopPropagation()
+  e.stopPropagation();
 
   // 重置消息
-  messages.value = []
-  localStorage.removeItem(STORAGE_KEY)
+  messages.value = [];
+  localStorage.removeItem(STORAGE_KEY);
 
   // 发送关闭事件
-  emit('update:visible', false)
-  emit('close')
-}
+  emit("update:visible", false);
+  emit("close");
+};
 
 // 调用OpenAI 兼容API获取回答 - 使用主进程的API
 const getAIResponse = async (): Promise<string> => {
   try {
     // 从config.json重新加载设置
-    await loadAISettings()
+    await loadAISettings();
 
     // 检查设置是否有效
     if (!aiSettings.value.apiKey || !aiSettings.value.modelName) {
-      const errorMsg = '请在设置中配置API密钥和模型名称。'
-      console.error('AI设置无效:', {
-        apiKey: aiSettings.value.apiKey ? '已设置' : '未设置',
-        modelName: aiSettings.value.modelName || '未设置',
-        error: errorMsg
-      })
-      return errorMsg
+      const errorMsg = "请在设置中配置API密钥和模型名称。";
+      console.error("AI设置无效:", {
+        apiKey: aiSettings.value.apiKey ? "已设置" : "未设置",
+        modelName: aiSettings.value.modelName || "未设置",
+        error: errorMsg,
+      });
+      return errorMsg;
     }
 
-    console.log('使用当前选择的API配置发送请求:', {
-      apiUrl: aiSettings.value.apiUrl || '未设置',
-      apiKeySet: aiSettings.value.apiKey ? '已设置' : '未设置',
-      modelName: aiSettings.value.modelName || '未设置'
-    })
+    console.log("使用当前选择的API配置发送请求:", {
+      apiUrl: aiSettings.value.apiUrl || "未设置",
+      apiKeySet: aiSettings.value.apiKey ? "已设置" : "未设置",
+      modelName: aiSettings.value.modelName || "未设置",
+    });
 
     // 准备消息历史
     const messageHistory = messages.value.map((msg) => ({
-      role: msg.type === 'user' ? 'user' : 'assistant',
-      content: msg.content
-    }))
+      role: msg.type === "user" ? "user" : "assistant",
+      content: msg.content,
+    }));
 
     // 添加系统消息，但不重复添加用户消息（因为已经在前端添加过了）
-    const apiMessages = [{ role: 'system', content: '' }, ...messageHistory]
+    const apiMessages = [{ role: "system", content: "" }, ...messageHistory];
 
     // 创建一个空的助手消息用于流式更新
-    const assistantMessageId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
+    const assistantMessageId =
+      Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
     messages.value.push({
       id: assistantMessageId,
-      type: 'assistant',
-      content: '',
+      type: "assistant",
+      content: "",
       timestamp: Date.now(),
-      rendered: false
-    })
+      rendered: false,
+    });
 
     // 设置当前流式消息ID
-    streamingMessageId.value = assistantMessageId
+    streamingMessageId.value = assistantMessageId;
     // 设置正在接收响应状态
-    isReceivingResponse.value = true
+    isReceivingResponse.value = true;
 
     // 滚动到底部
-    scrollToBottom()
+    scrollToBottom();
 
     // 清除可能存在的节流定时器
     if (renderThrottleTimer.value !== null) {
-      clearTimeout(renderThrottleTimer.value)
-      renderThrottleTimer.value = null
+      clearTimeout(renderThrottleTimer.value);
+      renderThrottleTimer.value = null;
     }
 
     // 调用主进程的AI请求接口，使用流式模式
     const response = await window.api.sendAIRequest({
-      prompt: '', // 不再传递prompt，因为用户消息已经包含在messageHistory中
+      prompt: "", // 不再传递prompt，因为用户消息已经包含在messageHistory中
       messages: apiMessages,
       apiKey: aiSettings.value.apiKey,
       apiUrl: aiSettings.value.apiUrl,
       modelName: aiSettings.value.modelName,
-      stream: true // 启用流式输出
-    })
+      stream: true, // 启用流式输出
+    });
 
     // 流式输出完成后
-    streamingMessageId.value = null
-    isReceivingResponse.value = false
+    streamingMessageId.value = null;
+    isReceivingResponse.value = false;
 
     // 确保最后一次完整渲染
-    const messageIndex = messages.value.findIndex((msg) => msg.id === assistantMessageId)
+    const messageIndex = messages.value.findIndex(
+      (msg) => msg.id === assistantMessageId,
+    );
     if (messageIndex !== -1) {
       // 强制重新渲染一次，确保内容完整显示
-      messages.value[messageIndex].rendered = false
-      
+      messages.value[messageIndex].rendered = false;
+
       // 使用nextTick确保DOM更新后再滚动
       nextTick(() => {
-        scrollToBottom()
-      })
+        scrollToBottom();
+      });
     }
 
     if (!response.success) {
-      console.error('AI请求失败:', {
+      console.error("AI请求失败:", {
         error: response.error,
         apiUrl: aiSettings.value.apiUrl,
-        modelName: aiSettings.value.modelName
-      })
+        modelName: aiSettings.value.modelName,
+      });
 
       // 更新错误消息
-      const errorIndex = messages.value.findIndex((msg) => msg.id === assistantMessageId)
+      const errorIndex = messages.value.findIndex(
+        (msg) => msg.id === assistantMessageId,
+      );
       if (errorIndex !== -1) {
-        messages.value[errorIndex].content = `调用AI服务失败: ${response.error || '未知错误'}`
-        messages.value[errorIndex].rendered = false
+        messages.value[errorIndex].content =
+          `调用AI服务失败: ${response.error || "未知错误"}`;
+        messages.value[errorIndex].rendered = false;
       }
 
-      return `调用AI服务失败: ${response.error || '未知错误'}`
+      return `调用AI服务失败: ${response.error || "未知错误"}`;
     }
 
-    console.log('收到AI回答')
-    return response.content || '抱歉，我无法生成回答。'
+    console.log("收到AI回答");
+    return response.content || "抱歉，我无法生成回答。";
   } catch (error) {
-    console.error('调用AI API失败:', error)
+    console.error("调用AI API失败:", error);
 
     // 如果有流式消息ID，更新错误
     if (streamingMessageId.value) {
-      const errorIndex = messages.value.findIndex((msg) => msg.id === streamingMessageId.value)
+      const errorIndex = messages.value.findIndex(
+        (msg) => msg.id === streamingMessageId.value,
+      );
       if (errorIndex !== -1) {
         messages.value[errorIndex].content =
-          `调用AI服务失败: ${error instanceof Error ? error.message : '未知错误'}`
-        messages.value[errorIndex].rendered = false
+          `调用AI服务失败: ${error instanceof Error ? error.message : "未知错误"}`;
+        messages.value[errorIndex].rendered = false;
       }
-      streamingMessageId.value = null
+      streamingMessageId.value = null;
     }
-    
-    isReceivingResponse.value = false
-    return `调用AI服务失败: ${error instanceof Error ? error.message : '未知错误'}`
+
+    isReceivingResponse.value = false;
+    return `调用AI服务失败: ${error instanceof Error ? error.message : "未知错误"}`;
   }
-}
+};
 
 // 停止AI回复
 const stopAIResponse = async () => {
-  if (!isReceivingResponse.value) return
-  
+  if (!isReceivingResponse.value) return;
+
   try {
     // 调用主进程的停止AI请求接口
-    await (window.api as any).stopAIRequest()
-    
+    await (window.api as any).stopAIRequest();
+
     // 更新状态
-    isReceivingResponse.value = false
-    
+    isReceivingResponse.value = false;
+
     // 如果有流式消息ID，添加中断提示
     if (streamingMessageId.value) {
-      const messageIndex = messages.value.findIndex((msg) => msg.id === streamingMessageId.value)
+      const messageIndex = messages.value.findIndex(
+        (msg) => msg.id === streamingMessageId.value,
+      );
       if (messageIndex !== -1) {
-        messages.value[messageIndex].content += '\n\n[用户已中断回复]'
-        messages.value[messageIndex].rendered = false
+        messages.value[messageIndex].content += "\n\n[用户已中断回复]";
+        messages.value[messageIndex].rendered = false;
       }
-      streamingMessageId.value = null
+      streamingMessageId.value = null;
     }
-    
-    console.log('已中断AI回复')
+
+    console.log("已中断AI回复");
   } catch (error) {
-    console.error('中断AI回复失败:', error)
+    console.error("中断AI回复失败:", error);
   }
-}
+};
 
 // 处理流式输出更新
 const handleStreamUpdate = (chunk: string) => {
-  if (!streamingMessageId.value) return
+  if (!streamingMessageId.value) return;
 
   // 查找当前流式消息
-  const messageIndex = messages.value.findIndex((msg) => msg.id === streamingMessageId.value)
+  const messageIndex = messages.value.findIndex(
+    (msg) => msg.id === streamingMessageId.value,
+  );
   if (messageIndex !== -1) {
     // 追加内容
-    messages.value[messageIndex].content += chunk
-    
+    messages.value[messageIndex].content += chunk;
+
     // 检查是否需要分段处理
-    const content = messages.value[messageIndex].content
+    const content = messages.value[messageIndex].content;
     if (content.length > CONTENT_CHUNK_THRESHOLD) {
       // 标记为长内容
       if (!messages.value[messageIndex].isLongContent) {
-        messages.value[messageIndex].isLongContent = true
+        messages.value[messageIndex].isLongContent = true;
         // 初始分段
-        messages.value[messageIndex].segments = segmentContent(content)
+        messages.value[messageIndex].segments = segmentContent(content);
       } else {
         // 更新最后一个分段或添加新分段
-        const segments = segmentContent(content)
-        messages.value[messageIndex].segments = segments
+        const segments = segmentContent(content);
+        messages.value[messageIndex].segments = segments;
       }
-      
+
       // 对于长内容，使用节流来减少渲染频率
       if (renderThrottleTimer.value === null) {
         renderThrottleTimer.value = window.setTimeout(() => {
           // 滚动到底部
-          scrollToBottom()
+          scrollToBottom();
           // 清除定时器
-          renderThrottleTimer.value = null
-        }, 300) // 300ms节流
+          renderThrottleTimer.value = null;
+        }, 300); // 300ms节流
       }
     } else {
       // 对于短内容，标记为未渲染，确保内容更新后会重新渲染
-      messages.value[messageIndex].rendered = false
+      messages.value[messageIndex].rendered = false;
       // 每次更新都滚动
-      scrollToBottom()
+      scrollToBottom();
     }
   }
-}
+};
 
 // 发送消息
 const sendMessage = async () => {
-  const message = userInput.value.trim()
-  if (!message) return
+  const message = userInput.value.trim();
+  if (!message) return;
 
   // 添加用户消息
   messages.value.push({
     id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-    type: 'user',
+    type: "user",
     content: message,
     timestamp: Date.now(),
-    rendered: false
-  })
+    rendered: false,
+  });
 
   // 清空输入框
-  userInput.value = ''
+  userInput.value = "";
 
   // 滚动到底部
-  scrollToBottom()
+  scrollToBottom();
 
   // 设置加载状态
-  isLoading.value = true
+  isLoading.value = true;
 
   try {
     // 检查是否配置了OpenAI
     if (!isUsingOpenAI.value) {
       // 尝试重新加载设置
-      await loadAISettings()
+      await loadAISettings();
     }
 
     // 再次检查是否配置了OpenAI
     if (isUsingOpenAI.value) {
       // 调用OpenAI API获取回答
-      await getAIResponse()
+      await getAIResponse();
     } else {
       // 添加错误消息
       messages.value.push({
         id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-        type: 'assistant',
-        content: '请在设置中配置API密钥和模型名称。',
+        type: "assistant",
+        content: "请在设置中配置API密钥和模型名称。",
         timestamp: Date.now(),
-        rendered: false
-      })
+        rendered: false,
+      });
     }
   } catch (error) {
-    console.error('获取AI回答失败:', error)
+    console.error("获取AI回答失败:", error);
     // 添加错误消息
     messages.value.push({
       id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-      type: 'assistant',
-      content: `抱歉，发生了错误: ${error instanceof Error ? error.message : '未知错误'}`,
+      type: "assistant",
+      content: `抱歉，发生了错误: ${error instanceof Error ? error.message : "未知错误"}`,
       timestamp: Date.now(),
-      rendered: false
-    })
+      rendered: false,
+    });
   } finally {
-    isLoading.value = false
+    isLoading.value = false;
     // 滚动到底部
-    scrollToBottom()
+    scrollToBottom();
   }
-}
+};
 
 // 按键事件处理
 const handleKeyDown = (e: KeyboardEvent) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    sendMessage()
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
   }
-}
+};
 
 // 滚动到底部
 const scrollToBottom = () => {
   setTimeout(() => {
-    const messageContainer = document.querySelector('.messages-container')
+    const messageContainer = document.querySelector(".messages-container");
     if (messageContainer) {
-      messageContainer.scrollTop = messageContainer.scrollHeight
+      messageContainer.scrollTop = messageContainer.scrollHeight;
     }
-  }, 50)
-}
+  }, 50);
+};
 
 // 格式化时间戳
 const formatTimestamp = (timestamp: number): string => {
-  const date = new Date(timestamp)
-  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
-}
+  const date = new Date(timestamp);
+  return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+};
 
 // 监听可见性变化
 watch(
@@ -764,88 +804,101 @@ watch(
   (newValue) => {
     if (newValue) {
       // 当浮窗显示时，滚动到底部
-      scrollToBottom()
+      scrollToBottom();
 
       // 如果已经加载过位置，确保窗口在可视区域内
       if (hasLoadedPosition.value) {
-        ensureWindowVisible()
+        ensureWindowVisible();
       } else {
         // 如果还没有加载过位置，设置默认位置
-        posX.value = window.innerWidth - 350
-        posY.value = 80
-        hasLoadedPosition.value = true
+        posX.value = window.innerWidth - 350;
+        posY.value = 80;
+        hasLoadedPosition.value = true;
       }
     }
-  }
-)
+  },
+);
 
 // 格式化消息，支持完整的Markdown
-const formatMessage = (content: string, messageId?: string, segmentIndex?: number): { html: string; safe: boolean } => {
-  if (!content) return { html: '', safe: true }
-  
+const formatMessage = (
+  content: string,
+  messageId?: string,
+  segmentIndex?: number,
+): { html: string; safe: boolean } => {
+  if (!content) return { html: "", safe: true };
+
   // 如果是长内容且提供了分段索引
   if (messageId && segmentIndex !== undefined) {
-    const messageIndex = messages.value.findIndex(msg => msg.id === messageId);
-    if (messageIndex !== -1 && 
-        messages.value[messageIndex].isLongContent && 
-        messages.value[messageIndex].segments && 
-        messages.value[messageIndex].segments[segmentIndex]) {
-      
+    const messageIndex = messages.value.findIndex(
+      (msg) => msg.id === messageId,
+    );
+    if (
+      messageIndex !== -1 &&
+      messages.value[messageIndex].isLongContent &&
+      messages.value[messageIndex].segments &&
+      messages.value[messageIndex].segments[segmentIndex]
+    ) {
       const segment = messages.value[messageIndex].segments[segmentIndex];
-      
+
       // 如果分段已经有缓存的HTML，直接返回
       if (segment.html) {
-        return { 
-          html: segment.html, 
-          safe: true 
+        return {
+          html: segment.html,
+          safe: true,
         };
       }
-      
+
       // 否则渲染这个分段
       try {
         // 配置marked
         marked.use(
           markedHighlight({
-            langPrefix: 'hljs language-',
+            langPrefix: "hljs language-",
             highlight(code, lang) {
-              const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+              const language = hljs.getLanguage(lang) ? lang : "plaintext";
               return hljs.highlight(code, { language }).value;
-            }
-          })
+            },
+          }),
         );
 
         // 使用marked解析Markdown
         const html = marked.parse(segment.content) as string;
-        
+
         // 缓存渲染结果
         segment.html = html;
-        
+
         return {
           html,
-          safe: true
+          safe: true,
         };
       } catch (error) {
-        console.error('Markdown解析错误:', error);
-        
+        console.error("Markdown解析错误:", error);
+
         // 降级处理
         let safeContent = escapeHtml(segment.content);
         safeContent = processSimpleMarkdown(safeContent);
-        
+
         return {
           html: safeContent,
-          safe: true
+          safe: true,
         };
       }
     }
   }
-  
+
   // 如果消息ID存在，尝试使用缓存的HTML（非分段模式）
   if (messageId && segmentIndex === undefined) {
-    const messageIndex = messages.value.findIndex(msg => msg.id === messageId);
-    if (messageIndex !== -1 && messages.value[messageIndex].html && messages.value[messageIndex].rendered) {
-      return { 
-        html: messages.value[messageIndex].html as string, 
-        safe: true 
+    const messageIndex = messages.value.findIndex(
+      (msg) => msg.id === messageId,
+    );
+    if (
+      messageIndex !== -1 &&
+      messages.value[messageIndex].html &&
+      messages.value[messageIndex].rendered
+    ) {
+      return {
+        html: messages.value[messageIndex].html as string,
+        safe: true,
       };
     }
   }
@@ -859,47 +912,49 @@ const formatMessage = (content: string, messageId?: string, segmentIndex?: numbe
     // 配置marked
     marked.use(
       markedHighlight({
-        langPrefix: 'hljs language-',
+        langPrefix: "hljs language-",
         highlight(code, lang) {
-          const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+          const language = hljs.getLanguage(lang) ? lang : "plaintext";
           return hljs.highlight(code, { language }).value;
-        }
-      })
+        },
+      }),
     );
 
     // 使用marked解析Markdown，不使用额外选项
     const html = marked.parse(content) as string;
-    
+
     // 如果消息ID存在，缓存解析后的HTML
     if (messageId && segmentIndex === undefined) {
-      const messageIndex = messages.value.findIndex(msg => msg.id === messageId);
+      const messageIndex = messages.value.findIndex(
+        (msg) => msg.id === messageId,
+      );
       if (messageIndex !== -1) {
         messages.value[messageIndex].html = html;
         messages.value[messageIndex].rendered = true;
       }
     }
-    
+
     // 重置渲染状态
     isRenderingLargeContent.value = false;
-    
+
     return {
       html,
-      safe: true
+      safe: true,
     };
   } catch (error) {
-    console.error('Markdown解析错误:', error);
+    console.error("Markdown解析错误:", error);
     isRenderingLargeContent.value = false;
-    
+
     // 降级处理，使用简单的格式化
     let safeContent = escapeHtml(content);
     safeContent = processSimpleMarkdown(safeContent);
-    
+
     return {
       html: safeContent,
-      safe: true
+      safe: true,
     };
   }
-}
+};
 
 // 简单的Markdown处理
 const processSimpleMarkdown = (content: string): string => {
@@ -909,163 +964,174 @@ const processSimpleMarkdown = (content: string): string => {
   });
 
   // 处理行内代码: `code`
-  processed = processed.replace(/`([^`]+)`/g, '<code>$1</code>');
+  processed = processed.replace(/`([^`]+)`/g, "<code>$1</code>");
 
   // 处理换行符
-  processed = processed.replace(/\n/g, '<br>');
-  
+  processed = processed.replace(/\n/g, "<br>");
+
   return processed;
-}
+};
 
 // 复制消息内容
 const copyMessageContent = (content: string) => {
-  navigator.clipboard.writeText(content)
+  navigator.clipboard
+    .writeText(content)
     .then(() => {
       // 可以添加复制成功的提示
-      console.log('内容已复制到剪贴板');
+      console.log("内容已复制到剪贴板");
     })
-    .catch(err => {
-      console.error('复制失败:', err);
+    .catch((err) => {
+      console.error("复制失败:", err);
     });
-}
+};
 
 // HTML转义
 const escapeHtml = (unsafe: string): string => {
   return unsafe
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-}
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
 
 // 加载AI设置
 const loadAISettings = async () => {
   try {
     // 通过IPC从主进程获取设置
-    const settingsArray = await window.api.loadSettings()
+    const settingsArray = await window.api.loadSettings();
     console.log(
-      '从主进程获取到的完整设置:',
+      "从主进程获取到的完整设置:",
       JSON.stringify(
         settingsArray,
         (key, value) => {
-          if (key === 'apiKey' && value) return '***'
-          return value
+          if (key === "apiKey" && value) return "***";
+          return value;
         },
-        2
-      )
-    )
+        2,
+      ),
+    );
 
     // 获取第一个配置对象
-    const settings = Array.isArray(settingsArray) ? settingsArray[0] : settingsArray
+    const settings = Array.isArray(settingsArray)
+      ? settingsArray[0]
+      : settingsArray;
     if (!settings) {
-      console.warn('未找到有效的设置配置')
-      return
+      console.warn("未找到有效的设置配置");
+      return;
     }
 
     // 加载API配置列表
     if (Array.isArray(settings.aiApis)) {
-      availableApiConfigs.value = settings.aiApis
-      console.log(`已加载 ${availableApiConfigs.value.length} 个AI API配置`)
-      
+      availableApiConfigs.value = settings.aiApis;
+      console.log(`已加载 ${availableApiConfigs.value.length} 个AI API配置`);
+
       // 如果有配置，选择第一个作为默认
       if (availableApiConfigs.value.length > 0) {
-        const firstApi = availableApiConfigs.value[0]
-        selectedApiId.value = firstApi.id
-        
+        const firstApi = availableApiConfigs.value[0];
+        selectedApiId.value = firstApi.id;
+
         // 更新当前使用的API设置
         aiSettings.value = {
-          apiUrl: firstApi.apiUrl || '',
-          apiKey: firstApi.apiKey || '',
-          modelName: firstApi.modelName || ''
-        }
-        
-        console.log('已选择默认API配置:', firstApi.name)
+          apiUrl: firstApi.apiUrl || "",
+          apiKey: firstApi.apiKey || "",
+          modelName: firstApi.modelName || "",
+        };
+
+        console.log("已选择默认API配置:", firstApi.name);
       }
     } else {
-      console.log('未找到API配置列表，尝试使用旧版aiSettings')
+      console.log("未找到API配置列表，尝试使用旧版aiSettings");
     }
 
     // 兼容旧版配置：如果没有aiApis或者aiApis为空，但有aiSettings，则使用aiSettings
-    if ((!settings.aiApis || settings.aiApis.length === 0) && settings.aiSettings) {
-      const { aiSettings: configAiSettings } = settings
-      
+    if (
+      (!settings.aiApis || settings.aiApis.length === 0) &&
+      settings.aiSettings
+    ) {
+      const { aiSettings: configAiSettings } = settings;
+
       if (configAiSettings) {
         // 更新本地设置
         aiSettings.value = {
-          apiUrl: configAiSettings.apiUrl || '',
-          apiKey: configAiSettings.apiKey || '',
-          modelName: configAiSettings.modelName || ''
-        }
+          apiUrl: configAiSettings.apiUrl || "",
+          apiKey: configAiSettings.apiKey || "",
+          modelName: configAiSettings.modelName || "",
+        };
 
-        console.log('从config.json加载的旧版AI设置:', {
-          apiUrl: configAiSettings.apiUrl || '未设置',
-          apiKey: configAiSettings.apiKey ? '已设置' : '未设置',
-          modelName: configAiSettings.modelName || '未设置'
-        })
+        console.log("从config.json加载的旧版AI设置:", {
+          apiUrl: configAiSettings.apiUrl || "未设置",
+          apiKey: configAiSettings.apiKey ? "已设置" : "未设置",
+          modelName: configAiSettings.modelName || "未设置",
+        });
       } else {
-        console.warn('未找到AI设置配置')
+        console.warn("未找到AI设置配置");
       }
     }
   } catch (error) {
-    console.error('加载AI设置失败:', error)
+    console.error("加载AI设置失败:", error);
   }
-}
+};
 
 // 切换选择的API配置
 const selectApiConfig = (apiId: string) => {
-  const selectedApi = availableApiConfigs.value.find(api => api.id === apiId)
+  const selectedApi = availableApiConfigs.value.find((api) => api.id === apiId);
   if (selectedApi) {
-    selectedApiId.value = apiId
+    selectedApiId.value = apiId;
     aiSettings.value = {
-      apiUrl: selectedApi.apiUrl || '',
-      apiKey: selectedApi.apiKey || '',
-      modelName: selectedApi.modelName || ''
-    }
-    console.log('已切换到API配置:', selectedApi.name)
+      apiUrl: selectedApi.apiUrl || "",
+      apiKey: selectedApi.apiKey || "",
+      modelName: selectedApi.modelName || "",
+    };
+    console.log("已切换到API配置:", selectedApi.name);
   }
-}
+};
 
 // 将长内容分段处理
-const segmentContent = (content: string): Array<{ content: string, html?: string }> => {
+const segmentContent = (
+  content: string,
+): Array<{ content: string; html?: string }> => {
   if (content.length <= SEGMENT_SIZE) {
     return [{ content }];
   }
-  
-  const segments: Array<{ content: string, html?: string }> = [];
-  
+
+  const segments: Array<{ content: string; html?: string }> = [];
+
   // 尝试在段落边界分段
-  const paragraphs = content.split('\n\n');
-  let currentSegment = '';
-  
+  const paragraphs = content.split("\n\n");
+  let currentSegment = "";
+
   for (const paragraph of paragraphs) {
     // 如果当前段落加上当前分段内容超过了分段大小
     if (currentSegment.length + paragraph.length + 2 > SEGMENT_SIZE) {
       // 如果当前分段不为空，添加到分段列表
       if (currentSegment.length > 0) {
         segments.push({ content: currentSegment });
-        currentSegment = '';
+        currentSegment = "";
       }
-      
+
       // 如果单个段落超过分段大小，需要进一步分割
       if (paragraph.length > SEGMENT_SIZE) {
         // 按句子分割
         const sentences = paragraph.split(/(?<=[.!?])\s+/);
-        let sentenceSegment = '';
-        
+        let sentenceSegment = "";
+
         for (const sentence of sentences) {
           if (sentenceSegment.length + sentence.length + 1 > SEGMENT_SIZE) {
             if (sentenceSegment.length > 0) {
               segments.push({ content: sentenceSegment });
-              sentenceSegment = '';
+              sentenceSegment = "";
             }
-            
+
             // 如果单个句子超过分段大小，按字符分割
             if (sentence.length > SEGMENT_SIZE) {
               let i = 0;
               while (i < sentence.length) {
-                segments.push({ 
-                  content: sentence.substring(i, Math.min(i + SEGMENT_SIZE, sentence.length)) 
+                segments.push({
+                  content: sentence.substring(
+                    i,
+                    Math.min(i + SEGMENT_SIZE, sentence.length),
+                  ),
                 });
                 i += SEGMENT_SIZE;
               }
@@ -1073,10 +1139,10 @@ const segmentContent = (content: string): Array<{ content: string, html?: string
               sentenceSegment = sentence;
             }
           } else {
-            sentenceSegment += (sentenceSegment ? ' ' : '') + sentence;
+            sentenceSegment += (sentenceSegment ? " " : "") + sentence;
           }
         }
-        
+
         if (sentenceSegment.length > 0) {
           segments.push({ content: sentenceSegment });
         }
@@ -1086,67 +1152,79 @@ const segmentContent = (content: string): Array<{ content: string, html?: string
       }
     } else {
       // 添加段落到当前分段
-      currentSegment += (currentSegment ? '\n\n' : '') + paragraph;
+      currentSegment += (currentSegment ? "\n\n" : "") + paragraph;
     }
   }
-  
+
   // 添加最后一个分段
   if (currentSegment.length > 0) {
     segments.push({ content: currentSegment });
   }
-  
+
   return segments;
-}
+};
 
 // 刷新API配置列表
 const refreshApiConfigs = async () => {
   try {
     // 通过IPC从主进程获取设置
-    const settingsArray = await window.api.loadSettings()
-    
+    const settingsArray = await window.api.loadSettings();
+
     // 获取第一个配置对象
-    const settings = Array.isArray(settingsArray) ? settingsArray[0] : settingsArray
-    if (!settings) return
-    
+    const settings = Array.isArray(settingsArray)
+      ? settingsArray[0]
+      : settingsArray;
+    if (!settings) return;
+
     // 检查API配置列表是否有变化
     if (Array.isArray(settings.aiApis)) {
       // 检查是否有变化
-      const currentApiIds = availableApiConfigs.value.map(api => api.id).sort().join(',')
-      const newApiIds = settings.aiApis.map(api => api.id).sort().join(',')
-      
+      const currentApiIds = availableApiConfigs.value
+        .map((api) => api.id)
+        .sort()
+        .join(",");
+      const newApiIds = settings.aiApis
+        .map((api) => api.id)
+        .sort()
+        .join(",");
+
       // 检查API列表是否有变化
-      const hasChanges = currentApiIds !== newApiIds || 
-                         JSON.stringify(availableApiConfigs.value) !== JSON.stringify(settings.aiApis)
-      
+      const hasChanges =
+        currentApiIds !== newApiIds ||
+        JSON.stringify(availableApiConfigs.value) !==
+          JSON.stringify(settings.aiApis);
+
       if (hasChanges) {
-        console.log('检测到API配置变化，更新配置列表')
-        availableApiConfigs.value = settings.aiApis
-        
+        console.log("检测到API配置变化，更新配置列表");
+        availableApiConfigs.value = settings.aiApis;
+
         // 如果当前选择的API在新列表中，更新其配置
         if (selectedApiId.value) {
-          const updatedApi = settings.aiApis.find(api => api.id === selectedApiId.value)
+          const updatedApi = settings.aiApis.find(
+            (api) => api.id === selectedApiId.value,
+          );
           if (updatedApi) {
             // 更新当前使用的API设置
             aiSettings.value = {
-              apiUrl: updatedApi.apiUrl || '',
-              apiKey: updatedApi.apiKey || '',
-              modelName: updatedApi.modelName || ''
-            }
-            console.log('已更新当前API配置:', updatedApi.name)
+              apiUrl: updatedApi.apiUrl || "",
+              apiKey: updatedApi.apiKey || "",
+              modelName: updatedApi.modelName || "",
+            };
+            console.log("已更新当前API配置:", updatedApi.name);
           } else if (settings.aiApis.length > 0) {
             // 如果当前选择的API不在新列表中，选择第一个
-            selectApiConfig(settings.aiApis[0].id)
+            selectApiConfig(settings.aiApis[0].id);
           }
         } else if (settings.aiApis.length > 0) {
           // 如果没有选择API，选择第一个
-          selectApiConfig(settings.aiApis[0].id)
+          selectApiConfig(settings.aiApis[0].id);
         }
       }
     }
   } catch (error) {
-    console.error('刷新API配置列表失败:', error)
+    console.error("刷新API配置列表失败:", error);
   }
-}
+};
 </script>
 
 <template>
@@ -1158,7 +1236,7 @@ const refreshApiConfigs = async () => {
   >
     <!-- 窗口头部 -->
     <div class="window-header" @mousedown="startDrag">
-      <div class="window-title">{{ t('aiAssistant.title') }}</div>
+      <div class="window-title">{{ t("aiAssistant.title") }}</div>
       <div class="window-controls">
         <!-- API选择下拉菜单 -->
         <div class="api-selector-container">
@@ -1167,18 +1245,24 @@ const refreshApiConfigs = async () => {
             <span class="dropdown-arrow">▼</span>
           </button>
           <div v-if="showApiSelector" class="api-selector-dropdown">
-            <div 
-              v-for="api in availableApiConfigs" 
-              :key="api.id" 
+            <div
+              v-for="api in availableApiConfigs"
+              :key="api.id"
               class="api-option"
-              :class="{ 'selected': selectedApiId === api.id }"
-              @click="selectApiConfig(api.id); showApiSelector = false;"
+              :class="{ selected: selectedApiId === api.id }"
+              @click="
+                selectApiConfig(api.id);
+                showApiSelector = false;
+              "
             >
               {{ api.name }}
             </div>
           </div>
         </div>
-        <button class="window-btn minimize-btn" @click="(e) => minimizeWindow(e)">
+        <button
+          class="window-btn minimize-btn"
+          @click="(e) => minimizeWindow(e)"
+        >
           <img :src="minimizeIcon" alt="Minimize" width="16" height="16" />
         </button>
         <button class="window-close" @click="(e) => closeWindow(e)">
@@ -1188,7 +1272,10 @@ const refreshApiConfigs = async () => {
     </div>
 
     <!-- 添加调整大小的边缘处理器 -->
-    <div class="resize-handle resize-handle-bottom-right" @mousedown="(e) => startResize(e, 'bottom-right')">
+    <div
+      class="resize-handle resize-handle-bottom-right"
+      @mousedown="(e) => startResize(e, 'bottom-right')"
+    >
       <div class="resize-icon"></div>
     </div>
 
@@ -1200,13 +1287,17 @@ const refreshApiConfigs = async () => {
         class="message-bubble"
         :class="{
           'user-message': message.type === 'user',
-          'assistant-message': message.type === 'assistant'
+          'assistant-message': message.type === 'assistant',
         }"
       >
         <!-- 用户消息 -->
         <div v-if="message.type === 'user'" class="message-content">
           <div class="message-actions">
-            <button class="copy-btn" @click="copyMessageContent(message.content)" title="复制内容">
+            <button
+              class="copy-btn"
+              @click="copyMessageContent(message.content)"
+              title="复制内容"
+            >
               <img :src="copyIcon" alt="Copy" width="16" height="16" />
             </button>
           </div>
@@ -1216,25 +1307,37 @@ const refreshApiConfigs = async () => {
         <!-- AI消息，支持格式化 -->
         <div v-else class="message-content formatted-content">
           <div class="message-actions">
-            <button class="copy-btn" @click="copyMessageContent(message.content)" title="复制内容">
+            <button
+              class="copy-btn"
+              @click="copyMessageContent(message.content)"
+              title="复制内容"
+            >
               <img :src="copyIcon" alt="Copy" width="16" height="16" />
             </button>
           </div>
-          
+
           <!-- 长内容分段渲染 -->
-          <template v-if="message.isLongContent && message.segments && message.segments.length > 0">
-            <div 
-              v-for="(segment, idx) in message.segments" 
+          <template
+            v-if="
+              message.isLongContent &&
+              message.segments &&
+              message.segments.length > 0
+            "
+          >
+            <div
+              v-for="(segment, idx) in message.segments"
               :key="`${message.id}-segment-${idx}`"
               class="message-segment"
             >
-              <div 
-                :innerHTML="formatMessage(segment.content, message.id, idx).html"
+              <div
+                :innerHTML="
+                  formatMessage(segment.content, message.id, idx).html
+                "
                 class="selectable-text markdown-body"
               ></div>
             </div>
           </template>
-          
+
           <!-- 短内容直接渲染 -->
           <template v-else>
             <div
@@ -1246,7 +1349,9 @@ const refreshApiConfigs = async () => {
           </template>
         </div>
 
-        <div class="message-timestamp">{{ formatTimestamp(message.timestamp) }}</div>
+        <div class="message-timestamp">
+          {{ formatTimestamp(message.timestamp) }}
+        </div>
       </div>
 
       <!-- 加载指示器 -->
@@ -1267,11 +1372,19 @@ const refreshApiConfigs = async () => {
         @keydown="handleKeyDown"
       ></textarea>
       <div class="button-container">
-        <button v-if="isReceivingResponse" class="stop-button" @click="stopAIResponse">
-          {{ t('aiAssistant.stop') || '停止' }}
+        <button
+          v-if="isReceivingResponse"
+          class="stop-button"
+          @click="stopAIResponse"
+        >
+          {{ t("aiAssistant.stop") || "停止" }}
         </button>
-        <button class="send-button" :disabled="!userInput.trim() || isLoading" @click="sendMessage">
-          {{ t('aiAssistant.send') || '发送' }}
+        <button
+          class="send-button"
+          :disabled="!userInput.trim() || isLoading"
+          @click="sendMessage"
+        >
+          {{ t("aiAssistant.send") || "发送" }}
         </button>
       </div>
     </div>
@@ -2496,7 +2609,8 @@ body.ai-window-resizing {
   position: relative;
 }
 
-.resize-icon:before, .resize-icon:after {
+.resize-icon:before,
+.resize-icon:after {
   content: "";
   position: absolute;
 }

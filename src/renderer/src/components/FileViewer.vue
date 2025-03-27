@@ -1,20 +1,38 @@
 <template>
   <teleport to="body">
     <div v-if="show" class="file-viewer-overlay" @click="closeViewer">
-      <div class="file-viewer-container" :class="{ 'dark-theme': isDarkTheme }" @click.stop>
+      <div
+        class="file-viewer-container"
+        :class="{ 'dark-theme': isDarkTheme }"
+        @click.stop
+      >
         <!-- 头部区域：标题和控制按钮 -->
         <div class="viewer-header">
           <div class="file-info">
-            <div class="file-meta">{{ fileName }}
-              <span class="file-type">{{ fileType }} | {{ formatFileSize(fileSize) }}</span>
-              <span v-if="isTruncated" class="truncated-notice">（文件过大，仅显示部分内容）</span>
+            <div class="file-meta">
+              {{ fileName }}
+              <span class="file-type"
+                >{{ fileType }} | {{ formatFileSize(fileSize) }}</span
+              >
+              <span v-if="isTruncated" class="truncated-notice"
+                >（文件过大，仅显示部分内容）</span
+              >
             </div>
           </div>
           <div class="viewer-controls">
-            <button class="viewer-button" title="搜索" @click="toggleSearch" v-if="isText">
+            <button
+              class="viewer-button"
+              title="搜索"
+              @click="toggleSearch"
+              v-if="isText"
+            >
               <img :src="searchIcon" alt="搜索" class="icon-search" />
             </button>
-            <button class="viewer-button" title="下载文件" @click="downloadFile">
+            <button
+              class="viewer-button"
+              title="下载文件"
+              @click="downloadFile"
+            >
               <img :src="downloadIcon" alt="下载" class="icon-download" />
             </button>
             <button class="viewer-button" title="关闭" @click="closeViewer">
@@ -22,23 +40,33 @@
             </button>
           </div>
         </div>
-        
+
         <!-- 搜索栏 -->
         <div v-if="showSearch && isText" class="search-bar">
-          <input 
-            type="text" 
-            v-model="searchQuery" 
-            placeholder="搜索文本..." 
+          <input
+            type="text"
+            v-model="searchQuery"
+            placeholder="搜索文本..."
             class="search-input"
             @keyup.enter="searchNext"
             ref="searchInputRef"
           />
           <div class="search-controls">
-            <span class="search-count" v-if="matchCount > 0">{{ currentMatchIndex + 1 }}/{{ matchCount }}</span>
-            <button class="search-button" @click="searchPrev" :disabled="matchCount === 0">
+            <span class="search-count" v-if="matchCount > 0"
+              >{{ currentMatchIndex + 1 }}/{{ matchCount }}</span
+            >
+            <button
+              class="search-button"
+              @click="searchPrev"
+              :disabled="matchCount === 0"
+            >
               <span>↑</span>
             </button>
-            <button class="search-button" @click="searchNext" :disabled="matchCount === 0">
+            <button
+              class="search-button"
+              @click="searchNext"
+              :disabled="matchCount === 0"
+            >
               <span>↓</span>
             </button>
             <button class="search-button" @click="clearSearch">
@@ -46,24 +74,39 @@
             </button>
           </div>
         </div>
-        
+
         <!-- 文件内容区域 -->
         <div class="viewer-content" ref="contentRef">
           <!-- 文本文件 -->
-          <div v-if="isText" class="text-viewer" :class="{ 'with-line-numbers': showLineNumbers }">
-            <div v-if="showLineNumbers" class="line-numbers" ref="lineNumbersRef">
-              <div v-for="n in textLineCount" :key="n" class="line-number">{{ n }}</div>
+          <div
+            v-if="isText"
+            class="text-viewer"
+            :class="{ 'with-line-numbers': showLineNumbers }"
+          >
+            <div
+              v-if="showLineNumbers"
+              class="line-numbers"
+              ref="lineNumbersRef"
+            >
+              <div v-for="n in textLineCount" :key="n" class="line-number">
+                {{ n }}
+              </div>
             </div>
             <div class="text-content-wrapper">
-              <pre class="text-content" v-html="formattedContent" ref="textContentRef" @scroll="handleTextScroll"></pre>
+              <pre
+                class="text-content"
+                v-html="formattedContent"
+                ref="textContentRef"
+                @scroll="handleTextScroll"
+              ></pre>
             </div>
           </div>
-          
+
           <!-- 图片文件 -->
           <div v-else-if="isImage" class="image-viewer">
             <img :src="imageUrl" alt="图片预览" />
           </div>
-          
+
           <!-- 不支持的文件类型 -->
           <div v-else class="unsupported-file">
             <div class="unsupported-icon">📁</div>
@@ -73,14 +116,14 @@
             </div>
           </div>
         </div>
-        
+
         <!-- 底部工具栏 -->
         <div v-if="isText" class="viewer-footer">
           <button class="footer-button" @click="toggleLineNumbers">
-            {{ showLineNumbers ? '隐藏行号' : '显示行号' }}
+            {{ showLineNumbers ? "隐藏行号" : "显示行号" }}
           </button>
           <button class="footer-button" @click="toggleWordWrap">
-            {{ wordWrap ? '关闭自动换行' : '开启自动换行' }}
+            {{ wordWrap ? "关闭自动换行" : "开启自动换行" }}
           </button>
           <div class="file-encoding">UTF-8</div>
         </div>
@@ -90,282 +133,290 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { useI18n } from '../i18n'
+import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { useI18n } from "../i18n";
 
-const { t } = useI18n()
+const { t } = useI18n();
 
 interface FileViewerProps {
-  show: boolean
-  fileName: string
-  fileContent?: string
-  fileType: string
-  fileSize: number
-  isText: boolean
-  isImage: boolean
-  tempFilePath?: string
-  isTruncated: boolean
-  connectionId: string
-  remotePath: string
-  isDarkTheme: boolean
+  show: boolean;
+  fileName: string;
+  fileContent?: string;
+  fileType: string;
+  fileSize: number;
+  isText: boolean;
+  isImage: boolean;
+  tempFilePath?: string;
+  isTruncated: boolean;
+  connectionId: string;
+  remotePath: string;
+  isDarkTheme: boolean;
 }
 
 const props = withDefaults(defineProps<FileViewerProps>(), {
-  fileContent: '',
-  tempFilePath: '',
-  isTruncated: false
-})
+  fileContent: "",
+  tempFilePath: "",
+  isTruncated: false,
+});
 
 const emit = defineEmits<{
-  (e: 'close'): void
-  (e: 'download'): void
-}>()
+  (e: "close"): void;
+  (e: "download"): void;
+}>();
 
 // 引用内容区域DOM元素
-const contentRef = ref<HTMLElement | null>(null)
-const textContentRef = ref<HTMLElement | null>(null)
-const lineNumbersRef = ref<HTMLElement | null>(null)
-const searchInputRef = ref<HTMLInputElement | null>(null)
+const contentRef = ref<HTMLElement | null>(null);
+const textContentRef = ref<HTMLElement | null>(null);
+const lineNumbersRef = ref<HTMLElement | null>(null);
+const searchInputRef = ref<HTMLInputElement | null>(null);
 
 // 文本显示选项
-const showLineNumbers = ref(true)
-const wordWrap = ref(true)
+const showLineNumbers = ref(true);
+const wordWrap = ref(true);
 
 // 搜索相关
-const showSearch = ref(false)
-const searchQuery = ref('')
-const matchCount = ref(0)
-const currentMatchIndex = ref(0)
-const matches = ref<number[]>([]) // 存储匹配位置
+const showSearch = ref(false);
+const searchQuery = ref("");
+const matchCount = ref(0);
+const currentMatchIndex = ref(0);
+const matches = ref<number[]>([]); // 存储匹配位置
 
 const searchIcon = computed(() => {
   if (props.isDarkTheme) {
-    return new URL('../assets/search-night.svg', import.meta.url).href
+    return new URL("../assets/search-night.svg", import.meta.url).href;
   } else {
-    return new URL('../assets/search-day.svg', import.meta.url).href
+    return new URL("../assets/search-day.svg", import.meta.url).href;
   }
-})
+});
 
 // 下载图标
 const downloadIcon = computed(() => {
   if (props.isDarkTheme) {
-    return new URL('../assets/download-night.svg', import.meta.url).href
+    return new URL("../assets/download-night.svg", import.meta.url).href;
   } else {
-    return new URL('../assets/download-day.svg', import.meta.url).href
+    return new URL("../assets/download-day.svg", import.meta.url).href;
   }
-})
+});
 
 // 计算文本行数
 const textLineCount = computed(() => {
-  if (!props.fileContent) return 0
-  return props.fileContent.split('\n').length
-})
+  if (!props.fileContent) return 0;
+  return props.fileContent.split("\n").length;
+});
 
 // 格式化内容 - 可以在这里添加语法高亮等功能
 const formattedContent = computed(() => {
-  if (!props.fileContent) return ''
-  
+  if (!props.fileContent) return "";
+
   // 简单的HTML转义以防XSS攻击
   let content = props.fileContent
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
   // 如果有搜索结果，添加高亮标记（保留原始文本，只添加样式）
   if (matches.value.length > 0 && searchQuery.value) {
-    const parts: string[] = []
-    let lastIndex = 0
-    
+    const parts: string[] = [];
+    let lastIndex = 0;
+
     for (let i = 0; i < matches.value.length; i++) {
-      const start = matches.value[i]
-      const end = start + searchQuery.value.length
-      
+      const start = matches.value[i];
+      const end = start + searchQuery.value.length;
+
       // 添加匹配前的文本
       if (start > lastIndex) {
-        parts.push(content.substring(lastIndex, start))
+        parts.push(content.substring(lastIndex, start));
       }
-      
+
       // 添加带高亮的匹配文本
-      const highlightClass = i === currentMatchIndex.value ? 'search-match-current' : 'search-match'
-      parts.push(`<span class="${highlightClass}">${content.substring(start, end)}</span>`)
-      
-      lastIndex = end
+      const highlightClass =
+        i === currentMatchIndex.value ? "search-match-current" : "search-match";
+      parts.push(
+        `<span class="${highlightClass}">${content.substring(start, end)}</span>`,
+      );
+
+      lastIndex = end;
     }
-    
+
     // 添加最后一个匹配后的文本
     if (lastIndex < content.length) {
-      parts.push(content.substring(lastIndex))
+      parts.push(content.substring(lastIndex));
     }
-    
-    content = parts.join('')
+
+    content = parts.join("");
   }
-  
-  return content
-})
+
+  return content;
+});
 
 // 图片URL
 const imageUrl = computed(() => {
-  if (!props.isImage || !props.tempFilePath) return ''
-  return `file://${props.tempFilePath}`
-})
+  if (!props.isImage || !props.tempFilePath) return "";
+  return `file://${props.tempFilePath}`;
+});
 
 // 格式化文件大小
 const formatFileSize = (size: number): string => {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`
-  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(2)} MB`
-  return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(2)} MB`;
+  return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
+};
 
 // 处理文本滚动以同步行号
 const handleTextScroll = () => {
   if (textContentRef.value && lineNumbersRef.value) {
-    lineNumbersRef.value.scrollTop = textContentRef.value.scrollTop
+    lineNumbersRef.value.scrollTop = textContentRef.value.scrollTop;
   }
-}
+};
 
 // 切换行号显示
 const toggleLineNumbers = () => {
-  showLineNumbers.value = !showLineNumbers.value
-}
+  showLineNumbers.value = !showLineNumbers.value;
+};
 
 // 切换自动换行
 const toggleWordWrap = () => {
-  wordWrap.value = !wordWrap.value
-  updateWordWrapStyle()
-}
+  wordWrap.value = !wordWrap.value;
+  updateWordWrapStyle();
+};
 
 // 更新自动换行样式
 const updateWordWrapStyle = () => {
   if (textContentRef.value) {
-    textContentRef.value.style.whiteSpace = wordWrap.value ? 'pre-wrap' : 'pre'
+    textContentRef.value.style.whiteSpace = wordWrap.value ? "pre-wrap" : "pre";
   }
-}
+};
 
 // 关闭查看器
 const closeViewer = () => {
-  emit('close')
-}
+  emit("close");
+};
 
 // 下载文件
 const downloadFile = () => {
-  emit('download')
-}
+  emit("download");
+};
 
 // 切换搜索框显示
 const toggleSearch = () => {
-  showSearch.value = !showSearch.value
+  showSearch.value = !showSearch.value;
   if (showSearch.value) {
     // 清空之前的搜索结果
-    clearSearch()
+    clearSearch();
     // 下一个 tick 后聚焦到输入框
     nextTick(() => {
-      searchInputRef.value?.focus()
-    })
+      searchInputRef.value?.focus();
+    });
   }
-}
+};
 
 // 执行搜索
 const performSearch = () => {
   if (!searchQuery.value || !props.fileContent) {
-    matches.value = []
-    matchCount.value = 0
-    currentMatchIndex.value = 0
-    return
+    matches.value = [];
+    matchCount.value = 0;
+    currentMatchIndex.value = 0;
+    return;
   }
-  
-  const query = searchQuery.value.toLowerCase()
-  const content = props.fileContent.toLowerCase()
-  
+
+  const query = searchQuery.value.toLowerCase();
+  const content = props.fileContent.toLowerCase();
+
   // 找出所有匹配位置
-  matches.value = []
-  let pos = content.indexOf(query)
+  matches.value = [];
+  let pos = content.indexOf(query);
   while (pos !== -1) {
-    matches.value.push(pos)
-    pos = content.indexOf(query, pos + 1)
+    matches.value.push(pos);
+    pos = content.indexOf(query, pos + 1);
   }
-  
-  matchCount.value = matches.value.length
-  currentMatchIndex.value = matches.value.length > 0 ? 0 : -1
-  
+
+  matchCount.value = matches.value.length;
+  currentMatchIndex.value = matches.value.length > 0 ? 0 : -1;
+
   // 重新渲染内容，添加高亮
   nextTick(() => {
-    scrollToCurrentMatch()
-  })
-}
+    scrollToCurrentMatch();
+  });
+};
 
 // 搜索下一个匹配项
 const searchNext = () => {
   if (matches.value.length === 0) {
-    performSearch()
-    return
+    performSearch();
+    return;
   }
-  
+
   if (currentMatchIndex.value < matches.value.length - 1) {
-    currentMatchIndex.value++
+    currentMatchIndex.value++;
   } else {
-    currentMatchIndex.value = 0 // 循环到第一个
+    currentMatchIndex.value = 0; // 循环到第一个
   }
-  
-  scrollToCurrentMatch()
-}
+
+  scrollToCurrentMatch();
+};
 
 // 搜索上一个匹配项
 const searchPrev = () => {
-  if (matches.value.length === 0) return
-  
+  if (matches.value.length === 0) return;
+
   if (currentMatchIndex.value > 0) {
-    currentMatchIndex.value--
+    currentMatchIndex.value--;
   } else {
-    currentMatchIndex.value = matches.value.length - 1 // 循环到最后一个
+    currentMatchIndex.value = matches.value.length - 1; // 循环到最后一个
   }
-  
-  scrollToCurrentMatch()
-}
+
+  scrollToCurrentMatch();
+};
 
 // 滚动到当前匹配项
 const scrollToCurrentMatch = () => {
-  if (matches.value.length === 0 || currentMatchIndex.value < 0) return
-  
+  if (matches.value.length === 0 || currentMatchIndex.value < 0) return;
+
   nextTick(() => {
     if (textContentRef.value) {
-      const highlightElements = textContentRef.value.querySelectorAll('.search-match-current')
+      const highlightElements = textContentRef.value.querySelectorAll(
+        ".search-match-current",
+      );
       if (highlightElements.length > 0) {
         highlightElements[0].scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
-        })
+          behavior: "smooth",
+          block: "center",
+        });
       }
     }
-  })
-}
+  });
+};
 
 // 清除搜索
 const clearSearch = () => {
-  searchQuery.value = ''
-  matches.value = []
-  matchCount.value = 0
-  currentMatchIndex.value = 0
-}
+  searchQuery.value = "";
+  matches.value = [];
+  matchCount.value = 0;
+  currentMatchIndex.value = 0;
+};
 
 // 监听搜索查询变化
 watch(searchQuery, () => {
-  performSearch()
-})
+  performSearch();
+});
 
 // 组件挂载后设置样式
 onMounted(() => {
-  updateWordWrapStyle()
-})
+  updateWordWrapStyle();
+});
 
 // 当显示状态变化时，更新样式
-watch(() => props.show, (newValue) => {
-  if (newValue) {
-    nextTick(() => {
-      updateWordWrapStyle()
-    })
-  }
-})
+watch(
+  () => props.show,
+  (newValue) => {
+    if (newValue) {
+      nextTick(() => {
+        updateWordWrapStyle();
+      });
+    }
+  },
+);
 </script>
 
 <style>
@@ -788,4 +839,4 @@ watch(() => props.show, (newValue) => {
 .dark-theme .file-encoding {
   color: #bdbdbd;
 }
-</style> 
+</style>

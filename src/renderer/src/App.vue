@@ -1,357 +1,367 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import NightIcon from './assets/night.svg'
-import DayIcon from './assets/day.svg'
-import BrainIcon from './assets/brain.svg'
-import SettingsNightIcon from './assets/settings-night.svg'
-import SettingsDayIcon from './assets/settings-day.svg'
-import SystemMonitor from './components/SystemMonitor.vue'
-import ConnectionManager from './components/ConnectionManager.vue'
-import Welcome from './components/Welcome.vue'
-import TerminalView from './components/TerminalView.vue'
-import FileManager from './components/FileManager.vue'
-import SettingsDialog from './components/SettingsDialog.vue'
-import AIAssistant from './components/AIAssistant.vue'
+import { ref, onMounted } from "vue";
+import NightIcon from "./assets/night.svg";
+import DayIcon from "./assets/day.svg";
+import BrainIcon from "./assets/brain.svg";
+import SettingsNightIcon from "./assets/settings-night.svg";
+import SettingsDayIcon from "./assets/settings-day.svg";
+import SystemMonitor from "./components/SystemMonitor.vue";
+import ConnectionManager from "./components/ConnectionManager.vue";
+import Welcome from "./components/Welcome.vue";
+import TerminalView from "./components/TerminalView.vue";
+import FileManager from "./components/FileManager.vue";
+import SettingsDialog from "./components/SettingsDialog.vue";
+import AIAssistant from "./components/AIAssistant.vue";
 
 // 定义TerminalView组件实例的类型
 interface TerminalViewInstance {
-  addLocalTerminal: () => void
-  addSshConnection: (connection: Connection) => void
-  hasAnyTabs: boolean
+  addLocalTerminal: () => void;
+  addSshConnection: (connection: Connection) => void;
+  hasAnyTabs: boolean;
 }
 
 interface GlobalSettings {
-  language: string
-  fontSize: number
-  fontFamily: string
+  language: string;
+  fontSize: number;
+  fontFamily: string;
 }
 
 // 主题状态
-const isDarkTheme = ref(true)
+const isDarkTheme = ref(true);
 const toggleTheme = () => {
-  isDarkTheme.value = !isDarkTheme.value
-}
+  isDarkTheme.value = !isDarkTheme.value;
+};
 
 // 连接状态
-const hasConnections = ref(false)
+const hasConnections = ref(false);
 // 是否使用本地终端模式
-const isLocalTerminalMode = ref(false)
+const isLocalTerminalMode = ref(false);
 
 // 左侧边栏状态
-const isLeftSidebarExpanded = ref(true)
-const sidebarWidth = ref(300)
-const lastSidebarWidth = ref(300)
-const isDragging = ref(false)
+const isLeftSidebarExpanded = ref(true);
+const sidebarWidth = ref(300);
+const lastSidebarWidth = ref(300);
+const isDragging = ref(false);
 
 // 当前活动的连接ID
-const activeConnectionId = ref<string | null>(null)
+const activeConnectionId = ref<string | null>(null);
 
 // 右侧边栏状态
-const isRightSidebarExpanded = ref(true)
-const rightSidebarWidth = ref(250)
-const lastRightSidebarWidth = ref(250)
-const isRightDragging = ref(false)
+const isRightSidebarExpanded = ref(true);
+const rightSidebarWidth = ref(250);
+const lastRightSidebarWidth = ref(250);
+const isRightDragging = ref(false);
 // 右侧边栏分割线位置（百分比）
-const rightSidebarSplitPosition = ref(50)
-const isRightSplitDragging = ref(false)
+const rightSidebarSplitPosition = ref(50);
+const isRightSplitDragging = ref(false);
 
 // 左侧边栏方法
 const toggleLeftSidebar = () => {
   if (isLeftSidebarExpanded.value) {
-    lastSidebarWidth.value = sidebarWidth.value
-    sidebarWidth.value = 40 // 设置为折叠宽度
+    lastSidebarWidth.value = sidebarWidth.value;
+    sidebarWidth.value = 40; // 设置为折叠宽度
   } else {
-    sidebarWidth.value = lastSidebarWidth.value
+    sidebarWidth.value = lastSidebarWidth.value;
   }
-  isLeftSidebarExpanded.value = !isLeftSidebarExpanded.value
-}
+  isLeftSidebarExpanded.value = !isLeftSidebarExpanded.value;
+};
 
 const handleMouseDown = () => {
-  if (!isLeftSidebarExpanded.value) return
-  isDragging.value = true
+  if (!isLeftSidebarExpanded.value) return;
+  isDragging.value = true;
 
   // 在拖动开始时禁用过渡动画，使拖动更流畅
-  const sidebar = document.querySelector('.left-sidebar') as HTMLElement
+  const sidebar = document.querySelector(".left-sidebar") as HTMLElement;
   if (sidebar) {
-    sidebar.classList.add('dragging')
+    sidebar.classList.add("dragging");
   }
 
-  document.addEventListener('mousemove', handleMouseMove)
-  document.addEventListener('mouseup', handleMouseUp)
-}
+  document.addEventListener("mousemove", handleMouseMove);
+  document.addEventListener("mouseup", handleMouseUp);
+};
 
 const handleMouseMove = (e: MouseEvent) => {
-  if (!isDragging.value) return
+  if (!isDragging.value) return;
 
   // 使用requestAnimationFrame减少不必要的渲染
   window.requestAnimationFrame(() => {
-    const newWidth = e.clientX
+    const newWidth = e.clientX;
     if (newWidth >= 100 && newWidth <= 500) {
-      sidebarWidth.value = newWidth
+      sidebarWidth.value = newWidth;
     }
-  })
-}
+  });
+};
 
 const handleMouseUp = () => {
-  isDragging.value = false
-  document.removeEventListener('mousemove', handleMouseMove)
-  document.removeEventListener('mouseup', handleMouseUp)
+  isDragging.value = false;
+  document.removeEventListener("mousemove", handleMouseMove);
+  document.removeEventListener("mouseup", handleMouseUp);
 
   // 恢复过渡动画
-  const sidebar = document.querySelector('.left-sidebar') as HTMLElement
+  const sidebar = document.querySelector(".left-sidebar") as HTMLElement;
   if (sidebar) {
-    sidebar.classList.remove('dragging')
+    sidebar.classList.remove("dragging");
   }
-}
+};
 
 // 右侧边栏方法
 const toggleRightSidebar = () => {
   if (isRightSidebarExpanded.value) {
-    lastRightSidebarWidth.value = rightSidebarWidth.value
+    lastRightSidebarWidth.value = rightSidebarWidth.value;
   } else {
-    rightSidebarWidth.value = lastRightSidebarWidth.value
+    rightSidebarWidth.value = lastRightSidebarWidth.value;
   }
-  isRightSidebarExpanded.value = !isRightSidebarExpanded.value
-}
+  isRightSidebarExpanded.value = !isRightSidebarExpanded.value;
+};
 
 const handleRightMouseDown = () => {
-  if (!isRightSidebarExpanded.value) return
-  isRightDragging.value = true
+  if (!isRightSidebarExpanded.value) return;
+  isRightDragging.value = true;
 
   // 在拖动开始时禁用过渡动画，使拖动更流畅
-  const sidebar = document.querySelector('.right-sidebar') as HTMLElement
+  const sidebar = document.querySelector(".right-sidebar") as HTMLElement;
   if (sidebar) {
-    sidebar.classList.add('dragging')
+    sidebar.classList.add("dragging");
   }
 
-  document.addEventListener('mousemove', handleRightMouseMove)
-  document.addEventListener('mouseup', handleRightMouseUp)
-}
+  document.addEventListener("mousemove", handleRightMouseMove);
+  document.addEventListener("mouseup", handleRightMouseUp);
+};
 
 const handleRightMouseMove = (e: MouseEvent) => {
-  if (!isRightDragging.value) return
+  if (!isRightDragging.value) return;
 
   // 使用requestAnimationFrame减少不必要的渲染
   window.requestAnimationFrame(() => {
-    const newWidth = window.innerWidth - e.clientX
+    const newWidth = window.innerWidth - e.clientX;
     if (newWidth >= 100 && newWidth <= 500) {
-      rightSidebarWidth.value = newWidth
+      rightSidebarWidth.value = newWidth;
     }
-  })
-}
+  });
+};
 
 const handleRightMouseUp = () => {
-  isRightDragging.value = false
-  document.removeEventListener('mousemove', handleRightMouseMove)
-  document.removeEventListener('mouseup', handleRightMouseUp)
+  isRightDragging.value = false;
+  document.removeEventListener("mousemove", handleRightMouseMove);
+  document.removeEventListener("mouseup", handleRightMouseUp);
 
   // 恢复过渡动画
-  const sidebar = document.querySelector('.right-sidebar') as HTMLElement
+  const sidebar = document.querySelector(".right-sidebar") as HTMLElement;
   if (sidebar) {
-    sidebar.classList.remove('dragging')
+    sidebar.classList.remove("dragging");
   }
-}
+};
 
 // 处理右侧边栏分割线拖动
 const handleRightSplitMouseDown = (e: MouseEvent) => {
-  e.preventDefault()
-  isRightSplitDragging.value = true
+  e.preventDefault();
+  isRightSplitDragging.value = true;
 
   // 在拖动开始时禁用过渡动画
-  const monitorSection = document.querySelector('.monitor-section') as HTMLElement
-  const connectionSection = document.querySelector('.connection-section') as HTMLElement
-  if (monitorSection) monitorSection.classList.add('dragging')
-  if (connectionSection) connectionSection.classList.add('dragging')
+  const monitorSection = document.querySelector(
+    ".monitor-section",
+  ) as HTMLElement;
+  const connectionSection = document.querySelector(
+    ".connection-section",
+  ) as HTMLElement;
+  if (monitorSection) monitorSection.classList.add("dragging");
+  if (connectionSection) connectionSection.classList.add("dragging");
 
-  document.addEventListener('mousemove', handleRightSplitMouseMove)
-  document.addEventListener('mouseup', handleRightSplitMouseUp)
-}
+  document.addEventListener("mousemove", handleRightSplitMouseMove);
+  document.addEventListener("mouseup", handleRightSplitMouseUp);
+};
 
 const handleRightSplitMouseMove = (e: MouseEvent) => {
-  if (!isRightSplitDragging.value) return
+  if (!isRightSplitDragging.value) return;
 
   // 使用requestAnimationFrame减少不必要的渲染
   window.requestAnimationFrame(() => {
-    const sidebarRect = document.querySelector('.right-sidebar-content')?.getBoundingClientRect()
-    if (!sidebarRect) return
+    const sidebarRect = document
+      .querySelector(".right-sidebar-content")
+      ?.getBoundingClientRect();
+    if (!sidebarRect) return;
 
-    const offsetY = e.clientY - sidebarRect.top
-    const percentage = Math.round((offsetY / sidebarRect.height) * 100)
+    const offsetY = e.clientY - sidebarRect.top;
+    const percentage = Math.round((offsetY / sidebarRect.height) * 100);
 
     // 限制拖动范围在20%-80%之间
     if (percentage >= 20 && percentage <= 80) {
-      rightSidebarSplitPosition.value = percentage
+      rightSidebarSplitPosition.value = percentage;
     }
-  })
-}
+  });
+};
 
 const handleRightSplitMouseUp = () => {
-  isRightSplitDragging.value = false
-  document.removeEventListener('mousemove', handleRightSplitMouseMove)
-  document.removeEventListener('mouseup', handleRightSplitMouseUp)
+  isRightSplitDragging.value = false;
+  document.removeEventListener("mousemove", handleRightSplitMouseMove);
+  document.removeEventListener("mouseup", handleRightSplitMouseUp);
 
   // 恢复过渡动画
-  const monitorSection = document.querySelector('.monitor-section') as HTMLElement
-  const connectionSection = document.querySelector('.connection-section') as HTMLElement
-  if (monitorSection) monitorSection.classList.remove('dragging')
-  if (connectionSection) connectionSection.classList.remove('dragging')
-}
+  const monitorSection = document.querySelector(
+    ".monitor-section",
+  ) as HTMLElement;
+  const connectionSection = document.querySelector(
+    ".connection-section",
+  ) as HTMLElement;
+  if (monitorSection) monitorSection.classList.remove("dragging");
+  if (connectionSection) connectionSection.classList.remove("dragging");
+};
 
 // 获取TerminalView组件的引用
-const TerminalViewRef = ref<TerminalViewInstance | null>(null)
+const TerminalViewRef = ref<TerminalViewInstance | null>(null);
 
 // 处理标签页变化
 const handleTabsChange = (hasTabs: boolean) => {
-  hasConnections.value = hasTabs
-}
+  hasConnections.value = hasTabs;
+};
 
 // 处理本地终端请求
 const handleOpenLocalTerminal = () => {
-  console.log('打开本地终端请求')
+  console.log("打开本地终端请求");
 
   // 检查是否已经有终端标签页
   if (hasConnections.value && TerminalViewRef.value?.hasAnyTabs) {
-    console.log('已有终端存在，直接添加新标签页')
-    TerminalViewRef.value.addLocalTerminal()
-    return
+    console.log("已有终端存在，直接添加新标签页");
+    TerminalViewRef.value.addLocalTerminal();
+    return;
   }
 
   // 首次创建终端 - 先添加标记，防止组件onMounted时重复创建
-  console.log('首次创建终端，设置本地终端模式')
+  console.log("首次创建终端，设置本地终端模式");
   // 添加正在创建的标记，防止TerminalView的onMounted钩子重复创建
-  window.localStorage.setItem('terminal_creating', 'true')
+  window.localStorage.setItem("terminal_creating", "true");
 
-  isLocalTerminalMode.value = true
-  hasConnections.value = true
+  isLocalTerminalMode.value = true;
+  hasConnections.value = true;
 
   // 确保TerminalView组件已加载并初始化后再创建终端
   setTimeout(() => {
     if (TerminalViewRef.value) {
-      console.log('TerminalView组件已初始化，创建新的本地终端标签页')
-      TerminalViewRef.value.addLocalTerminal()
+      console.log("TerminalView组件已初始化，创建新的本地终端标签页");
+      TerminalViewRef.value.addLocalTerminal();
       // 创建后清除标记
-      window.localStorage.removeItem('terminal_creating')
+      window.localStorage.removeItem("terminal_creating");
     } else {
-      console.warn('TerminalView组件未初始化，无法创建本地终端标签页')
+      console.warn("TerminalView组件未初始化，无法创建本地终端标签页");
       // 清除标记，避免残留
-      window.localStorage.removeItem('terminal_creating')
+      window.localStorage.removeItem("terminal_creating");
     }
-  }, 50) // 给予足够的时间让组件挂载和初始化
-}
+  }, 50); // 给予足够的时间让组件挂载和初始化
+};
 
 // 处理SSH连接请求
 const handleConnectToServer = async (connection: Connection) => {
-  console.log('处理SSH连接请求:', connection.id)
+  console.log("处理SSH连接请求:", connection.id);
 
   // 不再直接设置activeConnectionId，依赖TerminalView的事件通知
 
   if (!TerminalViewRef.value) {
-    hasConnections.value = true
+    hasConnections.value = true;
     await new Promise<void>((resolve) => {
       setTimeout(async () => {
         if (TerminalViewRef.value) {
           try {
-            await TerminalViewRef.value.addSshConnection(connection)
-            console.log('SSH连接成功')
+            await TerminalViewRef.value.addSshConnection(connection);
+            console.log("SSH连接成功");
             // activeConnectionId.value = connection.id  // 移除这一行
           } catch (error) {
-            console.error('SSH连接失败:', error)
+            console.error("SSH连接失败:", error);
           }
         }
-        resolve()
-      }, 0)
-    })
+        resolve();
+      }, 0);
+    });
   } else {
     try {
-      await TerminalViewRef.value.addSshConnection(connection)
-      console.log('SSH连接成功')
+      await TerminalViewRef.value.addSshConnection(connection);
+      console.log("SSH连接成功");
       // activeConnectionId.value = connection.id  // 移除这一行
     } catch (error) {
-      console.error('SSH连接失败:', error)
+      console.error("SSH连接失败:", error);
     }
   }
-}
+};
 
 // 处理活动连接ID变化
 const handleActiveConnectionChange = (connectionId: string | null) => {
-  console.log('活动连接ID变化:', connectionId)
-  activeConnectionId.value = connectionId
-}
+  console.log("活动连接ID变化:", connectionId);
+  activeConnectionId.value = connectionId;
+};
 
 // 设置对话框状态
-const settingsDialogVisible = ref(false)
+const settingsDialogVisible = ref(false);
 
 // 处理设置保存
 const handleSaveSettings = async (settings: GlobalSettings) => {
   try {
-    const result = await window.api.saveSettings(settings)
+    const result = await window.api.saveSettings(settings);
     if (result) {
       // 应用设置到当前界面 - 实际应用通过ipcRenderer.on('settings-saved')完成
-      console.log('设置保存成功:', settings)
+      console.log("设置保存成功:", settings);
 
       // 显示保存成功提示
       // 这里可以添加一个临时提示元素或使用toast组件
-      const toast = document.createElement('div')
-      toast.className = 'settings-toast'
-      toast.innerText = '设置已保存并应用'
-      document.body.appendChild(toast)
+      const toast = document.createElement("div");
+      toast.className = "settings-toast";
+      toast.innerText = "设置已保存并应用";
+      document.body.appendChild(toast);
 
       // 2秒后移除提示
       setTimeout(() => {
         if (document.body.contains(toast)) {
-          document.body.removeChild(toast)
+          document.body.removeChild(toast);
         }
-      }, 2000)
+      }, 2000);
     }
   } catch (error) {
-    console.error('保存设置失败:', error)
+    console.error("保存设置失败:", error);
 
     // 显示保存失败提示
-    const toast = document.createElement('div')
-    toast.className = 'settings-toast error'
-    toast.innerText = '设置保存失败'
-    document.body.appendChild(toast)
+    const toast = document.createElement("div");
+    toast.className = "settings-toast error";
+    toast.innerText = "设置保存失败";
+    document.body.appendChild(toast);
 
     // 2秒后移除提示
     setTimeout(() => {
       if (document.body.contains(toast)) {
-        document.body.removeChild(toast)
+        document.body.removeChild(toast);
       }
-    }, 2000)
+    }, 2000);
   }
-}
+};
 
 // AI助手状态
-const isAIAssistantVisible = ref(false)
+const isAIAssistantVisible = ref(false);
 const toggleAIAssistant = () => {
-  isAIAssistantVisible.value = !isAIAssistantVisible.value
-}
+  isAIAssistantVisible.value = !isAIAssistantVisible.value;
+};
 
 // 在组件加载后设置键盘快捷键
 onMounted(() => {
   // 设置主题切换快捷键
-  window.addEventListener('keydown', (e) => {
+  window.addEventListener("keydown", (e) => {
     // Ctrl+T 切换主题
-    if (e.ctrlKey && e.key === 't') {
-      toggleTheme()
+    if (e.ctrlKey && e.key === "t") {
+      toggleTheme();
     }
 
     // Ctrl+L 打开新的本地终端
-    if (e.ctrlKey && e.key === 'l') {
-      handleOpenLocalTerminal()
+    if (e.ctrlKey && e.key === "l") {
+      handleOpenLocalTerminal();
     }
 
     // Ctrl+S 打开设置
-    if (e.ctrlKey && e.key === 's') {
-      settingsDialogVisible.value = true
+    if (e.ctrlKey && e.key === "s") {
+      settingsDialogVisible.value = true;
     }
 
     // Ctrl+A 打开/关闭AI助手
-    if (e.ctrlKey && e.key === 'a') {
-      toggleAIAssistant()
+    if (e.ctrlKey && e.key === "a") {
+      toggleAIAssistant();
     }
-  })
-})
+  });
+});
 </script>
 
 <template>
@@ -363,7 +373,7 @@ onMounted(() => {
       :style="isLeftSidebarExpanded ? { width: sidebarWidth + 'px' } : {}"
     >
       <div class="left-sidebar-toggle" @click="toggleLeftSidebar">
-        {{ isLeftSidebarExpanded ? '' : '' }}
+        {{ isLeftSidebarExpanded ? "" : "" }}
       </div>
 
       <!-- 分割线 -->
@@ -388,7 +398,11 @@ onMounted(() => {
         </transition>
       </div>
 
-      <div v-show="isLeftSidebarExpanded" class="resize-handle" @mousedown="handleMouseDown"></div>
+      <div
+        v-show="isLeftSidebarExpanded"
+        class="resize-handle"
+        @mousedown="handleMouseDown"
+      ></div>
 
       <!-- 按钮容器 -->
       <div class="sidebar-buttons">
@@ -442,19 +456,22 @@ onMounted(() => {
       :style="isRightSidebarExpanded ? { width: rightSidebarWidth + 'px' } : {}"
     >
       <div class="right-sidebar-toggle" @click="toggleRightSidebar">
-        {{ isRightSidebarExpanded ? '' : '' }}
+        {{ isRightSidebarExpanded ? "" : "" }}
       </div>
       <div class="right-sidebar-content">
         <div class="right-sidebar-items">
           <!-- 上半部分：系统监控 -->
-          <div class="monitor-section" :style="{ height: rightSidebarSplitPosition + '%' }">
+          <div
+            class="monitor-section"
+            :style="{ height: rightSidebarSplitPosition + '%' }"
+          >
             <SystemMonitor
               :ssh-connection="
                 activeConnectionId
                   ? {
                       id: activeConnectionId,
                       name: '',
-                      connectionId: activeConnectionId
+                      connectionId: activeConnectionId,
                     }
                   : null
               "
@@ -462,7 +479,10 @@ onMounted(() => {
           </div>
 
           <!-- 分隔线 -->
-          <div class="right-sidebar-splitter" @mousedown="handleRightSplitMouseDown"></div>
+          <div
+            class="right-sidebar-splitter"
+            @mousedown="handleRightSplitMouseDown"
+          ></div>
 
           <!-- 下半部分：连接管理 -->
           <div
@@ -633,7 +653,7 @@ onMounted(() => {
 }
 
 .theme-toggle::after {
-  content: '主题切换';
+  content: "主题切换";
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
@@ -689,7 +709,7 @@ onMounted(() => {
 }
 
 .settings-toggle::after {
-  content: '设置';
+  content: "设置";
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
@@ -1028,7 +1048,7 @@ onMounted(() => {
 }
 
 .ai-toggle::after {
-  content: 'AI助手';
+  content: "AI助手";
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
