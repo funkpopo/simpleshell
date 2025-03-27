@@ -1,243 +1,247 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { useI18n } from '../i18n'
+import { ref, onMounted, onUnmounted, computed, watch } from "vue";
+import { useI18n } from "../i18n";
 
 // 使用i18n
-const { t } = useI18n()
+const { t } = useI18n();
 
 // 添加props接收SSH连接信息
 const props = defineProps<{
   sshConnection?: {
-    id: string
-    name: string
-    connectionId: string
-  } | null
-}>()
+    id: string;
+    name: string;
+    connectionId: string;
+  } | null;
+}>();
 
 interface SystemInfo {
   osInfo: {
-    platform: string
-    release: string
-    arch: string
-  }
+    platform: string;
+    release: string;
+    arch: string;
+  };
   cpuInfo: {
-    usage: number
-    model: string
-    cores: number
-  }
+    usage: number;
+    model: string;
+    cores: number;
+  };
   memoryInfo: {
-    total: number
-    free: number
-    used: number
-    usedPercentage: number
-  }
+    total: number;
+    free: number;
+    used: number;
+    usedPercentage: number;
+  };
 }
 
 const systemInfo = ref<SystemInfo>({
   osInfo: {
-    platform: '',
-    release: '',
-    arch: ''
+    platform: "",
+    release: "",
+    arch: "",
   },
   cpuInfo: {
     usage: 0,
-    model: '',
-    cores: 0
+    model: "",
+    cores: 0,
   },
   memoryInfo: {
     total: 0,
     free: 0,
     used: 0,
-    usedPercentage: 0
-  }
-})
+    usedPercentage: 0,
+  },
+});
 
 // 记录上一次CPU统计信息，用于计算使用率
 const lastCpuInfo = ref<{
-  idle: number
-  total: number
-} | null>(null)
+  idle: number;
+  total: number;
+} | null>(null);
 
 // 更新系统信息
 const updateSystemInfo = async () => {
   try {
     if (props.sshConnection) {
       // 远程系统信息获取
-      await updateRemoteSystemInfo()
+      await updateRemoteSystemInfo();
     } else {
       // 本地系统信息获取
-      const info = await window.api.getSystemInfo()
-      systemInfo.value = info
+      const info = await window.api.getSystemInfo();
+      systemInfo.value = info;
     }
-    lastUpdateTime = Date.now()
+    lastUpdateTime = Date.now();
   } catch (error) {
-    console.error('获取系统信息失败:', error)
+    console.error("获取系统信息失败:", error);
   }
-}
+};
 
 // 获取远程系统信息
 const updateRemoteSystemInfo = async () => {
-  if (!props.sshConnection?.connectionId) return
+  if (!props.sshConnection?.connectionId) return;
 
   try {
     // 获取操作系统信息
-    const osInfoCmd = 'uname -s -r -m'
+    const osInfoCmd = "uname -s -r -m";
     const osInfoResult = await window.api.sshExec({
       connectionId: props.sshConnection.connectionId,
-      command: osInfoCmd
-    })
+      command: osInfoCmd,
+    });
 
     if (osInfoResult.success && osInfoResult.output) {
-      const [platform, release, arch] = osInfoResult.output.trim().split(' ')
+      const [platform, release, arch] = osInfoResult.output.trim().split(" ");
       systemInfo.value.osInfo = {
         platform,
         release,
-        arch
-      }
+        arch,
+      };
     }
 
     // 获取CPU信息
     const cpuInfoCmd =
-      "cat /proc/cpuinfo | grep 'model name' | head -n1 && grep -c '^processor' /proc/cpuinfo && cat /proc/stat | grep '^cpu '"
+      "cat /proc/cpuinfo | grep 'model name' | head -n1 && grep -c '^processor' /proc/cpuinfo && cat /proc/stat | grep '^cpu '";
     const cpuInfoResult = await window.api.sshExec({
       connectionId: props.sshConnection.connectionId,
-      command: cpuInfoCmd
-    })
+      command: cpuInfoCmd,
+    });
 
     if (cpuInfoResult.success && cpuInfoResult.output) {
-      const [modelLine, cores, statLine] = cpuInfoResult.output.trim().split('\n')
-      const model = modelLine.split(':')[1]?.trim() || 'Unknown CPU'
+      const [modelLine, cores, statLine] = cpuInfoResult.output
+        .trim()
+        .split("\n");
+      const model = modelLine.split(":")[1]?.trim() || "Unknown CPU";
 
       // 解析CPU统计信息
-      const cpuStats = statLine.split(/\s+/).slice(1).map(Number)
-      const idle = cpuStats[3]
-      const total = cpuStats.reduce((a, b) => a + b, 0)
+      const cpuStats = statLine.split(/\s+/).slice(1).map(Number);
+      const idle = cpuStats[3];
+      const total = cpuStats.reduce((a, b) => a + b, 0);
 
       // 计算CPU使用率
-      let usage = 0
+      let usage = 0;
       if (lastCpuInfo.value) {
-        const idleDiff = idle - lastCpuInfo.value.idle
-        const totalDiff = total - lastCpuInfo.value.total
-        usage = 100 - (idleDiff / totalDiff) * 100
+        const idleDiff = idle - lastCpuInfo.value.idle;
+        const totalDiff = total - lastCpuInfo.value.total;
+        usage = 100 - (idleDiff / totalDiff) * 100;
       }
 
       // 更新CPU信息
       systemInfo.value.cpuInfo = {
         model,
         cores: parseInt(cores) || 1,
-        usage: Math.round(usage * 100) / 100
-      }
+        usage: Math.round(usage * 100) / 100,
+      };
 
       // 保存当前统计信息用于下次计算
-      lastCpuInfo.value = { idle, total }
+      lastCpuInfo.value = { idle, total };
     }
 
     // 获取内存信息
-    const memInfoCmd = 'cat /proc/meminfo | grep -E "^(MemTotal|MemFree|Buffers|Cached):"'
+    const memInfoCmd =
+      'cat /proc/meminfo | grep -E "^(MemTotal|MemFree|Buffers|Cached):"';
     const memInfoResult = await window.api.sshExec({
       connectionId: props.sshConnection.connectionId,
-      command: memInfoCmd
-    })
+      command: memInfoCmd,
+    });
 
     if (memInfoResult.success && memInfoResult.output) {
-      const memLines = memInfoResult.output.trim().split('\n')
-      const memInfo: Record<string, number> = {}
+      const memLines = memInfoResult.output.trim().split("\n");
+      const memInfo: Record<string, number> = {};
 
       memLines.forEach((line) => {
-        const [key, value] = line.split(':')
-        memInfo[key.trim()] = parseInt(value.trim().split(' ')[0]) * 1024 // 转换为字节
-      })
+        const [key, value] = line.split(":");
+        memInfo[key.trim()] = parseInt(value.trim().split(" ")[0]) * 1024; // 转换为字节
+      });
 
-      const total = memInfo.MemTotal
-      const free = memInfo.MemFree + (memInfo.Buffers || 0) + (memInfo.Cached || 0)
-      const used = total - free
+      const total = memInfo.MemTotal;
+      const free =
+        memInfo.MemFree + (memInfo.Buffers || 0) + (memInfo.Cached || 0);
+      const used = total - free;
 
       systemInfo.value.memoryInfo = {
         total,
         free,
         used,
-        usedPercentage: Math.round((used / total) * 100 * 100) / 100
-      }
+        usedPercentage: Math.round((used / total) * 100 * 100) / 100,
+      };
     }
   } catch (error) {
-    console.error('获取远程系统信息失败:', error)
+    console.error("获取远程系统信息失败:", error);
   }
-}
+};
 
-let updateInterval: ReturnType<typeof setInterval>
-let lastUpdateTime = 0
+let updateInterval: ReturnType<typeof setInterval>;
+let lastUpdateTime = 0;
 
 // 启动定时器
 const startTimer = () => {
-  clearInterval(updateInterval)
-  updateSystemInfo() // 立即执行一次更新
-  lastUpdateTime = Date.now()
-  updateInterval = setInterval(updateSystemInfo, 2000)
-}
+  clearInterval(updateInterval);
+  updateSystemInfo(); // 立即执行一次更新
+  lastUpdateTime = Date.now();
+  updateInterval = setInterval(updateSystemInfo, 2000);
+};
 
 // 处理页面可见性变化
 const handleVisibilityChange = () => {
   if (document.hidden) {
     // 页面隐藏时记录状态，但保持定时器运行
     // (backgroundThrottling: false 配置应该会确保定时器继续运行)
-    console.log('页面隐藏，继续在后台运行')
+    console.log("页面隐藏，继续在后台运行");
   } else {
     // 页面重新可见时，如果自上次更新已过去较长时间，立即执行更新
-    const timeSinceLastUpdate = Date.now() - lastUpdateTime
+    const timeSinceLastUpdate = Date.now() - lastUpdateTime;
     if (timeSinceLastUpdate > 3000) {
       // 如果超过3秒未更新
-      console.log('页面重新可见，立即更新数据')
-      updateSystemInfo()
-      lastUpdateTime = Date.now()
+      console.log("页面重新可见，立即更新数据");
+      updateSystemInfo();
+      lastUpdateTime = Date.now();
     }
   }
-}
+};
 
 onMounted(() => {
-  startTimer()
+  startTimer();
   // 添加页面可见性事件监听
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-})
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+});
 
 onUnmounted(() => {
   if (updateInterval) {
-    clearInterval(updateInterval)
+    clearInterval(updateInterval);
   }
   // 移除页面可见性事件监听
-  document.removeEventListener('visibilitychange', handleVisibilityChange)
-})
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+});
 
 const formatBytes = (bytes: number): string => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
 
 // 格式化百分比，保留2位小数
 const formatPercentage = (value: number): string => {
-  return value.toFixed(2)
-}
+  return value.toFixed(2);
+};
 
 // 计算进度条颜色
 const getProgressColor = (value: number) => {
-  if (value >= 90) return '#ff4757'
-  if (value >= 80) return '#ff6b81'
-  if (value >= 70) return '#FF7043'
-  if (value >= 60) return '#FFA726'
-  return '#4CAF50'
-}
+  if (value >= 90) return "#ff4757";
+  if (value >= 80) return "#ff6b81";
+  if (value >= 70) return "#FF7043";
+  if (value >= 60) return "#FFA726";
+  return "#4CAF50";
+};
 
 const cpuProgressStyle = computed(() => ({
   width: `${systemInfo.value.cpuInfo.usage}%`,
-  background: `linear-gradient(to right, ${getProgressColor(systemInfo.value.cpuInfo.usage)}, ${getProgressColor(systemInfo.value.cpuInfo.usage)}bb)`
-}))
+  background: `linear-gradient(to right, ${getProgressColor(systemInfo.value.cpuInfo.usage)}, ${getProgressColor(systemInfo.value.cpuInfo.usage)}bb)`,
+}));
 
 const memoryProgressStyle = computed(() => ({
   width: `${systemInfo.value.memoryInfo.usedPercentage}%`,
-  background: `linear-gradient(to right, ${getProgressColor(systemInfo.value.memoryInfo.usedPercentage)}, ${getProgressColor(systemInfo.value.memoryInfo.usedPercentage)}bb)`
-}))
+  background: `linear-gradient(to right, ${getProgressColor(systemInfo.value.memoryInfo.usedPercentage)}, ${getProgressColor(systemInfo.value.memoryInfo.usedPercentage)}bb)`,
+}));
 
 // 监听SSH连接状态变化
 watch(
@@ -245,13 +249,13 @@ watch(
   (newConn, oldConn) => {
     if (newConn?.connectionId !== oldConn?.connectionId) {
       // 重置lastCpuInfo
-      lastCpuInfo.value = null
+      lastCpuInfo.value = null;
       // 立即更新系统信息
-      updateSystemInfo()
+      updateSystemInfo();
     }
   },
-  { immediate: true }
-)
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -268,10 +272,12 @@ watch(
           class="mini-progress-bar"
           :style="{
             height: `${systemInfo.cpuInfo.usage}%`,
-            background: 'var(--progress-gradient)'
+            background: 'var(--progress-gradient)',
           }"
         ></div>
-        <span class="mini-progress-text">{{ formatPercentage(systemInfo.cpuInfo.usage) }}%</span>
+        <span class="mini-progress-text"
+          >{{ formatPercentage(systemInfo.cpuInfo.usage) }}%</span
+        >
       </div>
 
       <!-- 内存迷你进度条 -->
@@ -284,7 +290,7 @@ watch(
           class="mini-progress-bar"
           :style="{
             height: `${systemInfo.memoryInfo.usedPercentage}%`,
-            background: 'var(--progress-gradient)'
+            background: 'var(--progress-gradient)',
           }"
         ></div>
         <span class="mini-progress-text"
@@ -296,56 +302,68 @@ watch(
     <!-- 常规监控内容 -->
     <div class="monitor-content">
       <div class="monitor-section">
-        <h3>{{ t('system.os') }}</h3>
+        <h3>{{ t("system.os") }}</h3>
         <div class="info-item">
-          <span>{{ t('system.platform') }}：</span>
-          <span :title="systemInfo.osInfo.platform">{{ systemInfo.osInfo.platform }}</span>
+          <span>{{ t("system.platform") }}：</span>
+          <span :title="systemInfo.osInfo.platform">{{
+            systemInfo.osInfo.platform
+          }}</span>
         </div>
         <div class="info-item">
-          <span>{{ t('system.version') }}：</span>
-          <span :title="systemInfo.osInfo.release">{{ systemInfo.osInfo.release }}</span>
+          <span>{{ t("system.version") }}：</span>
+          <span :title="systemInfo.osInfo.release">{{
+            systemInfo.osInfo.release
+          }}</span>
         </div>
         <div class="info-item">
-          <span>{{ t('system.arch') }}：</span>
-          <span :title="systemInfo.osInfo.arch">{{ systemInfo.osInfo.arch }}</span>
+          <span>{{ t("system.arch") }}：</span>
+          <span :title="systemInfo.osInfo.arch">{{
+            systemInfo.osInfo.arch
+          }}</span>
         </div>
       </div>
 
       <div class="monitor-section">
-        <h3>{{ t('system.cpu') }}</h3>
+        <h3>{{ t("system.cpu") }}</h3>
         <div class="info-item">
-          <span>{{ t('system.model') }}：</span>
-          <span :title="systemInfo.cpuInfo.model">{{ systemInfo.cpuInfo.model }}</span>
+          <span>{{ t("system.model") }}：</span>
+          <span :title="systemInfo.cpuInfo.model">{{
+            systemInfo.cpuInfo.model
+          }}</span>
         </div>
         <div class="info-item">
-          <span>{{ t('system.cores') }}：</span>
+          <span>{{ t("system.cores") }}：</span>
           <span>{{ systemInfo.cpuInfo.cores }}</span>
         </div>
         <div class="info-item">
-          <span>{{ t('system.usage') }}：</span>
+          <span>{{ t("system.usage") }}：</span>
           <div class="progress-bar">
             <div class="progress" :style="cpuProgressStyle"></div>
-            <span class="progress-text">{{ formatPercentage(systemInfo.cpuInfo.usage) }}%</span>
+            <span class="progress-text"
+              >{{ formatPercentage(systemInfo.cpuInfo.usage) }}%</span
+            >
           </div>
         </div>
       </div>
 
       <div class="monitor-section">
-        <h3>{{ t('system.memory') }}</h3>
+        <h3>{{ t("system.memory") }}</h3>
         <div class="info-item">
-          <span>{{ t('system.total') }}：</span>
+          <span>{{ t("system.total") }}：</span>
           <span>{{ formatBytes(systemInfo.memoryInfo.total) }}</span>
         </div>
         <div class="info-item">
-          <span>{{ t('system.used') }}：</span>
+          <span>{{ t("system.used") }}：</span>
           <span>{{ formatBytes(systemInfo.memoryInfo.used) }}</span>
         </div>
         <div class="info-item">
-          <span>{{ t('system.usage') }}：</span>
+          <span>{{ t("system.usage") }}：</span>
           <div class="progress-bar">
             <div class="progress" :style="memoryProgressStyle"></div>
             <span class="progress-text"
-              >{{ formatPercentage(systemInfo.memoryInfo.usedPercentage) }}%</span
+              >{{
+                formatPercentage(systemInfo.memoryInfo.usedPercentage)
+              }}%</span
             >
           </div>
         </div>
@@ -651,7 +669,7 @@ watch(
 }
 
 @property --progress-color {
-  syntax: '<color>';
+  syntax: "<color>";
   initial-value: #4caf50;
   inherits: false;
 }
@@ -665,16 +683,16 @@ watch(
   );
 }
 
-.progress[style*='width: 6'] {
+.progress[style*="width: 6"] {
   --progress-color: #ffa726;
 }
-.progress[style*='width: 7'] {
+.progress[style*="width: 7"] {
   --progress-color: #ff7043;
 }
-.progress[style*='width: 8'] {
+.progress[style*="width: 8"] {
   --progress-color: #ff4757;
 }
-.progress[style*='width: 9'] {
+.progress[style*="width: 9"] {
   --progress-color: #ff4757;
 }
 

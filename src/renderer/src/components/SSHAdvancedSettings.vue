@@ -1,213 +1,259 @@
 <template>
   <div class="ssh-advanced-settings">
-    <h3>{{ t('connection.advancedSettings') }}</h3>
-    
+    <h3>{{ t("connection.advancedSettings") }}</h3>
+
     <div class="settings-section">
-      <h4>{{ t('connection.proxySettings') }}</h4>
-      
+      <h4>{{ t("connection.proxySettings") }}</h4>
+
       <div class="checkbox-container">
-        <input type="checkbox" id="enable-proxy" v-model="enableProxy" @change="updateProxyStatus">
-        <label for="enable-proxy">{{ t('connection.enableProxy') }}</label>
+        <input
+          type="checkbox"
+          id="enable-proxy"
+          v-model="enableProxy"
+          @change="updateProxyStatus"
+        />
+        <label for="enable-proxy">{{ t("connection.enableProxy") }}</label>
       </div>
-      
+
       <div class="settings-form" v-if="enableProxy">
         <div class="form-group">
-          <label for="proxy-type">{{ t('connection.proxyType') }}</label>
+          <label for="proxy-type">{{ t("connection.proxyType") }}</label>
           <select id="proxy-type" v-model="proxyType" @change="updateProxy">
             <option value="http">HTTP</option>
             <option value="socks">SOCKS</option>
           </select>
         </div>
-        
+
         <div class="form-group">
-          <label for="proxy-host">{{ t('connection.proxyHost') }}</label>
-          <input type="text" id="proxy-host" v-model="proxyHost" placeholder="127.0.0.1" @input="updateProxy">
+          <label for="proxy-host">{{ t("connection.proxyHost") }}</label>
+          <input
+            type="text"
+            id="proxy-host"
+            v-model="proxyHost"
+            placeholder="127.0.0.1"
+            @input="updateProxy"
+          />
         </div>
-        
+
         <div class="form-group">
-          <label for="proxy-port">{{ t('connection.proxyPort') }}</label>
-          <input type="number" id="proxy-port" v-model.number="proxyPort" placeholder="8080" @input="updateProxy">
+          <label for="proxy-port">{{ t("connection.proxyPort") }}</label>
+          <input
+            type="number"
+            id="proxy-port"
+            v-model.number="proxyPort"
+            placeholder="8080"
+            @input="updateProxy"
+          />
         </div>
       </div>
     </div>
-    
+
     <div class="settings-section">
-      <h4>{{ t('connection.keepAliveSettings') }}</h4>
-      
+      <h4>{{ t("connection.keepAliveSettings") }}</h4>
+
       <div class="checkbox-container">
-        <input type="checkbox" id="enable-keep-alive" v-model="enableKeepAlive" @change="updateKeepAliveStatus">
-        <label for="enable-keep-alive">{{ t('connection.enableKeepAlive') }}</label>
+        <input
+          type="checkbox"
+          id="enable-keep-alive"
+          v-model="enableKeepAlive"
+          @change="updateKeepAliveStatus"
+        />
+        <label for="enable-keep-alive">{{
+          t("connection.enableKeepAlive")
+        }}</label>
       </div>
-      
+
       <div class="settings-form" v-if="enableKeepAlive">
         <div class="form-group">
-          <label for="keep-alive-interval">{{ t('connection.keepAliveInterval') }}</label>
+          <label for="keep-alive-interval">{{
+            t("connection.keepAliveInterval")
+          }}</label>
           <div class="interval-input-container">
-            <input 
-              type="number" 
-              id="keep-alive-interval" 
-              v-model.number="keepAliveInterval" 
-              min="30" 
-              max="3600" 
+            <input
+              type="number"
+              id="keep-alive-interval"
+              v-model.number="keepAliveInterval"
+              min="30"
+              max="3600"
               @input="updateKeepAliveInterval"
-            >
-            <span class="interval-unit">{{ t('connection.seconds') }}</span>
+            />
+            <span class="interval-unit">{{ t("connection.seconds") }}</span>
           </div>
-          <small class="form-hint">{{ t('connection.keepAliveIntervalHint') }}</small>
+          <small class="form-hint">{{
+            t("connection.keepAliveIntervalHint")
+          }}</small>
         </div>
       </div>
     </div>
-    
+
     <div class="settings-actions">
-      <button class="btn btn-primary" @click="applySettings">{{ t('common.apply') }}</button>
-      <button class="btn btn-secondary" @click="resetSettings">{{ t('common.reset') }}</button>
+      <button class="btn btn-primary" @click="applySettings">
+        {{ t("common.apply") }}
+      </button>
+      <button class="btn btn-secondary" @click="resetSettings">
+        {{ t("common.reset") }}
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useI18n } from '../i18n'
+import { ref, onMounted } from "vue";
+import { useI18n } from "../i18n";
 
-const { t } = useI18n()
+const { t } = useI18n();
 
 // 代理设置
-const enableProxy = ref(false)
-const proxyType = ref<'http' | 'socks'>('http')
-const proxyHost = ref('127.0.0.1')
-const proxyPort = ref(8080)
+const enableProxy = ref(false);
+const proxyType = ref<"http" | "socks">("http");
+const proxyHost = ref("127.0.0.1");
+const proxyPort = ref(8080);
 
 // 保持连接活跃设置
-const enableKeepAlive = ref(true)
-const keepAliveInterval = ref(120)
+const enableKeepAlive = ref(true);
+const keepAliveInterval = ref(120);
 
 // 组件挂载时检查是否有已设置的代理和活跃连接设置
 onMounted(async () => {
   try {
     // 加载代理设置
-    const { proxy } = await window.api.getManualProxy()
+    const { proxy } = await window.api.getManualProxy();
     if (proxy) {
-      enableProxy.value = true
-      proxyType.value = proxy.type as 'http' | 'socks'
-      proxyHost.value = proxy.host
-      proxyPort.value = proxy.port
+      enableProxy.value = true;
+      proxyType.value = proxy.type as "http" | "socks";
+      proxyHost.value = proxy.host;
+      proxyPort.value = proxy.port;
     }
-    
+
     // 加载保持连接设置
-    const settings = await window.api.loadSettings()
+    const settings = await window.api.loadSettings();
     if (settings && settings.sshKeepAlive !== undefined) {
-      enableKeepAlive.value = settings.sshKeepAlive.enabled !== false
-      if (settings.sshKeepAlive.interval && settings.sshKeepAlive.interval >= 30) {
-        keepAliveInterval.value = Math.floor(settings.sshKeepAlive.interval / 1000) // 转换毫秒为秒
+      enableKeepAlive.value = settings.sshKeepAlive.enabled !== false;
+      if (
+        settings.sshKeepAlive.interval &&
+        settings.sshKeepAlive.interval >= 30
+      ) {
+        keepAliveInterval.value = Math.floor(
+          settings.sshKeepAlive.interval / 1000,
+        ); // 转换毫秒为秒
       }
     }
   } catch (error) {
-    console.error('获取设置失败:', error)
+    console.error("获取设置失败:", error);
   }
-})
+});
 
 // 更新代理启用状态
 const updateProxyStatus = async () => {
   if (enableProxy.value) {
-    await updateProxy()
+    await updateProxy();
   } else {
     try {
-      await window.api.clearManualProxy()
-      console.log('已清除代理设置')
+      await window.api.clearManualProxy();
+      console.log("已清除代理设置");
     } catch (error) {
-      console.error('清除代理设置失败:', error)
+      console.error("清除代理设置失败:", error);
     }
   }
-}
+};
 
 // 更新代理设置
 const updateProxy = async () => {
-  if (!enableProxy.value) return
-  
+  if (!enableProxy.value) return;
+
   if (!proxyHost.value || !proxyPort.value) {
-    console.error('代理主机和端口不能为空')
-    return
+    console.error("代理主机和端口不能为空");
+    return;
   }
-  
+
   try {
     await window.api.setManualProxy({
       host: proxyHost.value,
       port: proxyPort.value,
-      type: proxyType.value
-    })
-    console.log('已更新代理设置:', proxyType.value, proxyHost.value, proxyPort.value)
+      type: proxyType.value,
+    });
+    console.log(
+      "已更新代理设置:",
+      proxyType.value,
+      proxyHost.value,
+      proxyPort.value,
+    );
   } catch (error) {
-    console.error('设置代理失败:', error)
+    console.error("设置代理失败:", error);
   }
-}
+};
 
 // 更新保持连接状态
 const updateKeepAliveStatus = async () => {
   try {
-    const settings = await window.api.loadSettings()
+    const settings = await window.api.loadSettings();
     const updatedSettings = {
       ...settings,
       sshKeepAlive: {
         enabled: enableKeepAlive.value,
-        interval: keepAliveInterval.value * 1000 // 转换秒为毫秒
-      }
-    }
-    await window.api.saveSettings(updatedSettings)
-    console.log('已更新保持连接设置:', enableKeepAlive.value, keepAliveInterval.value)
+        interval: keepAliveInterval.value * 1000, // 转换秒为毫秒
+      },
+    };
+    await window.api.saveSettings(updatedSettings);
+    console.log(
+      "已更新保持连接设置:",
+      enableKeepAlive.value,
+      keepAliveInterval.value,
+    );
   } catch (error) {
-    console.error('更新保持连接设置失败:', error)
+    console.error("更新保持连接设置失败:", error);
   }
-}
+};
 
 // 更新保持连接间隔
 const updateKeepAliveInterval = async () => {
-  if (!enableKeepAlive.value) return
-  
+  if (!enableKeepAlive.value) return;
+
   // 确保值在合理范围内
-  if (keepAliveInterval.value < 30) keepAliveInterval.value = 30
-  if (keepAliveInterval.value > 3600) keepAliveInterval.value = 3600
-  
+  if (keepAliveInterval.value < 30) keepAliveInterval.value = 30;
+  if (keepAliveInterval.value > 3600) keepAliveInterval.value = 3600;
+
   try {
-    const settings = await window.api.loadSettings()
+    const settings = await window.api.loadSettings();
     const updatedSettings = {
       ...settings,
       sshKeepAlive: {
         enabled: true,
-        interval: keepAliveInterval.value * 1000 // 转换秒为毫秒
-      }
-    }
-    await window.api.saveSettings(updatedSettings)
-    console.log('已更新保持连接间隔:', keepAliveInterval.value)
+        interval: keepAliveInterval.value * 1000, // 转换秒为毫秒
+      },
+    };
+    await window.api.saveSettings(updatedSettings);
+    console.log("已更新保持连接间隔:", keepAliveInterval.value);
   } catch (error) {
-    console.error('更新保持连接间隔失败:', error)
+    console.error("更新保持连接间隔失败:", error);
   }
-}
+};
 
 // 应用设置
 const applySettings = async () => {
   if (enableProxy.value) {
-    await updateProxy()
+    await updateProxy();
   } else {
-    await window.api.clearManualProxy()
+    await window.api.clearManualProxy();
   }
-  
+
   // 更新保持连接设置
-  await updateKeepAliveStatus()
-}
+  await updateKeepAliveStatus();
+};
 
 // 重置设置
 const resetSettings = async () => {
-  enableProxy.value = false
-  proxyType.value = 'http'
-  proxyHost.value = '127.0.0.1'
-  proxyPort.value = 8080
-  await window.api.clearManualProxy()
-  
+  enableProxy.value = false;
+  proxyType.value = "http";
+  proxyHost.value = "127.0.0.1";
+  proxyPort.value = 8080;
+  await window.api.clearManualProxy();
+
   // 重置保持连接设置为默认值
-  enableKeepAlive.value = true
-  keepAliveInterval.value = 120
-  await updateKeepAliveStatus()
-}
+  enableKeepAlive.value = true;
+  keepAliveInterval.value = 120;
+  await updateKeepAliveStatus();
+};
 </script>
 
 <style scoped>
@@ -337,4 +383,4 @@ h4 {
   --secondary-color: #444;
   --hint-color: #999;
 }
-</style> 
+</style>

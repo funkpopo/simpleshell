@@ -1,59 +1,63 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useI18n } from '../i18n'
+import { ref } from "vue";
+import { useI18n } from "../i18n";
 
 // 使用i18n
-const { t } = useI18n()
+const { t } = useI18n();
 
 // 定义欢迎页面的属性
 const props = defineProps<{
-  isDarkTheme: boolean
-}>()
+  isDarkTheme: boolean;
+}>();
 
 // 定义事件
 const emit = defineEmits<{
-  (e: 'open-local-terminal'): void
-}>()
+  (e: "open-local-terminal"): void;
+}>();
 
 // 防抖控制
-const isClickDisabled = ref(false)
-const CLICK_DEBOUNCE_MS = 1000 // 1秒防抖
+const isClickDisabled = ref(false);
+const CLICK_DEBOUNCE_MS = 1000; // 1秒防抖
 
 // 打开本地终端 - 添加防抖逻辑
 const openLocalTerminal = () => {
   if (isClickDisabled.value) {
-    console.log('点击太频繁，已忽略')
-    return
+    console.log("点击太频繁，已忽略");
+    return;
   }
 
   // 设置点击禁用标志
-  isClickDisabled.value = true
+  isClickDisabled.value = true;
 
   // 触发事件
-  emit('open-local-terminal')
+  emit("open-local-terminal");
 
   // 一段时间后恢复点击
   setTimeout(() => {
-    isClickDisabled.value = false
-  }, CLICK_DEBOUNCE_MS)
-}
+    isClickDisabled.value = false;
+  }, CLICK_DEBOUNCE_MS);
+};
 </script>
 
 <template>
   <div class="welcome-section" :class="{ 'dark-theme': props.isDarkTheme }">
-    <h1>{{ t('app.welcome') }}</h1>
+    <h1>{{ t("app.welcome") }}</h1>
 
     <div class="quick-actions">
-      <div class="action-card" :class="{ disabled: isClickDisabled }" @click="openLocalTerminal">
+      <div
+        class="action-card"
+        :class="{ disabled: isClickDisabled }"
+        @click="openLocalTerminal"
+      >
         <div class="action-icon local-terminal-icon"></div>
-        <h3>{{ t('terminal.openLocalTerminal') }}</h3>
-        <p>{{ t('terminal.localDescription') }}</p>
+        <h3>{{ t("terminal.openLocalTerminal") }}</h3>
+        <p>{{ t("terminal.localDescription") }}</p>
       </div>
 
       <div class="action-card info-card">
         <div class="action-icon info-icon"></div>
-        <h3>{{ t('terminal.ssh') }}</h3>
-        <p>{{ t('terminal.sshDescription') }}</p>
+        <h3>{{ t("terminal.ssh") }}</h3>
+        <p>{{ t("terminal.sshDescription") }}</p>
       </div>
     </div>
   </div>

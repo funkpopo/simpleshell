@@ -1,526 +1,549 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
-import draggable from 'vuedraggable'
-import { useVirtualList } from '@vueuse/core'
-import CollectionNightIcon from '../assets/collection-night.svg'
-import CollectionDayIcon from '../assets/collection-day.svg'
-import AddCollectionNightIcon from '../assets/plus-night.svg'
-import AddCollectionDayIcon from '../assets/plus-day.svg'
-import ConnectNightIcon from '../assets/connect-night.svg'
-import ConnectDayIcon from '../assets/connect-day.svg'
-import DeleteNightIcon from '../assets/delete-night.svg'
-import DeleteDayIcon from '../assets/delete-day.svg'
-import EditNightIcon from '../assets/edit-night.svg'
-import EditDayIcon from '../assets/edit-day.svg'
-import ConnectDialog from './ConnectDialog.vue'
+import { ref, onMounted, onUnmounted, nextTick, watch, computed } from "vue";
+import draggable from "vuedraggable";
+import { useVirtualList } from "@vueuse/core";
+import CollectionNightIcon from "../assets/collection-night.svg";
+import CollectionDayIcon from "../assets/collection-day.svg";
+import AddCollectionNightIcon from "../assets/plus-night.svg";
+import AddCollectionDayIcon from "../assets/plus-day.svg";
+import ConnectNightIcon from "../assets/connect-night.svg";
+import ConnectDayIcon from "../assets/connect-day.svg";
+import DeleteNightIcon from "../assets/delete-night.svg";
+import DeleteDayIcon from "../assets/delete-day.svg";
+import EditNightIcon from "../assets/edit-night.svg";
+import EditDayIcon from "../assets/edit-day.svg";
+import ConnectDialog from "./ConnectDialog.vue";
 
 // 主题状态 - 通过props接收父组件的isDarkTheme
 const props = defineProps<{
-  isDarkTheme: boolean
-}>()
+  isDarkTheme: boolean;
+}>();
 
 // 定义事件
 const emit = defineEmits<{
-  (e: 'connect-to-server', connection: Connection): void
-}>()
+  (e: "connect-to-server", connection: Connection): void;
+}>();
 
 // 菜单类型
-type MenuType = 'organization' | 'connection' | 'area'
+type MenuType = "organization" | "connection" | "area";
 
 // 组织和连接项的数据结构
 interface Connection {
-  id: string
-  name: string
-  host: string
-  port: number
-  username: string
-  password?: string
-  privateKey?: string
-  privateKeyPath?: string
-  description?: string
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  privateKey?: string;
+  privateKeyPath?: string;
+  description?: string;
 }
 
 interface Organization {
-  id: string
-  name: string
-  connections: Connection[]
+  id: string;
+  name: string;
+  connections: Connection[];
 }
 
 interface ConnectionFormData {
-  name: string
-  host?: string
-  port?: number
-  username?: string
-  password?: string
-  privateKey?: string
-  privateKeyPath?: string
-  description?: string
+  name: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  privateKey?: string;
+  privateKeyPath?: string;
+  description?: string;
 }
 
 // 组织数据
-const organizations = ref<Organization[]>([])
+const organizations = ref<Organization[]>([]);
 
 // 对话框状态
-const dialogVisible = ref(false)
-const dialogType = ref<'organization' | 'connection'>('organization')
-const editingOrgId = ref<string | null>(null)
-const editingConnId = ref<string | null>(null)
+const dialogVisible = ref(false);
+const dialogType = ref<"organization" | "connection">("organization");
+const editingOrgId = ref<string | null>(null);
+const editingConnId = ref<string | null>(null);
 
 // 组织展开/折叠状态
-const expandedOrganizations = ref<Record<string, boolean>>({})
+const expandedOrganizations = ref<Record<string, boolean>>({});
 
 // 拖拽状态
-const isDragging = ref(false)
-const dragSourceOrg = ref<string | null>(null)
+const isDragging = ref(false);
+const dragSourceOrg = ref<string | null>(null);
 
 // 拖拽相关样式
 const dragOptionsOrg = {
   animation: 150,
-  group: 'organizations',
-  ghostClass: 'ghost-org',
-  dragClass: 'dragging-org',
-  handle: '.organization-header',
+  group: "organizations",
+  ghostClass: "ghost-org",
+  dragClass: "dragging-org",
+  handle: ".organization-header",
   delay: 50,
   delayOnTouchOnly: true,
-  chosenClass: 'chosen-org',
+  chosenClass: "chosen-org",
   forceFallback: false,
   fallbackOnBody: false,
   onMove: () => {
-    return !isDragging.value || organizations.value.length < 10
-  }
-}
+    return !isDragging.value || organizations.value.length < 10;
+  },
+};
 
 const dragOptionsConn = {
   animation: 150,
-  group: 'connections',
-  ghostClass: 'ghost-conn',
-  dragClass: 'dragging-conn',
+  group: "connections",
+  ghostClass: "ghost-conn",
+  dragClass: "dragging-conn",
   delay: 50,
   delayOnTouchOnly: true,
-  chosenClass: 'chosen-conn',
+  chosenClass: "chosen-conn",
   forceFallback: false,
   fallbackOnBody: false,
   onMove: () => {
-    const org = organizations.value.find(o => o.id === currentExpandedOrgId.value)
-    return !isDraggingConn.value || (org && org.connections.length < 30)
-  }
-}
+    const org = organizations.value.find(
+      (o) => o.id === currentExpandedOrgId.value,
+    );
+    return !isDraggingConn.value || (org && org.connections.length < 30);
+  },
+};
 
 // 保存防抖计时器
-let saveDebounceTimer: number | null = null
+let saveDebounceTimer: number | null = null;
 
 // 虚拟滚动相关
-const itemHeight = 32 // 每个连接项的高度，根据CSS调整
+const itemHeight = 32; // 每个连接项的高度，根据CSS调整
 
 // 当前展开的组织ID
-const currentExpandedOrgId = ref<string | null>(null)
+const currentExpandedOrgId = ref<string | null>(null);
 
 // 监听展开状态变化，更新当前展开的组织
 watch(expandedOrganizations, (newVal) => {
   // 找到第一个展开的组织
-  const expandedOrgId = Object.entries(newVal).find(([_, isExpanded]) => isExpanded)?.[0] || null
-  currentExpandedOrgId.value = expandedOrgId
-})
+  const expandedOrgId =
+    Object.entries(newVal).find(([_, isExpanded]) => isExpanded)?.[0] || null;
+  currentExpandedOrgId.value = expandedOrgId;
+});
 
 // 获取当前展开组织的连接列表
 const currentConnections = computed(() => {
-  if (!currentExpandedOrgId.value) return []
-  const org = organizations.value.find(o => o.id === currentExpandedOrgId.value)
-  return org?.connections || []
-})
+  if (!currentExpandedOrgId.value) return [];
+  const org = organizations.value.find(
+    (o) => o.id === currentExpandedOrgId.value,
+  );
+  return org?.connections || [];
+});
 
 // 设置虚拟列表
-const { list: virtualConnections, containerProps, wrapperProps } = useVirtualList(
-  currentConnections,
-  {
-    itemHeight,
-    overscan: 10 // 预渲染的项数
-  }
-)
+const {
+  list: virtualConnections,
+  containerProps,
+  wrapperProps,
+} = useVirtualList(currentConnections, {
+  itemHeight,
+  overscan: 10, // 预渲染的项数
+});
 
 // 拖拽优化 - 记录拖拽状态
-const isDraggingConn = ref(false)
+const isDraggingConn = ref(false);
 const handleDragStartConn = () => {
-  isDraggingConn.value = true
-}
+  isDraggingConn.value = true;
+};
 const handleDragEndConn = () => {
-  isDraggingConn.value = false
-}
+  isDraggingConn.value = false;
+};
 
 // 性能优化 - 检测连接数量是否过多
 const isConnectionCountHigh = computed(() => {
-  let totalConnections = 0
-  organizations.value.forEach(org => {
-    totalConnections += org.connections.length
-  })
-  return totalConnections > 100
-})
+  let totalConnections = 0;
+  organizations.value.forEach((org) => {
+    totalConnections += org.connections.length;
+  });
+  return totalConnections > 100;
+});
 
 // 性能优化 - 检测当前组织的连接数量
 const getConnectionCount = (orgId: string) => {
-  const org = organizations.value.find(o => o.id === orgId)
-  return org?.connections.length || 0
-}
+  const org = organizations.value.find((o) => o.id === orgId);
+  return org?.connections.length || 0;
+};
 
 // 性能优化 - 判断是否应该使用虚拟滚动
 const shouldUseVirtualScroll = (orgId: string) => {
-  return currentExpandedOrgId.value === orgId && getConnectionCount(orgId) > 30
-}
+  return currentExpandedOrgId.value === orgId && getConnectionCount(orgId) > 30;
+};
 
 // 处理组织排序变化
 const handleOrgChange = async (evt) => {
-  console.log('组织排序变更:', evt)
+  console.log("组织排序变更:", evt);
   if (evt.moved) {
-    if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
     saveDebounceTimer = setTimeout(async () => {
-      await saveConnections()
-    }, 1000) as unknown as number
+      await saveConnections();
+    }, 1000) as unknown as number;
   }
-}
+};
 
 // 处理连接排序变化
 const handleConnChange = async (evt) => {
-  console.log('连接排序变更:', evt)
+  console.log("连接排序变更:", evt);
   if (evt.moved || evt.added || evt.removed) {
     // 使用防抖延迟保存，避免频繁保存
-    if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
     saveDebounceTimer = setTimeout(async () => {
-      await saveConnections()
-    }, 1000) as unknown as number
+      await saveConnections();
+    }, 1000) as unknown as number;
   }
-}
+};
 
 // 拖拽开始
 const onDragStart = (orgId) => {
-  isDragging.value = true
-  dragSourceOrg.value = orgId
-  
-  document.body.classList.add('dragging-active')
-}
+  isDragging.value = true;
+  dragSourceOrg.value = orgId;
+
+  document.body.classList.add("dragging-active");
+};
 
 // 拖拽结束
 const onDragEnd = () => {
-  isDragging.value = false
-  dragSourceOrg.value = null
-  
-  document.body.classList.remove('dragging-active')
-  
-  if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+  isDragging.value = false;
+  dragSourceOrg.value = null;
+
+  document.body.classList.remove("dragging-active");
+
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
   saveDebounceTimer = setTimeout(async () => {
-    await saveConnections()
-  }, 500) as unknown as number
-}
+    await saveConnections();
+  }, 500) as unknown as number;
+};
 
 // 加载连接配置
 const loadConnections = async () => {
   try {
-    const data = await window.api.loadConnections()
-    organizations.value = data
+    const data = await window.api.loadConnections();
+    organizations.value = data;
 
     // 默认展开第一个组织
     if (data.length > 0) {
-      expandedOrganizations.value[data[0].id] = false
+      expandedOrganizations.value[data[0].id] = false;
     }
   } catch (error) {
-    console.error('加载连接配置失败:', error)
+    console.error("加载连接配置失败:", error);
   }
-}
+};
 
 // 保存连接配置
 const saveConnections = async () => {
   try {
     // 即使是空数组也允许保存
-    const orgData = JSON.parse(JSON.stringify(organizations.value))
-    console.log('前端发送保存请求，数据大小:', orgData.length, '个组织')
+    const orgData = JSON.parse(JSON.stringify(organizations.value));
+    console.log("前端发送保存请求，数据大小:", orgData.length, "个组织");
 
     // 添加重试机制
-    let retryCount = 0
-    const maxRetries = 3
-    let success = false
+    let retryCount = 0;
+    const maxRetries = 3;
+    let success = false;
 
     while (!success && retryCount < maxRetries) {
       try {
-        await window.api.saveConnections(orgData)
-        console.log('保存连接配置成功')
-        success = true
+        await window.api.saveConnections(orgData);
+        console.log("保存连接配置成功");
+        success = true;
       } catch (error) {
-        retryCount++
-        console.error(`保存连接配置失败(尝试 ${retryCount}/${maxRetries}):`, error)
+        retryCount++;
+        console.error(
+          `保存连接配置失败(尝试 ${retryCount}/${maxRetries}):`,
+          error,
+        );
 
         // 在重试之前等待一段时间
         if (retryCount < maxRetries) {
-          await new Promise((resolve) => setTimeout(resolve, 500))
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
       }
     }
 
-    return success
+    return success;
   } catch (error) {
-    console.error('保存连接配置失败:', error)
-    return false
+    console.error("保存连接配置失败:", error);
+    return false;
   }
-}
+};
 
 // 切换组织展开/折叠状态
 const toggleOrganization = (orgId: string) => {
   // 先关闭所有已展开的组织
-  Object.keys(expandedOrganizations.value).forEach(id => {
+  Object.keys(expandedOrganizations.value).forEach((id) => {
     if (id !== orgId && expandedOrganizations.value[id]) {
-      expandedOrganizations.value[id] = false
+      expandedOrganizations.value[id] = false;
     }
-  })
-  
+  });
+
   // 切换当前组织的展开状态
-  expandedOrganizations.value[orgId] = !expandedOrganizations.value[orgId]
-  
+  expandedOrganizations.value[orgId] = !expandedOrganizations.value[orgId];
+
   // 如果展开了，更新当前展开的组织ID
   if (expandedOrganizations.value[orgId]) {
-    currentExpandedOrgId.value = orgId
+    currentExpandedOrgId.value = orgId;
   } else {
-    currentExpandedOrgId.value = null
+    currentExpandedOrgId.value = null;
   }
-}
+};
 
 // 右键菜单数据
-const showContextMenu = ref(false)
-const menuType = ref<MenuType>('area')
-const menuPosition = ref({ x: 0, y: 0 })
-const selectedOrganizationId = ref<string | null>(null)
-const selectedConnectionId = ref<string | null>(null)
+const showContextMenu = ref(false);
+const menuType = ref<MenuType>("area");
+const menuPosition = ref({ x: 0, y: 0 });
+const selectedOrganizationId = ref<string | null>(null);
+const selectedConnectionId = ref<string | null>(null);
 
 // 颜色缓存，避免重复计算
-const connectionColorCache = ref<Record<string, string>>({})
+const connectionColorCache = ref<Record<string, string>>({});
 
 // 为连接生成随机颜色
 const getConnectionColor = (connId: string) => {
   if (connectionColorCache.value[connId]) {
-    return connectionColorCache.value[connId]
+    return connectionColorCache.value[connId];
   }
 
-  let hash = 0
+  let hash = 0;
   for (let i = 0; i < connId.length; i++) {
-    hash = connId.charCodeAt(i) + ((hash << 5) - hash)
+    hash = connId.charCodeAt(i) + ((hash << 5) - hash);
   }
 
-  const hue = Math.abs(hash) % 360
-  const color = `hsl(${hue}, 70%, 60%)`
-  
-  connectionColorCache.value[connId] = color
-  return color
-}
+  const hue = Math.abs(hash) % 360;
+  const color = `hsl(${hue}, 70%, 60%)`;
+
+  connectionColorCache.value[connId] = color;
+  return color;
+};
 
 // 显示右键菜单
-const showMenu = (e: MouseEvent, type: MenuType, orgId?: string, connId?: string) => {
-  e.preventDefault()
-  showContextMenu.value = true
-  menuType.value = type
+const showMenu = (
+  e: MouseEvent,
+  type: MenuType,
+  orgId?: string,
+  connId?: string,
+) => {
+  e.preventDefault();
+  showContextMenu.value = true;
+  menuType.value = type;
 
   // 获取窗口宽度和高度
-  const windowWidth = window.innerWidth
-  const windowHeight = window.innerHeight
+  const windowWidth = window.innerWidth;
+  const windowHeight = window.innerHeight;
 
   // 估计菜单宽高（可根据实际情况调整）
-  const estimatedMenuWidth = 180 // 根据CSS中设置的min-width
-  const estimatedMenuHeight = type === 'area' ? 40 : type === 'organization' ? 120 : 80 // 根据菜单项数量估计
+  const estimatedMenuWidth = 180; // 根据CSS中设置的min-width
+  const estimatedMenuHeight =
+    type === "area" ? 40 : type === "organization" ? 120 : 80; // 根据菜单项数量估计
 
   // 初始设置位置为鼠标位置
-  let posX = e.clientX
-  let posY = e.clientY
+  let posX = e.clientX;
+  let posY = e.clientY;
 
   // 检查右边界，如果超出则显示在鼠标左侧
   if (posX + estimatedMenuWidth > windowWidth) {
-    posX = posX - estimatedMenuWidth
+    posX = posX - estimatedMenuWidth;
   }
 
   // 检查底部边界，如果超出则向上移动菜单
   if (posY + estimatedMenuHeight > windowHeight) {
-    posY = posY - estimatedMenuHeight
+    posY = posY - estimatedMenuHeight;
   }
 
   // 设置调整后的位置
-  menuPosition.value = { x: posX, y: posY }
+  menuPosition.value = { x: posX, y: posY };
 
-  if (orgId) selectedOrganizationId.value = orgId
-  if (connId) selectedConnectionId.value = connId
+  if (orgId) selectedOrganizationId.value = orgId;
+  if (connId) selectedConnectionId.value = connId;
 
   // 添加一次性的点击事件监听，点击其他地方关闭菜单
   setTimeout(() => {
-    window.addEventListener('click', closeMenu, { once: true })
+    window.addEventListener("click", closeMenu, { once: true });
 
     // 菜单渲染后进行精确调整
     nextTick(() => {
-      const menuElement = document.querySelector('.context-menu') as HTMLElement
+      const menuElement = document.querySelector(
+        ".context-menu",
+      ) as HTMLElement;
       if (menuElement) {
-        const menuRect = menuElement.getBoundingClientRect()
+        const menuRect = menuElement.getBoundingClientRect();
 
         // 精确调整X坐标，确保不超出右边界
         if (menuRect.right > windowWidth) {
-          menuPosition.value.x = windowWidth - menuRect.width
+          menuPosition.value.x = windowWidth - menuRect.width;
         }
 
         // 精确调整Y坐标，确保不超出底部边界
         if (menuRect.bottom > windowHeight) {
-          menuPosition.value.y = windowHeight - menuRect.height
+          menuPosition.value.y = windowHeight - menuRect.height;
         }
 
         // 确保不超出左边界和上边界
-        if (menuPosition.value.x < 0) menuPosition.value.x = 0
-        if (menuPosition.value.y < 0) menuPosition.value.y = 0
+        if (menuPosition.value.x < 0) menuPosition.value.x = 0;
+        if (menuPosition.value.y < 0) menuPosition.value.y = 0;
       }
-    })
-  }, 0)
-}
+    });
+  }, 0);
+};
 
 // 关闭右键菜单
 const closeMenu = () => {
-  showContextMenu.value = false
-  selectedOrganizationId.value = null
-  selectedConnectionId.value = null
-}
+  showContextMenu.value = false;
+  selectedOrganizationId.value = null;
+  selectedConnectionId.value = null;
+};
 
 // 打开新建组织对话框
 const openCreateOrganizationDialog = () => {
-  dialogType.value = 'organization'
-  editingOrgId.value = null
-  editingConnId.value = null
-  dialogVisible.value = true
-  closeMenu()
-}
+  dialogType.value = "organization";
+  editingOrgId.value = null;
+  editingConnId.value = null;
+  dialogVisible.value = true;
+  closeMenu();
+};
 
 // 打开编辑组织对话框
 const openEditOrganizationDialog = (orgId: string | null) => {
-  if (!orgId) return
-  dialogType.value = 'organization'
-  editingOrgId.value = orgId
-  editingConnId.value = null
-  dialogVisible.value = true
-  closeMenu()
-}
+  if (!orgId) return;
+  dialogType.value = "organization";
+  editingOrgId.value = orgId;
+  editingConnId.value = null;
+  dialogVisible.value = true;
+  closeMenu();
+};
 
 // 打开新建连接对话框
 const openCreateConnectionDialog = (orgId: string | null) => {
-  if (!orgId) return
-  dialogType.value = 'connection'
-  editingOrgId.value = orgId
-  editingConnId.value = null
-  dialogVisible.value = true
-  closeMenu()
-}
+  if (!orgId) return;
+  dialogType.value = "connection";
+  editingOrgId.value = orgId;
+  editingConnId.value = null;
+  dialogVisible.value = true;
+  closeMenu();
+};
 
 // 打开编辑连接对话框
-const openEditConnectionDialog = (orgId: string | null, connId: string | null) => {
-  if (!orgId || !connId) return
-  dialogType.value = 'connection'
-  editingOrgId.value = orgId
-  editingConnId.value = connId
-  dialogVisible.value = true
-  closeMenu()
-}
+const openEditConnectionDialog = (
+  orgId: string | null,
+  connId: string | null,
+) => {
+  if (!orgId || !connId) return;
+  dialogType.value = "connection";
+  editingOrgId.value = orgId;
+  editingConnId.value = connId;
+  dialogVisible.value = true;
+  closeMenu();
+};
 
 // 处理表单保存
 const handleSaveForm = async (data: {
-  organizationId: string | null
-  connectionId: string | null
-  formData: ConnectionFormData
+  organizationId: string | null;
+  connectionId: string | null;
+  formData: ConnectionFormData;
 }) => {
-  console.log('处理表单保存，数据:', data)
+  console.log("处理表单保存，数据:", data);
 
-  if (dialogType.value === 'organization') {
+  if (dialogType.value === "organization") {
     if (data.organizationId) {
       // 编辑现有组织
-      const org = organizations.value.find((o) => o.id === data.organizationId)
+      const org = organizations.value.find((o) => o.id === data.organizationId);
       if (org) {
-        org.name = data.formData.name
-        console.log('已更新组织名称:', org.name)
+        org.name = data.formData.name;
+        console.log("已更新组织名称:", org.name);
       }
     } else {
       // 创建新组织
-      const newId = Date.now().toString()
+      const newId = Date.now().toString();
       organizations.value.push({
         id: newId,
         name: data.formData.name,
-        connections: []
-      })
-      console.log('已创建新组织:', data.formData.name)
+        connections: [],
+      });
+      console.log("已创建新组织:", data.formData.name);
       // 自动展开新创建的组织
-      expandedOrganizations.value[newId] = true
+      expandedOrganizations.value[newId] = true;
     }
-  } else if (dialogType.value === 'connection') {
+  } else if (dialogType.value === "connection") {
     if (data.organizationId) {
-      const org = organizations.value.find((o) => o.id === data.organizationId)
+      const org = organizations.value.find((o) => o.id === data.organizationId);
       if (org) {
         if (data.connectionId) {
           // 编辑现有连接
-          const conn = org.connections.find((c) => c.id === data.connectionId)
+          const conn = org.connections.find((c) => c.id === data.connectionId);
           if (conn) {
-            Object.assign(conn, data.formData)
-            console.log('已更新连接:', conn.name)
+            Object.assign(conn, data.formData);
+            console.log("已更新连接:", conn.name);
           }
         } else {
           // 创建新连接
-          const newId = `${data.organizationId}-${Date.now()}`
+          const newId = `${data.organizationId}-${Date.now()}`;
           const newConnection: Connection = {
             id: newId,
             name: data.formData.name,
-            host: data.formData.host || '',
+            host: data.formData.host || "",
             port: data.formData.port || 22,
-            username: data.formData.username || '',
+            username: data.formData.username || "",
             password: data.formData.password,
             privateKey: data.formData.privateKey,
             privateKeyPath: data.formData.privateKeyPath,
-            description: data.formData.description
-          }
-          org.connections.push(newConnection)
-          console.log('已创建新连接:', newConnection.name)
+            description: data.formData.description,
+          };
+          org.connections.push(newConnection);
+          console.log("已创建新连接:", newConnection.name);
         }
       }
     }
   }
 
-  console.log('组织数据更新后:', organizations.value)
+  console.log("组织数据更新后:", organizations.value);
 
   // 保存到本地存储
   try {
-    await saveConnections()
-    console.log('保存操作完成')
+    await saveConnections();
+    console.log("保存操作完成");
   } catch (error) {
-    console.error('保存操作失败:', error)
+    console.error("保存操作失败:", error);
   }
-}
+};
 
 // 删除组织
 const deleteOrganization = async (orgId: string | null) => {
-  if (!orgId) return
-  organizations.value = organizations.value.filter((o) => o.id !== orgId)
+  if (!orgId) return;
+  organizations.value = organizations.value.filter((o) => o.id !== orgId);
   // 从展开状态中移除
-  delete expandedOrganizations.value[orgId]
-  closeMenu()
+  delete expandedOrganizations.value[orgId];
+  closeMenu();
 
   // 保存到本地存储
-  await saveConnections()
-}
+  await saveConnections();
+};
 
 // 删除连接
-const deleteConnection = async (orgId: string | null, connId: string | null) => {
-  if (!orgId || !connId) return
-  const org = organizations.value.find((o) => o.id === orgId)
+const deleteConnection = async (
+  orgId: string | null,
+  connId: string | null,
+) => {
+  if (!orgId || !connId) return;
+  const org = organizations.value.find((o) => o.id === orgId);
   if (org) {
-    org.connections = org.connections.filter((c) => c.id !== connId)
+    org.connections = org.connections.filter((c) => c.id !== connId);
   }
-  closeMenu()
+  closeMenu();
 
   // 保存到本地存储
-  await saveConnections()
-}
+  await saveConnections();
+};
 
 // 连接到服务器
 const connectToServer = (orgId: string | null, connId: string | null) => {
-  if (!orgId || !connId) return
-  const org = organizations.value.find((o) => o.id === orgId)
+  if (!orgId || !connId) return;
+  const org = organizations.value.find((o) => o.id === orgId);
   if (org) {
-    const conn = org.connections.find((c) => c.id === connId)
+    const conn = org.connections.find((c) => c.id === connId);
     if (conn) {
-      console.log('连接到服务器:', conn)
+      console.log("连接到服务器:", conn);
 
       // 创建一个干净的连接对象副本，避免结构化克隆错误
       const cleanConnection = {
@@ -529,53 +552,53 @@ const connectToServer = (orgId: string | null, connId: string | null) => {
         host: conn.host,
         port: conn.port,
         username: conn.username,
-        password: conn.password || '',
-        privateKey: conn.privateKey || '',
-        privateKeyPath: conn.privateKeyPath || '',
-        description: conn.description || ''
-      }
+        password: conn.password || "",
+        privateKey: conn.privateKey || "",
+        privateKeyPath: conn.privateKeyPath || "",
+        description: conn.description || "",
+      };
 
       // 将连接信息发送到父组件
-      emit('connect-to-server', cleanConnection)
+      emit("connect-to-server", cleanConnection);
     }
   }
-  closeMenu()
-}
+  closeMenu();
+};
 
 // 重置所有连接
 const resetAllConnections = () => {
-  organizations.value = []
-  expandedOrganizations.value = {}
-  closeMenu()
+  organizations.value = [];
+  expandedOrganizations.value = {};
+  closeMenu();
   // 保存到本地存储
-  saveConnections()
-}
+  saveConnections();
+};
 
 // 组件挂载和卸载时的事件处理
 onMounted(async () => {
   // 加载连接配置
-  await loadConnections()
+  await loadConnections();
 
   // 添加自动保存功能 - 使用防抖优化，避免频繁保存
   watch(
     organizations,
     async () => {
-      console.log('检测到organizations数据变化')
+      console.log("检测到organizations数据变化");
       // 使用防抖延迟保存
-      if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
+      if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
       saveDebounceTimer = setTimeout(async () => {
-        console.log('执行延迟保存')
-        await saveConnections()
-      }, 2000) as unknown as number
+        console.log("执行延迟保存");
+        await saveConnections();
+      }, 2000) as unknown as number;
     },
-    { deep: true }
-  )
-})
+    { deep: true },
+  );
+});
 
 onUnmounted(() => {
-  window.removeEventListener('click', closeMenu)
-  if (saveDebounceTimer) clearTimeout(saveDebounceTimer)
-})
+  window.removeEventListener("click", closeMenu);
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+});
 </script>
 
 <template>
@@ -583,7 +606,7 @@ onUnmounted(() => {
     <!-- 仅在展开状态显示标题和连接列表 -->
     <div class="connection-manager-content">
       <h3>连接管理</h3>
-      
+
       <!-- 性能提示 -->
       <div v-if="isConnectionCountHigh" class="performance-tip">
         <span>连接数量较多，已启用性能优化</span>
@@ -610,19 +633,29 @@ onUnmounted(() => {
                 <div class="organization-name">
                   <span class="drag-handle">⋮⋮</span>
                   <img
-                    :src="props.isDarkTheme ? CollectionNightIcon : CollectionDayIcon"
+                    :src="
+                      props.isDarkTheme
+                        ? CollectionNightIcon
+                        : CollectionDayIcon
+                    "
                     class="collection-icon"
                   />
                   {{ org.name }}
                   <!-- 显示连接数量 -->
-                  <span class="connection-count" v-if="org.connections.length > 0">
+                  <span
+                    class="connection-count"
+                    v-if="org.connections.length > 0"
+                  >
                     ({{ org.connections.length }})
                   </span>
                 </div>
               </div>
 
               <!-- 连接列表 - 使用虚拟滚动优化大量连接的渲染 -->
-              <div v-show="expandedOrganizations[org.id]" class="connection-items">
+              <div
+                v-show="expandedOrganizations[org.id]"
+                class="connection-items"
+              >
                 <!-- 当前组织是展开的组织时使用虚拟滚动 -->
                 <template v-if="shouldUseVirtualScroll(org.id)">
                   <div v-bind="containerProps" class="virtual-list-container">
@@ -632,14 +665,18 @@ onUnmounted(() => {
                         :key="conn.id"
                         class="connection-item"
                         @dblclick="connectToServer(org.id, conn.id)"
-                        @contextmenu.stop="showMenu($event, 'connection', org.id, conn.id)"
+                        @contextmenu.stop="
+                          showMenu($event, 'connection', org.id, conn.id)
+                        "
                         :style="{ height: `${itemHeight}px` }"
                       >
                         <div class="connection-name">
                           <span class="drag-handle-conn">⋮⋮</span>
                           <div
                             class="connection-color-block"
-                            :style="{ backgroundColor: getConnectionColor(conn.id) }"
+                            :style="{
+                              backgroundColor: getConnectionColor(conn.id),
+                            }"
                           ></div>
                           {{ conn.name }}
                         </div>
@@ -662,13 +699,17 @@ onUnmounted(() => {
                       <div
                         class="connection-item"
                         @dblclick="connectToServer(org.id, conn.id)"
-                        @contextmenu.stop="showMenu($event, 'connection', org.id, conn.id)"
+                        @contextmenu.stop="
+                          showMenu($event, 'connection', org.id, conn.id)
+                        "
                       >
                         <div class="connection-name">
                           <span class="drag-handle-conn">⋮⋮</span>
                           <div
                             class="connection-color-block"
-                            :style="{ backgroundColor: getConnectionColor(conn.id) }"
+                            :style="{
+                              backgroundColor: getConnectionColor(conn.id),
+                            }"
                           ></div>
                           {{ conn.name }}
                         </div>
@@ -699,33 +740,59 @@ onUnmounted(() => {
       <template v-if="menuType === 'area'">
         <div class="menu-item" @click="openCreateOrganizationDialog">
           <img
-            :src="props.isDarkTheme ? AddCollectionNightIcon : AddCollectionDayIcon"
+            :src="
+              props.isDarkTheme ? AddCollectionNightIcon : AddCollectionDayIcon
+            "
             class="plus-icon"
           />
           新建组织
         </div>
 
-        <div v-if="organizations.length > 0" class="menu-item delete" @click="resetAllConnections">
-          <img :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon" class="delete-icon" />
+        <div
+          v-if="organizations.length > 0"
+          class="menu-item delete"
+          @click="resetAllConnections"
+        >
+          <img
+            :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
+            class="delete-icon"
+          />
           清空所有组织
         </div>
       </template>
 
       <!-- 组织菜单 -->
       <template v-else-if="menuType === 'organization'">
-        <div class="menu-item" @click="openEditOrganizationDialog(selectedOrganizationId)">
-          <img :src="props.isDarkTheme ? EditNightIcon : EditDayIcon" class="edit-icon" />
+        <div
+          class="menu-item"
+          @click="openEditOrganizationDialog(selectedOrganizationId)"
+        >
+          <img
+            :src="props.isDarkTheme ? EditNightIcon : EditDayIcon"
+            class="edit-icon"
+          />
           编辑组织
         </div>
-        <div class="menu-item" @click="openCreateConnectionDialog(selectedOrganizationId)">
+        <div
+          class="menu-item"
+          @click="openCreateConnectionDialog(selectedOrganizationId)"
+        >
           <img
-            :src="props.isDarkTheme ? AddCollectionNightIcon : AddCollectionDayIcon"
+            :src="
+              props.isDarkTheme ? AddCollectionNightIcon : AddCollectionDayIcon
+            "
             class="plus-icon"
           />
           新建连接
         </div>
-        <div class="menu-item delete" @click="deleteOrganization(selectedOrganizationId)">
-          <img :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon" class="delete-icon" />
+        <div
+          class="menu-item delete"
+          @click="deleteOrganization(selectedOrganizationId)"
+        >
+          <img
+            :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
+            class="delete-icon"
+          />
           删除组织
         </div>
       </template>
@@ -736,21 +803,37 @@ onUnmounted(() => {
           class="menu-item"
           @click="connectToServer(selectedOrganizationId, selectedConnectionId)"
         >
-          <img :src="props.isDarkTheme ? ConnectNightIcon : ConnectDayIcon" class="connect-icon" />
+          <img
+            :src="props.isDarkTheme ? ConnectNightIcon : ConnectDayIcon"
+            class="connect-icon"
+          />
           连接到服务器
         </div>
         <div
           class="menu-item"
-          @click="openEditConnectionDialog(selectedOrganizationId, selectedConnectionId)"
+          @click="
+            openEditConnectionDialog(
+              selectedOrganizationId,
+              selectedConnectionId,
+            )
+          "
         >
-          <img :src="props.isDarkTheme ? EditNightIcon : EditDayIcon" class="edit-icon" />
+          <img
+            :src="props.isDarkTheme ? EditNightIcon : EditDayIcon"
+            class="edit-icon"
+          />
           编辑连接
         </div>
         <div
           class="menu-item delete"
-          @click="deleteConnection(selectedOrganizationId, selectedConnectionId)"
+          @click="
+            deleteConnection(selectedOrganizationId, selectedConnectionId)
+          "
         >
-          <img :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon" class="delete-icon" />
+          <img
+            :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
+            class="delete-icon"
+          />
           删除连接
         </div>
       </template>
@@ -1096,7 +1179,7 @@ h3 {
 
 /* 添加底部边框作为装饰 */
 .connection-vertical-label::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: 2px;
   left: 50%;
@@ -1236,7 +1319,8 @@ h3 {
 }
 
 /* 拖拽时的性能优化 */
-:global(.dragging-active) .connection-item:not(.dragging-conn):not(.ghost-conn) {
+:global(.dragging-active)
+  .connection-item:not(.dragging-conn):not(.ghost-conn) {
   transform: none !important;
   transition: none !important;
 }
