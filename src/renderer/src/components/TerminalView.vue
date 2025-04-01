@@ -337,7 +337,7 @@ const initializeTerminal = async (tab: TerminalTab) => {
     lineHeight: 1.2,
     cursorBlink: true,
     theme: currentTheme.value,
-    scrollback: 5000,
+    scrollback: 10000, // 从5000修改为10000
     fastScrollModifier: "alt",
     convertEol: true,
     allowTransparency: true,
@@ -735,6 +735,20 @@ const connectToLocalTerminal = async (tab: TerminalTab) => {
               `标签页[${tab.id}]接收到终端[${event.id}]数据: ${shortData.replace(/\n/g, "\\n")}`,
             );
           }
+          
+          // 限制终端内容最多10000行
+          const buffer = tab.terminal.buffer.active;
+          const maxLines = 10000;
+          
+          // 如果buffer中的行数超过最大限制，从顶部删除多余的行
+          if (buffer.length > maxLines) {
+            const linesToRemove = buffer.length - maxLines;
+            for (let i = 0; i < linesToRemove; i++) {
+              // 删除第一行（最旧的行）
+              tab.terminal.clear();
+            }
+          }
+          
           tab.terminal.write(event.data);
         } catch (err) {
           console.error(
@@ -2191,12 +2205,18 @@ const refreshTerminal = () => {
   padding: 4px;
   width: 100%;
   height: 100%;
+  display: flex; /* 添加flex显示属性 */
+  flex-direction: column; /* 设置为列方向排列 */
 }
 
 .terminal-container {
-  width: 100%;
-  height: 100%;
   position: relative;
+  flex: 1;
+  overflow: hidden;
+  padding-left: 5px; /* 添加左侧内边距，避免被left-sidebar-toggle遮挡 */
+  height: 100%; /* 确保高度填满父容器 */
+  display: flex; /* 添加flex显示属性 */
+  flex-direction: column; /* 设置列方向排列 */
 }
 
 /* 主题变量 */
@@ -2228,10 +2248,11 @@ const refreshTerminal = () => {
   padding: 0;
   width: 100%;
   height: 100%;
+  margin-left: 5px; /* 增加左侧边距，避免被left-sidebar-toggle遮挡 */
 }
 
 :deep(.xterm-screen) {
-  width: 100% !important; /* 强制宽度100% */
+  width: calc(100% - 5px) !important; /* 调整宽度，保留左侧边距 */
 }
 
 :deep(.xterm-viewport) {
