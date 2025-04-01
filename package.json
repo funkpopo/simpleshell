@@ -1,6 +1,6 @@
 {
   "name": "simpleshell",
-  "version": "v1.0.3",
+  "version": "v1.1.0",
   "description": "A Simple Shell powered by Electron and Vue",
   "main": "./out/main/index.js",
   "author": "funkpopo",
