@@ -134,9 +134,6 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from "vue";
-import { useI18n } from "../i18n";
-
-const { t } = useI18n();
 
 interface FileViewerProps {
   show: boolean;

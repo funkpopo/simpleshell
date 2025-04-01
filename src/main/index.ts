@@ -1,4 +1,4 @@
-const { app, shell, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, shell, BrowserWindow, ipcMain, dialog } = require("electron");
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import icon from "../renderer/src/assets/SimpleShell-icon.png?asset";
