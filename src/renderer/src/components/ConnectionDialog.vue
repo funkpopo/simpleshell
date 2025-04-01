@@ -147,6 +147,56 @@
               placeholder="可选备注信息"
             ></textarea>
           </div>
+
+          <!-- 代理设置 -->
+          <div class="form-group proxy-settings">
+            <div class="proxy-header">
+              <label class="proxy-label">
+                <input
+                  type="checkbox"
+                  id="useProxy"
+                  v-model="formData.useProxy"
+                  class="proxy-checkbox"
+                  @change="validateForm"
+                />
+                使用代理服务器
+              </label>
+            </div>
+
+            <div v-if="formData.useProxy" class="proxy-options">
+              <div class="form-group">
+                <label for="proxyHost">
+                  代理服务器地址 <span class="required">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="proxyHost"
+                  v-model="formData.proxyHost"
+                  placeholder="例如: 127.0.0.1"
+                  @input="validateForm"
+                />
+                <div class="error-message" v-if="validation.proxyHost">
+                  {{ validation.proxyHost }}
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="proxyPort">
+                  代理服务器端口 <span class="required">*</span>
+                </label>
+                <input
+                  type="number"
+                  id="proxyPort"
+                  v-model.number="formData.proxyPort"
+                  placeholder="例如: 1080"
+                  @input="validateForm"
+                />
+                <div class="error-message" v-if="validation.proxyPort">
+                  {{ validation.proxyPort }}
+                </div>
+              </div>
+            </div>
+          </div>
         </template>
 
         <!-- 高级设置 -->
@@ -206,6 +256,9 @@ const formData = reactive({
   privateKey: "",
   privateKeyPath: "",
   description: "",
+  useProxy: false,
+  proxyHost: "",
+  proxyPort: 1080,
 });
 
 // 表单验证状态
@@ -217,6 +270,8 @@ const validation = reactive({
   password: "",
   privateKey: "",
   authMethod: "",
+  proxyHost: "",
+  proxyPort: "",
 });
 
 // 保存状态
@@ -271,6 +326,19 @@ function validateForm() {
     // 验证认证方式
     if (!formData.password && !formData.privateKey) {
       validation.authMethod = t("connection.atLeastOne");
+    }
+
+    // 验证代理设置
+    if (formData.useProxy) {
+      if (!formData.proxyHost.trim()) {
+        validation.proxyHost = t("connection.required");
+      }
+
+      if (!formData.proxyPort) {
+        validation.proxyPort = t("connection.required");
+      } else if (formData.proxyPort < 1 || formData.proxyPort > 65535) {
+        validation.proxyPort = t("connection.portRange");
+      }
     }
   }
 
@@ -527,6 +595,34 @@ async function saveConnection() {
   user-select: none;
   font-weight: 500;
   color: var(--heading-color);
+}
+
+/* 代理设置样式 */
+.proxy-settings {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+}
+
+.proxy-header {
+  margin-bottom: 10px;
+}
+
+.proxy-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.proxy-checkbox {
+  margin-right: 8px;
+}
+
+.proxy-options {
+  margin-top: 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-color);
 }
 
 :root {

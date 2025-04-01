@@ -27,6 +27,9 @@ interface Connection {
   name: string;
   host: string;
   port: number;
+  useProxy?: boolean;
+  proxyHost?: string;
+  proxyPort?: number;
   username: string;
   password?: string;
   privateKey?: string;
@@ -553,6 +556,9 @@ const connectToSSH = async (tab: TerminalTab) => {
       username: tab.connection.username,
       password: tab.connection.password || "",
       privateKey: tab.connection.privateKey || "",
+      useProxy: tab.connection.useProxy || false,
+      proxyHost: tab.connection.proxyHost || "",
+      proxyPort: tab.connection.proxyPort || 1080,
     };
 
     console.log("正在连接SSH服务器:", {
@@ -561,6 +567,9 @@ const connectToSSH = async (tab: TerminalTab) => {
       username: connectionData.username,
       hasPassword: !!connectionData.password,
       hasPrivateKey: !!connectionData.privateKey,
+      useProxy: connectionData.useProxy,
+      proxyHost: connectionData.useProxy ? connectionData.proxyHost : undefined,
+      proxyPort: connectionData.useProxy ? connectionData.proxyPort : undefined,
     });
 
     // 先建立SSH连接
@@ -735,11 +744,11 @@ const connectToLocalTerminal = async (tab: TerminalTab) => {
               `标签页[${tab.id}]接收到终端[${event.id}]数据: ${shortData.replace(/\n/g, "\\n")}`,
             );
           }
-          
+
           // 限制终端内容最多10000行
           const buffer = tab.terminal.buffer.active;
           const maxLines = 10000;
-          
+
           // 如果buffer中的行数超过最大限制，从顶部删除多余的行
           if (buffer.length > maxLines) {
             const linesToRemove = buffer.length - maxLines;
@@ -748,7 +757,7 @@ const connectToLocalTerminal = async (tab: TerminalTab) => {
               tab.terminal.clear();
             }
           }
-          
+
           tab.terminal.write(event.data);
         } catch (err) {
           console.error(

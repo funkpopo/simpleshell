@@ -256,11 +256,15 @@ const loadCurrentDirectory = async () => {
           }),
           timeoutPromise,
         ]);
-        
+
         // Use unknown as intermediate step for type safety
-        const result = rawResult ? 
-          (rawResult as unknown as ReadDirResult) : 
-          { success: false, files: [], error: "Timeout or null response" } as ReadDirResult;
+        const result = rawResult
+          ? (rawResult as unknown as ReadDirResult)
+          : ({
+              success: false,
+              files: [],
+              error: "Timeout or null response",
+            } as ReadDirResult);
 
         if (result.success && result.files) {
           console.log("目录加载成功，文件数量:", result.files.length);
@@ -408,10 +412,10 @@ const toggleFileSelection = (
 
   // 确保每个选中的文件都有对应的类型
   // 防止文件和类型不同步的问题
-  selectedFiles.value.forEach(name => {
+  selectedFiles.value.forEach((name) => {
     if (!selectedItemTypes.value.has(name)) {
       // 如果没有类型信息，尝试从文件列表中获取
-      const fileItem = fileList.value.find(f => f.name === name);
+      const fileItem = fileList.value.find((f) => f.name === name);
       if (fileItem) {
         selectedItemTypes.value.set(name, fileItem.type);
       }
@@ -425,11 +429,13 @@ const toggleFileSelection = (
       toRemove.push(name);
     }
   });
-  toRemove.forEach(name => {
+  toRemove.forEach((name) => {
     selectedItemTypes.value.delete(name);
   });
 
-  console.log(`选择后文件数量: ${selectedFiles.value.size}, 类型映射大小: ${selectedItemTypes.value.size}`);
+  console.log(
+    `选择后文件数量: ${selectedFiles.value.size}, 类型映射大小: ${selectedItemTypes.value.size}`,
+  );
 };
 
 // 清除选择
@@ -443,18 +449,18 @@ const downloadSelectedFiles = async () => {
   try {
     // 获取选中的文件（不包括文件夹）
     const filesToDownload = Array.from(selectedFiles.value).filter(
-      (fileName) => selectedItemTypes.value.get(fileName) === "file"
+      (fileName) => selectedItemTypes.value.get(fileName) === "file",
     );
-    
+
     // 如果没有选中文件，显示提示
     if (filesToDownload.length === 0) {
       error.value = "没有选择可下载的文件";
       return;
     }
-    
+
     // 显示传输进度窗口
     showTransferProgress.value = true;
-    
+
     for (const fileName of filesToDownload) {
       const result = await window.api.sftpDownloadFile({
         connectionId: props.connectionId,
@@ -1124,7 +1130,7 @@ const deleteSelectedItems = async () => {
   const { files, directories } = getSelectedItemsCount();
   console.log(`准备删除: ${files}个文件, ${directories}个文件夹`);
   console.log(`选中项总数: ${selectedFiles.value.size}`);
-  
+
   if (selectedFiles.value.size === 0) {
     console.log("没有选中任何项目，取消删除");
     return;
@@ -1162,12 +1168,12 @@ const deleteSelectedItems = async () => {
 
     for (const fileName of itemsToDelete) {
       deleteProgress.value.currentItem = fileName;
-      
+
       // 检查是否存在类型信息，如果不存在，尝试获取
       let fileType = selectedItemTypes.value.get(fileName);
       if (!fileType) {
         // 尝试从文件列表中获取类型信息
-        const fileItem = fileList.value.find(f => f.name === fileName);
+        const fileItem = fileList.value.find((f) => f.name === fileName);
         if (fileItem) {
           fileType = fileItem.type;
           console.log(`为 ${fileName} 找到类型: ${fileType}`);
@@ -1197,7 +1203,9 @@ const deleteSelectedItems = async () => {
 
         // 更新完成数量
         deleteProgress.value.completed++;
-        console.log(`已完成删除 ${deleteProgress.value.completed}/${deleteProgress.value.total}`);
+        console.log(
+          `已完成删除 ${deleteProgress.value.completed}/${deleteProgress.value.total}`,
+        );
       } catch (itemError: unknown) {
         console.error(`删除 ${fileName} 失败:`, itemError);
         error.value =
@@ -3382,7 +3390,9 @@ const startTransferStatusCheck = () => {
                       selectedFiles.add(f.name);
                       selectedItemTypes.set(f.name, f.type);
                     });
-                    console.log(`全选后文件数量: ${selectedFiles.size}, 类型映射大小: ${selectedItemTypes.size}`);
+                    console.log(
+                      `全选后文件数量: ${selectedFiles.size}, 类型映射大小: ${selectedItemTypes.size}`,
+                    );
                   } else {
                     clearSelection();
                   }
@@ -3693,7 +3703,7 @@ const startTransferStatusCheck = () => {
                 :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
                 class="delete-icon"
               />
-              {{ 
+              {{
                 (() => {
                   const { files, directories } = getSelectedItemsCount();
                   if (files > 0 && directories > 0) {

@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from "electron";
+const { app, shell, BrowserWindow, ipcMain, dialog } = require('electron')
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import icon from "../renderer/src/assets/SimpleShell-icon.png?asset";
@@ -17,7 +17,7 @@ import { spawn } from "child_process";
 import OpenAI from "openai";
 
 // 主窗口实例
-let mainWindow: BrowserWindow | null = null;
+let mainWindow: typeof BrowserWindow | null = null;
 
 // 定义连接配置的数据类型
 interface Connection {
@@ -25,6 +25,9 @@ interface Connection {
   name: string;
   host: string;
   port: number;
+  useProxy?: boolean;
+  proxyHost?: string;
+  proxyPort?: number;
   username: string;
   password?: string;
   privateKey?: string;
@@ -323,6 +326,9 @@ ipcMain.handle("ssh:connect", async (_, connectionInfo: Connection) => {
         username: (connectionInfo?.username as string) || "",
         password: (connectionInfo?.password as string) || "",
         privateKey: (connectionInfo?.privateKey as string) || "",
+        useProxy: connectionInfo?.useProxy || false,
+        proxyHost: connectionInfo?.proxyHost || "",
+        proxyPort: connectionInfo?.proxyPort || 1080,
       });
       safeConnectionInfo = JSON.parse(connectionStr);
 
@@ -383,11 +389,16 @@ ipcMain.handle("ssh:connect", async (_, connectionInfo: Connection) => {
           password?: string;
           privateKey?: string;
           readyTimeout: number;
+          proxy?: {
+            host: string;
+            port: number;
+            command?: string;
+          };
         } = {
           host,
           port,
           username,
-          readyTimeout: 30000, // 10秒超时
+          readyTimeout: 30000, // 30秒超时
         };
 
         // 添加认证方式
@@ -397,6 +408,21 @@ ipcMain.handle("ssh:connect", async (_, connectionInfo: Connection) => {
         } else if (password) {
           console.log("使用密码认证");
           connectConfig.password = password;
+        }
+
+        // 添加代理配置
+        if (
+          safeConnectionInfo.useProxy &&
+          safeConnectionInfo.proxyHost &&
+          safeConnectionInfo.proxyPort
+        ) {
+          console.log(
+            `使用代理: ${safeConnectionInfo.proxyHost}:${safeConnectionInfo.proxyPort}`,
+          );
+          connectConfig.proxy = {
+            host: safeConnectionInfo.proxyHost,
+            port: safeConnectionInfo.proxyPort,
+          };
         }
 
         // 设置事件处理器
@@ -445,7 +471,7 @@ ipcMain.handle("ssh:connect", async (_, connectionInfo: Connection) => {
             const sftp = new SftpClient();
 
             // 设置更长的超时时间
-            const sftpConfig = {
+            const sftpConfig: any = {
               host: connectionInfo.host,
               port: connectionInfo.port,
               username: connectionInfo.username,
@@ -456,6 +482,21 @@ ipcMain.handle("ssh:connect", async (_, connectionInfo: Connection) => {
               retry_factor: 2,
               retry_minTimeout: 5000,
             };
+
+            // 添加SFTP代理配置
+            if (
+              connectionInfo.useProxy &&
+              connectionInfo.proxyHost &&
+              connectionInfo.proxyPort
+            ) {
+              console.log(
+                `SFTP使用代理: ${connectionInfo.proxyHost}:${connectionInfo.proxyPort}`,
+              );
+              sftpConfig.proxy = {
+                host: connectionInfo.proxyHost,
+                port: connectionInfo.proxyPort,
+              };
+            }
 
             console.log("开始SFTP连接...");
             await sftp.connect(sftpConfig);

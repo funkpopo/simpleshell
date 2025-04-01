@@ -38,6 +38,9 @@ interface Connection {
   privateKey?: string;
   privateKeyPath?: string;
   description?: string;
+  useProxy?: boolean;
+  proxyHost?: string;
+  proxyPort?: number;
 }
 
 interface Organization {
