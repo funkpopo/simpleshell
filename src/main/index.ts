@@ -2089,11 +2089,11 @@ function loadSettings(): AppSettings {
 
       try {
         const parsed = JSON.parse(fileContent);
-        console.log("成功加载设置文件");
+        // console.log("成功加载设置文件");
 
         // 处理数组格式的配置文件
         if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log("检测到数组格式的设置文件，使用第一个元素");
+          // console.log("检测到数组格式的设置文件，使用第一个元素");
           return parsed[0];
         }
 
