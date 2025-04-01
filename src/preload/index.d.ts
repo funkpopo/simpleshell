@@ -1,5 +1,19 @@
 import { ElectronAPI } from "@electron-toolkit/preload";
 
+// 传输数据类型定义
+interface TransferData {
+  id: string;
+  transferred: number;
+  progress: number;
+  type?: "upload" | "download";
+  filename?: string;
+  path?: string;
+  size?: number;
+  connectionId?: string;
+  status?: string;
+  error?: string;
+}
+
 interface SystemInfo {
   osInfo: {
     platform: string;
@@ -239,13 +253,7 @@ interface API {
     }) => void,
   ) => () => void;
 
-  onTransferProgress: (
-    callback: (data: {
-      id: string;
-      transferred: number;
-      progress: number;
-    }) => void,
-  ) => () => void;
+  onTransferProgress: (callback: (data: TransferData) => void) => () => void;
 
   onTransferComplete: (
     callback: (data: { id: string; success: boolean }) => void,
@@ -256,6 +264,10 @@ interface API {
   ) => () => void;
 
   onTransferCancelled: (callback: (data: { id: string }) => void) => () => void;
+
+  onSftpReady: (
+    callback: (data: { connectionId: string }) => void,
+  ) => () => void;
 
   // AI相关方法
   sendAIRequest: (params: {
