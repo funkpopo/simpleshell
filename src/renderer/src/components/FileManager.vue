@@ -42,7 +42,7 @@ interface FileItem {
 type TransferType = "upload" | "download";
 
 // 定义TransferData类型
-interface TransferData {
+export interface TransferData {
   id: string;
   transferred: number;
   progress: number;
