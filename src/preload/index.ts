@@ -507,6 +507,13 @@ const api = {
     return () => ipcRenderer.removeListener("sftp:transferCancelled", handler);
   },
 
+  onSftpReady: (callback: (data: { connectionId: string }) => void) => {
+    const handler = (_: unknown, data: { connectionId: string }) =>
+      callback(data);
+    ipcRenderer.on("sftp:ready", handler);
+    return () => ipcRenderer.removeListener("sftp:ready", handler);
+  },
+
   // AI聊天相关方法
   loadChatHistory: async (): Promise<ChatHistoryResult> => {
     return await ipcRenderer.invoke("chat:load-history");

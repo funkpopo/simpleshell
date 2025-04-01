@@ -479,6 +479,11 @@ ipcMain.handle("ssh:connect", async (_, connectionInfo: Connection) => {
               await sftp.list("/");
               console.log("SFTP连接测试成功，可以列出根目录");
 
+              // 发送SFTP就绪事件到渲染进程
+              if (mainWindow) {
+                mainWindow.webContents.send("sftp:ready", { connectionId: id });
+              }
+
               // 只有在SFTP连接测试成功后才返回成功
               resolve({ success: true, id });
             } catch (testError) {

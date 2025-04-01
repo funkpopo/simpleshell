@@ -41,6 +41,20 @@ interface FileItem {
 // 文件传输类型
 type TransferType = "upload" | "download";
 
+// 定义TransferData类型
+interface TransferData {
+  id: string;
+  transferred: number;
+  progress: number;
+  type?: TransferType;
+  filename?: string;
+  path?: string;
+  size?: number;
+  connectionId?: string;
+  status?: string;
+  error?: string;
+}
+
 // 文件传输项
 interface TransferItem {
   id: string;
@@ -192,6 +206,8 @@ const formatModifyTime = (time: string): string => {
 
 // 定期检查传输状态的定时器
 let transferStatusCheckTimer: number | null = null;
+// SFTP就绪事件监听器
+let unlistenSftpReady: (() => void) | null = null;
 
 // 加载当前目录内容
 const loadCurrentDirectory = async () => {
@@ -369,6 +385,8 @@ const toggleFileSelection = (
   fileType: "file" | "directory",
   event?: MouseEvent,
 ) => {
+  console.log(`选择文件: ${fileName}, 类型: ${fileType}`);
+
   // 如果有按住Ctrl键，则不清除之前的选择
   if (event && !event.ctrlKey && !event.metaKey) {
     selectedFiles.value.clear();
@@ -382,6 +400,31 @@ const toggleFileSelection = (
     selectedFiles.value.add(fileName);
     selectedItemTypes.value.set(fileName, fileType);
   }
+
+  // 确保每个选中的文件都有对应的类型
+  // 防止文件和类型不同步的问题
+  selectedFiles.value.forEach(name => {
+    if (!selectedItemTypes.value.has(name)) {
+      // 如果没有类型信息，尝试从文件列表中获取
+      const fileItem = fileList.value.find(f => f.name === name);
+      if (fileItem) {
+        selectedItemTypes.value.set(name, fileItem.type);
+      }
+    }
+  });
+
+  // 移除多余的类型信息
+  const toRemove: string[] = [];
+  selectedItemTypes.value.forEach((_, name) => {
+    if (!selectedFiles.value.has(name)) {
+      toRemove.push(name);
+    }
+  });
+  toRemove.forEach(name => {
+    selectedItemTypes.value.delete(name);
+  });
+
+  console.log(`选择后文件数量: ${selectedFiles.value.size}, 类型映射大小: ${selectedItemTypes.value.size}`);
 };
 
 // 清除选择
@@ -393,7 +436,21 @@ const clearSelection = () => {
 // 下载选中的文件
 const downloadSelectedFiles = async () => {
   try {
-    for (const fileName of selectedFiles.value) {
+    // 获取选中的文件（不包括文件夹）
+    const filesToDownload = Array.from(selectedFiles.value).filter(
+      (fileName) => selectedItemTypes.value.get(fileName) === "file"
+    );
+    
+    // 如果没有选中文件，显示提示
+    if (filesToDownload.length === 0) {
+      error.value = "没有选择可下载的文件";
+      return;
+    }
+    
+    // 显示传输进度窗口
+    showTransferProgress.value = true;
+    
+    for (const fileName of filesToDownload) {
       const result = await window.api.sftpDownloadFile({
         connectionId: props.connectionId,
         remotePath: `${currentPath.value}/${fileName}`,
@@ -1060,6 +1117,13 @@ const showSuccessMessage = (message: string) => {
 // 删除选中的文件/文件夹
 const deleteSelectedItems = async () => {
   const { files, directories } = getSelectedItemsCount();
+  console.log(`准备删除: ${files}个文件, ${directories}个文件夹`);
+  console.log(`选中项总数: ${selectedFiles.value.size}`);
+  
+  if (selectedFiles.value.size === 0) {
+    console.log("没有选中任何项目，取消删除");
+    return;
+  }
 
   let confirmMessage = "";
   if (files > 0 && directories > 0) {
@@ -1069,6 +1133,7 @@ const deleteSelectedItems = async () => {
   } else if (directories > 0) {
     confirmMessage = `确定要删除选中的 ${directories} 个文件夹吗？文件夹内的所有内容也会被删除，此操作不可恢复。`;
   } else {
+    console.log("选中项类型统计异常，取消删除");
     return; // 没有选中任何项目
   }
 
@@ -1088,15 +1153,29 @@ const deleteSelectedItems = async () => {
   try {
     // 转换为数组以便按顺序处理
     const itemsToDelete = Array.from(selectedFiles.value);
+    console.log(`开始删除 ${itemsToDelete.length} 个项目`);
 
     for (const fileName of itemsToDelete) {
       deleteProgress.value.currentItem = fileName;
-
-      const fileType = selectedItemTypes.value.get(fileName) || "file";
+      
+      // 检查是否存在类型信息，如果不存在，尝试获取
+      let fileType = selectedItemTypes.value.get(fileName);
+      if (!fileType) {
+        // 尝试从文件列表中获取类型信息
+        const fileItem = fileList.value.find(f => f.name === fileName);
+        if (fileItem) {
+          fileType = fileItem.type;
+          console.log(`为 ${fileName} 找到类型: ${fileType}`);
+        } else {
+          fileType = "file"; // 默认假设为文件
+          console.log(`无法确定 ${fileName} 的类型，默认为文件`);
+        }
+      }
 
       try {
         // 构建完整路径
         const fullPath = `${currentPath.value}/${fileName}`;
+        console.log(`删除 ${fileType} ${fullPath}`);
 
         // 执行删除操作
         const result = await window.api.sftpDelete({
@@ -1113,6 +1192,7 @@ const deleteSelectedItems = async () => {
 
         // 更新完成数量
         deleteProgress.value.completed++;
+        console.log(`已完成删除 ${deleteProgress.value.completed}/${deleteProgress.value.total}`);
       } catch (itemError: unknown) {
         console.error(`删除 ${fileName} 失败:`, itemError);
         error.value =
@@ -2247,6 +2327,22 @@ onMounted(async () => {
   nextTick(() => {
     adjustColumnsToFitContainer();
   });
+
+  // 监听窗口大小变化
+  window.addEventListener("resize", handleWindowResize);
+  // 监听键盘事件
+  window.addEventListener("keydown", handleKeyDown);
+
+  // 创建监听器变量
+  unlistenSftpReady = (window.api as any).onSftpReady((data) => {
+    if (data.connectionId === props.connectionId) {
+      console.log("检测到SFTP连接就绪事件，立即刷新文件列表");
+      loadCurrentDirectory();
+    }
+  });
+
+  // 开始检查传输状态
+  startTransferStatusCheck();
 });
 
 // 组件卸载时移除事件监听
@@ -2265,6 +2361,17 @@ onBeforeUnmount(() => {
 
   // 清除所有传输项的计时器
   clearAllRemovalTimers();
+
+  // 移除SFTP就绪事件监听
+  if (unlistenSftpReady) {
+    unlistenSftpReady();
+  }
+
+  // 清理传输状态检查定时器
+  if (transferStatusCheckTimer !== null) {
+    clearInterval(transferStatusCheckTimer);
+    transferStatusCheckTimer = null;
+  }
 });
 
 // 验证文件传输是否成功
@@ -3145,6 +3252,39 @@ onBeforeUnmount(() => {
     closeFileViewer();
   }
 });
+
+// 开始传输状态检查
+const startTransferStatusCheck = () => {
+  // 避免重复设置定时器
+  if (transferStatusCheckTimer !== null) {
+    clearInterval(transferStatusCheckTimer);
+  }
+
+  // 设置定时器，每秒检查一次传输状态
+  transferStatusCheckTimer = window.setInterval(() => {
+    // 检查是否有卡在传输中的项目
+    for (const item of transferProgress.value) {
+      // 只处理正在传输的项目
+      if (item.status !== "transferring") continue;
+
+      // 检查最后更新时间，如果超过10秒没有更新进度，可能卡住了
+      const now = Date.now();
+      const lastUpdateTime = item._lastUpdateTime || now;
+
+      if (now - lastUpdateTime > 10000) {
+        console.warn(`传输项 ${item.filename} 可能卡住了，10秒内没有进度更新`);
+
+        // 尝试验证是否已经完成
+        verifyTransferSuccess(item).then((success) => {
+          if (success) {
+            console.log(`传输卡住但实际已完成: ${item.filename}`);
+            handleTransferVerificationResult(item, true);
+          }
+        });
+      }
+    }
+  }, 1000);
+};
 </script>
 
 <template>
@@ -3232,7 +3372,12 @@ onBeforeUnmount(() => {
                 (e) => {
                   const target = e.target as HTMLInputElement;
                   if (target.checked) {
-                    fileList.forEach((f) => selectedFiles.add(f.name));
+                    // 全选文件，并设置正确的文件类型
+                    fileList.forEach((f) => {
+                      selectedFiles.add(f.name);
+                      selectedItemTypes.set(f.name, f.type);
+                    });
+                    console.log(`全选后文件数量: ${selectedFiles.size}, 类型映射大小: ${selectedItemTypes.size}`);
                   } else {
                     clearSelection();
                   }
@@ -3421,9 +3566,10 @@ onBeforeUnmount(() => {
               class="download-icon"
             />
             {{
-              selectedFiles.size > 1
-                ? `下载 ${selectedFiles.size} 个文件`
-                : "下载文件"
+              (() => {
+                const { files } = getSelectedItemsCount();
+                return files > 1 ? `下载 ${files} 个文件` : "下载文件";
+              })()
             }}
           </div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
@@ -3432,9 +3578,16 @@ onBeforeUnmount(() => {
               class="delete-icon"
             />
             {{
-              selectedFiles.size > 1
-                ? `删除 ${selectedFiles.size} 个文件`
-                : "删除文件"
+              (() => {
+                const { files, directories } = getSelectedItemsCount();
+                if (files > 0 && directories > 0) {
+                  return `删除 ${files + directories} 个项目`;
+                } else if (files > 1) {
+                  return `删除 ${files} 个文件`;
+                } else {
+                  return "删除文件";
+                }
+              })()
             }}
           </div>
         </template>
@@ -3478,9 +3631,16 @@ onBeforeUnmount(() => {
               class="delete-icon"
             />
             {{
-              selectedFiles.size > 1
-                ? `删除 ${selectedFiles.size} 个文件夹`
-                : "删除文件夹"
+              (() => {
+                const { files, directories } = getSelectedItemsCount();
+                if (files > 0 && directories > 0) {
+                  return `删除 ${files + directories} 个项目`;
+                } else if (directories > 1) {
+                  return `删除 ${directories} 个文件夹`;
+                } else {
+                  return "删除文件夹";
+                }
+              })()
             }}
           </div>
         </template>
@@ -3528,7 +3688,18 @@ onBeforeUnmount(() => {
                 :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
                 class="delete-icon"
               />
-              {{ `删除选中的 ${selectedFiles.size} 个项目` }}
+              {{ 
+                (() => {
+                  const { files, directories } = getSelectedItemsCount();
+                  if (files > 0 && directories > 0) {
+                    return `删除选中的 ${files} 个文件和 ${directories} 个文件夹`;
+                  } else if (files > 0) {
+                    return `删除选中的 ${files} 个文件`;
+                  } else {
+                    return `删除选中的 ${directories} 个文件夹`;
+                  }
+                })()
+              }}
             </div>
           </template>
         </template>
