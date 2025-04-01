@@ -37,13 +37,13 @@ linux:
     - AppImage
     - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: https://github.com/funkpopo/simpleshell
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
 publish:
   provider: generic
-  url: https://example.com/auto-updates
+  url: https://github.com/funkpopo/simpleshell/releases
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

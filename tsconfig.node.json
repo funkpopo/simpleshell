@@ -1,8 +1,13 @@
 {
-  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
   "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*"],
   "compilerOptions": {
     "composite": true,
-    "types": ["electron-vite/node"]
+    "types": ["electron-vite/node"],
+    "module": "esnext",
+    "moduleResolution": "node",
+    "target": "es2021",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "lib": ["ESNext"]
   }
 }

@@ -8,7 +8,7 @@ import {
   onBeforeUnmount,
   onUnmounted,
 } from "vue";
-import path from "path";
+import * as path from "path";
 import DeleteDayIcon from "../assets/delete-day.svg";
 import DeleteNightIcon from "../assets/delete-night.svg";
 import UploadDayIcon from "../assets/upload-day.svg";
@@ -249,13 +249,18 @@ const loadCurrentDirectory = async () => {
           error?: string;
         }
 
-        const result = (await Promise.race([
+        const rawResult = await Promise.race([
           window.api.sftpReadDir({
             connectionId: props.connectionId,
             path: currentPath.value,
           }),
           timeoutPromise,
-        ])) as ReadDirResult;
+        ]);
+        
+        // Use unknown as intermediate step for type safety
+        const result = rawResult ? 
+          (rawResult as unknown as ReadDirResult) : 
+          { success: false, files: [], error: "Timeout or null response" } as ReadDirResult;
 
         if (result.success && result.files) {
           console.log("目录加载成功，文件数量:", result.files.length);
