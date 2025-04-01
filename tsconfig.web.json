@@ -4,7 +4,8 @@
     "src/renderer/src/env.d.ts",
     "src/renderer/src/**/*",
     "src/renderer/src/**/*.vue",
-    "src/preload/*.d.ts"
+    "src/preload/*.d.ts",
+    "src/preload/global.d.ts"
   ],
   "compilerOptions": {
     "composite": true,
@@ -12,6 +13,7 @@
     "paths": {
       "@renderer/*": ["src/renderer/src/*"]
     },
-    "module": "esnext"
+    "module": "esnext",
+    "lib": ["DOM", "ESNext"]
   }
 }

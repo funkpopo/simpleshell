@@ -1,5 +1,11 @@
-import { contextBridge, ipcRenderer } from "electron";
+const { contextBridge, ipcRenderer } = require("electron");
 import { electronAPI } from "@electron-toolkit/preload";
+
+// Declare global variables for TypeScript
+declare const window: any;
+declare const document: any;
+declare const process: any;
+declare const CustomEvent: any;
 
 // Define interfaces for the API types
 interface SystemInfo {
@@ -564,7 +570,7 @@ const api = {
     ipcRenderer.on("app:before-close", handleBeforeClose);
 
     // 同时监听窗口的beforeunload事件作为备份
-    window.addEventListener("beforeunload", () => {
+    (window as any).addEventListener("beforeunload", () => {
       console.log("触发beforeunload事件");
       handleBeforeClose();
     });

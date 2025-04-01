@@ -4,7 +4,7 @@
     "composite": true,
     "types": ["electron-vite/node"],
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "target": "es2021",
     "esModuleInterop": true,
     "resolveJsonModule": true,
