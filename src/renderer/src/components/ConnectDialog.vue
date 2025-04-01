@@ -10,6 +10,9 @@ interface Connection {
   name: string;
   host: string;
   port: number;
+  useProxy?: boolean;
+  proxyHost?: string;
+  proxyPort?: number;
   username: string;
   password?: string;
   privateKey?: string;
@@ -27,6 +30,9 @@ interface ConnectionFormData {
   name: string;
   host?: string;
   port?: number;
+  useProxy?: boolean;
+  proxyHost?: string;
+  proxyPort?: number;
   username?: string;
   password?: string;
   privateKey?: string;
@@ -61,6 +67,9 @@ const formData = ref<ConnectionFormData>({
   name: "",
   host: "",
   port: 22,
+  useProxy: false,
+  proxyHost: "",
+  proxyPort: 1080,
   username: "",
   password: "",
   privateKey: "",
@@ -74,6 +83,8 @@ const formErrors = ref<{
   host?: string;
   port?: string;
   username?: string;
+  proxyHost?: string;
+  proxyPort?: string;
 }>({});
 
 // 对话框标题
@@ -140,6 +151,9 @@ const initFormData = () => {
     name: "",
     host: "",
     port: 22,
+    useProxy: false,
+    proxyHost: "",
+    proxyPort: 1080,
     username: "",
     password: "",
     privateKey: "",
@@ -228,6 +242,23 @@ const validateForm = (): boolean => {
     if (!formData.value.username?.trim()) {
       formErrors.value.username = `${t("connection.username")}${t("connection.required")}`;
       isValid = false;
+    }
+
+    // 如果启用了代理，验证代理主机和端口
+    if (formData.value.useProxy) {
+      if (!formData.value.proxyHost?.trim()) {
+        formErrors.value.proxyHost = `代理主机${t("connection.required")}`;
+        isValid = false;
+      }
+
+      if (
+        !formData.value.proxyPort ||
+        formData.value.proxyPort <= 0 ||
+        formData.value.proxyPort > 65535
+      ) {
+        formErrors.value.proxyPort = t("connection.portRange");
+        isValid = false;
+      }
     }
   }
 
@@ -472,6 +503,56 @@ onMounted(() => {
                 placeholder="可选，添加对此连接的描述"
                 rows="2"
               ></textarea>
+            </div>
+
+            <!-- 代理设置 -->
+            <div class="form-input proxy-section">
+              <div class="proxy-header">
+                <label class="proxy-label">
+                  <input
+                    type="checkbox"
+                    v-model="formData.useProxy"
+                    class="proxy-checkbox"
+                  />
+                  使用代理服务器
+                </label>
+              </div>
+
+              <div v-if="formData.useProxy" class="proxy-settings">
+                <div class="form-input">
+                  <label for="proxyHost"
+                    >代理主机 <span class="required">*</span></label
+                  >
+                  <input
+                    id="proxyHost"
+                    v-model="formData.proxyHost"
+                    type="text"
+                    :class="{ error: formErrors.proxyHost }"
+                    placeholder="例如: 127.0.0.1"
+                  />
+                  <div v-if="formErrors.proxyHost" class="error-message">
+                    {{ formErrors.proxyHost }}
+                  </div>
+                </div>
+
+                <div class="form-input">
+                  <label for="proxyPort"
+                    >代理端口 <span class="required">*</span></label
+                  >
+                  <input
+                    id="proxyPort"
+                    v-model.number="formData.proxyPort"
+                    type="number"
+                    :class="{ error: formErrors.proxyPort }"
+                    min="1"
+                    max="65535"
+                    placeholder="例如: 1080"
+                  />
+                  <div v-if="formErrors.proxyPort" class="error-message">
+                    {{ formErrors.proxyPort }}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -869,5 +950,40 @@ onMounted(() => {
 
 .file-error {
   margin-top: 4px;
+}
+
+/* 代理设置样式 */
+.proxy-section {
+  margin-top: 10px;
+  border-top: 1px solid #e0e0e0;
+  padding-top: 15px;
+}
+
+.dark-theme .proxy-section {
+  border-top: 1px solid #444;
+}
+
+.proxy-header {
+  margin-bottom: 10px;
+}
+
+.proxy-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.proxy-checkbox {
+  margin-right: 8px;
+}
+
+.proxy-settings {
+  margin-top: 10px;
+  padding-left: 10px;
+  border-left: 2px solid #e0e0e0;
+}
+
+.dark-theme .proxy-settings {
+  border-left: 2px solid #444;
 }
 </style>
