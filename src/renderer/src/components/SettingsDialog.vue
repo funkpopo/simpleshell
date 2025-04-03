@@ -68,6 +68,11 @@ const currentApiConfig = ref<AIApiConfig | null>(null);
 const showApiConfigDialog = ref(false);
 const isEditingApi = ref(false);
 
+// 测试相关状态
+const isTesting = ref(false);
+const testResult = ref<{ success: boolean; message: string } | null>(null);
+const testingApiId = ref<string | null>(null);
+
 // 安全的API配置属性访问
 const apiName = computed({
   get: () => currentApiConfig.value?.name || "",
@@ -331,6 +336,58 @@ const cancelApiConfig = () => {
   currentApiConfig.value = null;
 };
 
+// 测试API配置
+const testApiConfig = async (api: AIApiConfig) => {
+  try {
+    testingApiId.value = api.id;
+    isTesting.value = true;
+    testResult.value = null;
+
+    const testMessage =
+      "Hello, this is a test message. Please respond with a short confirmation.";
+
+    const response = await window.api.sendAIRequest({
+      prompt: testMessage,
+      messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: testMessage },
+      ],
+      apiKey: api.apiKey,
+      apiUrl: api.apiUrl,
+      modelName: api.modelName,
+      stream: false,
+    });
+
+    if (response.success) {
+      testResult.value = {
+        success: true,
+        message: t("settings.aiApi.testSuccess"),
+      };
+    } else {
+      testResult.value = {
+        success: false,
+        message: response.error || t("settings.aiApi.testFailed"),
+      };
+    }
+  } catch (error) {
+    console.error("测试AI接口失败:", error);
+    testResult.value = {
+      success: false,
+      message:
+        error instanceof Error ? error.message : t("settings.aiApi.testFailed"),
+    };
+  } finally {
+    isTesting.value = false;
+    // 5秒后自动清除测试结果
+    setTimeout(() => {
+      if (testingApiId.value === api.id) {
+        testResult.value = null;
+        testingApiId.value = null;
+      }
+    }, 5000);
+  }
+};
+
 // 监听设置变更
 watch(
   () => formData.value,
@@ -490,20 +547,46 @@ onMounted(() => {
                   :key="api.id"
                   class="api-item"
                 >
-                  <div class="api-info">
-                    <div class="api-name">{{ api.name }}</div>
-                    <div class="api-url">{{ api.apiUrl }}</div>
+                  <div class="api-content">
+                    <div class="api-info">
+                      <div class="api-name">{{ api.name }}</div>
+                      <div class="api-url">{{ api.apiUrl }}</div>
+                    </div>
+                    <div class="api-actions">
+                      <button class="edit-button" @click="editApiConfig(api)">
+                        {{ t("common.edit") }}
+                      </button>
+                      <button
+                        class="test-button"
+                        @click="testApiConfig(api)"
+                        :disabled="isTesting && testingApiId === api.id"
+                      >
+                        {{
+                          isTesting && testingApiId === api.id
+                            ? t("common.testing")
+                            : t("common.test")
+                        }}
+                      </button>
+                      <button
+                        class="delete-button"
+                        @click="deleteApiConfig(api.id)"
+                      >
+                        {{ t("common.delete") }}
+                      </button>
+                    </div>
                   </div>
-                  <div class="api-actions">
-                    <button class="edit-button" @click="editApiConfig(api)">
-                      {{ t("common.edit") }}
-                    </button>
-                    <button
-                      class="delete-button"
-                      @click="deleteApiConfig(api.id)"
-                    >
-                      {{ t("common.delete") }}
-                    </button>
+                  <div
+                    v-if="testingApiId === api.id && testResult"
+                    class="test-result"
+                    :class="{
+                      success: testResult.success,
+                      error: !testResult.success,
+                    }"
+                  >
+                    <span class="result-icon">
+                      {{ testResult.success ? "✓" : "✕" }}
+                    </span>
+                    <span class="result-message">{{ testResult.message }}</span>
                   </div>
                 </div>
               </div>
@@ -927,8 +1010,7 @@ onMounted(() => {
 
 .api-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   padding: 10px;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
@@ -938,6 +1020,13 @@ onMounted(() => {
 .dark-theme .api-item {
   border-color: #444;
   background-color: #333;
+}
+
+.api-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
 }
 
 .api-info {
@@ -962,5 +1051,110 @@ onMounted(() => {
 .api-actions {
   display: flex;
   gap: 5px;
+}
+
+.test-button {
+  background-color: #4c94d4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.test-button:hover {
+  background-color: #3a7ab8;
+}
+
+.test-button:disabled {
+  background-color: #94b8d4;
+  cursor: wait;
+}
+
+.test-result {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  animation: fadeIn 0.3s ease-in-out;
+  transition: all 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.result-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  margin-right: 10px;
+  font-size: 14px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.test-result.success .result-icon {
+  background-color: rgba(0, 128, 0, 0.2);
+  color: #008800;
+}
+
+.test-result.error .result-icon {
+  background-color: rgba(220, 0, 0, 0.2);
+  color: #cc0000;
+}
+
+.result-message {
+  line-height: 1.4;
+}
+
+.test-result.success {
+  background-color: rgba(0, 128, 0, 0.05);
+  color: #006400;
+  border-left: 3px solid #00aa00;
+}
+
+.test-result.error {
+  background-color: rgba(220, 0, 0, 0.05);
+  color: #a80000;
+  border-left: 3px solid #cc0000;
+}
+
+.dark-theme .test-result.success {
+  background-color: rgba(0, 128, 0, 0.15);
+  color: #00cc00;
+  border-left: 3px solid #00cc00;
+}
+
+.dark-theme .test-result.error {
+  background-color: rgba(220, 0, 0, 0.15);
+  color: #ff6666;
+  border-left: 3px solid #ff4444;
+}
+
+.dark-theme .test-result.success .result-icon {
+  background-color: rgba(0, 204, 0, 0.3);
+  color: #00ee00;
+}
+
+.dark-theme .test-result.error .result-icon {
+  background-color: rgba(255, 68, 68, 0.3);
+  color: #ff8888;
 }
 </style>
