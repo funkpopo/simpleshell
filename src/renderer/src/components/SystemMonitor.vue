@@ -233,15 +233,62 @@ const getProgressColor = (value: number) => {
   return "#4CAF50";
 };
 
-const cpuProgressStyle = computed(() => ({
-  width: `${systemInfo.value.cpuInfo.usage}%`,
-  background: `linear-gradient(to right, ${getProgressColor(systemInfo.value.cpuInfo.usage)}, ${getProgressColor(systemInfo.value.cpuInfo.usage)}bb)`,
-}));
+const cpuProgressStyle = computed(() => {
+  const usage = systemInfo.value.cpuInfo.usage;
+  const baseColor = getProgressColor(usage);
 
-const memoryProgressStyle = computed(() => ({
-  width: `${systemInfo.value.memoryInfo.usedPercentage}%`,
-  background: `linear-gradient(to right, ${getProgressColor(systemInfo.value.memoryInfo.usedPercentage)}, ${getProgressColor(systemInfo.value.memoryInfo.usedPercentage)}bb)`,
-}));
+  // 根据使用率计算渐变
+  return {
+    width: `${usage}%`,
+    background: `linear-gradient(to right, ${baseColor}, ${baseColor}dd)`,
+    boxShadow: usage > 80 ? "0 0 8px rgba(255, 71, 87, 0.6)" : "none",
+    animation: usage > 85 ? "pulse 1.5s infinite" : "none",
+  };
+});
+
+const memoryProgressStyle = computed(() => {
+  const usage = systemInfo.value.memoryInfo.usedPercentage;
+  const baseColor = getProgressColor(usage);
+
+  // 根据使用率计算渐变
+  return {
+    width: `${usage}%`,
+    background: `linear-gradient(to right, ${baseColor}, ${baseColor}dd)`,
+    boxShadow: usage > 80 ? "0 0 8px rgba(255, 71, 87, 0.6)" : "none",
+    animation: usage > 85 ? "pulse 1.5s infinite" : "none",
+  };
+});
+
+// 迷你进度条样式计算属性
+const cpuMiniProgressStyle = computed(() => {
+  const usage = systemInfo.value.cpuInfo.usage;
+  const baseColor = getProgressColor(usage);
+
+  return {
+    height: `${usage}%`,
+    background: `linear-gradient(to top, ${baseColor}, ${baseColor}dd)`,
+    boxShadow: usage > 80 ? "0 0 8px rgba(255, 71, 87, 0.6)" : "none",
+    animation:
+      usage > 85
+        ? "pulse 1.5s infinite, shimmer 2s infinite linear"
+        : "shimmer 2s infinite linear",
+  };
+});
+
+const memoryMiniProgressStyle = computed(() => {
+  const usage = systemInfo.value.memoryInfo.usedPercentage;
+  const baseColor = getProgressColor(usage);
+
+  return {
+    height: `${usage}%`,
+    background: `linear-gradient(to top, ${baseColor}, ${baseColor}dd)`,
+    boxShadow: usage > 80 ? "0 0 8px rgba(255, 71, 87, 0.6)" : "none",
+    animation:
+      usage > 85
+        ? "pulse 1.5s infinite, shimmer 2s infinite linear"
+        : "shimmer 2s infinite linear",
+  };
+});
 
 // 监听SSH连接状态变化
 watch(
@@ -268,13 +315,7 @@ watch(
         data-type="CPU"
         :title="`${t('system.cpu')}: ${formatPercentage(systemInfo.cpuInfo.usage)}%\n${t('system.model')}: ${systemInfo.cpuInfo.model}\n${t('system.cores')}: ${systemInfo.cpuInfo.cores}`"
       >
-        <div
-          class="mini-progress-bar"
-          :style="{
-            height: `${systemInfo.cpuInfo.usage}%`,
-            background: 'var(--progress-gradient)',
-          }"
-        ></div>
+        <div class="mini-progress-bar" :style="cpuMiniProgressStyle"></div>
         <span class="mini-progress-text"
           >{{ formatPercentage(systemInfo.cpuInfo.usage) }}%</span
         >
@@ -286,13 +327,7 @@ watch(
         data-type="MEM"
         :title="`${t('system.memory')}: ${formatPercentage(systemInfo.memoryInfo.usedPercentage)}%\n${t('system.used')}: ${formatBytes(systemInfo.memoryInfo.used)}\n${t('system.total')}: ${formatBytes(systemInfo.memoryInfo.total)}`"
       >
-        <div
-          class="mini-progress-bar"
-          :style="{
-            height: `${systemInfo.memoryInfo.usedPercentage}%`,
-            background: 'var(--progress-gradient)',
-          }"
-        ></div>
+        <div class="mini-progress-bar" :style="memoryMiniProgressStyle"></div>
         <span class="mini-progress-text"
           >{{ formatPercentage(systemInfo.memoryInfo.usedPercentage) }}%</span
         >
@@ -447,6 +482,15 @@ watch(
   flex-direction: column;
   align-items: center;
   transition: all 0.3s ease;
+  backdrop-filter: blur(1px);
+}
+
+/* 增加进度条悬停效果 */
+.mini-progress:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 /* 折叠状态下优化mini-progress样式 */
@@ -457,6 +501,24 @@ watch(
   box-shadow:
     inset 0 2px 4px rgba(0, 0, 0, 0.3),
     0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 进度条内添加刻度线 */
+.mini-progress::after {
+  content: "";
+  position: absolute;
+  top: 5%;
+  left: 0;
+  width: 100%;
+  height: 90%;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 19%,
+    rgba(255, 255, 255, 0.1) 19%,
+    rgba(255, 255, 255, 0.1) 20%
+  );
+  pointer-events: none;
 }
 
 .mini-progress::before {
@@ -473,6 +535,8 @@ watch(
   padding: 1px 2px;
   border-radius: 3px;
   white-space: nowrap;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(2px);
 }
 
 /* 折叠状态下优化标签样式 */
@@ -488,10 +552,21 @@ watch(
   bottom: 0;
   left: 0;
   width: 100%;
-  transition: height 0.3s ease;
+  transition: height 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.3) inset,
     0 -1px 0 rgba(0, 0, 0, 0.1) inset;
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite linear;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
 }
 
 /* 折叠状态下优化进度条样式 */
@@ -507,32 +582,37 @@ watch(
   bottom: 4px;
   transform: translateX(-50%);
   color: white;
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 400;
   z-index: 1;
   white-space: nowrap;
-  letter-spacing: -0.5px;
-  padding: 1px 3px;
-  border-radius: 4px;
+  letter-spacing: -0.3px;
+  padding: 1px 2px;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.7),
+    0 0 3px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s ease;
 }
 
 /* 折叠状态下优化文本样式 */
 .right-sidebar-collapsed .mini-progress-text {
   bottom: 6px;
-  font-size: 12px;
-  padding: 2px 4px;
-  border-radius: 6px;
+  font-size: 10px;
+  padding: 0;
   letter-spacing: 0;
   font-weight: 500;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.8),
+    0 0 4px rgba(0, 0, 0, 0.6);
 }
 
 .mini-progress.cpu {
   --progress-color: #4caf50;
   --progress-gradient: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--progress-color) 90%, white) 0%,
-    var(--progress-color) 50%,
-    color-mix(in srgb, var(--progress-color) 90%, black) 100%
+    rgba(76, 175, 80, 0.9) 0%,
+    rgba(76, 175, 80, 1) 50%,
+    rgba(56, 142, 60, 1) 100%
   );
 }
 
@@ -540,9 +620,9 @@ watch(
   --progress-color: #2196f3;
   --progress-gradient: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--progress-color) 90%, white) 0%,
-    var(--progress-color) 50%,
-    color-mix(in srgb, var(--progress-color) 90%, black) 100%
+    rgba(33, 150, 243, 0.9) 0%,
+    rgba(33, 150, 243, 1) 50%,
+    rgba(25, 118, 210, 1) 100%
   );
 }
 
@@ -554,11 +634,11 @@ watch(
 }
 
 .dark-theme .mini-progress::before {
-  background: rgba(0, 0, 0, 0);
+  background: rgba(0, 0, 0, 0.4);
 }
 
 .dark-theme .mini-progress-text {
-  background: rgba(0, 0, 0, 0.4);
+  background: none;
 }
 
 .dark-theme .mini-progress-bar {
@@ -657,11 +737,52 @@ watch(
 
 .progress {
   height: 100%;
-  transition: all 0.3s ease;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.3) inset,
     0 -1px 0 rgba(0, 0, 0, 0.1) inset;
   min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  width: 100%;
+  transform: translateX(-100%);
+  animation: shimmer-horizontal 2s infinite;
+}
+
+@keyframes shimmer-horizontal {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.8;
+  }
 }
 
 .progress.warning {
@@ -707,6 +828,9 @@ watch(
   white-space: nowrap;
   min-width: 35px;
   text-align: right;
+  z-index: 5;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
 }
 
 :root {
