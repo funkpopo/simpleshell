@@ -15,6 +15,15 @@ export interface Connection {
   [key: string]: unknown; // Use unknown instead of any
 }
 
+// API配置接口
+export interface ApiConfig {
+  id: string;
+  name: string;
+  apiUrl: string;
+  apiKey: string;
+  modelName: string;
+}
+
 // AES 加密配置
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16; // 初始化向量长度
@@ -152,4 +161,46 @@ export function decryptConnection<
   }
 
   return decryptedConn;
+}
+
+// 加密AI API配置
+export function encryptApiConfig(config: ApiConfig): ApiConfig {
+  if (!config) return config;
+
+  // 创建深拷贝，避免修改原对象
+  const encryptedConfig = JSON.parse(JSON.stringify(config)) as ApiConfig;
+
+  // 加密API密钥
+  if (encryptedConfig.apiKey) {
+    encryptedConfig.apiKey = encryptString(encryptedConfig.apiKey);
+  }
+
+  return encryptedConfig;
+}
+
+// 解密AI API配置
+export function decryptApiConfig(config: ApiConfig): ApiConfig {
+  if (!config) return config;
+
+  // 创建深拷贝，避免修改原对象
+  const decryptedConfig = JSON.parse(JSON.stringify(config)) as ApiConfig;
+
+  // 解密API密钥
+  if (decryptedConfig.apiKey) {
+    decryptedConfig.apiKey = decryptString(decryptedConfig.apiKey);
+  }
+
+  return decryptedConfig;
+}
+
+// 批量加密API配置
+export function encryptApiConfigs(configs: ApiConfig[]): ApiConfig[] {
+  if (!configs || !Array.isArray(configs)) return configs;
+  return configs.map(encryptApiConfig);
+}
+
+// 批量解密API配置
+export function decryptApiConfigs(configs: ApiConfig[]): ApiConfig[] {
+  if (!configs || !Array.isArray(configs)) return configs;
+  return configs.map(decryptApiConfig);
 }

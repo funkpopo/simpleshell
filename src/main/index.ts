@@ -12,6 +12,10 @@ import {
   encryptConnection,
   decryptConnection,
   decryptString,
+  encryptApiConfig,
+  decryptApiConfig,
+  encryptApiConfigs,
+  decryptApiConfigs,
 } from "./crypto-utils";
 import { spawn } from "child_process";
 import OpenAI from "openai";
@@ -2078,57 +2082,66 @@ app.whenReady().then(() => {
 // 加载全局设置
 function loadSettings(): AppSettings {
   try {
-    // 首先检查文件是否存在
-    if (fs.existsSync(settingsPath)) {
-      const fileContent = fs.readFileSync(settingsPath, "utf-8");
-      // 如果文件存在但为空或内容无效，返回默认设置
-      if (!fileContent.trim()) {
-        console.log("设置文件存在但为空，返回默认设置");
+    // 获取设置文件路径
+    const configPath = settingsPath;
+
+    if (fs.existsSync(configPath)) {
+      // 读取配置文件
+      const data = fs.readFileSync(configPath, "utf8");
+      const parsedData = JSON.parse(data);
+
+      // 提取设置对象
+      const settings = Array.isArray(parsedData) ? parsedData[0] : parsedData;
+
+      if (!settings) {
+        console.warn("配置文件解析失败，使用默认设置");
         return getDefaultSettings();
       }
 
-      try {
-        const parsed = JSON.parse(fileContent);
-        // console.log("成功加载设置文件");
-
-        // 处理数组格式的配置文件
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // console.log("检测到数组格式的设置文件，使用第一个元素");
-          return parsed[0];
-        }
-
-        return parsed;
-      } catch (parseError) {
-        console.error("解析设置文件失败:", parseError);
-        return getDefaultSettings();
+      // 解密API密钥
+      if (Array.isArray(settings.aiApis)) {
+        settings.aiApis = decryptApiConfigs(settings.aiApis);
       }
+
+      if (settings.aiSettings) {
+        const decryptedSettings = decryptApiConfig({
+          id: "legacy",
+          name: "Legacy Settings",
+          apiUrl: settings.aiSettings.apiUrl || "",
+          apiKey: settings.aiSettings.apiKey || "",
+          modelName: settings.aiSettings.modelName || "",
+        });
+
+        settings.aiSettings = {
+          apiUrl: decryptedSettings.apiUrl,
+          apiKey: decryptedSettings.apiKey,
+          modelName: decryptedSettings.modelName,
+        };
+      }
+
+      // 增加默认值
+      if (!settings.fontSize) settings.fontSize = 14;
+      if (!settings.fontFamily) settings.fontFamily = "system-ui";
+      if (!settings.language) settings.language = "zh-CN";
+      if (!settings.terminalFontFamily)
+        settings.terminalFontFamily = 'Consolas, "Courier New", monospace';
+      if (!settings.terminalFontSize) settings.terminalFontSize = 14;
+
+      // 确保 sshKeepAlive 设置存在
+      if (!settings.sshKeepAlive) {
+        settings.sshKeepAlive = {
+          enabled: true,
+          interval: 120000, // 默认2分钟
+        };
+      }
+
+      return settings;
     } else {
-      // 文件不存在的情况，创建一个包含默认设置的新文件
-      console.log("设置文件不存在，创建默认设置文件");
-      const defaultSettings = getDefaultSettings();
-
-      try {
-        // 确保目录存在
-        const dirPath = path.dirname(settingsPath);
-        if (!fs.existsSync(dirPath)) {
-          fs.mkdirSync(dirPath, { recursive: true });
-        }
-
-        // 写入默认设置 - 保持数组格式与现有config.json一致
-        fs.writeFileSync(
-          settingsPath,
-          JSON.stringify([defaultSettings], null, 2),
-          "utf-8",
-        );
-        console.log("已创建默认设置文件:", settingsPath);
-      } catch (writeError) {
-        console.error("创建默认设置文件失败:", writeError);
-      }
-
-      return defaultSettings;
+      console.warn("配置文件不存在，使用默认设置");
+      return getDefaultSettings();
     }
   } catch (error) {
-    console.error("加载设置时发生错误:", error);
+    console.error("加载设置失败:", error);
     return getDefaultSettings();
   }
 }
@@ -2145,23 +2158,33 @@ function saveSettings(settings: AppSettings): boolean {
       terminalFontSize: settings.terminalFontSize,
     };
 
-    // 处理 aiApis 数组
+    // 处理 aiApis 数组，加密API密钥
     if (Array.isArray(settings.aiApis)) {
-      cleanSettings.aiApis = settings.aiApis.map((api) => ({
-        id: api.id,
-        name: api.name,
-        apiUrl: api.apiUrl,
-        apiKey: api.apiKey,
-        modelName: api.modelName,
-      }));
+      cleanSettings.aiApis = encryptApiConfigs(
+        settings.aiApis.map((api) => ({
+          id: api.id,
+          name: api.name,
+          apiUrl: api.apiUrl,
+          apiKey: api.apiKey,
+          modelName: api.modelName,
+        })),
+      );
     }
 
     // 处理旧版 aiSettings
     if (settings.aiSettings) {
+      const encryptedSettings = encryptApiConfig({
+        id: "legacy",
+        name: "Legacy Settings",
+        apiUrl: settings.aiSettings.apiUrl || "",
+        apiKey: settings.aiSettings.apiKey || "",
+        modelName: settings.aiSettings.modelName || "",
+      });
+
       cleanSettings.aiSettings = {
-        apiUrl: settings.aiSettings.apiUrl,
-        apiKey: settings.aiSettings.apiKey,
-        modelName: settings.aiSettings.modelName,
+        apiUrl: encryptedSettings.apiUrl,
+        apiKey: encryptedSettings.apiKey,
+        modelName: encryptedSettings.modelName,
       };
     }
 
@@ -2185,9 +2208,32 @@ function saveSettings(settings: AppSettings): boolean {
     // 将设置写入文件
     fs.writeFileSync(configPath, JSON.stringify([cleanSettings], null, 2));
 
-    // 通知渲染进程设置已更新
+    // 通知渲染进程设置已更新 - 发送到渲染进程前解密API密钥
     if (mainWindow) {
-      mainWindow.webContents.send("settings-saved", cleanSettings);
+      // 创建一个用于显示的设置副本，解密API密钥
+      const displaySettings = JSON.parse(JSON.stringify(cleanSettings));
+
+      if (Array.isArray(displaySettings.aiApis)) {
+        displaySettings.aiApis = decryptApiConfigs(displaySettings.aiApis);
+      }
+
+      if (displaySettings.aiSettings) {
+        const decryptedSettings = decryptApiConfig({
+          id: "legacy",
+          name: "Legacy Settings",
+          apiUrl: displaySettings.aiSettings.apiUrl || "",
+          apiKey: displaySettings.aiSettings.apiKey || "",
+          modelName: displaySettings.aiSettings.modelName || "",
+        });
+
+        displaySettings.aiSettings = {
+          apiUrl: decryptedSettings.apiUrl,
+          apiKey: decryptedSettings.apiKey,
+          modelName: decryptedSettings.modelName,
+        };
+      }
+
+      mainWindow.webContents.send("settings-saved", displaySettings);
     }
 
     return true;
@@ -2246,7 +2292,21 @@ ipcMain.handle("load-settings", async () => {
 // 保存设置
 ipcMain.handle("save-settings", async (_event, settings) => {
   try {
-    console.log("收到保存设置请求:", settings);
+    console.log("收到保存设置请求:", {
+      ...settings,
+      aiSettings: settings.aiSettings
+        ? {
+            ...settings.aiSettings,
+            apiKey: settings.aiSettings.apiKey ? "***" : undefined,
+          }
+        : undefined,
+      aiApis: Array.isArray(settings.aiApis)
+        ? settings.aiApis.map((api) => ({
+            ...api,
+            apiKey: api.apiKey ? "***" : undefined,
+          }))
+        : [],
+    });
 
     // 确保settings对象只包含需要的属性
     const cleanSettings = {
@@ -2284,14 +2344,14 @@ ipcMain.handle("save-settings", async (_event, settings) => {
 
     if (success) {
       console.log("保存成功，准备通知所有窗口");
-      // 通知所有窗口更新设置
+      // 通知所有窗口更新设置 - 注意saveSettings函数内部已处理加密/解密逻辑
       const windows = BrowserWindow.getAllWindows();
       console.log(`正在向 ${windows.length} 个窗口广播设置更新`);
 
       windows.forEach((win) => {
         if (!win.isDestroyed()) {
           console.log(`向窗口 ${win.id} 发送设置更新通知`);
-          win.webContents.send("settings-saved", cleanSettings);
+          // settingsUpdate事件将通过saveSettings直接处理
         }
       });
 
@@ -2367,6 +2427,8 @@ async function handleAIRequest(params: {
 
     // 获取设置
     const settings = loadSettings();
+
+    // 注意：loadSettings已经处理了解密，此处使用的是解密后的值
 
     // 使用传入的参数或从设置中获取
     const apiKey = params.apiKey || settings.aiSettings?.apiKey;

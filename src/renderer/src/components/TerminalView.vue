@@ -2223,6 +2223,7 @@ const refreshTerminal = () => {
   flex: 1;
   overflow: hidden;
   padding-left: 5px; /* 添加左侧内边距，避免被left-sidebar-toggle遮挡 */
+  padding-right: 5px; /* 添加右侧内边距，确保滚动条显示完整 */
   height: 100%; /* 确保高度填满父容器 */
   display: flex; /* 添加flex显示属性 */
   flex-direction: column; /* 设置列方向排列 */
@@ -2251,6 +2252,7 @@ const refreshTerminal = () => {
 :deep(.terminal-instance) {
   width: 100%;
   height: 100%;
+  position: relative; /* 添加相对定位 */
 }
 
 :deep(.xterm) {
@@ -2258,33 +2260,70 @@ const refreshTerminal = () => {
   width: 100%;
   height: 100%;
   margin-left: 5px; /* 增加左侧边距，避免被left-sidebar-toggle遮挡 */
+  margin-right: 5px; /* 增加右侧边距，确保滚动条显示完整 */
 }
 
 :deep(.xterm-screen) {
-  width: calc(100% - 5px) !important; /* 调整宽度，保留左侧边距 */
+  width: 100% !important; /* 修改为100%，移除calc计算 */
 }
 
 :deep(.xterm-viewport) {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(128, 128, 128, 0.4) transparent;
+  transition: all 0.3s ease;
+  right: 0; /* 确保视口右侧对齐 */
+  position: absolute; /* 添加绝对定位 */
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar) {
-  width: 6px;
+  width: 10px;
+  background: transparent;
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar-track) {
   background: transparent;
+  margin: 4px;
+  border-radius: 4px;
 }
 
 :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
   background-color: rgba(128, 128, 128, 0.4);
-  border-radius: 3px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 10px;
+  min-height: 50px;
+  transition: all 0.2s ease;
 }
 
-:deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
-  background-color: rgba(128, 128, 128, 0.7);
+:deep(.xterm-viewport:hover::-webkit-scrollbar-thumb) {
+  background-color: rgba(128, 128, 128, 0.6);
+}
+
+/* 暗色主题下的滚动条样式 */
+.dark-theme :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+.dark-theme :deep(.xterm-viewport:hover::-webkit-scrollbar-thumb) {
+  background-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Firefox 滚动条样式支持 */
+:deep(.xterm-viewport:hover) {
+  scrollbar-width: thin;
+}
+
+.dark-theme :deep(.xterm-viewport) {
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+:deep(.xterm-viewport:hover) {
+  scrollbar-color: rgba(128, 128, 128, 0.6) transparent;
+}
+
+.dark-theme :deep(.xterm-viewport:hover) {
+  scrollbar-color: rgba(255, 255, 255, 0.4) transparent;
 }
 
 /* 拖拽相关样式 */
