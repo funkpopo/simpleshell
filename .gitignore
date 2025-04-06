@@ -29,4 +29,5 @@ temp/*
 .vscode/*
 
 # 忽略.webpack
+.webpack
 .webpack/*
