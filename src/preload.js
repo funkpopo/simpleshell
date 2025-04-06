@@ -99,10 +99,12 @@ contextBridge.exposeInMainWorld('terminalAPI', {
   checkForUpdate: () => ipcRenderer.invoke('app:checkForUpdate'),
   
   // 文件管理相关API
-  listFiles: (tabId, path) => ipcRenderer.invoke('listFiles', tabId, path),
+  listFiles: (tabId, path, options) => ipcRenderer.invoke('listFiles', tabId, path, options),
   copyFile: (tabId, sourcePath, targetPath) => ipcRenderer.invoke('copyFile', tabId, sourcePath, targetPath),
   moveFile: (tabId, sourcePath, targetPath) => ipcRenderer.invoke('moveFile', tabId, sourcePath, targetPath),
   deleteFile: (tabId, filePath, isDirectory) => ipcRenderer.invoke('deleteFile', tabId, filePath, isDirectory),
+  createFolder: (tabId, folderPath) => ipcRenderer.invoke('createFolder', tabId, folderPath),
+  createFile: (tabId, filePath) => ipcRenderer.invoke('createFile', tabId, filePath),
   downloadFile: (tabId, remotePath, progressCallback) => {
     // 注册一个临时的进度监听器
     const progressListener = (_, data) => {
