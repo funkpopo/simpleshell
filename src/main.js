@@ -50,6 +50,430 @@ let nextProcessId = 1;
 // 存储活动的文件传输
 const activeTransfers = new Map();
 
+// 添加 SFTP 会话池
+const sftpSessions = new Map();  // 用于缓存 SFTP 会话，按 tabId 存储
+const sftpSessionLocks = new Map();  // 用于防止并发创建同一个会话
+const pendingOperations = new Map();  // 按 tabId 存储待处理的操作队列
+
+// SFTP会话池配置
+const SFTP_SESSION_IDLE_TIMEOUT = 20000;  // 空闲超时时间（毫秒），从60秒减少到20秒
+const MAX_SFTP_SESSIONS_PER_TAB = 1;      // 每个标签页的最大会话数量
+const MAX_TOTAL_SFTP_SESSIONS = 10;       // 总的最大会话数量
+const SFTP_HEALTH_CHECK_INTERVAL = 30000; // 健康检查间隔（毫秒）
+const SFTP_OPERATION_TIMEOUT = 20000;     // 操作超时时间（毫秒）
+
+// 添加 SFTP 会话池健康检查定时器
+let sftpHealthCheckTimer = null;
+
+// 启动SFTP会话池健康检查
+function startSftpHealthCheck() {
+  // 如果已经有定时器在运行，先清除
+  if (sftpHealthCheckTimer) {
+    clearInterval(sftpHealthCheckTimer);
+  }
+  
+  // 设置定时器，定期检查SFTP会话健康状况
+  sftpHealthCheckTimer = setInterval(() => {
+    checkSftpSessionsHealth();
+  }, SFTP_HEALTH_CHECK_INTERVAL);
+  
+  logToFile('Started SFTP session health check', 'INFO');
+}
+
+// 停止SFTP会话池健康检查
+function stopSftpHealthCheck() {
+  if (sftpHealthCheckTimer) {
+    clearInterval(sftpHealthCheckTimer);
+    sftpHealthCheckTimer = null;
+    logToFile('Stopped SFTP session health check', 'INFO');
+  }
+}
+
+// 检查SFTP会话健康状况
+function checkSftpSessionsHealth() {
+  try {
+    logToFile(`Running SFTP health check, active sessions: ${sftpSessions.size}`, 'INFO');
+    
+    // 如果会话总数超过限制，关闭最老的会话
+    if (sftpSessions.size > MAX_TOTAL_SFTP_SESSIONS) {
+      logToFile(`Too many SFTP sessions (${sftpSessions.size}), cleaning up oldest sessions`, 'WARN');
+      let sessionsToClose = sftpSessions.size - MAX_TOTAL_SFTP_SESSIONS;
+      
+      // 按会话创建时间排序
+      const sessionEntries = Array.from(sftpSessions.entries());
+      sessionEntries.sort((a, b) => a[1].createdAt - b[1].createdAt);
+      
+      // 关闭最老的会话
+      for (let i = 0; i < sessionsToClose; i++) {
+        if (i < sessionEntries.length) {
+          const [tabId, _] = sessionEntries[i];
+          logToFile(`Closing old SFTP session for tab ${tabId}`, 'INFO');
+          closeSftpSession(tabId);
+        }
+      }
+    }
+    
+    // 检查每个会话的健康状况
+    for (const [tabId, session] of sftpSessions.entries()) {
+      // 检查会话是否已存在超过最大空闲时间
+      const idleTime = Date.now() - session.lastUsed;
+      if (idleTime > SFTP_SESSION_IDLE_TIMEOUT) {
+        logToFile(`SFTP session ${tabId} idle for ${idleTime}ms, closing`, 'INFO');
+        closeSftpSession(tabId);
+        continue;
+      }
+      
+      // 对每个会话进行健康检查 - 尝试执行一个简单的readdir操作
+      checkSessionAlive(tabId, session);
+    }
+  } catch (error) {
+    logToFile(`Error in SFTP health check: ${error.message}`, 'ERROR');
+  }
+}
+
+// 检查会话是否存活
+async function checkSessionAlive(tabId, session) {
+  try {
+    // 创建一个Promise，添加超时处理
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('SFTP health check timeout')), 5000);
+    });
+    
+    // 创建一个执行基本SFTP操作的Promise
+    const checkPromise = new Promise((resolve, reject) => {
+      session.sftp.readdir('/', (err, _) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
+    // 使用Promise.race竞争，哪个先完成就用哪个结果
+    await Promise.race([checkPromise, timeoutPromise]);
+    // 如果执行到这里，说明会话是健康的
+    session.lastChecked = Date.now();
+  } catch (error) {
+    // 会话检查失败，认为会话已死亡
+    logToFile(`SFTP session ${tabId} health check failed: ${error.message}, closing session`, 'ERROR');
+    closeSftpSession(tabId);
+  }
+}
+
+// 获取或创建 SFTP 会话
+async function getSftpSession(tabId) {
+  // 检查是否已有处于获取中的会话
+  if (sftpSessionLocks.has(tabId)) {
+    // 等待已有的获取操作完成
+    return new Promise((resolve, reject) => {
+      const checkLock = () => {
+        if (!sftpSessionLocks.has(tabId)) {
+          // 锁已解除，尝试获取会话
+          if (sftpSessions.has(tabId)) {
+            const session = sftpSessions.get(tabId);
+            // 更新最后使用时间
+            session.lastUsed = Date.now();
+            resolve(session.sftp);
+          } else {
+            // 创建新会话
+            acquireSftpSession(tabId).then(resolve).catch(reject);
+          }
+        } else {
+          // 锁仍然存在，继续等待
+          setTimeout(checkLock, 100);
+        }
+      };
+      checkLock();
+    });
+  }
+
+  // 检查缓存中是否有可用会话
+  if (sftpSessions.has(tabId)) {
+    const session = sftpSessions.get(tabId);
+    
+    // 更新最后使用时间
+    session.lastUsed = Date.now();
+    
+    // 重置会话超时计时器
+    if (session.timeoutId) {
+      clearTimeout(session.timeoutId);
+    }
+    session.timeoutId = setTimeout(() => {
+      closeSftpSession(tabId);
+    }, SFTP_SESSION_IDLE_TIMEOUT);
+    
+    return session.sftp;
+  }
+  
+  // 检查是否超过了总会话数量限制
+  if (sftpSessions.size >= MAX_TOTAL_SFTP_SESSIONS) {
+    logToFile(`Maximum SFTP sessions limit reached (${MAX_TOTAL_SFTP_SESSIONS}), closing oldest session`, 'WARN');
+    
+    // 查找最老的会话进行关闭
+    let oldestTabId = null;
+    let oldestTime = Date.now();
+    
+    for (const [id, session] of sftpSessions.entries()) {
+      if (session.createdAt < oldestTime) {
+        oldestTime = session.createdAt;
+        oldestTabId = id;
+      }
+    }
+    
+    // 关闭最老的会话
+    if (oldestTabId) {
+      closeSftpSession(oldestTabId);
+    }
+  }
+  
+  // 创建新会话
+  return acquireSftpSession(tabId);
+}
+
+// 创建新的 SFTP 会话
+async function acquireSftpSession(tabId) {
+  // 设置锁以防止并发创建
+  sftpSessionLocks.set(tabId, true);
+  
+  try {
+    // 检查该标签页的会话数量是否已达到上限
+    let sessionCount = 0;
+    for (const [id, _] of sftpSessions.entries()) {
+      if (id === tabId) {
+        sessionCount++;
+      }
+    }
+    
+    if (sessionCount >= MAX_SFTP_SESSIONS_PER_TAB) {
+      logToFile(`Maximum SFTP sessions per tab reached (${MAX_SFTP_SESSIONS_PER_TAB}) for tab ${tabId}`, 'WARN');
+      throw new Error(`已达到每个标签页的最大SFTP会话数限制(${MAX_SFTP_SESSIONS_PER_TAB})`);
+    }
+    
+    // 查找对应的SSH客户端
+    const processInfo = childProcesses.get(tabId);
+    if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+      sftpSessionLocks.delete(tabId);
+      throw new Error('无效的SSH连接');
+    }
+    
+    const sshClient = processInfo.process;
+    
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        sftpSessionLocks.delete(tabId);
+        reject(new Error('SFTP会话创建超时'));
+      }, SFTP_OPERATION_TIMEOUT);
+      
+      sshClient.sftp((err, sftp) => {
+        clearTimeout(timeoutId);
+        
+        if (err) {
+          sftpSessionLocks.delete(tabId);
+          logToFile(`SFTP session creation error for session ${tabId}: ${err.message}`, 'ERROR');
+          reject(new Error(`SFTP错误: ${err.message}`));
+          return;
+        }
+        
+        // 创建会话对象
+        const now = Date.now();
+        const session = {
+          sftp,
+          timeoutId: setTimeout(() => {
+            closeSftpSession(tabId);
+          }, SFTP_SESSION_IDLE_TIMEOUT),
+          active: true,
+          createdAt: now,
+          lastUsed: now,
+          lastChecked: now
+        };
+        
+        // 存储会话
+        sftpSessions.set(tabId, session);
+        sftpSessionLocks.delete(tabId);
+        
+        // 设置错误处理
+        sftp.on('error', (err) => {
+          logToFile(`SFTP session error for ${tabId}: ${err.message}`, 'ERROR');
+          closeSftpSession(tabId);
+        });
+        
+        // 设置关闭处理
+        sftp.on('close', () => {
+          closeSftpSession(tabId);
+        });
+        
+        // 启动健康检查（如果还没启动）
+        if (!sftpHealthCheckTimer) {
+          startSftpHealthCheck();
+        }
+        
+        resolve(sftp);
+      });
+    });
+  } catch (error) {
+    sftpSessionLocks.delete(tabId);
+    throw error;
+  }
+}
+
+// 关闭SFTP会话
+function closeSftpSession(tabId) {
+  if (sftpSessions.has(tabId)) {
+    const session = sftpSessions.get(tabId);
+    
+    // 清除超时计时器
+    if (session.timeoutId) {
+      clearTimeout(session.timeoutId);
+    }
+    
+    // 标记会话为不活跃
+    session.active = false;
+    
+    // 尝试关闭SFTP会话
+    try {
+      session.sftp.end();
+    } catch (error) {
+      logToFile(`Error closing SFTP session for ${tabId}: ${error.message}`, 'ERROR');
+    }
+    
+    // 移除会话
+    sftpSessions.delete(tabId);
+    
+    logToFile(`Closed SFTP session for ${tabId}`, 'INFO');
+    
+    // 如果没有更多会话，停止健康检查
+    if (sftpSessions.size === 0 && sftpHealthCheckTimer) {
+      stopSftpHealthCheck();
+    }
+  }
+}
+
+// 处理 SFTP 操作队列
+function enqueueSftpOperation(tabId, operation, options = {}) {
+  // 初始化操作队列
+  if (!pendingOperations.has(tabId)) {
+    pendingOperations.set(tabId, []);
+  }
+  
+  const queue = pendingOperations.get(tabId);
+  const { priority = 'normal', type = 'other', path = null, canMerge = false } = options;
+  
+  // 如果操作是可合并的（如读取目录），检查是否有相同路径的相同类型操作已经在队列中
+  if (canMerge && path && type === 'readdir') {
+    // 寻找相同类型和路径的操作
+    const existingOpIndex = queue.findIndex(item => 
+      item.type === 'readdir' && item.path === path);
+    
+    if (existingOpIndex !== -1) {
+      // 找到可合并的操作，将其promise的resolve和reject添加到现有操作中
+      return new Promise((resolve, reject) => {
+        const existingOp = queue[existingOpIndex];
+        existingOp.subscribers = existingOp.subscribers || [];
+        existingOp.subscribers.push({ resolve, reject });
+        
+        logToFile(`Merged SFTP ${type} operation for path ${path} on tab ${tabId}`, 'INFO');
+      });
+    }
+  }
+  
+  // 根据优先级确定操作在队列中的位置
+  // 返回promise
+  return new Promise((resolve, reject) => {
+    // 创建操作对象
+    const operationObj = { 
+      operation, 
+      resolve, 
+      reject, 
+      priority, 
+      type, 
+      path,
+      canMerge,
+      enqueuedAt: Date.now(),
+      subscribers: [] // 用于存储合并操作的订阅者
+    };
+    
+    // 根据优先级插入队列
+    if (priority === 'high') {
+      // 高优先级操作插入到队列前面（但在当前执行的操作之后）
+      if (queue.length > 0) {
+        queue.splice(1, 0, operationObj);
+      } else {
+        queue.push(operationObj);
+      }
+    } else {
+      // 普通优先级操作添加到队列末尾
+      queue.push(operationObj);
+    }
+    
+    // 记录操作类型和路径
+    if (path) {
+      logToFile(`Enqueued SFTP ${type} operation for path ${path} on tab ${tabId} with priority ${priority}`, 'INFO');
+    } else {
+      logToFile(`Enqueued SFTP ${type} operation on tab ${tabId} with priority ${priority}`, 'INFO');
+    }
+    
+    // 如果队列中只有这一个操作，立即执行
+    if (queue.length === 1) {
+      processSftpQueue(tabId);
+    }
+  });
+}
+
+// 处理队列中的 SFTP 操作
+async function processSftpQueue(tabId) {
+  // 获取队列
+  const queue = pendingOperations.get(tabId);
+  if (!queue || queue.length === 0) {
+    return;
+  }
+  
+  // 获取第一个操作
+  const op = queue[0];
+  
+  try {
+    // 执行操作
+    const result = await op.operation();
+    
+    // 解析主Promise
+    op.resolve(result);
+    
+    // 解析所有合并操作的订阅者的Promise
+    if (op.subscribers && op.subscribers.length > 0) {
+      for (const subscriber of op.subscribers) {
+        subscriber.resolve(result);
+      }
+      logToFile(`Resolved ${op.subscribers.length} merged subscribers for SFTP ${op.type} operation on tab ${tabId}`, 'INFO');
+    }
+  } catch (error) {
+    // 操作失败，拒绝主Promise
+    op.reject(error);
+    
+    // 拒绝所有合并操作的订阅者的Promise
+    if (op.subscribers && op.subscribers.length > 0) {
+      for (const subscriber of op.subscribers) {
+        subscriber.reject(error);
+      }
+      logToFile(`Rejected ${op.subscribers.length} merged subscribers for SFTP ${op.type} operation on tab ${tabId}: ${error.message}`, 'ERROR');
+    }
+  } finally {
+    // 移除已完成的操作
+    queue.shift();
+    
+    // 处理队列中的下一个操作
+    if (queue.length > 0) {
+      // 根据操作类型决定延迟时间
+      // 对于操作类型为readdir的操作，使用较短的延迟
+      const nextOp = queue[0];
+      const delay = nextOp.type === 'readdir' ? 50 : 100;
+      
+      setTimeout(() => {
+        processSftpQueue(tabId);
+      }, delay);
+    }
+  }
+}
+
 // 获取worker文件路径
 function getWorkerPath() {
   // 先尝试相对于__dirname的路径
@@ -1434,40 +1858,39 @@ function setupIPC(mainWindow) {
   });
 
   // 文件管理相关API
-  ipcMain.handle('listFiles', async (event, tabId, path) => {
+  ipcMain.handle('listFiles', async (event, tabId, path, options = {}) => {
     try {
-      // 查找对应的SSH客户端
-      const processInfo = childProcesses.get(tabId);
-      if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
-        return { success: false, error: '无效的SSH连接' };
-      }
-      
-      const sshClient = processInfo.process;
-      
-      return new Promise((resolve, reject) => {
-        sshClient.sftp((err, sftp) => {
-          if (err) {
-            logToFile(`SFTP error for session ${tabId}: ${err.message}`, 'ERROR');
-            return resolve({ success: false, error: `SFTP错误: ${err.message}` });
-          }
+      // 使用 SFTP 会话池获取会话，而不是每次都创建新会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          const sftp = await getSftpSession(tabId);
           
-          sftp.readdir(path || '.', (err, list) => {
-            if (err) {
-              logToFile(`Failed to list directory for session ${tabId}: ${err.message}`, 'ERROR');
-              return resolve({ success: false, error: `无法列出目录: ${err.message}` });
-            }
-            
-            const files = list.map(item => ({
-              name: item.filename,
-              size: item.attrs.size,
-              isDirectory: item.attrs.isDirectory(),
-              modifyTime: new Date(item.attrs.mtime * 1000).toISOString(),
-              permissions: item.attrs.mode
-            }));
-            
-            resolve({ success: true, data: files });
+          return new Promise((resolve, reject) => {
+            sftp.readdir(path || '.', (err, list) => {
+              if (err) {
+                logToFile(`Failed to list directory for session ${tabId}: ${err.message}`, 'ERROR');
+                return resolve({ success: false, error: `无法列出目录: ${err.message}` });
+              }
+              
+              const files = list.map(item => ({
+                name: item.filename,
+                size: item.attrs.size,
+                isDirectory: item.attrs.isDirectory(),
+                modifyTime: new Date(item.attrs.mtime * 1000).toISOString(),
+                permissions: item.attrs.mode
+              }));
+              
+              resolve({ success: true, data: files });
+            });
           });
-        });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
+      }, { 
+        type: options.type || 'readdir', 
+        path, 
+        canMerge: options.canMerge || false,
+        priority: options.priority || 'normal'
       });
     } catch (error) {
       logToFile(`List files error for session ${tabId}: ${error.message}`, 'ERROR');
@@ -1477,48 +1900,48 @@ function setupIPC(mainWindow) {
   
   ipcMain.handle('copyFile', async (event, tabId, sourcePath, targetPath) => {
     try {
-      // 查找对应的SSH客户端
-      const processInfo = childProcesses.get(tabId);
-      if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
-        return { success: false, error: '无效的SSH连接' };
-      }
-      
-      const sshClient = processInfo.process;
-      
-      return new Promise((resolve, reject) => {
-        sshClient.sftp((err, sftp) => {
-          if (err) {
-            logToFile(`SFTP error for session ${tabId}: ${err.message}`, 'ERROR');
-            return resolve({ success: false, error: `SFTP错误: ${err.message}` });
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+            return { success: false, error: '无效的SSH连接' };
           }
           
-          // 在远程服务器上执行复制命令
-          sshClient.exec(`cp -r "${sourcePath}" "${targetPath}"`, (err, stream) => {
-            if (err) {
-              logToFile(`Failed to copy file for session ${tabId}: ${err.message}`, 'ERROR');
-              return resolve({ success: false, error: `复制文件失败: ${err.message}` });
-            }
-            
-            let errorOutput = '';
-            
-            stream.on('data', (data) => {
-              // 通常cp命令执行成功不会有输出
-            });
-            
-            stream.stderr.on('data', (data) => {
-              errorOutput += data.toString();
-            });
-            
-            stream.on('close', (code) => {
-              if (code === 0) {
-                resolve({ success: true });
-              } else {
-                logToFile(`File copy failed with code ${code} for session ${tabId}: ${errorOutput}`, 'ERROR');
-                resolve({ success: false, error: errorOutput || `复制文件失败，错误代码: ${code}` });
+          const sshClient = processInfo.process;
+          
+          return new Promise((resolve, reject) => {
+            // 在远程服务器上执行复制命令
+            sshClient.exec(`cp -r "${sourcePath}" "${targetPath}"`, (err, stream) => {
+              if (err) {
+                logToFile(`Failed to copy file for session ${tabId}: ${err.message}`, 'ERROR');
+                return resolve({ success: false, error: `复制文件失败: ${err.message}` });
               }
+              
+              let errorOutput = '';
+              
+              stream.on('data', (data) => {
+                // 通常cp命令执行成功不会有输出
+              });
+              
+              stream.stderr.on('data', (data) => {
+                errorOutput += data.toString();
+              });
+              
+              stream.on('close', (code) => {
+                if (code === 0) {
+                  resolve({ success: true });
+                } else {
+                  logToFile(`File copy failed with code ${code} for session ${tabId}: ${errorOutput}`, 'ERROR');
+                  resolve({ success: false, error: errorOutput || `复制文件失败，错误代码: ${code}` });
+                }
+              });
             });
           });
-        });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
       });
     } catch (error) {
       logToFile(`Copy file error for session ${tabId}: ${error.message}`, 'ERROR');
@@ -1528,48 +1951,48 @@ function setupIPC(mainWindow) {
   
   ipcMain.handle('moveFile', async (event, tabId, sourcePath, targetPath) => {
     try {
-      // 查找对应的SSH客户端
-      const processInfo = childProcesses.get(tabId);
-      if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
-        return { success: false, error: '无效的SSH连接' };
-      }
-      
-      const sshClient = processInfo.process;
-      
-      return new Promise((resolve, reject) => {
-        sshClient.sftp((err, sftp) => {
-          if (err) {
-            logToFile(`SFTP error for session ${tabId}: ${err.message}`, 'ERROR');
-            return resolve({ success: false, error: `SFTP错误: ${err.message}` });
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+            return { success: false, error: '无效的SSH连接' };
           }
           
-          // 在远程服务器上执行移动命令
-          sshClient.exec(`mv "${sourcePath}" "${targetPath}"`, (err, stream) => {
-            if (err) {
-              logToFile(`Failed to move file for session ${tabId}: ${err.message}`, 'ERROR');
-              return resolve({ success: false, error: `移动文件失败: ${err.message}` });
-            }
-            
-            let errorOutput = '';
-            
-            stream.on('data', (data) => {
-              // 通常mv命令执行成功不会有输出
-            });
-            
-            stream.stderr.on('data', (data) => {
-              errorOutput += data.toString();
-            });
-            
-            stream.on('close', (code) => {
-              if (code === 0) {
-                resolve({ success: true });
-              } else {
-                logToFile(`File move failed with code ${code} for session ${tabId}: ${errorOutput}`, 'ERROR');
-                resolve({ success: false, error: errorOutput || `移动文件失败，错误代码: ${code}` });
+          const sshClient = processInfo.process;
+          
+          return new Promise((resolve, reject) => {
+            // 在远程服务器上执行移动命令
+            sshClient.exec(`mv "${sourcePath}" "${targetPath}"`, (err, stream) => {
+              if (err) {
+                logToFile(`Failed to move file for session ${tabId}: ${err.message}`, 'ERROR');
+                return resolve({ success: false, error: `移动文件失败: ${err.message}` });
               }
+              
+              let errorOutput = '';
+              
+              stream.on('data', (data) => {
+                // 通常mv命令执行成功不会有输出
+              });
+              
+              stream.stderr.on('data', (data) => {
+                errorOutput += data.toString();
+              });
+              
+              stream.on('close', (code) => {
+                if (code === 0) {
+                  resolve({ success: true });
+                } else {
+                  logToFile(`File move failed with code ${code} for session ${tabId}: ${errorOutput}`, 'ERROR');
+                  resolve({ success: false, error: errorOutput || `移动文件失败，错误代码: ${code}` });
+                }
+              });
             });
           });
-        });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
       });
     } catch (error) {
       logToFile(`Move file error for session ${tabId}: ${error.message}`, 'ERROR');
@@ -1579,50 +2002,50 @@ function setupIPC(mainWindow) {
   
   ipcMain.handle('deleteFile', async (event, tabId, filePath, isDirectory) => {
     try {
-      // 查找对应的SSH客户端
-      const processInfo = childProcesses.get(tabId);
-      if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
-        return { success: false, error: '无效的SSH连接' };
-      }
-      
-      const sshClient = processInfo.process;
-      
-      return new Promise((resolve, reject) => {
-        sshClient.sftp((err, sftp) => {
-          if (err) {
-            logToFile(`SFTP error for session ${tabId}: ${err.message}`, 'ERROR');
-            return resolve({ success: false, error: `SFTP错误: ${err.message}` });
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+            return { success: false, error: '无效的SSH连接' };
           }
           
-          // 根据是否为目录选择不同的删除命令
-          const command = isDirectory ? `rm -rf "${filePath}"` : `rm "${filePath}"`;
+          const sshClient = processInfo.process;
           
-          sshClient.exec(command, (err, stream) => {
-            if (err) {
-              logToFile(`Failed to delete file for session ${tabId}: ${err.message}`, 'ERROR');
-              return resolve({ success: false, error: `删除文件失败: ${err.message}` });
-            }
+          return new Promise((resolve, reject) => {
+            // 根据是否为目录选择不同的删除命令
+            const command = isDirectory ? `rm -rf "${filePath}"` : `rm "${filePath}"`;
             
-            let errorOutput = '';
-            
-            stream.on('data', (data) => {
-              // 通常rm命令执行成功不会有输出
-            });
-            
-            stream.stderr.on('data', (data) => {
-              errorOutput += data.toString();
-            });
-            
-            stream.on('close', (code) => {
-              if (code === 0) {
-                resolve({ success: true });
-              } else {
-                logToFile(`File deletion failed with code ${code} for session ${tabId}: ${errorOutput}`, 'ERROR');
-                resolve({ success: false, error: errorOutput || `删除文件失败，错误代码: ${code}` });
+            sshClient.exec(command, (err, stream) => {
+              if (err) {
+                logToFile(`Failed to delete file for session ${tabId}: ${err.message}`, 'ERROR');
+                return resolve({ success: false, error: `删除文件失败: ${err.message}` });
               }
+              
+              let errorOutput = '';
+              
+              stream.on('data', (data) => {
+                // 通常rm命令执行成功不会有输出
+              });
+              
+              stream.stderr.on('data', (data) => {
+                errorOutput += data.toString();
+              });
+              
+              stream.on('close', (code) => {
+                if (code === 0) {
+                  resolve({ success: true });
+                } else {
+                  logToFile(`File deletion failed with code ${code} for session ${tabId}: ${errorOutput}`, 'ERROR');
+                  resolve({ success: false, error: errorOutput || `删除文件失败，错误代码: ${code}` });
+                }
+              });
             });
           });
-        });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
       });
     } catch (error) {
       logToFile(`Delete file error for session ${tabId}: ${error.message}`, 'ERROR');
@@ -1630,164 +2053,231 @@ function setupIPC(mainWindow) {
     }
   });
   
-  ipcMain.handle('downloadFile', async (event, tabId, remotePath) => {
+  // 创建文件夹
+  ipcMain.handle('createFolder', async (event, tabId, folderPath) => {
     try {
-      // 查找对应的SSH客户端
-      const processInfo = childProcesses.get(tabId);
-      if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
-        return { success: false, error: '无效的SSH连接' };
-      }
-      
-      const sshClient = processInfo.process;
-      const sshConfig = processInfo.config; // 获取SSH配置
-      
-      // 获取文件名
-      const fileName = path.basename(remotePath);
-      
-      // 打开保存对话框
-      const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-        title: '保存文件',
-        defaultPath: path.join(app.getPath('downloads'), fileName),
-        buttonLabel: '下载'
-      });
-      
-      if (canceled || !filePath) {
-        return { success: false, error: '用户取消下载' };
-      }
-      
-      // 创建SFTP客户端
-      const sftp = new SftpClient();
-      
-      // 创建传输对象并存储到活动传输中
-      const transferKey = `${tabId}-download`;
-      
-      return new Promise(async (resolve, reject) => {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
         try {
-          // 存储resolve和reject函数，以便在取消时调用
-          activeTransfers.set(transferKey, { 
-            sftp,
-            tempFilePath: filePath + '.part',
-            resolve,
-            reject
-          });
+          const sftp = await getSftpSession(tabId);
           
-          // 使用SSH2客户端的连接配置
-          await sftp.connect({
-            host: sshConfig.host,
-            port: sshConfig.port || 22,
-            username: sshConfig.username,
-            password: sshConfig.password,
-            privateKey: sshConfig.privateKeyPath ? fs.readFileSync(sshConfig.privateKeyPath, 'utf8') : undefined,
-            passphrase: sshConfig.privateKeyPath && sshConfig.password ? sshConfig.password : undefined
-          });
-          
-          // 获取文件状态以获取文件大小
-          const stats = await sftp.stat(remotePath);
-          const totalBytes = stats.size;
-          
-          // 设置进度监控
-          let transferredBytes = 0;
-          let lastProgressUpdate = 0;
-          let lastTransferredBytes = 0;
-          let lastUpdateTime = Date.now();
-          let transferSpeed = 0;
-          const progressReportInterval = 100;
-          
-          // 定义进度回调函数
-          const progressCallback = (transferred) => {
-            transferredBytes = transferred;
-            
-            // 计算进度百分比
-            const progress = Math.floor((transferredBytes / totalBytes) * 100);
-            
-            // 限制进度更新频率，避免频繁通知导致UI卡顿
-            const now = Date.now();
-            if (now - lastProgressUpdate >= progressReportInterval) {
-              // 计算传输速度 (字节/秒)
-              const elapsedSinceLastUpdate = (now - lastUpdateTime) / 1000; // 时间间隔(秒)
-              
-              if (elapsedSinceLastUpdate > 0) {
-                const bytesTransferredSinceLastUpdate = transferredBytes - lastTransferredBytes;
-                if (bytesTransferredSinceLastUpdate > 0) {
-                  transferSpeed = bytesTransferredSinceLastUpdate / elapsedSinceLastUpdate;
-                }
+          return new Promise((resolve, reject) => {
+            // 创建文件夹
+            sftp.mkdir(folderPath, (err) => {
+              if (err) {
+                logToFile(`Failed to create folder for session ${tabId}: ${err.message}`, 'ERROR');
+                return resolve({ success: false, error: `创建文件夹失败: ${err.message}` });
               }
               
-              // 存储当前值供下次计算
-              lastTransferredBytes = transferredBytes;
-              lastUpdateTime = now;
+              resolve({ success: true });
+            });
+          });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(`Create folder error for session ${tabId}: ${error.message}`, 'ERROR');
+      return { success: false, error: `创建文件夹失败: ${error.message}` };
+    }
+  });
+  
+  // 创建文件
+  ipcMain.handle('createFile', async (event, tabId, filePath) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          const sftp = await getSftpSession(tabId);
+          
+          return new Promise((resolve, reject) => {
+            // 使用writeFile创建一个空文件
+            const emptyBuffer = Buffer.from('');
+            sftp.writeFile(filePath, emptyBuffer, (err) => {
+              if (err) {
+                logToFile(`Failed to create file for session ${tabId}: ${err.message}`, 'ERROR');
+                return resolve({ success: false, error: `创建文件失败: ${err.message}` });
+              }
               
-              // 发送进度更新到渲染进程
-              event.sender.send('download-progress', {
-                tabId,
-                progress,
-                fileName,
-                transferredBytes,
-                totalBytes,
-                transferSpeed,
-                remainingTime: transferSpeed > 0 ? (totalBytes - transferredBytes) / transferSpeed : 0
+              resolve({ success: true });
+            });
+          });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(`Create file error for session ${tabId}: ${error.message}`, 'ERROR');
+      return { success: false, error: `创建文件失败: ${error.message}` };
+    }
+  });
+  
+  ipcMain.handle('downloadFile', async (event, tabId, remotePath) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+            return { success: false, error: '无效的SSH连接' };
+          }
+          
+          const sshClient = processInfo.process;
+          const sshConfig = processInfo.config; // 获取SSH配置
+          
+          // 获取文件名
+          const fileName = path.basename(remotePath);
+          
+          // 打开保存对话框
+          const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+            title: '保存文件',
+            defaultPath: path.join(app.getPath('downloads'), fileName),
+            buttonLabel: '下载'
+          });
+          
+          if (canceled || !filePath) {
+            return { success: false, error: '用户取消下载' };
+          }
+          
+          // 创建SFTP客户端
+          const sftp = new SftpClient();
+          
+          // 创建传输对象并存储到活动传输中
+          const transferKey = `${tabId}-download`;
+          
+          return new Promise(async (resolve, reject) => {
+            try {
+              // 存储resolve和reject函数，以便在取消时调用
+              activeTransfers.set(transferKey, { 
+                sftp,
+                tempFilePath: filePath + '.part',
+                resolve,
+                reject
               });
               
-              lastProgressUpdate = now;
-            }
-          };
-          
-          // 使用临时文件下载
-          const tempFilePath = filePath + '.part';
-          
-          // 使用fastGet下载文件，并监控进度
-          await sftp.fastGet(remotePath, tempFilePath, {
-            step: (transferred, chunk, total) => {
-              progressCallback(transferred);
+              // 使用SSH2客户端的连接配置
+              await sftp.connect({
+                host: sshConfig.host,
+                port: sshConfig.port || 22,
+                username: sshConfig.username,
+                password: sshConfig.password,
+                privateKey: sshConfig.privateKeyPath ? fs.readFileSync(sshConfig.privateKeyPath, 'utf8') : undefined,
+                passphrase: sshConfig.privateKeyPath && sshConfig.password ? sshConfig.password : undefined
+              });
+              
+              // 获取文件状态以获取文件大小
+              const stats = await sftp.stat(remotePath);
+              const totalBytes = stats.size;
+              
+              // 设置进度监控
+              let transferredBytes = 0;
+              let lastProgressUpdate = 0;
+              let lastTransferredBytes = 0;
+              let lastUpdateTime = Date.now();
+              let transferSpeed = 0;
+              const progressReportInterval = 100;
+              
+              // 定义进度回调函数
+              const progressCallback = (transferred) => {
+                transferredBytes = transferred;
+                
+                // 计算进度百分比
+                const progress = Math.floor((transferredBytes / totalBytes) * 100);
+                
+                // 限制进度更新频率，避免频繁通知导致UI卡顿
+                const now = Date.now();
+                if (now - lastProgressUpdate >= progressReportInterval) {
+                  // 计算传输速度 (字节/秒)
+                  const elapsedSinceLastUpdate = (now - lastUpdateTime) / 1000; // 时间间隔(秒)
+                  
+                  if (elapsedSinceLastUpdate > 0) {
+                    const bytesTransferredSinceLastUpdate = transferredBytes - lastTransferredBytes;
+                    if (bytesTransferredSinceLastUpdate > 0) {
+                      transferSpeed = bytesTransferredSinceLastUpdate / elapsedSinceLastUpdate;
+                    }
+                  }
+                  
+                  // 存储当前值供下次计算
+                  lastTransferredBytes = transferredBytes;
+                  lastUpdateTime = now;
+                  
+                  // 发送进度更新到渲染进程
+                  event.sender.send('download-progress', {
+                    tabId,
+                    progress,
+                    fileName,
+                    transferredBytes,
+                    totalBytes,
+                    transferSpeed,
+                    remainingTime: transferSpeed > 0 ? (totalBytes - transferredBytes) / transferSpeed : 0
+                  });
+                  
+                  lastProgressUpdate = now;
+                }
+              };
+              
+              // 使用临时文件下载
+              const tempFilePath = filePath + '.part';
+              
+              // 使用fastGet下载文件，并监控进度
+              await sftp.fastGet(remotePath, tempFilePath, {
+                step: (transferred, chunk, total) => {
+                  progressCallback(transferred);
+                }
+              });
+              
+              // 重命名临时文件为最终文件
+              fs.renameSync(tempFilePath, filePath);
+              
+              // 确保发送100%进度
+              event.sender.send('download-progress', {
+                tabId,
+                progress: 100,
+                fileName,
+                transferredBytes: totalBytes,
+                totalBytes,
+                transferSpeed,
+                remainingTime: 0
+              });
+              
+              // 成功下载
+              await sftp.end();
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              resolve({ success: true, filePath });
+              
+              // 在资源管理器中显示文件（可选）
+              shell.showItemInFolder(filePath);
+            } catch (error) {
+              logToFile(`Download file error for session ${tabId}: ${error.message}`, 'ERROR');
+              await sftp.end().catch(() => {}); // 忽略关闭连接可能的错误
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              // 如果是用户取消导致的错误，提供友好的消息
+              if (error.message.includes('aborted') || error.message.includes('cancel')) {
+                resolve({ success: false, cancelled: true, error: '下载已取消' });
+              } else {
+                resolve({ success: false, error: `下载文件失败: ${error.message}` });
+              }
+              
+              // 清理临时文件
+              try {
+                if (fs.existsSync(tempFilePath)) {
+                  fs.unlinkSync(tempFilePath);
+                }
+              } catch (e) {
+                logToFile(`Failed to delete temp file: ${e.message}`, 'ERROR');
+              }
             }
           });
-          
-          // 重命名临时文件为最终文件
-          fs.renameSync(tempFilePath, filePath);
-          
-          // 确保发送100%进度
-          event.sender.send('download-progress', {
-            tabId,
-            progress: 100,
-            fileName,
-            transferredBytes: totalBytes,
-            totalBytes,
-            transferSpeed,
-            remainingTime: 0
-          });
-          
-          // 成功下载
-          await sftp.end();
-          
-          // 从活动传输列表中移除
-          activeTransfers.delete(transferKey);
-          
-          resolve({ success: true, filePath });
-          
-          // 在资源管理器中显示文件（可选）
-          shell.showItemInFolder(filePath);
         } catch (error) {
           logToFile(`Download file error for session ${tabId}: ${error.message}`, 'ERROR');
-          await sftp.end().catch(() => {}); // 忽略关闭连接可能的错误
-          
-          // 从活动传输列表中移除
-          activeTransfers.delete(transferKey);
-          
-          // 如果是用户取消导致的错误，提供友好的消息
-          if (error.message.includes('aborted') || error.message.includes('cancel')) {
-            resolve({ success: false, cancelled: true, error: '下载已取消' });
-          } else {
-            resolve({ success: false, error: `下载文件失败: ${error.message}` });
-          }
-          
-          // 清理临时文件
-          try {
-            if (fs.existsSync(tempFilePath)) {
-              fs.unlinkSync(tempFilePath);
-            }
-          } catch (e) {
-            logToFile(`Failed to delete temp file: ${e.message}`, 'ERROR');
-          }
+          return { success: false, error: `下载文件失败: ${error.message}` };
         }
       });
     } catch (error) {
@@ -1798,165 +2288,173 @@ function setupIPC(mainWindow) {
   
   ipcMain.handle('uploadFile', async (event, tabId, targetFolder) => {
     try {
-      // 查找对应的SSH客户端
-      const processInfo = childProcesses.get(tabId);
-      if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
-        return { success: false, error: '无效的SSH连接' };
-      }
-      
-      const sshClient = processInfo.process;
-      const sshConfig = processInfo.config; // 获取SSH配置
-      
-      // 打开文件选择对话框
-      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-        title: '选择要上传的文件',
-        properties: ['openFile'],
-        buttonLabel: '上传'
-      });
-      
-      if (canceled || filePaths.length === 0) {
-        return { success: false, error: '用户取消上传' };
-      }
-      
-      const localFilePath = filePaths[0];
-      const fileName = path.basename(localFilePath);
-      
-      // 获取本地文件大小
-      const stats = fs.statSync(localFilePath);
-      const totalBytes = stats.size;
-      
-      // 确保路径格式正确（使用posix风格的路径）
-      // 处理空路径和特殊路径
-      let normalizedTargetFolder = targetFolder;
-      if (targetFolder === '~') {
-        normalizedTargetFolder = '.'; // 在SFTP中~不会自动扩展为主目录
-      }
-      // 确保路径格式正确
-      const remoteFilePath = normalizedTargetFolder ? 
-        path.posix.join(normalizedTargetFolder, fileName).replace(/\\/g, '/') : 
-        fileName;
-      
-      logToFile(`Uploading file "${localFilePath}" to "${remoteFilePath}" for session ${tabId}`, 'INFO');
-      
-      // 创建SFTP客户端
-      const sftp = new SftpClient();
-      
-      // 创建传输对象并存储到活动传输中
-      const transferKey = `${tabId}-upload`;
-      
-      return new Promise(async (resolve, reject) => {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
         try {
-          // 存储resolve和reject函数，以便在取消时调用
-          activeTransfers.set(transferKey, { 
-            sftp,
-            resolve,
-            reject
-          });
-          
-          // 使用SSH2客户端的连接配置
-          await sftp.connect({
-            host: sshConfig.host,
-            port: sshConfig.port || 22,
-            username: sshConfig.username,
-            password: sshConfig.password,
-            privateKey: sshConfig.privateKeyPath ? fs.readFileSync(sshConfig.privateKeyPath, 'utf8') : undefined,
-            passphrase: sshConfig.privateKeyPath && sshConfig.password ? sshConfig.password : undefined
-          });
-          
-          // 先检查目标文件夹是否存在
-          try {
-            const folderStat = await sftp.stat(normalizedTargetFolder);
-            if (!folderStat.isDirectory) {
-              await sftp.end();
-              activeTransfers.delete(transferKey);
-              return resolve({ success: false, error: `目标${normalizedTargetFolder}不是文件夹` });
-            }
-          } catch (statErr) {
-            logToFile(`Target folder check failed for session ${tabId}: ${statErr.message}`, 'ERROR');
-            await sftp.end();
-            activeTransfers.delete(transferKey);
-            return resolve({ success: false, error: `目标文件夹不可访问: ${statErr.message}` });
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+            return { success: false, error: '无效的SSH连接' };
           }
           
-          // 设置进度监控
-          let lastProgressUpdate = 0;
-          let lastTransferredBytes = 0;
-          let lastUpdateTime = Date.now();
-          let transferSpeed = 0;
-          const progressReportInterval = 100; // 每隔100ms报告进度
+          const sshClient = processInfo.process;
+          const sshConfig = processInfo.config; // 获取SSH配置
           
-          // 使用fastPut上传文件，并监控进度
-          await sftp.fastPut(localFilePath, remoteFilePath, {
-            step: (transferred, chunk, total) => {
-              // 计算进度百分比
-              const progress = Math.floor((transferred / totalBytes) * 100);
+          // 打开文件选择对话框
+          const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+            title: '选择要上传的文件',
+            properties: ['openFile'],
+            buttonLabel: '上传'
+          });
+          
+          if (canceled || filePaths.length === 0) {
+            return { success: false, error: '用户取消上传' };
+          }
+          
+          const localFilePath = filePaths[0];
+          const fileName = path.basename(localFilePath);
+          
+          // 获取本地文件大小
+          const stats = fs.statSync(localFilePath);
+          const totalBytes = stats.size;
+          
+          // 确保路径格式正确（使用posix风格的路径）
+          // 处理空路径和特殊路径
+          let normalizedTargetFolder = targetFolder;
+          if (targetFolder === '~') {
+            normalizedTargetFolder = '.'; // 在SFTP中~不会自动扩展为主目录
+          }
+          // 确保路径格式正确
+          const remoteFilePath = normalizedTargetFolder ? 
+            path.posix.join(normalizedTargetFolder, fileName).replace(/\\/g, '/') : 
+            fileName;
+          
+          logToFile(`Uploading file "${localFilePath}" to "${remoteFilePath}" for session ${tabId}`, 'INFO');
+          
+          // 创建SFTP客户端
+          const sftp = new SftpClient();
+          
+          // 创建传输对象并存储到活动传输中
+          const transferKey = `${tabId}-upload`;
+          
+          return new Promise(async (resolve, reject) => {
+            try {
+              // 存储resolve和reject函数，以便在取消时调用
+              activeTransfers.set(transferKey, { 
+                sftp,
+                resolve,
+                reject
+              });
               
-              // 限制进度更新频率，避免频繁通知导致UI卡顿
-              const now = Date.now();
-              if (now - lastProgressUpdate >= progressReportInterval) {
-                // 计算传输速度 (字节/秒)
-                const elapsedSinceLastUpdate = (now - lastUpdateTime) / 1000; // 时间间隔(秒)
-                
-                if (elapsedSinceLastUpdate > 0) {
-                  const bytesTransferredSinceLastUpdate = transferred - lastTransferredBytes;
-                  if (bytesTransferredSinceLastUpdate > 0) {
-                    transferSpeed = bytesTransferredSinceLastUpdate / elapsedSinceLastUpdate;
+              // 使用SSH2客户端的连接配置
+              await sftp.connect({
+                host: sshConfig.host,
+                port: sshConfig.port || 22,
+                username: sshConfig.username,
+                password: sshConfig.password,
+                privateKey: sshConfig.privateKeyPath ? fs.readFileSync(sshConfig.privateKeyPath, 'utf8') : undefined,
+                passphrase: sshConfig.privateKeyPath && sshConfig.password ? sshConfig.password : undefined
+              });
+              
+              // 先检查目标文件夹是否存在
+              try {
+                const folderStat = await sftp.stat(normalizedTargetFolder);
+                if (!folderStat.isDirectory) {
+                  await sftp.end();
+                  activeTransfers.delete(transferKey);
+                  return resolve({ success: false, error: `目标${normalizedTargetFolder}不是文件夹` });
+                }
+              } catch (statErr) {
+                logToFile(`Target folder check failed for session ${tabId}: ${statErr.message}`, 'ERROR');
+                await sftp.end();
+                activeTransfers.delete(transferKey);
+                return resolve({ success: false, error: `目标文件夹不可访问: ${statErr.message}` });
+              }
+              
+              // 设置进度监控
+              let lastProgressUpdate = 0;
+              let lastTransferredBytes = 0;
+              let lastUpdateTime = Date.now();
+              let transferSpeed = 0;
+              const progressReportInterval = 100; // 每隔100ms报告进度
+              
+              // 使用fastPut上传文件，并监控进度
+              await sftp.fastPut(localFilePath, remoteFilePath, {
+                step: (transferred, chunk, total) => {
+                  // 计算进度百分比
+                  const progress = Math.floor((transferred / totalBytes) * 100);
+                  
+                  // 限制进度更新频率，避免频繁通知导致UI卡顿
+                  const now = Date.now();
+                  if (now - lastProgressUpdate >= progressReportInterval) {
+                    // 计算传输速度 (字节/秒)
+                    const elapsedSinceLastUpdate = (now - lastUpdateTime) / 1000; // 时间间隔(秒)
+                    
+                    if (elapsedSinceLastUpdate > 0) {
+                      const bytesTransferredSinceLastUpdate = transferred - lastTransferredBytes;
+                      if (bytesTransferredSinceLastUpdate > 0) {
+                        transferSpeed = bytesTransferredSinceLastUpdate / elapsedSinceLastUpdate;
+                      }
+                    }
+                    
+                    // 存储当前值供下次计算
+                    lastTransferredBytes = transferred;
+                    lastUpdateTime = now;
+                    
+                    // 发送进度更新到渲染进程
+                    event.sender.send('upload-progress', {
+                      tabId,
+                      progress,
+                      fileName,
+                      transferredBytes: transferred,
+                      totalBytes,
+                      transferSpeed,
+                      remainingTime: transferSpeed > 0 ? (totalBytes - transferred) / transferSpeed : 0
+                    });
+                    
+                    lastProgressUpdate = now;
                   }
                 }
-                
-                // 存储当前值供下次计算
-                lastTransferredBytes = transferred;
-                lastUpdateTime = now;
-                
-                // 发送进度更新到渲染进程
-                event.sender.send('upload-progress', {
-                  tabId,
-                  progress,
-                  fileName,
-                  transferredBytes: transferred,
-                  totalBytes,
-                  transferSpeed,
-                  remainingTime: transferSpeed > 0 ? (totalBytes - transferred) / transferSpeed : 0
-                });
-                
-                lastProgressUpdate = now;
+              });
+              
+              // 确保发送100%进度
+              event.sender.send('upload-progress', {
+                tabId,
+                progress: 100,
+                fileName,
+                transferredBytes: totalBytes,
+                totalBytes,
+                transferSpeed,
+                remainingTime: 0
+              });
+              
+              // 成功上传
+              await sftp.end();
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              logToFile(`Successfully uploaded file "${localFilePath}" to "${remoteFilePath}" for session ${tabId}`, 'INFO');
+              resolve({ success: true, fileName });
+              
+            } catch (error) {
+              logToFile(`Upload file error for session ${tabId}: ${error.message}`, 'ERROR');
+              await sftp.end().catch(() => {}); // 忽略关闭连接可能的错误
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              // 如果是用户取消导致的错误，提供友好的消息
+              if (error.message.includes('aborted') || error.message.includes('cancel')) {
+                resolve({ success: false, cancelled: true, error: '上传已取消' });
+              } else {
+                resolve({ success: false, error: `上传文件失败: ${error.message}` });
               }
             }
           });
-          
-          // 确保发送100%进度
-          event.sender.send('upload-progress', {
-            tabId,
-            progress: 100,
-            fileName,
-            transferredBytes: totalBytes,
-            totalBytes,
-            transferSpeed,
-            remainingTime: 0
-          });
-          
-          // 成功上传
-          await sftp.end();
-          
-          // 从活动传输列表中移除
-          activeTransfers.delete(transferKey);
-          
-          logToFile(`Successfully uploaded file "${localFilePath}" to "${remoteFilePath}" for session ${tabId}`, 'INFO');
-          resolve({ success: true, fileName });
-          
         } catch (error) {
           logToFile(`Upload file error for session ${tabId}: ${error.message}`, 'ERROR');
-          await sftp.end().catch(() => {}); // 忽略关闭连接可能的错误
-          
-          // 从活动传输列表中移除
-          activeTransfers.delete(transferKey);
-          
-          // 如果是用户取消导致的错误，提供友好的消息
-          if (error.message.includes('aborted') || error.message.includes('cancel')) {
-            resolve({ success: false, cancelled: true, error: '上传已取消' });
-          } else {
-            resolve({ success: false, error: `上传文件失败: ${error.message}` });
-          }
+          return { success: false, error: `上传文件失败: ${error.message}` };
         }
       });
     } catch (error) {
@@ -1967,36 +2465,32 @@ function setupIPC(mainWindow) {
   
   ipcMain.handle('renameFile', async (event, tabId, oldPath, newName) => {
     try {
-      // 查找对应的SSH客户端
-      const processInfo = childProcesses.get(tabId);
-      if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
-        return { success: false, error: '无效的SSH连接' };
-      }
-      
-      const sshClient = processInfo.process;
-      
-      // 获取目录路径和新的完整路径
-      const dirPath = path.dirname(oldPath);
-      const newPath = path.join(dirPath, newName).replace(/\\/g, '/'); // 确保使用Unix风格的路径分隔符
-      
-      return new Promise((resolve, reject) => {
-        sshClient.sftp((err, sftp) => {
-          if (err) {
-            logToFile(`SFTP error for session ${tabId}: ${err.message}`, 'ERROR');
-            return resolve({ success: false, error: `SFTP错误: ${err.message}` });
-          }
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          const sftp = await getSftpSession(tabId);
           
-          // 使用SFTP重命名文件/文件夹
-          sftp.rename(oldPath, newPath, (err) => {
-            if (err) {
-              logToFile(`Failed to rename file for session ${tabId}: ${err.message}`, 'ERROR');
-              return resolve({ success: false, error: `重命名失败: ${err.message}` });
-            }
-            
-            // 成功重命名
-            resolve({ success: true });
+          // 从原路径中提取目录部分
+          const lastSlashIndex = oldPath.lastIndexOf('/');
+          const dirPath = lastSlashIndex > 0 ? oldPath.substring(0, lastSlashIndex) : '/';
+          
+          // 构建新路径
+          const newPath = dirPath === '/' ? `/${newName}` : `${dirPath}/${newName}`;
+          
+          return new Promise((resolve, reject) => {
+            // 使用SFTP重命名文件/文件夹
+            sftp.rename(oldPath, newPath, (err) => {
+              if (err) {
+                logToFile(`Failed to rename file for session ${tabId}: ${err.message}`, 'ERROR');
+                return resolve({ success: false, error: `重命名失败: ${err.message}` });
+              }
+              
+              resolve({ success: true });
+            });
           });
-        });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
       });
     } catch (error) {
       logToFile(`Rename file error for session ${tabId}: ${error.message}`, 'ERROR');
@@ -2006,48 +2500,51 @@ function setupIPC(mainWindow) {
   
   ipcMain.handle('getAbsolutePath', async (event, tabId, relativePath) => {
     try {
-      // 查找对应的SSH客户端
-      const processInfo = childProcesses.get(tabId);
-      if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
-        return { success: false, error: '无效的SSH连接' };
-      }
-      
-      const sshClient = processInfo.process;
-      
-      return new Promise((resolve, reject) => {
-        // 使用pwd命令获取当前工作目录
-        sshClient.exec(`cd "${path.dirname(relativePath) || '.'}" && pwd && cd - > /dev/null`, (err, stream) => {
-          if (err) {
-            logToFile(`Failed to get absolute path for session ${tabId}: ${err.message}`, 'ERROR');
-            return resolve({ success: false, error: `获取绝对路径失败: ${err.message}` });
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+            return { success: false, error: '无效的SSH连接' };
           }
           
-          let output = '';
-          let errorOutput = '';
+          const sshClient = processInfo.process;
           
-          stream.on('data', (data) => {
-            output += data.toString();
-          });
-          
-          stream.stderr.on('data', (data) => {
-            errorOutput += data.toString();
-          });
-          
-          stream.on('close', (code) => {
-            if (code === 0) {
-              // 获取成功，合成绝对路径
-              const basePath = output.trim().split('\n')[0];
-              const fileName = path.basename(relativePath);
-              const absolutePath = path.posix.join(basePath, fileName);
+          return new Promise((resolve, reject) => {
+            // 使用SSH执行pwd命令获取当前目录（用作基准目录）
+            sshClient.exec('pwd', (err, stream) => {
+              if (err) {
+                return resolve({ success: false, error: `无法获取绝对路径: ${err.message}` });
+              }
               
-              // 返回绝对路径给渲染进程处理
-              resolve({ success: true, path: absolutePath });
-            } else {
-              logToFile(`Get absolute path failed with code ${code} for session ${tabId}: ${errorOutput}`, 'ERROR');
-              resolve({ success: false, error: errorOutput || `获取绝对路径失败，错误代码: ${code}` });
-            }
+              let pwdOutput = '';
+              
+              stream.on('data', (data) => {
+                pwdOutput += data.toString().trim();
+              });
+              
+              stream.on('close', () => {
+                let absolutePath;
+                
+                if (relativePath.startsWith('/')) {
+                  // 如果是绝对路径，则直接使用
+                  absolutePath = relativePath;
+                } else if (relativePath.startsWith('~')) {
+                  // 如果以~开头，替换为home目录
+                  absolutePath = relativePath.replace('~', sshClient._sock._handle.remoteAddress);
+                } else {
+                  // 相对路径，基于pwd结果计算
+                  absolutePath = pwdOutput + '/' + relativePath;
+                }
+                
+                resolve({ success: true, path: absolutePath });
+              });
+            });
           });
-        });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
       });
     } catch (error) {
       logToFile(`Get absolute path error for session ${tabId}: ${error.message}`, 'ERROR');
@@ -2103,6 +2600,36 @@ function setupIPC(mainWindow) {
     } catch (error) {
       logToFile(`Cancel transfer error for session ${tabId}: ${error.message}`, 'ERROR');
       return { success: false, error: `取消传输失败: ${error.message}` };
+    }
+  });
+
+  // 获取或创建 SFTP 会话
+  ipcMain.handle('getSftpSession', async (event, tabId) => {
+    try {
+      return getSftpSession(tabId);
+    } catch (error) {
+      console.error('Error getting SFTP session:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 处理 SFTP 操作队列
+  ipcMain.handle('enqueueSftpOperation', async (event, tabId, operation) => {
+    try {
+      return enqueueSftpOperation(tabId, operation);
+    } catch (error) {
+      console.error('Error enqueuing SFTP operation:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 处理队列中的 SFTP 操作
+  ipcMain.handle('processSftpQueue', async (event, tabId) => {
+    try {
+      return processSftpQueue(tabId);
+    } catch (error) {
+      console.error('Error processing SFTP queue:', error);
+      return { success: false, error: error.message };
     }
   });
 }

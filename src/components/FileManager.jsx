@@ -25,18 +25,16 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import HomeIcon from '@mui/icons-material/Home';
-import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
-import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import LinkIcon from '@mui/icons-material/Link';
-import FileCopyIcon from '@mui/icons-material/FileCopy';
 import CancelIcon from '@mui/icons-material/Cancel';
+import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
+import NoteAddIcon from '@mui/icons-material/NoteAdd';
 
 const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   const theme = useTheme();
@@ -52,9 +50,27 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [newFileName, setNewFileName] = useState('');
   
+  // 新增状态
+  const [blankContextMenu, setBlankContextMenu] = useState(null);
+  const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [showCreateFileDialog, setShowCreateFileDialog] = useState(false);
+  const [newFileName2, setNewFileName2] = useState('');
+  
   // 传输进度相关状态
   const [transferProgress, setTransferProgress] = useState(null);
   const [transferCancelled, setTransferCancelled] = useState(false);
+  
+  // 目录内容缓存
+  const [directoryCache, setDirectoryCache] = useState({});
+  // 缓存过期时间（毫秒）
+  const CACHE_EXPIRY_TIME = 10000; // 10秒
+  
+  // 自动刷新相关状态
+  const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
+  
+  // 配置参数
+  const USER_ACTIVITY_REFRESH_DELAY = 2000; // 用户活动后刷新延迟
 
   // 当SSH连接改变时，重置状态并加载目录
   useEffect(() => {
@@ -68,18 +84,113 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         return;
       }
       
+      // 清空缓存
+      setDirectoryCache({});
+      
       setCurrentPath('/');
       setPathInput('/');
       loadDirectory('/');
     }
   }, [open, sshConnection, tabId]);
-
-  // 加载目录内容
-  const loadDirectory = async (path) => {
+  
+  // 从缓存中获取目录内容
+  const getDirectoryFromCache = (path) => {
+    if (!directoryCache[path]) return null;
+    
+    const cacheEntry = directoryCache[path];
+    const now = Date.now();
+    
+    // 检查缓存是否过期
+    if (now - cacheEntry.timestamp > CACHE_EXPIRY_TIME) {
+      // 缓存已过期
+      console.log(`FileManager: Cache for ${path} expired`);
+      return null;
+    }
+    
+    console.log(`FileManager: Using cached data for ${path}`);
+    return cacheEntry.data;
+  };
+  
+  // 更新目录缓存
+  const updateDirectoryCache = (path, data) => {
+    setDirectoryCache(prevCache => ({
+      ...prevCache,
+      [path]: {
+        data,
+        timestamp: Date.now()
+      }
+    }));
+  };
+  
+  // 静默刷新当前目录（不显示加载指示器）
+  const silentRefreshCurrentDirectory = async () => {
+    if (!sshConnection || !tabId || !currentPath) return;
+    
+    try {
+      console.log(`FileManager: Silent refreshing directory "${currentPath}"`);
+      
+      if (window.terminalAPI && window.terminalAPI.listFiles) {
+        // 将~转换为空字符串，用于API调用
+        const apiPath = currentPath === '~' ? '' : currentPath;
+        
+        // 使用可合并的目录读取操作
+        const options = {
+          type: 'readdir',
+          path: apiPath,
+          canMerge: true,
+          priority: 'low' // 使用低优先级，避免阻塞用户主动操作
+        };
+        
+        const response = await window.terminalAPI.listFiles(tabId, apiPath, options);
+        
+        if (response?.success) {
+          const fileData = response.data || [];
+          
+          // 检查数据是否有变化
+          const currentFiles = JSON.stringify(files);
+          const newFiles = JSON.stringify(fileData);
+          
+          if (currentFiles !== newFiles) {
+            console.log('FileManager: Directory content changed, updating view');
+            // 更新缓存
+            updateDirectoryCache(currentPath, fileData);
+            // 更新视图
+            setFiles(fileData);
+          } else {
+            console.log('FileManager: Directory content unchanged');
+          }
+          
+          // 记录刷新时间
+          setLastRefreshTime(Date.now());
+        } else {
+          console.error('Silent refresh failed:', response?.error);
+          // 静默刷新失败不显示错误，只记录日志
+        }
+      }
+    } catch (error) {
+      console.error('Silent refresh failed:', error);
+      // 静默刷新失败不显示错误，只记录日志
+    }
+  };
+  
+  // 修改loadDirectory，添加刷新时间记录
+  const loadDirectory = async (path, retryCount = 0, forceRefresh = false) => {
     if (!sshConnection || !tabId) {
       console.error('FileManager: Missing SSH connection or tabId');
       setError('缺少SSH连接信息');
       return;
+    }
+
+    // 如果不是强制刷新，尝试从缓存获取数据
+    if (!forceRefresh) {
+      const cachedData = getDirectoryFromCache(path);
+      if (cachedData) {
+        console.log(`FileManager: Using cached files for path "${path}"`);
+        setFiles(cachedData);
+        setCurrentPath(path);
+        setPathInput(path);
+        return;
+      }
     }
 
     setLoading(true);
@@ -90,13 +201,47 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       if (window.terminalAPI && window.terminalAPI.listFiles) {
         // 将~转换为空字符串，用于API调用
         const apiPath = path === '~' ? '' : path;
-        const response = await window.terminalAPI.listFiles(tabId, apiPath);
+        
+        // 使用可合并的目录读取操作
+        const options = {
+          type: 'readdir',
+          path: apiPath,
+          canMerge: true,
+          priority: forceRefresh ? 'high' : 'normal'
+        };
+        
+        const response = await window.terminalAPI.listFiles(tabId, apiPath, options);
         console.log('FileManager: Got response', response);
+        
         if (response?.success) {
-          setFiles(response.data || []);
+          const fileData = response.data || [];
+          
+          // 更新缓存
+          updateDirectoryCache(path, fileData);
+          
+          setFiles(fileData);
           setCurrentPath(path); // 保持UI中显示~
           setPathInput(path);
+          
+          // 记录刷新时间
+          setLastRefreshTime(Date.now());
         } else {
+          // 处理错误，检查是否需要重试
+          if (response?.error?.includes('SFTP错误') || response?.error?.includes('Channel open failure')) {
+            // 如果是SFTP通道错误且重试次数未达到上限，则进行重试
+            if (retryCount < 3) {
+              console.log(`FileManager: SFTP错误，尝试重试 (${retryCount + 1}/3)`);
+              setError(`加载目录失败，正在重试 (${retryCount + 1}/3)...`);
+              
+              // 添加延迟，避免立即重试
+              setTimeout(() => {
+                loadDirectory(path, retryCount + 1, forceRefresh);
+              }, 500 * (retryCount + 1)); // 逐步增加重试间隔
+              return;
+            }
+          }
+          
+          // 重试失败或其他错误
           setError(response?.error || '加载目录失败');
         }
       } else {
@@ -105,22 +250,72 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       }
     } catch (error) {
       console.error('加载目录失败:', error);
+      
+      // 如果是异常错误且重试次数未达到上限，则进行重试
+      if (retryCount < 3) {
+        console.log(`FileManager: 错误，尝试重试 (${retryCount + 1}/3)`);
+        setError(`加载目录失败，正在重试 (${retryCount + 1}/3)...`);
+        
+        // 添加延迟，避免立即重试
+        setTimeout(() => {
+          loadDirectory(path, retryCount + 1, forceRefresh);
+        }, 500 * (retryCount + 1)); // 逐步增加重试间隔
+        return;
+      }
+      
       setError('加载目录失败：' + (error.message || '未知错误'));
     } finally {
-      setLoading(false);
+      if (retryCount === 0 || retryCount >= 3) {
+        // 只有在初始尝试或重试结束后才设置loading为false
+        setLoading(false);
+      }
     }
   };
+  
+  // 刷新目录（强制从服务器重新加载）
+  const refreshDirectory = (path) => {
+    loadDirectory(path, 0, true);
+  };
+  
+  // 节流函数，用于限制连续的目录加载操作
+  const throttleLoadDirectory = (() => {
+    let lastExecution = 0;
+    let timeoutId = null;
+    
+    return (path, forceRefresh = false) => {
+      const now = Date.now();
+      const timeSinceLastCall = now - lastExecution;
+      
+      // 如果上次调用在300ms内，则防止立即执行
+      if (timeSinceLastCall < 300) {
+        // 取消之前的定时器
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        
+        // 安排新的定时器
+        timeoutId = setTimeout(() => {
+          lastExecution = Date.now();
+          loadDirectory(path, 0, forceRefresh);
+        }, 300 - timeSinceLastCall);
+      } else {
+        // 如果距离上次调用超过300ms，则立即执行
+        lastExecution = now;
+        loadDirectory(path, 0, forceRefresh);
+      }
+    };
+  })();
 
   // 进入目录
   const handleEnterDirectory = (path) => {
-    loadDirectory(path);
+    throttleLoadDirectory(path);
   };
 
   // 返回上级目录
   const handleGoBack = () => {
     // 如果当前在家目录，返回到根目录
     if (currentPath === '~') {
-      loadDirectory('/');
+      throttleLoadDirectory('/');
       return;
     }
 
@@ -137,17 +332,17 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       parentPath = '/';
     }
     
-    loadDirectory(parentPath);
+    throttleLoadDirectory(parentPath);
   };
 
   // 刷新目录
   const handleRefresh = () => {
-    loadDirectory(currentPath);
+    throttleLoadDirectory(currentPath, true); // 强制刷新
   };
 
   // 返回主目录
   const handleGoHome = () => {
-    loadDirectory('~');
+    throttleLoadDirectory('~');
   };
 
   // 处理搜索
@@ -183,23 +378,63 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     if (!selectedFile || !sshConnection) return;
 
     setLoading(true);
-    try {
-      const fullPath = currentPath === '/' ? 
-        '/' + selectedFile.name : 
-        currentPath ? currentPath + '/' + selectedFile.name : 
-        selectedFile.name;
+    setError(null);
+    let retryCount = 0;
+    const maxRetries = 3;
 
-      if (window.terminalAPI && window.terminalAPI.deleteFile) {
-        await window.terminalAPI.deleteFile(tabId, fullPath, selectedFile.isDirectory);
-        await loadDirectory(currentPath);
+    const attemptDelete = async () => {
+      try {
+        const fullPath = currentPath === '/' ? 
+          '/' + selectedFile.name : 
+          currentPath ? currentPath + '/' + selectedFile.name : 
+          selectedFile.name;
+
+        if (window.terminalAPI && window.terminalAPI.deleteFile) {
+          const response = await window.terminalAPI.deleteFile(tabId, fullPath, selectedFile.isDirectory);
+          
+          if (response?.success) {
+            // 成功删除，刷新目录
+            await loadDirectory(currentPath);
+            // 删除操作完成后设置定时器再次检查
+            refreshAfterUserActivity();
+          } else if (response?.error?.includes('SFTP错误') && retryCount < maxRetries) {
+            // SFTP错误，尝试重试
+            retryCount++;
+            console.log(`删除文件失败，尝试重试 (${retryCount}/${maxRetries})`);
+            setError(`删除文件失败，正在重试 (${retryCount}/${maxRetries})...`);
+            
+            // 添加延迟后重试
+            setTimeout(attemptDelete, 500 * retryCount);
+            return;
+          } else {
+            // 其他错误或已达到最大重试次数
+            setError(response?.error || '删除文件失败');
+          }
+        }
+      } catch (error) {
+        console.error('删除文件失败:', error);
+        
+        if (retryCount < maxRetries) {
+          // 发生异常，尝试重试
+          retryCount++;
+          console.log(`删除文件失败，尝试重试 (${retryCount}/${maxRetries})`);
+          setError(`删除文件失败，正在重试 (${retryCount}/${maxRetries})...`);
+          
+          // 添加延迟后重试
+          setTimeout(attemptDelete, 500 * retryCount);
+          return;
+        }
+        
+        setError('删除文件失败: ' + (error.message || '未知错误'));
+      } finally {
+        if (retryCount === 0 || retryCount >= maxRetries) {
+          setLoading(false);
+          handleContextMenuClose();
+        }
       }
-    } catch (error) {
-      console.error('删除文件失败:', error);
-      setError('删除文件失败: ' + (error.message || '未知错误'));
-    } finally {
-      setLoading(false);
-    }
-    handleContextMenuClose();
+    };
+
+    attemptDelete();
   };
 
   // 处理下载
@@ -268,7 +503,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     handleContextMenuClose();
   };
 
-  // 提交重命名
+  // 处理重命名提交
   const handleRenameSubmit = async (e) => {
     e.preventDefault();
     setShowRenameDialog(false);
@@ -276,22 +511,62 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     if (!selectedFile || !newFileName || newFileName === selectedFile.name) return;
     
     setLoading(true);
-    try {
-      const oldPath = currentPath === '/' ? 
-        '/' + selectedFile.name : 
-        currentPath ? currentPath + '/' + selectedFile.name : 
-        selectedFile.name;
-      
-      if (window.terminalAPI && window.terminalAPI.renameFile) {
-        await window.terminalAPI.renameFile(tabId, oldPath, newFileName);
-        await loadDirectory(currentPath);
+    setError(null);
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const attemptRename = async () => {
+      try {
+        const oldPath = currentPath === '/' ? 
+          '/' + selectedFile.name : 
+          currentPath ? currentPath + '/' + selectedFile.name : 
+          selectedFile.name;
+        
+        if (window.terminalAPI && window.terminalAPI.renameFile) {
+          const response = await window.terminalAPI.renameFile(tabId, oldPath, newFileName);
+          
+          if (response?.success) {
+            // 成功重命名，刷新目录
+            await loadDirectory(currentPath);
+            // 重命名操作完成后设置定时器再次检查
+            refreshAfterUserActivity();
+          } else if (response?.error?.includes('SFTP错误') && retryCount < maxRetries) {
+            // SFTP错误，尝试重试
+            retryCount++;
+            console.log(`重命名失败，尝试重试 (${retryCount}/${maxRetries})`);
+            setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
+            
+            // 添加延迟后重试
+            setTimeout(attemptRename, 500 * retryCount);
+            return;
+          } else {
+            // 其他错误或已达到最大重试次数
+            setError(response?.error || '重命名失败');
+          }
+        }
+      } catch (error) {
+        console.error('重命名失败:', error);
+        
+        if (retryCount < maxRetries) {
+          // 发生异常，尝试重试
+          retryCount++;
+          console.log(`重命名失败，尝试重试 (${retryCount}/${maxRetries})`);
+          setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
+          
+          // 添加延迟后重试
+          setTimeout(attemptRename, 500 * retryCount);
+          return;
+        }
+        
+        setError('重命名失败: ' + (error.message || '未知错误'));
+      } finally {
+        if (retryCount === 0 || retryCount >= maxRetries) {
+          setLoading(false);
+        }
       }
-    } catch (error) {
-      console.error('重命名失败:', error);
-      setError('重命名失败: ' + (error.message || '未知错误'));
-    } finally {
-      setLoading(false);
-    }
+    };
+
+    attemptRename();
   };
 
   // 处理上传文件到当前目录
@@ -356,6 +631,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           // 上传完成后清除进度状态
           setTimeout(() => setTransferProgress(null), 1500);
           await loadDirectory(currentPath);
+          // 上传文件操作完成后设置定时器再次检查
+          refreshAfterUserActivity();
         } else if (!transferCancelled) {
           // 只有在不是用户主动取消的情况下才显示错误
           setError(result.error || '上传文件失败');
@@ -398,7 +675,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     handleContextMenuClose();
   };
 
-  // 过滤文件列表
+  // 过滤文件列表（根据搜索词）
   const filteredFiles = searchTerm 
     ? files.filter(file => 
         file.name.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -438,14 +715,17 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
 
     if (!filteredFiles.length) {
       return (
-        <Box sx={{ 
-          padding: 2,
-          height: '100%',
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
+        <Box 
+          sx={{ 
+            padding: 2,
+            height: '100%',
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
+        >
           <Typography variant="body2" color="text.secondary">
             {searchTerm ? '没有找到匹配的文件' : '此目录为空'}
           </Typography>
@@ -461,7 +741,11 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     });
 
     return (
-      <List dense sx={{ width: '100%', padding: 0 }}>
+      <List 
+        dense 
+        sx={{ width: '100%', padding: 0 }}
+        onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
+      >
         {sortedFiles.map((file) => (
           <ListItem 
             key={file.name}
@@ -474,6 +758,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
                   '/' + file.name : 
                   currentPath + '/' + file.name
               )}
+              onDoubleClick={() => handleFileActivate(file)}
               dense
             >
               <ListItemIcon sx={{ minWidth: 36 }}>
@@ -485,7 +770,12 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               </ListItemIcon>
               <ListItemText 
                 primary={file.name} 
-                secondary={file.size && !file.isDirectory ? formatFileSize(file.size) : null}
+                secondary={
+                  <>
+                    {file.modifyTime && formatDate(new Date(file.modifyTime))}
+                    {file.size && !file.isDirectory && ` • ${formatFileSize(file.size)}`}
+                  </>
+                }
                 primaryTypographyProps={{ variant: 'body2' }}
                 secondaryTypographyProps={{ variant: 'caption' }}
               />
@@ -494,6 +784,27 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         ))}
       </List>
     );
+  };
+
+  // 格式化日期函数
+  const formatDate = (date) => {
+    const now = new Date();
+    const diff = now - date;
+    const day = 24 * 60 * 60 * 1000;
+    
+    // 如果是今天的文件，显示时间
+    if (diff < day && date.getDate() === now.getDate()) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // 如果是最近一周的文件，显示星期几
+    if (diff < 7 * day) {
+      const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      return days[date.getDay()];
+    }
+    
+    // 其他情况显示年-月-日
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
 
   // 格式化文件大小
@@ -598,6 +909,204 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     }
   };
 
+  // 处理空白区域右键菜单
+  const handleBlankContextMenu = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    // 确保不是针对列表项的右键点击
+    if (event.target.closest('li')) {
+      return;
+    }
+    
+    setBlankContextMenu({
+      mouseX: event.clientX,
+      mouseY: event.clientY,
+    });
+  };
+
+  // 关闭空白区域右键菜单
+  const handleBlankContextMenuClose = () => {
+    setBlankContextMenu(null);
+  };
+
+  // 处理创建文件夹
+  const handleCreateFolder = () => {
+    setNewFolderName('');
+    setShowCreateFolderDialog(true);
+    handleBlankContextMenuClose();
+  };
+
+  // 处理创建文件夹提交
+  const handleCreateFolderSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!newFolderName.trim() || !sshConnection) {
+      setShowCreateFolderDialog(false);
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const attemptCreateFolder = async () => {
+      try {
+        const fullPath = currentPath === '/' ? 
+          '/' + newFolderName.trim() : 
+          currentPath + '/' + newFolderName.trim();
+        
+        if (window.terminalAPI && window.terminalAPI.createFolder) {
+          const response = await window.terminalAPI.createFolder(tabId, fullPath);
+          
+          if (response?.success) {
+            // 成功创建文件夹，刷新目录
+            await loadDirectory(currentPath);
+            setShowCreateFolderDialog(false);
+            // 创建文件夹操作完成后设置定时器再次检查
+            refreshAfterUserActivity();
+          } else if (response?.error?.includes('SFTP错误') && retryCount < maxRetries) {
+            // SFTP错误，尝试重试
+            retryCount++;
+            console.log(`创建文件夹失败，尝试重试 (${retryCount}/${maxRetries})`);
+            setError(`创建文件夹失败，正在重试 (${retryCount}/${maxRetries})...`);
+            
+            // 添加延迟后重试
+            setTimeout(attemptCreateFolder, 500 * retryCount);
+            return;
+          } else {
+            // 其他错误或已达到最大重试次数
+            setError(response?.error || '创建文件夹失败');
+            setShowCreateFolderDialog(false);
+          }
+        } else {
+          setError('创建文件夹API不可用');
+          setShowCreateFolderDialog(false);
+        }
+      } catch (error) {
+        console.error('创建文件夹失败:', error);
+        
+        if (retryCount < maxRetries) {
+          // 发生异常，尝试重试
+          retryCount++;
+          console.log(`创建文件夹失败，尝试重试 (${retryCount}/${maxRetries})`);
+          setError(`创建文件夹失败，正在重试 (${retryCount}/${maxRetries})...`);
+          
+          // 添加延迟后重试
+          setTimeout(attemptCreateFolder, 500 * retryCount);
+          return;
+        }
+        
+        setError('创建文件夹失败: ' + (error.message || '未知错误'));
+        setShowCreateFolderDialog(false);
+      } finally {
+        if (retryCount === 0 || retryCount >= maxRetries) {
+          setLoading(false);
+        }
+      }
+    };
+
+    attemptCreateFolder();
+  };
+
+  // 处理创建文件
+  const handleCreateFile = () => {
+    setNewFileName2('');
+    setShowCreateFileDialog(true);
+    handleBlankContextMenuClose();
+  };
+
+  // 处理创建文件提交
+  const handleCreateFileSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!newFileName2.trim() || !sshConnection) {
+      setShowCreateFileDialog(false);
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      const fullPath = currentPath === '/' ? 
+        '/' + newFileName2.trim() : 
+        currentPath + '/' + newFileName2.trim();
+      
+      if (window.terminalAPI && window.terminalAPI.createFile) {
+        const result = await window.terminalAPI.createFile(tabId, fullPath);
+        if (result.success) {
+          await loadDirectory(currentPath);
+          // 创建文件操作完成后设置定时器再次检查
+          refreshAfterUserActivity();
+        } else {
+          setError(`创建文件失败: ${result.error || '未知错误'}`);
+        }
+      } else {
+        setError('创建文件API不可用');
+      }
+    } catch (error) {
+      console.error('创建文件失败:', error);
+      setError('创建文件失败: ' + (error.message || '未知错误'));
+    } finally {
+      setLoading(false);
+      setShowCreateFileDialog(false);
+    }
+  };
+
+  // 格式化显示上次刷新时间
+  const formatLastRefreshTime = () => {
+    const now = Date.now();
+    const diff = now - lastRefreshTime;
+    
+    if (diff < 1000) return '刚刚';
+    if (diff < 60000) return `${Math.floor(diff / 1000)}秒前`;
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+    
+    const date = new Date(lastRefreshTime);
+    return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+  };
+
+  // 用户活动后的刷新函数
+  const refreshAfterUserActivity = () => {    
+    console.log('FileManager: Scheduling refresh after user activity');
+    
+    // 添加短暂延迟，避免在操作完成前刷新
+    setTimeout(() => {
+      if (currentPath) {
+        silentRefreshCurrentDirectory();
+      }
+    }, USER_ACTIVITY_REFRESH_DELAY);
+  };
+  
+  // 在特定的回调函数中调用refreshAfterUserActivity
+  
+  // 处理文件激活（双击）
+  const handleFileActivate = (file) => {
+    if (file.isDirectory) {
+      // 如果是目录，进入该目录
+      const newPath = currentPath === '/' ? 
+        '/' + file.name : 
+        currentPath + '/' + file.name;
+      
+      handleEnterDirectory(newPath);
+    } else {
+      // 如果是文件，查看文件内容（可以替换为自定义实现）
+      if (window.terminalAPI && window.terminalAPI.openFile) {
+        const fullPath = currentPath === '/' ? 
+          '/' + file.name : 
+          currentPath + '/' + file.name;
+        
+        window.terminalAPI.openFile(tabId, fullPath);
+        
+        // 文件查看后延迟刷新，检测是否有变化
+        refreshAfterUserActivity();
+      }
+    }
+  };
+  
+  // 修改文件操作相关处理函数，在文件操作后调用refreshAfterUserActivity
+  
   return (
     <Paper
       sx={{
@@ -667,6 +1176,24 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
             <RefreshIcon fontSize="small" />
           </IconButton>
         </Tooltip>
+        
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            ml: 1, 
+            fontSize: '0.75rem',
+            color: theme.palette.text.secondary
+          }}
+        >
+          <Tooltip title="上次刷新时间">
+            <Box component="span" sx={{ fontSize: '0.75rem', opacity: 0.8 }}>
+              上次刷新: {formatLastRefreshTime()}
+            </Box>
+          </Tooltip>
+        </Box>
+        
+        <Box sx={{ flexGrow: 1 }} />
         
         <Tooltip title="搜索">
           <IconButton size="small" onClick={toggleSearch}>
@@ -758,7 +1285,9 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         flexDirection: 'column',
         height: 0, // 确保flex布局正常工作
         position: 'relative' // 创建新的定位上下文
-      }}>
+      }}
+        onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
+      >
         {renderFileList()}
       </Box>
 
@@ -819,7 +1348,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         </Box>
       )}
 
-      {/* 右键菜单 */}
+      {/* 文件右键菜单 */}
       <Menu
         open={contextMenu !== null}
         onClose={handleContextMenuClose}
@@ -872,6 +1401,41 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         </MenuItem>
       </Menu>
 
+      {/* 空白区域右键菜单 */}
+      <Menu
+        open={blankContextMenu !== null}
+        onClose={handleBlankContextMenuClose}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          blankContextMenu !== null
+            ? { top: blankContextMenu.mouseY, left: blankContextMenu.mouseX }
+            : undefined
+        }
+      >
+        <MenuItem onClick={handleCreateFolder}>
+          <ListItemIcon>
+            <CreateNewFolderIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>创建文件夹</ListItemText>
+        </MenuItem>
+        
+        <MenuItem onClick={handleCreateFile}>
+          <ListItemIcon>
+            <NoteAddIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>创建文件</ListItemText>
+        </MenuItem>
+        
+        <Divider />
+        
+        <MenuItem onClick={handleRefresh}>
+          <ListItemIcon>
+            <RefreshIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>刷新目录</ListItemText>
+        </MenuItem>
+      </Menu>
+
       {/* 重命名对话框 */}
       {showRenameDialog && (
         <Box
@@ -911,6 +1475,106 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               />
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
                 <Button onClick={() => setShowRenameDialog(false)} color="inherit" size="small">
+                  取消
+                </Button>
+                <Button type="submit" variant="contained" color="primary" size="small">
+                  确定
+                </Button>
+              </Box>
+            </form>
+          </Paper>
+        </Box>
+      )}
+
+      {/* 创建文件夹对话框 */}
+      {showCreateFolderDialog && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1300,
+          }}
+        >
+          <Paper
+            sx={{
+              width: '80%',
+              maxWidth: 400,
+              p: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            <Typography variant="subtitle1">创建文件夹</Typography>
+            <form onSubmit={handleCreateFolderSubmit}>
+              <TextField
+                fullWidth
+                label="文件夹名称"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                autoFocus
+                variant="outlined"
+                size="small"
+              />
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+                <Button onClick={() => setShowCreateFolderDialog(false)} color="inherit" size="small">
+                  取消
+                </Button>
+                <Button type="submit" variant="contained" color="primary" size="small">
+                  确定
+                </Button>
+              </Box>
+            </form>
+          </Paper>
+        </Box>
+      )}
+
+      {/* 创建文件对话框 */}
+      {showCreateFileDialog && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1300,
+          }}
+        >
+          <Paper
+            sx={{
+              width: '80%',
+              maxWidth: 400,
+              p: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            <Typography variant="subtitle1">创建文件</Typography>
+            <form onSubmit={handleCreateFileSubmit}>
+              <TextField
+                fullWidth
+                label="文件名称"
+                value={newFileName2}
+                onChange={(e) => setNewFileName2(e.target.value)}
+                autoFocus
+                variant="outlined"
+                size="small"
+              />
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+                <Button onClick={() => setShowCreateFileDialog(false)} color="inherit" size="small">
                   取消
                 </Button>
                 <Button type="submit" variant="contained" color="primary" size="small">

@@ -9,7 +9,6 @@ import {
   ListItemIcon, 
   ListItemButton,
   Collapse,
-  Divider,
   IconButton,
   TextField,
   Button,
@@ -31,8 +30,6 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import ExpandLess from '@mui/icons-material/ExpandLess';
-import ExpandMore from '@mui/icons-material/ExpandMore';
 import CloseIcon from '@mui/icons-material/Close';
 
 const ConnectionManager = ({ open, onClose, initialConnections = [], onConnectionsUpdate, onOpenConnection }) => {
