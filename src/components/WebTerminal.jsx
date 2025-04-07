@@ -157,6 +157,10 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
     foreground: theme.palette.mode === 'light' ? '#000000' : '#ffffff',
     // 光标颜色根据背景自动调整
     cursor: theme.palette.mode === 'light' ? '#000000' : '#ffffff',
+    // 选择文本的背景色，使用半透明色以避免遮挡字符
+    selectionBackground: theme.palette.mode === 'light' ? 'rgba(255, 255, 170, 0.35)' : 'rgba(30, 100, 255, 0.3)',
+    // 选择文本的前景色，确保文字清晰可见
+    selectionForeground: theme.palette.mode === 'light' ? '#000000' : '#ffffff',
     // 基础颜色
     black: '#000000',
     red: '#cc0000',

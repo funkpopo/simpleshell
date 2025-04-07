@@ -726,7 +726,6 @@ function App() {
               open={open}
               onClose={handleClose}
             >
-              <MenuItem onClick={handleClose}>设置</MenuItem>
               <MenuItem onClick={handleOpenAbout}>关于</MenuItem>
               <MenuItem onClick={handleExit}>退出</MenuItem>
             </Menu>
