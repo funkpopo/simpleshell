@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -36,10 +36,16 @@ const ENCRYPTION_KEY = 'simple-shell-encryption-key-12345'; // 在生产环境�
 const ENCRYPTION_ALGORITHM = 'aes-256-cbc';
 const IV_LENGTH = 16; // 对于 aes-256-cbc，IV长度是16字节
 
-// 全局变量用于存储AI worker实例
+// 全局变量用于存储worker实例
 let aiWorker = null;
-let aiRequestMap = new Map();
-let nextRequestId = 1;
+let fileWorker = null;
+let monitorWorker = null;
+const aiRequestMap = new Map();
+const fileRequestMap = new Map();
+const monitorRequestMap = new Map();
+let nextAIRequestId = 1;
+let nextFileRequestId = 1;
+let nextMonitorRequestId = 1;
 
 // 全局变量
 const childProcesses = new Map(); // 存储所有子进程
@@ -475,9 +481,13 @@ async function processSftpQueue(tabId) {
 }
 
 // 获取worker文件路径
-function getWorkerPath() {
+function getWorkerPath(workerType) {
+  // 基础文件名
+  const fileName = workerType === 'file' ? 'file-worker.js' : 
+                   workerType === 'monitor' ? 'monitor-worker.js' : 'ai-worker.js';
+  
   // 先尝试相对于__dirname的路径
-  let workerPath = path.join(__dirname, 'workers', 'ai-worker.js');
+  let workerPath = path.join(__dirname, 'workers', fileName);
   
   // 检查文件是否存在
   if (fs.existsSync(workerPath)) {
@@ -485,16 +495,16 @@ function getWorkerPath() {
   }
   
   // 如果文件不存在，可能是在开发环境，尝试使用源代码路径
-  workerPath = path.join(__dirname, '..', 'src', 'workers', 'ai-worker.js');
+  workerPath = path.join(__dirname, '..', 'src', 'workers', fileName);
   if (fs.existsSync(workerPath)) {
     return workerPath;
   }
   
   // 如果都找不到，记录错误并返回null
-  console.error('无法找到AI worker文件。已尝试以下路径:');
-  console.error(path.join(__dirname, 'workers', 'ai-worker.js'));
-  console.error(path.join(__dirname, '..', 'src', 'workers', 'ai-worker.js'));
-  throw new Error('找不到AI worker文件');
+  console.error(`无法找到 ${workerType} worker文件。已尝试以下路径:`);
+  console.error(path.join(__dirname, 'workers', fileName));
+  console.error(path.join(__dirname, '..', 'src', 'workers', fileName));
+  throw new Error(`找不到 ${workerType} worker文件`);
 }
 
 // 创建AI Worker线程
@@ -508,7 +518,7 @@ function createAIWorker() {
   }
 
   try {
-    const workerPath = getWorkerPath();
+    const workerPath = getWorkerPath('ai');
     console.log(`创建AI worker，使用路径: ${workerPath}`);
     
     // 创建worker实例
@@ -563,6 +573,196 @@ function createAIWorker() {
     console.error(`无法创建AI worker:`, error);
     return null;
   }
+}
+
+// 创建File Worker线程
+function createFileWorker() {
+  if (fileWorker) {
+    try {
+      fileWorker.terminate();
+    } catch (error) {
+      console.error('Error terminating existing File worker:', error);
+    }
+  }
+
+  try {
+    const workerPath = getWorkerPath('file');
+    console.log(`创建File worker，使用路径: ${workerPath}`);
+    
+    // 创建worker实例
+    fileWorker = new Worker(workerPath);
+    
+    // 监听worker线程的消息
+    fileWorker.on('message', (message) => {
+      const { id, result, error } = message;
+      // 查找对应的请求处理函数
+      const callback = fileRequestMap.get(id);
+      if (callback) {
+        if (error) {
+          callback.reject(error);
+        } else {
+          callback.resolve(result);
+        }
+        // 处理完成后从Map中移除
+        fileRequestMap.delete(id);
+      }
+    });
+    
+    // 处理worker错误
+    fileWorker.on('error', (error) => {
+      console.error('File Worker error:', error);
+      // 向所有待处理的请求返回错误
+      for (const [id, callback] of fileRequestMap.entries()) {
+        callback.reject(new Error('File Worker encountered an error: ' + error.message));
+        fileRequestMap.delete(id);
+      }
+    });
+    
+    // 处理worker退出
+    fileWorker.on('exit', (code) => {
+      console.log(`File Worker exited with code ${code}`);
+      // 如果退出码不是正常退出(0)，尝试重启worker
+      if (code !== 0) {
+        console.log('Attempting to restart File worker...');
+        setTimeout(() => {
+          createFileWorker();
+        }, 1000);
+      }
+      
+      // 向所有待处理的请求返回错误
+      for (const [id, callback] of fileRequestMap.entries()) {
+        callback.reject(new Error(`File Worker stopped unexpectedly with code ${code}`));
+        fileRequestMap.delete(id);
+      }
+    });
+    
+    return fileWorker;
+  } catch (error) {
+    console.error(`无法创建File worker:`, error);
+    return null;
+  }
+}
+
+// 创建Monitor Worker线程
+function createMonitorWorker() {
+  if (monitorWorker) {
+    try {
+      monitorWorker.terminate();
+    } catch (error) {
+      console.error('Error terminating existing Monitor worker:', error);
+    }
+  }
+
+  try {
+    const workerPath = getWorkerPath('monitor');
+    console.log(`创建Monitor worker，使用路径: ${workerPath}`);
+    
+    // 创建worker实例
+    monitorWorker = new Worker(workerPath);
+    
+    // 监听worker线程的消息
+    monitorWorker.on('message', (message) => {
+      const { id, result, error } = message;
+      // 查找对应的请求处理函数
+      const callback = monitorRequestMap.get(id);
+      if (callback) {
+        if (error) {
+          callback.reject(error);
+        } else {
+          callback.resolve(result);
+        }
+        // 处理完成后从Map中移除
+        monitorRequestMap.delete(id);
+      }
+    });
+    
+    // 处理worker错误
+    monitorWorker.on('error', (error) => {
+      console.error('Monitor Worker error:', error);
+      // 向所有待处理的请求返回错误
+      for (const [id, callback] of monitorRequestMap.entries()) {
+        callback.reject(new Error('Monitor Worker encountered an error: ' + error.message));
+        monitorRequestMap.delete(id);
+      }
+    });
+    
+    // 处理worker退出
+    monitorWorker.on('exit', (code) => {
+      console.log(`Monitor Worker exited with code ${code}`);
+      // 如果退出码不是正常退出(0)，尝试重启worker
+      if (code !== 0) {
+        console.log('Attempting to restart Monitor worker...');
+        setTimeout(() => {
+          createMonitorWorker();
+        }, 1000);
+      }
+      
+      // 向所有待处理的请求返回错误
+      for (const [id, callback] of monitorRequestMap.entries()) {
+        callback.reject(new Error(`Monitor Worker stopped unexpectedly with code ${code}`));
+        monitorRequestMap.delete(id);
+      }
+    });
+    
+    return monitorWorker;
+  } catch (error) {
+    console.error(`无法创建Monitor worker:`, error);
+    return null;
+  }
+}
+
+// 发送请求到AI Worker并返回Promise
+function sendToAIWorker(type, data) {
+  return new Promise((resolve, reject) => {
+    if (!aiWorker) {
+      aiWorker = createAIWorker();
+    }
+    
+    if (!aiWorker) {
+      reject(new Error('无法创建AI Worker'));
+      return;
+    }
+    
+    const id = nextAIRequestId++;
+    aiRequestMap.set(id, { resolve, reject });
+    aiWorker.postMessage({ type, id, ...data });
+  });
+}
+
+// 发送请求到File Worker并返回Promise
+function sendToFileWorker(type, data) {
+  return new Promise((resolve, reject) => {
+    if (!fileWorker) {
+      fileWorker = createFileWorker();
+    }
+    
+    if (!fileWorker) {
+      reject(new Error('无法创建File Worker'));
+      return;
+    }
+    
+    const id = nextFileRequestId++;
+    fileRequestMap.set(id, { resolve, reject });
+    fileWorker.postMessage({ type, id, ...data });
+  });
+}
+
+// 发送请求到Monitor Worker并返回Promise
+function sendToMonitorWorker(type, data) {
+  return new Promise((resolve, reject) => {
+    if (!monitorWorker) {
+      monitorWorker = createMonitorWorker();
+    }
+    
+    if (!monitorWorker) {
+      reject(new Error('无法创建Monitor Worker'));
+      return;
+    }
+    
+    const id = nextMonitorRequestId++;
+    monitorRequestMap.set(id, { resolve, reject });
+    monitorWorker.postMessage({ type, id, ...data });
+  });
 }
 
 // 加密函数
@@ -1508,7 +1708,8 @@ function setupIPC(mainWindow) {
   ipcMain.handle('terminal:getSystemInfo', async (event, processId) => {
     try {
       if (!processId || !childProcesses.has(processId)) {
-        return getLocalSystemInfo();
+        // 本地系统信息通过worker获取
+        return await sendToMonitorWorker('getLocalSystemInfo', {});
       } else {
         // SSH远程系统信息
         const processObj = childProcesses.get(processId);
@@ -1516,10 +1717,86 @@ function setupIPC(mainWindow) {
         // 支持多种SSH客户端类型
         if ((processObj.type === 'ssh2' || processObj.type === 'ssh') && 
             (processObj.process || processObj.client || processObj.channel)) {
+          // 远程系统信息通过SSH获取原始数据，然后由worker处理
           const sshClient = processObj.client || processObj.process || processObj.channel;
-          return getRemoteSystemInfo(sshClient);
+          
+          // 收集所有需要的SSH命令输出
+          const sshOutputs = {};
+          
+          // 基本系统信息
+          try {
+            sshOutputs.uname = await executeSSHCommand(sshClient, 'uname -a');
+          } catch (error) {
+            console.error('SSH uname failed:', error);
+          }
+          
+          // 尝试获取发行版信息
+          try {
+            const distroCommands = [
+              'cat /etc/os-release | grep -E "^(NAME|VERSION)="',
+              'lsb_release -a 2>/dev/null',
+              'cat /etc/redhat-release 2>/dev/null',
+              'cat /etc/debian_version 2>/dev/null'
+            ];
+            
+            // 尝试第一个发行版命令
+            for (const cmd of distroCommands) {
+              try {
+                const output = await executeSSHCommand(sshClient, cmd);
+                if (output && output.trim()) {
+                  sshOutputs.distro = output;
+                  break;
+                }
+              } catch (error) {
+                // 忽略单个命令的错误，继续尝试下一个
+              }
+            }
+          } catch (error) {
+            console.error('SSH distro check failed:', error);
+          }
+          
+          // 获取主机名
+          try {
+            sshOutputs.hostname = await executeSSHCommand(sshClient, 'hostname');
+          } catch (error) {
+            console.error('SSH hostname failed:', error);
+          }
+          
+          // 获取CPU信息
+          try {
+            sshOutputs.cpu = await executeSSHCommand(sshClient, 'cat /proc/cpuinfo');
+          } catch (error) {
+            console.error('SSH cpuinfo failed:', error);
+          }
+          
+          // 获取CPU使用率
+          try {
+            // 不同系统上获取CPU使用率的命令不同
+            const cpuCmd = sshOutputs.uname && sshOutputs.uname.includes('Linux') ?
+              "top -bn1 | grep '%Cpu' | awk '{print $2}'" :
+              "top -l 1 | grep 'CPU usage' | awk '{print $3}' | cut -d'%' -f1";
+            
+            sshOutputs.cpuUsage = await executeSSHCommand(sshClient, cpuCmd);
+          } catch (error) {
+            console.error('SSH CPU usage check failed:', error);
+          }
+          
+          // 获取内存信息
+          try {
+            const memoryCmd = sshOutputs.uname && sshOutputs.uname.includes('Linux') ?
+              'free -b' :
+              'vm_stat';
+            
+            sshOutputs.memory = await executeSSHCommand(sshClient, memoryCmd);
+          } catch (error) {
+            console.error('SSH memory check failed:', error);
+          }
+          
+          // 将收集的数据发送给worker处理
+          return await sendToMonitorWorker('processRemoteSystemInfo', { sshOutputs });
         } else {
-          return getLocalSystemInfo();
+          // 如果不是SSH连接，返回本地系统信息
+          return await sendToMonitorWorker('getLocalSystemInfo', {});
         }
       }
     } catch (error) {
@@ -1530,6 +1807,37 @@ function setupIPC(mainWindow) {
       };
     }
   });
+
+  // 执行SSH命令并返回结果
+  function executeSSHCommand(sshClient, command) {
+    return new Promise((resolve, reject) => {
+      sshClient.exec(command, (err, stream) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        
+        let output = '';
+        let errorOutput = '';
+        
+        stream.on('data', (data) => {
+          output += data.toString();
+        });
+        
+        stream.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+        
+        stream.on('close', (code) => {
+          if (code !== 0 && errorOutput) {
+            reject(new Error(`Command '${command}' failed with code ${code}: ${errorOutput}`));
+          } else {
+            resolve(output);
+          }
+        });
+      });
+    });
+  }
 
   // AI设置相关IPC处理
   ipcMain.handle('ai:loadSettings', async () => {
@@ -2632,575 +2940,65 @@ function setupIPC(mainWindow) {
       return { success: false, error: error.message };
     }
   });
+  
+  // 文件预览相关IPC处理
+  ipcMain.handle('previewFile', async (_, path, options = {}) => {
+    try {
+      // 检查是否是远程文件
+      if (options && options.isRemote && options.tabId) {
+        // 处理远程文件预览
+        return await handleRemoteFilePreview(options.tabId, path, options);
+      } else {
+        // 本地文件预览保持不变
+        return await sendToFileWorker('previewFile', { path, options });
+      }
+    } catch (error) {
+      console.error('预览文件失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  ipcMain.handle('getLocalFilesInFolder', async (_, folderPath) => {
+    try {
+      return await sendToFileWorker('listFiles', { path: folderPath });
+    } catch (error) {
+      console.error('获取本地文件列表失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  ipcMain.handle('readTextFile', async (_, filePath) => {
+    try {
+      return await sendToFileWorker('readFile', { path: filePath });
+    } catch (error) {
+      console.error('读取文本文件失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  ipcMain.handle('readImageFile', async (_, filePath) => {
+    try {
+      return await sendToFileWorker('readImageFile', { path: filePath });
+    } catch (error) {
+      console.error('读取图片文件失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
 }
 
 // 获取本地系统信息
 function getLocalSystemInfo() {
-  const osInfo = {
-    type: os.type(),
-    platform: os.platform(),
-    release: os.release(),
-    hostname: os.hostname(),
-    distro: '未知',
-    version: '未知'
-  };
-
-  // 根据平台添加额外信息
-  if (osInfo.platform === 'win32') {
-    // Windows平台
-    const windowsVersions = {
-      '10.0': 'Windows 10/11',
-      '6.3': 'Windows 8.1',
-      '6.2': 'Windows 8',
-      '6.1': 'Windows 7',
-      '6.0': 'Windows Vista',
-      '5.2': 'Windows XP 64-Bit Edition/Windows Server 2003',
-      '5.1': 'Windows XP',
-      '5.0': 'Windows 2000'
-    };
-
-    // 尝试获取Windows版本
-    const releaseVersion = osInfo.release.split('.');
-    if (releaseVersion.length >= 2) {
-      const majorMinor = `${releaseVersion[0]}.${releaseVersion[1]}`;
-      osInfo.distro = windowsVersions[majorMinor] || 'Windows';
-    } else {
-      osInfo.distro = 'Windows';
-    }
-    
-    // 获取更具体的Windows版本信息
-    try {
-      if (osInfo.release.startsWith('10.0')) {
-        // 获取Windows 10/11的具体版本号(如20H2, 21H1等)
-        const buildNumber = parseInt(osInfo.release.split('.')[2], 10);
-        
-        // 根据构建号识别主要Windows版本
-        if (buildNumber >= 22000) {
-          osInfo.distro = 'Windows 11';
-          if (buildNumber >= 22621) {
-            osInfo.version = '23H2';
-          } else if (buildNumber >= 22000) {
-            osInfo.version = '21H2';
-          }
-        } else {
-          osInfo.distro = 'Windows 10';
-          if (buildNumber >= 19045) {
-            osInfo.version = '22H2';
-          } else if (buildNumber >= 19044) {
-            osInfo.version = '21H2';
-          } else if (buildNumber >= 19043) {
-            osInfo.version = '21H1';
-          } else if (buildNumber >= 19042) {
-            osInfo.version = '20H2';
-          } else if (buildNumber >= 19041) {
-            osInfo.version = '2004';
-          } else if (buildNumber >= 18363) {
-            osInfo.version = '1909';
-          } else if (buildNumber >= 18362) {
-            osInfo.version = '1903';
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Error determining Windows version:', e);
-    }
-    
-    // 添加架构信息
-    try {
-      const arch = os.arch();
-      osInfo.release = `${osInfo.distro} ${osInfo.release} (${arch})`;
-    } catch (e) {
-      console.error('Error getting architecture info:', e);
-    }
-  } else if (osInfo.platform === 'darwin') {
-    // macOS平台
-    const macVersions = {
-      '22': 'Ventura',
-      '21': 'Monterey',
-      '20': 'Big Sur',
-      '19': 'Catalina',
-      '18': 'Mojave',
-      '17': 'High Sierra',
-      '16': 'Sierra',
-      '15': 'El Capitan',
-      '14': 'Yosemite',
-      '13': 'Mavericks',
-      '12': 'Mountain Lion',
-      '11': 'Lion',
-      '10': 'Snow Leopard'
-    };
-
-    // 尝试获取macOS版本
-    osInfo.distro = 'macOS';
-    const darwinVersion = osInfo.release.split('.')[0];
-    if (macVersions[darwinVersion]) {
-      osInfo.version = macVersions[darwinVersion];
-      osInfo.release = `macOS ${osInfo.version} (${osInfo.release})`;
-    } else {
-      // 尝试通过Darwin版本推断macOS版本
-      if (parseInt(darwinVersion, 10) >= 23) {
-        osInfo.version = 'Sonoma+';
-      }
-      osInfo.release = `macOS ${osInfo.version || osInfo.release}`;
-    }
-  } else if (osInfo.platform === 'linux') {
-    // Linux平台，但Electron环境中能获取的信息有限
-    osInfo.distro = 'Linux';
-    // 在Electron中我们无法轻松运行命令获取发行版信息
-    // 所以这里只提供基本信息
-    osInfo.release = `Linux ${osInfo.release}`;
-  }
-
-  return {
-    isLocal: true,
-    os: osInfo,
-    cpu: {
-      model: os.cpus()[0].model,
-      cores: os.cpus().length,
-      speed: os.cpus()[0].speed,
-      usage: getCpuUsage()
-    },
-    memory: {
-      total: os.totalmem(),
-      free: os.freemem(),
-      used: os.totalmem() - os.freemem(),
-      usagePercent: Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100)
-    }
-  };
+  // ... 已移至monitor-worker.js中的实现
 }
 
 // 计算CPU使用率
 function getCpuUsage() {
-  const cpus = os.cpus();
-  let totalIdle = 0;
-  let totalTick = 0;
-  
-  for (const cpu of cpus) {
-    for (const type in cpu.times) {
-      totalTick += cpu.times[type];
-    }
-    totalIdle += cpu.times.idle;
-  }
-  
-  const usage = 100 - Math.round((totalIdle / totalTick) * 100);
-  return usage;
+  // ... 已移至monitor-worker.js中的实现
 }
 
 // 获取远程系统信息
 async function getRemoteSystemInfo(sshClient) {
-  return new Promise((resolve, reject) => {
-    const result = {
-      isLocal: false,
-      os: { type: '未知', platform: '未知', release: '未知', hostname: '未知', distro: '未知', version: '未知' },
-      cpu: { model: '未知', cores: 0, usage: 0 },
-      memory: { total: 0, free: 0, used: 0, usagePercent: 0 }
-    };
-    
-    // 获取基本操作系统信息
-    sshClient.exec('uname -a', (err, stream) => {
-      if (err) {
-        console.error('SSH exec error (uname):', err);
-        resolve(result);
-        return;
-      }
-      
-      let output = '';
-      stream.on('data', (data) => {
-        output += data.toString();
-      });
-      
-      stream.on('close', () => {
-        // 解析基本操作系统信息
-        const osInfo = output.trim();
-        
-        // 检测操作系统类型
-        if (osInfo.includes('Linux')) {
-          result.os.type = 'Linux';
-          result.os.platform = 'linux';
-          
-          // 获取详细的Linux发行版信息
-          getLinuxDistro();
-        } else if (osInfo.includes('Darwin')) {
-          result.os.type = 'macOS';
-          result.os.platform = 'darwin';
-          
-          // 获取macOS版本
-          getMacOSVersion();
-        } else if (osInfo.includes('FreeBSD')) {
-          result.os.type = 'FreeBSD';
-          result.os.platform = 'freebsd';
-          getHostname();
-        } else if (osInfo.includes('Windows')) {
-          result.os.type = 'Windows';
-          result.os.platform = 'win32';
-          getWindowsVersion();
-        } else {
-          // 未识别的系统，直接保存uname信息
-          result.os.release = osInfo;
-          getHostname();
-        }
-        
-        // 获取Linux发行版信息
-        function getLinuxDistro() {
-          // 尝试多种方法获取Linux发行版信息
-          const distroCommands = [
-            'cat /etc/os-release | grep -E "^(NAME|VERSION)="',
-            'lsb_release -a 2>/dev/null',
-            'cat /etc/redhat-release 2>/dev/null',
-            'cat /etc/debian_version 2>/dev/null'
-          ];
-          
-          let commandIndex = 0;
-          tryNextCommand();
-          
-          function tryNextCommand() {
-            if (commandIndex >= distroCommands.length) {
-              // 所有命令都尝试过了，保存现有信息然后继续
-              result.os.release = osInfo;
-              getHostname();
-              return;
-            }
-            
-            const command = distroCommands[commandIndex++];
-            sshClient.exec(command, (err, stream) => {
-              if (err) {
-                console.error(`SSH exec error (distro command ${commandIndex}):`, err);
-                tryNextCommand();
-                return;
-              }
-              
-              let distroOutput = '';
-              stream.on('data', (data) => {
-                distroOutput += data.toString();
-              });
-              
-              stream.on('close', () => {
-                const output = distroOutput.trim();
-                if (output) {                  
-                  // 解析不同格式的输出
-                  if (command.includes('/etc/os-release')) {
-                    // 解析os-release格式
-                    const nameMatch = output.match(/NAME="([^"]+)"/);
-                    const versionMatch = output.match(/VERSION="([^"]+)"/);
-                    
-                    if (nameMatch) {
-                      result.os.distro = nameMatch[1];
-                    }
-                    if (versionMatch) {
-                      result.os.version = versionMatch[1];
-                    }
-                    
-                    result.os.release = `${result.os.distro || 'Linux'} ${result.os.version || ''}`.trim();
-                    getHostname();
-                  } else if (command.includes('lsb_release')) {
-                    // 解析lsb_release格式
-                    const distroMatch = output.match(/Distributor ID:\s+(.+)/);
-                    const versionMatch = output.match(/Release:\s+(.+)/);
-                    
-                    if (distroMatch) {
-                      result.os.distro = distroMatch[1].trim();
-                    }
-                    if (versionMatch) {
-                      result.os.version = versionMatch[1].trim();
-                    }
-                    
-                    result.os.release = `${result.os.distro || 'Linux'} ${result.os.version || ''}`.trim();
-                    getHostname();
-                  } else if (command.includes('/etc/redhat-release') || command.includes('/etc/debian_version')) {
-                    // 直接使用文件内容
-                    result.os.release = output;
-                    result.os.distro = output.split(' ')[0] || 'Linux';
-                    
-                    // 尝试提取版本号
-                    const versionMatch = output.match(/(\d+(\.\d+)+)/);
-                    if (versionMatch) {
-                      result.os.version = versionMatch[1];
-                    }
-                    
-                    getHostname();
-                  } else {
-                    tryNextCommand();
-                  }
-                } else {
-                  tryNextCommand();
-                }
-              });
-            });
-          }
-        }
-        
-        // 获取macOS版本
-        function getMacOSVersion() {
-          sshClient.exec('sw_vers', (err, stream) => {
-            if (err) {
-              console.error('SSH exec error (sw_vers):', err);
-              getHostname();
-              return;
-            }
-            
-            let macOutput = '';
-            stream.on('data', (data) => {
-              macOutput += data.toString();
-            });
-            
-            stream.on('close', () => {
-              const productMatch = macOutput.match(/ProductName:\s+(.+)/);
-              const versionMatch = macOutput.match(/ProductVersion:\s+(.+)/);
-              
-              if (productMatch) {
-                result.os.distro = productMatch[1].trim();
-              }
-              if (versionMatch) {
-                result.os.version = versionMatch[1].trim();
-              }
-              
-              result.os.release = `${result.os.distro || 'macOS'} ${result.os.version || ''}`.trim();
-              getHostname();
-            });
-          });
-        }
-        
-        // 获取Windows版本
-        function getWindowsVersion() {
-          sshClient.exec('wmic os get Caption,Version,OSArchitecture /value', (err, stream) => {
-            if (err) {
-              console.error('SSH exec error (wmic os):', err);
-              getHostname();
-              return;
-            }
-            
-            let winOutput = '';
-            stream.on('data', (data) => {
-              winOutput += data.toString();
-            });
-            
-            stream.on('close', () => {
-              const captionMatch = winOutput.match(/Caption=(.+)/);
-              const versionMatch = winOutput.match(/Version=(.+)/);
-              const archMatch = winOutput.match(/OSArchitecture=(.+)/);
-              
-              if (captionMatch) {
-                result.os.distro = captionMatch[1].trim();
-              }
-              if (versionMatch) {
-                result.os.version = versionMatch[1].trim();
-              }
-              
-              let archInfo = '';
-              if (archMatch) {
-                archInfo = ` (${archMatch[1].trim()})`;
-              }
-              
-              result.os.release = `${result.os.distro || 'Windows'} ${result.os.version || ''}${archInfo}`.trim();
-              getHostname();
-            });
-          });
-        }
-        
-        // 获取主机名
-        function getHostname() {
-          sshClient.exec('hostname', (err, stream) => {
-            if (err) {
-              console.error('SSH exec error (hostname):', err);
-              getMemoryInfo();
-              return;
-            }
-            
-            let hostnameOutput = '';
-            stream.on('data', (data) => {
-              hostnameOutput += data.toString();
-            });
-            
-            stream.on('close', () => {
-              result.os.hostname = hostnameOutput.trim();
-              getMemoryInfo();
-            });
-          });
-        }
-        
-        function getMemoryInfo() {
-          // 根据平台决定获取内存命令
-          const memCommand = result.os.platform === 'win32' 
-            ? 'wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Value' 
-            : 'free -b';
-          
-          sshClient.exec(memCommand, (err, stream) => {
-            if (err) {
-              console.error('SSH exec error (memory):', err);
-              getCpuInfo();
-              return;
-            }
-            
-            let memOutput = '';
-            stream.on('data', (data) => {
-              memOutput += data.toString();
-            });
-            
-            stream.on('close', () => {
-              try {
-                if (result.os.platform === 'win32') {
-                  // 解析Windows内存信息
-                  const freeMatch = memOutput.match(/FreePhysicalMemory=(\d+)/);
-                  const totalMatch = memOutput.match(/TotalVisibleMemorySize=(\d+)/);
-                  
-                  if (freeMatch && totalMatch) {
-                    // Windows返回的是KB，需要转换为字节
-                    const free = parseInt(freeMatch[1], 10) * 1024;
-                    const total = parseInt(totalMatch[1], 10) * 1024;
-                    const used = total - free;
-                    
-                    result.memory.total = total;
-                    result.memory.free = free;
-                    result.memory.used = used;
-                    result.memory.usagePercent = Math.round((used / total) * 100);
-                  }
-                } else {
-                  // 解析Linux内存信息
-                  const memLines = memOutput.split('\n');
-                  if (memLines.length > 1) {
-                    const memInfo = memLines[1].split(/\s+/);
-                    if (memInfo.length >= 4) {
-                      result.memory.total = parseInt(memInfo[1], 10);
-                      result.memory.used = parseInt(memInfo[2], 10);
-                      result.memory.free = parseInt(memInfo[3], 10);
-                      result.memory.usagePercent = Math.round((result.memory.used / result.memory.total) * 100);
-                    }
-                  }
-                }
-              } catch (error) {
-                console.error('Error parsing memory info:', error);
-              }
-              
-              getCpuInfo();
-            });
-          });
-        }
-        
-        function getCpuInfo() {
-          // 根据平台选择不同命令
-          const cpuCommand = result.os.platform === 'win32'
-            ? 'wmic cpu get NumberOfCores,Name'
-            : 'cat /proc/cpuinfo | grep -E "model name|processor" | wc -l';
-          
-          sshClient.exec(cpuCommand, (err, stream) => {
-            if (err) {
-              console.error('SSH exec error (cpuinfo):', err);
-              getCpuModel();
-              return;
-            }
-            
-            let cpuOutput = '';
-            stream.on('data', (data) => {
-              cpuOutput += data.toString();
-            });
-            
-            stream.on('close', () => {
-              try {
-                if (result.os.platform === 'win32') {
-                  // 解析Windows CPU核心数
-                  const lines = cpuOutput.trim().split('\n');
-                  if (lines.length >= 2) {
-                    const coresLine = lines[1].trim();
-                    result.cpu.cores = parseInt(coresLine, 10) || 1;
-                  }
-                } else {
-                  // 解析Linux CPU核心数
-                  result.cpu.cores = parseInt(cpuOutput.trim(), 10) / 2; // 除以2因为每个处理器有两行信息
-                }
-              } catch (error) {
-                console.error('Error parsing CPU count:', error);
-              }
-              
-              getCpuModel();
-            });
-          });
-        }
-        
-        function getCpuModel() {
-          const modelCommand = result.os.platform === 'win32'
-            ? 'wmic cpu get Name'
-            : 'cat /proc/cpuinfo | grep "model name" | head -1';
-          
-          sshClient.exec(modelCommand, (err, stream) => {
-            if (err) {
-              console.error('SSH exec error (cpuinfo model):', err);
-              getCpuUsage();
-              return;
-            }
-            
-            let modelOutput = '';
-            stream.on('data', (data) => {
-              modelOutput += data.toString();
-            });
-            
-            stream.on('close', () => {
-              try {
-                if (result.os.platform === 'win32') {
-                  // 解析Windows CPU型号
-                  const lines = modelOutput.trim().split('\n');
-                  if (lines.length >= 2) {
-                    result.cpu.model = lines[1].trim();
-                  }
-                } else {
-                  // 解析Linux CPU型号
-                  const match = modelOutput.match(/model name\s*:\s*(.*)/);
-                  if (match && match[1]) {
-                    result.cpu.model = match[1].trim();
-                  }
-                }
-              } catch (error) {
-                console.error('Error parsing CPU model:', error);
-              }
-              
-              getCpuUsage();
-            });
-          });
-        }
-        
-        function getCpuUsage() {
-          const usageCommand = result.os.platform === 'win32'
-            ? 'wmic cpu get LoadPercentage'
-            : 'top -bn1 | grep "Cpu(s)" | sed "s/.*, *\\([0-9.]*\\)%* id.*/\\1/" | awk \'{print 100 - $1}\'';
-          
-          sshClient.exec(usageCommand, (err, stream) => {
-            if (err) {
-              console.error('SSH exec error (cpu usage):', err);
-              finalize();
-              return;
-            }
-            
-            let usageOutput = '';
-            stream.on('data', (data) => {
-              usageOutput += data.toString();
-            });
-            
-            stream.on('close', () => {
-              try {
-                if (result.os.platform === 'win32') {
-                  // 解析Windows CPU使用率
-                  const lines = usageOutput.trim().split('\n');
-                  if (lines.length >= 2) {
-                    result.cpu.usage = parseInt(lines[1].trim(), 10);
-                  }
-                } else {
-                  // 解析Linux CPU使用率
-                  result.cpu.usage = parseFloat(usageOutput.trim());
-                }
-              } catch (error) {
-                console.error('Error parsing CPU usage:', error);
-              }
-              
-              finalize();
-            });
-          });
-        }
-        
-        function finalize() {
-          resolve(result);
-        }
-      });
-    });
-  });
+  // ... 已移至monitor-worker.js中的实现
 }
 
 // 加载AI设置，使用统一的config.json
@@ -3441,6 +3239,58 @@ const processAIPromptInline = async (prompt, settings) => {
     return { error: `处理请求时出错: ${error.message}` };
   }
 };
+
+// 处理远程文件预览
+async function handleRemoteFilePreview(tabId, remotePath, options = {}) {
+  try {
+    // 创建临时目录（如果不存在）
+    const tempDir = path.join(app.getPath('temp'), 'simpleshell-previews');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    // 生成唯一的临时文件名
+    const fileName = path.basename(remotePath);
+    const tempFilePath = path.join(tempDir, `${Date.now()}-${fileName}`);
+    
+    // 获取SFTP会话
+    const sftp = await getSftpSession(tabId);
+    
+    // 获取文件大小限制检查
+    const fileSize = options.fileSize || 0;
+    
+    // 检查文件大小
+    const MAX_PREVIEW_SIZE = 10 * 1024 * 1024; // 10MB
+    if (fileSize > MAX_PREVIEW_SIZE) {
+      return { 
+        success: true, 
+        preview: {
+          type: 'error',
+          message: '文件过大，无法预览(>10MB)'
+        }
+      };
+    }
+    
+    // 下载文件
+    await new Promise((resolve, reject) => {
+      sftp.fastGet(remotePath, tempFilePath, {}, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+    
+    // 使用worker预览下载的临时文件
+    const previewResult = await sendToFileWorker('previewFile', { 
+      path: tempFilePath, 
+      options: { ...options, deleteAfterPreview: true } 
+    });
+    
+    return previewResult;
+  } catch (error) {
+    console.error('远程文件预览失败:', error);
+    return { success: false, error: `无法预览远程文件: ${error.message}` };
+  }
+}
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
