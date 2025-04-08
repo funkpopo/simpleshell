@@ -359,7 +359,7 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
           e.preventDefault();
           navigator.clipboard.readText().then(text => {
             if (text && processCache[tabId]) {
-              window.terminalAPI.sendToProcess(processCache[tabId], text);
+              processMultiLineText(text);
             }
           });
         }
@@ -399,7 +399,7 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
           e.preventDefault();
           navigator.clipboard.readText().then(text => {
             if (text && processCache[tabId]) {
-              window.terminalAPI.sendToProcess(processCache[tabId], text);
+              processMultiLineText(text);
             }
           });
         }
@@ -802,13 +802,69 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
     navigator.clipboard.readText()
       .then(text => {
         if (text && termRef.current && processCache[tabId]) {
-          window.terminalAPI.sendToProcess(processCache[tabId], text);
+          // 处理文本，保持原始缩进
+          processMultiLineText(text);
         }
       })
       .catch(err => {
         console.error('从剪贴板读取失败:', err);
       });
     handleClose();
+  };
+
+  // 处理多行文本粘贴，保持原始缩进
+  const processMultiLineText = (text) => {
+    if (!text || !processCache[tabId]) return;
+    
+    // 按行分割文本，保留每行结尾的换行符
+    const lines = text.split(/\r?\n/);
+    
+    // 如果只有一行不包含换行符的文本，直接发送
+    if (lines.length === 1) {
+      window.terminalAPI.sendToProcess(processCache[tabId], text);
+      return;
+    }
+    
+    console.log(`正在处理多行文本粘贴，共 ${lines.length} 行`);
+    
+    // 获取进程信息，确定终端类型
+    const procInfo = processCache[tabId];
+    
+    // 针对PowerShell/SSH终端采用字符发送策略
+    // 基本策略：依次发送每一行，每行后面跟一个回车
+    const sendLines = async () => {
+      // 发送第一行
+      if (lines[0]) {
+        window.terminalAPI.sendToProcess(processCache[tabId], lines[0]);
+      }
+      
+      // 等待第一行处理完成
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // 依次发送剩余行，每行前面添加一个回车
+      for (let i = 1; i < lines.length; i++) {
+        // 发送回车换行
+        window.terminalAPI.sendToProcess(processCache[tabId], '\r');
+        
+        // 等待回车处理完成
+        await new Promise(resolve => setTimeout(resolve, 5));
+        
+        // 发送行内容（保持原始缩进）
+        window.terminalAPI.sendToProcess(processCache[tabId], lines[i]);
+        
+        // 如果不是最后一行，等待一小段时间以确保处理完成
+        if (i < lines.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+      }
+      
+      console.log('多行文本粘贴处理完成');
+    };
+    
+    // 执行发送
+    sendLines().catch(err => {
+      console.error('发送多行文本失败:', err);
+    });
   };
 
   // 清空终端
