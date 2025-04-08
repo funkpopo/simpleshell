@@ -35,11 +35,27 @@ module.exports = {
           }
           
           // 复制ai-worker.js
-          const srcFile = path.join(srcDir, 'ai-worker.js');
-          const destFile = path.join(destDir, 'ai-worker.js');
+          const aiWorkerSrc = path.join(srcDir, 'ai-worker.js');
+          const aiWorkerDest = path.join(destDir, 'ai-worker.js');
           
-          if (fs.existsSync(srcFile)) {
-            fs.copyFileSync(srcFile, destFile);
+          if (fs.existsSync(aiWorkerSrc)) {
+            fs.copyFileSync(aiWorkerSrc, aiWorkerDest);
+          }
+          
+          // 复制file-worker.js
+          const fileWorkerSrc = path.join(srcDir, 'file-worker.js');
+          const fileWorkerDest = path.join(destDir, 'file-worker.js');
+          
+          if (fs.existsSync(fileWorkerSrc)) {
+            fs.copyFileSync(fileWorkerSrc, fileWorkerDest);
+          }
+          
+          // 复制monitor-worker.js
+          const monitorWorkerSrc = path.join(srcDir, 'monitor-worker.js');
+          const monitorWorkerDest = path.join(destDir, 'monitor-worker.js');
+          
+          if (fs.existsSync(monitorWorkerSrc)) {
+            fs.copyFileSync(monitorWorkerSrc, monitorWorkerDest);
           }
           
           // 复制资源文件夹
@@ -50,21 +66,16 @@ module.exports = {
             fs.mkdirSync(assetsDestDir, { recursive: true });
           }
           
+          // 复制资源文件
           if (fs.existsSync(assetsSrcDir)) {
-            // 读取资源目录中的所有文件
-            const assetFiles = fs.readdirSync(assetsSrcDir);
-            
-            // 复制每个文件
-            assetFiles.forEach(file => {
-              const srcFilePath = path.join(assetsSrcDir, file);
-              const destFilePath = path.join(assetsDestDir, file);
-              
-              if (fs.statSync(srcFilePath).isFile()) {
-                fs.copyFileSync(srcFilePath, destFilePath);
+            const files = fs.readdirSync(assetsSrcDir);
+            files.forEach(file => {
+              const srcFile = path.join(assetsSrcDir, file);
+              const destFile = path.join(assetsDestDir, file);
+              if (fs.statSync(srcFile).isFile()) {
+                fs.copyFileSync(srcFile, destFile);
               }
             });
-          } else {
-            console.error(`Assets directory not found at ${assetsSrcDir}`);
           }
         });
       }

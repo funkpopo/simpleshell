@@ -157,6 +157,12 @@ contextBridge.exposeInMainWorld('terminalAPI', {
   cancelTransfer: (tabId, type) => ipcRenderer.invoke('cancelTransfer', tabId, type),
   getAbsolutePath: (tabId, relativePath) => ipcRenderer.invoke('getAbsolutePath', tabId, relativePath),
   
+  // 文件预览相关API
+  previewFile: (path, options = {}) => ipcRenderer.invoke('previewFile', path, options),
+  getLocalFilesInFolder: (folderPath) => ipcRenderer.invoke('getLocalFilesInFolder', folderPath),
+  readTextFile: (path) => ipcRenderer.invoke('readTextFile', path),
+  readImageFile: (path) => ipcRenderer.invoke('readImageFile', path),
+  
   // 在外部浏览器打开链接
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url)
 });

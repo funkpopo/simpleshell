@@ -35,6 +35,8 @@ import LinkIcon from '@mui/icons-material/Link';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
+import TextSnippetIcon from '@mui/icons-material/TextSnippet';
+import FileViewer from './FileViewer.jsx';
 
 const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   const theme = useTheme();
@@ -72,6 +74,13 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   // 配置参数
   const USER_ACTIVITY_REFRESH_DELAY = 2000; // 用户活动后刷新延迟
 
+  // 添加文件预览相关状态
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewFilePath, setPreviewFilePath] = useState(null);
+  const [previewFileName, setPreviewFileName] = useState(null);
+  // 添加远程文件预览选项
+  const [previewRemoteOptions, setPreviewRemoteOptions] = useState(null);
+  
   // 当SSH连接改变时，重置状态并加载目录
   useEffect(() => {
     if (open && sshConnection && tabId) {
@@ -1091,18 +1100,39 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       
       handleEnterDirectory(newPath);
     } else {
-      // 如果是文件，查看文件内容（可以替换为自定义实现）
-      if (window.terminalAPI && window.terminalAPI.openFile) {
-        const fullPath = currentPath === '/' ? 
-          '/' + file.name : 
-          currentPath + '/' + file.name;
-        
-        window.terminalAPI.openFile(tabId, fullPath);
-        
-        // 文件查看后延迟刷新，检测是否有变化
-        refreshAfterUserActivity();
-      }
+      // 如果是文件，预览文件内容
+      handlePreviewFile(file);
     }
+  };
+  
+  // 处理文件预览的方法
+  const handlePreviewFile = (file) => {
+    if (file.isDirectory) return;
+    
+    // 构建完整路径
+    const fullPath = currentPath === '/' ? 
+      '/' + file.name : 
+      currentPath + '/' + file.name;
+    
+    setPreviewFilePath(fullPath);
+    setPreviewFileName(file.name);
+    // 添加远程文件标志和连接ID
+    setPreviewRemoteOptions({
+      isRemote: true,
+      tabId: tabId,
+      fileSize: file.size
+    });
+    setPreviewOpen(true);
+    
+    // 关闭上下文菜单
+    handleContextMenuClose();
+  };
+  
+  // 关闭文件预览
+  const handleClosePreview = () => {
+    setPreviewOpen(false);
+    setPreviewFilePath(null);
+    setPreviewRemoteOptions(null);
   };
   
   // 修改文件操作相关处理函数，在文件操作后调用refreshAfterUserActivity
@@ -1399,6 +1429,16 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           </ListItemIcon>
           <ListItemText>删除</ListItemText>
         </MenuItem>
+
+        {/* 文件/文件夹预览 */}
+        {selectedFile && !selectedFile.isDirectory && (
+          <MenuItem onClick={() => handlePreviewFile(selectedFile)}>
+            <ListItemIcon>
+              <TextSnippetIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>预览</ListItemText>
+          </MenuItem>
+        )}
       </Menu>
 
       {/* 空白区域右键菜单 */}
@@ -1592,6 +1632,15 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           </Paper>
         </Box>
       )}
+
+      {/* 文件预览组件 */}
+      <FileViewer
+        open={previewOpen}
+        filePath={previewFilePath}
+        fileName={previewFileName}
+        onClose={handleClosePreview}
+        remoteOptions={previewRemoteOptions}
+      />
     </Paper>
   );
 };
