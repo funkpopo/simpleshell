@@ -36,6 +36,7 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
 import TextSnippetIcon from '@mui/icons-material/TextSnippet';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FileViewer from './FileViewer.jsx';
 
 const FileManager = ({ open, onClose, sshConnection, tabId }) => {
@@ -654,6 +655,94 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       // 只有在不是用户主动取消的情况下才显示错误
       if (!transferCancelled && !error.message?.includes('reply was never sent')) {
         setError('上传文件失败: ' + (error.message || '未知错误'));
+      }
+      
+      setTransferProgress(null);
+    }
+  };
+
+  // 处理上传文件夹到当前目录
+  const handleUploadFolder = async () => {
+    handleContextMenuClose();
+    
+    if (!sshConnection) return;
+    
+    // 重置取消状态
+    setTransferCancelled(false);
+    
+    try {
+      // 构建目标路径，确保路径格式正确
+      let targetPath;
+      
+      if (selectedFile && selectedFile.isDirectory) {
+        // 上传到选中的文件夹
+        if (currentPath === '/') {
+          targetPath = '/' + selectedFile.name;
+        } else if (currentPath === '~') {
+          targetPath = '~/' + selectedFile.name;
+        } else {
+          targetPath = currentPath + '/' + selectedFile.name;
+        }
+      } else {
+        // 上传到当前文件夹
+        targetPath = currentPath;
+      }
+      
+      console.log(`Uploading folder to path: ${targetPath}`);
+      
+      if (window.terminalAPI && window.terminalAPI.uploadFolder) {
+        // 设置初始传输进度状态
+        setTransferProgress({
+          type: 'upload',
+          progress: 0,
+          fileName: '',
+          transferredBytes: 0,
+          totalBytes: 0,
+          transferSpeed: 0,
+          remainingTime: 0,
+          currentFile: '',
+          totalFiles: 0,
+          processedFiles: 0
+        });
+        
+        // 使用progressCallback处理进度更新
+        const result = await window.terminalAPI.uploadFolder(
+          tabId, 
+          targetPath, 
+          (progress, fileName, transferredBytes, totalBytes, transferSpeed, remainingTime, currentFile, totalFiles, processedFiles) => {
+            setTransferProgress({
+              type: 'upload',
+              progress,
+              fileName,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime,
+              currentFile,
+              totalFiles,
+              processedFiles
+            });
+          }
+        );
+        
+        if (result.success) {
+          // 上传完成后清除进度状态
+          setTimeout(() => setTransferProgress(null), 1500);
+          await loadDirectory(currentPath);
+          // 上传文件操作完成后设置定时器再次检查
+          refreshAfterUserActivity();
+        } else if (!transferCancelled) {
+          // 只有在不是用户主动取消的情况下才显示错误
+          setError(result.error || '上传文件夹失败');
+          setTransferProgress(null);
+        }
+      }
+    } catch (error) {
+      console.error('上传文件夹失败:', error);
+      
+      // 只有在不是用户主动取消的情况下才显示错误
+      if (!transferCancelled && !error.message?.includes('reply was never sent')) {
+        setError('上传文件夹失败: ' + (error.message || '未知错误'));
       }
       
       setTransferProgress(null);
@@ -1375,6 +1464,18 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               剩余: {formatRemainingTime(transferProgress.remainingTime)}
             </Typography>
           )}
+          
+          {/* 文件夹上传进度信息 */}
+          {transferProgress.type === 'upload' && transferProgress.totalFiles > 0 && (
+            <Box sx={{ mt: 0.5 }}>
+              <Typography variant="caption" sx={{ display: 'block' }}>
+                当前文件: {transferProgress.currentFile || '-'}
+              </Typography>
+              <Typography variant="caption" sx={{ display: 'block' }}>
+                文件处理进度: {transferProgress.processedFiles} / {transferProgress.totalFiles}
+              </Typography>
+            </Box>
+          )}
         </Box>
       )}
 
@@ -1411,6 +1512,15 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               <UploadFileIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>上传文件到此文件夹</ListItemText>
+          </MenuItem>
+        )}
+        
+        {selectedFile?.isDirectory && (
+          <MenuItem onClick={handleUploadFolder}>
+            <ListItemIcon>
+              <FolderOpenIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>上传文件夹到此文件夹</ListItemText>
           </MenuItem>
         )}
         
@@ -1471,6 +1581,13 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
             <UploadFileIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>上传文件到当前目录</ListItemText>
+        </MenuItem>
+        
+        <MenuItem onClick={handleUploadFolder}>
+          <ListItemIcon>
+            <FolderOpenIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>上传文件夹到当前目录</ListItemText>
         </MenuItem>
         
         <Divider />
