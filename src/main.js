@@ -2771,6 +2771,257 @@ function setupIPC(mainWindow) {
     }
   });
   
+  // 计算文件夹大小的辅助函数
+  const calculateFolderSize = (folderPath) => {
+    let totalSize = 0;
+    let fileCount = 0;
+    
+    // 递归计算文件夹大小
+    const calculateSize = (dirPath) => {
+      const items = fs.readdirSync(dirPath, { withFileTypes: true });
+      
+      for (const item of items) {
+        const itemPath = path.join(dirPath, item.name);
+        
+        if (item.isDirectory()) {
+          // 递归处理子文件夹
+          calculateSize(itemPath);
+        } else if (item.isFile()) {
+          // 累加文件大小
+          const stats = fs.statSync(itemPath);
+          totalSize += stats.size;
+          fileCount++;
+        }
+      }
+    };
+    
+    calculateSize(folderPath);
+    return { totalSize, fileCount };
+  };
+  
+  // 上传文件夹处理函数
+  ipcMain.handle('uploadFolder', async (event, tabId, targetFolder) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+            return { success: false, error: '无效的SSH连接' };
+          }
+          
+          const sshClient = processInfo.process;
+          const sshConfig = processInfo.config; // 获取SSH配置
+          
+          // 打开文件夹选择对话框
+          const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+            title: '选择要上传的文件夹',
+            properties: ['openDirectory'],
+            buttonLabel: '上传文件夹'
+          });
+          
+          if (canceled || filePaths.length === 0) {
+            return { success: false, error: '用户取消上传' };
+          }
+          
+          const localFolderPath = filePaths[0];
+          const folderName = path.basename(localFolderPath);
+          
+          // 确保路径格式正确（使用posix风格的路径）
+          // 处理空路径和特殊路径
+          let normalizedTargetFolder = targetFolder;
+          if (targetFolder === '~') {
+            normalizedTargetFolder = '.'; // 在SFTP中~不会自动扩展为主目录
+          }
+          
+          // 构建远程目标路径
+          const remoteFolderPath = normalizedTargetFolder ? 
+            path.posix.join(normalizedTargetFolder, folderName).replace(/\\/g, '/') : 
+            folderName;
+            
+          logToFile(`Uploading folder "${localFolderPath}" to "${remoteFolderPath}" for session ${tabId}`, 'INFO');
+          
+          // 创建SFTP客户端
+          const sftp = new SftpClient();
+          
+          // 创建传输对象并存储到活动传输中
+          const transferKey = `${tabId}-upload`;
+          
+          // 第一阶段：计算文件夹总大小和文件数
+          const { totalSize, fileCount } = calculateFolderSize(localFolderPath);
+          
+          return new Promise(async (resolve, reject) => {
+            try {
+              // 存储resolve和reject函数，以便在取消时调用
+              activeTransfers.set(transferKey, { 
+                sftp,
+                resolve,
+                reject
+              });
+              
+              // 使用SSH2客户端的连接配置
+              await sftp.connect({
+                host: sshConfig.host,
+                port: sshConfig.port || 22,
+                username: sshConfig.username,
+                password: sshConfig.password,
+                privateKey: sshConfig.privateKeyPath ? fs.readFileSync(sshConfig.privateKeyPath, 'utf8') : undefined,
+                passphrase: sshConfig.privateKeyPath && sshConfig.password ? sshConfig.password : undefined
+              });
+              
+              // 先检查目标文件夹是否存在
+              try {
+                const folderStat = await sftp.stat(normalizedTargetFolder);
+                if (!folderStat.isDirectory) {
+                  await sftp.end();
+                  activeTransfers.delete(transferKey);
+                  return resolve({ success: false, error: `目标${normalizedTargetFolder}不是文件夹` });
+                }
+              } catch (statErr) {
+                // 如果目标不存在，尝试创建目标目录
+                try {
+                  await sftp.mkdir(normalizedTargetFolder, true);
+                } catch (mkdirErr) {
+                  logToFile(`Target folder create failed for session ${tabId}: ${mkdirErr.message}`, 'ERROR');
+                  await sftp.end();
+                  activeTransfers.delete(transferKey);
+                  return resolve({ success: false, error: `目标文件夹不可访问: ${mkdirErr.message}` });
+                }
+              }
+              
+              // 设置进度相关变量
+              let totalTransferredBytes = 0;
+              let processedFiles = 0;
+              let lastProgressUpdate = 0;
+              let lastTransferredBytes = 0;
+              let lastUpdateTime = Date.now();
+              let transferSpeed = 0;
+              const progressReportInterval = 100; // 每隔100ms报告进度
+              
+              // 定义上传进度回调
+              const uploadProgressCallback = (progress) => {
+                if (progress.source && progress.destination) {
+                  // 获取当前文件信息
+                  const currentFile = path.basename(progress.source);
+                  const currentFileStats = fs.statSync(progress.source);
+                  const currentFileSize = currentFileStats.size;
+                  
+                  // 更新进度数据
+                  totalTransferredBytes += currentFileSize;
+                  processedFiles++;
+                  
+                  // 计算进度百分比
+                  const totalProgress = Math.floor((totalTransferredBytes / totalSize) * 100);
+                  
+                  // 限制进度更新频率
+                  const now = Date.now();
+                  if (now - lastProgressUpdate >= progressReportInterval) {
+                    // 计算传输速度 (字节/秒)
+                    const elapsedSinceLastUpdate = (now - lastUpdateTime) / 1000; // 时间间隔(秒)
+                    
+                    if (elapsedSinceLastUpdate > 0) {
+                      const bytesTransferredSinceLastUpdate = totalTransferredBytes - lastTransferredBytes;
+                      if (bytesTransferredSinceLastUpdate > 0) {
+                        transferSpeed = bytesTransferredSinceLastUpdate / elapsedSinceLastUpdate;
+                      }
+                    }
+                    
+                    // 存储当前值供下次计算
+                    lastTransferredBytes = totalTransferredBytes;
+                    lastUpdateTime = now;
+                    
+                    // 发送进度更新到渲染进程
+                    event.sender.send('upload-progress', {
+                      tabId,
+                      progress: totalProgress,
+                      fileName: folderName,
+                      transferredBytes: totalTransferredBytes,
+                      totalBytes: totalSize,
+                      transferSpeed,
+                      remainingTime: transferSpeed > 0 ? (totalSize - totalTransferredBytes) / transferSpeed : 0,
+                      currentFile,
+                      totalFiles: fileCount,
+                      processedFiles
+                    });
+                    
+                    lastProgressUpdate = now;
+                  }
+                }
+              };
+              
+              // 设置回调选项
+              const callbacks = {
+                upload: uploadProgressCallback
+              };
+              
+              // 重新初始化SFTP客户端并设置回调
+              await sftp.end();
+              const sftpWithCallbacks = new SftpClient('sftp', callbacks);
+              
+              await sftpWithCallbacks.connect({
+                host: sshConfig.host,
+                port: sshConfig.port || 22,
+                username: sshConfig.username,
+                password: sshConfig.password,
+                privateKey: sshConfig.privateKeyPath ? fs.readFileSync(sshConfig.privateKeyPath, 'utf8') : undefined,
+                passphrase: sshConfig.privateKeyPath && sshConfig.password ? sshConfig.password : undefined
+              });
+              
+              // 上传文件夹
+              await sftpWithCallbacks.uploadDir(localFolderPath, remoteFolderPath, {
+                useFastput: true
+              });
+              
+              // 确保发送100%进度
+              event.sender.send('upload-progress', {
+                tabId,
+                progress: 100,
+                fileName: folderName,
+                transferredBytes: totalSize,
+                totalBytes: totalSize,
+                transferSpeed,
+                remainingTime: 0,
+                currentFile: '',
+                totalFiles: fileCount,
+                processedFiles: fileCount
+              });
+              
+              // 成功上传
+              await sftpWithCallbacks.end();
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              logToFile(`Successfully uploaded folder "${localFolderPath}" to "${remoteFolderPath}" for session ${tabId}`, 'INFO');
+              resolve({ success: true, folderName });
+              
+            } catch (error) {
+              logToFile(`Upload folder error for session ${tabId}: ${error.message}`, 'ERROR');
+              await sftp.end().catch(() => {}); // 忽略关闭连接可能的错误
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              // 如果是用户取消导致的错误，提供友好的消息
+              if (error.message.includes('aborted') || error.message.includes('cancel')) {
+                resolve({ success: false, cancelled: true, error: '上传已取消' });
+              } else {
+                resolve({ success: false, error: `上传文件夹失败: ${error.message}` });
+              }
+            }
+          });
+        } catch (error) {
+          logToFile(`Upload folder error for session ${tabId}: ${error.message}`, 'ERROR');
+          return { success: false, error: `上传文件夹失败: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(`Upload folder error for session ${tabId}: ${error.message}`, 'ERROR');
+      return { success: false, error: `上传文件夹失败: ${error.message}` };
+    }
+  });
+  
   ipcMain.handle('renameFile', async (event, tabId, oldPath, newName) => {
     try {
       // 使用 SFTP 会话池获取会话

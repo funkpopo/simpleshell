@@ -154,6 +154,35 @@ contextBridge.exposeInMainWorld('terminalAPI', {
       ipcRenderer.removeListener('upload-progress', progressListener);
     });
   },
+  
+  uploadFolder: (tabId, targetFolder, progressCallback) => {
+    // 注册一个临时的进度监听器
+    const progressListener = (_, data) => {
+      if (data.tabId === tabId && typeof progressCallback === 'function') {
+        // 确保传递所有必要的参数给回调函数
+        progressCallback(
+          data.progress || 0,
+          data.fileName || '',
+          data.transferredBytes || 0,
+          data.totalBytes || 0,
+          data.transferSpeed,
+          data.remainingTime,
+          data.currentFile || '',
+          data.totalFiles || 0,
+          data.processedFiles || 0
+        );
+      }
+    };
+    
+    // 添加进度事件监听器
+    ipcRenderer.on('upload-progress', progressListener);
+    
+    // 发起上传文件夹请求并在完成后移除监听器
+    return ipcRenderer.invoke('uploadFolder', tabId, targetFolder).finally(() => {
+      ipcRenderer.removeListener('upload-progress', progressListener);
+    });
+  },
+  
   cancelTransfer: (tabId, type) => ipcRenderer.invoke('cancelTransfer', tabId, type),
   getAbsolutePath: (tabId, relativePath) => ipcRenderer.invoke('getAbsolutePath', tabId, relativePath),
   
