@@ -275,13 +275,46 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
         // 如果有SSH配置，则优先使用SSH连接
         if (sshConfig && window.terminalAPI && window.terminalAPI.startSSH) {
           // 显示连接信息
-          term.writeln(`正在连接到 ${sshConfig.host}...`);
+          term.writeln(`正在连接到 ${sshConfig.host}:${sshConfig.port || 22}...`);
+          term.writeln(`用户名: ${sshConfig.username}`);
+          term.writeln(`认证方式: ${sshConfig.authType === 'privateKey' ? '私钥' : '密码'}`);
+          term.writeln('');
+          term.writeln('正在建立SSH连接，请稍候...');
+          
+          // 添加可视化的连接状态指示器
+          let connectionStatus = 'connecting';
+          let statusTimer = null;
+          const statusLine = '连接状态: ';
+          const statusPos = { line: term.buffer.active.cursorY, text: statusLine };
+          
+          // 显示连接中的状态
+          const updateConnectingStatus = () => {
+            if (connectionStatus === 'connecting') {
+              const dots = ['.  ', '.. ', '...'];
+              const time = Date.now();
+              const dotIndex = Math.floor((time / 500) % 3);
+              
+              term.write(`\r${statusLine}连接中${dots[dotIndex]}`);
+              
+              statusTimer = setTimeout(updateConnectingStatus, 500);
+            }
+          };
+          
+          // 开始显示状态
+          updateConnectingStatus();
           
           try {
             // 启动SSH连接
             window.terminalAPI.startSSH(sshConfig)
               .then(processId => {
+                // 清除状态更新计时器
+                if (statusTimer) {
+                  clearTimeout(statusTimer);
+                  statusTimer = null;
+                }
+                
                 if (processId) {
+                  connectionStatus = 'connected';
                   console.log(`SSH连接成功，tabId=${tabId}, processId=${processId}`);
                   
                   // 存储进程ID
@@ -300,18 +333,73 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
                   // 设置数据接收监听
                   setupDataListener(processId, term);
                   
-                  term.writeln(`已连接到 ${sshConfig.host}`);
+                  // 清除状态行并显示成功消息
+                  term.write('\r\x1b[K'); // 清除当前行
+                  term.writeln(`连接状态: \x1b[32m已连接\x1b[0m`);
+                  term.writeln('');
+                  term.writeln('\x1b[32m成功连接到服务器\x1b[0m');
                 } else {
-                  term.writeln(`连接失败: 未能获取进程ID`);
+                  connectionStatus = 'failed';
+                  term.write('\r\x1b[K'); // 清除当前行
+                  term.writeln(`连接状态: \x1b[31m失败\x1b[0m`);
+                  term.writeln('');
+                  term.writeln('\x1b[31m连接失败: 未能获取进程ID\x1b[0m');
+                  term.writeln('\r\n提示: 请检查服务器地址和端口是否正确，以及服务器是否允许SSH连接');
+                  term.writeln('按Ctrl+R可以尝试重新连接');
                 }
               })
               .catch(error => {
+                // 清除状态更新计时器
+                if (statusTimer) {
+                  clearTimeout(statusTimer);
+                  statusTimer = null;
+                }
+                
+                connectionStatus = 'failed';
                 console.error('SSH connection error:', error);
-                term.writeln(`\r\n连接失败: ${error.message || '未知错误'}`);
+                
+                // 清除状态行并显示错误消息
+                term.write('\r\x1b[K'); // 清除当前行
+                term.writeln(`连接状态: \x1b[31m失败\x1b[0m`);
+                term.writeln('');
+                term.writeln(`\x1b[31m连接失败: ${error.message || '未知错误'}\x1b[0m`);
+                
+                // 根据错误类型提供更具体的提示
+                if (error.message.includes('connect ECONNREFUSED')) {
+                  term.writeln('\r\n提示: 无法连接到服务器。请检查：');
+                  term.writeln('1. 主机地址和端口是否正确');
+                  term.writeln('2. 服务器SSH服务是否运行');
+                  term.writeln('3. 网络连接是否通畅');
+                  term.writeln('4. 防火墙是否允许SSH连接');
+                } else if (error.message.includes('Authentication failed')) {
+                  term.writeln('\r\n提示: 身份验证失败。请检查：');
+                  term.writeln('1. 用户名是否正确');
+                  term.writeln('2. 密码是否正确');
+                  term.writeln('3. 如果使用密钥认证，请确保私钥文件有效');
+                } else if (error.message.includes('timeout')) {
+                  term.writeln('\r\n提示: 连接超时。请检查：');
+                  term.writeln('1. 网络连接是否稳定');
+                  term.writeln('2. 服务器是否响应慢或繁忙');
+                } else {
+                  term.writeln('\r\n提示: 请检查连接参数并重试。按Ctrl+R可以尝试重新连接');
+                }
               });
           } catch (error) {
+            // 清除状态更新计时器
+            if (statusTimer) {
+              clearTimeout(statusTimer);
+              statusTimer = null;
+            }
+            
+            connectionStatus = 'failed';
             console.error('Failed to start SSH:', error);
-            term.writeln(`\r\n连接失败: ${error.message || '未知错误'}`);
+            
+            // 清除状态行并显示错误消息
+            term.write('\r\x1b[K'); // 清除当前行
+            term.writeln(`连接状态: \x1b[31m失败\x1b[0m`);
+            term.writeln('');
+            term.writeln(`\x1b[31m连接失败: ${error.message || '未知错误'}\x1b[0m`);
+            term.writeln('\r\n提示: SSH连接初始化失败。请检查应用程序配置并重试。')
           }
         }
         // 连接到本地PowerShell
