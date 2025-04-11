@@ -16,7 +16,7 @@
     "name": "funkpopo",
     "email": "s767609509@gmail.com"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@babel/core": "^7.26.10",
     "@babel/preset-env": "^7.26.9",
