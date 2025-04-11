@@ -1,8 +1,8 @@
 {
-  "name": "shell",
-  "productName": "shell",
-  "version": "1.0.0",
-  "description": "My Electron application description",
+  "name": "simpleshell",
+  "productName": "SimpleShell",
+  "version": "1.2.0-fix",
+  "description": "A Simple Terminal Application for Windows",
   "main": ".webpack/main",
   "scripts": {
     "start": "electron-forge start",
