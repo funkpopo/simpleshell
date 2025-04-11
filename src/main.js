@@ -301,6 +301,25 @@ const setupIPCHandlers = () => {
         return true;
       }
       
+      // 添加对PowerShell进程的大小调整支持
+      if (process.process && process.type === 'powershell') {
+        try {
+          // 在Windows上，使用PowerShell命令设置控制台大小
+          if (process.platform === 'win32') {
+            // 使用PowerShell命令设置控制台窗口大小
+            const resizeCommand = `$host.UI.RawUI.WindowSize = New-Object System.Management.Automation.Host.Size(${cols}, ${rows}); $host.UI.RawUI.BufferSize = New-Object System.Management.Automation.Host.Size(${cols}, ${Math.max(rows, 3000)});\r\n`;
+            process.process.stdin.write(resizeCommand);
+          } else if (process.process.resize) {
+            // 对于支持resize方法的PTY进程（通常在Linux/Mac上）
+            process.process.resize(cols, rows);
+          }
+          return true;
+        } catch (resizeError) {
+          console.error('调整PowerShell终端大小时出错:', resizeError);
+          return false;
+        }
+      }
+      
       return false;
     } catch (error) {
       console.error('调整终端大小时出错:', error);

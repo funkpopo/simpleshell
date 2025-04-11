@@ -78,8 +78,8 @@ class SSHService {
       // 创建新的SSH Shell会话
       conn.shell({
         term: 'xterm-256color',  // 更高级的终端类型，支持更多功能
-        rows: 30,                // 默认终端行数
-        cols: 120,               // 默认终端列数
+        rows: config.rows || 30,  // 使用传入的行数或默认值
+        cols: config.cols || 120, // 使用传入的列数或默认值
         // 启用PTY模式获取更好的终端体验
         modes: {
           ECHO: 1,               // 本地回显开启
@@ -98,7 +98,9 @@ class SSHService {
         this.connections.set(connectionId, { conn, stream });
         
         // 设置缓冲区大小，提高性能
-        stream.setWindow(30, 120, this.bufferSize, this.bufferSize);
+        const rows = config.rows || 30;
+        const cols = config.cols || 120;
+        stream.setWindow(rows, cols, this.bufferSize, this.bufferSize);
 
         // 数据缓冲区 - 用于批量传输数据，减少WebSocket消息数量
         let dataBuffer = '';
