@@ -16,27 +16,10 @@ module.exports = [
       },
     },
   },
-  // 添加对 React JSX 的支持
+  // 添加图标和其他资源文件的支持
   {
-    test: /\.(js|jsx)$/,
-    exclude: /(node_modules|\.webpack)/,
-    use: {
-      loader: 'babel-loader',
-      options: {
-        presets: ['@babel/preset-env', '@babel/preset-react']
-      }
-    }
-  },
-  // 添加对 SVG 文件的支持
-  {
-    test: /\.svg$/,
-    use: {
-      loader: 'file-loader',
-      options: {
-        name: '[name].[ext]',
-        outputPath: 'assets/'
-      },
-    },
+    test: /\.(ico|png|jpe?g|gif|svg)$/i,
+    type: 'asset/resource',
   },
   // Put your webpack loader rules in this array.  This is where you would put
   // your ts-loader configuration for instance:
@@ -54,4 +37,14 @@ module.exports = [
    *   }]
    * }
    */
+  {
+    test: /\.jsx?$/,
+    use: {
+      loader: 'babel-loader',
+      options: {
+        exclude: /node_modules/,
+        presets: ['@babel/preset-react']
+      }
+    }
+  }
 ];

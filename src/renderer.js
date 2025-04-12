@@ -26,21 +26,7 @@
  * ```
  */
 
-import React from 'react';
 import './index.css';
-// 导入 xterm 样式
-import '@xterm/xterm/css/xterm.css';
-// 导入自定义样式
-import './styles/terminal.css';
-// 导入 React 应用
-import App from './app.jsx';
-import { createRoot } from 'react-dom/client';
+import './app.jsx';
 
-// 在 DOM 加载完成后渲染 React 应用
-document.addEventListener('DOMContentLoaded', () => {
-  // 创建 React 根节点并渲染应用
-  const root = createRoot(document.getElementById('root'));
-  root.render(<App />);
-  
-  console.log('React 应用已渲染');
-});
+console.log('👋 This message is being logged by "renderer.js", included via webpack');

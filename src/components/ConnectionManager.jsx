@@ -41,34 +41,7 @@ const ConnectionManager = ({ open, onClose, initialConnections = [], onConnectio
     message: '',
     severity: 'info'
   });
-  
-  // 拖拽相关状态
-  const [draggedItem, setDraggedItem] = useState(null);
-  const [draggedItemPath, setDraggedItemPath] = useState(null); // 存储拖拽项的路径 ['groupId'] 或 ['groupId', 'connectionId']
-  const [dragOverItem, setDragOverItem] = useState(null);
-  const [dragOverType, setDragOverType] = useState(null); // 'item', 'group', 'inside-group'
-  const [dragOverPath, setDragOverPath] = useState(null);
-  
-  // 查找项目路径的辅助函数
-  const findItemPath = (itemId, items = connections, currentPath = []) => {
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      
-      // 检查当前项是否匹配
-      if (item.id === itemId) {
-        return [...currentPath, i];
-      }
-      
-      // 如果是组，则递归检查其子项
-      if (item.type === 'group' && Array.isArray(item.items)) {
-        const path = findItemPath(itemId, item.items, [...currentPath, i, 'items']);
-        if (path) return path;
-      }
-    }
-    
-    return null; // 未找到
-  };
-  
+
   // 初始加载数据
   useEffect(() => {
     if (open && isLoading) {
@@ -289,9 +262,8 @@ const ConnectionManager = ({ open, onClose, initialConnections = [], onConnectio
           privateKeyPath: formData.privateKeyPath
         };
         
-        // 判断是否需要移动连接到不同的组或从组中移出
-        if ((formData.parentGroup && selectedItem.parentGroupId !== formData.parentGroup) || 
-            (!formData.parentGroup && selectedItem.parentGroupId)) {
+        // 判断是否需要移动连接到不同的组
+        if (formData.parentGroup && selectedItem.parentGroupId !== formData.parentGroup) {
           // 从原组中删除
           if (selectedItem.parentGroupId) {
             setConnections(prevConnections => 
@@ -306,20 +278,14 @@ const ConnectionManager = ({ open, onClose, initialConnections = [], onConnectio
             setConnections(prev => prev.filter(item => item.id !== selectedItem.id));
           }
           
-          // 添加到新组或顶层
-          if (formData.parentGroup) {
-            // 添加到新组
-            setConnections(prevConnections => 
-              prevConnections.map(group => 
-                group.id === formData.parentGroup
-                  ? { ...group, items: [...group.items, updatedConnection] }
-                  : group
-              )
-            );
-          } else {
-            // 添加到顶层
-            setConnections(prev => [...prev, updatedConnection]);
-          }
+          // 添加到新组
+          setConnections(prevConnections => 
+            prevConnections.map(group => 
+              group.id === formData.parentGroup
+                ? { ...group, items: [...group.items, updatedConnection] }
+                : group
+            )
+          );
         } else {
           // 更新当前位置
           if (selectedItem.parentGroupId) {
@@ -365,297 +331,8 @@ const ConnectionManager = ({ open, onClose, initialConnections = [], onConnectio
     }
   };
   
-  // 拖拽开始处理
-  const handleDragStart = (e, item, parentGroup = null) => {
-    e.stopPropagation();
-    // 设置拖拽效果
-    e.dataTransfer.effectAllowed = 'move';
-    // 设置拖拽图像
-    if (e.target.tagName === 'LI') {
-      e.dataTransfer.setDragImage(e.target, 10, 10);
-    }
-    
-    // 将被拖拽项的ID存储在dataTransfer中
-    e.dataTransfer.setData('text/plain', JSON.stringify({
-      id: item.id,
-      type: item.type,
-      parentId: parentGroup ? parentGroup.id : null
-    }));
-    
-    // 设置拖拽状态
-    setDraggedItem(item);
-    const path = findItemPath(item.id);
-    setDraggedItemPath(path);
-    
-    // 添加拖拽时的视觉效果
-    e.target.style.opacity = '0.4';
-  };
-  
-  // 拖拽经过处理
-  const handleDragOver = (e, item, parentGroup = null, type = 'item') => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // 如果正在拖拽自己到自己上面，不做任何处理
-    if (draggedItem && draggedItem.id === item.id) {
-      setDragOverItem(null);
-      setDragOverType(null);
-      setDragOverPath(null);
-      return;
-    }
-    
-    // 新增：如果拖拽的是文件夹且目标是文件夹内部，不允许放置
-    if (draggedItem && draggedItem.type === 'group' && type === 'inside-group') {
-      // 不更新拖拽状态，表示不可放置
-      setDragOverItem(null);
-      setDragOverType(null);
-      setDragOverPath(null);
-      e.dataTransfer.dropEffect = 'none'; // 显示"禁止"图标
-      return;
-    }
-    
-    // 设置放置效果为移动
-    e.dataTransfer.dropEffect = 'move';
-    
-    // 更新拖拽经过的目标
-    setDragOverItem(item);
-    setDragOverType(type);
-    
-    // 计算目标路径
-    const targetPath = findItemPath(item.id);
-    setDragOverPath(targetPath);
-    
-    // 当拖拽到文件夹上并悬停足够时间时，自动展开文件夹
-    if (item.type === 'group' && type === 'group') {
-      // 可以在这里添加自动展开文件夹的逻辑
-      // 例如，如果悬停超过1秒，则展开文件夹
-    }
-  };
-  
-  // 处理放置
-  const handleDrop = (e, targetItem, parentGroup = null, dropType = 'item') => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // 如果没有拖拽项或拖拽自己到自己上面，不做任何处理
-    if (!draggedItem || draggedItem.id === targetItem.id) {
-      resetDragState();
-      return;
-    }
-    
-    try {
-      // 从dataTransfer中获取拖拽项数据
-      const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
-      const { id: dragId, type: dragType, parentId: dragParentId } = dragData;
-      
-      // 不允许将组拖入连接项
-      if (dragType === 'group' && targetItem.type === 'connection') {
-        resetDragState();
-        return;
-      }
-      
-      // 新增：不允许将文件夹放置到另一个文件夹内部
-      if (dragType === 'group' && dropType === 'inside-group') {
-        resetDragState();
-        return;
-      }
-      
-      // 不允许将组拖入其子组（会导致循环引用）- 代码保留但实际上不再需要，因为已经完全禁止组嵌套
-      if (dragType === 'group' && dropType === 'inside-group') {
-        // 检查目标组是否是拖拽组的子组
-        const isChildGroup = (parentId, childId) => {
-          const parent = connections.find(item => item.id === parentId);
-          if (!parent || parent.type !== 'group') return false;
-          
-          // 检查直接子组
-          if (parent.items.some(item => item.id === childId)) return true;
-          
-          // 递归检查子组的子组
-          return parent.items
-            .filter(item => item.type === 'group')
-            .some(group => isChildGroup(group.id, childId));
-        };
-        
-        if (isChildGroup(dragId, targetItem.id)) {
-          resetDragState();
-          return;
-        }
-      }
-      
-      // 创建连接的副本
-      const newConnections = [...connections];
-      
-      // 移动处理逻辑
-      if (dropType === 'inside-group' && targetItem.type === 'group') {
-        // 检查是否为文件夹：文件夹只能在顶层排序，不能放入其他文件夹
-        if (dragType === 'group') {
-          resetDragState();
-          return;
-        }
-        // 将项移动到组内 - 仅适用于连接项
-        moveItemToGroup(newConnections, dragId, targetItem.id, dragParentId);
-      } else {
-        // 将项移动到目标位置前面
-        moveItemBefore(newConnections, dragId, targetItem.id, dragParentId, parentGroup ? parentGroup.id : null);
-      }
-      
-      // 更新连接状态
-      setConnections(newConnections);
-    } catch (error) {
-      console.error('拖拽处理错误:', error);
-    }
-    
-    // 重置拖拽状态
-    resetDragState();
-  };
-  
-  // 移动项到组内
-  const moveItemToGroup = (connections, dragId, targetGroupId, dragParentId) => {
-    // 获取拖拽项和目标组
-    let draggedItem = null;
-    let sourceIndex = -1;
-    let sourceParentItems = connections;
-    
-    // 如果拖拽项有父组，从父组中查找
-    if (dragParentId) {
-      const parentGroup = connections.find(item => item.id === dragParentId);
-      if (parentGroup && parentGroup.type === 'group') {
-        sourceParentItems = parentGroup.items;
-        sourceIndex = sourceParentItems.findIndex(item => item.id === dragId);
-        if (sourceIndex !== -1) {
-          draggedItem = sourceParentItems[sourceIndex];
-          // 如果目标组和源组相同，不做任何操作
-          if (dragParentId === targetGroupId) {
-            return;
-          }
-        }
-      }
-    } else {
-      // 从顶层查找
-      sourceIndex = connections.findIndex(item => item.id === dragId);
-      if (sourceIndex !== -1) {
-        draggedItem = connections[sourceIndex];
-      }
-    }
-    
-    // 如果找到拖拽项，从原位置移除
-    if (draggedItem) {
-      sourceParentItems.splice(sourceIndex, 1);
-      
-      // 查找目标组并添加拖拽项
-      const targetGroup = findGroupById(connections, targetGroupId);
-      if (targetGroup) {
-        targetGroup.items.push(draggedItem);
-      }
-    }
-  };
-  
-  // 移动项到目标项前面
-  const moveItemBefore = (connections, dragId, targetId, dragParentId, targetParentId) => {
-    // 获取拖拽项
-    let draggedItem = null;
-    let sourceIndex = -1;
-    let sourceParentItems = connections;
-    
-    // 获取目标项
-    let targetIndex = -1;
-    let targetParentItems = connections;
-    
-    // 查找拖拽项
-    if (dragParentId) {
-      const parentGroup = findGroupById(connections, dragParentId);
-      if (parentGroup) {
-        sourceParentItems = parentGroup.items;
-        sourceIndex = sourceParentItems.findIndex(item => item.id === dragId);
-        if (sourceIndex !== -1) {
-          draggedItem = sourceParentItems[sourceIndex];
-        }
-      }
-    } else {
-      sourceIndex = connections.findIndex(item => item.id === dragId);
-      if (sourceIndex !== -1) {
-        draggedItem = connections[sourceIndex];
-      }
-    }
-    
-    // 查找目标项
-    if (targetParentId) {
-      const parentGroup = findGroupById(connections, targetParentId);
-      if (parentGroup) {
-        targetParentItems = parentGroup.items;
-        targetIndex = targetParentItems.findIndex(item => item.id === targetId);
-      }
-    } else {
-      targetIndex = connections.findIndex(item => item.id === targetId);
-    }
-    
-    // 如果找到了拖拽项和目标位置
-    if (draggedItem && targetIndex !== -1) {
-      // 如果源和目标是同一个容器
-      if (sourceParentItems === targetParentItems) {
-        // 从原位置移除
-        sourceParentItems.splice(sourceIndex, 1);
-        
-        // 计算新的目标索引（如果源索引在目标索引之前，目标索引需要减1）
-        const newTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
-        
-        // 插入到目标位置
-        targetParentItems.splice(newTargetIndex, 0, draggedItem);
-      } else {
-        // 从原位置移除
-        sourceParentItems.splice(sourceIndex, 1);
-        
-        // 插入到目标位置
-        targetParentItems.splice(targetIndex, 0, draggedItem);
-      }
-    }
-  };
-  
-  // 根据ID查找组
-  const findGroupById = (items, groupId) => {
-    // 直接在当前级别查找
-    const directGroup = items.find(item => item.id === groupId && item.type === 'group');
-    if (directGroup) return directGroup;
-    
-    // 在子组中递归查找
-    for (const item of items) {
-      if (item.type === 'group' && Array.isArray(item.items)) {
-        const group = findGroupById(item.items, groupId);
-        if (group) return group;
-      }
-    }
-    
-    return null;
-  };
-  
-  // 重置拖拽状态
-  const resetDragState = () => {
-    setDraggedItem(null);
-    setDraggedItemPath(null);
-    setDragOverItem(null);
-    setDragOverType(null);
-    setDragOverPath(null);
-  };
-  
-  // 处理拖拽结束
-  const handleDragEnd = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // 恢复元素的原始样式
-    if (e.target && e.target.style) {
-      e.target.style.opacity = '1';
-    }
-    
-    // 重置所有拖拽状态
-    resetDragState();
-  };
-  
   // 渲染连接项
   const renderConnectionItem = (connection, parentGroup = null) => {
-    const isBeingDragged = draggedItem && draggedItem.id === connection.id;
-    const isDropTarget = dragOverItem && dragOverItem.id === connection.id && dragOverType === 'item';
-    
     return (
       <ListItem
         key={connection.id}
@@ -664,11 +341,7 @@ const ConnectionManager = ({ open, onClose, initialConnections = [], onConnectio
           pl: parentGroup ? 4 : 1,
           '&:hover': {
             backgroundColor: 'rgba(0, 0, 0, 0.04)',
-          },
-          backgroundColor: isDropTarget ? 'rgba(144, 202, 249, 0.15)' : 'transparent',
-          opacity: isBeingDragged ? 0.4 : 1,
-          borderTop: isDropTarget ? `2px solid ${theme.palette.primary.main}` : 'none',
-          position: 'relative'
+          }
         }}
         secondaryAction={
           <Box>
@@ -676,7 +349,6 @@ const ConnectionManager = ({ open, onClose, initialConnections = [], onConnectio
               edge="end" 
               size="small"
               onClick={() => handleEdit(connection, parentGroup)}
-              onDragStart={(e) => e.stopPropagation()} // 防止按钮拖拽干扰项目拖拽
             >
               <EditIcon fontSize="small" />
             </IconButton>
@@ -684,17 +356,11 @@ const ConnectionManager = ({ open, onClose, initialConnections = [], onConnectio
               edge="end" 
               size="small"
               onClick={() => handleDelete(connection.id, parentGroup)}
-              onDragStart={(e) => e.stopPropagation()} // 防止按钮拖拽干扰项目拖拽
             >
               <DeleteIcon fontSize="small" />
             </IconButton>
           </Box>
         }
-        draggable={true}
-        onDragStart={(e) => handleDragStart(e, connection, parentGroup)}
-        onDragOver={(e) => handleDragOver(e, connection, parentGroup, 'item')}
-        onDrop={(e) => handleDrop(e, connection, parentGroup, 'item')}
-        onDragEnd={handleDragEnd}
       >
         <ListItemButton 
           onClick={() => handleOpenConnection(connection)}
@@ -716,140 +382,79 @@ const ConnectionManager = ({ open, onClose, initialConnections = [], onConnectio
   };
   
   // 渲染组
-  const renderGroup = (group) => {
-    const isBeingDragged = draggedItem && draggedItem.id === group.id;
-    const isDropTarget = dragOverItem && dragOverItem.id === group.id;
-    const isItemDropTarget = isDropTarget && dragOverType === 'group';
-    const isInsideDropTarget = isDropTarget && dragOverType === 'inside-group';
-    
-    // 判断是否应该显示文件夹内部放置的指示器
-    // 只有当拖拽项不是文件夹时才显示
-    const showInsideDropIndicator = isInsideDropTarget && 
-                                 (!draggedItem || draggedItem.type !== 'group');
-    
-    return (
-      <React.Fragment key={group.id}>
-        <ListItem 
-          disablePadding 
-          sx={{
-            backgroundColor: isItemDropTarget ? 'rgba(144, 202, 249, 0.15)' : 'transparent',
-            opacity: isBeingDragged ? 0.4 : 1,
-            borderTop: isItemDropTarget ? `2px solid ${theme.palette.primary.main}` : 'none',
-            position: 'relative'
-          }}
-          secondaryAction={
-            <Box sx={{ display: 'flex', gap: 0.5 }}>
-              <IconButton 
-                edge="end" 
-                size="small" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAddConnection(group.id);
-                }}
-                onDragStart={(e) => e.stopPropagation()} // 防止按钮拖拽干扰项目拖拽
-              >
-                <AddIcon fontSize="small" />
-              </IconButton>
-              <IconButton 
-                edge="end" 
-                size="small" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEdit(group);
-                }}
-                onDragStart={(e) => e.stopPropagation()} // 防止按钮拖拽干扰项目拖拽
-              >
-                <EditIcon fontSize="small" />
-              </IconButton>
-              <IconButton 
-                edge="end" 
-                size="small" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(group.id);
-                }}
-                onDragStart={(e) => e.stopPropagation()} // 防止按钮拖拽干扰项目拖拽
-              >
-                <DeleteIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          }
-          draggable={true}
-          onDragStart={(e) => handleDragStart(e, group)}
-          onDragOver={(e) => handleDragOver(e, group, null, 'group')}
-          onDrop={(e) => handleDrop(e, group, null, 'group')}
-          onDragEnd={handleDragEnd}
-        >
-          <ListItemButton 
-            onClick={() => handleToggleGroup(group.id)}
-            sx={{ py: 0.7 }} // 减小上下内边距，但比连接项稍高
-            onDragOver={(e) => {
-              e.stopPropagation();
-              handleDragOver(e, group, null, 'inside-group');
-            }}
-            onDrop={(e) => {
-              e.stopPropagation();
-              handleDrop(e, group, null, 'inside-group');
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 36 }}>
-              {group.expanded ? <FolderOpenIcon fontSize="small" /> : <FolderIcon fontSize="small" />}
-            </ListItemIcon>
-            <ListItemText 
-              primary={group.name} 
-              primaryTypographyProps={{ 
-                variant: 'body2', 
-                fontWeight: 'medium',
-                margin: 0 
+  const renderGroup = (group) => (
+    <React.Fragment key={group.id}>
+      <ListItem 
+        disablePadding 
+        secondaryAction={
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <IconButton 
+              edge="end" 
+              size="small" 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAddConnection(group.id);
               }}
-              sx={{ my: 0 }} // 减小外边距
-            />
-          </ListItemButton>
-        </ListItem>
-        
-        {/* 组内拖放区域指示器 - 只在拖拽项不是文件夹时显示 */}
-        {showInsideDropIndicator && !group.expanded && (
-          <Box 
-            sx={{ 
-              height: '2px', 
-              backgroundColor: theme.palette.primary.main,
-              mx: 4,
-              my: 1
-            }} 
+            >
+              <AddIcon fontSize="small" />
+            </IconButton>
+            <IconButton 
+              edge="end" 
+              size="small" 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEdit(group);
+              }}
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
+            <IconButton 
+              edge="end" 
+              size="small" 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(group.id);
+              }}
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        }
+      >
+        <ListItemButton 
+          onClick={() => handleToggleGroup(group.id)}
+          sx={{ py: 0.7 }} // 减小上下内边距，但比连接项稍高
+        >
+          <ListItemIcon sx={{ minWidth: 36 }}>
+            {group.expanded ? <FolderOpenIcon fontSize="small" /> : <FolderIcon fontSize="small" />}
+          </ListItemIcon>
+          <ListItemText 
+            primary={group.name} 
+            primaryTypographyProps={{ 
+              variant: 'body2', 
+              fontWeight: 'medium',
+              margin: 0 
+            }}
+            sx={{ my: 0 }} // 减小外边距
           />
-        )}
-        
-        <Collapse in={group.expanded} timeout="auto" unmountOnExit>
-          <List component="div" disablePadding sx={{ pl: 2 }}>
-            {group.items.map(item => renderConnectionItem(item, group))}
-            {group.items.length === 0 && (
-              <ListItem 
-                sx={{ 
-                  pl: 2,
-                  backgroundColor: showInsideDropIndicator ? 'rgba(144, 202, 249, 0.15)' : 'transparent'
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDragOver(e, group, null, 'inside-group');
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDrop(e, group, null, 'inside-group');
-                }}
-              >
-                <ListItemText 
-                  primary="没有连接项" 
-                  primaryTypographyProps={{ variant: 'caption', sx: { fontStyle: 'italic', color: 'text.disabled' } }}
-                />
-              </ListItem>
-            )}
-          </List>
-        </Collapse>
-      </React.Fragment>
-    );
-  };
+        </ListItemButton>
+      </ListItem>
+      
+      <Collapse in={group.expanded} timeout="auto" unmountOnExit>
+        <List component="div" disablePadding sx={{ pl: 2 }}>
+          {group.items.map(item => renderConnectionItem(item, group))}
+          {group.items.length === 0 && (
+            <ListItem sx={{ pl: 2 }}>
+              <ListItemText 
+                primary="没有连接项" 
+                primaryTypographyProps={{ variant: 'caption', sx: { fontStyle: 'italic', color: 'text.disabled' } }}
+              />
+            </ListItem>
+          )}
+        </List>
+      </Collapse>
+    </React.Fragment>
+  );
 
   return (
     <Paper

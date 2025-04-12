@@ -7,7 +7,6 @@ out
 .editorconfig
 .eslintrc.cjs
 .eslintignore
-.npmrc
 .prettierrc.yaml
 .prettierignore
 
