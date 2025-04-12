@@ -508,9 +508,7 @@ function createAIWorker() {
   }
 
   try {
-    const workerPath = getWorkerPath();
-    console.log(`创建AI worker，使用路径: ${workerPath}`);
-    
+    const workerPath = getWorkerPath();    
     // 创建worker实例
     aiWorker = new Worker(workerPath);
     
