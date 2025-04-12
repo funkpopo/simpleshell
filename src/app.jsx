@@ -18,6 +18,8 @@ import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import Link from '@mui/material/Link';
 import CircularProgress from '@mui/material/CircularProgress';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
 import AppsIcon from '@mui/icons-material/Apps';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
@@ -296,6 +298,18 @@ function App() {
   // 连接配置状态
   const [connections, setConnections] = React.useState([]);
   
+  // Snackbar消息状态
+  const [snackbar, setSnackbar] = React.useState({
+    open: false,
+    message: '',
+    severity: 'info'
+  });
+  
+  // 关闭Snackbar
+  const handleSnackbarClose = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+  
   // 应用启动时加载连接配置
   React.useEffect(() => {
     const loadConnections = async () => {
@@ -334,10 +348,24 @@ function App() {
   
   // 保存更新后的连接配置
   const handleConnectionsUpdate = (updatedConnections) => {
+    // 更新连接列表
     setConnections(updatedConnections);
-    if (window.terminalAPI && window.terminalAPI.saveConnections) {
-      window.terminalAPI.saveConnections(updatedConnections)
-        .catch(error => console.error('Failed to save connections:', error));
+    
+    try {
+      // 将更新的连接保存到文件
+      if (window.terminalAPI && window.terminalAPI.saveConnections) {
+        window.terminalAPI.saveConnections(updatedConnections)
+          .catch(error => {
+            console.error('保存连接时出错:', error);
+            setSnackbar({
+              open: true,
+              message: '保存连接失败',
+              severity: 'error'
+            });
+          });
+      }
+    } catch (error) {
+      console.error('保存连接访问API时出错:', error);
     }
   };
   
@@ -476,8 +504,55 @@ function App() {
     handleTabContextMenuClose();
   };
   
+  // 验证SSH连接配置
+  const validateSSHConfig = (config) => {
+    const errors = [];
+    
+    // 检查必要字段
+    if (!config.host || config.host.trim() === '') {
+      errors.push('主机地址不能为空');
+    }
+    
+    if (!config.username || config.username.trim() === '') {
+      errors.push('用户名不能为空');
+    }
+    
+    // 检查端口号
+    if (config.port) {
+      const port = parseInt(config.port);
+      if (isNaN(port) || port <= 0 || port > 65535) {
+        errors.push('端口号无效，应为1-65535之间的整数');
+      }
+    }
+    
+    // 检查身份验证方式
+    if (config.authType === 'password' && (!config.password || config.password.trim() === '')) {
+      errors.push('密码不能为空');
+    } else if (config.authType === 'privateKey' && (!config.privateKeyPath || config.privateKeyPath.trim() === '')) {
+      errors.push('私钥文件路径不能为空');
+    }
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  };
+  
   // 从连接配置创建SSH连接标签页
   const handleCreateSSHConnection = (connection) => {
+    console.log('创建SSH连接:', connection);
+    
+    // 验证连接配置
+    const validation = validateSSHConfig(connection);
+    if (!validation.isValid) {
+      setSnackbar({
+        open: true,
+        message: `连接配置无效: ${validation.errors.join(', ')}`,
+        severity: 'error'
+      });
+      return;
+    }
+    
     // 创建唯一的标签页ID
     const terminalId = `ssh-${Date.now()}`;
     // 创建标签名（使用连接配置中的名称）
@@ -493,23 +568,46 @@ function App() {
       connectionId: connection.id // 存储连接ID以便后续使用
     };
     
-    // 为连接添加tabId以便在main进程中识别
-    const sshConfigWithTabId = {
+    // 验证环境和API可用性
+    if (!window.terminalAPI || !window.terminalAPI.startSSH) {
+      setSnackbar({
+        open: true,
+        message: '无法创建SSH连接: API不可用',
+        severity: 'error'
+      });
+      return;
+    }
+    
+    // 确保安全相关设置正确
+    const sshConfig = { 
       ...connection,
-      tabId: terminalId
+      tabId: terminalId, 
+      port: connection.port || 22,
+      authType: connection.authType || 'password'
     };
+    
+    // 如果使用密码认证，确保密码字段存在
+    if (sshConfig.authType === 'password' && !sshConfig.password) {
+      sshConfig.password = '';
+    }
     
     // 为新标签页创建终端实例缓存，并包含SSH配置
     setTerminalInstances(prev => ({
       ...prev,
       [terminalId]: true,
-      [`${terminalId}-config`]: sshConfigWithTabId, // 将完整的连接配置存储在缓存中
+      [`${terminalId}-config`]: sshConfig, // 将完整的连接配置存储在缓存中
       [`${terminalId}-processId`]: null // 预留存储进程ID的位置
     }));
     
     // 添加标签并切换到新标签
     setTabs([...tabs, newTab]);
     setCurrentTab(tabs.length);
+    
+    setSnackbar({
+      open: true,
+      message: `正在连接到 ${sshConfig.host}...`,
+      severity: 'info'
+    });
   };
   
   // 处理从连接管理器打开连接
@@ -696,10 +794,14 @@ function App() {
         >
           <Toolbar 
             variant="dense" 
+            disableGutters={true}
             sx={{ 
-              px: 1, 
+              pl: 0,
               minHeight: '40px',
-              display: 'flex'
+              display: 'flex',
+              justifyContent: 'flex-start',
+              alignItems: 'center',
+              width: '100%'
             }}
           >
             <IconButton
@@ -742,6 +844,9 @@ function App() {
                 '& .MuiTabs-indicator': {
                   height: 4,
                   backgroundColor: darkMode ? 'primary.main' : '#757575 !important'
+                },
+                '& .MuiTabs-flexContainer': {
+                  justifyContent: 'flex-start'
                 },
                 '& .MuiTab-root': {
                   color: 'text.primary',
@@ -1050,9 +1155,25 @@ function App() {
         open={aboutDialogOpen} 
         onClose={handleCloseAbout} 
       />
+      
+      {/* 消息提示 */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={handleSnackbarClose} 
+          severity={snackbar.severity} 
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </ThemeProvider>
   );
 }
 
-const root = createRoot(document.getElementById('root'));
-root.render(<App />); 
+export default App; 

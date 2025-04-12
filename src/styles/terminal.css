@@ -1,0 +1,95 @@
+/* 终端组件样式 */
+#terminal-container {
+  width: 100%;
+  height: 100%;
+  background-color: #1e1e1e;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: #2c2c2c;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 5px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}
+
+/* 容器布局 */
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+  background-color: #252525;
+  color: #f0f0f0;
+}
+
+header {
+  padding: 10px 15px;
+  background-color: #333;
+  border-bottom: 1px solid #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: normal;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #666;
+}
+
+#status-indicator.connected {
+  background-color: #4caf50;
+  box-shadow: 0 0 5px #4caf50;
+}
+
+#status-indicator.disconnected {
+  background-color: #f44336;
+}
+
+main {
+  flex: 1;
+  padding: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+footer {
+  padding: 8px;
+  background-color: #333;
+  border-top: 1px solid #444;
+  font-size: 0.8rem;
+  text-align: center;
+  color: #999;
+}
+
+footer p {
+  margin: 0;
+} 

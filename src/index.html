@@ -2,16 +2,8 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SimpleShell</title>
-    <!-- 防止Material-UI中的字体闪烁 -->
-    <style>
-      body {
-        margin: 0;
-        padding: 0;
-        font-family: 'Roboto', sans-serif;
-      }
-    </style>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http://localhost:*; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline';">
   </head>
   <body>
     <div id="root"></div>
