@@ -70,7 +70,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
   
   // 配置参数
-  const USER_ACTIVITY_REFRESH_DELAY = 2000; // 用户活动后刷新延迟
+  const USER_ACTIVITY_REFRESH_DELAY = 1000; // 用户活动后刷新延迟
 
   // 当SSH连接改变时，重置状态并加载目录
   useEffect(() => {
