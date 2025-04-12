@@ -53,5 +53,34 @@ contextBridge.exposeInMainWorld('terminalAPI', {
   closeApp: () => ipcRenderer.invoke('close-app'),
   
   // 文件选择相关
-  selectKeyFile: () => ipcRenderer.invoke('select-key-file')
+  selectKeyFile: () => ipcRenderer.invoke('select-key-file'),
+  
+  // 添加文件保存对话框
+  showSaveDialog: (options) => ipcRenderer.invoke('show-save-dialog', options),
+  
+  // 添加文件打开对话框
+  showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
+  
+  // 文件管理相关
+  listFiles: (tabId, path, options) => ipcRenderer.invoke('list-files', tabId, path, options),
+  previewFile: (path, options) => ipcRenderer.invoke('preview-file', path, options),
+  
+  // 修改文件传输相关API，去除回调函数参数，改用事件监听
+  uploadFile: (tabId, srcPath, destPath) => ipcRenderer.invoke('upload-file', tabId, srcPath, destPath),
+  uploadFolder: (tabId, srcPath, destPath) => ipcRenderer.invoke('upload-folder', tabId, srcPath, destPath),
+  downloadFile: (tabId, remotePath, localPath) => ipcRenderer.invoke('download-file', tabId, remotePath, localPath),
+  cancelTransfer: (transferId) => ipcRenderer.invoke('cancel-transfer', transferId),
+  
+  // 添加文件传输进度事件相关API
+  onTransferProgress: (callback) => {
+    ipcRenderer.on('transfer-progress', (_, data) => callback(data));
+  },
+  removeTransferProgressListener: () => {
+    ipcRenderer.removeAllListeners('transfer-progress');
+  },
+  
+  deleteFile: (tabId, path, isDirectory) => ipcRenderer.invoke('delete-file', tabId, path, isDirectory),
+  renameFile: (tabId, oldPath, newPath) => ipcRenderer.invoke('rename-file', tabId, oldPath, newPath),
+  createFolder: (tabId, path) => ipcRenderer.invoke('create-folder', tabId, path),
+  createFile: (tabId, path, content) => ipcRenderer.invoke('create-file', tabId, path, content)
 });
