@@ -1,11 +1,11 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('node:path');
 const socketServer = require('./services/socket-server');
 const sshService = require('./services/ssh');
+const sftpService = require('./services/sftp');
 const { spawn } = require('child_process');
 const os = require('os');
 const fs = require('fs');
-const { dialog } = require('electron');
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
@@ -461,24 +461,88 @@ const setupIPCHandlers = () => {
   
   // 选择私钥文件
   ipcMain.handle('select-key-file', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: '选择SSH私钥文件',
+      buttonLabel: '选择',
+      filters: [
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+    
+    if (canceled || !filePaths || filePaths.length === 0) {
+      return null;
+    }
+    
+    return filePaths[0];
+  });
+  
+  // 添加文件保存对话框
+  ipcMain.handle('show-save-dialog', async (event, options) => {
     try {
-      const result = await dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [
-          { name: 'Private Key Files', extensions: ['pem', 'key', 'ppk'] },
+      const dialogOptions = {
+        title: options?.title || '保存文件',
+        buttonLabel: options?.buttonLabel || '保存',
+        defaultPath: options?.defaultPath || '',
+        filters: options?.filters || [
           { name: 'All Files', extensions: ['*'] }
-        ],
-        title: '选择SSH私钥文件'
-      });
+        ]
+      };
       
-      if (result.canceled) {
-        return null;
+      const { canceled, filePath } = await dialog.showSaveDialog(dialogOptions);
+      
+      if (canceled || !filePath) {
+        return { 
+          success: false, 
+          canceled: true 
+        };
       }
       
-      return result.filePaths[0];
+      return { 
+        success: true, 
+        filePath 
+      };
     } catch (error) {
-      console.error('选择SSH私钥文件时出错:', error);
-      return null;
+      console.error('显示保存对话框时出错:', error);
+      return { 
+        success: false, 
+        error: error.message 
+      };
+    }
+  });
+  
+  // 添加文件打开对话框
+  ipcMain.handle('show-open-dialog', async (event, options) => {
+    try {
+      const dialogOptions = {
+        title: options?.title || '选择文件',
+        buttonLabel: options?.buttonLabel || '选择',
+        defaultPath: options?.defaultPath || '',
+        properties: options?.properties || ['openFile'],
+        filters: options?.filters || [
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      };
+      
+      const { canceled, filePaths } = await dialog.showOpenDialog(dialogOptions);
+      
+      if (canceled || !filePaths || filePaths.length === 0) {
+        return { 
+          success: false, 
+          canceled: true 
+        };
+      }
+      
+      return { 
+        success: true, 
+        filePaths 
+      };
+    } catch (error) {
+      console.error('显示打开对话框时出错:', error);
+      return { 
+        success: false, 
+        error: error.message 
+      };
     }
   });
   
@@ -550,6 +614,240 @@ const setupIPCHandlers = () => {
   // 退出应用
   ipcMain.handle('close-app', () => {
     app.quit();
+  });
+  
+  // 文件管理相关IPC处理程序
+  
+  // 列出目录内容
+  ipcMain.handle('list-files', async (event, tabId, dirPath, options) => {
+    try {
+      console.log(`列出目录内容请求: tabId=${tabId}, dirPath=${dirPath}`);
+      console.log(`活动进程列表: [${Array.from(activeProcesses.keys()).join(', ')}]`);
+      
+      // 获取与标签页关联的SSH进程
+      const process = activeProcesses.get(tabId);
+      if (!process) {
+        console.error(`找不到与此标签页关联的SSH连接: ${tabId}`);
+        return { success: false, error: '找不到与此标签页关联的SSH连接' };
+      }
+      
+      // 获取SSH连接配置
+      const sshConfig = process.config;
+      
+      // 使用SFTP服务列出文件
+      return await sftpService.listFiles(sshConfig, dirPath, options);
+    } catch (error) {
+      console.error('列出文件时出错:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 预览文件
+  ipcMain.handle('preview-file', async (event, path, options) => {
+    try {
+      // 判断是本地文件还是远程文件
+      if (options && options.remote) {
+        // 获取与标签页关联的SSH进程
+        const process = activeProcesses.get(options.tabId);
+        if (!process) {
+          return { success: false, error: '找不到与此标签页关联的SSH连接' };
+        }
+        
+        // 获取SSH连接配置
+        const sshConfig = process.config;
+        
+        // 使用SFTP服务预览远程文件
+        return await sftpService.previewFile(sshConfig, path, options);
+      } else {
+        // 使用本地文件工作线程预览本地文件
+        // 这部分需要实现本地文件预览功能
+        return { success: false, error: '本地文件预览功能尚未实现' };
+      }
+    } catch (error) {
+      console.error('预览文件时出错:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 上传文件
+  ipcMain.handle('upload-file', async (event, tabId, srcPath, destPath) => {
+    try {
+      // 获取与标签页关联的SSH进程
+      const process = activeProcesses.get(tabId);
+      if (!process) {
+        return { success: false, error: '找不到与此标签页关联的SSH连接' };
+      }
+      
+      // 获取SSH连接配置
+      const sshConfig = process.config;
+      
+      // 创建监听进度的回调函数
+      const progressCallback = (progressData) => {
+        // 发送进度更新到渲染进程
+        event.sender.send('transfer-progress', progressData);
+      };
+      
+      // 使用SFTP服务上传文件
+      const result = await sftpService.uploadFile(sshConfig, srcPath, destPath, { 
+        onProgress: progressCallback 
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('上传文件时出错:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 上传文件夹
+  ipcMain.handle('upload-folder', async (event, tabId, srcPath, destPath) => {
+    try {
+      // 获取与标签页关联的SSH进程
+      const process = activeProcesses.get(tabId);
+      if (!process) {
+        return { success: false, error: '找不到与此标签页关联的SSH连接' };
+      }
+      
+      // 获取SSH连接配置
+      const sshConfig = process.config;
+      
+      // 创建监听进度的回调函数
+      const progressCallback = (progressData) => {
+        // 发送进度更新到渲染进程
+        event.sender.send('transfer-progress', progressData);
+      };
+      
+      // 使用SFTP服务上传文件夹
+      const result = await sftpService.uploadFolder(sshConfig, srcPath, destPath, { 
+        onProgress: progressCallback 
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('上传文件夹时出错:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 下载文件
+  ipcMain.handle('download-file', async (event, tabId, remotePath, localPath) => {
+    try {
+      // 获取与标签页关联的SSH进程
+      const process = activeProcesses.get(tabId);
+      if (!process) {
+        return { success: false, error: '找不到与此标签页关联的SSH连接' };
+      }
+      
+      // 获取SSH连接配置
+      const sshConfig = process.config;
+      
+      // 创建监听进度的回调函数
+      const progressCallback = (progressData) => {
+        // 发送进度更新到渲染进程
+        event.sender.send('transfer-progress', progressData);
+      };
+      
+      // 使用SFTP服务下载文件
+      const result = await sftpService.downloadFile(sshConfig, remotePath, localPath, { 
+        onProgress: progressCallback 
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('下载文件时出错:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 取消传输
+  ipcMain.handle('cancel-transfer', async (event, transferId) => {
+    try {
+      // 调用SFTP服务取消传输
+      return await sftpService.cancelTransfer(transferId);
+    } catch (error) {
+      console.error('取消传输时出错:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 删除文件或目录
+  ipcMain.handle('delete-file', async (event, tabId, path, isDirectory) => {
+    try {
+      // 获取与标签页关联的SSH进程
+      const process = activeProcesses.get(tabId);
+      if (!process) {
+        return { success: false, error: '找不到与此标签页关联的SSH连接' };
+      }
+      
+      // 获取SSH连接配置
+      const sshConfig = process.config;
+      
+      // 使用SFTP服务删除文件
+      return await sftpService.deleteFile(sshConfig, path, isDirectory);
+    } catch (error) {
+      console.error('删除文件时出错:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 重命名文件
+  ipcMain.handle('rename-file', async (event, tabId, oldPath, newPath) => {
+    try {
+      // 获取与标签页关联的SSH进程
+      const process = activeProcesses.get(tabId);
+      if (!process) {
+        return { success: false, error: '找不到与此标签页关联的SSH连接' };
+      }
+      
+      // 获取SSH连接配置
+      const sshConfig = process.config;
+      
+      // 使用SFTP服务重命名文件
+      return await sftpService.renameFile(sshConfig, oldPath, newPath);
+    } catch (error) {
+      console.error('重命名文件时出错:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 创建文件夹
+  ipcMain.handle('create-folder', async (event, tabId, path) => {
+    try {
+      // 获取与标签页关联的SSH进程
+      const process = activeProcesses.get(tabId);
+      if (!process) {
+        return { success: false, error: '找不到与此标签页关联的SSH连接' };
+      }
+      
+      // 获取SSH连接配置
+      const sshConfig = process.config;
+      
+      // 使用SFTP服务创建文件夹
+      return await sftpService.createFolder(sshConfig, path);
+    } catch (error) {
+      console.error('创建文件夹时出错:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 创建文件
+  ipcMain.handle('create-file', async (event, tabId, path, content) => {
+    try {
+      // 获取与标签页关联的SSH进程
+      const process = activeProcesses.get(tabId);
+      if (!process) {
+        return { success: false, error: '找不到与此标签页关联的SSH连接' };
+      }
+      
+      // 获取SSH连接配置
+      const sshConfig = process.config;
+      
+      // 使用SFTP服务创建文件
+      return await sftpService.createFile(sshConfig, path, content);
+    } catch (error) {
+      console.error('创建文件时出错:', error);
+      return { success: false, error: error.message };
+    }
   });
 };
 

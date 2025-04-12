@@ -332,10 +332,16 @@ function App() {
       const { terminalId, processId } = event.detail;
       if (terminalId && processId) {
         console.log(`Received SSH process ID update: ${terminalId} -> ${processId}`);
-        setTerminalInstances(prev => ({
-          ...prev,
-          [`${terminalId}-processId`]: processId
-        }));
+        
+        setTerminalInstances(prev => {
+          const updated = {
+            ...prev,
+            [`${terminalId}-processId`]: processId
+          };
+          console.log(`Updated terminalInstances:`, 
+                     `${terminalId}-processId = ${processId}`);
+          return updated;
+        });
       }
     };
     
@@ -1049,7 +1055,9 @@ function App() {
               <FileManager
                 open={fileManagerOpen}
                 onClose={handleCloseFileManager}
-                tabId={currentTab > 0 && tabs[currentTab] ? tabs[currentTab].id : null}
+                tabId={currentTab > 0 && tabs[currentTab] && tabs[currentTab].type === 'ssh' 
+                      ? terminalInstances[`${tabs[currentTab].id}-processId`] || null 
+                      : null}
                 sshConnection={
                   currentTab > 0 && tabs[currentTab] && tabs[currentTab].type === 'ssh' 
                     ? terminalInstances[`${tabs[currentTab].id}-config`] 

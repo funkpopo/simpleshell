@@ -987,6 +987,12 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
       window.terminalAPI.sendToProcess(processId, data);
     });
     
+    // 通知父组件更新进程ID
+    if (window.sshProcessIdCallback && tabId.startsWith('ssh-')) {
+      console.log(`Updating SSH process ID for tab ${tabId} to ${processId}`);
+      window.sshProcessIdCallback(tabId, processId);
+    }
+    
     // 连接建立后，主动调整终端大小
     setTimeout(() => {
       if (fitAddonRef.current) {

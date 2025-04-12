@@ -39,6 +39,13 @@ import TextSnippetIcon from '@mui/icons-material/TextSnippet';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import FileViewer from './FileViewer.jsx';
 
+// 文件路径处理函数
+const getBasename = (filepath) => {
+  if (!filepath) return '';
+  // 简单实现path.basename的功能
+  return filepath.split(/[\\/]/).pop();
+};
+
 const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
@@ -84,6 +91,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   
   // 当SSH连接改变时，重置状态并加载目录
   useEffect(() => {
+    console.log('FileManager: Props changed', { open, tabId, sshConnection: !!sshConnection });
+    
     if (open && sshConnection && tabId) {
       console.log('FileManager: Loading files for tab', tabId);
       
@@ -102,6 +111,27 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       loadDirectory('/');
     }
   }, [open, sshConnection, tabId]);
+  
+  // 添加useEffect来注册和清理传输进度事件监听
+  useEffect(() => {
+    if (open && window.terminalAPI) {
+      // 添加传输进度监听器
+      const handleTransferProgress = (data) => {
+        // 更新进度
+        setTransferProgress(data);
+      };
+      
+      // 注册传输进度事件监听
+      window.terminalAPI.onTransferProgress(handleTransferProgress);
+      
+      // 组件卸载或关闭时清理
+      return () => {
+        if (window.terminalAPI) {
+          window.terminalAPI.removeTransferProgressListener();
+        }
+      };
+    }
+  }, [open]);
   
   // 从缓存中获取目录内容
   const getDirectoryFromCache = (path) => {
@@ -208,6 +238,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
 
     try {
       console.log(`FileManager: Listing files at path "${path}" for tab ${tabId}`);
+      console.log('FileManager: sshConnection', sshConnection ? 'available' : 'missing');
       if (window.terminalAPI && window.terminalAPI.listFiles) {
         // 将~转换为空字符串，用于API调用
         const apiPath = path === '~' ? '' : path;
@@ -461,6 +492,21 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         selectedFile.name;
 
       if (window.terminalAPI && window.terminalAPI.downloadFile) {
+        // 弹出保存对话框让用户选择保存位置
+        const saveOptions = {
+          title: '保存文件',
+          buttonLabel: '下载',
+          defaultPath: selectedFile.name,
+          filters: []
+        };
+        
+        const saveDialogResult = await window.terminalAPI.showSaveDialog(saveOptions);
+        
+        // 如果用户取消了保存对话框，不继续下载
+        if (!saveDialogResult.success || saveDialogResult.canceled) {
+          return;
+        }
+        
         // 设置初始传输进度状态
         setTransferProgress({
           type: 'download',
@@ -472,25 +518,23 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           remainingTime: 0
         });
         
-        // 使用progressCallback处理进度更新
-        await window.terminalAPI.downloadFile(
+        // 使用事件监听方式获取进度更新，而不是传递回调函数
+        const result = await window.terminalAPI.downloadFile(
           tabId, 
-          fullPath, 
-          (progress, fileName, transferredBytes, totalBytes, transferSpeed, remainingTime) => {
-            setTransferProgress({
-              type: 'download',
-              progress,
-              fileName,
-              transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime
-            });
-          }
+          fullPath,
+          saveDialogResult.filePath
         );
         
-        // 下载完成后清除进度状态
-        setTimeout(() => setTransferProgress(null), 1500);
+        if (result.success) {
+          // 下载完成后清除进度状态
+          setTimeout(() => setTransferProgress(null), 1500);
+          // 下载操作完成后设置定时器再次检查
+          refreshAfterUserActivity();
+        } else if (!transferCancelled) {
+          // 只有在不是用户主动取消的情况下才显示错误
+          setError(result.error || '下载文件失败');
+          setTransferProgress(null);
+        }
       }
     } catch (error) {
       console.error('下载文件失败:', error);
@@ -606,35 +650,41 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         targetPath = currentPath;
       }
       
-      console.log(`Uploading to path: ${targetPath}`);
+      // 弹出文件选择对话框
+      const openOptions = {
+        title: '选择要上传的文件',
+        buttonLabel: '上传',
+        properties: ['openFile']
+      };
+      
+      const openDialogResult = await window.terminalAPI.showOpenDialog(openOptions);
+      
+      // 如果用户取消了文件选择，不继续上传
+      if (!openDialogResult.success || openDialogResult.canceled || !openDialogResult.filePaths) {
+        return;
+      }
+      
+      const srcPath = openDialogResult.filePaths[0]; // 选择的第一个文件路径
+      
+      console.log(`Uploading from ${srcPath} to ${targetPath}`);
       
       if (window.terminalAPI && window.terminalAPI.uploadFile) {
         // 设置初始传输进度状态
         setTransferProgress({
           type: 'upload',
           progress: 0,
-          fileName: '',
+          fileName: getBasename(srcPath),
           transferredBytes: 0,
           totalBytes: 0,
           transferSpeed: 0,
           remainingTime: 0
         });
         
-        // 使用progressCallback处理进度更新
+        // 使用事件监听方式获取进度更新，而不是传递回调函数
         const result = await window.terminalAPI.uploadFile(
           tabId, 
-          targetPath, 
-          (progress, fileName, transferredBytes, totalBytes, transferSpeed, remainingTime) => {
-            setTransferProgress({
-              type: 'upload',
-              progress,
-              fileName,
-              transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime
-            });
-          }
+          srcPath,
+          targetPath
         );
         
         if (result.success) {
@@ -688,14 +738,30 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         targetPath = currentPath;
       }
       
-      console.log(`Uploading folder to path: ${targetPath}`);
+      // 弹出文件夹选择对话框
+      const openOptions = {
+        title: '选择要上传的文件夹',
+        buttonLabel: '上传',
+        properties: ['openDirectory']
+      };
+      
+      const openDialogResult = await window.terminalAPI.showOpenDialog(openOptions);
+      
+      // 如果用户取消了文件夹选择，不继续上传
+      if (!openDialogResult.success || openDialogResult.canceled || !openDialogResult.filePaths) {
+        return;
+      }
+      
+      const srcPath = openDialogResult.filePaths[0]; // 选择的第一个文件夹路径
+      
+      console.log(`Uploading folder from ${srcPath} to ${targetPath}`);
       
       if (window.terminalAPI && window.terminalAPI.uploadFolder) {
         // 设置初始传输进度状态
         setTransferProgress({
           type: 'upload',
           progress: 0,
-          fileName: '',
+          fileName: getBasename(srcPath),
           transferredBytes: 0,
           totalBytes: 0,
           transferSpeed: 0,
@@ -705,24 +771,11 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           processedFiles: 0
         });
         
-        // 使用progressCallback处理进度更新
+        // 使用事件监听方式获取进度更新，而不是传递回调函数
         const result = await window.terminalAPI.uploadFolder(
           tabId, 
-          targetPath, 
-          (progress, fileName, transferredBytes, totalBytes, transferSpeed, remainingTime, currentFile, totalFiles, processedFiles) => {
-            setTransferProgress({
-              type: 'upload',
-              progress,
-              fileName,
-              transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime,
-              currentFile,
-              totalFiles,
-              processedFiles
-            });
-          }
+          srcPath,
+          targetPath
         );
         
         if (result.success) {
@@ -955,55 +1008,22 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
 
   // 处理取消传输
   const handleCancelTransfer = async () => {
-    if (!transferProgress || !window.terminalAPI || !window.terminalAPI.cancelTransfer) {
-      return;
-    }
+    if (!transferProgress || !transferProgress.transferId) return;
     
     try {
-      // 标记传输已取消，用于避免显示错误消息
       setTransferCancelled(true);
       
-      const result = await window.terminalAPI.cancelTransfer(tabId, transferProgress.type);
-      
-      if (result.success) {
-        // 更新UI以显示已取消
-        setTransferProgress({
-          ...transferProgress,
-          progress: 0,
-          isCancelled: true,
-          cancelMessage: '传输已取消'
-        });
+      if (window.terminalAPI && window.terminalAPI.cancelTransfer) {
+        await window.terminalAPI.cancelTransfer(transferProgress.transferId);
         
-        // 短暂延迟后移除进度条
-        setTimeout(() => setTransferProgress(null), 1500);
-      } else {
-        // 即使取消失败也不要显示错误，因为原始传输可能已经取消
-        console.log('取消传输失败: ' + (result.error || '未知错误'));
-        
-        // 仍然更新UI以避免用户困惑
-        setTransferProgress({
-          ...transferProgress,
-          progress: 0,
-          isCancelled: true,
-          cancelMessage: '传输已中断'
-        });
-        
-        // 短暂延迟后移除进度条
-        setTimeout(() => setTransferProgress(null), 1500);
+        // 短暂延迟后清除进度显示
+        setTimeout(() => {
+          setTransferProgress(null);
+        }, 500);
       }
     } catch (error) {
       console.error('取消传输失败:', error);
-      
-      // 即使出现错误，也更新UI表明传输已中断
-      setTransferProgress({
-        ...transferProgress,
-        progress: 0,
-        isCancelled: true,
-        cancelMessage: '传输已中断'
-      });
-      
-      // 短暂延迟后移除进度条
-      setTimeout(() => setTransferProgress(null), 1500);
+      setError('取消传输失败: ' + (error.message || '未知错误'));
     }
   };
 
