@@ -274,45 +274,91 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
 
         // 如果有SSH配置，则优先使用SSH连接
         if (sshConfig && window.terminalAPI && window.terminalAPI.startSSH) {
-          // 显示连接信息
-          term.writeln(`正在连接到 ${sshConfig.host}...`);
+          // 连接到SSH
+          term.writeln(`正在连接到 ${sshConfig.host}:${sshConfig.port || 22}...`);
+          term.writeln(`用户名: ${sshConfig.username}`);
+          term.writeln(`认证方式: ${sshConfig.authType === 'privateKey' ? '私钥' : '密码'}`);
           
-          try {
-            // 启动SSH连接
-            window.terminalAPI.startSSH(sshConfig)
-              .then(processId => {
-                if (processId) {
-                  console.log(`SSH连接成功，tabId=${tabId}, processId=${processId}`);
-                  
-                  // 存储进程ID
-                  currentProcessId.current = processId;
-                  
-                  // 存储到进程缓存中
-                  processCache[tabId] = processId;
-                  
-                  // 触发SSH进程ID更新事件，用于通知其他组件
-                  const event = new CustomEvent('sshProcessIdUpdated', {
-                    detail: { terminalId: tabId, processId }
-                  });
-                  
-                  window.dispatchEvent(event);
-                  
-                  // 设置数据接收监听
-                  setupDataListener(processId, term);
-                  
-                  term.writeln(`已连接到 ${sshConfig.host}`);
-                } else {
-                  term.writeln(`连接失败: 未能获取进程ID`);
-                }
-              })
-              .catch(error => {
-                console.error('SSH connection error:', error);
-                term.writeln(`\r\n连接失败: ${error.message || '未知错误'}`);
-              });
-          } catch (error) {
-            console.error('Failed to start SSH:', error);
-            term.writeln(`\r\n连接失败: ${error.message || '未知错误'}`);
-          }
+          // 创建一个连接状态指示器
+          let statusElement = document.createElement('div');
+          statusElement.className = 'ssh-connecting-status';
+          statusElement.style.position = 'absolute';
+          statusElement.style.top = '50%';
+          statusElement.style.left = '50%';
+          statusElement.style.transform = 'translate(-50%, -50%)';
+          statusElement.style.background = 'rgba(0, 0, 0, 0.7)';
+          statusElement.style.padding = '20px';
+          statusElement.style.borderRadius = '5px';
+          statusElement.style.color = '#fff';
+          statusElement.style.fontSize = '14px';
+          statusElement.style.fontFamily = 'Arial, sans-serif';
+          statusElement.style.zIndex = '1000';
+          
+          statusElement.textContent = '连接中...';
+          terminalRef.current.appendChild(statusElement);
+          
+          // 设置进度动画
+          let dots = 0;
+          
+          const updateConnectingStatus = () => {
+            dots = (dots + 1) % 4;
+            statusElement.textContent = `连接中${''.padEnd(dots, '.')}`;
+          };
+          
+          const progressInterval = setInterval(updateConnectingStatus, 500);
+          
+          // 获取终端的实际大小，放入SSH配置中
+          const sshConfigWithSize = { 
+            ...sshConfig,
+            cols: term.cols || 120, 
+            rows: term.rows || 30
+          };
+          
+          // 发起SSH连接
+          window.terminalAPI.startSSH(sshConfigWithSize)
+            .then(processId => {
+              // 清除连接状态指示器
+              clearInterval(progressInterval);
+              if (terminalRef.current && statusElement.parentNode === terminalRef.current) {
+                terminalRef.current.removeChild(statusElement);
+              }
+              
+              // 存储进程ID
+              processCache[tabId] = processId;
+              currentProcessId.current = processId;
+              
+              // 设置数据处理
+              setupDataListener(processId, term);
+            })
+            .catch(error => {
+              // 清除连接状态指示器
+              clearInterval(progressInterval);
+              if (terminalRef.current && statusElement.parentNode === terminalRef.current) {
+                terminalRef.current.removeChild(statusElement);
+              }
+              
+              console.error('SSH connection error:', error);
+              
+              // 根据错误类型提供更具体的提示
+              if (error.message.includes('connect ECONNREFUSED')) {
+                term.writeln('\r\n提示: 无法连接到服务器。请检查：');
+                term.writeln('1. 主机地址和端口是否正确');
+                term.writeln('2. 服务器SSH服务是否运行');
+                term.writeln('3. 网络连接是否通畅');
+                term.writeln('4. 防火墙是否允许SSH连接');
+              } else if (error.message.includes('Authentication failed')) {
+                term.writeln('\r\n提示: 身份验证失败。请检查：');
+                term.writeln('1. 用户名是否正确');
+                term.writeln('2. 密码是否正确');
+                term.writeln('3. 如果使用密钥认证，请确保私钥文件有效');
+              } else if (error.message.includes('timeout')) {
+                term.writeln('\r\n提示: 连接超时。请检查：');
+                term.writeln('1. 网络连接是否稳定');
+                term.writeln('2. 服务器是否响应慢或繁忙');
+              } else {
+                term.writeln('\r\n提示: 请检查连接参数并重试。按Ctrl+R可以尝试重新连接');
+              }
+            });
         }
         // 连接到本地PowerShell
         else if (usePowershell && window.terminalAPI && window.terminalAPI.startPowerShell) {
@@ -438,13 +484,20 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
           
           // 获取当前终端的大小
           const dimensions = term.options;
-          if (dimensions && processCache[tabId] && window.terminalAPI.resizeTerminal) {
+          // 改用正确的方法获取终端大小
+          const actualCols = term.cols || dimensions.cols || 120;
+          const actualRows = term.rows || dimensions.rows || 30;
+          
+          if (processCache[tabId] && window.terminalAPI && window.terminalAPI.resizeTerminal) {
             // 通知后端调整终端大小
             window.terminalAPI.resizeTerminal(
               processCache[tabId], 
-              dimensions.cols || 120, 
-              dimensions.rows || 30
+              actualCols, 
+              actualRows
             );
+            
+            // 调试信息
+            console.debug(`终端大小已调整: ${actualCols}x${actualRows}`);
           }
         } catch (error) {
           console.error('Error resizing terminal:', error);
@@ -453,6 +506,9 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
 
       // 立即调整大小
       handleResize();
+      
+      // 添加一个小延迟后再次调整大小，确保DOM完全渲染
+      setTimeout(handleResize, 10);
       
       // 添加resize事件监听
       window.addEventListener('resize', handleResize);
@@ -584,6 +640,23 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
         term.onData(data => {
           window.terminalAPI.sendToProcess(processId, data);
         });
+        
+        // 确保终端大小正确设置
+        setTimeout(() => {
+          if (fitAddonRef.current) {
+            fitAddonRef.current.fit();
+            
+            // 获取当前终端的实际大小
+            const actualCols = term.cols || 120;
+            const actualRows = term.rows || 30;
+            
+            // 发送大小调整命令
+            if (window.terminalAPI.resizeTerminal) {
+              window.terminalAPI.resizeTerminal(processId, actualCols, actualRows);
+              console.debug(`PowerShell终端大小已设置: ${actualCols}x${actualRows}`);
+            }
+          }
+        }, 100);
       })
       .catch(err => {
         term.writeln(`连接到PowerShell失败: ${err.message || '未知错误'}`);
