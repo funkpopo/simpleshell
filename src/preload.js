@@ -154,6 +154,61 @@ contextBridge.exposeInMainWorld('terminalAPI', {
       ipcRenderer.removeListener('upload-progress', progressListener);
     });
   },
+  // 新增: 上传文件夹API
+  uploadFolder: (tabId, targetFolder, progressCallback) => {
+    // 注册一个临时的进度监听器
+    const progressListener = (_, data) => {
+      if (data.tabId === tabId && typeof progressCallback === 'function') {
+        // 确保传递所有必要的参数给回调函数
+        progressCallback(
+          data.progress || 0, 
+          data.fileName || '', 
+          data.currentFile || '',
+          data.transferredBytes || 0, 
+          data.totalBytes || 0,
+          data.transferSpeed,
+          data.remainingTime,
+          data.processedFiles || 0,
+          data.totalFiles || 0
+        );
+      }
+    };
+    
+    // 添加进度事件监听器
+    ipcRenderer.on('upload-folder-progress', progressListener);
+    
+    // 发起上传请求并在完成后移除监听器
+    return ipcRenderer.invoke('uploadFolder', tabId, targetFolder).finally(() => {
+      ipcRenderer.removeListener('upload-folder-progress', progressListener);
+    });
+  },
+  // 新增: 下载文件夹API
+  downloadFolder: (tabId, remoteFolderPath, progressCallback) => {
+    // 注册一个临时的进度监听器
+    const progressListener = (_, data) => {
+      if (data.tabId === tabId && typeof progressCallback === 'function') {
+        // 确保传递所有必要的参数给回调函数
+        progressCallback(
+          data.progress || 0,
+          data.currentFile || '', 
+          data.transferredBytes || 0, 
+          data.totalBytes || 0,
+          data.transferSpeed,
+          data.remainingTime,
+          data.processedFiles || 0,
+          data.totalFiles || 0
+        );
+      }
+    };
+    
+    // 添加进度事件监听器
+    ipcRenderer.on('download-folder-progress', progressListener);
+    
+    // 发起下载请求并在完成后移除监听器
+    return ipcRenderer.invoke('downloadFolder', tabId, remoteFolderPath).finally(() => {
+      ipcRenderer.removeListener('download-folder-progress', progressListener);
+    });
+  },
   cancelTransfer: (tabId, type) => ipcRenderer.invoke('cancelTransfer', tabId, type),
   getAbsolutePath: (tabId, relativePath) => ipcRenderer.invoke('getAbsolutePath', tabId, relativePath),
   // 添加文件内容读取API

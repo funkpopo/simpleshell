@@ -2550,6 +2550,7 @@ function setupIPC(mainWindow) {
     }
   });
   
+  // 取消所有类型的文件传输（单文件传输、文件夹上传、文件夹下载等）
   ipcMain.handle('cancelTransfer', async (event, tabId, type) => {
     try {
       const transferKey = `${tabId}-${type}`;
@@ -2695,6 +2696,664 @@ function setupIPC(mainWindow) {
     } catch (error) {
       logToFile(`Read file as base64 error for session ${tabId}: ${error.message}`, 'ERROR');
       return { success: false, error: `读取文件内容失败: ${error.message}` };
+    }
+  });
+
+  // 新增：上传文件夹处理函数
+  ipcMain.handle('uploadFolder', async (event, tabId, targetFolder) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+            return { success: false, error: '无效的SSH连接' };
+          }
+          
+          const sshClient = processInfo.process;
+          const sshConfig = processInfo.config; // 获取SSH配置
+          
+          // 打开文件夹选择对话框
+          const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+            title: '选择要上传的文件夹',
+            properties: ['openDirectory'],
+            buttonLabel: '上传文件夹'
+          });
+          
+          if (canceled || filePaths.length === 0) {
+            return { success: false, error: '用户取消上传' };
+          }
+          
+          const localFolderPath = filePaths[0];
+          const folderName = path.basename(localFolderPath);
+          
+          // 确保路径格式正确（使用posix风格的路径）
+          // 处理空路径和特殊路径
+          let normalizedTargetFolder = targetFolder;
+          if (targetFolder === '~') {
+            normalizedTargetFolder = '.'; // 在SFTP中~不会自动扩展为主目录
+          }
+          
+          // 计算目标文件夹路径
+          const remoteFolderPath = normalizedTargetFolder ? 
+            path.posix.join(normalizedTargetFolder, folderName).replace(/\\/g, '/') : 
+            folderName;
+          
+          logToFile(`Uploading folder "${localFolderPath}" to "${remoteFolderPath}" for session ${tabId}`, 'INFO');
+          
+          // 创建SFTP客户端
+          const sftp = new SftpClient();
+          
+          // 创建传输对象并存储到活动传输中
+          const transferKey = `${tabId}-upload-folder`;
+          
+          return new Promise(async (resolve, reject) => {
+            try {
+              // 存储resolve和reject函数，以便在取消时调用
+              activeTransfers.set(transferKey, { 
+                sftp,
+                resolve,
+                reject
+              });
+              
+              // 使用SSH2客户端的连接配置
+              await sftp.connect({
+                host: sshConfig.host,
+                port: sshConfig.port || 22,
+                username: sshConfig.username,
+                password: sshConfig.password,
+                privateKey: sshConfig.privateKeyPath ? fs.readFileSync(sshConfig.privateKeyPath, 'utf8') : undefined,
+                passphrase: sshConfig.privateKeyPath && sshConfig.password ? sshConfig.password : undefined
+              });
+              
+              // 先检查目标文件夹是否存在
+              try {
+                const folderStat = await sftp.stat(normalizedTargetFolder);
+                if (!folderStat.isDirectory) {
+                  await sftp.end();
+                  activeTransfers.delete(transferKey);
+                  return resolve({ success: false, error: `目标${normalizedTargetFolder}不是文件夹` });
+                }
+              } catch (statErr) {
+                logToFile(`Target folder check failed for session ${tabId}: ${statErr.message}`, 'ERROR');
+                await sftp.end();
+                activeTransfers.delete(transferKey);
+                return resolve({ success: false, error: `目标文件夹不可访问: ${statErr.message}` });
+              }
+
+              // 递归扫描本地文件夹
+              const scanLocalFolder = (folderPath, basePath = '') => {
+                const items = [];
+                const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+                
+                for (const entry of entries) {
+                  const entryPath = path.join(folderPath, entry.name);
+                  const relativePath = path.join(basePath, entry.name).replace(/\\/g, '/');
+                  
+                  if (entry.isDirectory()) {
+                    // 递归扫描子文件夹
+                    const subItems = scanLocalFolder(entryPath, relativePath);
+                    items.push({
+                      path: relativePath,
+                      name: entry.name,
+                      isDirectory: true,
+                      children: subItems
+                    });
+                  } else {
+                    // 添加文件
+                    const stats = fs.statSync(entryPath);
+                    items.push({
+                      path: relativePath,
+                      name: entry.name,
+                      isDirectory: false,
+                      size: stats.size,
+                      localPath: entryPath
+                    });
+                  }
+                }
+                
+                return items;
+              };
+              
+              // 扫描本地文件夹结构
+              const folderStructure = scanLocalFolder(localFolderPath);
+              
+              // 计算上传总大小和文件数
+              let totalBytes = 0;
+              let totalFiles = 0;
+              const getAllFiles = (items) => {
+                for (const item of items) {
+                  if (item.isDirectory && item.children) {
+                    getAllFiles(item.children);
+                  } else if (!item.isDirectory) {
+                    totalBytes += item.size || 0;
+                    totalFiles++;
+                  }
+                }
+              };
+              getAllFiles(folderStructure);
+              
+              // 递归创建远程文件夹结构
+              const createRemoteFolders = async (items, parentPath) => {
+                for (const item of items) {
+                  if (item.isDirectory) {
+                    const remotePath = path.posix.join(parentPath, item.name).replace(/\\/g, '/');
+                    
+                    // 检查远程文件夹是否存在
+                    try {
+                      await sftp.stat(remotePath);
+                    } catch (err) {
+                      // 文件夹不存在，创建它
+                      await sftp.mkdir(remotePath);
+                    }
+                    
+                    // 递归处理子文件夹
+                    if (item.children && item.children.length > 0) {
+                      await createRemoteFolders(item.children, remotePath);
+                    }
+                  }
+                }
+              };
+              
+              // 先在远程创建文件夹结构
+              try {
+                // 首先创建根文件夹
+                try {
+                  await sftp.stat(remoteFolderPath);
+                } catch (err) {
+                  await sftp.mkdir(remoteFolderPath);
+                }
+                
+                // 然后创建子文件夹
+                if (folderStructure.length > 0) {
+                  await createRemoteFolders(folderStructure, remoteFolderPath);
+                }
+                
+              } catch (err) {
+                logToFile(`Error creating remote folder structure for session ${tabId}: ${err.message}`, 'ERROR');
+                await sftp.end();
+                activeTransfers.delete(transferKey);
+                return resolve({ success: false, error: `创建远程文件夹结构失败: ${err.message}` });
+              }
+              
+              // 收集所有文件以便上传
+              const allFiles = [];
+              const collectFiles = (items, parentPath) => {
+                for (const item of items) {
+                  if (item.isDirectory && item.children) {
+                    collectFiles(item.children, path.posix.join(parentPath, item.name).replace(/\\/g, '/'));
+                  } else if (!item.isDirectory) {
+                    allFiles.push({
+                      ...item,
+                      remotePath: path.posix.join(parentPath, item.name).replace(/\\/g, '/')
+                    });
+                  }
+                }
+              };
+              collectFiles(folderStructure, remoteFolderPath);
+              
+              // 开始上传文件
+              let transferredBytes = 0;
+              let processedFiles = 0;
+              let lastProgressUpdate = 0;
+              let lastTransferredBytes = 0;
+              let lastUpdateTime = Date.now();
+              let transferSpeed = 0;
+              const progressReportInterval = 100;
+              
+              // 逐个上传文件
+              for (const file of allFiles) {
+                // 检查是否传输被取消
+                const activeTransfer = activeTransfers.get(transferKey);
+                if (!activeTransfer) {
+                  throw new Error('传输已取消');
+                }
+                
+                // 当前处理的文件相对路径（用于显示）
+                const currentFile = file.path;
+                
+                // 更新进度信息
+                event.sender.send('upload-folder-progress', {
+                  tabId,
+                  progress: Math.floor((transferredBytes / totalBytes) * 100),
+                  fileName: folderName,
+                  currentFile,
+                  transferredBytes,
+                  totalBytes,
+                  transferSpeed,
+                  remainingTime: transferSpeed > 0 ? (totalBytes - transferredBytes) / transferSpeed : 0,
+                  processedFiles,
+                  totalFiles
+                });
+                
+                try {
+                  // 上传文件并跟踪进度
+                  await sftp.fastPut(file.localPath, file.remotePath, {
+                    step: (transferred, chunk, total) => {
+                      // 计算总体进度百分比
+                      const fileProgress = transferred;
+                      const overallTransferred = transferredBytes + fileProgress;
+                      const overallProgress = Math.floor((overallTransferred / totalBytes) * 100);
+                      
+                      // 限制进度更新频率
+                      const now = Date.now();
+                      if (now - lastProgressUpdate >= progressReportInterval) {
+                        // 计算传输速度 (字节/秒)
+                        const elapsedSinceLastUpdate = (now - lastUpdateTime) / 1000; // 时间间隔(秒)
+                        
+                        if (elapsedSinceLastUpdate > 0) {
+                          const bytesTransferredSinceLastUpdate = overallTransferred - lastTransferredBytes;
+                          if (bytesTransferredSinceLastUpdate > 0) {
+                            transferSpeed = bytesTransferredSinceLastUpdate / elapsedSinceLastUpdate;
+                          }
+                        }
+                        
+                        // 存储当前值供下次计算
+                        lastTransferredBytes = overallTransferred;
+                        lastUpdateTime = now;
+                        
+                        // 发送进度更新到渲染进程
+                        event.sender.send('upload-folder-progress', {
+                          tabId,
+                          progress: overallProgress,
+                          fileName: folderName,
+                          currentFile,
+                          transferredBytes: overallTransferred,
+                          totalBytes,
+                          transferSpeed,
+                          remainingTime: transferSpeed > 0 ? (totalBytes - overallTransferred) / transferSpeed : 0,
+                          processedFiles,
+                          totalFiles
+                        });
+                        
+                        lastProgressUpdate = now;
+                      }
+                    }
+                  });
+                  
+                  // 更新已传输字节数和处理文件数
+                  transferredBytes += file.size;
+                  processedFiles++;
+                  
+                } catch (fileError) {
+                  logToFile(`Error uploading file ${file.path} for session ${tabId}: ${fileError.message}`, 'ERROR');
+                  // 继续处理下一个文件，不中断整个过程
+                  continue;
+                }
+              }
+              
+              // 确保发送100%进度
+              event.sender.send('upload-folder-progress', {
+                tabId,
+                progress: 100,
+                fileName: folderName,
+                currentFile: '',
+                transferredBytes: totalBytes,
+                totalBytes,
+                transferSpeed,
+                remainingTime: 0,
+                processedFiles: totalFiles,
+                totalFiles
+              });
+              
+              // 成功上传
+              await sftp.end();
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              logToFile(`Successfully uploaded folder "${localFolderPath}" to "${remoteFolderPath}" for session ${tabId}`, 'INFO');
+              resolve({ success: true, folderName });
+              
+            } catch (error) {
+              logToFile(`Upload folder error for session ${tabId}: ${error.message}`, 'ERROR');
+              await sftp.end().catch(() => {}); // 忽略关闭连接可能的错误
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              // 如果是用户取消导致的错误，提供友好的消息
+              if (error.message.includes('aborted') || error.message.includes('cancel') || error.message.includes('传输已取消')) {
+                resolve({ success: false, cancelled: true, error: '上传已取消' });
+              } else {
+                resolve({ success: false, error: `上传文件夹失败: ${error.message}` });
+              }
+            }
+          });
+        } catch (error) {
+          logToFile(`Upload folder error for session ${tabId}: ${error.message}`, 'ERROR');
+          return { success: false, error: `上传文件夹失败: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(`Upload folder error for session ${tabId}: ${error.message}`, 'ERROR');
+      return { success: false, error: `上传文件夹失败: ${error.message}` };
+    }
+  });
+
+
+
+  // 下载文件夹
+  ipcMain.handle('downloadFolder', async (event, tabId, remoteFolderPath) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (!processInfo || !processInfo.process || processInfo.type !== 'ssh2') {
+            return { success: false, error: '无效的SSH连接' };
+          }
+          
+          const sshClient = processInfo.process;
+          const sshConfig = processInfo.config; // 获取SSH配置
+          
+          // 获取文件夹名
+          const folderName = path.basename(remoteFolderPath);
+          
+          // 打开保存对话框
+          const { canceled, filePath } = await dialog.showOpenDialog(mainWindow, {
+            title: '选择下载位置',
+            properties: ['openDirectory'],
+            buttonLabel: '下载到此文件夹'
+          });
+          
+          if (canceled || !filePath) {
+            return { success: false, error: '用户取消下载' };
+          }
+          
+          // 计算本地保存路径
+          const localFolderPath = path.join(filePath, folderName);
+          
+          // 确保本地文件夹存在
+          if (!fs.existsSync(localFolderPath)) {
+            fs.mkdirSync(localFolderPath, { recursive: true });
+          }
+          
+          logToFile(`Downloading folder "${remoteFolderPath}" to "${localFolderPath}" for session ${tabId}`, 'INFO');
+          
+          // 创建SFTP客户端
+          const sftp = new SftpClient();
+          
+          // 创建传输对象并存储到活动传输中
+          const transferKey = `${tabId}-download-folder`;
+          
+          return new Promise(async (resolve, reject) => {
+            try {
+              // 存储resolve和reject函数，以便在取消时调用
+              activeTransfers.set(transferKey, { 
+                sftp,
+                resolve,
+                reject
+              });
+              
+              // 使用SSH2客户端的连接配置
+              await sftp.connect({
+                host: sshConfig.host,
+                port: sshConfig.port || 22,
+                username: sshConfig.username,
+                password: sshConfig.password,
+                privateKey: sshConfig.privateKeyPath ? fs.readFileSync(sshConfig.privateKeyPath, 'utf8') : undefined,
+                passphrase: sshConfig.privateKeyPath && sshConfig.password ? sshConfig.password : undefined
+              });
+              
+              // 递归扫描远程文件夹
+              const scanRemoteFolder = async (folderPath, basePath = '') => {
+                let items = [];
+                
+                try {
+                  // 获取文件夹内容
+                  const entries = await sftp.list(folderPath);
+                  
+                  for (const entry of entries) {
+                    // 跳过"."和".."目录
+                    if (entry.name === '.' || entry.name === '..') continue;
+                    
+                    const entryPath = path.posix.join(folderPath, entry.name).replace(/\\/g, '/');
+                    const relativePath = path.join(basePath, entry.name).replace(/\\/g, '/');
+                    
+                    if (entry.type === 'd') { // 目录
+                      // 递归扫描子文件夹
+                      const subItems = await scanRemoteFolder(entryPath, relativePath);
+                      items.push({
+                        path: relativePath,
+                        remotePath: entryPath,
+                        name: entry.name,
+                        isDirectory: true,
+                        children: subItems
+                      });
+                    } else { // 文件
+                      items.push({
+                        path: relativePath,
+                        remotePath: entryPath,
+                        name: entry.name,
+                        isDirectory: false,
+                        size: entry.size
+                      });
+                    }
+                  }
+                } catch (error) {
+                  logToFile(`Error scanning remote folder ${folderPath}: ${error.message}`, 'ERROR');
+                  // 如果出错，返回空列表
+                  return [];
+                }
+                
+                return items;
+              };
+              
+              // 扫描远程文件夹结构
+              event.sender.send('download-folder-progress', {
+                tabId,
+                progress: 0,
+                currentFile: '正在扫描远程文件夹...',
+                transferredBytes: 0,
+                totalBytes: 0,
+                processedFiles: 0,
+                totalFiles: 0
+              });
+              
+              const folderStructure = await scanRemoteFolder(remoteFolderPath);
+              
+              // 计算下载总大小和文件数
+              let totalBytes = 0;
+              let totalFiles = 0;
+              const getAllFiles = (items) => {
+                for (const item of items) {
+                  if (item.isDirectory && item.children) {
+                    getAllFiles(item.children);
+                  } else if (!item.isDirectory) {
+                    totalBytes += item.size || 0;
+                    totalFiles++;
+                  }
+                }
+              };
+              getAllFiles(folderStructure);
+              
+              // 如果没有文件，直接返回成功
+              if (totalFiles === 0) {
+                await sftp.end();
+                activeTransfers.delete(transferKey);
+                return resolve({ success: true, message: '文件夹为空' });
+              }
+              
+              // 递归创建本地文件夹结构
+              const createLocalFolders = (items, parentPath) => {
+                for (const item of items) {
+                  if (item.isDirectory) {
+                    const localPath = path.join(parentPath, item.name);
+                    
+                    // 检查本地文件夹是否存在
+                    if (!fs.existsSync(localPath)) {
+                      fs.mkdirSync(localPath, { recursive: true });
+                    }
+                    
+                    // 递归处理子文件夹
+                    if (item.children && item.children.length > 0) {
+                      createLocalFolders(item.children, localPath);
+                    }
+                  }
+                }
+              };
+              
+              // 在本地创建文件夹结构
+              createLocalFolders(folderStructure, localFolderPath);
+              
+              // 收集所有文件以便下载
+              const allFiles = [];
+              const collectFiles = (items, parentPath) => {
+                for (const item of items) {
+                  if (item.isDirectory && item.children) {
+                    collectFiles(item.children, path.join(parentPath, item.name));
+                  } else if (!item.isDirectory) {
+                    allFiles.push({
+                      ...item,
+                      localPath: path.join(parentPath, item.name)
+                    });
+                  }
+                }
+              };
+              collectFiles(folderStructure, localFolderPath);
+              
+              // 开始下载文件
+              let transferredBytes = 0;
+              let processedFiles = 0;
+              let lastProgressUpdate = 0;
+              let lastTransferredBytes = 0;
+              let lastUpdateTime = Date.now();
+              let transferSpeed = 0;
+              const progressReportInterval = 100;
+              
+              // 逐个下载文件
+              for (const file of allFiles) {
+                // 检查是否传输被取消
+                const activeTransfer = activeTransfers.get(transferKey);
+                if (!activeTransfer) {
+                  throw new Error('传输已取消');
+                }
+                
+                // 当前处理的文件相对路径（用于显示）
+                const currentFile = file.path;
+                
+                // 更新进度信息
+                event.sender.send('download-folder-progress', {
+                  tabId,
+                  progress: Math.floor((transferredBytes / totalBytes) * 100),
+                  currentFile,
+                  transferredBytes,
+                  totalBytes,
+                  transferSpeed,
+                  remainingTime: transferSpeed > 0 ? (totalBytes - transferredBytes) / transferSpeed : 0,
+                  processedFiles,
+                  totalFiles
+                });
+                
+                try {
+                  // 创建临时文件路径
+                  const tempFilePath = file.localPath + '.part';
+                  
+                  // 下载文件
+                  await sftp.fastGet(file.remotePath, tempFilePath, {
+                    step: (transferred, chunk, total) => {
+                      // 计算总体进度百分比
+                      const fileProgress = transferred;
+                      const overallTransferred = transferredBytes + fileProgress;
+                      const overallProgress = Math.floor((overallTransferred / totalBytes) * 100);
+                      
+                      // 限制进度更新频率
+                      const now = Date.now();
+                      if (now - lastProgressUpdate >= progressReportInterval) {
+                        // 计算传输速度 (字节/秒)
+                        const elapsedSinceLastUpdate = (now - lastUpdateTime) / 1000; // 时间间隔(秒)
+                        
+                        if (elapsedSinceLastUpdate > 0) {
+                          const bytesTransferredSinceLastUpdate = overallTransferred - lastTransferredBytes;
+                          if (bytesTransferredSinceLastUpdate > 0) {
+                            transferSpeed = bytesTransferredSinceLastUpdate / elapsedSinceLastUpdate;
+                          }
+                        }
+                        
+                        // 存储当前值供下次计算
+                        lastTransferredBytes = overallTransferred;
+                        lastUpdateTime = now;
+                        
+                        // 发送进度更新到渲染进程
+                        event.sender.send('download-folder-progress', {
+                          tabId,
+                          progress: overallProgress,
+                          currentFile,
+                          transferredBytes: overallTransferred,
+                          totalBytes,
+                          transferSpeed,
+                          remainingTime: transferSpeed > 0 ? (totalBytes - overallTransferred) / transferSpeed : 0,
+                          processedFiles,
+                          totalFiles
+                        });
+                        
+                        lastProgressUpdate = now;
+                      }
+                    }
+                  });
+                  
+                  // 下载完成后，将临时文件重命名为最终文件
+                  fs.renameSync(tempFilePath, file.localPath);
+                  
+                  // 更新已传输字节数和处理文件数
+                  transferredBytes += file.size;
+                  processedFiles++;
+                  
+                } catch (fileError) {
+                  logToFile(`Error downloading file ${file.path} for session ${tabId}: ${fileError.message}`, 'ERROR');
+                  // 继续处理下一个文件，不中断整个过程
+                  continue;
+                }
+              }
+              
+              // 确保发送100%进度
+              event.sender.send('download-folder-progress', {
+                tabId,
+                progress: 100,
+                currentFile: '',
+                transferredBytes: totalBytes,
+                totalBytes,
+                transferSpeed,
+                remainingTime: 0,
+                processedFiles: totalFiles,
+                totalFiles
+              });
+              
+              // 成功下载
+              await sftp.end();
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              logToFile(`Successfully downloaded folder "${remoteFolderPath}" to "${localFolderPath}" for session ${tabId}`, 'INFO');
+              resolve({ success: true, folderName });
+              
+            } catch (error) {
+              logToFile(`Download folder error for session ${tabId}: ${error.message}`, 'ERROR');
+              await sftp.end().catch(() => {}); // 忽略关闭连接可能的错误
+              
+              // 从活动传输列表中移除
+              activeTransfers.delete(transferKey);
+              
+              // 如果是用户取消导致的错误，提供友好的消息
+              if (error.message.includes('aborted') || error.message.includes('cancel') || error.message.includes('传输已取消')) {
+                resolve({ success: false, cancelled: true, error: '下载已取消' });
+              } else {
+                resolve({ success: false, error: `下载文件夹失败: ${error.message}` });
+              }
+            }
+          });
+        } catch (error) {
+          logToFile(`Download folder error for session ${tabId}: ${error.message}`, 'ERROR');
+          return { success: false, error: `下载文件夹失败: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(`Download folder error for session ${tabId}: ${error.message}`, 'ERROR');
+      return { success: false, error: `下载文件夹失败: ${error.message}` };
     }
   });
 }
