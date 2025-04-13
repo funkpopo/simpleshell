@@ -1,7 +1,7 @@
 {
   "name": "simpleshell",
   "productName": "simpleshell",
-  "version": "1.2.0-fix",
+  "version": "1.2.2",
   "description": "A Simple Electron SSH Terminal for Windows",
   "main": ".webpack/main",
   "scripts": {
