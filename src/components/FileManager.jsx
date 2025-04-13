@@ -1431,6 +1431,13 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           <ListItemText>创建文件</ListItemText>
         </MenuItem>
         
+        <MenuItem onClick={handleUploadFile}>
+          <ListItemIcon>
+            <UploadFileIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>上传至当前文件夹</ListItemText>
+        </MenuItem>
+        
         <Divider />
         
         <MenuItem onClick={handleRefresh}>
