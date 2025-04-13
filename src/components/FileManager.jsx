@@ -35,6 +35,7 @@ import LinkIcon from '@mui/icons-material/Link';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
+import FilePreview from './FilePreview.jsx';
 
 const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   const theme = useTheme();
@@ -56,6 +57,10 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   const [newFolderName, setNewFolderName] = useState('');
   const [showCreateFileDialog, setShowCreateFileDialog] = useState(false);
   const [newFileName2, setNewFileName2] = useState('');
+  
+  // 文件预览相关状态
+  const [previewFile, setPreviewFile] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
   
   // 传输进度相关状态
   const [transferProgress, setTransferProgress] = useState(null);
@@ -1091,18 +1096,18 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       
       handleEnterDirectory(newPath);
     } else {
-      // 如果是文件，查看文件内容（可以替换为自定义实现）
-      if (window.terminalAPI && window.terminalAPI.openFile) {
-        const fullPath = currentPath === '/' ? 
-          '/' + file.name : 
-          currentPath + '/' + file.name;
-        
-        window.terminalAPI.openFile(tabId, fullPath);
-        
-        // 文件查看后延迟刷新，检测是否有变化
-        refreshAfterUserActivity();
-      }
+      // 如果是文件，打开预览
+      setPreviewFile(file);
+      setShowPreview(true);
+      
+      // 文件查看后延迟刷新，检测是否有变化
+      refreshAfterUserActivity();
     }
+  };
+  
+  // 关闭预览
+  const handleClosePreview = () => {
+    setShowPreview(false);
   };
   
   // 修改文件操作相关处理函数，在文件操作后调用refreshAfterUserActivity
@@ -1584,6 +1589,17 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
             </form>
           </Paper>
         </Box>
+      )}
+
+      {/* 文件预览 */}
+      {showPreview && previewFile && (
+        <FilePreview
+          open={showPreview}
+          onClose={handleClosePreview}
+          file={previewFile}
+          path={currentPath}
+          tabId={tabId}
+        />
       )}
     </Paper>
   );

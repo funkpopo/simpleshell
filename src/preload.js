@@ -156,6 +156,9 @@ contextBridge.exposeInMainWorld('terminalAPI', {
   },
   cancelTransfer: (tabId, type) => ipcRenderer.invoke('cancelTransfer', tabId, type),
   getAbsolutePath: (tabId, relativePath) => ipcRenderer.invoke('getAbsolutePath', tabId, relativePath),
+  // 添加文件内容读取API
+  readFileContent: (tabId, filePath) => ipcRenderer.invoke('readFileContent', tabId, filePath),
+  readFileAsBase64: (tabId, filePath) => ipcRenderer.invoke('readFileAsBase64', tabId, filePath),
   
   // 在外部浏览器打开链接
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url)
