@@ -30,3 +30,6 @@ temp/*
 # 忽略.webpack
 .webpack
 .webpack/*
+
+# 忽略.codelf
+.codelf
