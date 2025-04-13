@@ -442,138 +442,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     attemptDelete();
   };
 
-  // 处理下载
-  const handleDownload = async () => {
-    if (!selectedFile || !sshConnection) return;
-
-    // 重置取消状态
-    setTransferCancelled(false);
-    
-    try {
-      const fullPath = currentPath === '/' ? 
-        '/' + selectedFile.name : 
-        currentPath ? currentPath + '/' + selectedFile.name : 
-        selectedFile.name;
-
-      if (window.terminalAPI && window.terminalAPI.downloadFile) {
-        // 设置初始传输进度状态
-        setTransferProgress({
-          type: 'download',
-          progress: 0,
-          fileName: selectedFile.name,
-          transferredBytes: 0,
-          totalBytes: selectedFile.size || 0,
-          transferSpeed: 0,
-          remainingTime: 0
-        });
-        
-        // 使用progressCallback处理进度更新
-        await window.terminalAPI.downloadFile(
-          tabId, 
-          fullPath, 
-          (progress, fileName, transferredBytes, totalBytes, transferSpeed, remainingTime) => {
-            setTransferProgress({
-              type: 'download',
-              progress,
-              fileName,
-              transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime
-            });
-          }
-        );
-        
-        // 下载完成后清除进度状态
-        setTimeout(() => setTransferProgress(null), 1500);
-      }
-    } catch (error) {
-      console.error('下载文件失败:', error);
-      
-      // 只有在不是用户主动取消的情况下才显示错误
-      if (!transferCancelled && !error.message?.includes('reply was never sent')) {
-        setError('下载文件失败: ' + (error.message || '未知错误'));
-      }
-      
-      setTransferProgress(null);
-    }
-    handleContextMenuClose();
-  };
-
-  // 处理重命名
-  const handleRename = () => {
-    if (!selectedFile) return;
-    setNewFileName(selectedFile.name);
-    setShowRenameDialog(true);
-    handleContextMenuClose();
-  };
-
-  // 处理重命名提交
-  const handleRenameSubmit = async (e) => {
-    e.preventDefault();
-    setShowRenameDialog(false);
-    
-    if (!selectedFile || !newFileName || newFileName === selectedFile.name) return;
-    
-    setLoading(true);
-    setError(null);
-    let retryCount = 0;
-    const maxRetries = 3;
-
-    const attemptRename = async () => {
-      try {
-        const oldPath = currentPath === '/' ? 
-          '/' + selectedFile.name : 
-          currentPath ? currentPath + '/' + selectedFile.name : 
-          selectedFile.name;
-        
-        if (window.terminalAPI && window.terminalAPI.renameFile) {
-          const response = await window.terminalAPI.renameFile(tabId, oldPath, newFileName);
-          
-          if (response?.success) {
-            // 成功重命名，刷新目录
-            await loadDirectory(currentPath);
-            // 重命名操作完成后设置定时器再次检查
-            refreshAfterUserActivity();
-          } else if (response?.error?.includes('SFTP错误') && retryCount < maxRetries) {
-            // SFTP错误，尝试重试
-            retryCount++;
-            console.log(`重命名失败，尝试重试 (${retryCount}/${maxRetries})`);
-            setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
-            
-            // 添加延迟后重试
-            setTimeout(attemptRename, 500 * retryCount);
-            return;
-          } else {
-            // 其他错误或已达到最大重试次数
-            setError(response?.error || '重命名失败');
-          }
-        }
-      } catch (error) {
-        console.error('重命名失败:', error);
-        
-        if (retryCount < maxRetries) {
-          // 发生异常，尝试重试
-          retryCount++;
-          console.log(`重命名失败，尝试重试 (${retryCount}/${maxRetries})`);
-          setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
-          
-          // 添加延迟后重试
-          setTimeout(attemptRename, 500 * retryCount);
-          return;
-        }
-        
-        setError('重命名失败: ' + (error.message || '未知错误'));
-      } finally {
-        if (retryCount === 0 || retryCount >= maxRetries) {
-          setLoading(false);
-        }
-      }
-    };
-
-    attemptRename();
-  };
-
   // 处理上传文件到当前目录
   const handleUploadFile = async () => {
     handleContextMenuClose();
@@ -650,6 +518,94 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       // 只有在不是用户主动取消的情况下才显示错误
       if (!transferCancelled && !error.message?.includes('reply was never sent')) {
         setError('上传文件失败: ' + (error.message || '未知错误'));
+      }
+      
+      setTransferProgress(null);
+    }
+  };
+
+  // 处理上传文件夹到当前目录
+  const handleUploadFolder = async () => {
+    handleContextMenuClose();
+    
+    if (!sshConnection) return;
+    
+    // 重置取消状态
+    setTransferCancelled(false);
+    
+    try {
+      // 构建目标路径，确保路径格式正确
+      let targetPath;
+      
+      if (selectedFile && selectedFile.isDirectory) {
+        // 上传到选中的文件夹
+        if (currentPath === '/') {
+          targetPath = '/' + selectedFile.name;
+        } else if (currentPath === '~') {
+          targetPath = '~/' + selectedFile.name;
+        } else {
+          targetPath = currentPath + '/' + selectedFile.name;
+        }
+      } else {
+        // 上传到当前文件夹
+        targetPath = currentPath;
+      }
+      
+      console.log(`Uploading folder to path: ${targetPath}`);
+      
+      if (window.terminalAPI && window.terminalAPI.uploadFolder) {
+        // 设置初始传输进度状态
+        setTransferProgress({
+          type: 'upload-folder',
+          progress: 0,
+          fileName: '',
+          currentFile: '',
+          transferredBytes: 0,
+          totalBytes: 0,
+          transferSpeed: 0,
+          remainingTime: 0,
+          processedFiles: 0,
+          totalFiles: 0
+        });
+        
+        // 使用progressCallback处理进度更新
+        const result = await window.terminalAPI.uploadFolder(
+          tabId, 
+          targetPath, 
+          (progress, fileName, currentFile, transferredBytes, totalBytes, transferSpeed, remainingTime, processedFiles, totalFiles) => {
+            setTransferProgress({
+              type: 'upload-folder',
+              progress,
+              fileName,
+              currentFile,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime,
+              processedFiles,
+              totalFiles
+            });
+          }
+        );
+        
+        if (result.success) {
+          // 上传完成后清除进度状态
+          setTimeout(() => setTransferProgress(null), 1500);
+          await loadDirectory(currentPath);
+          // 上传文件夹操作完成后设置定时器再次检查
+          refreshAfterUserActivity();
+        } else if (!transferCancelled) {
+          // 只有在不是用户主动取消的情况下才显示错误
+          setError(result.error || '上传文件夹失败');
+          setTransferProgress(null);
+        }
+      }
+    } catch (error) {
+      console.error('上传文件夹失败:', error);
+      
+      // 只有在不是用户主动取消的情况下才显示错误
+      if (!transferCancelled && !error.message?.includes('reply was never sent')) {
+        setError('上传文件夹失败: ' + (error.message || '未知错误'));
       }
       
       setTransferProgress(null);
@@ -870,7 +826,21 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       // 标记传输已取消，用于避免显示错误消息
       setTransferCancelled(true);
       
-      const result = await window.terminalAPI.cancelTransfer(tabId, transferProgress.type);
+      // 确定传输类型
+      let transferType;
+      if (transferProgress.type === 'upload') {
+        transferType = 'upload';
+      } else if (transferProgress.type === 'download') {
+        transferType = 'download';
+      } else if (transferProgress.type === 'upload-folder') {
+        transferType = 'upload-folder';
+      } else if (transferProgress.type === 'download-folder') {
+        transferType = 'download-folder';
+      } else {
+        return; // 未知类型，不处理
+      }
+      
+      const result = await window.terminalAPI.cancelTransfer(tabId, transferType);
       
       if (result.success) {
         // 更新UI以显示已取消
@@ -880,6 +850,9 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           isCancelled: true,
           cancelMessage: '传输已取消'
         });
+        
+        // 取消成功后刷新文件列表
+        refreshAfterUserActivity();
         
         // 短暂延迟后移除进度条
         setTimeout(() => setTransferProgress(null), 1500);
@@ -895,6 +868,9 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           cancelMessage: '传输已中断'
         });
         
+        // 传输已中断后也刷新文件列表
+        refreshAfterUserActivity();
+        
         // 短暂延迟后移除进度条
         setTimeout(() => setTransferProgress(null), 1500);
       }
@@ -908,6 +884,9 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         isCancelled: true,
         cancelMessage: '传输已中断'
       });
+      
+      // 发生错误时也刷新文件列表
+      refreshAfterUserActivity();
       
       // 短暂延迟后移除进度条
       setTimeout(() => setTransferProgress(null), 1500);
@@ -1112,6 +1091,202 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   
   // 修改文件操作相关处理函数，在文件操作后调用refreshAfterUserActivity
   
+  // 处理下载
+  const handleDownload = async () => {
+    if (!selectedFile || !sshConnection) return;
+
+    // 重置取消状态
+    setTransferCancelled(false);
+    
+    try {
+      const fullPath = currentPath === '/' ? 
+        '/' + selectedFile.name : 
+        currentPath ? currentPath + '/' + selectedFile.name : 
+        selectedFile.name;
+
+      if (window.terminalAPI && window.terminalAPI.downloadFile) {
+        // 设置初始传输进度状态
+        setTransferProgress({
+          type: 'download',
+          progress: 0,
+          fileName: selectedFile.name,
+          transferredBytes: 0,
+          totalBytes: selectedFile.size || 0,
+          transferSpeed: 0,
+          remainingTime: 0
+        });
+        
+        // 使用progressCallback处理进度更新
+        await window.terminalAPI.downloadFile(
+          tabId, 
+          fullPath, 
+          (progress, fileName, transferredBytes, totalBytes, transferSpeed, remainingTime) => {
+            setTransferProgress({
+              type: 'download',
+              progress,
+              fileName,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime
+            });
+          }
+        );
+        
+        // 下载完成后清除进度状态
+        setTimeout(() => setTransferProgress(null), 1500);
+      }
+    } catch (error) {
+      console.error('下载文件失败:', error);
+      
+      // 只有在不是用户主动取消的情况下才显示错误
+      if (!transferCancelled && !error.message?.includes('reply was never sent')) {
+        setError('下载文件失败: ' + (error.message || '未知错误'));
+      }
+      
+      setTransferProgress(null);
+    }
+    handleContextMenuClose();
+  };
+
+  // 处理下载文件夹
+  const handleDownloadFolder = async () => {
+    if (!selectedFile || !selectedFile.isDirectory || !sshConnection) return;
+
+    // 重置取消状态
+    setTransferCancelled(false);
+    
+    try {
+      const fullPath = currentPath === '/' ? 
+        '/' + selectedFile.name : 
+        currentPath ? currentPath + '/' + selectedFile.name : 
+        selectedFile.name;
+
+      if (window.terminalAPI && window.terminalAPI.downloadFolder) {
+        // 设置初始传输进度状态
+        setTransferProgress({
+          type: 'download-folder',
+          progress: 0,
+          fileName: selectedFile.name,
+          currentFile: '',
+          transferredBytes: 0,
+          totalBytes: 0,
+          transferSpeed: 0,
+          remainingTime: 0,
+          processedFiles: 0,
+          totalFiles: 0
+        });
+        
+        // 使用progressCallback处理进度更新
+        await window.terminalAPI.downloadFolder(
+          tabId, 
+          fullPath, 
+          (progress, currentFile, transferredBytes, totalBytes, transferSpeed, remainingTime, processedFiles, totalFiles) => {
+            setTransferProgress({
+              type: 'download-folder',
+              progress,
+              fileName: selectedFile.name,
+              currentFile,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime,
+              processedFiles,
+              totalFiles
+            });
+          }
+        );
+        
+        // 下载完成后清除进度状态
+        setTimeout(() => setTransferProgress(null), 1500);
+      }
+    } catch (error) {
+      console.error('下载文件夹失败:', error);
+      
+      // 只有在不是用户主动取消的情况下才显示错误
+      if (!transferCancelled && !error.message?.includes('reply was never sent')) {
+        setError('下载文件夹失败: ' + (error.message || '未知错误'));
+      }
+      
+      setTransferProgress(null);
+    }
+    handleContextMenuClose();
+  };
+
+  // 处理重命名
+  const handleRename = () => {
+    if (!selectedFile) return;
+    setNewFileName(selectedFile.name);
+    setShowRenameDialog(true);
+    handleContextMenuClose();
+  };
+
+  // 处理重命名提交
+  const handleRenameSubmit = async (e) => {
+    e.preventDefault();
+    setShowRenameDialog(false);
+    
+    if (!selectedFile || !newFileName || newFileName === selectedFile.name) return;
+    
+    setLoading(true);
+    setError(null);
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const attemptRename = async () => {
+      try {
+        const oldPath = currentPath === '/' ? 
+          '/' + selectedFile.name : 
+          currentPath ? currentPath + '/' + selectedFile.name : 
+          selectedFile.name;
+        
+        if (window.terminalAPI && window.terminalAPI.renameFile) {
+          const response = await window.terminalAPI.renameFile(tabId, oldPath, newFileName);
+          
+          if (response?.success) {
+            // 成功重命名，刷新目录
+            await loadDirectory(currentPath);
+            // 重命名操作完成后设置定时器再次检查
+            refreshAfterUserActivity();
+          } else if (response?.error?.includes('SFTP错误') && retryCount < maxRetries) {
+            // SFTP错误，尝试重试
+            retryCount++;
+            console.log(`重命名失败，尝试重试 (${retryCount}/${maxRetries})`);
+            setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
+            
+            // 添加延迟后重试
+            setTimeout(attemptRename, 500 * retryCount);
+            return;
+          } else {
+            // 其他错误或已达到最大重试次数
+            setError(response?.error || '重命名失败');
+          }
+        }
+      } catch (error) {
+        console.error('重命名失败:', error);
+        
+        if (retryCount < maxRetries) {
+          // 发生异常，尝试重试
+          retryCount++;
+          console.log(`重命名失败，尝试重试 (${retryCount}/${maxRetries})`);
+          setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
+          
+          // 添加延迟后重试
+          setTimeout(attemptRename, 500 * retryCount);
+          return;
+        }
+        
+        setError('重命名失败: ' + (error.message || '未知错误'));
+      } finally {
+        if (retryCount === 0 || retryCount >= maxRetries) {
+          setLoading(false);
+        }
+      }
+    };
+
+    attemptRename();
+  };
+
   return (
     <Paper
       sx={{
@@ -1306,7 +1481,10 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         }}>
           <Box sx={{ mb: 0.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="caption" noWrap sx={{ maxWidth: '60%' }}>
-              {transferProgress.type === 'upload' ? '上传: ' : '下载: '}{transferProgress.fileName}
+              {transferProgress.type === 'upload' ? '上传: ' : 
+               transferProgress.type === 'upload-folder' ? '上传文件夹: ' : 
+               transferProgress.type === 'download-folder' ? '下载文件夹: ' : '下载: '}
+              {transferProgress.fileName}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <Typography variant="caption" sx={{ mr: 1 }}>
@@ -1322,6 +1500,13 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               </IconButton>
             </Box>
           </Box>
+          
+          {/* 文件夹传输时显示当前正在处理的文件 */}
+          {(transferProgress.type === 'upload-folder' || transferProgress.type === 'download-folder') && transferProgress.currentFile && (
+            <Typography variant="caption" noWrap sx={{ display: 'block', mb: 0.5, color: 'text.secondary' }}>
+              当前文件: {transferProgress.currentFile}
+            </Typography>
+          )}
           
           <LinearProgress 
             variant="determinate" 
@@ -1344,6 +1529,13 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               {!transferProgress.isCancelled && formatTransferSpeed(transferProgress.transferSpeed)}
             </Typography>
           </Box>
+          
+          {/* 文件夹传输时显示文件进度 */}
+          {(transferProgress.type === 'upload-folder' || transferProgress.type === 'download-folder') && (
+            <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+              {transferProgress.processedFiles} / {transferProgress.totalFiles} 个文件
+            </Typography>
+          )}
           
           {!transferProgress.isCancelled && (
             <Typography variant="caption" sx={{ display: 'block', textAlign: 'right' }}>
@@ -1389,12 +1581,30 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           </MenuItem>
         )}
         
+        {selectedFile?.isDirectory && (
+          <MenuItem onClick={handleUploadFolder}>
+            <ListItemIcon>
+              <UploadFileIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>上传文件夹到此文件夹</ListItemText>
+          </MenuItem>
+        )}
+        
         {!selectedFile?.isDirectory && (
           <MenuItem onClick={handleDownload}>
             <ListItemIcon>
               <DownloadIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>下载文件</ListItemText>
+          </MenuItem>
+        )}
+        
+        {selectedFile?.isDirectory && (
+          <MenuItem onClick={handleDownloadFolder}>
+            <ListItemIcon>
+              <DownloadIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>下载文件夹</ListItemText>
           </MenuItem>
         )}
         
@@ -1435,7 +1645,14 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           <ListItemIcon>
             <UploadFileIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText>上传至当前文件夹</ListItemText>
+          <ListItemText>上传文件至当前文件夹</ListItemText>
+        </MenuItem>
+        
+        <MenuItem onClick={handleUploadFolder}>
+          <ListItemIcon>
+            <UploadFileIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>上传文件夹至当前文件夹</ListItemText>
         </MenuItem>
         
         <Divider />
