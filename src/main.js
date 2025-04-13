@@ -2630,6 +2630,73 @@ function setupIPC(mainWindow) {
       return { success: false, error: error.message };
     }
   });
+
+  // 读取文件内容，返回文本
+  ipcMain.handle('readFileContent', async (event, tabId, filePath) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          const sftp = await getSftpSession(tabId);
+          
+          return new Promise((resolve, reject) => {
+            sftp.readFile(filePath, (err, data) => {
+              if (err) {
+                logToFile(`Failed to read file content for session ${tabId}: ${err.message}`, 'ERROR');
+                return resolve({ success: false, error: `读取文件内容失败: ${err.message}` });
+              }
+              
+              resolve({ 
+                success: true, 
+                content: data.toString('utf8'),
+                filePath
+              });
+            });
+          });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(`Read file content error for session ${tabId}: ${error.message}`, 'ERROR');
+      return { success: false, error: `读取文件内容失败: ${error.message}` };
+    }
+  });
+
+  // 读取文件内容，返回base64编码的数据（适用于图片等二进制文件）
+  ipcMain.handle('readFileAsBase64', async (event, tabId, filePath) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          const sftp = await getSftpSession(tabId);
+          
+          return new Promise((resolve, reject) => {
+            sftp.readFile(filePath, (err, data) => {
+              if (err) {
+                logToFile(`Failed to read file as base64 for session ${tabId}: ${err.message}`, 'ERROR');
+                return resolve({ success: false, error: `读取文件内容失败: ${err.message}` });
+              }
+              
+              // 转换为base64
+              const base64Data = data.toString('base64');
+              
+              resolve({ 
+                success: true, 
+                content: base64Data,
+                filePath
+              });
+            });
+          });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(`Read file as base64 error for session ${tabId}: ${error.message}`, 'ERROR');
+      return { success: false, error: `读取文件内容失败: ${error.message}` };
+    }
+  });
 }
 
 // 获取本地系统信息
