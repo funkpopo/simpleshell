@@ -141,7 +141,9 @@ contextBridge.exposeInMainWorld('terminalAPI', {
           data.transferredBytes || 0, 
           data.totalBytes || 0,
           data.transferSpeed,
-          data.remainingTime
+          data.remainingTime,
+          data.currentFileIndex,
+          data.totalFiles
         );
       }
     };
