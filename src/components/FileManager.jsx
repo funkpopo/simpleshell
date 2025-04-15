@@ -480,14 +480,16 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           transferredBytes: 0,
           totalBytes: 0,
           transferSpeed: 0,
-          remainingTime: 0
+          remainingTime: 0,
+          currentFileIndex: 0,
+          totalFiles: 0
         });
         
         // 使用progressCallback处理进度更新
         const result = await window.terminalAPI.uploadFile(
           tabId, 
           targetPath, 
-          (progress, fileName, transferredBytes, totalBytes, transferSpeed, remainingTime) => {
+          (progress, fileName, transferredBytes, totalBytes, transferSpeed, remainingTime, currentFileIndex, totalFiles) => {
             setTransferProgress({
               type: 'upload',
               progress,
@@ -495,7 +497,9 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               transferredBytes,
               totalBytes,
               transferSpeed,
-              remainingTime
+              remainingTime,
+              currentFileIndex,
+              totalFiles
             });
           }
         );
@@ -506,6 +510,11 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           await loadDirectory(currentPath);
           // 上传文件操作完成后设置定时器再次检查
           refreshAfterUserActivity();
+          
+          // 如果有警告信息（部分文件上传失败），显示给用户
+          if (result.partialSuccess && result.warning) {
+            setError(result.warning);
+          }
         } else if (!transferCancelled) {
           // 只有在不是用户主动取消的情况下才显示错误
           setError(result.error || '上传文件失败');
@@ -1485,6 +1494,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
                transferProgress.type === 'upload-folder' ? '上传文件夹: ' : 
                transferProgress.type === 'download-folder' ? '下载文件夹: ' : '下载: '}
               {transferProgress.fileName}
+              {transferProgress.totalFiles > 1 && ` (${transferProgress.currentFileIndex || 0}/${transferProgress.totalFiles})`}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <Typography variant="caption" sx={{ mr: 1 }}>
@@ -1500,6 +1510,13 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               </IconButton>
             </Box>
           </Box>
+          
+          {/* 多文件上传时显示当前正在处理的文件 */}
+          {transferProgress.type === 'upload' && transferProgress.totalFiles > 1 && transferProgress.fileName && (
+            <Typography variant="caption" noWrap sx={{ display: 'block', mb: 0.5, color: 'text.secondary' }}>
+              当前文件: {transferProgress.fileName}
+            </Typography>
+          )}
           
           {/* 文件夹传输时显示当前正在处理的文件 */}
           {(transferProgress.type === 'upload-folder' || transferProgress.type === 'download-folder') && transferProgress.currentFile && (
@@ -1529,6 +1546,13 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               {!transferProgress.isCancelled && formatTransferSpeed(transferProgress.transferSpeed)}
             </Typography>
           </Box>
+          
+          {/* 显示文件数量信息 */}
+          {transferProgress.type === 'upload' && transferProgress.totalFiles > 1 && (
+            <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+              {transferProgress.currentFileIndex || 0} / {transferProgress.totalFiles} 个文件
+            </Typography>
+          )}
           
           {/* 文件夹传输时显示文件进度 */}
           {(transferProgress.type === 'upload-folder' || transferProgress.type === 'download-folder') && (

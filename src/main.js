@@ -2301,7 +2301,7 @@ function setupIPC(mainWindow) {
           // 打开文件选择对话框
           const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
             title: '选择要上传的文件',
-            properties: ['openFile'],
+            properties: ['openFile', 'multiSelections'],
             buttonLabel: '上传'
           });
           
@@ -2369,72 +2369,159 @@ function setupIPC(mainWindow) {
                 return resolve({ success: false, error: `目标文件夹不可访问: ${statErr.message}` });
               }
               
-              // 设置进度监控
+              // 多文件上传变量
+              const totalFiles = filePaths.length;
+              let successfulFiles = 0;
+              let failedFiles = 0;
+              let failedFileNames = [];
+              let totalBytes = 0;
+              let totalTransferredBytes = 0;
+              
+              // 计算所有文件的总大小
+              for (const localFilePath of filePaths) {
+                const stats = fs.statSync(localFilePath);
+                totalBytes += stats.size;
+              }
+              
+              // 设置进度监控的通用变量
               let lastProgressUpdate = 0;
-              let lastTransferredBytes = 0;
               let lastUpdateTime = Date.now();
               let transferSpeed = 0;
               const progressReportInterval = 100; // 每隔100ms报告进度
               
-              // 使用fastPut上传文件，并监控进度
-              await sftp.fastPut(localFilePath, remoteFilePath, {
-                step: (transferred, chunk, total) => {
-                  // 计算进度百分比
-                  const progress = Math.floor((transferred / totalBytes) * 100);
-                  
-                  // 限制进度更新频率，避免频繁通知导致UI卡顿
-                  const now = Date.now();
-                  if (now - lastProgressUpdate >= progressReportInterval) {
-                    // 计算传输速度 (字节/秒)
-                    const elapsedSinceLastUpdate = (now - lastUpdateTime) / 1000; // 时间间隔(秒)
-                    
-                    if (elapsedSinceLastUpdate > 0) {
-                      const bytesTransferredSinceLastUpdate = transferred - lastTransferredBytes;
-                      if (bytesTransferredSinceLastUpdate > 0) {
-                        transferSpeed = bytesTransferredSinceLastUpdate / elapsedSinceLastUpdate;
+              // 依次处理每个文件
+              for (let fileIndex = 0; fileIndex < filePaths.length; fileIndex++) {
+                const localFilePath = filePaths[fileIndex];
+                const fileName = path.basename(localFilePath);
+                
+                // 获取本地文件大小
+                const stats = fs.statSync(localFilePath);
+                const fileSize = stats.size;
+                
+                // 确保路径格式正确
+                const remoteFilePath = normalizedTargetFolder ? 
+                  path.posix.join(normalizedTargetFolder, fileName).replace(/\\/g, '/') : 
+                  fileName;
+                
+                logToFile(`Uploading file "${localFilePath}" to "${remoteFilePath}" for session ${tabId} (${fileIndex + 1}/${totalFiles})`, 'INFO');
+                
+                // 单个文件的已传输字节数
+                let fileTransferredBytes = 0;
+                
+                try {
+                  // 使用fastPut上传文件，并监控进度
+                  await sftp.fastPut(localFilePath, remoteFilePath, {
+                    step: (transferred, chunk, total) => {
+                      // 更新文件和总体传输进度
+                      fileTransferredBytes = transferred;
+                      const currentTotalTransferred = totalTransferredBytes + transferred;
+                      
+                      // 计算总体进度百分比
+                      const progress = Math.floor((currentTotalTransferred / totalBytes) * 100);
+                      
+                      // 限制进度更新频率，避免频繁通知导致UI卡顿
+                      const now = Date.now();
+                      if (now - lastProgressUpdate >= progressReportInterval) {
+                        // 计算传输速度 (字节/秒)
+                        const elapsedSinceLastUpdate = (now - lastUpdateTime) / 1000; // 时间间隔(秒)
+                        
+                        if (elapsedSinceLastUpdate > 0) {
+                          const bytesTransferredSinceLastUpdate = transferred - (lastProgressUpdate === 0 ? 0 : fileTransferredBytes);
+                          if (bytesTransferredSinceLastUpdate > 0) {
+                            transferSpeed = bytesTransferredSinceLastUpdate / elapsedSinceLastUpdate;
+                          }
+                        }
+                        
+                        // 存储当前值供下次计算
+                        lastUpdateTime = now;
+                        
+                        // 发送进度更新到渲染进程
+                        event.sender.send('upload-progress', {
+                          tabId,
+                          progress,
+                          fileName,
+                          currentFileIndex: fileIndex + 1,
+                          totalFiles,
+                          transferredBytes: currentTotalTransferred,
+                          totalBytes,
+                          transferSpeed,
+                          remainingTime: transferSpeed > 0 ? (totalBytes - currentTotalTransferred) / transferSpeed : 0
+                        });
+                        
+                        lastProgressUpdate = now;
                       }
                     }
-                    
-                    // 存储当前值供下次计算
-                    lastTransferredBytes = transferred;
-                    lastUpdateTime = now;
-                    
-                    // 发送进度更新到渲染进程
-                    event.sender.send('upload-progress', {
-                      tabId,
-                      progress,
-                      fileName,
-                      transferredBytes: transferred,
-                      totalBytes,
-                      transferSpeed,
-                      remainingTime: transferSpeed > 0 ? (totalBytes - transferred) / transferSpeed : 0
-                    });
-                    
-                    lastProgressUpdate = now;
-                  }
+                  });
+                  
+                  // 文件成功上传，更新计数
+                  successfulFiles++;
+                  totalTransferredBytes += fileSize;
+                  
+                } catch (fileError) {
+                  // 记录失败的文件
+                  logToFile(`Upload failed for file "${localFilePath}": ${fileError.message}`, 'ERROR');
+                  failedFiles++;
+                  failedFileNames.push(fileName);
+                  
+                  // 继续处理下一个文件，不终止整个上传过程
+                  continue;
                 }
-              });
+              }
               
-              // 确保发送100%进度
-              event.sender.send('upload-progress', {
-                tabId,
-                progress: 100,
-                fileName,
-                transferredBytes: totalBytes,
-                totalBytes,
-                transferSpeed,
-                remainingTime: 0
-              });
+              // 确保发送100%进度（如果有文件成功上传）
+              if (successfulFiles > 0) {
+                event.sender.send('upload-progress', {
+                  tabId,
+                  progress: 100,
+                  fileName: successfulFiles > 1 ? `${successfulFiles}个文件上传完成` : path.basename(filePaths[0]),
+                  currentFileIndex: totalFiles,
+                  totalFiles,
+                  transferredBytes: totalTransferredBytes,
+                  totalBytes,
+                  transferSpeed: 0,
+                  remainingTime: 0
+                });
+              }
               
-              // 成功上传
+              // 关闭SFTP连接
               await sftp.end();
               
               // 从活动传输列表中移除
               activeTransfers.delete(transferKey);
               
-              logToFile(`Successfully uploaded file "${localFilePath}" to "${remoteFilePath}" for session ${tabId}`, 'INFO');
-              resolve({ success: true, fileName });
-              
+              // 返回结果
+              if (failedFiles > 0) {
+                let errorMessage = `${failedFiles}个文件上传失败`;
+                if (failedFileNames.length <= 3) {
+                  errorMessage += `: ${failedFileNames.join(', ')}`;
+                }
+                
+                if (successfulFiles > 0) {
+                  // 部分成功，部分失败
+                  resolve({ 
+                    success: true, 
+                    partialSuccess: true, 
+                    successfulFiles, 
+                    failedFiles, 
+                    failedFileNames,
+                    warning: errorMessage 
+                  });
+                } else {
+                  // 全部失败
+                  resolve({ 
+                    success: false, 
+                    error: errorMessage 
+                  });
+                }
+              } else {
+                // 全部成功
+                logToFile(`Successfully uploaded ${successfulFiles} files to "${normalizedTargetFolder}" for session ${tabId}`, 'INFO');
+                resolve({ 
+                  success: true, 
+                  totalFiles: successfulFiles
+                });
+              }
+
             } catch (error) {
               logToFile(`Upload file error for session ${tabId}: ${error.message}`, 'ERROR');
               await sftp.end().catch(() => {}); // 忽略关闭连接可能的错误
