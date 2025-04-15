@@ -157,6 +157,46 @@ const logTerminalSize = (message, term, container) => {
   }
 };
 
+// 添加一个用于强制重新计算和同步终端大小的辅助函数
+const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
+  if (!term || !container || !fitAddon) return;
+  
+  try {
+    // 强制重新计算DOM大小
+    const currentWidth = container.clientWidth;
+    const currentHeight = container.clientHeight;
+    
+    // 记录调整前的大小信息
+    logTerminalSize('强制调整前', term, container);
+    
+    // 确保终端完全填充容器
+    if (term && term.element) {
+      term.element.style.width = `${currentWidth}px`;
+      term.element.style.height = `${currentHeight}px`;
+    }
+    
+    // 适配终端大小
+    fitAddon.fit();
+    
+    // 记录调整后的大小信息
+    logTerminalSize('强制调整后', term, container);
+    
+    // 获取当前终端的大小
+    const cols = Math.max(Math.floor(term.cols || 120), 1);
+    const rows = Math.max(Math.floor(term.rows || 30), 1);
+    
+    console.log(`强制调整终端大小: 进程ID=${processId || tabId}, 列=${cols}, 行=${rows}`);
+    
+    // 通知后端调整终端大小
+    if (window.terminalAPI && window.terminalAPI.resizeTerminal) {
+      window.terminalAPI.resizeTerminal(processId || tabId, cols, rows)
+        .catch(err => console.error('终端大小强制调整失败:', err));
+    }
+  } catch (error) {
+    console.error('强制调整终端大小时出错:', error);
+  }
+};
+
 const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null }) => {
   const terminalRef = useRef(null);
   const termRef = useRef(null);
@@ -173,6 +213,42 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState({ count: 0, current: 0 });
   const [noMatchFound, setNoMatchFound] = useState(false);
+
+  // 定义检测用户输入命令的函数，用于监控特殊命令执行
+  const setupCommandDetection = (term, processId) => {
+    term.onData(data => {
+      // 检测回车键（通常是命令执行的触发）
+      if (data === '\r' || data === '\n') {
+        try {
+          // 获取终端的最后一行内容（可能包含用户输入的命令）
+          const lastLine = term.buffer.active.getLine(term.buffer.active.cursorY)?.translateToString() || '';
+          
+          // 检查这一行是否包含常见的全屏应用命令
+          if (/\b(top|htop|vi|vim|nano|less|more|watch|tail -f)\b/.test(lastLine)) {
+            console.log('检测到用户输入全屏应用命令:', lastLine);
+            
+            // 使用延迟序列触发终端大小调整
+            const delayTimes = [200, 500, 1000, 1500];
+            delayTimes.forEach(delay => {
+              setTimeout(() => {
+                if (terminalRef.current && fitAddonRef.current) {
+                  forceResizeTerminal(term, terminalRef.current, processId, tabId, fitAddonRef.current);
+                }
+              }, delay);
+            });
+          }
+        } catch (error) {
+          // 忽略任何错误，不影响正常功能
+          console.error('检测用户输入命令时出错:', error);
+        }
+      }
+      
+      // 发送数据到进程
+      if (processId) {
+        window.terminalAPI.sendToProcess(processId, data);
+      }
+    });
+  };
 
   // 定义响应主题模式的终端主题
   const terminalTheme = {
@@ -325,7 +401,23 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
                   // 设置数据接收监听
                   setupDataListener(processId, term);
                   
+                  // 设置命令检测
+                  setupCommandDetection(term, processId);
+                  
                   term.writeln(`已连接到 ${sshConfig.host}`);
+                  
+                  // 连接成功后多次尝试同步终端大小，确保远程终端能够正确获取前端显示区域的大小
+                  setTimeout(() => {
+                    if (terminalRef.current && fitAddonRef.current) {
+                      forceResizeTerminal(term, terminalRef.current, processId, tabId, fitAddonRef.current);
+                    }
+                  }, 1000);
+                  
+                  setTimeout(() => {
+                    if (terminalRef.current && fitAddonRef.current) {
+                      forceResizeTerminal(term, terminalRef.current, processId, tabId, fitAddonRef.current);
+                    }
+                  }, 2000);
                 } else {
                   term.writeln(`连接失败: 未能获取进程ID`);
                 }
@@ -491,6 +583,17 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
             ).catch(err => {
               console.error('终端大小调整失败:', err);
             });
+            
+            // 延迟再次调整大小，确保在某些情况下终端尺寸能够正确同步
+            setTimeout(() => {
+              if (terminalRef.current && term && processCache[tabId]) {
+                window.terminalAPI.resizeTerminal(
+                  processCache[tabId],
+                  Math.max(Math.floor(term.cols || 120), 1),
+                  Math.max(Math.floor(term.rows || 30), 1)
+                ).catch(err => console.error('延迟终端大小调整失败:', err));
+              }
+            }, 300);
           }
         } catch (error) {
           console.error('Error resizing terminal:', error);
@@ -653,10 +756,8 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
           }
         });
         
-        // 处理终端输入发送到PowerShell进程
-        term.onData(data => {
-          window.terminalAPI.sendToProcess(processId, data);
-        });
+        // 设置命令检测
+        setupCommandDetection(term, processId);
       })
       .catch(err => {
         term.writeln(`连接到PowerShell失败: ${err.message || '未知错误'}`);
@@ -916,22 +1017,55 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
 
   // 设置数据监听器的函数，处理终端输出
   const setupDataListener = (processId, term) => {
+    // 防止重复添加监听器
+    window.terminalAPI.removeOutputListener(processId);
+    
     // 保存进程ID以便后续可以关闭
     processCache[tabId] = processId;
     
-    // 设置数据处理
+    // 添加数据监听
     window.terminalAPI.onProcessOutput(processId, (data) => {
       if (data) {
         term.write(data);
+        
+        // 检测全屏应用启动并触发重新调整大小
+        // 通常像top, htop, vim, nano等全屏应用会发送特定的ANSI转义序列
+        const dataStr = data.toString();
+        
+        // 检测常见的全屏应用启动特征
+        if (
+          // 检测清屏命令
+          dataStr.includes('\u001b[2J') ||
+          // 检测光标定位到左上角
+          dataStr.includes('\u001b[H') ||
+          // 检测光标位置保存或恢复（常见于全屏应用）
+          dataStr.includes('\u001b[s') || dataStr.includes('\u001b[u') ||
+          // 检测屏幕清除到结尾（常见于全屏刷新）
+          dataStr.includes('\u001b[J') ||
+          // 检测常见的全屏应用命令名称
+          /\b(top|htop|vi|vim|nano|less|more|tail -f|watch)\b/.test(dataStr) ||
+          // 检测终端屏幕缓冲区交替（用于全屏应用）
+          dataStr.includes('\u001b[?1049h') || dataStr.includes('\u001b[?1049l') ||
+          // 检测终端大小查询回复
+          /\u001b\[8;\d+;\d+t/.test(dataStr)
+        ) {
+          console.log('检测到可能的全屏应用启动或屏幕刷新，调整终端大小');
+          
+          // 创建一系列延迟执行，以适应不同应用的启动速度
+          const delayTimes = [100, 300, 600, 1000];
+          
+          delayTimes.forEach(delay => {
+            setTimeout(() => {
+              if (terminalRef.current && fitAddonRef.current) {
+                forceResizeTerminal(term, terminalRef.current, processId, tabId, fitAddonRef.current);
+              }
+            }, delay);
+          });
+        }
       }
     });
     
-    // 处理终端输入发送到进程
-    term.onData(data => {
-      window.terminalAPI.sendToProcess(processId, data);
-    });
-    
-    // 连接建立后，主动调整终端大小
+    // 同步终端大小
     const syncTerminalSize = () => {
       if (fitAddonRef.current) {
         try {
@@ -958,8 +1092,11 @@ const WebTerminal = ({ tabId, refreshKey, usePowershell = true, sshConfig = null
     // 立即同步一次
     syncTerminalSize();
     
-    // 延迟后再同步几次，确保布局稳定后大小正确
+    // 延迟后多次同步，确保布局稳定后大小正确
     setTimeout(syncTerminalSize, 100);
+    setTimeout(syncTerminalSize, 300);
+    setTimeout(syncTerminalSize, 800);
+    setTimeout(syncTerminalSize, 1500);
   };
 
   // 监听主题变化并更新终端主题

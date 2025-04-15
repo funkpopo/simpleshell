@@ -1487,7 +1487,7 @@ function setupIPC(mainWindow) {
       if (procInfo.type === 'ssh2' && procInfo.stream) {
         // SSH2连接使用stream.setWindow方法调整大小
         if (typeof procInfo.stream.setWindow === 'function') {
-          procInfo.stream.setWindow(rows, cols);
+          procInfo.stream.setWindow(rows, cols);          
           return true;
         }
       } else if (typeof procInfo.process.resize === 'function') {
