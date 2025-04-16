@@ -166,28 +166,35 @@ const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
     const currentWidth = container.clientWidth;
     const currentHeight = container.clientHeight;
 
-    // 记录调整前的大小信息
-    logTerminalSize("强制调整前", term, container);
-
     // 确保终端完全填充容器
     if (term && term.element) {
       term.element.style.width = `${currentWidth}px`;
       term.element.style.height = `${currentHeight}px`;
+
+      // 添加强制重排的代码
+      term.element.getBoundingClientRect();
     }
 
     // 适配终端大小
     fitAddon.fit();
 
-    // 记录调整后的大小信息
-    logTerminalSize("强制调整后", term, container);
+    // 二次确认适配，有时首次fit可能不会完全生效
+    setTimeout(() => {
+      if (term && term.element && container) {
+        // 再次检查尺寸是否一致
+        const elemWidth = term.element.clientWidth;
+        const elemHeight = term.element.clientHeight;
+        
+        if (Math.abs(elemWidth - currentWidth) > 5 || 
+            Math.abs(elemHeight - currentHeight) > 5) {
+          fitAddon.fit();
+        }
+      }
+    }, 10);
 
     // 获取当前终端的大小
     const cols = Math.max(Math.floor(term.cols || 120), 1);
     const rows = Math.max(Math.floor(term.rows || 30), 1);
-
-    console.log(
-      `强制调整终端大小: 进程ID=${processId || tabId}, 列=${cols}, 行=${rows}`,
-    );
 
     // 通知后端调整终端大小
     if (window.terminalAPI && window.terminalAPI.resizeTerminal) {
@@ -195,9 +202,7 @@ const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
         .resizeTerminal(processId || tabId, cols, rows)
         .catch((err) => console.error("终端大小强制调整失败:", err));
     }
-  } catch (error) {
-    console.error("强制调整终端大小时出错:", error);
-  }
+  } catch (error) {}
 };
 
 const WebTerminal = ({
@@ -212,6 +217,8 @@ const WebTerminal = ({
   const currentProcessId = useRef(null);
   const theme = useTheme();
   let resizeTimeout = null;
+  // 添加内容更新标志，用于跟踪终端内容是否有更新
+  const [contentUpdated, setContentUpdated] = useState(false);
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState(null);
@@ -245,6 +252,8 @@ const WebTerminal = ({
             delayTimes.forEach((delay) => {
               setTimeout(() => {
                 if (terminalRef.current && fitAddonRef.current) {
+                  // 强制设置内容已更新，确保调整生效
+                  setContentUpdated(true);
                   forceResizeTerminal(
                     term,
                     terminalRef.current,
@@ -598,11 +607,31 @@ const WebTerminal = ({
             if (term && term.element) {
               term.element.style.width = `${currentWidth}px`;
               term.element.style.height = `${currentHeight}px`;
+              
+              // 添加强制重排的代码
+              term.element.getBoundingClientRect();
             }
           }
 
           // 适配终端大小
           fitAddon.fit();
+
+          // 二次检查适配结果
+          setTimeout(() => {
+            if (terminalRef.current && term && term.element) {
+              const container = terminalRef.current;
+              const currentWidth = container.clientWidth;
+              const currentHeight = container.clientHeight;
+              const elemWidth = term.element.clientWidth;
+              const elemHeight = term.element.clientHeight;
+              
+              if (Math.abs(elemWidth - currentWidth) > 5 || 
+                  Math.abs(elemHeight - currentHeight) > 5) {
+                console.log("检测到终端尺寸不匹配，执行二次适配");
+                fitAddon.fit();
+              }
+            }
+          }, 10);
 
           // 记录调整后的大小信息
           if (terminalRef.current) {
@@ -642,6 +671,9 @@ const WebTerminal = ({
                     Math.max(Math.floor(term.rows || 30), 1),
                   )
                   .catch((err) => console.error("延迟终端大小调整失败:", err));
+                  
+                // 重置内容更新标志，表示已处理完成
+                setContentUpdated(false);
               }
             }, 300);
           }
@@ -669,6 +701,7 @@ const WebTerminal = ({
       // 创建一个MutationObserver来检测元素的可见性变化
       const observer = new MutationObserver((mutations) => {
         let shouldResize = false;
+        let visibilityChanged = false;
 
         // 检查变化是否可能影响大小
         for (const mutation of mutations) {
@@ -677,18 +710,64 @@ const WebTerminal = ({
             mutation.attributeName === "style" ||
             mutation.attributeName === "class"
           ) {
+            const target = mutation.target;
+            
+            // 检查是否是display属性变化
+            if (target.style && 
+                (target.style.display === 'block' || 
+                 target.style.display === 'flex' || 
+                 target.style.display === 'grid' || 
+                 target.getAttribute('aria-hidden') === 'false')) {
+              visibilityChanged = true;
+              break;
+            }
+            
+            // 检查是否涉及visibility或opacity变化
+            const computedStyle = window.getComputedStyle(target);
+            if (computedStyle && 
+                (computedStyle.visibility === 'visible' || 
+                 computedStyle.opacity !== '0')) {
+              visibilityChanged = true;
+              break;
+            }
+            
             shouldResize = true;
-            break;
           }
 
           // 子元素变化也可能影响大小
           if (mutation.type === "childList") {
             shouldResize = true;
-            break;
           }
         }
 
-        if (shouldResize) {
+        // 如果检测到可见性变化，则立即重新计算大小
+        if (visibilityChanged) {
+          clearTimeout(resizeTimeout);
+          if (terminalRef.current && termRef.current && fitAddonRef.current) {
+            // 延迟一小段时间确保DOM已完全更新
+            setTimeout(() => {
+              forceResizeTerminal(
+                termRef.current, 
+                terminalRef.current, 
+                processCache[tabId], 
+                tabId, 
+                fitAddonRef.current
+              );
+            }, 10);
+
+            setTimeout(() => {
+              if (terminalRef.current && termRef.current && fitAddonRef.current) {
+                forceResizeTerminal(
+                  termRef.current, 
+                  terminalRef.current, 
+                  processCache[tabId], 
+                  tabId, 
+                  fitAddonRef.current
+                );
+              }
+            }, 100);
+          }
+        } else if (shouldResize) {
           // 使用节流函数延迟调用resize，避免频繁调整
           clearTimeout(resizeTimeout);
           resizeTimeout = setTimeout(() => {
@@ -718,16 +797,30 @@ const WebTerminal = ({
           attributes: true,
           childList: true,
           subtree: true,
+          attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'] // 只观察这些属性的变化
         });
 
         // 尝试观察父元素
         let parent = terminalRef.current.parentElement;
         if (parent) {
-          observer.observe(parent, { attributes: true });
+          observer.observe(parent, { 
+            attributes: true,
+            attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'] 
+          });
 
           // 对于TabPanel的特殊处理
           if (parent.parentElement) {
-            observer.observe(parent.parentElement, { attributes: true });
+            observer.observe(parent.parentElement, { 
+              attributes: true,
+              attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'] 
+            });
+
+            if (parent.parentElement.parentElement) {
+              observer.observe(parent.parentElement.parentElement, { 
+                attributes: true,
+                attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'] 
+              });
+            }
           }
         }
       }
@@ -751,7 +844,88 @@ const WebTerminal = ({
       termRef.current = term;
       fitAddonRef.current = fitAddon;
 
-      // 清理函数
+      // 同步终端大小
+      const syncTerminalSize = () => {
+        if (fitAddonRef.current) {
+          try {
+            // 先调用fit
+            fitAddonRef.current.fit();
+
+            // 获取实际尺寸
+            const cols = Math.max(Math.floor(term.cols || 120), 1);
+            const rows = Math.max(Math.floor(term.rows || 30), 1);
+
+            // 同步到后端
+            if (window.terminalAPI.resizeTerminal) {
+              window.terminalAPI
+                .resizeTerminal(processId, cols, rows)
+                .catch((err) => console.error("初始终端大小同步失败:", err));
+            }
+          } catch (error) {}
+        }
+      };
+
+      // 立即同步一次
+      syncTerminalSize();
+
+      // 延迟后同步，确保布局稳定后大小正确
+      setTimeout(syncTerminalSize, 100);
+      
+      // 添加一个新的辅助函数，确保终端在被激活时调整大小
+      const ensureTerminalSizeOnVisibilityChange = () => {
+        // 检查当前标签是否可见（通过DOM属性或样式）
+        if (terminalRef.current) {
+          const isVisible = isElementVisible(terminalRef.current);
+          
+          // 只有当终端可见且内容有更新时，才执行大小调整
+          if (isVisible && termRef.current && fitAddonRef.current && contentUpdated) {            
+            // 使用延迟执行强制调整大小
+            setTimeout(() => {
+              forceResizeTerminal(
+                termRef.current,
+                terminalRef.current,
+                processCache[tabId],
+                tabId,
+                fitAddonRef.current
+              );
+              // 重置内容更新标志
+              setContentUpdated(false);
+            }, 10);
+          }
+        }
+      };
+      
+      // 添加一个检查元素可见性的函数
+      const isElementVisible = (element) => {
+        if (!element) return false;
+        
+        // 检查元素及其所有父元素的可见性
+        let current = element;
+        while (current) {
+          const style = window.getComputedStyle(current);
+          if (style.display === 'none' || 
+              style.visibility === 'hidden' || 
+              style.opacity === '0' ||
+              current.getAttribute('aria-hidden') === 'true') {
+            return false;
+          }
+          current = current.parentElement;
+        }
+        
+        // 检查元素是否在视口内
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      
+      // 添加一个新的定时器，定期检查终端可见性
+      const visibilityCheckInterval = setInterval(() => {
+        // 只有当内容有更新时才检查并调整大小
+        if (contentUpdated) {
+          ensureTerminalSizeOnVisibilityChange();
+        }
+      }, 200); // 从100ms改为200ms，减轻性能负担
+      
+      // 添加定时器清理
       return () => {
         window.removeEventListener("resize", handleResize);
         document.removeEventListener(
@@ -761,6 +935,7 @@ const WebTerminal = ({
         document.removeEventListener("keydown", handleKeyDown);
         observer.disconnect();
         clearInterval(resizeInterval);
+        clearInterval(visibilityCheckInterval);
 
         // 清理任何事件监听器
         if (window.terminalAPI) {
@@ -816,6 +991,8 @@ const WebTerminal = ({
         window.terminalAPI.onProcessOutput(processId, (data) => {
           if (data) {
             term.write(data);
+            // 更新内容状态标志，表示终端内容已更新
+            setContentUpdated(true);
           }
         });
 
@@ -1093,6 +1270,8 @@ const WebTerminal = ({
     window.terminalAPI.onProcessOutput(processId, (data) => {
       if (data) {
         term.write(data);
+        // 更新内容状态标志，表示终端内容已更新
+        setContentUpdated(true);
 
         // 检测全屏应用启动并触发重新调整大小
         // 通常像top, htop, vim, nano等全屏应用会发送特定的ANSI转义序列
@@ -1125,6 +1304,8 @@ const WebTerminal = ({
           delayTimes.forEach((delay) => {
             setTimeout(() => {
               if (terminalRef.current && fitAddonRef.current) {
+                // 强制设置内容已更新，确保调整生效
+                setContentUpdated(true);
                 forceResizeTerminal(
                   term,
                   terminalRef.current,
@@ -1171,9 +1352,64 @@ const WebTerminal = ({
 
     // 延迟后多次同步，确保布局稳定后大小正确
     setTimeout(syncTerminalSize, 100);
-    setTimeout(syncTerminalSize, 300);
-    setTimeout(syncTerminalSize, 800);
-    setTimeout(syncTerminalSize, 1500);
+    
+    // 添加一个新的辅助函数，确保终端在被激活时调整大小
+    const ensureTerminalSizeOnVisibilityChange = () => {
+      // 检查当前标签是否可见（通过DOM属性或样式）
+      if (terminalRef.current) {
+        const isVisible = isElementVisible(terminalRef.current);
+        
+        if (isVisible && termRef.current && fitAddonRef.current && contentUpdated) {            
+          // 使用延迟执行强制调整大小
+          setTimeout(() => {
+            forceResizeTerminal(
+              termRef.current,
+              terminalRef.current,
+              processCache[tabId],
+              tabId,
+              fitAddonRef.current
+            );
+            // 重置内容更新标志
+            setContentUpdated(false);
+          }, 10);
+        }
+      }
+    };
+    
+    // 添加一个检查元素可见性的函数
+    const isElementVisible = (element) => {
+      if (!element) return false;
+      
+      // 检查元素及其所有父元素的可见性
+      let current = element;
+      while (current) {
+        const style = window.getComputedStyle(current);
+        if (style.display === 'none' || 
+            style.visibility === 'hidden' || 
+            style.opacity === '0' ||
+            current.getAttribute('aria-hidden') === 'true') {
+          return false;
+        }
+        current = current.parentElement;
+      }
+      
+      // 检查元素是否在视口内
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    
+    // 添加一个新的定时器，定期检查终端可见性
+    const visibilityCheckInterval = setInterval(() => {
+      // 只有当内容有更新时才检查并调整大小
+      if (contentUpdated) {
+        ensureTerminalSizeOnVisibilityChange();
+      }
+    }, 200); // 从100ms改为200ms，减轻性能负担
+    
+    // 添加定时器清理
+    return () => {
+      clearInterval(visibilityCheckInterval);
+    };
   };
 
   // 监听主题变化并更新终端主题
@@ -1183,6 +1419,55 @@ const WebTerminal = ({
       terminalCache[tabId].options.theme = terminalTheme;
     }
   }, [theme.palette.mode, tabId]);
+
+  // 添加标签切换监听器
+  useEffect(() => {
+    // 创建一个用于监听标签切换事件的处理函数
+    const handleTabChanged = (event) => {
+      // 检查是否是当前终端所在的标签被激活
+      if (event.detail && event.detail.tabId === tabId) {        
+        // 标签激活时设置内容已更新，确保调整生效
+        setContentUpdated(true);
+        
+        // 延迟执行以确保DOM已完全更新
+        setTimeout(() => {
+          if (terminalRef.current && fitAddonRef.current && termRef.current) {
+            forceResizeTerminal(
+              termRef.current,
+              terminalRef.current,
+              processCache[tabId],
+              tabId,
+              fitAddonRef.current
+            );
+          }
+        }, 10);
+        
+        // 多次尝试调整，以处理某些特殊情况
+        const delayTimes = [50, 150, 300];
+        delayTimes.forEach(delay => {
+          setTimeout(() => {
+            if (terminalRef.current && fitAddonRef.current && termRef.current) {
+              forceResizeTerminal(
+                termRef.current,
+                terminalRef.current,
+                processCache[tabId],
+                tabId,
+                fitAddonRef.current
+              );
+            }
+          }, delay);
+        });
+      }
+    };
+    
+    // 添加事件监听器
+    window.addEventListener("tabChanged", handleTabChanged);
+    
+    // 组件卸载时移除监听器
+    return () => {
+      window.removeEventListener("tabChanged", handleTabChanged);
+    };
+  }, [tabId]);
 
   return (
     <Box

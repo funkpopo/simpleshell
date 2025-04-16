@@ -433,6 +433,25 @@ function App() {
   // 标签页相关函数
   const handleTabChange = (event, newValue) => {
     setCurrentTab(newValue);
+    
+    // 触发自定义事件，通知WebTerminal组件进行大小调整
+    if (newValue < tabs.length) {
+      const currentTabId = tabs[newValue]?.id;
+      if (currentTabId) {
+        console.log(`标签切换到: ${currentTabId}`);
+        // 使用自定义事件通知特定标签页的WebTerminal组件
+        window.dispatchEvent(
+          new CustomEvent("tabChanged", {
+            detail: { tabId: currentTabId, index: newValue }
+          })
+        );
+        
+        // 触发窗口resize事件，作为备用机制确保布局更新
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+        }, 100);
+      }
+    }
   };
 
   // 标签页右键菜单打开
