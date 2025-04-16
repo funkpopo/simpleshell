@@ -5,6 +5,7 @@
   "description": "A Simple Electron SSH Terminal for Windows",
   "main": ".webpack/main",
   "scripts": {
+    "format": "prettier --write .",
     "start": "set NODE_ENV=development && electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
@@ -34,7 +35,8 @@
     "css-loader": "^7.1.2",
     "electron": "35.1.4",
     "node-loader": "^2.1.0",
-    "style-loader": "^4.0.0"
+    "style-loader": "^4.0.0",
+    "prettier": "^3.5.3"
   },
   "dependencies": {
     "@babel/core": "^7.26.10",
