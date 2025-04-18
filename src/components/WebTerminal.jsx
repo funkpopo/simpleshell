@@ -157,7 +157,7 @@ const logTerminalSize = (message, term, container) => {
   }
 };
 
-// 添加一个用于强制重新计算和同步终端大小的辅助函数
+// 添加一个辅助函数，用于强制重新计算和同步终端大小的辅助函数
 const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
   if (!term || !container || !fitAddon) return;
 
@@ -203,6 +203,80 @@ const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
         .catch((err) => console.error("终端大小强制调整失败:", err));
     }
   } catch (error) {}
+};
+
+// 添加辅助函数，用于处理多行粘贴文本，防止注释符号和缩进异常
+const processMultilineInput = (text, options = {}) => {
+  if (!text || typeof text !== "string") return text;
+  
+  // 如果文本不包含换行符，直接返回
+  if (!text.includes("\n")) return text;
+  
+  // 分割成行数组
+  const lines = text.split(/\r?\n/);
+  if (lines.length <= 1) return text;
+  
+  // 常见的注释符号模式
+  const commentPatterns = [
+    /^\s*\/\//, // JavaScript, C, C++, Java 等的单行注释 //
+    /^\s*#/,    // Python, Bash, Ruby 等的注释 #
+    /^\s*--/,   // SQL, Lua 等的注释 --
+    /^\s*;/,    // Assembly, INI 等的注释 ;
+    /^\s*%/,    // LaTeX, Matlab 等的注释 %
+    /^\s*\/\*/, // C, Java 等的多行注释开始 /*
+    /^\s*\*\//  // C, Java 等的多行注释结束 */
+  ];
+  
+  // 判断当前行是否包含注释
+  const isCommentLine = (line) => {
+    return commentPatterns.some(pattern => pattern.test(line));
+  };
+  
+  // 检测是否有注释行
+  const hasCommentLines = lines.some(line => isCommentLine(line));
+  
+  // 如果检测到注释行并且开启了逐行发送选项（默认为true），返回特殊标记对象
+  // 这将触发调用方进行逐行处理
+  if (hasCommentLines && (options.sendLineByLine !== false)) {
+    return {
+      type: 'multiline-with-comments',
+      lines: lines,
+      isCommentLine: isCommentLine
+    };
+  }
+  //统一使用'\n'
+  const lineEnding = '\n';
+  
+  // 处理每一行
+  let result = "";
+  let isInCommentBlock = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // 检测是否是注释行
+    const hasComment = isCommentLine(line);
+    
+    // 检测多行注释块
+    if (line.includes("/*")) isInCommentBlock = true;
+    if (line.includes("*/")) isInCommentBlock = false;
+    
+    // 添加当前行
+    result += line;
+    
+    // 如果不是最后一行，添加换行符
+    if (i < lines.length - 1) {
+      // 如果当前行包含注释或者在注释块内，添加一个额外的回车键输入
+      // 这会触发终端执行当前行，防止注释符号影响下一行
+      if (hasComment || isInCommentBlock) {
+        result += lineEnding + String.fromCharCode(13); // 回车键
+      } else {
+        result += lineEnding;
+      }
+    }
+  }
+  
+  return result;
 };
 
 const WebTerminal = ({
@@ -530,7 +604,9 @@ const WebTerminal = ({
           e.preventDefault();
           navigator.clipboard.readText().then((text) => {
             if (text && processCache[tabId]) {
-              window.terminalAPI.sendToProcess(processCache[tabId], text);
+              // 使用预处理函数处理多行文本，防止注释和缩进问题
+              const processedText = processMultilineInput(text);
+              window.terminalAPI.sendToProcess(processCache[tabId], processedText);
             }
           });
         }
@@ -573,7 +649,21 @@ const WebTerminal = ({
           e.preventDefault();
           navigator.clipboard.readText().then((text) => {
             if (text && processCache[tabId]) {
-              window.terminalAPI.sendToProcess(processCache[tabId], text);
+              // 使用预处理函数处理多行文本，防止注释和缩进问题
+              const processedText = processMultilineInput(text);
+              
+              // 检查是否需要逐行发送（含有注释的多行文本）
+              if (processedText && typeof processedText === 'object' && processedText.type === 'multiline-with-comments') {
+                // 逐行发送文本，每行之间添加适当延迟
+                processedText.lines.forEach((line, index) => {
+                  setTimeout(() => {
+                    window.terminalAPI.sendToProcess(processCache[tabId], line + (index < processedText.lines.length - 1 ? '\n' : ''));
+                  }, index * 50); // 50毫秒的延迟，可以根据实际情况调整
+                });
+              } else {
+                // 正常发送处理后的文本
+                window.terminalAPI.sendToProcess(processCache[tabId], processedText);
+              }
             }
           });
         }
@@ -1219,7 +1309,21 @@ const WebTerminal = ({
       .readText()
       .then((text) => {
         if (text && termRef.current && processCache[tabId]) {
-          window.terminalAPI.sendToProcess(processCache[tabId], text);
+          // 使用预处理函数处理多行文本，防止注释和缩进问题
+          const processedText = processMultilineInput(text);
+          
+          // 检查是否需要逐行发送（含有注释的多行文本）
+          if (processedText && typeof processedText === 'object' && processedText.type === 'multiline-with-comments') {
+            // 逐行发送文本，每行之间添加适当延迟
+            processedText.lines.forEach((line, index) => {
+              setTimeout(() => {
+                window.terminalAPI.sendToProcess(processCache[tabId], line + (index < processedText.lines.length - 1 ? '\n' : ''));
+              }, index * 50); // 50毫秒的延迟，可以根据实际情况调整
+            });
+          } else {
+            // 正常发送处理后的文本
+            window.terminalAPI.sendToProcess(processCache[tabId], processedText);
+          }
         }
       })
       .catch((err) => {
@@ -1359,7 +1463,7 @@ const WebTerminal = ({
       if (terminalRef.current) {
         const isVisible = isElementVisible(terminalRef.current);
         
-        if (isVisible && termRef.current && fitAddonRef.current && contentUpdated) {            
+        if (isVisible && termRef.current && fitAddonRef.current && contentUpdated) {
           // 使用延迟执行强制调整大小
           setTimeout(() => {
             forceResizeTerminal(
