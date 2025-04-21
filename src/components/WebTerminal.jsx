@@ -50,6 +50,12 @@ const terminalStyles = `
   width: 100% !important;
   height: 100% !important;
 }
+/* 优化终端选择文本的显示效果 */
+.xterm-selection {
+  opacity: 1 !important; 
+  z-index: 10 !important;
+  mix-blend-mode: difference !important;
+}
 .terminal-container {
   display: flex;
   flex-direction: column;
@@ -363,10 +369,13 @@ const WebTerminal = ({
     // 选择文本的背景色，使用半透明色以避免遮挡字符
     selectionBackground:
       theme.palette.mode === "light"
-        ? "rgba(255, 255, 170, 0.35)"
-        : "rgba(30, 100, 255, 0.3)",
+        ? "rgba(255, 255, 170, 0.65)"
+        : "rgba(30, 100, 255, 0.65)",
     // 选择文本的前景色，确保文字清晰可见
-    selectionForeground: theme.palette.mode === "light" ? "#000000" : "#ffffff",
+    selectionForeground: 
+      theme.palette.mode === "light" 
+        ? "#000000" 
+        : "#ffffff",
     // 基础颜色
     black: "#000000",
     red: "#cc0000",
