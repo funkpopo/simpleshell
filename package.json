@@ -35,8 +35,8 @@
     "css-loader": "^7.1.2",
     "electron": "35.1.4",
     "node-loader": "^2.1.0",
-    "style-loader": "^4.0.0",
-    "prettier": "^3.5.3"
+    "prettier": "^3.5.3",
+    "style-loader": "^4.0.0"
   },
   "dependencies": {
     "@babel/core": "^7.26.10",
@@ -58,6 +58,7 @@
     "@xterm/addon-search": "^0.15.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
+    "array-move": "^4.0.0",
     "babel-loader": "^10.0.0",
     "css-loader": "^7.1.2",
     "electron": "35.1.4",
@@ -66,6 +67,7 @@
     "node-loader": "^2.1.0",
     "node-pty": "^1.1.0-beta33",
     "react": "^18.3.1",
+    "react-beautiful-dnd": "^13.1.1",
     "react-dom": "^18.3.1",
     "react-syntax-highlighter": "^15.6.1",
     "ssh2": "^1.16.0",
