@@ -34,6 +34,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import { arrayMoveImmutable } from "array-move";
+import { alpha } from "@mui/material/styles";
 
 const ConnectionManager = ({
   open,
@@ -423,8 +424,11 @@ const ConnectionManager = ({
             disablePadding
             sx={{
               pl: parentGroup ? 4 : 1,
+              minHeight: '36px', // 改为最小高度而非固定高度
               "&:hover": {
-                backgroundColor: "rgba(0, 0, 0, 0.04)",
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本 
+                  : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
               },
               ...(snapshot.isDragging ? {
                 background: theme.palette.mode === 'dark' 
@@ -466,7 +470,13 @@ const ConnectionManager = ({
             <ListItemButton
               onClick={() => handleOpenConnection(connection)}
               dense
-              sx={{ borderRadius: 1, flexGrow: 1 }}
+              sx={{ 
+                flexGrow: 1,
+                py: 0.5, // 减小上下内边距
+                "&:hover": {
+                  backgroundColor: "transparent", // 防止ListItemButton自身的hover效果
+                }
+              }}
             >
               <ListItemIcon sx={{ minWidth: 36 }}>
                 <ComputerIcon fontSize="small" />
@@ -478,8 +488,7 @@ const ConnectionManager = ({
                     ? `${connection.username}@${connection.host}`
                     : connection.host
                 }
-                primaryTypographyProps={{ variant: "body2" }}
-                secondaryTypographyProps={{ variant: "caption" }}
+                sx={{ my: 0 }}
               />
             </ListItemButton>
           </ListItem>
@@ -498,6 +507,12 @@ const ConnectionManager = ({
             ref={provided.innerRef}
             {...provided.draggableProps}
             sx={{
+              minHeight: '36px', // 添加最小高度
+              "&:hover": {
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本 
+                  : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
+              },
               ...(snapshot.isDragging ? {
                 background: theme.palette.mode === 'dark' 
                   ? theme.palette.grey[700] 
@@ -553,7 +568,13 @@ const ConnectionManager = ({
             </Box>
             <ListItemButton
               onClick={() => handleToggleGroup(group.id)}
-              sx={{ py: 0.7, flexGrow: 1 }} // 减小上下内边距，但比连接项稍高
+              sx={{ 
+                py: 0.5, 
+                flexGrow: 1,
+                "&:hover": {
+                  backgroundColor: "transparent",
+                }
+              }}
             >
               <ListItemIcon sx={{ minWidth: 36 }}>
                 {group.expanded ? (
