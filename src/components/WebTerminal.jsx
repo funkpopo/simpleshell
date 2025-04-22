@@ -370,7 +370,7 @@ const WebTerminal = ({
     selectionBackground:
       theme.palette.mode === "light"
         ? "rgba(255, 255, 170, 0.65)"
-        : "rgba(30, 100, 255, 0.9)",
+        : "rgba(255, 255, 170, 0.65)",
     // 选择文本的前景色，确保文字清晰可见
     selectionForeground: 
       theme.palette.mode === "light" 

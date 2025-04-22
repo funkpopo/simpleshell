@@ -31,6 +31,9 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import CloseIcon from "@mui/icons-material/Close";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+import { arrayMoveImmutable } from "array-move";
 
 const ConnectionManager = ({
   open,
@@ -359,140 +362,248 @@ const ConnectionManager = ({
     }
   };
 
+  // 处理拖拽结束事件
+  const handleDragEnd = (result) => {
+    const { destination, source, type } = result;
+
+    // 如果没有目标位置，则不执行任何操作
+    if (!destination) return;
+
+    // 如果源位置和目标位置相同，不执行任何操作
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return;
+    }
+
+    // 顶层项目拖拽
+    if (type === "connection-list") {
+      const newConnections = arrayMoveImmutable(
+        connections,
+        source.index,
+        destination.index
+      );
+      setConnections(newConnections);
+      return;
+    }
+
+    // 组内项目拖拽
+    if (type.startsWith("group-items-")) {
+      const groupId = type.replace("group-items-", "");
+      const group = connections.find(item => item.id === groupId);
+      if (group) {
+        const newItems = arrayMoveImmutable(
+          group.items,
+          source.index,
+          destination.index
+        );
+        setConnections(prevConnections =>
+          prevConnections.map(item =>
+            item.id === groupId ? { ...item, items: newItems } : item
+          )
+        );
+      }
+      return;
+    }
+  };
+
   // 渲染连接项
-  const renderConnectionItem = (connection, parentGroup = null) => {
+  const renderConnectionItem = (connection, parentGroup = null, index) => {
     return (
-      <ListItem
-        key={connection.id}
-        disablePadding
-        sx={{
-          pl: parentGroup ? 4 : 1,
-          "&:hover": {
-            backgroundColor: "rgba(0, 0, 0, 0.04)",
-          },
-        }}
-        secondaryAction={
-          <Box>
-            <IconButton
-              edge="end"
-              size="small"
-              onClick={() => handleEdit(connection, parentGroup)}
-            >
-              <EditIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              edge="end"
-              size="small"
-              onClick={() => handleDelete(connection.id, parentGroup)}
-            >
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Box>
-        }
+      <Draggable 
+        key={connection.id} 
+        draggableId={connection.id} 
+        index={index}
       >
-        <ListItemButton
-          onClick={() => handleOpenConnection(connection)}
-          dense
-          sx={{ borderRadius: 1 }}
-        >
-          <ListItemIcon sx={{ minWidth: 36 }}>
-            <ComputerIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText
-            primary={connection.name || connection.host}
-            secondary={
-              connection.username
-                ? `${connection.username}@${connection.host}`
-                : connection.host
+        {(provided, snapshot) => (
+          <ListItem
+            ref={provided.innerRef}
+            {...provided.draggableProps}
+            disablePadding
+            sx={{
+              pl: parentGroup ? 4 : 1,
+              "&:hover": {
+                backgroundColor: "rgba(0, 0, 0, 0.04)",
+              },
+              ...(snapshot.isDragging ? {
+                background: theme.palette.mode === 'dark' 
+                  ? theme.palette.grey[700] 
+                  : theme.palette.grey[200],
+                boxShadow: theme.shadows[4]
+              } : {})
+            }}
+            secondaryAction={
+              <Box>
+                <IconButton
+                  edge="end"
+                  size="small"
+                  onClick={() => handleEdit(connection, parentGroup)}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+                <IconButton
+                  edge="end"
+                  size="small"
+                  onClick={() => handleDelete(connection.id, parentGroup)}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Box>
             }
-            primaryTypographyProps={{ variant: "body2" }}
-            secondaryTypographyProps={{ variant: "caption" }}
-          />
-        </ListItemButton>
-      </ListItem>
+          >
+            <Box 
+              {...provided.dragHandleProps}
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                cursor: 'grab',
+                '&:active': { cursor: 'grabbing' }
+              }}
+            >
+              <DragIndicatorIcon fontSize="small" sx={{ color: 'text.secondary', mr: 1 }} />
+            </Box>
+            <ListItemButton
+              onClick={() => handleOpenConnection(connection)}
+              dense
+              sx={{ borderRadius: 1, flexGrow: 1 }}
+            >
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                <ComputerIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary={connection.name || connection.host}
+                secondary={
+                  connection.username
+                    ? `${connection.username}@${connection.host}`
+                    : connection.host
+                }
+                primaryTypographyProps={{ variant: "body2" }}
+                secondaryTypographyProps={{ variant: "caption" }}
+              />
+            </ListItemButton>
+          </ListItem>
+        )}
+      </Draggable>
     );
   };
 
   // 渲染组
-  const renderGroup = (group) => (
-    <React.Fragment key={group.id}>
-      <ListItem
-        disablePadding
-        secondaryAction={
-          <Box sx={{ display: "flex", gap: 0.5 }}>
-            <IconButton
-              edge="end"
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleAddConnection(group.id);
-              }}
-            >
-              <AddIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              edge="end"
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEdit(group);
-              }}
-            >
-              <EditIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              edge="end"
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(group.id);
-              }}
-            >
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Box>
-        }
-      >
-        <ListItemButton
-          onClick={() => handleToggleGroup(group.id)}
-          sx={{ py: 0.7 }} // 减小上下内边距，但比连接项稍高
-        >
-          <ListItemIcon sx={{ minWidth: 36 }}>
-            {group.expanded ? (
-              <FolderOpenIcon fontSize="small" />
-            ) : (
-              <FolderIcon fontSize="small" />
-            )}
-          </ListItemIcon>
-          <ListItemText
-            primary={group.name}
-            primaryTypographyProps={{
-              variant: "body2",
-              fontWeight: "medium",
-              margin: 0,
+  const renderGroup = (group, index) => (
+    <Draggable key={group.id} draggableId={group.id} index={index}>
+      {(provided, snapshot) => (
+        <React.Fragment>
+          <ListItem
+            disablePadding
+            ref={provided.innerRef}
+            {...provided.draggableProps}
+            sx={{
+              ...(snapshot.isDragging ? {
+                background: theme.palette.mode === 'dark' 
+                  ? theme.palette.grey[700] 
+                  : theme.palette.grey[200],
+                boxShadow: theme.shadows[4]
+              } : {})
             }}
-            sx={{ my: 0 }} // 减小外边距
-          />
-        </ListItemButton>
-      </ListItem>
-
-      <Collapse in={group.expanded} timeout="auto" unmountOnExit>
-        <List component="div" disablePadding sx={{ pl: 2 }}>
-          {group.items.map((item) => renderConnectionItem(item, group))}
-          {group.items.length === 0 && (
-            <ListItem sx={{ pl: 2 }}>
+            secondaryAction={
+              <Box sx={{ display: "flex", gap: 0.5 }}>
+                <IconButton
+                  edge="end"
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAddConnection(group.id);
+                  }}
+                >
+                  <AddIcon fontSize="small" />
+                </IconButton>
+                <IconButton
+                  edge="end"
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEdit(group);
+                  }}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+                <IconButton
+                  edge="end"
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(group.id);
+                  }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            }
+          >
+            <Box 
+              {...provided.dragHandleProps}
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                cursor: 'grab',
+                '&:active': { cursor: 'grabbing' }
+              }}
+            >
+              <DragIndicatorIcon fontSize="small" sx={{ color: 'text.secondary', ml: 1, mr: 1 }} />
+            </Box>
+            <ListItemButton
+              onClick={() => handleToggleGroup(group.id)}
+              sx={{ py: 0.7, flexGrow: 1 }} // 减小上下内边距，但比连接项稍高
+            >
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                {group.expanded ? (
+                  <FolderOpenIcon fontSize="small" />
+                ) : (
+                  <FolderIcon fontSize="small" />
+                )}
+              </ListItemIcon>
               <ListItemText
-                primary="没有连接项"
+                primary={group.name}
                 primaryTypographyProps={{
-                  variant: "caption",
-                  sx: { fontStyle: "italic", color: "text.disabled" },
+                  variant: "body2",
+                  fontWeight: "medium",
+                  margin: 0,
                 }}
+                sx={{ my: 0 }} // 减小外边距
               />
-            </ListItem>
-          )}
-        </List>
-      </Collapse>
-    </React.Fragment>
+            </ListItemButton>
+          </ListItem>
+
+          <Collapse in={group.expanded} timeout="auto" unmountOnExit>
+            <Droppable droppableId={group.id} type={`group-items-${group.id}`}>
+              {(provided) => (
+                <List 
+                  component="div" 
+                  disablePadding 
+                  sx={{ pl: 2 }}
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                >
+                  {group.items.map((item, itemIndex) => renderConnectionItem(item, group, itemIndex))}
+                  {provided.placeholder}
+                  {group.items.length === 0 && (
+                    <ListItem sx={{ pl: 2 }}>
+                      <ListItemText
+                        primary="没有连接项"
+                        primaryTypographyProps={{
+                          variant: "caption",
+                          sx: { fontStyle: "italic", color: "text.disabled" },
+                        }}
+                      />
+                    </ListItem>
+                  )}
+                </List>
+              )}
+            </Droppable>
+          </Collapse>
+        </React.Fragment>
+      )}
+    </Draggable>
   );
 
   return (
@@ -564,28 +675,40 @@ const ConnectionManager = ({
           <Box
             sx={{ flexGrow: 1, overflow: "auto", height: "calc(100% - 120px)" }}
           >
-            <List dense sx={{ p: 1 }}>
-              {connections.map((item) =>
-                item.type === "group"
-                  ? renderGroup(item)
-                  : renderConnectionItem(item),
-              )}
-              {connections.length === 0 && (
-                <ListItem>
-                  <ListItemText
-                    primary="没有连接项"
-                    primaryTypographyProps={{
-                      variant: "body2",
-                      sx: {
-                        fontStyle: "italic",
-                        color: "text.secondary",
-                        textAlign: "center",
-                      },
-                    }}
-                  />
-                </ListItem>
-              )}
-            </List>
+            <DragDropContext onDragEnd={handleDragEnd}>
+              <Droppable droppableId="connection-list" type="connection-list">
+                {(provided) => (
+                  <List 
+                    dense 
+                    sx={{ p: 1 }}
+                    ref={provided.innerRef}
+                    {...provided.droppableProps}
+                  >
+                    {connections.map((item, index) =>
+                      item.type === "group"
+                        ? renderGroup(item, index)
+                        : renderConnectionItem(item, null, index),
+                    )}
+                    {provided.placeholder}
+                    {connections.length === 0 && (
+                      <ListItem>
+                        <ListItemText
+                          primary="没有连接项"
+                          primaryTypographyProps={{
+                            variant: "body2",
+                            sx: {
+                              fontStyle: "italic",
+                              color: "text.secondary",
+                              textAlign: "center",
+                            },
+                          }}
+                        />
+                      </ListItem>
+                    )}
+                  </List>
+                )}
+              </Droppable>
+            </DragDropContext>
           </Box>
 
           {/* 添加/编辑对话框 */}
