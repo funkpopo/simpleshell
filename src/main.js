@@ -4080,6 +4080,19 @@ function setupIPC(mainWindow) {
       return { success: false, error: `下载文件夹失败: ${error.message}` };
     }
   });
+
+  // 命令历史记录相关IPC
+  ipcMain.handle("terminal:loadCommandHistory", async () => {
+    return loadCommandHistory();
+  });
+
+  ipcMain.handle("terminal:saveCommand", async (event, command) => {
+    return saveCommandHistory(command);
+  });
+
+  ipcMain.handle("terminal:searchCommandHistory", async (event, searchTerm) => {
+    return searchCommandHistory(searchTerm);
+  });
 }
 
 // 获取本地系统信息
@@ -4946,4 +4959,78 @@ const processAIPromptInline = async (prompt, settings) => {
     console.error("Error processing AI prompt inline:", error);
     return { error: `处理请求时出错: ${error.message}` };
   }
+};
+
+// 加载命令历史记录
+const loadCommandHistory = () => {
+  const configPath = getConfigPath();
+
+  try {
+    if (fs.existsSync(configPath)) {
+      const data = fs.readFileSync(configPath, "utf8");
+      const config = JSON.parse(data);
+
+      // 检查是否有commandHistory字段
+      if (config.commandHistory && Array.isArray(config.commandHistory)) {
+        return config.commandHistory;
+      }
+    }
+  } catch (error) {
+    console.error("Failed to load command history:", error);
+  }
+
+  return [];
+};
+
+// 保存命令历史记录
+const saveCommandHistory = (command) => {
+  const configPath = getConfigPath();
+
+  try {
+    // 加载当前配置
+    let config = {};
+    if (fs.existsSync(configPath)) {
+      const data = fs.readFileSync(configPath, "utf8");
+      config = JSON.parse(data);
+    }
+
+    // 确保commandHistory是数组
+    if (!config.commandHistory) {
+      config.commandHistory = [];
+    }
+
+    // 如果命令已存在，先将其删除（避免重复）
+    const index = config.commandHistory.indexOf(command);
+    if (index !== -1) {
+      config.commandHistory.splice(index, 1);
+    }
+
+    // 添加到数组开头
+    config.commandHistory.unshift(command);
+
+    // 限制历史记录最大数量为10000条
+    if (config.commandHistory.length > 10000) {
+      config.commandHistory = config.commandHistory.slice(0, 10000);
+    }
+
+    // 写回配置文件
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+    return true;
+  } catch (error) {
+    console.error("Failed to save command history:", error);
+    return false;
+  }
+};
+
+// 搜索命令历史记录
+const searchCommandHistory = (searchTerm) => {
+  const history = loadCommandHistory();
+  if (!searchTerm || searchTerm.trim() === '') {
+    return [];
+  }
+  
+  const lowerSearchTerm = searchTerm.toLowerCase();
+  return history
+    .filter(cmd => cmd.toLowerCase().includes(lowerSearchTerm))
+    .slice(0, 10); // 返回最多10条匹配结果
 };

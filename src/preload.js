@@ -246,4 +246,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 在外部浏览器打开链接
   openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
+
+  // 命令历史记录相关API
+  loadCommandHistory: () => ipcRenderer.invoke("terminal:loadCommandHistory"),
+  saveCommand: (command) => ipcRenderer.invoke("terminal:saveCommand", command),
+  searchCommandHistory: (searchTerm) => 
+    ipcRenderer.invoke("terminal:searchCommandHistory", searchTerm),
 });
