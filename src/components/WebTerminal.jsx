@@ -134,6 +134,69 @@ const searchBarStyles = `
 }
 `;
 
+// 添加命令历史提示相关样式
+const commandSuggestionStyles = `
+.command-suggestion-container {
+  position: absolute;
+  z-index: 1000;
+  background: rgba(30, 30, 30, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 200px;
+  max-width: 500px;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  user-select: none; /* 防止文本选择，避免方向键导航时选中文本 */
+}
+
+.command-suggestion-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.command-suggestion-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.command-suggestion-container::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.command-suggestion-item {
+  padding: 5px 10px;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: monospace;
+  font-size: 0.9em;
+  transition: background-color 0.1s ease;
+}
+
+.command-suggestion-item:hover, .command-suggestion-item.selected {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.command-suggestion-item.light-theme {
+  color: rgba(0, 0, 0, 0.9);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.command-suggestion-item.light-theme:hover, .command-suggestion-item.light-theme.selected {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.command-suggestion-container.light-theme {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+`;
+
 // 使用对象来存储所有终端实例，实现跨标签页缓存
 const terminalCache = {};
 const fitAddonCache = {};
@@ -309,17 +372,67 @@ const WebTerminal = ({
   const [searchResults, setSearchResults] = useState({ count: 0, current: 0 });
   const [noMatchFound, setNoMatchFound] = useState(false);
 
+  // 命令提示状态
+  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
+  const [commandSuggestions, setCommandSuggestions] = useState([]);
+  const [currentCommandInput, setCurrentCommandInput] = useState("");
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const commandInputRef = useRef("");
+  const suggestionsRef = useRef(null);
+
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
   const setupCommandDetection = (term, processId) => {
+    // 保存当前输入的命令
+    let currentInput = "";
+    let inputStartX = 0;
+    
     term.onData((data) => {
       // 检测回车键（通常是命令执行的触发）
       if (data === "\r" || data === "\n") {
         try {
+          // 如果命令提示窗口可见，选择当前选中的提示
+          if (showCommandSuggestions && commandSuggestions.length > 0) {
+            const selectedCommand = commandSuggestions[selectedSuggestionIndex];
+            if (selectedCommand) {
+              // 计算需要补全的文本
+              const completionText = selectedCommand.substring(currentInput.length);
+              
+              if (completionText && processId) {
+                // 发送补全文本到终端
+                window.terminalAPI.sendToProcess(processId, completionText);
+              }
+              
+              // 更新当前输入
+              currentInput = selectedCommand;
+              
+              // 隐藏命令提示窗口
+              setShowCommandSuggestions(false);
+              return; // 阻止回车键执行原始功能
+            }
+          }
+          
           // 获取终端的最后一行内容（可能包含用户输入的命令）
           const lastLine =
             term.buffer.active
               .getLine(term.buffer.active.cursorY)
               ?.translateToString() || "";
+          
+          // 提取当前输入的命令
+          const commandMatch = lastLine.match(/([^\s]+)([^$]*)$/);
+          if (commandMatch && commandMatch[0].trim()) {
+            const command = commandMatch[0].trim();
+            
+            // 保存命令到历史记录
+            if (window.terminalAPI && window.terminalAPI.saveCommand) {
+              window.terminalAPI.saveCommand(command);
+            }
+          }
+          
+          // 隐藏命令提示
+          setShowCommandSuggestions(false);
+          setCurrentCommandInput("");
+          currentInput = "";
 
           // 检查这一行是否包含常见的全屏应用命令
           if (
@@ -349,6 +462,76 @@ const WebTerminal = ({
           // 忽略任何错误，不影响正常功能
           console.error("检测用户输入命令时出错:", error);
         }
+      } 
+      // 退格键处理
+      else if (data === "\x7f" || data === "\b") {
+        if (currentInput.length > 0) {
+          currentInput = currentInput.slice(0, -1);
+          updateCommandSuggestions(currentInput, term);
+        } else {
+          setShowCommandSuggestions(false);
+        }
+      }
+      // ESC键处理
+      else if (data === "\x1b") {
+        // 当命令提示窗口显示时，ESC键将关闭它
+        if (showCommandSuggestions) {
+          setShowCommandSuggestions(false);
+          return; // 阻止ESC键发送到终端
+        }
+      }
+      // 检测是否为ESC序列开始，但要忽略多字节序列
+      else if (data === "\x1b[" && showCommandSuggestions) {
+        // 等待下一个字符，可能是方向键
+        return; // 暂时不发送到终端
+      }
+      // Tab键处理 - 自动补全
+      else if (data === "\t" && showCommandSuggestions && commandSuggestions.length > 0) {
+        const selectedCommand = commandSuggestions[selectedSuggestionIndex];
+        if (selectedCommand) {
+          // 计算需要补全的部分
+          const currentParts = currentInput.split(" ");
+          const lastPart = currentParts[currentParts.length - 1];
+          const selectedParts = selectedCommand.split(" ");
+          
+          // 寻找相应位置的部分进行补全
+          const completionText = selectedCommand.substring(currentInput.length);
+          
+          if (completionText) {
+            // 补全命令
+            if (processId) {
+              window.terminalAPI.sendToProcess(processId, completionText);
+            }
+            currentInput = selectedCommand;
+            updateCommandSuggestions(currentInput, term);
+          }
+        }
+        return; // 阻止Tab键的默认行为
+      }
+      // 方向键处理
+      else if (data === "\x1b[A") { // 上箭头
+        if (showCommandSuggestions && commandSuggestions.length > 0) {
+          setSelectedSuggestionIndex(prev => 
+            prev > 0 ? prev - 1 : commandSuggestions.length - 1
+          );
+          return; // 阻止方向键发送到终端
+        }
+      }
+      else if (data === "\x1b[B") { // 下箭头
+        if (showCommandSuggestions && commandSuggestions.length > 0) {
+          setSelectedSuggestionIndex(prev => 
+            prev < commandSuggestions.length - 1 ? prev + 1 : 0
+          );
+          return; // 阻止方向键发送到终端
+        }
+      }
+      // 普通文本输入处理
+      else if (data.length === 1 && data.charCodeAt(0) >= 32) {
+        currentInput += data;
+        // 更新当前鼠标位置
+        updateCursorPosition(term);
+        // 更新命令提示
+        updateCommandSuggestions(currentInput, term);
       }
 
       // 发送数据到进程
@@ -356,6 +539,72 @@ const WebTerminal = ({
         window.terminalAPI.sendToProcess(processId, data);
       }
     });
+  };
+
+  // 更新光标位置
+  const updateCursorPosition = (term) => {
+    if (!term || !term.element) return;
+    
+    const terminal = term.element;
+    const termRect = terminal.getBoundingClientRect();
+    
+    // 获取字符尺寸
+    const charWidth = term._core._renderService.dimensions.actualCellWidth;
+    const charHeight = term._core._renderService.dimensions.actualCellHeight;
+    
+    // 计算光标在屏幕上的位置
+    const cursorX = termRect.left + (term._core._bufferService.buffer.x * charWidth);
+    const cursorY = termRect.top + (term._core._bufferService.buffer.y * charHeight);
+    
+    setCursorPosition({ x: cursorX, y: cursorY + charHeight });
+  };
+
+  // 更新命令提示
+  const updateCommandSuggestions = async (input, term) => {
+    if (!input || input.trim() === "") {
+      setShowCommandSuggestions(false);
+      return;
+    }
+
+    setCurrentCommandInput(input);
+    commandInputRef.current = input;
+
+    try {
+      if (window.terminalAPI && window.terminalAPI.searchCommandHistory) {
+        const suggestions = await window.terminalAPI.searchCommandHistory(input);
+        
+        if (suggestions && suggestions.length > 0) {
+          setCommandSuggestions(suggestions);
+          setSelectedSuggestionIndex(0);
+          setShowCommandSuggestions(true);
+          updateCursorPosition(term);
+        } else {
+          setShowCommandSuggestions(false);
+        }
+      }
+    } catch (error) {
+      console.error("获取命令提示时出错:", error);
+      setShowCommandSuggestions(false);
+    }
+  };
+
+  // 处理命令提示点击
+  const handleSuggestionClick = (suggestion) => {
+    const term = termRef.current;
+    const processId = processCache[tabId];
+    
+    if (!term || !processId) return;
+    
+    // 计算需要补全的文本
+    const completionText = suggestion.substring(currentCommandInput.length);
+    
+    if (completionText) {
+      // 发送补全文本到终端
+      window.terminalAPI.sendToProcess(processId, completionText);
+    }
+    
+    // 隐藏提示框
+    setShowCommandSuggestions(false);
   };
 
   // 定义响应主题模式的终端主题
@@ -426,7 +675,7 @@ const WebTerminal = ({
   useEffect(() => {
     // 添加全局样式
     const styleElement = document.createElement("style");
-    styleElement.textContent = terminalStyles + searchBarStyles;
+    styleElement.textContent = terminalStyles + searchBarStyles + commandSuggestionStyles;
     document.head.appendChild(styleElement);
 
     // 初始化 xterm.js
@@ -1109,6 +1358,7 @@ const WebTerminal = ({
   const setupSimulatedTerminal = (term) => {
     // 处理用户输入
     let userInput = "";
+    let currentInput = "";
 
     term.onKey(({ key, domEvent }) => {
       const printable =
@@ -1116,10 +1366,37 @@ const WebTerminal = ({
 
       // 回车键处理
       if (domEvent.keyCode === 13) {
+        // 如果命令提示窗口可见，选择当前选中的提示
+        if (showCommandSuggestions && commandSuggestions.length > 0) {
+          const selectedCommand = commandSuggestions[selectedSuggestionIndex];
+          if (selectedCommand) {
+            // 计算需要补全的文本
+            const completionText = selectedCommand.substring(currentInput.length);
+            
+            if (completionText) {
+              // 补全命令
+              userInput = selectedCommand;
+              currentInput = selectedCommand;
+              term.write(completionText);
+            }
+            
+            // 隐藏命令提示窗口
+            setShowCommandSuggestions(false);
+            domEvent.preventDefault();
+            return;
+          }
+        }
+        
+        // 正常的回车处理
         term.writeln("");
 
         // 处理命令
         if (userInput.trim() !== "") {
+          // 保存命令到历史记录
+          if (window.terminalAPI && window.terminalAPI.saveCommand) {
+            window.terminalAPI.saveCommand(userInput.trim());
+          }
+
           // 如果 IPC API 不可用，使用本地处理命令
           handleCommand(term, userInput);
           term.write("$ ");
@@ -1129,18 +1406,79 @@ const WebTerminal = ({
 
         // 重置输入
         userInput = "";
+        currentInput = "";
+        setShowCommandSuggestions(false);
       }
       // 退格键处理
       else if (domEvent.keyCode === 8) {
         if (userInput.length > 0) {
           userInput = userInput.slice(0, -1);
+          currentInput = userInput;
           term.write("\b \b");
+          
+          // 更新命令提示
+          if (currentInput.length > 0) {
+            updateCommandSuggestions(currentInput, term);
+          } else {
+            setShowCommandSuggestions(false);
+          }
+        }
+      }
+      // Tab键处理 - 自动补全
+      else if (domEvent.keyCode === 9 && showCommandSuggestions && commandSuggestions.length > 0) {
+        const selectedCommand = commandSuggestions[selectedSuggestionIndex];
+        if (selectedCommand) {
+          // 计算需要补全的部分
+          const completionText = selectedCommand.substring(currentInput.length);
+          
+          if (completionText) {
+            // 补全命令
+            userInput = selectedCommand;
+            currentInput = selectedCommand;
+            term.write(completionText);
+            updateCommandSuggestions(currentInput, term);
+          }
+        }
+        domEvent.preventDefault();
+      }
+      // 方向键处理
+      else if (domEvent.keyCode === 38) { // 上箭头
+        if (showCommandSuggestions && commandSuggestions.length > 0) {
+          setSelectedSuggestionIndex(prev => 
+            prev > 0 ? prev - 1 : commandSuggestions.length - 1
+          );
+          domEvent.preventDefault();
+          return;
+        }
+      }
+      else if (domEvent.keyCode === 40) { // 下箭头
+        if (showCommandSuggestions && commandSuggestions.length > 0) {
+          setSelectedSuggestionIndex(prev => 
+            prev < commandSuggestions.length - 1 ? prev + 1 : 0
+          );
+          domEvent.preventDefault();
+          return;
+        }
+      }
+      // ESC键处理
+      else if (domEvent.keyCode === 27) {
+        // 当命令提示窗口显示时，ESC键将关闭它
+        if (showCommandSuggestions) {
+          setShowCommandSuggestions(false);
+          domEvent.preventDefault(); // 阻止ESC键传递到终端
+          return;
         }
       }
       // 普通文本输入处理
       else if (printable) {
         userInput += key;
+        currentInput = userInput;
         term.write(key);
+        
+        // 更新光标位置
+        updateCursorPosition(term);
+        // 更新命令提示
+        updateCommandSuggestions(currentInput, term);
       }
     });
   };
@@ -1582,6 +1920,82 @@ const WebTerminal = ({
     };
   }, [tabId]);
 
+  // useEffect for setting up the terminal and fitAddon
+  useEffect(() => {
+    // 添加全局键盘事件处理
+    const handleGlobalKeyDown = (e) => {
+      // 当命令提示窗口可见时，处理全局键盘事件
+      if (showCommandSuggestions && commandSuggestions.length > 0) {
+        if (e.key === 'ArrowUp') {
+          // 上箭头选择上一个命令
+          setSelectedSuggestionIndex(prev => 
+            prev > 0 ? prev - 1 : commandSuggestions.length - 1
+          );
+          e.preventDefault();
+        } else if (e.key === 'ArrowDown') {
+          // 下箭头选择下一个命令
+          setSelectedSuggestionIndex(prev => 
+            prev < commandSuggestions.length - 1 ? prev + 1 : 0
+          );
+          e.preventDefault();
+        } else if (e.key === 'Escape') {
+          // ESC键关闭命令提示窗口
+          setShowCommandSuggestions(false);
+          e.preventDefault();
+        } else if (e.key === 'Enter') {
+          // 回车键选择当前命令
+          const selectedCommand = commandSuggestions[selectedSuggestionIndex];
+          const term = termRef.current;
+          const processId = processCache[tabId];
+          
+          if (selectedCommand && term && processId) {
+            // 计算需要补全的文本
+            const completionText = selectedCommand.substring(currentCommandInput.length);
+            
+            if (completionText) {
+              // 发送补全文本到终端
+              window.terminalAPI.sendToProcess(processId, completionText);
+            }
+            
+            // 隐藏命令提示窗口
+            setShowCommandSuggestions(false);
+            e.preventDefault();
+          }
+        }
+      }
+    };
+
+    // 添加全局键盘事件监听
+    window.addEventListener('keydown', handleGlobalKeyDown);
+
+    // 移除事件监听
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [showCommandSuggestions, commandSuggestions, selectedSuggestionIndex, currentCommandInput, tabId]);
+
+  // 监听选中建议的变化，滚动到视图中
+  useEffect(() => {
+    if (suggestionsRef.current && showCommandSuggestions && commandSuggestions.length > 0) {
+      const container = suggestionsRef.current;
+      const selectedItem = container.querySelector('.command-suggestion-item.selected');
+      
+      if (selectedItem) {
+        // 计算选中项是否在视图中
+        const containerRect = container.getBoundingClientRect();
+        const selectedRect = selectedItem.getBoundingClientRect();
+        
+        // 如果选中项不在可视区域内，滚动到该项
+        if (selectedRect.top < containerRect.top || selectedRect.bottom > containerRect.bottom) {
+          selectedItem.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest'
+          });
+        }
+      }
+    }
+  }, [selectedSuggestionIndex, showCommandSuggestions, commandSuggestions]);
+
   return (
     <Box
       sx={{
@@ -1747,6 +2161,36 @@ const WebTerminal = ({
           <ListItemText>清空</ListItemText>
         </MenuItem>
       </Menu>
+
+      {/* 命令提示浮动窗口 */}
+      {showCommandSuggestions && commandSuggestions.length > 0 && (
+        <div
+          ref={suggestionsRef}
+          className={`command-suggestion-container ${theme.palette.mode === "light" ? "light-theme" : ""}`}
+          style={{
+            left: `${Math.min(
+              cursorPosition.x,
+              // 确保不超出终端右边界
+              terminalRef.current 
+                ? terminalRef.current.getBoundingClientRect().right - 150
+                : window.innerWidth - 150
+            )}px`,
+            top: `${cursorPosition.y + 5}px`,
+          }}
+        >
+          {commandSuggestions.map((suggestion, index) => (
+            <div
+              key={index}
+              className={`command-suggestion-item ${
+                index === selectedSuggestionIndex ? "selected" : ""
+              } ${theme.palette.mode === "light" ? "light-theme" : ""}`}
+              onClick={() => handleSuggestionClick(suggestion)}
+            >
+              {suggestion}
+            </div>
+          ))}
+        </div>
+      )}
     </Box>
   );
 };
