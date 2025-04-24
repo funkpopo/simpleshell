@@ -1492,6 +1492,29 @@ function setupIPC(mainWindow) {
       let processedData = data;
       // 对特殊情况的处理（如果需要）
 
+      // 检测回车键并提取可能的命令
+      if (data === "\r" || data === "\n") {
+        // 可能是一个命令的结束，尝试从缓冲区获取命令
+        if (procInfo.commandBuffer && procInfo.commandBuffer.trim()) {
+          // 将命令添加到历史记录
+          addToCommandHistory(procInfo.commandBuffer.trim());
+          // 清空命令缓冲区
+          procInfo.commandBuffer = "";
+        }
+      } else if (data === "\u0003") { // Ctrl+C
+        // 清空命令缓冲区
+        procInfo.commandBuffer = "";
+      } else if (data === "\u007F" || data === "\b") { // 退格键
+        // 从缓冲区中删除最后一个字符
+        if (procInfo.commandBuffer && procInfo.commandBuffer.length > 0) {
+          procInfo.commandBuffer = procInfo.commandBuffer.slice(0, -1);
+        }
+      } else {
+        // 将字符添加到命令缓冲区
+        if (!procInfo.commandBuffer) procInfo.commandBuffer = "";
+        procInfo.commandBuffer += data;
+      }
+
       // 根据进程类型选择不同的写入方式
       if (procInfo.type === "ssh2") {
         // SSH2连接使用保存的流对象写入数据
@@ -1715,6 +1738,19 @@ function setupIPC(mainWindow) {
         message: error.message,
       };
     }
+  });
+
+  // 添加命令历史相关的IPC处理
+  ipcMain.handle("command:loadHistory", async () => {
+    return loadCommandHistory();
+  });
+
+  ipcMain.handle("command:saveHistory", async (event, commandHistory) => {
+    return saveCommandHistory(commandHistory);
+  });
+
+  ipcMain.handle("command:addToHistory", async (event, command) => {
+    return addToCommandHistory(command);
   });
 
   // AI设置相关IPC处理
@@ -4945,5 +4981,106 @@ const processAIPromptInline = async (prompt, settings) => {
   } catch (error) {
     console.error("Error processing AI prompt inline:", error);
     return { error: `处理请求时出错: ${error.message}` };
+  }
+};
+
+// 加载命令历史记录
+const loadCommandHistory = () => {
+  const configPath = getConfigPath();
+  
+  try {
+    if (fs.existsSync(configPath)) {
+      const data = fs.readFileSync(configPath, "utf8");
+      const config = JSON.parse(data);
+      
+      // 检查是否有commandHistory字段
+      if (config.commandHistory && Array.isArray(config.commandHistory)) {
+        return config.commandHistory;
+      } else if (config.commandHistory) {
+        // 兼容旧版本，如果commandHistory不是数组，重置为空数组
+        return [];
+      }
+    }
+  } catch (error) {
+    console.error("Failed to load command history:", error);
+  }
+  
+  return [];
+};
+
+// 保存命令历史记录
+const saveCommandHistory = (commandHistory) => {
+  const configPath = getConfigPath();
+  
+  try {
+    // 加载当前配置，以保留其他设置
+    let config = {};
+    if (fs.existsSync(configPath)) {
+      const data = fs.readFileSync(configPath, "utf8");
+      config = JSON.parse(data);
+    }
+    
+    // 更新commandHistory部分
+    config.commandHistory = commandHistory;
+    
+    // 写回配置文件
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+    return true;
+  } catch (error) {
+    console.error("Failed to save command history:", error);
+    return false;
+  }
+};
+
+// 添加命令到历史记录
+const addToCommandHistory = (command) => {
+  if (!command || command.trim() === '') return false;
+  
+  try {
+    const history = loadCommandHistory();
+    
+    // 检查命令是否已存在
+    const existingIndex = history.findIndex(item => 
+      typeof item === 'string' ? item === command : item.command === command
+    );
+    
+    if (existingIndex !== -1) {
+      // 命令已存在，更新使用次数
+      const existingItem = history[existingIndex];
+      if (typeof existingItem === 'string') {
+        // 旧格式转换为新格式
+        history[existingIndex] = {
+          command: existingItem,
+          count: 2, // 第一次+当前使用
+          lastUsed: Date.now()
+        };
+      } else {
+        // 增加使用次数
+        existingItem.count = (existingItem.count || 1) + 1;
+        existingItem.lastUsed = Date.now();
+      }
+      
+      // 移到数组首位
+      const item = history.splice(existingIndex, 1)[0];
+      history.unshift(item);
+    } else {
+      // 添加新命令
+      history.unshift({
+        command: command,
+        count: 1,
+        lastUsed: Date.now()
+      });
+      
+      // 如果超过10000条，删除最旧的
+      if (history.length > 10000) {
+        history.pop();
+      }
+    }
+    
+    // 保存更新后的历史记录
+    return saveCommandHistory(history);
+  } catch (error) {
+    console.error("Failed to add command to history:", error);
+    return false;
   }
 };

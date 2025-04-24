@@ -69,6 +69,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   resizeTerminal: (processId, cols, rows) =>
     ipcRenderer.invoke("terminal:resize", processId, cols, rows),
 
+  // 命令历史记录API
+  loadCommandHistory: () => ipcRenderer.invoke("command:loadHistory"),
+  saveCommandHistory: (commandHistory) => 
+    ipcRenderer.invoke("command:saveHistory", commandHistory),
+  addToCommandHistory: (command) => 
+    ipcRenderer.invoke("command:addToHistory", command),
+
   // AI助手API
   saveAISettings: (settings) => ipcRenderer.invoke("ai:saveSettings", settings),
   loadAISettings: () => ipcRenderer.invoke("ai:loadSettings"),
