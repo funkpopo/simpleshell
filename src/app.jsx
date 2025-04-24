@@ -1210,10 +1210,6 @@ function App() {
                   color="primary"
                   onClick={toggleCommandHistory}
                   sx={{
-                    position: "absolute",
-                    bottom: "120px",
-                    right: "0",
-                    zIndex: 111,
                     bgcolor: commandHistoryOpen
                       ? "action.selected"
                       : "transparent",
