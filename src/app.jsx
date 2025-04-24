@@ -30,6 +30,7 @@ import PowerOffIcon from "@mui/icons-material/PowerOff";
 import FolderIcon from "@mui/icons-material/Folder";
 import Tooltip from "@mui/material/Tooltip";
 import Paper from "@mui/material/Paper";
+import HistoryIcon from "@mui/icons-material/History";
 import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
 import TabPanel from "./components/TabPanel.jsx";
@@ -38,6 +39,7 @@ import ResourceMonitor from "./components/ResourceMonitor.jsx";
 import AIAssistant from "./components/AIAssistant.jsx";
 import AIIcon from "./components/AIIcon.jsx";
 import FileManager from "./components/FileManager.jsx";
+import CommandHistory from "./components/CommandHistory.jsx";
 
 // 自定义标签页组件
 function CustomTab(props) {
@@ -317,6 +319,9 @@ function App() {
 
   // 文件管理侧边栏状态
   const [fileManagerOpen, setFileManagerOpen] = React.useState(false);
+
+  // 命令历史侧边栏状态
+  const [commandHistoryOpen, setCommandHistoryOpen] = React.useState(false);
 
   // 最后打开的侧边栏（用于确定z-index层级）
   const [lastOpenedSidebar, setLastOpenedSidebar] = React.useState(null);
@@ -725,6 +730,20 @@ function App() {
     setFileManagerOpen(false);
   };
 
+  // 切换命令历史侧边栏
+  const toggleCommandHistory = () => {
+    setCommandHistoryOpen(!commandHistoryOpen);
+    // 如果要打开命令历史侧边栏，确保它显示在上层
+    if (!commandHistoryOpen) {
+      setLastOpenedSidebar("history");
+    }
+  };
+
+  // 关闭命令历史侧边栏
+  const handleCloseCommandHistory = () => {
+    setCommandHistoryOpen(false);
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -963,6 +982,7 @@ function App() {
                   if (resourceMonitorOpen) handleCloseResourceMonitor();
                   if (aiAssistantOpen) handleCloseAIAssistant();
                   if (fileManagerOpen) handleCloseFileManager();
+                  if (commandHistoryOpen) handleCloseCommandHistory();
                 }}
               />
             )}
@@ -1055,6 +1075,24 @@ function App() {
                     ? terminalInstances[`${tabs[currentTab].id}-config`]
                     : null
                 }
+              />
+            </Box>
+
+            {/* 命令历史侧边栏 */}
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                right: 48,
+                zIndex: lastOpenedSidebar === "history" ? 104 : 95,
+                height: "100%",
+                display: "flex",
+              }}
+            >
+              <CommandHistory
+                open={commandHistoryOpen}
+                onClose={handleCloseCommandHistory}
+                activeTabId={currentTab > 0 && tabs[currentTab] ? tabs[currentTab].id : null}
               />
             </Box>
 
@@ -1163,6 +1201,30 @@ function App() {
                   }
                 >
                   <FolderIcon />
+                </IconButton>
+              </Tooltip>
+
+              {/* 命令历史按钮 */}
+              <Tooltip title="命令历史记录" placement="left">
+                <IconButton
+                  color="primary"
+                  onClick={toggleCommandHistory}
+                  sx={{
+                    position: "absolute",
+                    bottom: "120px",
+                    right: "0",
+                    zIndex: 111,
+                    bgcolor: commandHistoryOpen
+                      ? "action.selected"
+                      : "transparent",
+                    "&:hover": {
+                      bgcolor: commandHistoryOpen
+                        ? "action.selected"
+                        : "action.hover",
+                    },
+                  }}
+                >
+                  <HistoryIcon />
                 </IconButton>
               </Tooltip>
             </Paper>
