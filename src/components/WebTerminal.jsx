@@ -320,6 +320,16 @@ const WebTerminal = ({
             term.buffer.active
               .getLine(term.buffer.active.cursorY)
               ?.translateToString() || "";
+              
+          // 提取用户输入的命令（去除提示符）
+          const commandMatch = lastLine.match(/[>$#]\s*(.+)$/);
+          if (commandMatch && commandMatch[1] && commandMatch[1].trim() !== "") {
+            const command = commandMatch[1].trim();
+            // 将命令添加到历史记录
+            if (window.terminalAPI?.addToCommandHistory) {
+              window.terminalAPI.addToCommandHistory(command);
+            }
+          }
 
           // 检查这一行是否包含常见的全屏应用命令
           if (
@@ -1120,6 +1130,11 @@ const WebTerminal = ({
 
         // 处理命令
         if (userInput.trim() !== "") {
+          // 将命令添加到历史记录
+          if (window.terminalAPI?.addToCommandHistory) {
+            window.terminalAPI.addToCommandHistory(userInput.trim());
+          }
+          
           // 如果 IPC API 不可用，使用本地处理命令
           handleCommand(term, userInput);
           term.write("$ ");

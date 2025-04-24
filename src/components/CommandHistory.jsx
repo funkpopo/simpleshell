@@ -17,6 +17,14 @@ import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Tooltip from "@mui/material/Tooltip";
 import Chip from "@mui/material/Chip";
+import Snackbar from "@mui/material/Snackbar";
+import Alert from "@mui/material/Alert";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { useTheme } from "@mui/material/styles";
 
 // 命令历史记录组件
@@ -27,36 +35,66 @@ function CommandHistory({ open, onClose, activeTabId }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortAnchorEl, setSortAnchorEl] = useState(null);
   const [sortBy, setSortBy] = useState("time"); // time, frequency, alphabet
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success"
+  });
   
-  // 加载命令历史记录
-  useEffect(() => {
-    const loadHistory = async () => {
-      if (window.terminalAPI?.loadCommandHistory) {
-        try {
-          const history = await window.terminalAPI.loadCommandHistory();
-          
-          // 确保所有历史记录都有标准格式
-          const standardizedHistory = history.map(item => {
-            if (typeof item === 'string') {
-              return {
-                command: item,
-                count: 1,
-                lastUsed: Date.now()
-              };
-            }
-            return item;
-          });
-          
-          setCommandHistory(standardizedHistory);
-          applyFiltersAndSort(standardizedHistory, searchTerm, sortBy);
-        } catch (error) {
-          console.error("Failed to load command history:", error);
-        }
+  // 编辑和删除相关状态
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [currentCommand, setCurrentCommand] = useState(null);
+  const [editedCommand, setEditedCommand] = useState("");
+  
+  // 提取加载命令历史记录函数，便于重复调用
+  const loadHistory = async () => {
+    if (window.terminalAPI?.loadCommandHistory) {
+      try {
+        const history = await window.terminalAPI.loadCommandHistory();
+        
+        // 确保所有历史记录都有标准格式
+        const standardizedHistory = history.map(item => {
+          if (typeof item === 'string') {
+            return {
+              command: item,
+              count: 1,
+              lastUsed: Date.now()
+            };
+          }
+          return item;
+        });
+        
+        setCommandHistory(standardizedHistory);
+        applyFiltersAndSort(standardizedHistory, searchTerm, sortBy);
+      } catch (error) {
+        console.error("Failed to load command history:", error);
       }
-    };
-    
+    }
+  };
+  
+  // 初始加载历史记录
+  useEffect(() => {
     loadHistory();
   }, []);
+  
+  // 添加自动刷新机制，每秒刷新一次
+  useEffect(() => {
+    let intervalId = null;
+    
+    // 只有在面板打开时才启动定时器
+    if (open) {
+      intervalId = setInterval(() => {
+        loadHistory();
+      }, 1000);
+    }
+    
+    // 清理函数：组件卸载或面板关闭时停止定时器
+    return () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [open, searchTerm, sortBy]); // 依赖项包括open状态和筛选条件
   
   // 搜索和排序功能
   const applyFiltersAndSort = (history, term, sortType) => {
@@ -110,42 +148,150 @@ function CommandHistory({ open, onClose, activeTabId }) {
   
   // 发送命令到终端
   const handleCommandClick = async (command) => {
-    if (window.terminalAPI?.sendToProcess && activeTabId) {
-      try {
-        // 获取活动标签页的进程ID
-        const processId = window.processCache?.[activeTabId];
-        
-        if (processId) {
-          // 发送命令到终端
-          await window.terminalAPI.sendToProcess(processId, command + "\r");
-          
-          // 更新使用次数
-          const updatedHistory = commandHistory.map(item => {
-            if (item.command === command) {
-              return {
-                ...item,
-                count: (item.count || 1) + 1,
-                lastUsed: Date.now()
-              };
-            }
-            return item;
-          });
-          
-          // 保存更新后的历史记录
-          if (window.terminalAPI?.saveCommandHistory) {
-            await window.terminalAPI.saveCommandHistory(updatedHistory);
-          }
-          
-          // 更新状态
-          setCommandHistory(updatedHistory);
-          applyFiltersAndSort(updatedHistory, searchTerm, sortBy);
+    try {
+      // 复制命令到剪贴板
+      await navigator.clipboard.writeText(command);
+      
+      // 更新使用时间但不增加使用次数
+      const updatedHistory = commandHistory.map(item => {
+        if (item.command === command) {
+          return {
+            ...item,
+            lastUsed: Date.now()
+          };
         }
-      } catch (error) {
-        console.error("Failed to send command to terminal:", error);
+        return item;
+      });
+      
+      // 保存更新后的历史记录
+      if (window.terminalAPI?.saveCommandHistory) {
+        await window.terminalAPI.saveCommandHistory(updatedHistory);
       }
+      
+      // 更新状态
+      setCommandHistory(updatedHistory);
+      applyFiltersAndSort(updatedHistory, searchTerm, sortBy);
+      
+      // 显示复制成功信息
+      setSnackbar({
+        open: true,
+        message: "命令已复制到剪贴板",
+        severity: "success"
+      });
+    } catch (error) {
+      console.error("Failed to copy command to clipboard:", error);
+      setSnackbar({
+        open: true,
+        message: "复制到剪贴板失败: " + error.message,
+        severity: "error"
+      });
     }
   };
   
+  // 关闭提示框
+  const handleSnackbarClose = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+  
+  // 处理删除命令
+  const handleDeleteClick = async (command) => {
+    try {
+      // 从历史记录中移除该命令
+      const updatedHistory = commandHistory.filter(item => 
+        item.command !== command.command
+      );
+      
+      // 保存更新后的历史记录
+      if (window.terminalAPI?.saveCommandHistory) {
+        await window.terminalAPI.saveCommandHistory(updatedHistory);
+      }
+      
+      // 更新状态
+      setCommandHistory(updatedHistory);
+      applyFiltersAndSort(updatedHistory, searchTerm, sortBy);
+      
+      // 显示删除成功信息
+      setSnackbar({
+        open: true,
+        message: "命令已删除",
+        severity: "success"
+      });
+    } catch (error) {
+      console.error("Failed to delete command:", error);
+      setSnackbar({
+        open: true,
+        message: "删除命令失败: " + error.message,
+        severity: "error"
+      });
+    }
+  };
+  
+  // 打开编辑对话框
+  const handleEditClick = (command) => {
+    setCurrentCommand(command);
+    setEditedCommand(command.command);
+    setEditDialogOpen(true);
+  };
+  
+  // 关闭编辑对话框
+  const handleEditCancel = () => {
+    setEditDialogOpen(false);
+    setCurrentCommand(null);
+    setEditedCommand("");
+  };
+  
+  // 处理编辑内容变化
+  const handleEditChange = (event) => {
+    setEditedCommand(event.target.value);
+  };
+  
+  // 保存编辑后的命令
+  const handleEditSave = async () => {
+    if (!currentCommand || editedCommand.trim() === "") return;
+    
+    try {
+      // 更新命令历史记录
+      const updatedHistory = commandHistory.map(item => {
+        if (item.command === currentCommand.command) {
+          return {
+            ...item,
+            command: editedCommand.trim(),
+            lastUsed: Date.now()
+          };
+        }
+        return item;
+      });
+      
+      // 保存更新后的历史记录
+      if (window.terminalAPI?.saveCommandHistory) {
+        await window.terminalAPI.saveCommandHistory(updatedHistory);
+      }
+      
+      // 更新状态
+      setCommandHistory(updatedHistory);
+      applyFiltersAndSort(updatedHistory, searchTerm, sortBy);
+      
+      // 显示编辑成功信息
+      setSnackbar({
+        open: true,
+        message: "命令已更新",
+        severity: "success"
+      });
+    } catch (error) {
+      console.error("Failed to update command:", error);
+      setSnackbar({
+        open: true,
+        message: "更新命令失败: " + error.message,
+        severity: "error"
+      });
+    }
+    
+    // 关闭对话框
+    setEditDialogOpen(false);
+    setCurrentCommand(null);
+    setEditedCommand("");
+  };
+
   return (
     <Paper
       elevation={4}
@@ -230,26 +376,74 @@ function CommandHistory({ open, onClose, activeTabId }) {
           >
             {filteredHistory.length > 0 ? (
               filteredHistory.map((item, index) => (
-                <ListItem key={index} disablePadding divider>
-                  <ListItemButton onClick={() => handleCommandClick(item.command)}>
+                <ListItem 
+                  key={index} 
+                  disablePadding 
+                  divider
+                  secondaryAction={
+                    <Box 
+                      className="command-actions" 
+                      sx={{ 
+                        display: 'flex',
+                        visibility: 'hidden', // 默认隐藏
+                        transition: 'visibility 0.2s'
+                      }}
+                    >
+                      <Tooltip title="编辑命令">
+                        <IconButton 
+                          edge="end" 
+                          size="small" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditClick(item);
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="删除命令">
+                        <IconButton 
+                          edge="end" 
+                          size="small" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(item);
+                          }}
+                          sx={{ ml: 0.5 }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  }
+                  sx={{
+                    '&:hover .command-actions': {
+                      visibility: 'visible',
+                    },
+                  }}
+                >
+                  <ListItemButton 
+                    onClick={() => handleCommandClick(item.command)}
+                    sx={{
+                      '&:hover': {
+                        backgroundColor: theme.palette.mode === 'dark' 
+                          ? 'rgba(255, 255, 255, 0.08)' 
+                          : 'rgba(0, 0, 0, 0.04)',
+                      }
+                    }}
+                  >
                     <ListItemText
                       primary={item.command}
                       secondary={
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Chip 
-                            label={`使用次数: ${item.count || 1}`} 
-                            size="small" 
-                            variant="outlined" 
-                          />
-                          <Typography variant="caption">
-                            {item.lastUsed ? new Date(item.lastUsed).toLocaleString() : ""}
-                          </Typography>
-                        </Box>
+                        <Typography variant="caption">
+                          {item.lastUsed ? new Date(item.lastUsed).toLocaleString() : ""}
+                        </Typography>
                       }
                       sx={{
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
+                        pr: 10, // 给操作按钮预留空间
                       }}
                     />
                   </ListItemButton>
@@ -264,6 +458,55 @@ function CommandHistory({ open, onClose, activeTabId }) {
               </ListItem>
             )}
           </List>
+
+          {/* 提示框 */}
+          <Snackbar
+            open={snackbar.open}
+            autoHideDuration={4000}
+            onClose={handleSnackbarClose}
+            anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+          >
+            <Alert
+              onClose={handleSnackbarClose}
+              severity={snackbar.severity}
+              sx={{ width: "100%" }}
+            >
+              {snackbar.message}
+            </Alert>
+          </Snackbar>
+          
+          {/* 编辑命令对话框 */}
+          <Dialog
+            open={editDialogOpen}
+            onClose={handleEditCancel}
+            fullWidth
+            maxWidth="sm"
+          >
+            <DialogTitle>编辑命令</DialogTitle>
+            <DialogContent>
+              <TextField
+                autoFocus
+                margin="dense"
+                label="命令"
+                type="text"
+                fullWidth
+                variant="outlined"
+                value={editedCommand}
+                onChange={handleEditChange}
+                sx={{ mt: 1 }}
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleEditCancel}>取消</Button>
+              <Button 
+                onClick={handleEditSave} 
+                color="primary"
+                disabled={editedCommand.trim() === ""}
+              >
+                保存
+              </Button>
+            </DialogActions>
+          </Dialog>
         </>
       )}
     </Paper>
