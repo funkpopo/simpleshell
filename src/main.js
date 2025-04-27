@@ -1,20 +1,39 @@
 const {
   app,
   BrowserWindow,
-  ipcMain,
-  shell,
   dialog,
   clipboard,
+  Menu,
+  Tray,
+  ipcMain,
+  shell,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
-const crypto = require("crypto");
+const Client = require("ssh2").Client;
 const os = require("os");
-const pty = require("node-pty");
-const { Client } = require("ssh2");
 const SftpClient = require("ssh2-sftp-client");
 const { Worker } = require("worker_threads");
+const crypto = require("crypto");
+const homeDir = os.homedir();
+
+// 应用设置和状态管理
+let mainWindow;
+let tray;
+const childProcesses = new Map();
+let nextProcessId = 1;
+
+// 跟踪编辑器会话状态的正则表达式
+const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
+const editorExitCommands = ['q', 'quit', 'exit', 'wq', 'ZZ', 'x', ':q', ':wq', ':x', 'Ctrl+X'];
+const editorExitRegex = new RegExp(`^(${editorExitCommands.join('|').replace(/\+/g, '\\+')}|:\\w+)$`, 'i');
+
+// 用于SSH连接的SFTP会话管理
+const sftpSessions = new Map();
+const sftpQueues = new Map();
+const sshConnections = new Map();
+const sftpLocks = new Map();
 
 // 日志记录功能
 const logFile = path.join(__dirname, "..", "logs", "app.log");
@@ -49,18 +68,10 @@ let aiRequestMap = new Map();
 let nextRequestId = 1;
 
 // 全局变量
-const childProcesses = new Map(); // 存储所有子进程
-const sshClients = new Map(); // 存储SSH客户端
 const terminalProcesses = new Map(); // 存储终端进程ID映射
-let nextProcessId = 1;
 
 // 存储活动的文件传输
 const activeTransfers = new Map();
-
-// 添加 SFTP 会话池
-const sftpSessions = new Map(); // 用于缓存 SFTP 会话，按 tabId 存储
-const sftpSessionLocks = new Map(); // 用于防止并发创建同一个会话
-const pendingOperations = new Map(); // 按 tabId 存储待处理的操作队列
 
 // SFTP会话池配置
 const SFTP_SESSION_IDLE_TIMEOUT = 20000; // 空闲超时时间（毫秒），从60秒减少到20秒
@@ -1153,6 +1164,8 @@ function setupIPC(mainWindow) {
       childProcesses.set(processId, {
         process: ps,
         listeners: new Set(),
+        editorMode: false, // 初始化编辑器模式为false
+        commandBuffer: "" // 初始化命令缓冲区
       });
 
       // 处理PowerShell输出
@@ -1161,7 +1174,9 @@ function setupIPC(mainWindow) {
           // 检查主窗口是否还存在且未被销毁
           if (mainWindow && !mainWindow.isDestroyed()) {
             const output = data.toString();
-            mainWindow.webContents.send(`process:output:${processId}`, output);
+            // 处理输出以检测编辑器退出
+            const processedOutput = processTerminalOutput(processId, output);
+            mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
           }
         } catch (error) {
           console.error("Error handling stdout data:", error);
@@ -1173,7 +1188,9 @@ function setupIPC(mainWindow) {
           // 检查主窗口是否还存在且未被销毁
           if (mainWindow && !mainWindow.isDestroyed()) {
             const output = data.toString();
-            mainWindow.webContents.send(`process:output:${processId}`, output);
+            // 处理输出以检测编辑器退出
+            const processedOutput = processTerminalOutput(processId, output);
+            mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
           }
         } catch (error) {
           console.error("Error handling stderr data:", error);
@@ -1240,6 +1257,8 @@ function setupIPC(mainWindow) {
           config: sshConfig,
           type: "ssh2",
           ready: false, // 标记SSH连接状态，默认为未就绪
+          editorMode: false, // 初始化编辑器模式为false
+          commandBuffer: "" // 初始化命令缓冲区
         });
 
         // 存储相同的SSH客户端，使用tabId（通常是形如'ssh-timestamp'的标识符）
@@ -1251,6 +1270,8 @@ function setupIPC(mainWindow) {
             config: sshConfig,
             type: "ssh2",
             ready: false, // 标记SSH连接状态，默认为未就绪
+            editorMode: false, // 初始化编辑器模式为false
+            commandBuffer: "" // 初始化命令缓冲区
           });
         }
 
@@ -1327,21 +1348,25 @@ function setupIPC(mainWindow) {
                   buffer = Buffer.concat([buffer, data]);
 
                   // 尝试将缓冲区转换为UTF-8字符串
-                  let output;
                   try {
-                    output = buffer.toString("utf8");
-                    // 转换成功，清空缓冲区
-                    buffer = Buffer.from([]);
-                  } catch (e) {
-                    // 如果转换失败（可能是UTF-8字符不完整），等待下一个数据包
-                    return;
-                  }
+                    const output = buffer.toString("utf8");
+                    
+                    // 处理输出以检测编辑器退出
+                    const processedOutput = processTerminalOutput(processId, output);
+                    
+                    // 发送到前端
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                      mainWindow.webContents.send(
+                        `process:output:${processId}`,
+                        processedOutput,
+                      );
+                    }
 
-                  if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send(
-                      `process:output:${processId}`,
-                      output,
-                    );
+                    // 重置缓冲区
+                    buffer = Buffer.from([]);
+                  } catch (error) {
+                    // 如果转换失败，说明可能是不完整的UTF-8序列，保留缓冲区继续等待
+                    console.error("Failed to convert buffer to string:", error);
                   }
                 } catch (error) {
                   console.error("Error handling stream data:", error);
@@ -1496,19 +1521,81 @@ function setupIPC(mainWindow) {
       if (data === "\r" || data === "\n") {
         // 可能是一个命令的结束，尝试从缓冲区获取命令
         if (procInfo.commandBuffer && procInfo.commandBuffer.trim()) {
-          // 将命令添加到历史记录
-          addToCommandHistory(procInfo.commandBuffer.trim());
+          const command = procInfo.commandBuffer.trim();
+          
+          // 检测是否启动了编辑器
+          if (!procInfo.editorMode && editorCommandRegex.test(command)) {
+            procInfo.editorMode = true;
+            procInfo.lastEditorCommand = command; // 记录最后使用的编辑器命令，帮助后续检测退出
+            console.log(`Editor mode detected: ${command}`);
+          } 
+          // 检测是否可能退出了编辑器
+          else if (procInfo.editorMode) {
+            // 检查是否是退出命令
+            if (editorExitRegex.test(command)) {
+              console.log(`Possible editor exit command detected: ${command}`);
+              
+              // 为某些编辑器，我们可以立即确认退出
+              if (/^(q|quit|exit|:q|:quit|:wq)$/i.test(command)) {
+                procInfo.editorMode = false;
+                console.log(`Editor mode exited via command: ${command}`);
+              } else {
+                // 对于其他情况，设置一个退出检测标志，下一个命令会确认是否真的退出
+                procInfo.possibleEditorExit = true;
+              }
+            } 
+            // 如果上一个命令可能是退出，且这个命令不是编辑器命令，则确认已退出
+            else if (procInfo.possibleEditorExit && !editorCommandRegex.test(command)) {
+              procInfo.editorMode = false;
+              procInfo.possibleEditorExit = false;
+              console.log("Editor mode confirmed exited");
+            } 
+            // 如果收到普通shell命令且不在编辑器命令中，则退出编辑器模式
+            else if (command.startsWith("$") || command.startsWith(">") || 
+                    (command.includes(" ") && 
+                     !/^\s*(w|write|q|quit|exit|ZZ|x|c|change|d|delete|y|yank|p|put|u|undo|r|redo|i|insert|a|append)\s*/.test(command))) {
+              procInfo.editorMode = false;
+              console.log("Editor mode exited - detected shell prompt");
+            }
+          }
+          // 只有不在编辑器模式下才添加到历史记录
+          else if (!procInfo.editorMode) {
+            // 将命令添加到历史记录
+            addToCommandHistory(command);
+          }
+          
           // 清空命令缓冲区
           procInfo.commandBuffer = "";
         }
       } else if (data === "\u0003") { // Ctrl+C
         // 清空命令缓冲区
         procInfo.commandBuffer = "";
+        
+        // 如果在编辑器模式，可能是用户中断了编辑
+        if (procInfo.editorMode) {
+          // 为部分编辑器，Ctrl+C会导致退出
+          setTimeout(() => {
+            procInfo.possibleEditorExit = true;
+            // 设置一个较长的检测时间，在下一个提示符出现时确认退出
+            setTimeout(() => {
+              if (procInfo.possibleEditorExit) {
+                procInfo.editorMode = false;
+                procInfo.possibleEditorExit = false;
+                console.log("Editor mode exited via timeout after Ctrl+C");
+              }
+            }, 1000);
+          }, 200);
+        }
       } else if (data === "\u007F" || data === "\b") { // 退格键
         // 从缓冲区中删除最后一个字符
         if (procInfo.commandBuffer && procInfo.commandBuffer.length > 0) {
           procInfo.commandBuffer = procInfo.commandBuffer.slice(0, -1);
         }
+      } else if (data === "\u001B" && procInfo.editorMode) { // ESC键，在编辑器模式下可能表示模式切换
+        // 在vi/vim中，ESC会从插入模式返回到命令模式，但不退出编辑器
+        // 仅记录这个键，不做特殊处理
+        if (!procInfo.commandBuffer) procInfo.commandBuffer = "";
+        procInfo.commandBuffer += data;
       } else {
         // 将字符添加到命令缓冲区
         if (!procInfo.commandBuffer) procInfo.commandBuffer = "";
@@ -5046,6 +5133,13 @@ const addToCommandHistory = (command) => {
     return false;
   }
   
+  // 检测命令是否可能是编辑器命令或编辑器的内部命令
+  if (editorCommandRegex.test(command) || 
+      /^(:|[wqxcdiaplsuyjk][a-z]*|ZZ|dd|yy|gg|\d+G|\/[^\/]+\/|\?[^\?]+\?)$/i.test(command)) {
+    console.log(`Not adding editor command to history: ${command}`);
+    return false;
+  }
+  
   try {
     const history = loadCommandHistory();
     if (history.length > 0) {
@@ -5122,4 +5216,31 @@ const addToCommandHistory = (command) => {
     console.error("Failed to add command to history:", error);
     return false;
   }
+};
+
+// 处理终端输出的函数，用于检测命令提示符
+const processTerminalOutput = (processId, output) => {
+  const procInfo = childProcesses.get(processId);
+  if (!procInfo) return output;
+  
+  // 检测是否在编辑器模式并且收到了shell提示符
+  if (procInfo.editorMode) {
+    // 常见的shell提示符模式
+    const promptPatterns = [
+      /\$\s*$/, // bash/zsh $ prompt
+      />\s*$/, // Windows command prompt
+      /#\s*$/, // Root shell prompt
+      /\w+@\w+:[~\w\/]+[$#>]\s*$/, // username@hostname:/path$ style prompt
+      /[\w-]+:[\w~\/]+[$#>]\s*$/ // name:path$ style prompt
+    ];
+    
+    // 检查输出中是否包含shell提示符
+    if (promptPatterns.some(pattern => pattern.test(output))) {
+      procInfo.editorMode = false;
+      procInfo.possibleEditorExit = false;
+      console.log("Editor mode exited - detected shell prompt in output");
+    }
+  }
+  
+  return output;
 };

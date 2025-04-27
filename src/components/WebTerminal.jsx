@@ -319,7 +319,13 @@ const WebTerminal = ({
     let escapeBuffer = '';
     // 用于记录最后一个执行的命令，避免重复添加到历史记录
     let lastExecutedCommand = '';
+    // 跟踪编辑器模式状态
+    let inEditorMode = false;
     
+    // 识别编辑器命令的正则表达式
+    const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
+    
+    // 监听终端数据输出，用于检测编辑器特征
     term.onData((data) => {
       // 检查是否是ESC开头的转义序列（通常是方向键等特殊键）
       if (data === '\x1b') {
@@ -381,8 +387,15 @@ const WebTerminal = ({
             command = currentInputBuffer.trim();
           }
           
+          // 检测是否进入了编辑器模式
+          if (command && editorCommandRegex.test(command)) {
+            inEditorMode = true;
+            console.log("Editor mode detected in frontend:", command);
+          }
+          
           // 确保命令不为空且不是因Tab补全导致的部分命令，并且不与上一次执行的命令相同
-          if (command && !command.endsWith('\t') && command !== lastExecutedCommand) {
+          // 同时确保不在编辑器模式中
+          if (command && !command.endsWith('\t') && command !== lastExecutedCommand && !inEditorMode) {
             // 将命令添加到历史记录
             if (window.terminalAPI?.addToCommandHistory) {
               window.terminalAPI.addToCommandHistory(command);
@@ -434,6 +447,31 @@ const WebTerminal = ({
       // 发送数据到进程
       if (processId) {
         window.terminalAPI.sendToProcess(processId, data);
+      }
+    });
+    
+    // 添加输出监听，以检测编辑器退出
+    term.onLineFeed(() => {
+      // 当获得新的一行时，检查是否有shell提示符出现，这可能表示编辑器已退出
+      try {
+        // 检查最后几行，寻找shell提示符
+        const linesCount = term.buffer.active.length;
+        const lastRowsToCheck = Math.min(5, linesCount); // 检查最后5行
+        
+        for (let i = 0; i < lastRowsToCheck; i++) {
+          const line = term.buffer.active.getLine(linesCount - 1 - i)?.translateToString() || "";
+          // 检查是否包含典型的shell提示符
+          if (/[>$#]\s*$/.test(line) || /\w+@\w+:[~\w\/]+[$#>]\s*$/.test(line)) {
+            // 如果在编辑器模式中发现shell提示符，可能已经退出
+            if (inEditorMode) {
+              inEditorMode = false;
+              console.log("Editor mode exited in frontend - detected shell prompt");
+            }
+            break;
+          }
+        }
+      } catch (error) {
+        console.error("检测shell提示符出错:", error);
       }
     });
   };
@@ -1185,10 +1223,18 @@ const WebTerminal = ({
       });
   };
 
-  // 设置模拟终端的功能
+  // 设置模拟终端（用于无法使用IPC API时的回退）
   const setupSimulatedTerminal = (term) => {
-    // 处理用户输入
+    const term_prompt = "$ ";
     let userInput = "";
+    
+    // 初始化编辑器模式状态
+    let inEditorMode = false;
+    // 识别编辑器命令的正则表达式
+    const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
+
+    // 写入初始提示符
+    term.write(term_prompt);
 
     term.onKey(({ key, domEvent }) => {
       const printable =
@@ -1200,13 +1246,31 @@ const WebTerminal = ({
 
         // 处理命令
         if (userInput.trim() !== "") {
-          // 将命令添加到历史记录
-          if (window.terminalAPI?.addToCommandHistory) {
-            window.terminalAPI.addToCommandHistory(userInput.trim());
+          const command = userInput.trim();
+          
+          // 检测是否是编辑器命令
+          if (editorCommandRegex.test(command)) {
+            inEditorMode = true;
+            console.log("Editor mode detected in simulated terminal:", command);
+            // 模拟编辑器输出
+            term.writeln(`Simulated ${command} editor mode. Type 'exit' to return.`);
+          } 
+          // 检测是否退出编辑器模式
+          else if (inEditorMode && /^(exit|quit|q|:q|:wq|:x)$/i.test(command)) {
+            inEditorMode = false;
+            console.log("Editor mode exited in simulated terminal");
+          }
+          // 只有不在编辑器模式下才添加到历史记录
+          else if (!inEditorMode) {
+            // 将命令添加到历史记录
+            if (window.terminalAPI?.addToCommandHistory) {
+              window.terminalAPI.addToCommandHistory(command);
+            }
+            
+            // 如果 IPC API 不可用，使用本地处理命令
+            handleCommand(term, command);
           }
           
-          // 如果 IPC API 不可用，使用本地处理命令
-          handleCommand(term, userInput);
           term.write("$ ");
         } else {
           term.write("$ ");
