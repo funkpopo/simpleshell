@@ -311,8 +311,57 @@ const WebTerminal = ({
 
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
   const setupCommandDetection = (term, processId) => {
+    // 用于存储用户正在输入的命令
+    let currentInputBuffer = '';
+    // 标记上一个按键是否是特殊键序列的开始
+    let isEscapeSequence = false;
+    // 用于存储转义序列
+    let escapeBuffer = '';
+    // 用于记录最后一个执行的命令，避免重复添加到历史记录
+    let lastExecutedCommand = '';
+    
     term.onData((data) => {
-      // 检测回车键（通常是命令执行的触发）
+      // 检查是否是ESC开头的转义序列（通常是方向键等特殊键）
+      if (data === '\x1b') {
+        isEscapeSequence = true;
+        escapeBuffer = data;
+        // 方向键等特殊键不会影响命令历史记录，直接发送到进程
+        if (processId) {
+          window.terminalAPI.sendToProcess(processId, data);
+        }
+        return;
+      }
+      
+      // 处理转义序列的后续字符
+      if (isEscapeSequence) {
+        escapeBuffer += data;
+        
+        // 检查是否是常见的转义序列结束符
+        if (/[A-Za-z~]/.test(data)) {
+          isEscapeSequence = false;
+          escapeBuffer = '';
+        }
+        
+        // 转义序列不会记录到命令历史，直接发送到进程
+        if (processId) {
+          window.terminalAPI.sendToProcess(processId, data);
+        }
+        return;
+      }
+      
+      // 处理退格键
+      if (data === '\b' || data === '\x7f') {
+        if (currentInputBuffer.length > 0) {
+          currentInputBuffer = currentInputBuffer.slice(0, -1);
+        }
+        // 发送数据到进程
+        if (processId) {
+          window.terminalAPI.sendToProcess(processId, data);
+        }
+        return;
+      }
+      
+      // 检测回车键（命令执行的触发）
       if (data === "\r" || data === "\n") {
         try {
           // 获取终端的最后一行内容（可能包含用户输入的命令）
@@ -323,13 +372,27 @@ const WebTerminal = ({
               
           // 提取用户输入的命令（去除提示符）
           const commandMatch = lastLine.match(/[>$#]\s*(.+)$/);
+          
+          // 获取实际命令，优先使用终端行显示的内容（可能包含tab补全后的结果）
+          let command = '';
           if (commandMatch && commandMatch[1] && commandMatch[1].trim() !== "") {
-            const command = commandMatch[1].trim();
+            command = commandMatch[1].trim();
+          } else if (currentInputBuffer.trim() !== "") {
+            command = currentInputBuffer.trim();
+          }
+          
+          // 确保命令不为空且不是因Tab补全导致的部分命令，并且不与上一次执行的命令相同
+          if (command && !command.endsWith('\t') && command !== lastExecutedCommand) {
             // 将命令添加到历史记录
             if (window.terminalAPI?.addToCommandHistory) {
               window.terminalAPI.addToCommandHistory(command);
+              // 记录最后添加的命令，避免重复添加
+              lastExecutedCommand = command;
             }
           }
+
+          // 重置当前输入缓冲区
+          currentInputBuffer = '';
 
           // 检查这一行是否包含常见的全屏应用命令
           if (
@@ -359,6 +422,13 @@ const WebTerminal = ({
           // 忽略任何错误，不影响正常功能
           console.error("检测用户输入命令时出错:", error);
         }
+      } else if (data !== '\t') {
+        // 对于非Tab键输入，追加到输入缓冲区
+        // Tab键被排除因为它通常用于自动补全，不是实际输入的一部分
+        currentInputBuffer += data;
+      } else {
+        // 处理Tab键的特殊情况 - Tab补全通常会由shell提供后续反馈
+        // 此处不需要特别处理，因为终端会通过数据流返回补全后的结果
       }
 
       // 发送数据到进程
