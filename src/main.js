@@ -5036,8 +5036,47 @@ const saveCommandHistory = (commandHistory) => {
 const addToCommandHistory = (command) => {
   if (!command || command.trim() === '') return false;
   
+  // 检查是否是转义序列（通常是方向键等）
+  if (command.startsWith('\x1b') || command.includes('\x1b[')) {
+    return false;
+  }
+  
+  // 检查是否是包含tab键的不完整命令
+  if (command.includes('\t')) {
+    return false;
+  }
+  
   try {
     const history = loadCommandHistory();
+    if (history.length > 0) {
+      // 获取历史记录中的第一个命令，它是最近添加的
+      const latestCommand = typeof history[0] === 'string' ? history[0] : history[0].command;
+      if (latestCommand.startsWith(command) && latestCommand !== command) {
+        return false;
+      }
+      
+      if (command.startsWith(latestCommand) && latestCommand !== command) {
+        history.shift();
+      }
+      
+      // 扫描历史记录中可能的残缺命令前缀
+      for (let i = 0; i < history.length; i++) {
+        const historyItem = history[i];
+        const historyCommand = typeof historyItem === 'string' ? historyItem : historyItem.command;
+        if (command !== historyCommand && 
+            command.startsWith(historyCommand) && 
+            (
+              // 检查它们是否有相同的命令开头（直到第一个空格）
+              command.split(' ')[0] === historyCommand.split(' ')[0] ||
+              // 或者历史命令是当前命令的直接路径前缀
+              command.lastIndexOf('/') > 0 && historyCommand === command.substring(0, command.lastIndexOf('/'))
+            )) {
+          // 移除这个残缺命令
+          history.splice(i, 1);
+          i--; // 调整索引以适应数组变化
+        }
+      }
+    }
     
     // 检查命令是否已存在
     const existingIndex = history.findIndex(item => 
