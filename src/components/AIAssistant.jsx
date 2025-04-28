@@ -24,6 +24,7 @@ import SmartToyIcon from "@mui/icons-material/SmartToy";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
+import StopIcon from "@mui/icons-material/Stop";
 import ListItemButton from "@mui/material/ListItemButton";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Switch from "@mui/material/Switch";
@@ -131,6 +132,10 @@ function AIAssistant({ open, onClose }) {
 
   // 流式响应ID引用
   const streamResponseIdRef = React.useRef(null);
+  
+  // 添加中断控制器和状态
+  const abortControllerRef = React.useRef(null);
+  const [isGenerating, setIsGenerating] = React.useState(false);
 
   // API设置
   const [apiSettings, setApiSettings] = React.useState({
@@ -254,7 +259,7 @@ function AIAssistant({ open, onClose }) {
               current: settings.current
                 ? {
                     ...settings.current,
-                    streamEnabled: false, // 强制禁用流式响应
+                    streamEnabled: true,
                   }
                 : {
                     apiUrl: "",
@@ -265,7 +270,7 @@ function AIAssistant({ open, onClose }) {
               configs: Array.isArray(settings.configs)
                 ? settings.configs.map((config) => ({
                     ...config,
-                    streamEnabled: false, // 为所有配置禁用流式响应
+                    streamEnabled: true,
                   }))
                 : [],
             });
@@ -274,7 +279,7 @@ function AIAssistant({ open, onClose }) {
             if (settings.current) {
               setCurrentEditConfig({
                 ...settings.current,
-                streamEnabled: false, // 强制禁用流式响应
+                streamEnabled: true,
                 name: settings.current.name || "默认配置",
               });
             }
@@ -326,6 +331,8 @@ function AIAssistant({ open, onClose }) {
       streamResponseIdRef.current = null;
       setLoading(false);
       setIsSending(false);
+      setIsGenerating(false);
+      abortControllerRef.current = null;
     };
 
     // 处理流式响应错误
@@ -346,6 +353,8 @@ function AIAssistant({ open, onClose }) {
       streamResponseIdRef.current = null;
       setLoading(false);
       setIsSending(false);
+      setIsGenerating(false);
+      abortControllerRef.current = null;
     };
 
     // 注册事件监听器
@@ -435,6 +444,9 @@ function AIAssistant({ open, onClose }) {
         // 保存当前流式响应的消息ID
         streamResponseIdRef.current = newAIMessageId;
         
+        // 设置生成状态
+        setIsGenerating(true);
+        
         // 发送流式请求
         window.terminalAPI.sendAPIRequest(requestData, true);
         
@@ -481,8 +493,18 @@ function AIAssistant({ open, onClose }) {
       // 保存当前流式响应的消息ID
       streamResponseIdRef.current = newAIMessageId;
       
+      // 创建 AbortController 用于中断请求
+      abortControllerRef.current = new AbortController();
+      setIsGenerating(true);
+      
+      // 将 signal 添加到请求选项中
+      const requestWithSignal = {
+        ...requestOptions,
+        signal: abortControllerRef.current.signal
+      };
+      
       // 开始流式响应处理
-      const response = await fetch(apiUrl, requestOptions);
+      const response = await fetch(apiUrl, requestWithSignal);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -544,10 +566,21 @@ function AIAssistant({ open, onClose }) {
         }
       }
       
+      setIsGenerating(false);
+      abortControllerRef.current = null;
+      
       // 返回消息ID
       return newAIMessageId;
     } catch (error) {
-      throw error;
+      // 检查是否是中断错误
+      if (error.name === 'AbortError') {
+        console.log('请求被中断');
+      } else {
+        throw error;
+      }
+    } finally {
+      setIsGenerating(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -617,6 +650,7 @@ function AIAssistant({ open, onClose }) {
 
     // 设置发送状态
     setIsSending(true);
+    setIsGenerating(true);
 
     // 添加用户消息，使用唯一的ID生成方式
     const userMessageId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
@@ -1025,6 +1059,17 @@ function AIAssistant({ open, onClose }) {
       if (streamResponseIdRef.current) {
         streamResponseIdRef.current = null;
       }
+      
+      // 中断任何正在进行的请求
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
+      // 如果使用的是 Electron IPC 通道
+      if (window.terminalAPI && window.terminalAPI.abortAPIRequest) {
+        window.terminalAPI.abortAPIRequest();
+      }
     };
   }, []);
 
@@ -1037,6 +1082,26 @@ function AIAssistant({ open, onClose }) {
 
     return () => clearInterval(cleanupInterval);
   }, []);
+
+  // 添加中断生成功能
+  const handleStopGeneration = () => {
+    // 如果有活跃的 AbortController，使用它中断请求
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
+    // 如果使用的是 Electron IPC 通道
+    if (window.terminalAPI && window.terminalAPI.abortAPIRequest) {
+      window.terminalAPI.abortAPIRequest();
+    }
+    
+    // 重置状态
+    streamResponseIdRef.current = null;
+    setIsGenerating(false);
+    setLoading(false);
+    setIsSending(false);
+  };
 
   return (
     <Paper
@@ -1275,15 +1340,26 @@ function AIAssistant({ open, onClose }) {
                     }}
                   />
                   <span>
-                    <Tooltip title="发送">
-                      <IconButton
-                        color="primary"
-                        onClick={handleSendMessage}
-                        disabled={!inputMessage.trim() || loading || isSending}
-                      >
-                        <SendIcon />
-                      </IconButton>
-                    </Tooltip>
+                    {isGenerating ? (
+                      <Tooltip title="中断生成">
+                        <IconButton
+                          color="error"
+                          onClick={handleStopGeneration}
+                        >
+                          <StopIcon />
+                        </IconButton>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip title="发送">
+                        <IconButton
+                          color="primary"
+                          onClick={handleSendMessage}
+                          disabled={!inputMessage.trim() || loading || isSending}
+                        >
+                          <SendIcon />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </span>
                 </Box>
               </Box>

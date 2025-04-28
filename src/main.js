@@ -70,6 +70,12 @@ let nextRequestId = 1;
 // 全局变量
 const terminalProcesses = new Map(); // 存储终端进程ID映射
 
+// 保存全局事件对象，用于流式响应
+let globalEvent = null;
+
+// 用于保存流式请求的引用，以便取消
+let activeAPIRequest = null;
+
 // 存储活动的文件传输
 const activeTransfers = new Map();
 
@@ -2087,6 +2093,8 @@ function setupIPC(mainWindow) {
 
           res.on("end", () => {
             event.sender.send("stream-end", { tabId: "ai" });
+            // 清理请求引用
+            activeAPIRequest = null;
           });
         });
 
@@ -2096,7 +2104,12 @@ function setupIPC(mainWindow) {
             tabId: "ai",
             error: { message: error.message }
           });
+          // 清理请求引用
+          activeAPIRequest = null;
         });
+
+        // 保存请求引用以便后续中断
+        activeAPIRequest = req;
 
         // 发送请求数据
         req.write(
@@ -2208,10 +2221,38 @@ function setupIPC(mainWindow) {
       }
     } catch (error) {
       console.error("发送API请求时出错:", error);
-      return {
-        success: false,
-        error: error.message,
-      };
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 处理中断API请求
+  ipcMain.handle("ai:abortAPIRequest", async (event) => {
+    try {
+      if (activeAPIRequest) {
+        console.log("中断API请求");
+        
+        // 中断请求
+        activeAPIRequest.abort();
+        
+        // 发送中断消息给渲染进程
+        if (globalEvent) {
+          globalEvent.sender.send("stream-end", { 
+            tabId: "ai",
+            aborted: true 
+          });
+        }
+        
+        // 清理请求引用
+        activeAPIRequest = null;
+        
+        return { success: true, message: "请求已中断" };
+      } else {
+        console.log("没有活跃的API请求可以中断");
+        return { success: false, message: "没有活跃的请求" };
+      }
+    } catch (error) {
+      console.error("中断API请求时出错:", error);
+      return { success: false, error: error.message };
     }
   });
 
@@ -5327,6 +5368,3 @@ const processTerminalOutput = (processId, output) => {
   
   return output;
 };
-
-// 保存全局事件对象，用于流式响应
-let globalEvent = null;
