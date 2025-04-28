@@ -2003,6 +2003,9 @@ function setupIPC(mainWindow) {
   // 直接处理API请求，绕过CORS限制
   ipcMain.handle("ai:sendAPIRequest", async (event, requestData, isStream) => {
     try {
+      // 保存事件对象，用于后续消息发送
+      globalEvent = event;
+
       // 验证请求数据
       if (
         !requestData.url ||
@@ -2040,7 +2043,10 @@ function setupIPC(mainWindow) {
           if (res.statusCode !== 200) {
             event.sender.send(
               "stream-error",
-              `API请求失败: ${res.statusCode} ${res.statusMessage}`,
+              {
+                tabId: "ai",
+                error: { message: `API请求失败: ${res.statusCode} ${res.statusMessage}` }
+              }
             );
             return;
           }
@@ -2062,7 +2068,10 @@ function setupIPC(mainWindow) {
                     ) {
                       event.sender.send(
                         "stream-chunk",
-                        jsonData.choices[0].delta.content,
+                        {
+                          tabId: "ai",
+                          chunk: jsonData.choices[0].delta.content
+                        }
                       );
                     }
                   } catch (e) {
@@ -2077,13 +2086,16 @@ function setupIPC(mainWindow) {
           });
 
           res.on("end", () => {
-            event.sender.send("stream-end", "");
+            event.sender.send("stream-end", { tabId: "ai" });
           });
         });
 
         req.on("error", (error) => {
           console.error("请求出错:", error);
-          event.sender.send("stream-error", error.message);
+          event.sender.send("stream-error", { 
+            tabId: "ai",
+            error: { message: error.message }
+          });
         });
 
         // 发送请求数据
@@ -5000,6 +5012,11 @@ const sendAIPrompt = async (prompt, settings) => {
       return processAIPromptInline(prompt, settings);
     }
 
+    // 处理流式请求
+    if (settings && settings.streamEnabled) {
+      return sendStreamingAIPrompt(prompt, settings);
+    }
+
     // 生成唯一请求ID
     const requestId = nextRequestId++;
 
@@ -5037,6 +5054,72 @@ const sendAIPrompt = async (prompt, settings) => {
     console.error("Error sending AI prompt to worker:", error);
     // 如果与worker通信失败，回退到内联处理
     return processAIPromptInline(prompt, settings);
+  }
+};
+
+// 向Worker线程发送流式AI请求
+const sendStreamingAIPrompt = async (prompt, settings) => {
+  try {
+    // 确保worker线程已经创建
+    if (!aiWorker) {
+      aiWorker = createAIWorker();
+    }
+
+    // 如果worker创建失败，则使用内联处理
+    if (!aiWorker) {
+      console.log("Worker not available for streaming, using internal API");
+      return { error: "Worker不可用，无法使用流式响应" };
+    }
+
+    // 生成唯一请求ID
+    const requestId = nextRequestId++;
+    
+    // 用于接收来自worker的数据
+    aiWorker.on("message", (message) => {
+      if (message.id === requestId) {
+        if (message.chunk) {
+          // 流式数据块
+          BrowserWindow.fromWebContents(globalEvent.sender).webContents.send(
+            "stream-chunk", 
+            { 
+              tabId: "ai", 
+              chunk: message.chunk 
+            }
+          );
+        } else if (message.streamEnd) {
+          // 流式请求结束
+          BrowserWindow.fromWebContents(globalEvent.sender).webContents.send(
+            "stream-end", 
+            { 
+              tabId: "ai" 
+            }
+          );
+        } else if (message.error) {
+          // 流式请求错误
+          BrowserWindow.fromWebContents(globalEvent.sender).webContents.send(
+            "stream-error", 
+            { 
+              tabId: "ai", 
+              error: message.error 
+            }
+          );
+        }
+      }
+    });
+
+    // 向worker发送流式请求
+    aiWorker.postMessage({
+      id: requestId,
+      type: "stream",
+      prompt,
+      settings,
+    });
+
+    // 返回成功通知
+    return { success: true, message: "流式请求已开始" };
+  } catch (error) {
+    console.error("Error sending streaming AI prompt to worker:", error);
+    return { error: `流式请求失败: ${error.message}` };
   }
 };
 
@@ -5244,3 +5327,6 @@ const processTerminalOutput = (processId, output) => {
   
   return output;
 };
+
+// 保存全局事件对象，用于流式响应
+let globalEvent = null;

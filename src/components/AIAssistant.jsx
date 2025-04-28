@@ -25,6 +25,8 @@ import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import ListItemButton from "@mui/material/ListItemButton";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import Switch from "@mui/material/Switch";
 
 // 消息样式
 const MessageItem = styled(ListItem)(({ theme, isuser }) => ({
@@ -127,13 +129,16 @@ function AIAssistant({ open, onClose }) {
   // 最近发送的消息时间戳
   const lastSendTimeRef = React.useRef(0);
 
+  // 流式响应ID引用
+  const streamResponseIdRef = React.useRef(null);
+
   // API设置
   const [apiSettings, setApiSettings] = React.useState({
     current: {
       apiUrl: "",
       apiKey: "",
       model: "",
-      streamEnabled: false,
+      streamEnabled: true, // 默认启用流式响应
     },
     configs: [],
   });
@@ -295,6 +300,67 @@ function AIAssistant({ open, onClose }) {
     }
   };
 
+  // 在组件挂载时设置流式事件监听器
+  React.useEffect(() => {
+    // 处理流式数据块
+    const handleStreamChunk = (event) => {
+      const { detail } = event;
+      if (detail && detail.chunk && streamResponseIdRef.current) {
+        // 更新当前AI响应的内容
+        setMessages((prev) => {
+          return prev.map((msg) => {
+            if (msg.id === streamResponseIdRef.current) {
+              return {
+                ...msg,
+                text: msg.text + detail.chunk,
+              };
+            }
+            return msg;
+          });
+        });
+      }
+    };
+
+    // 处理流式响应结束
+    const handleStreamEnd = (event) => {
+      streamResponseIdRef.current = null;
+      setLoading(false);
+      setIsSending(false);
+    };
+
+    // 处理流式响应错误
+    const handleStreamError = (event) => {
+      const { detail } = event;
+      if (detail && detail.error) {
+        // 添加错误消息
+        const errorMessageId = `error-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        const errorMessage = {
+          id: errorMessageId,
+          text: `错误: ${detail.error.message}`,
+          isUser: false,
+          isError: true,
+          timestamp: Date.now(),
+        };
+        safelyAddMessage(errorMessage);
+      }
+      streamResponseIdRef.current = null;
+      setLoading(false);
+      setIsSending(false);
+    };
+
+    // 注册事件监听器
+    window.addEventListener("ai-stream-chunk", handleStreamChunk);
+    window.addEventListener("ai-stream-end", handleStreamEnd);
+    window.addEventListener("ai-stream-error", handleStreamError);
+
+    // 清理函数
+    return () => {
+      window.removeEventListener("ai-stream-chunk", handleStreamChunk);
+      window.removeEventListener("ai-stream-end", handleStreamEnd);
+      window.removeEventListener("ai-stream-error", handleStreamError);
+    };
+  }, []);
+
   // 使用OpenAI API发送请求
   const sendOpenAIRequest = async (prompt, settings = apiSettings.current) => {
     if (!settings.apiUrl || !settings.apiKey || !settings.model) {
@@ -321,12 +387,16 @@ function AIAssistant({ open, onClose }) {
         body: JSON.stringify({
           model: settings.model,
           messages: messages,
-          stream: false, // 总是使用非流式响应
+          stream: settings.streamEnabled, // 使用设置中的流式响应标志
         }),
       };
 
-      // 始终使用标准响应处理
-      return handleStandardResponse(settings.apiUrl, requestOptions);
+      // 根据流式设置选择处理方式
+      if (settings.streamEnabled) {
+        return handleStreamingResponse(settings.apiUrl, requestOptions);
+      } else {
+        return handleStandardResponse(settings.apiUrl, requestOptions);
+      }
     }
   };
 
@@ -346,18 +416,41 @@ function AIAssistant({ open, onClose }) {
         apiKey: settings.apiKey,
         model: settings.model,
         messages: messages,
-        stream: false, // 禁用流式响应
+        stream: settings.streamEnabled, // 使用设置中的流式响应标志
       };
 
-      // 使用非流式请求
-      const response = await window.terminalAPI.sendAPIRequest(
-        requestData,
-        false,
-      );
-      if (response.error) {
-        throw new Error(response.error);
+      // 如果启用流式响应
+      if (settings.streamEnabled) {
+        // 创建一个空的AI响应消息
+        const newAIMessageId = `ai-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
+        const aiMessage = {
+          id: newAIMessageId,
+          text: "", // 初始为空文本
+          type: "ai",
+          isUser: false,
+          timestamp: Date.now(),
+        };
+        safelyAddMessage(aiMessage);
+        
+        // 保存当前流式响应的消息ID
+        streamResponseIdRef.current = newAIMessageId;
+        
+        // 发送流式请求
+        window.terminalAPI.sendAPIRequest(requestData, true);
+        
+        // 返回消息ID，表示已开始处理
+        return newAIMessageId;
+      } else {
+        // 使用非流式请求
+        const response = await window.terminalAPI.sendAPIRequest(
+          requestData,
+          false,
+        );
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        return response.content;
       }
-      return response.content;
     } catch (error) {
       if (
         error.message === "Failed to fetch" ||
@@ -371,24 +464,91 @@ function AIAssistant({ open, onClose }) {
     }
   };
 
-  // 添加新的AI消息
-  const addNewAIMessage = (text) => {
-    // 使用时间戳和随机字符串确保消息ID完全唯一
-    const newAIMessageId = `ai-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
-
-    // 添加一个新的消息
-    setMessages((prev) => [
-      ...prev,
-      {
+  // 处理流式响应
+  const handleStreamingResponse = async (apiUrl, requestOptions) => {
+    try {
+      // 创建一个空的AI响应消息
+      const newAIMessageId = `ai-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
+      const aiMessage = {
         id: newAIMessageId,
-        text,
+        text: "", // 初始为空文本
         type: "ai",
         isUser: false,
         timestamp: Date.now(),
-      },
-    ]);
-
-    return newAIMessageId;
+      };
+      safelyAddMessage(aiMessage);
+      
+      // 保存当前流式响应的消息ID
+      streamResponseIdRef.current = newAIMessageId;
+      
+      // 开始流式响应处理
+      const response = await fetch(apiUrl, requestOptions);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          `API请求失败: ${response.status} ${errorData.error?.message || response.statusText}`,
+        );
+      }
+      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      
+      // 循环读取流式数据
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          break;
+        }
+        
+        // 解码数据
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        
+        // 处理数据行
+        let newlineIndex;
+        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+          
+          if (line.trim() === "") continue;
+          if (line.trim() === "data: [DONE]") continue;
+          
+          // 处理数据行
+          if (line.startsWith("data: ")) {
+            try {
+              const jsonData = JSON.parse(line.slice(6));
+              if (jsonData.choices && jsonData.choices[0].delta) {
+                const { content } = jsonData.choices[0].delta;
+                if (content) {
+                  // 更新消息内容
+                  setMessages((prev) => {
+                    return prev.map((msg) => {
+                      if (msg.id === newAIMessageId) {
+                        return {
+                          ...msg,
+                          text: msg.text + content,
+                        };
+                      }
+                      return msg;
+                    });
+                  });
+                }
+              }
+            } catch (e) {
+              console.error("解析响应行出错:", e);
+            }
+          }
+        }
+      }
+      
+      // 返回消息ID
+      return newAIMessageId;
+    } catch (error) {
+      throw error;
+    }
   };
 
   // 处理标准响应
@@ -418,6 +578,26 @@ function AIAssistant({ open, onClose }) {
       }
       throw error;
     }
+  };
+
+  // 添加新的AI消息
+  const addNewAIMessage = (text) => {
+    // 使用时间戳和随机字符串确保消息ID完全唯一
+    const newAIMessageId = `ai-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
+
+    // 添加一个新的消息
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: newAIMessageId,
+        text,
+        type: "ai",
+        isUser: false,
+        timestamp: Date.now(),
+      },
+    ]);
+
+    return newAIMessageId;
   };
 
   // 处理发送消息
@@ -468,15 +648,24 @@ function AIAssistant({ open, onClose }) {
       // 直接调用OpenAI API
       const response = await sendOpenAIRequest(currentInput);
 
-      // 创建AI响应消息
-      const aiResponseId = `ai-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
-      const aiResponse = {
-        id: aiResponseId,
-        text: response,
-        isUser: false,
-        timestamp: Date.now(),
-      };
-      safelyAddMessage(aiResponse);
+      // 如果是流式响应，不需要创建新的AI响应消息，因为已经在handleStreamingResponse中创建了
+      if (!apiSettings.current.streamEnabled) {
+        // 创建AI响应消息
+        const aiResponseId = `ai-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
+        const aiResponse = {
+          id: aiResponseId,
+          text: response,
+          isUser: false,
+          timestamp: Date.now(),
+        };
+        safelyAddMessage(aiResponse);
+      }
+      
+      // 对于流式响应，setLoading和setIsSending会在流结束事件中被处理
+      if (!apiSettings.current.streamEnabled) {
+        setLoading(false);
+        setIsSending(false);
+      }
     } catch (error) {
       console.error("发送消息出错:", error);
       // 添加错误消息
@@ -489,7 +678,7 @@ function AIAssistant({ open, onClose }) {
         timestamp: Date.now(),
       };
       safelyAddMessage(errorMessage);
-    } finally {
+      
       setLoading(false);
       setIsSending(false);
     }
@@ -568,7 +757,7 @@ function AIAssistant({ open, onClose }) {
         apiKey: currentEditConfig.apiKey,
         model: currentEditConfig.model,
         messages: messages,
-        stream: false,
+        stream: false, // 测试时使用非流式请求
       };
 
       // 使用新的API请求方法
@@ -832,7 +1021,10 @@ function AIAssistant({ open, onClose }) {
   // 组件卸载时清理状态
   React.useEffect(() => {
     return () => {
-      // 无需流式处理相关的清理
+      // 如果有流式响应正在进行，需要中断它
+      if (streamResponseIdRef.current) {
+        streamResponseIdRef.current = null;
+      }
     };
   }, []);
 
@@ -1299,6 +1491,21 @@ function AIAssistant({ open, onClose }) {
                     placeholder="gpt-3.5-turbo"
                     helperText="例如: gpt-3.5-turbo, gpt-4, gpt-4-turbo"
                     size="small"
+                  />
+
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={currentEditConfig.streamEnabled}
+                        onChange={(e) => setCurrentEditConfig(prev => ({
+                          ...prev,
+                          streamEnabled: e.target.checked
+                        }))}
+                        name="streamEnabled"
+                      />
+                    }
+                    label="启用流式响应"
+                    sx={{ mt: 1 }}
                   />
 
                   <Box sx={{ mt: 2, display: "flex", gap: 1 }}>
