@@ -713,6 +713,10 @@ function App() {
 
   // 关闭AI助手侧边栏
   const handleCloseAIAssistant = () => {
+    // 清理会话记录，提高性能
+    if (window.aiAssistantRef && window.aiAssistantRef.current) {
+      window.aiAssistantRef.current.clearMessages();
+    }
     setAiAssistantOpen(false);
   };
 

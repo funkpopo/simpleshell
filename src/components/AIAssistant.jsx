@@ -1103,6 +1103,31 @@ function AIAssistant({ open, onClose }) {
     setIsSending(false);
   };
 
+  // 将组件实例暴露给父组件
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (!window.aiAssistantRef) {
+        window.aiAssistantRef = { current: null };
+      }
+      window.aiAssistantRef.current = {
+        clearMessages: () => {
+          setMessages([
+            {
+              id: "welcome-1",
+              text: "你好！我是AI助手，有什么可以帮助您的吗？",
+              isUser: false,
+            },
+          ]);
+        }
+      };
+    }
+    return () => {
+      if (typeof window !== 'undefined' && window.aiAssistantRef) {
+        window.aiAssistantRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <Paper
       sx={{
