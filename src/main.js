@@ -5252,11 +5252,6 @@ const addToCommandHistory = (command) => {
     return false;
   }
   
-  // 检查是否是包含tab键的不完整命令
-  if (command.includes('\t')) {
-    return false;
-  }
-  
   // 检测命令是否可能是编辑器命令或编辑器的内部命令
   if (editorCommandRegex.test(command) || 
       /^(:|[wqxcdiaplsuyjk][a-z]*|ZZ|dd|yy|gg|\d+G|\/[^\/]+\/|\?[^\?]+\?)$/i.test(command)) {
@@ -5274,7 +5269,7 @@ const addToCommandHistory = (command) => {
       }
       
       if (command.startsWith(latestCommand) && latestCommand !== command) {
-        history.shift();
+        history.shift(); // 移除最近的命令，即将被当前命令替换
       }
       
       // 扫描历史记录中可能的残缺命令前缀
@@ -5282,12 +5277,13 @@ const addToCommandHistory = (command) => {
         const historyItem = history[i];
         const historyCommand = typeof historyItem === 'string' ? historyItem : historyItem.command;
         if (command !== historyCommand && 
-            command.startsWith(historyCommand) && 
+            (command.startsWith(historyCommand) || historyCommand.startsWith(command)) && 
             (
-              // 检查它们是否有相同的命令开头（直到第一个空格）
+              // 检查它们是否有相同的命令开头（直到第一个空格），说明是同一命令的不同补全阶段
               command.split(' ')[0] === historyCommand.split(' ')[0] ||
-              // 或者历史命令是当前命令的直接路径前缀
-              command.lastIndexOf('/') > 0 && historyCommand === command.substring(0, command.lastIndexOf('/'))
+              // 或者历史命令是当前命令的直接路径前缀，说明是文件路径补全的不同阶段
+              (command.lastIndexOf('/') > 0 && 
+               historyCommand === command.substring(0, command.lastIndexOf('/')))
             )) {
           // 移除这个残缺命令
           history.splice(i, 1);

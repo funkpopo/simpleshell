@@ -321,6 +321,10 @@ const WebTerminal = ({
     let lastExecutedCommand = '';
     // 跟踪编辑器模式状态
     let inEditorMode = false;
+    // 标记是否刚刚使用了Tab补全
+    let tabCompletionUsed = false;
+    // 用于临时存储当前行位置和内容，以便在Tab补全后能恢复正确位置
+    let currentLineBeforeTab = null;
     
     // 识别编辑器命令的正则表达式
     const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
@@ -367,6 +371,22 @@ const WebTerminal = ({
         return;
       }
       
+      // 处理Tab键，标记Tab补全被使用
+      if (data === '\t') {
+        tabCompletionUsed = true;
+        // 存储当前行内容，以便于之后获取Tab补全后的完整命令
+        currentLineBeforeTab = {
+          y: term.buffer.active.cursorY,
+          content: term.buffer.active.getLine(term.buffer.active.cursorY)?.translateToString() || ""
+        };
+        
+        // 发送数据到进程
+        if (processId) {
+          window.terminalAPI.sendToProcess(processId, data);
+        }
+        return;
+      }
+      
       // 检测回车键（命令执行的触发）
       if (data === "\r" || data === "\n") {
         try {
@@ -377,14 +397,33 @@ const WebTerminal = ({
               ?.translateToString() || "";
               
           // 提取用户输入的命令（去除提示符）
-          const commandMatch = lastLine.match(/[>$#]\s*(.+)$/);
+          // 改进提示符检测，支持更多类型的shell提示符
+          const commandMatch = lastLine.match(/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/);
           
-          // 获取实际命令，优先使用终端行显示的内容（可能包含tab补全后的结果）
+          // 获取实际命令，优先使用终端行显示的内容（包含tab补全后的结果）
           let command = '';
           if (commandMatch && commandMatch[1] && commandMatch[1].trim() !== "") {
+            // 优先使用从终端行获取的命令，这包含了Tab补全后的结果
             command = commandMatch[1].trim();
           } else if (currentInputBuffer.trim() !== "") {
+            // 如果无法从终端行获取，回退到使用输入缓冲区
             command = currentInputBuffer.trim();
+          }
+          
+          // 如果发现命令为空但刚刚使用了Tab补全，尝试从整个终端缓冲区捕获命令
+          if ((!command || command === "") && tabCompletionUsed && currentLineBeforeTab) {
+            // 搜索从当前行向上几行，查找可能出现的完整命令
+            const linesCount = term.buffer.active.length;
+            const linesToCheck = Math.min(5, linesCount); // 检查最近5行
+            
+            for (let i = 0; i < linesToCheck; i++) {
+              const line = term.buffer.active.getLine(term.buffer.active.cursorY - i)?.translateToString() || "";
+              const potentialCommandMatch = line.match(/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/);
+              if (potentialCommandMatch && potentialCommandMatch[1] && potentialCommandMatch[1].trim() !== "") {
+                command = potentialCommandMatch[1].trim();
+                break;
+              }
+            }
           }
           
           // 检测是否进入了编辑器模式
@@ -393,10 +432,9 @@ const WebTerminal = ({
             console.log("Editor mode detected in frontend:", command);
           }
           
-          // 确保命令不为空且不是因Tab补全导致的部分命令，并且不与上一次执行的命令相同
-          // 同时确保不在编辑器模式中
-          if (command && !command.endsWith('\t') && command !== lastExecutedCommand && !inEditorMode) {
-            // 将命令添加到历史记录
+          // 确保命令不为空且不与上一次执行的命令相同，并且不在编辑器模式中
+          if (command && command !== lastExecutedCommand && !inEditorMode) {
+            // 记录当前命令作为完整命令，不管是否使用了Tab补全
             if (window.terminalAPI?.addToCommandHistory) {
               window.terminalAPI.addToCommandHistory(command);
               // 记录最后添加的命令，避免重复添加
@@ -404,8 +442,10 @@ const WebTerminal = ({
             }
           }
 
-          // 重置当前输入缓冲区
+          // 重置当前输入缓冲区和Tab补全状态
           currentInputBuffer = '';
+          tabCompletionUsed = false;
+          currentLineBeforeTab = null;
 
           // 检查这一行是否包含常见的全屏应用命令
           if (
@@ -437,11 +477,7 @@ const WebTerminal = ({
         }
       } else if (data !== '\t') {
         // 对于非Tab键输入，追加到输入缓冲区
-        // Tab键被排除因为它通常用于自动补全，不是实际输入的一部分
         currentInputBuffer += data;
-      } else {
-        // 处理Tab键的特殊情况 - Tab补全通常会由shell提供后续反馈
-        // 此处不需要特别处理，因为终端会通过数据流返回补全后的结果
       }
 
       // 发送数据到进程
@@ -461,7 +497,7 @@ const WebTerminal = ({
         for (let i = 0; i < lastRowsToCheck; i++) {
           const line = term.buffer.active.getLine(linesCount - 1 - i)?.translateToString() || "";
           // 检查是否包含典型的shell提示符
-          if (/[>$#]\s*$/.test(line) || /\w+@\w+:[~\w\/]+[$#>]\s*$/.test(line)) {
+          if (/[>$#][>$#]?\s*$/.test(line) || /\w+@\w+:[~\w\/]+[$#>]\s*$/.test(line)) {
             // 如果在编辑器模式中发现shell提示符，可能已经退出
             if (inEditorMode) {
               inEditorMode = false;
@@ -472,6 +508,33 @@ const WebTerminal = ({
         }
       } catch (error) {
         console.error("检测shell提示符出错:", error);
+      }
+    });
+    
+    // 添加终端数据处理监听，用于捕获Tab补全后的内容
+    term.onRender(() => {
+      // 如果使用了Tab补全并且有存储的之前行内容
+      if (tabCompletionUsed && currentLineBeforeTab) {
+        try {
+          // 获取当前行内容，看是否有变化（可能是Tab补全导致的）
+          const currentLine = term.buffer.active.getLine(term.buffer.active.cursorY)?.translateToString() || "";
+          const previousContent = currentLineBeforeTab.content;
+          
+          // 如果行内容发生了变化，可能是Tab补全生效了
+          if (currentLine !== previousContent) {
+            // 尝试提取命令部分（去除提示符）
+            const commandMatch = currentLine.match(/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/);
+            if (commandMatch && commandMatch[1] && commandMatch[1].trim() !== "") {
+              // 更新当前输入缓冲区为Tab补全后的命令
+              currentInputBuffer = commandMatch[1].trim();
+            }
+          }
+          
+          // 重置，因为我们已经处理了这次Tab补全
+          currentLineBeforeTab = null;
+        } catch (error) {
+          console.error("处理Tab补全后内容时出错:", error);
+        }
       }
     });
   };
