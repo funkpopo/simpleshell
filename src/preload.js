@@ -255,4 +255,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 在外部浏览器打开链接
   openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
+
+  // UI设置相关API
+  loadUISettings: () => ipcRenderer.invoke("settings:loadUISettings"),
+  saveUISettings: (settings) => ipcRenderer.invoke("settings:saveUISettings", settings),
 });

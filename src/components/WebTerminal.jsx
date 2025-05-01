@@ -577,6 +577,19 @@ const WebTerminal = ({
     brightWhite: "#eeeeec",
   };
 
+  // 获取存储的字体大小或使用默认值
+  const getFontSize = async () => {
+    try {
+      if (window.terminalAPI?.loadUISettings) {
+        const settings = await window.terminalAPI.loadUISettings();
+        return settings.fontSize || 14;
+      }
+    } catch (error) {
+      console.error("Failed to load font size from config:", error);
+    }
+    return 14;
+  };
+
   // 如果refreshKey变化，清除缓存强制重新创建终端
   useEffect(() => {
     if (refreshKey && terminalCache[tabId]) {
@@ -598,11 +611,41 @@ const WebTerminal = ({
       } catch (error) {
         console.error("Failed to dispose terminal:", error);
       }
-
       delete terminalCache[tabId];
-      delete fitAddonCache[tabId];
     }
   }, [refreshKey, tabId]);
+
+  // 监听设置变更事件
+  useEffect(() => {
+    const handleSettingsChanged = async (event) => {
+      const { fontSize } = event.detail;
+      
+      if (terminalRef.current && terminalCache[tabId] && fitAddonRef.current) {
+        // 更新终端字体大小
+        terminalCache[tabId].options.fontSize = parseInt(fontSize, 10);
+        
+        // 触发终端大小调整
+        setTimeout(() => {
+          if (fitAddonRef.current) {
+            fitAddonRef.current.fit();
+            
+            // 同步到后端进程
+            const processId = processCache[tabId];
+            if (processId && window.terminalAPI?.resizeTerminal) {
+              const dims = terminalCache[tabId].cols + "," + terminalCache[tabId].rows;
+              window.terminalAPI.resizeTerminal(processId, dims);
+            }
+          }
+        }, 100);
+      }
+    };
+
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    
+    return () => {
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, [tabId]);
 
   useEffect(() => {
     // 添加全局样式
@@ -637,7 +680,7 @@ const WebTerminal = ({
           cursorBlink: true,
           theme: terminalTheme, // 使用固定的终端主题
           fontFamily: 'Consolas, "Courier New", monospace',
-          fontSize: 14,
+          fontSize: 14, // 默认大小，稍后会更新
           scrollback: 10000,
           allowTransparency: true,
           cols: 120, // 设置更宽的初始列数
@@ -650,6 +693,22 @@ const WebTerminal = ({
           rightClickSelectsWord: false, // 禁用右键点击选中单词，使用自定义右键菜单
           copyOnSelect: false, // 选中后不自动复制
         });
+
+        // 异步加载字体大小设置并应用
+        (async () => {
+          try {
+            const fontSize = await getFontSize();
+            term.options.fontSize = fontSize;
+            // 应用字体大小后自动调整大小
+            setTimeout(() => {
+              if (fitAddon) {
+                fitAddon.fit();
+              }
+            }, 0);
+          } catch (error) {
+            console.error("Failed to apply font size:", error);
+          }
+        })();
 
         // 创建并加载插件
         fitAddon = new FitAddon();
@@ -1793,6 +1852,30 @@ const WebTerminal = ({
       window.removeEventListener("tabChanged", handleTabChanged);
     };
   }, [tabId]);
+
+  // 在创建终端前获取当前字体大小
+  const createTerminal = () => {
+    if (terminalRef.current) {
+      // 根据存储的设置获取字体大小
+      const currentFontSize = getFontSize();
+      
+      // 创建新的终端实例
+      const newTerm = new Terminal({
+        cursorBlink: true,
+        cursorStyle: "block",
+        scrollback: 10000,
+        theme: terminalTheme,
+        fontSize: currentFontSize, // 使用存储的字体大小
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        allowTransparency: true,
+        disableStdin: false, // 允许用户输入
+        convertEol: true, // 将回车转换为换行
+        // ... 其他现有选项
+      });
+
+      // ... 其余代码保持不变
+    }
+  };
 
   return (
     <Box

@@ -814,18 +814,23 @@ if (require("electron-squirrel-startup")) {
 }
 
 // 获取配置文件路径
-const getConfigPath = () => {
-  // 判断是开发环境还是生产环境
-  const isDev = process.env.NODE_ENV === "development";
-
-  if (isDev) {
-    // 开发环境：保存到项目根目录
-    return path.join(process.cwd(), "config.json");
-  } else {
-    // 生产环境：保存到exe同级目录
-    return path.join(path.dirname(app.getPath("exe")), "config.json");
+function getConfigPath() {
+  try {
+    // 判断是开发环境还是生产环境
+    const isDev = process.env.NODE_ENV === "development";
+    
+    if (isDev) {
+      // 开发环境：保存到项目根目录
+      return path.join(process.cwd(), "config.json");
+    } else {
+      // 生产环境：保存到exe同级目录
+      return path.join(path.dirname(app.getPath("exe")), "config.json");
+    }
+  } catch (error) {
+    console.error("获取配置文件路径失败:", error);
+    return path.join(app.getPath("userData"), "config.json");
   }
-};
+}
 
 // 加载连接配置
 const loadConnectionsConfig = () => {
@@ -4256,6 +4261,15 @@ function setupIPC(mainWindow) {
       return { success: false, error: `下载文件夹失败: ${error.message}` };
     }
   });
+
+  // UI设置相关API
+  ipcMain.handle("settings:loadUISettings", async () => {
+    return await loadUISettings();
+  });
+  
+  ipcMain.handle("settings:saveUISettings", async (event, settings) => {
+    return await saveUISettings(settings);
+  });
 }
 
 // 获取本地系统信息
@@ -5364,3 +5378,66 @@ const processTerminalOutput = (processId, output) => {
   
   return output;
 };
+
+// 加载UI设置
+async function loadUISettings() {
+  try {
+    const configPath = getConfigPath();
+    
+    // 检查配置文件是否存在
+    if (!fs.existsSync(configPath)) {
+      // 返回默认设置
+      return {
+        language: "zh-CN",
+        fontSize: 14
+      };
+    }
+    
+    // 读取配置文件
+    const data = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(data);
+    
+    // 如果配置中没有uiSettings，返回默认值
+    if (!config.uiSettings) {
+      return {
+        language: "zh-CN",
+        fontSize: 14
+      };
+    }
+    
+    return config.uiSettings;
+  } catch (error) {
+    console.error("加载UI设置失败:", error);
+    // 出错时返回默认设置
+    return {
+      language: "zh-CN",
+      fontSize: 14
+    };
+  }
+}
+
+// 保存UI设置
+async function saveUISettings(settings) {
+  try {
+    const configPath = getConfigPath();
+    let config = {};
+    
+    // 检查配置文件是否存在
+    if (fs.existsSync(configPath)) {
+      // 读取现有配置
+      const data = fs.readFileSync(configPath, "utf8");
+      config = JSON.parse(data);
+    }
+    
+    // 更新UI设置
+    config.uiSettings = settings;
+    
+    // 写入配置文件
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+    
+    return { success: true };
+  } catch (error) {
+    console.error("保存UI设置失败:", error);
+    return { success: false, error: error.message };
+  }
+}

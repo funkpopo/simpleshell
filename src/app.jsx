@@ -28,6 +28,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PowerOffIcon from "@mui/icons-material/PowerOff";
 import FolderIcon from "@mui/icons-material/Folder";
+import SettingsIcon from "@mui/icons-material/Settings";
 import Tooltip from "@mui/material/Tooltip";
 import Paper from "@mui/material/Paper";
 import HistoryIcon from "@mui/icons-material/History";
@@ -40,6 +41,8 @@ import AIAssistant from "./components/AIAssistant.jsx";
 import AIIcon from "./components/AIIcon.jsx";
 import FileManager from "./components/FileManager.jsx";
 import CommandHistory from "./components/CommandHistory.jsx";
+import Settings from "./components/Settings.jsx";
+import Divider from "@mui/material/Divider";
 
 // 自定义标签页组件
 function CustomTab(props) {
@@ -298,14 +301,20 @@ function App() {
   const [draggedTabIndex, setDraggedTabIndex] = React.useState(null);
 
   // 主题模式状态
-  const [darkMode, setDarkMode] = React.useState(true);
+  const [darkMode, setDarkMode] = React.useState(
+    localStorage.getItem("terminalDarkMode") === "true",
+  );
 
   // 标签页状态
-  const [tabs, setTabs] = React.useState([{ id: "welcome", label: "欢迎" }]);
+  const [tabs, setTabs] = React.useState([
+    { id: "welcome", label: "欢迎" },
+  ]);
   const [currentTab, setCurrentTab] = React.useState(0);
 
   // 存储终端实例的缓存
-  const [terminalInstances, setTerminalInstances] = React.useState({});
+  const [terminalInstances, setTerminalInstances] = React.useState({
+    usePowershell: false,
+  });
 
   // 连接管理侧边栏状态
   const [connectionManagerOpen, setConnectionManagerOpen] =
@@ -328,6 +337,9 @@ function App() {
 
   // 连接配置状态
   const [connections, setConnections] = React.useState([]);
+
+  // 设置对话框状态
+  const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false);
 
   // 应用启动时加载连接配置
   React.useEffect(() => {
@@ -420,6 +432,17 @@ function App() {
   // 关闭关于对话框
   const handleCloseAbout = () => {
     setAboutDialogOpen(false);
+  };
+
+  // 打开设置对话框
+  const handleOpenSettings = () => {
+    setAnchorEl(null);
+    setSettingsDialogOpen(true);
+  };
+
+  // 关闭设置对话框
+  const handleCloseSettings = () => {
+    setSettingsDialogOpen(false);
   };
 
   // 处理应用退出
@@ -748,6 +771,45 @@ function App() {
     setCommandHistoryOpen(false);
   };
 
+  // 处理设置变更
+  React.useEffect(() => {
+    const handleSettingsChanged = (event) => {
+      const { language, fontSize } = event.detail;
+      console.log(`Settings changed: language=${language}, fontSize=${fontSize}`);
+      
+      // 应用字号设置
+      document.documentElement.style.fontSize = `${fontSize}px`;
+      
+      // 语言切换逻辑将来可以在这里实现
+      // 这里可以添加i18n库的集成
+    };
+
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    
+    // 初始化应用设置
+    const loadInitialSettings = async () => {
+      try {
+        if (window.terminalAPI?.loadUISettings) {
+          const settings = await window.terminalAPI.loadUISettings();
+          if (settings) {
+            // 应用字号设置
+            document.documentElement.style.fontSize = `${settings.fontSize || 14}px`;
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load initial UI settings:", error);
+        // 使用默认字体大小
+        document.documentElement.style.fontSize = "14px";
+      }
+    };
+    
+    loadInitialSettings();
+
+    return () => {
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, []);
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -809,6 +871,11 @@ function App() {
               open={open}
               onClose={handleClose}
             >
+              <MenuItem onClick={handleOpenSettings}>
+                <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
+                设置
+              </MenuItem>
+              <Divider />
               <MenuItem onClick={handleOpenAbout}>关于</MenuItem>
               <MenuItem onClick={handleExit}>退出</MenuItem>
             </Menu>
@@ -1234,6 +1301,9 @@ function App() {
 
       {/* 关于对话框 */}
       <AboutDialog open={aboutDialogOpen} onClose={handleCloseAbout} />
+
+      {/* 设置对话框 */}
+      <Settings open={settingsDialogOpen} onClose={handleCloseSettings} />
     </ThemeProvider>
   );
 }
