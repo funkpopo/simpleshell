@@ -32,6 +32,8 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import Tooltip from "@mui/material/Tooltip";
 import Paper from "@mui/material/Paper";
 import HistoryIcon from "@mui/icons-material/History";
+import InfoIcon from "@mui/icons-material/Info";
+import ExitToAppIcon from "@mui/icons-material/ExitToApp";
 import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
 import TabPanel from "./components/TabPanel.jsx";
@@ -875,9 +877,14 @@ function App() {
                 <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
                 设置
               </MenuItem>
-              <Divider />
-              <MenuItem onClick={handleOpenAbout}>关于</MenuItem>
-              <MenuItem onClick={handleExit}>退出</MenuItem>
+              <MenuItem onClick={handleOpenAbout}>
+                <InfoIcon fontSize="small" sx={{ mr: 1 }} />
+                关于
+              </MenuItem>
+              <MenuItem onClick={handleExit}>
+                <ExitToAppIcon fontSize="small" sx={{ mr: 1 }} />
+                退出
+              </MenuItem>
             </Menu>
 
             {/* 标签页 */}
