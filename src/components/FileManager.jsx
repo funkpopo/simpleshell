@@ -167,6 +167,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
             updateDirectoryCache(currentPath, fileData);
             // 更新视图
             setFiles(fileData);
+            // 加载新目录时重置选中文件
+            setSelectedFile(null);
           } else {
             console.log("FileManager: Directory content unchanged");
           }
@@ -200,6 +202,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         setFiles(cachedData);
         setCurrentPath(path);
         setPathInput(path);
+        // 加载新目录时重置选中文件
+        setSelectedFile(null);
         return;
       }
     }
@@ -239,6 +243,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           setFiles(fileData);
           setCurrentPath(path); // 保持UI中显示~
           setPathInput(path);
+          // 加载新目录时重置选中文件
+          setSelectedFile(null);
 
           // 记录刷新时间
           setLastRefreshTime(Date.now());
@@ -438,6 +444,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
             await loadDirectory(currentPath);
             // 删除操作完成后设置定时器再次检查
             refreshAfterUserActivity();
+            // 重置选中文件，避免使用已删除的文件夹作为上传目标
+            setSelectedFile(null);
           } else if (
             response?.error?.includes("SFTP错误") &&
             retryCount < maxRetries
@@ -484,6 +492,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   // 处理上传文件到当前目录
   const handleUploadFile = async () => {
     handleContextMenuClose();
+    handleBlankContextMenuClose(); // 同时关闭空白区域菜单
 
     if (!sshConnection) return;
 
@@ -494,6 +503,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       // 构建目标路径，确保路径格式正确
       let targetPath;
 
+      // 只有当 selectedFile 不为 null 且为文件夹时才上传到选中的文件夹
+      // 这确保了从空白区域菜单调用时使用当前目录
       if (selectedFile && selectedFile.isDirectory) {
         // 上传到选中的文件夹
         if (currentPath === "/") {
@@ -587,6 +598,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   // 处理上传文件夹到当前目录
   const handleUploadFolder = async () => {
     handleContextMenuClose();
+    handleBlankContextMenuClose(); // 同时关闭空白区域菜单
 
     if (!sshConnection) return;
 
@@ -597,6 +609,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
       // 构建目标路径，确保路径格式正确
       let targetPath;
 
+      // 只有当 selectedFile 不为 null 且为文件夹时才上传到选中的文件夹
+      // 这确保了从空白区域菜单调用时使用当前目录
       if (selectedFile && selectedFile.isDirectory) {
         // 上传到选中的文件夹
         if (currentPath === "/") {
@@ -992,6 +1006,9 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     if (event.target.closest("li")) {
       return;
     }
+
+    // 重置选中文件，确保上传操作使用当前目录
+    setSelectedFile(null);
 
     setBlankContextMenu({
       mouseX: event.clientX,
