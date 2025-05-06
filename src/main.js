@@ -3300,7 +3300,7 @@ function setupIPC(mainWindow) {
               transfer.resolve({
                 success: false,
                 cancelled: true,
-                error: "用户取消了传输",
+                error: "传输已取消",
               });
             } catch (resolveError) {
               console.error(
