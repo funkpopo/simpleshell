@@ -1392,9 +1392,9 @@ function AIAssistant({ open, onClose }) {
 
             {/* 设置标签 */}
             <TabPanel value={tabValue} index={1}>
-              <Box sx={{ p: 1, display: "flex", height: "100%" }}>
+              <Box sx={{ p: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "auto" }}>
                 {/* 配置列表和操作区 */}
-                <Box sx={{ width: "45%", mr: 1, overflow: "auto" }}>
+                <Box sx={{ width: "100%", mb: 2 }}>
                   <Typography variant="h6" gutterBottom>
                     API配置
                   </Typography>
@@ -1407,7 +1407,7 @@ function AIAssistant({ open, onClose }) {
                       borderColor: "divider",
                       borderRadius: 1,
                       overflow: "auto",
-                      maxHeight: "300px",
+                      maxHeight: "150px",
                     }}
                     dense
                   >
@@ -1479,7 +1479,7 @@ function AIAssistant({ open, onClose }) {
                 </Box>
 
                 {/* 编辑区域 */}
-                <Box sx={{ width: "55%", overflow: "auto" }}>
+                <Box sx={{ width: "100%", flex: 1, overflow: "auto" }}>
                   <Typography variant="h6" gutterBottom>
                     配置详情
                   </Typography>
@@ -1488,9 +1488,9 @@ function AIAssistant({ open, onClose }) {
                   {testResult && (
                     <Box
                       sx={{
-                        p: 2,
+                        p: 1.5,
                         borderRadius: 1,
-                        mb: 2,
+                        mb: 1.5,
                         bgcolor: testResult.success
                           ? "success.light"
                           : "error.light",
@@ -1510,7 +1510,7 @@ function AIAssistant({ open, onClose }) {
                       {testResult.tip && (
                         <Typography
                           variant="body2"
-                          sx={{ mt: 1, color: "text.secondary" }}
+                          sx={{ mt: 0.5, color: "text.secondary" }}
                         >
                           {testResult.tip}
                         </Typography>
@@ -1520,7 +1520,7 @@ function AIAssistant({ open, onClose }) {
 
                   {/* 错误提示，只在没有测试结果时显示 */}
                   {!testResult && error && (
-                    <Typography variant="body2" color="error" sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="error" sx={{ mb: 1.5 }}>
                       {error}
                     </Typography>
                   )}
@@ -1530,7 +1530,7 @@ function AIAssistant({ open, onClose }) {
                     <Typography
                       variant="body2"
                       color="success.main"
-                      sx={{ mb: 2 }}
+                      sx={{ mb: 1.5 }}
                     >
                       设置已保存
                     </Typography>
@@ -1541,105 +1541,102 @@ function AIAssistant({ open, onClose }) {
                     <Typography
                       variant="body2"
                       color="info.main"
-                      sx={{ mb: 2 }}
+                      sx={{ mb: 1.5 }}
                     >
                       {infoMessage}
                     </Typography>
                   )}
 
-                  <TextField
-                    fullWidth
-                    label="配置名称"
-                    name="name"
-                    value={currentEditConfig.name}
-                    onChange={handleEditConfigChange}
-                    margin="normal"
-                    placeholder="我的API配置"
-                    size="small"
-                  />
-
-                  <TextField
-                    fullWidth
-                    label="API URL"
-                    name="apiUrl"
-                    value={currentEditConfig.apiUrl}
-                    onChange={handleEditConfigChange}
-                    margin="normal"
-                    placeholder="https://api.openai.com/v1/chat/completions"
-                    helperText="AI API的完整URL"
-                    size="small"
-                  />
-
-                  <TextField
-                    fullWidth
-                    label="API密钥"
-                    name="apiKey"
-                    type="password"
-                    value={currentEditConfig.apiKey}
-                    onChange={handleEditConfigChange}
-                    margin="normal"
-                    helperText="您的API密钥将被加密存储"
-                    size="small"
-                  />
-
-                  <TextField
-                    fullWidth
-                    label="模型名称"
-                    name="model"
-                    value={currentEditConfig.model}
-                    onChange={handleEditConfigChange}
-                    margin="normal"
-                    placeholder="gpt-3.5-turbo"
-                    helperText="例如: gpt-3.5-turbo, gpt-4, gpt-4-turbo"
-                    size="small"
-                  />
-
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={currentEditConfig.streamEnabled}
-                        onChange={(e) => setCurrentEditConfig(prev => ({
-                          ...prev,
-                          streamEnabled: e.target.checked
-                        }))}
-                        name="streamEnabled"
-                      />
-                    }
-                    label="启用流式响应"
-                    sx={{ mt: 1 }}
-                  />
-
-                  <Box sx={{ mt: 2, display: "flex", gap: 1 }}>
-                    <Button
-                      variant="contained"
-                      color="info"
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                    <TextField
                       fullWidth
-                      onClick={handleTestSettings}
-                      disabled={
-                        testing ||
-                        !currentEditConfig.apiUrl ||
-                        !currentEditConfig.apiKey ||
-                        !currentEditConfig.model
-                      }
-                      startIcon={
-                        testing && (
-                          <CircularProgress size={20} color="inherit" />
-                        )
-                      }
+                      label="配置名称"
+                      name="name"
+                      value={currentEditConfig.name}
+                      onChange={handleEditConfigChange}
+                      placeholder="我的API配置"
                       size="small"
-                    >
-                      {testing ? "测试中..." : "测试API设置"}
-                    </Button>
+                    />
 
-                    <Button
-                      variant="contained"
-                      color="primary"
+                    <TextField
                       fullWidth
-                      onClick={handleSaveSettings}
+                      label="API URL"
+                      name="apiUrl"
+                      value={currentEditConfig.apiUrl}
+                      onChange={handleEditConfigChange}
+                      placeholder="https://api.openai.com/v1/chat/completions"
+                      helperText="AI API的完整URL"
                       size="small"
-                    >
-                      保存设置
-                    </Button>
+                    />
+
+                    <TextField
+                      fullWidth
+                      label="API密钥"
+                      name="apiKey"
+                      type="password"
+                      value={currentEditConfig.apiKey}
+                      onChange={handleEditConfigChange}
+                      helperText="您的API密钥将被加密存储"
+                      size="small"
+                    />
+
+                    <TextField
+                      fullWidth
+                      label="模型名称"
+                      name="model"
+                      value={currentEditConfig.model}
+                      onChange={handleEditConfigChange}
+                      placeholder="gpt-3.5-turbo"
+                      helperText="例如: gpt-3.5-turbo, gpt-4, gpt-4-turbo"
+                      size="small"
+                    />
+
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={currentEditConfig.streamEnabled}
+                          onChange={(e) => setCurrentEditConfig(prev => ({
+                            ...prev,
+                            streamEnabled: e.target.checked
+                          }))}
+                          name="streamEnabled"
+                        />
+                      }
+                      label="启用流式响应"
+                    />
+
+                    <Box sx={{ display: "flex", gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        color="info"
+                        fullWidth
+                        onClick={handleTestSettings}
+                        disabled={
+                          testing ||
+                          !currentEditConfig.apiUrl ||
+                          !currentEditConfig.apiKey ||
+                          !currentEditConfig.model
+                        }
+                        startIcon={
+                          testing && (
+                            <CircularProgress size={20} color="inherit" />
+                          )
+                        }
+                        size="small"
+                      >
+                        {testing ? "测试中..." : "测试API设置"}
+                      </Button>
+
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        fullWidth
+                        onClick={handleSaveSettings}
+                        size="small"
+                      >
+                        保存设置
+                      </Button>
+                    </Box>
                   </Box>
                 </Box>
               </Box>
