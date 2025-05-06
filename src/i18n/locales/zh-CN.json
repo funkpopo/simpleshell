@@ -1,0 +1,66 @@
+{
+  "translation": {
+    "settings": {
+      "title": "设置",
+      "language": "界面语言",
+      "fontSize": "界面字号",
+      "fontSizeLabels": {
+        "small": "小",
+        "medium": "中",
+        "large": "大",
+        "xlarge": "特大"
+      },
+      "cancel": "取消",
+      "save": "保存",
+      "saveError": "保存设置失败，请重试。"
+    },
+    "menu": {
+      "settings": "设置",
+      "about": "关于",
+      "exit": "退出"
+    },
+    "tabMenu": {
+      "refresh": "刷新连接",
+      "close": "关闭连接"
+    },
+    "about": {
+      "title": "关于 SimpleShell",
+      "version": "版本",
+      "description": "一个简单高效的跨平台终端工具",
+      "author": "作者",
+      "email": "邮箱",
+      "updateCheck": "更新检查",
+      "checkingUpdate": "检查更新中...",
+      "latestVersion": "您使用的已经是最新版本",
+      "newVersion": "发现新版本: {{version}}, 请点击下方按钮查看详情",
+      "updateError": "无法获取更新信息: {{error}}",
+      "checkUpdateButton": "检查更新",
+      "viewLatestButton": "查看最新版本",
+      "close": "关闭",
+      "visitGithub": "访问 GitHub 发布页",
+      "updateNotAvailable": "无法检查更新：未找到更新检查API"
+    },
+    "sidebar": {
+      "theme": "切换主题",
+      "ai": "AI助手",
+      "monitor": "资源监控",
+      "connections": "连接管理",
+      "files": "文件管理",
+      "history": "命令历史记录"
+    },
+    "welcome": {
+      "title": "欢迎使用 SimpleShell",
+      "subtitle": "开始使用",
+      "newTerminal": "新建终端",
+      "newConnection": "新建SSH连接",
+      "recentConnections": "最近连接",
+      "tips": "小贴士"
+    },
+    "terminal": {
+      "connecting": "正在连接到 {{host}}...",
+      "connected": "已连接到 {{host}}",
+      "connectionFailed": "连接失败: {{error}}",
+      "welcome": "欢迎"
+    }
+  }
+} 
