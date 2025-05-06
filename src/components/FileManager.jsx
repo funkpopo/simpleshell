@@ -797,14 +797,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
             onContextMenu={(e) => handleContextMenu(e, file)}
           >
             <ListItemButton
-              onClick={() =>
-                file.isDirectory &&
-                handleEnterDirectory(
-                  currentPath === "/"
-                    ? "/" + file.name
-                    : currentPath + "/" + file.name,
-                )
-              }
               onDoubleClick={() => handleFileActivate(file)}
               dense
             >

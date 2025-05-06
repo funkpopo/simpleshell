@@ -2,9 +2,6 @@ const {
   app,
   BrowserWindow,
   dialog,
-  clipboard,
-  Menu,
-  Tray,
   ipcMain,
   shell,
 } = require("electron");
@@ -16,11 +13,8 @@ const os = require("os");
 const SftpClient = require("ssh2-sftp-client");
 const { Worker } = require("worker_threads");
 const crypto = require("crypto");
-const homeDir = os.homedir();
 
 // 应用设置和状态管理
-let mainWindow;
-let tray;
 const childProcesses = new Map();
 let nextProcessId = 1;
 
@@ -31,9 +25,8 @@ const editorExitRegex = new RegExp(`^(${editorExitCommands.join('|').replace(/\+
 
 // 用于SSH连接的SFTP会话管理
 const sftpSessions = new Map();
-const sftpQueues = new Map();
-const sshConnections = new Map();
-const sftpLocks = new Map();
+const sftpSessionLocks = new Map();
+const pendingOperations = new Map();
 
 // 日志记录功能
 const logFile = path.join(__dirname, "..", "logs", "app.log");
