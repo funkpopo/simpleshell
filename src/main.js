@@ -1683,13 +1683,31 @@ function setupIPC(mainWindow) {
   });
 
   // 获取应用版本号
-  ipcMain.handle("app:getVersion", () => {
+  ipcMain.handle("app:getVersion", async () => {
     return app.getVersion();
   });
 
   // 关闭应用
-  ipcMain.handle("app:close", () => {
+  ipcMain.handle("app:close", async () => {
     app.quit();
+    return true;
+  });
+
+  // 重新加载窗口
+  ipcMain.handle("app:reloadWindow", async () => {
+    mainWindow.reload();
+    return true;
+  });
+
+  // 在外部浏览器打开链接
+  ipcMain.handle("app:openExternal", async (event, url) => {
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error) {
+      console.error("Failed to open external link:", error);
+      return { success: false, error: error.message };
+    }
   });
 
   // 检查更新
@@ -1749,17 +1767,6 @@ function setupIPC(mainWindow) {
         success: false,
         error: error.message,
       };
-    }
-  });
-
-  // 在外部浏览器中打开URL
-  ipcMain.handle("app:openExternal", async (event, url) => {
-    try {
-      await shell.openExternal(url);
-      return true;
-    } catch (error) {
-      console.error("打开外部链接失败:", error);
-      return false;
     }
   });
 

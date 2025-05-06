@@ -1,4 +1,4 @@
-const { parentPort, workerData } = require("worker_threads");
+const { parentPort } = require("worker_threads");
 const fetch = require("node-fetch");
 
 // 处理来自主线程的消息

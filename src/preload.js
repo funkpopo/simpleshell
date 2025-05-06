@@ -259,4 +259,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // UI设置相关API
   loadUISettings: () => ipcRenderer.invoke("settings:loadUISettings"),
   saveUISettings: (settings) => ipcRenderer.invoke("settings:saveUISettings", settings),
+  
+  // 窗口重新加载
+  reloadWindow: () => ipcRenderer.invoke("app:reloadWindow"),
 });

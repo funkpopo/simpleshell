@@ -45,6 +45,10 @@ import FileManager from "./components/FileManager.jsx";
 import CommandHistory from "./components/CommandHistory.jsx";
 import Settings from "./components/Settings.jsx";
 import Divider from "@mui/material/Divider";
+// Import i18n configuration
+import { useTranslation } from "react-i18next";
+import "./i18n/i18n";
+import { changeLanguage } from "./i18n/i18n";
 
 // 自定义标签页组件
 function CustomTab(props) {
@@ -115,6 +119,7 @@ function CustomTab(props) {
 
 // 关于对话框组件
 function AboutDialog({ open, onClose }) {
+  const { t } = useTranslation();
   const [checkingForUpdate, setCheckingForUpdate] = React.useState(false);
   const [updateStatus, setUpdateStatus] = React.useState(null);
   const [appVersion, setAppVersion] = React.useState("1.0.0");
@@ -150,10 +155,10 @@ function AboutDialog({ open, onClose }) {
 
   const handleCheckForUpdate = () => {
     setCheckingForUpdate(true);
-    setUpdateStatus("检查更新中...");
+    setUpdateStatus(t('about.checkingUpdate'));
 
     if (!window.terminalAPI?.checkForUpdate) {
-      setUpdateStatus("无法检查更新：未找到更新检查API");
+      setUpdateStatus(t('about.updateNotAvailable'));
       setCheckingForUpdate(false);
       return;
     }
@@ -177,15 +182,15 @@ function AboutDialog({ open, onClose }) {
 
         if (latestVersionNumber > currentVersionNumber) {
           setUpdateStatus(
-            `发现新版本: ${latestVersion}, 请点击下方按钮查看详情`,
+            t('about.newVersion', { version: latestVersion })
           );
         } else {
-          setUpdateStatus("您使用的已经是最新版本");
+          setUpdateStatus(t('about.latestVersion'));
         }
       })
       .catch((error) => {
         console.error("检查更新失败:", error);
-        setUpdateStatus(`无法获取更新信息: ${error.message}`);
+        setUpdateStatus(t('about.updateError', { error: error.message }));
       })
       .finally(() => {
         setCheckingForUpdate(false);
@@ -194,27 +199,27 @@ function AboutDialog({ open, onClose }) {
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>关于 SimpleShell</DialogTitle>
+      <DialogTitle>{t('about.title')}</DialogTitle>
       <DialogContent dividers>
         <Box sx={{ mb: 2 }}>
           <Typography variant="h6" gutterBottom>
             SimpleShell
           </Typography>
           <Typography variant="body1" gutterBottom>
-            版本: {appVersion}
+            {t('about.version')}: {appVersion}
           </Typography>
           <Typography variant="body2" color="text.secondary" paragraph>
-            一个简单高效的跨平台终端工具
+            {t('about.description')}
           </Typography>
 
           <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
-            作者信息
+            {t('about.author')}
           </Typography>
           <Typography variant="body2" paragraph>
-            作者: funkpopo
+            {t('about.author')}: funkpopo
           </Typography>
           <Typography variant="body2" paragraph>
-            邮箱:{" "}
+            {t('about.email')}:{" "}
             <Link
               href="#"
               onClick={(e) => {
@@ -228,13 +233,13 @@ function AboutDialog({ open, onClose }) {
 
           <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle1" gutterBottom>
-              更新检查
+              {t('about.updateCheck')}
             </Typography>
             {updateStatus && (
               <Typography
                 variant="body2"
                 color={
-                  updateStatus.includes("最新版本")
+                  updateStatus === t('about.latestVersion')
                     ? "success.main"
                     : "text.secondary"
                 }
@@ -252,7 +257,7 @@ function AboutDialog({ open, onClose }) {
                   checkingForUpdate ? <CircularProgress size={16} /> : null
                 }
               >
-                检查更新
+                {t('about.checkUpdateButton')}
               </Button>
 
               {latestRelease && latestRelease.html_url && (
@@ -261,7 +266,7 @@ function AboutDialog({ open, onClose }) {
                   color="primary"
                   onClick={() => handleOpenExternalLink(latestRelease.html_url)}
                 >
-                  查看最新版本
+                  {t('about.viewLatestButton')}
                 </Button>
               )}
             </Box>
@@ -269,7 +274,7 @@ function AboutDialog({ open, onClose }) {
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>关闭</Button>
+        <Button onClick={onClose}>{t('about.close')}</Button>
         <Button
           onClick={() =>
             handleOpenExternalLink(
@@ -277,7 +282,7 @@ function AboutDialog({ open, onClose }) {
             )
           }
         >
-          访问 GitHub 发布页
+          {t('about.visitGithub')}
         </Button>
       </DialogActions>
     </Dialog>
@@ -285,6 +290,17 @@ function AboutDialog({ open, onClose }) {
 }
 
 function App() {
+  const { t, i18n } = useTranslation();
+  
+  // Update the tabs when language changes
+  React.useEffect(() => {
+    // Update welcome tab label when language changes
+    setTabs(prevTabs => [
+      { ...prevTabs[0], label: t('terminal.welcome') },
+      ...prevTabs.slice(1)
+    ]);
+  }, [i18n.language, t]);
+  
   // 状态管理菜单打开关闭
   const [anchorEl, setAnchorEl] = React.useState(null);
   const open = Boolean(anchorEl);
@@ -309,7 +325,7 @@ function App() {
 
   // 标签页状态
   const [tabs, setTabs] = React.useState([
-    { id: "welcome", label: "欢迎" },
+    { id: "welcome", label: t('terminal.welcome') },
   ]);
   const [currentTab, setCurrentTab] = React.useState(0);
 
@@ -782,8 +798,19 @@ function App() {
       // 应用字号设置
       document.documentElement.style.fontSize = `${fontSize}px`;
       
-      // 语言切换逻辑将来可以在这里实现
-      // 这里可以添加i18n库的集成
+      // 应用语言设置
+      if (language) {
+        // 通过i18n.js中的changeLanguage函数来改变语言
+        changeLanguage(language);
+        
+        // 基本的HTML语言设置
+        document.documentElement.lang = language;
+        
+        // 重新加载窗口以确保所有组件都使用新的语言设置
+        if (window.terminalAPI?.reloadWindow) {
+          window.terminalAPI.reloadWindow();
+        }
+      }
     };
 
     window.addEventListener("settingsChanged", handleSettingsChanged);
@@ -796,6 +823,12 @@ function App() {
           if (settings) {
             // 应用字号设置
             document.documentElement.style.fontSize = `${settings.fontSize || 14}px`;
+            
+            // 应用初始语言设置
+            if (settings.language) {
+              changeLanguage(settings.language);
+              document.documentElement.lang = settings.language;
+            }
           }
         }
       } catch (error) {
@@ -875,15 +908,15 @@ function App() {
             >
               <MenuItem onClick={handleOpenSettings}>
                 <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
-                设置
+                {t('menu.settings')}
               </MenuItem>
               <MenuItem onClick={handleOpenAbout}>
                 <InfoIcon fontSize="small" sx={{ mr: 1 }} />
-                关于
+                {t('menu.about')}
               </MenuItem>
               <MenuItem onClick={handleExit}>
                 <ExitToAppIcon fontSize="small" sx={{ mr: 1 }} />
-                退出
+                {t('menu.exit')}
               </MenuItem>
             </Menu>
 
@@ -945,11 +978,11 @@ function App() {
             >
               <MenuItem onClick={handleRefreshTerminal}>
                 <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
-                刷新连接
+                {t('tabMenu.refresh')}
               </MenuItem>
               <MenuItem onClick={handleCloseConnection}>
                 <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
-                关闭连接
+                {t('tabMenu.close')}
               </MenuItem>
             </Menu>
           </Toolbar>
@@ -1191,14 +1224,14 @@ function App() {
               }}
             >
               {/* 主题切换按钮 */}
-              <Tooltip title="切换主题" placement="left">
+              <Tooltip title={t('sidebar.theme')} placement="left">
                 <IconButton onClick={toggleTheme} color="primary">
                   {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
                 </IconButton>
               </Tooltip>
 
               {/* AI助手按钮 */}
-              <Tooltip title="AI助手" placement="left">
+              <Tooltip title={t('sidebar.ai')} placement="left">
                 <IconButton
                   color="primary"
                   onClick={toggleAIAssistant}
@@ -1218,7 +1251,7 @@ function App() {
               </Tooltip>
 
               {/* 资源监控按钮 */}
-              <Tooltip title="资源监控" placement="left">
+              <Tooltip title={t('sidebar.monitor')} placement="left">
                 <IconButton
                   color="primary"
                   onClick={toggleResourceMonitor}
@@ -1238,7 +1271,7 @@ function App() {
               </Tooltip>
 
               {/* 连接管理按钮 */}
-              <Tooltip title="连接管理" placement="left">
+              <Tooltip title={t('sidebar.connections')} placement="left">
                 <IconButton
                   color="primary"
                   onClick={toggleConnectionManager}
@@ -1258,7 +1291,7 @@ function App() {
               </Tooltip>
 
               {/* 文件管理按钮 */}
-              <Tooltip title="文件管理" placement="left">
+              <Tooltip title={t('sidebar.files')} placement="left">
                 <IconButton
                   color="primary"
                   onClick={toggleFileManager}
@@ -1283,7 +1316,7 @@ function App() {
               </Tooltip>
 
               {/* 命令历史按钮 */}
-              <Tooltip title="命令历史记录" placement="left">
+              <Tooltip title={t('sidebar.history')} placement="left">
                 <IconButton
                   color="primary"
                   onClick={toggleCommandHistory}

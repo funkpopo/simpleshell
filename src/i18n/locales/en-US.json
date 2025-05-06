@@ -1,0 +1,66 @@
+{
+  "translation": {
+    "settings": {
+      "title": "Settings",
+      "language": "Interface Language",
+      "fontSize": "Font Size",
+      "fontSizeLabels": {
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large",
+        "xlarge": "Extra Large"
+      },
+      "cancel": "Cancel",
+      "save": "Save",
+      "saveError": "Failed to save settings, please try again."
+    },
+    "menu": {
+      "settings": "Settings",
+      "about": "About",
+      "exit": "Exit"
+    },
+    "tabMenu": {
+      "refresh": "Refresh Connection",
+      "close": "Close Connection"
+    },
+    "about": {
+      "title": "About SimpleShell",
+      "version": "Version",
+      "description": "A simple and efficient cross-platform terminal tool",
+      "author": "Author",
+      "email": "Email",
+      "updateCheck": "Check for Updates",
+      "checkingUpdate": "Checking for updates...",
+      "latestVersion": "You are using the latest version",
+      "newVersion": "New version found: {{version}}, please click the button below for details",
+      "updateError": "Failed to get update information: {{error}}",
+      "checkUpdateButton": "Check for Updates",
+      "viewLatestButton": "View Latest Version",
+      "close": "Close",
+      "visitGithub": "Visit GitHub Release Page",
+      "updateNotAvailable": "Unable to check for updates: Update API not found"
+    },
+    "sidebar": {
+      "theme": "Toggle Theme",
+      "ai": "AI Assistant",
+      "monitor": "Resource Monitor",
+      "connections": "Connection Manager",
+      "files": "File Manager",
+      "history": "Command History"
+    },
+    "welcome": {
+      "title": "Welcome to SimpleShell",
+      "subtitle": "Get Started",
+      "newTerminal": "New Terminal",
+      "newConnection": "New SSH Connection",
+      "recentConnections": "Recent Connections",
+      "tips": "Tips"
+    },
+    "terminal": {
+      "connecting": "Connecting to {{host}}...",
+      "connected": "Connected to {{host}}",
+      "connectionFailed": "Connection failed: {{error}}",
+      "welcome": "Welcome"
+    }
+  }
+} 

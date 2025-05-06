@@ -15,6 +15,8 @@ import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import Slider from "@mui/material/Slider";
 import Divider from "@mui/material/Divider";
+import { useTranslation } from "react-i18next";
+import { changeLanguage } from "../i18n/i18n";
 
 // Custom styled dialog title
 const BootstrapDialogTitle = (props) => {
@@ -42,6 +44,8 @@ const BootstrapDialogTitle = (props) => {
 };
 
 const Settings = ({ open, onClose }) => {
+  const { t, i18n } = useTranslation();
+  
   // Define available languages
   const languages = [
     { code: "zh-CN", name: "简体中文" },
@@ -50,14 +54,14 @@ const Settings = ({ open, onClose }) => {
 
   // Define font size options
   const fontSizes = [
-    { value: 12, label: "小" },
-    { value: 14, label: "中" },
-    { value: 16, label: "大" },
-    { value: 18, label: "特大" },
+    { value: 12, label: t('settings.fontSizeLabels.small') },
+    { value: 14, label: t('settings.fontSizeLabels.medium') },
+    { value: 16, label: t('settings.fontSizeLabels.large') },
+    { value: 18, label: t('settings.fontSizeLabels.xlarge') },
   ];
 
   // Initial states
-  const [language, setLanguage] = React.useState("zh-CN");
+  const [language, setLanguage] = React.useState("");
   const [fontSize, setFontSize] = React.useState(14);
   const [isLoading, setIsLoading] = React.useState(true);
 
@@ -103,6 +107,11 @@ const Settings = ({ open, onClose }) => {
         await window.terminalAPI.saveUISettings(settings);
       }
 
+      // Apply language change
+      if (language && i18n.language !== language) {
+        changeLanguage(language);
+      }
+
       // Notify app to apply changes
       window.dispatchEvent(
         new CustomEvent("settingsChanged", {
@@ -113,7 +122,7 @@ const Settings = ({ open, onClose }) => {
       onClose();
     } catch (error) {
       console.error("Failed to save UI settings:", error);
-      alert("保存设置失败，请重试。");
+      alert(t('settings.saveError'));
     }
   };
 
@@ -126,21 +135,21 @@ const Settings = ({ open, onClose }) => {
       fullWidth
     >
       <BootstrapDialogTitle id="settings-dialog-title" onClose={onClose}>
-        设置
+        {t('settings.title')}
       </BootstrapDialogTitle>
       <DialogContent dividers>
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle1" gutterBottom>
-            语言设置
+            {t('settings.language')}
           </Typography>
           <FormControl fullWidth variant="outlined" size="small">
-            <InputLabel id="language-select-label">界面语言</InputLabel>
+            <InputLabel id="language-select-label">{t('settings.language')}</InputLabel>
             <Select
               labelId="language-select-label"
               id="language-select"
               value={language}
               onChange={handleLanguageChange}
-              label="界面语言"
+              label={t('settings.language')}
             >
               {languages.map((lang) => (
                 <MenuItem key={lang.code} value={lang.code}>
@@ -155,7 +164,7 @@ const Settings = ({ open, onClose }) => {
 
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle1" gutterBottom>
-            界面字号
+            {t('settings.fontSize')}
           </Typography>
           <Box sx={{ px: 2, pt: 1 }}>
             <Slider
@@ -175,10 +184,10 @@ const Settings = ({ open, onClose }) => {
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} color="primary">
-          取消
+          {t('settings.cancel')}
         </Button>
         <Button onClick={handleSave} color="primary" variant="contained">
-          保存
+          {t('settings.save')}
         </Button>
       </DialogActions>
     </Dialog>
