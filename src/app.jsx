@@ -49,6 +49,8 @@ import Divider from "@mui/material/Divider";
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
 import { changeLanguage } from "./i18n/i18n";
+import "./index.css";
+import { styled } from "@mui/material/styles";
 
 // 自定义标签页组件
 function CustomTab(props) {
@@ -116,6 +118,20 @@ function CustomTab(props) {
     />
   );
 }
+
+// 自定义磨砂玻璃效果的Dialog组件
+const GlassDialog = styled(Dialog)(({ theme }) => ({
+  '& .MuiDialog-paper': {
+    backgroundColor: theme.palette.mode === 'dark' 
+      ? 'rgba(40, 44, 52, 0.75)' 
+      : 'rgba(255, 255, 255, 0.75)',
+    backdropFilter: 'blur(10px)',
+    boxShadow: theme.palette.mode === 'dark'
+      ? '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+      : '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
+    border: '1px solid rgba(255, 255, 255, 0.18)',
+  }
+}));
 
 // 关于对话框组件
 function AboutDialog({ open, onClose }) {
@@ -198,7 +214,7 @@ function AboutDialog({ open, onClose }) {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <GlassDialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{t('about.title')}</DialogTitle>
       <DialogContent dividers>
         <Box sx={{ mb: 2 }}>
@@ -285,7 +301,7 @@ function AboutDialog({ open, onClose }) {
           {t('about.visitGithub')}
         </Button>
       </DialogActions>
-    </Dialog>
+    </GlassDialog>
   );
 }
 

@@ -54,7 +54,8 @@
       "newTerminal": "新建终端",
       "newConnection": "新建SSH连接",
       "recentConnections": "最近连接",
-      "tips": "小贴士"
+      "tips": "小贴士",
+      "description": "是一个轻量级的终端模拟器，提供了简单易用的界面和强大的功能。"
     },
     "terminal": {
       "connecting": "正在连接到 {{host}}...",
