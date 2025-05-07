@@ -54,7 +54,8 @@
       "newTerminal": "New Terminal",
       "newConnection": "New SSH Connection",
       "recentConnections": "Recent Connections",
-      "tips": "Tips"
+      "tips": "Tips",
+      "description": "is a lightweight terminal emulator with a simple interface and powerful features."
     },
     "terminal": {
       "connecting": "Connecting to {{host}}...",

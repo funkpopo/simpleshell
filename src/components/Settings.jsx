@@ -18,6 +18,20 @@ import Divider from "@mui/material/Divider";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 
+// 自定义磨砂玻璃效果的Dialog组件
+const GlassDialog = styled(Dialog)(({ theme }) => ({
+  '& .MuiDialog-paper': {
+    backgroundColor: theme.palette.mode === 'dark' 
+      ? 'rgba(40, 44, 52, 0.75)' 
+      : 'rgba(255, 255, 255, 0.75)',
+    backdropFilter: 'blur(10px)',
+    boxShadow: theme.palette.mode === 'dark'
+      ? '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+      : '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
+    border: '1px solid rgba(255, 255, 255, 0.18)',
+  }
+}));
+
 // Custom styled dialog title
 const BootstrapDialogTitle = (props) => {
   const { children, onClose, ...other } = props;
@@ -127,7 +141,7 @@ const Settings = ({ open, onClose }) => {
   };
 
   return (
-    <Dialog
+    <GlassDialog
       open={open}
       onClose={onClose}
       aria-labelledby="settings-dialog-title"
@@ -190,7 +204,7 @@ const Settings = ({ open, onClose }) => {
           {t('settings.save')}
         </Button>
       </DialogActions>
-    </Dialog>
+    </GlassDialog>
   );
 };
 
