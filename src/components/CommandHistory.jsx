@@ -433,17 +433,37 @@ function CommandHistory({ open, onClose, activeTabId }) {
                     }}
                   >
                     <ListItemText
-                      primary={item.command}
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Typography 
+                            component="span" 
+                            variant="body2" 
+                            sx={{ 
+                              flexGrow: 1,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {item.command}
+                          </Typography>
+                        </Box>
+                      }
                       secondary={
-                        <Typography variant="caption">
-                          {item.lastUsed ? new Date(item.lastUsed).toLocaleString() : ""}
+                        <Typography variant="caption" sx={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          width: '100%'
+                        }}>
+                          <span>{item.lastUsed ? new Date(item.lastUsed).toLocaleString() : ""}</span>
+                          {item.count > 1 && <span>× {item.count}</span>}
                         </Typography>
                       }
                       sx={{
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        pr: 10, // 给操作按钮预留空间
+                        pr: 6,
                       }}
                     />
                   </ListItemButton>

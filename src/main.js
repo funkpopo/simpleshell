@@ -1262,7 +1262,10 @@ function setupIPC(mainWindow) {
           type: "ssh2",
           ready: false, // 标记SSH连接状态，默认为未就绪
           editorMode: false, // 初始化编辑器模式为false
-          commandBuffer: "" // 初始化命令缓冲区
+          commandBuffer: "", // 初始化命令缓冲区
+          lastOutputLines: [], // 存储最近的终端输出行，用于提取远程命令
+          outputBuffer: "", // 用于存储当前未处理完的输出
+          isRemote: true // 标记为远程SSH会话
         });
 
         // 存储相同的SSH客户端，使用tabId（通常是形如'ssh-timestamp'的标识符）
@@ -1275,7 +1278,10 @@ function setupIPC(mainWindow) {
             type: "ssh2",
             ready: false, // 标记SSH连接状态，默认为未就绪
             editorMode: false, // 初始化编辑器模式为false
-            commandBuffer: "" // 初始化命令缓冲区
+            commandBuffer: "", // 初始化命令缓冲区
+            lastOutputLines: [], // 存储最近的终端输出行，用于提取远程命令
+            outputBuffer: "", // 用于存储当前未处理完的输出
+            isRemote: true // 标记为远程SSH会话
           });
         }
 
@@ -1521,6 +1527,33 @@ function setupIPC(mainWindow) {
       let processedData = data;
       // 对特殊情况的处理（如果需要）
 
+      // 检测Tab键 (ASCII 9, \t, \x09)
+      if (data === "\t" || data === "\x09") {
+        // 对于Tab键，直接发送到进程但不记录到命令缓冲区
+        // 这是因为Tab键通常用于命令补全，不是命令的一部分
+        console.log("检测到Tab键，跳过命令缓冲区处理");
+        
+        // 直接发送到进程
+        if (procInfo.type === "ssh2") {
+          if (procInfo.stream) {
+            procInfo.stream.write(processedData);
+            return true;
+          } else {
+            console.error("SSH2 stream not available");
+            return false;
+          }
+        } else if (typeof procInfo.process.write === "function") {
+          procInfo.process.write(processedData);
+          return true;
+        } else if (procInfo.process.stdin) {
+          procInfo.process.stdin.write(processedData);
+          return true;
+        } else {
+          console.error("Process has no valid write method");
+          return false;
+        }
+      }
+      
       // 检测回车键并提取可能的命令
       if (data === "\r" || data === "\n") {
         // 可能是一个命令的结束，尝试从缓冲区获取命令
@@ -1564,8 +1597,13 @@ function setupIPC(mainWindow) {
           }
           // 只有不在编辑器模式下才添加到历史记录
           else if (!procInfo.editorMode) {
-            // 将命令添加到历史记录
-            addToCommandHistory(command);
+            // 修改命令记录逻辑，只记录远程命令
+            // 对于SSH会话，先标记这个命令，稍后会通过输出提取确认的远程命令
+            if (procInfo.isRemote) {
+              // 只存储到lastLocalCommand，但不添加到历史记录
+              procInfo.lastLocalCommand = command;
+            }
+            // 移除本地命令记录，不再记录非SSH会话的命令
           }
           
           // 清空命令缓冲区
@@ -5269,7 +5307,6 @@ const addToCommandHistory = (command) => {
   // 检测命令是否可能是编辑器命令或编辑器的内部命令
   if (editorCommandRegex.test(command) || 
       /^(:|[wqxcdiaplsuyjk][a-z]*|ZZ|dd|yy|gg|\d+G|\/[^\/]+\/|\?[^\?]+\?)$/i.test(command)) {
-    console.log(`Not adding editor command to history: ${command}`);
     return false;
   }
   
@@ -5373,6 +5410,79 @@ const processTerminalOutput = (processId, output) => {
       procInfo.editorMode = false;
       procInfo.possibleEditorExit = false;
       console.log("Editor mode exited - detected shell prompt in output");
+    }
+  }
+  
+  // 如果是远程SSH会话，提取命令
+  if (procInfo.isRemote) {
+    // 将当前输出追加到输出缓冲区
+    procInfo.outputBuffer += output;
+    
+    // 按行分割输出
+    const lines = procInfo.outputBuffer.split(/\r?\n/);
+    
+    // 保留最后一行（可能不完整）为新的输出缓冲区
+    procInfo.outputBuffer = lines.pop() || "";
+    
+    // 将完整的行添加到最近输出行
+    procInfo.lastOutputLines = [...procInfo.lastOutputLines, ...lines];
+    
+    // 限制保存的行数，防止内存过度使用
+    if (procInfo.lastOutputLines.length > 50) {
+      procInfo.lastOutputLines = procInfo.lastOutputLines.slice(-50);
+    }
+    
+    // 远程命令提取逻辑
+    // 寻找命令提示符模式，然后提取命令
+    const commandPromptRegex = [
+      /^.*?[$#>]\s+([^$#>\r\n]+)$/, // 通用提示符后跟命令
+      /^.*?@.*?:.*?[$#>]\s+([^$#>\r\n]+)$/, // 带用户名和主机名的提示符后跟命令
+      /^.*?:.*?[$#>]\s+([^$#>\r\n]+)$/ // 路径提示符后跟命令
+    ];
+    
+    // 检查最近几行是否存在命令执行模式
+    // 1. 一行是命令输入 (提示符 + 命令)
+    // 2. 下面几行是命令输出
+    // 3. 最后一行是新的提示符
+    if (procInfo.lastOutputLines.length >= 2) {
+      for (let i = 0; i < procInfo.lastOutputLines.length - 1; i++) {
+        const currentLine = procInfo.lastOutputLines[i];
+        
+        // 尝试每个正则表达式来匹配命令
+        for (const regex of commandPromptRegex) {
+          const match = currentLine.match(regex);
+          if (match && match[1] && match[1].trim() !== "") {
+            const command = match[1].trim();
+            
+            // 跳过明显不是命令的情况
+            if (command.startsWith("\x1b") || command.length < 2) {
+              continue;
+            }
+            
+            // 检测下一行是否是新的提示符，表示命令已执行完毕
+            let nextLineIsPrompt = false;
+            for (let j = i + 1; j < procInfo.lastOutputLines.length; j++) {
+              const nextLine = procInfo.lastOutputLines[j];
+              if (commandPromptRegex.some(r => r.test(nextLine))) {
+                nextLineIsPrompt = true;
+                
+                // 找到完整的命令执行序列，将命令添加到历史记录
+                if (command !== procInfo.lastExtractedCommand) {
+                  // 避免重复添加相同的命令
+                  addToCommandHistory(command); // 从远程SSH输出提取的命令
+                  procInfo.lastExtractedCommand = command;
+                }
+                
+                // 清理已处理的行
+                procInfo.lastOutputLines.splice(0, i + 1);
+                break;
+              }
+            }
+            
+            if (nextLineIsPrompt) break;
+          }
+        }
+      }
     }
   }
   
