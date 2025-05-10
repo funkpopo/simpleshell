@@ -2783,6 +2783,9 @@ function setupIPC(mainWindow) {
                 step: (transferred, chunk, total) => {
                   progressCallback(transferred);
                 },
+                concurrency: 16,  // 同时传输16个数据块
+                chunkSize: 32768, // 32KB的块大小，提高传输效率
+                debug: false      // 不输出调试信息
               });
 
               // 重命名临时文件为最终文件
@@ -3079,6 +3082,9 @@ function setupIPC(mainWindow) {
                         lastProgressUpdate = now;
                       }
                     },
+                    concurrency: 16,  // 同时传输16个数据块
+                    chunkSize: 32768, // 32KB的块大小，提高传输效率
+                    debug: false      // 不输出调试信息
                   });
 
                   // 文件成功上传，更新计数
@@ -3823,6 +3829,9 @@ function setupIPC(mainWindow) {
                         lastProgressUpdate = now;
                       }
                     },
+                    concurrency: 16,  // 同时传输16个数据块
+                    chunkSize: 32768, // 32KB的块大小，提高传输效率
+                    debug: false      // 不输出调试信息
                   });
 
                   // 更新已传输字节数和处理文件数
@@ -4212,6 +4221,9 @@ function setupIPC(mainWindow) {
                         lastProgressUpdate = now;
                       }
                     },
+                    concurrency: 16,  // 同时传输16个数据块
+                    chunkSize: 32768, // 32KB的块大小，提高传输效率
+                    debug: false      // 不输出调试信息
                   });
 
                   // 下载完成后，将临时文件重命名为最终文件
