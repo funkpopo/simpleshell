@@ -9,14 +9,26 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   sendCommand: (command) => ipcRenderer.invoke("terminal:command", command),
 
   // PowerShell进程管理
-  startPowerShell: () => ipcRenderer.invoke("terminal:startPowerShell"),
-  sendToProcess: (processId, data) =>
-    ipcRenderer.invoke("terminal:sendToProcess", processId, data),
-  killProcess: (processId) =>
-    ipcRenderer.invoke("terminal:killProcess", processId),
-
-  // SSH连接管理
-  startSSH: (sshConfig) => ipcRenderer.invoke("terminal:startSSH", sshConfig),
+  startPowerShell: (args) => ipcRenderer.invoke("terminal:startPowerShell", args),
+  startCmd: (args) => ipcRenderer.invoke("terminal:startCmd", args),
+  startBash: (args) => ipcRenderer.invoke("terminal:startBash", args),
+  startSSH: (args) => ipcRenderer.invoke("terminal:startSSH", args),
+  startBatchSSH: (args) => ipcRenderer.invoke("terminal:startBatchSSH", args),
+  onProcessData: (callback) => ipcRenderer.on("terminal:processData", callback),
+  onResizeTerminal: (callback) => ipcRenderer.on("terminal:resizeTerminal", callback),
+  onProcessCompletion: (callback) => ipcRenderer.on("terminal:processCompletion", callback),
+  onProcessExit: (callback) => ipcRenderer.on("terminal:processExit", callback),
+  onSshConnectionUpdated: (callback) => ipcRenderer.on("terminal:sshConnectionUpdated", callback),
+  removeProcessListeners: () => {
+    ipcRenderer.removeAllListeners("terminal:processData");
+    ipcRenderer.removeAllListeners("terminal:resizeTerminal");
+    ipcRenderer.removeAllListeners("terminal:processCompletion");
+    ipcRenderer.removeAllListeners("terminal:processExit");
+    ipcRenderer.removeAllListeners("terminal:sshConnectionUpdated");
+  },
+  sendToProcess: (processId, data) => ipcRenderer.invoke("terminal:sendToProcess", processId, data),
+  setTerminalSize: (processId, cols, rows) => ipcRenderer.invoke("terminal:setTerminalSize", processId, cols, rows),
+  killProcess: (processId) => ipcRenderer.invoke("terminal:killProcess", processId),
 
   // 资源监控API
   getSystemInfo: (processId) =>
@@ -68,13 +80,6 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 终端大小调整
   resizeTerminal: (processId, cols, rows) =>
     ipcRenderer.invoke("terminal:resize", processId, cols, rows),
-
-  // 命令历史记录API
-  loadCommandHistory: () => ipcRenderer.invoke("command:loadHistory"),
-  saveCommandHistory: (commandHistory) => 
-    ipcRenderer.invoke("command:saveHistory", commandHistory),
-  addToCommandHistory: (command) => 
-    ipcRenderer.invoke("command:addToHistory", command),
 
   // AI助手API
   saveAISettings: (settings) => ipcRenderer.invoke("ai:saveSettings", settings),
@@ -262,4 +267,19 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   
   // 窗口重新加载
   reloadWindow: () => ipcRenderer.invoke("app:reloadWindow"),
+
+  // 新增: 通知主进程编辑器模式变化的API
+  notifyEditorModeChange: (processId, isEditorMode) => ipcRenderer.invoke("terminal:notifyEditorModeChange", processId, isEditorMode),
+
+  // 新增: 写入pty的方法
+  writePty: (data) => ipcRenderer.invoke("terminal:writePty", data),
+
+  // 新增: 调整pty大小的方法
+  resizePty: (size) => ipcRenderer.invoke("terminal:resizePty", size),
+
+  // 新增: 复制剪贴板的方法
+  copyClipboard: (text) => ipcRenderer.invoke("clipboard:copy", text),
+
+  // 新增: 粘贴剪贴板的方法
+  pasteClipboard: () => ipcRenderer.invoke("clipboard:paste"),
 });

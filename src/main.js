@@ -1560,22 +1560,22 @@ function setupIPC(mainWindow) {
         if (procInfo.commandBuffer && procInfo.commandBuffer.trim()) {
           const command = procInfo.commandBuffer.trim();
           
-          // 检测是否启动了编辑器
+          // 检测是否启动了编辑器（作为备用机制，现在优先使用buffer类型检测）
           if (!procInfo.editorMode && editorCommandRegex.test(command)) {
             procInfo.editorMode = true;
             procInfo.lastEditorCommand = command; // 记录最后使用的编辑器命令，帮助后续检测退出
-            console.log(`Editor mode detected: ${command}`);
+            console.log(`Editor mode detected: ${command} (通过命令分析检测，备用方法)`);
           } 
-          // 检测是否可能退出了编辑器
+          // 检测是否可能退出了编辑器（作为备用机制，现在优先使用buffer类型检测）
           else if (procInfo.editorMode) {
             // 检查是否是退出命令
             if (editorExitRegex.test(command)) {
-              console.log(`Possible editor exit command detected: ${command}`);
+              console.log(`Possible editor exit command detected: ${command} (通过命令分析检测，备用方法)`);
               
-              // 为某些编辑器，我们可以立即确认退出
+              // 为某些编辑器，我们可以立即确认退出（但如果前端使用buffer类型检测，这段代码会被前端通知覆盖）
               if (/^(q|quit|exit|:q|:quit|:wq)$/i.test(command)) {
                 procInfo.editorMode = false;
-                console.log(`Editor mode exited via command: ${command}`);
+                console.log(`Editor mode exited via command: ${command} (通过命令分析检测，备用方法)`);
               } else {
                 // 对于其他情况，设置一个退出检测标志，下一个命令会确认是否真的退出
                 procInfo.possibleEditorExit = true;
@@ -1585,14 +1585,14 @@ function setupIPC(mainWindow) {
             else if (procInfo.possibleEditorExit && !editorCommandRegex.test(command)) {
               procInfo.editorMode = false;
               procInfo.possibleEditorExit = false;
-              console.log("Editor mode confirmed exited");
+              console.log("Editor mode confirmed exited (通过命令分析检测，备用方法)");
             } 
             // 如果收到普通shell命令且不在编辑器命令中，则退出编辑器模式
             else if (command.startsWith("$") || command.startsWith(">") || 
                     (command.includes(" ") && 
                      !/^\s*(w|write|q|quit|exit|ZZ|x|c|change|d|delete|y|yank|p|put|u|undo|r|redo|i|insert|a|append)\s*/.test(command))) {
               procInfo.editorMode = false;
-              console.log("Editor mode exited - detected shell prompt");
+              console.log("Editor mode exited - detected shell prompt (通过命令分析检测，备用方法)");
             }
           }
           // 只有不在编辑器模式下才添加到历史记录
@@ -1696,6 +1696,40 @@ function setupIPC(mainWindow) {
       console.error("Failed to kill process:", error);
       return false;
     }
+  });
+
+  // 接收编辑器模式状态变更通知
+  ipcMain.handle("terminal:notifyEditorModeChange", async (event, processId, isEditorMode) => {
+    const procInfo = childProcesses.get(processId);
+    if (!procInfo) {
+      console.log(`无法更新进程 ${processId} 的编辑器模式状态：进程不存在`);
+      return false;
+    }
+
+    // 记录状态变更前的值，用于调试
+    const previousState = procInfo.editorMode;
+    
+    // 更新进程信息中的编辑器模式状态
+    procInfo.editorMode = isEditorMode;
+    
+    // 仅当状态实际变化时记录详细日志
+    if (previousState !== isEditorMode) {
+      console.log(`进程 ${processId} 编辑器模式已${isEditorMode ? '启动' : '退出'}（通过buffer类型检测）`);
+      
+      // 记录更多调试信息
+      if (isEditorMode) {
+        logToFile(`[EDITOR] 进程 ${processId} 进入编辑器模式（通过buffer类型检测）`, "DEBUG");
+      } else {
+        logToFile(`[EDITOR] 进程 ${processId} 退出编辑器模式（通过buffer类型检测）`, "DEBUG");
+      }
+    }
+    
+    // 如果退出编辑器模式，清除相关标志
+    if (!isEditorMode) {
+      procInfo.possibleEditorExit = false;
+    }
+    
+    return true;
   });
 
   // 加载连接配置
@@ -1874,19 +1908,6 @@ function setupIPC(mainWindow) {
         message: error.message,
       };
     }
-  });
-
-  // 添加命令历史相关的IPC处理
-  ipcMain.handle("command:loadHistory", async () => {
-    return loadCommandHistory();
-  });
-
-  ipcMain.handle("command:saveHistory", async (event, commandHistory) => {
-    return saveCommandHistory(commandHistory);
-  });
-
-  ipcMain.handle("command:addToHistory", async (event, command) => {
-    return addToCommandHistory(command);
   });
 
   // AI设置相关IPC处理
@@ -5259,148 +5280,6 @@ const processAIPromptInline = async (prompt, settings) => {
   }
 };
 
-// 加载命令历史记录
-const loadCommandHistory = () => {
-  const configPath = getConfigPath();
-  
-  try {
-    if (fs.existsSync(configPath)) {
-      const data = fs.readFileSync(configPath, "utf8");
-      const config = JSON.parse(data);
-      
-      // 检查是否有commandHistory字段
-      if (config.commandHistory && Array.isArray(config.commandHistory)) {
-        return config.commandHistory;
-      } else if (config.commandHistory) {
-        // 兼容旧版本，如果commandHistory不是数组，重置为空数组
-        return [];
-      }
-    }
-  } catch (error) {
-    console.error("Failed to load command history:", error);
-  }
-  
-  return [];
-};
-
-// 保存命令历史记录
-const saveCommandHistory = (commandHistory) => {
-  const configPath = getConfigPath();
-  
-  try {
-    // 加载当前配置，以保留其他设置
-    let config = {};
-    if (fs.existsSync(configPath)) {
-      const data = fs.readFileSync(configPath, "utf8");
-      config = JSON.parse(data);
-    }
-    
-    // 更新commandHistory部分
-    config.commandHistory = commandHistory;
-    
-    // 写回配置文件
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
-    return true;
-  } catch (error) {
-    console.error("Failed to save command history:", error);
-    return false;
-  }
-};
-
-// 添加命令到历史记录
-const addToCommandHistory = (command) => {
-  if (!command || command.trim() === '') return false;
-  
-  // 检查是否是转义序列（通常是方向键等）
-  if (command.startsWith('\x1b') || command.includes('\x1b[')) {
-    return false;
-  }
-  
-  // 检测命令是否可能是编辑器命令或编辑器的内部命令
-  if (editorCommandRegex.test(command) || 
-      /^(:|[wqxcdiaplsuyjk][a-z]*|ZZ|dd|yy|gg|\d+G|\/[^\/]+\/|\?[^\?]+\?)$/i.test(command)) {
-    return false;
-  }
-  
-  try {
-    const history = loadCommandHistory();
-    if (history.length > 0) {
-      // 获取历史记录中的第一个命令，它是最近添加的
-      const latestCommand = typeof history[0] === 'string' ? history[0] : history[0].command;
-      if (latestCommand.startsWith(command) && latestCommand !== command) {
-        return false;
-      }
-      
-      if (command.startsWith(latestCommand) && latestCommand !== command) {
-        history.shift(); // 移除最近的命令，即将被当前命令替换
-      }
-      
-      // 扫描历史记录中可能的残缺命令前缀
-      for (let i = 0; i < history.length; i++) {
-        const historyItem = history[i];
-        const historyCommand = typeof historyItem === 'string' ? historyItem : historyItem.command;
-        if (command !== historyCommand && 
-            (command.startsWith(historyCommand) || historyCommand.startsWith(command)) && 
-            (
-              // 检查它们是否有相同的命令开头（直到第一个空格），说明是同一命令的不同补全阶段
-              command.split(' ')[0] === historyCommand.split(' ')[0] ||
-              // 或者历史命令是当前命令的直接路径前缀，说明是文件路径补全的不同阶段
-              (command.lastIndexOf('/') > 0 && 
-               historyCommand === command.substring(0, command.lastIndexOf('/')))
-            )) {
-          // 移除这个残缺命令
-          history.splice(i, 1);
-          i--; // 调整索引以适应数组变化
-        }
-      }
-    }
-    
-    // 检查命令是否已存在
-    const existingIndex = history.findIndex(item => 
-      typeof item === 'string' ? item === command : item.command === command
-    );
-    
-    if (existingIndex !== -1) {
-      // 命令已存在，更新使用次数
-      const existingItem = history[existingIndex];
-      if (typeof existingItem === 'string') {
-        // 旧格式转换为新格式
-        history[existingIndex] = {
-          command: existingItem,
-          count: 2, // 第一次+当前使用
-          lastUsed: Date.now()
-        };
-      } else {
-        // 增加使用次数
-        existingItem.count = (existingItem.count || 1) + 1;
-        existingItem.lastUsed = Date.now();
-      }
-      
-      // 移到数组首位
-      const item = history.splice(existingIndex, 1)[0];
-      history.unshift(item);
-    } else {
-      // 添加新命令
-      history.unshift({
-        command: command,
-        count: 1,
-        lastUsed: Date.now()
-      });
-      
-      // 如果超过10000条，删除最旧的
-      if (history.length > 10000) {
-        history.pop();
-      }
-    }
-    
-    // 保存更新后的历史记录
-    return saveCommandHistory(history);
-  } catch (error) {
-    console.error("Failed to add command to history:", error);
-    return false;
-  }
-};
-
 // 处理终端输出的函数，用于检测命令提示符
 const processTerminalOutput = (processId, output) => {
   const procInfo = childProcesses.get(processId);
@@ -5477,11 +5356,7 @@ const processTerminalOutput = (processId, output) => {
               const nextLine = procInfo.lastOutputLines[j];
               if (commandPromptRegex.some(r => r.test(nextLine))) {
                 nextLineIsPrompt = true;
-                
-                // 找到完整的命令执行序列，将命令添加到历史记录
                 if (command !== procInfo.lastExtractedCommand) {
-                  // 避免重复添加相同的命令
-                  addToCommandHistory(command); // 从远程SSH输出提取的命令
                   procInfo.lastExtractedCommand = command;
                 }
                 
