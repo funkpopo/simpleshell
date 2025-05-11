@@ -147,7 +147,7 @@ const ConnectionManager = ({
       password: "",
       authType: "password",
       privateKeyPath: "",
-      parentGroup: parentGroupId,
+      parentGroup: parentGroupId || "",
     });
     setDialogOpen(true);
   };
@@ -222,7 +222,7 @@ const ConnectionManager = ({
   // 处理表单变化
   const handleFormChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value === null ? "" : value }));
   };
 
   // 保存表单数据
@@ -803,7 +803,7 @@ const ConnectionManager = ({
                       <InputLabel>认证方式</InputLabel>
                       <Select
                         name="authType"
-                        value={formData.authType}
+                        value={formData.authType || "password"}
                         label="认证方式"
                         onChange={handleFormChange}
                       >
@@ -854,7 +854,7 @@ const ConnectionManager = ({
                       <InputLabel>分组</InputLabel>
                       <Select
                         name="parentGroup"
-                        value={formData.parentGroup}
+                        value={formData.parentGroup || ""}
                         label="分组"
                         onChange={handleFormChange}
                       >
