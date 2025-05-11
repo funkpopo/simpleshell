@@ -329,6 +329,48 @@ const WebTerminal = ({
     // 识别编辑器命令的正则表达式
     const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
     
+    // 添加buffer类型监听，用于检测编辑器模式
+    // xterm.js在全屏应用（如vi）运行时会切换到alternate buffer
+    const bufferTypeObserver = {
+      handleBufferTypeChange: (type) => {
+        console.log(`终端缓冲区类型变化: ${type}`);
+        if (type === 'alternate') {
+          // 进入编辑器/全屏应用模式
+          inEditorMode = true;
+          console.log("编辑器模式已启动（通过buffer类型检测）");
+          
+          // 通知主进程编辑器模式状态变更
+          if (processId && window.terminalAPI?.notifyEditorModeChange) {
+            window.terminalAPI.notifyEditorModeChange(processId, true);
+          }
+        } else if (type === 'normal') {
+          // 退出编辑器/全屏应用模式
+          if (inEditorMode) {
+            inEditorMode = false;
+            console.log("编辑器模式已退出（通过buffer类型检测）");
+            
+            // 通知主进程编辑器模式状态变更
+            if (processId && window.terminalAPI?.notifyEditorModeChange) {
+              window.terminalAPI.notifyEditorModeChange(processId, false);
+            }
+          }
+        }
+      }
+    };
+    
+    // 监听buffer类型变化
+    if (term.buffer && typeof term.buffer.onBufferChange === 'function') {
+      // 如果xterm.js版本支持此方法
+      term.buffer.onBufferChange((e) => {
+        bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
+      });
+      
+      // 初始检查当前buffer类型
+      bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
+    } else {
+      console.log("当前xterm.js版本不支持buffer类型监听，将使用传统方法检测编辑器模式");
+    }
+    
     // 监听终端数据输出，用于检测编辑器特征
     term.onData((data) => {
       // 检查是否是ESC开头的转义序列（通常是方向键等特殊键）
@@ -426,22 +468,26 @@ const WebTerminal = ({
             }
           }
           
-          // 检测是否进入了编辑器模式
-          if (command && editorCommandRegex.test(command)) {
+          // 检测是否进入了编辑器模式（备用模式。确保能够实施resize）
+          // 只有在不支持buffer类型检测时才使用命令识别
+          if (command && 
+              editorCommandRegex.test(command) && 
+              (!term.buffer || typeof term.buffer.onBufferChange !== 'function')) {
             inEditorMode = true;
-            console.log("Editor mode detected in frontend:", command);
+            console.log("编辑器模式已启动（通过命令检测）:", command);
+            
+            // 通知主进程编辑器模式状态变更
+            if (processId && window.terminalAPI?.notifyEditorModeChange) {
+              window.terminalAPI.notifyEditorModeChange(processId, true);
+            }
           }
           
           // 确保命令不为空且不与上一次执行的命令相同，并且不在编辑器模式中
+          // 注意：inEditorMode可能已经被buffer类型检测器更新
           if (command && command !== lastExecutedCommand && !inEditorMode) {
-            // 记录当前命令作为完整命令，不管是否使用了Tab补全
-            if (window.terminalAPI?.addToCommandHistory) {
-              window.terminalAPI.addToCommandHistory(command);
-              // 记录最后添加的命令，避免重复添加
-              lastExecutedCommand = command;
-            }
+            lastExecutedCommand = command;
           }
-
+          
           // 重置当前输入缓冲区和Tab补全状态
           currentInputBuffer = '';
           tabCompletionUsed = false;
@@ -486,28 +532,35 @@ const WebTerminal = ({
       }
     });
     
-    // 添加输出监听，以检测编辑器退出
+    // 添加输出监听，以检测编辑器退出（仅作为备用方法）
     term.onLineFeed(() => {
       // 当获得新的一行时，检查是否有shell提示符出现，这可能表示编辑器已退出
+      // 注意：如果buffer类型检测可用，此方法是不必要的
       try {
-        // 检查最后几行，寻找shell提示符
-        const linesCount = term.buffer.active.length;
-        const lastRowsToCheck = Math.min(5, linesCount); // 检查最后5行
-        
-        for (let i = 0; i < lastRowsToCheck; i++) {
-          const line = term.buffer.active.getLine(linesCount - 1 - i)?.translateToString() || "";
-          // 检查是否包含典型的shell提示符
-          if (/[>$#][>$#]?\s*$/.test(line) || /\w+@\w+:[~\w\/]+[$#>]\s*$/.test(line)) {
-            // 如果在编辑器模式中发现shell提示符，可能已经退出
-            if (inEditorMode) {
+        // 只在不支持buffer类型检测时使用此备用方法
+        if (inEditorMode && (!term.buffer || typeof term.buffer.onBufferChange !== 'function')) {
+          // 检查最后几行，寻找shell提示符
+          const linesCount = term.buffer.active.length;
+          const lastRowsToCheck = Math.min(5, linesCount); // 检查最后5行
+          
+          for (let i = 0; i < lastRowsToCheck; i++) {
+            const line = term.buffer.active.getLine(linesCount - 1 - i)?.translateToString() || "";
+            // 检查是否包含典型的shell提示符
+            if (/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*$/.test(line)) {
               inEditorMode = false;
-              console.log("Editor mode exited in frontend - detected shell prompt");
+              console.log("编辑器模式已退出（通过shell提示符检测）");
+              
+              // 通知主进程编辑器模式状态变更
+              if (processId && window.terminalAPI?.notifyEditorModeChange) {
+                window.terminalAPI.notifyEditorModeChange(processId, false);
+              }
+              break;
             }
-            break;
           }
         }
       } catch (error) {
-        console.error("检测shell提示符出错:", error);
+        // 忽略任何错误，不影响正常功能
+        console.error("检测编辑器退出时出错:", error);
       }
     });
     
@@ -1384,10 +1437,10 @@ const WebTerminal = ({
           }
           // 只有不在编辑器模式下才添加到历史记录
           else if (!inEditorMode) {
-            // 将命令添加到历史记录
-            if (window.terminalAPI?.addToCommandHistory) {
-              window.terminalAPI.addToCommandHistory(command);
-            }
+            // 命令历史记录功能已移除
+            // if (window.terminalAPI?.addToCommandHistory) {
+            //   window.terminalAPI.addToCommandHistory(command);
+            // }
             
             // 如果 IPC API 不可用，使用本地处理命令
             handleCommand(term, command);

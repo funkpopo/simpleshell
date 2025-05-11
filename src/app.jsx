@@ -42,7 +42,6 @@ import ResourceMonitor from "./components/ResourceMonitor.jsx";
 import AIAssistant from "./components/AIAssistant.jsx";
 import AIIcon from "./components/AIIcon.jsx";
 import FileManager from "./components/FileManager.jsx";
-import CommandHistory from "./components/CommandHistory.jsx";
 import Settings from "./components/Settings.jsx";
 import Divider from "@mui/material/Divider";
 // Import i18n configuration
@@ -362,9 +361,6 @@ function App() {
 
   // 文件管理侧边栏状态
   const [fileManagerOpen, setFileManagerOpen] = React.useState(false);
-
-  // 命令历史侧边栏状态
-  const [commandHistoryOpen, setCommandHistoryOpen] = React.useState(false);
 
   // 最后打开的侧边栏（用于确定z-index层级）
   const [lastOpenedSidebar, setLastOpenedSidebar] = React.useState(null);
@@ -791,18 +787,12 @@ function App() {
     setFileManagerOpen(false);
   };
 
-  // 切换命令历史侧边栏
-  const toggleCommandHistory = () => {
-    setCommandHistoryOpen(!commandHistoryOpen);
-    // 如果要打开命令历史侧边栏，确保它显示在上层
-    if (!commandHistoryOpen) {
-      setLastOpenedSidebar("history");
-    }
-  };
-
-  // 关闭命令历史侧边栏
-  const handleCloseCommandHistory = () => {
-    setCommandHistoryOpen(false);
+  // 更新closeAllSidebars函数，移除命令历史部分
+  const closeAllSidebars = () => {
+    if (connectionManagerOpen) handleCloseConnectionManager();
+    if (resourceMonitorOpen) handleCloseResourceMonitor();
+    if (aiAssistantOpen) handleCloseAIAssistant();
+    if (fileManagerOpen) handleCloseFileManager();
   };
 
   // 处理设置变更
@@ -1104,13 +1094,7 @@ function App() {
                   zIndex: 89,
                   display: { xs: "block", md: "none" },
                 }}
-                onClick={() => {
-                  if (connectionManagerOpen) handleCloseConnectionManager();
-                  if (resourceMonitorOpen) handleCloseResourceMonitor();
-                  if (aiAssistantOpen) handleCloseAIAssistant();
-                  if (fileManagerOpen) handleCloseFileManager();
-                  if (commandHistoryOpen) handleCloseCommandHistory();
-                }}
+                onClick={closeAllSidebars}
               />
             )}
 
@@ -1202,24 +1186,6 @@ function App() {
                     ? terminalInstances[`${tabs[currentTab].id}-config`]
                     : null
                 }
-              />
-            </Box>
-
-            {/* 命令历史侧边栏 */}
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "history" ? 104 : 95,
-                height: "100%",
-                display: "flex",
-              }}
-            >
-              <CommandHistory
-                open={commandHistoryOpen}
-                onClose={handleCloseCommandHistory}
-                activeTabId={currentTab > 0 && tabs[currentTab] ? tabs[currentTab].id : null}
               />
             </Box>
 
@@ -1328,26 +1294,6 @@ function App() {
                   }
                 >
                   <FolderIcon />
-                </IconButton>
-              </Tooltip>
-
-              {/* 命令历史按钮 */}
-              <Tooltip title={t('sidebar.history')} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleCommandHistory}
-                  sx={{
-                    bgcolor: commandHistoryOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
-                      bgcolor: commandHistoryOpen
-                        ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                >
-                  <HistoryIcon />
                 </IconButton>
               </Tooltip>
             </Paper>

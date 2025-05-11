@@ -32,7 +32,8 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import CloseIcon from "@mui/icons-material/Close";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
-import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+import { DragDropContext, Draggable } from "react-beautiful-dnd";
+import { Droppable } from "./CustomDragDrop.jsx";
 import { arrayMoveImmutable } from "array-move";
 import { alpha } from "@mui/material/styles";
 
@@ -284,8 +285,8 @@ const ConnectionManager = ({
 
         // 判断是否需要移动连接到不同的组
         if (
-          formData.parentGroup &&
-          selectedItem.parentGroupId !== formData.parentGroup
+          (formData.parentGroup && selectedItem.parentGroupId !== formData.parentGroup) || 
+          (!formData.parentGroup && selectedItem.parentGroupId)
         ) {
           // 从原组中删除
           if (selectedItem.parentGroupId) {
@@ -308,14 +309,20 @@ const ConnectionManager = ({
             );
           }
 
-          // 添加到新组
-          setConnections((prevConnections) =>
-            prevConnections.map((group) =>
-              group.id === formData.parentGroup
-                ? { ...group, items: [...group.items, updatedConnection] }
-                : group,
-            ),
-          );
+          // 如果有新组，添加到新组；否则添加到顶层
+          if (formData.parentGroup) {
+            // 添加到新组
+            setConnections((prevConnections) =>
+              prevConnections.map((group) =>
+                group.id === formData.parentGroup
+                  ? { ...group, items: [...group.items, updatedConnection] }
+                  : group,
+              ),
+            );
+          } else {
+            // 添加到顶层
+            setConnections((prev) => [...prev, updatedConnection]);
+          }
         } else {
           // 更新当前位置
           if (selectedItem.parentGroupId) {
