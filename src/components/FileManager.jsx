@@ -18,6 +18,8 @@ import {
   MenuItem,
   Button,
   LinearProgress,
+  Alert,
+  Snackbar,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import FolderIcon from "@mui/icons-material/Folder";
@@ -76,6 +78,9 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
 
   // 配置参数
   const USER_ACTIVITY_REFRESH_DELAY = 1000; // 用户活动后刷新延迟
+
+  // 添加消息通知状态
+  const [notification, setNotification] = useState(null);
 
   // 当SSH连接改变时，重置状态并加载目录
   useEffect(() => {
@@ -1279,20 +1284,71 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     handleContextMenuClose();
   };
 
+  // 显示通知的辅助函数，增强版
+  const showNotification = (message, severity = "info", duration = 3000, showAction = false, actionCallback = null) => {
+    setNotification({ 
+      message, 
+      severity,
+      duration,
+      showAction,
+      actionCallback
+    });
+    
+    // 自动关闭通知（除非是错误或指定了更长的持续时间）
+    if (severity !== "error" && duration > 0) {
+      setTimeout(() => setNotification(null), duration);
+    }
+  };
+  
+  // 关闭通知
+  const handleCloseNotification = () => {
+    setNotification(null);
+  };
+  
+  // 修改 setError 的使用，使用通知系统
+  useEffect(() => {
+    if (error) {
+      showNotification(error, "error");
+    }
+  }, [error]);
+
   // 处理下载文件夹
   const handleDownloadFolder = async () => {
-    if (!selectedFile || !selectedFile.isDirectory || !sshConnection) return;
+    if (!sshConnection) {
+      showNotification("SSH连接不可用", "error");
+      return;
+    }
+    
+    // 确保有选中的文件夹
+    if (!selectedFile) {
+      showNotification("请先选择要下载的文件夹", "warning");
+      return;
+    }
+    
+    if (!selectedFile.isDirectory) {
+      // 如果选中的不是文件夹，而是文件，则使用文件下载函数
+      return handleDownload();
+    }
 
     // 重置取消状态
     setTransferCancelled(false);
 
     try {
-      const fullPath =
-        currentPath === "/"
-          ? "/" + selectedFile.name
-          : currentPath
-            ? currentPath + "/" + selectedFile.name
-            : selectedFile.name;
+      console.log(`准备下载文件夹: ${selectedFile.name}`);
+      showNotification(`正在准备下载文件夹 ${selectedFile.name}...`, "info");
+      
+      // 构建完整路径，确保处理各种路径情况
+      const fullPath = (() => {
+        if (currentPath === "/") {
+          return "/" + selectedFile.name;
+        } else if (currentPath === "~") {
+          return "~/" + selectedFile.name;
+        } else {
+          return currentPath + "/" + selectedFile.name;
+        }
+      })();
+      
+      console.log(`下载文件夹的完整路径: ${fullPath}`);
 
       if (window.terminalAPI && window.terminalAPI.downloadFolder) {
         // 设置初始传输进度状态
@@ -1310,23 +1366,12 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         });
 
         // 使用progressCallback处理进度更新
-        await window.terminalAPI.downloadFolder(
-          tabId,
-          fullPath,
-          (
-            progress,
-            currentFile,
-            transferredBytes,
-            totalBytes,
-            transferSpeed,
-            remainingTime,
-            processedFiles,
-            totalFiles,
-          ) => {
-            setTransferProgress({
-              type: "download-folder",
+        try {
+          const downloadResult = await window.terminalAPI.downloadFolder(
+            tabId,
+            fullPath,
+            (
               progress,
-              fileName: selectedFile.name,
               currentFile,
               transferredBytes,
               totalBytes,
@@ -1334,22 +1379,135 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
               remainingTime,
               processedFiles,
               totalFiles,
-            });
-          },
-        );
-
-        // 下载完成后清除进度状态
-        setTimeout(() => setTransferProgress(null), 1500);
+            ) => {
+              setTransferProgress({
+                type: "download-folder",
+                progress,
+                fileName: selectedFile.name,
+                currentFile,
+                transferredBytes,
+                totalBytes,
+                transferSpeed,
+                remainingTime,
+                processedFiles,
+                totalFiles,
+              });
+            },
+          );
+          
+          console.log(`文件夹 ${selectedFile.name} 下载成功`, downloadResult);
+          
+          // 下载完成后清除进度状态
+          setTimeout(() => {
+            setTransferProgress(null);
+            
+            // 显示详细的成功通知
+            if (downloadResult && downloadResult.downloadPath) {
+              const normalizedPath = downloadResult.downloadPath.replace(/\//g, '\\');
+              // 验证路径存在
+              window.terminalAPI.checkPathExists?.(normalizedPath)
+                .then(exists => {
+                  if (exists) {
+                    // 显示包含下载路径的成功消息
+                    showNotification(
+                      `文件夹 ${selectedFile.name} 已下载到: ${normalizedPath}`, 
+                      "success",
+                      15000, // 显示更长时间
+                      true, // 提供打开选项
+                      () => {
+                        // 尝试使用window.shell打开文件夹位置
+                        if (window.terminalAPI && window.terminalAPI.openExternal) {
+                          const folderUrl = `file://${normalizedPath}`;
+                          window.terminalAPI.openExternal(folderUrl)
+                            .then(() => {
+                              console.log("成功打开文件夹位置");
+                            })
+                            .catch(e => {
+                              console.error("无法打开文件夹:", e);
+                              // 尝试替代方法
+                              window.terminalAPI.showItemInFolder?.(normalizedPath).catch(() => {
+                                showNotification(`无法自动打开文件夹，位置: ${normalizedPath}`, "warning");
+                              });
+                            });
+                        }
+                      }
+                    );
+                  } else {
+                    showNotification(
+                      `文件夹下载可能未完成，无法在 ${normalizedPath} 找到文件`, 
+                      "warning",
+                      10000
+                    );
+                  }
+                })
+                .catch(() => {
+                  // 如果无法验证，仍然显示成功消息
+                  showNotification(
+                    `文件夹 ${selectedFile.name} 下载已完成，但无法验证路径: ${normalizedPath}`, 
+                    "success",
+                    10000
+                  );
+                });
+            } else {
+              // 基本成功通知
+              showNotification(`文件夹 ${selectedFile.name} 下载成功`, "success");
+            }
+            
+            setError(null); // 清除可能存在的错误信息
+          }, 1500);
+        } catch (downloadError) {
+          console.error("文件夹下载过程中出错:", downloadError);
+          throw downloadError; // 重新抛出错误，让外层 catch 处理
+        }
+      } else {
+        throw new Error("下载文件夹API不可用");
       }
     } catch (error) {
       console.error("下载文件夹失败:", error);
 
-      // 只有在不是用户主动取消的情况下才显示错误
-      if (
-        !transferCancelled &&
-        !error.message?.includes("reply was never sent")
-      ) {
-        setError("下载文件夹失败: " + (error.message || "未知错误"));
+      console.log("下载错误详情:", error);
+      
+      // 处理各种错误情况
+      if (transferCancelled) {
+        showNotification("下载已被用户取消", "info");
+      } else if (error.message?.includes("reply was never sent")) {
+        showNotification("下载进程异常中断，请重试", "warning", 8000);
+      } else if (error.message?.includes("用户取消下载")) {
+        // 特别处理这个可能误报的情况，提供更详细的解释
+        showNotification(
+          "下载路径选择有问题，请重试并确保正确选择下载文件夹", 
+          "warning", 
+          10000, 
+          true, 
+          () => {
+            console.log("用户点击重试下载");
+            setTimeout(() => handleDownloadFolder(), 500);
+          }
+        );
+      } else if (error.message?.includes("无法创建本地文件夹结构")) {
+        showNotification(`下载失败: 无法创建本地文件夹。请检查您的磁盘空间及权限。`, "error", 10000);
+      } else if (error.message?.includes("权限不足") || error.message?.includes("拒绝访问") || error.message?.includes("Access denied")) {
+        showNotification(`下载失败: 权限不足。请尝试以管理员身份运行或选择其他下载位置。`, "error", 10000);
+      } else if (error.message?.includes("网络") || error.message?.includes("Network") || error.message?.includes("timeout")) {
+        showNotification(`下载失败: 网络连接问题。请检查您的网络连接并重试。`, "error", 10000);
+      } else if (error.message?.includes("路径无效") || error.message?.includes("选择的下载路径无效")) {
+        showNotification(`下载失败: 您选择的下载路径无效或不可访问。请选择其他位置。`, "error", 10000);
+      } else {
+        // 通用错误处理
+        showNotification("下载文件夹失败: " + (error.message || "未知错误"), "error", 10000);
+      }
+
+      // 提供重试选项
+      if (error && !transferCancelled && !error.message?.includes("用户取消下载")) {
+        setTimeout(() => {
+          showNotification(
+            "您可以尝试重新下载文件夹",
+            "info",
+            8000,
+            true,
+            () => handleDownloadFolder()
+          );
+        }, 3000);
       }
 
       setTransferProgress(null);
@@ -1441,6 +1599,40 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     attemptRename();
   };
 
+  // 处理键盘快捷键
+  const handleKeyDown = (event) => {
+    // 只有当文件管理器打开时才处理键盘事件
+    if (!open) return;
+    
+    // Ctrl+D: 下载文件/文件夹
+    if (event.ctrlKey && event.key === 'd') {
+      event.preventDefault(); // 阻止默认行为
+      
+      // 如果有选中的文件/文件夹，则触发下载
+      if (selectedFile) {
+        if (selectedFile.isDirectory) {
+          handleDownloadFolder();
+        } else {
+          handleDownload();
+        }
+      } else {
+        showNotification("请先选择要下载的文件或文件夹", "warning");
+      }
+    }
+  };
+  
+  // 添加和移除键盘事件监听器
+  useEffect(() => {
+    if (open) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    
+    // 清理函数
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, selectedFile, handleDownload, handleDownloadFolder]); // 添加所有需要的依赖项
+
   return (
     <Paper
       sx={{
@@ -1458,6 +1650,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
         borderTopRightRadius: 0,
         borderBottomRightRadius: 0,
       }}
+      tabIndex={0} // 使得Paper元素可以接收键盘事件
     >
       {/* 标题栏 */}
       <Box
@@ -1539,6 +1732,19 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           <IconButton size="small" onClick={toggleSearch}>
             <SearchIcon fontSize="small" />
           </IconButton>
+        </Tooltip>
+
+        {/* 添加下载按钮 */}
+        <Tooltip title={selectedFile?.isDirectory ? "下载文件夹" : selectedFile ? "下载文件" : "下载"}>
+          <span>
+            <IconButton 
+              size="small" 
+              onClick={selectedFile?.isDirectory ? handleDownloadFolder : selectedFile ? handleDownload : null}
+              disabled={!selectedFile}
+            >
+              <DownloadIcon fontSize="small" />
+            </IconButton>
+          </span>
         </Tooltip>
       </Box>
 
@@ -2093,6 +2299,40 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           tabId={tabId}
         />
       )}
+
+      {/* 通知系统 - 增强版 */}
+      <Snackbar
+        open={notification !== null}
+        autoHideDuration={notification?.severity === "error" ? null : notification?.duration || 3000}
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        {notification && (
+          <Alert
+            onClose={handleCloseNotification}
+            severity={notification.severity}
+            sx={{ width: '100%' }}
+            action={
+              notification.showAction && notification.actionCallback ? (
+                <Button 
+                  color="inherit" 
+                  size="small" 
+                  onClick={() => {
+                    if (typeof notification.actionCallback === 'function') {
+                      notification.actionCallback();
+                    }
+                    handleCloseNotification();
+                  }}
+                >
+                  打开位置
+                </Button>
+              ) : null
+            }
+          >
+            {notification.message}
+          </Alert>
+        )}
+      </Snackbar>
     </Paper>
   );
 };

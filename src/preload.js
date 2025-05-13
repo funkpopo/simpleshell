@@ -260,6 +260,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 在外部浏览器打开链接
   openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
+  
+  // 文件系统辅助API
+  checkPathExists: (path) => ipcRenderer.invoke("checkPathExists", path),
+  showItemInFolder: (path) => ipcRenderer.invoke("showItemInFolder", path),
 
   // UI设置相关API
   loadUISettings: () => ipcRenderer.invoke("settings:loadUISettings"),

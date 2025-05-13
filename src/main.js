@@ -3958,33 +3958,96 @@ function setupIPC(mainWindow) {
           const sshClient = processInfo.process;
           const sshConfig = processInfo.config; // 获取SSH配置
 
-          // 获取文件夹名
-          const folderName = path.basename(remoteFolderPath);
+          // 获取文件夹名，处理特殊情况
+          let folderName;
+          if (remoteFolderPath === '/' || remoteFolderPath === '~') {
+            // 如果是根目录或家目录，使用安全的名称
+            folderName = 'root_folder';
+            logToFile(`检测到特殊目录 ${remoteFolderPath}，使用安全名称: ${folderName}`, "INFO");
+          } else if (remoteFolderPath.endsWith('/')) {
+            // 如果路径以斜杠结尾，需要特殊处理
+            const parts = remoteFolderPath.split('/').filter(p => p);
+            folderName = parts[parts.length - 1] || 'folder';
+            logToFile(`解析带斜杠结尾的路径 ${remoteFolderPath}，提取文件夹名: ${folderName}`, "INFO");
+          } else {
+            // 正常情况
+            folderName = path.basename(remoteFolderPath);
+            logToFile(`从路径 ${remoteFolderPath} 提取的文件夹名称: ${folderName}`, "INFO");
+          }
 
-          // 打开保存对话框
-          const { canceled, filePath } = await dialog.showOpenDialog(
+          // 打开保存对话框 - 设置默认下载位置
+          logToFile(`开始打开下载位置选择对话框, 默认路径: ${app.getPath("downloads")}`, "INFO");
+          
+          const result = await dialog.showOpenDialog(
             mainWindow,
             {
               title: "选择下载位置",
+              defaultPath: app.getPath("downloads"), // 使用系统下载文件夹作为默认位置
               properties: ["openDirectory"],
               buttonLabel: "下载到此文件夹",
             },
           );
-
-          if (canceled || !filePath) {
+          
+          logToFile(`对话框结果: ${JSON.stringify(result)}`, "INFO");
+          
+          // 检查对话框结果是否正确
+          if (!result || result.canceled || !result.filePaths || result.filePaths.length === 0) {
+            logToFile(`用户取消了选择或返回空路径: ${JSON.stringify(result)}`, "INFO");
             return { success: false, error: "用户取消下载" };
           }
+          
+          // 获取用户选择的路径
+          const userSelectedPath = result.filePaths[0];
+          logToFile(`用户选择的下载路径: ${userSelectedPath}`, "INFO");
+          
+          if (!userSelectedPath || userSelectedPath.trim() === '') {
+            logToFile(`用户选择的路径无效: ${userSelectedPath}`, "ERROR");
+            return { success: false, error: "选择的下载路径无效" };
+          }
 
-          // 计算本地保存路径
-          const localFolderPath = path.join(filePath, folderName);
+          // 计算本地保存路径 - 使用正确的用户所选路径
+          const localFolderPath = path.join(userSelectedPath, folderName);
+          logToFile(`计算得到的本地文件夹路径: ${localFolderPath}`, "INFO");
 
-          // 确保本地文件夹存在
-          if (!fs.existsSync(localFolderPath)) {
-            fs.mkdirSync(localFolderPath, { recursive: true });
+          // 规范化路径格式，确保Windows下路径正确
+          const normalizedLocalPath = path.normalize(localFolderPath);
+          logToFile(`规范化后的本地路径: ${normalizedLocalPath}`, "INFO");
+          
+          // 确保本地文件夹存在 - 添加更强的错误处理
+          try {
+            // 检查父文件夹是否存在并可写
+            const parentDir = path.dirname(normalizedLocalPath);
+            logToFile(`检查父文件夹: ${parentDir}`, "INFO");
+            
+            if (!fs.existsSync(parentDir)) {
+              logToFile(`父文件夹不存在，尝试创建: ${parentDir}`, "INFO");
+              fs.mkdirSync(parentDir, { recursive: true });
+            }
+            
+            // 检查目标文件夹
+            if (!fs.existsSync(normalizedLocalPath)) {
+              logToFile(`目标文件夹不存在，尝试创建: ${normalizedLocalPath}`, "INFO");
+              fs.mkdirSync(normalizedLocalPath, { recursive: true });
+            } else {
+              logToFile(`目标文件夹已存在: ${normalizedLocalPath}`, "INFO");
+            }
+            
+            // 验证文件夹是否可写
+            const testFilePath = path.join(normalizedLocalPath, '.write_test');
+            logToFile(`创建测试文件验证权限: ${testFilePath}`, "INFO");
+            fs.writeFileSync(testFilePath, 'test');
+            fs.unlinkSync(testFilePath);
+            logToFile(`文件夹权限检查通过: ${normalizedLocalPath}`, "INFO");
+          } catch (fsError) {
+            logToFile(`Error creating or writing to folder "${normalizedLocalPath}": ${fsError.message}`, "ERROR");
+            return { 
+              success: false, 
+              error: `无法创建或写入下载文件夹: ${fsError.message}。请检查路径权限或选择其他位置。`
+            };
           }
 
           logToFile(
-            `Downloading folder "${remoteFolderPath}" to "${localFolderPath}" for session ${tabId}`,
+            `Downloading folder "${remoteFolderPath}" to "${normalizedLocalPath}" for session ${tabId}`,
             "INFO",
           );
 
@@ -4023,19 +4086,26 @@ function setupIPC(mainWindow) {
                 let items = [];
 
                 try {
+                  // 记录扫描操作的开始
+                  logToFile(`开始扫描远程文件夹: ${folderPath}, 基础路径: ${basePath}`, "INFO");
+                  
                   // 获取文件夹内容
                   const entries = await sftp.list(folderPath);
+                  logToFile(`文件夹 ${folderPath} 包含 ${entries.length} 个项目`, "INFO");
 
                   for (const entry of entries) {
                     // 跳过"."和".."目录
                     if (entry.name === "." || entry.name === "..") continue;
 
-                    const entryPath = path.posix
-                      .join(folderPath, entry.name)
-                      .replace(/\\/g, "/");
-                    const relativePath = path
-                      .join(basePath, entry.name)
-                      .replace(/\\/g, "/");
+                    // 确保使用正斜杠处理SFTP远程路径
+                    const entryPath = folderPath === '/' 
+                      ? `/${entry.name}` 
+                      : `${folderPath}/${entry.name}`;
+                    
+                    // 本地相对路径使用系统相关路径分隔符，最后统一转换为SFTP格式
+                    const relativePath = basePath 
+                      ? path.join(basePath, entry.name).replace(/\\/g, "/") 
+                      : entry.name;
 
                     if (entry.type === "d") {
                       // 目录
@@ -4075,6 +4145,7 @@ function setupIPC(mainWindow) {
               };
 
               // 扫描远程文件夹结构
+              logToFile(`开始扫描远程文件夹: ${remoteFolderPath}`, "INFO");
               event.sender.send("download-folder-progress", {
                 tabId,
                 progress: 0,
@@ -4085,7 +4156,18 @@ function setupIPC(mainWindow) {
                 totalFiles: 0,
               });
 
-              const folderStructure = await scanRemoteFolder(remoteFolderPath);
+              let folderStructure;
+              try {
+                folderStructure = await scanRemoteFolder(remoteFolderPath);
+                if (!folderStructure || folderStructure.length === 0) {
+                  logToFile(`警告: 远程文件夹 ${remoteFolderPath} 返回了空结构`, "WARNING");
+                } else {
+                  logToFile(`成功扫描远程文件夹，获取到 ${folderStructure.length} 个顶级项目`, "INFO");
+                }
+              } catch (scanError) {
+                logToFile(`扫描远程文件夹出错: ${scanError.message}`, "ERROR");
+                throw scanError;
+              }
 
               // 计算下载总大小和文件数
               let totalBytes = 0;
@@ -4111,44 +4193,95 @@ function setupIPC(mainWindow) {
 
               // 递归创建本地文件夹结构
               const createLocalFolders = (items, parentPath) => {
+                logToFile(`准备在 ${parentPath} 创建本地文件夹结构`, "INFO");
+                
                 for (const item of items) {
                   if (item.isDirectory) {
                     const localPath = path.join(parentPath, item.name);
+                    logToFile(`尝试创建本地文件夹: ${localPath}`, "INFO");
 
-                    // 检查本地文件夹是否存在
-                    if (!fs.existsSync(localPath)) {
-                      fs.mkdirSync(localPath, { recursive: true });
-                    }
+                    try {
+                      // 检查本地文件夹是否存在
+                      if (!fs.existsSync(localPath)) {
+                        fs.mkdirSync(localPath, { recursive: true });
+                        logToFile(`成功创建本地文件夹: ${localPath}`, "INFO");
+                      } else {
+                        logToFile(`本地文件夹已存在: ${localPath}`, "INFO");
+                      }
 
-                    // 递归处理子文件夹
-                    if (item.children && item.children.length > 0) {
-                      createLocalFolders(item.children, localPath);
+                      // 确认文件夹创建成功并有写入权限
+                      if (!fs.existsSync(localPath)) {
+                        throw new Error(`创建文件夹失败: ${localPath}`);
+                      }
+                      
+                      // 创建测试文件以验证权限
+                      const testFile = path.join(localPath, '.write_test');
+                      fs.writeFileSync(testFile, 'test');
+                      fs.unlinkSync(testFile);
+                      logToFile(`文件夹权限验证成功: ${localPath}`, "INFO");
+
+                      // 递归处理子文件夹
+                      if (item.children && item.children.length > 0) {
+                        createLocalFolders(item.children, localPath);
+                      }
+                    } catch (folderError) {
+                      logToFile(`创建或验证本地文件夹失败: ${localPath}, 错误: ${folderError.message}`, "ERROR");
+                      throw folderError; // 重新抛出错误，中断整个过程
                     }
                   }
                 }
               };
 
               // 在本地创建文件夹结构
-              createLocalFolders(folderStructure, localFolderPath);
+              try {
+                // 确保根文件夹存在
+                if (!fs.existsSync(normalizedLocalPath)) {
+                  logToFile(`创建根下载文件夹: ${normalizedLocalPath}`, "INFO");
+                  fs.mkdirSync(normalizedLocalPath, { recursive: true });
+                } else {
+                  logToFile(`根下载文件夹已存在: ${normalizedLocalPath}`, "INFO");
+                }
+                
+                // 创建内部文件夹结构
+                logToFile(`开始创建内部文件夹结构，共 ${folderStructure.length} 个顶级项目`, "INFO");
+                createLocalFolders(folderStructure, normalizedLocalPath);
+                logToFile(`本地文件夹结构创建成功: ${normalizedLocalPath}`, "INFO");
+                
+                // 最后再次验证根文件夹是否存在
+                if (!fs.existsSync(normalizedLocalPath)) {
+                  throw new Error(`根文件夹不存在，可能创建失败: ${normalizedLocalPath}`);
+                }
+              } catch (folderStructureError) {
+                logToFile(`创建本地文件夹结构失败: ${folderStructureError.message}`, "ERROR");
+                throw new Error(`无法创建本地文件夹结构: ${folderStructureError.message}`);
+              }
 
               // 收集所有文件以便下载
               const allFiles = [];
               const collectFiles = (items, parentPath) => {
+                logToFile(`收集文件: 处理 ${items.length} 个项目，父路径: ${parentPath}`, "INFO");
                 for (const item of items) {
                   if (item.isDirectory && item.children) {
+                    // 处理子文件夹
+                    const subFolderPath = path.join(parentPath, item.name);
+                    logToFile(`处理子文件夹: ${item.name}, 完整路径: ${subFolderPath}`, "INFO");
                     collectFiles(
                       item.children,
-                      path.join(parentPath, item.name),
+                      subFolderPath,
                     );
                   } else if (!item.isDirectory) {
+                    // 处理文件
+                    const localFilePath = path.join(parentPath, item.name);
+                    logToFile(`收集文件: ${item.name}, 完整路径: ${localFilePath}, 大小: ${item.size || 0} 字节`, "INFO");
                     allFiles.push({
                       ...item,
-                      localPath: path.join(parentPath, item.name),
+                      localPath: localFilePath,
                     });
                   }
                 }
               };
-              collectFiles(folderStructure, localFolderPath);
+              collectFiles(folderStructure, normalizedLocalPath);
+              logToFile(`共收集到 ${allFiles.length} 个需要下载的文件`, "INFO");
 
               // 开始下载文件
               let transferredBytes = 0;
@@ -4190,6 +4323,12 @@ function setupIPC(mainWindow) {
                   // 创建临时文件路径
                   const tempFilePath = file.localPath + ".part";
 
+                  // 记录文件下载开始
+                  logToFile(
+                    `开始下载文件: ${file.remotePath} 到临时文件 ${tempFilePath}, 文件大小: ${file.size} 字节`,
+                    "INFO",
+                  );
+                  
                   // 下载文件
                   await sftp.fastGet(file.remotePath, tempFilePath, {
                     step: (transferred, chunk, total) => {
@@ -4248,16 +4387,52 @@ function setupIPC(mainWindow) {
                   });
 
                   // 下载完成后，将临时文件重命名为最终文件
-                  fs.renameSync(tempFilePath, file.localPath);
+                  logToFile(
+                    `文件下载完成，准备重命名: ${tempFilePath} -> ${file.localPath}`,
+                    "INFO",
+                  );
+                  
+                  try {
+                    fs.renameSync(tempFilePath, file.localPath);
+                    logToFile(`文件重命名成功: ${file.localPath}`, "INFO");
+                  } catch (renameError) {
+                    logToFile(`文件重命名失败: ${renameError.message}`, "ERROR");
+                    // 尝试替代方法: 复制后删除
+                    logToFile(`尝试使用复制方法替代重命名`, "INFO");
+                    fs.copyFileSync(tempFilePath, file.localPath);
+                    fs.unlinkSync(tempFilePath);
+                    logToFile(`使用复制方法成功完成文件写入: ${file.localPath}`, "INFO");
+                  }
 
                   // 更新已传输字节数和处理文件数
                   transferredBytes += file.size;
                   processedFiles++;
                 } catch (fileError) {
+                  // 详细记录错误
                   logToFile(
-                    `Error downloading file ${file.path} for session ${tabId}: ${fileError.message}`,
+                    `下载文件失败 ${file.remotePath} 到 ${file.localPath}, 会话 ${tabId}: ${fileError.message}`,
                     "ERROR",
                   );
+                  
+                  // 检查错误类型，判断是否需要重试或处理特殊情况
+                  if (fileError.code === 'ENOENT') {
+                    logToFile(`远程文件不存在: ${file.remotePath}`, "ERROR");
+                  } else if (fileError.code === 'EACCES') {
+                    logToFile(`权限不足，无法创建本地文件: ${file.localPath}`, "ERROR");
+                  } else if (fileError.message.includes('timeout')) {
+                    logToFile(`下载超时，可能是网络问题`, "ERROR");
+                  }
+                  
+                  // 尝试清理临时文件
+                  try {
+                    if (fs.existsSync(tempFilePath)) {
+                      fs.unlinkSync(tempFilePath);
+                      logToFile(`已清理临时文件: ${tempFilePath}`, "INFO");
+                    }
+                  } catch (cleanupError) {
+                    logToFile(`清理临时文件失败: ${cleanupError.message}`, "ERROR");
+                  }
+                  
                   // 继续处理下一个文件，不中断整个过程
                   continue;
                 }
@@ -4282,11 +4457,49 @@ function setupIPC(mainWindow) {
               // 从活动传输列表中移除
               activeTransfers.delete(transferKey);
 
+              // 最终确认下载的文件夹是否存在
+              let finalSuccess = true;
+              if (!fs.existsSync(normalizedLocalPath)) {
+                logToFile(`警告: 下载完成后无法找到目标文件夹: ${normalizedLocalPath}`, "WARNING");
+                finalSuccess = false;
+              } else {
+                // 检查是否有文件下载成功
+                const downloadedFiles = fs.readdirSync(normalizedLocalPath);
+                logToFile(`下载文件夹中的文件数量: ${downloadedFiles.length}`, "INFO");
+                
+                if (downloadedFiles.length === 0 && totalFiles > 0) {
+                  logToFile(`警告: 文件夹存在但为空，原始文件数: ${totalFiles}`, "WARNING");
+                  finalSuccess = false;
+                }
+              }
+              
               logToFile(
-                `Successfully downloaded folder "${remoteFolderPath}" to "${localFolderPath}" for session ${tabId}`,
-                "INFO",
+                `Successfully downloaded folder "${remoteFolderPath}" to "${normalizedLocalPath}" for session ${tabId}, Final status: ${finalSuccess ? 'SUCCESS' : 'PARTIAL_FAILURE'}`,
+                finalSuccess ? "INFO" : "WARNING",
               );
-              resolve({ success: true, folderName });
+              
+              // 在资源管理器中显示下载的文件夹
+              if (finalSuccess) {
+                try {
+                  logToFile(`尝试在文件资源管理器中显示文件夹: ${normalizedLocalPath}`, "INFO");
+                  shell.showItemInFolder(normalizedLocalPath);
+                } catch (showError) {
+                  logToFile(`Error showing folder in explorer: ${showError.message}`, "ERROR");
+                  // 即使无法显示文件夹，也不影响下载成功状态
+                }
+              }
+              
+              resolve({ 
+                success: finalSuccess, 
+                folderName,
+                downloadPath: normalizedLocalPath,  // 返回完整下载路径
+                // 提供更详细的状态信息
+                fileCount: allFiles.length,
+                totalSize: totalBytes,
+                message: finalSuccess 
+                  ? `成功下载${allFiles.length}个文件` 
+                  : "下载可能不完整，请检查文件夹内容"
+              });
             } catch (error) {
               logToFile(
                 `Download folder error for session ${tabId}: ${error.message}`,
@@ -4333,6 +4546,31 @@ function setupIPC(mainWindow) {
     }
   });
 
+  // 添加检查路径是否存在的API
+  ipcMain.handle("checkPathExists", async (event, checkPath) => {
+    try {
+      logToFile(`检查路径是否存在: ${checkPath}`, "INFO");
+      const exists = fs.existsSync(checkPath);
+      logToFile(`路径 ${checkPath} ${exists ? '存在' : '不存在'}`, "INFO");
+      return exists;
+    } catch (error) {
+      logToFile(`检查路径出错: ${error.message}`, "ERROR");
+      return false;
+    }
+  });
+  
+  // 添加在文件管理器中显示文件/文件夹的API
+  ipcMain.handle("showItemInFolder", async (event, itemPath) => {
+    try {
+      logToFile(`尝试在文件管理器中显示: ${itemPath}`, "INFO");
+      shell.showItemInFolder(itemPath);
+      return true;
+    } catch (error) {
+      logToFile(`显示文件或文件夹失败: ${error.message}`, "ERROR");
+      return false;
+    }
+  });
+  
   // UI设置相关API
   ipcMain.handle("settings:loadUISettings", async () => {
     return await loadUISettings();
