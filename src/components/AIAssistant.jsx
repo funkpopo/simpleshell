@@ -371,8 +371,12 @@ function AIAssistant({ open, onClose }) {
   }, []);
 
   // 使用OpenAI API发送请求
-  const sendOpenAIRequest = async (prompt, settings = apiSettings.current) => {
-    if (!settings.apiUrl || !settings.apiKey || !settings.model) {
+  const sendOpenAIRequest = async (prompt, settings) => {
+    // 确保使用提供的settings或当前的apiSettings
+    const apiConfig = settings || apiSettings.current;
+
+    // 验证设置
+    if (!apiConfig.apiUrl || !apiConfig.apiKey || !apiConfig.model) {
       throw new Error("API URL、API密钥和模型名称都必须提供");
     }
 
@@ -384,27 +388,27 @@ function AIAssistant({ open, onClose }) {
     // 检查是否在Electron环境中
     if (window.terminalAPI && window.terminalAPI.sendAPIRequest) {
       // 使用Electron的IPC通道发送请求
-      return sendRequestViaElectron(prompt, settings);
+      return sendRequestViaElectron(prompt, apiConfig);
     } else {
       // 回退到浏览器fetch API
       const requestOptions = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${settings.apiKey}`,
+          Authorization: `Bearer ${apiConfig.apiKey}`,
         },
         body: JSON.stringify({
-          model: settings.model,
+          model: apiConfig.model,
           messages: messages,
-          stream: settings.streamEnabled, // 使用设置中的流式响应标志
+          stream: apiConfig.streamEnabled, // 使用设置中的流式响应标志
         }),
       };
 
       // 根据流式设置选择处理方式
-      if (settings.streamEnabled) {
-        return handleStreamingResponse(settings.apiUrl, requestOptions);
+      if (apiConfig.streamEnabled) {
+        return handleStreamingResponse(apiConfig.apiUrl, requestOptions);
       } else {
-        return handleStandardResponse(settings.apiUrl, requestOptions);
+        return handleStandardResponse(apiConfig.apiUrl, requestOptions);
       }
     }
   };
@@ -412,24 +416,32 @@ function AIAssistant({ open, onClose }) {
   // 通过Electron的IPC通道发送请求
   const sendRequestViaElectron = async (
     prompt,
-    settings = apiSettings.current,
+    settings,
   ) => {
     try {
+      // 确保使用提供的settings或当前的apiSettings
+      const apiConfig = settings || apiSettings.current;
+
+      // 验证配置
+      if (!apiConfig.apiUrl || !apiConfig.apiKey || !apiConfig.model) {
+        throw new Error("API URL、API密钥和模型名称都必须提供");
+      }
+
       const messages = [
         { role: "system", content: "你是一个有帮助的助手。" },
         { role: "user", content: prompt },
       ];
 
       const requestData = {
-        url: settings.apiUrl,
-        apiKey: settings.apiKey,
-        model: settings.model,
+        url: apiConfig.apiUrl,
+        apiKey: apiConfig.apiKey,
+        model: apiConfig.model,
         messages: messages,
-        stream: settings.streamEnabled, // 使用设置中的流式响应标志
+        stream: apiConfig.streamEnabled, // 使用设置中的流式响应标志
       };
 
       // 如果启用流式响应
-      if (settings.streamEnabled) {
+      if (apiConfig.streamEnabled) {
         // 创建一个空的AI响应消息
         const newAIMessageId = `ai-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
         const aiMessage = {
@@ -1127,6 +1139,107 @@ function AIAssistant({ open, onClose }) {
       }
     };
   }, []);
+
+  // 添加监听终端发送的解析文本请求
+  React.useEffect(() => {
+    // 处理终端发送的解析文本请求
+    const handleParseTextRequest = async (event) => {
+      if (event.detail && event.detail.text) {
+        // 获取选中的文本
+        const text = event.detail.text;
+        
+        // 自动打开AI助手（如果没有打开）
+        if (!open) {
+          onClose(true); // 调用关闭函数但传入true，表示打开AI助手
+        }
+        
+        // 组装提示词
+        const prompt = `请解析并分析下面的内容：\n\n${text}`;
+        
+        console.log("开始解析文本，当前API配置状态:", {
+          hasConfig: !!apiSettings.current,
+          apiUrl: apiSettings.current?.apiUrl?.substring(0, 10) + "...",
+          hasApiKey: !!apiSettings.current?.apiKey,
+          model: apiSettings.current?.model
+        });
+        
+        // 发送到AI进行处理
+        try {
+          // 验证API设置
+          if (!apiSettings.current || !apiSettings.current.apiUrl || !apiSettings.current.apiKey || !apiSettings.current.model) {
+            console.log("API设置不完整，尝试重新加载设置");
+            // 重新尝试加载设置（可能之前没加载完全）
+            if (window.terminalAPI && window.terminalAPI.loadAISettings) {
+              const settings = await window.terminalAPI.loadAISettings();
+              console.log("重新加载的设置状态:", {
+                hasSettings: !!settings,
+                hasCurrent: !!settings?.current,
+                hasApiUrl: !!settings?.current?.apiUrl,
+                hasApiKey: !!settings?.current?.apiKey,
+                hasModel: !!settings?.current?.model
+              });
+              
+              if (settings && settings.current && settings.current.apiUrl && settings.current.apiKey && settings.current.model) {
+                setApiSettings(settings);
+                // 将新加载的设置用于当前请求
+                await sendParseRequest(prompt, settings.current);
+              } else {
+                throw new Error("API设置不完整，请在AI助手设置中配置API URL、API密钥和模型名称");
+              }
+            } else {
+              throw new Error("API设置不完整，请在AI助手设置中配置API URL、API密钥和模型名称");
+            }
+          } else {
+            // 使用当前的API设置
+            await sendParseRequest(prompt, apiSettings.current);
+          }
+        } catch (error) {
+          console.error("解析文本时出错:", error);
+          // 添加错误消息
+          addNewAIMessage(`解析文本时出错: ${error.message}`);
+        }
+      }
+    };
+    
+    // 专门处理解析请求的函数，接受自定义API设置
+    const sendParseRequest = async (prompt, apiConfig) => {
+      try {
+        // 添加用户消息
+        const userMessage = {
+          id: generateUniqueId("user"),
+          text: prompt,
+          type: "user",
+          isUser: true,
+          timestamp: Date.now(),
+        };
+        
+        safelyAddMessage(userMessage);
+        
+        // 使用提供的API设置调用AI
+        setIsGenerating(true);
+        
+        // 根据是否启用了流式响应选择处理方式
+        if (apiConfig.streamEnabled) {
+          await sendOpenAIRequest(prompt, apiConfig);
+        } else {
+          const response = await sendOpenAIRequest(prompt, apiConfig);
+          addNewAIMessage(response);
+        }
+      } catch (error) {
+        throw error;
+      } finally {
+        setIsGenerating(false);
+      }
+    };
+
+    // 注册事件监听器
+    window.addEventListener("terminal:parseText", handleParseTextRequest);
+
+    // 清理函数
+    return () => {
+      window.removeEventListener("terminal:parseText", handleParseTextRequest);
+    };
+  }, [open, onClose, apiSettings]);
 
   return (
     <Paper
