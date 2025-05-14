@@ -40,13 +40,35 @@ const ResourceMonitor = ({ open, onClose, currentTabId }) => {
       setLoading(true);
       setError(null);
 
-      if (window.terminalAPI && window.terminalAPI.getSystemInfo) {
-        const info = await window.terminalAPI.getSystemInfo(currentTabId);
+      // 输出调试信息
+      console.log(`ResourceMonitor: 尝试获取系统信息，currentTabId =`, currentTabId);
 
-        if (info.error) {
-          setError(info.message || "获取系统信息失败");
+      if (window.terminalAPI && window.terminalAPI.getSystemInfo) {
+        // 只有当有有效的currentTabId时才获取远程系统信息
+        if (currentTabId) {
+          const info = await window.terminalAPI.getSystemInfo(currentTabId);
+          console.log(`ResourceMonitor: 获取到系统信息:`, info.isLocal ? '本地系统' : '远程系统');
+
+          if (info.error) {
+            setError(info.message || "获取系统信息失败");
+          } else {
+            setSystemInfo(info);
+          }
         } else {
-          setSystemInfo(info);
+          // 如果没有currentTabId，显示一个提示信息
+          setSystemInfo({
+            isLocal: true,
+            os: {
+              type: "未选择SSH会话",
+              platform: "-",
+              hostname: "-",
+              distro: "-",
+              version: "-",
+            },
+            cpu: { model: "-", cores: 0, usage: 0 },
+            memory: { total: 0, free: 0, used: 0, usagePercent: 0 },
+            message: "请选择一个SSH会话以查看远程系统信息"
+          });
         }
       } else {
         setError("API不可用");
@@ -61,6 +83,13 @@ const ResourceMonitor = ({ open, onClose, currentTabId }) => {
 
   // 当侧边栏打开或标签页切换时获取系统信息
   useEffect(() => {
+    // 清理之前的刷新间隔
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      setRefreshInterval(null);
+    }
+
+    // 只有在侧边栏打开且有有效的currentTabId时才设置刷新间隔
     if (open) {
       fetchSystemInfo();
 
@@ -73,9 +102,6 @@ const ResourceMonitor = ({ open, onClose, currentTabId }) => {
           clearInterval(refreshInterval);
         }
       };
-    } else if (refreshInterval) {
-      clearInterval(refreshInterval);
-      setRefreshInterval(null);
     }
   }, [open, currentTabId]);
 

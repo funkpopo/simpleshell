@@ -1130,11 +1130,8 @@ function App() {
                 open={resourceMonitorOpen}
                 onClose={handleCloseResourceMonitor}
                 currentTabId={
-                  currentTab > 0 && tabs[currentTab]
-                    ? tabs[currentTab].type === "ssh"
-                      ? terminalInstances[`${tabs[currentTab].id}-processId`] ||
-                        tabs[currentTab].id
-                      : null
+                  resourceMonitorOpen && currentTab > 0 && tabs[currentTab] && tabs[currentTab].type === "ssh"
+                    ? terminalInstances[`${tabs[currentTab].id}-processId`] || tabs[currentTab].id
                     : null
                 }
               />
