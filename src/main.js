@@ -1883,7 +1883,11 @@ function setupIPC(mainWindow) {
   // 获取系统资源信息
   ipcMain.handle("terminal:getSystemInfo", async (event, processId) => {
     try {
+      console.log(`获取系统信息请求，进程ID: ${processId}`);
+      
+      // 只有当提供了有效的进程ID且该进程存在于childProcesses映射中时才获取远程系统信息
       if (!processId || !childProcesses.has(processId)) {
+        console.log(`未找到进程ID ${processId}，返回本地系统信息`);
         return getLocalSystemInfo();
       } else {
         // SSH远程系统信息
@@ -1896,8 +1900,10 @@ function setupIPC(mainWindow) {
         ) {
           const sshClient =
             processObj.client || processObj.process || processObj.channel;
+          console.log(`找到进程ID ${processId}，获取远程系统信息`);
           return getRemoteSystemInfo(sshClient);
         } else {
+          console.log(`进程ID ${processId} 不是SSH类型，返回本地系统信息`);
           return getLocalSystemInfo();
         }
       }
