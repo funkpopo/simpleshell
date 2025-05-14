@@ -56,6 +56,13 @@ const terminalStyles = `
   opacity: 1 !important; 
   z-index: 10 !important;
   mix-blend-mode: difference !important;
+  pointer-events: none !important; /* 确保选择区域不会干扰鼠标事件 */
+  transition: all 0.05s ease !important; /* 添加微小过渡效果使选择更流畅 */
+  position: relative !important; /* 确保定位正确 */
+}
+/* 确保选中区域准确反映实际选择内容 */
+.xterm .xterm-selection div {
+  position: absolute !important;
 }
 .terminal-container {
   display: flex;
@@ -604,12 +611,12 @@ const WebTerminal = ({
     // 选择文本的背景色，使用半透明色以避免遮挡字符
     selectionBackground:
       theme.palette.mode === "light"
-        ? "rgba(255, 255, 170, 0.65)"
+        ? "rgba(0, 120, 215, 0.7)" // 日间模式下使用更显眼的蓝色
         : "rgba(255, 255, 170, 0.65)",
     // 选择文本的前景色，确保文字清晰可见
     selectionForeground: 
       theme.palette.mode === "light" 
-        ? "#000000" 
+        ? "#ffffff" // 在蓝色背景上使用白色文本更清晰
         : "#ffffff",
     // 基础颜色
     black: "#000000",
@@ -984,11 +991,49 @@ const WebTerminal = ({
             }
           });
         }
+        
+        // 在mousedown时记录选择开始，帮助确保选择行为的准确性
+        if (e.button === 0 && termRef.current) { // 左键点击
+          // 使用requestAnimationFrame确保在下一次渲染周期处理选择
+          requestAnimationFrame(adjustSelectionElements);
+        }
       };
-
+      
+      // 提取调整选择元素的函数，以便在多个事件处理函数中复用
+      const adjustSelectionElements = () => {
+        // 获取所有选择元素
+        const selectionElements = document.querySelectorAll('.xterm .xterm-selection div');
+        // 优化选择元素以确保准确性
+        selectionElements.forEach(elem => {
+          // 确保选择元素的大小精确匹配所选内容
+          elem.style.height = `${Math.floor(elem.offsetHeight)}px`;
+          // 应用任何必要的偏移校正
+          const computedStyle = window.getComputedStyle(elem);
+          const top = parseFloat(computedStyle.top);
+          if (!isNaN(top)) {
+            elem.style.top = `${Math.floor(top)}px`;
+          }
+        });
+      };
+      
       // 添加鼠标事件监听
       if (terminalRef.current) {
         terminalRef.current.addEventListener("mousedown", handleMouseDown);
+        
+        // 添加鼠标移动和松开事件以优化选择体验
+        const handleMouseMove = (e) => {
+          if (e.buttons === 1 && termRef.current) { // 左键拖动
+            requestAnimationFrame(adjustSelectionElements);
+          }
+        };
+        
+        const handleMouseUp = () => {
+          // 鼠标释放时最终调整选择区域
+          requestAnimationFrame(adjustSelectionElements);
+        };
+        
+        terminalRef.current.addEventListener("mousemove", handleMouseMove);
+        terminalRef.current.addEventListener("mouseup", handleMouseUp);
       }
 
       // 添加右键菜单事件监听
@@ -1359,6 +1404,10 @@ const WebTerminal = ({
             handleContextMenu,
           );
           terminalRef.current.removeEventListener("mousedown", handleMouseDown);
+          
+          // 移除新增的鼠标事件监听器
+          terminalRef.current.removeEventListener("mousemove", handleMouseMove);
+          terminalRef.current.removeEventListener("mouseup", handleMouseUp);
         }
 
         // 注意：我们不再在这里销毁终端实例，而是保存在缓存中
