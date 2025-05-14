@@ -766,7 +766,21 @@ const WebTerminal = ({
         // 创建并加载插件
         fitAddon = new FitAddon();
         searchAddon = new SearchAddon();
-        const webLinksAddon = new WebLinksAddon();
+        
+        // 自定义WebLinksAddon的链接处理逻辑，使用系统默认浏览器打开链接
+        const webLinksAddon = new WebLinksAddon((event, uri) => {
+          // 阻止默认行为（在应用内打开）
+          event.preventDefault();
+          
+          // 使用预加载脚本中定义的API在系统默认浏览器中打开链接
+          if (window.terminalAPI && window.terminalAPI.openExternal) {
+            console.log("在系统默认浏览器打开链接:", uri);
+            window.terminalAPI.openExternal(uri)
+              .catch(err => console.error("打开链接失败:", err));
+          } else {
+            console.warn("terminalAPI.openExternal不可用，无法打开链接");
+          }
+        });
 
         term.loadAddon(fitAddon);
         term.loadAddon(searchAddon);
