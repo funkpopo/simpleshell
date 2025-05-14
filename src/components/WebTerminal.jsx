@@ -14,6 +14,7 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import PasteIcon from "@mui/icons-material/ContentPaste";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SearchIcon from "@mui/icons-material/Search";
+import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import CloseIcon from "@mui/icons-material/Close";
 import Divider from "@mui/material/Divider";
 import Tooltip from "@mui/material/Tooltip";
@@ -1679,6 +1680,20 @@ const WebTerminal = ({
     handleClose();
   };
 
+  // 将选中的文本发送给AI进行解析
+  const handleParse = () => {
+    if (selectedText) {
+      // 创建一个自定义事件，将选中文本传递给AIAssistant组件
+      const event = new CustomEvent("terminal:parseText", {
+        detail: { text: selectedText }
+      });
+      // 分发事件
+      window.dispatchEvent(event);
+      console.log("发送文本到AI解析:", selectedText.substring(0, 30) + (selectedText.length > 30 ? "..." : ""));
+    }
+    handleClose();
+  };
+
   // 清空终端
   const handleClear = () => {
     if (termRef.current) {
@@ -2100,6 +2115,12 @@ const WebTerminal = ({
           </ListItemIcon>
           <ListItemText>搜索</ListItemText>
           <div style={{ marginLeft: 8, opacity: 0.7 }}>Ctrl+Alt+F</div>
+        </MenuItem>
+        <MenuItem onClick={handleParse} disabled={!selectedText}>
+          <ListItemIcon>
+            <AutoFixHighIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>解析</ListItemText>
         </MenuItem>
         <Divider />
         <MenuItem onClick={handleClear}>
