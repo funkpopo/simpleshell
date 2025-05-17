@@ -44,31 +44,13 @@ const ResourceMonitor = ({ open, onClose, currentTabId }) => {
       console.log(`ResourceMonitor: 尝试获取系统信息，currentTabId =`, currentTabId);
 
       if (window.terminalAPI && window.terminalAPI.getSystemInfo) {
-        // 只有当有有效的currentTabId时才获取远程系统信息
-        if (currentTabId) {
-          const info = await window.terminalAPI.getSystemInfo(currentTabId);
-          console.log(`ResourceMonitor: 获取到系统信息:`, info.isLocal ? '本地系统' : '远程系统');
+        const info = await window.terminalAPI.getSystemInfo(currentTabId);
+        console.log(`ResourceMonitor: 获取到系统信息:`, info.isLocal ? '本地系统' : '远程系统');
 
-          if (info.error) {
-            setError(info.message || "获取系统信息失败");
-          } else {
-            setSystemInfo(info);
-          }
+        if (info.error) {
+          setError(info.message || "获取系统信息失败");
         } else {
-          // 如果没有currentTabId，显示一个提示信息
-          setSystemInfo({
-            isLocal: true,
-            os: {
-              type: "未选择SSH会话",
-              platform: "-",
-              hostname: "-",
-              distro: "-",
-              version: "-",
-            },
-            cpu: { model: "-", cores: 0, usage: 0 },
-            memory: { total: 0, free: 0, used: 0, usagePercent: 0 },
-            message: "请选择一个SSH会话以查看远程系统信息"
-          });
+          setSystemInfo(info);
         }
       } else {
         setError("API不可用");
@@ -89,7 +71,7 @@ const ResourceMonitor = ({ open, onClose, currentTabId }) => {
       setRefreshInterval(null);
     }
 
-    // 只有在侧边栏打开且有有效的currentTabId时才设置刷新间隔
+    // 只有在侧边栏打开时才设置刷新间隔
     if (open) {
       fetchSystemInfo();
 
