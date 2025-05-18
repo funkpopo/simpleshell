@@ -255,6 +255,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 添加文件内容读取API
   readFileContent: (tabId, filePath) =>
     ipcRenderer.invoke("readFileContent", tabId, filePath),
+  
+  // 新增：保存文件内容API
+  saveFileContent: (tabId, filePath, content) =>
+    ipcRenderer.invoke("saveFileContent", tabId, filePath, content),
+  
+  // 从base64解码读取文件内容
   readFileAsBase64: (tabId, filePath) =>
     ipcRenderer.invoke("readFileAsBase64", tabId, filePath),
 

@@ -3522,6 +3522,49 @@ function setupIPC(mainWindow) {
     }
   });
 
+  // 新增：保存文件内容
+  ipcMain.handle("saveFileContent", async (event, tabId, filePath, content) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return enqueueSftpOperation(tabId, async () => {
+        try {
+          const sftp = await getSftpSession(tabId);
+
+          return new Promise((resolve, reject) => {
+            // 将内容转换为Buffer
+            const buffer = Buffer.from(content, 'utf8');
+            
+            sftp.writeFile(filePath, buffer, (err) => {
+              if (err) {
+                logToFile(
+                  `Failed to save file content for session ${tabId}: ${err.message}`,
+                  "ERROR",
+                );
+                return resolve({
+                  success: false,
+                  error: `保存文件内容失败: ${err.message}`,
+                });
+              }
+
+              resolve({
+                success: true,
+                filePath,
+              });
+            });
+          });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(
+        `Save file content error for session ${tabId}: ${error.message}`,
+        "ERROR",
+      );
+      return { success: false, error: `保存文件内容失败: ${error.message}` };
+    }
+  });
+
   // 新增：上传文件夹处理函数
   ipcMain.handle("uploadFolder", async (event, tabId, targetFolder) => {
     try {
@@ -4580,6 +4623,7 @@ function setupIPC(mainWindow) {
   ipcMain.handle("settings:saveUISettings", async (event, settings) => {
     return await saveUISettings(settings);
   });
+
 }
 
 // 获取本地系统信息
