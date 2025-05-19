@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 const WelcomePage = () => {
   const theme = useTheme();
   const { t } = useTranslation();
-  
+
   // 定义更自然的水流波浪动画
   const wave1Animation = keyframes`
     0% {
@@ -37,7 +37,7 @@ const WelcomePage = () => {
       opacity: 0.6;
     }
   `;
-  
+
   const wave2Animation = keyframes`
     0% {
       transform: translate(-50%, -50%) rotate(0deg) scale(1.1);
@@ -60,7 +60,7 @@ const WelcomePage = () => {
       opacity: 0.5;
     }
   `;
-  
+
   const wave3Animation = keyframes`
     0% {
       transform: translate(-50%, -50%) rotate(0deg) scale(1.2);
@@ -78,7 +78,7 @@ const WelcomePage = () => {
       opacity: 0.4;
     }
   `;
-  
+
   // 定义光影效果动画
   const shimmerAnimation = keyframes`
     0% {
@@ -90,7 +90,7 @@ const WelcomePage = () => {
       opacity: 0.6;
     }
   `;
-  
+
   // 定义微小水波纹动画
   const rippleAnimation = keyframes`
     0% {
@@ -102,7 +102,7 @@ const WelcomePage = () => {
       opacity: 0;
     }
   `;
-  
+
   // 定义内容卡片悬停动画
   const floatAnimation = keyframes`
     0% {
@@ -118,7 +118,7 @@ const WelcomePage = () => {
       box-shadow: 0 8px 24px 0 ${theme.palette.primary.main}30;
     }
   `;
-  
+
   // 更自然的水流层基础样式
   const waterLayerBaseStyles = {
     position: "absolute",
@@ -159,7 +159,7 @@ const WelcomePage = () => {
           filter: "blur(8px)",
         }}
       />
-      
+
       <Box
         sx={{
           ...waterLayerBaseStyles,
@@ -172,7 +172,7 @@ const WelcomePage = () => {
           filter: "blur(6px)",
         }}
       />
-      
+
       <Box
         sx={{
           ...waterLayerBaseStyles,
@@ -185,7 +185,7 @@ const WelcomePage = () => {
           filter: "blur(4px)",
         }}
       />
-      
+
       {/* 水面光影效果 */}
       <Box
         sx={{
@@ -205,7 +205,7 @@ const WelcomePage = () => {
           mixBlendMode: "soft-light",
         }}
       />
-      
+
       {/* 随机水波纹效果点缀 */}
       {[...Array(5)].map((_, i) => (
         <Box
@@ -248,58 +248,62 @@ const WelcomePage = () => {
           },
           "& *::selection": {
             backgroundColor: `${theme.palette.primary.main}30`,
-          }
+          },
         }}
       >
-        <Box sx={{ 
-          mb: 4, 
-          display: "flex", 
-          justifyContent: "center",
-          position: "relative",
-          "&::after": {
-            content: '""',
-            position: "absolute",
-            bottom: "-10px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: "40%",
-            height: "1px",
-            background: `linear-gradient(90deg, transparent, ${theme.palette.primary.main}50, transparent)`,
-          }
-        }}>
-          <ComputerIcon sx={{ 
-            fontSize: 80, 
-            color: "primary.main", 
-            mb: 2,
-            filter: `drop-shadow(0 4px 6px ${theme.palette.primary.main}40)`,
-            transition: "all 0.3s ease",
-            "&:hover": {
-              transform: "scale(1.05)",
-              filter: `drop-shadow(0 6px 8px ${theme.palette.primary.main}60)`,
-            }
-          }} />
+        <Box
+          sx={{
+            mb: 4,
+            display: "flex",
+            justifyContent: "center",
+            position: "relative",
+            "&::after": {
+              content: '""',
+              position: "absolute",
+              bottom: "-10px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: "40%",
+              height: "1px",
+              background: `linear-gradient(90deg, transparent, ${theme.palette.primary.main}50, transparent)`,
+            },
+          }}
+        >
+          <ComputerIcon
+            sx={{
+              fontSize: 80,
+              color: "primary.main",
+              mb: 2,
+              filter: `drop-shadow(0 4px 6px ${theme.palette.primary.main}40)`,
+              transition: "all 0.3s ease",
+              "&:hover": {
+                transform: "scale(1.05)",
+                filter: `drop-shadow(0 6px 8px ${theme.palette.primary.main}60)`,
+              },
+            }}
+          />
         </Box>
 
         <Typography
           variant="h4"
           gutterBottom
-          sx={{ 
-            fontWeight: "bold", 
+          sx={{
+            fontWeight: "bold",
             mb: 3,
             background: `linear-gradient(120deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark} 50%, ${theme.palette.primary.main})`,
             backgroundSize: "200% auto",
             backgroundClip: "text",
             textFillColor: "transparent",
             WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent", 
+            WebkitTextFillColor: "transparent",
           }}
         >
-          {t('welcome.title')}
+          {t("welcome.title")}
         </Typography>
 
         <Typography variant="body1" paragraph sx={{ mb: 4, lineHeight: 1.8 }}>
           SimpleShell
-          {t('welcome.description')}
+          {t("welcome.description")}
         </Typography>
       </Paper>
     </Box>

@@ -54,7 +54,7 @@ async function processStreamingPrompt(prompt, settings, id) {
     if (!settings || !settings.apiKey) {
       parentPort.postMessage({
         id,
-        error: { message: "API设置不完整，请在设置中配置API密钥" }
+        error: { message: "API设置不完整，请在设置中配置API密钥" },
       });
       return;
     }
@@ -62,7 +62,7 @@ async function processStreamingPrompt(prompt, settings, id) {
     if (!settings.apiUrl) {
       parentPort.postMessage({
         id,
-        error: { message: "API URL不可用，请在设置中配置API URL" }
+        error: { message: "API URL不可用，请在设置中配置API URL" },
       });
       return;
     }
@@ -70,7 +70,7 @@ async function processStreamingPrompt(prompt, settings, id) {
     if (!settings.model) {
       parentPort.postMessage({
         id,
-        error: { message: "模型名称未指定，请在设置中配置模型名称" }
+        error: { message: "模型名称未指定，请在设置中配置模型名称" },
       });
       return;
     }
@@ -85,7 +85,7 @@ async function processStreamingPrompt(prompt, settings, id) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${settings.apiKey}`
+        Authorization: `Bearer ${settings.apiKey}`,
       },
       body: JSON.stringify({
         model: settings.model,
@@ -96,42 +96,42 @@ async function processStreamingPrompt(prompt, settings, id) {
 
     try {
       const response = await fetch(settings.apiUrl, requestOptions);
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`API请求失败: ${response.status} ${errorText}`);
       }
-      
+
       // 处理流式响应
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
-      
+
       while (true) {
         const { done, value } = await reader.read();
-        
+
         if (done) {
           // 流结束
           parentPort.postMessage({
             id,
-            streamEnd: true
+            streamEnd: true,
           });
           break;
         }
-        
+
         // 解码收到的数据
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
-        
+
         // 处理数据行
         let newlineIndex;
         while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
           const line = buffer.slice(0, newlineIndex);
           buffer = buffer.slice(newlineIndex + 1);
-          
+
           if (line.trim() === "") continue;
           if (line.trim() === "data: [DONE]") continue;
-          
+
           // 处理数据行
           if (line.startsWith("data: ")) {
             try {
@@ -142,7 +142,7 @@ async function processStreamingPrompt(prompt, settings, id) {
                   // 发送内容块给主进程
                   parentPort.postMessage({
                     id,
-                    chunk: content
+                    chunk: content,
                   });
                 }
               }
@@ -156,13 +156,13 @@ async function processStreamingPrompt(prompt, settings, id) {
       // 发送错误给主进程
       parentPort.postMessage({
         id,
-        error: { message: error.message }
+        error: { message: error.message },
       });
     }
   } catch (error) {
     parentPort.postMessage({
       id,
-      error: { message: error.message, stack: error.stack }
+      error: { message: error.message, stack: error.stack },
     });
   }
 }
@@ -187,7 +187,7 @@ async function sendToAPI(prompt, settings) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${settings.apiKey}`
+        Authorization: `Bearer ${settings.apiKey}`,
       },
       body: JSON.stringify(requestData),
     });
@@ -195,7 +195,7 @@ async function sendToAPI(prompt, settings) {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        `API请求失败: ${response.status} ${errorData.error?.message || response.statusText}`
+        `API请求失败: ${response.status} ${errorData.error?.message || response.statusText}`,
       );
     }
 

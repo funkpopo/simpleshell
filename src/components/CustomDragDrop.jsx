@@ -1,17 +1,17 @@
-import React from 'react';
-import { Droppable as OriginalDroppable } from 'react-beautiful-dnd';
+import React from "react";
+import { Droppable as OriginalDroppable } from "react-beautiful-dnd";
 
 // 创建 Droppable 的包装器组件，使用 JavaScript 默认参数替代 defaultProps
-export const Droppable = ({ 
-  children, 
-  isDropDisabled = false, 
-  direction = 'vertical', 
-  type = 'DEFAULT',
+export const Droppable = ({
+  children,
+  isDropDisabled = false,
+  direction = "vertical",
+  type = "DEFAULT",
   ignoreContainerClipping = false,
-  ...props 
+  ...props
 }) => {
   return (
-    <OriginalDroppable 
+    <OriginalDroppable
       isDropDisabled={isDropDisabled}
       direction={direction}
       type={type}
@@ -24,4 +24,4 @@ export const Droppable = ({
 };
 
 // 如果需要，可以添加其他包装器组件
-export * from 'react-beautiful-dnd'; 
+export * from "react-beautiful-dnd";

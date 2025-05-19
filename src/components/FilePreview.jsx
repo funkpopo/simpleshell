@@ -20,14 +20,14 @@ import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import SaveIcon from "@mui/icons-material/Save";
 import { useTheme } from "@mui/material/styles";
-import CodeMirror from '@uiw/react-codemirror';
-import { javascript } from '@codemirror/lang-javascript';
-import { html } from '@codemirror/lang-html';
-import { css } from '@codemirror/lang-css';
-import { json } from '@codemirror/lang-json';
-import { python } from '@codemirror/lang-python';
-import { xml } from '@codemirror/lang-xml';
-import { oneDark } from '@codemirror/theme-one-dark';
+import CodeMirror from "@uiw/react-codemirror";
+import { javascript } from "@codemirror/lang-javascript";
+import { html } from "@codemirror/lang-html";
+import { css } from "@codemirror/lang-css";
+import { json } from "@codemirror/lang-json";
+import { python } from "@codemirror/lang-python";
+import { xml } from "@codemirror/lang-xml";
+import { oneDark } from "@codemirror/theme-one-dark";
 
 // 获取文件扩展名
 const getFileExtension = (filename) => {
@@ -226,37 +226,37 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
     try {
       setSavingFile(true);
-      
+
       if (window.terminalAPI && window.terminalAPI.saveFileContent) {
         const response = await window.terminalAPI.saveFileContent(
           tabId,
           fullPath,
-          content
+          content,
         );
 
         if (response.success) {
           setNotification({
             message: "文件保存成功",
-            severity: "success"
+            severity: "success",
           });
           setModified(false);
         } else {
           setNotification({
             message: `保存失败: ${response.error || "未知错误"}`,
-            severity: "error"
+            severity: "error",
           });
         }
       } else {
         setNotification({
           message: "文件保存API不可用",
-          severity: "error"
+          severity: "error",
         });
       }
     } catch (error) {
       console.error("保存文件失败:", error);
       setNotification({
         message: `保存失败: ${error.message || "未知错误"}`,
-        severity: "error"
+        severity: "error",
       });
     } finally {
       setSavingFile(false);
@@ -303,30 +303,30 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         // 编辑模式 - 使用 CodeMirror
         const languageMode = getLanguageMode(file.name);
         const extensions = [];
-        
+
         if (languageMode) {
           extensions.push(languageMode());
         }
-        
+
         // 根据主题添加编辑器主题
-        if (theme.palette.mode === 'dark') {
+        if (theme.palette.mode === "dark") {
           extensions.push(oneDark);
         }
 
         return (
-          <Box sx={{ width: '100%', height: '100%', minHeight: '400px' }}>
+          <Box sx={{ width: "100%", height: "100%", minHeight: "400px" }}>
             <CodeMirror
-              value={content || ''}
+              value={content || ""}
               height="400px"
               width="100%"
               extensions={extensions}
               onChange={handleEditorChange}
               theme={theme.palette.mode}
-              style={{ 
-                fontSize: '14px',
-                fontFamily: 'monospace',
+              style={{
+                fontSize: "14px",
+                fontFamily: "monospace",
                 border: `1px solid ${theme.palette.divider}`,
-                borderRadius: '4px',
+                borderRadius: "4px",
               }}
             />
           </Box>
@@ -335,7 +335,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         // 预览模式 - 文本显示
         // 将文本内容拆分为行
         const lines = content ? content.split("\n") : [];
-        
+
         return (
           <Box
             component="pre"
@@ -344,7 +344,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               maxHeight: "400px",
               overflowX: "auto",
               overflowY: "auto",
-              backgroundColor: theme.palette.mode === "dark" ? "#1e1e1e" : "#f5f5f5",
+              backgroundColor:
+                theme.palette.mode === "dark" ? "#1e1e1e" : "#f5f5f5",
               color: theme.palette.mode === "dark" ? "#d4d4d4" : "#333333",
               p: 2,
               borderRadius: 1,
@@ -410,23 +411,33 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         <Box sx={{ display: "flex", alignItems: "center" }}>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             {file?.name}
-            {modified && <span style={{ color: theme.palette.warning.main }}> *</span>}
+            {modified && (
+              <span style={{ color: theme.palette.warning.main }}> *</span>
+            )}
           </Typography>
           <Box>
             {isTextFile(file?.name) && (
               <>
-                <Tooltip title={isEditing ? "切换到预览模式" : "切换到编辑模式"}>
-                  <IconButton color="primary" onClick={toggleEditMode} disabled={loading}>
+                <Tooltip
+                  title={isEditing ? "切换到预览模式" : "切换到编辑模式"}
+                >
+                  <IconButton
+                    color="primary"
+                    onClick={toggleEditMode}
+                    disabled={loading}
+                  >
                     {isEditing ? <VisibilityIcon /> : <EditIcon />}
                   </IconButton>
                 </Tooltip>
-                
+
                 <Tooltip title="保存文件">
                   <span>
-                    <IconButton 
-                      color="primary" 
-                      onClick={handleSaveFile} 
-                      disabled={!isEditing || !modified || savingFile || loading}
+                    <IconButton
+                      color="primary"
+                      onClick={handleSaveFile}
+                      disabled={
+                        !isEditing || !modified || savingFile || loading
+                      }
                     >
                       <SaveIcon />
                     </IconButton>
@@ -435,7 +446,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               </>
             )}
             <Tooltip title="下载文件">
-              <IconButton color="primary" onClick={handleDownload} disabled={loading}>
+              <IconButton
+                color="primary"
+                onClick={handleDownload}
+                disabled={loading}
+              >
                 <DownloadIcon />
               </IconButton>
             </Tooltip>
@@ -449,7 +464,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       </DialogTitle>
       <DialogContent dividers>
         {savingFile ? (
-          <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "400px" }}>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              height: "400px",
+            }}
+          >
             <CircularProgress size={40} />
             <Typography variant="body1" sx={{ ml: 2 }}>
               正在保存文件...
@@ -462,9 +484,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       <DialogActions>
         <Button onClick={onClose}>关闭</Button>
         {isTextFile(file?.name) && isEditing && (
-          <Button 
-            onClick={handleSaveFile} 
-            color="primary" 
+          <Button
+            onClick={handleSaveFile}
+            color="primary"
             disabled={!modified || savingFile}
             startIcon={<SaveIcon />}
           >
@@ -474,14 +496,18 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       </DialogActions>
 
       {/* 通知消息 */}
-      <Snackbar 
-        open={notification !== null} 
-        autoHideDuration={3000} 
+      <Snackbar
+        open={notification !== null}
+        autoHideDuration={3000}
         onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         {notification && (
-          <Alert onClose={handleCloseNotification} severity={notification.severity} sx={{ width: '100%' }}>
+          <Alert
+            onClose={handleCloseNotification}
+            severity={notification.severity}
+            sx={{ width: "100%" }}
+          >
             {notification.message}
           </Alert>
         )}

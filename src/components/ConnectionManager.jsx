@@ -285,7 +285,8 @@ const ConnectionManager = ({
 
         // 判断是否需要移动连接到不同的组
         if (
-          (formData.parentGroup && selectedItem.parentGroupId !== formData.parentGroup) || 
+          (formData.parentGroup &&
+            selectedItem.parentGroupId !== formData.parentGroup) ||
           (!formData.parentGroup && selectedItem.parentGroupId)
         ) {
           // 从原组中删除
@@ -390,7 +391,7 @@ const ConnectionManager = ({
       const newConnections = arrayMoveImmutable(
         connections,
         source.index,
-        destination.index
+        destination.index,
       );
       setConnections(newConnections);
       return;
@@ -399,17 +400,17 @@ const ConnectionManager = ({
     // 组内项目拖拽
     if (type.startsWith("group-items-")) {
       const groupId = type.replace("group-items-", "");
-      const group = connections.find(item => item.id === groupId);
+      const group = connections.find((item) => item.id === groupId);
       if (group) {
         const newItems = arrayMoveImmutable(
           group.items,
           source.index,
-          destination.index
+          destination.index,
         );
-        setConnections(prevConnections =>
-          prevConnections.map(item =>
-            item.id === groupId ? { ...item, items: newItems } : item
-          )
+        setConnections((prevConnections) =>
+          prevConnections.map((item) =>
+            item.id === groupId ? { ...item, items: newItems } : item,
+          ),
         );
       }
       return;
@@ -419,11 +420,7 @@ const ConnectionManager = ({
   // 渲染连接项
   const renderConnectionItem = (connection, parentGroup = null, index) => {
     return (
-      <Draggable 
-        key={connection.id} 
-        draggableId={connection.id} 
-        index={index}
-      >
+      <Draggable key={connection.id} draggableId={connection.id} index={index}>
         {(provided, snapshot) => (
           <ListItem
             ref={provided.innerRef}
@@ -431,18 +428,22 @@ const ConnectionManager = ({
             disablePadding
             sx={{
               pl: parentGroup ? 4 : 1,
-              minHeight: '36px', // 改为最小高度而非固定高度
+              minHeight: "36px", // 改为最小高度而非固定高度
               "&:hover": {
-                backgroundColor: theme.palette.mode === 'dark'
-                  ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本 
-                  : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
+                    : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
               },
-              ...(snapshot.isDragging ? {
-                background: theme.palette.mode === 'dark' 
-                  ? theme.palette.grey[700] 
-                  : theme.palette.grey[200],
-                boxShadow: theme.shadows[4]
-              } : {})
+              ...(snapshot.isDragging
+                ? {
+                    background:
+                      theme.palette.mode === "dark"
+                        ? theme.palette.grey[700]
+                        : theme.palette.grey[200],
+                    boxShadow: theme.shadows[4],
+                  }
+                : {}),
             }}
             secondaryAction={
               <Box>
@@ -463,26 +464,29 @@ const ConnectionManager = ({
               </Box>
             }
           >
-            <Box 
+            <Box
               {...provided.dragHandleProps}
-              sx={{ 
-                display: 'flex', 
-                alignItems: 'center',
-                cursor: 'grab',
-                '&:active': { cursor: 'grabbing' }
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                cursor: "grab",
+                "&:active": { cursor: "grabbing" },
               }}
             >
-              <DragIndicatorIcon fontSize="small" sx={{ color: 'text.secondary', mr: 1 }} />
+              <DragIndicatorIcon
+                fontSize="small"
+                sx={{ color: "text.secondary", mr: 1 }}
+              />
             </Box>
             <ListItemButton
               onClick={() => handleOpenConnection(connection)}
               dense
-              sx={{ 
+              sx={{
                 flexGrow: 1,
                 py: 0.5, // 减小上下内边距
                 "&:hover": {
                   backgroundColor: "transparent", // 防止ListItemButton自身的hover效果
-                }
+                },
               }}
             >
               <ListItemIcon sx={{ minWidth: 36 }}>
@@ -514,18 +518,22 @@ const ConnectionManager = ({
             ref={provided.innerRef}
             {...provided.draggableProps}
             sx={{
-              minHeight: '36px', // 添加最小高度
+              minHeight: "36px", // 添加最小高度
               "&:hover": {
-                backgroundColor: theme.palette.mode === 'dark'
-                  ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本 
-                  : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
+                    : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
               },
-              ...(snapshot.isDragging ? {
-                background: theme.palette.mode === 'dark' 
-                  ? theme.palette.grey[700] 
-                  : theme.palette.grey[200],
-                boxShadow: theme.shadows[4]
-              } : {})
+              ...(snapshot.isDragging
+                ? {
+                    background:
+                      theme.palette.mode === "dark"
+                        ? theme.palette.grey[700]
+                        : theme.palette.grey[200],
+                    boxShadow: theme.shadows[4],
+                  }
+                : {}),
             }}
             secondaryAction={
               <Box sx={{ display: "flex", gap: 0.5 }}>
@@ -562,25 +570,28 @@ const ConnectionManager = ({
               </Box>
             }
           >
-            <Box 
+            <Box
               {...provided.dragHandleProps}
-              sx={{ 
-                display: 'flex', 
-                alignItems: 'center',
-                cursor: 'grab',
-                '&:active': { cursor: 'grabbing' }
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                cursor: "grab",
+                "&:active": { cursor: "grabbing" },
               }}
             >
-              <DragIndicatorIcon fontSize="small" sx={{ color: 'text.secondary', ml: 1, mr: 1 }} />
+              <DragIndicatorIcon
+                fontSize="small"
+                sx={{ color: "text.secondary", ml: 1, mr: 1 }}
+              />
             </Box>
             <ListItemButton
               onClick={() => handleToggleGroup(group.id)}
-              sx={{ 
-                py: 0.5, 
+              sx={{
+                py: 0.5,
                 flexGrow: 1,
                 "&:hover": {
                   backgroundColor: "transparent",
-                }
+                },
               }}
             >
               <ListItemIcon sx={{ minWidth: 36 }}>
@@ -605,14 +616,16 @@ const ConnectionManager = ({
           <Collapse in={group.expanded} timeout="auto" unmountOnExit>
             <Droppable droppableId={group.id} type={`group-items-${group.id}`}>
               {(provided) => (
-                <List 
-                  component="div" 
-                  disablePadding 
+                <List
+                  component="div"
+                  disablePadding
                   sx={{ pl: 2 }}
                   ref={provided.innerRef}
                   {...provided.droppableProps}
                 >
-                  {group.items.map((item, itemIndex) => renderConnectionItem(item, group, itemIndex))}
+                  {group.items.map((item, itemIndex) =>
+                    renderConnectionItem(item, group, itemIndex),
+                  )}
                   {provided.placeholder}
                   {group.items.length === 0 && (
                     <ListItem sx={{ pl: 2 }}>
@@ -706,8 +719,8 @@ const ConnectionManager = ({
             <DragDropContext onDragEnd={handleDragEnd}>
               <Droppable droppableId="connection-list" type="connection-list">
                 {(provided) => (
-                  <List 
-                    dense 
+                  <List
+                    dense
                     sx={{ p: 1 }}
                     ref={provided.innerRef}
                     {...provided.droppableProps}

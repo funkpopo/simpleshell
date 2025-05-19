@@ -40,7 +40,7 @@ if (window.terminalAPI) {
     if (data && data.tabId) {
       // Dispatch a custom event that the AIAssistant component can listen for
       window.dispatchEvent(
-        new CustomEvent("ai-stream-chunk", { detail: data })
+        new CustomEvent("ai-stream-chunk", { detail: data }),
       );
     }
   });
@@ -48,9 +48,7 @@ if (window.terminalAPI) {
   // Listen for end of stream
   window.terminalAPI.on("stream-end", (event, data) => {
     if (data && data.tabId) {
-      window.dispatchEvent(
-        new CustomEvent("ai-stream-end", { detail: data })
-      );
+      window.dispatchEvent(new CustomEvent("ai-stream-end", { detail: data }));
     }
   });
 
@@ -58,7 +56,7 @@ if (window.terminalAPI) {
   window.terminalAPI.on("stream-error", (event, data) => {
     if (data && data.tabId) {
       window.dispatchEvent(
-        new CustomEvent("ai-stream-error", { detail: data })
+        new CustomEvent("ai-stream-error", { detail: data }),
       );
     }
   });
