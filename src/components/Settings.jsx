@@ -20,16 +20,18 @@ import { changeLanguage } from "../i18n/i18n";
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
-  '& .MuiDialog-paper': {
-    backgroundColor: theme.palette.mode === 'dark' 
-      ? 'rgba(40, 44, 52, 0.75)' 
-      : 'rgba(255, 255, 255, 0.75)',
-    backdropFilter: 'blur(10px)',
-    boxShadow: theme.palette.mode === 'dark'
-      ? '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
-      : '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
-    border: '1px solid rgba(255, 255, 255, 0.18)',
-  }
+  "& .MuiDialog-paper": {
+    backgroundColor:
+      theme.palette.mode === "dark"
+        ? "rgba(40, 44, 52, 0.75)"
+        : "rgba(255, 255, 255, 0.75)",
+    backdropFilter: "blur(10px)",
+    boxShadow:
+      theme.palette.mode === "dark"
+        ? "0 8px 32px 0 rgba(0, 0, 0, 0.37)"
+        : "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
+    border: "1px solid rgba(255, 255, 255, 0.18)",
+  },
 }));
 
 // Custom styled dialog title
@@ -59,7 +61,7 @@ const BootstrapDialogTitle = (props) => {
 
 const Settings = ({ open, onClose }) => {
   const { t, i18n } = useTranslation();
-  
+
   // Define available languages
   const languages = [
     { code: "zh-CN", name: "简体中文" },
@@ -68,10 +70,10 @@ const Settings = ({ open, onClose }) => {
 
   // Define font size options
   const fontSizes = [
-    { value: 12, label: t('settings.fontSizeLabels.small') },
-    { value: 14, label: t('settings.fontSizeLabels.medium') },
-    { value: 16, label: t('settings.fontSizeLabels.large') },
-    { value: 18, label: t('settings.fontSizeLabels.xlarge') },
+    { value: 12, label: t("settings.fontSizeLabels.small") },
+    { value: 14, label: t("settings.fontSizeLabels.medium") },
+    { value: 16, label: t("settings.fontSizeLabels.large") },
+    { value: 18, label: t("settings.fontSizeLabels.xlarge") },
   ];
 
   // Initial states
@@ -130,13 +132,13 @@ const Settings = ({ open, onClose }) => {
       window.dispatchEvent(
         new CustomEvent("settingsChanged", {
           detail: { language, fontSize },
-        })
+        }),
       );
 
       onClose();
     } catch (error) {
       console.error("Failed to save UI settings:", error);
-      alert(t('settings.saveError'));
+      alert(t("settings.saveError"));
     }
   };
 
@@ -149,21 +151,23 @@ const Settings = ({ open, onClose }) => {
       fullWidth
     >
       <BootstrapDialogTitle id="settings-dialog-title" onClose={onClose}>
-        {t('settings.title')}
+        {t("settings.title")}
       </BootstrapDialogTitle>
       <DialogContent dividers>
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle1" gutterBottom>
-            {t('settings.language')}
+            {t("settings.language")}
           </Typography>
           <FormControl fullWidth variant="outlined" size="small">
-            <InputLabel id="language-select-label">{t('settings.language')}</InputLabel>
+            <InputLabel id="language-select-label">
+              {t("settings.language")}
+            </InputLabel>
             <Select
               labelId="language-select-label"
               id="language-select"
               value={language}
               onChange={handleLanguageChange}
-              label={t('settings.language')}
+              label={t("settings.language")}
             >
               {languages.map((lang) => (
                 <MenuItem key={lang.code} value={lang.code}>
@@ -178,7 +182,7 @@ const Settings = ({ open, onClose }) => {
 
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle1" gutterBottom>
-            {t('settings.fontSize')}
+            {t("settings.fontSize")}
           </Typography>
           <Box sx={{ px: 2, pt: 1 }}>
             <Slider
@@ -198,14 +202,14 @@ const Settings = ({ open, onClose }) => {
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} color="primary">
-          {t('settings.cancel')}
+          {t("settings.cancel")}
         </Button>
         <Button onClick={handleSave} color="primary" variant="contained">
-          {t('settings.save')}
+          {t("settings.save")}
         </Button>
       </DialogActions>
     </GlassDialog>
   );
 };
 
-export default Settings; 
+export default Settings;

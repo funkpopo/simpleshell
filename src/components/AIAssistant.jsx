@@ -132,7 +132,7 @@ function AIAssistant({ open, onClose }) {
 
   // 流式响应ID引用
   const streamResponseIdRef = React.useRef(null);
-  
+
   // 添加中断控制器和状态
   const abortControllerRef = React.useRef(null);
   const [isGenerating, setIsGenerating] = React.useState(false);
@@ -239,6 +239,17 @@ function AIAssistant({ open, onClose }) {
     return (
       messages
         .filter((msg) => msg.isUser || (msg.text && msg.text.trim() !== ""))
+        .map((msg) => {
+          // 如果是AI消息，过滤掉<think></think>标签包围的内容
+          if (!msg.isUser && msg.text) {
+            // 创建一个新的消息对象，避免修改原始消息
+            return {
+              ...msg,
+              text: msg.text.replace(/<think>[\s\S]*?<\/think>/g, ""),
+            };
+          }
+          return msg;
+        })
         // 按时间戳排序显示
         .sort((a, b) => {
           // 使用消息的时间戳排序
@@ -311,13 +322,25 @@ function AIAssistant({ open, onClose }) {
     const handleStreamChunk = (event) => {
       const { detail } = event;
       if (detail && detail.chunk && streamResponseIdRef.current) {
+        // 过滤掉<think></think>标签包围的内容
+        let filteredChunk = detail.chunk;
+
         // 更新当前AI响应的内容
         setMessages((prev) => {
           return prev.map((msg) => {
             if (msg.id === streamResponseIdRef.current) {
+              // 获取当前消息的完整文本
+              const currentText = msg.text;
+              let newText = currentText + filteredChunk;
+
+              // 处理完整的<think></think>标签
+              newText = newText.replace(/<think>[\s\S]*?<\/think>/g, "");
+
               return {
                 ...msg,
-                text: msg.text + detail.chunk,
+                // 保存原始文本用于后续处理
+                rawText: currentText + filteredChunk,
+                text: newText,
               };
             }
             return msg;
@@ -328,6 +351,28 @@ function AIAssistant({ open, onClose }) {
 
     // 处理流式响应结束
     const handleStreamEnd = (event) => {
+      // 在流结束时，确保所有的<think></think>标签都被正确处理
+      if (streamResponseIdRef.current) {
+        setMessages((prev) => {
+          return prev.map((msg) => {
+            if (msg.id === streamResponseIdRef.current) {
+              // 确保过滤所有<think></think>标签内容
+              const filteredText = msg.rawText
+                ? msg.rawText.replace(/<think>[\s\S]*?<\/think>/g, "")
+                : msg.text;
+
+              return {
+                ...msg,
+                text: filteredText,
+                // 移除临时保存的原始文本
+                rawText: undefined,
+              };
+            }
+            return msg;
+          });
+        });
+      }
+
       streamResponseIdRef.current = null;
       setLoading(false);
       setIsSending(false);
@@ -338,6 +383,29 @@ function AIAssistant({ open, onClose }) {
     // 处理流式响应错误
     const handleStreamError = (event) => {
       const { detail } = event;
+
+      // 在错误发生时，也确保所有消息中的<think></think>标签被过滤
+      if (streamResponseIdRef.current) {
+        setMessages((prev) => {
+          return prev.map((msg) => {
+            if (msg.id === streamResponseIdRef.current && msg.text) {
+              // 确保过滤所有<think></think>标签内容
+              const filteredText = msg.rawText
+                ? msg.rawText.replace(/<think>[\s\S]*?<\/think>/g, "")
+                : msg.text.replace(/<think>[\s\S]*?<\/think>/g, "");
+
+              return {
+                ...msg,
+                text: filteredText,
+                // 移除临时保存的原始文本
+                rawText: undefined,
+              };
+            }
+            return msg;
+          });
+        });
+      }
+
       if (detail && detail.error) {
         // 添加错误消息
         const errorMessageId = `error-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
@@ -414,10 +482,7 @@ function AIAssistant({ open, onClose }) {
   };
 
   // 通过Electron的IPC通道发送请求
-  const sendRequestViaElectron = async (
-    prompt,
-    settings,
-  ) => {
+  const sendRequestViaElectron = async (prompt, settings) => {
     try {
       // 确保使用提供的settings或当前的apiSettings
       const apiConfig = settings || apiSettings.current;
@@ -452,16 +517,16 @@ function AIAssistant({ open, onClose }) {
           timestamp: Date.now(),
         };
         safelyAddMessage(aiMessage);
-        
+
         // 保存当前流式响应的消息ID
         streamResponseIdRef.current = newAIMessageId;
-        
+
         // 设置生成状态
         setIsGenerating(true);
-        
+
         // 发送流式请求
         window.terminalAPI.sendAPIRequest(requestData, true);
-        
+
         // 返回消息ID，表示已开始处理
         return newAIMessageId;
       } else {
@@ -501,55 +566,55 @@ function AIAssistant({ open, onClose }) {
         timestamp: Date.now(),
       };
       safelyAddMessage(aiMessage);
-      
+
       // 保存当前流式响应的消息ID
       streamResponseIdRef.current = newAIMessageId;
-      
+
       // 创建 AbortController 用于中断请求
       abortControllerRef.current = new AbortController();
       setIsGenerating(true);
-      
+
       // 将 signal 添加到请求选项中
       const requestWithSignal = {
         ...requestOptions,
-        signal: abortControllerRef.current.signal
+        signal: abortControllerRef.current.signal,
       };
-      
+
       // 开始流式响应处理
       const response = await fetch(apiUrl, requestWithSignal);
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(
           `API请求失败: ${response.status} ${errorData.error?.message || response.statusText}`,
         );
       }
-      
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      
+
       // 循环读取流式数据
       while (true) {
         const { done, value } = await reader.read();
-        
+
         if (done) {
           break;
         }
-        
+
         // 解码数据
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
-        
+
         // 处理数据行
         let newlineIndex;
         while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
           const line = buffer.slice(0, newlineIndex);
           buffer = buffer.slice(newlineIndex + 1);
-          
+
           if (line.trim() === "") continue;
           if (line.trim() === "data: [DONE]") continue;
-          
+
           // 处理数据行
           if (line.startsWith("data: ")) {
             try {
@@ -577,16 +642,16 @@ function AIAssistant({ open, onClose }) {
           }
         }
       }
-      
+
       setIsGenerating(false);
       abortControllerRef.current = null;
-      
+
       // 返回消息ID
       return newAIMessageId;
     } catch (error) {
       // 检查是否是中断错误
-      if (error.name === 'AbortError') {
-        console.log('请求被中断');
+      if (error.name === "AbortError") {
+        console.log("请求被中断");
       } else {
         throw error;
       }
@@ -630,12 +695,17 @@ function AIAssistant({ open, onClose }) {
     // 使用时间戳和随机字符串确保消息ID完全唯一
     const newAIMessageId = `ai-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
 
+    // 过滤<think></think>标签包围的内容
+    const filteredText = text.replace(/<think>[\s\S]*?<\/think>/g, "");
+
     // 添加一个新的消息
     setMessages((prev) => [
       ...prev,
       {
         id: newAIMessageId,
-        text,
+        text: filteredText,
+        // 保存原始文本，以备后续处理
+        rawText: text,
         type: "ai",
         isUser: false,
         timestamp: Date.now(),
@@ -706,7 +776,7 @@ function AIAssistant({ open, onClose }) {
         };
         safelyAddMessage(aiResponse);
       }
-      
+
       // 对于流式响应，setLoading和setIsSending会在流结束事件中被处理
       if (!apiSettings.current.streamEnabled) {
         setLoading(false);
@@ -724,7 +794,7 @@ function AIAssistant({ open, onClose }) {
         timestamp: Date.now(),
       };
       safelyAddMessage(errorMessage);
-      
+
       setLoading(false);
       setIsSending(false);
     }
@@ -1071,13 +1141,13 @@ function AIAssistant({ open, onClose }) {
       if (streamResponseIdRef.current) {
         streamResponseIdRef.current = null;
       }
-      
+
       // 中断任何正在进行的请求
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
-      
+
       // 如果使用的是 Electron IPC 通道
       if (window.terminalAPI && window.terminalAPI.abortAPIRequest) {
         window.terminalAPI.abortAPIRequest();
@@ -1102,12 +1172,12 @@ function AIAssistant({ open, onClose }) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    
+
     // 如果使用的是 Electron IPC 通道
     if (window.terminalAPI && window.terminalAPI.abortAPIRequest) {
       window.terminalAPI.abortAPIRequest();
     }
-    
+
     // 重置状态
     streamResponseIdRef.current = null;
     setIsGenerating(false);
@@ -1117,7 +1187,7 @@ function AIAssistant({ open, onClose }) {
 
   // 将组件实例暴露给父组件
   React.useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       if (!window.aiAssistantRef) {
         window.aiAssistantRef = { current: null };
       }
@@ -1130,11 +1200,11 @@ function AIAssistant({ open, onClose }) {
               isUser: false,
             },
           ]);
-        }
+        },
       };
     }
     return () => {
-      if (typeof window !== 'undefined' && window.aiAssistantRef) {
+      if (typeof window !== "undefined" && window.aiAssistantRef) {
         window.aiAssistantRef.current = null;
       }
     };
@@ -1147,26 +1217,31 @@ function AIAssistant({ open, onClose }) {
       if (event.detail && event.detail.text) {
         // 获取选中的文本
         const text = event.detail.text;
-        
+
         // 自动打开AI助手（如果没有打开）
         if (!open) {
           onClose(true); // 调用关闭函数但传入true，表示打开AI助手
         }
-        
+
         // 组装提示词
         const prompt = `请解析并分析下面的内容：\n\n${text}`;
-        
+
         console.log("开始解析文本，当前API配置状态:", {
           hasConfig: !!apiSettings.current,
           apiUrl: apiSettings.current?.apiUrl?.substring(0, 10) + "...",
           hasApiKey: !!apiSettings.current?.apiKey,
-          model: apiSettings.current?.model
+          model: apiSettings.current?.model,
         });
-        
+
         // 发送到AI进行处理
         try {
           // 验证API设置
-          if (!apiSettings.current || !apiSettings.current.apiUrl || !apiSettings.current.apiKey || !apiSettings.current.model) {
+          if (
+            !apiSettings.current ||
+            !apiSettings.current.apiUrl ||
+            !apiSettings.current.apiKey ||
+            !apiSettings.current.model
+          ) {
             console.log("API设置不完整，尝试重新加载设置");
             // 重新尝试加载设置（可能之前没加载完全）
             if (window.terminalAPI && window.terminalAPI.loadAISettings) {
@@ -1176,18 +1251,28 @@ function AIAssistant({ open, onClose }) {
                 hasCurrent: !!settings?.current,
                 hasApiUrl: !!settings?.current?.apiUrl,
                 hasApiKey: !!settings?.current?.apiKey,
-                hasModel: !!settings?.current?.model
+                hasModel: !!settings?.current?.model,
               });
-              
-              if (settings && settings.current && settings.current.apiUrl && settings.current.apiKey && settings.current.model) {
+
+              if (
+                settings &&
+                settings.current &&
+                settings.current.apiUrl &&
+                settings.current.apiKey &&
+                settings.current.model
+              ) {
                 setApiSettings(settings);
                 // 将新加载的设置用于当前请求
                 await sendParseRequest(prompt, settings.current);
               } else {
-                throw new Error("API设置不完整，请在AI助手设置中配置API URL、API密钥和模型名称");
+                throw new Error(
+                  "API设置不完整，请在AI助手设置中配置API URL、API密钥和模型名称",
+                );
               }
             } else {
-              throw new Error("API设置不完整，请在AI助手设置中配置API URL、API密钥和模型名称");
+              throw new Error(
+                "API设置不完整，请在AI助手设置中配置API URL、API密钥和模型名称",
+              );
             }
           } else {
             // 使用当前的API设置
@@ -1200,7 +1285,7 @@ function AIAssistant({ open, onClose }) {
         }
       }
     };
-    
+
     // 专门处理解析请求的函数，接受自定义API设置
     const sendParseRequest = async (prompt, apiConfig) => {
       try {
@@ -1212,12 +1297,12 @@ function AIAssistant({ open, onClose }) {
           isUser: true,
           timestamp: Date.now(),
         };
-        
+
         safelyAddMessage(userMessage);
-        
+
         // 使用提供的API设置调用AI
         setIsGenerating(true);
-        
+
         // 根据是否启用了流式响应选择处理方式
         if (apiConfig.streamEnabled) {
           await sendOpenAIRequest(prompt, apiConfig);
@@ -1492,7 +1577,9 @@ function AIAssistant({ open, onClose }) {
                         <IconButton
                           color="primary"
                           onClick={handleSendMessage}
-                          disabled={!inputMessage.trim() || loading || isSending}
+                          disabled={
+                            !inputMessage.trim() || loading || isSending
+                          }
                         >
                           <SendIcon />
                         </IconButton>
@@ -1505,7 +1592,15 @@ function AIAssistant({ open, onClose }) {
 
             {/* 设置标签 */}
             <TabPanel value={tabValue} index={1}>
-              <Box sx={{ p: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "auto" }}>
+              <Box
+                sx={{
+                  p: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  overflow: "auto",
+                }}
+              >
                 {/* 配置列表和操作区 */}
                 <Box sx={{ width: "100%", mb: 2 }}>
                   <Typography variant="h6" gutterBottom>
@@ -1660,7 +1755,9 @@ function AIAssistant({ open, onClose }) {
                     </Typography>
                   )}
 
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                  <Box
+                    sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}
+                  >
                     <TextField
                       fullWidth
                       label="配置名称"
@@ -1708,10 +1805,12 @@ function AIAssistant({ open, onClose }) {
                       control={
                         <Switch
                           checked={currentEditConfig.streamEnabled}
-                          onChange={(e) => setCurrentEditConfig(prev => ({
-                            ...prev,
-                            streamEnabled: e.target.checked
-                          }))}
+                          onChange={(e) =>
+                            setCurrentEditConfig((prev) => ({
+                              ...prev,
+                              streamEnabled: e.target.checked,
+                            }))
+                          }
                           name="streamEnabled"
                         />
                       }

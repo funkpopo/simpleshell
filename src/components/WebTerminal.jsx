@@ -198,9 +198,11 @@ const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
         // 再次检查尺寸是否一致
         const elemWidth = term.element.clientWidth;
         const elemHeight = term.element.clientHeight;
-        
-        if (Math.abs(elemWidth - currentWidth) > 5 || 
-            Math.abs(elemHeight - currentHeight) > 5) {
+
+        if (
+          Math.abs(elemWidth - currentWidth) > 5 ||
+          Math.abs(elemHeight - currentHeight) > 5
+        ) {
           fitAddon.fit();
         }
       }
@@ -222,62 +224,62 @@ const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
 // 添加辅助函数，用于处理多行粘贴文本，防止注释符号和缩进异常
 const processMultilineInput = (text, options = {}) => {
   if (!text || typeof text !== "string") return text;
-  
+
   // 如果文本不包含换行符，直接返回
   if (!text.includes("\n")) return text;
-  
+
   // 分割成行数组
   const lines = text.split(/\r?\n/);
   if (lines.length <= 1) return text;
-  
+
   // 常见的注释符号模式
   const commentPatterns = [
     /^\s*\/\//, // JavaScript, C, C++, Java 等的单行注释 //
-    /^\s*#/,    // Python, Bash, Ruby 等的注释 #
-    /^\s*--/,   // SQL, Lua 等的注释 --
-    /^\s*;/,    // Assembly, INI 等的注释 ;
-    /^\s*%/,    // LaTeX, Matlab 等的注释 %
+    /^\s*#/, // Python, Bash, Ruby 等的注释 #
+    /^\s*--/, // SQL, Lua 等的注释 --
+    /^\s*;/, // Assembly, INI 等的注释 ;
+    /^\s*%/, // LaTeX, Matlab 等的注释 %
     /^\s*\/\*/, // C, Java 等的多行注释开始 /*
-    /^\s*\*\//  // C, Java 等的多行注释结束 */
+    /^\s*\*\//, // C, Java 等的多行注释结束 */
   ];
-  
+
   // 判断当前行是否包含注释
   const isCommentLine = (line) => {
-    return commentPatterns.some(pattern => pattern.test(line));
+    return commentPatterns.some((pattern) => pattern.test(line));
   };
-  
+
   // 检测是否有注释行
-  const hasCommentLines = lines.some(line => isCommentLine(line));
-  
+  const hasCommentLines = lines.some((line) => isCommentLine(line));
+
   // 如果检测到注释行并且开启了逐行发送选项（默认为true），返回特殊标记对象
   // 这将触发调用方进行逐行处理
-  if (hasCommentLines && (options.sendLineByLine !== false)) {
+  if (hasCommentLines && options.sendLineByLine !== false) {
     return {
-      type: 'multiline-with-comments',
+      type: "multiline-with-comments",
       lines: lines,
-      isCommentLine: isCommentLine
+      isCommentLine: isCommentLine,
     };
   }
   //统一使用'\n'
-  const lineEnding = '\n';
-  
+  const lineEnding = "\n";
+
   // 处理每一行
   let result = "";
   let isInCommentBlock = false;
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    
+
     // 检测是否是注释行
     const hasComment = isCommentLine(line);
-    
+
     // 检测多行注释块
     if (line.includes("/*")) isInCommentBlock = true;
     if (line.includes("*/")) isInCommentBlock = false;
-    
+
     // 添加当前行
     result += line;
-    
+
     // 如果不是最后一行，添加换行符
     if (i < lines.length - 1) {
       // 如果当前行包含注释或者在注释块内，添加一个额外的回车键输入
@@ -289,7 +291,7 @@ const processMultilineInput = (text, options = {}) => {
       }
     }
   }
-  
+
   return result;
 };
 
@@ -320,69 +322,72 @@ const WebTerminal = ({
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
   const setupCommandDetection = (term, processId) => {
     // 用于存储用户正在输入的命令
-    let currentInputBuffer = '';
+    let currentInputBuffer = "";
     // 标记上一个按键是否是特殊键序列的开始
     let isEscapeSequence = false;
     // 用于存储转义序列
-    let escapeBuffer = '';
+    let escapeBuffer = "";
     // 用于记录最后一个执行的命令，避免重复添加到历史记录
-    let lastExecutedCommand = '';
+    let lastExecutedCommand = "";
     // 跟踪编辑器模式状态
     let inEditorMode = false;
     // 标记是否刚刚使用了Tab补全
     let tabCompletionUsed = false;
     // 用于临时存储当前行位置和内容，以便在Tab补全后能恢复正确位置
     let currentLineBeforeTab = null;
-    
+
     // 识别编辑器命令的正则表达式
-    const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
-    
+    const editorCommandRegex =
+      /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
+
     // 添加buffer类型监听，用于检测编辑器模式
     // xterm.js在全屏应用（如vi）运行时会切换到alternate buffer
     const bufferTypeObserver = {
       handleBufferTypeChange: (type) => {
         console.log(`终端缓冲区类型变化: ${type}`);
-        if (type === 'alternate') {
+        if (type === "alternate") {
           // 进入编辑器/全屏应用模式
           inEditorMode = true;
           console.log("编辑器模式已启动（通过buffer类型检测）");
-          
+
           // 通知主进程编辑器模式状态变更
           if (processId && window.terminalAPI?.notifyEditorModeChange) {
             window.terminalAPI.notifyEditorModeChange(processId, true);
           }
-        } else if (type === 'normal') {
+        } else if (type === "normal") {
           // 退出编辑器/全屏应用模式
           if (inEditorMode) {
             inEditorMode = false;
             console.log("编辑器模式已退出（通过buffer类型检测）");
-            
+
             // 通知主进程编辑器模式状态变更
             if (processId && window.terminalAPI?.notifyEditorModeChange) {
               window.terminalAPI.notifyEditorModeChange(processId, false);
             }
           }
         }
-      }
+      },
     };
-    
+
     // 监听buffer类型变化
-    if (term.buffer && typeof term.buffer.onBufferChange === 'function') {
+    if (term.buffer && typeof term.buffer.onBufferChange === "function") {
       // 如果xterm.js版本支持此方法
       term.buffer.onBufferChange((e) => {
         bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
       });
-      
+
       // 初始检查当前buffer类型
       bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
     } else {
-      console.log("当前xterm.js版本不支持buffer类型监听，将使用传统方法检测编辑器模式");
+      console.log(
+        "当前xterm.js版本不支持buffer类型监听，将使用传统方法检测编辑器模式",
+      );
     }
-    
+
     // 监听终端数据输出，用于检测编辑器特征
     term.onData((data) => {
       // 检查是否是ESC开头的转义序列（通常是方向键等特殊键）
-      if (data === '\x1b') {
+      if (data === "\x1b") {
         isEscapeSequence = true;
         escapeBuffer = data;
         // 方向键等特殊键不会影响命令历史记录，直接发送到进程
@@ -391,26 +396,26 @@ const WebTerminal = ({
         }
         return;
       }
-      
+
       // 处理转义序列的后续字符
       if (isEscapeSequence) {
         escapeBuffer += data;
-        
+
         // 检查是否是常见的转义序列结束符
         if (/[A-Za-z~]/.test(data)) {
           isEscapeSequence = false;
-          escapeBuffer = '';
+          escapeBuffer = "";
         }
-        
+
         // 转义序列不会记录到命令历史，直接发送到进程
         if (processId) {
           window.terminalAPI.sendToProcess(processId, data);
         }
         return;
       }
-      
+
       // 处理退格键
-      if (data === '\b' || data === '\x7f') {
+      if (data === "\b" || data === "\x7f") {
         if (currentInputBuffer.length > 0) {
           currentInputBuffer = currentInputBuffer.slice(0, -1);
         }
@@ -420,23 +425,26 @@ const WebTerminal = ({
         }
         return;
       }
-      
+
       // 处理Tab键，标记Tab补全被使用
-      if (data === '\t') {
+      if (data === "\t") {
         tabCompletionUsed = true;
         // 存储当前行内容，以便于之后获取Tab补全后的完整命令
         currentLineBeforeTab = {
           y: term.buffer.active.cursorY,
-          content: term.buffer.active.getLine(term.buffer.active.cursorY)?.translateToString() || ""
+          content:
+            term.buffer.active
+              .getLine(term.buffer.active.cursorY)
+              ?.translateToString() || "",
         };
-        
+
         // 发送数据到进程
         if (processId) {
           window.terminalAPI.sendToProcess(processId, data);
         }
         return;
       }
-      
+
       // 检测回车键（命令执行的触发）
       if (data === "\r" || data === "\n") {
         try {
@@ -445,59 +453,80 @@ const WebTerminal = ({
             term.buffer.active
               .getLine(term.buffer.active.cursorY)
               ?.translateToString() || "";
-              
+
           // 提取用户输入的命令（去除提示符）
           // 改进提示符检测，支持更多类型的shell提示符
-          const commandMatch = lastLine.match(/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/);
-          
+          const commandMatch = lastLine.match(
+            /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/,
+          );
+
           // 获取实际命令，优先使用终端行显示的内容（包含tab补全后的结果）
-          let command = '';
-          if (commandMatch && commandMatch[1] && commandMatch[1].trim() !== "") {
+          let command = "";
+          if (
+            commandMatch &&
+            commandMatch[1] &&
+            commandMatch[1].trim() !== ""
+          ) {
             // 优先使用从终端行获取的命令，这包含了Tab补全后的结果
             command = commandMatch[1].trim();
           } else if (currentInputBuffer.trim() !== "") {
             // 如果无法从终端行获取，回退到使用输入缓冲区
             command = currentInputBuffer.trim();
           }
-          
+
           // 如果发现命令为空但刚刚使用了Tab补全，尝试从整个终端缓冲区捕获命令
-          if ((!command || command === "") && tabCompletionUsed && currentLineBeforeTab) {
+          if (
+            (!command || command === "") &&
+            tabCompletionUsed &&
+            currentLineBeforeTab
+          ) {
             // 搜索从当前行向上几行，查找可能出现的完整命令
             const linesCount = term.buffer.active.length;
             const linesToCheck = Math.min(5, linesCount); // 检查最近5行
-            
+
             for (let i = 0; i < linesToCheck; i++) {
-              const line = term.buffer.active.getLine(term.buffer.active.cursorY - i)?.translateToString() || "";
-              const potentialCommandMatch = line.match(/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/);
-              if (potentialCommandMatch && potentialCommandMatch[1] && potentialCommandMatch[1].trim() !== "") {
+              const line =
+                term.buffer.active
+                  .getLine(term.buffer.active.cursorY - i)
+                  ?.translateToString() || "";
+              const potentialCommandMatch = line.match(
+                /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/,
+              );
+              if (
+                potentialCommandMatch &&
+                potentialCommandMatch[1] &&
+                potentialCommandMatch[1].trim() !== ""
+              ) {
                 command = potentialCommandMatch[1].trim();
                 break;
               }
             }
           }
-          
+
           // 检测是否进入了编辑器模式（备用模式。确保能够实施resize）
           // 只有在不支持buffer类型检测时才使用命令识别
-          if (command && 
-              editorCommandRegex.test(command) && 
-              (!term.buffer || typeof term.buffer.onBufferChange !== 'function')) {
+          if (
+            command &&
+            editorCommandRegex.test(command) &&
+            (!term.buffer || typeof term.buffer.onBufferChange !== "function")
+          ) {
             inEditorMode = true;
             console.log("编辑器模式已启动（通过命令检测）:", command);
-            
+
             // 通知主进程编辑器模式状态变更
             if (processId && window.terminalAPI?.notifyEditorModeChange) {
               window.terminalAPI.notifyEditorModeChange(processId, true);
             }
           }
-          
+
           // 确保命令不为空且不与上一次执行的命令相同，并且不在编辑器模式中
           // 注意：inEditorMode可能已经被buffer类型检测器更新
           if (command && command !== lastExecutedCommand && !inEditorMode) {
             lastExecutedCommand = command;
           }
-          
+
           // 重置当前输入缓冲区和Tab补全状态
-          currentInputBuffer = '';
+          currentInputBuffer = "";
           tabCompletionUsed = false;
           currentLineBeforeTab = null;
 
@@ -529,7 +558,7 @@ const WebTerminal = ({
           // 忽略任何错误，不影响正常功能
           console.error("检测用户输入命令时出错:", error);
         }
-      } else if (data !== '\t') {
+      } else if (data !== "\t") {
         // 对于非Tab键输入，追加到输入缓冲区
         currentInputBuffer += data;
       }
@@ -539,25 +568,31 @@ const WebTerminal = ({
         window.terminalAPI.sendToProcess(processId, data);
       }
     });
-    
+
     // 添加输出监听，以检测编辑器退出（仅作为备用方法）
     term.onLineFeed(() => {
       // 当获得新的一行时，检查是否有shell提示符出现，这可能表示编辑器已退出
       // 注意：如果buffer类型检测可用，此方法是不必要的
       try {
         // 只在不支持buffer类型检测时使用此备用方法
-        if (inEditorMode && (!term.buffer || typeof term.buffer.onBufferChange !== 'function')) {
+        if (
+          inEditorMode &&
+          (!term.buffer || typeof term.buffer.onBufferChange !== "function")
+        ) {
           // 检查最后几行，寻找shell提示符
           const linesCount = term.buffer.active.length;
           const lastRowsToCheck = Math.min(5, linesCount); // 检查最后5行
-          
+
           for (let i = 0; i < lastRowsToCheck; i++) {
-            const line = term.buffer.active.getLine(linesCount - 1 - i)?.translateToString() || "";
+            const line =
+              term.buffer.active
+                .getLine(linesCount - 1 - i)
+                ?.translateToString() || "";
             // 检查是否包含典型的shell提示符
             if (/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*$/.test(line)) {
               inEditorMode = false;
               console.log("编辑器模式已退出（通过shell提示符检测）");
-              
+
               // 通知主进程编辑器模式状态变更
               if (processId && window.terminalAPI?.notifyEditorModeChange) {
                 window.terminalAPI.notifyEditorModeChange(processId, false);
@@ -571,26 +606,35 @@ const WebTerminal = ({
         console.error("检测编辑器退出时出错:", error);
       }
     });
-    
+
     // 添加终端数据处理监听，用于捕获Tab补全后的内容
     term.onRender(() => {
       // 如果使用了Tab补全并且有存储的之前行内容
       if (tabCompletionUsed && currentLineBeforeTab) {
         try {
           // 获取当前行内容，看是否有变化（可能是Tab补全导致的）
-          const currentLine = term.buffer.active.getLine(term.buffer.active.cursorY)?.translateToString() || "";
+          const currentLine =
+            term.buffer.active
+              .getLine(term.buffer.active.cursorY)
+              ?.translateToString() || "";
           const previousContent = currentLineBeforeTab.content;
-          
+
           // 如果行内容发生了变化，可能是Tab补全生效了
           if (currentLine !== previousContent) {
             // 尝试提取命令部分（去除提示符）
-            const commandMatch = currentLine.match(/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/);
-            if (commandMatch && commandMatch[1] && commandMatch[1].trim() !== "") {
+            const commandMatch = currentLine.match(
+              /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/,
+            );
+            if (
+              commandMatch &&
+              commandMatch[1] &&
+              commandMatch[1].trim() !== ""
+            ) {
               // 更新当前输入缓冲区为Tab补全后的命令
               currentInputBuffer = commandMatch[1].trim();
             }
           }
-          
+
           // 重置，因为我们已经处理了这次Tab补全
           currentLineBeforeTab = null;
         } catch (error) {
@@ -614,8 +658,8 @@ const WebTerminal = ({
         ? "rgba(0, 120, 215, 0.7)" // 日间模式下使用更显眼的蓝色
         : "rgba(255, 255, 170, 0.65)",
     // 选择文本的前景色，确保文字清晰可见
-    selectionForeground: 
-      theme.palette.mode === "light" 
+    selectionForeground:
+      theme.palette.mode === "light"
         ? "#ffffff" // 在蓝色背景上使用白色文本更清晰
         : "#ffffff",
     // 基础颜色
@@ -680,20 +724,21 @@ const WebTerminal = ({
   useEffect(() => {
     const handleSettingsChanged = async (event) => {
       const { fontSize } = event.detail;
-      
+
       if (terminalRef.current && terminalCache[tabId] && fitAddonRef.current) {
         // 更新终端字体大小
         terminalCache[tabId].options.fontSize = parseInt(fontSize, 10);
-        
+
         // 触发终端大小调整
         setTimeout(() => {
           if (fitAddonRef.current) {
             fitAddonRef.current.fit();
-            
+
             // 同步到后端进程
             const processId = processCache[tabId];
             if (processId && window.terminalAPI?.resizeTerminal) {
-              const dims = terminalCache[tabId].cols + "," + terminalCache[tabId].rows;
+              const dims =
+                terminalCache[tabId].cols + "," + terminalCache[tabId].rows;
               window.terminalAPI.resizeTerminal(processId, dims);
             }
           }
@@ -702,7 +747,7 @@ const WebTerminal = ({
     };
 
     window.addEventListener("settingsChanged", handleSettingsChanged);
-    
+
     return () => {
       window.removeEventListener("settingsChanged", handleSettingsChanged);
     };
@@ -774,17 +819,18 @@ const WebTerminal = ({
         // 创建并加载插件
         fitAddon = new FitAddon();
         searchAddon = new SearchAddon();
-        
+
         // 自定义WebLinksAddon的链接处理逻辑，使用系统默认浏览器打开链接
         const webLinksAddon = new WebLinksAddon((event, uri) => {
           // 阻止默认行为（在应用内打开）
           event.preventDefault();
-          
+
           // 使用预加载脚本中定义的API在系统默认浏览器中打开链接
           if (window.terminalAPI && window.terminalAPI.openExternal) {
             console.log("在系统默认浏览器打开链接:", uri);
-            window.terminalAPI.openExternal(uri)
-              .catch(err => console.error("打开链接失败:", err));
+            window.terminalAPI
+              .openExternal(uri)
+              .catch((err) => console.error("打开链接失败:", err));
           } else {
             console.warn("terminalAPI.openExternal不可用，无法打开链接");
           }
@@ -930,7 +976,10 @@ const WebTerminal = ({
             if (text && processCache[tabId]) {
               // 使用预处理函数处理多行文本，防止注释和缩进问题
               const processedText = processMultilineInput(text);
-              window.terminalAPI.sendToProcess(processCache[tabId], processedText);
+              window.terminalAPI.sendToProcess(
+                processCache[tabId],
+                processedText,
+              );
             }
           });
         }
@@ -975,36 +1024,50 @@ const WebTerminal = ({
             if (text && processCache[tabId]) {
               // 使用预处理函数处理多行文本，防止注释和缩进问题
               const processedText = processMultilineInput(text);
-              
+
               // 检查是否需要逐行发送（含有注释的多行文本）
-              if (processedText && typeof processedText === 'object' && processedText.type === 'multiline-with-comments') {
+              if (
+                processedText &&
+                typeof processedText === "object" &&
+                processedText.type === "multiline-with-comments"
+              ) {
                 // 逐行发送文本，每行之间添加适当延迟
                 processedText.lines.forEach((line, index) => {
                   setTimeout(() => {
-                    window.terminalAPI.sendToProcess(processCache[tabId], line + (index < processedText.lines.length - 1 ? '\n' : ''));
+                    window.terminalAPI.sendToProcess(
+                      processCache[tabId],
+                      line +
+                        (index < processedText.lines.length - 1 ? "\n" : ""),
+                    );
                   }, index * 50); // 50毫秒的延迟，可以根据实际情况调整
                 });
               } else {
                 // 正常发送处理后的文本
-                window.terminalAPI.sendToProcess(processCache[tabId], processedText);
+                window.terminalAPI.sendToProcess(
+                  processCache[tabId],
+                  processedText,
+                );
               }
             }
           });
         }
-        
+
         // 在mousedown时记录选择开始，帮助确保选择行为的准确性
-        if (e.button === 0 && termRef.current) { // 左键点击
+        if (e.button === 0 && termRef.current) {
+          // 左键点击
           // 使用requestAnimationFrame确保在下一次渲染周期处理选择
           requestAnimationFrame(adjustSelectionElements);
         }
       };
-      
+
       // 提取调整选择元素的函数，以便在多个事件处理函数中复用
       const adjustSelectionElements = () => {
         // 获取所有选择元素
-        const selectionElements = document.querySelectorAll('.xterm .xterm-selection div');
+        const selectionElements = document.querySelectorAll(
+          ".xterm .xterm-selection div",
+        );
         // 优化选择元素以确保准确性
-        selectionElements.forEach(elem => {
+        selectionElements.forEach((elem) => {
           // 确保选择元素的大小精确匹配所选内容
           elem.style.height = `${Math.floor(elem.offsetHeight)}px`;
           // 应用任何必要的偏移校正
@@ -1015,23 +1078,24 @@ const WebTerminal = ({
           }
         });
       };
-      
+
       // 添加鼠标事件监听
       if (terminalRef.current) {
         terminalRef.current.addEventListener("mousedown", handleMouseDown);
-        
+
         // 添加鼠标移动和松开事件以优化选择体验
         const handleMouseMove = (e) => {
-          if (e.buttons === 1 && termRef.current) { // 左键拖动
+          if (e.buttons === 1 && termRef.current) {
+            // 左键拖动
             requestAnimationFrame(adjustSelectionElements);
           }
         };
-        
+
         const handleMouseUp = () => {
           // 鼠标释放时最终调整选择区域
           requestAnimationFrame(adjustSelectionElements);
         };
-        
+
         terminalRef.current.addEventListener("mousemove", handleMouseMove);
         terminalRef.current.addEventListener("mouseup", handleMouseUp);
       }
@@ -1059,7 +1123,7 @@ const WebTerminal = ({
             if (term && term.element) {
               term.element.style.width = `${currentWidth}px`;
               term.element.style.height = `${currentHeight}px`;
-              
+
               // 添加强制重排的代码
               term.element.getBoundingClientRect();
             }
@@ -1076,9 +1140,11 @@ const WebTerminal = ({
               const currentHeight = container.clientHeight;
               const elemWidth = term.element.clientWidth;
               const elemHeight = term.element.clientHeight;
-              
-              if (Math.abs(elemWidth - currentWidth) > 5 || 
-                  Math.abs(elemHeight - currentHeight) > 5) {
+
+              if (
+                Math.abs(elemWidth - currentWidth) > 5 ||
+                Math.abs(elemHeight - currentHeight) > 5
+              ) {
                 console.log("检测到终端尺寸不匹配，执行二次适配");
                 fitAddon.fit();
               }
@@ -1123,7 +1189,7 @@ const WebTerminal = ({
                     Math.max(Math.floor(term.rows || 30), 1),
                   )
                   .catch((err) => console.error("延迟终端大小调整失败:", err));
-                  
+
                 // 重置内容更新标志，表示已处理完成
                 setContentUpdated(false);
               }
@@ -1163,26 +1229,30 @@ const WebTerminal = ({
             mutation.attributeName === "class"
           ) {
             const target = mutation.target;
-            
+
             // 检查是否是display属性变化
-            if (target.style && 
-                (target.style.display === 'block' || 
-                 target.style.display === 'flex' || 
-                 target.style.display === 'grid' || 
-                 target.getAttribute('aria-hidden') === 'false')) {
+            if (
+              target.style &&
+              (target.style.display === "block" ||
+                target.style.display === "flex" ||
+                target.style.display === "grid" ||
+                target.getAttribute("aria-hidden") === "false")
+            ) {
               visibilityChanged = true;
               break;
             }
-            
+
             // 检查是否涉及visibility或opacity变化
             const computedStyle = window.getComputedStyle(target);
-            if (computedStyle && 
-                (computedStyle.visibility === 'visible' || 
-                 computedStyle.opacity !== '0')) {
+            if (
+              computedStyle &&
+              (computedStyle.visibility === "visible" ||
+                computedStyle.opacity !== "0")
+            ) {
               visibilityChanged = true;
               break;
             }
-            
+
             shouldResize = true;
           }
 
@@ -1199,22 +1269,26 @@ const WebTerminal = ({
             // 延迟一小段时间确保DOM已完全更新
             setTimeout(() => {
               forceResizeTerminal(
-                termRef.current, 
-                terminalRef.current, 
-                processCache[tabId], 
-                tabId, 
-                fitAddonRef.current
+                termRef.current,
+                terminalRef.current,
+                processCache[tabId],
+                tabId,
+                fitAddonRef.current,
               );
             }, 10);
 
             setTimeout(() => {
-              if (terminalRef.current && termRef.current && fitAddonRef.current) {
+              if (
+                terminalRef.current &&
+                termRef.current &&
+                fitAddonRef.current
+              ) {
                 forceResizeTerminal(
-                  termRef.current, 
-                  terminalRef.current, 
-                  processCache[tabId], 
-                  tabId, 
-                  fitAddonRef.current
+                  termRef.current,
+                  terminalRef.current,
+                  processCache[tabId],
+                  tabId,
+                  fitAddonRef.current,
                 );
               }
             }, 100);
@@ -1249,28 +1323,28 @@ const WebTerminal = ({
           attributes: true,
           childList: true,
           subtree: true,
-          attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'] // 只观察这些属性的变化
+          attributeFilter: ["style", "class", "hidden", "aria-hidden"], // 只观察这些属性的变化
         });
 
         // 尝试观察父元素
         let parent = terminalRef.current.parentElement;
         if (parent) {
-          observer.observe(parent, { 
+          observer.observe(parent, {
             attributes: true,
-            attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'] 
+            attributeFilter: ["style", "class", "hidden", "aria-hidden"],
           });
 
           // 对于TabPanel的特殊处理
           if (parent.parentElement) {
-            observer.observe(parent.parentElement, { 
+            observer.observe(parent.parentElement, {
               attributes: true,
-              attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'] 
+              attributeFilter: ["style", "class", "hidden", "aria-hidden"],
             });
 
             if (parent.parentElement.parentElement) {
-              observer.observe(parent.parentElement.parentElement, { 
+              observer.observe(parent.parentElement.parentElement, {
                 attributes: true,
-                attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'] 
+                attributeFilter: ["style", "class", "hidden", "aria-hidden"],
               });
             }
           }
@@ -1322,15 +1396,20 @@ const WebTerminal = ({
 
       // 延迟后同步，确保布局稳定后大小正确
       setTimeout(syncTerminalSize, 100);
-      
+
       // 添加一个新的辅助函数，确保终端在被激活时调整大小
       const ensureTerminalSizeOnVisibilityChange = () => {
         // 检查当前标签是否可见（通过DOM属性或样式）
         if (terminalRef.current) {
           const isVisible = isElementVisible(terminalRef.current);
-          
+
           // 只有当终端可见且内容有更新时，才执行大小调整
-          if (isVisible && termRef.current && fitAddonRef.current && contentUpdated) {            
+          if (
+            isVisible &&
+            termRef.current &&
+            fitAddonRef.current &&
+            contentUpdated
+          ) {
             // 使用延迟执行强制调整大小
             setTimeout(() => {
               forceResizeTerminal(
@@ -1338,7 +1417,7 @@ const WebTerminal = ({
                 terminalRef.current,
                 processCache[tabId],
                 tabId,
-                fitAddonRef.current
+                fitAddonRef.current,
               );
               // 重置内容更新标志
               setContentUpdated(false);
@@ -1346,29 +1425,31 @@ const WebTerminal = ({
           }
         }
       };
-      
+
       // 添加一个检查元素可见性的函数
       const isElementVisible = (element) => {
         if (!element) return false;
-        
+
         // 检查元素及其所有父元素的可见性
         let current = element;
         while (current) {
           const style = window.getComputedStyle(current);
-          if (style.display === 'none' || 
-              style.visibility === 'hidden' || 
-              style.opacity === '0' ||
-              current.getAttribute('aria-hidden') === 'true') {
+          if (
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            style.opacity === "0" ||
+            current.getAttribute("aria-hidden") === "true"
+          ) {
             return false;
           }
           current = current.parentElement;
         }
-        
+
         // 检查元素是否在视口内
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
       };
-      
+
       // 添加一个新的定时器，定期检查终端可见性
       const visibilityCheckInterval = setInterval(() => {
         // 只有当内容有更新时才检查并调整大小
@@ -1376,7 +1457,7 @@ const WebTerminal = ({
           ensureTerminalSizeOnVisibilityChange();
         }
       }, 200); // 从100ms改为200ms，减轻性能负担
-      
+
       // 添加定时器清理
       return () => {
         window.removeEventListener("resize", handleResize);
@@ -1404,7 +1485,7 @@ const WebTerminal = ({
             handleContextMenu,
           );
           terminalRef.current.removeEventListener("mousedown", handleMouseDown);
-          
+
           // 移除新增的鼠标事件监听器
           terminalRef.current.removeEventListener("mousemove", handleMouseMove);
           terminalRef.current.removeEventListener("mouseup", handleMouseUp);
@@ -1466,11 +1547,12 @@ const WebTerminal = ({
   const setupSimulatedTerminal = (term) => {
     const term_prompt = "$ ";
     let userInput = "";
-    
+
     // 初始化编辑器模式状态
     let inEditorMode = false;
     // 识别编辑器命令的正则表达式
-    const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
+    const editorCommandRegex =
+      /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
 
     // 写入初始提示符
     term.write(term_prompt);
@@ -1486,14 +1568,16 @@ const WebTerminal = ({
         // 处理命令
         if (userInput.trim() !== "") {
           const command = userInput.trim();
-          
+
           // 检测是否是编辑器命令
           if (editorCommandRegex.test(command)) {
             inEditorMode = true;
             console.log("Editor mode detected in simulated terminal:", command);
             // 模拟编辑器输出
-            term.writeln(`Simulated ${command} editor mode. Type 'exit' to return.`);
-          } 
+            term.writeln(
+              `Simulated ${command} editor mode. Type 'exit' to return.`,
+            );
+          }
           // 检测是否退出编辑器模式
           else if (inEditorMode && /^(exit|quit|q|:q|:wq|:x)$/i.test(command)) {
             inEditorMode = false;
@@ -1505,11 +1589,11 @@ const WebTerminal = ({
             // if (window.terminalAPI?.addToCommandHistory) {
             //   window.terminalAPI.addToCommandHistory(command);
             // }
-            
+
             // 如果 IPC API 不可用，使用本地处理命令
             handleCommand(term, command);
           }
-          
+
           term.write("$ ");
         } else {
           term.write("$ ");
@@ -1708,18 +1792,28 @@ const WebTerminal = ({
         if (text && termRef.current && processCache[tabId]) {
           // 使用预处理函数处理多行文本，防止注释和缩进问题
           const processedText = processMultilineInput(text);
-          
+
           // 检查是否需要逐行发送（含有注释的多行文本）
-          if (processedText && typeof processedText === 'object' && processedText.type === 'multiline-with-comments') {
+          if (
+            processedText &&
+            typeof processedText === "object" &&
+            processedText.type === "multiline-with-comments"
+          ) {
             // 逐行发送文本，每行之间添加适当延迟
             processedText.lines.forEach((line, index) => {
               setTimeout(() => {
-                window.terminalAPI.sendToProcess(processCache[tabId], line + (index < processedText.lines.length - 1 ? '\n' : ''));
+                window.terminalAPI.sendToProcess(
+                  processCache[tabId],
+                  line + (index < processedText.lines.length - 1 ? "\n" : ""),
+                );
               }, index * 50); // 50毫秒的延迟，可以根据实际情况调整
             });
           } else {
             // 正常发送处理后的文本
-            window.terminalAPI.sendToProcess(processCache[tabId], processedText);
+            window.terminalAPI.sendToProcess(
+              processCache[tabId],
+              processedText,
+            );
           }
         }
       })
@@ -1734,11 +1828,14 @@ const WebTerminal = ({
     if (selectedText) {
       // 创建一个自定义事件，将选中文本传递给AIAssistant组件
       const event = new CustomEvent("terminal:parseText", {
-        detail: { text: selectedText }
+        detail: { text: selectedText },
       });
       // 分发事件
       window.dispatchEvent(event);
-      console.log("发送文本到AI解析:", selectedText.substring(0, 30) + (selectedText.length > 30 ? "..." : ""));
+      console.log(
+        "发送文本到AI解析:",
+        selectedText.substring(0, 30) + (selectedText.length > 30 ? "..." : ""),
+      );
     }
     handleClose();
   };
@@ -1867,14 +1964,19 @@ const WebTerminal = ({
 
     // 延迟后多次同步，确保布局稳定后大小正确
     setTimeout(syncTerminalSize, 100);
-    
+
     // 添加一个新的辅助函数，确保终端在被激活时调整大小
     const ensureTerminalSizeOnVisibilityChange = () => {
       // 检查当前标签是否可见（通过DOM属性或样式）
       if (terminalRef.current) {
         const isVisible = isElementVisible(terminalRef.current);
-        
-        if (isVisible && termRef.current && fitAddonRef.current && contentUpdated) {
+
+        if (
+          isVisible &&
+          termRef.current &&
+          fitAddonRef.current &&
+          contentUpdated
+        ) {
           // 使用延迟执行强制调整大小
           setTimeout(() => {
             forceResizeTerminal(
@@ -1882,7 +1984,7 @@ const WebTerminal = ({
               terminalRef.current,
               processCache[tabId],
               tabId,
-              fitAddonRef.current
+              fitAddonRef.current,
             );
             // 重置内容更新标志
             setContentUpdated(false);
@@ -1890,29 +1992,31 @@ const WebTerminal = ({
         }
       }
     };
-    
+
     // 添加一个检查元素可见性的函数
     const isElementVisible = (element) => {
       if (!element) return false;
-      
+
       // 检查元素及其所有父元素的可见性
       let current = element;
       while (current) {
         const style = window.getComputedStyle(current);
-        if (style.display === 'none' || 
-            style.visibility === 'hidden' || 
-            style.opacity === '0' ||
-            current.getAttribute('aria-hidden') === 'true') {
+        if (
+          style.display === "none" ||
+          style.visibility === "hidden" ||
+          style.opacity === "0" ||
+          current.getAttribute("aria-hidden") === "true"
+        ) {
           return false;
         }
         current = current.parentElement;
       }
-      
+
       // 检查元素是否在视口内
       const rect = element.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
     };
-    
+
     // 添加一个新的定时器，定期检查终端可见性
     const visibilityCheckInterval = setInterval(() => {
       // 只有当内容有更新时才检查并调整大小
@@ -1920,7 +2024,7 @@ const WebTerminal = ({
         ensureTerminalSizeOnVisibilityChange();
       }
     }, 200); // 从100ms改为200ms，减轻性能负担
-    
+
     // 添加定时器清理
     return () => {
       clearInterval(visibilityCheckInterval);
@@ -1940,10 +2044,10 @@ const WebTerminal = ({
     // 创建一个用于监听标签切换事件的处理函数
     const handleTabChanged = (event) => {
       // 检查是否是当前终端所在的标签被激活
-      if (event.detail && event.detail.tabId === tabId) {        
+      if (event.detail && event.detail.tabId === tabId) {
         // 标签激活时设置内容已更新，确保调整生效
         setContentUpdated(true);
-        
+
         // 延迟执行以确保DOM已完全更新
         setTimeout(() => {
           if (terminalRef.current && fitAddonRef.current && termRef.current) {
@@ -1952,14 +2056,14 @@ const WebTerminal = ({
               terminalRef.current,
               processCache[tabId],
               tabId,
-              fitAddonRef.current
+              fitAddonRef.current,
             );
           }
         }, 10);
-        
+
         // 多次尝试调整，以处理某些特殊情况
         const delayTimes = [50, 150, 300];
-        delayTimes.forEach(delay => {
+        delayTimes.forEach((delay) => {
           setTimeout(() => {
             if (terminalRef.current && fitAddonRef.current && termRef.current) {
               forceResizeTerminal(
@@ -1967,17 +2071,17 @@ const WebTerminal = ({
                 terminalRef.current,
                 processCache[tabId],
                 tabId,
-                fitAddonRef.current
+                fitAddonRef.current,
               );
             }
           }, delay);
         });
       }
     };
-    
+
     // 添加事件监听器
     window.addEventListener("tabChanged", handleTabChanged);
-    
+
     // 组件卸载时移除监听器
     return () => {
       window.removeEventListener("tabChanged", handleTabChanged);
@@ -1989,7 +2093,7 @@ const WebTerminal = ({
     if (terminalRef.current) {
       // 根据存储的设置获取字体大小
       const currentFontSize = getFontSize();
-      
+
       // 创建新的终端实例
       const newTerm = new Terminal({
         cursorBlink: true,

@@ -1,10 +1,4 @@
-const {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  shell,
-} = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
@@ -20,8 +14,22 @@ let nextProcessId = 1;
 
 // 跟踪编辑器会话状态的正则表达式
 const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
-const editorExitCommands = ['q', 'quit', 'exit', 'wq', 'ZZ', 'x', ':q', ':wq', ':x', 'Ctrl+X'];
-const editorExitRegex = new RegExp(`^(${editorExitCommands.join('|').replace(/\+/g, '\\+')}|:\\w+)$`, 'i');
+const editorExitCommands = [
+  "q",
+  "quit",
+  "exit",
+  "wq",
+  "ZZ",
+  "x",
+  ":q",
+  ":wq",
+  ":x",
+  "Ctrl+X",
+];
+const editorExitRegex = new RegExp(
+  `^(${editorExitCommands.join("|").replace(/\+/g, "\\+")}|:\\w+)$`,
+  "i",
+);
 
 // 用于SSH连接的SFTP会话管理
 const sftpSessions = new Map();
@@ -811,7 +819,7 @@ function getConfigPath() {
   try {
     // 判断是开发环境还是生产环境
     const isDev = process.env.NODE_ENV === "development";
-    
+
     if (isDev) {
       // 开发环境：保存到项目根目录
       return path.join(process.cwd(), "config.json");
@@ -1169,7 +1177,7 @@ function setupIPC(mainWindow) {
         process: ps,
         listeners: new Set(),
         editorMode: false, // 初始化编辑器模式为false
-        commandBuffer: "" // 初始化命令缓冲区
+        commandBuffer: "", // 初始化命令缓冲区
       });
 
       // 处理PowerShell输出
@@ -1180,7 +1188,10 @@ function setupIPC(mainWindow) {
             const output = data.toString();
             // 处理输出以检测编辑器退出
             const processedOutput = processTerminalOutput(processId, output);
-            mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
+            mainWindow.webContents.send(
+              `process:output:${processId}`,
+              processedOutput,
+            );
           }
         } catch (error) {
           console.error("Error handling stdout data:", error);
@@ -1194,7 +1205,10 @@ function setupIPC(mainWindow) {
             const output = data.toString();
             // 处理输出以检测编辑器退出
             const processedOutput = processTerminalOutput(processId, output);
-            mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
+            mainWindow.webContents.send(
+              `process:output:${processId}`,
+              processedOutput,
+            );
           }
         } catch (error) {
           console.error("Error handling stderr data:", error);
@@ -1265,7 +1279,7 @@ function setupIPC(mainWindow) {
           commandBuffer: "", // 初始化命令缓冲区
           lastOutputLines: [], // 存储最近的终端输出行，用于提取远程命令
           outputBuffer: "", // 用于存储当前未处理完的输出
-          isRemote: true // 标记为远程SSH会话
+          isRemote: true, // 标记为远程SSH会话
         });
 
         // 存储相同的SSH客户端，使用tabId（通常是形如'ssh-timestamp'的标识符）
@@ -1281,7 +1295,7 @@ function setupIPC(mainWindow) {
             commandBuffer: "", // 初始化命令缓冲区
             lastOutputLines: [], // 存储最近的终端输出行，用于提取远程命令
             outputBuffer: "", // 用于存储当前未处理完的输出
-            isRemote: true // 标记为远程SSH会话
+            isRemote: true, // 标记为远程SSH会话
           });
         }
 
@@ -1360,10 +1374,13 @@ function setupIPC(mainWindow) {
                   // 尝试将缓冲区转换为UTF-8字符串
                   try {
                     const output = buffer.toString("utf8");
-                    
+
                     // 处理输出以检测编辑器退出
-                    const processedOutput = processTerminalOutput(processId, output);
-                    
+                    const processedOutput = processTerminalOutput(
+                      processId,
+                      output,
+                    );
+
                     // 发送到前端
                     if (mainWindow && !mainWindow.isDestroyed()) {
                       mainWindow.webContents.send(
@@ -1532,7 +1549,7 @@ function setupIPC(mainWindow) {
         // 对于Tab键，直接发送到进程但不记录到命令缓冲区
         // 这是因为Tab键通常用于命令补全，不是命令的一部分
         console.log("检测到Tab键，跳过命令缓冲区处理");
-        
+
         // 直接发送到进程
         if (procInfo.type === "ssh2") {
           if (procInfo.stream) {
@@ -1553,46 +1570,64 @@ function setupIPC(mainWindow) {
           return false;
         }
       }
-      
+
       // 检测回车键并提取可能的命令
       if (data === "\r" || data === "\n") {
         // 可能是一个命令的结束，尝试从缓冲区获取命令
         if (procInfo.commandBuffer && procInfo.commandBuffer.trim()) {
           const command = procInfo.commandBuffer.trim();
-          
+
           // 检测是否启动了编辑器（作为备用机制，现在优先使用buffer类型检测）
           if (!procInfo.editorMode && editorCommandRegex.test(command)) {
             procInfo.editorMode = true;
             procInfo.lastEditorCommand = command; // 记录最后使用的编辑器命令，帮助后续检测退出
-            console.log(`Editor mode detected: ${command} (通过命令分析检测，备用方法)`);
-          } 
+            console.log(
+              `Editor mode detected: ${command} (通过命令分析检测，备用方法)`,
+            );
+          }
           // 检测是否可能退出了编辑器（作为备用机制，现在优先使用buffer类型检测）
           else if (procInfo.editorMode) {
             // 检查是否是退出命令
             if (editorExitRegex.test(command)) {
-              console.log(`Possible editor exit command detected: ${command} (通过命令分析检测，备用方法)`);
-              
+              console.log(
+                `Possible editor exit command detected: ${command} (通过命令分析检测，备用方法)`,
+              );
+
               // 为某些编辑器，我们可以立即确认退出（但如果前端使用buffer类型检测，这段代码会被前端通知覆盖）
               if (/^(q|quit|exit|:q|:quit|:wq)$/i.test(command)) {
                 procInfo.editorMode = false;
-                console.log(`Editor mode exited via command: ${command} (通过命令分析检测，备用方法)`);
+                console.log(
+                  `Editor mode exited via command: ${command} (通过命令分析检测，备用方法)`,
+                );
               } else {
                 // 对于其他情况，设置一个退出检测标志，下一个命令会确认是否真的退出
                 procInfo.possibleEditorExit = true;
               }
-            } 
+            }
             // 如果上一个命令可能是退出，且这个命令不是编辑器命令，则确认已退出
-            else if (procInfo.possibleEditorExit && !editorCommandRegex.test(command)) {
+            else if (
+              procInfo.possibleEditorExit &&
+              !editorCommandRegex.test(command)
+            ) {
               procInfo.editorMode = false;
               procInfo.possibleEditorExit = false;
-              console.log("Editor mode confirmed exited (通过命令分析检测，备用方法)");
-            } 
+              console.log(
+                "Editor mode confirmed exited (通过命令分析检测，备用方法)",
+              );
+            }
             // 如果收到普通shell命令且不在编辑器命令中，则退出编辑器模式
-            else if (command.startsWith("$") || command.startsWith(">") || 
-                    (command.includes(" ") && 
-                     !/^\s*(w|write|q|quit|exit|ZZ|x|c|change|d|delete|y|yank|p|put|u|undo|r|redo|i|insert|a|append)\s*/.test(command))) {
+            else if (
+              command.startsWith("$") ||
+              command.startsWith(">") ||
+              (command.includes(" ") &&
+                !/^\s*(w|write|q|quit|exit|ZZ|x|c|change|d|delete|y|yank|p|put|u|undo|r|redo|i|insert|a|append)\s*/.test(
+                  command,
+                ))
+            ) {
               procInfo.editorMode = false;
-              console.log("Editor mode exited - detected shell prompt (通过命令分析检测，备用方法)");
+              console.log(
+                "Editor mode exited - detected shell prompt (通过命令分析检测，备用方法)",
+              );
             }
           }
           // 只有不在编辑器模式下才添加到历史记录
@@ -1605,14 +1640,15 @@ function setupIPC(mainWindow) {
             }
             // 移除本地命令记录，不再记录非SSH会话的命令
           }
-          
+
           // 清空命令缓冲区
           procInfo.commandBuffer = "";
         }
-      } else if (data === "\u0003") { // Ctrl+C
+      } else if (data === "\u0003") {
+        // Ctrl+C
         // 清空命令缓冲区
         procInfo.commandBuffer = "";
-        
+
         // 如果在编辑器模式，可能是用户中断了编辑
         if (procInfo.editorMode) {
           // 为部分编辑器，Ctrl+C会导致退出
@@ -1628,12 +1664,14 @@ function setupIPC(mainWindow) {
             }, 1000);
           }, 200);
         }
-      } else if (data === "\u007F" || data === "\b") { // 退格键
+      } else if (data === "\u007F" || data === "\b") {
+        // 退格键
         // 从缓冲区中删除最后一个字符
         if (procInfo.commandBuffer && procInfo.commandBuffer.length > 0) {
           procInfo.commandBuffer = procInfo.commandBuffer.slice(0, -1);
         }
-      } else if (data === "\u001B" && procInfo.editorMode) { // ESC键，在编辑器模式下可能表示模式切换
+      } else if (data === "\u001B" && procInfo.editorMode) {
+        // ESC键，在编辑器模式下可能表示模式切换
         // 在vi/vim中，ESC会从插入模式返回到命令模式，但不退出编辑器
         // 仅记录这个键，不做特殊处理
         if (!procInfo.commandBuffer) procInfo.commandBuffer = "";
@@ -1699,38 +1737,49 @@ function setupIPC(mainWindow) {
   });
 
   // 接收编辑器模式状态变更通知
-  ipcMain.handle("terminal:notifyEditorModeChange", async (event, processId, isEditorMode) => {
-    const procInfo = childProcesses.get(processId);
-    if (!procInfo) {
-      console.log(`无法更新进程 ${processId} 的编辑器模式状态：进程不存在`);
-      return false;
-    }
-
-    // 记录状态变更前的值，用于调试
-    const previousState = procInfo.editorMode;
-    
-    // 更新进程信息中的编辑器模式状态
-    procInfo.editorMode = isEditorMode;
-    
-    // 仅当状态实际变化时记录详细日志
-    if (previousState !== isEditorMode) {
-      console.log(`进程 ${processId} 编辑器模式已${isEditorMode ? '启动' : '退出'}（通过buffer类型检测）`);
-      
-      // 记录更多调试信息
-      if (isEditorMode) {
-        logToFile(`[EDITOR] 进程 ${processId} 进入编辑器模式（通过buffer类型检测）`, "DEBUG");
-      } else {
-        logToFile(`[EDITOR] 进程 ${processId} 退出编辑器模式（通过buffer类型检测）`, "DEBUG");
+  ipcMain.handle(
+    "terminal:notifyEditorModeChange",
+    async (event, processId, isEditorMode) => {
+      const procInfo = childProcesses.get(processId);
+      if (!procInfo) {
+        console.log(`无法更新进程 ${processId} 的编辑器模式状态：进程不存在`);
+        return false;
       }
-    }
-    
-    // 如果退出编辑器模式，清除相关标志
-    if (!isEditorMode) {
-      procInfo.possibleEditorExit = false;
-    }
-    
-    return true;
-  });
+
+      // 记录状态变更前的值，用于调试
+      const previousState = procInfo.editorMode;
+
+      // 更新进程信息中的编辑器模式状态
+      procInfo.editorMode = isEditorMode;
+
+      // 仅当状态实际变化时记录详细日志
+      if (previousState !== isEditorMode) {
+        console.log(
+          `进程 ${processId} 编辑器模式已${isEditorMode ? "启动" : "退出"}（通过buffer类型检测）`,
+        );
+
+        // 记录更多调试信息
+        if (isEditorMode) {
+          logToFile(
+            `[EDITOR] 进程 ${processId} 进入编辑器模式（通过buffer类型检测）`,
+            "DEBUG",
+          );
+        } else {
+          logToFile(
+            `[EDITOR] 进程 ${processId} 退出编辑器模式（通过buffer类型检测）`,
+            "DEBUG",
+          );
+        }
+      }
+
+      // 如果退出编辑器模式，清除相关标志
+      if (!isEditorMode) {
+        procInfo.possibleEditorExit = false;
+      }
+
+      return true;
+    },
+  );
 
   // 加载连接配置
   ipcMain.handle("terminal:loadConnections", async () => {
@@ -1882,7 +1931,7 @@ function setupIPC(mainWindow) {
 
   // 获取系统资源信息
   ipcMain.handle("terminal:getSystemInfo", async (event, processId) => {
-    try {      
+    try {
       // 只有当提供了有效的进程ID且该进程存在于childProcesses映射中时才获取远程系统信息
       if (!processId || !childProcesses.has(processId)) {
         return getLocalSystemInfo();
@@ -2112,13 +2161,12 @@ function setupIPC(mainWindow) {
 
         const req = requestModule.request(options, (res) => {
           if (res.statusCode !== 200) {
-            event.sender.send(
-              "stream-error",
-              {
-                tabId: "ai",
-                error: { message: `API请求失败: ${res.statusCode} ${res.statusMessage}` }
-              }
-            );
+            event.sender.send("stream-error", {
+              tabId: "ai",
+              error: {
+                message: `API请求失败: ${res.statusCode} ${res.statusMessage}`,
+              },
+            });
             return;
           }
 
@@ -2137,13 +2185,10 @@ function setupIPC(mainWindow) {
                       jsonData.choices[0].delta &&
                       jsonData.choices[0].delta.content
                     ) {
-                      event.sender.send(
-                        "stream-chunk",
-                        {
-                          tabId: "ai",
-                          chunk: jsonData.choices[0].delta.content
-                        }
-                      );
+                      event.sender.send("stream-chunk", {
+                        tabId: "ai",
+                        chunk: jsonData.choices[0].delta.content,
+                      });
                     }
                   } catch (e) {
                     // 这可能只是部分数据，不是完整的JSON
@@ -2165,9 +2210,9 @@ function setupIPC(mainWindow) {
 
         req.on("error", (error) => {
           console.error("请求出错:", error);
-          event.sender.send("stream-error", { 
+          event.sender.send("stream-error", {
             tabId: "ai",
-            error: { message: error.message }
+            error: { message: error.message },
           });
           // 清理请求引用
           activeAPIRequest = null;
@@ -2295,21 +2340,21 @@ function setupIPC(mainWindow) {
     try {
       if (activeAPIRequest) {
         console.log("中断API请求");
-        
+
         // 中断请求
         activeAPIRequest.abort();
-        
+
         // 发送中断消息给渲染进程
         if (globalEvent) {
-          globalEvent.sender.send("stream-end", { 
+          globalEvent.sender.send("stream-end", {
             tabId: "ai",
-            aborted: true 
+            aborted: true,
           });
         }
-        
+
         // 清理请求引用
         activeAPIRequest = null;
-        
+
         return { success: true, message: "请求已中断" };
       } else {
         console.log("没有活跃的API请求可以中断");
@@ -2805,9 +2850,9 @@ function setupIPC(mainWindow) {
                 step: (transferred, chunk, total) => {
                   progressCallback(transferred);
                 },
-                concurrency: 16,  // 同时传输16个数据块
+                concurrency: 16, // 同时传输16个数据块
                 chunkSize: 32768, // 32KB的块大小，提高传输效率
-                debug: false      // 不输出调试信息
+                debug: false, // 不输出调试信息
               });
 
               // 重命名临时文件为最终文件
@@ -3104,9 +3149,9 @@ function setupIPC(mainWindow) {
                         lastProgressUpdate = now;
                       }
                     },
-                    concurrency: 16,  // 同时传输16个数据块
+                    concurrency: 16, // 同时传输16个数据块
                     chunkSize: 32768, // 32KB的块大小，提高传输效率
-                    debug: false      // 不输出调试信息
+                    debug: false, // 不输出调试信息
                   });
 
                   // 文件成功上传，更新计数
@@ -3532,8 +3577,8 @@ function setupIPC(mainWindow) {
 
           return new Promise((resolve, reject) => {
             // 将内容转换为Buffer
-            const buffer = Buffer.from(content, 'utf8');
-            
+            const buffer = Buffer.from(content, "utf8");
+
             sftp.writeFile(filePath, buffer, (err) => {
               if (err) {
                 logToFile(
@@ -3894,9 +3939,9 @@ function setupIPC(mainWindow) {
                         lastProgressUpdate = now;
                       }
                     },
-                    concurrency: 16,  // 同时传输16个数据块
+                    concurrency: 16, // 同时传输16个数据块
                     chunkSize: 32768, // 32KB的块大小，提高传输效率
-                    debug: false      // 不输出调试信息
+                    debug: false, // 不输出调试信息
                   });
 
                   // 更新已传输字节数和处理文件数
@@ -4004,47 +4049,64 @@ function setupIPC(mainWindow) {
 
           // 获取文件夹名，处理特殊情况
           let folderName;
-          if (remoteFolderPath === '/' || remoteFolderPath === '~') {
+          if (remoteFolderPath === "/" || remoteFolderPath === "~") {
             // 如果是根目录或家目录，使用安全的名称
-            folderName = 'root_folder';
-            logToFile(`检测到特殊目录 ${remoteFolderPath}，使用安全名称: ${folderName}`, "INFO");
-          } else if (remoteFolderPath.endsWith('/')) {
+            folderName = "root_folder";
+            logToFile(
+              `检测到特殊目录 ${remoteFolderPath}，使用安全名称: ${folderName}`,
+              "INFO",
+            );
+          } else if (remoteFolderPath.endsWith("/")) {
             // 如果路径以斜杠结尾，需要特殊处理
-            const parts = remoteFolderPath.split('/').filter(p => p);
-            folderName = parts[parts.length - 1] || 'folder';
-            logToFile(`解析带斜杠结尾的路径 ${remoteFolderPath}，提取文件夹名: ${folderName}`, "INFO");
+            const parts = remoteFolderPath.split("/").filter((p) => p);
+            folderName = parts[parts.length - 1] || "folder";
+            logToFile(
+              `解析带斜杠结尾的路径 ${remoteFolderPath}，提取文件夹名: ${folderName}`,
+              "INFO",
+            );
           } else {
             // 正常情况
             folderName = path.basename(remoteFolderPath);
-            logToFile(`从路径 ${remoteFolderPath} 提取的文件夹名称: ${folderName}`, "INFO");
+            logToFile(
+              `从路径 ${remoteFolderPath} 提取的文件夹名称: ${folderName}`,
+              "INFO",
+            );
           }
 
           // 打开保存对话框 - 设置默认下载位置
-          logToFile(`开始打开下载位置选择对话框, 默认路径: ${app.getPath("downloads")}`, "INFO");
-          
-          const result = await dialog.showOpenDialog(
-            mainWindow,
-            {
-              title: "选择下载位置",
-              defaultPath: app.getPath("downloads"), // 使用系统下载文件夹作为默认位置
-              properties: ["openDirectory"],
-              buttonLabel: "下载到此文件夹",
-            },
+          logToFile(
+            `开始打开下载位置选择对话框, 默认路径: ${app.getPath("downloads")}`,
+            "INFO",
           );
-          
+
+          const result = await dialog.showOpenDialog(mainWindow, {
+            title: "选择下载位置",
+            defaultPath: app.getPath("downloads"), // 使用系统下载文件夹作为默认位置
+            properties: ["openDirectory"],
+            buttonLabel: "下载到此文件夹",
+          });
+
           logToFile(`对话框结果: ${JSON.stringify(result)}`, "INFO");
-          
+
           // 检查对话框结果是否正确
-          if (!result || result.canceled || !result.filePaths || result.filePaths.length === 0) {
-            logToFile(`用户取消了选择或返回空路径: ${JSON.stringify(result)}`, "INFO");
+          if (
+            !result ||
+            result.canceled ||
+            !result.filePaths ||
+            result.filePaths.length === 0
+          ) {
+            logToFile(
+              `用户取消了选择或返回空路径: ${JSON.stringify(result)}`,
+              "INFO",
+            );
             return { success: false, error: "用户取消下载" };
           }
-          
+
           // 获取用户选择的路径
           const userSelectedPath = result.filePaths[0];
           logToFile(`用户选择的下载路径: ${userSelectedPath}`, "INFO");
-          
-          if (!userSelectedPath || userSelectedPath.trim() === '') {
+
+          if (!userSelectedPath || userSelectedPath.trim() === "") {
             logToFile(`用户选择的路径无效: ${userSelectedPath}`, "ERROR");
             return { success: false, error: "选择的下载路径无效" };
           }
@@ -4056,37 +4118,43 @@ function setupIPC(mainWindow) {
           // 规范化路径格式，确保Windows下路径正确
           const normalizedLocalPath = path.normalize(localFolderPath);
           logToFile(`规范化后的本地路径: ${normalizedLocalPath}`, "INFO");
-          
+
           // 确保本地文件夹存在 - 添加更强的错误处理
           try {
             // 检查父文件夹是否存在并可写
             const parentDir = path.dirname(normalizedLocalPath);
             logToFile(`检查父文件夹: ${parentDir}`, "INFO");
-            
+
             if (!fs.existsSync(parentDir)) {
               logToFile(`父文件夹不存在，尝试创建: ${parentDir}`, "INFO");
               fs.mkdirSync(parentDir, { recursive: true });
             }
-            
+
             // 检查目标文件夹
             if (!fs.existsSync(normalizedLocalPath)) {
-              logToFile(`目标文件夹不存在，尝试创建: ${normalizedLocalPath}`, "INFO");
+              logToFile(
+                `目标文件夹不存在，尝试创建: ${normalizedLocalPath}`,
+                "INFO",
+              );
               fs.mkdirSync(normalizedLocalPath, { recursive: true });
             } else {
               logToFile(`目标文件夹已存在: ${normalizedLocalPath}`, "INFO");
             }
-            
+
             // 验证文件夹是否可写
-            const testFilePath = path.join(normalizedLocalPath, '.write_test');
+            const testFilePath = path.join(normalizedLocalPath, ".write_test");
             logToFile(`创建测试文件验证权限: ${testFilePath}`, "INFO");
-            fs.writeFileSync(testFilePath, 'test');
+            fs.writeFileSync(testFilePath, "test");
             fs.unlinkSync(testFilePath);
             logToFile(`文件夹权限检查通过: ${normalizedLocalPath}`, "INFO");
           } catch (fsError) {
-            logToFile(`Error creating or writing to folder "${normalizedLocalPath}": ${fsError.message}`, "ERROR");
-            return { 
-              success: false, 
-              error: `无法创建或写入下载文件夹: ${fsError.message}。请检查路径权限或选择其他位置。`
+            logToFile(
+              `Error creating or writing to folder "${normalizedLocalPath}": ${fsError.message}`,
+              "ERROR",
+            );
+            return {
+              success: false,
+              error: `无法创建或写入下载文件夹: ${fsError.message}。请检查路径权限或选择其他位置。`,
             };
           }
 
@@ -4131,24 +4199,31 @@ function setupIPC(mainWindow) {
 
                 try {
                   // 记录扫描操作的开始
-                  logToFile(`开始扫描远程文件夹: ${folderPath}, 基础路径: ${basePath}`, "INFO");
-                  
+                  logToFile(
+                    `开始扫描远程文件夹: ${folderPath}, 基础路径: ${basePath}`,
+                    "INFO",
+                  );
+
                   // 获取文件夹内容
                   const entries = await sftp.list(folderPath);
-                  logToFile(`文件夹 ${folderPath} 包含 ${entries.length} 个项目`, "INFO");
+                  logToFile(
+                    `文件夹 ${folderPath} 包含 ${entries.length} 个项目`,
+                    "INFO",
+                  );
 
                   for (const entry of entries) {
                     // 跳过"."和".."目录
                     if (entry.name === "." || entry.name === "..") continue;
 
                     // 确保使用正斜杠处理SFTP远程路径
-                    const entryPath = folderPath === '/' 
-                      ? `/${entry.name}` 
-                      : `${folderPath}/${entry.name}`;
-                    
+                    const entryPath =
+                      folderPath === "/"
+                        ? `/${entry.name}`
+                        : `${folderPath}/${entry.name}`;
+
                     // 本地相对路径使用系统相关路径分隔符，最后统一转换为SFTP格式
-                    const relativePath = basePath 
-                      ? path.join(basePath, entry.name).replace(/\\/g, "/") 
+                    const relativePath = basePath
+                      ? path.join(basePath, entry.name).replace(/\\/g, "/")
                       : entry.name;
 
                     if (entry.type === "d") {
@@ -4204,9 +4279,15 @@ function setupIPC(mainWindow) {
               try {
                 folderStructure = await scanRemoteFolder(remoteFolderPath);
                 if (!folderStructure || folderStructure.length === 0) {
-                  logToFile(`警告: 远程文件夹 ${remoteFolderPath} 返回了空结构`, "WARNING");
+                  logToFile(
+                    `警告: 远程文件夹 ${remoteFolderPath} 返回了空结构`,
+                    "WARNING",
+                  );
                 } else {
-                  logToFile(`成功扫描远程文件夹，获取到 ${folderStructure.length} 个顶级项目`, "INFO");
+                  logToFile(
+                    `成功扫描远程文件夹，获取到 ${folderStructure.length} 个顶级项目`,
+                    "INFO",
+                  );
                 }
               } catch (scanError) {
                 logToFile(`扫描远程文件夹出错: ${scanError.message}`, "ERROR");
@@ -4238,7 +4319,7 @@ function setupIPC(mainWindow) {
               // 递归创建本地文件夹结构
               const createLocalFolders = (items, parentPath) => {
                 logToFile(`准备在 ${parentPath} 创建本地文件夹结构`, "INFO");
-                
+
                 for (const item of items) {
                   if (item.isDirectory) {
                     const localPath = path.join(parentPath, item.name);
@@ -4257,10 +4338,10 @@ function setupIPC(mainWindow) {
                       if (!fs.existsSync(localPath)) {
                         throw new Error(`创建文件夹失败: ${localPath}`);
                       }
-                      
+
                       // 创建测试文件以验证权限
-                      const testFile = path.join(localPath, '.write_test');
-                      fs.writeFileSync(testFile, 'test');
+                      const testFile = path.join(localPath, ".write_test");
+                      fs.writeFileSync(testFile, "test");
                       fs.unlinkSync(testFile);
                       logToFile(`文件夹权限验证成功: ${localPath}`, "INFO");
 
@@ -4269,7 +4350,10 @@ function setupIPC(mainWindow) {
                         createLocalFolders(item.children, localPath);
                       }
                     } catch (folderError) {
-                      logToFile(`创建或验证本地文件夹失败: ${localPath}, 错误: ${folderError.message}`, "ERROR");
+                      logToFile(
+                        `创建或验证本地文件夹失败: ${localPath}, 错误: ${folderError.message}`,
+                        "ERROR",
+                      );
                       throw folderError; // 重新抛出错误，中断整个过程
                     }
                   }
@@ -4283,40 +4367,62 @@ function setupIPC(mainWindow) {
                   logToFile(`创建根下载文件夹: ${normalizedLocalPath}`, "INFO");
                   fs.mkdirSync(normalizedLocalPath, { recursive: true });
                 } else {
-                  logToFile(`根下载文件夹已存在: ${normalizedLocalPath}`, "INFO");
+                  logToFile(
+                    `根下载文件夹已存在: ${normalizedLocalPath}`,
+                    "INFO",
+                  );
                 }
-                
+
                 // 创建内部文件夹结构
-                logToFile(`开始创建内部文件夹结构，共 ${folderStructure.length} 个顶级项目`, "INFO");
+                logToFile(
+                  `开始创建内部文件夹结构，共 ${folderStructure.length} 个顶级项目`,
+                  "INFO",
+                );
                 createLocalFolders(folderStructure, normalizedLocalPath);
-                logToFile(`本地文件夹结构创建成功: ${normalizedLocalPath}`, "INFO");
-                
+                logToFile(
+                  `本地文件夹结构创建成功: ${normalizedLocalPath}`,
+                  "INFO",
+                );
+
                 // 最后再次验证根文件夹是否存在
                 if (!fs.existsSync(normalizedLocalPath)) {
-                  throw new Error(`根文件夹不存在，可能创建失败: ${normalizedLocalPath}`);
+                  throw new Error(
+                    `根文件夹不存在，可能创建失败: ${normalizedLocalPath}`,
+                  );
                 }
               } catch (folderStructureError) {
-                logToFile(`创建本地文件夹结构失败: ${folderStructureError.message}`, "ERROR");
-                throw new Error(`无法创建本地文件夹结构: ${folderStructureError.message}`);
+                logToFile(
+                  `创建本地文件夹结构失败: ${folderStructureError.message}`,
+                  "ERROR",
+                );
+                throw new Error(
+                  `无法创建本地文件夹结构: ${folderStructureError.message}`,
+                );
               }
 
               // 收集所有文件以便下载
               const allFiles = [];
               const collectFiles = (items, parentPath) => {
-                logToFile(`收集文件: 处理 ${items.length} 个项目，父路径: ${parentPath}`, "INFO");
+                logToFile(
+                  `收集文件: 处理 ${items.length} 个项目，父路径: ${parentPath}`,
+                  "INFO",
+                );
                 for (const item of items) {
                   if (item.isDirectory && item.children) {
                     // 处理子文件夹
                     const subFolderPath = path.join(parentPath, item.name);
-                    logToFile(`处理子文件夹: ${item.name}, 完整路径: ${subFolderPath}`, "INFO");
-                    collectFiles(
-                      item.children,
-                      subFolderPath,
+                    logToFile(
+                      `处理子文件夹: ${item.name}, 完整路径: ${subFolderPath}`,
+                      "INFO",
                     );
+                    collectFiles(item.children, subFolderPath);
                   } else if (!item.isDirectory) {
                     // 处理文件
                     const localFilePath = path.join(parentPath, item.name);
-                    logToFile(`收集文件: ${item.name}, 完整路径: ${localFilePath}, 大小: ${item.size || 0} 字节`, "INFO");
+                    logToFile(
+                      `收集文件: ${item.name}, 完整路径: ${localFilePath}, 大小: ${item.size || 0} 字节`,
+                      "INFO",
+                    );
                     allFiles.push({
                       ...item,
                       localPath: localFilePath,
@@ -4372,7 +4478,7 @@ function setupIPC(mainWindow) {
                     `开始下载文件: ${file.remotePath} 到临时文件 ${tempFilePath}, 文件大小: ${file.size} 字节`,
                     "INFO",
                   );
-                  
+
                   // 下载文件
                   await sftp.fastGet(file.remotePath, tempFilePath, {
                     step: (transferred, chunk, total) => {
@@ -4425,9 +4531,9 @@ function setupIPC(mainWindow) {
                         lastProgressUpdate = now;
                       }
                     },
-                    concurrency: 16,  // 同时传输16个数据块
+                    concurrency: 16, // 同时传输16个数据块
                     chunkSize: 32768, // 32KB的块大小，提高传输效率
-                    debug: false      // 不输出调试信息
+                    debug: false, // 不输出调试信息
                   });
 
                   // 下载完成后，将临时文件重命名为最终文件
@@ -4435,17 +4541,23 @@ function setupIPC(mainWindow) {
                     `文件下载完成，准备重命名: ${tempFilePath} -> ${file.localPath}`,
                     "INFO",
                   );
-                  
+
                   try {
                     fs.renameSync(tempFilePath, file.localPath);
                     logToFile(`文件重命名成功: ${file.localPath}`, "INFO");
                   } catch (renameError) {
-                    logToFile(`文件重命名失败: ${renameError.message}`, "ERROR");
+                    logToFile(
+                      `文件重命名失败: ${renameError.message}`,
+                      "ERROR",
+                    );
                     // 尝试替代方法: 复制后删除
                     logToFile(`尝试使用复制方法替代重命名`, "INFO");
                     fs.copyFileSync(tempFilePath, file.localPath);
                     fs.unlinkSync(tempFilePath);
-                    logToFile(`使用复制方法成功完成文件写入: ${file.localPath}`, "INFO");
+                    logToFile(
+                      `使用复制方法成功完成文件写入: ${file.localPath}`,
+                      "INFO",
+                    );
                   }
 
                   // 更新已传输字节数和处理文件数
@@ -4457,16 +4569,19 @@ function setupIPC(mainWindow) {
                     `下载文件失败 ${file.remotePath} 到 ${file.localPath}, 会话 ${tabId}: ${fileError.message}`,
                     "ERROR",
                   );
-                  
+
                   // 检查错误类型，判断是否需要重试或处理特殊情况
-                  if (fileError.code === 'ENOENT') {
+                  if (fileError.code === "ENOENT") {
                     logToFile(`远程文件不存在: ${file.remotePath}`, "ERROR");
-                  } else if (fileError.code === 'EACCES') {
-                    logToFile(`权限不足，无法创建本地文件: ${file.localPath}`, "ERROR");
-                  } else if (fileError.message.includes('timeout')) {
+                  } else if (fileError.code === "EACCES") {
+                    logToFile(
+                      `权限不足，无法创建本地文件: ${file.localPath}`,
+                      "ERROR",
+                    );
+                  } else if (fileError.message.includes("timeout")) {
                     logToFile(`下载超时，可能是网络问题`, "ERROR");
                   }
-                  
+
                   // 尝试清理临时文件
                   try {
                     if (fs.existsSync(tempFilePath)) {
@@ -4474,9 +4589,12 @@ function setupIPC(mainWindow) {
                       logToFile(`已清理临时文件: ${tempFilePath}`, "INFO");
                     }
                   } catch (cleanupError) {
-                    logToFile(`清理临时文件失败: ${cleanupError.message}`, "ERROR");
+                    logToFile(
+                      `清理临时文件失败: ${cleanupError.message}`,
+                      "ERROR",
+                    );
                   }
-                  
+
                   // 继续处理下一个文件，不中断整个过程
                   continue;
                 }
@@ -4504,45 +4622,60 @@ function setupIPC(mainWindow) {
               // 最终确认下载的文件夹是否存在
               let finalSuccess = true;
               if (!fs.existsSync(normalizedLocalPath)) {
-                logToFile(`警告: 下载完成后无法找到目标文件夹: ${normalizedLocalPath}`, "WARNING");
+                logToFile(
+                  `警告: 下载完成后无法找到目标文件夹: ${normalizedLocalPath}`,
+                  "WARNING",
+                );
                 finalSuccess = false;
               } else {
                 // 检查是否有文件下载成功
                 const downloadedFiles = fs.readdirSync(normalizedLocalPath);
-                logToFile(`下载文件夹中的文件数量: ${downloadedFiles.length}`, "INFO");
-                
+                logToFile(
+                  `下载文件夹中的文件数量: ${downloadedFiles.length}`,
+                  "INFO",
+                );
+
                 if (downloadedFiles.length === 0 && totalFiles > 0) {
-                  logToFile(`警告: 文件夹存在但为空，原始文件数: ${totalFiles}`, "WARNING");
+                  logToFile(
+                    `警告: 文件夹存在但为空，原始文件数: ${totalFiles}`,
+                    "WARNING",
+                  );
                   finalSuccess = false;
                 }
               }
-              
+
               logToFile(
-                `Successfully downloaded folder "${remoteFolderPath}" to "${normalizedLocalPath}" for session ${tabId}, Final status: ${finalSuccess ? 'SUCCESS' : 'PARTIAL_FAILURE'}`,
+                `Successfully downloaded folder "${remoteFolderPath}" to "${normalizedLocalPath}" for session ${tabId}, Final status: ${finalSuccess ? "SUCCESS" : "PARTIAL_FAILURE"}`,
                 finalSuccess ? "INFO" : "WARNING",
               );
-              
+
               // 在资源管理器中显示下载的文件夹
               if (finalSuccess) {
                 try {
-                  logToFile(`尝试在文件资源管理器中显示文件夹: ${normalizedLocalPath}`, "INFO");
+                  logToFile(
+                    `尝试在文件资源管理器中显示文件夹: ${normalizedLocalPath}`,
+                    "INFO",
+                  );
                   shell.showItemInFolder(normalizedLocalPath);
                 } catch (showError) {
-                  logToFile(`Error showing folder in explorer: ${showError.message}`, "ERROR");
+                  logToFile(
+                    `Error showing folder in explorer: ${showError.message}`,
+                    "ERROR",
+                  );
                   // 即使无法显示文件夹，也不影响下载成功状态
                 }
               }
-              
-              resolve({ 
-                success: finalSuccess, 
+
+              resolve({
+                success: finalSuccess,
                 folderName,
-                downloadPath: normalizedLocalPath,  // 返回完整下载路径
+                downloadPath: normalizedLocalPath, // 返回完整下载路径
                 // 提供更详细的状态信息
                 fileCount: allFiles.length,
                 totalSize: totalBytes,
-                message: finalSuccess 
-                  ? `成功下载${allFiles.length}个文件` 
-                  : "下载可能不完整，请检查文件夹内容"
+                message: finalSuccess
+                  ? `成功下载${allFiles.length}个文件`
+                  : "下载可能不完整，请检查文件夹内容",
               });
             } catch (error) {
               logToFile(
@@ -4595,14 +4728,14 @@ function setupIPC(mainWindow) {
     try {
       logToFile(`检查路径是否存在: ${checkPath}`, "INFO");
       const exists = fs.existsSync(checkPath);
-      logToFile(`路径 ${checkPath} ${exists ? '存在' : '不存在'}`, "INFO");
+      logToFile(`路径 ${checkPath} ${exists ? "存在" : "不存在"}`, "INFO");
       return exists;
     } catch (error) {
       logToFile(`检查路径出错: ${error.message}`, "ERROR");
       return false;
     }
   });
-  
+
   // 添加在文件管理器中显示文件/文件夹的API
   ipcMain.handle("showItemInFolder", async (event, itemPath) => {
     try {
@@ -4614,16 +4747,15 @@ function setupIPC(mainWindow) {
       return false;
     }
   });
-  
+
   // UI设置相关API
   ipcMain.handle("settings:loadUISettings", async () => {
     return await loadUISettings();
   });
-  
+
   ipcMain.handle("settings:saveUISettings", async (event, settings) => {
     return await saveUISettings(settings);
   });
-
 }
 
 // 获取本地系统信息
@@ -5482,35 +5614,35 @@ const sendStreamingAIPrompt = async (prompt, settings) => {
 
     // 生成唯一请求ID
     const requestId = nextRequestId++;
-    
+
     // 用于接收来自worker的数据
     aiWorker.on("message", (message) => {
       if (message.id === requestId) {
         if (message.chunk) {
           // 流式数据块
           BrowserWindow.fromWebContents(globalEvent.sender).webContents.send(
-            "stream-chunk", 
-            { 
-              tabId: "ai", 
-              chunk: message.chunk 
-            }
+            "stream-chunk",
+            {
+              tabId: "ai",
+              chunk: message.chunk,
+            },
           );
         } else if (message.streamEnd) {
           // 流式请求结束
           BrowserWindow.fromWebContents(globalEvent.sender).webContents.send(
-            "stream-end", 
-            { 
-              tabId: "ai" 
-            }
+            "stream-end",
+            {
+              tabId: "ai",
+            },
           );
         } else if (message.error) {
           // 流式请求错误
           BrowserWindow.fromWebContents(globalEvent.sender).webContents.send(
-            "stream-error", 
-            { 
-              tabId: "ai", 
-              error: message.error 
-            }
+            "stream-error",
+            {
+              tabId: "ai",
+              error: message.error,
+            },
           );
         }
       }
@@ -5567,7 +5699,7 @@ const processAIPromptInline = async (prompt, settings) => {
 const processTerminalOutput = (processId, output) => {
   const procInfo = childProcesses.get(processId);
   if (!procInfo) return output;
-  
+
   // 检测是否在编辑器模式并且收到了shell提示符
   if (procInfo.editorMode) {
     // 常见的shell提示符模式
@@ -5576,44 +5708,44 @@ const processTerminalOutput = (processId, output) => {
       />\s*$/, // Windows command prompt
       /#\s*$/, // Root shell prompt
       /\w+@\w+:[~\w\/]+[$#>]\s*$/, // username@hostname:/path$ style prompt
-      /[\w-]+:[\w~\/]+[$#>]\s*$/ // name:path$ style prompt
+      /[\w-]+:[\w~\/]+[$#>]\s*$/, // name:path$ style prompt
     ];
-    
+
     // 检查输出中是否包含shell提示符
-    if (promptPatterns.some(pattern => pattern.test(output))) {
+    if (promptPatterns.some((pattern) => pattern.test(output))) {
       procInfo.editorMode = false;
       procInfo.possibleEditorExit = false;
       console.log("Editor mode exited - detected shell prompt in output");
     }
   }
-  
+
   // 如果是远程SSH会话，提取命令
   if (procInfo.isRemote) {
     // 将当前输出追加到输出缓冲区
     procInfo.outputBuffer += output;
-    
+
     // 按行分割输出
     const lines = procInfo.outputBuffer.split(/\r?\n/);
-    
+
     // 保留最后一行（可能不完整）为新的输出缓冲区
     procInfo.outputBuffer = lines.pop() || "";
-    
+
     // 将完整的行添加到最近输出行
     procInfo.lastOutputLines = [...procInfo.lastOutputLines, ...lines];
-    
+
     // 限制保存的行数，防止内存过度使用
     if (procInfo.lastOutputLines.length > 50) {
       procInfo.lastOutputLines = procInfo.lastOutputLines.slice(-50);
     }
-    
+
     // 远程命令提取逻辑
     // 寻找命令提示符模式，然后提取命令
     const commandPromptRegex = [
       /^.*?[$#>]\s+([^$#>\r\n]+)$/, // 通用提示符后跟命令
       /^.*?@.*?:.*?[$#>]\s+([^$#>\r\n]+)$/, // 带用户名和主机名的提示符后跟命令
-      /^.*?:.*?[$#>]\s+([^$#>\r\n]+)$/ // 路径提示符后跟命令
+      /^.*?:.*?[$#>]\s+([^$#>\r\n]+)$/, // 路径提示符后跟命令
     ];
-    
+
     // 检查最近几行是否存在命令执行模式
     // 1. 一行是命令输入 (提示符 + 命令)
     // 2. 下面几行是命令输出
@@ -5621,41 +5753,41 @@ const processTerminalOutput = (processId, output) => {
     if (procInfo.lastOutputLines.length >= 2) {
       for (let i = 0; i < procInfo.lastOutputLines.length - 1; i++) {
         const currentLine = procInfo.lastOutputLines[i];
-        
+
         // 尝试每个正则表达式来匹配命令
         for (const regex of commandPromptRegex) {
           const match = currentLine.match(regex);
           if (match && match[1] && match[1].trim() !== "") {
             const command = match[1].trim();
-            
+
             // 跳过明显不是命令的情况
             if (command.startsWith("\x1b") || command.length < 2) {
               continue;
             }
-            
+
             // 检测下一行是否是新的提示符，表示命令已执行完毕
             let nextLineIsPrompt = false;
             for (let j = i + 1; j < procInfo.lastOutputLines.length; j++) {
               const nextLine = procInfo.lastOutputLines[j];
-              if (commandPromptRegex.some(r => r.test(nextLine))) {
+              if (commandPromptRegex.some((r) => r.test(nextLine))) {
                 nextLineIsPrompt = true;
                 if (command !== procInfo.lastExtractedCommand) {
                   procInfo.lastExtractedCommand = command;
                 }
-                
+
                 // 清理已处理的行
                 procInfo.lastOutputLines.splice(0, i + 1);
                 break;
               }
             }
-            
+
             if (nextLineIsPrompt) break;
           }
         }
       }
     }
   }
-  
+
   return output;
 };
 
@@ -5663,35 +5795,35 @@ const processTerminalOutput = (processId, output) => {
 async function loadUISettings() {
   try {
     const configPath = getConfigPath();
-    
+
     // 检查配置文件是否存在
     if (!fs.existsSync(configPath)) {
       // 返回默认设置
       return {
         language: "zh-CN",
-        fontSize: 14
+        fontSize: 14,
       };
     }
-    
+
     // 读取配置文件
     const data = fs.readFileSync(configPath, "utf8");
     const config = JSON.parse(data);
-    
+
     // 如果配置中没有uiSettings，返回默认值
     if (!config.uiSettings) {
       return {
         language: "zh-CN",
-        fontSize: 14
+        fontSize: 14,
       };
     }
-    
+
     return config.uiSettings;
   } catch (error) {
     console.error("加载UI设置失败:", error);
     // 出错时返回默认设置
     return {
       language: "zh-CN",
-      fontSize: 14
+      fontSize: 14,
     };
   }
 }
@@ -5701,20 +5833,20 @@ async function saveUISettings(settings) {
   try {
     const configPath = getConfigPath();
     let config = {};
-    
+
     // 检查配置文件是否存在
     if (fs.existsSync(configPath)) {
       // 读取现有配置
       const data = fs.readFileSync(configPath, "utf8");
       config = JSON.parse(data);
     }
-    
+
     // 更新UI设置
     config.uiSettings = settings;
-    
+
     // 写入配置文件
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
-    
+
     return { success: true };
   } catch (error) {
     console.error("保存UI设置失败:", error);

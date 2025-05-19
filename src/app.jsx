@@ -120,16 +120,18 @@ function CustomTab(props) {
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
-  '& .MuiDialog-paper': {
-    backgroundColor: theme.palette.mode === 'dark' 
-      ? 'rgba(40, 44, 52, 0.75)' 
-      : 'rgba(255, 255, 255, 0.75)',
-    backdropFilter: 'blur(10px)',
-    boxShadow: theme.palette.mode === 'dark'
-      ? '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
-      : '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
-    border: '1px solid rgba(255, 255, 255, 0.18)',
-  }
+  "& .MuiDialog-paper": {
+    backgroundColor:
+      theme.palette.mode === "dark"
+        ? "rgba(40, 44, 52, 0.75)"
+        : "rgba(255, 255, 255, 0.75)",
+    backdropFilter: "blur(10px)",
+    boxShadow:
+      theme.palette.mode === "dark"
+        ? "0 8px 32px 0 rgba(0, 0, 0, 0.37)"
+        : "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
+    border: "1px solid rgba(255, 255, 255, 0.18)",
+  },
 }));
 
 // 关于对话框组件
@@ -170,10 +172,10 @@ function AboutDialog({ open, onClose }) {
 
   const handleCheckForUpdate = () => {
     setCheckingForUpdate(true);
-    setUpdateStatus(t('about.checkingUpdate'));
+    setUpdateStatus(t("about.checkingUpdate"));
 
     if (!window.terminalAPI?.checkForUpdate) {
-      setUpdateStatus(t('about.updateNotAvailable'));
+      setUpdateStatus(t("about.updateNotAvailable"));
       setCheckingForUpdate(false);
       return;
     }
@@ -196,16 +198,14 @@ function AboutDialog({ open, onClose }) {
         const currentVersionNumber = currentVersion.replace(/^v/, "");
 
         if (latestVersionNumber > currentVersionNumber) {
-          setUpdateStatus(
-            t('about.newVersion', { version: latestVersion })
-          );
+          setUpdateStatus(t("about.newVersion", { version: latestVersion }));
         } else {
-          setUpdateStatus(t('about.latestVersion'));
+          setUpdateStatus(t("about.latestVersion"));
         }
       })
       .catch((error) => {
         console.error("检查更新失败:", error);
-        setUpdateStatus(t('about.updateError', { error: error.message }));
+        setUpdateStatus(t("about.updateError", { error: error.message }));
       })
       .finally(() => {
         setCheckingForUpdate(false);
@@ -214,27 +214,27 @@ function AboutDialog({ open, onClose }) {
 
   return (
     <GlassDialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{t('about.title')}</DialogTitle>
+      <DialogTitle>{t("about.title")}</DialogTitle>
       <DialogContent dividers>
         <Box sx={{ mb: 2 }}>
           <Typography variant="h6" gutterBottom>
             SimpleShell
           </Typography>
           <Typography variant="body1" gutterBottom>
-            {t('about.version')}: {appVersion}
+            {t("about.version")}: {appVersion}
           </Typography>
           <Typography variant="body2" color="text.secondary" paragraph>
-            {t('about.description')}
+            {t("about.description")}
           </Typography>
 
           <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
-            {t('about.author')}
+            {t("about.author")}
           </Typography>
           <Typography variant="body2" paragraph>
-            {t('about.author')}: funkpopo
+            {t("about.author")}: funkpopo
           </Typography>
           <Typography variant="body2" paragraph>
-            {t('about.email')}:{" "}
+            {t("about.email")}:{" "}
             <Link
               href="#"
               onClick={(e) => {
@@ -248,13 +248,13 @@ function AboutDialog({ open, onClose }) {
 
           <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle1" gutterBottom>
-              {t('about.updateCheck')}
+              {t("about.updateCheck")}
             </Typography>
             {updateStatus && (
               <Typography
                 variant="body2"
                 color={
-                  updateStatus === t('about.latestVersion')
+                  updateStatus === t("about.latestVersion")
                     ? "success.main"
                     : "text.secondary"
                 }
@@ -272,7 +272,7 @@ function AboutDialog({ open, onClose }) {
                   checkingForUpdate ? <CircularProgress size={16} /> : null
                 }
               >
-                {t('about.checkUpdateButton')}
+                {t("about.checkUpdateButton")}
               </Button>
 
               {latestRelease && latestRelease.html_url && (
@@ -281,7 +281,7 @@ function AboutDialog({ open, onClose }) {
                   color="primary"
                   onClick={() => handleOpenExternalLink(latestRelease.html_url)}
                 >
-                  {t('about.viewLatestButton')}
+                  {t("about.viewLatestButton")}
                 </Button>
               )}
             </Box>
@@ -289,7 +289,7 @@ function AboutDialog({ open, onClose }) {
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>{t('about.close')}</Button>
+        <Button onClick={onClose}>{t("about.close")}</Button>
         <Button
           onClick={() =>
             handleOpenExternalLink(
@@ -297,7 +297,7 @@ function AboutDialog({ open, onClose }) {
             )
           }
         >
-          {t('about.visitGithub')}
+          {t("about.visitGithub")}
         </Button>
       </DialogActions>
     </GlassDialog>
@@ -306,16 +306,16 @@ function AboutDialog({ open, onClose }) {
 
 function App() {
   const { t, i18n } = useTranslation();
-  
+
   // Update the tabs when language changes
   React.useEffect(() => {
     // Update welcome tab label when language changes
-    setTabs(prevTabs => [
-      { ...prevTabs[0], label: t('terminal.welcome') },
-      ...prevTabs.slice(1)
+    setTabs((prevTabs) => [
+      { ...prevTabs[0], label: t("terminal.welcome") },
+      ...prevTabs.slice(1),
     ]);
   }, [i18n.language, t]);
-  
+
   // 状态管理菜单打开关闭
   const [anchorEl, setAnchorEl] = React.useState(null);
   const open = Boolean(anchorEl);
@@ -340,7 +340,7 @@ function App() {
 
   // 标签页状态
   const [tabs, setTabs] = React.useState([
-    { id: "welcome", label: t('terminal.welcome') },
+    { id: "welcome", label: t("terminal.welcome") },
   ]);
   const [currentTab, setCurrentTab] = React.useState(0);
 
@@ -491,7 +491,7 @@ function App() {
   // 标签页相关函数
   const handleTabChange = (event, newValue) => {
     setCurrentTab(newValue);
-    
+
     // 触发自定义事件，通知WebTerminal组件进行大小调整
     if (newValue < tabs.length) {
       const currentTabId = tabs[newValue]?.id;
@@ -500,13 +500,13 @@ function App() {
         // 使用自定义事件通知特定标签页的WebTerminal组件
         window.dispatchEvent(
           new CustomEvent("tabChanged", {
-            detail: { tabId: currentTabId, index: newValue }
-          })
+            detail: { tabId: currentTabId, index: newValue },
+          }),
         );
-        
+
         // 触发窗口resize事件，作为备用机制确保布局更新
         setTimeout(() => {
-          window.dispatchEvent(new Event('resize'));
+          window.dispatchEvent(new Event("resize"));
         }, 100);
       }
     }
@@ -799,19 +799,21 @@ function App() {
   React.useEffect(() => {
     const handleSettingsChanged = (event) => {
       const { language, fontSize } = event.detail;
-      console.log(`Settings changed: language=${language}, fontSize=${fontSize}`);
-      
+      console.log(
+        `Settings changed: language=${language}, fontSize=${fontSize}`,
+      );
+
       // 应用字号设置
       document.documentElement.style.fontSize = `${fontSize}px`;
-      
+
       // 应用语言设置
       if (language) {
         // 通过i18n.js中的changeLanguage函数来改变语言
         changeLanguage(language);
-        
+
         // 基本的HTML语言设置
         document.documentElement.lang = language;
-        
+
         // 重新加载窗口以确保所有组件都使用新的语言设置
         if (window.terminalAPI?.reloadWindow) {
           window.terminalAPI.reloadWindow();
@@ -820,7 +822,7 @@ function App() {
     };
 
     window.addEventListener("settingsChanged", handleSettingsChanged);
-    
+
     // 初始化应用设置
     const loadInitialSettings = async () => {
       try {
@@ -829,7 +831,7 @@ function App() {
           if (settings) {
             // 应用字号设置
             document.documentElement.style.fontSize = `${settings.fontSize || 14}px`;
-            
+
             // 应用初始语言设置
             if (settings.language) {
               changeLanguage(settings.language);
@@ -843,7 +845,7 @@ function App() {
         document.documentElement.style.fontSize = "14px";
       }
     };
-    
+
     loadInitialSettings();
 
     return () => {
@@ -914,15 +916,15 @@ function App() {
             >
               <MenuItem onClick={handleOpenSettings}>
                 <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
-                {t('menu.settings')}
+                {t("menu.settings")}
               </MenuItem>
               <MenuItem onClick={handleOpenAbout}>
                 <InfoIcon fontSize="small" sx={{ mr: 1 }} />
-                {t('menu.about')}
+                {t("menu.about")}
               </MenuItem>
               <MenuItem onClick={handleExit}>
                 <ExitToAppIcon fontSize="small" sx={{ mr: 1 }} />
-                {t('menu.exit')}
+                {t("menu.exit")}
               </MenuItem>
             </Menu>
 
@@ -984,11 +986,11 @@ function App() {
             >
               <MenuItem onClick={handleRefreshTerminal}>
                 <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
-                {t('tabMenu.refresh')}
+                {t("tabMenu.refresh")}
               </MenuItem>
               <MenuItem onClick={handleCloseConnection}>
                 <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
-                {t('tabMenu.close')}
+                {t("tabMenu.close")}
               </MenuItem>
             </Menu>
           </Toolbar>
@@ -1130,8 +1132,12 @@ function App() {
                 open={resourceMonitorOpen}
                 onClose={handleCloseResourceMonitor}
                 currentTabId={
-                  resourceMonitorOpen && currentTab > 0 && tabs[currentTab] && tabs[currentTab].type === "ssh"
-                    ? terminalInstances[`${tabs[currentTab].id}-processId`] || tabs[currentTab].id
+                  resourceMonitorOpen &&
+                  currentTab > 0 &&
+                  tabs[currentTab] &&
+                  tabs[currentTab].type === "ssh"
+                    ? terminalInstances[`${tabs[currentTab].id}-processId`] ||
+                      tabs[currentTab].id
                     : null
                 }
               />
@@ -1203,14 +1209,14 @@ function App() {
               }}
             >
               {/* 主题切换按钮 */}
-              <Tooltip title={t('sidebar.theme')} placement="left">
+              <Tooltip title={t("sidebar.theme")} placement="left">
                 <IconButton onClick={toggleTheme} color="primary">
                   {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
                 </IconButton>
               </Tooltip>
 
               {/* AI助手按钮 */}
-              <Tooltip title={t('sidebar.ai')} placement="left">
+              <Tooltip title={t("sidebar.ai")} placement="left">
                 <IconButton
                   color="primary"
                   onClick={toggleAIAssistant}
@@ -1230,7 +1236,7 @@ function App() {
               </Tooltip>
 
               {/* 资源监控按钮 */}
-              <Tooltip title={t('sidebar.monitor')} placement="left">
+              <Tooltip title={t("sidebar.monitor")} placement="left">
                 <IconButton
                   color="primary"
                   onClick={toggleResourceMonitor}
@@ -1250,7 +1256,7 @@ function App() {
               </Tooltip>
 
               {/* 连接管理按钮 */}
-              <Tooltip title={t('sidebar.connections')} placement="left">
+              <Tooltip title={t("sidebar.connections")} placement="left">
                 <IconButton
                   color="primary"
                   onClick={toggleConnectionManager}
@@ -1270,7 +1276,7 @@ function App() {
               </Tooltip>
 
               {/* 文件管理按钮 */}
-              <Tooltip title={t('sidebar.files')} placement="left">
+              <Tooltip title={t("sidebar.files")} placement="left">
                 <IconButton
                   color="primary"
                   onClick={toggleFileManager}

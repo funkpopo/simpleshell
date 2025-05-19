@@ -1,14 +1,14 @@
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import LanguageDetector from "i18next-browser-languagedetector";
 
 // Import translations
-import translationEN from './locales/en-US.json';
-import translationZH from './locales/zh-CN.json';
+import translationEN from "./locales/en-US.json";
+import translationZH from "./locales/zh-CN.json";
 
 const resources = {
-  'en-US': translationEN,
-  'zh-CN': translationZH,
+  "en-US": translationEN,
+  "zh-CN": translationZH,
 };
 
 // Initialize i18next
@@ -17,15 +17,15 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: 'zh-CN',
-    debug: process.env.NODE_ENV === 'development',
+    fallbackLng: "zh-CN",
+    debug: process.env.NODE_ENV === "development",
     interpolation: {
       escapeValue: false, // not needed for React
     },
     detection: {
-      order: ['localStorage', 'navigator'],
-      lookupLocalStorage: 'language',
-      caches: ['localStorage'],
+      order: ["localStorage", "navigator"],
+      lookupLocalStorage: "language",
+      caches: ["localStorage"],
     },
   });
 
@@ -33,8 +33,8 @@ i18n
 export const changeLanguage = (lng) => {
   if (i18n.language !== lng) {
     i18n.changeLanguage(lng);
-    localStorage.setItem('language', lng);
+    localStorage.setItem("language", lng);
   }
 };
 
-export default i18n; 
+export default i18n;

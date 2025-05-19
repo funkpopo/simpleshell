@@ -41,11 +41,17 @@ const ResourceMonitor = ({ open, onClose, currentTabId }) => {
       setError(null);
 
       // 输出调试信息
-      console.log(`ResourceMonitor: 尝试获取系统信息，currentTabId =`, currentTabId);
+      console.log(
+        `ResourceMonitor: 尝试获取系统信息，currentTabId =`,
+        currentTabId,
+      );
 
       if (window.terminalAPI && window.terminalAPI.getSystemInfo) {
         const info = await window.terminalAPI.getSystemInfo(currentTabId);
-        console.log(`ResourceMonitor: 获取到系统信息:`, info.isLocal ? '本地系统' : '远程系统');
+        console.log(
+          `ResourceMonitor: 获取到系统信息:`,
+          info.isLocal ? "本地系统" : "远程系统",
+        );
 
         if (info.error) {
           setError(info.message || "获取系统信息失败");
