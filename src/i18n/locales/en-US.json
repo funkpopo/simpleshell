@@ -2,17 +2,17 @@
   "translation": {
     "settings": {
       "title": "Settings",
-      "language": "Interface Language",
+      "language": "Language",
       "fontSize": "Font Size",
       "fontSizeLabels": {
         "small": "Small",
         "medium": "Medium",
         "large": "Large",
-        "xlarge": "Extra Large"
+        "xlarge": "X-Large"
       },
       "cancel": "Cancel",
       "save": "Save",
-      "saveError": "Failed to save settings, please try again."
+      "saveError": "Failed to save settings. Please try again."
     },
     "menu": {
       "settings": "Settings",
@@ -26,27 +26,28 @@
     "about": {
       "title": "About SimpleShell",
       "version": "Version",
-      "description": "A simple and efficient cross-platform terminal tool",
+      "description": "A simple and efficient cross-platform terminal",
       "author": "Author",
       "email": "Email",
       "updateCheck": "Check for Updates",
       "checkingUpdate": "Checking for updates...",
       "latestVersion": "You are using the latest version",
-      "newVersion": "New version found: {{version}}, please click the button below for details",
-      "updateError": "Failed to get update information: {{error}}",
+      "newVersion": "New version available: {{version}}. Click button below for details",
+      "updateError": "Could not check for updates: {{error}}",
       "checkUpdateButton": "Check for Updates",
       "viewLatestButton": "View Latest Version",
       "close": "Close",
       "visitGithub": "Visit GitHub Release Page",
-      "updateNotAvailable": "Unable to check for updates: Update API not found"
+      "updateNotAvailable": "Cannot check for updates: Update API not found"
     },
     "sidebar": {
       "theme": "Toggle Theme",
       "ai": "AI Assistant",
       "monitor": "Resource Monitor",
-      "connections": "Connection Manager",
+      "connections": "Connections",
       "files": "File Manager",
-      "history": "Command History"
+      "history": "Command History",
+      "shortcutCommands": "Shortcut Commands"
     },
     "welcome": {
       "title": "Welcome to SimpleShell",
@@ -62,6 +63,40 @@
       "connected": "Connected to {{host}}",
       "connectionFailed": "Connection failed: {{error}}",
       "welcome": "Welcome"
+    },
+    "common": {
+      "cancel": "Cancel",
+      "save": "Save",
+      "delete": "Delete",
+      "edit": "Edit",
+      "add": "Add",
+      "name": "Name",
+      "description": "Description"
+    },
+    "shortcutCommands": {
+      "title": "Shortcut Commands",
+      "search": "Search commands...",
+      "addCommand": "Add Command",
+      "editCommand": "Edit Command",
+      "commandName": "Command Name",
+      "command": "Command",
+      "description": "Description",
+      "category": "Category",
+      "uncategorized": "Uncategorized",
+      "loading": "Loading...",
+      "noCommands": "No shortcut commands yet. Click add button to create one.",
+      "noCommandsFound": "No matching commands found",
+      "allCommands": "All Commands",
+      "categories": "Categories",
+      "addCategory": "Add Category",
+      "editCategory": "Edit Category",
+      "categoryName": "Category Name",
+      "color": "Color",
+      "edit": "Edit",
+      "delete": "Delete",
+      "sendCommand": "Send Command",
+      "copyCommand": "Copy Command",
+      "totalCommands": "{{count}} commands total"
     }
   }
 }

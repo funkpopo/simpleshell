@@ -46,7 +46,8 @@
       "monitor": "资源监控",
       "connections": "连接管理",
       "files": "文件管理",
-      "history": "命令历史记录"
+      "history": "命令历史记录",
+      "shortcutCommands": "快捷命令"
     },
     "welcome": {
       "title": "欢迎使用 SimpleShell",
@@ -62,6 +63,40 @@
       "connected": "已连接到 {{host}}",
       "connectionFailed": "连接失败: {{error}}",
       "welcome": "欢迎"
+    },
+    "common": {
+      "cancel": "取消",
+      "save": "保存",
+      "delete": "删除",
+      "edit": "编辑",
+      "add": "添加",
+      "name": "名称",
+      "description": "描述"
+    },
+    "shortcutCommands": {
+      "title": "快捷命令",
+      "search": "搜索命令...",
+      "addCommand": "添加命令",
+      "editCommand": "编辑命令",
+      "commandName": "命令名称",
+      "command": "命令",
+      "description": "描述",
+      "category": "分类",
+      "uncategorized": "未分类",
+      "loading": "加载中...",
+      "noCommands": "尚无快捷命令，点击添加按钮创建。",
+      "noCommandsFound": "未找到匹配的命令",
+      "allCommands": "所有命令",
+      "categories": "分类",
+      "addCategory": "添加分类",
+      "editCategory": "编辑分类",
+      "categoryName": "分类名称",
+      "color": "颜色",
+      "edit": "编辑",
+      "delete": "删除",
+      "sendCommand": "发送命令",
+      "copyCommand": "复制命令",
+      "totalCommands": "共 {{count}} 条命令"
     }
   }
 }
