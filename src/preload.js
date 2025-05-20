@@ -41,6 +41,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   getSystemInfo: (processId) =>
     ipcRenderer.invoke("terminal:getSystemInfo", processId),
 
+  // 快捷命令API
+  getShortcutCommands: () => ipcRenderer.invoke("get-shortcut-commands"),
+  saveShortcutCommands: (data) => ipcRenderer.invoke("save-shortcut-commands", data),
+
   // 事件监听
   onProcessOutput: (processId, callback) => {
     const channel = `process:output:${processId}`;

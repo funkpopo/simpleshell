@@ -80,6 +80,9 @@ let activeAPIRequest = null;
 // 存储活动的文件传输
 const activeTransfers = new Map();
 
+// 快捷命令保存路径
+const shortcutCommandsConfigPath = path.join(app.getPath('userData'), 'shortcutCommands.json');
+
 // SFTP会话池配置
 const SFTP_SESSION_IDLE_TIMEOUT = 20000; // 空闲超时时间（毫秒），从60秒减少到20秒
 const MAX_SFTP_SESSIONS_PER_TAB = 1; // 每个标签页的最大会话数量
@@ -4756,6 +4759,40 @@ function setupIPC(mainWindow) {
   ipcMain.handle("settings:saveUISettings", async (event, settings) => {
     return await saveUISettings(settings);
   });
+
+  // 获取快捷命令
+  ipcMain.handle('get-shortcut-commands', async () => {
+    try {
+      const data = loadShortcutCommands();
+      return {
+        success: true,
+        data
+      };
+    } catch (error) {
+      logToFile(`Error in get-shortcut-commands: ${error.message}`, "ERROR");
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+  
+  // 保存快捷命令
+  ipcMain.handle('save-shortcut-commands', async (_, data) => {
+    try {
+      const result = saveShortcutCommands(data);
+      return {
+        success: result,
+        error: result ? null : "Failed to save shortcut commands"
+      };
+    } catch (error) {
+      logToFile(`Error in save-shortcut-commands: ${error.message}`, "ERROR");
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
 }
 
 // 获取本地系统信息
@@ -5853,3 +5890,52 @@ async function saveUISettings(settings) {
     return { success: false, error: error.message };
   }
 }
+
+// 加载快捷命令设置
+const loadShortcutCommands = () => {
+  try {
+    if (fs.existsSync(shortcutCommandsConfigPath)) {
+      const data = fs.readFileSync(shortcutCommandsConfigPath, 'utf8');
+      let commands;
+      
+      try {
+        // 尝试解析已加密的数据
+        commands = JSON.parse(decryptText(data));
+      } catch (decryptError) {
+        // 如果解密失败，尝试直接解析（可能是未加密的旧数据）
+        try {
+          commands = JSON.parse(data);
+        } catch (parseError) {
+          logToFile(`Error parsing shortcut commands data: ${parseError.message}`, "ERROR");
+          return { commands: [], categories: [] };
+        }
+      }
+      
+      logToFile(`Loaded ${commands.commands?.length || 0} shortcut commands and ${commands.categories?.length || 0} categories`, "INFO");
+      return commands;
+    } else {
+      logToFile("No shortcut commands file found, creating default", "INFO");
+      return { commands: [], categories: [] };
+    }
+  } catch (error) {
+    logToFile(`Error loading shortcut commands: ${error.message}`, "ERROR");
+    return { commands: [], categories: [] };
+  }
+};
+
+// 保存快捷命令设置
+const saveShortcutCommands = (data) => {
+  try {
+    // 加密数据
+    const encryptedData = encryptText(JSON.stringify(data));
+    
+    // 保存到文件
+    fs.writeFileSync(shortcutCommandsConfigPath, encryptedData);
+    
+    logToFile(`Saved ${data.commands?.length || 0} shortcut commands and ${data.categories?.length || 0} categories`, "INFO");
+    return true;
+  } catch (error) {
+    logToFile(`Error saving shortcut commands: ${error.message}`, "ERROR");
+    return false;
+  }
+};

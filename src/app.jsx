@@ -44,6 +44,8 @@ import AIIcon from "./components/AIIcon.jsx";
 import FileManager from "./components/FileManager.jsx";
 import Settings from "./components/Settings.jsx";
 import Divider from "@mui/material/Divider";
+import ShortcutCommands from "./components/ShortcutCommands.jsx";
+import TerminalIcon from '@mui/icons-material/Terminal';
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -370,6 +372,9 @@ function App() {
 
   // 设置对话框状态
   const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false);
+
+  // 添加快捷命令侧边栏状态
+  const [shortcutCommandsOpen, setShortcutCommandsOpen] = React.useState(false);
 
   // 应用启动时加载连接配置
   React.useEffect(() => {
@@ -787,12 +792,45 @@ function App() {
     setFileManagerOpen(false);
   };
 
-  // 更新closeAllSidebars函数，移除命令历史部分
+  // 添加切换快捷命令侧边栏的函数
+  const toggleShortcutCommands = () => {
+    if (shortcutCommandsOpen) {
+      setShortcutCommandsOpen(false);
+    } else {
+      closeAllSidebars();
+      setShortcutCommandsOpen(true);
+      setLastOpenedSidebar("shortcut");
+    }
+  };
+
+  const handleCloseShortcutCommands = () => {
+    setShortcutCommandsOpen(false);
+  };
+
+  // 更新关闭所有侧边栏的函数
   const closeAllSidebars = () => {
-    if (connectionManagerOpen) handleCloseConnectionManager();
-    if (resourceMonitorOpen) handleCloseResourceMonitor();
-    if (aiAssistantOpen) handleCloseAIAssistant();
-    if (fileManagerOpen) handleCloseFileManager();
+    setAiAssistantOpen(false);
+    setResourceMonitorOpen(false);
+    setConnectionManagerOpen(false);
+    setFileManagerOpen(false);
+    setShortcutCommandsOpen(false);
+  };
+  
+  // 添加发送快捷命令到终端的函数
+  const handleSendCommand = (command) => {
+    if (currentTab > 0 && tabs[currentTab]) {
+      const tab = tabs[currentTab];
+      if (tab.type === "ssh") {
+        // 向指定的终端发送命令
+        const processId = terminalInstances[`${tab.id}-processId`];
+        if (processId && window.terminalAPI.sendToProcess) {
+          window.terminalAPI.sendToProcess(processId, command + "\r");
+          console.log(`发送命令到终端 ${processId}:`, command);
+        } else {
+          console.error("无法发送命令:", processId ? "API未找到" : "进程ID未找到");
+        }
+      }
+    }
   };
 
   // 处理设置变更
@@ -1192,6 +1230,24 @@ function App() {
               />
             </Box>
 
+            {/* 添加快捷命令侧边栏 */}
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                right: 48,
+                zIndex: lastOpenedSidebar === "shortcut" ? 104 : 95,
+                height: "100%",
+                display: "flex",
+              }}
+            >
+              <ShortcutCommands
+                open={shortcutCommandsOpen}
+                onClose={handleCloseShortcutCommands}
+                onSendCommand={handleSendCommand}
+              />
+            </Box>
+
             {/* 右侧边栏 */}
             <Paper
               elevation={3}
@@ -1297,6 +1353,31 @@ function App() {
                   }
                 >
                   <FolderIcon />
+                </IconButton>
+              </Tooltip>
+
+              {/* 快捷命令按钮 - 应该放在文件按钮的后面 */}
+              <Tooltip title={t("sidebar.shortcutCommands")} placement="left">
+                <IconButton
+                  color="primary"
+                  onClick={toggleShortcutCommands}
+                  sx={{
+                    bgcolor: shortcutCommandsOpen
+                      ? "action.selected"
+                      : "transparent",
+                    "&:hover": {
+                      bgcolor: shortcutCommandsOpen
+                        ? "action.selected"
+                        : "action.hover",
+                    },
+                  }}
+                  disabled={
+                    !currentTab ||
+                    currentTab === 0 ||
+                    (tabs[currentTab] && tabs[currentTab].type !== "ssh")
+                  }
+                >
+                  <TerminalIcon />
                 </IconButton>
               </Tooltip>
             </Paper>
