@@ -245,7 +245,7 @@ function AIAssistant({ open, onClose }) {
             // 创建一个新的消息对象，避免修改原始消息
             return {
               ...msg,
-              text: msg.text.replace(/<think>[\s\S]*?<\/think>/g, ""),
+              text: msg.text.replace(/<think>[\s\S]*?<\/think>\n?/g, ""),
             };
           }
           return msg;
@@ -333,8 +333,8 @@ function AIAssistant({ open, onClose }) {
               const currentText = msg.text;
               let newText = currentText + filteredChunk;
 
-              // 处理完整的<think></think>标签
-              newText = newText.replace(/<think>[\s\S]*?<\/think>/g, "");
+              // 处理完整的<think></think>标签及其后的空行
+              newText = newText.replace(/<think>[\s\S]*?<\/think>\n?/g, "");
 
               return {
                 ...msg,
@@ -356,9 +356,9 @@ function AIAssistant({ open, onClose }) {
         setMessages((prev) => {
           return prev.map((msg) => {
             if (msg.id === streamResponseIdRef.current) {
-              // 确保过滤所有<think></think>标签内容
+              // 确保过滤所有<think></think>标签内容及其后的空行
               const filteredText = msg.rawText
-                ? msg.rawText.replace(/<think>[\s\S]*?<\/think>/g, "")
+                ? msg.rawText.replace(/<think>[\s\S]*?<\/think>\n?/g, "")
                 : msg.text;
 
               return {
@@ -389,10 +389,10 @@ function AIAssistant({ open, onClose }) {
         setMessages((prev) => {
           return prev.map((msg) => {
             if (msg.id === streamResponseIdRef.current && msg.text) {
-              // 确保过滤所有<think></think>标签内容
+              // 确保过滤所有<think></think>标签内容及其后的空行
               const filteredText = msg.rawText
-                ? msg.rawText.replace(/<think>[\s\S]*?<\/think>/g, "")
-                : msg.text.replace(/<think>[\s\S]*?<\/think>/g, "");
+                ? msg.rawText.replace(/<think>[\s\S]*?<\/think>\n?/g, "")
+                : msg.text.replace(/<think>[\s\S]*?<\/think>\n?/g, "");
 
               return {
                 ...msg,
