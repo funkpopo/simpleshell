@@ -788,13 +788,20 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   return (
     <Paper
       sx={{
-        display: open ? "flex" : "none",
         flexDirection: "column",
-        width: 320,
+        width: open ? 300 : 0,
         height: "100%",
         overflow: "hidden",
+        transition: (theme) =>
+          theme.transitions.create("width", {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
+        display: 'flex',
       }}
     >
+      {open && (
+      <>
       {/* 标题栏 */}
       <Box
         sx={{
@@ -951,6 +958,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           {notification.message}
         </Alert>
       </Snackbar>
+      </>
+      )}
     </Paper>
   );
 }
