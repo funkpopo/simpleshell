@@ -428,7 +428,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
             key={cmd.id}
             disablePadding
             secondaryAction={
-              <Box>
+              <Box display="flex" gap={1}>
                 <Tooltip title={t("shortcutCommands.sendCommand")}>
                   <IconButton edge="end" onClick={() => handleSendCommand(cmd.command)}>
                     <SendIcon fontSize="small" />
@@ -558,7 +558,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                     disablePadding
                     sx={{ pl: 4 }}
                     secondaryAction={
-                      <Box>
+                      <Box display="flex" gap={1}>
                         <Tooltip title={t("shortcutCommands.sendCommand")}>
                           <IconButton 
                             edge="end" 
