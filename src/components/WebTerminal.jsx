@@ -882,8 +882,6 @@ const WebTerminal = ({
                   // 设置命令检测
                   setupCommandDetection(term, processId);
 
-                  term.writeln(`已连接到 ${sshConfig.host}`);
-
                   // 连接成功后多次尝试同步终端大小，确保远程终端能够正确获取前端显示区域的大小
                   setTimeout(() => {
                     if (terminalRef.current && fitAddonRef.current) {

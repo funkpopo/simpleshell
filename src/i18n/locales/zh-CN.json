@@ -60,7 +60,6 @@
     },
     "terminal": {
       "connecting": "正在连接到 {{host}}...",
-      "connected": "已连接到 {{host}}",
       "connectionFailed": "连接失败: {{error}}",
       "welcome": "欢迎"
     },

@@ -84,10 +84,10 @@ const activeTransfers = new Map();
 const shortcutCommandsConfigPath = path.join(app.getPath('userData'), 'shortcutCommands.json');
 
 // SFTP会话池配置
-const SFTP_SESSION_IDLE_TIMEOUT = 20000; // 空闲超时时间（毫秒），从60秒减少到20秒
+const SFTP_SESSION_IDLE_TIMEOUT = 120000; // 空闲超时时间（毫秒）
 const MAX_SFTP_SESSIONS_PER_TAB = 1; // 每个标签页的最大会话数量
-const MAX_TOTAL_SFTP_SESSIONS = 10; // 总的最大会话数量
-const SFTP_HEALTH_CHECK_INTERVAL = 30000; // 健康检查间隔（毫秒）
+const MAX_TOTAL_SFTP_SESSIONS = 50; // 总的最大会话数量
+const SFTP_HEALTH_CHECK_INTERVAL = 90000; // 健康检查间隔（毫秒）
 const SFTP_OPERATION_TIMEOUT = 20000; // 操作超时时间（毫秒）
 
 // 添加 SFTP 会话池健康检查定时器
