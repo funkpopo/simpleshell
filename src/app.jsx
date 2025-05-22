@@ -52,6 +52,7 @@ import "./i18n/i18n";
 import { changeLanguage } from "./i18n/i18n";
 import "./index.css";
 import { styled } from "@mui/material/styles";
+import { SIDEBAR_WIDTHS } from "./constants/layout.js";
 
 // 自定义标签页组件
 function CustomTab(props) {
@@ -308,6 +309,7 @@ function AboutDialog({ open, onClose }) {
 
 function App() {
   const { t, i18n } = useTranslation();
+  const [activeSidebarMargin, setActiveSidebarMargin] = React.useState(0);
 
   // Update the tabs when language changes
   React.useEffect(() => {
@@ -375,6 +377,34 @@ function App() {
 
   // 添加快捷命令侧边栏状态
   const [shortcutCommandsOpen, setShortcutCommandsOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    let calculatedMargin = 0;
+    if (aiAssistantOpen && lastOpenedSidebar === 'ai') {
+      calculatedMargin = SIDEBAR_WIDTHS.AI_ASSISTANT;
+    } else if (resourceMonitorOpen && lastOpenedSidebar === 'resource') {
+      calculatedMargin = SIDEBAR_WIDTHS.RESOURCE_MONITOR;
+    } else if (connectionManagerOpen && lastOpenedSidebar === 'connection') {
+      calculatedMargin = SIDEBAR_WIDTHS.CONNECTION_MANAGER;
+    } else if (fileManagerOpen && lastOpenedSidebar === 'file') {
+      calculatedMargin = SIDEBAR_WIDTHS.FILE_MANAGER;
+    } else if (shortcutCommandsOpen && lastOpenedSidebar === 'shortcut') {
+      calculatedMargin = SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
+    } else {
+      // Fallback if lastOpenedSidebar isn't set but one is open
+      if (aiAssistantOpen) calculatedMargin = SIDEBAR_WIDTHS.AI_ASSISTANT;
+      else if (resourceMonitorOpen) calculatedMargin = SIDEBAR_WIDTHS.RESOURCE_MONITOR;
+      else if (connectionManagerOpen) calculatedMargin = SIDEBAR_WIDTHS.CONNECTION_MANAGER;
+      else if (fileManagerOpen) calculatedMargin = SIDEBAR_WIDTHS.FILE_MANAGER;
+      else if (shortcutCommandsOpen) calculatedMargin = SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
+    }
+
+    if (calculatedMargin > 0) {
+      calculatedMargin += SIDEBAR_WIDTHS.DEFAULT_PADDING;
+    }
+
+    setActiveSidebarMargin(calculatedMargin);
+  }, [aiAssistantOpen, resourceMonitorOpen, connectionManagerOpen, fileManagerOpen, shortcutCommandsOpen, lastOpenedSidebar, SIDEBAR_WIDTHS]);
 
   // 应用启动时加载连接配置
   React.useEffect(() => {
@@ -1049,6 +1079,8 @@ function App() {
               p: 0,
               display: "flex",
               flexDirection: "column",
+              marginRight: `${activeSidebarMargin}px`,
+              transition: "margin-right 0.25s ease-out",
             }}
           >
             {/* 标签页内容 */}
