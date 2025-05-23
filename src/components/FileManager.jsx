@@ -39,7 +39,7 @@ import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import FilePreview from "./FilePreview.jsx";
 
-const FileManager = ({ open, onClose, sshConnection, tabId }) => {
+const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -85,8 +85,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
   // 当SSH连接改变时，重置状态并加载目录
   useEffect(() => {
     if (open && sshConnection && tabId) {
-      console.log("FileManager: Loading files for tab", tabId);
-
       // 先检查API是否可用
       if (!window.terminalAPI || !window.terminalAPI.listFiles) {
         console.error("FileManager: listFiles API not available");
@@ -112,12 +110,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
 
     // 检查缓存是否过期
     if (now - cacheEntry.timestamp > CACHE_EXPIRY_TIME) {
-      // 缓存已过期
-      console.log(`FileManager: Cache for ${path} expired`);
       return null;
     }
-
-    console.log(`FileManager: Using cached data for ${path}`);
     return cacheEntry.data;
   };
 
@@ -137,8 +131,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     if (!sshConnection || !tabId || !currentPath) return;
 
     try {
-      console.log(`FileManager: Silent refreshing directory "${currentPath}"`);
-
       if (window.terminalAPI && window.terminalAPI.listFiles) {
         // 将~转换为空字符串，用于API调用
         const apiPath = currentPath === "~" ? "" : currentPath;
@@ -165,17 +157,12 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           const newFiles = JSON.stringify(fileData);
 
           if (currentFiles !== newFiles) {
-            console.log(
-              "FileManager: Directory content changed, updating view",
-            );
             // 更新缓存
             updateDirectoryCache(currentPath, fileData);
             // 更新视图
             setFiles(fileData);
             // 加载新目录时重置选中文件
             setSelectedFile(null);
-          } else {
-            console.log("FileManager: Directory content unchanged");
           }
 
           // 记录刷新时间
@@ -203,7 +190,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     if (!forceRefresh) {
       const cachedData = getDirectoryFromCache(path);
       if (cachedData) {
-        console.log(`FileManager: Using cached files for path "${path}"`);
         setFiles(cachedData);
         setCurrentPath(path);
         setPathInput(path);
@@ -217,9 +203,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
     setError(null);
 
     try {
-      console.log(
-        `FileManager: Listing files at path "${path}" for tab ${tabId}`,
-      );
       if (window.terminalAPI && window.terminalAPI.listFiles) {
         // 将~转换为空字符串，用于API调用
         const apiPath = path === "~" ? "" : path;
@@ -237,7 +220,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           apiPath,
           options,
         );
-        console.log("FileManager: Got response", response);
 
         if (response?.success) {
           const fileData = response.data || [];
@@ -263,11 +245,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           ) {
             // 如果是SFTP通道错误或SSH连接未就绪，且重试次数未达到上限，则进行重试
             if (retryCount < 5) {
-              // 增加到5次重试
-              console.log(
-                `FileManager: 连接错误，尝试重试 (${retryCount + 1}/5)`,
-              );
-
               // 增加重试等待时间，指数退避算法
               const waitTime = Math.min(500 * Math.pow(1.5, retryCount), 5000); // 最长等待5秒
 
@@ -293,8 +270,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
 
       // 如果是异常错误且重试次数未达到上限，则进行重试
       if (retryCount < 5) {
-        // 增加到5次重试
-        console.log(`FileManager: 错误，尝试重试 (${retryCount + 1}/5)`);
 
         // 增加重试等待时间，指数退避算法
         const waitTime = Math.min(500 * Math.pow(1.5, retryCount), 5000); // 最长等待5秒
@@ -1177,8 +1152,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
 
   // 用户活动后的刷新函数
   const refreshAfterUserActivity = () => {
-    console.log("FileManager: Scheduling refresh after user activity");
-
     // 添加短暂延迟，避免在操作完成前刷新
     setTimeout(() => {
       if (currentPath) {
@@ -1719,7 +1692,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId }) => {
           variant="subtitle1"
           sx={{ flexGrow: 1, fontWeight: "bold" }}
         >
-          文件管理
+          {tabName ? `文件管理 - ${tabName}` : "文件管理"}
         </Typography>
         <IconButton size="small" onClick={onClose} edge="end">
           <CloseIcon fontSize="small" />

@@ -531,7 +531,6 @@ function App() {
     if (newValue < tabs.length) {
       const currentTabId = tabs[newValue]?.id;
       if (currentTabId) {
-        console.log(`标签切换到: ${currentTabId}`);
         // 使用自定义事件通知特定标签页的WebTerminal组件
         window.dispatchEvent(
           new CustomEvent("tabChanged", {
@@ -1250,6 +1249,11 @@ function App() {
                 tabId={
                   currentTab > 0 && tabs[currentTab]
                     ? tabs[currentTab].id
+                    : null
+                }
+                tabName={
+                  currentTab > 0 && tabs[currentTab]
+                    ? tabs[currentTab].label
                     : null
                 }
                 sshConnection={
