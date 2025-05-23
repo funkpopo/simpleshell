@@ -147,30 +147,6 @@ const terminalCache = {};
 const fitAddonCache = {};
 const processCache = {};
 
-// 添加一个辅助函数，用于在调试模式下记录终端大小相关信息
-const logTerminalSize = (message, term, container) => {
-  // 确保参数有效
-  if (!term || !container) return;
-
-  try {
-    const termCols = term.cols;
-    const termRows = term.rows;
-    const containerWidth = container.clientWidth;
-    const containerHeight = container.clientHeight;
-    const termElement = term.element;
-    const termElementWidth = termElement ? termElement.clientWidth : "NA";
-    const termElementHeight = termElement ? termElement.clientHeight : "NA";
-
-    console.log(`[终端大小信息] ${message}:`, {
-      container: `${containerWidth}x${containerHeight}`,
-      terminal: `${termCols}x${termRows}`,
-      element: `${termElementWidth}x${termElementHeight}`,
-    });
-  } catch (error) {
-    console.error("记录终端大小信息时出错:", error);
-  }
-};
-
 // 添加一个辅助函数，用于强制重新计算和同步终端大小的辅助函数
 const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
   if (!term || !container || !fitAddon) return;
