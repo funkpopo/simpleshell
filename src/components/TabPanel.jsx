@@ -32,30 +32,36 @@ const TabPanel = (props) => {
     }
   }, [value, index]);
 
+  const isActive = value === index;
+
   return (
     <div
       role="tabpanel"
-      hidden={value !== index}
       id={`tabpanel-${index}`}
       aria-labelledby={`tab-${index}`}
       ref={panelRef}
       style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
         height: "100%",
-        display: value === index ? "block" : "none",
+        opacity: isActive ? 1 : 0,
+        zIndex: isActive ? 1 : 0,
+        pointerEvents: isActive ? "auto" : "none",
+        visibility: isActive ? "visible" : "hidden",
+        transition: "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
       }}
       {...other}
     >
-      {value === index && (
-        <Box
-          sx={{
-            height: "100%",
-            // 不要给Box添加背景色，让它透明
-            backgroundColor: "transparent",
-          }}
-        >
-          {children}
-        </Box>
-      )}
+      <Box
+        sx={{
+          height: "100%",
+          backgroundColor: "transparent",
+        }}
+      >
+        {children}
+      </Box>
     </div>
   );
 };

@@ -4,6 +4,9 @@
       "title": "设置",
       "language": "界面语言",
       "fontSize": "界面字号",
+      "theme": "主题模式",
+      "themeLight": "明亮模式",
+      "themeDark": "深色模式",
       "fontSizeLabels": {
         "small": "小",
         "medium": "中",

@@ -320,6 +320,32 @@ function App() {
     ]);
   }, [i18n.language, t]);
 
+  // 加载主题设置
+  React.useEffect(() => {
+    const loadThemeSettings = async () => {
+      try {
+        setThemeLoading(true);
+        if (window.terminalAPI?.loadUISettings) {
+          const settings = await window.terminalAPI.loadUISettings();
+          if (settings && settings.darkMode !== undefined) {
+            setDarkMode(settings.darkMode);
+          }
+        }
+      } catch (error) {
+        console.error("加载主题设置失败:", error);
+        // 如果加载失败，尝试从 localStorage 恢复作为备选
+        const fallbackTheme = localStorage.getItem("terminalDarkMode");
+        if (fallbackTheme !== null) {
+          setDarkMode(fallbackTheme === "true");
+        }
+      } finally {
+        setThemeLoading(false);
+      }
+    };
+
+    loadThemeSettings();
+  }, []);
+
   // 状态管理菜单打开关闭
   const [anchorEl, setAnchorEl] = React.useState(null);
   const open = Boolean(anchorEl);
@@ -338,9 +364,8 @@ function App() {
   const [draggedTabIndex, setDraggedTabIndex] = React.useState(null);
 
   // 主题模式状态
-  const [darkMode, setDarkMode] = React.useState(
-    localStorage.getItem("terminalDarkMode") === "true",
-  );
+  const [darkMode, setDarkMode] = React.useState(true); // 默认值
+  const [themeLoading, setThemeLoading] = React.useState(true); // 主题加载状态
 
   // 标签页状态
   const [tabs, setTabs] = React.useState([
@@ -427,9 +452,6 @@ function App() {
     const handleSshProcessIdUpdate = (event) => {
       const { terminalId, processId } = event.detail;
       if (terminalId && processId) {
-        console.log(
-          `Received SSH process ID update: ${terminalId} -> ${processId}`,
-        );
         setTerminalInstances((prev) => ({
           ...prev,
           [`${terminalId}-processId`]: processId,
@@ -519,8 +541,42 @@ function App() {
   };
 
   // 切换主题模式
-  const toggleTheme = () => {
-    setDarkMode(!darkMode);
+  const toggleTheme = async () => {
+    try {
+      const newDarkMode = !darkMode;
+      setDarkMode(newDarkMode);
+      
+      // 保存主题设置到配置文件
+      if (window.terminalAPI?.saveUISettings) {
+        // 先获取当前设置，然后更新主题设置
+        let currentSettings = { language: "zh-CN", fontSize: 14 };
+        try {
+          if (window.terminalAPI?.loadUISettings) {
+            const loadedSettings = await window.terminalAPI.loadUISettings();
+            if (loadedSettings) {
+              currentSettings = loadedSettings;
+            }
+          }
+        } catch (loadError) {
+          console.warn("获取当前设置失败，使用默认值:", loadError);
+        }
+        
+        // 更新主题设置并保存
+        const updatedSettings = {
+          ...currentSettings,
+          darkMode: newDarkMode,
+        };
+        
+        await window.terminalAPI.saveUISettings(updatedSettings);
+      }
+      
+      // 同时更新 localStorage 作为备选（向后兼容）
+      localStorage.setItem("terminalDarkMode", newDarkMode.toString());
+    } catch (error) {
+      console.error("保存主题设置失败:", error);
+      // 如果保存失败，至少更新 localStorage
+      localStorage.setItem("terminalDarkMode", (!darkMode).toString());
+    }
   };
 
   // 标签页相关函数
@@ -627,8 +683,6 @@ function App() {
     const terminalId = `ssh-${Date.now()}`;
     // 创建标签名（使用连接配置中的名称）
     const tabName = connection.name || `SSH: ${connection.host}`;
-
-    console.log(`Creating SSH connection with ID: ${terminalId}`);
 
     // 创建新标签页
     const newTab = {
@@ -854,7 +908,6 @@ function App() {
         const processId = terminalInstances[`${tab.id}-processId`];
         if (processId && window.terminalAPI.sendToProcess) {
           window.terminalAPI.sendToProcess(processId, command + "\r");
-          console.log(`发送命令到终端 ${processId}:`, command);
         } else {
           console.error("无法发送命令:", processId ? "API未找到" : "进程ID未找到");
         }
@@ -865,13 +918,17 @@ function App() {
   // 处理设置变更
   React.useEffect(() => {
     const handleSettingsChanged = (event) => {
-      const { language, fontSize } = event.detail;
-      console.log(
-        `Settings changed: language=${language}, fontSize=${fontSize}`,
-      );
-
+      const { language, fontSize, darkMode: newDarkMode } = event.detail;
+      
+      // 应用主题设置
+      if (newDarkMode !== undefined && newDarkMode !== darkMode) {
+        setDarkMode(newDarkMode);
+      }
+      
       // 应用字号设置
-      document.documentElement.style.fontSize = `${fontSize}px`;
+      if (fontSize) {
+        document.documentElement.style.fontSize = `${fontSize}px`;
+      }
 
       // 应用语言设置
       if (language) {
@@ -896,6 +953,11 @@ function App() {
         if (window.terminalAPI?.loadUISettings) {
           const settings = await window.terminalAPI.loadUISettings();
           if (settings) {
+            // 应用主题设置
+            if (settings.darkMode !== undefined) {
+              setDarkMode(settings.darkMode);
+            }
+            
             // 应用字号设置
             document.documentElement.style.fontSize = `${settings.fontSize || 14}px`;
 
@@ -918,7 +980,28 @@ function App() {
     return () => {
       window.removeEventListener("settingsChanged", handleSettingsChanged);
     };
-  }, []);
+  }, [darkMode]); // 添加 darkMode 依赖
+
+  // 在主题加载完成前显示加载状态，避免闪烁
+  if (themeLoading) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            width: "100vw",
+            height: "100vh",
+            bgcolor: "background.default",
+          }}
+        >
+          {/* 简单加载提示，不显示任何文本避免复杂化 */}
+        </Box>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider theme={theme}>
@@ -1096,13 +1179,22 @@ function App() {
                 padding: 0,
                 margin: 0,
                 boxShadow: "none",
+                position: "relative",
               }}
             >
               {/* 欢迎页 - 始终渲染，但根据currentTab控制显示/隐藏 */}
               <div
                 style={{
-                  display: currentTab === 0 ? "block" : "none",
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
                   height: "100%",
+                  opacity: currentTab === 0 ? 1 : 0,
+                  zIndex: currentTab === 0 ? 1 : 0,
+                  pointerEvents: currentTab === 0 ? "auto" : "none",
+                  visibility: currentTab === 0 ? "visible" : "hidden",
+                  transition: "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
                 }}
               >
                 <WelcomePage />
@@ -1113,8 +1205,16 @@ function App() {
                 <div
                   key={tab.id}
                   style={{
-                    display: currentTab === index + 1 ? "block" : "none",
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
                     height: "100%",
+                    opacity: currentTab === index + 1 ? 1 : 0,
+                    zIndex: currentTab === index + 1 ? 1 : 0,
+                    pointerEvents: currentTab === index + 1 ? "auto" : "none",
+                    visibility: currentTab === index + 1 ? "visible" : "hidden",
+                    transition: "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
                     // 标签页容器使用背景颜色，会随主题变化
                     backgroundColor: "inherit",
                   }}

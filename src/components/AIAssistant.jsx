@@ -86,17 +86,29 @@ function useBlinkStyle() {
 // 标签页面板
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
+  const isActive = value === index;
 
   return (
     <div
       role="tabpanel"
-      hidden={value !== index}
       id={`ai-tabpanel-${index}`}
       aria-labelledby={`ai-tab-${index}`}
-      style={{ height: "100%", overflow: "auto" }}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        overflow: "auto",
+        opacity: isActive ? 1 : 0,
+        zIndex: isActive ? 1 : 0,
+        pointerEvents: isActive ? "auto" : "none",
+        visibility: isActive ? "visible" : "hidden",
+        transition: "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
+      }}
       {...other}
     >
-      {value === index && <Box sx={{ height: "100%", p: 0 }}>{children}</Box>}
+      <Box sx={{ height: "100%", p: 0 }}>{children}</Box>
     </div>
   );
 }
@@ -651,7 +663,6 @@ function AIAssistant({ open, onClose }) {
     } catch (error) {
       // 检查是否是中断错误
       if (error.name === "AbortError") {
-        console.log("请求被中断");
       } else {
         throw error;
       }
@@ -722,8 +733,6 @@ function AIAssistant({ open, onClose }) {
     // 检查是否过快地发送消息（防抖动）
     const now = Date.now();
     if (now - lastSendTimeRef.current < 1000) {
-      // 1秒内不允许连续发送
-      console.log("发送过快，请稍后再试");
       return;
     }
 
@@ -858,10 +867,6 @@ function AIAssistant({ open, onClose }) {
         );
       }
 
-      console.log(
-        `向 ${currentEditConfig.apiUrl} 发送测试消息: "${testPrompt}"`,
-      );
-
       // 准备发送测试请求
       const messages = [
         { role: "system", content: "你是一个有帮助的助手。" },
@@ -925,7 +930,6 @@ function AIAssistant({ open, onClose }) {
   const handleNewConfig = () => {
     // 生成唯一ID
     const newId = generateUniqueId();
-    console.log("创建新配置，ID:", newId);
 
     // 清空测试结果和错误
     setTestResult(null);
@@ -966,14 +970,10 @@ function AIAssistant({ open, onClose }) {
   // 保存设置
   const handleSaveSettings = async () => {
     try {
-      // 保存当前正在编辑的配置
-      console.log("正在保存当前编辑的配置:", currentEditConfig);
-
       // 确保有ID
       let configToSave = { ...currentEditConfig };
       if (!configToSave.id) {
         const newId = generateUniqueId();
-        console.log("生成新ID:", newId);
         configToSave.id = newId;
       }
 
@@ -998,8 +998,6 @@ function AIAssistant({ open, onClose }) {
 
       // 保存配置到IPC
       if (window.terminalAPI && window.terminalAPI.saveApiConfig) {
-        console.log("正在通过IPC保存配置，ID:", configToSave.id);
-
         // 保存配置
         const success = await window.terminalAPI.saveApiConfig(configToSave);
 
@@ -1009,11 +1007,8 @@ function AIAssistant({ open, onClose }) {
           return;
         }
 
-        console.log("保存配置成功，配置ID:", configToSave.id);
-
         // 将该配置设置为当前配置
         if (configToSave.id) {
-          console.log(`将配置 ${configToSave.id} 设置为当前选中配置`);
           const currentSuccess = await window.terminalAPI.setCurrentApiConfig(
             configToSave.id,
           );
@@ -1021,8 +1016,6 @@ function AIAssistant({ open, onClose }) {
           if (!currentSuccess) {
             console.error("设置当前配置失败");
             setError("设置当前配置失败");
-          } else {
-            console.log("设置当前配置成功");
           }
         } else {
           console.error("配置ID无效，无法设置为当前配置");
@@ -1032,20 +1025,8 @@ function AIAssistant({ open, onClose }) {
 
         // 无论是否设置为当前配置成功，都重新加载设置
         try {
-          console.log("重新加载设置");
           const settings = await window.terminalAPI.loadAISettings();
           if (settings) {
-            console.log(
-              "已加载最新设置:",
-              JSON.stringify({
-                hasConfigs: Array.isArray(settings.configs),
-                configsCount: Array.isArray(settings.configs)
-                  ? settings.configs.length
-                  : 0,
-                hasCurrent: !!settings.current,
-              }),
-            );
-
             setApiSettings(settings);
 
             // 更新当前编辑的配置
@@ -1054,7 +1035,6 @@ function AIAssistant({ open, onClose }) {
             );
             if (savedConfig) {
               setCurrentEditConfig(savedConfig);
-              console.log("已更新当前编辑的配置");
 
               setInfoMessage("所有设置已保存");
               setSettingsSaved(true);
@@ -1226,13 +1206,6 @@ function AIAssistant({ open, onClose }) {
         // 组装提示词
         const prompt = `请解析并分析下面的内容：\n\n${text}`;
 
-        console.log("开始解析文本，当前API配置状态:", {
-          hasConfig: !!apiSettings.current,
-          apiUrl: apiSettings.current?.apiUrl?.substring(0, 10) + "...",
-          hasApiKey: !!apiSettings.current?.apiKey,
-          model: apiSettings.current?.model,
-        });
-
         // 发送到AI进行处理
         try {
           // 验证API设置
@@ -1242,17 +1215,9 @@ function AIAssistant({ open, onClose }) {
             !apiSettings.current.apiKey ||
             !apiSettings.current.model
           ) {
-            console.log("API设置不完整，尝试重新加载设置");
             // 重新尝试加载设置（可能之前没加载完全）
             if (window.terminalAPI && window.terminalAPI.loadAISettings) {
               const settings = await window.terminalAPI.loadAISettings();
-              console.log("重新加载的设置状态:", {
-                hasSettings: !!settings,
-                hasCurrent: !!settings?.current,
-                hasApiUrl: !!settings?.current?.apiUrl,
-                hasApiKey: !!settings?.current?.apiKey,
-                hasModel: !!settings?.current?.model,
-              });
 
               if (
                 settings &&
@@ -1389,9 +1354,7 @@ function AIAssistant({ open, onClose }) {
           <Box
             sx={{
               flexGrow: 1,
-              overflow: "hidden",
-              display: "flex",
-              flexDirection: "column",
+              position: "relative",
             }}
           >
             {/* 对话标签 */}

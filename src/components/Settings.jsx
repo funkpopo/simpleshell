@@ -79,6 +79,7 @@ const Settings = ({ open, onClose }) => {
   // Initial states
   const [language, setLanguage] = React.useState("");
   const [fontSize, setFontSize] = React.useState(14);
+  const [darkMode, setDarkMode] = React.useState(true);
   const [isLoading, setIsLoading] = React.useState(true);
 
   // Load settings from config.json via API
@@ -90,6 +91,7 @@ const Settings = ({ open, onClose }) => {
           if (settings) {
             setLanguage(settings.language || "zh-CN");
             setFontSize(settings.fontSize || 14);
+            setDarkMode(settings.darkMode !== undefined ? settings.darkMode : true);
           }
         }
       } catch (error) {
@@ -114,12 +116,17 @@ const Settings = ({ open, onClose }) => {
     setFontSize(newValue);
   };
 
+  // Handle theme mode change
+  const handleDarkModeChange = (event) => {
+    setDarkMode(event.target.value === "dark");
+  };
+
   // Save settings
   const handleSave = async () => {
     try {
       // Save to config.json via API
       if (window.terminalAPI?.saveUISettings) {
-        const settings = { language, fontSize };
+        const settings = { language, fontSize, darkMode };
         await window.terminalAPI.saveUISettings(settings);
       }
 
@@ -131,7 +138,7 @@ const Settings = ({ open, onClose }) => {
       // Notify app to apply changes
       window.dispatchEvent(
         new CustomEvent("settingsChanged", {
-          detail: { language, fontSize },
+          detail: { language, fontSize, darkMode },
         }),
       );
 
@@ -174,6 +181,29 @@ const Settings = ({ open, onClose }) => {
                   {lang.name}
                 </MenuItem>
               ))}
+            </Select>
+          </FormControl>
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="subtitle1" gutterBottom>
+            {t("settings.theme")}
+          </Typography>
+          <FormControl fullWidth variant="outlined" size="small">
+            <InputLabel id="theme-select-label">
+              {t("settings.theme")}
+            </InputLabel>
+            <Select
+              labelId="theme-select-label"
+              id="theme-select"
+              value={darkMode ? "dark" : "light"}
+              onChange={handleDarkModeChange}
+              label={t("settings.theme")}
+            >
+              <MenuItem value="light">{t("settings.themeLight")}</MenuItem>
+              <MenuItem value="dark">{t("settings.themeDark")}</MenuItem>
             </Select>
           </FormControl>
         </Box>

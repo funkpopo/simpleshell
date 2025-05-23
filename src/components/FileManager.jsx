@@ -432,7 +432,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           ) {
             // SFTP错误，尝试重试
             retryCount++;
-            console.log(`删除文件失败，尝试重试 (${retryCount}/${maxRetries})`);
             setError(`删除文件失败，正在重试 (${retryCount}/${maxRetries})...`);
 
             // 添加延迟后重试
@@ -449,7 +448,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         if (retryCount < maxRetries) {
           // 发生异常，尝试重试
           retryCount++;
-          console.log(`删除文件失败，尝试重试 (${retryCount}/${maxRetries})`);
           setError(`删除文件失败，正在重试 (${retryCount}/${maxRetries})...`);
 
           // 添加延迟后重试
@@ -498,8 +496,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         // 上传到当前文件夹
         targetPath = currentPath;
       }
-
-      console.log(`Uploading to path: ${targetPath}`);
 
       if (window.terminalAPI && window.terminalAPI.uploadFile) {
         // 设置初始传输进度状态
@@ -604,8 +600,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         // 上传到当前文件夹
         targetPath = currentPath;
       }
-
-      console.log(`Uploading folder to path: ${targetPath}`);
 
       if (window.terminalAPI && window.terminalAPI.uploadFolder) {
         // 设置初始传输进度状态
@@ -941,9 +935,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         // 短暂延迟后移除进度条
         setTimeout(() => setTransferProgress(null), 1500);
       } else {
-        // 即使取消失败也不要显示错误，因为原始传输可能已经取消
-        console.log("取消传输失败: " + (result.error || "未知错误"));
-
         // 仍然更新UI以避免用户困惑
         setTransferProgress({
           ...transferProgress,
@@ -1047,9 +1038,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           ) {
             // SFTP错误，尝试重试
             retryCount++;
-            console.log(
-              `创建文件夹失败，尝试重试 (${retryCount}/${maxRetries})`,
-            );
             setError(
               `创建文件夹失败，正在重试 (${retryCount}/${maxRetries})...`,
             );
@@ -1072,7 +1060,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         if (retryCount < maxRetries) {
           // 发生异常，尝试重试
           retryCount++;
-          console.log(`创建文件夹失败，尝试重试 (${retryCount}/${maxRetries})`);
           setError(`创建文件夹失败，正在重试 (${retryCount}/${maxRetries})...`);
 
           // 添加延迟后重试
@@ -1313,7 +1300,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     setTransferCancelled(false);
 
     try {
-      console.log(`准备下载文件夹: ${selectedFile.name}`);
       showNotification(`正在准备下载文件夹 ${selectedFile.name}...`, "info");
 
       // 构建完整路径，确保处理各种路径情况
@@ -1326,8 +1312,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           return currentPath + "/" + selectedFile.name;
         }
       })();
-
-      console.log(`下载文件夹的完整路径: ${fullPath}`);
 
       if (window.terminalAPI && window.terminalAPI.downloadFolder) {
         // 设置初始传输进度状态
@@ -1374,8 +1358,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
             },
           );
 
-          console.log(`文件夹 ${selectedFile.name} 下载成功`, downloadResult);
-
           // 下载完成后清除进度状态
           setTimeout(() => {
             setTransferProgress(null);
@@ -1406,9 +1388,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
                           const folderUrl = `file://${normalizedPath}`;
                           window.terminalAPI
                             .openExternal(folderUrl)
-                            .then(() => {
-                              console.log("成功打开文件夹位置");
-                            })
                             .catch((e) => {
                               console.error("无法打开文件夹:", e);
                               // 尝试替代方法
@@ -1460,8 +1439,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     } catch (error) {
       console.error("下载文件夹失败:", error);
 
-      console.log("下载错误详情:", error);
-
       // 处理各种错误情况
       if (transferCancelled) {
         showNotification("下载已被用户取消", "info");
@@ -1475,7 +1452,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           10000,
           true,
           () => {
-            console.log("用户点击重试下载");
             setTimeout(() => handleDownloadFolder(), 500);
           },
         );
@@ -1589,7 +1565,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           ) {
             // SFTP错误，尝试重试
             retryCount++;
-            console.log(`重命名失败，尝试重试 (${retryCount}/${maxRetries})`);
             setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
 
             // 添加延迟后重试
@@ -1606,7 +1581,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         if (retryCount < maxRetries) {
           // 发生异常，尝试重试
           retryCount++;
-          console.log(`重命名失败，尝试重试 (${retryCount}/${maxRetries})`);
           setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
 
           // 添加延迟后重试
