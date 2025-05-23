@@ -4,6 +4,9 @@
       "title": "Settings",
       "language": "Language",
       "fontSize": "Font Size",
+      "theme": "Theme Mode",
+      "themeLight": "Light Mode",
+      "themeDark": "Dark Mode",
       "fontSizeLabels": {
         "small": "Small",
         "medium": "Medium",

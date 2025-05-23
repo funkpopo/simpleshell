@@ -322,7 +322,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           message: `命令已发送: ${command}`,
           severity: "success"
         });
-        console.log("命令已发送:", command);
       } catch (error) {
         // 显示错误通知
         setNotification({

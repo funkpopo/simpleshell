@@ -320,11 +320,9 @@ const WebTerminal = ({
     // xterm.js在全屏应用（如vi）运行时会切换到alternate buffer
     const bufferTypeObserver = {
       handleBufferTypeChange: (type) => {
-        console.log(`终端缓冲区类型变化: ${type}`);
         if (type === "alternate") {
           // 进入编辑器/全屏应用模式
           inEditorMode = true;
-          console.log("编辑器模式已启动（通过buffer类型检测）");
 
           // 通知主进程编辑器模式状态变更
           if (processId && window.terminalAPI?.notifyEditorModeChange) {
@@ -334,7 +332,6 @@ const WebTerminal = ({
           // 退出编辑器/全屏应用模式
           if (inEditorMode) {
             inEditorMode = false;
-            console.log("编辑器模式已退出（通过buffer类型检测）");
 
             // 通知主进程编辑器模式状态变更
             if (processId && window.terminalAPI?.notifyEditorModeChange) {
@@ -354,10 +351,6 @@ const WebTerminal = ({
 
       // 初始检查当前buffer类型
       bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
-    } else {
-      console.log(
-        "当前xterm.js版本不支持buffer类型监听，将使用传统方法检测编辑器模式",
-      );
     }
 
     // 监听终端数据输出，用于检测编辑器特征
@@ -487,7 +480,6 @@ const WebTerminal = ({
             (!term.buffer || typeof term.buffer.onBufferChange !== "function")
           ) {
             inEditorMode = true;
-            console.log("编辑器模式已启动（通过命令检测）:", command);
 
             // 通知主进程编辑器模式状态变更
             if (processId && window.terminalAPI?.notifyEditorModeChange) {
@@ -510,8 +502,6 @@ const WebTerminal = ({
           if (
             /\b(top|htop|vi|vim|nano|less|more|watch|tail -f)\b/.test(lastLine)
           ) {
-            console.log("检测到用户输入全屏应用命令:", lastLine);
-
             // 使用延迟序列触发终端大小调整
             const delayTimes = [200, 500, 1000, 1500];
             delayTimes.forEach((delay) => {
@@ -567,7 +557,6 @@ const WebTerminal = ({
             // 检查是否包含典型的shell提示符
             if (/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*$/.test(line)) {
               inEditorMode = false;
-              console.log("编辑器模式已退出（通过shell提示符检测）");
 
               // 通知主进程编辑器模式状态变更
               if (processId && window.terminalAPI?.notifyEditorModeChange) {
@@ -803,7 +792,6 @@ const WebTerminal = ({
 
           // 使用预加载脚本中定义的API在系统默认浏览器中打开链接
           if (window.terminalAPI && window.terminalAPI.openExternal) {
-            console.log("在系统默认浏览器打开链接:", uri);
             window.terminalAPI
               .openExternal(uri)
               .catch((err) => console.error("打开链接失败:", err));
@@ -835,10 +823,6 @@ const WebTerminal = ({
               .startSSH(sshConfig)
               .then((processId) => {
                 if (processId) {
-                  console.log(
-                    `SSH连接成功，tabId=${tabId}, processId=${processId}`,
-                  );
-
                   // 存储进程ID
                   currentProcessId.current = processId;
 
@@ -940,7 +924,6 @@ const WebTerminal = ({
           if (selection) {
             e.preventDefault();
             navigator.clipboard.writeText(selection);
-            console.log("已复制文本:", selection);
           }
         }
         // Ctrl+Alt+V 粘贴 (改为Ctrl+Alt+V)
@@ -1091,7 +1074,7 @@ const WebTerminal = ({
             const currentHeight = container.clientHeight;
 
             // 记录调整前的大小信息
-            logTerminalSize("调整前", term, container);
+            // logTerminalSize("调整前", term, container);
 
             // 确保终端完全填充容器
             if (term && term.element) {
@@ -1119,7 +1102,6 @@ const WebTerminal = ({
                 Math.abs(elemWidth - currentWidth) > 5 ||
                 Math.abs(elemHeight - currentHeight) > 5
               ) {
-                console.log("检测到终端尺寸不匹配，执行二次适配");
                 fitAddon.fit();
               }
             }
@@ -1127,7 +1109,7 @@ const WebTerminal = ({
 
           // 记录调整后的大小信息
           if (terminalRef.current) {
-            logTerminalSize("调整后", term, terminalRef.current);
+            // logTerminalSize("调整后", term, terminalRef.current);
           }
 
           // 获取当前终端的大小
@@ -1141,10 +1123,6 @@ const WebTerminal = ({
             // 确保cols和rows是有效的正整数
             const cols = Math.max(Math.floor(dimensions.cols || 120), 1);
             const rows = Math.max(Math.floor(dimensions.rows || 30), 1);
-
-            console.log(
-              `调整终端大小: 进程ID=${processCache[tabId]}, 列=${cols}, 行=${rows}`,
-            );
 
             // 通知后端调整终端大小
             window.terminalAPI
@@ -1471,8 +1449,10 @@ const WebTerminal = ({
           try {
             // 这将从DOM中分离终端但不销毁它
             const element = terminalRef.current;
-            while (element.firstChild) {
-              element.removeChild(element.firstChild);
+            if (element) { // Added null check for element
+              while (element.firstChild) {
+                element.removeChild(element.firstChild);
+              }
             }
           } catch (err) {
             console.error("Error detaching terminal:", err);
@@ -1546,7 +1526,6 @@ const WebTerminal = ({
           // 检测是否是编辑器命令
           if (editorCommandRegex.test(command)) {
             inEditorMode = true;
-            console.log("Editor mode detected in simulated terminal:", command);
             // 模拟编辑器输出
             term.writeln(
               `Simulated ${command} editor mode. Type 'exit' to return.`,
@@ -1555,7 +1534,6 @@ const WebTerminal = ({
           // 检测是否退出编辑器模式
           else if (inEditorMode && /^(exit|quit|q|:q|:wq|:x)$/i.test(command)) {
             inEditorMode = false;
-            console.log("Editor mode exited in simulated terminal");
           }
           // 只有不在编辑器模式下才添加到历史记录
           else if (!inEditorMode) {
@@ -1748,9 +1726,6 @@ const WebTerminal = ({
     if (selectedText) {
       navigator.clipboard
         .writeText(selectedText)
-        .then(() => {
-          console.log("文本已复制到剪贴板");
-        })
         .catch((err) => {
           console.error("复制到剪贴板失败:", err);
         });
@@ -1806,10 +1781,6 @@ const WebTerminal = ({
       });
       // 分发事件
       window.dispatchEvent(event);
-      console.log(
-        "发送文本到AI解析:",
-        selectedText.substring(0, 30) + (selectedText.length > 30 ? "..." : ""),
-      );
     }
     handleClose();
   };
@@ -1882,8 +1853,6 @@ const WebTerminal = ({
           // 检测终端大小查询回复
           /\u001b\[8;\d+;\d+t/.test(dataStr)
         ) {
-          console.log("检测到可能的全屏应用启动或屏幕刷新，调整终端大小");
-
           // 创建一系列延迟执行，以适应不同应用的启动速度
           const delayTimes = [100, 300, 600, 1000];
 
@@ -1916,10 +1885,6 @@ const WebTerminal = ({
           // 获取实际尺寸
           const cols = Math.max(Math.floor(term.cols || 120), 1);
           const rows = Math.max(Math.floor(term.rows || 30), 1);
-
-          console.log(
-            `初始同步终端大小: 进程ID=${processId}, 列=${cols}, 行=${rows}`,
-          );
 
           // 同步到后端
           if (window.terminalAPI.resizeTerminal) {

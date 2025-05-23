@@ -698,10 +698,8 @@ function createAIWorker() {
 
     // 处理worker退出
     aiWorker.on("exit", (code) => {
-      console.log(`AI Worker exited with code ${code}`);
       // 如果退出码不是正常退出(0)，尝试重启worker
       if (code !== 0) {
-        console.log("Attempting to restart AI worker...");
         setTimeout(() => {
           createAIWorker();
         }, 1000);
@@ -967,7 +965,6 @@ const initializeConfig = () => {
         JSON.stringify(initialConfig, null, 2),
         "utf8",
       );
-      console.log("Created initial config file:", configPath);
     } catch (error) {
       console.error("Failed to create initial config file:", error);
     }
@@ -1062,7 +1059,6 @@ const initializeConfig = () => {
       // 如果需要，更新配置文件
       if (configUpdated) {
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
-        console.log("Updated config file structure:", configPath);
       }
     } catch (error) {
       console.error("Error checking config file structure:", error);
@@ -1087,7 +1083,6 @@ const initializeConfig = () => {
           JSON.stringify(initialConfig, null, 2),
           "utf8",
         );
-        console.log("Recreated config file due to parsing error:", configPath);
       } catch (writeError) {
         console.error("Failed to recreate config file:", writeError);
       }
@@ -1287,7 +1282,6 @@ function setupIPC(mainWindow) {
 
         // 存储相同的SSH客户端，使用tabId（通常是形如'ssh-timestamp'的标识符）
         if (sshConfig.tabId) {
-          console.log(`Setting up SSH client for tabId: ${sshConfig.tabId}`);
           childProcesses.set(sshConfig.tabId, {
             process: ssh,
             listeners: new Set(),
@@ -1421,7 +1415,6 @@ function setupIPC(mainWindow) {
               // 监听关闭事件
               stream.on("close", () => {
                 try {
-                  console.log("SSH stream closed");
                   if (mainWindow && !mainWindow.isDestroyed()) {
                     mainWindow.webContents.send(
                       `process:output:${processId}`,
@@ -1455,7 +1448,6 @@ function setupIPC(mainWindow) {
 
         // 监听关闭事件
         ssh.on("close", () => {
-          console.log("SSH connection closed");
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send(
               `process:output:${processId}`,
@@ -1549,10 +1541,6 @@ function setupIPC(mainWindow) {
 
       // 检测Tab键 (ASCII 9, \t, \x09)
       if (data === "\t" || data === "\x09") {
-        // 对于Tab键，直接发送到进程但不记录到命令缓冲区
-        // 这是因为Tab键通常用于命令补全，不是命令的一部分
-        console.log("检测到Tab键，跳过命令缓冲区处理");
-
         // 直接发送到进程
         if (procInfo.type === "ssh2") {
           if (procInfo.stream) {
@@ -1583,25 +1571,15 @@ function setupIPC(mainWindow) {
           // 检测是否启动了编辑器（作为备用机制，现在优先使用buffer类型检测）
           if (!procInfo.editorMode && editorCommandRegex.test(command)) {
             procInfo.editorMode = true;
-            procInfo.lastEditorCommand = command; // 记录最后使用的编辑器命令，帮助后续检测退出
-            console.log(
-              `Editor mode detected: ${command} (通过命令分析检测，备用方法)`,
-            );
+            procInfo.lastEditorCommand = command;
           }
           // 检测是否可能退出了编辑器（作为备用机制，现在优先使用buffer类型检测）
           else if (procInfo.editorMode) {
             // 检查是否是退出命令
             if (editorExitRegex.test(command)) {
-              console.log(
-                `Possible editor exit command detected: ${command} (通过命令分析检测，备用方法)`,
-              );
-
               // 为某些编辑器，我们可以立即确认退出（但如果前端使用buffer类型检测，这段代码会被前端通知覆盖）
               if (/^(q|quit|exit|:q|:quit|:wq)$/i.test(command)) {
                 procInfo.editorMode = false;
-                console.log(
-                  `Editor mode exited via command: ${command} (通过命令分析检测，备用方法)`,
-                );
               } else {
                 // 对于其他情况，设置一个退出检测标志，下一个命令会确认是否真的退出
                 procInfo.possibleEditorExit = true;
@@ -1614,9 +1592,6 @@ function setupIPC(mainWindow) {
             ) {
               procInfo.editorMode = false;
               procInfo.possibleEditorExit = false;
-              console.log(
-                "Editor mode confirmed exited (通过命令分析检测，备用方法)",
-              );
             }
             // 如果收到普通shell命令且不在编辑器命令中，则退出编辑器模式
             else if (
@@ -1628,9 +1603,6 @@ function setupIPC(mainWindow) {
                 ))
             ) {
               procInfo.editorMode = false;
-              console.log(
-                "Editor mode exited - detected shell prompt (通过命令分析检测，备用方法)",
-              );
             }
           }
           // 只有不在编辑器模式下才添加到历史记录
@@ -1662,7 +1634,6 @@ function setupIPC(mainWindow) {
               if (procInfo.possibleEditorExit) {
                 procInfo.editorMode = false;
                 procInfo.possibleEditorExit = false;
-                console.log("Editor mode exited via timeout after Ctrl+C");
               }
             }, 1000);
           }, 200);
@@ -1745,7 +1716,6 @@ function setupIPC(mainWindow) {
     async (event, processId, isEditorMode) => {
       const procInfo = childProcesses.get(processId);
       if (!procInfo) {
-        console.log(`无法更新进程 ${processId} 的编辑器模式状态：进程不存在`);
         return false;
       }
 
@@ -1757,10 +1727,6 @@ function setupIPC(mainWindow) {
 
       // 仅当状态实际变化时记录详细日志
       if (previousState !== isEditorMode) {
-        console.log(
-          `进程 ${processId} 编辑器模式已${isEditorMode ? "启动" : "退出"}（通过buffer类型检测）`,
-        );
-
         // 记录更多调试信息
         if (isEditorMode) {
           logToFile(
@@ -2139,10 +2105,6 @@ function setupIPC(mainWindow) {
         throw new Error("请求数据无效，缺少必要参数");
       }
 
-      console.log(
-        `发送${isStream ? "流式" : "标准"}API请求到: ${requestData.url}`,
-      );
-
       if (isStream) {
         // 处理流式请求
         const https = require("https");
@@ -2194,8 +2156,6 @@ function setupIPC(mainWindow) {
                       });
                     }
                   } catch (e) {
-                    // 这可能只是部分数据，不是完整的JSON
-                    console.log("非JSON数据片段:", line);
                   }
                 }
               }
@@ -2342,8 +2302,6 @@ function setupIPC(mainWindow) {
   ipcMain.handle("ai:abortAPIRequest", async (event) => {
     try {
       if (activeAPIRequest) {
-        console.log("中断API请求");
-
         // 中断请求
         activeAPIRequest.abort();
 
@@ -2360,7 +2318,6 @@ function setupIPC(mainWindow) {
 
         return { success: true, message: "请求已中断" };
       } else {
-        console.log("没有活跃的API请求可以中断");
         return { success: false, message: "没有活跃的请求" };
       }
     } catch (error) {
@@ -3398,11 +3355,8 @@ function setupIPC(mainWindow) {
       const transfer = activeTransfers.get(transferKey);
 
       if (!transfer) {
-        console.log(`No active transfer found for ${transferKey}`);
         return { success: false, error: "没有找到活动的传输任务" };
       }
-
-      console.log(`Cancelling transfer for ${transferKey}`);
 
       // 中断传输
       if (transfer.sftp) {
@@ -3410,7 +3364,6 @@ function setupIPC(mainWindow) {
           // 如果有resolve方法（表示有未完成的IPC请求），尝试调用它
           if (transfer.resolve) {
             try {
-              console.log(`Resolving pending ${type} request for ${tabId}`);
               transfer.resolve({
                 success: false,
                 cancelled: true,
@@ -5586,7 +5539,6 @@ const sendAIPrompt = async (prompt, settings) => {
 
     // 如果worker创建失败，则使用内联处理
     if (!aiWorker) {
-      console.log("Worker not available, using inline processing");
       return processAIPromptInline(prompt, settings);
     }
 
@@ -5645,7 +5597,6 @@ const sendStreamingAIPrompt = async (prompt, settings) => {
 
     // 如果worker创建失败，则使用内联处理
     if (!aiWorker) {
-      console.log("Worker not available for streaming, using internal API");
       return { error: "Worker不可用，无法使用流式响应" };
     }
 
@@ -5717,11 +5668,6 @@ const processAIPromptInline = async (prompt, settings) => {
       return { error: "模型名称未指定，请在设置中配置模型名称" };
     }
 
-    console.log(
-      "Processing AI prompt inline:",
-      prompt.substring(0, 30) + "...",
-    );
-
     // 使用简单的响应模拟
     return {
       response: `这是对"${prompt}"的模拟响应(内联处理)。在实际应用中，这里将连接到AI API。您当前的设置是使用模型: ${settings.model}`,
@@ -5752,7 +5698,6 @@ const processTerminalOutput = (processId, output) => {
     if (promptPatterns.some((pattern) => pattern.test(output))) {
       procInfo.editorMode = false;
       procInfo.possibleEditorExit = false;
-      console.log("Editor mode exited - detected shell prompt in output");
     }
   }
 
@@ -5839,6 +5784,7 @@ async function loadUISettings() {
       return {
         language: "zh-CN",
         fontSize: 14,
+        darkMode: true,
       };
     }
 
@@ -5851,16 +5797,25 @@ async function loadUISettings() {
       return {
         language: "zh-CN",
         fontSize: 14,
+        darkMode: true,
       };
     }
 
-    return config.uiSettings;
+    // 确保所有必要的字段都存在，添加默认值
+    const uiSettings = {
+      language: config.uiSettings.language || "zh-CN",
+      fontSize: config.uiSettings.fontSize || 14,
+      darkMode: config.uiSettings.darkMode !== undefined ? config.uiSettings.darkMode : true,
+    };
+
+    return uiSettings;
   } catch (error) {
     console.error("加载UI设置失败:", error);
     // 出错时返回默认设置
     return {
       language: "zh-CN",
       fontSize: 14,
+      darkMode: true,
     };
   }
 }
@@ -5878,8 +5833,15 @@ async function saveUISettings(settings) {
       config = JSON.parse(data);
     }
 
+    // 确保设置包含所有必要字段
+    const completeSettings = {
+      language: settings.language || "zh-CN",
+      fontSize: settings.fontSize || 14,
+      darkMode: settings.darkMode !== undefined ? settings.darkMode : true,
+    };
+
     // 更新UI设置
-    config.uiSettings = settings;
+    config.uiSettings = completeSettings;
 
     // 写入配置文件
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
