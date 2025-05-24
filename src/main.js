@@ -4,9 +4,12 @@ const fs = require("fs");
 const { spawn } = require("child_process");
 const Client = require("ssh2").Client;
 const os = require("os");
-const SftpClient = require("ssh2-sftp-client");
 const { Worker } = require("worker_threads");
-const crypto = require("crypto");
+const { logToFile, initLogger } = require("./core/utils/logger");
+const configManager = require("./core/ConfigManager");
+const sftpCore = require("./modules/sftp/sftpCore");
+const sftpTransfer = require("./modules/sftp/sftpTransfer");
+const systemInfo = require("./modules/system-info");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -31,38 +34,6 @@ const editorExitRegex = new RegExp(
   "i",
 );
 
-// 用于SSH连接的SFTP会话管理
-const sftpSessions = new Map();
-const sftpSessionLocks = new Map();
-const pendingOperations = new Map();
-
-// 日志记录功能
-const logFile = path.join(__dirname, "..", "logs", "app.log");
-const logToFile = (message, type = "INFO") => {
-  try {
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] [${type}] ${message}\n`;
-    fs.appendFileSync(logFile, logEntry);
-  } catch (error) {
-    console.error("Failed to write to log file:", error);
-  }
-};
-
-// 确保日志目录存在
-try {
-  const logDir = path.join(__dirname, "..", "logs");
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
-  }
-} catch (error) {
-  console.error("Failed to create log directory:", error);
-}
-
-// 加密配置
-const ENCRYPTION_KEY = "simple-shell-encryption-key-12345"; // 在生产环境中应该更安全地存储
-const ENCRYPTION_ALGORITHM = "aes-256-cbc";
-const IV_LENGTH = 16; // 对于 aes-256-cbc，IV长度是16字节
-
 // 全局变量用于存储AI worker实例
 let aiWorker = null;
 let aiRequestMap = new Map();
@@ -76,559 +47,6 @@ let globalEvent = null;
 
 // 用于保存流式请求的引用，以便取消
 let activeAPIRequest = null;
-
-// 存储活动的文件传输
-const activeTransfers = new Map();
-
-// 快捷命令保存路径
-const shortcutCommandsConfigPath = path.join(app.getPath('userData'), 'shortcutCommands.json');
-
-// SFTP会话池配置
-const SFTP_SESSION_IDLE_TIMEOUT = 120000; // 空闲超时时间（毫秒）
-const MAX_SFTP_SESSIONS_PER_TAB = 1; // 每个标签页的最大会话数量
-const MAX_TOTAL_SFTP_SESSIONS = 50; // 总的最大会话数量
-const SFTP_HEALTH_CHECK_INTERVAL = 90000; // 健康检查间隔（毫秒）
-const SFTP_OPERATION_TIMEOUT = 20000; // 操作超时时间（毫秒）
-
-// 添加 SFTP 会话池健康检查定时器
-let sftpHealthCheckTimer = null;
-
-// 启动SFTP会话池健康检查
-function startSftpHealthCheck() {
-  // 如果已经有定时器在运行，先清除
-  if (sftpHealthCheckTimer) {
-    clearInterval(sftpHealthCheckTimer);
-  }
-
-  // 设置定时器，定期检查SFTP会话健康状况
-  sftpHealthCheckTimer = setInterval(() => {
-    checkSftpSessionsHealth();
-  }, SFTP_HEALTH_CHECK_INTERVAL);
-
-  logToFile("Started SFTP session health check", "INFO");
-}
-
-// 停止SFTP会话池健康检查
-function stopSftpHealthCheck() {
-  if (sftpHealthCheckTimer) {
-    clearInterval(sftpHealthCheckTimer);
-    sftpHealthCheckTimer = null;
-    logToFile("Stopped SFTP session health check", "INFO");
-  }
-}
-
-// 检查SFTP会话健康状况
-function checkSftpSessionsHealth() {
-  try {
-    logToFile(
-      `Running SFTP health check, active sessions: ${sftpSessions.size}`,
-      "INFO",
-    );
-
-    // 如果会话总数超过限制，关闭最老的会话
-    if (sftpSessions.size > MAX_TOTAL_SFTP_SESSIONS) {
-      logToFile(
-        `Too many SFTP sessions (${sftpSessions.size}), cleaning up oldest sessions`,
-        "WARN",
-      );
-      let sessionsToClose = sftpSessions.size - MAX_TOTAL_SFTP_SESSIONS;
-
-      // 按会话创建时间排序
-      const sessionEntries = Array.from(sftpSessions.entries());
-      sessionEntries.sort((a, b) => a[1].createdAt - b[1].createdAt);
-
-      // 关闭最老的会话
-      for (let i = 0; i < sessionsToClose; i++) {
-        if (i < sessionEntries.length) {
-          const [tabId, _] = sessionEntries[i];
-          logToFile(`Closing old SFTP session for tab ${tabId}`, "INFO");
-          closeSftpSession(tabId);
-        }
-      }
-    }
-
-    // 检查每个会话的健康状况
-    for (const [tabId, session] of sftpSessions.entries()) {
-      // 检查会话是否已存在超过最大空闲时间
-      const idleTime = Date.now() - session.lastUsed;
-      if (idleTime > SFTP_SESSION_IDLE_TIMEOUT) {
-        logToFile(
-          `SFTP session ${tabId} idle for ${idleTime}ms, closing`,
-          "INFO",
-        );
-        closeSftpSession(tabId);
-        continue;
-      }
-
-      // 对每个会话进行健康检查 - 尝试执行一个简单的readdir操作
-      checkSessionAlive(tabId, session);
-    }
-  } catch (error) {
-    logToFile(`Error in SFTP health check: ${error.message}`, "ERROR");
-  }
-}
-
-// 检查会话是否存活
-async function checkSessionAlive(tabId, session) {
-  try {
-    // 创建一个Promise，添加超时处理
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("SFTP health check timeout")), 5000);
-    });
-
-    // 创建一个执行基本SFTP操作的Promise
-    const checkPromise = new Promise((resolve, reject) => {
-      session.sftp.readdir("/", (err, _) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-    });
-
-    // 使用Promise.race竞争，哪个先完成就用哪个结果
-    await Promise.race([checkPromise, timeoutPromise]);
-    // 如果执行到这里，说明会话是健康的
-    session.lastChecked = Date.now();
-  } catch (error) {
-    // 会话检查失败，认为会话已死亡
-    logToFile(
-      `SFTP session ${tabId} health check failed: ${error.message}, closing session`,
-      "ERROR",
-    );
-    closeSftpSession(tabId);
-  }
-}
-
-// 获取或创建 SFTP 会话
-async function getSftpSession(tabId) {
-  // 检查是否已有处于获取中的会话
-  if (sftpSessionLocks.has(tabId)) {
-    // 等待已有的获取操作完成
-    return new Promise((resolve, reject) => {
-      const checkLock = () => {
-        if (!sftpSessionLocks.has(tabId)) {
-          // 锁已解除，尝试获取会话
-          if (sftpSessions.has(tabId)) {
-            const session = sftpSessions.get(tabId);
-            // 更新最后使用时间
-            session.lastUsed = Date.now();
-            resolve(session.sftp);
-          } else {
-            // 创建新会话
-            acquireSftpSession(tabId).then(resolve).catch(reject);
-          }
-        } else {
-          // 锁仍然存在，继续等待
-          setTimeout(checkLock, 100);
-        }
-      };
-      checkLock();
-    });
-  }
-
-  // 检查缓存中是否有可用会话
-  if (sftpSessions.has(tabId)) {
-    const session = sftpSessions.get(tabId);
-
-    // 更新最后使用时间
-    session.lastUsed = Date.now();
-
-    // 重置会话超时计时器
-    if (session.timeoutId) {
-      clearTimeout(session.timeoutId);
-    }
-    session.timeoutId = setTimeout(() => {
-      closeSftpSession(tabId);
-    }, SFTP_SESSION_IDLE_TIMEOUT);
-
-    return session.sftp;
-  }
-
-  // 检查是否超过了总会话数量限制
-  if (sftpSessions.size >= MAX_TOTAL_SFTP_SESSIONS) {
-    logToFile(
-      `Maximum SFTP sessions limit reached (${MAX_TOTAL_SFTP_SESSIONS}), closing oldest session`,
-      "WARN",
-    );
-
-    // 查找最老的会话进行关闭
-    let oldestTabId = null;
-    let oldestTime = Date.now();
-
-    for (const [id, session] of sftpSessions.entries()) {
-      if (session.createdAt < oldestTime) {
-        oldestTime = session.createdAt;
-        oldestTabId = id;
-      }
-    }
-
-    // 关闭最老的会话
-    if (oldestTabId) {
-      closeSftpSession(oldestTabId);
-    }
-  }
-
-  // 在创建新会话前检查SSH连接是否就绪
-  const processInfo = childProcesses.get(tabId);
-  if (!processInfo || !processInfo.process || processInfo.type !== "ssh2") {
-    throw new Error("无效的SSH连接");
-  }
-
-  // 如果SSH连接未就绪，则等待连接就绪或返回错误
-  if (!processInfo.ready) {
-    logToFile(
-      `SSH connection not ready for session ${tabId}, waiting for ready state`,
-      "INFO",
-    );
-  }
-
-  // 创建新会话
-  return acquireSftpSession(tabId);
-}
-
-// 创建新的 SFTP 会话
-async function acquireSftpSession(tabId) {
-  // 设置锁以防止并发创建
-  sftpSessionLocks.set(tabId, true);
-
-  try {
-    // 检查该标签页的会话数量是否已达到上限
-    let sessionCount = 0;
-    for (const [id, _] of sftpSessions.entries()) {
-      if (id === tabId) {
-        sessionCount++;
-      }
-    }
-
-    if (sessionCount >= MAX_SFTP_SESSIONS_PER_TAB) {
-      logToFile(
-        `Maximum SFTP sessions per tab reached (${MAX_SFTP_SESSIONS_PER_TAB}) for tab ${tabId}`,
-        "WARN",
-      );
-      throw new Error(
-        `已达到每个标签页的最大SFTP会话数限制(${MAX_SFTP_SESSIONS_PER_TAB})`,
-      );
-    }
-
-    // 查找对应的SSH客户端
-    const processInfo = childProcesses.get(tabId);
-    if (!processInfo || !processInfo.process || processInfo.type !== "ssh2") {
-      sftpSessionLocks.delete(tabId);
-      throw new Error("无效的SSH连接");
-    }
-
-    const sshClient = processInfo.process;
-
-    // 等待SSH连接就绪
-    if (!processInfo.ready) {
-      logToFile(
-        `Waiting for SSH connection to be ready for session ${tabId}`,
-        "INFO",
-      );
-
-      // 最多等待10秒钟
-      const maxWaitTime = 10000; // 10秒
-      const startTime = Date.now();
-      const checkInterval = 100; // 100毫秒检查一次
-
-      // 等待SSH连接就绪
-      await new Promise((resolve, reject) => {
-        const checkReady = () => {
-          // 重新获取processInfo，因为可能已经更新
-          const currentInfo = childProcesses.get(tabId);
-
-          // 检查连接是否已经就绪
-          if (currentInfo && currentInfo.ready) {
-            resolve();
-            return;
-          }
-
-          // 检查是否超时
-          if (Date.now() - startTime > maxWaitTime) {
-            reject(new Error("等待SSH连接就绪超时"));
-            return;
-          }
-
-          // 继续等待
-          setTimeout(checkReady, checkInterval);
-        };
-
-        // 开始检查
-        checkReady();
-      });
-
-      logToFile(`SSH connection is now ready for session ${tabId}`, "INFO");
-    }
-
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        sftpSessionLocks.delete(tabId);
-        reject(new Error("SFTP会话创建超时"));
-      }, SFTP_OPERATION_TIMEOUT);
-
-      sshClient.sftp((err, sftp) => {
-        clearTimeout(timeoutId);
-
-        if (err) {
-          sftpSessionLocks.delete(tabId);
-          logToFile(
-            `SFTP session creation error for session ${tabId}: ${err.message}`,
-            "ERROR",
-          );
-          reject(new Error(`SFTP错误: ${err.message}`));
-          return;
-        }
-
-        // 创建会话对象
-        const now = Date.now();
-        const session = {
-          sftp,
-          timeoutId: setTimeout(() => {
-            closeSftpSession(tabId);
-          }, SFTP_SESSION_IDLE_TIMEOUT),
-          active: true,
-          createdAt: now,
-          lastUsed: now,
-          lastChecked: now,
-        };
-
-        // 存储会话
-        sftpSessions.set(tabId, session);
-        sftpSessionLocks.delete(tabId);
-
-        // 设置错误处理
-        sftp.on("error", (err) => {
-          logToFile(`SFTP session error for ${tabId}: ${err.message}`, "ERROR");
-          closeSftpSession(tabId);
-        });
-
-        // 设置关闭处理
-        sftp.on("close", () => {
-          closeSftpSession(tabId);
-        });
-
-        // 启动健康检查（如果还没启动）
-        if (!sftpHealthCheckTimer) {
-          startSftpHealthCheck();
-        }
-
-        resolve(sftp);
-      });
-    });
-  } catch (error) {
-    sftpSessionLocks.delete(tabId);
-    throw error;
-  }
-}
-
-// 关闭SFTP会话
-function closeSftpSession(tabId) {
-  if (sftpSessions.has(tabId)) {
-    const session = sftpSessions.get(tabId);
-
-    // 清除超时计时器
-    if (session.timeoutId) {
-      clearTimeout(session.timeoutId);
-    }
-
-    // 标记会话为不活跃
-    session.active = false;
-
-    // 尝试关闭SFTP会话
-    try {
-      session.sftp.end();
-    } catch (error) {
-      logToFile(
-        `Error closing SFTP session for ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-    }
-
-    // 移除会话
-    sftpSessions.delete(tabId);
-
-    logToFile(`Closed SFTP session for ${tabId}`, "INFO");
-
-    // 如果没有更多会话，停止健康检查
-    if (sftpSessions.size === 0 && sftpHealthCheckTimer) {
-      stopSftpHealthCheck();
-    }
-  }
-}
-
-// 处理 SFTP 操作队列
-function enqueueSftpOperation(tabId, operation, options = {}) {
-  // 初始化操作队列
-  if (!pendingOperations.has(tabId)) {
-    pendingOperations.set(tabId, []);
-  }
-
-  const queue = pendingOperations.get(tabId);
-  const {
-    priority = "normal",
-    type = "other",
-    path = null,
-    canMerge = false,
-  } = options;
-
-  // 如果操作是可合并的（如读取目录），检查是否有相同路径的相同类型操作已经在队列中
-  if (canMerge && path && type === "readdir") {
-    // 寻找相同类型和路径的操作
-    const existingOpIndex = queue.findIndex(
-      (item) => item.type === "readdir" && item.path === path,
-    );
-
-    if (existingOpIndex !== -1) {
-      // 找到可合并的操作，将其promise的resolve和reject添加到现有操作中
-      return new Promise((resolve, reject) => {
-        const existingOp = queue[existingOpIndex];
-        existingOp.subscribers = existingOp.subscribers || [];
-        existingOp.subscribers.push({ resolve, reject });
-
-        logToFile(
-          `Merged SFTP ${type} operation for path ${path} on tab ${tabId}`,
-          "INFO",
-        );
-      });
-    }
-  }
-
-  // 根据优先级确定操作在队列中的位置
-  // 返回promise
-  return new Promise((resolve, reject) => {
-    // 创建操作对象
-    const operationObj = {
-      operation,
-      resolve,
-      reject,
-      priority,
-      type,
-      path,
-      canMerge,
-      enqueuedAt: Date.now(),
-      subscribers: [], // 用于存储合并操作的订阅者
-    };
-
-    // 根据优先级插入队列
-    if (priority === "high") {
-      // 高优先级操作插入到队列前面（但在当前执行的操作之后）
-      if (queue.length > 0) {
-        queue.splice(1, 0, operationObj);
-      } else {
-        queue.push(operationObj);
-      }
-    } else {
-      // 普通优先级操作添加到队列末尾
-      queue.push(operationObj);
-    }
-
-    // 记录操作类型和路径
-    if (path) {
-      logToFile(
-        `Enqueued SFTP ${type} operation for path ${path} on tab ${tabId} with priority ${priority}`,
-        "INFO",
-      );
-    } else {
-      logToFile(
-        `Enqueued SFTP ${type} operation on tab ${tabId} with priority ${priority}`,
-        "INFO",
-      );
-    }
-
-    // 如果队列中只有这一个操作，立即执行
-    if (queue.length === 1) {
-      processSftpQueue(tabId);
-    }
-  });
-}
-
-// 处理队列中的 SFTP 操作
-async function processSftpQueue(tabId) {
-  // 获取队列
-  const queue = pendingOperations.get(tabId);
-  if (!queue || queue.length === 0) {
-    return;
-  }
-
-  // 获取第一个操作
-  const op = queue[0];
-
-  try {
-    // 检查SSH连接状态
-    const processInfo = childProcesses.get(tabId);
-    if (!processInfo || !processInfo.process || processInfo.type !== "ssh2") {
-      throw new Error("无效的SSH连接");
-    }
-
-    // 执行操作
-    const result = await op.operation();
-
-    // 解析主Promise
-    op.resolve(result);
-
-    // 解析所有合并操作的订阅者的Promise
-    if (op.subscribers && op.subscribers.length > 0) {
-      for (const subscriber of op.subscribers) {
-        subscriber.resolve(result);
-      }
-      logToFile(
-        `Resolved ${op.subscribers.length} merged subscribers for SFTP ${op.type} operation on tab ${tabId}`,
-        "INFO",
-      );
-    }
-  } catch (error) {
-    // 检查错误是否与SSH连接状态有关
-    let errorMessage = error.message;
-
-    if (errorMessage.includes("等待SSH连接就绪超时")) {
-      errorMessage = "SSH连接尚未就绪，请稍后重试";
-      logToFile(
-        `SSH connection not ready for SFTP operation on tab ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-    } else if (
-      errorMessage.includes("ECONNRESET") ||
-      errorMessage.includes("Channel open failure")
-    ) {
-      errorMessage = "SSH连接被重置，请检查网络连接并重试";
-      logToFile(
-        `SSH connection reset for SFTP operation on tab ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-    }
-
-    // 操作失败，拒绝主Promise
-    op.reject(new Error(errorMessage));
-
-    // 拒绝所有合并操作的订阅者的Promise
-    if (op.subscribers && op.subscribers.length > 0) {
-      for (const subscriber of op.subscribers) {
-        subscriber.reject(new Error(errorMessage));
-      }
-      logToFile(
-        `Rejected ${op.subscribers.length} merged subscribers for SFTP ${op.type} operation on tab ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-    }
-  } finally {
-    // 移除已完成的操作
-    queue.shift();
-
-    // 处理队列中的下一个操作
-    if (queue.length > 0) {
-      // 根据操作类型决定延迟时间
-      // 对于操作类型为readdir的操作，使用较短的延迟
-      const nextOp = queue[0];
-      const delay = nextOp.type === "readdir" ? 50 : 100;
-
-      setTimeout(() => {
-        processSftpQueue(tabId);
-      }, delay);
-    }
-  }
-}
 
 // 获取worker文件路径
 function getWorkerPath() {
@@ -721,166 +139,10 @@ function createAIWorker() {
   }
 }
 
-// 加密函数
-function encryptText(text) {
-  if (!text) return text;
-  try {
-    // 创建随机的初始化向量
-    const iv = crypto.randomBytes(IV_LENGTH);
-    // 从加密密钥创建密钥（使用SHA-256哈希以得到正确长度的密钥）
-    const key = crypto.createHash("sha256").update(ENCRYPTION_KEY).digest();
-    // 创建加密器
-    const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
-    // 加密文本
-    let encrypted = cipher.update(text, "utf8", "hex");
-    encrypted += cipher.final("hex");
-    // 返回IV和加密文本的组合（使用冒号分隔）
-    return `${iv.toString("hex")}:${encrypted}`;
-  } catch (error) {
-    console.error("Encryption error:", error);
-    return text;
-  }
-}
-
-// 解密函数
-function decryptText(text) {
-  if (!text || !text.includes(":")) return text;
-  try {
-    // 分离IV和加密文本
-    const [ivHex, encryptedText] = text.split(":");
-    const iv = Buffer.from(ivHex, "hex");
-    // 从加密密钥创建密钥
-    const key = crypto.createHash("sha256").update(ENCRYPTION_KEY).digest();
-    // 创建解密器
-    const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
-    // 解密文本
-    let decrypted = decipher.update(encryptedText, "hex", "utf8");
-    decrypted += decipher.final("utf8");
-    return decrypted;
-  } catch (error) {
-    console.error("Decryption error:", error);
-    return text;
-  }
-}
-
-// 递归处理连接项，加密敏感字段
-function processConnectionsForSave(items) {
-  return items.map((item) => {
-    const result = { ...item };
-
-    if (item.type === "connection") {
-      // 加密敏感信息
-      if (item.password) {
-        result.password = encryptText(item.password);
-      }
-      if (item.privateKeyPath) {
-        result.privateKeyPath = encryptText(item.privateKeyPath);
-      }
-    } else if (item.type === "group" && Array.isArray(item.items)) {
-      // 递归处理组内的项
-      result.items = processConnectionsForSave(item.items);
-    }
-
-    return result;
-  });
-}
-
-// 递归处理连接项，解密敏感字段
-function processConnectionsForLoad(items) {
-  return items.map((item) => {
-    const result = { ...item };
-
-    if (item.type === "connection") {
-      // 解密敏感信息
-      if (item.password) {
-        result.password = decryptText(item.password);
-      }
-      if (item.privateKeyPath) {
-        result.privateKeyPath = decryptText(item.privateKeyPath);
-      }
-    } else if (item.type === "group" && Array.isArray(item.items)) {
-      // 递归处理组内的项
-      result.items = processConnectionsForLoad(item.items);
-    }
-
-    return result;
-  });
-}
-
-// 存储进程和对应的处理函数
-// 已在文件顶部声明 childProcesses 和 nextProcessId
-
 // 处理生产和开发环境中的路径差异
 if (require("electron-squirrel-startup")) {
   app.quit();
 }
-
-// 获取配置文件路径
-function getConfigPath() {
-  try {
-    // 判断是开发环境还是生产环境
-    const isDev = process.env.NODE_ENV === "development";
-
-    if (isDev) {
-      // 开发环境：保存到项目根目录
-      return path.join(process.cwd(), "config.json");
-    } else {
-      // 生产环境：保存到exe同级目录
-      return path.join(path.dirname(app.getPath("exe")), "config.json");
-    }
-  } catch (error) {
-    console.error("获取配置文件路径失败:", error);
-    return path.join(app.getPath("userData"), "config.json");
-  }
-}
-
-// 加载连接配置
-const loadConnectionsConfig = () => {
-  const configPath = getConfigPath();
-
-  try {
-    if (fs.existsSync(configPath)) {
-      const data = fs.readFileSync(configPath, "utf8");
-      const config = JSON.parse(data);
-
-      // 检查是否有connections字段
-      if (config.connections && Array.isArray(config.connections)) {
-        return processConnectionsForLoad(config.connections);
-      }
-    }
-  } catch (error) {
-    console.error("Failed to load connections config:", error);
-  }
-
-  return [];
-};
-
-// 保存连接配置
-const saveConnectionsConfig = (connections) => {
-  const configPath = getConfigPath();
-
-  try {
-    // 加载当前配置，以保留其他设置（如AI设置）
-    let config = {};
-    if (fs.existsSync(configPath)) {
-      const data = fs.readFileSync(configPath, "utf8");
-      config = JSON.parse(data);
-    }
-
-    // 处理连接项以加密敏感信息
-    const processedConnections = processConnectionsForSave(connections);
-
-    // 更新connections部分而不影响其他设置
-    config.connections = processedConnections;
-
-    // 写回配置文件
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
-    return true;
-  } catch (error) {
-    console.error("Failed to save connections config:", error);
-    return false;
-  }
-};
 
 // 选择密钥文件
 const selectKeyFile = async () => {
@@ -938,168 +200,42 @@ const createWindow = () => {
   setupIPC(mainWindow);
 };
 
-// 初始化应用配置
-const initializeConfig = () => {
-  const configPath = getConfigPath();
-
-  // 检查配置文件是否存在
-  if (!fs.existsSync(configPath)) {
-    // 创建初始配置
-    const initialConfig = {
-      connections: [],
-      aiSettings: {
-        configs: [],
-        current: {
-          apiUrl: "",
-          apiKey: "",
-          model: "",
-          streamEnabled: true,
-        },
-      },
-    };
-
-    try {
-      // 写入初始配置
-      fs.writeFileSync(
-        configPath,
-        JSON.stringify(initialConfig, null, 2),
-        "utf8",
-      );
-    } catch (error) {
-      console.error("Failed to create initial config file:", error);
-    }
-  } else {
-    try {
-      // 检查现有配置，确保结构完整
-      const data = fs.readFileSync(configPath, "utf8");
-      let config = JSON.parse(data);
-      let configUpdated = false;
-
-      // 确保connections存在
-      if (!config.connections) {
-        config.connections = [];
-        configUpdated = true;
-      }
-
-      // 确保aiSettings存在并具有正确的结构
-      if (!config.aiSettings) {
-        config.aiSettings = {
-          configs: [],
-          current: {
-            apiUrl: "",
-            apiKey: "",
-            model: "",
-            streamEnabled: true,
-          },
-        };
-        configUpdated = true;
-      } else {
-        // 检查并更新旧版本的AI设置
-        const aiSettings = config.aiSettings;
-
-        // 兼容旧版配置格式，将单一配置迁移到多配置结构
-        if (!aiSettings.configs) {
-          aiSettings.configs = [];
-
-          // 如果旧版本有配置数据，将其作为当前配置添加到configs中
-          if (aiSettings.apiUrl || aiSettings.apiKey || aiSettings.model) {
-            const oldConfig = {
-              id: Date.now().toString(),
-              name: "默认配置",
-              apiUrl: aiSettings.apiUrl || "",
-              apiKey: aiSettings.apiKey || "",
-              model: aiSettings.model || "",
-              streamEnabled:
-                aiSettings.streamEnabled !== undefined
-                  ? aiSettings.streamEnabled
-                  : true,
-            };
-
-            aiSettings.configs.push(oldConfig);
-
-            // 保留当前配置
-            aiSettings.current = { ...oldConfig };
-          }
-
-          // 删除旧的顶层属性
-          ["apiUrl", "apiKey", "model", "streamEnabled"].forEach((key) => {
-            if (key in aiSettings && key !== "configs" && key !== "current") {
-              delete aiSettings[key];
-            }
-          });
-
-          configUpdated = true;
-        }
-
-        // 确保current存在
-        if (!aiSettings.current) {
-          aiSettings.current = {
-            apiUrl: "",
-            apiKey: "",
-            model: "",
-            streamEnabled: true,
-          };
-          configUpdated = true;
-        }
-
-        // 确保current中的所有必要字段都存在
-        const currentFields = ["apiUrl", "apiKey", "model", "streamEnabled"];
-        currentFields.forEach((field) => {
-          if (aiSettings.current[field] === undefined) {
-            if (field === "streamEnabled") {
-              aiSettings.current[field] = true;
-            } else {
-              aiSettings.current[field] = "";
-            }
-            configUpdated = true;
-          }
-        });
-      }
-
-      // 如果需要，更新配置文件
-      if (configUpdated) {
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
-      }
-    } catch (error) {
-      console.error("Error checking config file structure:", error);
-
-      // 如果解析失败（例如文件为空或格式错误），创建新的配置文件
-      try {
-        const initialConfig = {
-          connections: [],
-          aiSettings: {
-            configs: [],
-            current: {
-              apiUrl: "",
-              apiKey: "",
-              model: "",
-              streamEnabled: true,
-            },
-          },
-        };
-
-        fs.writeFileSync(
-          configPath,
-          JSON.stringify(initialConfig, null, 2),
-          "utf8",
-        );
-      } catch (writeError) {
-        console.error("Failed to recreate config file:", writeError);
-      }
-    }
-  }
-};
-
 // 在应用准备好时创建窗口并初始化配置
-app.on("ready", () => {
-  // 初始化配置
-  initializeConfig();
+app.whenReady().then(() => {
+  initLogger(app); // 初始化日志模块
+  // Inject dependencies into configManager
+  configManager.init(app, { logToFile }, require("./core/utils/crypto"));
+  configManager.initializeMainConfig(); // 初始化主配置文件
 
-  // 创建窗口
+  // Initialize sftpCore module
+  sftpCore.init({ logToFile }, (tabId) => childProcesses.get(tabId)); // Pass logger and childProcesses getter
+  sftpCore.startSftpHealthCheck(); // Start health check after core init
+
+  // Initialize sftpTransfer module
+  sftpTransfer.init(
+    { logToFile },
+    sftpCore,
+    dialog,
+    shell,
+    (tabId) => childProcesses.get(tabId),
+    (channel, ...args) => {
+      // sendToRendererFunction
+      const mainWindow = BrowserWindow.getAllWindows()[0]; // Assuming single main window
+      if (
+        mainWindow &&
+        mainWindow.webContents &&
+        !mainWindow.webContents.isDestroyed()
+      ) {
+        // ... existing code ...
+      }
+    },
+  );
+
+  // ... existing code ...
+
   createWindow();
-
-  // 创建AI Worker
   createAIWorker();
+  logToFile("Application ready and window created", "INFO");
 });
 
 // 在应用退出前清理资源
@@ -1752,12 +888,12 @@ function setupIPC(mainWindow) {
 
   // 加载连接配置
   ipcMain.handle("terminal:loadConnections", async () => {
-    return loadConnectionsConfig();
+    return configManager.loadConnections();
   });
 
   // 保存连接配置
   ipcMain.handle("terminal:saveConnections", async (event, connections) => {
-    return saveConnectionsConfig(connections);
+    return configManager.saveConnections(connections);
   });
 
   // 选择密钥文件
@@ -1903,7 +1039,7 @@ function setupIPC(mainWindow) {
     try {
       // 只有当提供了有效的进程ID且该进程存在于childProcesses映射中时才获取远程系统信息
       if (!processId || !childProcesses.has(processId)) {
-        return getLocalSystemInfo();
+        return systemInfo.getLocalSystemInfo();
       } else {
         // SSH远程系统信息
         const processObj = childProcesses.get(processId);
@@ -1915,9 +1051,9 @@ function setupIPC(mainWindow) {
         ) {
           const sshClient =
             processObj.client || processObj.process || processObj.channel;
-          return getRemoteSystemInfo(sshClient);
+          return systemInfo.getRemoteSystemInfo(sshClient); // This might be another issue for later
         } else {
-          return getLocalSystemInfo();
+          return systemInfo.getLocalSystemInfo();
         }
       }
     } catch (error) {
@@ -1931,93 +1067,59 @@ function setupIPC(mainWindow) {
 
   // AI设置相关IPC处理
   ipcMain.handle("ai:loadSettings", async () => {
-    return loadAISettings();
+    return configManager.loadAISettings();
   });
 
   ipcMain.handle("ai:saveSettings", async (event, settings) => {
-    return saveAISettings(settings);
+    return configManager.saveAISettings(settings);
   });
 
   // 新增: 处理API配置的IPC方法
   ipcMain.handle("ai:saveApiConfig", async (event, config) => {
     try {
-      logToFile(
-        `Saving API config: ${JSON.stringify({
-          id: config.id,
-          name: config.name,
-          model: config.model,
-        })}`,
-      );
-
-      // 加载当前设置
-      const settings = loadAISettings();
-
-      // 确保configs存在
-      if (!settings.configs) {
-        settings.configs = [];
+      if (logToFile) {
         logToFile(
-          "No configs array in loaded settings, initializing empty array",
-          "WARN",
+          `Saving API config (via main.js IPC): ${JSON.stringify({
+            id: config.id,
+            name: config.name,
+            model: config.model,
+          })}`,
+          "INFO",
         );
       }
-
-      // 为新配置生成ID (如果没有)
-      if (!config.id) {
-        config.id = Date.now().toString();
-        logToFile(`Generated new ID for config: ${config.id}`);
-      }
-
-      // 查找是否存在相同ID的配置
+      const settings = configManager.loadAISettings();
+      if (!settings.configs) settings.configs = [];
+      if (!config.id) config.id = Date.now().toString();
       const existingIndex = settings.configs.findIndex(
         (c) => c.id === config.id,
       );
-      logToFile(`Existing config index: ${existingIndex}`);
-
       if (existingIndex >= 0) {
-        // 更新现有配置
-        logToFile(`Updating existing config at index ${existingIndex}`);
         settings.configs[existingIndex] = config;
       } else {
-        // 添加新配置
-        logToFile(`Adding new config with ID ${config.id}`);
         settings.configs.push(config);
       }
-
-      logToFile(`Total configs after update: ${settings.configs.length}`);
-
-      // 保存设置
-      const result = await saveAISettings(settings);
-      logToFile(`Save result: ${result}`);
-      return result;
+      return configManager.saveAISettings(settings);
     } catch (error) {
-      logToFile(`Failed to save API config: ${error.message}`, "ERROR");
-      console.error("Failed to save API config:", error);
+      if (logToFile)
+        logToFile(
+          `Failed to save API config (via main.js IPC): ${error.message}`,
+          "ERROR",
+        );
+      console.error("Failed to save API config (IPC):", error);
       return false;
     }
   });
 
   ipcMain.handle("ai:deleteApiConfig", async (event, configId) => {
     try {
-      // 加载当前设置
-      const settings = loadAISettings();
-
-      // 确保configs存在
-      if (!settings.configs) {
-        settings.configs = [];
-        return saveAISettings(settings);
-      }
-
-      // 查找配置并删除
+      const settings = configManager.loadAISettings();
+      if (!settings.configs) settings.configs = [];
       const originalLength = settings.configs.length;
       settings.configs = settings.configs.filter((c) => c.id !== configId);
-
-      // 如果当前选中的配置被删除，重置current
       if (settings.current && settings.current.id === configId) {
         if (settings.configs.length > 0) {
-          // 如果还有其他配置，选择第一个
           settings.current = { ...settings.configs[0] };
         } else {
-          // 如果没有配置了，重置为空配置
           settings.current = {
             apiUrl: "",
             apiKey: "",
@@ -2026,63 +1128,50 @@ function setupIPC(mainWindow) {
           };
         }
       }
-
-      // 如果确实删除了配置，保存设置
       if (settings.configs.length !== originalLength) {
-        return saveAISettings(settings);
+        return configManager.saveAISettings(settings);
       }
-
       return true;
     } catch (error) {
-      console.error("Failed to delete API config:", error);
+      if (logToFile)
+        logToFile(
+          `Failed to delete API config (via main.js IPC): ${error.message}`,
+          "ERROR",
+        );
+      console.error("Failed to delete API config (IPC):", error);
       return false;
     }
   });
 
   ipcMain.handle("ai:setCurrentApiConfig", async (event, configId) => {
     try {
-      logToFile(`Setting current API config with ID: ${configId}`);
-
-      // 加载当前设置
-      const settings = loadAISettings();
-
-      // 确保configs存在
-      if (!settings.configs) {
-        settings.configs = [];
+      if (logToFile)
         logToFile(
-          "No configs array in loaded settings, initializing empty array",
-          "WARN",
+          `Setting current API config with ID (via main.js IPC): ${configId}`,
+          "INFO",
         );
-      }
-
-      logToFile(`Found ${settings.configs.length} configs in settings`);
-
-      // 查找指定ID的配置
+      const settings = configManager.loadAISettings();
+      if (!settings.configs) settings.configs = [];
       const selectedConfig = settings.configs.find((c) => c.id === configId);
-
       if (selectedConfig) {
-        logToFile(`Found config with ID ${configId}, updating current config`);
-        // 更新当前配置
         settings.current = { ...selectedConfig };
-
-        // 保存设置
-        const saveResult = saveAISettings(settings);
-        logToFile(`Save result: ${saveResult}`);
-        return saveResult;
-      } else {
-        logToFile(`No config found with ID ${configId}`, "ERROR");
-        return false;
+        return configManager.saveAISettings(settings);
       }
+      return false;
     } catch (error) {
-      logToFile(`Failed to set current API config: ${error.message}`, "ERROR");
-      console.error("Failed to set current API config:", error);
+      if (logToFile)
+        logToFile(
+          `Failed to set current API config (via main.js IPC): ${error.message}`,
+          "ERROR",
+        );
+      console.error("Failed to set current API config (IPC):", error);
       return false;
     }
   });
 
   ipcMain.handle("ai:sendPrompt", async (event, prompt, settings) => {
     try {
-      return await sendAIPrompt(prompt, settings);
+      return await configManager.sendAIPrompt(prompt, settings);
     } catch (error) {
       console.error("Error sending AI prompt:", error);
       return { error: error.message || "发送请求时出错" };
@@ -2155,8 +1244,7 @@ function setupIPC(mainWindow) {
                         chunk: jsonData.choices[0].delta.content,
                       });
                     }
-                  } catch (e) {
-                  }
+                  } catch (e) {}
                 }
               }
             } catch (error) {
@@ -4706,1198 +3794,43 @@ function setupIPC(mainWindow) {
 
   // UI设置相关API
   ipcMain.handle("settings:loadUISettings", async () => {
-    return await loadUISettings();
+    return await configManager.loadUISettings(); // loadUISettings in configManager is not async, but IPC handler can be
   });
 
   ipcMain.handle("settings:saveUISettings", async (event, settings) => {
-    return await saveUISettings(settings);
+    return await configManager.saveUISettings(settings); // saveUISettings in configManager is not async
   });
 
   // 获取快捷命令
-  ipcMain.handle('get-shortcut-commands', async () => {
+  ipcMain.handle("get-shortcut-commands", async () => {
     try {
-      const data = loadShortcutCommands();
-      return {
-        success: true,
-        data
-      };
+      const data = configManager.loadShortcutCommands();
+      return { success: true, data };
     } catch (error) {
-      logToFile(`Error in get-shortcut-commands: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message
-      };
+      if (logToFile)
+        logToFile(
+          `Error in get-shortcut-commands (IPC): ${error.message}`,
+          "ERROR",
+        );
+      return { success: false, error: error.message };
     }
   });
-  
+
   // 保存快捷命令
-  ipcMain.handle('save-shortcut-commands', async (_, data) => {
+  ipcMain.handle("save-shortcut-commands", async (_, data) => {
     try {
-      const result = saveShortcutCommands(data);
+      const result = configManager.saveShortcutCommands(data);
       return {
         success: result,
-        error: result ? null : "Failed to save shortcut commands"
+        error: result ? null : "Failed to save shortcut commands (IPC)",
       };
     } catch (error) {
-      logToFile(`Error in save-shortcut-commands: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  });
-}
-
-// 获取本地系统信息
-function getLocalSystemInfo() {
-  const osInfo = {
-    type: os.type(),
-    platform: os.platform(),
-    release: os.release(),
-    hostname: os.hostname(),
-    distro: "未知",
-    version: "未知",
-  };
-
-  // 根据平台添加额外信息
-  if (osInfo.platform === "win32") {
-    // Windows平台
-    const windowsVersions = {
-      "10.0": "Windows 10/11",
-      6.3: "Windows 8.1",
-      6.2: "Windows 8",
-      6.1: "Windows 7",
-      "6.0": "Windows Vista",
-      5.2: "Windows XP 64-Bit Edition/Windows Server 2003",
-      5.1: "Windows XP",
-      "5.0": "Windows 2000",
-    };
-
-    // 尝试获取Windows版本
-    const releaseVersion = osInfo.release.split(".");
-    if (releaseVersion.length >= 2) {
-      const majorMinor = `${releaseVersion[0]}.${releaseVersion[1]}`;
-      osInfo.distro = windowsVersions[majorMinor] || "Windows";
-    } else {
-      osInfo.distro = "Windows";
-    }
-
-    // 获取更具体的Windows版本信息
-    try {
-      if (osInfo.release.startsWith("10.0")) {
-        // 获取Windows 10/11的具体版本号(如20H2, 21H1等)
-        const buildNumber = parseInt(osInfo.release.split(".")[2], 10);
-
-        // 根据构建号识别主要Windows版本
-        if (buildNumber >= 22000) {
-          osInfo.distro = "Windows 11";
-          if (buildNumber >= 22621) {
-            osInfo.version = "23H2";
-          } else if (buildNumber >= 22000) {
-            osInfo.version = "21H2";
-          }
-        } else {
-          osInfo.distro = "Windows 10";
-          if (buildNumber >= 19045) {
-            osInfo.version = "22H2";
-          } else if (buildNumber >= 19044) {
-            osInfo.version = "21H2";
-          } else if (buildNumber >= 19043) {
-            osInfo.version = "21H1";
-          } else if (buildNumber >= 19042) {
-            osInfo.version = "20H2";
-          } else if (buildNumber >= 19041) {
-            osInfo.version = "2004";
-          } else if (buildNumber >= 18363) {
-            osInfo.version = "1909";
-          } else if (buildNumber >= 18362) {
-            osInfo.version = "1903";
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Error determining Windows version:", e);
-    }
-
-    // 添加架构信息
-    try {
-      const arch = os.arch();
-      osInfo.release = `${osInfo.distro} ${osInfo.release} (${arch})`;
-    } catch (e) {
-      console.error("Error getting architecture info:", e);
-    }
-  } else if (osInfo.platform === "darwin") {
-    // macOS平台
-    const macVersions = {
-      22: "Ventura",
-      21: "Monterey",
-      20: "Big Sur",
-      19: "Catalina",
-      18: "Mojave",
-      17: "High Sierra",
-      16: "Sierra",
-      15: "El Capitan",
-      14: "Yosemite",
-      13: "Mavericks",
-      12: "Mountain Lion",
-      11: "Lion",
-      10: "Snow Leopard",
-    };
-
-    // 尝试获取macOS版本
-    osInfo.distro = "macOS";
-    const darwinVersion = osInfo.release.split(".")[0];
-    if (macVersions[darwinVersion]) {
-      osInfo.version = macVersions[darwinVersion];
-      osInfo.release = `macOS ${osInfo.version} (${osInfo.release})`;
-    } else {
-      // 尝试通过Darwin版本推断macOS版本
-      if (parseInt(darwinVersion, 10) >= 23) {
-        osInfo.version = "Sonoma+";
-      }
-      osInfo.release = `macOS ${osInfo.version || osInfo.release}`;
-    }
-  } else if (osInfo.platform === "linux") {
-    // Linux平台，但Electron环境中能获取的信息有限
-    osInfo.distro = "Linux";
-    // 在Electron中我们无法轻松运行命令获取发行版信息
-    // 所以这里只提供基本信息
-    osInfo.release = `Linux ${osInfo.release}`;
-  }
-
-  return {
-    isLocal: true,
-    os: osInfo,
-    cpu: {
-      model: os.cpus()[0].model,
-      cores: os.cpus().length,
-      speed: os.cpus()[0].speed,
-      usage: getCpuUsage(),
-    },
-    memory: {
-      total: os.totalmem(),
-      free: os.freemem(),
-      used: os.totalmem() - os.freemem(),
-      usagePercent: Math.round(
-        ((os.totalmem() - os.freemem()) / os.totalmem()) * 100,
-      ),
-    },
-  };
-}
-
-// 计算CPU使用率
-function getCpuUsage() {
-  const cpus = os.cpus();
-  let totalIdle = 0;
-  let totalTick = 0;
-
-  for (const cpu of cpus) {
-    for (const type in cpu.times) {
-      totalTick += cpu.times[type];
-    }
-    totalIdle += cpu.times.idle;
-  }
-
-  const usage = 100 - Math.round((totalIdle / totalTick) * 100);
-  return usage;
-}
-
-// 获取远程系统信息
-async function getRemoteSystemInfo(sshClient) {
-  return new Promise((resolve, reject) => {
-    const result = {
-      isLocal: false,
-      os: {
-        type: "未知",
-        platform: "未知",
-        release: "未知",
-        hostname: "未知",
-        distro: "未知",
-        version: "未知",
-      },
-      cpu: { model: "未知", cores: 0, usage: 0 },
-      memory: { total: 0, free: 0, used: 0, usagePercent: 0 },
-    };
-
-    // 获取基本操作系统信息
-    sshClient.exec("uname -a", (err, stream) => {
-      if (err) {
-        console.error("SSH exec error (uname):", err);
-        resolve(result);
-        return;
-      }
-
-      let output = "";
-      stream.on("data", (data) => {
-        output += data.toString();
-      });
-
-      stream.on("close", () => {
-        // 解析基本操作系统信息
-        const osInfo = output.trim();
-
-        // 检测操作系统类型
-        if (osInfo.includes("Linux")) {
-          result.os.type = "Linux";
-          result.os.platform = "linux";
-
-          // 获取详细的Linux发行版信息
-          getLinuxDistro();
-        } else if (osInfo.includes("Darwin")) {
-          result.os.type = "macOS";
-          result.os.platform = "darwin";
-
-          // 获取macOS版本
-          getMacOSVersion();
-        } else if (osInfo.includes("FreeBSD")) {
-          result.os.type = "FreeBSD";
-          result.os.platform = "freebsd";
-          getHostname();
-        } else if (osInfo.includes("Windows")) {
-          result.os.type = "Windows";
-          result.os.platform = "win32";
-          getWindowsVersion();
-        } else {
-          // 未识别的系统，直接保存uname信息
-          result.os.release = osInfo;
-          getHostname();
-        }
-
-        // 获取Linux发行版信息
-        function getLinuxDistro() {
-          // 尝试多种方法获取Linux发行版信息
-          const distroCommands = [
-            'cat /etc/os-release | grep -E "^(NAME|VERSION)="',
-            "lsb_release -a 2>/dev/null",
-            "cat /etc/redhat-release 2>/dev/null",
-            "cat /etc/debian_version 2>/dev/null",
-          ];
-
-          let commandIndex = 0;
-          tryNextCommand();
-
-          function tryNextCommand() {
-            if (commandIndex >= distroCommands.length) {
-              // 所有命令都尝试过了，保存现有信息然后继续
-              result.os.release = osInfo;
-              getHostname();
-              return;
-            }
-
-            const command = distroCommands[commandIndex++];
-            sshClient.exec(command, (err, stream) => {
-              if (err) {
-                console.error(
-                  `SSH exec error (distro command ${commandIndex}):`,
-                  err,
-                );
-                tryNextCommand();
-                return;
-              }
-
-              let distroOutput = "";
-              stream.on("data", (data) => {
-                distroOutput += data.toString();
-              });
-
-              stream.on("close", () => {
-                const output = distroOutput.trim();
-                if (output) {
-                  // 解析不同格式的输出
-                  if (command.includes("/etc/os-release")) {
-                    // 解析os-release格式
-                    const nameMatch = output.match(/NAME="([^"]+)"/);
-                    const versionMatch = output.match(/VERSION="([^"]+)"/);
-
-                    if (nameMatch) {
-                      result.os.distro = nameMatch[1];
-                    }
-                    if (versionMatch) {
-                      result.os.version = versionMatch[1];
-                    }
-
-                    result.os.release =
-                      `${result.os.distro || "Linux"} ${result.os.version || ""}`.trim();
-                    getHostname();
-                  } else if (command.includes("lsb_release")) {
-                    // 解析lsb_release格式
-                    const distroMatch = output.match(/Distributor ID:\s+(.+)/);
-                    const versionMatch = output.match(/Release:\s+(.+)/);
-
-                    if (distroMatch) {
-                      result.os.distro = distroMatch[1].trim();
-                    }
-                    if (versionMatch) {
-                      result.os.version = versionMatch[1].trim();
-                    }
-
-                    result.os.release =
-                      `${result.os.distro || "Linux"} ${result.os.version || ""}`.trim();
-                    getHostname();
-                  } else if (
-                    command.includes("/etc/redhat-release") ||
-                    command.includes("/etc/debian_version")
-                  ) {
-                    // 直接使用文件内容
-                    result.os.release = output;
-                    result.os.distro = output.split(" ")[0] || "Linux";
-
-                    // 尝试提取版本号
-                    const versionMatch = output.match(/(\d+(\.\d+)+)/);
-                    if (versionMatch) {
-                      result.os.version = versionMatch[1];
-                    }
-
-                    getHostname();
-                  } else {
-                    tryNextCommand();
-                  }
-                } else {
-                  tryNextCommand();
-                }
-              });
-            });
-          }
-        }
-
-        // 获取macOS版本
-        function getMacOSVersion() {
-          sshClient.exec("sw_vers", (err, stream) => {
-            if (err) {
-              console.error("SSH exec error (sw_vers):", err);
-              getHostname();
-              return;
-            }
-
-            let macOutput = "";
-            stream.on("data", (data) => {
-              macOutput += data.toString();
-            });
-
-            stream.on("close", () => {
-              const productMatch = macOutput.match(/ProductName:\s+(.+)/);
-              const versionMatch = macOutput.match(/ProductVersion:\s+(.+)/);
-
-              if (productMatch) {
-                result.os.distro = productMatch[1].trim();
-              }
-              if (versionMatch) {
-                result.os.version = versionMatch[1].trim();
-              }
-
-              result.os.release =
-                `${result.os.distro || "macOS"} ${result.os.version || ""}`.trim();
-              getHostname();
-            });
-          });
-        }
-
-        // 获取Windows版本
-        function getWindowsVersion() {
-          sshClient.exec(
-            "wmic os get Caption,Version,OSArchitecture /value",
-            (err, stream) => {
-              if (err) {
-                console.error("SSH exec error (wmic os):", err);
-                getHostname();
-                return;
-              }
-
-              let winOutput = "";
-              stream.on("data", (data) => {
-                winOutput += data.toString();
-              });
-
-              stream.on("close", () => {
-                const captionMatch = winOutput.match(/Caption=(.+)/);
-                const versionMatch = winOutput.match(/Version=(.+)/);
-                const archMatch = winOutput.match(/OSArchitecture=(.+)/);
-
-                if (captionMatch) {
-                  result.os.distro = captionMatch[1].trim();
-                }
-                if (versionMatch) {
-                  result.os.version = versionMatch[1].trim();
-                }
-
-                let archInfo = "";
-                if (archMatch) {
-                  archInfo = ` (${archMatch[1].trim()})`;
-                }
-
-                result.os.release =
-                  `${result.os.distro || "Windows"} ${result.os.version || ""}${archInfo}`.trim();
-                getHostname();
-              });
-            },
-          );
-        }
-
-        // 获取主机名
-        function getHostname() {
-          sshClient.exec("hostname", (err, stream) => {
-            if (err) {
-              console.error("SSH exec error (hostname):", err);
-              getMemoryInfo();
-              return;
-            }
-
-            let hostnameOutput = "";
-            stream.on("data", (data) => {
-              hostnameOutput += data.toString();
-            });
-
-            stream.on("close", () => {
-              result.os.hostname = hostnameOutput.trim();
-              getMemoryInfo();
-            });
-          });
-        }
-
-        function getMemoryInfo() {
-          // 根据平台决定获取内存命令
-          const memCommand =
-            result.os.platform === "win32"
-              ? "wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Value"
-              : "free -b";
-
-          sshClient.exec(memCommand, (err, stream) => {
-            if (err) {
-              console.error("SSH exec error (memory):", err);
-              getCpuInfo();
-              return;
-            }
-
-            let memOutput = "";
-            stream.on("data", (data) => {
-              memOutput += data.toString();
-            });
-
-            stream.on("close", () => {
-              try {
-                if (result.os.platform === "win32") {
-                  // 解析Windows内存信息
-                  const freeMatch = memOutput.match(/FreePhysicalMemory=(\d+)/);
-                  const totalMatch = memOutput.match(
-                    /TotalVisibleMemorySize=(\d+)/,
-                  );
-
-                  if (freeMatch && totalMatch) {
-                    // Windows返回的是KB，需要转换为字节
-                    const free = parseInt(freeMatch[1], 10) * 1024;
-                    const total = parseInt(totalMatch[1], 10) * 1024;
-                    const used = total - free;
-
-                    result.memory.total = total;
-                    result.memory.free = free;
-                    result.memory.used = used;
-                    result.memory.usagePercent = Math.round(
-                      (used / total) * 100,
-                    );
-                  }
-                } else {
-                  // 解析Linux内存信息
-                  const memLines = memOutput.split("\n");
-                  if (memLines.length > 1) {
-                    const memInfo = memLines[1].split(/\s+/);
-                    if (memInfo.length >= 4) {
-                      result.memory.total = parseInt(memInfo[1], 10);
-                      result.memory.used = parseInt(memInfo[2], 10);
-                      result.memory.free = parseInt(memInfo[3], 10);
-                      result.memory.usagePercent = Math.round(
-                        (result.memory.used / result.memory.total) * 100,
-                      );
-                    }
-                  }
-                }
-              } catch (error) {
-                console.error("Error parsing memory info:", error);
-              }
-
-              getCpuInfo();
-            });
-          });
-        }
-
-        function getCpuInfo() {
-          // 根据平台选择不同命令
-          const cpuCommand =
-            result.os.platform === "win32"
-              ? "wmic cpu get NumberOfCores,Name"
-              : 'cat /proc/cpuinfo | grep -E "model name|processor" | wc -l';
-
-          sshClient.exec(cpuCommand, (err, stream) => {
-            if (err) {
-              console.error("SSH exec error (cpuinfo):", err);
-              getCpuModel();
-              return;
-            }
-
-            let cpuOutput = "";
-            stream.on("data", (data) => {
-              cpuOutput += data.toString();
-            });
-
-            stream.on("close", () => {
-              try {
-                if (result.os.platform === "win32") {
-                  // 解析Windows CPU核心数
-                  const lines = cpuOutput.trim().split("\n");
-                  if (lines.length >= 2) {
-                    const coresLine = lines[1].trim();
-                    result.cpu.cores = parseInt(coresLine, 10) || 1;
-                  }
-                } else {
-                  // 解析Linux CPU核心数
-                  result.cpu.cores = parseInt(cpuOutput.trim(), 10) / 2; // 除以2因为每个处理器有两行信息
-                }
-              } catch (error) {
-                console.error("Error parsing CPU count:", error);
-              }
-
-              getCpuModel();
-            });
-          });
-        }
-
-        function getCpuModel() {
-          const modelCommand =
-            result.os.platform === "win32"
-              ? "wmic cpu get Name"
-              : 'cat /proc/cpuinfo | grep "model name" | head -1';
-
-          sshClient.exec(modelCommand, (err, stream) => {
-            if (err) {
-              console.error("SSH exec error (cpuinfo model):", err);
-              getCpuUsage();
-              return;
-            }
-
-            let modelOutput = "";
-            stream.on("data", (data) => {
-              modelOutput += data.toString();
-            });
-
-            stream.on("close", () => {
-              try {
-                if (result.os.platform === "win32") {
-                  // 解析Windows CPU型号
-                  const lines = modelOutput.trim().split("\n");
-                  if (lines.length >= 2) {
-                    result.cpu.model = lines[1].trim();
-                  }
-                } else {
-                  // 解析Linux CPU型号
-                  const match = modelOutput.match(/model name\s*:\s*(.*)/);
-                  if (match && match[1]) {
-                    result.cpu.model = match[1].trim();
-                  }
-                }
-              } catch (error) {
-                console.error("Error parsing CPU model:", error);
-              }
-
-              getCpuUsage();
-            });
-          });
-        }
-
-        function getCpuUsage() {
-          const usageCommand =
-            result.os.platform === "win32"
-              ? "wmic cpu get LoadPercentage"
-              : 'top -bn1 | grep "Cpu(s)" | sed "s/.*, *\\([0-9.]*\\)%* id.*/\\1/" | awk \'{print 100 - $1}\'';
-
-          sshClient.exec(usageCommand, (err, stream) => {
-            if (err) {
-              console.error("SSH exec error (cpu usage):", err);
-              finalize();
-              return;
-            }
-
-            let usageOutput = "";
-            stream.on("data", (data) => {
-              usageOutput += data.toString();
-            });
-
-            stream.on("close", () => {
-              try {
-                if (result.os.platform === "win32") {
-                  // 解析Windows CPU使用率
-                  const lines = usageOutput.trim().split("\n");
-                  if (lines.length >= 2) {
-                    result.cpu.usage = parseInt(lines[1].trim(), 10);
-                  }
-                } else {
-                  // 解析Linux CPU使用率
-                  result.cpu.usage = parseFloat(usageOutput.trim());
-                }
-              } catch (error) {
-                console.error("Error parsing CPU usage:", error);
-              }
-
-              finalize();
-            });
-          });
-        }
-
-        function finalize() {
-          resolve(result);
-        }
-      });
-    });
-  });
-}
-
-// 加载AI设置，使用统一的config.json
-const loadAISettings = () => {
-  const configPath = getConfigPath();
-  logToFile(`Loading AI settings from ${configPath}`);
-
-  try {
-    if (fs.existsSync(configPath)) {
-      const data = fs.readFileSync(configPath, "utf8");
-      const config = JSON.parse(data);
-
-      // 从config对象中读取AI设置
-      if (config.aiSettings) {
-        const settings = { ...config.aiSettings };
+      if (logToFile)
         logToFile(
-          `Loaded settings: ${JSON.stringify({
-            hasConfigs: Array.isArray(settings.configs),
-            configsCount: Array.isArray(settings.configs)
-              ? settings.configs.length
-              : 0,
-            hasCurrent: !!settings.current,
-          })}`,
+          `Error in save-shortcut-commands (IPC): ${error.message}`,
+          "ERROR",
         );
-
-        // 确保必要的属性存在
-        if (!settings.configs) {
-          settings.configs = [];
-          logToFile("No configs array found, initializing empty array", "WARN");
-        }
-
-        // 解密所有配置中的API密钥
-        if (settings.configs && Array.isArray(settings.configs)) {
-          settings.configs = settings.configs.map((cfg) => {
-            if (cfg.apiKey) {
-              try {
-                return { ...cfg, apiKey: decrypt(cfg.apiKey) };
-              } catch (err) {
-                logToFile(
-                  `Failed to decrypt API key for config ${cfg.id}: ${err.message}`,
-                  "ERROR",
-                );
-                return cfg;
-              }
-            }
-            return cfg;
-          });
-        }
-
-        // 解密当前设置的API密钥
-        if (settings.current && settings.current.apiKey) {
-          try {
-            settings.current.apiKey = decrypt(settings.current.apiKey);
-          } catch (err) {
-            logToFile(
-              `Failed to decrypt current API key: ${err.message}`,
-              "ERROR",
-            );
-          }
-        }
-
-        // 确保当前设置存在所有字段
-        if (!settings.current) {
-          settings.current = {
-            apiUrl: "",
-            apiKey: "",
-            model: "",
-            streamEnabled: true,
-          };
-          logToFile(
-            "No current settings found, initializing with defaults",
-            "WARN",
-          );
-        }
-
-        return settings;
-      } else {
-        logToFile("No aiSettings found in config", "WARN");
-      }
-    } else {
-      logToFile(`Config file does not exist: ${configPath}`, "WARN");
+      return { success: false, error: error.message };
     }
-  } catch (error) {
-    logToFile(`Failed to load AI settings: ${error.message}`, "ERROR");
-    console.error("Failed to load AI settings:", error);
-  }
-
-  // 默认设置
-  logToFile("Returning default settings");
-  return {
-    configs: [],
-    current: {
-      apiUrl: "",
-      apiKey: "",
-      model: "",
-      streamEnabled: true,
-    },
-  };
-};
-
-// 保存AI设置，使用统一的config.json
-const saveAISettings = (settings) => {
-  const configPath = getConfigPath();
-  logToFile(`Saving AI settings to ${configPath}`);
-  logToFile(
-    `Settings to save: ${JSON.stringify({
-      hasConfigs: Array.isArray(settings.configs),
-      configsCount: Array.isArray(settings.configs)
-        ? settings.configs.length
-        : 0,
-      hasCurrent: !!settings.current,
-    })}`,
-  );
-
-  try {
-    // 加载当前配置
-    let config = {};
-    if (fs.existsSync(configPath)) {
-      const data = fs.readFileSync(configPath, "utf8");
-      config = JSON.parse(data);
-      logToFile("Loaded existing config");
-    } else {
-      logToFile("No existing config, creating new one");
-    }
-
-    // 创建设置副本以避免修改原始对象
-    const settingsToSave = JSON.parse(JSON.stringify(settings));
-
-    // 确保configs是数组
-    if (!settingsToSave.configs) {
-      settingsToSave.configs = [];
-      logToFile(
-        "No configs array in settings to save, initializing empty array",
-        "WARN",
-      );
-    }
-
-    // 加密所有配置的API密钥
-    if (settingsToSave.configs && Array.isArray(settingsToSave.configs)) {
-      logToFile(`Encrypting ${settingsToSave.configs.length} configs`);
-      settingsToSave.configs = settingsToSave.configs.map((cfg) => {
-        const configCopy = { ...cfg };
-        if (configCopy.apiKey) {
-          try {
-            configCopy.apiKey = encrypt(configCopy.apiKey);
-          } catch (err) {
-            logToFile(
-              `Failed to encrypt API key for config ${cfg.id}: ${err.message}`,
-              "ERROR",
-            );
-          }
-        }
-        return configCopy;
-      });
-    }
-
-    // 加密当前设置的API密钥
-    if (settingsToSave.current && settingsToSave.current.apiKey) {
-      try {
-        settingsToSave.current.apiKey = encrypt(settingsToSave.current.apiKey);
-        logToFile("Encrypted current API key");
-      } catch (err) {
-        logToFile(`Failed to encrypt current API key: ${err.message}`, "ERROR");
-      }
-    }
-
-    // 更新AI设置部分
-    config.aiSettings = settingsToSave;
-
-    // 写回配置文件
-    const configJson = JSON.stringify(config, null, 2);
-    logToFile(`Config to write: ${configJson.substring(0, 100)}...`);
-    fs.writeFileSync(configPath, configJson, "utf8");
-    logToFile("Successfully saved AI settings");
-    return true;
-  } catch (error) {
-    logToFile(`Failed to save AI settings: ${error.message}`, "ERROR");
-    console.error("Failed to save AI settings:", error);
-    return false;
-  }
-};
-
-// 向Worker线程发送AI请求
-const sendAIPrompt = async (prompt, settings) => {
-  try {
-    // 确保worker线程已经创建
-    if (!aiWorker) {
-      aiWorker = createAIWorker();
-    }
-
-    // 如果worker创建失败，则使用内联处理
-    if (!aiWorker) {
-      return processAIPromptInline(prompt, settings);
-    }
-
-    // 处理流式请求
-    if (settings && settings.streamEnabled) {
-      return sendStreamingAIPrompt(prompt, settings);
-    }
-
-    // 生成唯一请求ID
-    const requestId = nextRequestId++;
-
-    // 创建Promise，将其解析函数存储在Map中
-    const responsePromise = new Promise((resolve, reject) => {
-      // 设置5秒超时，避免永久阻塞
-      const timeoutId = setTimeout(() => {
-        aiRequestMap.delete(requestId);
-        reject(new Error("请求超时，AI处理时间过长"));
-      }, 5000);
-
-      aiRequestMap.set(requestId, {
-        resolve: (result) => {
-          clearTimeout(timeoutId);
-          resolve(result);
-        },
-        reject: (error) => {
-          clearTimeout(timeoutId);
-          reject(error);
-        },
-      });
-    });
-
-    // 向worker发送请求
-    aiWorker.postMessage({
-      id: requestId,
-      type: "prompt",
-      prompt,
-      settings,
-    });
-
-    // 等待结果
-    return await responsePromise;
-  } catch (error) {
-    console.error("Error sending AI prompt to worker:", error);
-    // 如果与worker通信失败，回退到内联处理
-    return processAIPromptInline(prompt, settings);
-  }
-};
-
-// 向Worker线程发送流式AI请求
-const sendStreamingAIPrompt = async (prompt, settings) => {
-  try {
-    // 确保worker线程已经创建
-    if (!aiWorker) {
-      aiWorker = createAIWorker();
-    }
-
-    // 如果worker创建失败，则使用内联处理
-    if (!aiWorker) {
-      return { error: "Worker不可用，无法使用流式响应" };
-    }
-
-    // 生成唯一请求ID
-    const requestId = nextRequestId++;
-
-    // 用于接收来自worker的数据
-    aiWorker.on("message", (message) => {
-      if (message.id === requestId) {
-        if (message.chunk) {
-          // 流式数据块
-          BrowserWindow.fromWebContents(globalEvent.sender).webContents.send(
-            "stream-chunk",
-            {
-              tabId: "ai",
-              chunk: message.chunk,
-            },
-          );
-        } else if (message.streamEnd) {
-          // 流式请求结束
-          BrowserWindow.fromWebContents(globalEvent.sender).webContents.send(
-            "stream-end",
-            {
-              tabId: "ai",
-            },
-          );
-        } else if (message.error) {
-          // 流式请求错误
-          BrowserWindow.fromWebContents(globalEvent.sender).webContents.send(
-            "stream-error",
-            {
-              tabId: "ai",
-              error: message.error,
-            },
-          );
-        }
-      }
-    });
-
-    // 向worker发送流式请求
-    aiWorker.postMessage({
-      id: requestId,
-      type: "stream",
-      prompt,
-      settings,
-    });
-
-    // 返回成功通知
-    return { success: true, message: "流式请求已开始" };
-  } catch (error) {
-    console.error("Error sending streaming AI prompt to worker:", error);
-    return { error: `流式请求失败: ${error.message}` };
-  }
-};
-
-// 内联处理AI请求（作为worker不可用时的备选）
-const processAIPromptInline = async (prompt, settings) => {
-  try {
-    // 检查设置是否有效
-    if (!settings || !settings.apiKey) {
-      return { error: "API设置不完整，请在设置中配置API密钥" };
-    }
-
-    if (!settings.apiUrl) {
-      return { error: "API URL不可用，请在设置中配置API URL" };
-    }
-
-    if (!settings.model) {
-      return { error: "模型名称未指定，请在设置中配置模型名称" };
-    }
-
-    // 使用简单的响应模拟
-    return {
-      response: `这是对"${prompt}"的模拟响应(内联处理)。在实际应用中，这里将连接到AI API。您当前的设置是使用模型: ${settings.model}`,
-    };
-  } catch (error) {
-    console.error("Error processing AI prompt inline:", error);
-    return { error: `处理请求时出错: ${error.message}` };
-  }
-};
-
-// 处理终端输出的函数，用于检测命令提示符
-const processTerminalOutput = (processId, output) => {
-  const procInfo = childProcesses.get(processId);
-  if (!procInfo) return output;
-
-  // 检测是否在编辑器模式并且收到了shell提示符
-  if (procInfo.editorMode) {
-    // 常见的shell提示符模式
-    const promptPatterns = [
-      /\$\s*$/, // bash/zsh $ prompt
-      />\s*$/, // Windows command prompt
-      /#\s*$/, // Root shell prompt
-      /\w+@\w+:[~\w\/]+[$#>]\s*$/, // username@hostname:/path$ style prompt
-      /[\w-]+:[\w~\/]+[$#>]\s*$/, // name:path$ style prompt
-    ];
-
-    // 检查输出中是否包含shell提示符
-    if (promptPatterns.some((pattern) => pattern.test(output))) {
-      procInfo.editorMode = false;
-      procInfo.possibleEditorExit = false;
-    }
-  }
-
-  // 如果是远程SSH会话，提取命令
-  if (procInfo.isRemote) {
-    // 将当前输出追加到输出缓冲区
-    procInfo.outputBuffer += output;
-
-    // 按行分割输出
-    const lines = procInfo.outputBuffer.split(/\r?\n/);
-
-    // 保留最后一行（可能不完整）为新的输出缓冲区
-    procInfo.outputBuffer = lines.pop() || "";
-
-    // 将完整的行添加到最近输出行
-    procInfo.lastOutputLines = [...procInfo.lastOutputLines, ...lines];
-
-    // 限制保存的行数，防止内存过度使用
-    if (procInfo.lastOutputLines.length > 50) {
-      procInfo.lastOutputLines = procInfo.lastOutputLines.slice(-50);
-    }
-
-    // 远程命令提取逻辑
-    // 寻找命令提示符模式，然后提取命令
-    const commandPromptRegex = [
-      /^.*?[$#>]\s+([^$#>\r\n]+)$/, // 通用提示符后跟命令
-      /^.*?@.*?:.*?[$#>]\s+([^$#>\r\n]+)$/, // 带用户名和主机名的提示符后跟命令
-      /^.*?:.*?[$#>]\s+([^$#>\r\n]+)$/, // 路径提示符后跟命令
-    ];
-
-    // 检查最近几行是否存在命令执行模式
-    // 1. 一行是命令输入 (提示符 + 命令)
-    // 2. 下面几行是命令输出
-    // 3. 最后一行是新的提示符
-    if (procInfo.lastOutputLines.length >= 2) {
-      for (let i = 0; i < procInfo.lastOutputLines.length - 1; i++) {
-        const currentLine = procInfo.lastOutputLines[i];
-
-        // 尝试每个正则表达式来匹配命令
-        for (const regex of commandPromptRegex) {
-          const match = currentLine.match(regex);
-          if (match && match[1] && match[1].trim() !== "") {
-            const command = match[1].trim();
-
-            // 跳过明显不是命令的情况
-            if (command.startsWith("\x1b") || command.length < 2) {
-              continue;
-            }
-
-            // 检测下一行是否是新的提示符，表示命令已执行完毕
-            let nextLineIsPrompt = false;
-            for (let j = i + 1; j < procInfo.lastOutputLines.length; j++) {
-              const nextLine = procInfo.lastOutputLines[j];
-              if (commandPromptRegex.some((r) => r.test(nextLine))) {
-                nextLineIsPrompt = true;
-                if (command !== procInfo.lastExtractedCommand) {
-                  procInfo.lastExtractedCommand = command;
-                }
-
-                // 清理已处理的行
-                procInfo.lastOutputLines.splice(0, i + 1);
-                break;
-              }
-            }
-
-            if (nextLineIsPrompt) break;
-          }
-        }
-      }
-    }
-  }
-
-  return output;
-};
-
-// 加载UI设置
-async function loadUISettings() {
-  try {
-    const configPath = getConfigPath();
-
-    // 检查配置文件是否存在
-    if (!fs.existsSync(configPath)) {
-      // 返回默认设置
-      return {
-        language: "zh-CN",
-        fontSize: 14,
-        darkMode: true,
-      };
-    }
-
-    // 读取配置文件
-    const data = fs.readFileSync(configPath, "utf8");
-    const config = JSON.parse(data);
-
-    // 如果配置中没有uiSettings，返回默认值
-    if (!config.uiSettings) {
-      return {
-        language: "zh-CN",
-        fontSize: 14,
-        darkMode: true,
-      };
-    }
-
-    // 确保所有必要的字段都存在，添加默认值
-    const uiSettings = {
-      language: config.uiSettings.language || "zh-CN",
-      fontSize: config.uiSettings.fontSize || 14,
-      darkMode: config.uiSettings.darkMode !== undefined ? config.uiSettings.darkMode : true,
-    };
-
-    return uiSettings;
-  } catch (error) {
-    console.error("加载UI设置失败:", error);
-    // 出错时返回默认设置
-    return {
-      language: "zh-CN",
-      fontSize: 14,
-      darkMode: true,
-    };
-  }
-}
-
-// 保存UI设置
-async function saveUISettings(settings) {
-  try {
-    const configPath = getConfigPath();
-    let config = {};
-
-    // 检查配置文件是否存在
-    if (fs.existsSync(configPath)) {
-      // 读取现有配置
-      const data = fs.readFileSync(configPath, "utf8");
-      config = JSON.parse(data);
-    }
-
-    // 确保设置包含所有必要字段
-    const completeSettings = {
-      language: settings.language || "zh-CN",
-      fontSize: settings.fontSize || 14,
-      darkMode: settings.darkMode !== undefined ? settings.darkMode : true,
-    };
-
-    // 更新UI设置
-    config.uiSettings = completeSettings;
-
-    // 写入配置文件
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
-
-    return { success: true };
-  } catch (error) {
-    console.error("保存UI设置失败:", error);
-    return { success: false, error: error.message };
-  }
-}
-
-// 加载快捷命令设置
-const loadShortcutCommands = () => {
-  try {
-    if (fs.existsSync(shortcutCommandsConfigPath)) {
-      const data = fs.readFileSync(shortcutCommandsConfigPath, 'utf8');
-      let commands;
-      
-      try {
-        // 尝试解析已加密的数据
-        commands = JSON.parse(decryptText(data));
-      } catch (decryptError) {
-        // 如果解密失败，尝试直接解析（可能是未加密的旧数据）
-        try {
-          commands = JSON.parse(data);
-        } catch (parseError) {
-          logToFile(`Error parsing shortcut commands data: ${parseError.message}`, "ERROR");
-          return { commands: [], categories: [] };
-        }
-      }
-      
-      logToFile(`Loaded ${commands.commands?.length || 0} shortcut commands and ${commands.categories?.length || 0} categories`, "INFO");
-      return commands;
-    } else {
-      logToFile("No shortcut commands file found, creating default", "INFO");
-      return { commands: [], categories: [] };
-    }
-  } catch (error) {
-    logToFile(`Error loading shortcut commands: ${error.message}`, "ERROR");
-    return { commands: [], categories: [] };
-  }
-};
-
-// 保存快捷命令设置
-const saveShortcutCommands = (data) => {
-  try {
-    // 加密数据
-    const encryptedData = encryptText(JSON.stringify(data));
-    
-    // 保存到文件
-    fs.writeFileSync(shortcutCommandsConfigPath, encryptedData);
-    
-    logToFile(`Saved ${data.commands?.length || 0} shortcut commands and ${data.categories?.length || 0} categories`, "INFO");
-    return true;
-  } catch (error) {
-    logToFile(`Error saving shortcut commands: ${error.message}`, "ERROR");
-    return false;
-  }
-};
+  });
+} // Closing brace for setupIPC function

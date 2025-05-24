@@ -1449,7 +1449,8 @@ const WebTerminal = ({
           try {
             // 这将从DOM中分离终端但不销毁它
             const element = terminalRef.current;
-            if (element) { // Added null check for element
+            if (element) {
+              // Added null check for element
               while (element.firstChild) {
                 element.removeChild(element.firstChild);
               }
@@ -1724,11 +1725,9 @@ const WebTerminal = ({
   // 复制选中的文本
   const handleCopy = () => {
     if (selectedText) {
-      navigator.clipboard
-        .writeText(selectedText)
-        .catch((err) => {
-          console.error("复制到剪贴板失败:", err);
-        });
+      navigator.clipboard.writeText(selectedText).catch((err) => {
+        console.error("复制到剪贴板失败:", err);
+      });
     }
     handleClose();
   };

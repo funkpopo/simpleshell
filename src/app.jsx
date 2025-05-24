@@ -45,7 +45,7 @@ import FileManager from "./components/FileManager.jsx";
 import Settings from "./components/Settings.jsx";
 import Divider from "@mui/material/Divider";
 import ShortcutCommands from "./components/ShortcutCommands.jsx";
-import TerminalIcon from '@mui/icons-material/Terminal';
+import TerminalIcon from "@mui/icons-material/Terminal";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -405,23 +405,26 @@ function App() {
 
   React.useEffect(() => {
     let calculatedMargin = 0;
-    if (aiAssistantOpen && lastOpenedSidebar === 'ai') {
+    if (aiAssistantOpen && lastOpenedSidebar === "ai") {
       calculatedMargin = SIDEBAR_WIDTHS.AI_ASSISTANT;
-    } else if (resourceMonitorOpen && lastOpenedSidebar === 'resource') {
+    } else if (resourceMonitorOpen && lastOpenedSidebar === "resource") {
       calculatedMargin = SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-    } else if (connectionManagerOpen && lastOpenedSidebar === 'connection') {
+    } else if (connectionManagerOpen && lastOpenedSidebar === "connection") {
       calculatedMargin = SIDEBAR_WIDTHS.CONNECTION_MANAGER;
-    } else if (fileManagerOpen && lastOpenedSidebar === 'file') {
+    } else if (fileManagerOpen && lastOpenedSidebar === "file") {
       calculatedMargin = SIDEBAR_WIDTHS.FILE_MANAGER;
-    } else if (shortcutCommandsOpen && lastOpenedSidebar === 'shortcut') {
+    } else if (shortcutCommandsOpen && lastOpenedSidebar === "shortcut") {
       calculatedMargin = SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
     } else {
       // Fallback if lastOpenedSidebar isn't set but one is open
       if (aiAssistantOpen) calculatedMargin = SIDEBAR_WIDTHS.AI_ASSISTANT;
-      else if (resourceMonitorOpen) calculatedMargin = SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-      else if (connectionManagerOpen) calculatedMargin = SIDEBAR_WIDTHS.CONNECTION_MANAGER;
+      else if (resourceMonitorOpen)
+        calculatedMargin = SIDEBAR_WIDTHS.RESOURCE_MONITOR;
+      else if (connectionManagerOpen)
+        calculatedMargin = SIDEBAR_WIDTHS.CONNECTION_MANAGER;
       else if (fileManagerOpen) calculatedMargin = SIDEBAR_WIDTHS.FILE_MANAGER;
-      else if (shortcutCommandsOpen) calculatedMargin = SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
+      else if (shortcutCommandsOpen)
+        calculatedMargin = SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
     }
 
     if (calculatedMargin > 0) {
@@ -429,7 +432,15 @@ function App() {
     }
 
     setActiveSidebarMargin(calculatedMargin);
-  }, [aiAssistantOpen, resourceMonitorOpen, connectionManagerOpen, fileManagerOpen, shortcutCommandsOpen, lastOpenedSidebar, SIDEBAR_WIDTHS]);
+  }, [
+    aiAssistantOpen,
+    resourceMonitorOpen,
+    connectionManagerOpen,
+    fileManagerOpen,
+    shortcutCommandsOpen,
+    lastOpenedSidebar,
+    SIDEBAR_WIDTHS,
+  ]);
 
   // 应用启动时加载连接配置
   React.useEffect(() => {
@@ -545,7 +556,7 @@ function App() {
     try {
       const newDarkMode = !darkMode;
       setDarkMode(newDarkMode);
-      
+
       // 保存主题设置到配置文件
       if (window.terminalAPI?.saveUISettings) {
         // 先获取当前设置，然后更新主题设置
@@ -560,16 +571,16 @@ function App() {
         } catch (loadError) {
           console.warn("获取当前设置失败，使用默认值:", loadError);
         }
-        
+
         // 更新主题设置并保存
         const updatedSettings = {
           ...currentSettings,
           darkMode: newDarkMode,
         };
-        
+
         await window.terminalAPI.saveUISettings(updatedSettings);
       }
-      
+
       // 同时更新 localStorage 作为备选（向后兼容）
       localStorage.setItem("terminalDarkMode", newDarkMode.toString());
     } catch (error) {
@@ -898,7 +909,7 @@ function App() {
     setFileManagerOpen(false);
     setShortcutCommandsOpen(false);
   };
-  
+
   // 添加发送快捷命令到终端的函数
   const handleSendCommand = (command) => {
     if (currentTab > 0 && tabs[currentTab]) {
@@ -909,7 +920,10 @@ function App() {
         if (processId && window.terminalAPI.sendToProcess) {
           window.terminalAPI.sendToProcess(processId, command + "\r");
         } else {
-          console.error("无法发送命令:", processId ? "API未找到" : "进程ID未找到");
+          console.error(
+            "无法发送命令:",
+            processId ? "API未找到" : "进程ID未找到",
+          );
         }
       }
     }
@@ -919,12 +933,12 @@ function App() {
   React.useEffect(() => {
     const handleSettingsChanged = (event) => {
       const { language, fontSize, darkMode: newDarkMode } = event.detail;
-      
+
       // 应用主题设置
       if (newDarkMode !== undefined && newDarkMode !== darkMode) {
         setDarkMode(newDarkMode);
       }
-      
+
       // 应用字号设置
       if (fontSize) {
         document.documentElement.style.fontSize = `${fontSize}px`;
@@ -957,7 +971,7 @@ function App() {
             if (settings.darkMode !== undefined) {
               setDarkMode(settings.darkMode);
             }
-            
+
             // 应用字号设置
             document.documentElement.style.fontSize = `${settings.fontSize || 14}px`;
 
@@ -1194,7 +1208,8 @@ function App() {
                   zIndex: currentTab === 0 ? 1 : 0,
                   pointerEvents: currentTab === 0 ? "auto" : "none",
                   visibility: currentTab === 0 ? "visible" : "hidden",
-                  transition: "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
+                  transition:
+                    "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
                 }}
               >
                 <WelcomePage />
@@ -1214,7 +1229,8 @@ function App() {
                     zIndex: currentTab === index + 1 ? 1 : 0,
                     pointerEvents: currentTab === index + 1 ? "auto" : "none",
                     visibility: currentTab === index + 1 ? "visible" : "hidden",
-                    transition: "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
+                    transition:
+                      "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
                     // 标签页容器使用背景颜色，会随主题变化
                     backgroundColor: "inherit",
                   }}

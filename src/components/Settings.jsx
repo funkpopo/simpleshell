@@ -91,7 +91,9 @@ const Settings = ({ open, onClose }) => {
           if (settings) {
             setLanguage(settings.language || "zh-CN");
             setFontSize(settings.fontSize || 14);
-            setDarkMode(settings.darkMode !== undefined ? settings.darkMode : true);
+            setDarkMode(
+              settings.darkMode !== undefined ? settings.darkMode : true,
+            );
           }
         }
       } catch (error) {

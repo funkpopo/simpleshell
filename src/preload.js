@@ -43,7 +43,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 快捷命令API
   getShortcutCommands: () => ipcRenderer.invoke("get-shortcut-commands"),
-  saveShortcutCommands: (data) => ipcRenderer.invoke("save-shortcut-commands", data),
+  saveShortcutCommands: (data) =>
+    ipcRenderer.invoke("save-shortcut-commands", data),
 
   // 事件监听
   onProcessOutput: (processId, callback) => {
