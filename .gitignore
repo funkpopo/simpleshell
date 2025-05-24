@@ -4,6 +4,7 @@ dist
 out
 .DS_Store
 *.log*
+log
 .editorconfig
 .eslintrc.cjs
 .eslintignore
