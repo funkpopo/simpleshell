@@ -819,17 +819,19 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   return (
     <Paper
       sx={{
-        flexDirection: "column",
         width: open ? 300 : 0,
         height: "100%",
         overflow: "hidden",
-        transition: (theme) =>
-          theme.transitions.create("width", {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
+        transition: theme.transitions.create("width", {
+          easing: theme.transitions.easing.sharp,
+          duration: theme.transitions.duration.enteringScreen,
+        }),
+        borderLeft: `1px solid ${theme.palette.divider}`,
         display: "flex",
+        flexDirection: "column",
+        borderRadius: 0,
       }}
+      elevation={4}
     >
       {open && (
         <>
@@ -837,15 +839,13 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           <Box
             sx={{
               display: "flex",
-              alignItems: "center",
               justifyContent: "space-between",
-              px: 2,
-              py: 1,
-              borderBottom: 1,
-              borderColor: "divider",
+              alignItems: "center",
+              p: 2,
+              borderBottom: `1px solid ${theme.palette.divider}`,
             }}
           >
-            <Typography variant="h6" component="div">
+            <Typography variant="subtitle1" fontWeight="medium">
               {t("shortcutCommands.title")}
             </Typography>
             <Box>
@@ -861,7 +861,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           </Box>
 
           {/* 搜索框 */}
-          <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
+          <Box sx={{ p: 1, borderBottom: `1px solid ${theme.palette.divider}` }}>
             <TextField
               placeholder={t("shortcutCommands.search")}
               variant="outlined"
@@ -887,7 +887,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           </Box>
 
           {/* 标签页 */}
-          <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
+          <Box sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}>
             <Tabs
               value={tabValue}
               onChange={handleTabChange}
@@ -916,6 +916,13 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               overflow: "auto",
               bgcolor:
                 theme.palette.mode === "dark" ? "background.paper" : "grey.50",
+              "&::-webkit-scrollbar": {
+                width: "8px",
+              },
+              "&::-webkit-scrollbar-thumb": {
+                backgroundColor: "rgba(0,0,0,0.2)",
+                borderRadius: "4px",
+              },
             }}
           >
             <div
@@ -953,8 +960,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           <Box
             sx={{
               p: 1,
-              borderTop: 1,
-              borderColor: "divider",
+              borderTop: `1px solid ${theme.palette.divider}`,
               display: "flex",
               justifyContent: "flex-end",
             }}
