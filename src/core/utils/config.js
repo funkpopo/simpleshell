@@ -1,7 +1,7 @@
 const { app } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const { encryptText, decryptText } = require("./encryption");
+const { encryptText, decryptText } = require("./crypto");
 
 /**
  * 获取配置文件路径

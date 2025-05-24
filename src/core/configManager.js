@@ -7,9 +7,8 @@ let logToFile = null;
 let encryptText = null;
 let decryptText = null;
 
-// Path for shortcut commands configuration, will be set in init
+// Path for main configuration file, will be set in init
 let mainConfigPath = null;
-let shortcutCommandsConfigPathInternal = null;
 
 /**
  * Initializes the ConfigManager with necessary dependencies.
@@ -35,9 +34,8 @@ function init(appInstance, loggerModule, cryptoModule) {
 
   try {
     mainConfigPath = _getMainConfigPathInternal(); // Call the renamed internal function
-    shortcutCommandsConfigPathInternal = path.join(app.getPath('userData'), 'shortcutCommands.json');
     if (logToFile) {
-      logToFile("ConfigManager initialized. Main config path: " + mainConfigPath + ", Shortcut commands path: " + shortcutCommandsConfigPathInternal, "INFO");
+      logToFile("ConfigManager initialized. Main config path: " + mainConfigPath, "INFO");
     }
   } catch (error) {
     console.error("ConfigManager: Failed to set paths during init:", error);
@@ -199,38 +197,31 @@ function loadAISettings() {
       if (config.aiSettings) {
         const settings = { ...config.aiSettings };
         if (logToFile) {
-          logToFile(
-            `ConfigManager: Loaded AI settings - Has configs: ${Array.isArray(settings.configs)}, Count: ${Array.isArray(settings.configs) ? settings.configs.length : 0}, Has current: ${!!settings.current}`,
-            "INFO"
-          );
+          logToFile(`ConfigManager: Loaded ${settings.configs?.length || 0} AI configurations.`, "INFO");
         }
-
-        if (!settings.configs) settings.configs = [];
-        if (Array.isArray(settings.configs)) {
-          settings.configs = settings.configs.map((cfg) => {
+        // Decrypt API keys in configs array
+        if (settings.configs && Array.isArray(settings.configs)) {
+          settings.configs = settings.configs.map(cfg => {
             if (cfg.apiKey && decryptText) {
               try { return { ...cfg, apiKey: decryptText(cfg.apiKey) }; }
-              catch (err) { 
-                if (logToFile) logToFile(`ConfigManager: Failed to decrypt API key for AI config ${cfg.id || '(no id)'}: ${err.message}`, "ERROR");
-                return cfg; // Return original cfg if decryption fails
+              catch (decryptError) {
+                if (logToFile) logToFile(`ConfigManager: Failed to decrypt API key for config ${cfg.name || cfg.id}. Error: ${decryptError.message}`, "WARN");
+                return { ...cfg, apiKey: "" }; // Clear the key if decryption fails
               }
             }
             return cfg;
           });
         }
-
+        // Decrypt current API key
         if (settings.current && settings.current.apiKey && decryptText) {
           try { settings.current.apiKey = decryptText(settings.current.apiKey); }
-          catch (err) { 
-            if (logToFile) logToFile(`ConfigManager: Failed to decrypt current AI API key: ${err.message}`, "ERROR");
+          catch (decryptError) {
+            if (logToFile) logToFile(`ConfigManager: Failed to decrypt current API key. Error: ${decryptError.message}`, "WARN");
+            settings.current.apiKey = ""; // Clear the key if decryption fails
           }
-        }
-        if (!settings.current) {
-          settings.current = { apiUrl: "", apiKey: "", model: "", streamEnabled: true };
         }
         return settings;
       }
-      if (logToFile) logToFile("ConfigManager: No aiSettings found in config file.", "WARN");
     }
   } catch (error) {
     if (logToFile) logToFile("ConfigManager: Failed to load AI settings - " + error.message, "ERROR");
@@ -257,30 +248,35 @@ function saveAISettings(settings) {
       const data = fs.readFileSync(mainConfigPath, "utf8");
       config = JSON.parse(data);
     }
-
-    const settingsToSave = JSON.parse(JSON.stringify(settings)); // Deep copy
-    if (!settingsToSave.configs) settingsToSave.configs = [];
-
-    if (Array.isArray(settingsToSave.configs) && encryptText) {
-      settingsToSave.configs = settingsToSave.configs.map((cfg) => {
-        const configCopy = { ...cfg };
-        if (configCopy.apiKey) {
-          try { configCopy.apiKey = encryptText(configCopy.apiKey); }
-          catch (err) { 
-            if (logToFile) logToFile(`ConfigManager: Failed to encrypt API key for AI config ${cfg.id || '(no id)'}: ${err.message}`, "ERROR");
+    
+    const settingsToSave = { ...settings };
+    
+    // Encrypt API keys in configs array
+    if (settingsToSave.configs && Array.isArray(settingsToSave.configs) && encryptText) {
+      settingsToSave.configs = settingsToSave.configs.map(cfg => {
+        if (cfg.apiKey) {
+          const encryptedKey = encryptText(cfg.apiKey);
+          if (encryptedKey === null) {
+            if (logToFile) logToFile(`ConfigManager: Failed to encrypt API key for config ${cfg.name || cfg.id}.`, "ERROR");
+            return { ...cfg, apiKey: "" }; // Clear the key if encryption fails
           }
+          return { ...cfg, apiKey: encryptedKey };
         }
-        return configCopy;
+        return cfg;
       });
     }
-
+    
+    // Encrypt current API key
     if (settingsToSave.current && settingsToSave.current.apiKey && encryptText) {
-      try { settingsToSave.current.apiKey = encryptText(settingsToSave.current.apiKey); }
-      catch (err) { 
-        if (logToFile) logToFile(`ConfigManager: Failed to encrypt current AI API key: ${err.message}`, "ERROR");
+      const encryptedCurrentKey = encryptText(settingsToSave.current.apiKey);
+      if (encryptedCurrentKey === null) {
+        if (logToFile) logToFile("ConfigManager: Failed to encrypt current API key.", "ERROR");
+        settingsToSave.current.apiKey = ""; // Clear the key if encryption fails
+      } else {
+        settingsToSave.current.apiKey = encryptedCurrentKey;
       }
     }
-
+    
     config.aiSettings = settingsToSave;
     fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
     if (logToFile) logToFile("ConfigManager: AI settings saved successfully.", "INFO");
@@ -299,10 +295,9 @@ function saveAISettings(settings) {
  * @returns {object} UI settings object, or a default structure if failed.
  */
 function loadUISettings() {
-  const defaultSettings = { language: "zh-CN", fontSize: 14, darkMode: true };
   if (!mainConfigPath) {
     if (logToFile) logToFile("ConfigManager: Main config path not set. Cannot load UI settings.", "ERROR");
-    return defaultSettings;
+    return { language: "zh-CN", fontSize: 14, darkMode: true };
   }
   if (logToFile) logToFile(`ConfigManager: Loading UI settings from ${mainConfigPath}`, "INFO");
 
@@ -311,23 +306,15 @@ function loadUISettings() {
       const data = fs.readFileSync(mainConfigPath, "utf8");
       const config = JSON.parse(data);
       if (config.uiSettings) {
-        // Ensure all necessary fields exist, providing defaults if not
-        const loadedSettings = config.uiSettings;
-        const completeSettings = {
-          language: loadedSettings.language || defaultSettings.language,
-          fontSize: loadedSettings.fontSize || defaultSettings.fontSize,
-          darkMode: loadedSettings.darkMode !== undefined ? loadedSettings.darkMode : defaultSettings.darkMode,
-        };
         if (logToFile) logToFile("ConfigManager: UI settings loaded successfully.", "INFO");
-        return completeSettings;
+        return config.uiSettings;
       }
-      if (logToFile) logToFile("ConfigManager: No uiSettings found in config file. Returning defaults.", "WARN");
     }
   } catch (error) {
     if (logToFile) logToFile("ConfigManager: Failed to load UI settings - " + error.message, "ERROR");
     console.error("ConfigManager: Failed to load UI settings:", error);
   }
-  return defaultSettings;
+  return { language: "zh-CN", fontSize: 14, darkMode: true };
 }
 
 /**
@@ -336,7 +323,6 @@ function loadUISettings() {
  * @returns {boolean} True if successful, false otherwise.
  */
 function saveUISettings(settings) {
-  const defaultSettings = { language: "zh-CN", fontSize: 14, darkMode: true };
   if (!mainConfigPath) {
     if (logToFile) logToFile("ConfigManager: Main config path not set. Cannot save UI settings.", "ERROR");
     return false;
@@ -349,15 +335,7 @@ function saveUISettings(settings) {
       const data = fs.readFileSync(mainConfigPath, "utf8");
       config = JSON.parse(data);
     }
-    
-    // Ensure settings contain all necessary fields, providing defaults if not
-    const completeSettings = {
-      language: settings.language || defaultSettings.language,
-      fontSize: settings.fontSize || defaultSettings.fontSize,
-      darkMode: settings.darkMode !== undefined ? settings.darkMode : defaultSettings.darkMode,
-    };
-    
-    config.uiSettings = completeSettings;
+    config.uiSettings = settings;
     fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
     if (logToFile) logToFile("ConfigManager: UI settings saved successfully.", "INFO");
     return true;
@@ -371,37 +349,38 @@ function saveUISettings(settings) {
 // === Public API for Shortcut Commands ===
 
 /**
- * Loads shortcut commands from their dedicated config file.
+ * Loads shortcut commands from the main config file.
  * @returns {object} Shortcut commands object (e.g., { commands: [], categories: [] }), or a default if failed.
  */
 function loadShortcutCommands() {
   const defaultShortcuts = { commands: [], categories: [] };
-  if (!shortcutCommandsConfigPathInternal) {
-    if (logToFile) logToFile("ConfigManager: Shortcut commands config path not set. Cannot load shortcuts.", "ERROR");
+  if (!mainConfigPath) {
+    if (logToFile) logToFile("ConfigManager: Main config path not set. Cannot load shortcuts.", "ERROR");
     return defaultShortcuts;
   }
-  if (logToFile) logToFile(`ConfigManager: Loading shortcut commands from ${shortcutCommandsConfigPathInternal}`, "INFO");
+  if (logToFile) logToFile(`ConfigManager: Loading shortcut commands from ${mainConfigPath}`, "INFO");
 
   try {
-    if (fs.existsSync(shortcutCommandsConfigPathInternal)) {
-      const data = fs.readFileSync(shortcutCommandsConfigPathInternal, 'utf8');
-      let shortcuts;
-      try {
-        if (!decryptText) throw new Error("decryptText function not available.");
-        shortcuts = JSON.parse(decryptText(data));
-      } catch (decryptError) {
-        if (logToFile) logToFile(`ConfigManager: Failed to decrypt shortcut commands, trying to parse as plain JSON. Error: ${decryptError.message}`, "WARN");
+    if (fs.existsSync(mainConfigPath)) {
+      const data = fs.readFileSync(mainConfigPath, 'utf8');
+      const config = JSON.parse(data);
+      
+      if (config.shortcutCommands) {
+        let shortcuts;
         try {
-          shortcuts = JSON.parse(data); // Fallback for unencrypted data
+          // 直接解析为明文JSON，不再使用加密
+          shortcuts = JSON.parse(config.shortcutCommands);
         } catch (parseError) {
-          if (logToFile) logToFile(`ConfigManager: Error parsing shortcut commands data (even as plain JSON): ${parseError.message}`, "ERROR");
+          if (logToFile) logToFile(`ConfigManager: Error parsing shortcut commands data: ${parseError.message}`, "ERROR");
           return defaultShortcuts;
         }
+        if (logToFile) logToFile(`ConfigManager: Loaded ${shortcuts.commands?.length || 0} shortcut commands and ${shortcuts.categories?.length || 0} categories.`, "INFO");
+        return shortcuts || defaultShortcuts; // Ensure we return an object
       }
-      if (logToFile) logToFile(`ConfigManager: Loaded ${shortcuts.commands?.length || 0} shortcut commands and ${shortcuts.categories?.length || 0} categories.`, "INFO");
-      return shortcuts || defaultShortcuts; // Ensure we return an object
+      if (logToFile) logToFile("ConfigManager: No shortcut commands field found in config. Returning defaults.", "INFO");
+    } else {
+      if (logToFile) logToFile("ConfigManager: No main config file found. Returning defaults.", "INFO");
     }
-    if (logToFile) logToFile("ConfigManager: No shortcut commands file found. Returning defaults.", "INFO");
   } catch (error) {
     if (logToFile) logToFile("ConfigManager: Error loading shortcut commands - " + error.message, "ERROR");
     console.error("ConfigManager: Error loading shortcut commands:", error);
@@ -410,28 +389,27 @@ function loadShortcutCommands() {
 }
 
 /**
- * Saves shortcut commands to their dedicated config file.
+ * Saves shortcut commands to the main config file.
  * @param {object} data - The shortcut commands object (e.g., { commands: [], categories: [] }) to save.
  * @returns {boolean} True if successful, false otherwise.
  */
 function saveShortcutCommands(data) {
-  if (!shortcutCommandsConfigPathInternal) {
-    if (logToFile) logToFile("ConfigManager: Shortcut commands config path not set. Cannot save shortcuts.", "ERROR");
+  if (!mainConfigPath) {
+    if (logToFile) logToFile("ConfigManager: Main config path not set. Cannot save shortcuts.", "ERROR");
     return false;
   }
-  if (!encryptText) {
-    if (logToFile) logToFile("ConfigManager: encryptText function not available. Cannot save encrypted shortcuts.", "ERROR");
-    return false;
-  }
-  if (logToFile) logToFile(`ConfigManager: Saving shortcut commands to ${shortcutCommandsConfigPathInternal}`, "INFO");
+  if (logToFile) logToFile(`ConfigManager: Saving shortcut commands to ${mainConfigPath}`, "INFO");
 
   try {
-    const encryptedData = encryptText(JSON.stringify(data));
-    if (encryptedData === null) { // encryptText returns null on failure
-        if (logToFile) logToFile("ConfigManager: Encryption of shortcut commands failed.", "ERROR");
-        return false;
+    let config = {};
+    if (fs.existsSync(mainConfigPath)) {
+      const configData = fs.readFileSync(mainConfigPath, "utf8");
+      config = JSON.parse(configData);
     }
-    fs.writeFileSync(shortcutCommandsConfigPathInternal, encryptedData);
+    
+    // 直接存储为明文JSON，不再使用加密
+    config.shortcutCommands = JSON.stringify(data);
+    fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
     if (logToFile) logToFile(`ConfigManager: Saved ${data.commands?.length || 0} shortcut commands and ${data.categories?.length || 0} categories.`, "INFO");
     return true;
   } catch (error) {
@@ -460,6 +438,7 @@ function initializeMainConfig() {
     current: { apiUrl: "", apiKey: "", model: "", streamEnabled: true },
   };
   const initialUIStructure = { language: "zh-CN", fontSize: 14, darkMode: true };
+  const initialShortcutCommands = { commands: [], categories: [] };
 
   try {
     if (!fs.existsSync(mainConfigPath)) {
@@ -467,6 +446,7 @@ function initializeMainConfig() {
         connections: [],
         aiSettings: initialAIStructure,
         uiSettings: initialUIStructure,
+        shortcutCommands: JSON.stringify(initialShortcutCommands),
       };
       fs.writeFileSync(mainConfigPath, JSON.stringify(initialConfig, null, 2), "utf8");
       if (logToFile) logToFile("ConfigManager: Initial main config file created.", "INFO");
@@ -541,6 +521,12 @@ function initializeMainConfig() {
         if (uiSettings.darkMode === undefined) { uiSettings.darkMode = defaultUISettings.darkMode; configUpdated = true; }
       }
 
+      if (!config.shortcutCommands) {
+        config.shortcutCommands = JSON.stringify(initialShortcutCommands);
+        configUpdated = true;
+        if (logToFile) logToFile("ConfigManager: Added missing 'shortcutCommands' structure to main config.", "INFO");
+      }
+
       if (configUpdated) {
         fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
         if (logToFile) logToFile("ConfigManager: Main config file updated for missing fields/structure or AI settings migration.", "INFO");
@@ -555,6 +541,7 @@ function initializeMainConfig() {
             connections: [],
             aiSettings: initialAIStructure,
             uiSettings: initialUIStructure,
+            shortcutCommands: JSON.stringify(initialShortcutCommands),
         };
         fs.writeFileSync(mainConfigPath, JSON.stringify(initialConfig, null, 2), "utf8");
         if (logToFile) logToFile("ConfigManager: Recreated main config file due to initialization error.", "WARN");
