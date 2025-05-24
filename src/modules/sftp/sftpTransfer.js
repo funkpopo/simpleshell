@@ -187,7 +187,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
 }
 
 async function handleUploadFile(event, tabId, targetFolder) {
-  if (!sftpCore || !dialog || !getChildProcessInfo || !sendToRenderer) {
+  if (!sftpCore || !dialog || !getChildProcessInfo || !sendToRenderer || !logToFile || !fs || !path || !SftpClient) {
     logToFile("sftpTransfer not properly initialized for uploadFile.", "ERROR");
     return { success: false, error: "SFTP Transfer module not initialized." };
   }
@@ -202,19 +202,35 @@ async function handleUploadFile(event, tabId, targetFolder) {
     return { success: false, cancelled: true, error: "用户取消上传" };
   }
 
-  // For simplicity, this example handles only the first selected file if multiSelections is true
-  // The original main.js logic for multi-file upload was more complex and iterated
-  const localFilePath = filePaths[0];
-  const fileName = path.basename(localFilePath);
-  const stats = fs.statSync(localFilePath);
-  const totalBytes = stats.size;
-
   // Normalize target folder path
   let normalizedTargetFolder = targetFolder;
-  if (targetFolder === "~") normalizedTargetFolder = "."; // SFTP client might handle ~, or use a known home path if available
-  const remoteFilePath = path.posix
-    .join(normalizedTargetFolder || ".", fileName)
-    .replace(/\\/g, "/");
+  if (targetFolder === "~" || !targetFolder) normalizedTargetFolder = "."; // SFTP client might handle ~, or use a known home path if available
+
+  const totalFilesToUpload = filePaths.length;
+  let overallUploadedBytes = 0;
+  let filesUploadedCount = 0;
+  let failedUploads = 0;
+  let failedFileNames = [];
+  let totalBytesToUpload = 0;
+
+  // Calculate total size for all files
+  for (const filePath of filePaths) {
+    try {
+      const stats = fs.statSync(filePath);
+      totalBytesToUpload += stats.size;
+    } catch (statError) {
+      logToFile(`Error stating file ${filePath}: ${statError.message}`, "WARN");
+      // Optionally, count this as a failed file upfront or skip
+    }
+  }
+
+  if (totalBytesToUpload === 0 && totalFilesToUpload > 0) {
+      // This case can happen if all files failed to stat or are empty.
+      // Depending on desired behavior, could return an error or specific message.
+      logToFile(`No bytes to upload, though ${totalFilesToUpload} files were selected (possibly stat errors or all empty).`, "WARN");
+      // For now, let it proceed, fastPut might handle empty files or error out if path is invalid.
+  }
+
 
   return sftpCore.enqueueSftpOperation(
     tabId,
@@ -226,8 +242,10 @@ async function handleUploadFile(event, tabId, targetFolder) {
       const sshConfig = processInfo.config;
 
       const sftp = new SftpClient();
-      const transferKey = `${tabId}-upload-${Date.now()}`;
-      activeTransfers.set(transferKey, { sftp, type: "upload" });
+      // Create a more unique transferKey if multiple `handleUploadFile` calls can be concurrent for the same tabId
+      // For now, assuming one major upload operation per tabId from this handler.
+      const transferKey = `${tabId}-upload-multifile-${Date.now()}`;
+      activeTransfers.set(transferKey, { sftp, type: "upload-multifile" });
 
       try {
         await sftp.connect({
@@ -244,78 +262,192 @@ async function handleUploadFile(event, tabId, targetFolder) {
               : undefined,
         });
 
-        // Ensure target directory exists (simplified check, real version had more robust folder check)
+        // Ensure target directory exists
         try {
           const folderStat = await sftp.stat(normalizedTargetFolder || ".");
-          if (!folderStat.isDirectory)
-            throw new Error("Target is not a directory.");
+          if (!folderStat.isDirectory) {
+            await sftp.end().catch(()=>{});
+            activeTransfers.delete(transferKey);
+            return { success: false, error: `目标 ${normalizedTargetFolder} 不是一个有效的文件夹。` };
+          }
         } catch (statErr) {
-          // If stat fails, it might be because the directory doesn't exist, or other issues.
-          // For simplicity, we are not creating it here. Production code might need to.
           logToFile(
-            `sftpTransfer: Target folder check/stat failed: ${statErr.message}`,
+            `sftpTransfer: Target folder check/stat failed for "${normalizedTargetFolder}": ${statErr.message}`,
             "WARN",
           );
-          // Depending on strictness, could fail here or proceed assuming sftp.put will handle it.
+          await sftp.end().catch(()=>{});
+          activeTransfers.delete(transferKey);
+          return { success: false, error: `目标文件夹 "${normalizedTargetFolder}" 不可访问: ${statErr.message}` };
         }
 
-        let transferredBytes = 0;
-        let lastProgressUpdate = 0;
+        let lastProgressUpdateTime = 0;
 
-        await sftp.fastPut(localFilePath, remoteFilePath, {
-          step: (totalTransferred) => {
-            transferredBytes = totalTransferred;
-            const progress = Math.floor((transferredBytes / totalBytes) * 100);
-            const now = Date.now();
-            if (now - lastProgressUpdate >= 100) {
-              sendToRenderer("upload-progress", {
-                tabId,
-                transferKey,
-                progress,
-                fileName,
-                transferredBytes,
-                totalBytes,
-                // totalFiles, currentFileIndex for multi-file would be here
-              });
-              lastProgressUpdate = now;
+        for (let i = 0; i < totalFilesToUpload; i++) {
+          const localFilePath = filePaths[i];
+          const fileName = path.basename(localFilePath);
+          const remoteFilePath = path.posix
+            .join(normalizedTargetFolder || ".", fileName)
+            .replace(/\\\\/g, "/");
+          
+          let currentFileStats;
+          try {
+            currentFileStats = fs.statSync(localFilePath);
+          } catch (statError) {
+            logToFile(`Skipping file ${localFilePath} due to stat error: ${statError.message}`, "ERROR");
+            failedUploads++;
+            failedFileNames.push(fileName);
+            // Send progress update for the skipped file if desired
+            sendToRenderer("upload-progress", {
+              tabId,
+              transferKey,
+              progress: totalBytesToUpload > 0 ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100) : 0,
+              currentFileName: fileName,
+              currentFileIndex: i + 1,
+              totalFiles: totalFilesToUpload,
+              overallUploadedBytes, // Use 'overallUploadedBytes' for consistency with folder upload
+              totalBytes: totalBytesToUpload, // Use 'totalBytes' for consistency
+              error: `无法读取文件属性: ${statError.message.substring(0,50)}...`
+            });
+            if (i === totalFilesToUpload - 1 && filesUploadedCount === 0) { // Last file and no successes
+                 // If all files failed and this is the last one, ensure we communicate failure.
             }
-          },
-          concurrency: 16,
-          chunkSize: 32768,
-        });
+            continue; // Skip to the next file
+          }
+          
+          const currentFileSize = currentFileStats.size;
+          let fileTransferredBytes = 0;
 
+          // Check for cancellation before each file
+          if (!activeTransfers.has(transferKey)) {
+            throw new Error("Upload cancelled by user.");
+          }
+
+          try {
+            await sftp.fastPut(localFilePath, remoteFilePath, {
+              step: (totalTransferredForFile) => {
+                fileTransferredBytes = totalTransferredForFile;
+                const currentOverallTransferred = overallUploadedBytes + fileTransferredBytes;
+                const progress = totalBytesToUpload > 0 ? Math.floor((currentOverallTransferred / totalBytesToUpload) * 100) : 0;
+                const now = Date.now();
+
+                if (now - lastProgressUpdateTime >= 100) { // Report every 100ms
+                  sendToRenderer("upload-progress", {
+                    tabId,
+                    transferKey,
+                    progress: Math.min(100, progress),
+                    currentFileName: fileName,
+                    currentFileIndex: i + 1,
+                    totalFiles: totalFilesToUpload,
+                    overallUploadedBytes: currentOverallTransferred,
+                    totalBytes: totalBytesToUpload,
+                  });
+                  lastProgressUpdateTime = now;
+                }
+              },
+              concurrency: 16, // As per previous settings
+              chunkSize: 32768, // As per previous settings
+            });
+            overallUploadedBytes += currentFileSize;
+            filesUploadedCount++;
+            // Send final progress for this file
+            sendToRenderer("upload-progress", {
+              tabId,
+              transferKey,
+              progress: totalBytesToUpload > 0 ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100) : (totalFilesToUpload > 0 ? 100 : 0),
+              currentFileName: fileName,
+              currentFileIndex: i + 1,
+              totalFiles: totalFilesToUpload,
+              overallUploadedBytes,
+              totalBytes: totalBytesToUpload,
+              fileUploadSuccess: true // Indicate this specific file was successful
+            });
+          } catch (fileError) {
+            logToFile(
+              `sftpTransfer: Error uploading file "${localFilePath}" to "${remoteFilePath}": ${fileError.message}`,
+              "ERROR",
+            );
+            failedUploads++;
+            failedFileNames.push(fileName);
+            // Send progress update for the failed file
+             sendToRenderer("upload-progress", {
+              tabId,
+              transferKey,
+              progress: totalBytesToUpload > 0 ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100) : 0,
+              currentFileName: fileName,
+              currentFileIndex: i + 1,
+              totalFiles: totalFilesToUpload,
+              overallUploadedBytes,
+              totalBytes: totalBytesToUpload,
+              error: fileError.message.substring(0,100)+'...', // Truncate long errors
+              fileUploadSuccess: false // Indicate this specific file failed
+            });
+          }
+        } // End of for loop
+
+        // Final overall progress update after loop (covers all files)
         sendToRenderer("upload-progress", {
           tabId,
           transferKey,
-          progress: 100,
-          fileName,
-          transferredBytes: totalBytes,
-          totalBytes,
+          progress: totalBytesToUpload > 0 && filesUploadedCount > 0 ? 100 : (failedUploads === totalFilesToUpload ? 0 : 100), // show 0 if all failed
+          currentFileName: failedUploads > 0 ? `${failedUploads} 个文件上传失败` : "所有文件上传完成!",
+          currentFileIndex: totalFilesToUpload,
+          totalFiles: totalFilesToUpload,
+          overallUploadedBytes,
+          totalBytes: totalBytesToUpload,
+          operationComplete: true,
+          successfulFiles: filesUploadedCount,
+          failedFiles: failedUploads,
         });
-        await sftp.end();
-        activeTransfers.delete(transferKey);
-        return { success: true, remotePath: remoteFilePath, totalFiles: 1 }; // Simplified for single file
+
+        return {
+          success: filesUploadedCount > 0, // Success if at least one file uploaded
+          totalFiles: totalFilesToUpload,
+          successfulFiles: filesUploadedCount,
+          failedFiles: failedUploads,
+          failedFileNames,
+          remotePath: normalizedTargetFolder, // Target folder
+          message: filesUploadedCount > 0 ? `${filesUploadedCount} 个文件上传成功。` + (failedUploads > 0 ? ` ${failedUploads} 个文件上传失败。` : "") : "没有文件成功上传。"
+        };
+
       } catch (error) {
         logToFile(
-          `sftpTransfer: Upload file error for ${localFilePath} to ${remoteFilePath} on ${tabId}: ${error.message}`,
+          `sftpTransfer: General upload error on tab ${tabId} to ${normalizedTargetFolder}: ${error.message}`,
           "ERROR",
         );
-        await sftp.end().catch(() => {});
-        activeTransfers.delete(transferKey);
+        // Send a final error status to renderer for the whole operation
+        sendToRenderer("upload-progress", {
+            tabId,
+            transferKey,
+            error: error.message,
+            cancelled: error.message.includes("cancel") || error.message.includes("abort"),
+            progress: -1, // Indicate error
+            operationComplete: true,
+            successfulFiles: filesUploadedCount,
+            failedFiles: totalFilesToUpload - filesUploadedCount, // All remaining are failed
+        });
         return {
           success: false,
-          error: `上传文件失败: ${error.message}`,
-          cancelled:
-            error.message.includes("cancel") || error.message.includes("abort"),
+          error: `上传操作失败: ${error.message}`,
+          cancelled: error.message.includes("cancel") || error.message.includes("abort"),
+          totalFiles: totalFilesToUpload,
+          successfulFiles: filesUploadedCount,
+          failedFiles: totalFilesToUpload - filesUploadedCount,
+          failedFileNames, // May not be fully populated if error is before loop
         };
+      } finally {
+        if (sftp.sftp) { // Check if sftp client is connected
+          await sftp.end().catch(e => logToFile(`Error ending SFTP in multi-upload: ${e.message}`, "WARN"));
+        }
+        activeTransfers.delete(transferKey);
       }
     },
-    { type: "upload", path: remoteFilePath },
+    // Adjust queue operation type if needed, e.g., to reflect multi-file nature or priority
+    { type: "upload-multifile", path: normalizedTargetFolder, priority: "normal" }
   );
 }
 
 // Placeholder for handleUploadFolder - very complex, will simplify for now or defer
-async function handleUploadFolder(tabId, targetFolder) {
+async function handleUploadFolder(tabId, localFolderPath, targetFolder) {
   if (
     !sftpCore ||
     !dialog ||
@@ -336,17 +468,14 @@ async function handleUploadFolder(tabId, targetFolder) {
     };
   }
 
-  const { canceled, filePaths } = await dialog.showOpenDialog({
-    title: "选择要上传的文件夹",
-    properties: ["openDirectory"],
-    buttonLabel: "上传文件夹",
-  });
-
-  if (canceled || !filePaths || filePaths.length === 0) {
-    return { success: false, cancelled: true, error: "用户取消上传" };
+  if (!localFolderPath) {
+    logToFile(
+      "sftpTransfer: localFolderPath not provided for uploadFolder.",
+      "ERROR",
+    );
+    return { success: false, error: "本地文件夹路径未提供" };
   }
 
-  const localFolderPath = filePaths[0];
   const folderName = path.basename(localFolderPath);
 
   let normalizedTargetFolder = targetFolder;
@@ -489,7 +618,7 @@ async function handleUploadFolder(tabId, targetFolder) {
                 "DEBUG",
               );
             } catch (mkdirError) {
-              // If error is not 'Failure code 4' (already exists), then rethrow
+              // If error is not 'Failure code is 4' (already exists), then rethrow
               if (
                 !mkdirError.message ||
                 (!mkdirError.message.includes("Failure code is 4") &&

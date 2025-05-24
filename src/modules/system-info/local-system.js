@@ -101,42 +101,8 @@ function getLocalSystemInfo() {
     } catch (e) {
       console.error("Error getting architecture info:", e);
     }
-  } else if (osInfo.platform === "darwin") {
-    // macOS平台
-    const macVersions = {
-      22: "Ventura",
-      21: "Monterey",
-      20: "Big Sur",
-      19: "Catalina",
-      18: "Mojave",
-      17: "High Sierra",
-      16: "Sierra",
-      15: "El Capitan",
-      14: "Yosemite",
-      13: "Mavericks",
-      12: "Mountain Lion",
-      11: "Lion",
-      10: "Snow Leopard",
-    };
-
-    // 尝试获取macOS版本
-    osInfo.distro = "macOS";
-    const darwinVersion = osInfo.release.split(".")[0];
-    if (macVersions[darwinVersion]) {
-      osInfo.version = macVersions[darwinVersion];
-      osInfo.release = `macOS ${osInfo.version} (${osInfo.release})`;
-    } else {
-      // 尝试通过Darwin版本推断macOS版本
-      if (parseInt(darwinVersion, 10) >= 23) {
-        osInfo.version = "Sonoma+";
-      }
-      osInfo.release = `macOS ${osInfo.version || osInfo.release}`;
-    }
   } else if (osInfo.platform === "linux") {
-    // Linux平台，但Electron环境中能获取的信息有限
     osInfo.distro = "Linux";
-    // 在Electron中我们无法轻松运行命令获取发行版信息
-    // 所以这里只提供基本信息
     osInfo.release = `Linux ${osInfo.release}`;
   }
 
@@ -163,4 +129,4 @@ function getLocalSystemInfo() {
 module.exports = {
   getLocalSystemInfo,
   getCpuUsage,
-};
+}; 
