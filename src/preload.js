@@ -173,59 +173,73 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   renameFile: (tabId, oldPath, newName) =>
     ipcRenderer.invoke("renameFile", tabId, oldPath, newName),
   uploadFile: (tabId, targetFolder, progressCallback) => {
-    // 注册一个临时的进度监听器
-    const progressListener = (_, data) => {
-      if (data.tabId === tabId && typeof progressCallback === "function") {
-        // 确保传递所有必要的参数给回调函数
+    // Unique channel for this specific upload
+    const progressChannel = `upload-progress-${tabId}-${Date.now()}`;
+
+    // Listen for progress updates on the unique channel
+    const handler = (event, progressData) => {
+      if (progressCallback && typeof progressCallback === "function") {
+        // 确保传递标准化的进度数据格式
         progressCallback(
-          data.progress || 0,
-          data.fileName || "",
-          data.transferredBytes || 0,
-          data.totalBytes || 0,
-          data.transferSpeed,
-          data.remainingTime,
-          data.currentFileIndex,
-          data.totalFiles,
+          progressData.progress || 0,
+          progressData.fileName || '',
+          progressData.transferredBytes || 0,
+          progressData.totalBytes || 0,
+          progressData.transferSpeed || 0,
+          progressData.remainingTime || 0,
+          progressData.currentFileIndex || 0,
+          progressData.totalFiles || 0
         );
       }
+      // If operation is complete or cancelled, remove listener
+      if (progressData.operationComplete || progressData.cancelled) {
+        ipcRenderer.removeListener(progressChannel, handler);
+      }
     };
+    ipcRenderer.on(progressChannel, handler);
 
-    // 添加进度事件监听器
-    ipcRenderer.on("upload-progress", progressListener);
-
-    // 发起上传请求并在完成后移除监听器
-    return ipcRenderer.invoke("uploadFile", tabId, targetFolder).finally(() => {
-      ipcRenderer.removeListener("upload-progress", progressListener);
-    });
+    // Invoke the main process to start the upload, passing the unique channel
+    return ipcRenderer
+      .invoke("uploadFile", tabId, targetFolder, progressChannel)
+      .finally(() => {
+        // Ensure listener is removed if invoke fails or completes without progressData signal
+        ipcRenderer.removeListener(progressChannel, handler);
+      });
   },
   // 新增: 上传文件夹API
   uploadFolder: (tabId, targetFolder, progressCallback) => {
-    // 注册一个临时的进度监听器
-    const progressListener = (_, data) => {
-      if (data.tabId === tabId && typeof progressCallback === "function") {
-        // 确保传递所有必要的参数给回调函数
+    // Unique channel for this specific upload
+    const progressChannel = `upload-folder-progress-${tabId}-${Date.now()}`;
+
+    // Listen for progress updates on the unique channel
+    const handler = (event, progressData) => {
+      if (progressCallback && typeof progressCallback === "function") {
+        // 确保传递标准化的进度数据格式
         progressCallback(
-          data.progress || 0,
-          data.fileName || "",
-          data.currentFile || "",
-          data.transferredBytes || 0,
-          data.totalBytes || 0,
-          data.transferSpeed,
-          data.remainingTime,
-          data.processedFiles || 0,
-          data.totalFiles || 0,
+          progressData.progress || 0,
+          progressData.fileName || '',
+          progressData.currentFile || '',
+          progressData.transferredBytes || 0,
+          progressData.totalBytes || 0,
+          progressData.transferSpeed || 0,
+          progressData.remainingTime || 0,
+          progressData.processedFiles || 0,
+          progressData.totalFiles || 0
         );
       }
+      // If operation is complete or cancelled, remove listener
+      if (progressData.operationComplete || progressData.cancelled) {
+        ipcRenderer.removeListener(progressChannel, handler);
+      }
     };
+    ipcRenderer.on(progressChannel, handler);
 
-    // 添加进度事件监听器
-    ipcRenderer.on("upload-folder-progress", progressListener);
-
-    // 发起上传请求并在完成后移除监听器
+    // Invoke the main process to start the upload, passing the unique channel
     return ipcRenderer
-      .invoke("uploadFolder", tabId, targetFolder)
+      .invoke("upload-folder", tabId, targetFolder, progressChannel)
       .finally(() => {
-        ipcRenderer.removeListener("upload-folder-progress", progressListener);
+        // Ensure listener is removed if invoke fails or completes without progressData signal
+        ipcRenderer.removeListener(progressChannel, handler);
       });
   },
   // 新增: 下载文件夹API

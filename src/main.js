@@ -227,12 +227,10 @@ app.whenReady().then(() => {
         mainWindow.webContents &&
         !mainWindow.webContents.isDestroyed()
       ) {
-        // ... existing code ...
+        mainWindow.webContents.send(channel, ...args);
       }
     },
   );
-
-  // ... existing code ...
 
   createWindow();
   createAIWorker();
@@ -244,6 +242,16 @@ app.on("before-quit", () => {
   // 移除所有事件监听器和子进程
   for (const [id, proc] of childProcesses.entries()) {
     try {
+      // 清理与此进程相关的待处理SFTP操作
+      if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+        sftpCore.clearPendingOperationsForTab(id);
+        // 如果proc.config && proc.config.tabId 与 id 不同，也清理 proc.config.tabId
+        // 因为 SSH 进程可能会在 childProcesses 中用两个键存储 (processId 和 sshConfig.tabId)
+        if (proc.config && proc.config.tabId && proc.config.tabId !== id) {
+          sftpCore.clearPendingOperationsForTab(proc.config.tabId);
+        }
+      }
+
       if (proc.process) {
         // 移除所有事件监听器
         if (proc.process.stdout) {
@@ -360,6 +368,10 @@ function setupIPC(mainWindow) {
               `\r\nProcess exited with code ${code || 0}\r\n`,
             );
           }
+          // 清理与此进程相关的待处理SFTP操作
+          if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+            sftpCore.clearPendingOperationsForTab(processId);
+          }
           childProcesses.delete(processId);
         } catch (error) {
           console.error("Error handling process exit:", error);
@@ -375,6 +387,10 @@ function setupIPC(mainWindow) {
               `process:output:${processId}`,
               `\r\nProcess error: ${err.message}\r\n`,
             );
+          }
+          // 清理与此进程相关的待处理SFTP操作
+          if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+            sftpCore.clearPendingOperationsForTab(processId);
           }
           childProcesses.delete(processId);
         } catch (error) {
@@ -445,6 +461,8 @@ function setupIPC(mainWindow) {
           // 不主动断开连接，让用户决定是否关闭
         }, 15000);
 
+        let connectionTimeoutRejected = false;
+
         // 监听就绪事件
         ssh.on("ready", () => {
           // 清除超时定时器
@@ -480,21 +498,26 @@ function setupIPC(mainWindow) {
             },
             (err, stream) => {
               if (err) {
-                console.error("Failed to create shell:", err);
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                  mainWindow.webContents.send(
-                    `process:output:${processId}`,
-                    `\r\n*** 创建Shell会话失败: ${err.message} ***\r\n`,
-                  );
+                logToFile(
+                  `SSH shell error for processId ${processId}: ${err.message}`,
+                  "ERROR",
+                );
+                // 清理与此进程相关的待处理SFTP操作
+                if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+                  sftpCore.clearPendingOperationsForTab(processId);
+                  if (sshConfig && sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
                 }
-                ssh.end();
-                return;
+                childProcesses.delete(processId);
+                if (sshConfig && sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+                try {
+                  ssh.end();
+                } catch (e) { /* ignore */ }
+                return reject(err);
               }
 
-              // 存储流对象到进程信息中，用于后续写入数据
-              const procInfo = childProcesses.get(processId);
-              if (procInfo) {
-                procInfo.stream = stream;
+              const procToUpdate = childProcesses.get(processId);
+              if (procToUpdate) {
+                procToUpdate.stream = stream;
               }
 
               // 监听数据事件 - 使用Buffer拼接确保UTF-8字符完整
@@ -551,16 +574,20 @@ function setupIPC(mainWindow) {
 
               // 监听关闭事件
               stream.on("close", () => {
+                logToFile(`SSH stream closed for processId: ${processId}`, "INFO");
+                 // 清理与此进程相关的待处理SFTP操作
+                if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+                  sftpCore.clearPendingOperationsForTab(processId);
+                  if (sshConfig && sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
+                }
+                childProcesses.delete(processId);
+                if (sshConfig && sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
                 try {
-                  if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send(
-                      `process:output:${processId}`,
-                      `\r\n*** SSH会话已关闭 ***\r\n`,
-                    );
-                  }
                   ssh.end();
-                } catch (error) {
-                  console.error("Error handling stream close:", error);
+                } catch (e) { /* ignore */ }
+                // Resolve promise when stream closes after setup, only if not already rejected by connection timeout
+                if (!connectionTimeoutRejected) {
+                    resolve(processId); 
                 }
               });
             },
@@ -569,30 +596,35 @@ function setupIPC(mainWindow) {
 
         // 监听错误事件
         ssh.on("error", (err) => {
+          logToFile(`SSH connection error for processId ${processId}: ${err.message}`, "ERROR");
           clearTimeout(connectionTimeout);
-
-          console.error("SSH connection error:", err);
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              `\r\n\x1b[31m*** SSH连接错误: ${err.message} ***\x1b[0m\r\n`,
-            );
+          // 清理与此进程相关的待处理SFTP操作
+          if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+            sftpCore.clearPendingOperationsForTab(processId);
+            if (sshConfig && sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
           }
-
           childProcesses.delete(processId);
-          reject(err);
+          if (sshConfig && sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+          try {
+            // ssh.end(); // ssh might be in a bad state, end() might throw or hang.
+          } catch (e) { /* ignore */ }
+          if (!connectionTimeoutRejected) { // Avoid double rejection
+            reject(err);
+          }
         });
 
         // 监听关闭事件
         ssh.on("close", () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              `\r\n*** SSH连接已关闭 ***\r\n`,
-            );
+          logToFile(`SSH connection closed for processId: ${processId}`, "INFO");
+          clearTimeout(connectionTimeout); // Clear timeout on successful close
+          // 通常 stream.on('close') 会先处理清理，但作为双重保险或处理未成功建立shell的情况
+          if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+            sftpCore.clearPendingOperationsForTab(processId);
+            if (sshConfig && sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
           }
-
           childProcesses.delete(processId);
+          if (sshConfig && sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+          // No reject here as it's a normal close, resolve might have happened on stream ready/close
         });
 
         // 监听键盘交互事件（用于处理密码认证）
@@ -823,27 +855,38 @@ function setupIPC(mainWindow) {
 
   // 终止进程
   ipcMain.handle("terminal:killProcess", async (event, processId) => {
-    const procInfo = childProcesses.get(processId);
-    if (!procInfo || !procInfo.process) {
-      return false;
-    }
+    const proc = childProcesses.get(processId);
+    if (proc && proc.process) {
+      try {
+        // 清理与此进程相关的待处理SFTP操作
+        if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+          sftpCore.clearPendingOperationsForTab(processId);
+          // 如果是SSH进程，它可能在childProcesses中用config.tabId也存储了
+          if (proc.config && proc.config.tabId && proc.config.tabId !== processId) {
+             sftpCore.clearPendingOperationsForTab(proc.config.tabId);
+          }
+        }
 
-    try {
-      if (procInfo.type === "ssh2") {
-        // SSH2连接使用end方法关闭
-        procInfo.process.end();
-      } else if (typeof procInfo.process.kill === "function") {
-        // 直接用kill方法（适用于node-pty和child_process）
-        procInfo.process.kill();
-      } else {
-        console.error("Process has no valid kill method");
+        // 移除stdout和stderr的监听器，防止在进程被kill后继续触发
+        if (proc.process.stdout) {
+          proc.process.stdout.removeAllListeners();
+        }
+        if (proc.process.stderr) {
+          proc.process.stderr.removeAllListeners();
+        }
+
+        // 终止进程
+        try {
+          if (typeof proc.process.kill === "function") {
+            // 正常终止进程
+            proc.process.kill();
+          }
+        } catch (error) {
+          console.error(`Error killing process ${processId}:`, error);
+        }
+      } catch (error) {
+        console.error(`Error handling process kill:`, error);
       }
-
-      childProcesses.delete(processId);
-      return true;
-    } catch (error) {
-      console.error("Failed to kill process:", error);
-      return false;
     }
   });
 
@@ -1775,17 +1818,42 @@ function setupIPC(mainWindow) {
     return sftpTransfer.handleDownloadFile(event, tabId, remotePath);
   });
 
-  ipcMain.handle("uploadFile", async (event, tabId, targetFolder) => {
-    // Ensure sftpTransfer module and its handleUploadFile function are available
+  // Handle SFTP Upload File
+  ipcMain.handle("uploadFile", async (event, tabId, targetFolder, progressChannel) => {
+    // Ensure sftpTransfer module is available
     if (!sftpTransfer || typeof sftpTransfer.handleUploadFile !== 'function') {
       logToFile("sftpTransfer.handleUploadFile is not available or not a function.", "ERROR");
       return { success: false, error: "SFTP Upload feature not properly initialized." };
     }
-    
-    // Directly call the enhanced sftpTransfer.handleUploadFile function
-    // The sftpTransfer.handleUploadFile function now handles dialog, multi-file logic, and progress reporting via sendToRenderer.
-    // The 'event' is passed so that sftpTransfer can use event.sender.send if needed, though it primarily uses the initialized sendToRenderer.
-    return sftpTransfer.handleUploadFile(event, tabId, targetFolder);
+
+    const processInfo = childProcesses.get(tabId);
+    if (!processInfo || !processInfo.config || !processInfo.process || processInfo.type !== "ssh2") {
+      logToFile(`Invalid or not ready SSH connection for tabId: ${tabId}`, "ERROR");
+      return { success: false, error: "无效或未就绪的SSH连接" };
+    }
+
+    const mainWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) {
+      logToFile("No main window available for dialog.", "ERROR");
+      return { success: false, error: "无法显示对话框" };
+    }
+
+    // Open file selection dialog
+    const { canceled, filePaths } = await dialog.showOpenDialog(
+      mainWindow,
+      {
+        title: "选择要上传的文件",
+        properties: ["openFile", "multiSelections"],
+        buttonLabel: "上传文件",
+      }
+    );
+
+    if (canceled || !filePaths || filePaths.length === 0) {
+      return { success: false, cancelled: true, error: "用户取消上传" };
+    }
+
+    // Call the refactored sftpTransfer function, now passing progressChannel
+    return sftpTransfer.handleUploadFile(event, tabId, targetFolder, filePaths, progressChannel);
   });
 
   ipcMain.handle("renameFile", async (event, tabId, oldPath, newName) => {
@@ -1902,63 +1970,12 @@ function setupIPC(mainWindow) {
   });
 
   // 取消所有类型的文件传输（单文件传输、文件夹上传、文件夹下载等）
-  ipcMain.handle("cancelTransfer", async (event, tabId, type) => {
-    try {
-      const transferKey = `${tabId}-${type}`;
-      const transfer = activeTransfers.get(transferKey);
-
-      if (!transfer) {
-        return { success: false, error: "没有找到活动的传输任务" };
-      }
-
-      // 中断传输
-      if (transfer.sftp) {
-        try {
-          // 如果有resolve方法（表示有未完成的IPC请求），尝试调用它
-          if (transfer.resolve) {
-            try {
-              transfer.resolve({
-                success: false,
-                cancelled: true,
-                error: "传输已取消",
-              });
-            } catch (resolveError) {
-              console.error(
-                `Error resolving pending request: ${resolveError.message}`,
-              );
-            }
-          }
-
-          // 尝试中断操作并关闭连接
-          await transfer.sftp.end();
-          logToFile(`Transfer cancelled for session ${tabId}`, "INFO");
-
-          // 如果有临时文件需要删除
-          if (transfer.tempFilePath && fs.existsSync(transfer.tempFilePath)) {
-            fs.unlinkSync(transfer.tempFilePath);
-          }
-
-          // 从活动传输中移除
-          activeTransfers.delete(transferKey);
-
-          return { success: true };
-        } catch (error) {
-          logToFile(
-            `Error cancelling transfer for session ${tabId}: ${error.message}`,
-            "ERROR",
-          );
-          return { success: false, error: `取消传输失败: ${error.message}` };
-        }
-      } else {
-        return { success: false, error: "传输任务无法取消" };
-      }
-    } catch (error) {
-      logToFile(
-        `Cancel transfer error for session ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: `取消传输失败: ${error.message}` };
+  ipcMain.handle("cancelTransfer", async (event, tabId, transferKey) => {
+    if (!sftpTransfer || typeof sftpTransfer.handleCancelTransfer !== 'function') {
+      logToFile("sftpTransfer.handleCancelTransfer is not available or not a function.", "ERROR");
+      return { success: false, error: "SFTP Cancel Transfer feature not properly initialized." };
     }
+    return sftpTransfer.handleCancelTransfer(event, tabId, transferKey);
   });
 
   // 获取或创建 SFTP 会话
@@ -2120,7 +2137,7 @@ function setupIPC(mainWindow) {
   });
 
   // 新增：上传文件夹处理函数
-  ipcMain.handle("upload-folder", async (event, tabId, targetFolder) => {
+  ipcMain.handle("upload-folder", async (event, tabId, targetFolder, progressChannel) => {
     // Ensure sftpTransfer module is available
     if (!sftpTransfer || typeof sftpTransfer.handleUploadFolder !== 'function') {
       logToFile("sftpTransfer.handleUploadFolder is not available or not a function.", "ERROR");
@@ -2129,7 +2146,7 @@ function setupIPC(mainWindow) {
   
     const processInfo = childProcesses.get(tabId);
     if (!processInfo || !processInfo.config || !processInfo.process || processInfo.type !== "ssh2" ) {
-      logToFile(`Invalid or not ready SSH connection for tabId: \${tabId}`, "ERROR");
+      logToFile(`Invalid or not ready SSH connection for tabId: ${tabId}`, "ERROR");
       return { success: false, error: "无效或未就绪的SSH连接" };
     }
     
@@ -2155,703 +2172,8 @@ function setupIPC(mainWindow) {
   
     const localFolderPath = filePaths[0];
   
-    // Call the refactored sftpTransfer function
-    return sftpTransfer.handleUploadFolder(tabId, localFolderPath, targetFolder);
-  });
-
-  // Handle SFTP Download Folder
-  ipcMain.handle("download-folder", async (event, tabId, remotePath) => {
-    try {
-      // 使用 SFTP 会话池获取会话
-      return sftpCore.enqueueSftpOperation(tabId, async () => {
-        try {
-          // 查找对应的SSH客户端
-          const processInfo = childProcesses.get(tabId);
-          if (
-            !processInfo ||
-            !processInfo.process ||
-            processInfo.type !== "ssh2"
-          ) {
-            return { success: false, error: "无效的SSH连接" };
-          }
-
-          const sshClient = processInfo.process;
-          const sshConfig = processInfo.config; // 获取SSH配置
-
-          // 获取文件夹名，处理特殊情况
-          let folderName;
-          if (remotePath === "/" || remotePath === "~") {
-            // 如果是根目录或家目录，使用安全的名称
-            folderName = "root_folder";
-            logToFile(
-              `检测到特殊目录 ${remotePath}，使用安全名称: ${folderName}`,
-              "INFO",
-            );
-          } else if (remotePath.endsWith("/")) {
-            // 如果路径以斜杠结尾，需要特殊处理
-            const parts = remotePath.split("/").filter((p) => p);
-            folderName = parts[parts.length - 1] || "folder";
-            logToFile(
-              `解析带斜杠结尾的路径 ${remotePath}，提取文件夹名: ${folderName}`,
-              "INFO",
-            );
-          } else {
-            // 正常情况
-            folderName = path.basename(remotePath);
-            logToFile(
-              `从路径 ${remotePath} 提取的文件夹名称: ${folderName}`,
-              "INFO",
-            );
-          }
-
-          // 打开保存对话框 - 设置默认下载位置
-          logToFile(
-            `开始打开下载位置选择对话框, 默认路径: ${app.getPath("downloads")}`,
-            "INFO",
-          );
-
-          const result = await dialog.showOpenDialog(mainWindow, {
-            title: "选择下载位置",
-            defaultPath: app.getPath("downloads"), // 使用系统下载文件夹作为默认位置
-            properties: ["openDirectory"],
-            buttonLabel: "下载到此文件夹",
-          });
-
-          logToFile(`对话框结果: ${JSON.stringify(result)}`, "INFO");
-
-          // 检查对话框结果是否正确
-          if (
-            !result ||
-            result.canceled ||
-            !result.filePaths ||
-            result.filePaths.length === 0
-          ) {
-            logToFile(
-              `用户取消了选择或返回空路径: ${JSON.stringify(result)}`,
-              "INFO",
-            );
-            return { success: false, error: "用户取消下载" };
-          }
-
-          // 获取用户选择的路径
-          const userSelectedPath = result.filePaths[0];
-          logToFile(`用户选择的下载路径: ${userSelectedPath}`, "INFO");
-
-          if (!userSelectedPath || userSelectedPath.trim() === "") {
-            logToFile(`用户选择的路径无效: ${userSelectedPath}`, "ERROR");
-            return { success: false, error: "选择的下载路径无效" };
-          }
-
-          // 计算本地保存路径 - 使用正确的用户所选路径
-          const localFolderPath = path.join(userSelectedPath, folderName);
-          logToFile(`计算得到的本地文件夹路径: ${localFolderPath}`, "INFO");
-
-          // 规范化路径格式，确保Windows下路径正确
-          const normalizedLocalPath = path.normalize(localFolderPath);
-          logToFile(`规范化后的本地路径: ${normalizedLocalPath}`, "INFO");
-
-          // 确保本地文件夹存在 - 添加更强的错误处理
-          try {
-            // 检查父文件夹是否存在并可写
-            const parentDir = path.dirname(normalizedLocalPath);
-            logToFile(`检查父文件夹: ${parentDir}`, "INFO");
-
-            if (!fs.existsSync(parentDir)) {
-              logToFile(`父文件夹不存在，尝试创建: ${parentDir}`, "INFO");
-              fs.mkdirSync(parentDir, { recursive: true });
-            }
-
-            // 检查目标文件夹
-            if (!fs.existsSync(normalizedLocalPath)) {
-              logToFile(
-                `目标文件夹不存在，尝试创建: ${normalizedLocalPath}`,
-                "INFO",
-              );
-              fs.mkdirSync(normalizedLocalPath, { recursive: true });
-            } else {
-              logToFile(`目标文件夹已存在: ${normalizedLocalPath}`, "INFO");
-            }
-
-            // 验证文件夹是否可写
-            const testFilePath = path.join(normalizedLocalPath, ".write_test");
-            logToFile(`创建测试文件验证权限: ${testFilePath}`, "INFO");
-            fs.writeFileSync(testFilePath, "test");
-            fs.unlinkSync(testFilePath);
-            logToFile(`文件夹权限检查通过: ${normalizedLocalPath}`, "INFO");
-          } catch (fsError) {
-            logToFile(
-              `Error creating or writing to folder "${normalizedLocalPath}": ${fsError.message}`,
-              "ERROR",
-            );
-            return {
-              success: false,
-              error: `无法创建或写入下载文件夹: ${fsError.message}。请检查路径权限或选择其他位置。`,
-            };
-          }
-
-          logToFile(
-            `Downloading folder "${remotePath}" to "${normalizedLocalPath}" for session ${tabId}`,
-            "INFO",
-          );
-
-          // 创建SFTP客户端
-          const sftp = new SftpClient();
-
-          // 创建传输对象并存储到活动传输中
-          const transferKey = `${tabId}-download-folder`;
-
-          return new Promise(async (resolve, reject) => {
-            try {
-              // 存储resolve和reject函数，以便在取消时调用
-              activeTransfers.set(transferKey, {
-                sftp,
-                resolve,
-                reject,
-              });
-
-              // 使用SSH2客户端的连接配置
-              await sftp.connect({
-                host: sshConfig.host,
-                port: sshConfig.port || 22,
-                username: sshConfig.username,
-                password: sshConfig.password,
-                privateKey: sshConfig.privateKeyPath
-                  ? fs.readFileSync(sshConfig.privateKeyPath, "utf8")
-                  : undefined,
-                passphrase:
-                  sshConfig.privateKeyPath && sshConfig.password
-                    ? sshConfig.password
-                    : undefined,
-              });
-
-              // 递归扫描远程文件夹
-              const scanRemoteFolder = async (folderPath, basePath = "") => {
-                let items = [];
-
-                try {
-                  // 记录扫描操作的开始
-                  logToFile(
-                    `开始扫描远程文件夹: ${folderPath}, 基础路径: ${basePath}`,
-                    "INFO",
-                  );
-
-                  // 获取文件夹内容
-                  const entries = await sftp.list(folderPath);
-                  logToFile(
-                    `文件夹 ${folderPath} 包含 ${entries.length} 个项目`,
-                    "INFO",
-                  );
-
-                  for (const entry of entries) {
-                    // 跳过"."和".."目录
-                    if (entry.name === "." || entry.name === "..") continue;
-
-                    // 确保使用正斜杠处理SFTP远程路径
-                    const entryPath =
-                      folderPath === "/"
-                        ? `/${entry.name}`
-                        : `${folderPath}/${entry.name}`;
-
-                    // 本地相对路径使用系统相关路径分隔符，最后统一转换为SFTP格式
-                    const relativePath = basePath
-                      ? path.join(basePath, entry.name).replace(/\\/g, "/")
-                      : entry.name;
-
-                    if (entry.type === "d") {
-                      // 目录
-                      // 递归扫描子文件夹
-                      const subItems = await scanRemoteFolder(
-                        entryPath,
-                        relativePath,
-                      );
-                      items.push({
-                        path: relativePath,
-                        remotePath: entryPath,
-                        name: entry.name,
-                        isDirectory: true,
-                        children: subItems,
-                      });
-                    } else {
-                      // 文件
-                      items.push({
-                        path: relativePath,
-                        remotePath: entryPath,
-                        name: entry.name,
-                        isDirectory: false,
-                        size: entry.size,
-                      });
-                    }
-                  }
-                } catch (error) {
-                  logToFile(
-                    `Error scanning remote folder ${folderPath}: ${error.message}`,
-                    "ERROR",
-                  );
-                  // 如果出错，返回空列表
-                  return [];
-                }
-
-                return items;
-              };
-
-              // 扫描远程文件夹结构
-              logToFile(`开始扫描远程文件夹: ${remotePath}`, "INFO");
-              event.sender.send("download-folder-progress", {
-                tabId,
-                progress: 0,
-                currentFile: "正在扫描远程文件夹...",
-                transferredBytes: 0,
-                totalBytes: 0,
-                processedFiles: 0,
-                totalFiles: 0,
-              });
-
-              let folderStructure;
-              try {
-                folderStructure = await scanRemoteFolder(remotePath);
-                if (!folderStructure || folderStructure.length === 0) {
-                  logToFile(
-                    `警告: 远程文件夹 ${remotePath} 返回了空结构`,
-                    "WARNING",
-                  );
-                } else {
-                  logToFile(
-                    `成功扫描远程文件夹，获取到 ${folderStructure.length} 个顶级项目`,
-                    "INFO",
-                  );
-                }
-              } catch (scanError) {
-                logToFile(`扫描远程文件夹出错: ${scanError.message}`, "ERROR");
-                throw scanError;
-              }
-
-              // 计算下载总大小和文件数
-              let totalBytes = 0;
-              let totalFiles = 0;
-              const getAllFiles = (items) => {
-                for (const item of items) {
-                  if (item.isDirectory && item.children) {
-                    getAllFiles(item.children);
-                  } else if (!item.isDirectory) {
-                    totalBytes += item.size || 0;
-                    totalFiles++;
-                  }
-                }
-              };
-              getAllFiles(folderStructure);
-
-              // 如果没有文件，直接返回成功
-              if (totalFiles === 0) {
-                await sftp.end();
-                activeTransfers.delete(transferKey);
-                return resolve({ success: true, message: "文件夹为空" });
-              }
-
-              // 递归创建本地文件夹结构
-              const createLocalFolders = (items, parentPath) => {
-                logToFile(`准备在 ${parentPath} 创建本地文件夹结构`, "INFO");
-
-                for (const item of items) {
-                  if (item.isDirectory) {
-                    const localPath = path.join(parentPath, item.name);
-                    logToFile(`尝试创建本地文件夹: ${localPath}`, "INFO");
-
-                    try {
-                      // 检查本地文件夹是否存在
-                      if (!fs.existsSync(localPath)) {
-                        fs.mkdirSync(localPath, { recursive: true });
-                        logToFile(`成功创建本地文件夹: ${localPath}`, "INFO");
-                      } else {
-                        logToFile(`本地文件夹已存在: ${localPath}`, "INFO");
-                      }
-
-                      // 确认文件夹创建成功并有写入权限
-                      if (!fs.existsSync(localPath)) {
-                        throw new Error(`创建文件夹失败: ${localPath}`);
-                      }
-
-                      // 创建测试文件以验证权限
-                      const testFile = path.join(localPath, ".write_test");
-                      fs.writeFileSync(testFile, "test");
-                      fs.unlinkSync(testFile);
-                      logToFile(`文件夹权限验证成功: ${localPath}`, "INFO");
-
-                      // 递归处理子文件夹
-                      if (item.children && item.children.length > 0) {
-                        createLocalFolders(item.children, localPath);
-                      }
-                    } catch (folderError) {
-                      logToFile(
-                        `创建或验证本地文件夹失败: ${localPath}, 错误: ${folderError.message}`,
-                        "ERROR",
-                      );
-                      throw folderError; // 重新抛出错误，中断整个过程
-                    }
-                  }
-                }
-              };
-
-              // 在本地创建文件夹结构
-              try {
-                // 确保根文件夹存在
-                if (!fs.existsSync(normalizedLocalPath)) {
-                  logToFile(`创建根下载文件夹: ${normalizedLocalPath}`, "INFO");
-                  fs.mkdirSync(normalizedLocalPath, { recursive: true });
-                } else {
-                  logToFile(
-                    `根下载文件夹已存在: ${normalizedLocalPath}`,
-                    "INFO",
-                  );
-                }
-
-                // 创建内部文件夹结构
-                logToFile(
-                  `开始创建内部文件夹结构，共 ${folderStructure.length} 个顶级项目`,
-                  "INFO",
-                );
-                createLocalFolders(folderStructure, normalizedLocalPath);
-                logToFile(
-                  `本地文件夹结构创建成功: ${normalizedLocalPath}`,
-                  "INFO",
-                );
-
-                // 最后再次验证根文件夹是否存在
-                if (!fs.existsSync(normalizedLocalPath)) {
-                  throw new Error(
-                    `根文件夹不存在，可能创建失败: ${normalizedLocalPath}`,
-                  );
-                }
-              } catch (folderStructureError) {
-                logToFile(
-                  `创建本地文件夹结构失败: ${folderStructureError.message}`,
-                  "ERROR",
-                );
-                throw new Error(
-                  `无法创建本地文件夹结构: ${folderStructureError.message}`,
-                );
-              }
-
-              // 收集所有文件以便下载
-              const allFiles = [];
-              const collectFiles = (items, parentPath) => {
-                logToFile(
-                  `收集文件: 处理 ${items.length} 个项目，父路径: ${parentPath}`,
-                  "INFO",
-                );
-                for (const item of items) {
-                  if (item.isDirectory && item.children) {
-                    // 处理子文件夹
-                    const subFolderPath = path.join(parentPath, item.name);
-                    logToFile(
-                      `处理子文件夹: ${item.name}, 完整路径: ${subFolderPath}`,
-                      "INFO",
-                    );
-                    collectFiles(item.children, subFolderPath);
-                  } else if (!item.isDirectory) {
-                    // 处理文件
-                    const localFilePath = path.join(parentPath, item.name);
-                    logToFile(
-                      `收集文件: ${item.name}, 完整路径: ${localFilePath}, 大小: ${item.size || 0} 字节`,
-                      "INFO",
-                    );
-                    allFiles.push({
-                      ...item,
-                      localPath: localFilePath,
-                    });
-                  }
-                }
-              };
-              collectFiles(folderStructure, normalizedLocalPath);
-              logToFile(`共收集到 ${allFiles.length} 个需要下载的文件`, "INFO");
-
-              // 开始下载文件
-              let transferredBytes = 0;
-              let processedFiles = 0;
-              let lastProgressUpdate = 0;
-              let lastTransferredBytes = 0;
-              let lastUpdateTime = Date.now();
-              let transferSpeed = 0;
-              const progressReportInterval = 100;
-
-              // 逐个下载文件
-              for (const file of allFiles) {
-                // 检查是否传输被取消
-                const activeTransfer = activeTransfers.get(transferKey);
-                if (!activeTransfer) {
-                  throw new Error("传输已取消");
-                }
-
-                // 当前处理的文件相对路径（用于显示）
-                const currentFile = file.path;
-
-                // 更新进度信息
-                event.sender.send("download-folder-progress", {
-                  tabId,
-                  progress: Math.floor((transferredBytes / totalBytes) * 100),
-                  currentFile,
-                  transferredBytes,
-                  totalBytes,
-                  transferSpeed,
-                  remainingTime:
-                    transferSpeed > 0
-                      ? (totalBytes - transferredBytes) / transferSpeed
-                      : 0,
-                  processedFiles,
-                  totalFiles,
-                });
-
-                try {
-                  // 创建临时文件路径
-                  const tempFilePath = file.localPath + ".part";
-
-                  // 记录文件下载开始
-                  logToFile(
-                    `开始下载文件: ${file.remotePath} 到临时文件 ${tempFilePath}, 文件大小: ${file.size} 字节`,
-                    "INFO",
-                  );
-
-                  // 下载文件
-                  await sftp.fastGet(file.remotePath, tempFilePath, {
-                    step: (transferred, chunk, total) => {
-                      // 计算总体进度百分比
-                      const fileProgress = transferred;
-                      const overallTransferred =
-                        transferredBytes + fileProgress;
-                      const overallProgress = Math.floor(
-                        (overallTransferred / totalBytes) * 100,
-                      );
-
-                      // 限制进度更新频率
-                      const now = Date.now();
-                      if (now - lastProgressUpdate >= progressReportInterval) {
-                        // 计算传输速度 (字节/秒)
-                        const elapsedSinceLastUpdate =
-                          (now - lastUpdateTime) / 1000; // 时间间隔(秒)
-
-                        if (elapsedSinceLastUpdate > 0) {
-                          const bytesTransferredSinceLastUpdate =
-                            overallTransferred - lastTransferredBytes;
-                          if (bytesTransferredSinceLastUpdate > 0) {
-                            transferSpeed =
-                              bytesTransferredSinceLastUpdate /
-                              elapsedSinceLastUpdate;
-                          }
-                        }
-
-                        // 存储当前值供下次计算
-                        lastTransferredBytes = overallTransferred;
-                        lastUpdateTime = now;
-
-                        // 发送进度更新到渲染进程
-                        event.sender.send("download-folder-progress", {
-                          tabId,
-                          progress: overallProgress,
-                          currentFile,
-                          transferredBytes: overallTransferred,
-                          totalBytes,
-                          transferSpeed,
-                          remainingTime:
-                            transferSpeed > 0
-                              ? (totalBytes - overallTransferred) /
-                                transferSpeed
-                              : 0,
-                          processedFiles,
-                          totalFiles,
-                        });
-
-                        lastProgressUpdate = now;
-                      }
-                    },
-                    concurrency: 16, // 同时传输16个数据块
-                    chunkSize: 32768, // 32KB的块大小，提高传输效率
-                    debug: false, // 不输出调试信息
-                  });
-
-                  // 下载完成后，将临时文件重命名为最终文件
-                  logToFile(
-                    `文件下载完成，准备重命名: ${tempFilePath} -> ${file.localPath}`,
-                    "INFO",
-                  );
-
-                  try {
-                    fs.renameSync(tempFilePath, file.localPath);
-                    logToFile(`文件重命名成功: ${file.localPath}`, "INFO");
-                  } catch (renameError) {
-                    logToFile(
-                      `文件重命名失败: ${renameError.message}`,
-                      "ERROR",
-                    );
-                    // 尝试替代方法: 复制后删除
-                    logToFile(`尝试使用复制方法替代重命名`, "INFO");
-                    fs.copyFileSync(tempFilePath, file.localPath);
-                    fs.unlinkSync(tempFilePath);
-                    logToFile(
-                      `使用复制方法成功完成文件写入: ${file.localPath}`,
-                      "INFO",
-                    );
-                  }
-
-                  // 更新已传输字节数和处理文件数
-                  transferredBytes += file.size;
-                  processedFiles++;
-                } catch (fileError) {
-                  // 详细记录错误
-                  logToFile(
-                    `下载文件失败 ${file.remotePath} 到 ${file.localPath}, 会话 ${tabId}: ${fileError.message}`,
-                    "ERROR",
-                  );
-
-                  // 检查错误类型，判断是否需要重试或处理特殊情况
-                  if (fileError.code === "ENOENT") {
-                    logToFile(`远程文件不存在: ${file.remotePath}`, "ERROR");
-                  } else if (fileError.code === "EACCES") {
-                    logToFile(
-                      `权限不足，无法创建本地文件: ${file.localPath}`,
-                      "ERROR",
-                    );
-                  } else if (fileError.message.includes("timeout")) {
-                    logToFile(`下载超时，可能是网络问题`, "ERROR");
-                  }
-
-                  // 尝试清理临时文件
-                  try {
-                    if (fs.existsSync(tempFilePath)) {
-                      fs.unlinkSync(tempFilePath);
-                      logToFile(`已清理临时文件: ${tempFilePath}`, "INFO");
-                    }
-                  } catch (cleanupError) {
-                    logToFile(
-                      `清理临时文件失败: ${cleanupError.message}`,
-                      "ERROR",
-                    );
-                  }
-
-                  // 继续处理下一个文件，不中断整个过程
-                  continue;
-                }
-              }
-
-              // 确保发送100%进度
-              event.sender.send("download-folder-progress", {
-                tabId,
-                progress: 100,
-                currentFile: "",
-                transferredBytes: totalBytes,
-                totalBytes,
-                transferSpeed,
-                remainingTime: 0,
-                processedFiles: totalFiles,
-                totalFiles,
-              });
-
-              // 成功下载
-              await sftp.end();
-
-              // 从活动传输列表中移除
-              activeTransfers.delete(transferKey);
-
-              // 最终确认下载的文件夹是否存在
-              let finalSuccess = true;
-              if (!fs.existsSync(normalizedLocalPath)) {
-                logToFile(
-                  `警告: 下载完成后无法找到目标文件夹: ${normalizedLocalPath}`,
-                  "WARNING",
-                );
-                finalSuccess = false;
-              } else {
-                // 检查是否有文件下载成功
-                const downloadedFiles = fs.readdirSync(normalizedLocalPath);
-                logToFile(
-                  `下载文件夹中的文件数量: ${downloadedFiles.length}`,
-                  "INFO",
-                );
-
-                if (downloadedFiles.length === 0 && totalFiles > 0) {
-                  logToFile(
-                    `警告: 文件夹存在但为空，原始文件数: ${totalFiles}`,
-                    "WARNING",
-                  );
-                  finalSuccess = false;
-                }
-              }
-
-              logToFile(
-                `Successfully downloaded folder "${remotePath}" to "${normalizedLocalPath}" for session ${tabId}, Final status: ${finalSuccess ? "SUCCESS" : "PARTIAL_FAILURE"}`,
-                finalSuccess ? "INFO" : "WARNING",
-              );
-
-              // 在资源管理器中显示下载的文件夹
-              if (finalSuccess) {
-                try {
-                  logToFile(
-                    `尝试在文件资源管理器中显示文件夹: ${normalizedLocalPath}`,
-                    "INFO",
-                  );
-                  shell.showItemInFolder(normalizedLocalPath);
-                } catch (showError) {
-                  logToFile(
-                    `Error showing folder in explorer: ${showError.message}`,
-                    "ERROR",
-                  );
-                  // 即使无法显示文件夹，也不影响下载成功状态
-                }
-              }
-
-              resolve({
-                success: finalSuccess,
-                folderName,
-                downloadPath: normalizedLocalPath, // 返回完整下载路径
-                // 提供更详细的状态信息
-                fileCount: allFiles.length,
-                totalSize: totalBytes,
-                message: finalSuccess
-                  ? `成功下载${allFiles.length}个文件`
-                  : "下载可能不完整，请检查文件夹内容",
-              });
-            } catch (error) {
-              logToFile(
-                `Download folder error for session ${tabId}: ${error.message}`,
-                "ERROR",
-              );
-              await sftp.end().catch(() => {}); // 忽略关闭连接可能的错误
-
-              // 从活动传输列表中移除
-              activeTransfers.delete(transferKey);
-
-              // 如果是用户取消导致的错误，提供友好的消息
-              if (
-                error.message.includes("aborted") ||
-                error.message.includes("cancel") ||
-                error.message.includes("传输已取消")
-              ) {
-                resolve({
-                  success: false,
-                  cancelled: true,
-                  error: "下载已取消",
-                });
-              } else {
-                resolve({
-                  success: false,
-                  error: `下载文件夹失败: ${error.message}`,
-                });
-              }
-            }
-          });
-        } catch (error) {
-          logToFile(
-            `Download folder error for session ${tabId}: ${error.message}`,
-            "ERROR",
-          );
-          return { success: false, error: `下载文件夹失败: ${error.message}` };
-        }
-      });
-    } catch (error) {
-      logToFile(
-        `Download folder error for session ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: `下载文件夹失败: ${error.message}` };
-    }
+    // Call the refactored sftpTransfer function, now passing progressChannel
+    return sftpTransfer.handleUploadFolder(tabId, localFolderPath, targetFolder, progressChannel);
   });
 
   // 添加检查路径是否存在的API
