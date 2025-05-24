@@ -58,7 +58,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [tabValue, setTabValue] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState({});
-  
+
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogType, setDialogType] = useState(""); // 'command', 'category'
@@ -75,7 +75,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [notification, setNotification] = useState({
     open: false,
     message: "",
-    severity: "success"
+    severity: "success",
   });
 
   // 加载命令数据
@@ -94,10 +94,10 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
         if (result.success) {
           setCommands(result.data.commands || []);
           setCategories(result.data.categories || []);
-          
+
           // 初始化展开状态
           const expanded = {};
-          result.data.categories.forEach(category => {
+          result.data.categories.forEach((category) => {
             expanded[category.id] = true;
           });
           setExpandedCategories(expanded);
@@ -146,9 +146,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理目录展开/折叠
   const toggleCategoryExpand = (categoryId) => {
-    setExpandedCategories(prev => ({
+    setExpandedCategories((prev) => ({
       ...prev,
-      [categoryId]: !prev[categoryId]
+      [categoryId]: !prev[categoryId],
     }));
   };
 
@@ -185,7 +185,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理编辑命令
   const handleEditCommand = (commandId) => {
-    const command = commands.find(cmd => cmd.id === commandId);
+    const command = commands.find((cmd) => cmd.id === commandId);
     if (command) {
       setCurrentCommand({ ...command });
       setDialogType("command");
@@ -197,7 +197,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理删除命令
   const handleDeleteCommand = async (commandId) => {
-    const newCommands = commands.filter(cmd => cmd.id !== commandId);
+    const newCommands = commands.filter((cmd) => cmd.id !== commandId);
     setCommands(newCommands);
     await saveCommands(newCommands);
     handleMenuClose();
@@ -208,7 +208,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     setCurrentCategory({
       id: "",
       name: "",
-      color: "#" + Math.floor(Math.random()*16777215).toString(16),
+      color: "#" + Math.floor(Math.random() * 16777215).toString(16),
     });
     setDialogType("category");
     setDialogAction("add");
@@ -218,7 +218,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理编辑分类
   const handleEditCategory = (categoryId) => {
-    const category = categories.find(cat => cat.id === categoryId);
+    const category = categories.find((cat) => cat.id === categoryId);
     if (category) {
       setCurrentCategory({ ...category });
       setDialogType("category");
@@ -231,11 +231,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   // 处理删除分类
   const handleDeleteCategory = async (categoryId) => {
     // 删除分类，并将该分类下的命令设为未分类
-    const newCategories = categories.filter(cat => cat.id !== categoryId);
-    const newCommands = commands.map(cmd => 
-      cmd.category === categoryId ? { ...cmd, category: "" } : cmd
+    const newCategories = categories.filter((cat) => cat.id !== categoryId);
+    const newCommands = commands.map((cmd) =>
+      cmd.category === categoryId ? { ...cmd, category: "" } : cmd,
     );
-    
+
     setCategories(newCategories);
     setCommands(newCommands);
     await saveCommands(newCommands, newCategories);
@@ -249,7 +249,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理命令表单变化
   const handleCommandFormChange = (field, value) => {
-    setCurrentCommand(prev => ({
+    setCurrentCommand((prev) => ({
       ...prev,
       [field]: value,
     }));
@@ -257,7 +257,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理分类表单变化
   const handleCategoryFormChange = (field, value) => {
-    setCurrentCategory(prev => ({
+    setCurrentCategory((prev) => ({
       ...prev,
       [field]: value,
     }));
@@ -266,7 +266,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   // 处理保存命令
   const handleSaveCommand = async () => {
     let newCommands = [...commands];
-    
+
     if (dialogAction === "add") {
       const newCommand = {
         ...currentCommand,
@@ -274,11 +274,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       };
       newCommands.push(newCommand);
     } else {
-      newCommands = commands.map(cmd => 
-        cmd.id === currentCommand.id ? { ...currentCommand } : cmd
+      newCommands = commands.map((cmd) =>
+        cmd.id === currentCommand.id ? { ...currentCommand } : cmd,
       );
     }
-    
+
     setCommands(newCommands);
     await saveCommands(newCommands);
     setDialogOpen(false);
@@ -287,25 +287,25 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   // 处理保存分类
   const handleSaveCategory = async () => {
     let newCategories = [...categories];
-    
+
     if (dialogAction === "add") {
       const newCategory = {
         ...currentCategory,
         id: generateUniqueId("cat-"),
       };
       newCategories.push(newCategory);
-      
+
       // 更新展开状态
-      setExpandedCategories(prev => ({
+      setExpandedCategories((prev) => ({
         ...prev,
         [newCategory.id]: true,
       }));
     } else {
-      newCategories = categories.map(cat => 
-        cat.id === currentCategory.id ? { ...currentCategory } : cat
+      newCategories = categories.map((cat) =>
+        cat.id === currentCategory.id ? { ...currentCategory } : cat,
       );
     }
-    
+
     setCategories(newCategories);
     await saveCommands(null, newCategories);
     setDialogOpen(false);
@@ -313,21 +313,21 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理发送命令
   const handleSendCommand = (command) => {
-    if (onSendCommand && typeof onSendCommand === 'function') {
+    if (onSendCommand && typeof onSendCommand === "function") {
       try {
         onSendCommand(command);
         // 显示成功通知
         setNotification({
           open: true,
           message: `命令已发送: ${command}`,
-          severity: "success"
+          severity: "success",
         });
       } catch (error) {
         // 显示错误通知
         setNotification({
           open: true,
           message: `发送命令失败: ${error.message}`,
-          severity: "error"
+          severity: "error",
         });
         console.error("发送命令失败:", error);
       }
@@ -335,7 +335,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       setNotification({
         open: true,
         message: "发送命令处理函数未提供",
-        severity: "warning"
+        severity: "warning",
       });
       console.warn("发送命令处理函数未提供");
     }
@@ -343,26 +343,25 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理复制命令
   const handleCopyCommand = (command) => {
-    navigator.clipboard.writeText(command).catch(err => {
+    navigator.clipboard.writeText(command).catch((err) => {
       console.error("Failed to copy command:", err);
     });
   };
 
   // 过滤命令
   const getFilteredCommands = () => {
-    return commands.filter(cmd => {
+    return commands.filter((cmd) => {
       // 根据搜索词过滤
-      const matchesSearch = 
-        searchTerm === "" || 
+      const matchesSearch =
+        searchTerm === "" ||
         cmd.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         cmd.command.toLowerCase().includes(searchTerm.toLowerCase()) ||
         cmd.description.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       // 根据选定分类过滤
-      const matchesCategory = 
-        selectedCategory === "all" || 
-        cmd.category === selectedCategory;
-      
+      const matchesCategory =
+        selectedCategory === "all" || cmd.category === selectedCategory;
+
       return matchesSearch && matchesCategory;
     });
   };
@@ -370,7 +369,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   // 获取按分类分组的命令
   const getCommandsByCategory = () => {
     const result = {};
-    
+
     // 添加未分类组
     result["uncategorized"] = {
       id: "uncategorized",
@@ -378,30 +377,31 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       color: "#808080",
       commands: [],
     };
-    
+
     // 为每个分类创建一个条目
-    categories.forEach(cat => {
+    categories.forEach((cat) => {
       result[cat.id] = {
         ...cat,
         commands: [],
       };
     });
-    
+
     // 将命令添加到相应分类
     const filteredCommands = getFilteredCommands();
-    filteredCommands.forEach(cmd => {
-      const categoryId = cmd.category && result[cmd.category] ? cmd.category : "uncategorized";
+    filteredCommands.forEach((cmd) => {
+      const categoryId =
+        cmd.category && result[cmd.category] ? cmd.category : "uncategorized";
       result[categoryId].commands.push(cmd);
     });
-    
+
     // 过滤掉没有命令的分类
-    return Object.values(result).filter(cat => cat.commands.length > 0);
+    return Object.values(result).filter((cat) => cat.commands.length > 0);
   };
 
   // 渲染命令列表
   const renderCommandList = () => {
     const filteredCommands = getFilteredCommands();
-    
+
     if (loading) {
       return (
         <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
@@ -409,17 +409,19 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
         </Box>
       );
     }
-    
+
     if (filteredCommands.length === 0) {
       return (
         <Box sx={{ p: 2, textAlign: "center" }}>
           <Typography color="textSecondary">
-            {searchTerm ? t("shortcutCommands.noCommandsFound") : t("shortcutCommands.noCommands")}
+            {searchTerm
+              ? t("shortcutCommands.noCommandsFound")
+              : t("shortcutCommands.noCommands")}
           </Typography>
         </Box>
       );
     }
-    
+
     return (
       <List sx={{ width: "100%" }} dense>
         {filteredCommands.map((cmd) => (
@@ -429,17 +431,23 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
             secondaryAction={
               <Box display="flex" gap={1}>
                 <Tooltip title={t("shortcutCommands.sendCommand")}>
-                  <IconButton edge="end" onClick={() => handleSendCommand(cmd.command)}>
+                  <IconButton
+                    edge="end"
+                    onClick={() => handleSendCommand(cmd.command)}
+                  >
                     <SendIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title={t("shortcutCommands.copyCommand")}>
-                  <IconButton edge="end" onClick={() => handleCopyCommand(cmd.command)}>
+                  <IconButton
+                    edge="end"
+                    onClick={() => handleCopyCommand(cmd.command)}
+                  >
                     <ContentCopyIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-                <IconButton 
-                  edge="end" 
+                <IconButton
+                  edge="end"
                   onClick={(e) => handleMenuOpen(e, cmd.id, "command")}
                 >
                   <MoreVertIcon fontSize="small" />
@@ -460,11 +468,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                     <Typography
                       variant="body2"
                       component="span"
-                      sx={{ 
-                        display: "inline", 
+                      sx={{
+                        display: "inline",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
-                        textOverflow: "ellipsis"
+                        textOverflow: "ellipsis",
                       }}
                     >
                       {cmd.command}
@@ -473,11 +481,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                       <Typography
                         variant="caption"
                         component="div"
-                        sx={{ 
+                        sx={{
                           color: "text.secondary",
                           whiteSpace: "nowrap",
                           overflow: "hidden",
-                          textOverflow: "ellipsis"
+                          textOverflow: "ellipsis",
                         }}
                       >
                         {cmd.description}
@@ -496,7 +504,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   // 渲染分类视图
   const renderCategoriesView = () => {
     const commandsByCategory = getCommandsByCategory();
-    
+
     if (loading) {
       return (
         <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
@@ -504,17 +512,19 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
         </Box>
       );
     }
-    
+
     if (commandsByCategory.length === 0) {
       return (
         <Box sx={{ p: 2, textAlign: "center" }}>
           <Typography color="textSecondary">
-            {searchTerm ? t("shortcutCommands.noCommandsFound") : t("shortcutCommands.noCommands")}
+            {searchTerm
+              ? t("shortcutCommands.noCommandsFound")
+              : t("shortcutCommands.noCommands")}
           </Typography>
         </Box>
       );
     }
-    
+
     return (
       <List sx={{ width: "100%" }} dense>
         {commandsByCategory.map((category) => (
@@ -522,7 +532,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
             <ListItem
               button
               onClick={() => toggleCategoryExpand(category.id)}
-              sx={{ 
+              sx={{
                 backgroundColor: theme.palette.action.hover,
                 px: 2,
               }}
@@ -537,8 +547,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                 <ExpandMoreIcon />
               )}
               {category.id !== "uncategorized" && (
-                <IconButton 
-                  size="small" 
+                <IconButton
+                  size="small"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleMenuOpen(e, category.id, "category");
@@ -549,7 +559,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                 </IconButton>
               )}
             </ListItem>
-            <Collapse in={expandedCategories[category.id] || false} timeout="auto" unmountOnExit>
+            <Collapse
+              in={expandedCategories[category.id] || false}
+              timeout="auto"
+              unmountOnExit
+            >
               <List component="div" disablePadding>
                 {category.commands.map((cmd) => (
                   <ListItem
@@ -559,8 +573,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                     secondaryAction={
                       <Box display="flex" gap={1}>
                         <Tooltip title={t("shortcutCommands.sendCommand")}>
-                          <IconButton 
-                            edge="end" 
+                          <IconButton
+                            edge="end"
                             onClick={() => handleSendCommand(cmd.command)}
                             size="small"
                           >
@@ -568,16 +582,16 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                           </IconButton>
                         </Tooltip>
                         <Tooltip title={t("shortcutCommands.copyCommand")}>
-                          <IconButton 
-                            edge="end" 
+                          <IconButton
+                            edge="end"
                             onClick={() => handleCopyCommand(cmd.command)}
                             size="small"
                           >
                             <ContentCopyIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                        <IconButton 
-                          edge="end" 
+                        <IconButton
+                          edge="end"
                           onClick={(e) => handleMenuOpen(e, cmd.id, "command")}
                           size="small"
                         >
@@ -594,11 +608,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                             <Typography
                               variant="body2"
                               component="span"
-                              sx={{ 
-                                display: "inline", 
+                              sx={{
+                                display: "inline",
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
-                                textOverflow: "ellipsis"
+                                textOverflow: "ellipsis",
                               }}
                             >
                               {cmd.command}
@@ -607,11 +621,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                               <Typography
                                 variant="caption"
                                 component="div"
-                                sx={{ 
+                                sx={{
                                   color: "text.secondary",
                                   whiteSpace: "nowrap",
                                   overflow: "hidden",
-                                  textOverflow: "ellipsis"
+                                  textOverflow: "ellipsis",
                                 }}
                               >
                                 {cmd.description}
@@ -633,9 +647,16 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 渲染命令对话框
   const renderCommandDialog = () => (
-    <Dialog open={dialogOpen && dialogType === "command"} onClose={handleDialogClose} maxWidth="sm" fullWidth>
+    <Dialog
+      open={dialogOpen && dialogType === "command"}
+      onClose={handleDialogClose}
+      maxWidth="sm"
+      fullWidth
+    >
       <DialogTitle>
-        {dialogAction === "add" ? t("shortcutCommands.addCommand") : t("shortcutCommands.editCommand")}
+        {dialogAction === "add"
+          ? t("shortcutCommands.addCommand")
+          : t("shortcutCommands.editCommand")}
       </DialogTitle>
       <DialogContent>
         <TextField
@@ -662,14 +683,18 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           label={t("shortcutCommands.description")}
           fullWidth
           value={currentCommand?.description || ""}
-          onChange={(e) => handleCommandFormChange("description", e.target.value)}
+          onChange={(e) =>
+            handleCommandFormChange("description", e.target.value)
+          }
           sx={{ mb: 2 }}
         />
         <FormControl fullWidth sx={{ mb: 2 }}>
           <InputLabel>{t("shortcutCommands.category")}</InputLabel>
           <Select
             value={currentCommand?.category || ""}
-            onChange={(e) => handleCommandFormChange("category", e.target.value)}
+            onChange={(e) =>
+              handleCommandFormChange("category", e.target.value)
+            }
             label={t("shortcutCommands.category")}
           >
             <MenuItem value="">{t("shortcutCommands.uncategorized")}</MenuItem>
@@ -692,9 +717,16 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 渲染分类对话框
   const renderCategoryDialog = () => (
-    <Dialog open={dialogOpen && dialogType === "category"} onClose={handleDialogClose} maxWidth="sm" fullWidth>
+    <Dialog
+      open={dialogOpen && dialogType === "category"}
+      onClose={handleDialogClose}
+      maxWidth="sm"
+      fullWidth
+    >
       <DialogTitle>
-        {dialogAction === "add" ? t("shortcutCommands.addCategory") : t("shortcutCommands.editCategory")}
+        {dialogAction === "add"
+          ? t("shortcutCommands.addCategory")
+          : t("shortcutCommands.editCategory")}
       </DialogTitle>
       <DialogContent>
         <TextField
@@ -732,12 +764,12 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       open={menuOpen}
       onClose={handleMenuClose}
       anchorOrigin={{
-        vertical: 'bottom',
-        horizontal: 'right',
+        vertical: "bottom",
+        horizontal: "right",
       }}
       transformOrigin={{
-        vertical: 'top',
-        horizontal: 'right',
+        vertical: "top",
+        horizontal: "right",
       }}
     >
       {dialogType === "command" && (
@@ -777,9 +809,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理通知关闭
   const handleCloseNotification = () => {
-    setNotification(prev => ({
+    setNotification((prev) => ({
       ...prev,
-      open: false
+      open: false,
     }));
   };
 
@@ -796,171 +828,178 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.enteringScreen,
           }),
-        display: 'flex',
+        display: "flex",
       }}
     >
       {open && (
-      <>
-      {/* 标题栏 */}
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          px: 2,
-          py: 1,
-          borderBottom: 1,
-          borderColor: "divider",
-        }}
-      >
-        <Typography variant="h6" component="div">
-          {t("shortcutCommands.title")}
-        </Typography>
-        <Box>
-          <Tooltip title={t("shortcutCommands.addCommand")}>
-            <IconButton onClick={handleAddCommand} size="small">
-              <AddIcon />
-            </IconButton>
-          </Tooltip>
-          <IconButton onClick={onClose} size="small">
-            <CloseIcon />
-          </IconButton>
-        </Box>
-      </Box>
-
-      {/* 搜索框 */}
-      <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
-        <TextField
-          placeholder={t("shortcutCommands.search")}
-          variant="outlined"
-          size="small"
-          fullWidth
-          value={searchTerm}
-          onChange={handleSearchChange}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-            endAdornment: searchTerm && (
-              <InputAdornment position="end">
-                <IconButton
-                  size="small"
-                  onClick={() => setSearchTerm("")}
-                >
-                  <CloseIcon fontSize="small" />
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-        />
-      </Box>
-
-      {/* 标签页 */}
-      <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-        <Tabs
-          value={tabValue}
-          onChange={handleTabChange}
-          variant="fullWidth"
-          sx={{ minHeight: 40 }}
-        >
-          <Tab 
-            label={t("shortcutCommands.allCommands")} 
-            id="commands-tab-0" 
-            aria-controls="commands-tabpanel-0"
-            sx={{ minHeight: 40, py: 0 }}
-          />
-          <Tab 
-            label={t("shortcutCommands.categories")} 
-            id="commands-tab-1" 
-            aria-controls="commands-tabpanel-1"
-            sx={{ minHeight: 40, py: 0 }}
-          />
-        </Tabs>
-      </Box>
-
-      {/* 内容区域 */}
-      <Box
-        sx={{
-          flexGrow: 1,
-          overflow: "auto",
-          bgcolor: theme.palette.mode === "dark" ? "background.paper" : "grey.50",
-        }}
-      >
-        <div
-          role="tabpanel"
-          hidden={tabValue !== 0}
-          id="commands-tabpanel-0"
-          aria-labelledby="commands-tab-0"
-        >
-          {tabValue === 0 && renderCommandList()}
-        </div>
-        <div
-          role="tabpanel"
-          hidden={tabValue !== 1}
-          id="commands-tabpanel-1"
-          aria-labelledby="commands-tab-1"
-        >
-          {tabValue === 1 && (
+        <>
+          {/* 标题栏 */}
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              px: 2,
+              py: 1,
+              borderBottom: 1,
+              borderColor: "divider",
+            }}
+          >
+            <Typography variant="h6" component="div">
+              {t("shortcutCommands.title")}
+            </Typography>
             <Box>
-              <Box sx={{ p: 1, textAlign: "right" }}>
-                <Button
-                  startIcon={<CategoryIcon />}
-                  size="small"
-                  onClick={handleAddCategory}
-                >
-                  {t("shortcutCommands.addCategory")}
-                </Button>
-              </Box>
-              {renderCategoriesView()}
+              <Tooltip title={t("shortcutCommands.addCommand")}>
+                <IconButton onClick={handleAddCommand} size="small">
+                  <AddIcon />
+                </IconButton>
+              </Tooltip>
+              <IconButton onClick={onClose} size="small">
+                <CloseIcon />
+              </IconButton>
             </Box>
-          )}
-        </div>
-      </Box>
+          </Box>
 
-      {/* 底部操作区 */}
-      <Box
-        sx={{
-          p: 1,
-          borderTop: 1,
-          borderColor: "divider",
-          display: "flex",
-          justifyContent: "flex-end",
-        }}
-      >
-        <Typography variant="caption" color="textSecondary" sx={{ flexGrow: 1, alignSelf: 'center' }}>
-          {loading ? t("shortcutCommands.loading") : 
-           commands.length > 0 ? t("shortcutCommands.totalCommands", {count: commands.length}) : ""}
-        </Typography>
-      </Box>
+          {/* 搜索框 */}
+          <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
+            <TextField
+              placeholder={t("shortcutCommands.search")}
+              variant="outlined"
+              size="small"
+              fullWidth
+              value={searchTerm}
+              onChange={handleSearchChange}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearchTerm("")}>
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Box>
 
-      {/* 对话框 */}
-      {renderCommandDialog()}
-      {renderCategoryDialog()}
+          {/* 标签页 */}
+          <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
+            <Tabs
+              value={tabValue}
+              onChange={handleTabChange}
+              variant="fullWidth"
+              sx={{ minHeight: 40 }}
+            >
+              <Tab
+                label={t("shortcutCommands.allCommands")}
+                id="commands-tab-0"
+                aria-controls="commands-tabpanel-0"
+                sx={{ minHeight: 40, py: 0 }}
+              />
+              <Tab
+                label={t("shortcutCommands.categories")}
+                id="commands-tab-1"
+                aria-controls="commands-tabpanel-1"
+                sx={{ minHeight: 40, py: 0 }}
+              />
+            </Tabs>
+          </Box>
 
-      {/* 菜单 */}
-      {renderMenu()}
+          {/* 内容区域 */}
+          <Box
+            sx={{
+              flexGrow: 1,
+              overflow: "auto",
+              bgcolor:
+                theme.palette.mode === "dark" ? "background.paper" : "grey.50",
+            }}
+          >
+            <div
+              role="tabpanel"
+              hidden={tabValue !== 0}
+              id="commands-tabpanel-0"
+              aria-labelledby="commands-tab-0"
+            >
+              {tabValue === 0 && renderCommandList()}
+            </div>
+            <div
+              role="tabpanel"
+              hidden={tabValue !== 1}
+              id="commands-tabpanel-1"
+              aria-labelledby="commands-tab-1"
+            >
+              {tabValue === 1 && (
+                <Box>
+                  <Box sx={{ p: 1, textAlign: "right" }}>
+                    <Button
+                      startIcon={<CategoryIcon />}
+                      size="small"
+                      onClick={handleAddCategory}
+                    >
+                      {t("shortcutCommands.addCategory")}
+                    </Button>
+                  </Box>
+                  {renderCategoriesView()}
+                </Box>
+              )}
+            </div>
+          </Box>
 
-      {/* 添加通知组件 */}
-      <Snackbar 
-        open={notification.open} 
-        autoHideDuration={3000} 
-        onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert 
-          onClose={handleCloseNotification} 
-          severity={notification.severity} 
-          sx={{ width: '100%' }}
-        >
-          {notification.message}
-        </Alert>
-      </Snackbar>
-      </>
+          {/* 底部操作区 */}
+          <Box
+            sx={{
+              p: 1,
+              borderTop: 1,
+              borderColor: "divider",
+              display: "flex",
+              justifyContent: "flex-end",
+            }}
+          >
+            <Typography
+              variant="caption"
+              color="textSecondary"
+              sx={{ flexGrow: 1, alignSelf: "center" }}
+            >
+              {loading
+                ? t("shortcutCommands.loading")
+                : commands.length > 0
+                  ? t("shortcutCommands.totalCommands", {
+                      count: commands.length,
+                    })
+                  : ""}
+            </Typography>
+          </Box>
+
+          {/* 对话框 */}
+          {renderCommandDialog()}
+          {renderCategoryDialog()}
+
+          {/* 菜单 */}
+          {renderMenu()}
+
+          {/* 添加通知组件 */}
+          <Snackbar
+            open={notification.open}
+            autoHideDuration={3000}
+            onClose={handleCloseNotification}
+            anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+          >
+            <Alert
+              onClose={handleCloseNotification}
+              severity={notification.severity}
+              sx={{ width: "100%" }}
+            >
+              {notification.message}
+            </Alert>
+          </Snackbar>
+        </>
       )}
     </Paper>
   );
 }
 
-export default ShortcutCommands; 
+export default ShortcutCommands;

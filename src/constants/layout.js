@@ -6,4 +6,4 @@ export const SIDEBAR_WIDTHS = {
   SHORTCUT_COMMANDS: 310, // px
   // A small padding when any sidebar is open, to avoid content flush against edge
   DEFAULT_PADDING: 5, //px
-}; 
+};

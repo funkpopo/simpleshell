@@ -1,0 +1,271 @@
+const { app } = require("electron");
+const path = require("path");
+const fs = require("fs");
+const { encryptText, decryptText } = require("./encryption");
+
+/**
+ * 获取配置文件路径
+ * @returns {string} 配置文件路径
+ */
+function getConfigPath() {
+  try {
+    // 判断是否为开发环境
+    const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
+
+    if (isDev) {
+      // 开发环境：使用应用根目录下的config.json
+      return path.join(__dirname, "..", "..", "..", "config.json");
+    } else {
+      // 生产环境：使用exe同级目录下的config.json
+      const exePath = process.execPath;
+      const exeDir = path.dirname(exePath);
+      return path.join(exeDir, "config.json");
+    }
+  } catch (error) {
+    console.error("获取配置路径失败:", error);
+    // 如果获取路径失败，使用当前目录
+    return path.join(__dirname, "..", "..", "..", "config.json");
+  }
+}
+
+/**
+ * 处理连接配置以供保存（加密敏感信息）
+ * @param {Array} items - 连接配置数组
+ * @returns {Array} 处理后的连接配置
+ */
+function processConnectionsForSave(items) {
+  return items.map((item) => {
+    const processedItem = { ...item };
+
+    // 加密敏感字段
+    if (processedItem.password) {
+      processedItem.password = encryptText(processedItem.password);
+    }
+    if (processedItem.passphrase) {
+      processedItem.passphrase = encryptText(processedItem.passphrase);
+    }
+
+    return processedItem;
+  });
+}
+
+/**
+ * 处理连接配置以供加载（解密敏感信息）
+ * @param {Array} items - 加密的连接配置数组
+ * @returns {Array} 解密后的连接配置
+ */
+function processConnectionsForLoad(items) {
+  return items.map((item) => {
+    const processedItem = { ...item };
+
+    try {
+      // 解密敏感字段
+      if (processedItem.password) {
+        processedItem.password = decryptText(processedItem.password);
+      }
+      if (processedItem.passphrase) {
+        processedItem.passphrase = decryptText(processedItem.passphrase);
+      }
+    } catch (error) {
+      console.error("解密连接配置失败:", error);
+      // 如果解密失败，保持原值（可能是未加密的旧数据）
+    }
+
+    return processedItem;
+  });
+}
+
+/**
+ * 加载连接配置
+ * @returns {Array} 连接配置数组
+ */
+const loadConnectionsConfig = () => {
+  try {
+    const configPath = getConfigPath();
+
+    if (!fs.existsSync(configPath)) {
+      return [];
+    }
+
+    const data = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(data);
+
+    if (!config.connections) {
+      return [];
+    }
+
+    return processConnectionsForLoad(config.connections);
+  } catch (error) {
+    console.error("加载连接配置失败:", error);
+    return [];
+  }
+};
+
+/**
+ * 保存连接配置
+ * @param {Array} connections - 连接配置数组
+ * @returns {boolean} 保存是否成功
+ */
+const saveConnectionsConfig = (connections) => {
+  try {
+    const configPath = getConfigPath();
+    let config = {};
+
+    // 如果配置文件已存在，先读取现有配置
+    if (fs.existsSync(configPath)) {
+      const data = fs.readFileSync(configPath, "utf8");
+      config = JSON.parse(data);
+    }
+
+    // 处理连接配置（加密敏感信息）
+    config.connections = processConnectionsForSave(connections);
+
+    // 写入配置文件
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+
+    return true;
+  } catch (error) {
+    console.error("保存连接配置失败:", error);
+    return false;
+  }
+};
+
+/**
+ * 加载UI设置
+ * @returns {Object} UI设置对象
+ */
+async function loadUISettings() {
+  try {
+    const configPath = getConfigPath();
+
+    // 检查配置文件是否存在
+    if (!fs.existsSync(configPath)) {
+      // 返回默认设置
+      return {
+        language: "zh-CN",
+        fontSize: 14,
+        darkMode: true,
+      };
+    }
+
+    // 读取配置文件
+    const data = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(data);
+
+    // 如果配置中没有uiSettings，返回默认值
+    if (!config.uiSettings) {
+      return {
+        language: "zh-CN",
+        fontSize: 14,
+        darkMode: true,
+      };
+    }
+
+    // 确保所有必要的字段都存在，添加默认值
+    const uiSettings = {
+      language: config.uiSettings.language || "zh-CN",
+      fontSize: config.uiSettings.fontSize || 14,
+      darkMode:
+        config.uiSettings.darkMode !== undefined
+          ? config.uiSettings.darkMode
+          : true,
+    };
+
+    return uiSettings;
+  } catch (error) {
+    console.error("加载UI设置失败:", error);
+    // 出错时返回默认设置
+    return {
+      language: "zh-CN",
+      fontSize: 14,
+      darkMode: true,
+    };
+  }
+}
+
+/**
+ * 保存UI设置
+ * @param {Object} settings - UI设置对象
+ * @returns {Object} 保存结果
+ */
+async function saveUISettings(settings) {
+  try {
+    const configPath = getConfigPath();
+    let config = {};
+
+    // 检查配置文件是否存在
+    if (fs.existsSync(configPath)) {
+      // 读取现有配置
+      const data = fs.readFileSync(configPath, "utf8");
+      config = JSON.parse(data);
+    }
+
+    // 确保设置包含所有必要字段
+    const completeSettings = {
+      language: settings.language || "zh-CN",
+      fontSize: settings.fontSize || 14,
+      darkMode: settings.darkMode !== undefined ? settings.darkMode : true,
+    };
+
+    // 更新UI设置
+    config.uiSettings = completeSettings;
+
+    // 写入配置文件
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+
+    return { success: true };
+  } catch (error) {
+    console.error("保存UI设置失败:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 初始化配置
+ * @returns {Object} 初始化结果
+ */
+const initializeConfig = () => {
+  try {
+    const configPath = getConfigPath();
+
+    // 如果配置文件不存在，创建默认配置
+    if (!fs.existsSync(configPath)) {
+      const defaultConfig = {
+        connections: [],
+        uiSettings: {
+          language: "zh-CN",
+          fontSize: 14,
+          darkMode: true,
+        },
+      };
+
+      // 确保配置目录存在
+      const configDir = path.dirname(configPath);
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify(defaultConfig, null, 2),
+        "utf8",
+      );
+    }
+
+    return { success: true, path: configPath };
+  } catch (error) {
+    console.error("初始化配置失败:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+module.exports = {
+  getConfigPath,
+  processConnectionsForSave,
+  processConnectionsForLoad,
+  loadConnectionsConfig,
+  saveConnectionsConfig,
+  loadUISettings,
+  saveUISettings,
+  initializeConfig,
+};

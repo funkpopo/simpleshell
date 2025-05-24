@@ -22,9 +22,7 @@
       "presets": ["@babel/preset-react"]
     }
   },
-  "plugins": [
-    "react"
-  ],
+  "plugins": ["react"],
   "rules": {
     "react/react-in-jsx-scope": "off",
     "prettier/prettier": ["warn", {}, { "usePrettierrc": true }]
@@ -34,4 +32,4 @@
       "version": "detect"
     }
   }
-} 
+}

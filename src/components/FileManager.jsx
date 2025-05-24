@@ -270,7 +270,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
 
       // 如果是异常错误且重试次数未达到上限，则进行重试
       if (retryCount < 5) {
-
         // 增加重试等待时间，指数退避算法
         const waitTime = Math.min(500 * Math.pow(1.5, retryCount), 5000); // 最长等待5秒
 
