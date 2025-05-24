@@ -4,46 +4,123 @@ const fs = require("fs");
 let logFile = null; // Will be set by initLogger
 let appInstance = null;
 
+/**
+ * 检测当前运行环境
+ * @param {Electron.App} electronApp - Electron应用实例
+ * @returns {string} 'development' 或 'production'
+ */
+function detectEnvironment(electronApp) {
+  // 主要检测方法：使用app.isPackaged
+  if (electronApp && typeof electronApp.isPackaged === 'boolean') {
+    return electronApp.isPackaged ? 'production' : 'development';
+  }
+  
+  // 备用检测方法1：NODE_ENV环境变量
+  if (process.env.NODE_ENV === 'development') {
+    return 'development';
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return 'production';
+  }
+  
+  // 备用检测方法2：路径分析
+  if (__dirname.includes('node_modules') || __dirname.includes('.webpack')) {
+    return 'production';
+  }
+  
+  // 默认为开发环境
+  return 'development';
+}
+
+/**
+ * 根据环境获取日志目录路径
+ * @param {Electron.App} electronApp - Electron应用实例
+ * @returns {string} 日志目录路径
+ */
+function getLogDirectory(electronApp) {
+  const environment = detectEnvironment(electronApp);
+  
+  if (environment === 'development') {
+    // 开发环境：使用项目根目录下的log文件夹
+    return path.join(process.cwd(), 'log');
+  } else {
+    // 生产环境：使用exe同级的log文件夹
+    return path.join(path.dirname(process.execPath), 'log');
+  }
+}
+
 // 初始化日志模块，必须在 app 'ready' 后调用
 function initLogger(electronApp) {
   appInstance = electronApp;
+  const environment = detectEnvironment(electronApp);
+  
   try {
-    const logDir = appInstance.getPath("logs");
+    // 根据环境选择日志目录
+    const logDir = getLogDirectory(electronApp);
+    
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
+    
     logFile = path.join(logDir, "app.log");
-    // 写入一条初始化成功的日志，以便确认路径设置正确
-    logToFileInternal("Logger initialized. Log path: " + logFile, "INFO", true);
+    
+    // 写入初始化成功的日志，包含环境信息
+    logToFileInternal(
+      `Logger initialized in ${environment} environment. Log path: ${logFile}`, 
+      "INFO", 
+      true
+    );
+    
   } catch (error) {
     console.error(
-      "Failed to initialize logger or create log directory:",
+      "Failed to initialize logger with environment-specific path:",
       error,
     );
-    // 如果初始化失败，尝试回退到原先的基于 __dirname 的路径，但这在打包后可能不准确
+    
+    // 第一级回退：使用Electron默认日志路径
     try {
-      const fallbackLogDir = path.join(__dirname, "..", "..", "..", "logs"); //  假设 logger.js 在 src/core/utils
-      if (!fs.existsSync(fallbackLogDir)) {
-        fs.mkdirSync(fallbackLogDir, { recursive: true });
+      const electronLogDir = electronApp.getPath("logs");
+      if (!fs.existsSync(electronLogDir)) {
+        fs.mkdirSync(electronLogDir, { recursive: true });
       }
-      logFile = path.join(fallbackLogDir, "app_fallback.log");
+      logFile = path.join(electronLogDir, "app.log");
       logToFileInternal(
-        "Logger initialized with fallback path: " + logFile,
+        `Logger initialized with Electron default path (fallback level 1): ${logFile}`,
         "WARN",
         true,
       );
-    } catch (fallbackError) {
+    } catch (electronError) {
       console.error(
-        "Failed to initialize logger with fallback path:",
-        fallbackError,
+        "Failed to initialize logger with Electron default path:",
+        electronError,
       );
-      logFile = "app_emergency.log"; // 最终回退，直接在工作目录下
-      logToFileInternal(
-        "Logger initialized with emergency path in current working directory: " +
-          logFile,
-        "ERROR",
-        true,
-      );
+      
+      // 第二级回退：使用基于__dirname的路径
+      try {
+        const fallbackLogDir = path.join(__dirname, "..", "..", "..", "logs");
+        if (!fs.existsSync(fallbackLogDir)) {
+          fs.mkdirSync(fallbackLogDir, { recursive: true });
+        }
+        logFile = path.join(fallbackLogDir, "app_fallback.log");
+        logToFileInternal(
+          `Logger initialized with __dirname-based path (fallback level 2): ${logFile}`,
+          "WARN",
+          true,
+        );
+      } catch (fallbackError) {
+        console.error(
+          "Failed to initialize logger with __dirname-based path:",
+          fallbackError,
+        );
+        
+        // 最终回退：直接在工作目录下
+        logFile = "app_emergency.log";
+        logToFileInternal(
+          `Logger initialized with emergency path in current working directory (fallback level 3): ${logFile}`,
+          "ERROR",
+          true,
+        );
+      }
     }
   }
 }
