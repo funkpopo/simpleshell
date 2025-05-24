@@ -490,6 +490,43 @@ async function processSftpQueue(tabId) {
   }
 }
 
+// 新增：清理指定tabId的待处理操作队列
+function clearPendingOperationsForTab(tabId) {
+  if (pendingOperations.has(tabId)) {
+    const queue = pendingOperations.get(tabId);
+    if (queue && queue.length > 0) {
+      logToFile(
+        `sftpCore: Clearing ${queue.length} pending SFTP operations for tab ${tabId} due to connection closure.`,
+        "INFO",
+      );
+      for (const op of queue) {
+        if (op.reject && typeof op.reject === 'function') {
+          op.reject(new Error("操作已取消：SSH连接已关闭。"));
+        }
+        // 如果有合并的订阅者，也需要拒绝它们
+        if (op.subscribers && op.subscribers.length > 0) {
+          for (const subscriber of op.subscribers) {
+            if (subscriber.reject && typeof subscriber.reject === 'function') {
+              subscriber.reject(new Error("操作已取消：SSH连接已关闭。"));
+            }
+          }
+        }
+      }
+      pendingOperations.set(tabId, []); // Clear the queue for this tabId
+    } else {
+      logToFile(
+        `sftpCore: No pending operations to clear for tab ${tabId}.`,
+        "INFO",
+      );
+    }
+  } else {
+    logToFile(
+      `sftpCore: No pending operations queue found for tab ${tabId} to clear.`,
+      "INFO",
+    );
+  }
+}
+
 module.exports = {
   init,
   startSftpHealthCheck,
@@ -497,6 +534,7 @@ module.exports = {
   getSftpSession,
   closeSftpSession,
   enqueueSftpOperation,
+  clearPendingOperationsForTab, // 导出新函数
   // processSftpQueue is internal, not exported
   // checkSftpSessionsHealth and checkSessionAlive are also internal after startSftpHealthCheck is called
 };

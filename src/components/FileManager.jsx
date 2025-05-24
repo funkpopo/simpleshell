@@ -524,16 +524,23 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
             currentFileIndex,
             totalFiles,
           ) => {
+            // 验证并标准化进度数据
+            const validProgress = Math.max(0, Math.min(100, progress || 0));
+            const validTransferredBytes = Math.max(0, transferredBytes || 0);
+            const validTotalBytes = Math.max(0, totalBytes || 0);
+            const validTransferSpeed = Math.max(0, transferSpeed || 0);
+            const validRemainingTime = Math.max(0, remainingTime || 0);
+            
             setTransferProgress({
               type: "upload",
-              progress,
-              fileName,
-              transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime,
-              currentFileIndex,
-              totalFiles,
+              progress: validProgress,
+              fileName: fileName || '',
+              transferredBytes: validTransferredBytes,
+              totalBytes: validTotalBytes,
+              transferSpeed: validTransferSpeed,
+              remainingTime: validRemainingTime,
+              currentFileIndex: currentFileIndex || 0,
+              totalFiles: totalFiles || 0,
             });
           },
         );
@@ -630,17 +637,26 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
             processedFiles,
             totalFiles,
           ) => {
+            // 验证并标准化进度数据
+            const validProgress = Math.max(0, Math.min(100, progress || 0));
+            const validTransferredBytes = Math.max(0, transferredBytes || 0);
+            const validTotalBytes = Math.max(0, totalBytes || 0);
+            const validTransferSpeed = Math.max(0, transferSpeed || 0);
+            const validRemainingTime = Math.max(0, remainingTime || 0);
+            const validProcessedFiles = Math.max(0, processedFiles || 0);
+            const validTotalFiles = Math.max(0, totalFiles || 0);
+            
             setTransferProgress({
               type: "upload-folder",
-              progress,
-              fileName,
-              currentFile,
-              transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime,
-              processedFiles,
-              totalFiles,
+              progress: validProgress,
+              fileName: fileName || '',
+              currentFile: currentFile || '',
+              transferredBytes: validTransferredBytes,
+              totalBytes: validTotalBytes,
+              transferSpeed: validTransferSpeed,
+              remainingTime: validRemainingTime,
+              processedFiles: validProcessedFiles,
+              totalFiles: validTotalFiles,
             });
           },
         );
