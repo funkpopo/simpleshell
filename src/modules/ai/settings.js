@@ -1,11 +1,78 @@
 const fs = require("fs");
 const { logToFile } = require("../../core/utils/logger");
-const { encryptText, decryptText } = require("../../core/utils/encryption");
+const { encryptText, decryptText } = require("../../core/utils/crypto");
 const { getConfigPath } = require("../../core/utils/config");
 
 // 为了兼容性，创建别名函数
 const encrypt = encryptText;
 const decrypt = decryptText;
+
+// 导入旧的加密方法用于数据迁移
+const crypto = require("crypto");
+const LEGACY_ENCRYPTION_KEY = "simple-shell-encryption-key-12345";
+const LEGACY_ENCRYPTION_ALGORITHM = "aes-256-cbc";
+
+/**
+ * 检测加密数据格式是否为新格式
+ * @param {string} encryptedText - 加密的文本
+ * @returns {boolean} 是否为新格式
+ */
+function isNewFormat(encryptedText) {
+  if (typeof encryptedText !== "string" || !encryptedText.includes(":")) {
+    return false;
+  }
+  const parts = encryptedText.split(":");
+  if (parts.length !== 2) {
+    return false;
+  }
+  // 新格式的IV应该是32个十六进制字符（16字节）
+  const ivHex = parts[0];
+  return ivHex.length === 32 && /^[0-9a-fA-F]+$/.test(ivHex);
+}
+
+/**
+ * 使用旧方法解密数据（用于数据迁移）
+ * @param {string} text - 要解密的文本
+ * @returns {string|null} 解密后的文本，失败返回null
+ */
+function legacyDecrypt(text) {
+  try {
+    const textParts = text.split(":");
+    const iv = Buffer.from(textParts.shift(), "hex");
+    const encryptedText = textParts.join(":");
+    const decipher = crypto.createDecipher(LEGACY_ENCRYPTION_ALGORITHM, LEGACY_ENCRYPTION_KEY);
+    let decrypted = decipher.update(encryptedText, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } catch (error) {
+    logToFile(`Legacy decryption failed: ${error.message}`, "ERROR");
+    return null;
+  }
+}
+
+/**
+ * 智能解密函数，支持新旧格式
+ * @param {string} encryptedText - 加密的文本
+ * @returns {string|null} 解密后的文本，失败返回null
+ */
+function smartDecrypt(encryptedText) {
+  if (!encryptedText) {
+    return null;
+  }
+  
+  // 首先尝试新格式解密
+  if (isNewFormat(encryptedText)) {
+    try {
+      return decrypt(encryptedText);
+    } catch (error) {
+      logToFile(`New format decryption failed: ${error.message}`, "ERROR");
+    }
+  }
+  
+  // 如果新格式失败，尝试旧格式解密
+  logToFile("Attempting legacy decryption for old format data", "INFO");
+  return legacyDecrypt(encryptedText);
+}
 
 /**
  * 加载AI设置，使用统一的config.json
@@ -39,15 +106,22 @@ const loadAISettings = () => {
           logToFile("No configs array found, initializing empty array", "WARN");
         }
 
-        // 解密所有配置中的API密钥
+        // 解密所有配置中的API密钥，支持数据迁移
+        let needsMigration = false;
         if (settings.configs && Array.isArray(settings.configs)) {
           settings.configs = settings.configs.map((cfg) => {
             if (cfg.apiKey) {
-              try {
-                return { ...cfg, apiKey: decrypt(cfg.apiKey) };
-              } catch (err) {
+              const decryptedKey = smartDecrypt(cfg.apiKey);
+              if (decryptedKey) {
+                // 检查是否使用了旧格式
+                if (!isNewFormat(cfg.apiKey)) {
+                  needsMigration = true;
+                  logToFile(`Migrating API key for config ${cfg.id} from old format`, "INFO");
+                }
+                return { ...cfg, apiKey: decryptedKey };
+              } else {
                 logToFile(
-                  `Failed to decrypt API key for config ${cfg.id}: ${err.message}`,
+                  `Failed to decrypt API key for config ${cfg.id}`,
                   "ERROR",
                 );
                 return cfg;
@@ -57,16 +131,25 @@ const loadAISettings = () => {
           });
         }
 
-        // 解密当前设置的API密钥
+        // 解密当前设置的API密钥，支持数据迁移
         if (settings.current && settings.current.apiKey) {
-          try {
-            settings.current.apiKey = decrypt(settings.current.apiKey);
-          } catch (err) {
-            logToFile(
-              `Failed to decrypt current API key: ${err.message}`,
-              "ERROR",
-            );
+          const decryptedKey = smartDecrypt(settings.current.apiKey);
+          if (decryptedKey) {
+            // 检查是否使用了旧格式
+            if (!isNewFormat(settings.current.apiKey)) {
+              needsMigration = true;
+              logToFile("Migrating current API key from old format", "INFO");
+            }
+            settings.current.apiKey = decryptedKey;
+          } else {
+            logToFile("Failed to decrypt current API key", "ERROR");
           }
+        }
+
+        // 如果检测到旧格式数据，自动迁移到新格式
+        if (needsMigration) {
+          logToFile("Auto-migrating AI settings to new encryption format", "INFO");
+          saveAISettings(settings);
         }
 
         // 确保当前设置存在所有字段
