@@ -530,11 +530,11 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
             const validTotalBytes = Math.max(0, totalBytes || 0);
             const validTransferSpeed = Math.max(0, transferSpeed || 0);
             const validRemainingTime = Math.max(0, remainingTime || 0);
-            
+
             setTransferProgress({
               type: "upload",
               progress: validProgress,
-              fileName: fileName || '',
+              fileName: fileName || "",
               transferredBytes: validTransferredBytes,
               totalBytes: validTotalBytes,
               transferSpeed: validTransferSpeed,
@@ -645,12 +645,12 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
             const validRemainingTime = Math.max(0, remainingTime || 0);
             const validProcessedFiles = Math.max(0, processedFiles || 0);
             const validTotalFiles = Math.max(0, totalFiles || 0);
-            
+
             setTransferProgress({
               type: "upload-folder",
               progress: validProgress,
-              fileName: fileName || '',
-              currentFile: currentFile || '',
+              fileName: fileName || "",
+              currentFile: currentFile || "",
               transferredBytes: validTransferredBytes,
               totalBytes: validTotalBytes,
               transferSpeed: validTransferSpeed,

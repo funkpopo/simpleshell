@@ -186,18 +186,36 @@ async function handleDownloadFile(event, tabId, remotePath) {
   );
 }
 
-async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, progressChannel) {
-  if (!sftpCore || !dialog || !getChildProcessInfo || !sendToRenderer || !logToFile || !fs || !path || !SftpClient) {
+async function handleUploadFile(
+  event,
+  tabId,
+  targetFolder,
+  filePathsFromMain,
+  progressChannel,
+) {
+  if (
+    !sftpCore ||
+    !dialog ||
+    !getChildProcessInfo ||
+    !sendToRenderer ||
+    !logToFile ||
+    !fs ||
+    !path ||
+    !SftpClient
+  ) {
     logToFile("sftpTransfer not properly initialized for uploadFile.", "ERROR");
     return { success: false, error: "SFTP Transfer module not initialized." };
   }
 
   // File selection is now done in main.js, filePathsFromMain is the result.
-  const filePaths = filePathsFromMain; 
+  const filePaths = filePathsFromMain;
 
   if (!filePaths || filePaths.length === 0) {
     // This case should ideally be caught by main.js before calling this
-    logToFile("sftpTransfer: No filePaths provided to handleUploadFile.", "WARN");
+    logToFile(
+      "sftpTransfer: No filePaths provided to handleUploadFile.",
+      "WARN",
+    );
     return { success: false, cancelled: true, error: "没有选择文件" };
   }
 
@@ -224,12 +242,14 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
   }
 
   if (totalBytesToUpload === 0 && totalFilesToUpload > 0) {
-      // This case can happen if all files failed to stat or are empty.
-      // Depending on desired behavior, could return an error or specific message.
-      logToFile(`No bytes to upload, though ${totalFilesToUpload} files were selected (possibly stat errors or all empty).`, "WARN");
-      // For now, let it proceed, fastPut might handle empty files or error out if path is invalid.
+    // This case can happen if all files failed to stat or are empty.
+    // Depending on desired behavior, could return an error or specific message.
+    logToFile(
+      `No bytes to upload, though ${totalFilesToUpload} files were selected (possibly stat errors or all empty).`,
+      "WARN",
+    );
+    // For now, let it proceed, fastPut might handle empty files or error out if path is invalid.
   }
-
 
   return sftpCore.enqueueSftpOperation(
     tabId,
@@ -265,18 +285,24 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
         try {
           const folderStat = await sftp.stat(normalizedTargetFolder || ".");
           if (!folderStat.isDirectory) {
-            await sftp.end().catch(()=>{});
+            await sftp.end().catch(() => {});
             activeTransfers.delete(transferKey);
-            return { success: false, error: `目标 ${normalizedTargetFolder} 不是一个有效的文件夹。` };
+            return {
+              success: false,
+              error: `目标 ${normalizedTargetFolder} 不是一个有效的文件夹。`,
+            };
           }
         } catch (statErr) {
           logToFile(
             `sftpTransfer: Target folder check/stat failed for "${normalizedTargetFolder}": ${statErr.message}`,
             "WARN",
           );
-          await sftp.end().catch(()=>{});
+          await sftp.end().catch(() => {});
           activeTransfers.delete(transferKey);
-          return { success: false, error: `目标文件夹 "${normalizedTargetFolder}" 不可访问: ${statErr.message}` };
+          return {
+            success: false,
+            error: `目标文件夹 "${normalizedTargetFolder}" 不可访问: ${statErr.message}`,
+          };
         }
 
         let lastProgressUpdateTime = 0;
@@ -287,36 +313,47 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
           const remoteFilePath = path.posix
             .join(normalizedTargetFolder || ".", fileName)
             .replace(/\\\\/g, "/");
-          
+
           let currentFileStats;
           try {
             currentFileStats = fs.statSync(localFilePath);
           } catch (statError) {
-            logToFile(`Skipping file ${localFilePath} due to stat error: ${statError.message}`, "ERROR");
+            logToFile(
+              `Skipping file ${localFilePath} due to stat error: ${statError.message}`,
+              "ERROR",
+            );
             failedUploads++;
             failedFileNames.push(fileName);
             // Send progress update for the skipped file if desired, using the specific progressChannel
-            if (progressChannel) { // Check if progressChannel is provided
-              sendToRenderer(progressChannel, { // Use progressChannel
+            if (progressChannel) {
+              // Check if progressChannel is provided
+              sendToRenderer(progressChannel, {
+                // Use progressChannel
                 tabId,
                 transferKey,
-                progress: totalBytesToUpload > 0 ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100) : 0,
+                progress:
+                  totalBytesToUpload > 0
+                    ? Math.floor(
+                        (overallUploadedBytes / totalBytesToUpload) * 100,
+                      )
+                    : 0,
                 fileName: fileName,
                 currentFileIndex: i + 1,
                 totalFiles: totalFilesToUpload,
-                transferredBytes: overallUploadedBytes, 
-                totalBytes: totalBytesToUpload, 
+                transferredBytes: overallUploadedBytes,
+                totalBytes: totalBytesToUpload,
                 transferSpeed: 0,
                 remainingTime: 0,
-                error: `无法读取文件属性: ${statError.message.substring(0,50)}...`
+                error: `无法读取文件属性: ${statError.message.substring(0, 50)}...`,
               });
             }
-            if (i === totalFilesToUpload - 1 && filesUploadedCount === 0) { // Last file and no successes
-                 // If all files failed and this is the last one, ensure we communicate failure.
+            if (i === totalFilesToUpload - 1 && filesUploadedCount === 0) {
+              // Last file and no successes
+              // If all files failed and this is the last one, ensure we communicate failure.
             }
             continue; // Skip to the next file
           }
-          
+
           const currentFileSize = currentFileStats.size;
           let fileTransferredBytes = 0;
 
@@ -329,13 +366,22 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
             await sftp.fastPut(localFilePath, remoteFilePath, {
               step: (totalTransferredForFile) => {
                 fileTransferredBytes = totalTransferredForFile;
-                const currentOverallTransferred = overallUploadedBytes + fileTransferredBytes;
-                const progress = totalBytesToUpload > 0 ? Math.floor((currentOverallTransferred / totalBytesToUpload) * 100) : 0;
+                const currentOverallTransferred =
+                  overallUploadedBytes + fileTransferredBytes;
+                const progress =
+                  totalBytesToUpload > 0
+                    ? Math.floor(
+                        (currentOverallTransferred / totalBytesToUpload) * 100,
+                      )
+                    : 0;
                 const now = Date.now();
 
-                if (now - lastProgressUpdateTime >= 100) { // Report every 100ms
-                  if (progressChannel) { // Check if progressChannel is provided
-                    sendToRenderer(progressChannel, { // Use progressChannel
+                if (now - lastProgressUpdateTime >= 100) {
+                  // Report every 100ms
+                  if (progressChannel) {
+                    // Check if progressChannel is provided
+                    sendToRenderer(progressChannel, {
+                      // Use progressChannel
                       tabId,
                       transferKey,
                       progress: Math.min(100, progress),
@@ -345,7 +391,7 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
                       transferredBytes: currentOverallTransferred,
                       totalBytes: totalBytesToUpload,
                       transferSpeed: 0, // Will be calculated separately
-                      remainingTime: 0  // Will be calculated separately
+                      remainingTime: 0, // Will be calculated separately
                     });
                   }
                   lastProgressUpdateTime = now;
@@ -357,11 +403,20 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
             overallUploadedBytes += currentFileSize;
             filesUploadedCount++;
             // Send final progress for this file
-            if (progressChannel) { // Check if progressChannel is provided
-              sendToRenderer(progressChannel, { // Use progressChannel
+            if (progressChannel) {
+              // Check if progressChannel is provided
+              sendToRenderer(progressChannel, {
+                // Use progressChannel
                 tabId,
                 transferKey,
-                progress: totalBytesToUpload > 0 ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100) : (totalFilesToUpload > 0 ? 100 : 0),
+                progress:
+                  totalBytesToUpload > 0
+                    ? Math.floor(
+                        (overallUploadedBytes / totalBytesToUpload) * 100,
+                      )
+                    : totalFilesToUpload > 0
+                      ? 100
+                      : 0,
                 fileName: fileName,
                 currentFileIndex: i + 1,
                 totalFiles: totalFilesToUpload,
@@ -369,7 +424,7 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
                 totalBytes: totalBytesToUpload,
                 transferSpeed: 0,
                 remainingTime: 0,
-                fileUploadSuccess: true // Indicate this specific file was successful
+                fileUploadSuccess: true, // Indicate this specific file was successful
               });
             }
           } catch (fileError) {
@@ -380,11 +435,18 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
             failedUploads++;
             failedFileNames.push(fileName);
             // Send progress update for the failed file
-             if (progressChannel) { // Check if progressChannel is provided
-              sendToRenderer(progressChannel, { // Use progressChannel
+            if (progressChannel) {
+              // Check if progressChannel is provided
+              sendToRenderer(progressChannel, {
+                // Use progressChannel
                 tabId,
                 transferKey,
-                progress: totalBytesToUpload > 0 ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100) : 0,
+                progress:
+                  totalBytesToUpload > 0
+                    ? Math.floor(
+                        (overallUploadedBytes / totalBytesToUpload) * 100,
+                      )
+                    : 0,
                 fileName: fileName,
                 currentFileIndex: i + 1,
                 totalFiles: totalFilesToUpload,
@@ -392,20 +454,30 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
                 totalBytes: totalBytesToUpload,
                 transferSpeed: 0,
                 remainingTime: 0,
-                error: fileError.message.substring(0,100)+'...', // Truncate long errors
-                fileUploadSuccess: false // Indicate this specific file failed
+                error: fileError.message.substring(0, 100) + "...", // Truncate long errors
+                fileUploadSuccess: false, // Indicate this specific file failed
               });
             }
           }
         } // End of for loop
 
         // Final overall progress update after loop (covers all files)
-        if (progressChannel) { // Check if progressChannel is provided
-          sendToRenderer(progressChannel, { // Use progressChannel
+        if (progressChannel) {
+          // Check if progressChannel is provided
+          sendToRenderer(progressChannel, {
+            // Use progressChannel
             tabId,
             transferKey,
-            progress: totalBytesToUpload > 0 && filesUploadedCount > 0 ? 100 : (failedUploads === totalFilesToUpload ? 0 : 100), // show 0 if all failed
-            fileName: failedUploads > 0 ? `${failedUploads} 个文件上传失败` : "所有文件上传完成!",
+            progress:
+              totalBytesToUpload > 0 && filesUploadedCount > 0
+                ? 100
+                : failedUploads === totalFilesToUpload
+                  ? 0
+                  : 100, // show 0 if all failed
+            fileName:
+              failedUploads > 0
+                ? `${failedUploads} 个文件上传失败`
+                : "所有文件上传完成!",
             currentFileIndex: totalFilesToUpload,
             totalFiles: totalFilesToUpload,
             transferredBytes: overallUploadedBytes,
@@ -425,50 +497,75 @@ async function handleUploadFile(event, tabId, targetFolder, filePathsFromMain, p
           failedFiles: failedUploads,
           failedFileNames,
           remotePath: normalizedTargetFolder, // Target folder
-          message: filesUploadedCount > 0 ? `${filesUploadedCount} 个文件上传成功。` + (failedUploads > 0 ? ` ${failedUploads} 个文件上传失败。` : "") : "没有文件成功上传。"
+          message:
+            filesUploadedCount > 0
+              ? `${filesUploadedCount} 个文件上传成功。` +
+                (failedUploads > 0 ? ` ${failedUploads} 个文件上传失败。` : "")
+              : "没有文件成功上传。",
         };
-
       } catch (error) {
         logToFile(
           `sftpTransfer: General upload error on tab ${tabId} to ${normalizedTargetFolder}: ${error.message}`,
           "ERROR",
         );
         // Send a final error status to renderer for the whole operation
-        if (progressChannel) { // Check if progressChannel is provided
-          sendToRenderer(progressChannel, { // Use progressChannel
-              tabId,
-              transferKey,
-              error: error.message,
-              cancelled: error.message.includes("cancel") || error.message.includes("abort"),
-              progress: -1, // Indicate error
-              operationComplete: true,
-              successfulFiles: filesUploadedCount,
-              failedFiles: totalFilesToUpload - filesUploadedCount, // All remaining are failed
+        if (progressChannel) {
+          // Check if progressChannel is provided
+          sendToRenderer(progressChannel, {
+            // Use progressChannel
+            tabId,
+            transferKey,
+            error: error.message,
+            cancelled:
+              error.message.includes("cancel") ||
+              error.message.includes("abort"),
+            progress: -1, // Indicate error
+            operationComplete: true,
+            successfulFiles: filesUploadedCount,
+            failedFiles: totalFilesToUpload - filesUploadedCount, // All remaining are failed
           });
         }
         return {
           success: false,
           error: `上传操作失败: ${error.message}`,
-          cancelled: error.message.includes("cancel") || error.message.includes("abort"),
+          cancelled:
+            error.message.includes("cancel") || error.message.includes("abort"),
           totalFiles: totalFilesToUpload,
           successfulFiles: filesUploadedCount,
           failedFiles: totalFilesToUpload - filesUploadedCount,
           failedFileNames, // May not be fully populated if error is before loop
         };
       } finally {
-        if (sftp.sftp) { // Check if sftp client is connected
-          await sftp.end().catch(e => logToFile(`Error ending SFTP in multi-upload: ${e.message}`, "WARN"));
+        if (sftp.sftp) {
+          // Check if sftp client is connected
+          await sftp
+            .end()
+            .catch((e) =>
+              logToFile(
+                `Error ending SFTP in multi-upload: ${e.message}`,
+                "WARN",
+              ),
+            );
         }
         activeTransfers.delete(transferKey);
       }
     },
     // Adjust queue operation type if needed, e.g., to reflect multi-file nature or priority
-    { type: "upload-multifile", path: normalizedTargetFolder, priority: "normal" }
+    {
+      type: "upload-multifile",
+      path: normalizedTargetFolder,
+      priority: "normal",
+    },
   );
 }
 
 // Placeholder for handleUploadFolder - very complex, will simplify for now or defer
-async function handleUploadFolder(tabId, localFolderPath, targetFolder, progressChannel) {
+async function handleUploadFolder(
+  tabId,
+  localFolderPath,
+  targetFolder,
+  progressChannel,
+) {
   if (
     !sftpCore ||
     !dialog ||
@@ -696,21 +793,22 @@ async function handleUploadFolder(tabId, localFolderPath, targetFolder, progress
                         100,
                     )
                   : 0;
-              if (progressChannel) { // Check if progressChannel is provided
-                sendToRenderer(progressChannel, { // Use progressChannel
+              if (progressChannel) {
+                // Check if progressChannel is provided
+                sendToRenderer(progressChannel, {
+                  // Use progressChannel
                   tabId,
                   transferKey,
-                  progress: Math.min(100, progress), 
+                  progress: Math.min(100, progress),
                   fileName: file.name,
                   currentFile: file.name,
                   processedFiles:
-                    filesUploadedCount + (isFinal && !file.isDirectory ? 1 : 0), 
+                    filesUploadedCount + (isFinal && !file.isDirectory ? 1 : 0),
                   totalFiles: totalFilesToUpload,
-                  transferredBytes:
-                    overallUploadedBytes + fileTransferredBytes,
+                  transferredBytes: overallUploadedBytes + fileTransferredBytes,
                   totalBytes: totalBytesToUpload,
                   transferSpeed: 0, // Will be calculated separately
-                  remainingTime: 0  // Will be calculated separately
+                  remainingTime: 0, // Will be calculated separately
                 });
               }
               lastProgressUpdateTime = now;
@@ -736,8 +834,10 @@ async function handleUploadFolder(tabId, localFolderPath, targetFolder, progress
         }
 
         // Send final progress update
-        if (progressChannel) { // Check if progressChannel is provided
-          sendToRenderer(progressChannel, { // Use progressChannel
+        if (progressChannel) {
+          // Check if progressChannel is provided
+          sendToRenderer(progressChannel, {
+            // Use progressChannel
             tabId,
             transferKey,
             progress: 100,
@@ -751,7 +851,7 @@ async function handleUploadFolder(tabId, localFolderPath, targetFolder, progress
             remainingTime: 0,
             operationComplete: true, // Indicate completion
             successfulFiles: filesUploadedCount, // Number of successful files
-            failedFiles: totalFilesToUpload - filesUploadedCount // Number of failed files (if any)
+            failedFiles: totalFilesToUpload - filesUploadedCount, // Number of failed files (if any)
           });
         }
         logToFile(
@@ -770,16 +870,20 @@ async function handleUploadFolder(tabId, localFolderPath, targetFolder, progress
           "ERROR",
         );
         // Send a final error status to renderer for the whole operation
-        if (progressChannel) { // Check if progressChannel is provided
-          sendToRenderer(progressChannel, { // Use progressChannel
-              tabId,
-              transferKey,
-              error: error.message,
-              cancelled: error.message.includes("cancel") || error.message.includes("abort"),
-              progress: -1, 
-              operationComplete: true,
-              successfulFiles: filesUploadedCount,
-              failedFiles: totalFilesToUpload - filesUploadedCount, 
+        if (progressChannel) {
+          // Check if progressChannel is provided
+          sendToRenderer(progressChannel, {
+            // Use progressChannel
+            tabId,
+            transferKey,
+            error: error.message,
+            cancelled:
+              error.message.includes("cancel") ||
+              error.message.includes("abort"),
+            progress: -1,
+            operationComplete: true,
+            successfulFiles: filesUploadedCount,
+            failedFiles: totalFilesToUpload - filesUploadedCount,
           });
         }
         return {

@@ -40,7 +40,10 @@ function legacyDecrypt(text) {
     const textParts = text.split(":");
     const iv = Buffer.from(textParts.shift(), "hex");
     const encryptedText = textParts.join(":");
-    const decipher = crypto.createDecipher(LEGACY_ENCRYPTION_ALGORITHM, LEGACY_ENCRYPTION_KEY);
+    const decipher = crypto.createDecipher(
+      LEGACY_ENCRYPTION_ALGORITHM,
+      LEGACY_ENCRYPTION_KEY,
+    );
     let decrypted = decipher.update(encryptedText, "hex", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
@@ -59,7 +62,7 @@ function smartDecrypt(encryptedText) {
   if (!encryptedText) {
     return null;
   }
-  
+
   // 首先尝试新格式解密
   if (isNewFormat(encryptedText)) {
     try {
@@ -68,7 +71,7 @@ function smartDecrypt(encryptedText) {
       logToFile(`New format decryption failed: ${error.message}`, "ERROR");
     }
   }
-  
+
   // 如果新格式失败，尝试旧格式解密
   logToFile("Attempting legacy decryption for old format data", "INFO");
   return legacyDecrypt(encryptedText);
@@ -116,7 +119,10 @@ const loadAISettings = () => {
                 // 检查是否使用了旧格式
                 if (!isNewFormat(cfg.apiKey)) {
                   needsMigration = true;
-                  logToFile(`Migrating API key for config ${cfg.id} from old format`, "INFO");
+                  logToFile(
+                    `Migrating API key for config ${cfg.id} from old format`,
+                    "INFO",
+                  );
                 }
                 return { ...cfg, apiKey: decryptedKey };
               } else {
@@ -148,7 +154,10 @@ const loadAISettings = () => {
 
         // 如果检测到旧格式数据，自动迁移到新格式
         if (needsMigration) {
-          logToFile("Auto-migrating AI settings to new encryption format", "INFO");
+          logToFile(
+            "Auto-migrating AI settings to new encryption format",
+            "INFO",
+          );
           saveAISettings(settings);
         }
 

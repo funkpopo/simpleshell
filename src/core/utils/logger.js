@@ -11,25 +11,25 @@ let appInstance = null;
  */
 function detectEnvironment(electronApp) {
   // 主要检测方法：使用app.isPackaged
-  if (electronApp && typeof electronApp.isPackaged === 'boolean') {
-    return electronApp.isPackaged ? 'production' : 'development';
+  if (electronApp && typeof electronApp.isPackaged === "boolean") {
+    return electronApp.isPackaged ? "production" : "development";
   }
-  
+
   // 备用检测方法1：NODE_ENV环境变量
-  if (process.env.NODE_ENV === 'development') {
-    return 'development';
+  if (process.env.NODE_ENV === "development") {
+    return "development";
   }
-  if (process.env.NODE_ENV === 'production') {
-    return 'production';
+  if (process.env.NODE_ENV === "production") {
+    return "production";
   }
-  
+
   // 备用检测方法2：路径分析
-  if (__dirname.includes('node_modules') || __dirname.includes('.webpack')) {
-    return 'production';
+  if (__dirname.includes("node_modules") || __dirname.includes(".webpack")) {
+    return "production";
   }
-  
+
   // 默认为开发环境
-  return 'development';
+  return "development";
 }
 
 /**
@@ -39,13 +39,13 @@ function detectEnvironment(electronApp) {
  */
 function getLogDirectory(electronApp) {
   const environment = detectEnvironment(electronApp);
-  
-  if (environment === 'development') {
+
+  if (environment === "development") {
     // 开发环境：使用项目根目录下的log文件夹
-    return path.join(process.cwd(), 'log');
+    return path.join(process.cwd(), "log");
   } else {
     // 生产环境：使用exe同级的log文件夹
-    return path.join(path.dirname(process.execPath), 'log');
+    return path.join(path.dirname(process.execPath), "log");
   }
 }
 
@@ -53,30 +53,29 @@ function getLogDirectory(electronApp) {
 function initLogger(electronApp) {
   appInstance = electronApp;
   const environment = detectEnvironment(electronApp);
-  
+
   try {
     // 根据环境选择日志目录
     const logDir = getLogDirectory(electronApp);
-    
+
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
-    
+
     logFile = path.join(logDir, "app.log");
-    
+
     // 写入初始化成功的日志，包含环境信息
     logToFileInternal(
-      `Logger initialized in ${environment} environment. Log path: ${logFile}`, 
-      "INFO", 
-      true
+      `Logger initialized in ${environment} environment. Log path: ${logFile}`,
+      "INFO",
+      true,
     );
-    
   } catch (error) {
     console.error(
       "Failed to initialize logger with environment-specific path:",
       error,
     );
-    
+
     // 第一级回退：使用Electron默认日志路径
     try {
       const electronLogDir = electronApp.getPath("logs");
@@ -94,7 +93,7 @@ function initLogger(electronApp) {
         "Failed to initialize logger with Electron default path:",
         electronError,
       );
-      
+
       // 第二级回退：使用基于__dirname的路径
       try {
         const fallbackLogDir = path.join(__dirname, "..", "..", "..", "logs");
@@ -112,7 +111,7 @@ function initLogger(electronApp) {
           "Failed to initialize logger with __dirname-based path:",
           fallbackError,
         );
-        
+
         // 最终回退：直接在工作目录下
         logFile = "app_emergency.log";
         logToFileInternal(

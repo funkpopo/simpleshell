@@ -129,4 +129,4 @@ function getLocalSystemInfo() {
 module.exports = {
   getLocalSystemInfo,
   getCpuUsage,
-}; 
+};

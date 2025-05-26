@@ -500,13 +500,13 @@ function clearPendingOperationsForTab(tabId) {
         "INFO",
       );
       for (const op of queue) {
-        if (op.reject && typeof op.reject === 'function') {
+        if (op.reject && typeof op.reject === "function") {
           op.reject(new Error("操作已取消：SSH连接已关闭。"));
         }
         // 如果有合并的订阅者，也需要拒绝它们
         if (op.subscribers && op.subscribers.length > 0) {
           for (const subscriber of op.subscribers) {
-            if (subscriber.reject && typeof subscriber.reject === 'function') {
+            if (subscriber.reject && typeof subscriber.reject === "function") {
               subscriber.reject(new Error("操作已取消：SSH连接已关闭。"));
             }
           }

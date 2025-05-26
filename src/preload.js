@@ -182,13 +182,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         // 确保传递标准化的进度数据格式
         progressCallback(
           progressData.progress || 0,
-          progressData.fileName || '',
+          progressData.fileName || "",
           progressData.transferredBytes || 0,
           progressData.totalBytes || 0,
           progressData.transferSpeed || 0,
           progressData.remainingTime || 0,
           progressData.currentFileIndex || 0,
-          progressData.totalFiles || 0
+          progressData.totalFiles || 0,
         );
       }
       // If operation is complete or cancelled, remove listener
@@ -217,14 +217,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         // 确保传递标准化的进度数据格式
         progressCallback(
           progressData.progress || 0,
-          progressData.fileName || '',
-          progressData.currentFile || '',
+          progressData.fileName || "",
+          progressData.currentFile || "",
           progressData.transferredBytes || 0,
           progressData.totalBytes || 0,
           progressData.transferSpeed || 0,
           progressData.remainingTime || 0,
           progressData.processedFiles || 0,
-          progressData.totalFiles || 0
+          progressData.totalFiles || 0,
         );
       }
       // If operation is complete or cancelled, remove listener

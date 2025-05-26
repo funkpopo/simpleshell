@@ -243,7 +243,10 @@ app.on("before-quit", () => {
   for (const [id, proc] of childProcesses.entries()) {
     try {
       // 清理与此进程相关的待处理SFTP操作
-      if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+      if (
+        sftpCore &&
+        typeof sftpCore.clearPendingOperationsForTab === "function"
+      ) {
         sftpCore.clearPendingOperationsForTab(id);
         // 如果proc.config && proc.config.tabId 与 id 不同，也清理 proc.config.tabId
         // 因为 SSH 进程可能会在 childProcesses 中用两个键存储 (processId 和 sshConfig.tabId)
@@ -330,7 +333,10 @@ function setupIPC(mainWindow) {
           if (mainWindow && !mainWindow.isDestroyed()) {
             const output = data.toString();
             // 处理输出以检测编辑器退出
-            const processedOutput = terminalManager.processOutput(processId, output);
+            const processedOutput = terminalManager.processOutput(
+              processId,
+              output,
+            );
             mainWindow.webContents.send(
               `process:output:${processId}`,
               processedOutput,
@@ -347,7 +353,10 @@ function setupIPC(mainWindow) {
           if (mainWindow && !mainWindow.isDestroyed()) {
             const output = data.toString();
             // 处理输出以检测编辑器退出
-            const processedOutput = terminalManager.processOutput(processId, output);
+            const processedOutput = terminalManager.processOutput(
+              processId,
+              output,
+            );
             mainWindow.webContents.send(
               `process:output:${processId}`,
               processedOutput,
@@ -369,7 +378,10 @@ function setupIPC(mainWindow) {
             );
           }
           // 清理与此进程相关的待处理SFTP操作
-          if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+          if (
+            sftpCore &&
+            typeof sftpCore.clearPendingOperationsForTab === "function"
+          ) {
             sftpCore.clearPendingOperationsForTab(processId);
           }
           childProcesses.delete(processId);
@@ -389,7 +401,10 @@ function setupIPC(mainWindow) {
             );
           }
           // 清理与此进程相关的待处理SFTP操作
-          if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+          if (
+            sftpCore &&
+            typeof sftpCore.clearPendingOperationsForTab === "function"
+          ) {
             sftpCore.clearPendingOperationsForTab(processId);
           }
           childProcesses.delete(processId);
@@ -503,15 +518,22 @@ function setupIPC(mainWindow) {
                   "ERROR",
                 );
                 // 清理与此进程相关的待处理SFTP操作
-                if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+                if (
+                  sftpCore &&
+                  typeof sftpCore.clearPendingOperationsForTab === "function"
+                ) {
                   sftpCore.clearPendingOperationsForTab(processId);
-                  if (sshConfig && sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
+                  if (sshConfig && sshConfig.tabId)
+                    sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
                 }
                 childProcesses.delete(processId);
-                if (sshConfig && sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+                if (sshConfig && sshConfig.tabId)
+                  childProcesses.delete(sshConfig.tabId);
                 try {
                   ssh.end();
-                } catch (e) { /* ignore */ }
+                } catch (e) {
+                  /* ignore */
+                }
                 return reject(err);
               }
 
@@ -574,20 +596,30 @@ function setupIPC(mainWindow) {
 
               // 监听关闭事件
               stream.on("close", () => {
-                logToFile(`SSH stream closed for processId: ${processId}`, "INFO");
-                 // 清理与此进程相关的待处理SFTP操作
-                if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+                logToFile(
+                  `SSH stream closed for processId: ${processId}`,
+                  "INFO",
+                );
+                // 清理与此进程相关的待处理SFTP操作
+                if (
+                  sftpCore &&
+                  typeof sftpCore.clearPendingOperationsForTab === "function"
+                ) {
                   sftpCore.clearPendingOperationsForTab(processId);
-                  if (sshConfig && sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
+                  if (sshConfig && sshConfig.tabId)
+                    sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
                 }
                 childProcesses.delete(processId);
-                if (sshConfig && sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+                if (sshConfig && sshConfig.tabId)
+                  childProcesses.delete(sshConfig.tabId);
                 try {
                   ssh.end();
-                } catch (e) { /* ignore */ }
+                } catch (e) {
+                  /* ignore */
+                }
                 // Resolve promise when stream closes after setup, only if not already rejected by connection timeout
                 if (!connectionTimeoutRejected) {
-                    resolve(processId); 
+                  resolve(processId);
                 }
               });
             },
@@ -596,34 +628,53 @@ function setupIPC(mainWindow) {
 
         // 监听错误事件
         ssh.on("error", (err) => {
-          logToFile(`SSH connection error for processId ${processId}: ${err.message}`, "ERROR");
+          logToFile(
+            `SSH connection error for processId ${processId}: ${err.message}`,
+            "ERROR",
+          );
           clearTimeout(connectionTimeout);
           // 清理与此进程相关的待处理SFTP操作
-          if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+          if (
+            sftpCore &&
+            typeof sftpCore.clearPendingOperationsForTab === "function"
+          ) {
             sftpCore.clearPendingOperationsForTab(processId);
-            if (sshConfig && sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
+            if (sshConfig && sshConfig.tabId)
+              sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
           }
           childProcesses.delete(processId);
-          if (sshConfig && sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+          if (sshConfig && sshConfig.tabId)
+            childProcesses.delete(sshConfig.tabId);
           try {
             // ssh.end(); // ssh might be in a bad state, end() might throw or hang.
-          } catch (e) { /* ignore */ }
-          if (!connectionTimeoutRejected) { // Avoid double rejection
+          } catch (e) {
+            /* ignore */
+          }
+          if (!connectionTimeoutRejected) {
+            // Avoid double rejection
             reject(err);
           }
         });
 
         // 监听关闭事件
         ssh.on("close", () => {
-          logToFile(`SSH connection closed for processId: ${processId}`, "INFO");
+          logToFile(
+            `SSH connection closed for processId: ${processId}`,
+            "INFO",
+          );
           clearTimeout(connectionTimeout); // Clear timeout on successful close
           // 通常 stream.on('close') 会先处理清理，但作为双重保险或处理未成功建立shell的情况
-          if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+          if (
+            sftpCore &&
+            typeof sftpCore.clearPendingOperationsForTab === "function"
+          ) {
             sftpCore.clearPendingOperationsForTab(processId);
-            if (sshConfig && sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
+            if (sshConfig && sshConfig.tabId)
+              sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
           }
           childProcesses.delete(processId);
-          if (sshConfig && sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+          if (sshConfig && sshConfig.tabId)
+            childProcesses.delete(sshConfig.tabId);
           // No reject here as it's a normal close, resolve might have happened on stream ready/close
         });
 
@@ -859,11 +910,18 @@ function setupIPC(mainWindow) {
     if (proc && proc.process) {
       try {
         // 清理与此进程相关的待处理SFTP操作
-        if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === 'function') {
+        if (
+          sftpCore &&
+          typeof sftpCore.clearPendingOperationsForTab === "function"
+        ) {
           sftpCore.clearPendingOperationsForTab(processId);
           // 如果是SSH进程，它可能在childProcesses中用config.tabId也存储了
-          if (proc.config && proc.config.tabId && proc.config.tabId !== processId) {
-             sftpCore.clearPendingOperationsForTab(proc.config.tabId);
+          if (
+            proc.config &&
+            proc.config.tabId &&
+            proc.config.tabId !== processId
+          ) {
+            sftpCore.clearPendingOperationsForTab(proc.config.tabId);
           }
         }
 
@@ -1810,51 +1868,84 @@ function setupIPC(mainWindow) {
   });
 
   ipcMain.handle("downloadFile", async (event, tabId, remotePath) => {
-    if (!sftpTransfer || typeof sftpTransfer.handleDownloadFile !== 'function') {
-      logToFile("sftpTransfer.handleDownloadFile is not available or not a function.", "ERROR");
-      return { success: false, error: "SFTP Download feature not properly initialized." };
+    if (
+      !sftpTransfer ||
+      typeof sftpTransfer.handleDownloadFile !== "function"
+    ) {
+      logToFile(
+        "sftpTransfer.handleDownloadFile is not available or not a function.",
+        "ERROR",
+      );
+      return {
+        success: false,
+        error: "SFTP Download feature not properly initialized.",
+      };
     }
     // sftpTransfer.handleDownloadFile signature is: async function handleDownloadFile(event, tabId, remotePath)
     return sftpTransfer.handleDownloadFile(event, tabId, remotePath);
   });
 
   // Handle SFTP Upload File
-  ipcMain.handle("uploadFile", async (event, tabId, targetFolder, progressChannel) => {
-    // Ensure sftpTransfer module is available
-    if (!sftpTransfer || typeof sftpTransfer.handleUploadFile !== 'function') {
-      logToFile("sftpTransfer.handleUploadFile is not available or not a function.", "ERROR");
-      return { success: false, error: "SFTP Upload feature not properly initialized." };
-    }
+  ipcMain.handle(
+    "uploadFile",
+    async (event, tabId, targetFolder, progressChannel) => {
+      // Ensure sftpTransfer module is available
+      if (
+        !sftpTransfer ||
+        typeof sftpTransfer.handleUploadFile !== "function"
+      ) {
+        logToFile(
+          "sftpTransfer.handleUploadFile is not available or not a function.",
+          "ERROR",
+        );
+        return {
+          success: false,
+          error: "SFTP Upload feature not properly initialized.",
+        };
+      }
 
-    const processInfo = childProcesses.get(tabId);
-    if (!processInfo || !processInfo.config || !processInfo.process || processInfo.type !== "ssh2") {
-      logToFile(`Invalid or not ready SSH connection for tabId: ${tabId}`, "ERROR");
-      return { success: false, error: "无效或未就绪的SSH连接" };
-    }
+      const processInfo = childProcesses.get(tabId);
+      if (
+        !processInfo ||
+        !processInfo.config ||
+        !processInfo.process ||
+        processInfo.type !== "ssh2"
+      ) {
+        logToFile(
+          `Invalid or not ready SSH connection for tabId: ${tabId}`,
+          "ERROR",
+        );
+        return { success: false, error: "无效或未就绪的SSH连接" };
+      }
 
-    const mainWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
-    if (!mainWindow) {
-      logToFile("No main window available for dialog.", "ERROR");
-      return { success: false, error: "无法显示对话框" };
-    }
+      const mainWindow =
+        BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+      if (!mainWindow) {
+        logToFile("No main window available for dialog.", "ERROR");
+        return { success: false, error: "无法显示对话框" };
+      }
 
-    // Open file selection dialog
-    const { canceled, filePaths } = await dialog.showOpenDialog(
-      mainWindow,
-      {
+      // Open file selection dialog
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
         title: "选择要上传的文件",
         properties: ["openFile", "multiSelections"],
         buttonLabel: "上传文件",
+      });
+
+      if (canceled || !filePaths || filePaths.length === 0) {
+        return { success: false, cancelled: true, error: "用户取消上传" };
       }
-    );
 
-    if (canceled || !filePaths || filePaths.length === 0) {
-      return { success: false, cancelled: true, error: "用户取消上传" };
-    }
-
-    // Call the refactored sftpTransfer function, now passing progressChannel
-    return sftpTransfer.handleUploadFile(event, tabId, targetFolder, filePaths, progressChannel);
-  });
+      // Call the refactored sftpTransfer function, now passing progressChannel
+      return sftpTransfer.handleUploadFile(
+        event,
+        tabId,
+        targetFolder,
+        filePaths,
+        progressChannel,
+      );
+    },
+  );
 
   ipcMain.handle("renameFile", async (event, tabId, oldPath, newName) => {
     try {
@@ -1971,9 +2062,18 @@ function setupIPC(mainWindow) {
 
   // 取消所有类型的文件传输（单文件传输、文件夹上传、文件夹下载等）
   ipcMain.handle("cancelTransfer", async (event, tabId, transferKey) => {
-    if (!sftpTransfer || typeof sftpTransfer.handleCancelTransfer !== 'function') {
-      logToFile("sftpTransfer.handleCancelTransfer is not available or not a function.", "ERROR");
-      return { success: false, error: "SFTP Cancel Transfer feature not properly initialized." };
+    if (
+      !sftpTransfer ||
+      typeof sftpTransfer.handleCancelTransfer !== "function"
+    ) {
+      logToFile(
+        "sftpTransfer.handleCancelTransfer is not available or not a function.",
+        "ERROR",
+      );
+      return {
+        success: false,
+        error: "SFTP Cancel Transfer feature not properly initialized.",
+      };
     }
     return sftpTransfer.handleCancelTransfer(event, tabId, transferKey);
   });
@@ -2137,44 +2237,67 @@ function setupIPC(mainWindow) {
   });
 
   // 新增：上传文件夹处理函数
-  ipcMain.handle("upload-folder", async (event, tabId, targetFolder, progressChannel) => {
-    // Ensure sftpTransfer module is available
-    if (!sftpTransfer || typeof sftpTransfer.handleUploadFolder !== 'function') {
-      logToFile("sftpTransfer.handleUploadFolder is not available or not a function.", "ERROR");
-      return { success: false, error: "SFTP Upload feature not properly initialized." };
-    }
-  
-    const processInfo = childProcesses.get(tabId);
-    if (!processInfo || !processInfo.config || !processInfo.process || processInfo.type !== "ssh2" ) {
-      logToFile(`Invalid or not ready SSH connection for tabId: ${tabId}`, "ERROR");
-      return { success: false, error: "无效或未就绪的SSH连接" };
-    }
-    
-    const mainWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
-    if (!mainWindow) {
-      logToFile("No main window available for dialog.", "ERROR");
-      return { success: false, error: "无法显示对话框" };
-    }
-  
-    // Open folder selection dialog
-    const { canceled, filePaths } = await dialog.showOpenDialog(
-      mainWindow,
-      {
+  ipcMain.handle(
+    "upload-folder",
+    async (event, tabId, targetFolder, progressChannel) => {
+      // Ensure sftpTransfer module is available
+      if (
+        !sftpTransfer ||
+        typeof sftpTransfer.handleUploadFolder !== "function"
+      ) {
+        logToFile(
+          "sftpTransfer.handleUploadFolder is not available or not a function.",
+          "ERROR",
+        );
+        return {
+          success: false,
+          error: "SFTP Upload feature not properly initialized.",
+        };
+      }
+
+      const processInfo = childProcesses.get(tabId);
+      if (
+        !processInfo ||
+        !processInfo.config ||
+        !processInfo.process ||
+        processInfo.type !== "ssh2"
+      ) {
+        logToFile(
+          `Invalid or not ready SSH connection for tabId: ${tabId}`,
+          "ERROR",
+        );
+        return { success: false, error: "无效或未就绪的SSH连接" };
+      }
+
+      const mainWindow =
+        BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+      if (!mainWindow) {
+        logToFile("No main window available for dialog.", "ERROR");
+        return { success: false, error: "无法显示对话框" };
+      }
+
+      // Open folder selection dialog
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
         title: "选择要上传的文件夹",
         properties: ["openDirectory"],
         buttonLabel: "上传文件夹",
+      });
+
+      if (canceled || !filePaths || filePaths.length === 0) {
+        return { success: false, cancelled: true, error: "用户取消上传" };
       }
-    );
-  
-    if (canceled || !filePaths || filePaths.length === 0) {
-      return { success: false, cancelled: true, error: "用户取消上传" };
-    }
-  
-    const localFolderPath = filePaths[0];
-  
-    // Call the refactored sftpTransfer function, now passing progressChannel
-    return sftpTransfer.handleUploadFolder(tabId, localFolderPath, targetFolder, progressChannel);
-  });
+
+      const localFolderPath = filePaths[0];
+
+      // Call the refactored sftpTransfer function, now passing progressChannel
+      return sftpTransfer.handleUploadFolder(
+        tabId,
+        localFolderPath,
+        targetFolder,
+        progressChannel,
+      );
+    },
+  );
 
   // 添加检查路径是否存在的API
   ipcMain.handle("checkPathExists", async (event, checkPath) => {
@@ -2244,9 +2367,18 @@ function setupIPC(mainWindow) {
   });
 
   ipcMain.handle("downloadFolder", async (event, tabId, remotePath) => {
-    if (!sftpTransfer || typeof sftpTransfer.handleDownloadFolder !== 'function') {
-      logToFile("sftpTransfer.handleDownloadFolder is not available or not a function.", "ERROR");
-      return { success: false, error: "SFTP Download feature not properly initialized." };
+    if (
+      !sftpTransfer ||
+      typeof sftpTransfer.handleDownloadFolder !== "function"
+    ) {
+      logToFile(
+        "sftpTransfer.handleDownloadFolder is not available or not a function.",
+        "ERROR",
+      );
+      return {
+        success: false,
+        error: "SFTP Download feature not properly initialized.",
+      };
     }
     // sftpTransfer.handleDownloadFolder signature is: async function handleDownloadFolder(tabId, remoteFolderPath)
     return sftpTransfer.handleDownloadFolder(tabId, remotePath);
