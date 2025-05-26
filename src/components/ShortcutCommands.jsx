@@ -861,7 +861,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           </Box>
 
           {/* 搜索框 */}
-          <Box sx={{ p: 1, borderBottom: `1px solid ${theme.palette.divider}` }}>
+          <Box
+            sx={{ p: 1, borderBottom: `1px solid ${theme.palette.divider}` }}
+          >
             <TextField
               placeholder={t("shortcutCommands.search")}
               variant="outlined"
