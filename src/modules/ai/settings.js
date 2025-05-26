@@ -12,11 +12,6 @@ const crypto = require("crypto");
 const LEGACY_ENCRYPTION_KEY = "simple-shell-encryption-key-12345";
 const LEGACY_ENCRYPTION_ALGORITHM = "aes-256-cbc";
 
-/**
- * 检测加密数据格式是否为新格式
- * @param {string} encryptedText - 加密的文本
- * @returns {boolean} 是否为新格式
- */
 function isNewFormat(encryptedText) {
   if (typeof encryptedText !== "string" || !encryptedText.includes(":")) {
     return false;
@@ -30,11 +25,6 @@ function isNewFormat(encryptedText) {
   return ivHex.length === 32 && /^[0-9a-fA-F]+$/.test(ivHex);
 }
 
-/**
- * 使用旧方法解密数据（用于数据迁移）
- * @param {string} text - 要解密的文本
- * @returns {string|null} 解密后的文本，失败返回null
- */
 function legacyDecrypt(text) {
   try {
     const textParts = text.split(":");
@@ -53,11 +43,6 @@ function legacyDecrypt(text) {
   }
 }
 
-/**
- * 智能解密函数，支持新旧格式
- * @param {string} encryptedText - 加密的文本
- * @returns {string|null} 解密后的文本，失败返回null
- */
 function smartDecrypt(encryptedText) {
   if (!encryptedText) {
     return null;
@@ -77,10 +62,6 @@ function smartDecrypt(encryptedText) {
   return legacyDecrypt(encryptedText);
 }
 
-/**
- * 加载AI设置，使用统一的config.json
- * @returns {Object} AI设置对象
- */
 const loadAISettings = () => {
   const configPath = getConfigPath();
   logToFile(`Loading AI settings from ${configPath}`);
@@ -200,11 +181,6 @@ const loadAISettings = () => {
   };
 };
 
-/**
- * 保存AI设置，使用统一的config.json
- * @param {Object} settings - AI设置对象
- * @returns {boolean} 保存是否成功
- */
 const saveAISettings = (settings) => {
   const configPath = getConfigPath();
   logToFile(`Saving AI settings to ${configPath}`);

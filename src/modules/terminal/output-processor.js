@@ -57,10 +57,6 @@ const COLOR_TO_ANSI = {
   '#5F9EA0': ANSI_COLORS.cyan, // 军蓝色 (Docker ID)
 };
 
-/**
- * 输出处理器类
- * 负责处理终端输出，包括编辑器检测和命令提取
- */
 class OutputProcessor {
   constructor() {
     // 跟踪编辑器会话状态的正则表达式
@@ -84,12 +80,6 @@ class OutputProcessor {
     );
   }
 
-  /**
-   * 处理终端输出
-   * @param {number} processId - 进程ID
-   * @param {string} output - 原始输出
-   * @returns {string} 处理后的输出
-   */
   processTerminalOutput(processId, output) {
     try {
       // 获取进程管理器实例
@@ -139,13 +129,6 @@ class OutputProcessor {
     }
   }
 
-  /**
-   * 处理远程SSH会话输出
-   * @param {number} processId - 进程ID
-   * @param {string} output - 原始输出
-   * @param {Object} procInfo - 进程信息
-   * @returns {string} 处理后的输出
-   */
   processRemoteOutput(processId, output, procInfo) {
     // 将当前输出追加到输出缓冲区
     procInfo.outputBuffer += output;
@@ -170,11 +153,6 @@ class OutputProcessor {
     return output;
   }
 
-  /**
-   * 提取远程命令
-   * @param {number} processId - 进程ID
-   * @param {Object} procInfo - 进程信息
-   */
   extractRemoteCommands(processId, procInfo) {
     // 寻找命令提示符模式，然后提取命令
     const commandPromptRegex = [
@@ -226,33 +204,18 @@ class OutputProcessor {
     }
   }
 
-  /**
-   * 检查是否为编辑器模式
-   * @param {number} processId - 进程ID
-   * @returns {boolean} 是否为编辑器模式
-   */
   isEditorMode(processId) {
     const processManager = require("./process-manager");
     const procInfo = processManager.getProcessInfo(processId);
     return procInfo ? procInfo.editorMode : false;
   }
 
-  /**
-   * 获取最后提取的命令
-   * @param {number} processId - 进程ID
-   * @returns {string} 最后提取的命令
-   */
   getLastExtractedCommand(processId) {
     const processManager = require("./process-manager");
     const procInfo = processManager.getProcessInfo(processId);
     return procInfo ? procInfo.lastExtractedCommand : null;
   }
 
-  /**
-   * 应用语法高亮到输出字符串
-   * @param {string} output - 原始输出字符串
-   * @returns {string} - 带高亮ANSI转义序列的字符串
-   */
   applySyntaxHighlighting(output) {
     if (!output || typeof output !== 'string') {
       return output;

@@ -2,10 +2,6 @@ const { spawn } = require("child_process");
 const Client = require("ssh2").Client;
 const { logToFile } = require("../../core/utils/logger");
 
-/**
- * 进程管理器类
- * 负责管理终端进程和SSH连接
- */
 class ProcessManager {
   constructor() {
     // 应用设置和状态管理
@@ -36,16 +32,10 @@ class ProcessManager {
     );
   }
 
-  /**
-   * 初始化进程管理器
-   */
   initialize() {
     logToFile("Process manager initialized", "INFO");
   }
 
-  /**
-   * 清理进程管理器
-   */
   cleanup() {
     // 终止所有活动进程
     for (const [processId, processInfo] of this.childProcesses) {
@@ -73,46 +63,6 @@ class ProcessManager {
     logToFile("Process manager cleanup completed", "INFO");
   }
 
-  /**
-   * 启动PowerShell进程
-   * @returns {Promise<number>} 进程ID
-   */
-  async startPowerShell() {
-    const processId = this.nextProcessId++;
-
-    // 获取PowerShell路径
-    const powershellPath =
-      process.platform === "win32" ? "powershell.exe" : "pwsh";
-
-    try {
-      // 启动PowerShell进程
-      const ps = spawn(powershellPath, ["-NoLogo"], {
-        env: process.env,
-        cwd: process.env.USERPROFILE || process.env.HOME,
-      });
-
-      // 存储进程信息
-      this.childProcesses.set(processId, {
-        process: ps,
-        listeners: new Set(),
-        editorMode: false, // 初始化编辑器模式为false
-        commandBuffer: "", // 初始化命令缓冲区
-        type: "powershell",
-      });
-
-      logToFile(`PowerShell process started with ID: ${processId}`, "INFO");
-      return processId;
-    } catch (error) {
-      logToFile(`Failed to start PowerShell: ${error.message}`, "ERROR");
-      throw error;
-    }
-  }
-
-  /**
-   * 启动SSH连接
-   * @param {Object} sshConfig - SSH配置
-   * @returns {Promise<number>} 进程ID
-   */
   async startSSH(sshConfig) {
     const processId = this.nextProcessId++;
 
@@ -233,11 +183,6 @@ class ProcessManager {
     });
   }
 
-  /**
-   * 向进程发送输入
-   * @param {number} processId - 进程ID
-   * @param {string} input - 输入内容
-   */
   sendInput(processId, input) {
     const processInfo = this.childProcesses.get(processId);
     if (!processInfo) {
@@ -265,10 +210,6 @@ class ProcessManager {
     }
   }
 
-  /**
-   * 终止进程
-   * @param {number} processId - 进程ID
-   */
   killProcess(processId) {
     const processInfo = this.childProcesses.get(processId);
     if (!processInfo) {
@@ -305,12 +246,6 @@ class ProcessManager {
     }
   }
 
-  /**
-   * 调整终端大小
-   * @param {number} processId - 进程ID
-   * @param {number} cols - 列数
-   * @param {number} rows - 行数
-   */
   resizeTerminal(processId, cols, rows) {
     const processInfo = this.childProcesses.get(processId);
     if (!processInfo) {
@@ -334,28 +269,14 @@ class ProcessManager {
     }
   }
 
-  /**
-   * 获取进程信息
-   * @param {number} processId - 进程ID
-   * @returns {Object} 进程信息
-   */
   getProcessInfo(processId) {
     return this.childProcesses.get(processId);
   }
 
-  /**
-   * 获取所有活动进程
-   * @returns {Map} 进程映射
-   */
   getAllProcesses() {
     return this.childProcesses;
   }
 
-  /**
-   * 设置进程的Shell流
-   * @param {number} processId - 进程ID
-   * @param {Object} stream - Shell流对象
-   */
   setProcessStream(processId, stream) {
     const processInfo = this.childProcesses.get(processId);
     if (processInfo) {
