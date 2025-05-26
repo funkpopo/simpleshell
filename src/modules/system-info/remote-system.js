@@ -1,8 +1,3 @@
-/**
- * 获取远程系统信息
- * @param {Object} sshClient - SSH客户端实例
- * @returns {Promise<Object>} 包含远程系统信息的Promise对象
- */
 async function getRemoteSystemInfo(sshClient) {
   return new Promise((resolve, reject) => {
     const result = {

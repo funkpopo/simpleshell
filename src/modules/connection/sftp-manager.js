@@ -8,10 +8,6 @@ const MAX_TOTAL_SFTP_SESSIONS = 50; // 总的最大会话数量
 const SFTP_HEALTH_CHECK_INTERVAL = 90000; // 健康检查间隔（毫秒）
 const SFTP_OPERATION_TIMEOUT = 20000; // 操作超时时间（毫秒）
 
-/**
- * SFTP管理器类
- * 负责管理SFTP会话池和操作队列
- */
 class SftpManager {
   constructor() {
     // 用于SSH连接的SFTP会话管理
@@ -23,17 +19,11 @@ class SftpManager {
     this.sftpHealthCheckTimer = null;
   }
 
-  /**
-   * 初始化SFTP管理器
-   */
   initialize() {
     this.startSftpHealthCheck();
     logToFile("SFTP Manager initialized", "INFO");
   }
 
-  /**
-   * 清理SFTP管理器
-   */
   cleanup() {
     this.stopSftpHealthCheck();
     // 关闭所有SFTP会话
@@ -43,9 +33,6 @@ class SftpManager {
     logToFile("SFTP Manager cleanup completed", "INFO");
   }
 
-  /**
-   * 启动SFTP会话池健康检查
-   */
   startSftpHealthCheck() {
     // 如果已经有定时器在运行，先清除
     if (this.sftpHealthCheckTimer) {
@@ -60,9 +47,6 @@ class SftpManager {
     logToFile("Started SFTP session health check", "INFO");
   }
 
-  /**
-   * 停止SFTP会话池健康检查
-   */
   stopSftpHealthCheck() {
     if (this.sftpHealthCheckTimer) {
       clearInterval(this.sftpHealthCheckTimer);
@@ -71,9 +55,6 @@ class SftpManager {
     }
   }
 
-  /**
-   * 检查SFTP会话健康状况
-   */
   checkSftpSessionsHealth() {
     try {
       logToFile(
@@ -124,9 +105,6 @@ class SftpManager {
     }
   }
 
-  /**
-   * 检查会话是否存活
-   */
   async checkSessionAlive(tabId, session) {
     try {
       // 创建一个Promise，添加超时处理
@@ -159,9 +137,6 @@ class SftpManager {
     }
   }
 
-  /**
-   * 获取SFTP会话
-   */
   async getSftpSession(tabId) {
     try {
       // 检查是否已有锁定的会话获取过程
@@ -201,9 +176,6 @@ class SftpManager {
     }
   }
 
-  /**
-   * 获取新的SFTP会话
-   */
   async acquireSftpSession(tabId) {
     // 设置锁
     this.sftpSessionLocks.set(tabId, true);
@@ -289,9 +261,6 @@ class SftpManager {
     }
   }
 
-  /**
-   * 关闭SFTP会话
-   */
   closeSftpSession(tabId) {
     try {
       const session = this.sftpSessions.get(tabId);
@@ -319,9 +288,6 @@ class SftpManager {
     }
   }
 
-  /**
-   * 将SFTP操作加入队列
-   */
   enqueueSftpOperation(tabId, operation, options = {}) {
     return new Promise((resolve, reject) => {
       const operationWrapper = {
@@ -351,9 +317,6 @@ class SftpManager {
     });
   }
 
-  /**
-   * 处理SFTP操作队列
-   */
   async processSftpQueue(tabId) {
     const queue = this.pendingOperations.get(tabId);
     if (!queue || queue.length === 0) {

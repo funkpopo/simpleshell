@@ -4,11 +4,6 @@ const fs = require("fs");
 let logFile = null; // Will be set by initLogger
 let appInstance = null;
 
-/**
- * 检测当前运行环境
- * @param {Electron.App} electronApp - Electron应用实例
- * @returns {string} 'development' 或 'production'
- */
 function detectEnvironment(electronApp) {
   // 主要检测方法：使用app.isPackaged
   if (electronApp && typeof electronApp.isPackaged === "boolean") {
@@ -32,11 +27,6 @@ function detectEnvironment(electronApp) {
   return "development";
 }
 
-/**
- * 根据环境获取日志目录路径
- * @param {Electron.App} electronApp - Electron应用实例
- * @returns {string} 日志目录路径
- */
 function getLogDirectory(electronApp) {
   const environment = detectEnvironment(electronApp);
 
@@ -158,34 +148,18 @@ const logToFile = (message, type = "INFO") => {
   logToFileInternal(message, type, false);
 };
 
-/**
- * 记录信息日志
- * @param {string} message - 日志消息
- */
 const logInfo = (message) => {
   logToFile(message, "INFO");
 };
 
-/**
- * 记录警告日志
- * @param {string} message - 日志消息
- */
 const logWarn = (message) => {
   logToFile(message, "WARN");
 };
 
-/**
- * 记录错误日志
- * @param {string} message - 日志消息
- */
 const logError = (message) => {
   logToFile(message, "ERROR");
 };
 
-/**
- * 记录调试日志
- * @param {string} message - 日志消息
- */
 const logDebug = (message) => {
   logToFile(message, "DEBUG");
 };

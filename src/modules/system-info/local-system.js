@@ -1,9 +1,5 @@
 const os = require("os");
 
-/**
- * 计算CPU使用率
- * @returns {number} CPU使用率百分比
- */
 function getCpuUsage() {
   const cpus = os.cpus();
   let totalIdle = 0;
@@ -20,10 +16,6 @@ function getCpuUsage() {
   return usage;
 }
 
-/**
- * 获取本地系统信息
- * @returns {Object} 包含操作系统、CPU和内存信息的对象
- */
 function getLocalSystemInfo() {
   const osInfo = {
     type: os.type(),

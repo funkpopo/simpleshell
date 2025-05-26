@@ -3,10 +3,6 @@ const path = require("path");
 const fs = require("fs");
 const { encryptText, decryptText } = require("./crypto");
 
-/**
- * 获取配置文件路径
- * @returns {string} 配置文件路径
- */
 function getConfigPath() {
   try {
     // 判断是否为开发环境
@@ -28,11 +24,6 @@ function getConfigPath() {
   }
 }
 
-/**
- * 处理连接配置以供保存（加密敏感信息）
- * @param {Array} items - 连接配置数组
- * @returns {Array} 处理后的连接配置
- */
 function processConnectionsForSave(items) {
   return items.map((item) => {
     const processedItem = { ...item };
@@ -49,11 +40,6 @@ function processConnectionsForSave(items) {
   });
 }
 
-/**
- * 处理连接配置以供加载（解密敏感信息）
- * @param {Array} items - 加密的连接配置数组
- * @returns {Array} 解密后的连接配置
- */
 function processConnectionsForLoad(items) {
   return items.map((item) => {
     const processedItem = { ...item };
@@ -75,10 +61,6 @@ function processConnectionsForLoad(items) {
   });
 }
 
-/**
- * 加载连接配置
- * @returns {Array} 连接配置数组
- */
 const loadConnectionsConfig = () => {
   try {
     const configPath = getConfigPath();
@@ -101,11 +83,6 @@ const loadConnectionsConfig = () => {
   }
 };
 
-/**
- * 保存连接配置
- * @param {Array} connections - 连接配置数组
- * @returns {boolean} 保存是否成功
- */
 const saveConnectionsConfig = (connections) => {
   try {
     const configPath = getConfigPath();
@@ -130,10 +107,6 @@ const saveConnectionsConfig = (connections) => {
   }
 };
 
-/**
- * 加载UI设置
- * @returns {Object} UI设置对象
- */
 async function loadUISettings() {
   try {
     const configPath = getConfigPath();
@@ -183,11 +156,6 @@ async function loadUISettings() {
   }
 }
 
-/**
- * 保存UI设置
- * @param {Object} settings - UI设置对象
- * @returns {Object} 保存结果
- */
 async function saveUISettings(settings) {
   try {
     const configPath = getConfigPath();
@@ -220,10 +188,6 @@ async function saveUISettings(settings) {
   }
 }
 
-/**
- * 初始化配置
- * @returns {Object} 初始化结果
- */
 const initializeConfig = () => {
   try {
     const configPath = getConfigPath();

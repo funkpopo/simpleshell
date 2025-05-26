@@ -10,13 +10,6 @@ let decryptText = null;
 // Path for main configuration file, will be set in init
 let mainConfigPath = null;
 
-/**
- * Initializes the ConfigManager with necessary dependencies.
- * This must be called once when the application starts.
- * @param {object} appInstance - The Electron app instance.
- * @param {object} loggerModule - The logger module (e.g., { logToFile }).
- * @param {object} cryptoModule - The crypto module (e.g., { encryptText, decryptText }).
- */
 function init(appInstance, loggerModule, cryptoModule) {
   if (!appInstance || !loggerModule || !cryptoModule) {
     console.error(
@@ -59,11 +52,6 @@ function init(appInstance, loggerModule, cryptoModule) {
   }
 }
 
-/**
- * Gets the path to the main configuration file (config.json).
- * Private helper function.
- * @returns {string}
- */
 function _getMainConfigPathInternal() {
   // Renamed to avoid conflict if we export a public getConfigPath later
   if (!app) {
@@ -101,13 +89,6 @@ function _getMainConfigPathInternal() {
   }
 }
 
-// === Connection Config Helpers (Private) ===
-
-/**
- * Recursively processes connection items to encrypt sensitive fields for saving.
- * @param {Array<object>} items - Array of connection or group items.
- * @returns {Array<object>} Processed items with encrypted fields.
- */
 function _processConnectionsForSave(items) {
   if (!encryptText) {
     if (logToFile)
@@ -132,11 +113,6 @@ function _processConnectionsForSave(items) {
   });
 }
 
-/**
- * Recursively processes connection items to decrypt sensitive fields after loading.
- * @param {Array<object>} items - Array of connection or group items.
- * @returns {Array<object>} Processed items with decrypted fields.
- */
 function _processConnectionsForLoad(items) {
   if (!decryptText) {
     if (logToFile)
@@ -160,12 +136,6 @@ function _processConnectionsForLoad(items) {
   });
 }
 
-// === Public API for Connection Config ===
-
-/**
- * Loads connection configurations from the main config file.
- * @returns {Array<object>} An array of connection items, or an empty array if failed.
- */
 function loadConnections() {
   if (!mainConfigPath) {
     if (logToFile)
@@ -194,11 +164,6 @@ function loadConnections() {
   return [];
 }
 
-/**
- * Saves connection configurations to the main config file.
- * @param {Array<object>} connections - The array of connection items to save.
- * @returns {boolean} True if successful, false otherwise.
- */
 function saveConnections(connections) {
   if (!mainConfigPath) {
     if (logToFile)
@@ -234,12 +199,6 @@ function saveConnections(connections) {
   }
 }
 
-// === Public API for AI Settings ===
-
-/**
- * Loads AI settings from the main config file.
- * @returns {object} AI settings object, or a default structure if failed.
- */
 function loadAISettings() {
   if (!mainConfigPath) {
     if (logToFile)
@@ -318,11 +277,6 @@ function loadAISettings() {
   };
 }
 
-/**
- * Saves AI settings to the main config file.
- * @param {object} settings - The AI settings object to save.
- * @returns {boolean} True if successful, false otherwise.
- */
 function saveAISettings(settings) {
   if (!mainConfigPath) {
     if (logToFile)
@@ -402,12 +356,6 @@ function saveAISettings(settings) {
   }
 }
 
-// === Public API for UI Settings ===
-
-/**
- * Loads UI settings from the main config file.
- * @returns {object} UI settings object, or a default structure if failed.
- */
 function loadUISettings() {
   if (!mainConfigPath) {
     if (logToFile)
@@ -444,11 +392,6 @@ function loadUISettings() {
   return { language: "zh-CN", fontSize: 14, darkMode: true };
 }
 
-/**
- * Saves UI settings to the main config file.
- * @param {object} settings - The UI settings object to save.
- * @returns {boolean} True if successful, false otherwise.
- */
 function saveUISettings(settings) {
   if (!mainConfigPath) {
     if (logToFile)
@@ -483,12 +426,6 @@ function saveUISettings(settings) {
   }
 }
 
-// === Public API for Shortcut Commands ===
-
-/**
- * Loads shortcut commands from the main config file.
- * @returns {object} Shortcut commands object (e.g., { commands: [], categories: [] }), or a default if failed.
- */
 function loadShortcutCommands() {
   const defaultShortcuts = { commands: [], categories: [] };
   if (!mainConfigPath) {
@@ -553,11 +490,6 @@ function loadShortcutCommands() {
   return defaultShortcuts;
 }
 
-/**
- * Saves shortcut commands to the main config file.
- * @param {object} data - The shortcut commands object (e.g., { commands: [], categories: [] }) to save.
- * @returns {boolean} True if successful, false otherwise.
- */
 function saveShortcutCommands(data) {
   if (!mainConfigPath) {
     if (logToFile)
@@ -600,13 +532,6 @@ function saveShortcutCommands(data) {
   }
 }
 
-// === Public API for Main Config Initialization ===
-
-/**
- * Initializes the main configuration file (config.json).
- * Ensures the file exists and has the basic structure for connections and AI settings.
- * Handles migration of old AI settings format if necessary.
- */
 function initializeMainConfig() {
   if (!mainConfigPath) {
     if (logToFile)

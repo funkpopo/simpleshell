@@ -5,11 +5,6 @@ const ENCRYPTION_KEY = "simple-shell-encryption-key-12345"; // 在生产环境�
 const ENCRYPTION_ALGORITHM = "aes-256-cbc";
 const IV_LENGTH = 16; // 对于 aes-256-cbc，IV长度是16字节
 
-/**
- * 加密文本
- * @param {string} text 要加密的文本
- * @returns {string|null} 加密后的文本 (hex编码的IV + ':' + hex编码的密文)，如果加密失败则返回 null
- */
 function encryptText(text) {
   try {
     // 创建随机的初始化向量
@@ -34,11 +29,6 @@ function encryptText(text) {
   }
 }
 
-/**
- * 解密文本
- * @param {string} text 加密的文本 (格式: hex编码的IV + ':' + hex编码的密文)
- * @returns {string|null} 解密后的文本，如果解密失败则返回 null
- */
 function decryptText(text) {
   if (typeof text !== "string" || !text.includes(":")) {
     console.error("Decryption failed: Invalid input format.");
