@@ -511,6 +511,19 @@ function App() {
     [darkMode],
   );
 
+  // 处理主题过渡效果
+  React.useEffect(() => {
+    // 当主题变化时，添加过渡类
+    const transitionTimeout = setTimeout(() => {
+      document.body.classList.remove('theme-transition');
+    }, 300); // 匹配CSS中的过渡时间
+
+    return () => {
+      clearTimeout(transitionTimeout);
+      document.body.classList.remove('theme-transition');
+    };
+  }, [darkMode]);
+
   // 处理菜单打开
   const handleMenu = (event) => {
     setAnchorEl(event.currentTarget);
@@ -555,7 +568,14 @@ function App() {
   const toggleTheme = async () => {
     try {
       const newDarkMode = !darkMode;
-      setDarkMode(newDarkMode);
+      
+      // 添加CSS类以启用过渡效果
+      document.body.classList.add('theme-transition');
+      
+      // 设置新的主题模式（延迟一点执行以确保过渡效果可以被触发）
+      setTimeout(() => {
+        setDarkMode(newDarkMode);
+      }, 10);
 
       // 保存主题设置到配置文件
       if (window.terminalAPI?.saveUISettings) {
