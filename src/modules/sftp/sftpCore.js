@@ -7,7 +7,7 @@ let getChildProcessInfo = null; // Function to get info from main.js's childProc
 // SFTP 会话管理
 const sftpSessions = new Map();
 const sftpSessionLocks = new Map();
-const pendingOperations = new Map(); // Operation queue per tabId
+let pendingOperations = new Map(); // key: tabId, value: Array of pending operations
 
 // SFTP 会话池配置 (Consider making these configurable via init or a config module later)
 const SFTP_SESSION_IDLE_TIMEOUT = 120000; // 空闲超时时间（毫秒）
@@ -157,7 +157,83 @@ async function checkSessionAlive(tabId, session) {
   }
 }
 
-// 获取或创建 SFTP 会话 (heavily dependent on getChildProcessInfo)
+// 添加新方法: 确保SFTP会话有效性，如有必要则重新初始化
+async function ensureSftpSession(tabId) {
+  try {
+    // 检查是否已有会话
+    if (sftpSessions.has(tabId)) {
+      const session = sftpSessions.get(tabId);
+      
+      // 重置会话超时
+      if (session.timeoutId) clearTimeout(session.timeoutId);
+      session.timeoutId = setTimeout(() => {
+        closeSftpSession(tabId);
+      }, SFTP_SESSION_IDLE_TIMEOUT);
+      
+      // 如果会话存在但不活跃，尝试重新创建
+      if (!session.active) {
+        logToFile(`sftpCore: Session for tab ${tabId} exists but inactive, recreating`, "INFO");
+        await closeSftpSession(tabId);
+        return acquireSftpSession(tabId);
+      }
+      
+      // 如果会话存在并活跃，进行简单验证
+      try {
+        // 简单操作测试会话可用性
+        await new Promise((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            reject(new Error("SFTP health check timeout"));
+          }, 2000);
+          
+          session.sftp.stat(".", (err, stats) => {
+            clearTimeout(timeoutId);
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+        
+        // 会话验证成功
+        session.lastChecked = Date.now();
+        session.lastUsed = Date.now();
+        return session.sftp;
+      } catch (healthError) {
+        // 会话验证失败，关闭并重新创建
+        logToFile(`sftpCore: Session check failed for tab ${tabId}, recreating: ${healthError.message}`, "WARN");
+        await closeSftpSession(tabId);
+        return acquireSftpSession(tabId);
+      }
+    } else {
+      // 如果会话数量已达上限，清除最旧的会话
+      if (sftpSessions.size >= MAX_TOTAL_SFTP_SESSIONS) {
+        logToFile(
+          `sftpCore: Maximum SFTP sessions limit reached (${MAX_TOTAL_SFTP_SESSIONS}), closing oldest session`,
+          "WARN",
+        );
+        let oldestTabId = null;
+        let oldestTime = Date.now();
+        for (const [id, session] of sftpSessions.entries()) {
+          if (session.createdAt < oldestTime) {
+            oldestTime = session.createdAt;
+            oldestTabId = id;
+          }
+        }
+        if (oldestTabId) await closeSftpSession(oldestTabId);
+      }
+      
+      // 无会话，直接创建新的
+      logToFile(`sftpCore: No session for tab ${tabId}, creating new`, "INFO");
+      return acquireSftpSession(tabId);
+    }
+  } catch (error) {
+    logToFile(`sftpCore: Error ensuring SFTP session for tab ${tabId}: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
+// 修改getSftpSession方法，使用ensureSftpSession
 async function getSftpSession(tabId) {
   if (sftpSessionLocks.has(tabId)) {
     return new Promise((resolve, reject) => {
@@ -178,49 +254,13 @@ async function getSftpSession(tabId) {
     });
   }
 
-  if (sftpSessions.has(tabId)) {
-    const session = sftpSessions.get(tabId);
-    session.lastUsed = Date.now();
-    if (session.timeoutId) clearTimeout(session.timeoutId);
-    session.timeoutId = setTimeout(() => {
-      closeSftpSession(tabId);
-    }, SFTP_SESSION_IDLE_TIMEOUT);
-    return session.sftp;
+  // 使用确保会话有效性的方式获取会话
+  try {
+    return await ensureSftpSession(tabId);
+  } catch (error) {
+    logToFile(`sftpCore: Failed to get SFTP session for tab ${tabId}: ${error.message}`, "ERROR");
+    throw error; 
   }
-
-  if (sftpSessions.size >= MAX_TOTAL_SFTP_SESSIONS) {
-    logToFile(
-      `sftpCore: Maximum SFTP sessions limit reached (${MAX_TOTAL_SFTP_SESSIONS}), closing oldest session`,
-      "WARN",
-    );
-    let oldestTabId = null;
-    let oldestTime = Date.now();
-    for (const [id, session] of sftpSessions.entries()) {
-      if (session.createdAt < oldestTime) {
-        oldestTime = session.createdAt;
-        oldestTabId = id;
-      }
-    }
-    if (oldestTabId) await closeSftpSession(oldestTabId);
-  }
-
-  // This is where the dependency on getChildProcessInfo is critical
-  const processInfo = getChildProcessInfo(tabId);
-  if (!processInfo || !processInfo.process || processInfo.type !== "ssh2") {
-    throw new Error(
-      "sftpCore: Invalid SSH connection info obtained via getChildProcessInfo.",
-    );
-  }
-  if (!processInfo.ready) {
-    logToFile(
-      `sftpCore: SSH connection not ready for session ${tabId}, waiting for ready state (info from getChildProcessInfo)`,
-      "INFO",
-    );
-    // Potentially add a waiting mechanism here if processInfo can be updated externally and re-checked.
-    // For now, this might lead to issues if called before SSH is ready.
-    // The original main.js had a Promise-based wait loop in acquireSftpSession.
-  }
-  return acquireSftpSession(tabId);
 }
 
 // 创建新的 SFTP 会话 (heavily dependent on getChildProcessInfo)
@@ -263,6 +303,11 @@ async function acquireSftpSession(tabId) {
       await new Promise((resolve, reject) => {
         const checkReady = () => {
           const currentInfo = getChildProcessInfo(tabId); // Re-fetch, might be updated
+          if (!currentInfo) {
+            reject(new Error("sftpCore: SSH connection no longer exists"));
+            return;
+          }
+          
           if (currentInfo && currentInfo.ready) {
             resolve();
             return;
@@ -286,51 +331,66 @@ async function acquireSftpSession(tabId) {
     }
 
     return new Promise((resolve, reject) => {
+      // 增加更长的超时时间，以防止网络延迟导致的问题
       const timeoutId = setTimeout(() => {
         sftpSessionLocks.delete(tabId);
         reject(new Error("sftpCore: SFTP session creation timed out"));
-      }, SFTP_OPERATION_TIMEOUT);
+      }, SFTP_OPERATION_TIMEOUT * 2);
 
-      sshClient.sftp((err, sftp) => {
-        // sshClient here is from processInfo.process
-        clearTimeout(timeoutId);
-        if (err) {
+      try {
+        sshClient.sftp((err, sftp) => {
+          // sshClient here is from processInfo.process
+          clearTimeout(timeoutId);
+          if (err) {
+            sftpSessionLocks.delete(tabId);
+            logToFile(
+              `sftpCore: SFTP session creation error for session ${tabId}: ${err.message}`,
+              "ERROR",
+            );
+            reject(new Error(`sftpCore: SFTP error: ${err.message}`));
+            return;
+          }
+          const now = Date.now();
+          const session = {
+            sftp, // This is the ssh2.sftp instance
+            timeoutId: setTimeout(() => {
+              closeSftpSession(tabId);
+            }, SFTP_SESSION_IDLE_TIMEOUT),
+            active: true,
+            createdAt: now,
+            lastUsed: now,
+            lastChecked: now,
+          };
+          sftpSessions.set(tabId, session);
           sftpSessionLocks.delete(tabId);
-          logToFile(
-            `sftpCore: SFTP session creation error for session ${tabId}: ${err.message}`,
-            "ERROR",
-          );
-          reject(new Error(`sftpCore: SFTP error: ${err.message}`));
-          return;
-        }
-        const now = Date.now();
-        const session = {
-          sftp, // This is the ssh2.sftp instance
-          timeoutId: setTimeout(() => {
+          sftp.on("error", (sftpErr) => {
+            logToFile(
+              `sftpCore: SFTP session error for ${tabId}: ${sftpErr.message}`,
+              "ERROR",
+            );
             closeSftpSession(tabId);
-          }, SFTP_SESSION_IDLE_TIMEOUT),
-          active: true,
-          createdAt: now,
-          lastUsed: now,
-          lastChecked: now,
-        };
-        sftpSessions.set(tabId, session);
+          });
+          sftp.on("close", () => {
+            logToFile(
+              `sftpCore: SFTP session closed by remote for ${tabId}`,
+              "INFO",
+            );
+            closeSftpSession(tabId);
+          });
+          if (!sftpHealthCheckTimer) {
+            startSftpHealthCheck();
+          }
+          resolve(sftp); // Resolve with the ssh2.sftp instance
+        });
+      } catch (sftpError) {
+        clearTimeout(timeoutId);
         sftpSessionLocks.delete(tabId);
-        sftp.on("error", (sftpErr) => {
-          logToFile(
-            `sftpCore: SFTP session error for ${tabId}: ${sftpErr.message}`,
-            "ERROR",
-          );
-          closeSftpSession(tabId);
-        });
-        sftp.on("close", () => {
-          closeSftpSession(tabId);
-        });
-        if (!sftpHealthCheckTimer) {
-          startSftpHealthCheck();
-        }
-        resolve(sftp); // Resolve with the ssh2.sftp instance
-      });
+        logToFile(
+          `sftpCore: Error creating SFTP session for ${tabId}: ${sftpError.message}`,
+          "ERROR",
+        );
+        reject(sftpError);
+      }
     });
   } catch (error) {
     sftpSessionLocks.delete(tabId);
@@ -365,149 +425,239 @@ async function closeSftpSession(tabId) {
   }
 }
 
-// 处理 SFTP 操作队列
-function enqueueSftpOperation(tabId, operationFunction, options = {}) {
+async function enqueueSftpOperation(tabId, operation, options = {}) {
+  const type = options.type || "generic";
+  const path = options.path || ".";
+  const canMerge = Boolean(options.canMerge);
+  const priority = options.priority || "normal";
+
+  // Parse priority to numeric value
+  let priorityValue;
+  switch (priority) {
+    case "high":
+      priorityValue = 10;
+      break;
+    case "low":
+      priorityValue = 1;
+      break;
+    default:
+      priorityValue = 5; // normal
+      break;
+  }
+
+  // Create or get queue for this tabId
   if (!pendingOperations.has(tabId)) {
     pendingOperations.set(tabId, []);
   }
-  const queue = pendingOperations.get(tabId);
-  const {
-    priority = "normal",
-    type = "other", // e.g., "readdir", "upload", "download"
-    path = null, // For mergeable operations
-    canMerge = false, // Specific for readdir for now
-  } = options;
 
-  if (canMerge && path && type === "readdir") {
-    const existingOpIndex = queue.findIndex(
-      (item) => item.type === "readdir" && item.path === path,
-    );
-    if (existingOpIndex !== -1) {
-      return new Promise((resolve, reject) => {
-        const existingOp = queue[existingOpIndex];
-        existingOp.subscribers = existingOp.subscribers || [];
-        existingOp.subscribers.push({ resolve, reject });
-        logToFile(
-          `sftpCore: Merged SFTP ${type} operation for path ${path} on tab ${tabId}`,
-          "INFO",
-        );
-      });
+  // 日志记录操作请求
+  logToFile(
+    `sftpCore: Enqueued SFTP ${type} operation for path ${path} on tab ${tabId} with priority ${priority}`,
+    "INFO",
+  );
+
+  // Check for similar operations in queue if canMerge is true
+  // This is useful for operations like directory listings that can be collapsed to the most recent one
+  if (canMerge) {
+    const queue = pendingOperations.get(tabId);
+    let matchingOpIndex = -1;
+    let matchingOp = null;
+
+    // Only merge waiting operations, not those in progress
+    for (let i = 0; i < queue.length; i++) {
+      const op = queue[i];
+      if (!op.inProgress && op.type === type && op.path === path) {
+        matchingOpIndex = i;
+        matchingOp = op;
+        break;
+      }
+    }
+
+    if (matchingOp) {
+      logToFile(
+        `sftpCore: Merging new ${type} operation for ${path} with existing queued operation.`,
+        "INFO",
+      );
+
+      // Update existing operation with new priority if higher
+      if (priorityValue > matchingOp.priorityValue) {
+        queue[matchingOpIndex].priorityValue = priorityValue;
+      }
+
+      // Return the existing operation's promise
+      return matchingOp.promise;
     }
   }
 
+  // Create new operation
   return new Promise((resolve, reject) => {
     const operationObj = {
-      operationFunction, // The actual async function to execute
-      resolve,
-      reject,
-      priority,
+      tabId,
       type,
       path,
       canMerge,
-      enqueuedAt: Date.now(),
-      subscribers: [],
+      priorityValue,
+      operation,
+      promise: null,
+      resolve,
+      reject,
+      inProgress: false,
+      timestamp: Date.now(),
+      retries: 0, // 添加重试计数
+      maxRetries: 2, // 最大重试次数
     };
-    if (priority === "high") {
-      if (queue.length > 0) queue.splice(1, 0, operationObj);
-      else queue.push(operationObj);
-    } else {
-      queue.push(operationObj);
-    }
-    if (path) {
-      logToFile(
-        `sftpCore: Enqueued SFTP ${type} operation for path ${path} on tab ${tabId} with priority ${priority}`,
-        "INFO",
-      );
-    } else {
-      logToFile(
-        `sftpCore: Enqueued SFTP ${type} operation on tab ${tabId} with priority ${priority}`,
-        "INFO",
-      );
-    }
-    if (queue.length === 1) {
-      processSftpQueue(tabId);
-    }
+
+    // Set promise reference in operationObj for potential future merging
+    operationObj.promise = new Promise((res, rej) => {
+      operationObj.innerResolve = res;
+      operationObj.innerReject = rej;
+    });
+
+    // Add to queue
+    const queue = pendingOperations.get(tabId);
+    queue.push(operationObj);
+
+    // Start processing queue
+    processSftpQueue(tabId);
   });
 }
 
-// 处理队列中的 SFTP 操作
+// 内部函数：处理 SFTP 操作队列
 async function processSftpQueue(tabId) {
-  const queue = pendingOperations.get(tabId);
-  if (!queue || queue.length === 0) return;
+  // Check if queue exists
+  if (!pendingOperations.has(tabId)) {
+    return;
+  }
 
-  const op = queue[0];
-  try {
-    const processInfo = getChildProcessInfo(tabId); // Dependency
-    if (!processInfo || !processInfo.process || processInfo.type !== "ssh2") {
-      throw new Error(
-        "sftpCore: Invalid SSH connection for queued SFTP operation.",
-      );
-    }
-    const result = await op.operationFunction(); // Execute the function passed to enqueueSftpOperation
-    op.resolve(result);
-    if (op.subscribers && op.subscribers.length > 0) {
-      for (const subscriber of op.subscribers) subscriber.resolve(result);
-      logToFile(
-        `sftpCore: Resolved ${op.subscribers.length} merged subscribers for SFTP ${op.type} operation on tab ${tabId}`,
-        "INFO",
-      );
-    }
-  } catch (error) {
-    let errorMessage = error.message;
-    if (errorMessage.includes("等待SSH连接就绪超时")) {
-      // This specific error was from main.js
-      errorMessage = "sftpCore: SSH连接尚未就绪，请稍后重试";
-      logToFile(
-        `sftpCore: SSH connection not ready for SFTP operation on tab ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-    } else if (
-      errorMessage.includes("ECONNRESET") ||
-      errorMessage.includes("Channel open failure")
-    ) {
-      errorMessage = "sftpCore: SSH连接被重置，请检查网络连接并重试";
-      logToFile(
-        `sftpCore: SSH connection reset for SFTP operation on tab ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-    }
-    op.reject(new Error(errorMessage));
-    if (op.subscribers && op.subscribers.length > 0) {
-      for (const subscriber of op.subscribers)
-        subscriber.reject(new Error(errorMessage));
-      logToFile(
-        `sftpCore: Rejected ${op.subscribers.length} merged subscribers for SFTP ${op.type} operation on tab ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-    }
-  } finally {
-    queue.shift();
-    if (queue.length > 0) {
-      const nextOp = queue[0];
-      const delay = nextOp.type === "readdir" ? 50 : 100; // Keep this delay logic
-      setTimeout(() => processSftpQueue(tabId), delay);
+  const queue = pendingOperations.get(tabId);
+
+  // Check if queue is empty or already being processed
+  if (queue.length === 0) {
+    return;
+  }
+
+  // Find the highest priority waiting operation
+  let highestPriority = -1;
+  let nextOpIndex = -1;
+
+  for (let i = 0; i < queue.length; i++) {
+    const op = queue[i];
+    if (!op.inProgress && op.priorityValue > highestPriority) {
+      highestPriority = op.priorityValue;
+      nextOpIndex = i;
     }
   }
+
+  // If no waiting operation (all in progress), return
+  if (nextOpIndex === -1) {
+    return;
+  }
+
+  const nextOp = queue[nextOpIndex];
+  nextOp.inProgress = true;
+
+  // Track operation initiation time, helps with debugging hangs
+  nextOp.startTime = Date.now();
+
+  try {
+    // Execute the operation
+    const result = await Promise.race([
+      nextOp.operation(),
+      new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("Operation timed out")), SFTP_OPERATION_TIMEOUT),
+      ),
+    ]);
+
+    // Operation completed successfully
+    nextOp.resolve(result);
+    nextOp.innerResolve(result);
+
+    // Remove operation from queue
+    queue.splice(nextOpIndex, 1);
+  } catch (error) {
+    // 操作失败，考虑是否重试
+    if (nextOp.retries < nextOp.maxRetries && isRetryableError(error)) {
+      nextOp.retries++;
+      nextOp.inProgress = false;
+      
+      logToFile(
+        `sftpCore: Operation ${nextOp.type} failed on tab ${tabId}, retrying (${nextOp.retries}/${nextOp.maxRetries}): ${error.message}`,
+        "WARN",
+      );
+      
+      // 添加重试延迟，防止立即失败的循环
+      setTimeout(() => {
+        processSftpQueue(tabId); // 再次尝试处理队列
+      }, 1000 * nextOp.retries); // 随重试次数增加延迟
+      
+      return; // 不删除操作，不解析promise
+    }
+    
+    // 超过重试次数或不可重试的错误
+    nextOp.reject(error);
+    nextOp.innerReject(error);
+
+    // Remove failed operation from queue
+    queue.splice(nextOpIndex, 1);
+    
+    logToFile(
+      `sftpCore: Operation ${nextOp.type} failed on tab ${tabId} after ${nextOp.retries} retries: ${error.message}`,
+      "ERROR",
+    );
+  }
+
+  // Process next operation in queue
+  processSftpQueue(tabId);
+}
+
+// 判断是否为可重试的错误类型
+function isRetryableError(error) {
+  // 网络超时、连接重置、连接中断等类型错误可以重试
+  const retryableMessages = [
+    "timeout",
+    "timed out",
+    "disconnected",
+    "reset",
+    "ECONNRESET",
+    "EOF",
+    "socket hang up",
+    "无法连接到远程主机",
+    "SSH连接已关闭",
+    "operation has been aborted"
+  ];
+  
+  if (!error || !error.message) return false;
+  
+  const message = error.message.toLowerCase();
+  return retryableMessages.some(msg => message.includes(msg.toLowerCase()));
 }
 
 // 新增：清理指定tabId的待处理操作队列
-function clearPendingOperationsForTab(tabId) {
+function clearPendingOperationsForTab(tabId, options = {}) {
+  const { userCancelled = false } = options;
+  
   if (pendingOperations.has(tabId)) {
     const queue = pendingOperations.get(tabId);
     if (queue && queue.length > 0) {
       logToFile(
-        `sftpCore: Clearing ${queue.length} pending SFTP operations for tab ${tabId} due to connection closure.`,
-        "INFO",
+        `sftpCore: Clearing ${queue.length} pending SFTP operations for tab ${tabId} due to ${userCancelled ? 'user cancellation' : 'connection closure'}.`,
+        userCancelled ? "INFO" : "WARN",
       );
       for (const op of queue) {
         if (op.reject && typeof op.reject === "function") {
-          op.reject(new Error("操作已取消：SSH连接已关闭。"));
+          // 创建一个带有特殊标记的错误对象
+          const error = new Error(userCancelled ? "用户已取消操作" : "操作已取消：SSH连接已关闭。");
+          error.userCancelled = userCancelled;
+          op.reject(error);
         }
         // 如果有合并的订阅者，也需要拒绝它们
         if (op.subscribers && op.subscribers.length > 0) {
           for (const subscriber of op.subscribers) {
             if (subscriber.reject && typeof subscriber.reject === "function") {
-              subscriber.reject(new Error("操作已取消：SSH连接已关闭。"));
+              // 同样添加特殊标记
+              const error = new Error(userCancelled ? "用户已取消操作" : "操作已取消：SSH连接已关闭。");
+              error.userCancelled = userCancelled;
+              subscriber.reject(error);
             }
           }
         }
@@ -535,6 +685,7 @@ module.exports = {
   closeSftpSession,
   enqueueSftpOperation,
   clearPendingOperationsForTab, // 导出新函数
+  ensureSftpSession, // 导出新方法
   // processSftpQueue is internal, not exported
   // checkSftpSessionsHealth and checkSessionAlive are also internal after startSftpHealthCheck is called
 };

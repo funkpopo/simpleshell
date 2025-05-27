@@ -153,10 +153,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         // 确保传递所有必要的参数给回调函数
         progressCallback(
           data.progress || 0,
+          data.fileName || "",
           data.transferredBytes || 0,
           data.totalBytes || 0,
-          data.transferSpeed,
-          data.remainingTime,
+          data.transferSpeed || 0,
+          data.remainingTime || 0,
+          data.transferKey || ""  // 添加transferKey参数
         );
       }
     };
@@ -189,6 +191,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.remainingTime || 0,
           progressData.currentFileIndex || 0,
           progressData.totalFiles || 0,
+          progressData.transferKey || "" // 添加transferKey参数
         );
       }
       // If operation is complete or cancelled, remove listener
@@ -225,6 +228,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.remainingTime || 0,
           progressData.processedFiles || 0,
           progressData.totalFiles || 0,
+          progressData.transferKey || "" // 添加transferKey参数
         );
       }
       // If operation is complete or cancelled, remove listener
@@ -253,10 +257,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           data.currentFile || "",
           data.transferredBytes || 0,
           data.totalBytes || 0,
-          data.transferSpeed,
-          data.remainingTime,
+          data.transferSpeed || 0,
+          data.remainingTime || 0,
           data.processedFiles || 0,
           data.totalFiles || 0,
+          data.transferKey || ""  // 添加transferKey参数
         );
       }
     };
