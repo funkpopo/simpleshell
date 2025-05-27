@@ -41,46 +41,88 @@ import FilePreview from "./FilePreview.jsx";
 
 const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
   const theme = useTheme();
+  const [currentPath, setCurrentPath] = useState("/");
+  const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentPath, setCurrentPath] = useState("");
-  const [pathInput, setPathInput] = useState("");
-  const [files, setFiles] = useState([]);
+  const [lastRefreshTime, setLastRefreshTime] = useState(null);
+  const [directoryCache, setDirectoryCache] = useState({});
+  const [currentSorting, setCurrentSorting] = useState({
+    field: "name",
+    direction: "asc",
+  });
+  const [contextMenu, setContextMenu] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearch, setShowSearch] = useState(false);
-  const [contextMenu, setContextMenu] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
-  const [newFileName, setNewFileName] = useState("");
-
-  // 新增状态
+  const [newName, setNewName] = useState("");
   const [blankContextMenu, setBlankContextMenu] = useState(null);
   const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [showCreateFileDialog, setShowCreateFileDialog] = useState(false);
-  const [newFileName2, setNewFileName2] = useState("");
-
-  // 文件预览相关状态
-  const [previewFile, setPreviewFile] = useState(null);
+  const [newFileName, setNewFileName] = useState("");
+  const [filePreview, setFilePreview] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-
-  // 传输进度相关状态
+  const [pathInput, setPathInput] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
   const [transferProgress, setTransferProgress] = useState(null);
   const [transferCancelled, setTransferCancelled] = useState(false);
-
-  // 目录内容缓存
-  const [directoryCache, setDirectoryCache] = useState({});
+  const [isClosing, setIsClosing] = useState(false);
+  const [notification, setNotification] = useState(null);
+  
   // 缓存过期时间（毫秒）
   const CACHE_EXPIRY_TIME = 10000; // 10秒
-
-  // 自动刷新相关状态
-  const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
-
-  // 配置参数
+  
+  // 自动刷新相关参数
   const USER_ACTIVITY_REFRESH_DELAY = 1000; // 用户活动后刷新延迟
-
-  // 添加消息通知状态
-  const [notification, setNotification] = useState(null);
+  
+  // 检查错误消息是否与用户取消操作相关
+  const isUserCancellationError = (error) => {
+    // 检查错误对象
+    if (!error) return false;
+    
+    // 如果是字符串类型的错误消息
+    if (typeof error === 'string') {
+      return error.includes("cancel") || 
+             error.includes("abort") || 
+             error.includes("用户已取消") ||
+             error.includes("用户取消") ||
+             error.includes("已中断");
+    }
+    
+    // 如果是带有message属性的错误对象
+    if (error.message) {
+      return error.message.includes("cancel") || 
+             error.message.includes("abort") || 
+             error.message.includes("用户已取消") ||
+             error.message.includes("用户取消") ||
+             error.message.includes("已中断");
+    }
+    
+    // 如果是API响应对象
+    if (error.error) {
+      return error.error.includes("cancel") || 
+             error.error.includes("abort") || 
+             error.error.includes("用户已取消") ||
+             error.error.includes("用户取消") ||
+             error.error.includes("已中断") || 
+             error.userCancelled || 
+             error.cancelled;
+    }
+    
+    // 检查特殊标志
+    return error.userCancelled || error.cancelled;
+  };
+  
+  // 确保组件有logToFile函数
+  const logToFile = (message, type) => {
+    if (window.terminalAPI && window.terminalAPI.log) {
+      window.terminalAPI.log(message, type);
+    } else {
+      console.log(`[FileManager-${type || "INFO"}] ${message}`);
+    }
+  };
 
   // 当SSH连接改变时，重置状态并加载目录
   useEffect(() => {
@@ -523,6 +565,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
             remainingTime,
             currentFileIndex,
             totalFiles,
+            transferKey
           ) => {
             // 验证并标准化进度数据
             const validProgress = Math.max(0, Math.min(100, progress || 0));
@@ -541,6 +584,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
               remainingTime: validRemainingTime,
               currentFileIndex: currentFileIndex || 0,
               totalFiles: totalFiles || 0,
+              transferKey: transferKey || "" // 添加transferKey到状态
             });
           },
         );
@@ -548,32 +592,47 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         if (result.success) {
           // 上传完成后清除进度状态
           setTimeout(() => setTransferProgress(null), 1500);
-          await loadDirectory(currentPath);
-          // 上传文件操作完成后设置定时器再次检查
-          refreshAfterUserActivity();
-
+          
           // 如果有警告信息（部分文件上传失败），显示给用户
           if (result.partialSuccess && result.warning) {
             setError(result.warning);
           }
+          
+          // 检查是否是用户取消操作
+          if (isUserCancellationError(result)) {
+            logToFile("FileManager: 上传被用户取消，跳过错误显示", "INFO");
+            setTransferCancelled(true);
+          }
         } else if (!transferCancelled) {
-          // 只有在不是用户主动取消的情况下才显示错误
-          setError(result.error || "上传文件失败");
+          // 检查是否是取消操作相关的错误
+          if (!isUserCancellationError(result)) {
+            // 只有在不是用户主动取消的情况下才显示错误
+            setError(result.error || "上传文件失败");
+          } else {
+            logToFile("FileManager: 检测到用户取消操作，跳过错误显示", "INFO");
+            setTransferCancelled(true);
+          }
           setTransferProgress(null);
         }
+        
+        // 无论上传结果如何，都刷新文件列表
+        refreshAfterUserActivity();
       }
     } catch (error) {
       console.error("上传文件失败:", error);
 
       // 只有在不是用户主动取消的情况下才显示错误
-      if (
-        !transferCancelled &&
-        !error.message?.includes("reply was never sent")
-      ) {
+      if (!transferCancelled && !isUserCancellationError(error) && !error.message?.includes("reply was never sent")) {
         setError("上传文件失败: " + (error.message || "未知错误"));
+      } else {
+        logToFile(`FileManager: 跳过取消操作错误显示: ${error.message}`, "INFO");
+        setTransferCancelled(true);
       }
 
       setTransferProgress(null);
+      
+      // 无论上传结果如何，都刷新文件列表
+      refreshAfterUserActivity();
     }
   };
 
@@ -636,6 +695,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
             remainingTime,
             processedFiles,
             totalFiles,
+            transferKey
           ) => {
             // 验证并标准化进度数据
             const validProgress = Math.max(0, Math.min(100, progress || 0));
@@ -657,6 +717,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
               remainingTime: validRemainingTime,
               processedFiles: validProcessedFiles,
               totalFiles: validTotalFiles,
+              transferKey: transferKey || "" // 添加transferKey到状态
             });
           },
         );
@@ -664,27 +725,47 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         if (result.success) {
           // 上传完成后清除进度状态
           setTimeout(() => setTransferProgress(null), 1500);
-          await loadDirectory(currentPath);
-          // 上传文件夹操作完成后设置定时器再次检查
-          refreshAfterUserActivity();
+          
+          // 如果有警告信息（部分文件上传失败），显示给用户
+          if (result.partialSuccess && result.warning) {
+            setError(result.warning);
+          }
+          
+          // 检查是否是用户取消操作
+          if (isUserCancellationError(result)) {
+            logToFile("FileManager: 上传文件夹被用户取消，跳过错误显示", "INFO");
+            setTransferCancelled(true);
+          }
         } else if (!transferCancelled) {
-          // 只有在不是用户主动取消的情况下才显示错误
-          setError(result.error || "上传文件夹失败");
+          // 检查是否是取消操作相关的错误
+          if (!isUserCancellationError(result)) {
+            // 只有在不是用户主动取消的情况下才显示错误
+            setError(result.error || "上传文件夹失败");
+          } else {
+            logToFile("FileManager: 检测到用户取消操作，跳过错误显示", "INFO");
+            setTransferCancelled(true);
+          }
           setTransferProgress(null);
         }
+        
+        // 无论上传结果如何，都刷新文件列表
+        refreshAfterUserActivity();
       }
     } catch (error) {
       console.error("上传文件夹失败:", error);
 
       // 只有在不是用户主动取消的情况下才显示错误
-      if (
-        !transferCancelled &&
-        !error.message?.includes("reply was never sent")
-      ) {
+      if (!transferCancelled && !isUserCancellationError(error) && !error.message?.includes("reply was never sent")) {
         setError("上传文件夹失败: " + (error.message || "未知错误"));
+      } else {
+        logToFile(`FileManager: 跳过文件夹上传取消操作错误显示: ${error.message}`, "INFO");
+        setTransferCancelled(true);
       }
 
       setTransferProgress(null);
+      
+      // 无论上传结果如何，都刷新文件列表
+      refreshAfterUserActivity();
     }
   };
 
@@ -879,9 +960,32 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
   // 格式化传输速度
   const formatTransferSpeed = (bytesPerSecond) => {
     if (!bytesPerSecond) return "0 B/s";
-    const units = ["B/s", "KB/s", "MB/s", "GB/s"];
-    const i = Math.floor(Math.log(bytesPerSecond) / Math.log(1024));
-    return `${(bytesPerSecond / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+    
+    // 添加更多单位，包括TB/s
+    const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
+    
+    // 避免非常小的值显示为高级单位
+    if (bytesPerSecond < 0.1) return "0 B/s";
+    
+    // 计算适当的单位
+    let i = 0;
+    let unitValue = bytesPerSecond;
+    
+    // 找到合适的单位
+    while (unitValue >= 1024 && i < units.length - 1) {
+      unitValue /= 1024;
+      i++;
+    }
+    
+    // 根据值的大小调整小数点位数
+    let decimals = 2;
+    if (unitValue >= 100) {
+      decimals = 0; // 大于100时不显示小数
+    } else if (unitValue >= 10) {
+      decimals = 1; // 10-100之间显示1位小数
+    }
+    
+    return `${unitValue.toFixed(decimals)} ${units[i]}`;
   };
 
   // 格式化剩余时间
@@ -906,64 +1010,87 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
   const handleCancelTransfer = async () => {
     if (
       !transferProgress ||
-      !window.terminalAPI ||
-      !window.terminalAPI.cancelTransfer
+      !window.terminalAPI
     ) {
       return;
     }
 
     try {
+      // 检查传输是否已经完成或已经取消
+      if (transferProgress.isCancelled || transferProgress.progress === 100) {
+        // 传输已完成或已取消，直接隐藏进度界面并刷新文件列表
+        setTransferProgress(null);
+        refreshAfterUserActivity();
+        return;
+      }
+
       // 标记传输已取消，用于避免显示错误消息
       setTransferCancelled(true);
 
-      // 确定传输类型
-      let transferType;
-      if (transferProgress.type === "upload") {
-        transferType = "upload";
-      } else if (transferProgress.type === "download") {
-        transferType = "download";
-      } else if (transferProgress.type === "upload-folder") {
-        transferType = "upload-folder";
-      } else if (transferProgress.type === "download-folder") {
-        transferType = "download-folder";
-      } else {
-        return; // 未知类型，不处理
-      }
-
-      const result = await window.terminalAPI.cancelTransfer(
-        tabId,
-        transferType,
-      );
-
-      if (result.success) {
-        // 更新UI以显示已取消
+      // 获取传输键值，用于取消特定的传输任务
+      const transferKey = transferProgress.transferKey;
+      
+      // 只有在传输进行中且API可用时才调用取消传输API
+      if (!transferProgress.isCancelled && 
+          transferProgress.progress < 100 && 
+          window.terminalAPI.cancelTransfer) {
+          
+        // 显示取消中状态
         setTransferProgress({
           ...transferProgress,
-          progress: 0,
-          isCancelled: true,
-          cancelMessage: "传输已取消",
+          cancelInProgress: true,
+          cancelMessage: "正在取消传输...",
         });
+          
+        // 调用取消API传递transferKey
+        const result = await window.terminalAPI.cancelTransfer(
+          tabId,
+          transferKey
+        );
 
-        // 取消成功后刷新文件列表
-        refreshAfterUserActivity();
+        if (result.success) {
+          // 更新UI以显示已取消
+          setTransferProgress({
+            ...transferProgress,
+            progress: 0,
+            isCancelled: true,
+            cancelMessage: "传输已取消",
+          });
 
-        // 短暂延迟后移除进度条
-        setTimeout(() => setTransferProgress(null), 1500);
+          // 短暂延迟后移除进度条
+          setTimeout(() => setTransferProgress(null), 1500);
+          
+          // 记录取消成功
+          logToFile(`FileManager: 传输 ${transferKey} 已成功取消`, "INFO");
+        } else {
+          // 仍然更新UI以避免用户困惑
+          setTransferProgress({
+            ...transferProgress,
+            progress: 0,
+            isCancelled: true,
+            cancelMessage: "传输已中断",
+          });
+
+          // 短暂延迟后移除进度条
+          setTimeout(() => setTransferProgress(null), 1500);
+          
+          // 记录取消失败但显示为成功
+          logToFile(`FileManager: 传输取消API返回失败，但界面仍显示已取消: ${result.error || "未知错误"}`, "WARN");
+        }
       } else {
-        // 仍然更新UI以避免用户困惑
-        setTransferProgress({
-          ...transferProgress,
-          progress: 0,
-          isCancelled: true,
-          cancelMessage: "传输已中断",
-        });
-
-        // 传输已中断后也刷新文件列表
-        refreshAfterUserActivity();
-
-        // 短暂延迟后移除进度条
-        setTimeout(() => setTransferProgress(null), 1500);
+        // API不可用，直接隐藏进度界面
+        logToFile("FileManager: 取消API不可用或传输已经结束，直接隐藏进度条", "INFO");
+        setTransferProgress(null);
       }
+
+      // 添加额外延迟，确保取消操作完成后再刷新
+      setTimeout(() => {
+        // 无论是否成功取消传输，都刷新文件列表
+        refreshAfterUserActivity();
+        
+        // 也执行一次强制刷新
+        loadDirectory(currentPath, 0, true);
+      }, 800); // 延迟800ms等待后端处理完成
     } catch (error) {
       console.error("取消传输失败:", error);
 
@@ -975,8 +1102,11 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         cancelMessage: "传输已中断",
       });
 
-      // 发生错误时也刷新文件列表
-      refreshAfterUserActivity();
+      // 发生错误时也刷新文件列表，确保UI状态一致
+      setTimeout(() => {
+        refreshAfterUserActivity();
+        loadDirectory(currentPath, 0, true);
+      }, 800);
 
       // 短暂延迟后移除进度条
       setTimeout(() => setTransferProgress(null), 1500);
@@ -1174,7 +1304,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
       handleEnterDirectory(newPath);
     } else {
       // 如果是文件，打开预览
-      setPreviewFile(file);
+      setFilePreview(file);
       setShowPreview(true);
 
       // 文件查看后延迟刷新，检测是否有变化
@@ -1227,6 +1357,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
             totalBytes,
             transferSpeed,
             remainingTime,
+            transferKey
           ) => {
             setTransferProgress({
               type: "download",
@@ -1236,6 +1367,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
               totalBytes,
               transferSpeed,
               remainingTime,
+              transferKey // 添加transferKey到进度状态
             });
           },
         );
@@ -1357,6 +1489,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
               remainingTime,
               processedFiles,
               totalFiles,
+              transferKey
             ) => {
               setTransferProgress({
                 type: "download-folder",
@@ -1369,6 +1502,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
                 remainingTime,
                 processedFiles,
                 totalFiles,
+                transferKey // 添加transferKey到状态
               });
             },
           );
@@ -1535,7 +1669,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
   // 处理重命名
   const handleRename = () => {
     if (!selectedFile) return;
-    setNewFileName(selectedFile.name);
+    setNewName(selectedFile.name);
     setShowRenameDialog(true);
     handleContextMenuClose();
   };
@@ -1545,7 +1679,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     e.preventDefault();
     setShowRenameDialog(false);
 
-    if (!selectedFile || !newFileName || newFileName === selectedFile.name)
+    if (!selectedFile || !newName || newName === selectedFile.name)
       return;
 
     setLoading(true);
@@ -1566,7 +1700,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           const response = await window.terminalAPI.renameFile(
             tabId,
             oldPath,
-            newFileName,
+            newName,
           );
 
           if (response?.success) {
@@ -1648,6 +1782,46 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     };
   }, [open, selectedFile, handleDownload, handleDownloadFolder]); // 添加所有需要的依赖项
 
+  // 处理关闭文件管理器
+  const handleClose = () => {
+    // 检查是否有正在进行的传输
+    if (transferProgress && !transferProgress.isCancelled && transferProgress.progress < 100) {
+      // 显示确认对话框，询问用户是否确定要取消传输
+      const isConfirmed = window.confirm(`有正在进行的${transferProgress.type === "upload" || transferProgress.type === "upload-folder" ? "上传" : "下载"}任务，关闭窗口将中断传输。是否继续？`);
+      
+      if (isConfirmed) {
+        // 先禁用关闭按钮防止用户多次点击
+        setIsClosing(true);
+        
+        // 显示取消中的状态
+        setTransferProgress({
+          ...transferProgress,
+          cancelMessage: "正在取消传输...",
+        });
+        
+        // 执行取消传输操作
+        handleCancelTransfer().then(() => {
+          // 添加短暂延迟确保取消操作完成
+          setTimeout(() => {
+            logToFile && logToFile("FileManager: Closing window after cancelling transfer", "INFO");
+            onClose();
+          }, 300);
+        }).catch(error => {
+          console.error("取消传输失败:", error);
+          // 即使取消失败也关闭窗口，但添加延迟确保取消请求被发送
+          setTimeout(() => {
+            logToFile && logToFile("FileManager: Closing window after transfer cancel error", "WARN");
+            onClose();
+          }, 300);
+        });
+      }
+      // 如果用户选择不关闭，则不执行任何操作
+    } else {
+      // 没有传输或传输已完成/已取消，直接关闭
+      onClose();
+    }
+  };
+
   return (
     <Paper
       sx={{
@@ -1683,7 +1857,12 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         >
           {tabName ? `文件管理 - ${tabName}` : "文件管理"}
         </Typography>
-        <IconButton size="small" onClick={onClose} edge="end">
+        <IconButton 
+          size="small" 
+          onClick={handleClose} 
+          edge="end"
+          disabled={isClosing} // 禁用关闭按钮当正在关闭时
+        >
           <CloseIcon fontSize="small" />
         </IconButton>
       </Box>
@@ -1910,10 +2089,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
               <IconButton
                 size="small"
                 onClick={handleCancelTransfer}
-                disabled={
-                  transferProgress.isCancelled ||
-                  transferProgress.progress === 100
-                }
                 sx={{ padding: 0.5 }}
               >
                 <CancelIcon fontSize="small" />
@@ -2151,8 +2326,8 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
               <TextField
                 fullWidth
                 label="新名称"
-                value={newFileName}
-                onChange={(e) => setNewFileName(e.target.value)}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
                 autoFocus
                 variant="outlined"
                 size="small"
@@ -2319,11 +2494,11 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
       )}
 
       {/* 文件预览 */}
-      {showPreview && previewFile && (
+      {showPreview && filePreview && (
         <FilePreview
           open={showPreview}
           onClose={handleClosePreview}
-          file={previewFile}
+          file={filePreview}
           path={currentPath}
           tabId={tabId}
         />
