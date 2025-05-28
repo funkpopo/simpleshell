@@ -15,6 +15,8 @@ import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import Slider from "@mui/material/Slider";
 import Divider from "@mui/material/Divider";
+import TextField from "@mui/material/TextField";
+import InputAdornment from "@mui/material/InputAdornment";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 
@@ -76,16 +78,29 @@ const Settings = ({ open, onClose }) => {
     { value: 18, label: t("settings.fontSizeLabels.xlarge") },
   ];
 
+  // Define log level options
+  const logLevels = [
+    { value: "DEBUG", label: "DEBUG" },
+    { value: "INFO", label: "INFO" },
+    { value: "WARN", label: "WARN" },
+    { value: "ERROR", label: "ERROR" },
+  ];
+
   // Initial states
   const [language, setLanguage] = React.useState("");
   const [fontSize, setFontSize] = React.useState(14);
   const [darkMode, setDarkMode] = React.useState(true);
+  const [logLevel, setLogLevel] = React.useState("WARN");
+  const [maxFileSize, setMaxFileSize] = React.useState(5);
   const [isLoading, setIsLoading] = React.useState(true);
 
   // Load settings from config.json via API
   React.useEffect(() => {
     const loadSettings = async () => {
       try {
+        setIsLoading(true);
+        
+        // 加载UI设置
         if (window.terminalAPI?.loadUISettings) {
           const settings = await window.terminalAPI.loadUISettings();
           if (settings) {
@@ -96,8 +111,22 @@ const Settings = ({ open, onClose }) => {
             );
           }
         }
+        
+        // 加载日志设置
+        if (window.terminalAPI?.loadLogSettings) {
+          const logSettings = await window.terminalAPI.loadLogSettings();
+          if (logSettings) {
+            setLogLevel(logSettings.level || "WARN");
+            // 将字节转换为MB
+            setMaxFileSize(
+              logSettings.maxFileSize 
+                ? Math.round(logSettings.maxFileSize / (1024 * 1024)) 
+                : 5
+            );
+          }
+        }
       } catch (error) {
-        console.error("Failed to load UI settings:", error);
+        console.error("Failed to load settings:", error);
       } finally {
         setIsLoading(false);
       }
@@ -122,14 +151,41 @@ const Settings = ({ open, onClose }) => {
   const handleDarkModeChange = (event) => {
     setDarkMode(event.target.value === "dark");
   };
+  
+  // Handle log level change
+  const handleLogLevelChange = (event) => {
+    setLogLevel(event.target.value);
+  };
+  
+  // Handle max file size change
+  const handleMaxFileSizeChange = (event) => {
+    const value = event.target.value;
+    // 确保输入的是数字，且大于0
+    if (!isNaN(value) && Number(value) > 0) {
+      setMaxFileSize(Number(value));
+    }
+  };
 
   // Save settings
   const handleSave = async () => {
     try {
-      // Save to config.json via API
+      // 保存UI设置
       if (window.terminalAPI?.saveUISettings) {
         const settings = { language, fontSize, darkMode };
         await window.terminalAPI.saveUISettings(settings);
+      }
+      
+      // 保存日志设置
+      if (window.terminalAPI?.saveLogSettings) {
+        const logSettings = { 
+          level: logLevel,
+          // 将MB转换为字节
+          maxFileSize: maxFileSize * 1024 * 1024,
+          // 保留其他设置默认值
+          maxFiles: 5,
+          compressOldLogs: true
+        };
+        await window.terminalAPI.saveLogSettings(logSettings);
       }
 
       // Apply language change
@@ -146,7 +202,7 @@ const Settings = ({ open, onClose }) => {
 
       onClose();
     } catch (error) {
-      console.error("Failed to save UI settings:", error);
+      console.error("Failed to save settings:", error);
       alert(t("settings.saveError"));
     }
   };
@@ -228,6 +284,54 @@ const Settings = ({ open, onClose }) => {
               }))}
               min={12}
               max={18}
+            />
+          </Box>
+        </Box>
+        
+        <Divider sx={{ my: 2 }} />
+        
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="subtitle1" gutterBottom>
+            日志设置
+          </Typography>
+          
+          <Box sx={{ mb: 2 }}>
+            <FormControl fullWidth variant="outlined" size="small">
+              <InputLabel id="log-level-select-label">
+                日志记录等级
+              </InputLabel>
+              <Select
+                labelId="log-level-select-label"
+                id="log-level-select"
+                value={logLevel}
+                onChange={handleLogLevelChange}
+                label="日志记录等级"
+              >
+                {logLevels.map((level) => (
+                  <MenuItem key={level.value} value={level.value}>
+                    {level.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+          
+          <Box>
+            <TextField
+              fullWidth
+              label="日志文件大小上限"
+              variant="outlined"
+              size="small"
+              type="number"
+              value={maxFileSize}
+              onChange={handleMaxFileSizeChange}
+              InputProps={{
+                endAdornment: <InputAdornment position="end">MB</InputAdornment>,
+              }}
+              inputProps={{
+                min: 1,
+                step: 1,
+              }}
             />
           </Box>
         </Box>
