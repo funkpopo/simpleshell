@@ -105,10 +105,10 @@ async function handleDownloadFile(event, tabId, remotePath) {
 
       const sftp = new SftpClient(); // Using a new SftpClient instance for transfer as in main.js
       const transferKey = `${tabId}-download-${Date.now()}`;
-      activeTransfers.set(transferKey, { 
-        sftp, 
+      activeTransfers.set(transferKey, {
+        sftp,
         type: "download",
-        path: path.dirname(remotePath)
+        path: path.dirname(remotePath),
       });
 
       try {
@@ -130,7 +130,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
         const totalBytes = stats.size;
         let transferredBytes = 0;
         let lastProgressUpdate = 0;
-        
+
         // 添加用于计算传输速度和剩余时间的变量
         const transferStartTime = Date.now();
         let lastBytesTransferred = 0;
@@ -138,7 +138,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
         let currentTransferSpeed = 0;
         let currentRemainingTime = 0;
         const speedSmoothingFactor = 0.3; // 速度平滑因子，较低的值使速度变化更平缓
-        
+
         const tempFilePath = filePath + ".part";
 
         await sftp.fastGet(remotePath, tempFilePath, {
@@ -146,33 +146,38 @@ async function handleDownloadFile(event, tabId, remotePath) {
             transferredBytes = totalTransferred;
             const progress = Math.floor((transferredBytes / totalBytes) * 100);
             const now = Date.now();
-            
-            if (now - lastProgressUpdate >= 100) { // Report every 100ms
+
+            if (now - lastProgressUpdate >= 100) {
+              // Report every 100ms
               // 计算传输速度（字节/秒）
-              const timeElapsedSinceLastUpdate = (now - lastTransferTime) / 1000; // 转换为秒
+              const timeElapsedSinceLastUpdate =
+                (now - lastTransferTime) / 1000; // 转换为秒
               if (timeElapsedSinceLastUpdate > 0) {
-                const bytesTransferredSinceLastUpdate = transferredBytes - lastBytesTransferred;
-                const instantSpeed = bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
-                
+                const bytesTransferredSinceLastUpdate =
+                  transferredBytes - lastBytesTransferred;
+                const instantSpeed =
+                  bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
+
                 // 使用平滑因子计算平滑速度，避免数值剧烈波动
                 if (currentTransferSpeed === 0) {
                   currentTransferSpeed = instantSpeed; // 初始值
                 } else {
-                  currentTransferSpeed = (speedSmoothingFactor * instantSpeed) + 
-                                        ((1 - speedSmoothingFactor) * currentTransferSpeed);
+                  currentTransferSpeed =
+                    speedSmoothingFactor * instantSpeed +
+                    (1 - speedSmoothingFactor) * currentTransferSpeed;
                 }
-                
+
                 // 计算剩余时间（秒）
                 const remainingBytes = totalBytes - transferredBytes;
                 if (currentTransferSpeed > 0) {
                   currentRemainingTime = remainingBytes / currentTransferSpeed;
                 }
-                
+
                 // 更新追踪变量
                 lastBytesTransferred = transferredBytes;
                 lastTransferTime = now;
               }
-              
+
               sendToRenderer("download-progress", {
                 tabId, // Or a more specific transferId if needed
                 transferKey,
@@ -181,7 +186,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
                 transferredBytes,
                 totalBytes,
                 transferSpeed: currentTransferSpeed,
-                remainingTime: currentRemainingTime
+                remainingTime: currentRemainingTime,
               });
               lastProgressUpdate = now;
             }
@@ -198,8 +203,8 @@ async function handleDownloadFile(event, tabId, remotePath) {
           fileName,
           transferredBytes: totalBytes,
           totalBytes,
-          transferSpeed: 0,  // 传输完成，速度为0
-          remainingTime: 0   // 传输完成，剩余时间为0
+          transferSpeed: 0, // 传输完成，速度为0
+          remainingTime: 0, // 传输完成，剩余时间为0
         });
         await sftp.end();
         activeTransfers.delete(transferKey);
@@ -313,10 +318,10 @@ async function handleUploadFile(
       // Create a more unique transferKey if multiple `handleUploadFile` calls can be concurrent for the same tabId
       // For now, assuming one major upload operation per tabId from this handler.
       const transferKey = `${tabId}-upload-multifile-${Date.now()}`;
-      activeTransfers.set(transferKey, { 
-        sftp, 
+      activeTransfers.set(transferKey, {
+        sftp,
         type: "upload-multifile",
-        path: normalizedTargetFolder || "."
+        path: normalizedTargetFolder || ".",
       });
 
       try {
@@ -429,31 +434,37 @@ async function handleUploadFile(
 
                 if (now - lastProgressUpdateTime >= 100) {
                   // 计算传输速度和剩余时间
-                  const timeElapsedSinceLastUpdate = (now - lastTransferTime) / 1000; // 转换为秒
+                  const timeElapsedSinceLastUpdate =
+                    (now - lastTransferTime) / 1000; // 转换为秒
                   if (timeElapsedSinceLastUpdate > 0) {
-                    const bytesTransferredSinceLastUpdate = 
+                    const bytesTransferredSinceLastUpdate =
                       currentOverallTransferred - lastOverallBytesTransferred;
-                    const instantSpeed = bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
-                    
+                    const instantSpeed =
+                      bytesTransferredSinceLastUpdate /
+                      timeElapsedSinceLastUpdate;
+
                     // 使用平滑因子计算平滑速度，避免数值剧烈波动
                     if (currentTransferSpeed === 0) {
                       currentTransferSpeed = instantSpeed; // 初始值
                     } else {
-                      currentTransferSpeed = (speedSmoothingFactor * instantSpeed) + 
-                                            ((1 - speedSmoothingFactor) * currentTransferSpeed);
+                      currentTransferSpeed =
+                        speedSmoothingFactor * instantSpeed +
+                        (1 - speedSmoothingFactor) * currentTransferSpeed;
                     }
-                    
+
                     // 计算剩余时间（秒）
-                    const remainingBytes = totalBytesToUpload - currentOverallTransferred;
+                    const remainingBytes =
+                      totalBytesToUpload - currentOverallTransferred;
                     if (currentTransferSpeed > 0) {
-                      currentRemainingTime = remainingBytes / currentTransferSpeed;
+                      currentRemainingTime =
+                        remainingBytes / currentTransferSpeed;
                     }
-                    
+
                     // 更新追踪变量
                     lastOverallBytesTransferred = currentOverallTransferred;
                     lastTransferTime = now;
                   }
-                  
+
                   // Report every 100ms
                   if (progressChannel) {
                     // Check if progressChannel is provided
@@ -586,11 +597,11 @@ async function handleUploadFile(
           `sftpTransfer: General upload error on tab ${tabId} to ${normalizedTargetFolder}: ${error.message}`,
           "ERROR",
         );
-        
+
         // 检查是否是取消操作
-        const isCancelledOperation = error.message.includes("cancel") || 
-                                  error.message.includes("abort");
-        
+        const isCancelledOperation =
+          error.message.includes("cancel") || error.message.includes("abort");
+
         // Send a final error status to renderer for the whole operation
         if (progressChannel) {
           // Check if progressChannel is provided
@@ -606,7 +617,7 @@ async function handleUploadFile(
             failedFiles: totalFilesToUpload - filesUploadedCount, // All remaining are failed
           });
         }
-        
+
         // 如果是用户取消操作，返回成功状态的对象而不是错误
         if (isCancelledOperation) {
           return {
@@ -620,7 +631,7 @@ async function handleUploadFile(
             failedFileNames, // May not be fully populated if error is before loop
           };
         }
-        
+
         // 如果是其他错误，保持原有的错误返回逻辑
         return {
           success: false,
@@ -726,7 +737,7 @@ async function handleUploadFolder(
         type: "upload-folder",
         localFolderPath,
         remoteBaseUploadPath,
-        path: normalizedTargetFolder || "."
+        path: normalizedTargetFolder || ".",
       });
 
       let overallUploadedBytes = 0;
@@ -872,7 +883,7 @@ async function handleUploadFolder(
         let currentTransferSpeed = 0;
         let currentRemainingTime = 0;
         const speedSmoothingFactor = 0.3; // 速度平滑因子，较低的值使速度变化更平缓
-        
+
         // 4. Upload files
         for (const file of allFiles) {
           if (!activeTransfers.has(transferKey)) {
@@ -890,38 +901,42 @@ async function handleUploadFolder(
           const reportProgress = (isFinal = false) => {
             const now = Date.now();
             if (isFinal || now - lastProgressUpdateTime >= 100) {
-              const totalTransferred = overallUploadedBytes + fileTransferredBytes;
+              const totalTransferred =
+                overallUploadedBytes + fileTransferredBytes;
               const progress =
                 totalBytesToUpload > 0
                   ? Math.floor((totalTransferred / totalBytesToUpload) * 100)
                   : 0;
-                  
+
               // 计算传输速度和剩余时间
-              const timeElapsedSinceLastUpdate = (now - lastTransferTime) / 1000; // 转换为秒
+              const timeElapsedSinceLastUpdate =
+                (now - lastTransferTime) / 1000; // 转换为秒
               if (timeElapsedSinceLastUpdate > 0) {
-                const bytesTransferredSinceLastUpdate = 
+                const bytesTransferredSinceLastUpdate =
                   totalTransferred - lastOverallBytesTransferred;
-                const instantSpeed = bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
-                
+                const instantSpeed =
+                  bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
+
                 // 使用平滑因子计算平滑速度，避免数值剧烈波动
                 if (currentTransferSpeed === 0) {
                   currentTransferSpeed = instantSpeed; // 初始值
                 } else {
-                  currentTransferSpeed = (speedSmoothingFactor * instantSpeed) + 
-                                        ((1 - speedSmoothingFactor) * currentTransferSpeed);
+                  currentTransferSpeed =
+                    speedSmoothingFactor * instantSpeed +
+                    (1 - speedSmoothingFactor) * currentTransferSpeed;
                 }
-                
+
                 // 计算剩余时间（秒）
                 const remainingBytes = totalBytesToUpload - totalTransferred;
                 if (currentTransferSpeed > 0) {
                   currentRemainingTime = remainingBytes / currentTransferSpeed;
                 }
-                
+
                 // 更新追踪变量
                 lastOverallBytesTransferred = totalTransferred;
                 lastTransferTime = now;
               }
-                
+
               if (progressChannel) {
                 // Check if progressChannel is provided
                 sendToRenderer(progressChannel, {
@@ -937,7 +952,7 @@ async function handleUploadFolder(
                   transferredBytes: totalTransferred,
                   totalBytes: totalBytesToUpload,
                   transferSpeed: currentTransferSpeed,
-                  remainingTime: currentRemainingTime
+                  remainingTime: currentRemainingTime,
                 });
               }
               lastProgressUpdateTime = now;
@@ -1131,7 +1146,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         type: "download-folder",
         remoteFolderPath,
         localBaseDownloadPath,
-        path: path.dirname(remoteFolderPath) || "."
+        path: path.dirname(remoteFolderPath) || ".",
       });
 
       let overallDownloadedBytes = 0;
@@ -1249,7 +1264,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         let currentTransferSpeed = 0;
         let currentRemainingTime = 0;
         const speedSmoothingFactor = 0.3; // 速度平滑因子，较低的值使速度变化更平缓
-        
+
         // 3. Download files
         for (const file of allFiles) {
           if (!activeTransfers.has(transferKey)) {
@@ -1268,38 +1283,42 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           const reportProgress = (isFinal = false) => {
             const now = Date.now();
             if (isFinal || now - lastProgressUpdateTime >= 100) {
-              const totalTransferred = overallDownloadedBytes + fileDownloadedBytes;
+              const totalTransferred =
+                overallDownloadedBytes + fileDownloadedBytes;
               const progress =
                 totalBytesToDownload > 0
                   ? Math.floor((totalTransferred / totalBytesToDownload) * 100)
                   : 0;
-              
+
               // 计算传输速度和剩余时间
-              const timeElapsedSinceLastUpdate = (now - lastTransferTime) / 1000; // 转换为秒
+              const timeElapsedSinceLastUpdate =
+                (now - lastTransferTime) / 1000; // 转换为秒
               if (timeElapsedSinceLastUpdate > 0) {
-                const bytesTransferredSinceLastUpdate = 
+                const bytesTransferredSinceLastUpdate =
                   totalTransferred - lastOverallBytesTransferred;
-                const instantSpeed = bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
-                
+                const instantSpeed =
+                  bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
+
                 // 使用平滑因子计算平滑速度，避免数值剧烈波动
                 if (currentTransferSpeed === 0) {
                   currentTransferSpeed = instantSpeed; // 初始值
                 } else {
-                  currentTransferSpeed = (speedSmoothingFactor * instantSpeed) + 
-                                        ((1 - speedSmoothingFactor) * currentTransferSpeed);
+                  currentTransferSpeed =
+                    speedSmoothingFactor * instantSpeed +
+                    (1 - speedSmoothingFactor) * currentTransferSpeed;
                 }
-                
+
                 // 计算剩余时间（秒）
                 const remainingBytes = totalBytesToDownload - totalTransferred;
                 if (currentTransferSpeed > 0) {
                   currentRemainingTime = remainingBytes / currentTransferSpeed;
                 }
-                
+
                 // 更新追踪变量
                 lastOverallBytesTransferred = totalTransferred;
                 lastTransferTime = now;
               }
-              
+
               sendToRenderer("download-folder-progress", {
                 tabId,
                 transferKey,
@@ -1312,7 +1331,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
                 transferredBytes: totalTransferred,
                 totalBytes: totalBytesToDownload,
                 transferSpeed: currentTransferSpeed,
-                remainingTime: currentRemainingTime
+                remainingTime: currentRemainingTime,
               });
               lastProgressUpdateTime = now;
             }
@@ -1361,7 +1380,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           overallDownloadedBytes: totalBytesToDownload,
           totalBytes: totalBytesToDownload,
           transferSpeed: 0, // 传输完成，速度为0
-          remainingTime: 0  // 传输完成，剩余时间为0
+          remainingTime: 0, // 传输完成，剩余时间为0
         });
         logToFile(
           `sftpTransfer: Folder download completed for "${remoteFolderPath}". ${filesDownloadedCount} files downloaded.`,
@@ -1420,23 +1439,36 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
 async function handleCancelTransfer(event, tabId, transferKey) {
   // 如果没有找到精确的transferKey，尝试查找与tabId相关的传输
   if (!activeTransfers.has(transferKey)) {
-    logToFile(`sftpTransfer: TransferKey ${transferKey} not found, searching for active transfers for tabId ${tabId}`, "INFO");
-    
+    logToFile(
+      `sftpTransfer: TransferKey ${transferKey} not found, searching for active transfers for tabId ${tabId}`,
+      "INFO",
+    );
+
     // 查找与tabId相关的任何传输
     let foundTransferKey = null;
     for (const [key, transfer] of activeTransfers.entries()) {
       if (key.startsWith(tabId)) {
         foundTransferKey = key;
-        logToFile(`sftpTransfer: Found alternative transferKey ${foundTransferKey} for tabId ${tabId}`, "INFO");
+        logToFile(
+          `sftpTransfer: Found alternative transferKey ${foundTransferKey} for tabId ${tabId}`,
+          "INFO",
+        );
         break;
       }
     }
-    
+
     if (foundTransferKey) {
       transferKey = foundTransferKey;
-      logToFile(`sftpTransfer: Attempting to cancel transfer ${transferKey} (type: ${activeTransfers.get(transferKey).type})`, "INFO");
+      logToFile(
+        `sftpTransfer: Attempting to cancel transfer ${transferKey} (type: ${activeTransfers.get(transferKey).type})`,
+        "INFO",
+      );
     } else {
-      return { success: false, error: "没有找到活动的传输任务", userCancelled: true };
+      return {
+        success: false,
+        error: "没有找到活动的传输任务",
+        userCancelled: true,
+      };
     }
   }
 
@@ -1445,65 +1477,111 @@ async function handleCancelTransfer(event, tabId, transferKey) {
     if (transfer && transfer.sftp) {
       // 添加取消标志
       transfer.cancelled = true;
-      
+
       // 使用更强力的方式中断传输
-      logToFile(`sftpTransfer: Forcefully interrupting transfer ${transferKey}`, "INFO");
-      
+      logToFile(
+        `sftpTransfer: Forcefully interrupting transfer ${transferKey}`,
+        "INFO",
+      );
+
       // 1. 尝试使用abort方法（如果可用）
       let abortSuccessful = false;
-      if (transfer.sftp.currentTransfer && typeof transfer.sftp.currentTransfer.abort === 'function') {
+      if (
+        transfer.sftp.currentTransfer &&
+        typeof transfer.sftp.currentTransfer.abort === "function"
+      ) {
         try {
           transfer.sftp.currentTransfer.abort();
-          logToFile(`sftpTransfer: Transfer ${transferKey} aborted using transfer.abort()`, "INFO");
+          logToFile(
+            `sftpTransfer: Transfer ${transferKey} aborted using transfer.abort()`,
+            "INFO",
+          );
           abortSuccessful = true;
         } catch (abortError) {
-          logToFile(`sftpTransfer: Error aborting transfer using abort(): ${abortError.message}`, "WARN");
+          logToFile(
+            `sftpTransfer: Error aborting transfer using abort(): ${abortError.message}`,
+            "WARN",
+          );
         }
       }
-      
+
       // 2. 中断SFTP流（如果有）
-      if (!abortSuccessful && transfer.sftp._sftpStream && transfer.sftp._sftpStream.destroy) {
+      if (
+        !abortSuccessful &&
+        transfer.sftp._sftpStream &&
+        transfer.sftp._sftpStream.destroy
+      ) {
         try {
           // 强制中断SFTP流
           transfer.sftp._sftpStream.destroy();
-          logToFile(`sftpTransfer: Destroyed SFTP stream for transfer ${transferKey}`, "INFO");
+          logToFile(
+            `sftpTransfer: Destroyed SFTP stream for transfer ${transferKey}`,
+            "INFO",
+          );
           abortSuccessful = true;
         } catch (streamError) {
-          logToFile(`sftpTransfer: Error destroying SFTP stream: ${streamError.message}`, "WARN");
+          logToFile(
+            `sftpTransfer: Error destroying SFTP stream: ${streamError.message}`,
+            "WARN",
+          );
         }
       }
-      
+
       // 3. 如果以上方法都失败，强制关闭并重新创建SFTP连接
       if (!abortSuccessful) {
-        logToFile(`sftpTransfer: Trying to force close the SFTP connection for ${transferKey}`, "INFO");
-        
+        logToFile(
+          `sftpTransfer: Trying to force close the SFTP connection for ${transferKey}`,
+          "INFO",
+        );
+
         try {
           // 强制结束SFTP连接
-          await transfer.sftp.end().catch(e => {
-            logToFile(`sftpTransfer: Non-critical error ending SFTP connection: ${e.message}`, "WARN");
+          await transfer.sftp.end().catch((e) => {
+            logToFile(
+              `sftpTransfer: Non-critical error ending SFTP connection: ${e.message}`,
+              "WARN",
+            );
           });
-          
-          logToFile(`sftpTransfer: Successfully forced SFTP connection closure for ${transferKey}`, "INFO");
+
+          logToFile(
+            `sftpTransfer: Successfully forced SFTP connection closure for ${transferKey}`,
+            "INFO",
+          );
         } catch (endError) {
-          logToFile(`sftpTransfer: Error ending SFTP connection: ${endError.message}`, "WARN");
-          
+          logToFile(
+            `sftpTransfer: Error ending SFTP connection: ${endError.message}`,
+            "WARN",
+          );
+
           // 即使出错也尝试最后的方式：连接销毁
           try {
-            if (transfer.sftp._client && typeof transfer.sftp._client.destroy === 'function') {
+            if (
+              transfer.sftp._client &&
+              typeof transfer.sftp._client.destroy === "function"
+            ) {
               transfer.sftp._client.destroy();
-              logToFile(`sftpTransfer: Destroyed SFTP client connection for ${transferKey}`, "INFO");
+              logToFile(
+                `sftpTransfer: Destroyed SFTP client connection for ${transferKey}`,
+                "INFO",
+              );
             }
           } catch (destroyError) {
-            logToFile(`sftpTransfer: Error destroying SFTP client: ${destroyError.message}`, "WARN");
+            logToFile(
+              `sftpTransfer: Error destroying SFTP client: ${destroyError.message}`,
+              "WARN",
+            );
           }
         }
       }
     }
-    
+
     // 从活跃传输映射中移除
     activeTransfers.delete(transferKey);
-    logToFile(`sftpTransfer: Removed transfer ${transferKey} from activeTransfers map. Active transfers remaining: ${activeTransfers.size}`, "INFO");
-    
+    logToFile(
+      `sftpTransfer: Removed transfer ${transferKey} from activeTransfers map. Active transfers remaining: ${activeTransfers.size}`,
+      "INFO",
+    );
+
     // 根据传输类型发送正确的取消通知
     let channel = "upload-progress";
     if (transfer.type === "download") {
@@ -1513,74 +1591,110 @@ async function handleCancelTransfer(event, tabId, transferKey) {
     } else if (transfer.type.includes("upload-folder")) {
       channel = "upload-folder-progress";
     }
-    
+
     sendToRenderer(channel, {
       tabId,
       transferKey,
       cancelled: true,
       progress: -1,
-      userCancelled: true // 添加标志表明这是用户主动取消
+      userCancelled: true, // 添加标志表明这是用户主动取消
     });
-    
+
     // 清理待处理操作但不关闭SFTP会话
-    if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === "function") {
+    if (
+      sftpCore &&
+      typeof sftpCore.clearPendingOperationsForTab === "function"
+    ) {
       try {
         sftpCore.clearPendingOperationsForTab(tabId, { userCancelled: true });
-        logToFile(`sftpTransfer: Cleared pending operations for tab ${tabId} after cancel`, "INFO");
+        logToFile(
+          `sftpTransfer: Cleared pending operations for tab ${tabId} after cancel`,
+          "INFO",
+        );
       } catch (clearError) {
-        logToFile(`sftpTransfer: Error clearing pending operations: ${clearError.message}`, "WARN");
+        logToFile(
+          `sftpTransfer: Error clearing pending operations: ${clearError.message}`,
+          "WARN",
+        );
       }
     }
-    
+
     // 触发目录刷新以更新文件列表
     if (transfer.path) {
       try {
         // 异步获取当前目录的文件列表，使用setTimeout确保在当前事件循环后执行
         setTimeout(() => {
-          sftpCore.enqueueSftpOperation(
-            tabId,
-            async () => {
-              try {
-                logToFile(`sftpTransfer: Refreshing directory listing for tab ${tabId} after cancel at path: ${transfer.path}`, "INFO");
-                // 这里不需要直接返回结果，只需触发操作刷新会话
-                return { success: true, refreshed: true };
-              } catch (refreshError) {
-                logToFile(`sftpTransfer: Error refreshing directory after cancel: ${refreshError.message}`, "WARN");
-                return { success: false, error: refreshError.message };
-              }
-            },
-            {
-              type: "readdir",
-              path: transfer.path || ".",
-              priority: "high",
-              canMerge: true
-            }
-          ).catch(err => {
-            logToFile(`sftpTransfer: Failed to enqueue refresh operation: ${err.message}`, "WARN");
-          });
+          sftpCore
+            .enqueueSftpOperation(
+              tabId,
+              async () => {
+                try {
+                  logToFile(
+                    `sftpTransfer: Refreshing directory listing for tab ${tabId} after cancel at path: ${transfer.path}`,
+                    "INFO",
+                  );
+                  // 这里不需要直接返回结果，只需触发操作刷新会话
+                  return { success: true, refreshed: true };
+                } catch (refreshError) {
+                  logToFile(
+                    `sftpTransfer: Error refreshing directory after cancel: ${refreshError.message}`,
+                    "WARN",
+                  );
+                  return { success: false, error: refreshError.message };
+                }
+              },
+              {
+                type: "readdir",
+                path: transfer.path || ".",
+                priority: "high",
+                canMerge: true,
+              },
+            )
+            .catch((err) => {
+              logToFile(
+                `sftpTransfer: Failed to enqueue refresh operation: ${err.message}`,
+                "WARN",
+              );
+            });
         }, 500); // 延迟500ms，让取消操作完全处理后再刷新
       } catch (refreshError) {
-        logToFile(`sftpTransfer: Error triggering refresh: ${refreshError.message}`, "WARN");
+        logToFile(
+          `sftpTransfer: Error triggering refresh: ${refreshError.message}`,
+          "WARN",
+        );
       }
     }
-    
+
     return { success: true, message: "传输已取消", userCancelled: true }; // 添加标志表明这是用户主动取消
   } catch (error) {
-    logToFile(`sftpTransfer: Error cancelling transfer ${transferKey}: ${error.message}`, "ERROR");
-    
+    logToFile(
+      `sftpTransfer: Error cancelling transfer ${transferKey}: ${error.message}`,
+      "ERROR",
+    );
+
     // 即使出错也从活跃传输映射中删除
     activeTransfers.delete(transferKey);
-    
+
     // 即使出错也尝试清理待处理操作
-    if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === "function") {
+    if (
+      sftpCore &&
+      typeof sftpCore.clearPendingOperationsForTab === "function"
+    ) {
       try {
         sftpCore.clearPendingOperationsForTab(tabId, { userCancelled: true });
       } catch (clearError) {
-        logToFile(`sftpTransfer: Error clearing pending operations after cancel error: ${clearError.message}`, "ERROR");
+        logToFile(
+          `sftpTransfer: Error clearing pending operations after cancel error: ${clearError.message}`,
+          "ERROR",
+        );
       }
     }
-    
-    return { success: false, error: `取消传输失败: ${error.message}`, userCancelled: true }; // 添加标志表明这是用户主动取消
+
+    return {
+      success: false,
+      error: `取消传输失败: ${error.message}`,
+      userCancelled: true,
+    }; // 添加标志表明这是用户主动取消
   }
 }
 
@@ -1593,57 +1707,81 @@ async function handleCancelTransfer(event, tabId, transferKey) {
 async function cleanupActiveTransfersForTab(tabId) {
   try {
     if (!tabId) {
-      logToFile("sftpTransfer: Invalid tabId provided to cleanupActiveTransfersForTab", "WARN");
+      logToFile(
+        "sftpTransfer: Invalid tabId provided to cleanupActiveTransfersForTab",
+        "WARN",
+      );
       return { success: false, message: "无效的标签ID", cleanedCount: 0 };
     }
 
-    logToFile(`sftpTransfer: Cleaning up all active transfers for tab ${tabId}`, "INFO");
-    
+    logToFile(
+      `sftpTransfer: Cleaning up all active transfers for tab ${tabId}`,
+      "INFO",
+    );
+
     let cleanedCount = 0;
     const transfersToClean = [];
-    
+
     // 查找所有与该tabId相关的传输
     for (const [key, transfer] of activeTransfers.entries()) {
       if (key.startsWith(`${tabId}-`) || key === tabId) {
         transfersToClean.push(key);
       }
     }
-    
+
     // 逐个清理找到的传输
     for (const transferKey of transfersToClean) {
-      logToFile(`sftpTransfer: Found active transfer ${transferKey} for tab ${tabId}, cleaning up`, "INFO");
+      logToFile(
+        `sftpTransfer: Found active transfer ${transferKey} for tab ${tabId}, cleaning up`,
+        "INFO",
+      );
       const transfer = activeTransfers.get(transferKey);
-      
+
       if (transfer && transfer.sftp) {
         try {
           // 关闭SFTP客户端连接以终止传输
-          await transfer.sftp.end().catch(e => {
-            logToFile(`sftpTransfer: Error ending SFTP client for transfer ${transferKey}: ${e.message}`, "ERROR");
+          await transfer.sftp.end().catch((e) => {
+            logToFile(
+              `sftpTransfer: Error ending SFTP client for transfer ${transferKey}: ${e.message}`,
+              "ERROR",
+            );
           });
-          
-          logToFile(`sftpTransfer: Successfully ended SFTP client for transfer ${transferKey}`, "INFO");
+
+          logToFile(
+            `sftpTransfer: Successfully ended SFTP client for transfer ${transferKey}`,
+            "INFO",
+          );
         } catch (error) {
-          logToFile(`sftpTransfer: Error ending SFTP client for transfer ${transferKey}: ${error.message}`, "ERROR");
+          logToFile(
+            `sftpTransfer: Error ending SFTP client for transfer ${transferKey}: ${error.message}`,
+            "ERROR",
+          );
         }
-        
+
         // 从活跃传输映射中删除
         activeTransfers.delete(transferKey);
         cleanedCount++;
       }
     }
-    
-    logToFile(`sftpTransfer: Cleaned up ${cleanedCount} active transfers for tab ${tabId}`, "INFO");
-    return { 
-      success: true, 
-      message: `已清理${cleanedCount}个活跃传输`, 
-      cleanedCount 
+
+    logToFile(
+      `sftpTransfer: Cleaned up ${cleanedCount} active transfers for tab ${tabId}`,
+      "INFO",
+    );
+    return {
+      success: true,
+      message: `已清理${cleanedCount}个活跃传输`,
+      cleanedCount,
     };
   } catch (error) {
-    logToFile(`sftpTransfer: Error in cleanupActiveTransfersForTab for ${tabId}: ${error.message}`, "ERROR");
-    return { 
-      success: false, 
-      message: `清理传输时发生错误: ${error.message}`, 
-      cleanedCount: 0 
+    logToFile(
+      `sftpTransfer: Error in cleanupActiveTransfersForTab for ${tabId}: ${error.message}`,
+      "ERROR",
+    );
+    return {
+      success: false,
+      message: `清理传输时发生错误: ${error.message}`,
+      cleanedCount: 0,
     };
   }
 }

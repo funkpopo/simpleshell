@@ -163,20 +163,23 @@ async function ensureSftpSession(tabId) {
     // 检查是否已有会话
     if (sftpSessions.has(tabId)) {
       const session = sftpSessions.get(tabId);
-      
+
       // 重置会话超时
       if (session.timeoutId) clearTimeout(session.timeoutId);
       session.timeoutId = setTimeout(() => {
         closeSftpSession(tabId);
       }, SFTP_SESSION_IDLE_TIMEOUT);
-      
+
       // 如果会话存在但不活跃，尝试重新创建
       if (!session.active) {
-        logToFile(`sftpCore: Session for tab ${tabId} exists but inactive, recreating`, "INFO");
+        logToFile(
+          `sftpCore: Session for tab ${tabId} exists but inactive, recreating`,
+          "INFO",
+        );
         await closeSftpSession(tabId);
         return acquireSftpSession(tabId);
       }
-      
+
       // 如果会话存在并活跃，进行简单验证
       try {
         // 简单操作测试会话可用性
@@ -184,7 +187,7 @@ async function ensureSftpSession(tabId) {
           const timeoutId = setTimeout(() => {
             reject(new Error("SFTP health check timeout"));
           }, 2000);
-          
+
           session.sftp.stat(".", (err, stats) => {
             clearTimeout(timeoutId);
             if (err) {
@@ -194,14 +197,17 @@ async function ensureSftpSession(tabId) {
             }
           });
         });
-        
+
         // 会话验证成功
         session.lastChecked = Date.now();
         session.lastUsed = Date.now();
         return session.sftp;
       } catch (healthError) {
         // 会话验证失败，关闭并重新创建
-        logToFile(`sftpCore: Session check failed for tab ${tabId}, recreating: ${healthError.message}`, "WARN");
+        logToFile(
+          `sftpCore: Session check failed for tab ${tabId}, recreating: ${healthError.message}`,
+          "WARN",
+        );
         await closeSftpSession(tabId);
         return acquireSftpSession(tabId);
       }
@@ -222,13 +228,16 @@ async function ensureSftpSession(tabId) {
         }
         if (oldestTabId) await closeSftpSession(oldestTabId);
       }
-      
+
       // 无会话，直接创建新的
       logToFile(`sftpCore: No session for tab ${tabId}, creating new`, "INFO");
       return acquireSftpSession(tabId);
     }
   } catch (error) {
-    logToFile(`sftpCore: Error ensuring SFTP session for tab ${tabId}: ${error.message}`, "ERROR");
+    logToFile(
+      `sftpCore: Error ensuring SFTP session for tab ${tabId}: ${error.message}`,
+      "ERROR",
+    );
     throw error;
   }
 }
@@ -258,8 +267,11 @@ async function getSftpSession(tabId) {
   try {
     return await ensureSftpSession(tabId);
   } catch (error) {
-    logToFile(`sftpCore: Failed to get SFTP session for tab ${tabId}: ${error.message}`, "ERROR");
-    throw error; 
+    logToFile(
+      `sftpCore: Failed to get SFTP session for tab ${tabId}: ${error.message}`,
+      "ERROR",
+    );
+    throw error;
   }
 }
 
@@ -307,7 +319,7 @@ async function acquireSftpSession(tabId) {
             reject(new Error("sftpCore: SSH connection no longer exists"));
             return;
           }
-          
+
           if (currentInfo && currentInfo.ready) {
             resolve();
             return;
@@ -564,7 +576,10 @@ async function processSftpQueue(tabId) {
     const result = await Promise.race([
       nextOp.operation(),
       new Promise((_, rej) =>
-        setTimeout(() => rej(new Error("Operation timed out")), SFTP_OPERATION_TIMEOUT),
+        setTimeout(
+          () => rej(new Error("Operation timed out")),
+          SFTP_OPERATION_TIMEOUT,
+        ),
       ),
     ]);
 
@@ -579,27 +594,27 @@ async function processSftpQueue(tabId) {
     if (nextOp.retries < nextOp.maxRetries && isRetryableError(error)) {
       nextOp.retries++;
       nextOp.inProgress = false;
-      
+
       logToFile(
         `sftpCore: Operation ${nextOp.type} failed on tab ${tabId}, retrying (${nextOp.retries}/${nextOp.maxRetries}): ${error.message}`,
         "WARN",
       );
-      
+
       // 添加重试延迟，防止立即失败的循环
       setTimeout(() => {
         processSftpQueue(tabId); // 再次尝试处理队列
       }, 1000 * nextOp.retries); // 随重试次数增加延迟
-      
+
       return; // 不删除操作，不解析promise
     }
-    
+
     // 超过重试次数或不可重试的错误
     nextOp.reject(error);
     nextOp.innerReject(error);
 
     // Remove failed operation from queue
     queue.splice(nextOpIndex, 1);
-    
+
     logToFile(
       `sftpCore: Operation ${nextOp.type} failed on tab ${tabId} after ${nextOp.retries} retries: ${error.message}`,
       "ERROR",
@@ -623,30 +638,32 @@ function isRetryableError(error) {
     "socket hang up",
     "无法连接到远程主机",
     "SSH连接已关闭",
-    "operation has been aborted"
+    "operation has been aborted",
   ];
-  
+
   if (!error || !error.message) return false;
-  
+
   const message = error.message.toLowerCase();
-  return retryableMessages.some(msg => message.includes(msg.toLowerCase()));
+  return retryableMessages.some((msg) => message.includes(msg.toLowerCase()));
 }
 
 // 新增：清理指定tabId的待处理操作队列
 function clearPendingOperationsForTab(tabId, options = {}) {
   const { userCancelled = false } = options;
-  
+
   if (pendingOperations.has(tabId)) {
     const queue = pendingOperations.get(tabId);
     if (queue && queue.length > 0) {
       logToFile(
-        `sftpCore: Clearing ${queue.length} pending SFTP operations for tab ${tabId} due to ${userCancelled ? 'user cancellation' : 'connection closure'}.`,
+        `sftpCore: Clearing ${queue.length} pending SFTP operations for tab ${tabId} due to ${userCancelled ? "user cancellation" : "connection closure"}.`,
         userCancelled ? "INFO" : "WARN",
       );
       for (const op of queue) {
         if (op.reject && typeof op.reject === "function") {
           // 创建一个带有特殊标记的错误对象
-          const error = new Error(userCancelled ? "用户已取消操作" : "操作已取消：SSH连接已关闭。");
+          const error = new Error(
+            userCancelled ? "用户已取消操作" : "操作已取消：SSH连接已关闭。",
+          );
           error.userCancelled = userCancelled;
           op.reject(error);
         }
@@ -655,7 +672,11 @@ function clearPendingOperationsForTab(tabId, options = {}) {
           for (const subscriber of op.subscribers) {
             if (subscriber.reject && typeof subscriber.reject === "function") {
               // 同样添加特殊标记
-              const error = new Error(userCancelled ? "用户已取消操作" : "操作已取消：SSH连接已关闭。");
+              const error = new Error(
+                userCancelled
+                  ? "用户已取消操作"
+                  : "操作已取消：SSH连接已关闭。",
+              );
               error.userCancelled = userCancelled;
               subscriber.reject(error);
             }

@@ -158,7 +158,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           data.totalBytes || 0,
           data.transferSpeed || 0,
           data.remainingTime || 0,
-          data.transferKey || ""  // 添加transferKey参数
+          data.transferKey || "", // 添加transferKey参数
         );
       }
     };
@@ -191,7 +191,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.remainingTime || 0,
           progressData.currentFileIndex || 0,
           progressData.totalFiles || 0,
-          progressData.transferKey || "" // 添加transferKey参数
+          progressData.transferKey || "", // 添加transferKey参数
         );
       }
       // If operation is complete or cancelled, remove listener
@@ -228,7 +228,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.remainingTime || 0,
           progressData.processedFiles || 0,
           progressData.totalFiles || 0,
-          progressData.transferKey || "" // 添加transferKey参数
+          progressData.transferKey || "", // 添加transferKey参数
         );
       }
       // If operation is complete or cancelled, remove listener
@@ -261,7 +261,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           data.remainingTime || 0,
           data.processedFiles || 0,
           data.totalFiles || 0,
-          data.transferKey || ""  // 添加transferKey参数
+          data.transferKey || "", // 添加transferKey参数
         );
       }
     };

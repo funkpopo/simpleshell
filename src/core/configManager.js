@@ -532,159 +532,266 @@ function saveShortcutCommands(data) {
   }
 }
 
-function initializeMainConfig() {
+function loadLogSettings() {
   if (!mainConfigPath) {
-    if (logToFile)
+    if (logToFile) {
       logToFile(
-        "ConfigManager: Main config path not set. Cannot initialize main config.",
+        "ConfigManager: Main config path not set. Cannot load log settings.",
         "ERROR",
       );
-    return;
+    }
+    return {
+      level: "INFO",
+      maxFileSize: 5 * 1024 * 1024,
+      maxFiles: 5,
+      compressOldLogs: true,
+    };
   }
+
+  if (logToFile) {
+    logToFile(
+      `ConfigManager: Loading log settings from ${mainConfigPath}`,
+      "INFO",
+    );
+  }
+
+  try {
+    if (fs.existsSync(mainConfigPath)) {
+      const data = fs.readFileSync(mainConfigPath, "utf8");
+      const config = JSON.parse(data);
+
+      if (config.logSettings) {
+        // 返回日志设置，确保包含所有默认值
+        return {
+          level: config.logSettings.level || "INFO",
+          maxFileSize: config.logSettings.maxFileSize || 5 * 1024 * 1024,
+          maxFiles: config.logSettings.maxFiles || 5,
+          compressOldLogs:
+            config.logSettings.compressOldLogs !== undefined
+              ? config.logSettings.compressOldLogs
+              : true,
+        };
+      }
+    }
+  } catch (error) {
+    if (logToFile) {
+      logToFile(
+        "ConfigManager: Failed to load log settings - " + error.message,
+        "ERROR",
+      );
+    }
+    console.error("ConfigManager: Failed to load log settings:", error);
+  }
+
+  // 返回默认日志设置
+  return {
+    level: "INFO",
+    maxFileSize: 5 * 1024 * 1024,
+    maxFiles: 5,
+    compressOldLogs: true,
+  };
+}
+
+function saveLogSettings(settings) {
+  if (!mainConfigPath) {
+    if (logToFile) {
+      logToFile(
+        "ConfigManager: Main config path not set. Cannot save log settings.",
+        "ERROR",
+      );
+    }
+    return false;
+  }
+
+  try {
+    let config = {};
+    if (fs.existsSync(mainConfigPath)) {
+      const data = fs.readFileSync(mainConfigPath, "utf8");
+      config = JSON.parse(data);
+    }
+
+    // 确保设置包含所有必要字段
+    config.logSettings = {
+      level: settings.level || "INFO",
+      maxFileSize: settings.maxFileSize || 5 * 1024 * 1024,
+      maxFiles: settings.maxFiles || 5,
+      compressOldLogs:
+        settings.compressOldLogs !== undefined
+          ? settings.compressOldLogs
+          : true,
+    };
+
+    fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
+
+    if (logToFile) {
+      logToFile("ConfigManager: Log settings saved successfully.", "INFO");
+    }
+    return true;
+  } catch (error) {
+    if (logToFile) {
+      logToFile(
+        "ConfigManager: Failed to save log settings - " + error.message,
+        "ERROR",
+      );
+    }
+    console.error("ConfigManager: Failed to save log settings:", error);
+    return false;
+  }
+}
+
+function initializeMainConfig() {
+  if (!mainConfigPath) {
+    console.error(
+      "ConfigManager: initializeMainConfig called before mainConfigPath was set.",
+    );
+    return { success: false, error: "Configuration path not set" };
+  }
+
   if (logToFile)
     logToFile(
-      `ConfigManager: Initializing main config at ${mainConfigPath}`,
+      "ConfigManager: Initializing main config at " + mainConfigPath,
       "INFO",
     );
 
-  const initialAIStructure = {
-    configs: [],
-    current: { apiUrl: "", apiKey: "", model: "", streamEnabled: true },
-  };
-  const initialUIStructure = {
-    language: "zh-CN",
-    fontSize: 14,
-    darkMode: true,
-  };
-  const initialShortcutCommands = { commands: [], categories: [] };
-
   try {
+    // If config doesn't exist, create default
     if (!fs.existsSync(mainConfigPath)) {
-      const initialConfig = {
+      const defaultConfig = {
         connections: [],
-        aiSettings: initialAIStructure,
-        uiSettings: initialUIStructure,
-        shortcutCommands: JSON.stringify(initialShortcutCommands),
+        uiSettings: {
+          language: "zh-CN",
+          fontSize: 14,
+          darkMode: true,
+        },
+        aiSettings: {
+          configs: [],
+          current: null,
+        },
+        logSettings: {
+          level: "INFO",
+          maxFileSize: 5 * 1024 * 1024,
+          maxFiles: 5,
+          compressOldLogs: true,
+        },
+        transferHistory: [],
       };
+
+      // Ensure the directory exists
+      const dir = path.dirname(mainConfigPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
       fs.writeFileSync(
         mainConfigPath,
-        JSON.stringify(initialConfig, null, 2),
+        JSON.stringify(defaultConfig, null, 2),
         "utf8",
       );
       if (logToFile)
-        logToFile("ConfigManager: Initial main config file created.", "INFO");
+        logToFile(
+          "ConfigManager: Created default config at " + mainConfigPath,
+          "INFO",
+        );
     } else {
+      // If config exists, make sure it has all the required sections
       const data = fs.readFileSync(mainConfigPath, "utf8");
-      let config = JSON.parse(data);
-      let configUpdated = false;
+      let config = {};
+      try {
+        config = JSON.parse(data);
+      } catch (parseError) {
+        if (logToFile)
+          logToFile(
+            "ConfigManager: Error parsing existing config, will create backup and new default - " +
+              parseError.message,
+            "ERROR",
+          );
+        // Backup corrupted file
+        const backupPath = mainConfigPath + ".backup." + Date.now();
+        fs.copyFileSync(mainConfigPath, backupPath);
+        // Create new default
+        throw new Error(
+          "Config parsing failed, created backup at " + backupPath,
+        );
+      }
 
+      let changed = false;
+
+      // Ensure connections exists
       if (!config.connections) {
         config.connections = [];
-        configUpdated = true;
-        if (logToFile)
-          logToFile(
-            "ConfigManager: Added missing 'connections' array to main config.",
-            "INFO",
-          );
+        changed = true;
       }
 
-      if (!config.aiSettings) {
-        config.aiSettings = initialAIStructure;
-        configUpdated = true;
-        if (logToFile)
-          logToFile(
-            "ConfigManager: Added missing 'aiSettings' structure to main config.",
-            "INFO",
-          );
-      } else {
-        // Check and migrate old AI settings format
-        const aiSettings = config.aiSettings;
-        if (!aiSettings.configs) {
-          // Old format detection
-          aiSettings.configs = [];
-          if (aiSettings.apiUrl || aiSettings.apiKey || aiSettings.model) {
-            // If old data exists
-            const oldConfig = {
-              id: Date.now().toString(), // Simple unique ID
-              name: "默认配置 (迁移)",
-              apiUrl: aiSettings.apiUrl || "",
-              apiKey: aiSettings.apiKey || "", // Will be encrypted on next saveAISettings call
-              model: aiSettings.model || "",
-              streamEnabled:
-                aiSettings.streamEnabled !== undefined
-                  ? aiSettings.streamEnabled
-                  : true,
-            };
-            aiSettings.configs.push(oldConfig);
-            // Set current to the migrated one if it looks valid
-            if (oldConfig.apiUrl || oldConfig.apiKey) {
-              aiSettings.current = { ...oldConfig };
-            } else if (!aiSettings.current) {
-              aiSettings.current = initialAIStructure.current;
-            }
-          }
-          delete aiSettings.apiUrl;
-          delete aiSettings.apiKey;
-          delete aiSettings.model;
-          delete aiSettings.streamEnabled; // Clean up old top-level fields
-          configUpdated = true;
-          if (logToFile)
-            logToFile(
-              "ConfigManager: Migrated old AI settings format to new structure.",
-              "INFO",
-            );
-        }
-        if (!aiSettings.current) {
-          aiSettings.current = initialAIStructure.current;
-          configUpdated = true;
-        }
-        // Ensure current has all fields
-        const currentFields = ["apiUrl", "apiKey", "model", "streamEnabled"];
-        currentFields.forEach((field) => {
-          if (aiSettings.current[field] === undefined) {
-            aiSettings.current[field] = initialAIStructure.current[field];
-            configUpdated = true;
-          }
-        });
-      }
-
+      // Ensure uiSettings exists
       if (!config.uiSettings) {
-        config.uiSettings = initialUIStructure;
-        configUpdated = true;
-        if (logToFile)
-          logToFile(
-            "ConfigManager: Added missing 'uiSettings' structure to main config.",
-            "INFO",
-          );
+        config.uiSettings = {
+          language: "zh-CN",
+          fontSize: 14,
+          darkMode: true,
+        };
+        changed = true;
       } else {
-        // Ensure all uiSettings fields exist
-        const uiSettings = config.uiSettings;
-        const defaultUISettings = initialUIStructure;
-        if (uiSettings.language === undefined) {
-          uiSettings.language = defaultUISettings.language;
-          configUpdated = true;
+        // Ensure all UI settings fields exist
+        if (!config.uiSettings.language) {
+          config.uiSettings.language = "zh-CN";
+          changed = true;
         }
-        if (uiSettings.fontSize === undefined) {
-          uiSettings.fontSize = defaultUISettings.fontSize;
-          configUpdated = true;
+        if (config.uiSettings.fontSize === undefined) {
+          config.uiSettings.fontSize = 14;
+          changed = true;
         }
-        if (uiSettings.darkMode === undefined) {
-          uiSettings.darkMode = defaultUISettings.darkMode;
-          configUpdated = true;
+        if (config.uiSettings.darkMode === undefined) {
+          config.uiSettings.darkMode = true;
+          changed = true;
         }
       }
 
-      if (!config.shortcutCommands) {
-        config.shortcutCommands = JSON.stringify(initialShortcutCommands);
-        configUpdated = true;
-        if (logToFile)
-          logToFile(
-            "ConfigManager: Added missing 'shortcutCommands' structure to main config.",
-            "INFO",
-          );
+      // Ensure aiSettings exists
+      if (!config.aiSettings) {
+        config.aiSettings = {
+          configs: [],
+          current: null,
+        };
+        changed = true;
+      } else {
+        // Ensure all AI settings fields exist
+        if (!config.aiSettings.configs) {
+          config.aiSettings.configs = [];
+          changed = true;
+        }
       }
 
-      if (configUpdated) {
+      // Ensure logSettings exists
+      if (!config.logSettings) {
+        config.logSettings = {
+          level: "INFO",
+          maxFileSize: 5 * 1024 * 1024,
+          maxFiles: 5,
+          compressOldLogs: true,
+        };
+        changed = true;
+      } else {
+        // Ensure all log settings fields exist
+        if (!config.logSettings.level) {
+          config.logSettings.level = "INFO";
+          changed = true;
+        }
+        if (config.logSettings.maxFileSize === undefined) {
+          config.logSettings.maxFileSize = 5 * 1024 * 1024;
+          changed = true;
+        }
+        if (config.logSettings.maxFiles === undefined) {
+          config.logSettings.maxFiles = 5;
+          changed = true;
+        }
+        if (config.logSettings.compressOldLogs === undefined) {
+          config.logSettings.compressOldLogs = true;
+          changed = true;
+        }
+      }
+
+      // Write updated config if changes were made
+      if (changed) {
         fs.writeFileSync(
           mainConfigPath,
           JSON.stringify(config, null, 2),
@@ -692,48 +799,22 @@ function initializeMainConfig() {
         );
         if (logToFile)
           logToFile(
-            "ConfigManager: Main config file updated for missing fields/structure or AI settings migration.",
+            "ConfigManager: Updated existing config with missing sections at " +
+              mainConfigPath,
             "INFO",
           );
       }
     }
+
+    return { success: true };
   } catch (error) {
     if (logToFile)
       logToFile(
-        "ConfigManager: Error initializing main config - " + error.message,
+        "ConfigManager: Failed to initialize main config - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Error initializing main config:", error);
-    // Attempt to create a new clean config file if parsing failed badly
-    try {
-      const initialConfig = {
-        connections: [],
-        aiSettings: initialAIStructure,
-        uiSettings: initialUIStructure,
-        shortcutCommands: JSON.stringify(initialShortcutCommands),
-      };
-      fs.writeFileSync(
-        mainConfigPath,
-        JSON.stringify(initialConfig, null, 2),
-        "utf8",
-      );
-      if (logToFile)
-        logToFile(
-          "ConfigManager: Recreated main config file due to initialization error.",
-          "WARN",
-        );
-    } catch (recreateError) {
-      if (logToFile)
-        logToFile(
-          "ConfigManager: Failed to recreate main config file after error - " +
-            recreateError.message,
-          "ERROR",
-        );
-      console.error(
-        "ConfigManager: Failed to recreate main config file:",
-        recreateError,
-      );
-    }
+    console.error("ConfigManager: Failed to initialize main config:", error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -748,6 +829,8 @@ module.exports = {
   saveUISettings,
   loadShortcutCommands,
   saveShortcutCommands,
+  loadLogSettings,
+  saveLogSettings,
   // Do not export _getMainConfigPathInternal, _processConnectionsForSave, _processConnectionsForLoad
   // as they are intended to be private helper functions.
 };
