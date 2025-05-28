@@ -515,12 +515,12 @@ function App() {
   React.useEffect(() => {
     // 当主题变化时，添加过渡类
     const transitionTimeout = setTimeout(() => {
-      document.body.classList.remove('theme-transition');
+      document.body.classList.remove("theme-transition");
     }, 300); // 匹配CSS中的过渡时间
 
     return () => {
       clearTimeout(transitionTimeout);
-      document.body.classList.remove('theme-transition');
+      document.body.classList.remove("theme-transition");
     };
   }, [darkMode]);
 
@@ -568,10 +568,10 @@ function App() {
   const toggleTheme = async () => {
     try {
       const newDarkMode = !darkMode;
-      
+
       // 添加CSS类以启用过渡效果
-      document.body.classList.add('theme-transition');
-      
+      document.body.classList.add("theme-transition");
+
       // 设置新的主题模式（延迟一点执行以确保过渡效果可以被触发）
       setTimeout(() => {
         setDarkMode(newDarkMode);

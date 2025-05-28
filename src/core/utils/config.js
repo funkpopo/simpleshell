@@ -3,6 +3,14 @@ const path = require("path");
 const fs = require("fs");
 const { encryptText, decryptText } = require("./crypto");
 
+// 默认日志配置
+const DEFAULT_LOG_CONFIG = {
+  level: "INFO", // 日志级别：DEBUG, INFO, WARN, ERROR
+  maxFileSize: 5 * 1024 * 1024, // 最大文件大小（字节）
+  maxFiles: 5, // 最大历史文件数
+  compressOldLogs: true, // 是否压缩旧日志
+};
+
 function getConfigPath() {
   try {
     // 判断是否为开发环境
@@ -188,6 +196,70 @@ async function saveUISettings(settings) {
   }
 }
 
+// 加载日志设置
+function loadLogSettings() {
+  try {
+    const configPath = getConfigPath();
+
+    // 检查配置文件是否存在
+    if (!fs.existsSync(configPath)) {
+      // 返回默认设置
+      return DEFAULT_LOG_CONFIG;
+    }
+
+    // 读取配置文件
+    const data = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(data);
+
+    // 如果配置中没有logSettings，返回默认值
+    if (!config.logSettings) {
+      return DEFAULT_LOG_CONFIG;
+    }
+
+    // 合并默认配置和用户配置
+    return {
+      ...DEFAULT_LOG_CONFIG,
+      ...config.logSettings,
+    };
+  } catch (error) {
+    console.error("加载日志设置失败:", error);
+    // 出错时返回默认设置
+    return DEFAULT_LOG_CONFIG;
+  }
+}
+
+// 保存日志设置
+function saveLogSettings(settings) {
+  try {
+    const configPath = getConfigPath();
+    let config = {};
+
+    // 检查配置文件是否存在
+    if (fs.existsSync(configPath)) {
+      // 读取现有配置
+      const data = fs.readFileSync(configPath, "utf8");
+      config = JSON.parse(data);
+    }
+
+    // 确保设置包含所有必要字段
+    const completeSettings = {
+      ...DEFAULT_LOG_CONFIG,
+      ...settings,
+    };
+
+    // 更新日志设置
+    config.logSettings = completeSettings;
+
+    // 写入配置文件
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+
+    return { success: true };
+  } catch (error) {
+    console.error("保存日志设置失败:", error);
+    return { success: false, error: error.message };
+  }
+}
+
 const initializeConfig = () => {
   try {
     const configPath = getConfigPath();
@@ -201,6 +273,7 @@ const initializeConfig = () => {
           fontSize: 14,
           darkMode: true,
         },
+        logSettings: DEFAULT_LOG_CONFIG,
       };
 
       // 确保配置目录存在
@@ -214,6 +287,15 @@ const initializeConfig = () => {
         JSON.stringify(defaultConfig, null, 2),
         "utf8",
       );
+    } else {
+      // 如果配置文件已存在，但没有logSettings部分，添加默认日志设置
+      const data = fs.readFileSync(configPath, "utf8");
+      const config = JSON.parse(data);
+
+      if (!config.logSettings) {
+        config.logSettings = DEFAULT_LOG_CONFIG;
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+      }
     }
 
     return { success: true, path: configPath };
@@ -231,5 +313,7 @@ module.exports = {
   saveConnectionsConfig,
   loadUISettings,
   saveUISettings,
+  loadLogSettings,
+  saveLogSettings,
   initializeConfig,
 };

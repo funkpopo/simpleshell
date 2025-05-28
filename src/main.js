@@ -5,7 +5,11 @@ const { spawn } = require("child_process");
 const Client = require("ssh2").Client;
 const os = require("os");
 const { Worker } = require("worker_threads");
-const { logToFile, initLogger } = require("./core/utils/logger");
+const {
+  logToFile,
+  initLogger,
+  updateLogConfig,
+} = require("./core/utils/logger");
 const configManager = require("./core/ConfigManager");
 const sftpCore = require("./modules/sftp/sftpCore");
 const sftpTransfer = require("./modules/sftp/sftpTransfer");
@@ -208,6 +212,10 @@ app.whenReady().then(() => {
   configManager.init(app, { logToFile }, require("./core/utils/crypto"));
   configManager.initializeMainConfig(); // 初始化主配置文件
 
+  // 加载日志配置并更新日志模块
+  const logSettings = configManager.loadLogSettings();
+  updateLogConfig(logSettings);
+
   // Initialize sftpCore module
   sftpCore.init({ logToFile }, (tabId) => childProcesses.get(tabId)); // Pass logger and childProcesses getter
   sftpCore.startSftpHealthCheck(); // Start health check after core init
@@ -261,30 +269,47 @@ app.on("before-quit", () => {
         typeof sftpTransfer.cleanupActiveTransfersForTab === "function"
       ) {
         try {
-          sftpTransfer.cleanupActiveTransfersForTab(id)
-            .then(result => {
+          sftpTransfer
+            .cleanupActiveTransfersForTab(id)
+            .then((result) => {
               if (result.cleanedCount > 0) {
-                logToFile(`Cleaned up ${result.cleanedCount} active SFTP transfers for tab ${id} during app quit`, "INFO");
+                logToFile(
+                  `Cleaned up ${result.cleanedCount} active SFTP transfers for tab ${id} during app quit`,
+                  "INFO",
+                );
               }
             })
-            .catch(err => {
-              logToFile(`Error cleaning up SFTP transfers for tab ${id} during app quit: ${err.message}`, "ERROR");
+            .catch((err) => {
+              logToFile(
+                `Error cleaning up SFTP transfers for tab ${id} during app quit: ${err.message}`,
+                "ERROR",
+              );
             });
 
           // 如果proc.config && proc.config.tabId 与 id 不同，也清理 proc.config.tabId 相关的传输
           if (proc.config && proc.config.tabId && proc.config.tabId !== id) {
-            sftpTransfer.cleanupActiveTransfersForTab(proc.config.tabId)
-              .then(result => {
+            sftpTransfer
+              .cleanupActiveTransfersForTab(proc.config.tabId)
+              .then((result) => {
                 if (result.cleanedCount > 0) {
-                  logToFile(`Cleaned up ${result.cleanedCount} active SFTP transfers for tabId ${proc.config.tabId} during app quit`, "INFO");
+                  logToFile(
+                    `Cleaned up ${result.cleanedCount} active SFTP transfers for tabId ${proc.config.tabId} during app quit`,
+                    "INFO",
+                  );
                 }
               })
-              .catch(err => {
-                logToFile(`Error cleaning up SFTP transfers for tabId ${proc.config.tabId} during app quit: ${err.message}`, "ERROR");
+              .catch((err) => {
+                logToFile(
+                  `Error cleaning up SFTP transfers for tabId ${proc.config.tabId} during app quit: ${err.message}`,
+                  "ERROR",
+                );
               });
           }
         } catch (cleanupError) {
-          logToFile(`Error initiating SFTP transfer cleanup for tab ${id}: ${cleanupError.message}`, "ERROR");
+          logToFile(
+            `Error initiating SFTP transfer cleanup for tab ${id}: ${cleanupError.message}`,
+            "ERROR",
+          );
         }
       }
 
@@ -633,40 +658,62 @@ function setupIPC(mainWindow) {
                   `SSH stream closed for processId: ${processId}`,
                   "INFO",
                 );
-                
+
                 // 添加: 清理与此SSH连接相关的活跃SFTP传输
                 if (
                   sftpTransfer &&
-                  typeof sftpTransfer.cleanupActiveTransfersForTab === "function"
+                  typeof sftpTransfer.cleanupActiveTransfersForTab ===
+                    "function"
                 ) {
                   try {
-                    sftpTransfer.cleanupActiveTransfersForTab(processId)
-                      .then(result => {
+                    sftpTransfer
+                      .cleanupActiveTransfersForTab(processId)
+                      .then((result) => {
                         if (result.cleanedCount > 0) {
-                          logToFile(`Cleaned up ${result.cleanedCount} active SFTP transfers for processId ${processId} on stream close`, "INFO");
+                          logToFile(
+                            `Cleaned up ${result.cleanedCount} active SFTP transfers for processId ${processId} on stream close`,
+                            "INFO",
+                          );
                         }
                       })
-                      .catch(err => {
-                        logToFile(`Error cleaning up SFTP transfers for processId ${processId} on stream close: ${err.message}`, "ERROR");
+                      .catch((err) => {
+                        logToFile(
+                          `Error cleaning up SFTP transfers for processId ${processId} on stream close: ${err.message}`,
+                          "ERROR",
+                        );
                       });
-                    
+
                     // 如果有tabId，也清理tabId相关的传输
-                    if (sshConfig && sshConfig.tabId && sshConfig.tabId !== processId) {
-                      sftpTransfer.cleanupActiveTransfersForTab(sshConfig.tabId)
-                        .then(result => {
+                    if (
+                      sshConfig &&
+                      sshConfig.tabId &&
+                      sshConfig.tabId !== processId
+                    ) {
+                      sftpTransfer
+                        .cleanupActiveTransfersForTab(sshConfig.tabId)
+                        .then((result) => {
                           if (result.cleanedCount > 0) {
-                            logToFile(`Cleaned up ${result.cleanedCount} active SFTP transfers for tabId ${sshConfig.tabId} on stream close`, "INFO");
+                            logToFile(
+                              `Cleaned up ${result.cleanedCount} active SFTP transfers for tabId ${sshConfig.tabId} on stream close`,
+                              "INFO",
+                            );
                           }
                         })
-                        .catch(err => {
-                          logToFile(`Error cleaning up SFTP transfers for tabId ${sshConfig.tabId} on stream close: ${err.message}`, "ERROR");
+                        .catch((err) => {
+                          logToFile(
+                            `Error cleaning up SFTP transfers for tabId ${sshConfig.tabId} on stream close: ${err.message}`,
+                            "ERROR",
+                          );
                         });
                     }
                   } catch (cleanupError) {
-                    logToFile(`Error initiating SFTP transfer cleanup for processId ${processId} on stream close: ${cleanupError.message}`, "ERROR");
+                    logToFile(
+                      `Error initiating SFTP transfer cleanup for processId ${processId} on stream close: ${cleanupError.message}`,
+                      "ERROR",
+                    );
                   }
                 }
-                
+
                 // 清理与此进程相关的待处理SFTP操作
                 if (
                   sftpCore &&
@@ -730,40 +777,61 @@ function setupIPC(mainWindow) {
             "INFO",
           );
           clearTimeout(connectionTimeout); // Clear timeout on successful close
-          
+
           // 添加: 清理与此SSH连接相关的活跃SFTP传输
           if (
             sftpTransfer &&
             typeof sftpTransfer.cleanupActiveTransfersForTab === "function"
           ) {
             try {
-              sftpTransfer.cleanupActiveTransfersForTab(processId)
-                .then(result => {
+              sftpTransfer
+                .cleanupActiveTransfersForTab(processId)
+                .then((result) => {
                   if (result.cleanedCount > 0) {
-                    logToFile(`Cleaned up ${result.cleanedCount} active SFTP transfers for processId ${processId} on SSH close`, "INFO");
+                    logToFile(
+                      `Cleaned up ${result.cleanedCount} active SFTP transfers for processId ${processId} on SSH close`,
+                      "INFO",
+                    );
                   }
                 })
-                .catch(err => {
-                  logToFile(`Error cleaning up SFTP transfers for processId ${processId} on SSH close: ${err.message}`, "ERROR");
+                .catch((err) => {
+                  logToFile(
+                    `Error cleaning up SFTP transfers for processId ${processId} on SSH close: ${err.message}`,
+                    "ERROR",
+                  );
                 });
-              
+
               // 如果有tabId，也清理tabId相关的传输
-              if (sshConfig && sshConfig.tabId && sshConfig.tabId !== processId) {
-                sftpTransfer.cleanupActiveTransfersForTab(sshConfig.tabId)
-                  .then(result => {
+              if (
+                sshConfig &&
+                sshConfig.tabId &&
+                sshConfig.tabId !== processId
+              ) {
+                sftpTransfer
+                  .cleanupActiveTransfersForTab(sshConfig.tabId)
+                  .then((result) => {
                     if (result.cleanedCount > 0) {
-                      logToFile(`Cleaned up ${result.cleanedCount} active SFTP transfers for tabId ${sshConfig.tabId} on SSH close`, "INFO");
+                      logToFile(
+                        `Cleaned up ${result.cleanedCount} active SFTP transfers for tabId ${sshConfig.tabId} on SSH close`,
+                        "INFO",
+                      );
                     }
                   })
-                  .catch(err => {
-                    logToFile(`Error cleaning up SFTP transfers for tabId ${sshConfig.tabId} on SSH close: ${err.message}`, "ERROR");
+                  .catch((err) => {
+                    logToFile(
+                      `Error cleaning up SFTP transfers for tabId ${sshConfig.tabId} on SSH close: ${err.message}`,
+                      "ERROR",
+                    );
                   });
               }
             } catch (cleanupError) {
-              logToFile(`Error initiating SFTP transfer cleanup for processId ${processId} on SSH close: ${cleanupError.message}`, "ERROR");
+              logToFile(
+                `Error initiating SFTP transfer cleanup for processId ${processId} on SSH close: ${cleanupError.message}`,
+                "ERROR",
+              );
             }
           }
-          
+
           // 通常 stream.on('close') 会先处理清理，但作为双重保险或处理未成功建立shell的情况
           if (
             sftpCore &&
@@ -773,7 +841,7 @@ function setupIPC(mainWindow) {
             if (sshConfig && sshConfig.tabId)
               sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
           }
-          
+
           childProcesses.delete(processId);
           if (sshConfig && sshConfig.tabId)
             childProcesses.delete(sshConfig.tabId);
@@ -1625,9 +1693,15 @@ function setupIPC(mainWindow) {
       if (sftpCore && typeof sftpCore.ensureSftpSession === "function") {
         try {
           await sftpCore.ensureSftpSession(tabId);
-          logToFile(`Successfully ensured SFTP session for tab ${tabId} before listing files`, "INFO");
+          logToFile(
+            `Successfully ensured SFTP session for tab ${tabId} before listing files`,
+            "INFO",
+          );
         } catch (sessionError) {
-          logToFile(`Failed to ensure SFTP session for tab ${tabId}: ${sessionError.message}`, "ERROR");
+          logToFile(
+            `Failed to ensure SFTP session for tab ${tabId}: ${sessionError.message}`,
+            "ERROR",
+          );
           // 继续处理，让enqueueSftpOperation中的错误处理机制处理潜在问题
         }
       }
@@ -2060,62 +2134,79 @@ function setupIPC(mainWindow) {
         );
       } catch (error) {
         logToFile(`Error in uploadFile IPC handler: ${error.message}`, "ERROR");
-        
+
         // 检查是否是由用户取消操作引起的错误
-        const isCancelError = 
-          error.message?.includes("cancel") || 
-          error.message?.includes("abort") || 
-          error.message?.includes("用户取消") || 
+        const isCancelError =
+          error.message?.includes("cancel") ||
+          error.message?.includes("abort") ||
+          error.message?.includes("用户取消") ||
           error.message?.includes("user cancelled");
-        
+
         // 如果是取消操作，返回成功状态而非错误
         if (isCancelError) {
-          logToFile(`Upload cancelled by user for tab ${tabId}, suppressing error display`, "INFO");
-          
+          logToFile(
+            `Upload cancelled by user for tab ${tabId}, suppressing error display`,
+            "INFO",
+          );
+
           // 触发目录刷新
           if (sftpCore && typeof sftpCore.enqueueSftpOperation === "function") {
             try {
               // 异步刷新目录，不等待结果
               setTimeout(() => {
-                sftpCore.enqueueSftpOperation(
-                  tabId,
-                  async () => {
-                    try {
-                      logToFile(`Refreshing directory listing for tab ${tabId} after cancel at path: ${targetFolder}`, "INFO");
-                      return { success: true, refreshed: true };
-                    } catch (refreshError) {
-                      logToFile(`Error refreshing directory after cancel: ${refreshError.message}`, "WARN");
-                      return { success: false, error: refreshError.message };
-                    }
-                  },
-                  {
-                    type: "readdir",
-                    path: targetFolder || ".",
-                    priority: "high",
-                    canMerge: true
-                  }
-                ).catch(err => {
-                  logToFile(`Failed to enqueue refresh operation: ${err.message}`, "WARN");
-                });
+                sftpCore
+                  .enqueueSftpOperation(
+                    tabId,
+                    async () => {
+                      try {
+                        logToFile(
+                          `Refreshing directory listing for tab ${tabId} after cancel at path: ${targetFolder}`,
+                          "INFO",
+                        );
+                        return { success: true, refreshed: true };
+                      } catch (refreshError) {
+                        logToFile(
+                          `Error refreshing directory after cancel: ${refreshError.message}`,
+                          "WARN",
+                        );
+                        return { success: false, error: refreshError.message };
+                      }
+                    },
+                    {
+                      type: "readdir",
+                      path: targetFolder || ".",
+                      priority: "high",
+                      canMerge: true,
+                    },
+                  )
+                  .catch((err) => {
+                    logToFile(
+                      `Failed to enqueue refresh operation: ${err.message}`,
+                      "WARN",
+                    );
+                  });
               }, 500); // 延迟500ms执行刷新
             } catch (refreshError) {
-              logToFile(`Error triggering directory refresh: ${refreshError.message}`, "WARN");
+              logToFile(
+                `Error triggering directory refresh: ${refreshError.message}`,
+                "WARN",
+              );
             }
           }
-          
+
           // 返回成功状态，表明这是用户取消操作
-          return { 
-            success: true, 
-            cancelled: true, 
-            userCancelled: true, 
-            message: "用户已取消操作" 
+          return {
+            success: true,
+            cancelled: true,
+            userCancelled: true,
+            message: "用户已取消操作",
           };
         }
-        
+
         // 其他类型的错误，正常返回错误信息
-        return { 
-          success: false, 
-          error: `上传文件失败: ${error.message}` 
+        return {
+          success: false,
+          error: `上传文件失败: ${error.message}`,
         };
       }
     },
@@ -2249,29 +2340,39 @@ function setupIPC(mainWindow) {
         error: "SFTP Cancel Transfer feature not properly initialized.",
       };
     }
-    
+
     try {
       // 调用取消传输处理函数
-      const result = await sftpTransfer.handleCancelTransfer(event, tabId, transferKey);
-      
+      const result = await sftpTransfer.handleCancelTransfer(
+        event,
+        tabId,
+        transferKey,
+      );
+
       // 如果结果表明这是用户主动取消，不作为错误处理
       if (result.userCancelled) {
-        logToFile(`User cancelled transfer ${transferKey} for tab ${tabId}, suppressing error display`, "INFO");
+        logToFile(
+          `User cancelled transfer ${transferKey} for tab ${tabId}, suppressing error display`,
+          "INFO",
+        );
         // 确保success为true，确保前端不会显示错误
-        return { 
-          ...result, 
+        return {
+          ...result,
           success: true,
           suppressError: true,
-          message: result.message || "传输已取消"
+          message: result.message || "传输已取消",
         };
       }
-      
+
       return result;
     } catch (error) {
-      logToFile(`Error in cancelTransfer IPC handler: ${error.message}`, "ERROR");
+      logToFile(
+        `Error in cancelTransfer IPC handler: ${error.message}`,
+        "ERROR",
+      );
       return {
         success: false,
-        error: `处理传输取消请求时出错: ${error.message}`
+        error: `处理传输取消请求时出错: ${error.message}`,
       };
     }
   });
@@ -2496,63 +2597,83 @@ function setupIPC(mainWindow) {
           progressChannel,
         );
       } catch (error) {
-        logToFile(`Error in upload-folder IPC handler: ${error.message}`, "ERROR");
-        
+        logToFile(
+          `Error in upload-folder IPC handler: ${error.message}`,
+          "ERROR",
+        );
+
         // 检查是否是由用户取消操作引起的错误
-        const isCancelError = 
-          error.message?.includes("cancel") || 
-          error.message?.includes("abort") || 
-          error.message?.includes("用户取消") || 
+        const isCancelError =
+          error.message?.includes("cancel") ||
+          error.message?.includes("abort") ||
+          error.message?.includes("用户取消") ||
           error.message?.includes("user cancelled");
-        
+
         // 如果是取消操作，返回成功状态而非错误
         if (isCancelError) {
-          logToFile(`Folder upload cancelled by user for tab ${tabId}, suppressing error display`, "INFO");
-          
+          logToFile(
+            `Folder upload cancelled by user for tab ${tabId}, suppressing error display`,
+            "INFO",
+          );
+
           // 触发目录刷新
           if (sftpCore && typeof sftpCore.enqueueSftpOperation === "function") {
             try {
               // 异步刷新目录，不等待结果
               setTimeout(() => {
-                sftpCore.enqueueSftpOperation(
-                  tabId,
-                  async () => {
-                    try {
-                      logToFile(`Refreshing directory listing for tab ${tabId} after cancel at path: ${targetFolder}`, "INFO");
-                      return { success: true, refreshed: true };
-                    } catch (refreshError) {
-                      logToFile(`Error refreshing directory after cancel: ${refreshError.message}`, "WARN");
-                      return { success: false, error: refreshError.message };
-                    }
-                  },
-                  {
-                    type: "readdir",
-                    path: targetFolder || ".",
-                    priority: "high",
-                    canMerge: true
-                  }
-                ).catch(err => {
-                  logToFile(`Failed to enqueue refresh operation: ${err.message}`, "WARN");
-                });
+                sftpCore
+                  .enqueueSftpOperation(
+                    tabId,
+                    async () => {
+                      try {
+                        logToFile(
+                          `Refreshing directory listing for tab ${tabId} after cancel at path: ${targetFolder}`,
+                          "INFO",
+                        );
+                        return { success: true, refreshed: true };
+                      } catch (refreshError) {
+                        logToFile(
+                          `Error refreshing directory after cancel: ${refreshError.message}`,
+                          "WARN",
+                        );
+                        return { success: false, error: refreshError.message };
+                      }
+                    },
+                    {
+                      type: "readdir",
+                      path: targetFolder || ".",
+                      priority: "high",
+                      canMerge: true,
+                    },
+                  )
+                  .catch((err) => {
+                    logToFile(
+                      `Failed to enqueue refresh operation: ${err.message}`,
+                      "WARN",
+                    );
+                  });
               }, 500); // 延迟500ms执行刷新
             } catch (refreshError) {
-              logToFile(`Error triggering directory refresh: ${refreshError.message}`, "WARN");
+              logToFile(
+                `Error triggering directory refresh: ${refreshError.message}`,
+                "WARN",
+              );
             }
           }
-          
+
           // 返回成功状态，表明这是用户取消操作
-          return { 
-            success: true, 
-            cancelled: true, 
-            userCancelled: true, 
-            message: "用户已取消操作" 
+          return {
+            success: true,
+            cancelled: true,
+            userCancelled: true,
+            message: "用户已取消操作",
           };
         }
-        
+
         // 其他类型的错误，正常返回错误信息
-        return { 
-          success: false, 
-          error: `上传文件夹失败: ${error.message}` 
+        return {
+          success: false,
+          error: `上传文件夹失败: ${error.message}`,
         };
       }
     },
