@@ -186,7 +186,6 @@ class ProcessManager {
   sendInput(processId, input) {
     const processInfo = this.childProcesses.get(processId);
     if (!processInfo) {
-      logToFile(`Process ${processId} not found`, "ERROR");
       return;
     }
 
@@ -213,7 +212,6 @@ class ProcessManager {
   killProcess(processId) {
     const processInfo = this.childProcesses.get(processId);
     if (!processInfo) {
-      logToFile(`Process ${processId} not found`, "ERROR");
       return;
     }
 
@@ -249,7 +247,6 @@ class ProcessManager {
   resizeTerminal(processId, cols, rows) {
     const processInfo = this.childProcesses.get(processId);
     if (!processInfo) {
-      logToFile(`Process ${processId} not found for resize`, "ERROR");
       return;
     }
 

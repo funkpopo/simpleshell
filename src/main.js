@@ -10,7 +10,7 @@ const {
   initLogger,
   updateLogConfig,
 } = require("./core/utils/logger");
-const configManager = require("./core/ConfigManager");
+const configManager = require("./core/configManager");
 const sftpCore = require("./modules/sftp/sftpCore");
 const sftpTransfer = require("./modules/sftp/sftpTransfer");
 const systemInfo = require("./modules/system-info");
@@ -659,6 +659,20 @@ function setupIPC(mainWindow) {
                   "INFO",
                 );
 
+                // 向前端发送SSH断开连接的通知（如果连接已经建立）
+                const procInfo = childProcesses.get(processId);
+                if (
+                  procInfo &&
+                  procInfo.ready &&
+                  mainWindow &&
+                  !mainWindow.isDestroyed()
+                ) {
+                  mainWindow.webContents.send(
+                    `process:output:${processId}`,
+                    `\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`,
+                  );
+                }
+
                 // 添加: 清理与此SSH连接相关的活跃SFTP传输
                 if (
                   sftpTransfer &&
@@ -777,6 +791,14 @@ function setupIPC(mainWindow) {
             "INFO",
           );
           clearTimeout(connectionTimeout); // Clear timeout on successful close
+
+          // 向前端发送SSH断开连接的通知
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(
+              `process:output:${processId}`,
+              `\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`,
+            );
+          }
 
           // 添加: 清理与此SSH连接相关的活跃SFTP传输
           if (
@@ -920,7 +942,6 @@ function setupIPC(mainWindow) {
   ipcMain.handle("terminal:sendToProcess", async (event, processId, data) => {
     const procInfo = childProcesses.get(processId);
     if (!procInfo || !procInfo.process) {
-      console.error(`Process ${processId} not found or invalid`);
       return false;
     }
 
@@ -1282,7 +1303,6 @@ function setupIPC(mainWindow) {
   ipcMain.handle("terminal:resize", async (event, processId, cols, rows) => {
     const procInfo = childProcesses.get(processId);
     if (!procInfo) {
-      console.error(`Process ${processId} not found`);
       return false;
     }
 
