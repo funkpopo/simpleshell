@@ -2733,6 +2733,20 @@ function setupIPC(mainWindow) {
     return await configManager.saveUISettings(settings); // saveUISettings in configManager is not async
   });
 
+  // 日志设置相关API
+  ipcMain.handle("settings:loadLogSettings", async () => {
+    return await configManager.loadLogSettings();
+  });
+
+  ipcMain.handle("settings:saveLogSettings", async (event, settings) => {
+    const saved = await configManager.saveLogSettings(settings);
+    if (saved) {
+      // 更新当前运行的日志系统配置
+      updateLogConfig(settings);
+    }
+    return saved;
+  });
+
   // 获取快捷命令
   ipcMain.handle("get-shortcut-commands", async () => {
     try {
