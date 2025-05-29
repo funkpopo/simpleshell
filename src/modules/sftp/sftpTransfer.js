@@ -6,7 +6,7 @@ const path = require("path");
 const SftpClient = require("ssh2-sftp-client"); // For direct SFTP operations if not going through sftpCore's queue for all parts.
 
 let logToFile = null;
-let sftpCore = null; // To access getSftpSession, enqueueSftpOperation
+let sftpCore = null; // To access getSftpSession, enqueueSftpOperation, calculateDynamicTimeout
 let dialog = null; // Electron dialog
 let shell = null; // Electron shell
 let getChildProcessInfo = null; // To get SSH config from childProcesses map in main.js
@@ -124,6 +124,17 @@ async function handleDownloadFile(event, tabId, remotePath) {
             sshConfig.privateKeyPath && sshConfig.password
               ? sshConfig.password
               : undefined,
+          // 优化连接参数以改善大文件传输稳定性
+          keepaliveInterval: 30000, // 30秒发送一次keepalive
+          keepaliveCountMax: 3, // 最多3次keepalive失败
+          readyTimeout: 60000, // 连接准备超时60秒
+          timeout: 0, // 不设置全局超时，让操作级别的超时来控制
+          algorithms: {
+            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
+            kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha256'],
+            cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm'],
+            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
+          }
         });
 
         const stats = await sftp.stat(remotePath);
@@ -140,6 +151,18 @@ async function handleDownloadFile(event, tabId, remotePath) {
         const speedSmoothingFactor = 0.3; // 速度平滑因子，较低的值使速度变化更平缓
 
         const tempFilePath = filePath + ".part";
+
+        // 根据文件大小动态调整传输参数
+        let chunkSize = 32768; // 默认32KB
+        let concurrency = 8; // 默认并发数
+        
+        if (totalBytes > 100 * 1024 * 1024) { // 大于100MB的文件
+          chunkSize = 131072; // 128KB分块
+          concurrency = 8; // 预留并发调整空间参数
+        } else if (totalBytes > 10 * 1024 * 1024) { // 大于10MB的文件
+          chunkSize = 65536; // 64KB分块
+          concurrency = 8; // 预留并发调整空间参数
+        }
 
         await sftp.fastGet(remotePath, tempFilePath, {
           step: (transferredChunkBytes, chunk, totalTransferred) => {
@@ -191,8 +214,8 @@ async function handleDownloadFile(event, tabId, remotePath) {
               lastProgressUpdate = now;
             }
           },
-          concurrency: 16,
-          chunkSize: 32768,
+          concurrency: concurrency,
+          chunkSize: chunkSize,
         });
 
         fs.renameSync(tempFilePath, filePath);
@@ -337,6 +360,17 @@ async function handleUploadFile(
             sshConfig.privateKeyPath && sshConfig.password
               ? sshConfig.password
               : undefined,
+          // 优化连接参数以改善大文件传输稳定性
+          keepaliveInterval: 30000, // 30秒发送一次keepalive
+          keepaliveCountMax: 3, // 最多3次keepalive失败
+          readyTimeout: 60000, // 连接准备超时60秒
+          timeout: 0, // 不设置全局超时，让操作级别的超时来控制
+          algorithms: {
+            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
+            kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha256'],
+            cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm'],
+            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
+          }
         });
 
         // Ensure target directory exists
@@ -419,6 +453,18 @@ async function handleUploadFile(
           }
 
           try {
+            // 根据文件大小动态调整传输参数
+            let chunkSize = 32768; // 默认32KB
+            let concurrency = 16; // 默认并发数
+            
+            if (currentFileSize > 100 * 1024 * 1024) { // 大于100MB的文件
+              chunkSize = 131072; // 128KB分块
+              concurrency = 8; // 降低并发数以减少连接压力
+            } else if (currentFileSize > 10 * 1024 * 1024) { // 大于10MB的文件
+              chunkSize = 65536; // 64KB分块
+              concurrency = 12;
+            }
+
             await sftp.fastPut(localFilePath, remoteFilePath, {
               step: (totalTransferredForFile) => {
                 fileTransferredBytes = totalTransferredForFile;
@@ -486,8 +532,8 @@ async function handleUploadFile(
                   lastProgressUpdateTime = now;
                 }
               },
-              concurrency: 16, // As per previous settings
-              chunkSize: 32768, // As per previous settings
+              concurrency: concurrency, // 动态调整的并发数
+              chunkSize: chunkSize, // 动态调整的分块大小
             });
             overallUploadedBytes += currentFileSize;
             filesUploadedCount++;
@@ -803,6 +849,17 @@ async function handleUploadFolder(
             sshConfig.privateKeyPath && sshConfig.password
               ? sshConfig.password
               : undefined,
+          // 优化连接参数以改善大文件传输稳定性
+          keepaliveInterval: 30000, // 30秒发送一次keepalive
+          keepaliveCountMax: 3, // 最多3次keepalive失败
+          readyTimeout: 60000, // 连接准备超时60秒
+          timeout: 0, // 不设置全局超时，让操作级别的超时来控制
+          algorithms: {
+            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
+            kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha256'],
+            cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm'],
+            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
+          }
         });
         logToFile(
           `sftpTransfer: SFTP connected for folder upload to ${sshConfig.host}. TransferKey: ${transferKey}`,
@@ -960,9 +1017,21 @@ async function handleUploadFolder(
           };
           reportProgress(); // Initial progress for the file
 
+          // 根据文件大小动态调整传输参数
+          let chunkSize = 32768; // 默认32KB
+          let concurrency = 8; // 默认并发数
+          
+          if (file.size > 100 * 1024 * 1024) { // 大于100MB的文件
+            chunkSize = 131072; // 128KB分块
+            concurrency = 8; // 预留并发调整空间参数
+          } else if (file.size > 10 * 1024 * 1024) { // 大于10MB的文件
+            chunkSize = 65536; // 64KB分块
+            concurrency = 8; // 预留并发调整空间参数
+          }
+
           await sftp.fastPut(file.localPath, remoteFilePath, {
-            concurrency: 16,
-            chunkSize: 32768,
+            concurrency: concurrency,
+            chunkSize: chunkSize,
             step: (transferredChunkBytes, chunk, totalForFile) => {
               fileTransferredBytes = totalForFile;
               reportProgress();
@@ -1206,6 +1275,17 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
             sshConfig.privateKeyPath && sshConfig.password
               ? sshConfig.password
               : undefined,
+          // 优化连接参数以改善大文件传输稳定性
+          keepaliveInterval: 30000, // 30秒发送一次keepalive
+          keepaliveCountMax: 3, // 最多3次keepalive失败
+          readyTimeout: 60000, // 连接准备超时60秒
+          timeout: 0, // 不设置全局超时，让操作级别的超时来控制
+          algorithms: {
+            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
+            kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha256'],
+            cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm'],
+            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
+          }
         });
         logToFile(
           `sftpTransfer: SFTP connected for folder download from ${sshConfig.host}. TransferKey: ${transferKey}`,

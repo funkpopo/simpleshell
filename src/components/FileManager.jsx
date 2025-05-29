@@ -1970,31 +1970,14 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           </IconButton>
         </Tooltip>
 
-        {/* 添加下载按钮 */}
-        <Tooltip
-          title={
-            selectedFile?.isDirectory
-              ? "下载文件夹"
-              : selectedFile
-                ? "下载文件"
-                : "下载"
-          }
-        >
-          <span>
-            <IconButton
-              size="small"
-              onClick={
-                selectedFile?.isDirectory
-                  ? handleDownloadFolder
-                  : selectedFile
-                    ? handleDownload
-                    : null
-              }
-              disabled={!selectedFile}
-            >
-              <DownloadIcon fontSize="small" />
-            </IconButton>
-          </span>
+        {/* 添加上传按钮 */}
+        <Tooltip title="上传文件到当前文件夹">
+          <IconButton
+            size="small"
+            onClick={handleUploadFile}
+          >
+            <UploadFileIcon fontSize="small" />
+          </IconButton>
         </Tooltip>
       </Box>
 

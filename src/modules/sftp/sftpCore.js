@@ -14,9 +14,31 @@ const SFTP_SESSION_IDLE_TIMEOUT = 120000; // 空闲超时时间（毫秒）
 const MAX_SFTP_SESSIONS_PER_TAB = 1; // 每个标签页的最大会话数量
 const MAX_TOTAL_SFTP_SESSIONS = 50; // 总的最大会话数量
 const SFTP_HEALTH_CHECK_INTERVAL = 90000; // 健康检查间隔（毫秒）
-const SFTP_OPERATION_TIMEOUT = 20000; // 操作超时时间（毫秒）
+const SFTP_OPERATION_TIMEOUT = 60000; // 操作超时时间（毫秒），增加到60秒
+const SFTP_LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 大文件阈值（100MB）
+const SFTP_LARGE_FILE_TIMEOUT = 3000000; // 大文件传输超时时间（50分钟）
 
 let sftpHealthCheckTimer = null;
+
+// 动态计算超时时间的函数
+function calculateDynamicTimeout(fileSize, baseTimeout = SFTP_OPERATION_TIMEOUT) {
+  if (!fileSize || fileSize <= 0) {
+    return baseTimeout;
+  }
+  
+  // 如果是大文件，使用更长的超时时间
+  if (fileSize >= SFTP_LARGE_FILE_THRESHOLD) {
+    return SFTP_LARGE_FILE_TIMEOUT;
+  }
+  
+  // 对于中等大小文件，按文件大小动态调整超时时间
+  // 假设传输速度为 1MB/s，至少给 3 倍的缓冲时间
+  const estimatedTransferTime = (fileSize / (1024 * 1024)) * 1000; // 毫秒
+  const dynamicTimeout = Math.max(baseTimeout, estimatedTransferTime * 3);
+  
+  // 限制最大超时时间不超过大文件超时时间
+  return Math.min(dynamicTimeout, SFTP_LARGE_FILE_TIMEOUT);
+}
 
 function init(logger, getChildProcessInfoFunc) {
   if (!logger || !logger.logToFile) {
@@ -572,13 +594,32 @@ async function processSftpQueue(tabId) {
   nextOp.startTime = Date.now();
 
   try {
+    // 计算动态超时时间
+    let timeoutMs = SFTP_OPERATION_TIMEOUT;
+    
+    // 检查操作类型和路径，尝试估算文件大小以动态调整超时
+    if (nextOp.type === 'upload' || nextOp.type === 'download' || 
+        nextOp.type === 'upload-multifile' || nextOp.type === 'upload-folder' || 
+        nextOp.type === 'download-folder') {
+      
+      // 对于传输操作，使用较长的超时时间
+      if (nextOp.type === 'upload-multifile' || nextOp.type === 'upload-folder' || 
+          nextOp.type === 'download-folder') {
+        // 文件夹或多文件操作，使用最长超时
+        timeoutMs = SFTP_LARGE_FILE_TIMEOUT;
+      } else {
+        // 单文件操作，使用大文件超时
+        timeoutMs = SFTP_LARGE_FILE_TIMEOUT;
+      }
+    }
+
     // Execute the operation
     const result = await Promise.race([
       nextOp.operation(),
       new Promise((_, rej) =>
         setTimeout(
           () => rej(new Error("Operation timed out")),
-          SFTP_OPERATION_TIMEOUT,
+          timeoutMs,
         ),
       ),
     ]);
@@ -707,6 +748,7 @@ module.exports = {
   enqueueSftpOperation,
   clearPendingOperationsForTab, // 导出新函数
   ensureSftpSession, // 导出新方法
+  calculateDynamicTimeout, // 导出动态超时计算函数
   // processSftpQueue is internal, not exported
   // checkSftpSessionsHealth and checkSessionAlive are also internal after startSftpHealthCheck is called
 };
