@@ -28,6 +28,9 @@ import StopIcon from "@mui/icons-material/Stop";
 import ListItemButton from "@mui/material/ListItemButton";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Switch from "@mui/material/Switch";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 
 // 消息样式
 const MessageItem = styled(ListItem)(({ theme, isuser }) => ({
@@ -156,6 +159,7 @@ function AIAssistant({ open, onClose }) {
       apiKey: "",
       model: "",
       streamEnabled: true, // 默认启用流式响应
+      maxTokens: 4096, // 添加 maxTokens 字段，默认 4096
     },
     configs: [],
   });
@@ -168,6 +172,7 @@ function AIAssistant({ open, onClose }) {
     apiKey: "",
     model: "",
     streamEnabled: false,
+    maxTokens: 4096, // 添加 maxTokens 字段，默认 4096
   });
 
   // 设置是否已保存的状态
@@ -515,6 +520,7 @@ function AIAssistant({ open, onClose }) {
         model: apiConfig.model,
         messages: messages,
         stream: apiConfig.streamEnabled, // 使用设置中的流式响应标志
+        max_tokens: apiConfig.maxTokens, // 添加 max_tokens
       };
 
       // 如果启用流式响应
@@ -589,6 +595,10 @@ function AIAssistant({ open, onClose }) {
       // 将 signal 添加到请求选项中
       const requestWithSignal = {
         ...requestOptions,
+        body: JSON.stringify({
+          ...JSON.parse(requestOptions.body),
+          max_tokens: apiSettings.current.maxTokens,
+        }),
         signal: abortControllerRef.current.signal,
       };
 
@@ -675,7 +685,15 @@ function AIAssistant({ open, onClose }) {
   // 处理标准响应
   const handleStandardResponse = async (apiUrl, requestOptions) => {
     try {
-      const response = await fetch(apiUrl, requestOptions);
+      const requestOptionsWithMaxTokens = { // 添加 max_tokens 到请求选项
+        ...requestOptions,
+        body: JSON.stringify({ // 重新构造 body
+          ...JSON.parse(requestOptions.body),
+          max_tokens: apiSettings.current.maxTokens,
+        }),
+      };
+
+      const response = await fetch(apiUrl, requestOptionsWithMaxTokens);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -879,6 +897,7 @@ function AIAssistant({ open, onClose }) {
         model: currentEditConfig.model,
         messages: messages,
         stream: false, // 测试时使用非流式请求
+        max_tokens: currentEditConfig.maxTokens, // 添加 max_tokens
       };
 
       // 使用新的API请求方法
@@ -943,14 +962,15 @@ function AIAssistant({ open, onClose }) {
       apiKey: "",
       model: "",
       streamEnabled: false,
+      maxTokens: 4096, // 添加 maxTokens 字段，默认 4096
     });
-    setInfoMessage("请在右侧表单中填写新配置的详细信息");
+    setInfoMessage("请填写新配置的详细信息");
   };
 
   // 编辑现有配置
   const handleEditConfig = (config) => {
     setCurrentEditConfig({ ...config });
-    setInfoMessage("请在右侧表单中编辑配置");
+    setInfoMessage("请编辑配置");
     setSettingsSaved(false);
     setTestResult(null);
     setError(null);
@@ -1477,7 +1497,15 @@ function AIAssistant({ open, onClose }) {
                                 wordBreak: "break-word",
                               }}
                             >
-                              {message.text}
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                rehypePlugins={[rehypeHighlight]}
+                                components={{
+                                  a: ({node, ...props}) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+                                }}
+                              >
+                                {message.text}
+                              </ReactMarkdown>
                             </Typography>
                           </MessageContent>
                         </Box>
@@ -1749,7 +1777,7 @@ function AIAssistant({ open, onClose }) {
                       type="password"
                       value={currentEditConfig.apiKey}
                       onChange={handleEditConfigChange}
-                      helperText="您的API密钥将被加密存储"
+                      helperText="API密钥将被加密存储"
                       size="small"
                     />
 
