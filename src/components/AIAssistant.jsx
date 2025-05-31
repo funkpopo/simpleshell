@@ -59,6 +59,27 @@ const MessageContent = styled(Paper)(({ theme, isuser }) => ({
   wordBreak: "break-word",
   whiteSpace: "pre-wrap",
   display: "inline-block",
+  overflow: "hidden",
+  overflowWrap: "break-word",
+  hyphens: "auto",
+  // 为代码块和长文本提供更好的处理
+  "& pre": {
+    overflow: "auto",
+    maxWidth: "100%",
+    whiteSpace: "pre",
+    wordWrap: "normal",
+  },
+  "& code": {
+    wordBreak: "break-all",
+    whiteSpace: "pre-wrap",
+  },
+  // 确保表格不会溢出
+  "& table": {
+    maxWidth: "100%",
+    overflow: "auto",
+    display: "block",
+    whiteSpace: "nowrap",
+  },
 }));
 
 // 闪烁光标样式
@@ -486,6 +507,7 @@ function AIAssistant({ open, onClose }) {
           model: apiConfig.model,
           messages: messages,
           stream: apiConfig.streamEnabled, // 使用设置中的流式响应标志
+          max_tokens: apiConfig.maxTokens, // 添加 max_tokens 参数
         }),
       };
 
@@ -979,9 +1001,21 @@ function AIAssistant({ open, onClose }) {
   // 处理当前编辑配置的输入变更
   const handleEditConfigChange = (e) => {
     const { name, value, checked } = e.target;
+    let processedValue;
+    
+    if (name === "streamEnabled") {
+      processedValue = checked;
+    } else if (name === "maxTokens") {
+      // 处理maxTokens字段，确保是数字类型
+      const numValue = parseInt(value, 10);
+      processedValue = isNaN(numValue) ? 4096 : Math.max(1, numValue);
+    } else {
+      processedValue = value;
+    }
+    
     setCurrentEditConfig((prev) => ({
       ...prev,
-      [name]: name === "streamEnabled" ? checked : value,
+      [name]: processedValue,
     }));
     // 如果设置被修改，重置保存状态
     setSettingsSaved(false);
@@ -1491,17 +1525,39 @@ function AIAssistant({ open, onClose }) {
                             }}
                           >
                             <Typography
+                              component="div"
                               variant="body2"
                               sx={{
                                 whiteSpace: "pre-wrap",
                                 wordBreak: "break-word",
                               }}
+                              className="ai-message-content"
                             >
                               <ReactMarkdown
                                 remarkPlugins={[remarkGfm]}
                                 rehypePlugins={[rehypeHighlight]}
                                 components={{
                                   a: ({node, ...props}) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+                                  code: ({node, inline, className, children, ...props}) => {
+                                    if (inline) {
+                                      return <code className={className} {...props}>{children}</code>;
+                                    }
+                                    return (
+                                      <code className={`${className} hljs`} {...props}>
+                                        {children}
+                                      </code>
+                                    );
+                                  },
+                                  pre: ({node, children, ...props}) => (
+                                    <pre {...props} style={{ margin: '0.5em 0', overflow: 'auto' }}>
+                                      {children}
+                                    </pre>
+                                  ),
+                                  table: ({node, children, ...props}) => (
+                                    <div style={{ overflow: 'auto', maxWidth: '100%' }}>
+                                      <table {...props}>{children}</table>
+                                    </div>
+                                  ),
                                 }}
                               >
                                 {message.text}
@@ -1790,6 +1846,21 @@ function AIAssistant({ open, onClose }) {
                       placeholder="gpt-3.5-turbo"
                       helperText="例如: gpt-3.5-turbo, gpt-4, gpt-4-turbo"
                       size="small"
+                    />
+
+                    <TextField
+                      fullWidth
+                      label="最大令牌数 (max_tokens)"
+                      name="maxTokens"
+                      type="number"
+                      value={currentEditConfig.maxTokens}
+                      onChange={handleEditConfigChange}
+                      placeholder="4096"
+                      size="small"
+                      inputProps={{
+                        min: 1,
+                        step: 1
+                      }}
                     />
 
                     <FormControlLabel
