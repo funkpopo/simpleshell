@@ -517,31 +517,29 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
   // 处理上传文件到当前目录
   const handleUploadFile = async () => {
     handleContextMenuClose();
-    handleBlankContextMenuClose(); // 同时关闭空白区域菜单
+    handleBlankContextMenuClose();
 
     if (!sshConnection) return;
 
-    // 重置取消状态
     setTransferCancelled(false);
+    
+    // 保存当前路径状态
+    const savedCurrentPath = currentPath;
+    const savedSelectedFile = selectedFile;
 
     try {
-      // 构建目标路径，确保路径格式正确
       let targetPath;
-
-      // 只有当 selectedFile 不为 null 且为文件夹时才上传到选中的文件夹
-      // 这确保了从空白区域菜单调用时使用当前目录
-      if (selectedFile && selectedFile.isDirectory) {
-        // 上传到选中的文件夹
-        if (currentPath === "/") {
-          targetPath = "/" + selectedFile.name;
-        } else if (currentPath === "~") {
-          targetPath = "~/" + selectedFile.name;
+      // 使用保存的状态而非实时状态
+      if (savedSelectedFile && savedSelectedFile.isDirectory) {
+        if (savedCurrentPath === "/") {
+          targetPath = "/" + savedSelectedFile.name;
+        } else if (savedCurrentPath === "~") {
+          targetPath = "~/" + savedSelectedFile.name;
         } else {
-          targetPath = currentPath + "/" + selectedFile.name;
+          targetPath = savedCurrentPath + "/" + savedSelectedFile.name;
         }
       } else {
-        // 上传到当前文件夹
-        targetPath = currentPath;
+        targetPath = savedCurrentPath;
       }
 
       if (window.terminalAPI && window.terminalAPI.uploadFile) {
@@ -590,14 +588,19 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
               remainingTime: validRemainingTime,
               currentFileIndex: currentFileIndex || 0,
               totalFiles: totalFiles || 0,
-              transferKey: transferKey || "", // 添加transferKey到状态
+              transferKey: transferKey || "",
             });
           },
         );
 
-        if (result.success) {
+        if (result?.success) {
           // 上传完成后清除进度状态
           setTimeout(() => setTransferProgress(null), 1500);
+
+          // 切换到上传的目标路径
+          setCurrentPath(targetPath);
+          setPathInput(targetPath);
+          loadDirectory(targetPath, 0, true); // 强制刷新目标目录
 
           // 如果有警告信息（部分文件上传失败），显示给用户
           if (result.partialSuccess && result.warning) {
@@ -652,31 +655,29 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
   // 处理上传文件夹到当前目录
   const handleUploadFolder = async () => {
     handleContextMenuClose();
-    handleBlankContextMenuClose(); // 同时关闭空白区域菜单
+    handleBlankContextMenuClose();
 
     if (!sshConnection) return;
 
-    // 重置取消状态
     setTransferCancelled(false);
+    
+    // 保存当前路径状态
+    const savedCurrentPath = currentPath;
+    const savedSelectedFile = selectedFile;
 
     try {
-      // 构建目标路径，确保路径格式正确
       let targetPath;
-
-      // 只有当 selectedFile 不为 null 且为文件夹时才上传到选中的文件夹
-      // 这确保了从空白区域菜单调用时使用当前目录
-      if (selectedFile && selectedFile.isDirectory) {
-        // 上传到选中的文件夹
-        if (currentPath === "/") {
-          targetPath = "/" + selectedFile.name;
-        } else if (currentPath === "~") {
-          targetPath = "~/" + selectedFile.name;
+      // 使用保存的状态而非实时状态
+      if (savedSelectedFile && savedSelectedFile.isDirectory) {
+        if (savedCurrentPath === "/") {
+          targetPath = "/" + savedSelectedFile.name;
+        } else if (savedCurrentPath === "~") {
+          targetPath = "~/" + savedSelectedFile.name;
         } else {
-          targetPath = currentPath + "/" + selectedFile.name;
+          targetPath = savedCurrentPath + "/" + savedSelectedFile.name;
         }
       } else {
-        // 上传到当前文件夹
-        targetPath = currentPath;
+        targetPath = savedCurrentPath;
       }
 
       if (window.terminalAPI && window.terminalAPI.uploadFolder) {
@@ -735,9 +736,14 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           },
         );
 
-        if (result.success) {
+        if (result?.success) {
           // 上传完成后清除进度状态
           setTimeout(() => setTransferProgress(null), 1500);
+
+          // 切换到上传的目标路径
+          setCurrentPath(targetPath);
+          setPathInput(targetPath);
+          loadDirectory(targetPath, 0, true); // 强制刷新目标目录
 
           // 如果有警告信息（部分文件上传失败），显示给用户
           if (result.partialSuccess && result.warning) {
@@ -1353,22 +1359,26 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     // 重置取消状态
     setTransferCancelled(false);
 
+    // 保存当前路径状态
+    const savedCurrentPath = currentPath;
+    const savedSelectedFile = selectedFile;
+
     try {
       const fullPath =
-        currentPath === "/"
-          ? "/" + selectedFile.name
-          : currentPath
-            ? currentPath + "/" + selectedFile.name
-            : selectedFile.name;
+        savedCurrentPath === "/"
+          ? "/" + savedSelectedFile.name
+          : savedCurrentPath
+            ? savedCurrentPath + "/" + savedSelectedFile.name
+            : savedSelectedFile.name;
 
       if (window.terminalAPI && window.terminalAPI.downloadFile) {
         // 设置初始传输进度状态
         setTransferProgress({
           type: "download",
           progress: 0,
-          fileName: selectedFile.name,
+          fileName: savedSelectedFile.name,
           transferredBytes: 0,
-          totalBytes: selectedFile.size || 0,
+          totalBytes: savedSelectedFile.size || 0,
           transferSpeed: 0,
           remainingTime: 0,
         });
@@ -1465,8 +1475,11 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
       return;
     }
 
-    if (!selectedFile.isDirectory) {
-      // 如果选中的不是文件夹，而是文件，则使用文件下载函数
+    // 保存当前路径状态
+    const savedCurrentPath = currentPath;
+    const savedSelectedFile = selectedFile;
+
+    if (!savedSelectedFile.isDirectory) {
       return handleDownload();
     }
 
@@ -1474,16 +1487,14 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     setTransferCancelled(false);
 
     try {
-      showNotification(`正在准备下载文件夹 ${selectedFile.name}...`, "info");
-
       // 构建完整路径，确保处理各种路径情况
       const fullPath = (() => {
-        if (currentPath === "/") {
-          return "/" + selectedFile.name;
-        } else if (currentPath === "~") {
-          return "~/" + selectedFile.name;
+        if (savedCurrentPath === "/") {
+          return "/" + savedSelectedFile.name;
+        } else if (savedCurrentPath === "~") {
+          return "~/" + savedSelectedFile.name;
         } else {
-          return currentPath + "/" + selectedFile.name;
+          return savedCurrentPath + "/" + savedSelectedFile.name;
         }
       })();
 
@@ -1492,7 +1503,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         setTransferProgress({
           type: "download-folder",
           progress: 0,
-          fileName: selectedFile.name,
+          fileName: savedSelectedFile.name,
           currentFile: "",
           transferredBytes: 0,
           totalBytes: 0,
@@ -1521,7 +1532,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
               setTransferProgress({
                 type: "download-folder",
                 progress,
-                fileName: selectedFile.name,
+                fileName: savedSelectedFile.name,
                 currentFile,
                 transferredBytes,
                 totalBytes,
@@ -1551,7 +1562,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
                   if (exists) {
                     // 显示包含下载路径的成功消息
                     showNotification(
-                      `文件夹 ${selectedFile.name} 已下载到: ${normalizedPath}`,
+                      `文件夹 ${savedSelectedFile.name} 已下载到: ${normalizedPath}`,
                       "success",
                       15000, // 显示更长时间
                       true, // 提供打开选项
@@ -1590,7 +1601,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
                 .catch(() => {
                   // 如果无法验证，仍然显示成功消息
                   showNotification(
-                    `文件夹 ${selectedFile.name} 下载已完成，但无法验证路径: ${normalizedPath}`,
+                    `文件夹 ${savedSelectedFile.name} 下载已完成，但无法验证路径: ${normalizedPath}`,
                     "success",
                     10000,
                   );
@@ -1598,7 +1609,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
             } else {
               // 基本成功通知
               showNotification(
-                `文件夹 ${selectedFile.name} 下载成功`,
+                `文件夹 ${savedSelectedFile.name} 下载成功`,
                 "success",
               );
             }
