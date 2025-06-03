@@ -6,6 +6,11 @@ import { SearchAddon } from "@xterm/addon-search";
 import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
 import "@xterm/xterm/css/xterm.css";
+import {
+  debounce,
+  createResizeObserver,
+  isElementVisible
+} from "../core/utils/performance.js";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -147,11 +152,14 @@ const terminalCache = {};
 const fitAddonCache = {};
 const processCache = {};
 
-// 添加一个辅助函数，用于强制重新计算和同步终端大小的辅助函数
-const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
+// 优化的终端尺寸调整函数，使用防抖机制减少频繁调用
+const forceResizeTerminal = debounce((term, container, processId, tabId, fitAddon) => {
   if (!term || !container || !fitAddon) return;
 
   try {
+    // 检查元素可见性，避免在隐藏状态下进行无效计算
+    if (!isElementVisible(container)) return;
+
     // 强制重新计算DOM大小
     const currentWidth = container.clientWidth;
     const currentHeight = container.clientHeight;
@@ -168,22 +176,6 @@ const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
     // 适配终端大小
     fitAddon.fit();
 
-    // 二次确认适配，有时首次fit可能不会完全生效
-    setTimeout(() => {
-      if (term && term.element && container) {
-        // 再次检查尺寸是否一致
-        const elemWidth = term.element.clientWidth;
-        const elemHeight = term.element.clientHeight;
-
-        if (
-          Math.abs(elemWidth - currentWidth) > 5 ||
-          Math.abs(elemHeight - currentHeight) > 5
-        ) {
-          fitAddon.fit();
-        }
-      }
-    }, 10);
-
     // 获取当前终端的大小
     const cols = Math.max(Math.floor(term.cols || 120), 1);
     const rows = Math.max(Math.floor(term.rows || 30), 1);
@@ -194,8 +186,10 @@ const forceResizeTerminal = (term, container, processId, tabId, fitAddon) => {
         .resizeTerminal(processId || tabId, cols, rows)
         .catch((err) => console.error("终端大小强制调整失败:", err));
     }
-  } catch (error) {}
-};
+  } catch (error) {
+    console.error("终端尺寸调整失败:", error);
+  }
+}, 100); // 100ms防抖延迟
 
 // 添加辅助函数，用于处理多行粘贴文本，防止注释符号和缩进异常
 const processMultilineInput = (text, options = {}) => {
@@ -1089,8 +1083,8 @@ const WebTerminal = ({
           // 适配终端大小
           fitAddon.fit();
 
-          // 二次检查适配结果
-          setTimeout(() => {
+          // 使用requestAnimationFrame进行二次检查，确保在下一帧进行适配检查
+          requestAnimationFrame(() => {
             if (terminalRef.current && term && term.element) {
               const container = terminalRef.current;
               const currentWidth = container.clientWidth;
@@ -1105,7 +1099,7 @@ const WebTerminal = ({
                 fitAddon.fit();
               }
             }
-          }, 10);
+          });
 
           // 记录调整后的大小信息
           if (terminalRef.current) {
@@ -1155,16 +1149,32 @@ const WebTerminal = ({
       // 立即调整大小
       handleResize();
 
-      // 添加resize事件监听
+      // 使用ResizeObserver替代window resize事件监听，提供更精确的尺寸变化检测
+      const resizeObserver = createResizeObserver(
+        terminalRef.current,
+        ({ width, height }) => {
+          // 只有当尺寸确实发生变化时才触发resize
+          if (termRef.current && termRef.current.element) {
+            const currentWidth = termRef.current.element.clientWidth;
+            const currentHeight = termRef.current.element.clientHeight;
+
+            if (Math.abs(width - currentWidth) > 5 || Math.abs(height - currentHeight) > 5) {
+              handleResize();
+            }
+          }
+        },
+        { debounceTime: 100 } // 100ms防抖
+      );
+
+      // 保留window resize事件作为备用
       window.addEventListener("resize", handleResize);
 
-      // 添加标签页激活/可见性事件处理
-      const handleVisibilityChange = () => {
-        if (!document.hidden && termRef.current) {
-          // 页面可见时调整大小
-          setTimeout(handleResize, 50);
+      // 优化的可见性变化处理，使用防抖减少频繁调用
+      const handleVisibilityChange = debounce(() => {
+        if (!document.hidden && termRef.current && isElementVisible(terminalRef.current)) {
+          handleResize();
         }
-      };
+      }, 50);
 
       document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -1419,6 +1429,7 @@ const WebTerminal = ({
         );
         document.removeEventListener("keydown", handleKeyDown);
         observer.disconnect();
+        resizeObserver.disconnect(); // 清理ResizeObserver
         clearInterval(resizeInterval);
         clearInterval(visibilityCheckInterval);
 
