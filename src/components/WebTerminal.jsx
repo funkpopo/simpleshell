@@ -58,16 +58,56 @@ const terminalStyles = `
 }
 /* 优化终端选择文本的显示效果 */
 .xterm-selection {
-  opacity: 1 !important; 
+  opacity: 1 !important;
   z-index: 10 !important;
-  mix-blend-mode: difference !important;
   pointer-events: none !important; /* 确保选择区域不会干扰鼠标事件 */
-  transition: all 0.05s ease !important; /* 添加微小过渡效果使选择更流畅 */
-  position: relative !important; /* 确保定位正确 */
+  position: absolute !important; /* 确保定位正确 */
 }
+
 /* 确保选中区域准确反映实际选择内容 */
 .xterm .xterm-selection div {
   position: absolute !important;
+  box-sizing: border-box !important;
+  /* 保持简单的样式以确保稳定性 */
+}
+
+/* 更强力的重复元素隐藏规则 */
+.xterm .xterm-selection div:nth-child(n+2) {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* 针对可能的多层选择容器 */
+.xterm-selection:nth-child(n+2) {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+/* 确保只有第一个选择元素可见 */
+.xterm .xterm-selection div:first-child {
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* 针对标记为重复的选择元素 */
+.xterm-selection-duplicate {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* 强制隐藏所有可能的重复选择 */
+.xterm .xterm-selection:not(:first-of-type) {
+  display: none !important;
+}
+
+.xterm .xterm-selection div:not(:first-of-type) {
+  display: none !important;
 }
 .terminal-container {
   display: flex;
@@ -151,6 +191,130 @@ const searchBarStyles = `
 const terminalCache = {};
 const fitAddonCache = {};
 const processCache = {};
+
+// 字符度量计算辅助函数
+const getCharacterMetrics = (term) => {
+  if (!term || !term.element) return null;
+
+  try {
+    // 获取终端的实际字符尺寸
+    const charWidth = term._core?._renderService?._renderer?.dimensions?.actualCellWidth ||
+                     term._core?._renderService?.dimensions?.actualCellWidth ||
+                     term.element.querySelector('.xterm-char-measure-element')?.getBoundingClientRect()?.width ||
+                     9; // 默认字符宽度
+
+    const charHeight = term._core?._renderService?._renderer?.dimensions?.actualCellHeight ||
+                      term._core?._renderService?.dimensions?.actualCellHeight ||
+                      term.element.querySelector('.xterm-char-measure-element')?.getBoundingClientRect()?.height ||
+                      17; // 默认字符高度
+
+    // 获取终端视口的偏移量
+    const viewport = term.element.querySelector('.xterm-viewport');
+    const screen = term.element.querySelector('.xterm-screen');
+
+    const viewportRect = viewport?.getBoundingClientRect() || { left: 0, top: 0 };
+    const screenRect = screen?.getBoundingClientRect() || { left: 0, top: 0 };
+
+    return {
+      charWidth: Math.round(charWidth),
+      charHeight: Math.round(charHeight),
+      viewportOffset: {
+        x: viewportRect.left,
+        y: viewportRect.top
+      },
+      screenOffset: {
+        x: screenRect.left,
+        y: screenRect.top
+      }
+    };
+  } catch (error) {
+    console.warn('获取字符度量失败，使用默认值:', error);
+    return {
+      charWidth: 9,
+      charHeight: 17,
+      viewportOffset: { x: 0, y: 0 },
+      screenOffset: { x: 0, y: 0 }
+    };
+  }
+};
+
+// 字符网格坐标转换函数
+const getCharacterGridPosition = (term, pixelX, pixelY) => {
+  const metrics = getCharacterMetrics(term);
+  if (!metrics) return null;
+
+  try {
+    // 计算相对于终端屏幕的像素位置
+    const relativeX = pixelX - metrics.screenOffset.x;
+    const relativeY = pixelY - metrics.screenOffset.y;
+
+    // 转换为字符网格坐标
+    const col = Math.floor(relativeX / metrics.charWidth);
+    const row = Math.floor(relativeY / metrics.charHeight);
+
+    // 确保坐标在有效范围内
+    const boundedCol = Math.max(0, Math.min(col, term.cols - 1));
+    const boundedRow = Math.max(0, Math.min(row, term.rows - 1));
+
+    return {
+      col: boundedCol,
+      row: boundedRow,
+      pixelX: boundedCol * metrics.charWidth + metrics.screenOffset.x,
+      pixelY: boundedRow * metrics.charHeight + metrics.screenOffset.y
+    };
+  } catch (error) {
+    console.warn('字符网格坐标转换失败:', error);
+    return null;
+  }
+};
+
+// 调试辅助函数 - 用于测试和验证选择对齐效果
+const debugSelectionAlignment = (term) => {
+  if (!term || !window.console) return;
+
+  const metrics = getCharacterMetrics(term);
+  if (!metrics) {
+    console.log('无法获取字符度量信息');
+    return;
+  }
+
+  console.log('终端字符度量信息:', {
+    charWidth: metrics.charWidth,
+    charHeight: metrics.charHeight,
+    screenOffset: metrics.screenOffset,
+    terminalCols: term.cols,
+    terminalRows: term.rows
+  });
+
+  const selectionElements = document.querySelectorAll('.xterm .xterm-selection div');
+  if (selectionElements.length > 0) {
+    console.log(`当前选择区域信息 (共${selectionElements.length}个):`);
+    selectionElements.forEach((elem, index) => {
+      const rect = elem.getBoundingClientRect();
+      const style = window.getComputedStyle(elem);
+      console.log(`选择区域 ${index + 1}:`, {
+        left: style.left,
+        top: style.top,
+        width: style.width,
+        height: style.height,
+        opacity: style.opacity,
+        transform: style.transform,
+        visible: style.opacity !== '0',
+        boundingRect: rect
+      });
+    });
+
+    // 检查是否有重复显示的问题
+    const visibleElements = Array.from(selectionElements).filter(elem =>
+      window.getComputedStyle(elem).opacity !== '0'
+    );
+    if (visibleElements.length > 1) {
+      console.warn(`警告：检测到${visibleElements.length}个可见的选择区域，可能存在重复显示问题`);
+    }
+  } else {
+    console.log('当前没有选择区域');
+  }
+};
 
 // 优化的终端尺寸调整函数，使用防抖机制减少频繁调用
 const forceResizeTerminal = debounce((term, container, processId, tabId, fitAddon) => {
@@ -611,16 +775,13 @@ const WebTerminal = ({
     foreground: theme.palette.mode === "light" ? "#000000" : "#ffffff",
     // 光标颜色根据背景自动调整
     cursor: theme.palette.mode === "light" ? "#000000" : "#ffffff",
-    // 选择文本的背景色，使用半透明色以避免遮挡字符
+    // 选择文本的背景色，使用更透明的颜色以避免遮挡字符
     selectionBackground:
       theme.palette.mode === "light"
-        ? "rgba(0, 120, 215, 0.7)" // 日间模式下使用更显眼的蓝色
-        : "rgba(255, 255, 170, 0.65)",
-    // 选择文本的前景色，确保文字清晰可见
-    selectionForeground:
-      theme.palette.mode === "light"
-        ? "#ffffff" // 在蓝色背景上使用白色文本更清晰
-        : "#ffffff",
+        ? "rgba(0, 120, 215, 0.3)" // 降低透明度，避免覆盖文字
+        : "rgba(255, 255, 170, 0.3)", // 降低透明度，避免覆盖文字
+    // 选择文本的前景色，保持原文字颜色可见
+    selectionForeground: undefined, // 不设置前景色，保持原文字颜色
     // 基础颜色
     black: "#000000",
     red: "#cc0000",
@@ -752,11 +913,20 @@ const WebTerminal = ({
           rows: 30, // 设置初始行数
           convertEol: true, // 自动将行尾换行符转换为CRLF
           disableStdin: false,
-          rendererType: "canvas",
+          rendererType: "canvas", // 使用canvas渲染器以保持稳定性
           termName: "xterm-256color", // 使用更高级的终端类型
           allowProposedApi: true, // 允许使用提议的API
           rightClickSelectsWord: false, // 禁用右键点击选中单词，使用自定义右键菜单
           copyOnSelect: false, // 选中后不自动复制
+          // 添加选择相关的配置
+          selectionScrollSpeed: 5, // 选择时的滚动速度
+          fastScrollModifier: 'shift', // 快速滚动修饰键
+          // 优化字符渲染
+          letterSpacing: 0, // 字符间距
+          lineHeight: 1.0, // 行高
+          // 禁用一些可能影响选择精度的特性
+          macOptionIsMeta: false,
+          macOptionClickForcesSelection: false,
         });
 
         // 异步加载字体大小设置并应用
@@ -939,6 +1109,13 @@ const WebTerminal = ({
           e.preventDefault();
           setShowSearchBar(true);
         }
+        // Ctrl+Alt+D 调试选择对齐 (开发调试用)
+        else if (e.ctrlKey && e.altKey && e.key === "d") {
+          e.preventDefault();
+          if (termRef.current) {
+            debugSelectionAlignment(termRef.current);
+          }
+        }
         // Esc 关闭搜索
         else if (e.key === "Escape" && showSearchBar) {
           e.preventDefault();
@@ -965,6 +1142,18 @@ const WebTerminal = ({
 
       // 添加键盘事件监听
       document.addEventListener("keydown", handleKeyDown);
+
+      // 简化的选择监控 - 只在选择完成后进行调整
+      let selectionAdjustmentTimeout = null;
+
+      const scheduleSelectionAdjustment = () => {
+        if (selectionAdjustmentTimeout) {
+          clearTimeout(selectionAdjustmentTimeout);
+        }
+        selectionAdjustmentTimeout = setTimeout(() => {
+          requestAnimationFrame(adjustSelectionElements);
+        }, 100); // 增加延迟以减少频繁调整
+      };
 
       // 添加鼠标中键粘贴功能
       const handleMouseDown = (e) => {
@@ -1005,50 +1194,141 @@ const WebTerminal = ({
 
         // 在mousedown时记录选择开始，帮助确保选择行为的准确性
         if (e.button === 0 && termRef.current) {
-          // 左键点击
-          // 使用requestAnimationFrame确保在下一次渲染周期处理选择
-          requestAnimationFrame(adjustSelectionElements);
+          // 左键点击 - 使用调度函数进行温和的调整
+          scheduleSelectionAdjustment();
         }
       };
 
-      // 提取调整选择元素的函数，以便在多个事件处理函数中复用
+      // 优化的选择元素调整函数 - 避免重复高亮
       const adjustSelectionElements = () => {
-        // 获取所有选择元素
-        const selectionElements = document.querySelectorAll(
-          ".xterm .xterm-selection div",
-        );
-        // 优化选择元素以确保准确性
-        selectionElements.forEach((elem) => {
-          // 确保选择元素的大小精确匹配所选内容
-          elem.style.height = `${Math.floor(elem.offsetHeight)}px`;
-          // 应用任何必要的偏移校正
-          const computedStyle = window.getComputedStyle(elem);
-          const top = parseFloat(computedStyle.top);
-          if (!isNaN(top)) {
-            elem.style.top = `${Math.floor(top)}px`;
+        if (!termRef.current) return;
+
+        try {
+          // 获取终端DOM元素
+          const terminalElement = termRef.current.element;
+          if (!terminalElement) return;
+
+          // 获取所有选择相关元素
+          const selectionElements = terminalElement.querySelectorAll(
+            ".xterm-selection div",
+          );
+
+          // 如果没有选择元素，直接返回
+          if (selectionElements.length === 0) return;
+
+          // 彻底处理重复的选择元素
+          if (selectionElements.length > 1) {
+            console.log(`检测到${selectionElements.length}个选择元素，彻底清理重复项`);
+
+            // 保留第一个元素，彻底隐藏其他重复元素
+            selectionElements.forEach((elem, index) => {
+              if (index > 0) {
+                // 使用多种方式彻底隐藏重复元素
+                elem.style.display = 'none';
+                elem.style.opacity = '0';
+                elem.style.visibility = 'hidden';
+                elem.style.transform = '';
+                elem.style.willChange = '';
+                elem.style.pointerEvents = 'none';
+                // 添加标记类以便CSS规则识别
+                elem.classList.add('xterm-selection-duplicate');
+              } else {
+                // 确保第一个元素完全可见
+                elem.style.display = '';
+                elem.style.opacity = '1';
+                elem.style.visibility = 'visible';
+                elem.classList.remove('xterm-selection-duplicate');
+              }
+            });
           }
-        });
+
+          // 同时检查是否有多个选择容器
+          const allSelectionContainers = terminalElement.querySelectorAll('.xterm-selection');
+          if (allSelectionContainers.length > 1) {
+            console.log(`检测到${allSelectionContainers.length}个选择容器，隐藏重复容器`);
+            allSelectionContainers.forEach((container, index) => {
+              if (index > 0) {
+                container.style.display = 'none';
+                container.style.opacity = '0';
+                container.style.visibility = 'hidden';
+              }
+            });
+          }
+
+          // 只对第一个（主要的）选择元素进行调整
+          const primaryElement = selectionElements[0];
+          if (!primaryElement) return;
+
+          // 获取字符度量信息
+          const metrics = getCharacterMetrics(termRef.current);
+          if (!metrics) return;
+
+          const computedStyle = window.getComputedStyle(primaryElement);
+          const currentLeft = parseFloat(computedStyle.left) || 0;
+          const currentTop = parseFloat(computedStyle.top) || 0;
+
+          // 计算需要的偏移量（更温和的调整）
+          const leftOffset = (currentLeft - metrics.screenOffset.x) % metrics.charWidth;
+          const topOffset = (currentTop - metrics.screenOffset.y) % metrics.charHeight;
+
+          // 只有当偏移量超过阈值时才进行调整
+          const threshold = 3; // 增加阈值以减少不必要的调整
+          if (Math.abs(leftOffset) > threshold || Math.abs(topOffset) > threshold) {
+            const adjustX = leftOffset > metrics.charWidth / 2 ?
+                           metrics.charWidth - leftOffset : -leftOffset;
+            const adjustY = topOffset > metrics.charHeight / 2 ?
+                           metrics.charHeight - topOffset : -topOffset;
+
+            // 只对主要元素应用调整
+            primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
+            primaryElement.style.willChange = 'transform';
+            primaryElement.style.opacity = '1'; // 确保主要元素可见
+          }
+
+        } catch (error) {
+          console.warn('选择元素调整失败:', error);
+          // 简化的回退处理 - 清理所有transform
+          const selectionElements = document.querySelectorAll(
+            ".xterm .xterm-selection div",
+          );
+          selectionElements.forEach((elem) => {
+            elem.style.transform = '';
+            elem.style.willChange = '';
+            elem.style.opacity = '';
+          });
+        }
       };
 
       // 添加鼠标事件监听
       if (terminalRef.current) {
         terminalRef.current.addEventListener("mousedown", handleMouseDown);
 
-        // 添加鼠标移动和松开事件以优化选择体验
+        // 简化的鼠标事件处理 - 减少频繁调整
         const handleMouseMove = (e) => {
-          if (e.buttons === 1 && termRef.current) {
-            // 左键拖动
-            requestAnimationFrame(adjustSelectionElements);
-          }
+          // 移除实时调整以避免闪烁
+          // 选择调整将在鼠标释放时进行
         };
 
-        const handleMouseUp = () => {
-          // 鼠标释放时最终调整选择区域
-          requestAnimationFrame(adjustSelectionElements);
+        const handleMouseUp = (e) => {
+          // 鼠标释放时进行一次性选择区域调整
+          if (termRef.current) {
+            // 使用调度函数进行延迟调整
+            scheduleSelectionAdjustment();
+          }
         };
 
         terminalRef.current.addEventListener("mousemove", handleMouseMove);
         terminalRef.current.addEventListener("mouseup", handleMouseUp);
+
+        // 将调度函数保存到组件引用中以便清理
+        if (!terminalRef.current.cleanupFunctions) {
+          terminalRef.current.cleanupFunctions = [];
+        }
+        terminalRef.current.cleanupFunctions.push(() => {
+          if (selectionAdjustmentTimeout) {
+            clearTimeout(selectionAdjustmentTimeout);
+          }
+        });
       }
 
       // 添加右键菜单事件监听
@@ -1452,6 +1732,18 @@ const WebTerminal = ({
           // 移除新增的鼠标事件监听器
           terminalRef.current.removeEventListener("mousemove", handleMouseMove);
           terminalRef.current.removeEventListener("mouseup", handleMouseUp);
+
+          // 执行所有保存的清理函数
+          if (terminalRef.current.cleanupFunctions) {
+            terminalRef.current.cleanupFunctions.forEach(cleanup => {
+              try {
+                cleanup();
+              } catch (error) {
+                console.warn('清理函数执行失败:', error);
+              }
+            });
+            terminalRef.current.cleanupFunctions = [];
+          }
         }
 
         // 注意：我们不再在这里销毁终端实例，而是保存在缓存中
