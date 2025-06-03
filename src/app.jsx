@@ -1216,61 +1216,69 @@ function App() {
                 position: "relative",
               }}
             >
-              {/* 欢迎页 - 始终渲染，但根据currentTab控制显示/隐藏 */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  opacity: currentTab === 0 ? 1 : 0,
-                  zIndex: currentTab === 0 ? 1 : 0,
-                  pointerEvents: currentTab === 0 ? "auto" : "none",
-                  visibility: currentTab === 0 ? "visible" : "hidden",
-                  transition:
-                    "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
-                }}
-              >
-                <WelcomePage />
-              </div>
-
-              {/* 终端标签页 - 始终渲染所有标签内容，但根据currentTab控制显示/隐藏 */}
-              {tabs.slice(1).map((tab, index) => (
-                <div
-                  key={tab.id}
-                  style={{
+              {/* 欢迎页 - 使用条件渲染优化性能 */}
+              {currentTab === 0 && (
+                <Box
+                  sx={{
                     position: "absolute",
                     top: 0,
                     left: 0,
                     width: "100%",
                     height: "100%",
-                    opacity: currentTab === index + 1 ? 1 : 0,
-                    zIndex: currentTab === index + 1 ? 1 : 0,
-                    pointerEvents: currentTab === index + 1 ? "auto" : "none",
-                    visibility: currentTab === index + 1 ? "visible" : "hidden",
-                    transition:
-                      "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
-                    // 标签页容器使用背景颜色，会随主题变化
-                    backgroundColor: "inherit",
+                    zIndex: 1,
+                    animation: "fadeIn 0.2s ease-in-out",
+                    "@keyframes fadeIn": {
+                      from: { opacity: 0 },
+                      to: { opacity: 1 },
+                    },
                   }}
                 >
-                  {terminalInstances[tab.id] && (
-                    <WebTerminal
-                      tabId={tab.id}
-                      refreshKey={terminalInstances[`${tab.id}-refresh`]}
-                      usePowershell={
-                        tab.type !== "ssh" && terminalInstances.usePowershell
-                      }
-                      sshConfig={
-                        tab.type === "ssh"
-                          ? terminalInstances[`${tab.id}-config`]
-                          : null
-                      }
-                    />
-                  )}
-                </div>
-              ))}
+                  <WelcomePage />
+                </Box>
+              )}
+
+              {/* 终端标签页 - 优化渲染，只渲染当前活动标签页 */}
+              {tabs.slice(1).map((tab, index) => {
+                const isActive = currentTab === index + 1;
+
+                // 只渲染当前活动的标签页，减少DOM节点数量
+                if (!isActive) return null;
+
+                return (
+                  <Box
+                    key={tab.id}
+                    sx={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
+                      zIndex: 1,
+                      backgroundColor: "inherit",
+                      animation: "fadeIn 0.2s ease-in-out",
+                      "@keyframes fadeIn": {
+                        from: { opacity: 0 },
+                        to: { opacity: 1 },
+                      },
+                    }}
+                  >
+                    {terminalInstances[tab.id] && (
+                      <WebTerminal
+                        tabId={tab.id}
+                        refreshKey={terminalInstances[`${tab.id}-refresh`]}
+                        usePowershell={
+                          tab.type !== "ssh" && terminalInstances.usePowershell
+                        }
+                        sshConfig={
+                          tab.type === "ssh"
+                            ? terminalInstances[`${tab.id}-config`]
+                            : null
+                        }
+                      />
+                    )}
+                  </Box>
+                );
+              })}
             </Box>
           </Box>
 

@@ -38,6 +38,14 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import FilePreview from "./FilePreview.jsx";
+import {
+  formatFileSize,
+  formatTransferSpeed,
+  formatRemainingTime,
+  formatDate,
+  formatLastRefreshTime
+} from "../core/utils/formatters.js";
+import { debounce } from "../core/utils/performance.js";
 
 const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
   const theme = useTheme();
@@ -964,14 +972,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   };
 
-  // 格式化文件大小
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
+
 
   // 处理路径输入更改
   const handlePathInputChange = (e) => {
@@ -986,54 +987,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     }
   };
 
-  // 格式化传输速度
-  const formatTransferSpeed = (bytesPerSecond) => {
-    if (!bytesPerSecond) return "0 B/s";
 
-    // 添加更多单位，包括TB/s
-    const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
-
-    // 避免非常小的值显示为高级单位
-    if (bytesPerSecond < 0.1) return "0 B/s";
-
-    // 计算适当的单位
-    let i = 0;
-    let unitValue = bytesPerSecond;
-
-    // 找到合适的单位
-    while (unitValue >= 1024 && i < units.length - 1) {
-      unitValue /= 1024;
-      i++;
-    }
-
-    // 根据值的大小调整小数点位数
-    let decimals = 2;
-    if (unitValue >= 100) {
-      decimals = 0; // 大于100时不显示小数
-    } else if (unitValue >= 10) {
-      decimals = 1; // 10-100之间显示1位小数
-    }
-
-    return `${unitValue.toFixed(decimals)} ${units[i]}`;
-  };
-
-  // 格式化剩余时间
-  const formatRemainingTime = (seconds) => {
-    if (!seconds || !isFinite(seconds)) return "计算中...";
-    if (seconds < 1) return "即将完成";
-
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-
-    if (hrs > 0) {
-      return `${hrs}h ${mins}m ${secs}s`;
-    } else if (mins > 0) {
-      return `${mins}m ${secs}s`;
-    } else {
-      return `${secs}s`;
-    }
-  };
 
   // 处理取消传输
   const handleCancelTransfer = async () => {
@@ -1302,28 +1256,14 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     }
   };
 
-  // 格式化显示上次刷新时间
-  const formatLastRefreshTime = () => {
-    const now = Date.now();
-    const diff = now - lastRefreshTime;
 
-    if (diff < 1000) return "刚刚";
-    if (diff < 60000) return `${Math.floor(diff / 1000)}秒前`;
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
 
-    const date = new Date(lastRefreshTime);
-    return `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
-  };
-
-  // 用户活动后的刷新函数
-  const refreshAfterUserActivity = () => {
-    // 添加短暂延迟，避免在操作完成前刷新
-    setTimeout(() => {
-      if (currentPath) {
-        silentRefreshCurrentDirectory();
-      }
-    }, USER_ACTIVITY_REFRESH_DELAY);
-  };
+  // 用户活动后的刷新函数，使用防抖优化
+  const refreshAfterUserActivity = debounce(() => {
+    if (currentPath) {
+      silentRefreshCurrentDirectory();
+    }
+  }, USER_ACTIVITY_REFRESH_DELAY);
 
   // 在特定的回调函数中调用refreshAfterUserActivity
 
@@ -1968,7 +1908,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
         >
           <Tooltip title="上次刷新时间">
             <Box component="span" sx={{ fontSize: "0.75rem", opacity: 0.8 }}>
-              上次刷新: {formatLastRefreshTime()}
+              上次刷新: {formatLastRefreshTime(lastRefreshTime)}
             </Box>
           </Tooltip>
         </Box>
