@@ -38,10 +38,13 @@ import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
 import TabPanel from "./components/TabPanel.jsx";
 import ConnectionManager from "./components/ConnectionManager.jsx";
-import ResourceMonitor from "./components/ResourceMonitor.jsx";
-import AIAssistant from "./components/AIAssistant.jsx";
+import {
+  ResourceMonitorWithSuspense as ResourceMonitor,
+  AIAssistantWithSuspense as AIAssistant,
+  FileManagerWithSuspense as FileManager,
+  preloadComponents
+} from "./components/LazyComponents.jsx";
 import AIIcon from "./components/AIIcon.jsx";
-import FileManager from "./components/FileManager.jsx";
 import Settings from "./components/Settings.jsx";
 import Divider from "@mui/material/Divider";
 import ShortcutCommands from "./components/ShortcutCommands.jsx";
@@ -442,7 +445,7 @@ function App() {
     SIDEBAR_WIDTHS,
   ]);
 
-  // 应用启动时加载连接配置
+  // 应用启动时加载连接配置和预加载组件
   React.useEffect(() => {
     const loadConnections = async () => {
       try {
@@ -459,6 +462,18 @@ function App() {
 
     loadConnections();
 
+    // 延迟预加载组件，避免影响应用启动性能
+    const preloadTimer = setTimeout(() => {
+      // 预加载AI助手组件（最常用）
+      preloadComponents.aiAssistant().catch(console.warn);
+
+      // 再延迟一点预加载其他组件
+      setTimeout(() => {
+        preloadComponents.resourceMonitor().catch(console.warn);
+        preloadComponents.fileManager().catch(console.warn);
+      }, 2000);
+    }, 3000);
+
     // 添加监听器，接收SSH进程ID更新事件
     const handleSshProcessIdUpdate = (event) => {
       const { terminalId, processId } = event.detail;
@@ -473,6 +488,9 @@ function App() {
     window.addEventListener("sshProcessIdUpdated", handleSshProcessIdUpdate);
 
     return () => {
+      // 清理预加载定时器
+      clearTimeout(preloadTimer);
+
       window.removeEventListener(
         "sshProcessIdUpdated",
         handleSshProcessIdUpdate,
@@ -886,6 +904,7 @@ function App() {
   // 关闭AI助手侧边栏
   const handleCloseAIAssistant = () => {
     // 清理会话记录，提高性能
+    // 注意：懒加载组件可能还未加载，所以需要检查ref是否存在
     if (window.aiAssistantRef && window.aiAssistantRef.current) {
       window.aiAssistantRef.current.clearMessages();
     }
