@@ -38,6 +38,7 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import FilePreview from "./FilePreview.jsx";
+import VirtualizedFileList from "./VirtualizedFileList.jsx";
 import {
   formatFileSize,
   formatTransferSpeed,
@@ -878,73 +879,18 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
       );
     }
 
-    if (!filteredFiles.length) {
-      return (
-        <Box
-          sx={{
-            padding: 2,
-            height: "100%",
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-          onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
-        >
-          <Typography variant="body2" color="text.secondary">
-            {searchTerm ? "没有找到匹配的文件" : "此目录为空"}
-          </Typography>
-        </Box>
-      );
-    }
-
-    // 先显示目录，然后是文件
-    const sortedFiles = [...filteredFiles].sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
-
+    // 使用虚拟化文件列表组件
     return (
-      <List
-        dense
-        sx={{ width: "100%", padding: 0 }}
-        onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
-      >
-        {sortedFiles.map((file) => (
-          <ListItem
-            key={file.name}
-            disablePadding
-            onContextMenu={(e) => handleContextMenu(e, file)}
-          >
-            <ListItemButton
-              onDoubleClick={() => handleFileActivate(file)}
-              dense
-            >
-              <ListItemIcon sx={{ minWidth: 36 }}>
-                {file.isDirectory ? (
-                  <FolderIcon color="primary" fontSize="small" />
-                ) : (
-                  <InsertDriveFileIcon fontSize="small" />
-                )}
-              </ListItemIcon>
-              <ListItemText
-                primary={file.name}
-                secondary={
-                  <>
-                    {file.modifyTime && formatDate(new Date(file.modifyTime))}
-                    {file.size &&
-                      !file.isDirectory &&
-                      ` • ${formatFileSize(file.size)}`}
-                  </>
-                }
-                primaryTypographyProps={{ variant: "body2" }}
-                secondaryTypographyProps={{ variant: "caption" }}
-              />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
+      <VirtualizedFileList
+        files={files}
+        onFileActivate={handleFileActivate}
+        onContextMenu={handleContextMenu}
+        selectedFile={selectedFile}
+        height="100%"
+        itemHeight={48}
+        searchTerm={searchTerm}
+        onBlankContextMenu={handleBlankContextMenu}
+      />
     );
   };
 
