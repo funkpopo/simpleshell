@@ -74,6 +74,8 @@
     "react-i18next": "^15.5.1",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^15.6.1",
+    "react-window": "^1.8.11",
+    "react-window-infinite-loader": "^1.0.10",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
     "ssh2": "^1.16.0",
