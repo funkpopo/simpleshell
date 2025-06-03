@@ -54,7 +54,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@fontsource/roboto": "^5.2.5",
-    "@mui/icons-material": "^7.0.1",
+    "@mui/icons-material": "^7.1.1",
     "@types/react-beautiful-dnd": "^13.1.8",
     "@uiw/react-codemirror": "^4.23.12",
     "@xterm/addon-fit": "^0.10.0",
