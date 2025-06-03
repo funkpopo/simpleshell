@@ -1,20 +1,24 @@
 const sftpManager = require("./sftp-manager");
 const sshManager = require("./ssh-manager");
+const sshConnectionPool = require("./ssh-connection-pool");
 const { logToFile } = require("../../core/utils/logger");
 
 class ConnectionManager {
   constructor() {
     this.sftpManager = sftpManager;
     this.sshManager = sshManager;
+    this.sshConnectionPool = sshConnectionPool;
   }
 
   initialize() {
     logToFile("Connection manager initialized", "INFO");
+    this.sshConnectionPool.initialize();
     this.sftpManager.initialize();
   }
 
   cleanup() {
     logToFile("Connection manager cleanup", "INFO");
+    this.sshConnectionPool.cleanup();
     this.sftpManager.cleanup();
   }
 
@@ -48,6 +52,44 @@ class ConnectionManager {
 
   resizeTerminal(processId, cols, rows) {
     this.sshManager.resizeTerminal(processId, cols, rows);
+  }
+
+  // 连接池相关方法
+  async getSSHConnection(sshConfig) {
+    return this.sshConnectionPool.getConnection(sshConfig);
+  }
+
+  releaseSSHConnection(connectionKey) {
+    this.sshConnectionPool.releaseConnection(connectionKey);
+  }
+
+  getConnectionPoolStatus() {
+    return this.sshConnectionPool.getStatus();
+  }
+
+  getConnectionPoolStats() {
+    return this.sshConnectionPool.getDetailedStats();
+  }
+
+  // 优雅关闭指定连接
+  async closeSSHConnection(connectionKey) {
+    try {
+      this.sshConnectionPool.closeConnection(connectionKey);
+      logToFile(`手动关闭SSH连接: ${connectionKey}`, "INFO");
+    } catch (error) {
+      logToFile(`关闭SSH连接失败: ${connectionKey} - ${error.message}`, "ERROR");
+      throw error;
+    }
+  }
+
+  // 清理空闲连接
+  cleanupIdleConnections(count = 1) {
+    return this.sshConnectionPool.cleanupIdleConnections(count);
+  }
+
+  // 强制健康检查
+  performHealthCheck() {
+    this.sshConnectionPool.performHealthCheck();
   }
 }
 

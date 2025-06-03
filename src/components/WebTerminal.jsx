@@ -1218,8 +1218,6 @@ const WebTerminal = ({
 
           // 彻底处理重复的选择元素
           if (selectionElements.length > 1) {
-            console.log(`检测到${selectionElements.length}个选择元素，彻底清理重复项`);
-
             // 保留第一个元素，彻底隐藏其他重复元素
             selectionElements.forEach((elem, index) => {
               if (index > 0) {

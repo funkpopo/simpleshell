@@ -191,7 +191,12 @@ class SftpManager {
         throw new Error(`No SSH connection found for tab ${tabId}`);
       }
 
-      const sshClient = processInfo.process;
+      // 优先使用连接池中的连接信息
+      let sshClient = processInfo.process;
+      if (processInfo.connectionInfo && processInfo.connectionInfo.client) {
+        sshClient = processInfo.connectionInfo.client;
+        logToFile(`Using connection pool SSH client for SFTP session ${tabId}`, "INFO");
+      }
 
       // 创建SFTP客户端
       const sftp = new SftpClient();
