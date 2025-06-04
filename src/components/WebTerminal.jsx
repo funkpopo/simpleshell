@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -25,6 +25,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import Divider from "@mui/material/Divider";
 import Tooltip from "@mui/material/Tooltip";
 import IconButton from "@mui/material/IconButton";
+import CommandSuggestion from "./CommandSuggestion.jsx";
 
 // 添加全局样式以确保xterm正确填满容器
 const terminalStyles = `
@@ -454,6 +455,123 @@ const WebTerminal = ({
   const [searchResults, setSearchResults] = useState({ count: 0, current: 0 });
   const [noMatchFound, setNoMatchFound] = useState(false);
 
+  // 命令建议相关状态
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [currentInput, setCurrentInput] = useState("");
+  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const [inEditorMode, setInEditorMode] = useState(false);
+  const inputDebounceRef = useRef(null);
+  const suggestionSelectedRef = useRef(false);
+
+  // 获取命令建议的防抖函数
+  const getSuggestions = useCallback(
+    debounce(async (input) => {
+      if (!input || input.trim().length === 0 || inEditorMode) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+
+      try {
+        const result = await window.terminalAPI?.getCommandSuggestions(input.trim(), 8);
+        if (result?.success && result.suggestions?.length > 0) {
+          setSuggestions(result.suggestions);
+          setShowSuggestions(true);
+        } else {
+          setSuggestions([]);
+          setShowSuggestions(false);
+        }
+      } catch (error) {
+        console.error('获取命令建议失败:', error);
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 300),
+    [inEditorMode]
+  );
+
+  // 处理建议选择
+  const handleSuggestionSelect = useCallback((suggestion) => {
+    if (!suggestion || !termRef.current || !currentProcessId.current) return;
+
+    try {
+      // 增加使用次数
+      window.terminalAPI?.incrementCommandUsage(suggestion.command);
+
+      // 计算需要清除的字符数
+      const clearLength = currentInput.length;
+      
+      // 清除当前输入
+      for (let i = 0; i < clearLength; i++) {
+        window.terminalAPI.sendToProcess(currentProcessId.current, '\b \b');
+      }
+      
+      // 输入选中的命令
+      window.terminalAPI.sendToProcess(currentProcessId.current, suggestion.command);
+      
+      // 标记这是通过建议选择的命令，直接将建议的命令添加到历史记录
+      if (window.terminalAPI?.addToCommandHistory) {
+        window.terminalAPI.addToCommandHistory(suggestion.command);
+      }
+      
+      // 标记为通过建议选择的命令，避免在回车时重复记录
+      suggestionSelectedRef.current = true;
+      
+      // 隐藏建议窗口
+      setShowSuggestions(false);
+      setSuggestions([]);
+      setCurrentInput("");
+    } catch (error) {
+      console.error('应用命令建议失败:', error);
+    }
+  }, [currentInput]);
+
+  // 关闭建议窗口
+  const closeSuggestions = useCallback(() => {
+    setShowSuggestions(false);
+    setSuggestions([]);
+  }, []);
+
+  // 更新光标位置用于建议窗口定位
+  const updateCursorPosition = useCallback(() => {
+    if (!termRef.current || !terminalRef.current) return;
+
+    try {
+      const term = termRef.current;
+      const terminalElement = terminalRef.current;
+      const terminalRect = terminalElement.getBoundingClientRect();
+      
+      // 获取终端的基本度量信息
+      const fontSize = term.options.fontSize || 14;
+      const lineHeight = Math.ceil(fontSize * 1.2); // 行高通常是字体大小的1.2倍
+      const charWidth = fontSize * 0.6; // 字符宽度大约是字体大小的0.6倍
+
+      // 计算光标位置
+      const cursorX = term.buffer.active.cursorX;
+      const cursorY = term.buffer.active.cursorY;
+      
+      // 计算相对于视口的绝对像素位置
+      const pixelX = terminalRect.left + (cursorX * charWidth);
+      const pixelY = terminalRect.top + (cursorY * lineHeight);
+
+      // 计算建议窗口高度（预估）
+      const estimatedSuggestionHeight = Math.min(suggestions.length * 40 + 60, 300); // 每项40px + 底部提示60px
+      
+      // 检查是否有足够空间在下方显示
+      const spaceBelow = window.innerHeight - pixelY - lineHeight;
+      const shouldShowAbove = spaceBelow < estimatedSuggestionHeight;
+
+      setCursorPosition({ 
+        x: pixelX, 
+        y: pixelY,
+        showAbove: shouldShowAbove
+      });
+    } catch (error) {
+      console.error('更新光标位置失败:', error);
+    }
+  }, [suggestions.length]);
+
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
   const setupCommandDetection = (term, processId) => {
     // 用于存储用户正在输入的命令
@@ -482,15 +600,21 @@ const WebTerminal = ({
         if (type === "alternate") {
           // 进入编辑器/全屏应用模式
           inEditorMode = true;
+          setInEditorMode(true);
 
           // 通知主进程编辑器模式状态变更
           if (processId && window.terminalAPI?.notifyEditorModeChange) {
             window.terminalAPI.notifyEditorModeChange(processId, true);
           }
+          
+          // 隐藏命令建议
+          setShowSuggestions(false);
+          setSuggestions([]);
         } else if (type === "normal") {
           // 退出编辑器/全屏应用模式
           if (inEditorMode) {
             inEditorMode = false;
+            setInEditorMode(false);
 
             // 通知主进程编辑器模式状态变更
             if (processId && window.terminalAPI?.notifyEditorModeChange) {
@@ -544,8 +668,16 @@ const WebTerminal = ({
 
       // 处理退格键
       if (data === "\b" || data === "\x7f") {
-        if (currentInputBuffer.length > 0) {
+        // 只有在非Tab补全状态下才处理退格
+        if (!tabCompletionUsed && currentInputBuffer.length > 0) {
           currentInputBuffer = currentInputBuffer.slice(0, -1);
+          
+          // 更新当前输入状态并触发建议搜索
+          if (!inEditorMode) {
+            setCurrentInput(currentInputBuffer);
+            updateCursorPosition();
+            getSuggestions(currentInputBuffer);
+          }
         }
         // 发送数据到进程
         if (processId) {
@@ -557,6 +689,9 @@ const WebTerminal = ({
       // 处理Tab键，标记Tab补全被使用
       if (data === "\t") {
         tabCompletionUsed = true;
+        // 清空当前输入缓冲区，避免记录不完整的命令
+        currentInputBuffer = "";
+        
         // 存储当前行内容，以便于之后获取Tab补全后的完整命令
         currentLineBeforeTab = {
           y: term.buffer.active.cursorY,
@@ -565,6 +700,13 @@ const WebTerminal = ({
               .getLine(term.buffer.active.cursorY)
               ?.translateToString() || "",
         };
+
+        // 隐藏命令建议窗口（因为用户在使用原生Tab补全）
+        if (!inEditorMode) {
+          setShowSuggestions(false);
+          setSuggestions([]);
+          setCurrentInput("");
+        }
 
         // 发送数据到进程
         if (processId) {
@@ -602,32 +744,14 @@ const WebTerminal = ({
             command = currentInputBuffer.trim();
           }
 
-          // 如果发现命令为空但刚刚使用了Tab补全，尝试从整个终端缓冲区捕获命令
-          if (
-            (!command || command === "") &&
-            tabCompletionUsed &&
-            currentLineBeforeTab
-          ) {
-            // 搜索从当前行向上几行，查找可能出现的完整命令
-            const linesCount = term.buffer.active.length;
-            const linesToCheck = Math.min(5, linesCount); // 检查最近5行
-
-            for (let i = 0; i < linesToCheck; i++) {
-              const line =
-                term.buffer.active
-                  .getLine(term.buffer.active.cursorY - i)
-                  ?.translateToString() || "";
-              const potentialCommandMatch = line.match(
-                /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/,
-              );
-              if (
-                potentialCommandMatch &&
-                potentialCommandMatch[1] &&
-                potentialCommandMatch[1].trim() !== ""
-              ) {
-                command = potentialCommandMatch[1].trim();
-                break;
-              }
+          // 特殊处理：如果使用了Tab补全，直接使用当前行的完整内容
+          if (tabCompletionUsed) {
+            // 从当前行获取Tab补全后的完整命令
+            const fullCommand = lastLine.match(
+              /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/,
+            );
+            if (fullCommand && fullCommand[1] && fullCommand[1].trim() !== "") {
+              command = fullCommand[1].trim();
             }
           }
 
@@ -650,12 +774,27 @@ const WebTerminal = ({
           // 注意：inEditorMode可能已经被buffer类型检测器更新
           if (command && command !== lastExecutedCommand && !inEditorMode) {
             lastExecutedCommand = command;
+            
+            // 只有不是通过建议选择的命令才添加到历史记录
+            if (!suggestionSelectedRef.current && window.terminalAPI?.addToCommandHistory) {
+              window.terminalAPI.addToCommandHistory(command);
+            }
           }
 
-          // 重置当前输入缓冲区和Tab补全状态
-          currentInputBuffer = "";
+          // 重置Tab补全状态（立即重置，因为已经处理完命令）
           tabCompletionUsed = false;
           currentLineBeforeTab = null;
+          
+          // 重置当前输入缓冲区
+          currentInputBuffer = "";
+          
+          // 重置建议选择标记
+          suggestionSelectedRef.current = false;
+          
+          // 隐藏命令建议
+          setShowSuggestions(false);
+          setSuggestions([]);
+          setCurrentInput("");
 
           // 检查这一行是否包含常见的全屏应用命令
           if (
@@ -684,8 +823,17 @@ const WebTerminal = ({
           console.error("检测用户输入命令时出错:", error);
         }
       } else if (data !== "\t") {
-        // 对于非Tab键输入，追加到输入缓冲区
-        currentInputBuffer += data;
+        // 对于非Tab键输入，只有在非Tab补全状态下才追加到输入缓冲区
+        if (!tabCompletionUsed) {
+          currentInputBuffer += data;
+        }
+        
+        // 更新当前输入状态并触发建议搜索（仅在普通字符输入时，且不在Tab补全状态）
+        if (!inEditorMode && !tabCompletionUsed && data.length === 1 && data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
+          setCurrentInput(currentInputBuffer);
+          updateCursorPosition();
+          getSuggestions(currentInputBuffer);
+        }
       }
 
       // 发送数据到进程
@@ -754,13 +902,20 @@ const WebTerminal = ({
               commandMatch[1] &&
               commandMatch[1].trim() !== ""
             ) {
-              // 更新当前输入缓冲区为Tab补全后的命令
+              // 更新当前输入缓冲区为Tab补全后的命令，用于后续回车时记录
               currentInputBuffer = commandMatch[1].trim();
+              
+              // 同时更新显示状态
+              if (!inEditorMode) {
+                setCurrentInput(currentInputBuffer);
+              }
             }
           }
 
-          // 重置，因为我们已经处理了这次Tab补全
-          currentLineBeforeTab = null;
+          // 延迟重置Tab补全状态，给足够时间处理补全
+          setTimeout(() => {
+            currentLineBeforeTab = null;
+          }, 100);
         } catch (error) {
           console.error("处理Tab补全后内容时出错:", error);
         }
@@ -2475,6 +2630,17 @@ const WebTerminal = ({
           <ListItemText>清空</ListItemText>
         </MenuItem>
       </Menu>
+
+      {/* 命令建议组件 */}
+      <CommandSuggestion
+        suggestions={suggestions}
+        visible={showSuggestions}
+        position={cursorPosition}
+        onSelectSuggestion={handleSuggestionSelect}
+        onClose={closeSuggestions}
+        terminalElement={terminalRef.current}
+        currentInput={currentInput}
+      />
     </Box>
   );
 };

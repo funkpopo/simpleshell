@@ -818,6 +818,79 @@ function initializeMainConfig() {
   }
 }
 
+function loadCommandHistory() {
+  if (!mainConfigPath) {
+    if (logToFile)
+      logToFile(
+        "ConfigManager: Main config path not set. Cannot load command history.",
+        "ERROR",
+      );
+    return [];
+  }
+
+  try {
+    if (fs.existsSync(mainConfigPath)) {
+      const data = fs.readFileSync(mainConfigPath, "utf8");
+      const config = JSON.parse(data);
+      
+      if (config.commandHistory && Array.isArray(config.commandHistory)) {
+        if (logToFile)
+          logToFile(
+            `ConfigManager: Loaded ${config.commandHistory.length} command history entries.`,
+            "INFO",
+          );
+        return config.commandHistory;
+      }
+    }
+  } catch (error) {
+    if (logToFile)
+      logToFile(
+        "ConfigManager: Failed to load command history - " + error.message,
+        "ERROR",
+      );
+    console.error("ConfigManager: Failed to load command history:", error);
+  }
+  
+  return [];
+}
+
+function saveCommandHistory(history) {
+  if (!mainConfigPath) {
+    if (logToFile)
+      logToFile(
+        "ConfigManager: Main config path not set. Cannot save command history.",
+        "ERROR",
+      );
+    return false;
+  }
+
+  try {
+    let config = {};
+    if (fs.existsSync(mainConfigPath)) {
+      const data = fs.readFileSync(mainConfigPath, "utf8");
+      config = JSON.parse(data);
+    }
+
+    config.commandHistory = Array.isArray(history) ? history : [];
+    fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
+    
+    if (logToFile)
+      logToFile(
+        `ConfigManager: Saved ${config.commandHistory.length} command history entries.`,
+        "INFO",
+      );
+    return true;
+  } catch (error) {
+    if (logToFile)
+      logToFile(
+        "ConfigManager: Failed to save command history - " + error.message,
+        "ERROR",
+      );
+    console.error("ConfigManager: Failed to save command history:", error);
+    return false;
+  }
+}
+
 module.exports = {
   init,
   initializeMainConfig,
@@ -831,6 +904,8 @@ module.exports = {
   saveShortcutCommands,
   loadLogSettings,
   saveLogSettings,
+  loadCommandHistory,
+  saveCommandHistory,
   // Do not export _getMainConfigPathInternal, _processConnectionsForSave, _processConnectionsForLoad
   // as they are intended to be private helper functions.
 };
