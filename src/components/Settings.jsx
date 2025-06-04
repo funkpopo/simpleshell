@@ -66,8 +66,8 @@ const Settings = ({ open, onClose }) => {
 
   // Define available languages
   const languages = [
-    { code: "zh-CN", name: "简体中文" },
-    { code: "en-US", name: "English" },
+    { code: "zh-CN", name: t("languages.zh-CN") },
+    { code: "en-US", name: t("languages.en-US") },
   ];
 
   // Define font size options
@@ -292,24 +292,24 @@ const Settings = ({ open, onClose }) => {
         
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle1" gutterBottom>
-            日志设置
+            {t("settings.logSettingsTitle")}
           </Typography>
           
           <Box sx={{ mb: 2 }}>
             <FormControl fullWidth variant="outlined" size="small">
               <InputLabel id="log-level-select-label">
-                日志记录等级
+                {t("settings.logLevelLabel")}
               </InputLabel>
               <Select
                 labelId="log-level-select-label"
                 id="log-level-select"
                 value={logLevel}
                 onChange={handleLogLevelChange}
-                label="日志记录等级"
+                label={t("settings.logLevelLabel")}
               >
                 {logLevels.map((level) => (
                   <MenuItem key={level.value} value={level.value}>
-                    {level.label}
+                    {level.label} 
                   </MenuItem>
                 ))}
               </Select>
@@ -319,7 +319,7 @@ const Settings = ({ open, onClose }) => {
           <Box>
             <TextField
               fullWidth
-              label="日志文件大小上限"
+              label={t("settings.logFileSizeLimitLabel")}
               variant="outlined"
               size="small"
               type="number"

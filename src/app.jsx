@@ -168,7 +168,7 @@ function AboutDialog({ open, onClose }) {
     if (window.terminalAPI?.openExternal) {
       window.terminalAPI.openExternal(url).catch((error) => {
         console.error("打开外部链接失败:", error);
-        alert("无法打开链接，请手动访问: " + url);
+        alert(t("app.cannotOpenLinkAlert", { url }));
       });
     } else {
       // 降级方案：尝试使用window.open
@@ -190,7 +190,7 @@ function AboutDialog({ open, onClose }) {
       .checkForUpdate()
       .then((result) => {
         if (!result.success) {
-          throw new Error(result.error || "未知错误");
+          throw new Error(result.error || t("app.unknownUpdateError"));
         }
 
         const releaseData = result.data;
@@ -959,10 +959,8 @@ function App() {
         if (processId && window.terminalAPI.sendToProcess) {
           window.terminalAPI.sendToProcess(processId, command + "\r");
         } else {
-          console.error(
-            "无法发送命令:",
-            processId ? "API未找到" : "进程ID未找到",
-          );
+          const reason = processId ? t("app.apiNotFound") : t("app.processIdNotFound");
+          console.error(t("app.cannotSendCommandConsole", { reason }));
         }
       }
     }
@@ -990,11 +988,6 @@ function App() {
 
         // 基本的HTML语言设置
         document.documentElement.lang = language;
-
-        // 重新加载窗口以确保所有组件都使用新的语言设置
-        if (window.terminalAPI?.reloadWindow) {
-          window.terminalAPI.reloadWindow();
-        }
       }
     };
 

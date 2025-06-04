@@ -15,7 +15,21 @@
       },
       "cancel": "取消",
       "save": "保存",
-      "saveError": "保存设置失败，请重试。"
+      "saveError": "保存设置失败，请重试。",
+      "logSettingsTitle": "日志设置",
+      "logLevelLabel": "日志记录等级",
+      "logFileSizeLimitLabel": "日志文件大小上限"
+    },
+    "languages": {
+      "zh-CN": "简体中文",
+      "en-US": "English (US)"
+    },
+    "app": {
+      "cannotOpenLinkAlert": "无法打开链接，请手动访问: {{url}}",
+      "unknownUpdateError": "检查更新时发生未知错误",
+      "cannotSendCommandConsole": "无法发送命令: {{reason}}",
+      "apiNotFound": "API未找到",
+      "processIdNotFound": "进程ID未找到"
     },
     "menu": {
       "settings": "设置",
@@ -98,7 +112,10 @@
       "delete": "删除",
       "sendCommand": "发送命令",
       "copyCommand": "复制命令",
-      "totalCommands": "共 {{count}} 条命令"
+      "totalCommands": "共 {{count}} 条命令",
+      "commandSent": "命令已发送: {{command}}",
+      "sendCommandFailed": "发送命令失败: {{error}}",
+      "sendCommandHandlerMissing": "发送命令处理函数未提供"
     }
   }
 }

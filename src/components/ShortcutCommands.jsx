@@ -319,14 +319,14 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
         // 显示成功通知
         setNotification({
           open: true,
-          message: `命令已发送: ${command}`,
+          message: t("shortcutCommands.commandSent", { command }),
           severity: "success",
         });
       } catch (error) {
         // 显示错误通知
         setNotification({
           open: true,
-          message: `发送命令失败: ${error.message}`,
+          message: t("shortcutCommands.sendCommandFailed", { error: error.message }),
           severity: "error",
         });
         console.error("发送命令失败:", error);
@@ -334,7 +334,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     } else {
       setNotification({
         open: true,
-        message: "发送命令处理函数未提供",
+        message: t("shortcutCommands.sendCommandHandlerMissing"),
         severity: "warning",
       });
       console.warn("发送命令处理函数未提供");
