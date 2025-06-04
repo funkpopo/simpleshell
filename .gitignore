@@ -10,6 +10,7 @@ log
 .eslintignore
 .prettierrc.yaml
 .prettierignore
+issues
 
 # 忽略所有.env文件
 .env*
