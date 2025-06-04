@@ -11,6 +11,7 @@ import {
   createResizeObserver,
   isElementVisible
 } from "../core/utils/performance.js";
+import { useEventManager } from "../core/utils/eventManager.js";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -440,7 +441,7 @@ const WebTerminal = ({
   const fitAddonRef = useRef(null);
   const currentProcessId = useRef(null);
   const theme = useTheme();
-  let resizeTimeout = null;
+  const eventManager = useEventManager(); // 使用统一的事件管理器
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
 
@@ -660,10 +661,10 @@ const WebTerminal = ({
           if (
             /\b(top|htop|vi|vim|nano|less|more|watch|tail -f)\b/.test(lastLine)
           ) {
-            // 使用延迟序列触发终端大小调整
+            // 使用EventManager管理延迟序列触发终端大小调整
             const delayTimes = [200, 500, 1000, 1500];
             delayTimes.forEach((delay) => {
-              setTimeout(() => {
+              eventManager.setTimeout(() => {
                 if (terminalRef.current && fitAddonRef.current) {
                   // 强制设置内容已更新，确保调整生效
                   setContentUpdated(true);
@@ -849,8 +850,8 @@ const WebTerminal = ({
         // 更新终端字体大小
         terminalCache[tabId].options.fontSize = parseInt(fontSize, 10);
 
-        // 触发终端大小调整
-        setTimeout(() => {
+        // 使用EventManager管理定时器
+        eventManager.setTimeout(() => {
           if (fitAddonRef.current) {
             fitAddonRef.current.fit();
 
@@ -866,12 +867,9 @@ const WebTerminal = ({
       }
     };
 
-    window.addEventListener("settingsChanged", handleSettingsChanged);
-
-    return () => {
-      window.removeEventListener("settingsChanged", handleSettingsChanged);
-    };
-  }, [tabId]);
+    // 使用EventManager管理事件监听器
+    eventManager.addEventListener(window, "settingsChanged", handleSettingsChanged);
+  }, [tabId, eventManager]);
 
   useEffect(() => {
     // 添加全局样式
@@ -934,8 +932,8 @@ const WebTerminal = ({
           try {
             const fontSize = await getFontSize();
             term.options.fontSize = fontSize;
-            // 应用字体大小后自动调整大小
-            setTimeout(() => {
+            // 使用EventManager管理应用字体大小后自动调整大小
+            eventManager.setTimeout(() => {
               if (fitAddon) {
                 fitAddon.fit();
               }
@@ -971,8 +969,8 @@ const WebTerminal = ({
         // 打开终端
         term.open(terminalRef.current);
 
-        // 确保适配容器大小
-        setTimeout(() => {
+        // 使用EventManager管理确保适配容器大小
+        eventManager.setTimeout(() => {
           fitAddon.fit();
         }, 0);
 
@@ -1006,8 +1004,8 @@ const WebTerminal = ({
                   // 设置命令检测
                   setupCommandDetection(term, processId);
 
-                  // 连接成功后多次尝试同步终端大小，确保远程终端能够正确获取前端显示区域的大小
-                  setTimeout(() => {
+                  // 使用EventManager管理连接成功后多次尝试同步终端大小
+                  eventManager.setTimeout(() => {
                     if (terminalRef.current && fitAddonRef.current) {
                       forceResizeTerminal(
                         term,
@@ -1019,7 +1017,7 @@ const WebTerminal = ({
                     }
                   }, 1000);
 
-                  setTimeout(() => {
+                  eventManager.setTimeout(() => {
                     if (terminalRef.current && fitAddonRef.current) {
                       forceResizeTerminal(
                         term,
@@ -1140,17 +1138,13 @@ const WebTerminal = ({
         }
       };
 
-      // 添加键盘事件监听
-      document.addEventListener("keydown", handleKeyDown);
+      // 使用EventManager添加键盘事件监听
+      eventManager.addEventListener(document, "keydown", handleKeyDown);
 
       // 简化的选择监控 - 只在选择完成后进行调整
-      let selectionAdjustmentTimeout = null;
-
       const scheduleSelectionAdjustment = () => {
-        if (selectionAdjustmentTimeout) {
-          clearTimeout(selectionAdjustmentTimeout);
-        }
-        selectionAdjustmentTimeout = setTimeout(() => {
+        // 使用EventManager管理定时器
+        eventManager.setTimeout(() => {
           requestAnimationFrame(adjustSelectionElements);
         }, 100); // 增加延迟以减少频繁调整
       };
@@ -1171,9 +1165,9 @@ const WebTerminal = ({
                 typeof processedText === "object" &&
                 processedText.type === "multiline-with-comments"
               ) {
-                // 逐行发送文本，每行之间添加适当延迟
+                // 使用EventManager管理逐行发送文本的延迟
                 processedText.lines.forEach((line, index) => {
-                  setTimeout(() => {
+                  eventManager.setTimeout(() => {
                     window.terminalAPI.sendToProcess(
                       processCache[tabId],
                       line +
@@ -1297,9 +1291,9 @@ const WebTerminal = ({
         }
       };
 
-      // 添加鼠标事件监听
+      // 使用EventManager添加鼠标事件监听
       if (terminalRef.current) {
-        terminalRef.current.addEventListener("mousedown", handleMouseDown);
+        eventManager.addEventListener(terminalRef.current, "mousedown", handleMouseDown);
 
         // 简化的鼠标事件处理 - 减少频繁调整
         const handleMouseMove = (e) => {
@@ -1315,23 +1309,13 @@ const WebTerminal = ({
           }
         };
 
-        terminalRef.current.addEventListener("mousemove", handleMouseMove);
-        terminalRef.current.addEventListener("mouseup", handleMouseUp);
-
-        // 将调度函数保存到组件引用中以便清理
-        if (!terminalRef.current.cleanupFunctions) {
-          terminalRef.current.cleanupFunctions = [];
-        }
-        terminalRef.current.cleanupFunctions.push(() => {
-          if (selectionAdjustmentTimeout) {
-            clearTimeout(selectionAdjustmentTimeout);
-          }
-        });
+        eventManager.addEventListener(terminalRef.current, "mousemove", handleMouseMove);
+        eventManager.addEventListener(terminalRef.current, "mouseup", handleMouseUp);
       }
 
-      // 添加右键菜单事件监听
+      // 使用EventManager添加右键菜单事件监听
       if (terminalRef.current) {
-        terminalRef.current.addEventListener("contextmenu", handleContextMenu);
+        eventManager.addEventListener(terminalRef.current, "contextmenu", handleContextMenu);
       }
 
       // 处理窗口调整大小
@@ -1403,8 +1387,8 @@ const WebTerminal = ({
                 console.error("终端大小调整失败:", err);
               });
 
-            // 延迟再次调整大小，确保在某些情况下终端尺寸能够正确同步
-            setTimeout(() => {
+            // 使用EventManager管理延迟再次调整大小，确保在某些情况下终端尺寸能够正确同步
+            eventManager.setTimeout(() => {
               if (terminalRef.current && term && processCache[tabId]) {
                 window.terminalAPI
                   .resizeTerminal(
@@ -1444,8 +1428,8 @@ const WebTerminal = ({
         { debounceTime: 100 } // 100ms防抖
       );
 
-      // 保留window resize事件作为备用
-      window.addEventListener("resize", handleResize);
+      // 使用EventManager管理window resize事件作为备用
+      eventManager.addEventListener(window, "resize", handleResize);
 
       // 优化的可见性变化处理，使用防抖减少频繁调用
       const handleVisibilityChange = debounce(() => {
@@ -1454,7 +1438,7 @@ const WebTerminal = ({
         }
       }, 50);
 
-      document.addEventListener("visibilitychange", handleVisibilityChange);
+      eventManager.addEventListener(document, "visibilitychange", handleVisibilityChange);
 
       // 创建一个MutationObserver来检测元素的可见性变化
       const observer = new MutationObserver((mutations) => {
@@ -1504,10 +1488,9 @@ const WebTerminal = ({
 
         // 如果检测到可见性变化，则立即重新计算大小
         if (visibilityChanged) {
-          clearTimeout(resizeTimeout);
           if (terminalRef.current && termRef.current && fitAddonRef.current) {
-            // 延迟一小段时间确保DOM已完全更新
-            setTimeout(() => {
+            // 使用EventManager管理延迟，确保DOM已完全更新
+            eventManager.setTimeout(() => {
               forceResizeTerminal(
                 termRef.current,
                 terminalRef.current,
@@ -1517,7 +1500,7 @@ const WebTerminal = ({
               );
             }, 10);
 
-            setTimeout(() => {
+            eventManager.setTimeout(() => {
               if (
                 terminalRef.current &&
                 termRef.current &&
@@ -1534,9 +1517,8 @@ const WebTerminal = ({
             }, 100);
           }
         } else if (shouldResize) {
-          // 使用节流函数延迟调用resize，避免频繁调整
-          clearTimeout(resizeTimeout);
-          resizeTimeout = setTimeout(() => {
+          // 使用EventManager管理节流函数延迟调用resize，避免频繁调整
+          eventManager.setTimeout(() => {
             // 检查终端容器和DOM尺寸
             if (terminalRef.current && termRef.current) {
               // 检查尺寸是否确实发生变化
@@ -1566,6 +1548,9 @@ const WebTerminal = ({
           attributeFilter: ["style", "class", "hidden", "aria-hidden"], // 只观察这些属性的变化
         });
 
+        // 使用EventManager管理observer
+        eventManager.addObserver(observer);
+
         // 尝试观察父元素
         let parent = terminalRef.current.parentElement;
         if (parent) {
@@ -1591,8 +1576,8 @@ const WebTerminal = ({
         }
       }
 
-      // 定时检查并调整大小，以确保在不同情况下都能正确适配
-      const resizeInterval = setInterval(() => {
+      // 使用EventManager管理定时检查并调整大小
+      eventManager.setInterval(() => {
         if (termRef.current && termRef.current.element) {
           const xtermElement = termRef.current.element;
           const container = terminalRef.current;
@@ -1634,8 +1619,8 @@ const WebTerminal = ({
       // 立即同步一次
       syncTerminalSize();
 
-      // 延迟后同步，确保布局稳定后大小正确
-      setTimeout(syncTerminalSize, 100);
+      // 使用EventManager管理延迟同步，确保布局稳定后大小正确
+      eventManager.setTimeout(syncTerminalSize, 100);
 
       // 添加一个新的辅助函数，确保终端在被激活时调整大小
       const ensureTerminalSizeOnVisibilityChange = () => {
@@ -1650,8 +1635,8 @@ const WebTerminal = ({
             fitAddonRef.current &&
             contentUpdated
           ) {
-            // 使用延迟执行强制调整大小
-            setTimeout(() => {
+            // 使用EventManager管理延迟执行强制调整大小
+            eventManager.setTimeout(() => {
               forceResizeTerminal(
                 termRef.current,
                 terminalRef.current,
@@ -1690,8 +1675,8 @@ const WebTerminal = ({
         return rect.width > 0 && rect.height > 0;
       };
 
-      // 添加一个新的定时器，定期检查终端可见性
-      const visibilityCheckInterval = setInterval(() => {
+      // 使用EventManager管理定期检查终端可见性的定时器
+      eventManager.setInterval(() => {
         // 只有当内容有更新时才检查并调整大小
         if (contentUpdated) {
           ensureTerminalSizeOnVisibilityChange();
@@ -1699,19 +1684,12 @@ const WebTerminal = ({
       }, 200); // 从100ms改为200ms，减轻性能负担
 
       // 添加定时器清理
-      return () => {
-        window.removeEventListener("resize", handleResize);
-        document.removeEventListener(
-          "visibilitychange",
-          handleVisibilityChange,
-        );
-        document.removeEventListener("keydown", handleKeyDown);
-        observer.disconnect();
-        resizeObserver.disconnect(); // 清理ResizeObserver
-        clearInterval(resizeInterval);
-        clearInterval(visibilityCheckInterval);
+      // 添加ResizeObserver到EventManager管理
+      eventManager.addObserver(resizeObserver);
 
-        // 清理任何事件监听器
+      // 添加自定义清理逻辑到EventManager
+      eventManager.addCleanup(() => {
+        // 清理terminalAPI监听器
         if (window.terminalAPI) {
           if (processCache[tabId]) {
             window.terminalAPI.removeOutputListener(processCache[tabId]);
@@ -1720,38 +1698,11 @@ const WebTerminal = ({
           }
         }
 
-        if (terminalRef.current) {
-          terminalRef.current.removeEventListener(
-            "contextmenu",
-            handleContextMenu,
-          );
-          terminalRef.current.removeEventListener("mousedown", handleMouseDown);
-
-          // 移除新增的鼠标事件监听器
-          terminalRef.current.removeEventListener("mousemove", handleMouseMove);
-          terminalRef.current.removeEventListener("mouseup", handleMouseUp);
-
-          // 执行所有保存的清理函数
-          if (terminalRef.current.cleanupFunctions) {
-            terminalRef.current.cleanupFunctions.forEach(cleanup => {
-              try {
-                cleanup();
-              } catch (error) {
-                console.warn('清理函数执行失败:', error);
-              }
-            });
-            terminalRef.current.cleanupFunctions = [];
-          }
-        }
-
-        // 注意：我们不再在这里销毁终端实例，而是保存在缓存中
-        // 但仍需要从DOM中分离
+        // 从DOM中分离终端但保留缓存
         if (termRef.current) {
           try {
-            // 这将从DOM中分离终端但不销毁它
             const element = terminalRef.current;
             if (element) {
-              // Added null check for element
               while (element.firstChild) {
                 element.removeChild(element.firstChild);
               }
@@ -1761,12 +1712,19 @@ const WebTerminal = ({
           }
         }
 
-        if (styleElement) {
+        // 移除样式元素
+        if (styleElement && document.head.contains(styleElement)) {
           document.head.removeChild(styleElement);
         }
+      });
+
+      // EventManager会自动清理所有事件监听器、定时器和观察者
+      return () => {
+        // 这个函数现在很简洁，因为EventManager处理了大部分清理工作
+        console.log(`WebTerminal ${tabId} 组件卸载，资源清理由EventManager处理`);
       };
     }
-  }, [tabId, usePowershell, refreshKey, sshConfig]);
+  }, [tabId, usePowershell, refreshKey, sshConfig, eventManager]);
 
   // 启动PowerShell的辅助函数
   const startPowerShell = (term, tabId) => {
@@ -2048,9 +2006,9 @@ const WebTerminal = ({
             typeof processedText === "object" &&
             processedText.type === "multiline-with-comments"
           ) {
-            // 逐行发送文本，每行之间添加适当延迟
+            // 使用EventManager管理逐行发送文本的延迟
             processedText.lines.forEach((line, index) => {
-              setTimeout(() => {
+              eventManager.setTimeout(() => {
                 window.terminalAPI.sendToProcess(
                   processCache[tabId],
                   line + (index < processedText.lines.length - 1 ? "\n" : ""),
@@ -2153,11 +2111,11 @@ const WebTerminal = ({
           // 检测终端大小查询回复
           /\u001b\[8;\d+;\d+t/.test(dataStr)
         ) {
-          // 创建一系列延迟执行，以适应不同应用的启动速度
+          // 使用EventManager管理一系列延迟执行，以适应不同应用的启动速度
           const delayTimes = [100, 300, 600, 1000];
 
           delayTimes.forEach((delay) => {
-            setTimeout(() => {
+            eventManager.setTimeout(() => {
               if (terminalRef.current && fitAddonRef.current) {
                 // 强制设置内容已更新，确保调整生效
                 setContentUpdated(true);
@@ -2201,8 +2159,8 @@ const WebTerminal = ({
     // 立即同步一次
     syncTerminalSize();
 
-    // 延迟后多次同步，确保布局稳定后大小正确
-    setTimeout(syncTerminalSize, 100);
+    // 使用EventManager管理延迟同步，确保布局稳定后大小正确
+    eventManager.setTimeout(syncTerminalSize, 100);
 
     // 添加一个新的辅助函数，确保终端在被激活时调整大小
     const ensureTerminalSizeOnVisibilityChange = () => {
@@ -2216,8 +2174,8 @@ const WebTerminal = ({
           fitAddonRef.current &&
           contentUpdated
         ) {
-          // 使用延迟执行强制调整大小
-          setTimeout(() => {
+          // 使用EventManager管理延迟执行强制调整大小
+          eventManager.setTimeout(() => {
             forceResizeTerminal(
               termRef.current,
               terminalRef.current,
@@ -2256,17 +2214,17 @@ const WebTerminal = ({
       return rect.width > 0 && rect.height > 0;
     };
 
-    // 添加一个新的定时器，定期检查终端可见性
-    const visibilityCheckInterval = setInterval(() => {
+    // 使用EventManager管理定期检查终端可见性的定时器
+    eventManager.setInterval(() => {
       // 只有当内容有更新时才检查并调整大小
       if (contentUpdated) {
         ensureTerminalSizeOnVisibilityChange();
       }
     }, 200); // 从100ms改为200ms，减轻性能负担
 
-    // 添加定时器清理
+    // EventManager会自动清理定时器，无需返回清理函数
     return () => {
-      clearInterval(visibilityCheckInterval);
+      // 留空，清理由EventManager处理
     };
   };
 
@@ -2287,8 +2245,8 @@ const WebTerminal = ({
         // 标签激活时设置内容已更新，确保调整生效
         setContentUpdated(true);
 
-        // 延迟执行以确保DOM已完全更新
-        setTimeout(() => {
+        // 使用EventManager管理延迟执行以确保DOM已完全更新
+        eventManager.setTimeout(() => {
           if (terminalRef.current && fitAddonRef.current && termRef.current) {
             forceResizeTerminal(
               termRef.current,
@@ -2300,10 +2258,10 @@ const WebTerminal = ({
           }
         }, 10);
 
-        // 多次尝试调整，以处理某些特殊情况
+        // 使用EventManager管理多次尝试调整，以处理某些特殊情况
         const delayTimes = [50, 150, 300];
         delayTimes.forEach((delay) => {
-          setTimeout(() => {
+          eventManager.setTimeout(() => {
             if (terminalRef.current && fitAddonRef.current && termRef.current) {
               forceResizeTerminal(
                 termRef.current,
@@ -2318,13 +2276,8 @@ const WebTerminal = ({
       }
     };
 
-    // 添加事件监听器
-    window.addEventListener("tabChanged", handleTabChanged);
-
-    // 组件卸载时移除监听器
-    return () => {
-      window.removeEventListener("tabChanged", handleTabChanged);
-    };
+    // 使用EventManager添加事件监听器
+    eventManager.addEventListener(window, "tabChanged", handleTabChanged);
   }, [tabId]);
 
   // 在创建终端前获取当前字体大小
