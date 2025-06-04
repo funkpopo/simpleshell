@@ -15,7 +15,21 @@
       },
       "cancel": "Cancel",
       "save": "Save",
-      "saveError": "Failed to save settings. Please try again."
+      "saveError": "Failed to save settings. Please try again.",
+      "logSettingsTitle": "Log Settings",
+      "logLevelLabel": "Log Level",
+      "logFileSizeLimitLabel": "Log File Size Limit"
+    },
+    "languages": {
+      "zh-CN": "简体中文 (Chinese Simplified)",
+      "en-US": "English (US)"
+    },
+    "app": {
+      "cannotOpenLinkAlert": "Cannot open link. Please visit manually: {{url}}",
+      "unknownUpdateError": "An unknown error occurred while checking for updates",
+      "cannotSendCommandConsole": "Cannot send command: {{reason}}",
+      "apiNotFound": "API not found",
+      "processIdNotFound": "Process ID not found"
     },
     "menu": {
       "settings": "Settings",
@@ -99,7 +113,10 @@
       "delete": "Delete",
       "sendCommand": "Send Command",
       "copyCommand": "Copy Command",
-      "totalCommands": "{{count}} commands total"
+      "totalCommands": "{{count}} commands total",
+      "commandSent": "Command sent: {{command}}",
+      "sendCommandFailed": "Send command failed: {{error}}",
+      "sendCommandHandlerMissing": "Send command handler not provided"
     }
   }
 }
