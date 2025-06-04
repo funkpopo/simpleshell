@@ -15,6 +15,7 @@ const sftpCore = require("./modules/sftp/sftpCore");
 const sftpTransfer = require("./modules/sftp/sftpTransfer");
 const systemInfo = require("./modules/system-info");
 const terminalManager = require("./modules/terminal");
+const commandHistoryService = require("./modules/terminal/command-history");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -242,6 +243,16 @@ app.whenReady().then(() => {
 
   createWindow();
   createAIWorker();
+  
+  // 初始化命令历史服务
+  try {
+    const commandHistory = configManager.loadCommandHistory();
+    commandHistoryService.initialize(commandHistory);
+    logToFile(`Command history service initialized with ${commandHistory.length} entries`, "INFO");
+  } catch (error) {
+    logToFile(`Failed to initialize command history service: ${error.message}`, "ERROR");
+  }
+  
   logToFile("Application ready and window created", "INFO");
 });
 
@@ -338,6 +349,15 @@ app.on("before-quit", () => {
   }
   // 清空进程映射
   childProcesses.clear();
+  
+  // 保存命令历史
+  try {
+    const historyToSave = commandHistoryService.exportHistory();
+    configManager.saveCommandHistory(historyToSave);
+    logToFile(`Saved ${historyToSave.length} command history entries on app quit`, "INFO");
+  } catch (error) {
+    logToFile(`Failed to save command history on quit: ${error.message}`, "ERROR");
+  }
 });
 
 // 关闭所有窗口时退出应用（macOS除外）
@@ -2796,5 +2816,68 @@ function setupIPC(mainWindow) {
     }
     // sftpTransfer.handleDownloadFolder signature is: async function handleDownloadFolder(tabId, remoteFolderPath)
     return sftpTransfer.handleDownloadFolder(tabId, remotePath);
+  });
+
+  // 命令历史相关API
+  ipcMain.handle("command-history:add", async (event, command) => {
+    try {
+      const added = commandHistoryService.addCommand(command);
+      if (added) {
+        // 异步保存到配置文件
+        setTimeout(() => {
+          try {
+            const historyToSave = commandHistoryService.exportHistory();
+            configManager.saveCommandHistory(historyToSave);
+          } catch (saveError) {
+            logToFile(`Failed to save command history: ${saveError.message}`, "ERROR");
+          }
+        }, 1000); // 延迟1秒保存，避免频繁写入
+      }
+      return { success: added };
+    } catch (error) {
+      logToFile(`Error adding command to history: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("command-history:getSuggestions", async (event, input, maxResults = 10) => {
+    try {
+      const suggestions = commandHistoryService.getSuggestions(input, maxResults);
+      return { success: true, suggestions };
+    } catch (error) {
+      logToFile(`Error getting command suggestions: ${error.message}`, "ERROR");
+      return { success: false, error: error.message, suggestions: [] };
+    }
+  });
+
+  ipcMain.handle("command-history:incrementUsage", async (event, command) => {
+    try {
+      commandHistoryService.incrementCommandUsage(command);
+      return { success: true };
+    } catch (error) {
+      logToFile(`Error incrementing command usage: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("command-history:clear", async (event) => {
+    try {
+      commandHistoryService.clearHistory();
+      configManager.saveCommandHistory([]);
+      return { success: true };
+    } catch (error) {
+      logToFile(`Error clearing command history: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("command-history:getStatistics", async (event) => {
+    try {
+      const stats = commandHistoryService.getStatistics();
+      return { success: true, statistics: stats };
+    } catch (error) {
+      logToFile(`Error getting command history statistics: ${error.message}`, "ERROR");
+      return { success: false, error: error.message, statistics: null };
+    }
   });
 } // Closing brace for setupIPC function

@@ -334,4 +334,16 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 新增: 粘贴剪贴板的方法
   pasteClipboard: () => ipcRenderer.invoke("clipboard:paste"),
+
+  // 命令历史相关API
+  addToCommandHistory: (command) =>
+    ipcRenderer.invoke("command-history:add", command),
+  getCommandSuggestions: (input, maxResults) =>
+    ipcRenderer.invoke("command-history:getSuggestions", input, maxResults),
+  incrementCommandUsage: (command) =>
+    ipcRenderer.invoke("command-history:incrementUsage", command),
+  clearCommandHistory: () =>
+    ipcRenderer.invoke("command-history:clear"),
+  getCommandHistoryStatistics: () =>
+    ipcRenderer.invoke("command-history:getStatistics"),
 });
