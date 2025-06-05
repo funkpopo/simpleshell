@@ -188,9 +188,15 @@ class OutputProcessor {
               const nextLine = procInfo.lastOutputLines[j];
               if (commandPromptRegex.some((r) => r.test(nextLine))) {
                 nextLineIsPrompt = true;
+                // 只有当命令不同且不重复时才记录
                 if (command !== procInfo.lastExtractedCommand) {
-                  procInfo.lastExtractedCommand = command;
-                  logToFile(`Extracted remote command: ${command}`, "INFO");
+                  // 添加时间戳记录，用于防止短时间内重复触发
+                  const now = Date.now();
+                  if (!procInfo.lastExtractedTime || (now - procInfo.lastExtractedTime) > 500) {
+                    procInfo.lastExtractedCommand = command;
+                    procInfo.lastExtractedTime = now;
+                    logToFile(`Extracted remote command: ${command}`, "INFO");
+                  }
                 }
 
                 // 清理已处理的行
