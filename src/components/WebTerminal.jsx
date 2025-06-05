@@ -465,21 +465,66 @@ const WebTerminal = ({
   const [inEditorMode, setInEditorMode] = useState(false);
   const inputDebounceRef = useRef(null);
   const suggestionSelectedRef = useRef(false);
+  
+  // 命令执行状态跟踪
+  const [isCommandExecuting, setIsCommandExecuting] = useState(false);
+  const lastExecutedCommandTimeRef = useRef(0);
+  const lastExecutedCommandRef = useRef("");
 
   // 获取命令建议的防抖函数
   const getSuggestions = useCallback(
     debounce(async (input) => {
+      // 基础检查：空输入或编辑器模式
       if (!input || input.trim().length === 0 || inEditorMode) {
         setSuggestions([]);
         setShowSuggestions(false);
         return;
       }
 
+      // 检查命令执行状态：如果正在执行命令则不显示建议
+      if (isCommandExecuting) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+
+      // 检查时间间隔和命令重复
+      const timeSinceLastCommand = Date.now() - lastExecutedCommandTimeRef.current;
+      
+      // 距离上次命令执行300ms内不显示建议
+      if (timeSinceLastCommand < 300) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+
+      const trimmedInput = input.trim();
+      
+      // 检查是否与刚执行的命令相同（仅在执行后1秒内生效）
+      if (trimmedInput === lastExecutedCommandRef.current && timeSinceLastCommand < 1000) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+
       try {
-        const result = await window.terminalAPI?.getCommandSuggestions(input.trim(), 8);
+        const result = await window.terminalAPI?.getCommandSuggestions(trimmedInput, 8);
         if (result?.success && result.suggestions?.length > 0) {
-          setSuggestions(result.suggestions);
-          setShowSuggestions(true);
+          // 只在刚执行命令后的短时间内过滤该命令
+          let filteredSuggestions = result.suggestions;
+          if (timeSinceLastCommand < 1000) {
+            filteredSuggestions = result.suggestions.filter(
+              suggestion => suggestion.command !== lastExecutedCommandRef.current
+            );
+          }
+          
+          if (filteredSuggestions.length > 0) {
+            setSuggestions(filteredSuggestions);
+            setShowSuggestions(true);
+          } else {
+            setSuggestions([]);
+            setShowSuggestions(false);
+          }
         } else {
           setSuggestions([]);
           setShowSuggestions(false);
@@ -490,7 +535,7 @@ const WebTerminal = ({
         setShowSuggestions(false);
       }
     }, 300),
-    [inEditorMode, setShowSuggestions, setSuggestions]
+    [inEditorMode, isCommandExecuting, setShowSuggestions, setSuggestions]
   );
 
   // 处理建议选择
@@ -680,7 +725,8 @@ const WebTerminal = ({
           if (!inEditorMode) {
             setCurrentInput(currentInputBuffer);
             updateCursorPosition();
-            if (!suggestionsHiddenByEsc) {
+            // 只有在非命令执行状态下才触发建议搜索
+            if (!suggestionsHiddenByEsc && !isCommandExecuting) {
               getSuggestions(currentInputBuffer);
             }
             if (currentInputBuffer.length === 0) {
@@ -727,6 +773,9 @@ const WebTerminal = ({
 
       // 检测回车键（命令执行的触发）
       if (data === "\r" || data === "\n") {
+        // 设置命令执行状态，防止显示建议
+        setIsCommandExecuting(true);
+        
         try {
           // 获取终端的最后一行内容（可能包含用户输入的命令）
           const lastLine =
@@ -785,6 +834,10 @@ const WebTerminal = ({
           if (command && command !== lastExecutedCommand && !inEditorMode) {
             lastExecutedCommand = command;
             
+            // 记录执行的命令和时间，用于防止后续显示该命令的建议
+            lastExecutedCommandRef.current = command;
+            lastExecutedCommandTimeRef.current = Date.now();
+            
             // 只有不是通过建议选择的命令才添加到历史记录
             if (!suggestionSelectedRef.current && window.terminalAPI?.addToCommandHistory) {
               window.terminalAPI.addToCommandHistory(command);
@@ -806,6 +859,11 @@ const WebTerminal = ({
           setSuggestions([]);
           setCurrentInput("");
           setSuggestionsHiddenByEsc(false);
+          
+          // 延迟重置命令执行状态，给足够时间让输出完成
+          setTimeout(() => {
+            setIsCommandExecuting(false);
+          }, 100);
 
           // 检查这一行是否包含常见的全屏应用命令
           if (
@@ -832,6 +890,10 @@ const WebTerminal = ({
         } catch (error) {
           // 忽略任何错误，不影响正常功能
           console.error("检测用户输入命令时出错:", error);
+          // 即使发生错误也要重置命令执行状态
+          setTimeout(() => {
+            setIsCommandExecuting(false);
+          }, 100);
         }
       } else if (data !== "\t") {
         // 对于非Tab键输入，只有在非Tab补全状态下才追加到输入缓冲区
@@ -843,7 +905,8 @@ const WebTerminal = ({
         if (!inEditorMode && !tabCompletionUsed && data.length === 1 && data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
           setCurrentInput(currentInputBuffer);
           updateCursorPosition();
-          if (!suggestionsHiddenByEsc) {
+          // 只有在非命令执行状态下才触发建议搜索
+          if (!suggestionsHiddenByEsc && !isCommandExecuting) {
             getSuggestions(currentInputBuffer);
           }
         }
