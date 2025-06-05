@@ -1,12 +1,10 @@
 const sftpManager = require("./sftp-manager");
-const sshManager = require("./ssh-manager");
 const sshConnectionPool = require("./ssh-connection-pool");
 const { logToFile } = require("../../core/utils/logger");
 
 class ConnectionManager {
   constructor() {
     this.sftpManager = sftpManager;
-    this.sshManager = sshManager;
     this.sshConnectionPool = sshConnectionPool;
   }
 
