@@ -3,8 +3,8 @@ const { logToFile } = require("../../core/utils/logger");
 
 // 连接池配置常量
 const MAX_CONNECTIONS = 10; // 最大连接数
-const IDLE_TIMEOUT = 5 * 60 * 1000; // 空闲超时时间（5分钟）
-const HEALTH_CHECK_INTERVAL = 2 * 60 * 1000; // 健康检查间隔（2分钟）
+const IDLE_TIMEOUT = 30 * 60 * 1000; // 空闲超时时间（30分钟）- 延长以支持标签页切换
+const HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // 健康检查间隔（5分钟）
 const CONNECTION_TIMEOUT = 15 * 1000; // 连接超时时间（15秒）
 
 class SSHConnectionPool {
@@ -12,6 +12,7 @@ class SSHConnectionPool {
     this.maxConnections = maxConnections;
     this.connections = new Map(); // 存储活跃连接
     this.connectionQueue = new Map(); // 连接请求队列
+    this.tabReferences = new Map(); // 存储标签页对连接的引用关系
     this.healthCheckTimer = null;
     this.isInitialized = false;
   }
@@ -36,6 +37,7 @@ class SSHConnectionPool {
     
     this.connections.clear();
     this.connectionQueue.clear();
+    this.tabReferences.clear();
     this.isInitialized = false;
     logToFile("SSH连接池已清理", "INFO");
   }
@@ -146,13 +148,36 @@ class SSHConnectionPool {
     });
   }
 
-  releaseConnection(connectionKey) {
+  releaseConnection(connectionKey, tabId = null) {
     const connectionInfo = this.connections.get(connectionKey);
     if (connectionInfo) {
       connectionInfo.refCount = Math.max(0, connectionInfo.refCount - 1);
       connectionInfo.lastUsed = Date.now();
+      
+      // 如果提供了tabId，从标签页引用中移除
+      if (tabId && this.tabReferences.has(tabId)) {
+        this.tabReferences.delete(tabId);
+        logToFile(`移除标签页引用: ${tabId} -> ${connectionKey}`, "INFO");
+      }
+      
       logToFile(`释放连接引用: ${connectionKey}, 剩余引用: ${connectionInfo.refCount}`, "INFO");
     }
+  }
+
+  // 添加标签页引用追踪
+  addTabReference(tabId, connectionKey) {
+    this.tabReferences.set(tabId, connectionKey);
+    logToFile(`添加标签页引用: ${tabId} -> ${connectionKey}`, "INFO");
+  }
+
+  // 检查连接是否被标签页引用
+  isConnectionReferencedByTabs(connectionKey) {
+    for (const [tabId, connKey] of this.tabReferences) {
+      if (connKey === connectionKey) {
+        return true;
+      }
+    }
+    return false;
   }
 
   closeConnection(connectionKey) {
@@ -184,8 +209,13 @@ class SSHConnectionPool {
 
     // 找出空闲连接
     for (const [key, connectionInfo] of this.connections) {
-      if (connectionInfo.refCount === 0 && 
-          (now - connectionInfo.lastUsed) > IDLE_TIMEOUT) {
+      // 检查连接是否真正空闲：无引用计数且未被标签页引用且超过空闲时间
+      const hasTabReference = this.isConnectionReferencedByTabs(key);
+      const isIdle = connectionInfo.refCount === 0 && 
+                    !hasTabReference && 
+                    (now - connectionInfo.lastUsed) > IDLE_TIMEOUT;
+      
+      if (isIdle) {
         idleConnections.push({ key, lastUsed: connectionInfo.lastUsed });
       }
     }
@@ -238,8 +268,10 @@ class SSHConnectionPool {
         continue;
       }
 
-      // 检查是否超过空闲时间且无引用
+      // 检查是否超过空闲时间且无引用且未被标签页引用
+      const hasTabReference = this.isConnectionReferencedByTabs(key);
       if (connectionInfo.refCount === 0 && 
+          !hasTabReference &&
           (now - connectionInfo.lastUsed) > IDLE_TIMEOUT) {
         unhealthyConnections.push(key);
       }

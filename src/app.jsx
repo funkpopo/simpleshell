@@ -1249,12 +1249,9 @@ function App() {
                 </Box>
               )}
 
-              {/* 终端标签页 - 优化渲染，只渲染当前活动标签页 */}
+              {/* 终端标签页 - 保持所有标签页DOM以维持连接状态 */}
               {tabs.slice(1).map((tab, index) => {
                 const isActive = currentTab === index + 1;
-
-                // 只渲染当前活动的标签页，减少DOM节点数量
-                if (!isActive) return null;
 
                 return (
                   <Box
@@ -1265,13 +1262,12 @@ function App() {
                       left: 0,
                       width: "100%",
                       height: "100%",
-                      zIndex: 1,
+                      zIndex: isActive ? 1 : 0,
                       backgroundColor: "inherit",
-                      animation: "fadeIn 0.2s ease-in-out",
-                      "@keyframes fadeIn": {
-                        from: { opacity: 0 },
-                        to: { opacity: 1 },
-                      },
+                      visibility: isActive ? "visible" : "hidden",
+                      opacity: isActive ? 1 : 0,
+                      pointerEvents: isActive ? "auto" : "none",
+                      transition: isActive ? "opacity 0.2s ease-in-out" : "none",
                     }}
                   >
                     {terminalInstances[tab.id] && (
@@ -1286,6 +1282,7 @@ function App() {
                             ? terminalInstances[`${tab.id}-config`]
                             : null
                         }
+                        isActive={isActive}
                       />
                     )}
                   </Box>

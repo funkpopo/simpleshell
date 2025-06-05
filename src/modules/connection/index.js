@@ -57,8 +57,15 @@ class ConnectionManager {
     return this.sshConnectionPool.getConnection(sshConfig);
   }
 
-  releaseSSHConnection(connectionKey) {
-    this.sshConnectionPool.releaseConnection(connectionKey);
+  releaseSSHConnection(connectionKey, tabId = null) {
+    this.sshConnectionPool.releaseConnection(connectionKey, tabId);
+  }
+
+  // 添加标签页引用追踪
+  addTabReference(tabId, connectionKey) {
+    if (this.sshConnectionPool.addTabReference) {
+      this.sshConnectionPool.addTabReference(tabId, connectionKey);
+    }
   }
 
   getConnectionPoolStatus() {
