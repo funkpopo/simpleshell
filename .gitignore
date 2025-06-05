@@ -12,6 +12,8 @@ log
 .prettierignore
 issues
 
+.cursorignore
+
 # 忽略所有.env文件
 .env*
 

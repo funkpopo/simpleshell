@@ -460,6 +460,7 @@ const WebTerminal = ({
   const [suggestions, setSuggestions] = useState([]);
   const [currentInput, setCurrentInput] = useState("");
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const [suggestionsHiddenByEsc, setSuggestionsHiddenByEsc] = useState(false);
   const [inEditorMode, setInEditorMode] = useState(false);
   const inputDebounceRef = useRef(null);
   const suggestionSelectedRef = useRef(false);
@@ -488,7 +489,7 @@ const WebTerminal = ({
         setShowSuggestions(false);
       }
     }, 300),
-    [inEditorMode]
+    [inEditorMode, setShowSuggestions, setSuggestions]
   );
 
   // 处理建议选择
@@ -522,16 +523,18 @@ const WebTerminal = ({
       setShowSuggestions(false);
       setSuggestions([]);
       setCurrentInput("");
+      setSuggestionsHiddenByEsc(false);
     } catch (error) {
       console.error('应用命令建议失败:', error);
     }
-  }, [currentInput]);
+  }, [currentInput, setShowSuggestions, setSuggestions, setCurrentInput, setSuggestionsHiddenByEsc]);
 
   // 关闭建议窗口
   const closeSuggestions = useCallback(() => {
     setShowSuggestions(false);
     setSuggestions([]);
-  }, []);
+    setSuggestionsHiddenByEsc(true);
+  }, [setShowSuggestions, setSuggestions, setSuggestionsHiddenByEsc]);
 
   // 更新光标位置用于建议窗口定位
   const updateCursorPosition = useCallback(() => {
@@ -676,7 +679,12 @@ const WebTerminal = ({
           if (!inEditorMode) {
             setCurrentInput(currentInputBuffer);
             updateCursorPosition();
-            getSuggestions(currentInputBuffer);
+            if (!suggestionsHiddenByEsc) {
+              getSuggestions(currentInputBuffer);
+            }
+            if (currentInputBuffer.length === 0) {
+              setSuggestionsHiddenByEsc(false);
+            }
           }
         }
         // 发送数据到进程
@@ -706,6 +714,7 @@ const WebTerminal = ({
           setShowSuggestions(false);
           setSuggestions([]);
           setCurrentInput("");
+          setSuggestionsHiddenByEsc(false);
         }
 
         // 发送数据到进程
@@ -795,6 +804,7 @@ const WebTerminal = ({
           setShowSuggestions(false);
           setSuggestions([]);
           setCurrentInput("");
+          setSuggestionsHiddenByEsc(false);
 
           // 检查这一行是否包含常见的全屏应用命令
           if (
@@ -832,7 +842,9 @@ const WebTerminal = ({
         if (!inEditorMode && !tabCompletionUsed && data.length === 1 && data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
           setCurrentInput(currentInputBuffer);
           updateCursorPosition();
-          getSuggestions(currentInputBuffer);
+          if (!suggestionsHiddenByEsc) {
+            getSuggestions(currentInputBuffer);
+          }
         }
       }
 
