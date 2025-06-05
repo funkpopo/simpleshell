@@ -436,6 +436,7 @@ const WebTerminal = ({
   refreshKey,
   usePowershell = true,
   sshConfig = null,
+  isActive = true,
 }) => {
   const terminalRef = useRef(null);
   const termRef = useRef(null);
@@ -1065,6 +1066,14 @@ const WebTerminal = ({
 
         // 重新打开终端并附加到DOM
         term.open(terminalRef.current);
+        
+        // 如果标签页不活跃，避免立即触发resize以减少性能影响
+        if (isActive) {
+          // 使用EventManager管理确保适配容器大小
+          eventManager.setTimeout(() => {
+            fitAddon.fit();
+          }, 0);
+        }
       } else {
         // 创建新的终端实例
         term = new Terminal({
