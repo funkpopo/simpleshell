@@ -10,15 +10,93 @@ class CommandHistoryService {
     this.initialized = true;
   }
 
-  addCommand(command) {
+  isValidCommand(command) {
     if (!command || typeof command !== 'string') {
       return false;
     }
 
     const trimmedCommand = command.trim();
-    if (!trimmedCommand || trimmedCommand.length === 0) {
+    
+    // 基本长度检查
+    if (trimmedCommand.length === 0 || trimmedCommand.length < 2) {
       return false;
     }
+
+    // 过滤ANSI转义序列
+    if (/\x1b\[|\u001b\[/.test(trimmedCommand)) {
+      return false;
+    }
+
+    // 过滤控制字符（除了常见的空白字符）
+    // ASCII控制字符范围：0-31，但允许空格(32)、制表符(9)、换行符(10)、回车符(13)
+    const hasInvalidControlChars = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(trimmedCommand);
+    if (hasInvalidControlChars) {
+      return false;
+    }
+
+    // 过滤只包含方向键序列的命令
+    if (/^\[?[ABCD]\]?$/.test(trimmedCommand)) {
+      return false;
+    }
+
+    // 过滤只包含特殊字符组合的命令
+    const specialCharPatterns = [
+      /^[\[\]]+$/, // 只包含方括号
+      /^[<>]+$/, // 只包含尖括号
+      /^[\-=_]+$/, // 只包含横线、等号、下划线
+      /^[~`!@#$%^&*()+=|\\{}[\]:";'<>?,./]+$/, // 只包含特殊符号
+      /^[\s]+$/, // 只包含空白字符
+    ];
+
+    if (specialCharPatterns.some(pattern => pattern.test(trimmedCommand))) {
+      return false;
+    }
+
+    // 过滤重复字符（同一字符重复3次以上）
+    if (/(.)\1{2,}/.test(trimmedCommand) && trimmedCommand.length <= 5) {
+      return false;
+    }
+
+    // 确保命令包含至少一个字母或数字
+    if (!/[a-zA-Z0-9]/.test(trimmedCommand)) {
+      return false;
+    }
+
+    // 过滤明显的按键序列或无意义的输入
+    const invalidPatterns = [
+      /^[hjkl]+$/, // vim导航键
+      /^[wasd]+$/, // 游戏控制键
+      /^[qwerty]+$/, // 键盘布局测试
+      /^[asdf]+$/, // 随意按键
+      /^[zxcv]+$/, // 常见快捷键
+      /^[.,;:'"]+$/, // 只包含标点
+      /^\d{1,2,3,4,5,6,7,8,9,10}$/, // 单纯的1-10位数字
+      /^[yn]$/, // 单个y或n（通常是确认响应，不是命令）
+    ];
+
+    if (invalidPatterns.some(pattern => pattern.test(trimmedCommand.toLowerCase()))) {
+      return false;
+    }
+
+    // 过滤过长的重复模式
+    if (trimmedCommand.length > 20) {
+      // 检查是否有重复的子字符串模式
+      const repeatedPattern = /(.{2,10})\1{2,}/.exec(trimmedCommand);
+      if (repeatedPattern) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  addCommand(command) {
+    // 使用增强的验证逻辑
+    if (!this.isValidCommand(command)) {
+      return false;
+    }
+
+    const trimmedCommand = command.trim();
 
     // 移除重复的命令（如果存在）
     this.removeCommand(trimmedCommand);

@@ -63,7 +63,7 @@
       "monitor": "资源监控",
       "connections": "连接管理",
       "files": "文件管理",
-      "history": "命令历史记录",
+      "history": "历史命令",
       "shortcutCommands": "快捷命令"
     },
     "welcome": {
@@ -116,6 +116,42 @@
       "commandSent": "命令已发送: {{command}}",
       "sendCommandFailed": "发送命令失败: {{error}}",
       "sendCommandHandlerMissing": "发送命令处理函数未提供"
+    },
+    "commandHistory": {
+      "title": "历史命令",
+      "search": "搜索历史命令...",
+      "noCommands": "暂无历史命令记录",
+      "noCommandsFound": "未找到匹配的历史命令",
+      "totalCommands": "共 {{count}} 条命令",
+      "commandSent": "命令已发送: {{command}}",
+      "commandCopied": "命令已复制到剪贴板",
+      "copyFailed": "复制失败",
+      "sendCommand": "发送命令",
+      "copyCommand": "复制命令",
+      "editCommand": "编辑命令",
+      "deleteCommand": "删除命令",
+      "commandDeleted": "命令已删除",
+      "deleteFailed": "删除失败",
+      "selectMode": "选择模式",
+      "exitSelect": "退出选择",
+      "selectAll": "全选",
+      "deselectAll": "取消全选",
+      "deleteSelected": "删除选中",
+      "batchDeleteSuccess": "成功删除 {{count}} 条命令",
+      "batchDeleteFailed": "批量删除失败",
+      "clearAll": "清空所有",
+      "clearAllSuccess": "已清空所有历史记录",
+      "clearAllFailed": "清空失败",
+      "commandEmpty": "命令不能为空",
+      "savedToShortcuts": "已保存到快捷命令",
+      "saveToShortcuts": "保存到快捷命令",
+      "saveToShortcutsFailed": "保存到快捷命令失败",
+      "enterCommand": "请输入命令...",
+      "editNote": "编辑后的命令将保存为快捷命令",
+      "sendCommandHandlerMissing": "发送命令处理函数未提供",
+      "sendFailed": "发送失败",
+      "noSshConnection": "请先建立SSH连接",
+      "notSshTab": "当前标签页不是SSH连接"
     }
   }
 }
