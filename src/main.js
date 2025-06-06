@@ -2880,4 +2880,51 @@ function setupIPC(mainWindow) {
       return { success: false, error: error.message, statistics: null };
     }
   });
+
+  // 新增：获取所有历史命令
+  ipcMain.handle("command-history:getAll", async (event) => {
+    try {
+      const history = commandHistoryService.getAllHistory();
+      return { success: true, data: history };
+    } catch (error) {
+      logToFile(`Error getting all command history: ${error.message}`, "ERROR");
+      return { success: false, error: error.message, data: [] };
+    }
+  });
+
+  // 新增：删除单个历史命令
+  ipcMain.handle("command-history:delete", async (event, command) => {
+    try {
+      commandHistoryService.removeCommand(command);
+      // 保存到配置文件
+      const historyToSave = commandHistoryService.exportHistory();
+      configManager.saveCommandHistory(historyToSave);
+      return { success: true };
+    } catch (error) {
+      logToFile(`Error deleting command from history: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 新增：批量删除历史命令
+  ipcMain.handle("command-history:deleteBatch", async (event, commands) => {
+    try {
+      if (!Array.isArray(commands)) {
+        throw new Error("Commands must be an array");
+      }
+      
+      commands.forEach(command => {
+        commandHistoryService.removeCommand(command);
+      });
+      
+      // 保存到配置文件
+      const historyToSave = commandHistoryService.exportHistory();
+      configManager.saveCommandHistory(historyToSave);
+      
+      return { success: true };
+    } catch (error) {
+      logToFile(`Error batch deleting commands from history: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
 } // Closing brace for setupIPC function

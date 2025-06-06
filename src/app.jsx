@@ -48,6 +48,7 @@ import AIIcon from "./components/AIIcon.jsx";
 import Settings from "./components/Settings.jsx";
 import Divider from "@mui/material/Divider";
 import ShortcutCommands from "./components/ShortcutCommands.jsx";
+import CommandHistory from "./components/CommandHistory.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
@@ -406,6 +407,9 @@ function App() {
   // 添加快捷命令侧边栏状态
   const [shortcutCommandsOpen, setShortcutCommandsOpen] = React.useState(false);
 
+  // 历史命令侧边栏状态
+  const [commandHistoryOpen, setCommandHistoryOpen] = React.useState(false);
+
   React.useEffect(() => {
     let calculatedMargin = 0;
     if (aiAssistantOpen && lastOpenedSidebar === "ai") {
@@ -418,6 +422,8 @@ function App() {
       calculatedMargin = SIDEBAR_WIDTHS.FILE_MANAGER;
     } else if (shortcutCommandsOpen && lastOpenedSidebar === "shortcut") {
       calculatedMargin = SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
+    } else if (commandHistoryOpen && lastOpenedSidebar === "history") {
+      calculatedMargin = SIDEBAR_WIDTHS.COMMAND_HISTORY;
     } else {
       // Fallback if lastOpenedSidebar isn't set but one is open
       if (aiAssistantOpen) calculatedMargin = SIDEBAR_WIDTHS.AI_ASSISTANT;
@@ -428,6 +434,8 @@ function App() {
       else if (fileManagerOpen) calculatedMargin = SIDEBAR_WIDTHS.FILE_MANAGER;
       else if (shortcutCommandsOpen)
         calculatedMargin = SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
+      else if (commandHistoryOpen)
+        calculatedMargin = SIDEBAR_WIDTHS.COMMAND_HISTORY;
     }
 
     if (calculatedMargin > 0) {
@@ -441,6 +449,7 @@ function App() {
     connectionManagerOpen,
     fileManagerOpen,
     shortcutCommandsOpen,
+    commandHistoryOpen,
     lastOpenedSidebar,
     SIDEBAR_WIDTHS,
   ]);
@@ -940,6 +949,21 @@ function App() {
     setShortcutCommandsOpen(false);
   };
 
+  // 添加切换历史命令侧边栏的函数
+  const toggleCommandHistory = () => {
+    if (commandHistoryOpen) {
+      setCommandHistoryOpen(false);
+    } else {
+      closeAllSidebars();
+      setCommandHistoryOpen(true);
+      setLastOpenedSidebar("history");
+    }
+  };
+
+  const handleCloseCommandHistory = () => {
+    setCommandHistoryOpen(false);
+  };
+
   // 更新关闭所有侧边栏的函数
   const closeAllSidebars = () => {
     setAiAssistantOpen(false);
@@ -947,6 +971,7 @@ function App() {
     setConnectionManagerOpen(false);
     setFileManagerOpen(false);
     setShortcutCommandsOpen(false);
+    setCommandHistoryOpen(false);
   };
 
   // 添加发送快捷命令到终端的函数
@@ -958,11 +983,17 @@ function App() {
         const processId = terminalInstances[`${tab.id}-processId`];
         if (processId && window.terminalAPI.sendToProcess) {
           window.terminalAPI.sendToProcess(processId, command + "\r");
+          return { success: true };
         } else {
           const reason = processId ? t("app.apiNotFound") : t("app.processIdNotFound");
           console.error(t("app.cannotSendCommandConsole", { reason }));
+          return { success: false, error: reason };
         }
+      } else {
+        return { success: false, error: "当前标签页不是SSH连接" };
       }
+    } else {
+      return { success: false, error: "请先建立SSH连接" };
     }
   };
 
@@ -1437,6 +1468,24 @@ function App() {
               />
             </Box>
 
+            {/* 添加历史命令侧边栏 */}
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                right: 48,
+                zIndex: lastOpenedSidebar === "history" ? 105 : 94,
+                height: "100%",
+                display: "flex",
+              }}
+            >
+              <CommandHistory
+                open={commandHistoryOpen}
+                onClose={handleCloseCommandHistory}
+                onSendCommand={handleSendCommand}
+              />
+            </Box>
+
             {/* 右侧边栏 */}
             <Paper
               elevation={3}
@@ -1567,6 +1616,26 @@ function App() {
                   }
                 >
                   <TerminalIcon />
+                </IconButton>
+              </Tooltip>
+
+              {/* 历史命令按钮 */}
+              <Tooltip title={t("sidebar.history")} placement="left">
+                <IconButton
+                  color="primary"
+                  onClick={toggleCommandHistory}
+                  sx={{
+                    bgcolor: commandHistoryOpen
+                      ? "action.selected"
+                      : "transparent",
+                    "&:hover": {
+                      bgcolor: commandHistoryOpen
+                        ? "action.selected"
+                        : "action.hover",
+                    },
+                  }}
+                >
+                  <HistoryIcon />
                 </IconButton>
               </Tooltip>
             </Paper>

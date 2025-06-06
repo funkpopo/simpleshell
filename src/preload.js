@@ -346,4 +346,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("command-history:clear"),
   getCommandHistoryStatistics: () =>
     ipcRenderer.invoke("command-history:getStatistics"),
+  
+  // 新增：历史命令管理API
+  getAllCommandHistory: () =>
+    ipcRenderer.invoke("command-history:getAll"),
+  deleteCommandHistory: (command) =>
+    ipcRenderer.invoke("command-history:delete", command),
+  deleteCommandHistoryBatch: (commands) =>
+    ipcRenderer.invoke("command-history:deleteBatch", commands),
 });
