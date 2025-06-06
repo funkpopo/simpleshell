@@ -119,7 +119,6 @@ const terminalStyles = `
   height: 100%;
   overflow: hidden;
   position: relative;
-  padding-right: 5px; /* 添加右侧边距，避免内容被右侧边栏遮挡 */
 }
 `;
 
@@ -128,7 +127,7 @@ const searchBarStyles = `
 .search-bar {
   position: absolute;
   top: 5px;
-  right: 65px; /* 将搜索栏向左移动，从60px改为65px */
+  right: 15px; /* 搜索栏位置靠近右侧边缘 */
   z-index: 10;
   display: flex;
   background: rgba(30, 30, 30, 0.9);
@@ -174,7 +173,7 @@ const searchBarStyles = `
 .search-icon-btn {
   position: absolute;
   top: 5px;
-  right: 65px; /* 将搜索按钮向左移动，从60px改为65px */
+  right: 15px; /* 搜索按钮位置靠近右侧边缘 */
   z-index: 9;
   color: rgba(255, 255, 255, 0.7);
   background-color: rgba(0, 0, 0, 0.3);
@@ -2550,7 +2549,6 @@ const WebTerminal = ({
         height: "100%",
         display: "flex",
         overflow: "hidden",
-        pr: "5px" /* 添加右侧边距，避免内容被右侧边栏遮挡 */,
       }}
     >
       <div className="terminal-container">

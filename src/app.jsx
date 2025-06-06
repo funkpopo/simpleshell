@@ -412,34 +412,41 @@ function App() {
 
   React.useEffect(() => {
     let calculatedMargin = 0;
-    if (aiAssistantOpen && lastOpenedSidebar === "ai") {
-      calculatedMargin = SIDEBAR_WIDTHS.AI_ASSISTANT;
-    } else if (resourceMonitorOpen && lastOpenedSidebar === "resource") {
-      calculatedMargin = SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-    } else if (connectionManagerOpen && lastOpenedSidebar === "connection") {
-      calculatedMargin = SIDEBAR_WIDTHS.CONNECTION_MANAGER;
-    } else if (fileManagerOpen && lastOpenedSidebar === "file") {
-      calculatedMargin = SIDEBAR_WIDTHS.FILE_MANAGER;
-    } else if (shortcutCommandsOpen && lastOpenedSidebar === "shortcut") {
-      calculatedMargin = SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
-    } else if (commandHistoryOpen && lastOpenedSidebar === "history") {
-      calculatedMargin = SIDEBAR_WIDTHS.COMMAND_HISTORY;
-    } else {
-      // Fallback if lastOpenedSidebar isn't set but one is open
-      if (aiAssistantOpen) calculatedMargin = SIDEBAR_WIDTHS.AI_ASSISTANT;
-      else if (resourceMonitorOpen)
-        calculatedMargin = SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-      else if (connectionManagerOpen)
-        calculatedMargin = SIDEBAR_WIDTHS.CONNECTION_MANAGER;
-      else if (fileManagerOpen) calculatedMargin = SIDEBAR_WIDTHS.FILE_MANAGER;
-      else if (shortcutCommandsOpen)
-        calculatedMargin = SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
-      else if (commandHistoryOpen)
-        calculatedMargin = SIDEBAR_WIDTHS.COMMAND_HISTORY;
-    }
+    
+    // 检查哪个边栏当前是开启的
+    const getSidebarWidth = () => {
+      if (aiAssistantOpen && lastOpenedSidebar === "ai") {
+        return SIDEBAR_WIDTHS.AI_ASSISTANT;
+      } else if (resourceMonitorOpen && lastOpenedSidebar === "resource") {
+        return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
+      } else if (connectionManagerOpen && lastOpenedSidebar === "connection") {
+        return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
+      } else if (fileManagerOpen && lastOpenedSidebar === "file") {
+        return SIDEBAR_WIDTHS.FILE_MANAGER;
+      } else if (shortcutCommandsOpen && lastOpenedSidebar === "shortcut") {
+        return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
+      } else if (commandHistoryOpen && lastOpenedSidebar === "history") {
+        return SIDEBAR_WIDTHS.COMMAND_HISTORY;
+      } else {
+        // Fallback if lastOpenedSidebar isn't set but one is open
+        if (aiAssistantOpen) return SIDEBAR_WIDTHS.AI_ASSISTANT;
+        else if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
+        else if (connectionManagerOpen) return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
+        else if (fileManagerOpen) return SIDEBAR_WIDTHS.FILE_MANAGER;
+        else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
+        else if (commandHistoryOpen) return SIDEBAR_WIDTHS.COMMAND_HISTORY;
+      }
+      return 0;
+    };
 
-    if (calculatedMargin > 0) {
-      calculatedMargin += SIDEBAR_WIDTHS.DEFAULT_PADDING;
+    const sidebarWidth = getSidebarWidth();
+    
+    // 始终为右侧按钮栏预留空间，即使没有侧边栏开启
+    calculatedMargin = SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH;
+    
+    if (sidebarWidth > 0) {
+      // 边栏宽度 + 右侧按钮栏宽度 + 额外安全边距
+      calculatedMargin = sidebarWidth + SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH + SIDEBAR_WIDTHS.SAFETY_MARGIN;
     }
 
     setActiveSidebarMargin(calculatedMargin);
