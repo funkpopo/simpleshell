@@ -490,8 +490,8 @@ const WebTerminal = ({
       // 检查时间间隔和命令重复
       const timeSinceLastCommand = Date.now() - lastExecutedCommandTimeRef.current;
       
-      // 距离上次命令执行300ms内不显示建议
-      if (timeSinceLastCommand < 300) {
+      // 距离上次命令执行50ms内不显示建议
+      if (timeSinceLastCommand < 50) {
         setSuggestions([]);
         setShowSuggestions(false);
         return;
@@ -533,7 +533,7 @@ const WebTerminal = ({
         setSuggestions([]);
         setShowSuggestions(false);
       }
-    }, 300),
+    }, 50),
     [inEditorMode, isCommandExecuting, setShowSuggestions, setSuggestions]
   );
 
