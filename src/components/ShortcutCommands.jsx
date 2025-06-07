@@ -102,9 +102,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           });
           setExpandedCategories(expanded);
         } else {
+          console.error("Failed to load commands:", result.error);
         }
       }
     } catch (error) {
+      console.error("Error loading commands:", error);
     } finally {
       setLoading(false);
     }
@@ -119,9 +121,12 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           categories: newCategories || categories,
         });
         if (!result.success) {
+          console.error("Failed to save commands:", result.error);
         }
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error("Error saving commands:", error);
+    }
   };
 
   // 生成唯一ID
@@ -326,6 +331,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           }),
           severity: "error",
         });
+        console.error("发送命令失败:", error);
       }
     } else {
       setNotification({
@@ -339,7 +345,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理复制命令
   const handleCopyCommand = (command) => {
-    navigator.clipboard.writeText(command).catch((err) => {});
+    navigator.clipboard.writeText(command).catch((err) => {
+      console.error("Failed to copy command:", err);
+    });
   };
 
   // 过滤命令

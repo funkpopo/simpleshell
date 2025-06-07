@@ -131,7 +131,7 @@ function createAIWorker() {
     });
 
     return aiWorker;
-  } catch (error) {    
+  } catch (error) {
     return null;
   }
 }
