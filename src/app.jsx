@@ -395,6 +395,9 @@ function App() {
   // 文件管理侧边栏状态
   const [fileManagerOpen, setFileManagerOpen] = React.useState(false);
 
+  // 文件管理路径记忆状态 - 为每个SSH连接记住最后访问的路径
+  const [fileManagerPaths, setFileManagerPaths] = React.useState({});
+
   // 最后打开的侧边栏（用于确定z-index层级）
   const [lastOpenedSidebar, setLastOpenedSidebar] = React.useState(null);
 
@@ -797,6 +800,13 @@ function App() {
       return newInstances;
     });
 
+    // 清理文件管理路径记忆
+    setFileManagerPaths((prev) => {
+      const newPaths = { ...prev };
+      delete newPaths[tabToRemove.id];
+      return newPaths;
+    });
+
     const newTabs = tabs.filter((_, i) => i !== index);
     setTabs(newTabs);
 
@@ -941,12 +951,26 @@ function App() {
     setFileManagerOpen(false);
   };
 
+  // 更新文件管理路径记忆
+  const updateFileManagerPath = (tabId, path) => {
+    if (tabId && path) {
+      setFileManagerPaths(prev => ({
+        ...prev,
+        [tabId]: path
+      }));
+    }
+  };
+
+  // 获取文件管理记忆路径
+  const getFileManagerPath = (tabId) => {
+    return fileManagerPaths[tabId] || "/";
+  };
+
   // 添加切换快捷命令侧边栏的函数
   const toggleShortcutCommands = () => {
     if (shortcutCommandsOpen) {
       setShortcutCommandsOpen(false);
     } else {
-      closeAllSidebars();
       setShortcutCommandsOpen(true);
       setLastOpenedSidebar("shortcut");
     }
@@ -961,7 +985,6 @@ function App() {
     if (commandHistoryOpen) {
       setCommandHistoryOpen(false);
     } else {
-      closeAllSidebars();
       setCommandHistoryOpen(true);
       setLastOpenedSidebar("history");
     }
@@ -1454,6 +1477,12 @@ function App() {
                     ? terminalInstances[`${tabs[currentTab].id}-config`]
                     : null
                 }
+                initialPath={
+                  currentTab > 0 && tabs[currentTab]
+                    ? getFileManagerPath(tabs[currentTab].id)
+                    : "/"
+                }
+                onPathChange={updateFileManagerPath}
               />
             </Box>
 

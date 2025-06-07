@@ -884,7 +884,7 @@ function AIAssistant({ open, onClose }) {
     setInfoMessage("");
 
     // 测试消息内容
-    const testPrompt = "这是一条测试消息，请回复'测试成功'确认连接正常。";
+    const testPrompt = "ping, Just reply 'pong'";
 
     try {
       // 验证设置
