@@ -45,14 +45,9 @@ function calculateDynamicTimeout(
 
 function init(logger, getChildProcessInfoFunc) {
   if (!logger || !logger.logToFile) {
-    console.error("sftpCore: Logger (logToFile) not provided during init!");
-    // Fallback to
+    // Logger not provided during init, using fallback
     logToFile = (message, type = "INFO") => {
-      const prefix = `[sftpCore-${type}]`;
-      if (type === "ERROR" || type === "WARN") {
-        console.error(prefix, message);
-      } else {
-      }
+      // Fallback logging - could be enhanced to write to file or use alternative logging
     };
   } else {
     logToFile = logger.logToFile;

@@ -337,11 +337,11 @@ app.on("before-quit", () => {
             proc.process.kill();
           }
         } catch (error) {
-          console.error(`Error killing process ${id}:`, error);
+          logToFile(`Error killing process ${id}: ${error.message}`, "ERROR");
         }
       }
     } catch (error) {
-      console.error(`Error cleaning up process ${id}:`, error);
+      logToFile(`Error cleaning up process ${id}: ${error.message}`, "ERROR");
     }
   }
   // 清空进程映射
@@ -370,7 +370,7 @@ app.on("window-all-closed", () => {
     if (aiWorker) {
       aiWorker
         .terminate()
-        .catch((err) => console.error("Error terminating AI worker:", err));
+        .catch((err) => logToFile(`Error terminating AI worker: ${err.message}`, "ERROR"));
     }
     app.quit();
   }
@@ -424,7 +424,7 @@ function setupIPC(mainWindow) {
             );
           }
         } catch (error) {
-          console.error("Error handling stdout data:", error);
+          logToFile(`Error handling stdout data: ${error.message}`, "ERROR");
         }
       });
 
@@ -444,7 +444,7 @@ function setupIPC(mainWindow) {
             );
           }
         } catch (error) {
-          console.error("Error handling stderr data:", error);
+          logToFile(`Error handling stderr data: ${error.message}`, "ERROR");
         }
       });
 
@@ -467,7 +467,7 @@ function setupIPC(mainWindow) {
           }
           childProcesses.delete(processId);
         } catch (error) {
-          console.error("Error handling process exit:", error);
+          logToFile(`Error handling process exit: ${error.message}`, "ERROR");
         }
       });
 
@@ -490,13 +490,13 @@ function setupIPC(mainWindow) {
           }
           childProcesses.delete(processId);
         } catch (error) {
-          console.error("Error handling process error:", error);
+          logToFile(`Error handling process error: ${error.message}`, "ERROR");
         }
       });
 
       return processId;
     } catch (error) {
-      console.error("Failed to start PowerShell:", error);
+      logToFile(`Failed to start PowerShell: ${error.message}`, "ERROR");
       throw error;
     }
   });
@@ -506,7 +506,7 @@ function setupIPC(mainWindow) {
     const processId = nextProcessId++;
 
     if (!sshConfig || !sshConfig.host) {
-      console.error("Invalid SSH configuration");
+      logToFile("Invalid SSH configuration", "ERROR");
       throw new Error("Invalid SSH configuration");
     }
 
@@ -547,7 +547,7 @@ function setupIPC(mainWindow) {
 
         // 设置连接超时定时器
         const connectionTimeout = setTimeout(() => {
-          console.error("SSH connection timed out after 15 seconds");
+          logToFile("SSH connection timed out after 15 seconds", "ERROR");
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send(
               `process:output:${processId}`,
@@ -653,10 +653,10 @@ function setupIPC(mainWindow) {
                     buffer = Buffer.from([]);
                   } catch (error) {
                     // 如果转换失败，说明可能是不完整的UTF-8序列，保留缓冲区继续等待
-                    console.error("Failed to convert buffer to string:", error);
+                    logToFile(`Failed to convert buffer to string: ${error.message}`, "ERROR");
                   }
                 } catch (error) {
-                  console.error("Error handling stream data:", error);
+                  logToFile(`Error handling stream data: ${error.message}`, "ERROR");
                 }
               });
 
@@ -671,7 +671,7 @@ function setupIPC(mainWindow) {
                     );
                   }
                 } catch (error) {
-                  console.error("Error handling extended data:", error);
+                  logToFile(`Error handling extended data: ${error.message}`, "ERROR");
                 }
               });
 
@@ -932,7 +932,7 @@ function setupIPC(mainWindow) {
               connectConfig.passphrase = sshConfig.password;
             }
           } catch (error) {
-            console.error("Error reading private key file:", error);
+            logToFile(`Error reading private key file: ${error.message}`, "ERROR");
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send(
                 `process:output:${processId}`,
@@ -955,7 +955,7 @@ function setupIPC(mainWindow) {
         // 返回进程ID
         resolve(processId);
       } catch (error) {
-        console.error("Failed to start SSH connection:", error);
+        logToFile(`Failed to start SSH connection: ${error.message}`, "ERROR");
         reject(error);
       }
     });
@@ -981,7 +981,7 @@ function setupIPC(mainWindow) {
             procInfo.stream.write(processedData);
             return true;
           } else {
-            console.error("SSH2 stream not available");
+            logToFile("SSH2 stream not available", "ERROR");
             return false;
           }
         } else if (typeof procInfo.process.write === "function") {
@@ -991,7 +991,7 @@ function setupIPC(mainWindow) {
           procInfo.process.stdin.write(processedData);
           return true;
         } else {
-          console.error("Process has no valid write method");
+          logToFile("Process has no valid write method", "ERROR");
           return false;
         }
       }
@@ -1097,7 +1097,7 @@ function setupIPC(mainWindow) {
           procInfo.stream.write(processedData);
           return true;
         } else {
-          console.error("SSH2 stream not available");
+          logToFile("SSH2 stream not available", "ERROR");
           return false;
         }
       } else if (typeof procInfo.process.write === "function") {
@@ -1109,11 +1109,11 @@ function setupIPC(mainWindow) {
         procInfo.process.stdin.write(processedData);
         return true;
       } else {
-        console.error("Process has no valid write method");
+        logToFile("Process has no valid write method", "ERROR");
         return false;
       }
     } catch (error) {
-      console.error("Failed to send data to process:", error);
+      logToFile(`Failed to send data to process: ${error.message}`, "ERROR");
       return false;
     }
   });
@@ -1154,10 +1154,10 @@ function setupIPC(mainWindow) {
             proc.process.kill();
           }
         } catch (error) {
-          console.error(`Error killing process ${processId}:`, error);
+          logToFile(`Error killing process ${processId}: ${error.message}`, "ERROR");
         }
       } catch (error) {
-        console.error(`Error handling process kill:`, error);
+        logToFile(`Error handling process kill: ${error.message}`, "ERROR");
       }
     }
   });
@@ -1240,7 +1240,7 @@ function setupIPC(mainWindow) {
       await shell.openExternal(url);
       return { success: true };
     } catch (error) {
-      console.error("Failed to open external link:", error);
+      logToFile(`Failed to open external link: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   });
@@ -1297,7 +1297,7 @@ function setupIPC(mainWindow) {
         data: releaseData,
       };
     } catch (error) {
-      console.error("检查更新失败:", error);
+      logToFile(`检查更新失败: ${error.message}`, "ERROR");
       return {
         success: false,
         error: error.message,
@@ -1317,7 +1317,7 @@ function setupIPC(mainWindow) {
         return { output: `Command not recognized: ${command}` };
       }
     } catch (error) {
-      console.error("Command error:", error);
+      logToFile(`Command error: ${error.message}`, "ERROR");
       return { error: error.message };
     }
   });
@@ -1344,7 +1344,7 @@ function setupIPC(mainWindow) {
       }
       return false;
     } catch (error) {
-      console.error("Failed to resize terminal:", error);
+      logToFile(`Failed to resize terminal: ${error.message}`, "ERROR");
       return false;
     }
   });
@@ -1372,7 +1372,7 @@ function setupIPC(mainWindow) {
         }
       }
     } catch (error) {
-      console.error("Failed to get system info:", error);
+      logToFile(`Failed to get system info: ${error.message}`, "ERROR");
       return {
         error: "获取系统信息失败",
         message: error.message,
@@ -1420,7 +1420,6 @@ function setupIPC(mainWindow) {
           `Failed to save API config (via main.js IPC): ${error.message}`,
           "ERROR",
         );
-      console.error("Failed to save API config (IPC):", error);
       return false;
     }
   });
@@ -1453,7 +1452,6 @@ function setupIPC(mainWindow) {
           `Failed to delete API config (via main.js IPC): ${error.message}`,
           "ERROR",
         );
-      console.error("Failed to delete API config (IPC):", error);
       return false;
     }
   });
@@ -1479,7 +1477,6 @@ function setupIPC(mainWindow) {
           `Failed to set current API config (via main.js IPC): ${error.message}`,
           "ERROR",
         );
-      console.error("Failed to set current API config (IPC):", error);
       return false;
     }
   });
@@ -1488,7 +1485,7 @@ function setupIPC(mainWindow) {
     try {
       return await configManager.sendAIPrompt(prompt, settings);
     } catch (error) {
-      console.error("Error sending AI prompt:", error);
+      logToFile(`Error sending AI prompt: ${error.message}`, "ERROR");
       return { error: error.message || "发送请求时出错" };
     }
   });
@@ -1563,7 +1560,7 @@ function setupIPC(mainWindow) {
                 }
               }
             } catch (error) {
-              console.error("处理流数据时出错:", error);
+              logToFile(`处理流数据时出错: ${error.message}`, "ERROR");
             }
           });
 
@@ -1575,7 +1572,7 @@ function setupIPC(mainWindow) {
         });
 
         req.on("error", (error) => {
-          console.error("请求出错:", error);
+          logToFile(`请求出错: ${error.message}`, "ERROR");
           event.sender.send("stream-error", {
             tabId: "ai",
             error: { message: error.message },
@@ -1658,7 +1655,7 @@ function setupIPC(mainWindow) {
                     });
                   }
                 } catch (error) {
-                  console.error("解析API响应时出错:", error);
+                  logToFile(`解析API响应时出错: ${error.message}`, "ERROR");
                   resolve({
                     success: false,
                     error: `解析响应失败: ${error.message}`,
@@ -1669,7 +1666,7 @@ function setupIPC(mainWindow) {
             });
 
             req.on("error", (error) => {
-              console.error("请求出错:", error);
+              logToFile(`请求出错: ${error.message}`, "ERROR");
               resolve({
                 success: false,
                 error: `请求失败: ${error.message}`,
@@ -1687,7 +1684,7 @@ function setupIPC(mainWindow) {
 
             req.end();
           } catch (error) {
-            console.error("创建请求时出错:", error);
+            logToFile(`创建请求时出错: ${error.message}`, "ERROR");
             resolve({
               success: false,
               error: `创建请求失败: ${error.message}`,
@@ -1696,7 +1693,7 @@ function setupIPC(mainWindow) {
         });
       }
     } catch (error) {
-      console.error("发送API请求时出错:", error);
+      logToFile(`发送API请求时出错: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   });
@@ -1724,7 +1721,7 @@ function setupIPC(mainWindow) {
         return { success: false, message: "没有活跃的请求" };
       }
     } catch (error) {
-      console.error("中断API请求时出错:", error);
+      logToFile(`中断API请求时出错: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   });
@@ -2425,7 +2422,7 @@ function setupIPC(mainWindow) {
     try {
       return sftpCore.getSftpSession(tabId);
     } catch (error) {
-      console.error("Error getting SFTP session:", error);
+      logToFile(`Error getting SFTP session: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   });
@@ -2435,7 +2432,7 @@ function setupIPC(mainWindow) {
     try {
       return sftpCore.enqueueSftpOperation(tabId, operation);
     } catch (error) {
-      console.error("Error enqueuing SFTP operation:", error);
+      logToFile(`Error enqueuing SFTP operation: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   });
@@ -2445,7 +2442,7 @@ function setupIPC(mainWindow) {
     try {
       return sftpCore.processSftpQueue(tabId);
     } catch (error) {
-      console.error("Error processing SFTP queue:", error);
+      logToFile(`Error processing SFTP queue: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   });

@@ -335,7 +335,6 @@ function AIAssistant({ open, onClose }) {
           }
         }
       } catch (error) {
-        console.error("Failed to load AI settings:", error);
         setError("无法加载AI设置");
       }
     };
@@ -681,7 +680,7 @@ function AIAssistant({ open, onClose }) {
                 }
               }
             } catch (e) {
-              console.error("解析响应行出错:", e);
+              // 解析响应行出错
             }
           }
         }
@@ -834,7 +833,6 @@ function AIAssistant({ open, onClose }) {
         setIsSending(false);
       }
     } catch (error) {
-      console.error("发送消息出错:", error);
       // 添加错误消息
       const errorMessageId = `error-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
       const errorMessage = {
@@ -1300,7 +1298,6 @@ function AIAssistant({ open, onClose }) {
             await sendParseRequest(prompt, apiSettings.current);
           }
         } catch (error) {
-          console.error("解析文本时出错:", error);
           // 添加错误消息
           addNewAIMessage(`解析文本时出错: ${error.message}`);
         }

@@ -145,7 +145,7 @@ const VirtualizedFileList = ({
           }
         }
       } catch (error) {
-        console.warn("虚拟化列表高度计算失败:", error);
+        // 虚拟化列表高度计算失败
         setVirtualizationError(true);
       }
     };
@@ -161,7 +161,7 @@ const VirtualizedFileList = ({
         resizeObserver.observe(containerRef.current);
       }
     } catch (error) {
-      console.warn("ResizeObserver 不可用，降级到传统渲染:", error);
+      // ResizeObserver 不可用，降级到传统渲染
       setVirtualizationError(true);
     }
 

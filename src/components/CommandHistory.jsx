@@ -82,12 +82,10 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         if (result.success) {
           setHistory(result.data || []);
         } else {
-          console.error("Failed to load command history:", result.error);
           showNotification("加载历史记录失败", "error");
         }
       }
     } catch (error) {
-      console.error("Error loading command history:", error);
       showNotification("加载历史记录出错", "error");
     } finally {
       setLoading(false);
@@ -121,7 +119,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
     const searchTermLower = searchTerm.toLowerCase();
     return history.filter((item) =>
-      item.command.toLowerCase().includes(searchTermLower)
+      item.command.toLowerCase().includes(searchTermLower),
     );
   };
 
@@ -159,7 +157,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       await navigator.clipboard.writeText(command);
       showNotification(t("commandHistory.commandCopied"));
     } catch (error) {
-      console.error("Failed to copy command:", error);
       showNotification(t("commandHistory.copyFailed"), "error");
     }
     handleMenuClose();
@@ -182,15 +179,18 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
     try {
       // 将编辑后的命令保存为快捷命令
-      if (window.terminalAPI?.getShortcutCommands && window.terminalAPI?.saveShortcutCommands) {
+      if (
+        window.terminalAPI?.getShortcutCommands &&
+        window.terminalAPI?.saveShortcutCommands
+      ) {
         const result = await window.terminalAPI.getShortcutCommands();
         if (result.success) {
           const newCommand = {
             id: `cmd-${Date.now()}`,
-            name: editedCommand.split(' ')[0] || 'Command',
+            name: editedCommand.split(" ")[0] || "Command",
             command: editedCommand,
             description: `从历史记录编辑的命令`,
-            category: result.data.categories?.[0]?.id || '',
+            category: result.data.categories?.[0]?.id || "",
             params: [],
             tags: [],
           };
@@ -204,7 +204,10 @@ function CommandHistory({ open, onClose, onSendCommand }) {
           if (saveResult.success) {
             showNotification(t("commandHistory.savedToShortcuts"));
           } else {
-            showNotification(t("commandHistory.saveToShortcutsFailed"), "error");
+            showNotification(
+              t("commandHistory.saveToShortcutsFailed"),
+              "error",
+            );
           }
         }
       }
@@ -260,7 +263,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     if (selectedCommands.size === filteredHistory.length) {
       setSelectedCommands(new Set());
     } else {
-      setSelectedCommands(new Set(filteredHistory.map(item => item.command)));
+      setSelectedCommands(new Set(filteredHistory.map((item) => item.command)));
     }
   };
 
@@ -270,12 +273,18 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
     try {
       if (window.terminalAPI?.deleteCommandHistoryBatch) {
-        const result = await window.terminalAPI.deleteCommandHistoryBatch(Array.from(selectedCommands));
+        const result = await window.terminalAPI.deleteCommandHistoryBatch(
+          Array.from(selectedCommands),
+        );
         if (result.success) {
           await loadHistory();
           setSelectedCommands(new Set());
           setSelectMode(false);
-          showNotification(t("commandHistory.batchDeleteSuccess", { count: selectedCommands.size }));
+          showNotification(
+            t("commandHistory.batchDeleteSuccess", {
+              count: selectedCommands.size,
+            }),
+          );
         } else {
           showNotification(t("commandHistory.batchDeleteFailed"), "error");
         }
@@ -341,8 +350,8 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                            p: 2,
-            borderBottom: `1px solid ${theme.palette.divider}`,
+                p: 2,
+                borderBottom: `1px solid ${theme.palette.divider}`,
               }}
             >
               <Typography variant="h6" component="h2">
@@ -354,182 +363,219 @@ function CommandHistory({ open, onClose, onSendCommand }) {
               </IconButton>
             </Box>
 
-        {/* 搜索栏和工具栏 */}
-        <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}>
-          <TextField
-            fullWidth
-            size="small"
-            placeholder={t("commandHistory.search")}
-            value={searchTerm}
-            onChange={handleSearchChange}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ mb: 2 }}
-          />
-
-          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-            <Button
-              size="small"
-              variant={selectMode ? "contained" : "outlined"}
-              onClick={toggleSelectMode}
-              startIcon={<SelectAllIcon />}
+            {/* 搜索栏和工具栏 */}
+            <Box
+              sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}
             >
-              {selectMode ? t("commandHistory.exitSelect") : t("commandHistory.selectMode")}
-            </Button>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder={t("commandHistory.search")}
+                value={searchTerm}
+                onChange={handleSearchChange}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{ mb: 2 }}
+              />
 
-            {selectMode && (
-              <>
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
                 <Button
                   size="small"
-                  onClick={toggleSelectAll}
+                  variant={selectMode ? "contained" : "outlined"}
+                  onClick={toggleSelectMode}
                   startIcon={<SelectAllIcon />}
                 >
-                  {selectedCommands.size === filteredHistory.length 
-                    ? t("commandHistory.deselectAll") 
-                    : t("commandHistory.selectAll")}
+                  {selectMode
+                    ? t("commandHistory.exitSelect")
+                    : t("commandHistory.selectMode")}
                 </Button>
-                
-                {selectedCommands.size > 0 && (
-                  <Button
-                    size="small"
-                    color="error"
-                    onClick={handleDeleteSelected}
-                    startIcon={<DeleteIcon />}
-                  >
-                    {t("commandHistory.deleteSelected")} ({selectedCommands.size})
-                  </Button>
+
+                {selectMode && (
+                  <>
+                    <Button
+                      size="small"
+                      onClick={toggleSelectAll}
+                      startIcon={<SelectAllIcon />}
+                    >
+                      {selectedCommands.size === filteredHistory.length
+                        ? t("commandHistory.deselectAll")
+                        : t("commandHistory.selectAll")}
+                    </Button>
+
+                    {selectedCommands.size > 0 && (
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={handleDeleteSelected}
+                        startIcon={<DeleteIcon />}
+                      >
+                        {t("commandHistory.deleteSelected")} (
+                        {selectedCommands.size})
+                      </Button>
+                    )}
+                  </>
                 )}
-              </>
-            )}
 
-            <Button
-              size="small"
-              color="error"
-              onClick={handleClearAll}
-              startIcon={<ClearAllIcon />}
-              disabled={history.length === 0}
-            >
-              {t("commandHistory.clearAll")}
-            </Button>
-          </Box>
-        </Box>
-
-        {/* 历史记录列表 */}
-        <Box sx={{ 
-          flex: 1, 
-          overflow: "auto",
-          bgcolor: theme.palette.mode === "dark" ? "background.paper" : "grey.50",
-          "&::-webkit-scrollbar": {
-            width: "8px",
-          },
-          "&::-webkit-scrollbar-thumb": {
-            backgroundColor: "rgba(0,0,0,0.2)",
-            borderRadius: "4px",
-          },
-        }}>
-          {loading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-              <CircularProgress />
+                <Button
+                  size="small"
+                  color="error"
+                  onClick={handleClearAll}
+                  startIcon={<ClearAllIcon />}
+                  disabled={history.length === 0}
+                >
+                  {t("commandHistory.clearAll")}
+                </Button>
+              </Box>
             </Box>
-          ) : filteredHistory.length === 0 ? (
-            <Box sx={{ p: 4, textAlign: "center", color: "text.secondary" }}>
-              <HistoryIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-              <Typography>
-                {searchTerm ? t("commandHistory.noCommandsFound") : t("commandHistory.noCommands")}
+
+            {/* 历史记录列表 */}
+            <Box
+              sx={{
+                flex: 1,
+                overflow: "auto",
+                bgcolor:
+                  theme.palette.mode === "dark"
+                    ? "background.paper"
+                    : "grey.50",
+                "&::-webkit-scrollbar": {
+                  width: "8px",
+                },
+                "&::-webkit-scrollbar-thumb": {
+                  backgroundColor: "rgba(0,0,0,0.2)",
+                  borderRadius: "4px",
+                },
+              }}
+            >
+              {loading ? (
+                <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : filteredHistory.length === 0 ? (
+                <Box
+                  sx={{ p: 4, textAlign: "center", color: "text.secondary" }}
+                >
+                  <HistoryIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+                  <Typography>
+                    {searchTerm
+                      ? t("commandHistory.noCommandsFound")
+                      : t("commandHistory.noCommands")}
+                  </Typography>
+                </Box>
+              ) : (
+                <List dense>
+                  {filteredHistory.map((item, index) => (
+                    <ListItem
+                      key={`${item.command}-${item.timestamp}-${index}`}
+                      disablePadding
+                      sx={{
+                        borderBottom: `1px solid ${theme.palette.divider}`,
+                      }}
+                    >
+                      <ListItemButton
+                        onClick={() =>
+                          selectMode
+                            ? toggleCommandSelection(item.command)
+                            : handleSendCommand(item.command)
+                        }
+                        sx={{
+                          minHeight: 72,
+                          bgcolor:
+                            selectMode && selectedCommands.has(item.command)
+                              ? "action.selected"
+                              : "transparent",
+                        }}
+                      >
+                        {selectMode && (
+                          <ListItemIcon sx={{ minWidth: 36 }}>
+                            <Checkbox
+                              checked={selectedCommands.has(item.command)}
+                              onChange={() =>
+                                toggleCommandSelection(item.command)
+                              }
+                              size="small"
+                            />
+                          </ListItemIcon>
+                        )}
+
+                        <ListItemText
+                          primary={
+                            <Box
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 1,
+                              }}
+                            >
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  flex: 1,
+                                  wordBreak: "break-all",
+                                }}
+                              >
+                                {item.command}
+                              </Typography>
+                              {item.count > 1 && (
+                                <Chip
+                                  label={`${item.count}次`}
+                                  size="small"
+                                  variant="outlined"
+                                  sx={{ fontSize: "0.7rem", height: 20 }}
+                                />
+                              )}
+                            </Box>
+                          }
+                          secondary={
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {formatTime(item.timestamp)}
+                            </Typography>
+                          }
+                        />
+
+                        {!selectMode && (
+                          <IconButton
+                            size="small"
+                            onClick={(e) => handleMenuOpen(e, item)}
+                            sx={{ ml: 1 }}
+                          >
+                            <MoreVertIcon />
+                          </IconButton>
+                        )}
+                      </ListItemButton>
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </Box>
+
+            {/* 状态栏 */}
+            <Box
+              sx={{
+                p: 1,
+                borderTop: `1px solid ${theme.palette.divider}`,
+                bgcolor: "background.default",
+              }}
+            >
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                align="center"
+                display="block"
+              >
+                {t("commandHistory.totalCommands", {
+                  count: filteredHistory.length,
+                })}
+                {searchTerm && ` / ${history.length} 总计`}
               </Typography>
             </Box>
-          ) : (
-            <List dense>
-              {filteredHistory.map((item, index) => (
-                <ListItem
-                  key={`${item.command}-${item.timestamp}-${index}`}
-                  disablePadding
-                  sx={{
-                    borderBottom: `1px solid ${theme.palette.divider}`,
-                  }}
-                >
-                  <ListItemButton
-                    onClick={() => selectMode ? toggleCommandSelection(item.command) : handleSendCommand(item.command)}
-                    sx={{
-                      minHeight: 72,
-                      bgcolor: selectMode && selectedCommands.has(item.command) 
-                        ? "action.selected" 
-                        : "transparent",
-                    }}
-                  >
-                    {selectMode && (
-                      <ListItemIcon sx={{ minWidth: 36 }}>
-                        <Checkbox
-                          checked={selectedCommands.has(item.command)}
-                          onChange={() => toggleCommandSelection(item.command)}
-                          size="small"
-                        />
-                      </ListItemIcon>
-                    )}
-                    
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              flex: 1,
-                              wordBreak: "break-all",
-                            }}
-                          >
-                            {item.command}
-                          </Typography>
-                          {item.count > 1 && (
-                            <Chip
-                              label={`${item.count}次`}
-                              size="small"
-                              variant="outlined"
-                              sx={{ fontSize: "0.7rem", height: 20 }}
-                            />
-                          )}
-                        </Box>
-                      }
-                      secondary={
-                        <Typography variant="caption" color="text.secondary">
-                          {formatTime(item.timestamp)}
-                        </Typography>
-                      }
-                    />
-                    
-                    {!selectMode && (
-                      <IconButton
-                        size="small"
-                        onClick={(e) => handleMenuOpen(e, item)}
-                        sx={{ ml: 1 }}
-                      >
-                        <MoreVertIcon />
-                      </IconButton>
-                    )}
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
-          )}
-        </Box>
-
-        {/* 状态栏 */}
-        <Box
-          sx={{
-            p: 1,
-            borderTop: `1px solid ${theme.palette.divider}`,
-            bgcolor: "background.default",
-          }}
-        >
-          <Typography variant="caption" color="text.secondary" align="center" display="block">
-            {t("commandHistory.totalCommands", { count: filteredHistory.length })}
-            {searchTerm && ` / ${history.length} 总计`}
-          </Typography>
-        </Box>
           </>
         )}
       </Paper>
@@ -555,7 +601,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
           {t("commandHistory.editCommand")}
         </MenuItem>
         <Divider />
-        <MenuItem 
+        <MenuItem
           onClick={() => handleDeleteCommand(menuTargetCommand?.command)}
           sx={{ color: "error.main" }}
         >
@@ -582,7 +628,11 @@ function CommandHistory({ open, onClose, onSendCommand }) {
             placeholder={t("commandHistory.enterCommand")}
             sx={{ mt: 1 }}
           />
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ mt: 1, display: "block" }}
+          >
             {t("commandHistory.editNote")}
           </Typography>
         </DialogContent>
@@ -615,4 +665,4 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   );
 }
 
-export default CommandHistory; 
+export default CommandHistory;

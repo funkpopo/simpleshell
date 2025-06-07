@@ -331,7 +331,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           }),
           severity: "error",
         });
-        console.error("发送命令失败:", error);
+        // 错误已通过UI通知显示给用户
       }
     } else {
       setNotification({
@@ -339,7 +339,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
         message: t("shortcutCommands.sendCommandHandlerMissing"),
         severity: "warning",
       });
-      console.warn("发送命令处理函数未提供");
+      // 警告已通过UI通知显示给用户
     }
   };
 
