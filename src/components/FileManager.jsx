@@ -48,7 +48,7 @@ import {
 } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 
-const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
+const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath = "/", onPathChange }) => {
   const theme = useTheme();
   const [currentPath, setCurrentPath] = useState("/");
   const [files, setFiles] = useState([]);
@@ -139,6 +139,14 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
     }
   };
 
+  // 更新当前路径并通知父组件
+  const updateCurrentPath = (newPath) => {
+    setCurrentPath(newPath);
+    if (onPathChange && tabId) {
+      onPathChange(tabId, newPath);
+    }
+  };
+
   // 当SSH连接改变时，重置状态并加载目录
   useEffect(() => {
     if (open && sshConnection && tabId) {
@@ -152,11 +160,13 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
       // 清空缓存
       setDirectoryCache({});
 
-      setCurrentPath("/");
-      setPathInput("/");
-      loadDirectory("/");
+      // 使用记忆的路径或默认路径
+      const pathToLoad = initialPath || "/";
+      updateCurrentPath(pathToLoad);
+      setPathInput(pathToLoad);
+      loadDirectory(pathToLoad);
     }
-  }, [open, sshConnection, tabId]);
+  }, [open, sshConnection, tabId, initialPath]);
 
   // 从缓存中获取目录内容
   const getDirectoryFromCache = (path) => {
@@ -248,7 +258,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
       const cachedData = getDirectoryFromCache(path);
       if (cachedData) {
         setFiles(cachedData);
-        setCurrentPath(path);
+        updateCurrentPath(path);
         setPathInput(path);
         // 加载新目录时重置选中文件
         setSelectedFile(null);
@@ -285,7 +295,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           updateDirectoryCache(path, fileData);
 
           setFiles(fileData);
-          setCurrentPath(path); // 保持UI中显示~
+          updateCurrentPath(path); // 保持UI中显示~
           setPathInput(path);
           // 加载新目录时重置选中文件
           setSelectedFile(null);
@@ -607,7 +617,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           setTimeout(() => setTransferProgress(null), 1500);
 
           // 切换到上传的目标路径
-          setCurrentPath(targetPath);
+          updateCurrentPath(targetPath);
           setPathInput(targetPath);
           loadDirectory(targetPath, 0, true); // 强制刷新目标目录
 
@@ -750,7 +760,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName }) => {
           setTimeout(() => setTransferProgress(null), 1500);
 
           // 切换到上传的目标路径
-          setCurrentPath(targetPath);
+          updateCurrentPath(targetPath);
           setPathInput(targetPath);
           loadDirectory(targetPath, 0, true); // 强制刷新目标目录
 
