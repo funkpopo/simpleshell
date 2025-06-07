@@ -956,7 +956,6 @@ function AIAssistant({ open, onClose }) {
       // 提示用户保存设置
       setInfoMessage('测试成功！请点击"保存设置"按钮保存您的配置。');
     } catch (error) {
-      console.error("API测试失败:", error);
       setTestResult({
         success: false,
         message: `测试失败: ${error.message || "未知错误"}`,
@@ -1056,7 +1055,6 @@ function AIAssistant({ open, onClose }) {
         const success = await window.terminalAPI.saveApiConfig(configToSave);
 
         if (!success) {
-          console.error("保存配置失败");
           setError("保存配置失败");
           return;
         }
@@ -1068,11 +1066,9 @@ function AIAssistant({ open, onClose }) {
           );
 
           if (!currentSuccess) {
-            console.error("设置当前配置失败");
             setError("设置当前配置失败");
           }
         } else {
-          console.error("配置ID无效，无法设置为当前配置");
           setError("配置ID无效");
           return;
         }
@@ -1094,23 +1090,18 @@ function AIAssistant({ open, onClose }) {
               setSettingsSaved(true);
               setError(null);
             } else {
-              console.error("无法在加载的设置中找到已保存的配置");
               setError("保存的配置未正确加载");
             }
           } else {
-            console.error("加载设置返回无效数据");
             setError("无法加载更新后的设置");
           }
         } catch (loadError) {
-          console.error("加载设置时出错:", loadError);
           setError(`加载设置失败: ${loadError.message || "未知错误"}`);
         }
       } else {
-        console.error("saveApiConfig API不可用");
         setError("保存API不可用");
       }
     } catch (error) {
-      console.error("保存设置时发生错误:", error);
       setError(`保存设置失败: ${error.message || "未知错误"}`);
     }
   };
@@ -1136,7 +1127,6 @@ function AIAssistant({ open, onClose }) {
         }
       }
     } catch (error) {
-      console.error("设置当前配置时发生错误:", error);
       setError(`切换配置失败: ${error.message || "未知错误"}`);
     }
   };
@@ -1163,7 +1153,6 @@ function AIAssistant({ open, onClose }) {
         }
       }
     } catch (error) {
-      console.error("删除配置时发生错误:", error);
       setError(`删除配置失败: ${error.message || "未知错误"}`);
     }
   };

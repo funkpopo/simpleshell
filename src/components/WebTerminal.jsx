@@ -1216,11 +1216,9 @@ const WebTerminal = ({
 
           // 使用预加载脚本中定义的API在系统默认浏览器中打开链接
           if (window.terminalAPI && window.terminalAPI.openExternal) {
-            window.terminalAPI
-              .openExternal(uri)
-              .catch((err) => {
-                // 打开链接失败
-              });
+            window.terminalAPI.openExternal(uri).catch((err) => {
+              // 打开链接失败
+            });
           } else {
             // terminalAPI.openExternal不可用，无法打开链接
           }

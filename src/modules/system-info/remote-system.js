@@ -17,7 +17,6 @@ async function getRemoteSystemInfo(sshClient) {
     // 获取基本操作系统信息
     sshClient.exec("uname -a", (err, stream) => {
       if (err) {
-        console.error("SSH exec error (uname):", err);
         resolve(result);
         return;
       }
@@ -145,7 +144,6 @@ async function getRemoteSystemInfo(sshClient) {
         function getMacOSVersion() {
           sshClient.exec("sw_vers", (err, stream) => {
             if (err) {
-              console.error("SSH exec error (sw_vers):", err);
               getHostname();
               return;
             }
@@ -179,7 +177,6 @@ async function getRemoteSystemInfo(sshClient) {
             "wmic os get Caption,Version,OSArchitecture /value",
             (err, stream) => {
               if (err) {
-                console.error("SSH exec error (wmic os):", err);
                 getHostname();
                 return;
               }
@@ -218,7 +215,6 @@ async function getRemoteSystemInfo(sshClient) {
         function getHostname() {
           sshClient.exec("hostname", (err, stream) => {
             if (err) {
-              console.error("SSH exec error (hostname):", err);
               getMemoryInfo();
               return;
             }
@@ -244,7 +240,6 @@ async function getRemoteSystemInfo(sshClient) {
 
           sshClient.exec(memCommand, (err, stream) => {
             if (err) {
-              console.error("SSH exec error (memory):", err);
               getCpuInfo();
               return;
             }
@@ -291,9 +286,7 @@ async function getRemoteSystemInfo(sshClient) {
                     }
                   }
                 }
-              } catch (error) {
-                console.error("Error parsing memory info:", error);
-              }
+              } catch (error) {}
 
               getCpuInfo();
             });
@@ -309,7 +302,6 @@ async function getRemoteSystemInfo(sshClient) {
 
           sshClient.exec(cpuCommand, (err, stream) => {
             if (err) {
-              console.error("SSH exec error (cpuinfo):", err);
               getCpuModel();
               return;
             }
@@ -332,9 +324,7 @@ async function getRemoteSystemInfo(sshClient) {
                   // 解析Linux CPU核心数
                   result.cpu.cores = parseInt(cpuOutput.trim(), 10) / 2; // 除以2因为每个处理器有两行信息
                 }
-              } catch (error) {
-                console.error("Error parsing CPU count:", error);
-              }
+              } catch (error) {}
 
               getCpuModel();
             });
@@ -349,7 +339,6 @@ async function getRemoteSystemInfo(sshClient) {
 
           sshClient.exec(modelCommand, (err, stream) => {
             if (err) {
-              console.error("SSH exec error (cpuinfo model):", err);
               getCpuUsage();
               return;
             }
@@ -374,9 +363,7 @@ async function getRemoteSystemInfo(sshClient) {
                     result.cpu.model = match[1].trim();
                   }
                 }
-              } catch (error) {
-                console.error("Error parsing CPU model:", error);
-              }
+              } catch (error) {}
 
               getCpuUsage();
             });
@@ -391,7 +378,6 @@ async function getRemoteSystemInfo(sshClient) {
 
           sshClient.exec(usageCommand, (err, stream) => {
             if (err) {
-              console.error("SSH exec error (cpu usage):", err);
               finalize();
               return;
             }
@@ -413,9 +399,7 @@ async function getRemoteSystemInfo(sshClient) {
                   // 解析Linux CPU使用率
                   result.cpu.usage = parseFloat(usageOutput.trim());
                 }
-              } catch (error) {
-                console.error("Error parsing CPU usage:", error);
-              }
+              } catch (error) {}
 
               finalize();
             });

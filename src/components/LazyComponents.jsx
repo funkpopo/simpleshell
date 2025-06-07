@@ -10,7 +10,6 @@ import LoadingFallback from "./LoadingFallback.jsx";
 // 文件管理器懒加载组件
 const LazyFileManager = React.lazy(() =>
   import("./FileManager.jsx").catch((error) => {
-    console.error("FileManager组件加载失败:", error);
     // 返回一个默认的错误组件
     return {
       default: () => (
@@ -25,7 +24,6 @@ const LazyFileManager = React.lazy(() =>
 // AI助手懒加载组件
 const LazyAIAssistant = React.lazy(() =>
   import("./AIAssistant.jsx").catch((error) => {
-    console.error("AIAssistant组件加载失败:", error);
     return {
       default: () => (
         <div style={{ padding: "20px", textAlign: "center" }}>
@@ -39,7 +37,6 @@ const LazyAIAssistant = React.lazy(() =>
 // 资源监控懒加载组件
 const LazyResourceMonitor = React.lazy(() =>
   import("./ResourceMonitor.jsx").catch((error) => {
-    console.error("ResourceMonitor组件加载失败:", error);
     return {
       default: () => (
         <div style={{ padding: "20px", textAlign: "center" }}>

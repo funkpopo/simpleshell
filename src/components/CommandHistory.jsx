@@ -212,7 +212,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         }
       }
     } catch (error) {
-      console.error("Error saving command to shortcuts:", error);
       showNotification(t("commandHistory.saveToShortcutsFailed"), "error");
     }
 
@@ -234,7 +233,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         }
       }
     } catch (error) {
-      console.error("Error deleting command:", error);
       showNotification(t("commandHistory.deleteFailed"), "error");
     }
     handleMenuClose();
@@ -290,7 +288,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         }
       }
     } catch (error) {
-      console.error("Error deleting commands:", error);
       showNotification(t("commandHistory.batchDeleteFailed"), "error");
     }
   };
@@ -310,7 +307,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         }
       }
     } catch (error) {
-      console.error("Error clearing history:", error);
       showNotification(t("commandHistory.clearAllFailed"), "error");
     }
   };

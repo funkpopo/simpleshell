@@ -79,7 +79,6 @@ function loadLogConfig() {
       }
     }
   } catch (error) {
-    console.error("Failed to load log configuration:", error);
     // 保持默认配置
   }
   return logConfig;
@@ -94,9 +93,7 @@ function checkLogFileSize() {
     if (stats.size >= logConfig.maxFileSize) {
       rotateLogs();
     }
-  } catch (error) {
-    console.error("Error checking log file size:", error);
-  }
+  } catch (error) {}
 }
 
 // 执行日志轮转
@@ -129,9 +126,7 @@ function rotateLogs() {
             // 由于Electron环境中使用Node.js内置模块的限制，
             // 这里仅作为示例，实际项目可能需要添加额外依赖如zlib
           }
-        } catch (err) {
-          console.error(`Failed to rotate log file ${oldFile}:`, err);
-        }
+        } catch (err) {}
       }
     }
 
@@ -147,9 +142,7 @@ function rotateLogs() {
 
     // 记录轮转事件
     logToFileInternal("Log rotation completed.", "INFO", true);
-  } catch (error) {
-    console.error("Failed to rotate logs:", error);
-  }
+  } catch (error) {}
 }
 
 // 清理过期的日志文件
@@ -277,7 +270,7 @@ function logToFileInternal(message, type = "INFO", isInitialization = false) {
   try {
     const timestamp = new Date().toISOString();
     const logEntry = `[${timestamp}] [${type}] ${message}\n`;
-    // 对于初始化阶段的日志，如果 logFile 仍然为 null (例如，在 initLogger 内部，路径设置失败前的 console.error 后的回退尝试)
+    // 对于初始化阶段的日志，如果 logFile 仍然为 null (例如，在 initLogger 内部，路径设置失败前的
     // 这种情况应该由 initLogger 内部的 try-catch 处理，这里主要是防止外部调用时 logFile 为 null。
     // 如果是初始化调用，则路径可能正在被设置，所以使用当前 logFile 的值。
     const currentLogPath =

@@ -126,7 +126,6 @@ const Settings = ({ open, onClose }) => {
           }
         }
       } catch (error) {
-        console.error("Failed to load settings:", error);
       } finally {
         setIsLoading(false);
       }
@@ -202,7 +201,6 @@ const Settings = ({ open, onClose }) => {
 
       onClose();
     } catch (error) {
-      console.error("Failed to save settings:", error);
       alert(t("settings.saveError"));
     }
   };

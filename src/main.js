@@ -370,7 +370,9 @@ app.on("window-all-closed", () => {
     if (aiWorker) {
       aiWorker
         .terminate()
-        .catch((err) => logToFile(`Error terminating AI worker: ${err.message}`, "ERROR"));
+        .catch((err) =>
+          logToFile(`Error terminating AI worker: ${err.message}`, "ERROR"),
+        );
     }
     app.quit();
   }
@@ -653,10 +655,16 @@ function setupIPC(mainWindow) {
                     buffer = Buffer.from([]);
                   } catch (error) {
                     // 如果转换失败，说明可能是不完整的UTF-8序列，保留缓冲区继续等待
-                    logToFile(`Failed to convert buffer to string: ${error.message}`, "ERROR");
+                    logToFile(
+                      `Failed to convert buffer to string: ${error.message}`,
+                      "ERROR",
+                    );
                   }
                 } catch (error) {
-                  logToFile(`Error handling stream data: ${error.message}`, "ERROR");
+                  logToFile(
+                    `Error handling stream data: ${error.message}`,
+                    "ERROR",
+                  );
                 }
               });
 
@@ -671,7 +679,10 @@ function setupIPC(mainWindow) {
                     );
                   }
                 } catch (error) {
-                  logToFile(`Error handling extended data: ${error.message}`, "ERROR");
+                  logToFile(
+                    `Error handling extended data: ${error.message}`,
+                    "ERROR",
+                  );
                 }
               });
 
@@ -932,7 +943,10 @@ function setupIPC(mainWindow) {
               connectConfig.passphrase = sshConfig.password;
             }
           } catch (error) {
-            logToFile(`Error reading private key file: ${error.message}`, "ERROR");
+            logToFile(
+              `Error reading private key file: ${error.message}`,
+              "ERROR",
+            );
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send(
                 `process:output:${processId}`,
@@ -1154,7 +1168,10 @@ function setupIPC(mainWindow) {
             proc.process.kill();
           }
         } catch (error) {
-          logToFile(`Error killing process ${processId}: ${error.message}`, "ERROR");
+          logToFile(
+            `Error killing process ${processId}: ${error.message}`,
+            "ERROR",
+          );
         }
       } catch (error) {
         logToFile(`Error handling process kill: ${error.message}`, "ERROR");

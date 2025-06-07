@@ -22,7 +22,6 @@ function encryptText(text) {
     // 将IV附加到加密文本的前面，以便解密时使用
     return iv.toString("hex") + ":" + encrypted;
   } catch (error) {
-    // 在实际应用中，这里也应该调用 logToFile
     // logToFile(`Encryption failed: ${error.message}`, "ERROR");
     return null;
   }
@@ -31,7 +30,6 @@ function encryptText(text) {
 function decryptText(text) {
   if (typeof text !== "string" || !text.includes(":")) {
     // logToFile(`Decryption failed: Invalid input format. Input: ${text}`, "ERROR");
-    return null;
   }
   try {
     // 分离IV和加密文本
