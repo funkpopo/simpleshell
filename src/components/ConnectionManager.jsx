@@ -70,6 +70,7 @@ const ConnectionManager = ({
               setIsLoading(false);
             })
             .catch((error) => {
+              console.error("Error loading connections:", error);
               setSnackbar({
                 open: true,
                 message: "加载连接配置失败",
@@ -81,6 +82,7 @@ const ConnectionManager = ({
           setIsLoading(false);
         }
       } catch (error) {
+        console.error("Error accessing terminal API:", error);
         setIsLoading(false);
       }
     }
