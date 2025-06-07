@@ -476,7 +476,7 @@ function App() {
           }
         }
       } catch (error) {
-        console.error("Failed to load connections during app startup:", error);
+        // 连接加载失败，应用仍可正常启动
       }
     };
 
@@ -485,12 +485,12 @@ function App() {
     // 延迟预加载组件，避免影响应用启动性能
     const preloadTimer = setTimeout(() => {
       // 预加载AI助手组件（最常用）
-      preloadComponents.aiAssistant().catch(console.warn);
+      preloadComponents.aiAssistant().catch(() => {});
 
       // 再延迟一点预加载其他组件
       setTimeout(() => {
-        preloadComponents.resourceMonitor().catch(console.warn);
-        preloadComponents.fileManager().catch(console.warn);
+        preloadComponents.resourceMonitor().catch(() => {});
+        preloadComponents.fileManager().catch(() => {});
       }, 2000);
     }, 3000);
 
@@ -627,7 +627,7 @@ function App() {
             }
           }
         } catch (loadError) {
-          console.warn("获取当前设置失败，使用默认值:", loadError);
+          // 获取当前设置失败，使用默认值
         }
 
         // 更新主题设置并保存

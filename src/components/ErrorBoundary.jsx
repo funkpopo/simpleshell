@@ -14,11 +14,11 @@ import { useTheme } from "@mui/material/styles";
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { 
-      hasError: false, 
-      error: null, 
+    this.state = {
+      hasError: false,
+      error: null,
       errorInfo: null,
-      retryCount: 0 
+      retryCount: 0,
     };
   }
 
@@ -28,28 +28,27 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // 记录错误信息
-    console.error("懒加载组件错误:", error, errorInfo);
+    // 记录错误信息 - 可以考虑使用项目的日志系统
     this.setState({
       error: error,
-      errorInfo: errorInfo
+      errorInfo: errorInfo,
     });
   }
 
   handleRetry = () => {
     // 重试加载组件
-    this.setState(prevState => ({
+    this.setState((prevState) => ({
       hasError: false,
       error: null,
       errorInfo: null,
-      retryCount: prevState.retryCount + 1
+      retryCount: prevState.retryCount + 1,
     }));
   };
 
   render() {
     if (this.state.hasError) {
       return (
-        <ErrorFallback 
+        <ErrorFallback
           error={this.state.error}
           onRetry={this.handleRetry}
           retryCount={this.state.retryCount}
@@ -65,7 +64,12 @@ class ErrorBoundary extends React.Component {
 /**
  * 错误回退UI组件
  */
-const ErrorFallback = ({ error, onRetry, retryCount, componentName = "组件" }) => {
+const ErrorFallback = ({
+  error,
+  onRetry,
+  retryCount,
+  componentName = "组件",
+}) => {
   const theme = useTheme();
 
   return (
@@ -82,12 +86,12 @@ const ErrorFallback = ({ error, onRetry, retryCount, componentName = "组件" })
         p: 3,
       }}
     >
-      <Alert 
-        severity="error" 
-        sx={{ 
-          width: "100%", 
+      <Alert
+        severity="error"
+        sx={{
+          width: "100%",
           maxWidth: "400px",
-          mb: 2 
+          mb: 2,
         }}
         icon={<ErrorOutlineIcon />}
       >
@@ -128,13 +132,13 @@ const ErrorFallback = ({ error, onRetry, retryCount, componentName = "组件" })
           <Typography variant="caption" color="error">
             开发模式错误信息：
           </Typography>
-          <Typography 
-            variant="caption" 
-            component="pre" 
-            sx={{ 
+          <Typography
+            variant="caption"
+            component="pre"
+            sx={{
               fontSize: "0.7rem",
               wordBreak: "break-all",
-              whiteSpace: "pre-wrap"
+              whiteSpace: "pre-wrap",
             }}
           >
             {error.toString()}

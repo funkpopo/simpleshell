@@ -186,7 +186,7 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
       }
     }
   } catch (error) {
-    console.error("Failed to cleanup old logs:", error);
+    // Failed to cleanup old logs - 避免在日志系统中使用console
   }
 }
 

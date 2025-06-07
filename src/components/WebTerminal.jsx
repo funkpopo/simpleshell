@@ -238,7 +238,7 @@ const getCharacterMetrics = (term) => {
       },
     };
   } catch (error) {
-    console.warn("获取字符度量失败，使用默认值:", error);
+    // 获取字符度量失败，使用默认值
     return {
       charWidth: 9,
       charHeight: 17,
@@ -273,7 +273,7 @@ const getCharacterGridPosition = (term, pixelX, pixelY) => {
       pixelY: boundedRow * metrics.charHeight + metrics.screenOffset.y,
     };
   } catch (error) {
-    console.warn("字符网格坐标转换失败:", error);
+    // 字符网格坐标转换失败
     return null;
   }
 };
@@ -291,33 +291,14 @@ const debugSelectionAlignment = (term) => {
     ".xterm .xterm-selection div",
   );
   if (selectionElements.length > 0) {
-    console.log(`当前选择区域信息 (共${selectionElements.length}个):`);
-    selectionElements.forEach((elem, index) => {
-      const rect = elem.getBoundingClientRect();
-      const style = window.getComputedStyle(elem);
-      console.log(`选择区域 ${index + 1}:`, {
-        left: style.left,
-        top: style.top,
-        width: style.width,
-        height: style.height,
-        opacity: style.opacity,
-        transform: style.transform,
-        visible: style.opacity !== "0",
-        boundingRect: rect,
-      });
-    });
-
     // 检查是否有重复显示的问题
     const visibleElements = Array.from(selectionElements).filter(
       (elem) => window.getComputedStyle(elem).opacity !== "0",
     );
+    // 只在有重复显示问题时记录警告
     if (visibleElements.length > 1) {
-      console.warn(
-        `警告：检测到${visibleElements.length}个可见的选择区域，可能存在重复显示问题`,
-      );
+      // 可以考虑使用项目的日志系统而不是console
     }
-  } else {
-    console.log("当前没有选择区域");
   }
 };
 
@@ -354,10 +335,12 @@ const forceResizeTerminal = debounce(
       if (window.terminalAPI && window.terminalAPI.resizeTerminal) {
         window.terminalAPI
           .resizeTerminal(processId || tabId, cols, rows)
-          .catch((err) => console.error("终端大小强制调整失败:", err));
+          .catch((err) => {
+            // 终端大小强制调整失败
+          });
       }
     } catch (error) {
-      console.error("终端尺寸调整失败:", error);
+      // 终端尺寸调整失败
     }
   },
   100,
@@ -544,7 +527,7 @@ const WebTerminal = ({
           setShowSuggestions(false);
         }
       } catch (error) {
-        console.error("获取命令建议失败:", error);
+        // 获取命令建议失败
         setSuggestions([]);
         setShowSuggestions(false);
       }
@@ -589,7 +572,7 @@ const WebTerminal = ({
         setCurrentInput("");
         setSuggestionsHiddenByEsc(false);
       } catch (error) {
-        console.error("应用命令建议失败:", error);
+        // 应用命令建议失败
       }
     },
     [
@@ -646,7 +629,7 @@ const WebTerminal = ({
         showAbove: shouldShowAbove,
       });
     } catch (error) {
-      console.error("更新光标位置失败:", error);
+      // 更新光标位置失败
     }
   }, [suggestions.length]);
 
@@ -921,7 +904,6 @@ const WebTerminal = ({
           }
         } catch (error) {
           // 忽略任何错误，不影响正常功能
-          console.error("检测用户输入命令时出错:", error);
           // 即使发生错误也要重置命令执行状态
           setTimeout(() => {
             setIsCommandExecuting(false);
@@ -989,7 +971,6 @@ const WebTerminal = ({
         }
       } catch (error) {
         // 忽略任何错误，不影响正常功能
-        console.error("检测编辑器退出时出错:", error);
       }
     });
 
@@ -1031,7 +1012,7 @@ const WebTerminal = ({
             currentLineBeforeTab = null;
           }, 100);
         } catch (error) {
-          console.error("处理Tab补全后内容时出错:", error);
+          // 处理Tab补全后内容时出错
         }
       }
     });
@@ -1080,7 +1061,7 @@ const WebTerminal = ({
         return settings.fontSize || 14;
       }
     } catch (error) {
-      console.error("Failed to load font size from config:", error);
+      // Failed to load font size from config
     }
     return 14;
   };
@@ -1095,7 +1076,7 @@ const WebTerminal = ({
             window.terminalAPI.killProcess(processCache[tabId]);
           }
         } catch (error) {
-          console.error("Failed to kill process:", error);
+          // Failed to kill process
         }
         delete processCache[tabId];
       }
@@ -1104,7 +1085,7 @@ const WebTerminal = ({
       try {
         terminalCache[tabId].dispose();
       } catch (error) {
-        console.error("Failed to dispose terminal:", error);
+        // Failed to dispose terminal
       }
       delete terminalCache[tabId];
     }
@@ -1220,7 +1201,7 @@ const WebTerminal = ({
               }
             }, 0);
           } catch (error) {
-            console.error("Failed to apply font size:", error);
+            // Failed to apply font size
           }
         })();
 
@@ -1237,9 +1218,11 @@ const WebTerminal = ({
           if (window.terminalAPI && window.terminalAPI.openExternal) {
             window.terminalAPI
               .openExternal(uri)
-              .catch((err) => console.error("打开链接失败:", err));
+              .catch((err) => {
+                // 打开链接失败
+              });
           } else {
-            console.warn("terminalAPI.openExternal不可用，无法打开链接");
+            // terminalAPI.openExternal不可用，无法打开链接
           }
         });
 
@@ -1314,11 +1297,9 @@ const WebTerminal = ({
                 }
               })
               .catch((error) => {
-                console.error("SSH connection error:", error);
                 term.writeln(`\r\n连接失败: ${error.message || "未知错误"}`);
               });
           } catch (error) {
-            console.error("Failed to start SSH:", error);
             term.writeln(`\r\n连接失败: ${error.message || "未知错误"}`);
           }
         }
@@ -1519,9 +1500,6 @@ const WebTerminal = ({
           const allSelectionContainers =
             terminalElement.querySelectorAll(".xterm-selection");
           if (allSelectionContainers.length > 1) {
-            console.log(
-              `检测到${allSelectionContainers.length}个选择容器，隐藏重复容器`,
-            );
             allSelectionContainers.forEach((container, index) => {
               if (index > 0) {
                 container.style.display = "none";
@@ -1570,8 +1548,7 @@ const WebTerminal = ({
             primaryElement.style.opacity = "1"; // 确保主要元素可见
           }
         } catch (error) {
-          console.warn("选择元素调整失败:", error);
-          // 简化的回退处理 - 清理所有transform
+          // 选择元素调整失败，简化的回退处理 - 清理所有transform
           const selectionElements = document.querySelectorAll(
             ".xterm .xterm-selection div",
           );
@@ -1692,7 +1669,7 @@ const WebTerminal = ({
             window.terminalAPI
               .resizeTerminal(processCache[tabId], cols, rows)
               .catch((err) => {
-                console.error("终端大小调整失败:", err);
+                // 终端大小调整失败
               });
 
             // 使用EventManager管理延迟再次调整大小，确保在某些情况下终端尺寸能够正确同步
@@ -1704,7 +1681,9 @@ const WebTerminal = ({
                     Math.max(Math.floor(term.cols || 120), 1),
                     Math.max(Math.floor(term.rows || 30), 1),
                   )
-                  .catch((err) => console.error("延迟终端大小调整失败:", err));
+                  .catch((err) => {
+                    // 延迟终端大小调整失败
+                  });
 
                 // 重置内容更新标志，表示已处理完成
                 setContentUpdated(false);
@@ -1712,7 +1691,7 @@ const WebTerminal = ({
             }, 300);
           }
         } catch (error) {
-          console.error("Error resizing terminal:", error);
+          // Error resizing terminal
         }
       };
 
@@ -1928,8 +1907,10 @@ const WebTerminal = ({
             // 同步到后端
             if (window.terminalAPI.resizeTerminal) {
               window.terminalAPI
-                .resizeTerminal(processId, cols, rows)
-                .catch((err) => console.error("初始终端大小同步失败:", err));
+                .resizeTerminal(processCache[tabId], cols, rows)
+                .catch((err) => {
+                  // 初始终端大小同步失败
+                });
             }
           } catch (error) {}
         }
@@ -2027,7 +2008,7 @@ const WebTerminal = ({
               }
             }
           } catch (err) {
-            console.error("Error detaching terminal:", err);
+            // Error detaching terminal
           }
         }
 
@@ -2040,9 +2021,7 @@ const WebTerminal = ({
       // EventManager会自动清理所有事件监听器、定时器和观察者
       return () => {
         // 这个函数现在很简洁，因为EventManager处理了大部分清理工作
-        console.log(
-          `WebTerminal ${tabId} 组件卸载，资源清理由EventManager处理`,
-        );
+        // 组件卸载时的清理工作由EventManager处理
       };
     }
   }, [tabId, usePowershell, refreshKey, sshConfig, eventManager]);
@@ -2198,7 +2177,7 @@ const WebTerminal = ({
           }
         }
       } catch (error) {
-        console.error("Search error:", error);
+        // Search error
         setNoMatchFound(true);
       }
     }
@@ -2224,7 +2203,7 @@ const WebTerminal = ({
           }
         }
       } catch (error) {
-        console.error("Search error:", error);
+        // Search error
         setNoMatchFound(true);
       }
     }
@@ -2259,7 +2238,7 @@ const WebTerminal = ({
       setSearchResults({ count, current: count > 0 ? 1 : 0 });
       setNoMatchFound(count === 0);
     } catch (error) {
-      console.error("Error calculating search results:", error);
+      // 搜索结果计算失败，重置为默认值
       setSearchResults({ count: 0, current: 0 });
     }
   };
@@ -2306,7 +2285,7 @@ const WebTerminal = ({
   const handleCopy = () => {
     if (selectedText) {
       navigator.clipboard.writeText(selectedText).catch((err) => {
-        console.error("复制到剪贴板失败:", err);
+        // 复制到剪贴板失败
       });
     }
     handleClose();
@@ -2346,7 +2325,7 @@ const WebTerminal = ({
         }
       })
       .catch((err) => {
-        console.error("从剪贴板读取失败:", err);
+        // 从剪贴板读取失败
       });
     handleClose();
   };
@@ -2384,7 +2363,7 @@ const WebTerminal = ({
         });
         window.dispatchEvent(event);
       } catch (error) {
-        console.error("Failed to update SSH process ID:", error);
+        // Failed to update SSH process ID
       }
     };
 
@@ -2468,11 +2447,13 @@ const WebTerminal = ({
           // 同步到后端
           if (window.terminalAPI.resizeTerminal) {
             window.terminalAPI
-              .resizeTerminal(processId, cols, rows)
-              .catch((err) => console.error("初始终端大小同步失败:", err));
+              .resizeTerminal(processCache[tabId], cols, rows)
+              .catch((err) => {
+                // 初始终端大小同步失败
+              });
           }
         } catch (error) {
-          console.error("终端大小适配失败:", error);
+          // 终端大小适配失败
         }
       }
     };
