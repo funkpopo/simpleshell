@@ -52,6 +52,7 @@ const ResourceMonitor = ({ open, onClose, currentTabId }) => {
         setError("API不可用");
       }
     } catch (err) {
+      console.error("Failed to fetch system info:", err);
       setError(err.message || "获取系统信息时发生错误");
     } finally {
       setLoading(false);
