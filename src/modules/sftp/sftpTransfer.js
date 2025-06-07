@@ -29,26 +29,19 @@ function init(
   }
 
   if (!core) {
-    console.error("sftpTransfer: sftpCore module not provided!");
     // sftpCore is essential, operations will fail without it.
   }
   sftpCore = core;
 
-  if (!electronDialog)
-    console.error("sftpTransfer: Electron dialog not provided!");
-  dialog = electronDialog;
+  if (!electronDialog) dialog = electronDialog;
 
-  if (!electronShell)
-    console.error("sftpTransfer: Electron shell not provided!");
-  shell = electronShell;
+  if (!electronShell) shell = electronShell;
 
   if (typeof getChildProcessInfoFunc !== "function") {
-    console.error("sftpTransfer: getChildProcessInfo function not provided!");
   }
   getChildProcessInfo = getChildProcessInfoFunc;
 
   if (typeof sendToRendererFunc !== "function") {
-    console.error("sftpTransfer: sendToRenderer function not provided!");
     sendToRenderer = (channel, ...args) =>
       logToFile(
         `sendToRenderer (dummy) called: ${channel}, ${JSON.stringify(args)}`,

@@ -33,7 +33,6 @@ function init(appInstance, loggerModule, cryptoModule) {
         );
       }
     } catch (error) {
-      console.error("ConfigManager: Failed to set paths during init:", error);
       if (logToFile) {
         logToFile(
           "ConfigManager: Error setting paths during init - " + error.message,
@@ -143,7 +142,6 @@ function loadConnections() {
         "ConfigManager: Failed to load connections config - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to load connections config:", error);
   }
   return [];
 }
@@ -178,7 +176,7 @@ function saveConnections(connections) {
         "ConfigManager: Failed to save connections config - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to save connections config:", error);
+
     return false;
   }
 }
@@ -253,7 +251,6 @@ function loadAISettings() {
         "ConfigManager: Failed to load AI settings - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to load AI settings:", error);
   }
   return {
     configs: [],
@@ -335,7 +332,7 @@ function saveAISettings(settings) {
         "ConfigManager: Failed to save AI settings - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to save AI settings:", error);
+
     return false;
   }
 }
@@ -371,7 +368,6 @@ function loadUISettings() {
         "ConfigManager: Failed to load UI settings - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to load UI settings:", error);
   }
   return { language: "zh-CN", fontSize: 14, darkMode: true };
 }
@@ -405,7 +401,7 @@ function saveUISettings(settings) {
         "ConfigManager: Failed to save UI settings - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to save UI settings:", error);
+
     return false;
   }
 }
@@ -469,7 +465,6 @@ function loadShortcutCommands() {
         "ConfigManager: Error loading shortcut commands - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Error loading shortcut commands:", error);
   }
   return defaultShortcuts;
 }
@@ -511,7 +506,7 @@ function saveShortcutCommands(data) {
         "ConfigManager: Error saving shortcut commands - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Error saving shortcut commands:", error);
+
     return false;
   }
 }
@@ -564,7 +559,6 @@ function loadLogSettings() {
         "ERROR",
       );
     }
-    console.error("ConfigManager: Failed to load log settings:", error);
   }
 
   // 返回默认日志设置
@@ -618,7 +612,7 @@ function saveLogSettings(settings) {
         "ERROR",
       );
     }
-    console.error("ConfigManager: Failed to save log settings:", error);
+
     return false;
   }
 }
@@ -794,7 +788,7 @@ function initializeMainConfig() {
         "ConfigManager: Failed to initialize main config - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to initialize main config:", error);
+
     return { success: false, error: error.message };
   }
 }
@@ -829,7 +823,6 @@ function loadCommandHistory() {
         "ConfigManager: Failed to load command history - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to load command history:", error);
   }
 
   return [];
@@ -867,7 +860,7 @@ function saveCommandHistory(history) {
         "ConfigManager: Failed to save command history - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to save command history:", error);
+
     return false;
   }
 }

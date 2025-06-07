@@ -154,9 +154,7 @@ function AboutDialog({ open, onClose }) {
     if (window.terminalAPI?.getAppVersion) {
       const versionPromise = window.terminalAPI.getAppVersion();
       if (versionPromise instanceof Promise) {
-        versionPromise
-          .then((version) => setAppVersion(version))
-          .catch((error) => console.error("获取版本失败:", error));
+        versionPromise.then((version) => setAppVersion(version));
       } else {
         // 如果不是Promise，可能是直接返回的版本字符串
         setAppVersion(versionPromise || "1.0.0");
@@ -522,9 +520,7 @@ function App() {
   const handleConnectionsUpdate = (updatedConnections) => {
     setConnections(updatedConnections);
     if (window.terminalAPI && window.terminalAPI.saveConnections) {
-      window.terminalAPI
-        .saveConnections(updatedConnections)
-        .catch((error) => console.error("Failed to save connections:", error));
+      window.terminalAPI.saveConnections(updatedConnections);
     }
   };
 

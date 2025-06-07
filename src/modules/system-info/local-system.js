@@ -91,7 +91,7 @@ function getLocalSystemInfo() {
     } catch (e) {}
   } else if (osInfo.platform === "linux") {
     osInfo.distro = "Linux";
-    osInfo.release = `Linux ${osInfo.release}`;
+    os;
   }
 
   return {
