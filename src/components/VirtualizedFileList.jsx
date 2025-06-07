@@ -1,5 +1,12 @@
-import React, { memo, useMemo, useCallback, useRef, useState, useEffect } from 'react';
-import { FixedSizeList as List } from 'react-window';
+import React, {
+  memo,
+  useMemo,
+  useCallback,
+  useRef,
+  useState,
+  useEffect,
+} from "react";
+import { FixedSizeList as List } from "react-window";
 import {
   ListItem,
   ListItemButton,
@@ -8,29 +15,29 @@ import {
   Box,
   Typography,
   useTheme,
-} from '@mui/material';
+} from "@mui/material";
 import {
   Folder as FolderIcon,
   InsertDriveFile as InsertDriveFileIcon,
-} from '@mui/icons-material';
+} from "@mui/icons-material";
 
 // 文件大小格式化函数
 const formatFileSize = (bytes) => {
-  if (!bytes || bytes === 0) return '';
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  if (!bytes || bytes === 0) return "";
+  const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
 };
 
 // 日期格式化函数
 const formatDate = (date) => {
-  if (!date) return '';
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+  if (!date) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(date);
 };
 
@@ -44,9 +51,12 @@ const FileItem = memo(({ index, style, data }) => {
     onFileActivate(file);
   }, [file, onFileActivate]);
 
-  const handleContextMenu = useCallback((e) => {
-    onContextMenu(e, file);
-  }, [file, onContextMenu]);
+  const handleContextMenu = useCallback(
+    (e) => {
+      onContextMenu(e, file);
+    },
+    [file, onContextMenu],
+  );
 
   const isSelected = selectedFile && selectedFile.name === file.name;
 
@@ -56,8 +66,10 @@ const FileItem = memo(({ index, style, data }) => {
         disablePadding
         onContextMenu={handleContextMenu}
         sx={{
-          backgroundColor: isSelected ? theme.palette.action.selected : 'transparent',
-          '&:hover': {
+          backgroundColor: isSelected
+            ? theme.palette.action.selected
+            : "transparent",
+          "&:hover": {
             backgroundColor: theme.palette.action.hover,
           },
         }}
@@ -88,12 +100,12 @@ const FileItem = memo(({ index, style, data }) => {
               </>
             }
             primaryTypographyProps={{
-              variant: 'body2',
+              variant: "body2",
               noWrap: true,
             }}
             secondaryTypographyProps={{
-              variant: 'caption',
-              color: 'text.secondary',
+              variant: "caption",
+              color: "text.secondary",
               noWrap: true,
             }}
           />
@@ -103,7 +115,7 @@ const FileItem = memo(({ index, style, data }) => {
   );
 });
 
-FileItem.displayName = 'FileItem';
+FileItem.displayName = "FileItem";
 
 // 虚拟化文件列表组件
 const VirtualizedFileList = ({
@@ -113,7 +125,7 @@ const VirtualizedFileList = ({
   selectedFile,
   height = 400,
   itemHeight = 48,
-  searchTerm = '',
+  searchTerm = "",
   onBlankContextMenu,
   enableVirtualization = true, // 允许禁用虚拟化作为降级选项
 }) => {
@@ -133,7 +145,7 @@ const VirtualizedFileList = ({
           }
         }
       } catch (error) {
-        console.warn('虚拟化列表高度计算失败:', error);
+        console.warn("虚拟化列表高度计算失败:", error);
         setVirtualizationError(true);
       }
     };
@@ -149,7 +161,7 @@ const VirtualizedFileList = ({
         resizeObserver.observe(containerRef.current);
       }
     } catch (error) {
-      console.warn('ResizeObserver 不可用，降级到传统渲染:', error);
+      console.warn("ResizeObserver 不可用，降级到传统渲染:", error);
       setVirtualizationError(true);
     }
 
@@ -167,7 +179,7 @@ const VirtualizedFileList = ({
     // 搜索过滤
     if (searchTerm) {
       filteredFiles = files.filter((file) =>
-        file.name.toLowerCase().includes(searchTerm.toLowerCase())
+        file.name.toLowerCase().includes(searchTerm.toLowerCase()),
       );
     }
 
@@ -180,15 +192,18 @@ const VirtualizedFileList = ({
   }, [files, searchTerm]);
 
   // 传递给每个文件项的数据
-  const itemData = useMemo(() => ({
-    files: processedFiles,
-    onFileActivate,
-    onContextMenu,
-    selectedFile,
-  }), [processedFiles, onFileActivate, onContextMenu, selectedFile]);
+  const itemData = useMemo(
+    () => ({
+      files: processedFiles,
+      onFileActivate,
+      onContextMenu,
+      selectedFile,
+    }),
+    [processedFiles, onFileActivate, onContextMenu, selectedFile],
+  );
 
   // 计算实际使用的高度
-  const actualHeight = height === '100%' ? containerHeight : height;
+  const actualHeight = height === "100%" ? containerHeight : height;
 
   // 如果没有文件，显示空状态
   if (processedFiles.length === 0) {
@@ -196,11 +211,11 @@ const VirtualizedFileList = ({
       <Box
         ref={containerRef}
         sx={{
-          height: height === '100%' ? '100%' : height,
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          height: height === "100%" ? "100%" : height,
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
           padding: 2,
         }}
         onContextMenu={onBlankContextMenu}
@@ -217,20 +232,20 @@ const VirtualizedFileList = ({
     <Box
       ref={containerRef}
       sx={{
-        height: height === '100%' ? '100%' : height,
-        width: '100%',
-        overflow: 'auto',
-        '&::-webkit-scrollbar': {
+        height: height === "100%" ? "100%" : height,
+        width: "100%",
+        overflow: "auto",
+        "&::-webkit-scrollbar": {
           width: 8,
         },
-        '&::-webkit-scrollbar-track': {
+        "&::-webkit-scrollbar-track": {
           backgroundColor: theme.palette.action.hover,
           borderRadius: 4,
         },
-        '&::-webkit-scrollbar-thumb': {
+        "&::-webkit-scrollbar-thumb": {
           backgroundColor: theme.palette.action.disabled,
           borderRadius: 4,
-          '&:hover': {
+          "&:hover": {
             backgroundColor: theme.palette.action.focus,
           },
         },
@@ -254,7 +269,11 @@ const VirtualizedFileList = ({
   );
 
   // 如果虚拟化被禁用或出现错误，使用降级渲染
-  if (!enableVirtualization || virtualizationError || processedFiles.length < 50) {
+  if (
+    !enableVirtualization ||
+    virtualizationError ||
+    processedFiles.length < 50
+  ) {
     return renderFallbackList();
   }
 
@@ -262,21 +281,21 @@ const VirtualizedFileList = ({
     <Box
       ref={containerRef}
       sx={{
-        height: height === '100%' ? '100%' : height,
-        width: '100%',
-        '& .react-window-list': {
+        height: height === "100%" ? "100%" : height,
+        width: "100%",
+        "& .react-window-list": {
           // 自定义滚动条样式
-          '&::-webkit-scrollbar': {
+          "&::-webkit-scrollbar": {
             width: 8,
           },
-          '&::-webkit-scrollbar-track': {
+          "&::-webkit-scrollbar-track": {
             backgroundColor: theme.palette.action.hover,
             borderRadius: 4,
           },
-          '&::-webkit-scrollbar-thumb': {
+          "&::-webkit-scrollbar-thumb": {
             backgroundColor: theme.palette.action.disabled,
             borderRadius: 4,
-            '&:hover': {
+            "&:hover": {
               backgroundColor: theme.palette.action.focus,
             },
           },
@@ -294,8 +313,10 @@ const VirtualizedFileList = ({
           overscanCount={5} // 预渲染5个项目以提高滚动性能
           onItemsRendered={({ visibleStartIndex, visibleStopIndex }) => {
             // 性能监控：记录可见项目范围
-            if (process.env.NODE_ENV === 'development') {
-              console.debug(`虚拟化列表渲染: ${visibleStartIndex}-${visibleStopIndex} / ${processedFiles.length}`);
+            if (process.env.NODE_ENV === "development") {
+              console.debug(
+                `虚拟化列表渲染: ${visibleStartIndex}-${visibleStopIndex} / ${processedFiles.length}`,
+              );
             }
           }}
         >

@@ -23,9 +23,7 @@ function init(
   sendToRendererFunc,
 ) {
   if (!logger || !logger.logToFile) {
-    console.error("sftpTransfer: Logger (logToFile) not provided!");
-    logToFile = (message, type = "INFO") =>
-      console.log(`[sftpTransfer-${type}] ${message}`);
+    return;
   } else {
     logToFile = logger.logToFile;
   }
@@ -130,11 +128,27 @@ async function handleDownloadFile(event, tabId, remotePath) {
           readyTimeout: 60000, // 连接准备超时60秒
           timeout: 0, // 不设置全局超时，让操作级别的超时来控制
           algorithms: {
-            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
-            kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha256'],
-            cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm'],
-            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
-          }
+            serverHostKey: [
+              "ssh-rsa",
+              "ssh-dss",
+              "ecdsa-sha2-nistp256",
+              "ecdsa-sha2-nistp384",
+              "ecdsa-sha2-nistp521",
+            ],
+            kex: [
+              "diffie-hellman-group14-sha256",
+              "diffie-hellman-group14-sha1",
+              "diffie-hellman-group-exchange-sha256",
+            ],
+            cipher: [
+              "aes128-ctr",
+              "aes192-ctr",
+              "aes256-ctr",
+              "aes128-gcm",
+              "aes256-gcm",
+            ],
+            hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
+          },
         });
 
         const stats = await sftp.stat(remotePath);
@@ -155,11 +169,13 @@ async function handleDownloadFile(event, tabId, remotePath) {
         // 根据文件大小动态调整传输参数
         let chunkSize = 32768; // 默认32KB
         let concurrency = 8; // 默认并发数
-        
-        if (totalBytes > 100 * 1024 * 1024) { // 大于100MB的文件
+
+        if (totalBytes > 100 * 1024 * 1024) {
+          // 大于100MB的文件
           chunkSize = 131072; // 128KB分块
           concurrency = 8; // 预留并发调整空间参数
-        } else if (totalBytes > 10 * 1024 * 1024) { // 大于10MB的文件
+        } else if (totalBytes > 10 * 1024 * 1024) {
+          // 大于10MB的文件
           chunkSize = 65536; // 64KB分块
           concurrency = 8; // 预留并发调整空间参数
         }
@@ -366,11 +382,27 @@ async function handleUploadFile(
           readyTimeout: 60000, // 连接准备超时60秒
           timeout: 0, // 不设置全局超时，让操作级别的超时来控制
           algorithms: {
-            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
-            kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha256'],
-            cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm'],
-            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
-          }
+            serverHostKey: [
+              "ssh-rsa",
+              "ssh-dss",
+              "ecdsa-sha2-nistp256",
+              "ecdsa-sha2-nistp384",
+              "ecdsa-sha2-nistp521",
+            ],
+            kex: [
+              "diffie-hellman-group14-sha256",
+              "diffie-hellman-group14-sha1",
+              "diffie-hellman-group-exchange-sha256",
+            ],
+            cipher: [
+              "aes128-ctr",
+              "aes192-ctr",
+              "aes256-ctr",
+              "aes128-gcm",
+              "aes256-gcm",
+            ],
+            hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
+          },
         });
 
         // Ensure target directory exists
@@ -456,11 +488,13 @@ async function handleUploadFile(
             // 根据文件大小动态调整传输参数
             let chunkSize = 32768; // 默认32KB
             let concurrency = 16; // 默认并发数
-            
-            if (currentFileSize > 100 * 1024 * 1024) { // 大于100MB的文件
+
+            if (currentFileSize > 100 * 1024 * 1024) {
+              // 大于100MB的文件
               chunkSize = 131072; // 128KB分块
               concurrency = 8; // 降低并发数以减少连接压力
-            } else if (currentFileSize > 10 * 1024 * 1024) { // 大于10MB的文件
+            } else if (currentFileSize > 10 * 1024 * 1024) {
+              // 大于10MB的文件
               chunkSize = 65536; // 64KB分块
               concurrency = 12;
             }
@@ -855,11 +889,27 @@ async function handleUploadFolder(
           readyTimeout: 60000, // 连接准备超时60秒
           timeout: 0, // 不设置全局超时，让操作级别的超时来控制
           algorithms: {
-            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
-            kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha256'],
-            cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm'],
-            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
-          }
+            serverHostKey: [
+              "ssh-rsa",
+              "ssh-dss",
+              "ecdsa-sha2-nistp256",
+              "ecdsa-sha2-nistp384",
+              "ecdsa-sha2-nistp521",
+            ],
+            kex: [
+              "diffie-hellman-group14-sha256",
+              "diffie-hellman-group14-sha1",
+              "diffie-hellman-group-exchange-sha256",
+            ],
+            cipher: [
+              "aes128-ctr",
+              "aes192-ctr",
+              "aes256-ctr",
+              "aes128-gcm",
+              "aes256-gcm",
+            ],
+            hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
+          },
         });
         logToFile(
           `sftpTransfer: SFTP connected for folder upload to ${sshConfig.host}. TransferKey: ${transferKey}`,
@@ -1020,11 +1070,13 @@ async function handleUploadFolder(
           // 根据文件大小动态调整传输参数
           let chunkSize = 32768; // 默认32KB
           let concurrency = 8; // 默认并发数
-          
-          if (file.size > 100 * 1024 * 1024) { // 大于100MB的文件
+
+          if (file.size > 100 * 1024 * 1024) {
+            // 大于100MB的文件
             chunkSize = 131072; // 128KB分块
             concurrency = 8; // 预留并发调整空间参数
-          } else if (file.size > 10 * 1024 * 1024) { // 大于10MB的文件
+          } else if (file.size > 10 * 1024 * 1024) {
+            // 大于10MB的文件
             chunkSize = 65536; // 64KB分块
             concurrency = 8; // 预留并发调整空间参数
           }
@@ -1281,11 +1333,27 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           readyTimeout: 60000, // 连接准备超时60秒
           timeout: 0, // 不设置全局超时，让操作级别的超时来控制
           algorithms: {
-            serverHostKey: ['ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'],
-            kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha256'],
-            cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-gcm', 'aes256-gcm'],
-            hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1']
-          }
+            serverHostKey: [
+              "ssh-rsa",
+              "ssh-dss",
+              "ecdsa-sha2-nistp256",
+              "ecdsa-sha2-nistp384",
+              "ecdsa-sha2-nistp521",
+            ],
+            kex: [
+              "diffie-hellman-group14-sha256",
+              "diffie-hellman-group14-sha1",
+              "diffie-hellman-group-exchange-sha256",
+            ],
+            cipher: [
+              "aes128-ctr",
+              "aes192-ctr",
+              "aes256-ctr",
+              "aes128-gcm",
+              "aes256-gcm",
+            ],
+            hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
+          },
         });
         logToFile(
           `sftpTransfer: SFTP connected for folder download from ${sshConfig.host}. TransferKey: ${transferKey}`,

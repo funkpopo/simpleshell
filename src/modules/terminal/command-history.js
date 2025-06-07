@@ -11,12 +11,12 @@ class CommandHistoryService {
   }
 
   isValidCommand(command) {
-    if (!command || typeof command !== 'string') {
+    if (!command || typeof command !== "string") {
       return false;
     }
 
     const trimmedCommand = command.trim();
-    
+
     // 基本长度检查
     if (trimmedCommand.length === 0 || trimmedCommand.length < 2) {
       return false;
@@ -29,7 +29,9 @@ class CommandHistoryService {
 
     // 过滤控制字符（除了常见的空白字符）
     // ASCII控制字符范围：0-31，但允许空格(32)、制表符(9)、换行符(10)、回车符(13)
-    const hasInvalidControlChars = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(trimmedCommand);
+    const hasInvalidControlChars = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(
+      trimmedCommand,
+    );
     if (hasInvalidControlChars) {
       return false;
     }
@@ -48,7 +50,7 @@ class CommandHistoryService {
       /^[\s]+$/, // 只包含空白字符
     ];
 
-    if (specialCharPatterns.some(pattern => pattern.test(trimmedCommand))) {
+    if (specialCharPatterns.some((pattern) => pattern.test(trimmedCommand))) {
       return false;
     }
 
@@ -74,7 +76,11 @@ class CommandHistoryService {
       /^[yn]$/, // 单个y或n（通常是确认响应，不是命令）
     ];
 
-    if (invalidPatterns.some(pattern => pattern.test(trimmedCommand.toLowerCase()))) {
+    if (
+      invalidPatterns.some((pattern) =>
+        pattern.test(trimmedCommand.toLowerCase()),
+      )
+    ) {
       return false;
     }
 
@@ -105,7 +111,7 @@ class CommandHistoryService {
     this.history.unshift({
       command: trimmedCommand,
       timestamp: Date.now(),
-      count: 1
+      count: 1,
     });
 
     // 保持历史记录大小限制
@@ -117,11 +123,11 @@ class CommandHistoryService {
   }
 
   removeCommand(command) {
-    this.history = this.history.filter(item => item.command !== command);
+    this.history = this.history.filter((item) => item.command !== command);
   }
 
   incrementCommandUsage(command) {
-    const item = this.history.find(h => h.command === command);
+    const item = this.history.find((h) => h.command === command);
     if (item) {
       item.count = (item.count || 1) + 1;
       item.timestamp = Date.now();
@@ -129,7 +135,7 @@ class CommandHistoryService {
   }
 
   getSuggestions(input, maxResults = 10) {
-    if (!input || typeof input !== 'string' || input.trim().length === 0) {
+    if (!input || typeof input !== "string" || input.trim().length === 0) {
       // 如果没有输入，返回最近使用的命令
       return this.getRecentCommands(maxResults);
     }
@@ -138,27 +144,41 @@ class CommandHistoryService {
     const suggestions = [];
 
     // 1. 精确前缀匹配（优先级最高）
-    const prefixMatches = this.history.filter(item => 
-      item.command.toLowerCase().startsWith(trimmedInput)
+    const prefixMatches = this.history.filter((item) =>
+      item.command.toLowerCase().startsWith(trimmedInput),
     );
 
     // 2. 包含匹配
-    const containsMatches = this.history.filter(item => 
-      !item.command.toLowerCase().startsWith(trimmedInput) && 
-      item.command.toLowerCase().includes(trimmedInput)
+    const containsMatches = this.history.filter(
+      (item) =>
+        !item.command.toLowerCase().startsWith(trimmedInput) &&
+        item.command.toLowerCase().includes(trimmedInput),
     );
 
     // 3. 模糊匹配
-    const fuzzyMatches = this.history.filter(item => 
-      !item.command.toLowerCase().includes(trimmedInput) &&
-      this.fuzzyMatch(item.command.toLowerCase(), trimmedInput)
+    const fuzzyMatches = this.history.filter(
+      (item) =>
+        !item.command.toLowerCase().includes(trimmedInput) &&
+        this.fuzzyMatch(item.command.toLowerCase(), trimmedInput),
     );
 
     // 合并结果并按优先级排序
     const allMatches = [
-      ...prefixMatches.map(item => ({ ...item, matchType: 'prefix', score: 3 })),
-      ...containsMatches.map(item => ({ ...item, matchType: 'contains', score: 2 })),
-      ...fuzzyMatches.map(item => ({ ...item, matchType: 'fuzzy', score: 1 }))
+      ...prefixMatches.map((item) => ({
+        ...item,
+        matchType: "prefix",
+        score: 3,
+      })),
+      ...containsMatches.map((item) => ({
+        ...item,
+        matchType: "contains",
+        score: 2,
+      })),
+      ...fuzzyMatches.map((item) => ({
+        ...item,
+        matchType: "fuzzy",
+        score: 1,
+      })),
     ];
 
     // 按分数、使用次数和时间排序
@@ -168,23 +188,21 @@ class CommandHistoryService {
       return b.timestamp - a.timestamp;
     });
 
-    return allMatches.slice(0, maxResults).map(item => ({
+    return allMatches.slice(0, maxResults).map((item) => ({
       command: item.command,
       matchType: item.matchType,
       count: item.count || 1,
-      timestamp: item.timestamp
+      timestamp: item.timestamp,
     }));
   }
 
   getRecentCommands(maxResults = 10) {
-    return this.history
-      .slice(0, maxResults)
-      .map(item => ({
-        command: item.command,
-        matchType: 'recent',
-        count: item.count || 1,
-        timestamp: item.timestamp
-      }));
+    return this.history.slice(0, maxResults).map((item) => ({
+      command: item.command,
+      matchType: "recent",
+      count: item.count || 1,
+      timestamp: item.timestamp,
+    }));
   }
 
   fuzzyMatch(text, pattern) {
@@ -210,7 +228,7 @@ class CommandHistoryService {
   }
 
   setMaxHistorySize(size) {
-    if (typeof size === 'number' && size > 0) {
+    if (typeof size === "number" && size > 0) {
       this.maxHistorySize = size;
       if (this.history.length > size) {
         this.history = this.history.slice(0, size);
@@ -223,35 +241,35 @@ class CommandHistoryService {
       totalCommands: this.history.length,
       maxHistorySize: this.maxHistorySize,
       mostUsedCommand: this.getMostUsedCommand(),
-      initialized: this.initialized
+      initialized: this.initialized,
     };
   }
 
   getMostUsedCommand() {
     if (this.history.length === 0) return null;
-    
-    return this.history.reduce((max, current) => 
-      (current.count || 1) > (max.count || 1) ? current : max
+
+    return this.history.reduce((max, current) =>
+      (current.count || 1) > (max.count || 1) ? current : max,
     );
   }
 
   exportHistory() {
-    return this.history.map(item => ({
+    return this.history.map((item) => ({
       command: item.command,
       timestamp: item.timestamp,
-      count: item.count || 1
+      count: item.count || 1,
     }));
   }
 
   importHistory(exportedHistory) {
     if (!Array.isArray(exportedHistory)) return;
-    
+
     this.history = exportedHistory
-      .filter(item => item && typeof item.command === 'string')
-      .map(item => ({
+      .filter((item) => item && typeof item.command === "string")
+      .map((item) => ({
         command: item.command,
         timestamp: item.timestamp || Date.now(),
-        count: item.count || 1
+        count: item.count || 1,
       }))
       .slice(0, this.maxHistorySize);
   }
@@ -260,4 +278,4 @@ class CommandHistoryService {
 // 创建单例实例
 const commandHistoryService = new CommandHistoryService();
 
-module.exports = commandHistoryService; 
+module.exports = commandHistoryService;

@@ -21,21 +21,24 @@ const SFTP_LARGE_FILE_TIMEOUT = 3000000; // 大文件传输超时时间（50分�
 let sftpHealthCheckTimer = null;
 
 // 动态计算超时时间的函数
-function calculateDynamicTimeout(fileSize, baseTimeout = SFTP_OPERATION_TIMEOUT) {
+function calculateDynamicTimeout(
+  fileSize,
+  baseTimeout = SFTP_OPERATION_TIMEOUT,
+) {
   if (!fileSize || fileSize <= 0) {
     return baseTimeout;
   }
-  
+
   // 如果是大文件，使用更长的超时时间
   if (fileSize >= SFTP_LARGE_FILE_THRESHOLD) {
     return SFTP_LARGE_FILE_TIMEOUT;
   }
-  
+
   // 对于中等大小文件，按文件大小动态调整超时时间
   // 假设传输速度为 1MB/s，至少给 3 倍的缓冲时间
   const estimatedTransferTime = (fileSize / (1024 * 1024)) * 1000; // 毫秒
   const dynamicTimeout = Math.max(baseTimeout, estimatedTransferTime * 3);
-  
+
   // 限制最大超时时间不超过大文件超时时间
   return Math.min(dynamicTimeout, SFTP_LARGE_FILE_TIMEOUT);
 }
@@ -43,13 +46,12 @@ function calculateDynamicTimeout(fileSize, baseTimeout = SFTP_OPERATION_TIMEOUT)
 function init(logger, getChildProcessInfoFunc) {
   if (!logger || !logger.logToFile) {
     console.error("sftpCore: Logger (logToFile) not provided during init!");
-    // Fallback to console logging if logToFile is not available
+    // Fallback to
     logToFile = (message, type = "INFO") => {
       const prefix = `[sftpCore-${type}]`;
       if (type === "ERROR" || type === "WARN") {
         console.error(prefix, message);
       } else {
-        console.log(prefix, message);
       }
     };
   } else {
@@ -57,9 +59,6 @@ function init(logger, getChildProcessInfoFunc) {
   }
 
   if (typeof getChildProcessInfoFunc !== "function") {
-    console.error(
-      "sftpCore: getChildProcessInfo function not provided during init!",
-    );
     // Fallback to a dummy function to prevent crashes, though functionality will be impaired.
     getChildProcessInfo = (tabId) => {
       logToFile(
@@ -99,9 +98,6 @@ async function checkSftpSessionsHealth() {
   try {
     if (!logToFile) {
       // Ensure logToFile is available
-      console.error(
-        "sftpCore: logToFile not initialized in checkSftpSessionsHealth",
-      );
       return;
     }
     logToFile(
@@ -146,10 +142,6 @@ async function checkSftpSessionsHealth() {
       logToFile(
         `sftpCore: Error in SFTP health check: ${error.message}`,
         "ERROR",
-      );
-    } else {
-      console.error(
-        `sftpCore: Error in SFTP health check (logToFile not init): ${error.message}`,
       );
     }
   }
@@ -596,15 +588,21 @@ async function processSftpQueue(tabId) {
   try {
     // 计算动态超时时间
     let timeoutMs = SFTP_OPERATION_TIMEOUT;
-    
+
     // 检查操作类型和路径，尝试估算文件大小以动态调整超时
-    if (nextOp.type === 'upload' || nextOp.type === 'download' || 
-        nextOp.type === 'upload-multifile' || nextOp.type === 'upload-folder' || 
-        nextOp.type === 'download-folder') {
-      
+    if (
+      nextOp.type === "upload" ||
+      nextOp.type === "download" ||
+      nextOp.type === "upload-multifile" ||
+      nextOp.type === "upload-folder" ||
+      nextOp.type === "download-folder"
+    ) {
       // 对于传输操作，使用较长的超时时间
-      if (nextOp.type === 'upload-multifile' || nextOp.type === 'upload-folder' || 
-          nextOp.type === 'download-folder') {
+      if (
+        nextOp.type === "upload-multifile" ||
+        nextOp.type === "upload-folder" ||
+        nextOp.type === "download-folder"
+      ) {
         // 文件夹或多文件操作，使用最长超时
         timeoutMs = SFTP_LARGE_FILE_TIMEOUT;
       } else {
@@ -617,10 +615,7 @@ async function processSftpQueue(tabId) {
     const result = await Promise.race([
       nextOp.operation(),
       new Promise((_, rej) =>
-        setTimeout(
-          () => rej(new Error("Operation timed out")),
-          timeoutMs,
-        ),
+        setTimeout(() => rej(new Error("Operation timed out")), timeoutMs),
       ),
     ]);
 

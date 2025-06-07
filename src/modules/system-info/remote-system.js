@@ -72,10 +72,6 @@ async function getRemoteSystemInfo(sshClient) {
             const command = distroCommands[commandIndex++];
             sshClient.exec(command, (err, stream) => {
               if (err) {
-                console.error(
-                  `SSH exec error (distro command ${commandIndex}):`,
-                  err,
-                );
                 tryNextCommand();
                 return;
               }

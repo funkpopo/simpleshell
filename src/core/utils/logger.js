@@ -218,11 +218,6 @@ function initLogger(electronApp) {
       true,
     );
   } catch (error) {
-    console.error(
-      "Failed to initialize logger with environment-specific path:",
-      error,
-    );
-
     // 第一级回退：使用Electron默认日志路径
     try {
       const electronLogDir = electronApp.getPath("logs");
@@ -236,11 +231,6 @@ function initLogger(electronApp) {
         true,
       );
     } catch (electronError) {
-      console.error(
-        "Failed to initialize logger with Electron default path:",
-        electronError,
-      );
-
       // 第二级回退：使用基于__dirname的路径
       try {
         const fallbackLogDir = path.join(__dirname, "..", "..", "..", "logs");
@@ -254,11 +244,6 @@ function initLogger(electronApp) {
           true,
         );
       } catch (fallbackError) {
-        console.error(
-          "Failed to initialize logger with __dirname-based path:",
-          fallbackError,
-        );
-
         // 最终回退：直接在工作目录下
         logFile = "app_emergency.log";
         logToFileInternal(
@@ -281,10 +266,6 @@ function shouldLog(level) {
 function logToFileInternal(message, type = "INFO", isInitialization = false) {
   if (!logFile && !isInitialization) {
     // 如果 logFile 未设置且不是初始化调用，说明 initLogger 未被调用或失败
-    console.error(
-      "Logger not initialized. Call initLogger(app) first. Message: ",
-      message,
-    );
     return;
   }
 
@@ -307,14 +288,7 @@ function logToFileInternal(message, type = "INFO", isInitialization = false) {
     if (!isInitialization && logFile) {
       checkLogFileSize();
     }
-  } catch (error) {
-    console.error(
-      "Failed to write to log file:",
-      error,
-      "Original message:",
-      message,
-    );
-  }
+  } catch (error) {}
 }
 
 // 公开的日志函数

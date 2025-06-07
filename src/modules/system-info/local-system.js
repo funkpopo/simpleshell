@@ -82,17 +82,13 @@ function getLocalSystemInfo() {
           }
         }
       }
-    } catch (e) {
-      console.error("Error determining Windows version:", e);
-    }
+    } catch (e) {}
 
     // 添加架构信息
     try {
       const arch = os.arch();
       osInfo.release = `${osInfo.distro} ${osInfo.release} (${arch})`;
-    } catch (e) {
-      console.error("Error getting architecture info:", e);
-    }
+    } catch (e) {}
   } else if (osInfo.platform === "linux") {
     osInfo.distro = "Linux";
     osInfo.release = `Linux ${osInfo.release}`;

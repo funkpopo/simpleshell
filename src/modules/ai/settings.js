@@ -165,7 +165,6 @@ const loadAISettings = () => {
     }
   } catch (error) {
     logToFile(`Failed to load AI settings: ${error.message}`, "ERROR");
-    console.error("Failed to load AI settings:", error);
   }
 
   // 默认设置
@@ -257,7 +256,7 @@ const saveAISettings = (settings) => {
     return true;
   } catch (error) {
     logToFile(`Failed to save AI settings: ${error.message}`, "ERROR");
-    console.error("Failed to save AI settings:", error);
+
     return false;
   }
 };

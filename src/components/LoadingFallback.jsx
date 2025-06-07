@@ -11,10 +11,10 @@ import { useTheme } from "@mui/material/styles";
  * @param {number} props.size - 加载指示器大小
  * @param {boolean} props.showMessage - 是否显示加载信息
  */
-const LoadingFallback = ({ 
-  message = "正在加载组件...", 
-  size = 40, 
-  showMessage = true 
+const LoadingFallback = ({
+  message = "正在加载组件...",
+  size = 40,
+  showMessage = true,
 }) => {
   const theme = useTheme();
 
@@ -33,8 +33,8 @@ const LoadingFallback = ({
         gap: 2,
       }}
     >
-      <CircularProgress 
-        size={size} 
+      <CircularProgress
+        size={size}
         color="primary"
         sx={{
           animation: "pulse 1.5s ease-in-out infinite",
@@ -52,8 +52,8 @@ const LoadingFallback = ({
         }}
       />
       {showMessage && (
-        <Typography 
-          variant="body2" 
+        <Typography
+          variant="body2"
           color="text.secondary"
           sx={{
             textAlign: "center",

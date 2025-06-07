@@ -195,7 +195,10 @@ class SftpManager {
       let sshClient = processInfo.process;
       if (processInfo.connectionInfo && processInfo.connectionInfo.client) {
         sshClient = processInfo.connectionInfo.client;
-        logToFile(`Using connection pool SSH client for SFTP session ${tabId}`, "INFO");
+        logToFile(
+          `Using connection pool SSH client for SFTP session ${tabId}`,
+          "INFO",
+        );
       }
 
       // 创建SFTP客户端

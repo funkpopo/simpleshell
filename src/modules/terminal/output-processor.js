@@ -192,7 +192,10 @@ class OutputProcessor {
                 if (command !== procInfo.lastExtractedCommand) {
                   // 添加时间戳记录，用于防止短时间内重复触发
                   const now = Date.now();
-                  if (!procInfo.lastExtractedTime || (now - procInfo.lastExtractedTime) > 500) {
+                  if (
+                    !procInfo.lastExtractedTime ||
+                    now - procInfo.lastExtractedTime > 500
+                  ) {
                     procInfo.lastExtractedCommand = command;
                     procInfo.lastExtractedTime = now;
                     logToFile(`Extracted remote command: ${command}`, "INFO");

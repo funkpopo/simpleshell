@@ -44,11 +44,19 @@ import {
   formatTransferSpeed,
   formatRemainingTime,
   formatDate,
-  formatLastRefreshTime
+  formatLastRefreshTime,
 } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 
-const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath = "/", onPathChange }) => {
+const FileManager = ({
+  open,
+  onClose,
+  sshConnection,
+  tabId,
+  tabName,
+  initialPath = "/",
+  onPathChange,
+}) => {
   const theme = useTheme();
   const [currentPath, setCurrentPath] = useState("/");
   const [files, setFiles] = useState([]);
@@ -135,7 +143,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
     if (window.terminalAPI && window.terminalAPI.log) {
       window.terminalAPI.log(message, type);
     } else {
-      console.log(`[FileManager-${type || "INFO"}] ${message}`);
     }
   };
 
@@ -152,7 +159,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
     if (open && sshConnection && tabId) {
       // 先检查API是否可用
       if (!window.terminalAPI || !window.terminalAPI.listFiles) {
-        console.error("FileManager: listFiles API not available");
         setError("文件管理API不可用");
         return;
       }
@@ -235,12 +241,10 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
           // 记录刷新时间
           setLastRefreshTime(Date.now());
         } else {
-          console.error("Silent refresh failed:", response?.error);
           // 静默刷新失败不显示错误，只记录日志
         }
       }
     } catch (error) {
-      console.error("Silent refresh failed:", error);
       // 静默刷新失败不显示错误，只记录日志
     }
   };
@@ -248,7 +252,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
   // 修改loadDirectory，添加刷新时间记录
   const loadDirectory = async (path, retryCount = 0, forceRefresh = false) => {
     if (!sshConnection || !tabId) {
-      console.error("FileManager: Missing SSH connection or tabId");
       setError("缺少SSH连接信息");
       return;
     }
@@ -329,12 +332,9 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
           setError(response?.error || "加载目录失败");
         }
       } else {
-        console.error("FileManager: listFiles API not available");
         setError("文件管理API不可用");
       }
     } catch (error) {
-      console.error("加载目录失败:", error);
-
       // 如果是异常错误且重试次数未达到上限，则进行重试
       if (retryCount < 5) {
         // 增加重试等待时间，指数退避算法
@@ -509,8 +509,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
           }
         }
       } catch (error) {
-        console.error("删除文件失败:", error);
-
         if (retryCount < maxRetries) {
           // 发生异常，尝试重试
           retryCount++;
@@ -541,7 +539,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
     if (!sshConnection) return;
 
     setTransferCancelled(false);
-    
+
     // 保存当前路径状态
     const savedCurrentPath = currentPath;
     const savedSelectedFile = selectedFile;
@@ -647,8 +645,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
         refreshAfterUserActivity();
       }
     } catch (error) {
-      console.error("上传文件失败:", error);
-
       // 只有在不是用户主动取消的情况下才显示错误
       if (
         !transferCancelled &&
@@ -679,7 +675,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
     if (!sshConnection) return;
 
     setTransferCancelled(false);
-    
+
     // 保存当前路径状态
     const savedCurrentPath = currentPath;
     const savedSelectedFile = selectedFile;
@@ -793,8 +789,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
         refreshAfterUserActivity();
       }
     } catch (error) {
-      console.error("上传文件夹失败:", error);
-
       // 只有在不是用户主动取消的情况下才显示错误
       if (
         !transferCancelled &&
@@ -840,7 +834,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
         }
       }
     } catch (error) {
-      console.error("复制路径失败:", error);
       setError("复制路径失败: " + (error.message || "未知错误"));
     }
     handleContextMenuClose();
@@ -928,8 +921,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   };
 
-
-
   // 处理路径输入更改
   const handlePathInputChange = (e) => {
     setPathInput(e.target.value);
@@ -942,8 +933,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
       loadDirectory(pathInput);
     }
   };
-
-
 
   // 处理取消传输
   const handleCancelTransfer = async () => {
@@ -1035,8 +1024,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
         loadDirectory(currentPath, 0, true);
       }, 800); // 延迟800ms等待后端处理完成
     } catch (error) {
-      console.error("取消传输失败:", error);
-
       // 即使出现错误，也更新UI表明传输已中断
       setTransferProgress({
         ...transferProgress,
@@ -1143,8 +1130,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
           setShowCreateFolderDialog(false);
         }
       } catch (error) {
-        console.error("创建文件夹失败:", error);
-
         if (retryCount < maxRetries) {
           // 发生异常，尝试重试
           retryCount++;
@@ -1204,15 +1189,12 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
         setError("创建文件API不可用");
       }
     } catch (error) {
-      console.error("创建文件失败:", error);
       setError("创建文件失败: " + (error.message || "未知错误"));
     } finally {
       setLoading(false);
       setShowCreateFileDialog(false);
     }
   };
-
-
 
   // 用户活动后的刷新函数，使用防抖优化
   const refreshAfterUserActivity = debounce(() => {
@@ -1309,8 +1291,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
         setTimeout(() => setTransferProgress(null), 1500);
       }
     } catch (error) {
-      console.error("下载文件失败:", error);
-
       // 只有在不是用户主动取消的情况下才显示错误
       if (
         !transferCancelled &&
@@ -1472,7 +1452,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
                           window.terminalAPI
                             .openExternal(folderUrl)
                             .catch((e) => {
-                              console.error("无法打开文件夹:", e);
                               // 尝试替代方法
                               window.terminalAPI
                                 .showItemInFolder?.(normalizedPath)
@@ -1513,15 +1492,12 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
             setError(null); // 清除可能存在的错误信息
           }, 1500);
         } catch (downloadError) {
-          console.error("文件夹下载过程中出错:", downloadError);
           throw downloadError; // 重新抛出错误，让外层 catch 处理
         }
       } else {
         throw new Error("下载文件夹API不可用");
       }
     } catch (error) {
-      console.error("下载文件夹失败:", error);
-
       // 处理各种错误情况
       if (transferCancelled) {
         showNotification("下载已被用户取消", "info");
@@ -1658,8 +1634,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
           }
         }
       } catch (error) {
-        console.error("重命名失败:", error);
-
         if (retryCount < maxRetries) {
           // 发生异常，尝试重试
           retryCount++;
@@ -1752,7 +1726,6 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
             }, 300);
           })
           .catch((error) => {
-            console.error("取消传输失败:", error);
             // 即使取消失败也关闭窗口，但添加延迟确保取消请求被发送
             setTimeout(() => {
               logToFile &&
@@ -1879,10 +1852,7 @@ const FileManager = ({ open, onClose, sshConnection, tabId, tabName, initialPath
 
         {/* 添加上传按钮 */}
         <Tooltip title="上传文件到当前文件夹">
-          <IconButton
-            size="small"
-            onClick={handleUploadFile}
-          >
+          <IconButton size="small" onClick={handleUploadFile}>
             <UploadFileIcon fontSize="small" />
           </IconButton>
         </Tooltip>
