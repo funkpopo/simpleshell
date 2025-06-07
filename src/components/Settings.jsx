@@ -99,7 +99,7 @@ const Settings = ({ open, onClose }) => {
     const loadSettings = async () => {
       try {
         setIsLoading(true);
-
+        
         // 加载UI设置
         if (window.terminalAPI?.loadUISettings) {
           const settings = await window.terminalAPI.loadUISettings();
@@ -111,7 +111,7 @@ const Settings = ({ open, onClose }) => {
             );
           }
         }
-
+        
         // 加载日志设置
         if (window.terminalAPI?.loadLogSettings) {
           const logSettings = await window.terminalAPI.loadLogSettings();
@@ -119,13 +119,14 @@ const Settings = ({ open, onClose }) => {
             setLogLevel(logSettings.level || "WARN");
             // 将字节转换为MB
             setMaxFileSize(
-              logSettings.maxFileSize
-                ? Math.round(logSettings.maxFileSize / (1024 * 1024))
-                : 5,
+              logSettings.maxFileSize 
+                ? Math.round(logSettings.maxFileSize / (1024 * 1024)) 
+                : 5
             );
           }
         }
       } catch (error) {
+        console.error("Failed to load settings:", error);
       } finally {
         setIsLoading(false);
       }
@@ -150,12 +151,12 @@ const Settings = ({ open, onClose }) => {
   const handleDarkModeChange = (event) => {
     setDarkMode(event.target.value === "dark");
   };
-
+  
   // Handle log level change
   const handleLogLevelChange = (event) => {
     setLogLevel(event.target.value);
   };
-
+  
   // Handle max file size change
   const handleMaxFileSizeChange = (event) => {
     const value = event.target.value;
@@ -173,16 +174,16 @@ const Settings = ({ open, onClose }) => {
         const settings = { language, fontSize, darkMode };
         await window.terminalAPI.saveUISettings(settings);
       }
-
+      
       // 保存日志设置
       if (window.terminalAPI?.saveLogSettings) {
-        const logSettings = {
+        const logSettings = { 
           level: logLevel,
           // 将MB转换为字节
           maxFileSize: maxFileSize * 1024 * 1024,
           // 保留其他设置默认值
           maxFiles: 5,
-          compressOldLogs: true,
+          compressOldLogs: true
         };
         await window.terminalAPI.saveLogSettings(logSettings);
       }
@@ -201,6 +202,7 @@ const Settings = ({ open, onClose }) => {
 
       onClose();
     } catch (error) {
+      console.error("Failed to save settings:", error);
       alert(t("settings.saveError"));
     }
   };
@@ -285,14 +287,14 @@ const Settings = ({ open, onClose }) => {
             />
           </Box>
         </Box>
-
+        
         <Divider sx={{ my: 2 }} />
-
+        
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle1" gutterBottom>
             {t("settings.logSettingsTitle")}
           </Typography>
-
+          
           <Box sx={{ mb: 2 }}>
             <FormControl fullWidth variant="outlined" size="small">
               <InputLabel id="log-level-select-label">
@@ -307,13 +309,13 @@ const Settings = ({ open, onClose }) => {
               >
                 {logLevels.map((level) => (
                   <MenuItem key={level.value} value={level.value}>
-                    {level.label}
+                    {level.label} 
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
           </Box>
-
+          
           <Box>
             <TextField
               fullWidth
@@ -324,9 +326,7 @@ const Settings = ({ open, onClose }) => {
               value={maxFileSize}
               onChange={handleMaxFileSizeChange}
               InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">MB</InputAdornment>
-                ),
+                endAdornment: <InputAdornment position="end">MB</InputAdornment>,
               }}
               inputProps={{
                 min: 1,
