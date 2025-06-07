@@ -185,6 +185,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           setError("不支持预览此类型的文件");
         }
       } catch (err) {
+        console.error("预览文件失败:", err);
         setError("预览文件失败: " + (err.message || "未知错误"));
       } finally {
         setLoading(false);
@@ -208,7 +209,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           () => {}, // 简单进度回调
         );
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error("下载文件失败:", error);
+    }
   };
 
   // 处理文本编辑
@@ -250,6 +253,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         });
       }
     } catch (error) {
+      console.error("保存文件失败:", error);
       setNotification({
         message: `保存失败: ${error.message || "未知错误"}`,
         severity: "error",
