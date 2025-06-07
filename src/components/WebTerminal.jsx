@@ -9,7 +9,7 @@ import "@xterm/xterm/css/xterm.css";
 import {
   debounce,
   createResizeObserver,
-  isElementVisible
+  isElementVisible,
 } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
 import Menu from "@mui/material/Menu";
@@ -199,21 +199,30 @@ const getCharacterMetrics = (term) => {
 
   try {
     // 获取终端的实际字符尺寸
-    const charWidth = term._core?._renderService?._renderer?.dimensions?.actualCellWidth ||
-                     term._core?._renderService?.dimensions?.actualCellWidth ||
-                     term.element.querySelector('.xterm-char-measure-element')?.getBoundingClientRect()?.width ||
-                     9; // 默认字符宽度
+    const charWidth =
+      term._core?._renderService?._renderer?.dimensions?.actualCellWidth ||
+      term._core?._renderService?.dimensions?.actualCellWidth ||
+      term.element
+        .querySelector(".xterm-char-measure-element")
+        ?.getBoundingClientRect()?.width ||
+      9; // 默认字符宽度
 
-    const charHeight = term._core?._renderService?._renderer?.dimensions?.actualCellHeight ||
-                      term._core?._renderService?.dimensions?.actualCellHeight ||
-                      term.element.querySelector('.xterm-char-measure-element')?.getBoundingClientRect()?.height ||
-                      17; // 默认字符高度
+    const charHeight =
+      term._core?._renderService?._renderer?.dimensions?.actualCellHeight ||
+      term._core?._renderService?.dimensions?.actualCellHeight ||
+      term.element
+        .querySelector(".xterm-char-measure-element")
+        ?.getBoundingClientRect()?.height ||
+      17; // 默认字符高度
 
     // 获取终端视口的偏移量
-    const viewport = term.element.querySelector('.xterm-viewport');
-    const screen = term.element.querySelector('.xterm-screen');
+    const viewport = term.element.querySelector(".xterm-viewport");
+    const screen = term.element.querySelector(".xterm-screen");
 
-    const viewportRect = viewport?.getBoundingClientRect() || { left: 0, top: 0 };
+    const viewportRect = viewport?.getBoundingClientRect() || {
+      left: 0,
+      top: 0,
+    };
     const screenRect = screen?.getBoundingClientRect() || { left: 0, top: 0 };
 
     return {
@@ -221,20 +230,20 @@ const getCharacterMetrics = (term) => {
       charHeight: Math.round(charHeight),
       viewportOffset: {
         x: viewportRect.left,
-        y: viewportRect.top
+        y: viewportRect.top,
       },
       screenOffset: {
         x: screenRect.left,
-        y: screenRect.top
-      }
+        y: screenRect.top,
+      },
     };
   } catch (error) {
-    console.warn('获取字符度量失败，使用默认值:', error);
+    console.warn("获取字符度量失败，使用默认值:", error);
     return {
       charWidth: 9,
       charHeight: 17,
       viewportOffset: { x: 0, y: 0 },
-      screenOffset: { x: 0, y: 0 }
+      screenOffset: { x: 0, y: 0 },
     };
   }
 };
@@ -261,10 +270,10 @@ const getCharacterGridPosition = (term, pixelX, pixelY) => {
       col: boundedCol,
       row: boundedRow,
       pixelX: boundedCol * metrics.charWidth + metrics.screenOffset.x,
-      pixelY: boundedRow * metrics.charHeight + metrics.screenOffset.y
+      pixelY: boundedRow * metrics.charHeight + metrics.screenOffset.y,
     };
   } catch (error) {
-    console.warn('字符网格坐标转换失败:', error);
+    console.warn("字符网格坐标转换失败:", error);
     return null;
   }
 };
@@ -275,19 +284,12 @@ const debugSelectionAlignment = (term) => {
 
   const metrics = getCharacterMetrics(term);
   if (!metrics) {
-    console.log('无法获取字符度量信息');
     return;
   }
 
-  console.log('终端字符度量信息:', {
-    charWidth: metrics.charWidth,
-    charHeight: metrics.charHeight,
-    screenOffset: metrics.screenOffset,
-    terminalCols: term.cols,
-    terminalRows: term.rows
-  });
-
-  const selectionElements = document.querySelectorAll('.xterm .xterm-selection div');
+  const selectionElements = document.querySelectorAll(
+    ".xterm .xterm-selection div",
+  );
   if (selectionElements.length > 0) {
     console.log(`当前选择区域信息 (共${selectionElements.length}个):`);
     selectionElements.forEach((elem, index) => {
@@ -300,61 +302,66 @@ const debugSelectionAlignment = (term) => {
         height: style.height,
         opacity: style.opacity,
         transform: style.transform,
-        visible: style.opacity !== '0',
-        boundingRect: rect
+        visible: style.opacity !== "0",
+        boundingRect: rect,
       });
     });
 
     // 检查是否有重复显示的问题
-    const visibleElements = Array.from(selectionElements).filter(elem =>
-      window.getComputedStyle(elem).opacity !== '0'
+    const visibleElements = Array.from(selectionElements).filter(
+      (elem) => window.getComputedStyle(elem).opacity !== "0",
     );
     if (visibleElements.length > 1) {
-      console.warn(`警告：检测到${visibleElements.length}个可见的选择区域，可能存在重复显示问题`);
+      console.warn(
+        `警告：检测到${visibleElements.length}个可见的选择区域，可能存在重复显示问题`,
+      );
     }
   } else {
-    console.log('当前没有选择区域');
+    console.log("当前没有选择区域");
   }
 };
 
 // 优化的终端尺寸调整函数，使用防抖机制减少频繁调用
-const forceResizeTerminal = debounce((term, container, processId, tabId, fitAddon) => {
-  if (!term || !container || !fitAddon) return;
+const forceResizeTerminal = debounce(
+  (term, container, processId, tabId, fitAddon) => {
+    if (!term || !container || !fitAddon) return;
 
-  try {
-    // 检查元素可见性，避免在隐藏状态下进行无效计算
-    if (!isElementVisible(container)) return;
+    try {
+      // 检查元素可见性，避免在隐藏状态下进行无效计算
+      if (!isElementVisible(container)) return;
 
-    // 强制重新计算DOM大小
-    const currentWidth = container.clientWidth;
-    const currentHeight = container.clientHeight;
+      // 强制重新计算DOM大小
+      const currentWidth = container.clientWidth;
+      const currentHeight = container.clientHeight;
 
-    // 确保终端完全填充容器
-    if (term && term.element) {
-      term.element.style.width = `${currentWidth}px`;
-      term.element.style.height = `${currentHeight}px`;
+      // 确保终端完全填充容器
+      if (term && term.element) {
+        term.element.style.width = `${currentWidth}px`;
+        term.element.style.height = `${currentHeight}px`;
 
-      // 添加强制重排的代码
-      term.element.getBoundingClientRect();
+        // 添加强制重排的代码
+        term.element.getBoundingClientRect();
+      }
+
+      // 适配终端大小
+      fitAddon.fit();
+
+      // 获取当前终端的大小
+      const cols = Math.max(Math.floor(term.cols || 120), 1);
+      const rows = Math.max(Math.floor(term.rows || 30), 1);
+
+      // 通知后端调整终端大小
+      if (window.terminalAPI && window.terminalAPI.resizeTerminal) {
+        window.terminalAPI
+          .resizeTerminal(processId || tabId, cols, rows)
+          .catch((err) => console.error("终端大小强制调整失败:", err));
+      }
+    } catch (error) {
+      console.error("终端尺寸调整失败:", error);
     }
-
-    // 适配终端大小
-    fitAddon.fit();
-
-    // 获取当前终端的大小
-    const cols = Math.max(Math.floor(term.cols || 120), 1);
-    const rows = Math.max(Math.floor(term.rows || 30), 1);
-
-    // 通知后端调整终端大小
-    if (window.terminalAPI && window.terminalAPI.resizeTerminal) {
-      window.terminalAPI
-        .resizeTerminal(processId || tabId, cols, rows)
-        .catch((err) => console.error("终端大小强制调整失败:", err));
-    }
-  } catch (error) {
-    console.error("终端尺寸调整失败:", error);
-  }
-}, 100); // 100ms防抖延迟
+  },
+  100,
+); // 100ms防抖延迟
 
 // 添加辅助函数，用于处理多行粘贴文本，防止注释符号和缩进异常
 const processMultilineInput = (text, options = {}) => {
@@ -464,7 +471,7 @@ const WebTerminal = ({
   const [inEditorMode, setInEditorMode] = useState(false);
   const inputDebounceRef = useRef(null);
   const suggestionSelectedRef = useRef(false);
-  
+
   // 命令执行状态跟踪
   const [isCommandExecuting, setIsCommandExecuting] = useState(false);
   const lastExecutedCommandTimeRef = useRef(0);
@@ -488,8 +495,9 @@ const WebTerminal = ({
       }
 
       // 检查时间间隔和命令重复
-      const timeSinceLastCommand = Date.now() - lastExecutedCommandTimeRef.current;
-      
+      const timeSinceLastCommand =
+        Date.now() - lastExecutedCommandTimeRef.current;
+
       // 距离上次命令执行50ms内不显示建议
       if (timeSinceLastCommand < 50) {
         setSuggestions([]);
@@ -498,25 +506,32 @@ const WebTerminal = ({
       }
 
       const trimmedInput = input.trim();
-      
+
       // 检查是否与刚执行的命令相同（仅在执行后1秒内生效）
-      if (trimmedInput === lastExecutedCommandRef.current && timeSinceLastCommand < 1000) {
+      if (
+        trimmedInput === lastExecutedCommandRef.current &&
+        timeSinceLastCommand < 1000
+      ) {
         setSuggestions([]);
         setShowSuggestions(false);
         return;
       }
 
       try {
-        const result = await window.terminalAPI?.getCommandSuggestions(trimmedInput, 8);
+        const result = await window.terminalAPI?.getCommandSuggestions(
+          trimmedInput,
+          8,
+        );
         if (result?.success && result.suggestions?.length > 0) {
           // 只在刚执行命令后的短时间内过滤该命令
           let filteredSuggestions = result.suggestions;
           if (timeSinceLastCommand < 1000) {
             filteredSuggestions = result.suggestions.filter(
-              suggestion => suggestion.command !== lastExecutedCommandRef.current
+              (suggestion) =>
+                suggestion.command !== lastExecutedCommandRef.current,
             );
           }
-          
+
           if (filteredSuggestions.length > 0) {
             setSuggestions(filteredSuggestions);
             setShowSuggestions(true);
@@ -529,50 +544,62 @@ const WebTerminal = ({
           setShowSuggestions(false);
         }
       } catch (error) {
-        console.error('获取命令建议失败:', error);
+        console.error("获取命令建议失败:", error);
         setSuggestions([]);
         setShowSuggestions(false);
       }
     }, 50),
-    [inEditorMode, isCommandExecuting, setShowSuggestions, setSuggestions]
+    [inEditorMode, isCommandExecuting, setShowSuggestions, setSuggestions],
   );
 
   // 处理建议选择
-  const handleSuggestionSelect = useCallback((suggestion) => {
-    if (!suggestion || !termRef.current || !currentProcessId.current) return;
+  const handleSuggestionSelect = useCallback(
+    (suggestion) => {
+      if (!suggestion || !termRef.current || !currentProcessId.current) return;
 
-    try {
-      // 增加使用次数
-      window.terminalAPI?.incrementCommandUsage(suggestion.command);
+      try {
+        // 增加使用次数
+        window.terminalAPI?.incrementCommandUsage(suggestion.command);
 
-      // 计算需要清除的字符数
-      const clearLength = currentInput.length;
-      
-      // 清除当前输入
-      for (let i = 0; i < clearLength; i++) {
-        window.terminalAPI.sendToProcess(currentProcessId.current, '\b \b');
+        // 计算需要清除的字符数
+        const clearLength = currentInput.length;
+
+        // 清除当前输入
+        for (let i = 0; i < clearLength; i++) {
+          window.terminalAPI.sendToProcess(currentProcessId.current, "\b \b");
+        }
+
+        // 输入选中的命令
+        window.terminalAPI.sendToProcess(
+          currentProcessId.current,
+          suggestion.command,
+        );
+
+        // 标记这是通过建议选择的命令，直接将建议的命令添加到历史记录
+        if (window.terminalAPI?.addToCommandHistory) {
+          window.terminalAPI.addToCommandHistory(suggestion.command);
+        }
+
+        // 标记为通过建议选择的命令，避免在回车时重复记录
+        suggestionSelectedRef.current = true;
+
+        // 隐藏建议窗口
+        setShowSuggestions(false);
+        setSuggestions([]);
+        setCurrentInput("");
+        setSuggestionsHiddenByEsc(false);
+      } catch (error) {
+        console.error("应用命令建议失败:", error);
       }
-      
-      // 输入选中的命令
-      window.terminalAPI.sendToProcess(currentProcessId.current, suggestion.command);
-      
-      // 标记这是通过建议选择的命令，直接将建议的命令添加到历史记录
-      if (window.terminalAPI?.addToCommandHistory) {
-        window.terminalAPI.addToCommandHistory(suggestion.command);
-      }
-      
-      // 标记为通过建议选择的命令，避免在回车时重复记录
-      suggestionSelectedRef.current = true;
-      
-      // 隐藏建议窗口
-      setShowSuggestions(false);
-      setSuggestions([]);
-      setCurrentInput("");
-      setSuggestionsHiddenByEsc(false);
-    } catch (error) {
-      console.error('应用命令建议失败:', error);
-    }
-  }, [currentInput, setShowSuggestions, setSuggestions, setCurrentInput, setSuggestionsHiddenByEsc]);
+    },
+    [
+      currentInput,
+      setShowSuggestions,
+      setSuggestions,
+      setCurrentInput,
+      setSuggestionsHiddenByEsc,
+    ],
+  );
 
   // 关闭建议窗口
   const closeSuggestions = useCallback(() => {
@@ -589,7 +616,7 @@ const WebTerminal = ({
       const term = termRef.current;
       const terminalElement = terminalRef.current;
       const terminalRect = terminalElement.getBoundingClientRect();
-      
+
       // 获取终端的基本度量信息
       const fontSize = term.options.fontSize || 14;
       const lineHeight = Math.ceil(fontSize * 1.2); // 行高通常是字体大小的1.2倍
@@ -598,25 +625,28 @@ const WebTerminal = ({
       // 计算光标位置
       const cursorX = term.buffer.active.cursorX;
       const cursorY = term.buffer.active.cursorY;
-      
+
       // 计算相对于视口的绝对像素位置
-      const pixelX = terminalRect.left + (cursorX * charWidth);
-      const pixelY = terminalRect.top + (cursorY * lineHeight);
+      const pixelX = terminalRect.left + cursorX * charWidth;
+      const pixelY = terminalRect.top + cursorY * lineHeight;
 
       // 计算建议窗口高度（预估）
-      const estimatedSuggestionHeight = Math.min(suggestions.length * 40 + 60, 300); // 每项40px + 底部提示60px
-      
+      const estimatedSuggestionHeight = Math.min(
+        suggestions.length * 40 + 60,
+        300,
+      ); // 每项40px + 底部提示60px
+
       // 检查是否有足够空间在下方显示
       const spaceBelow = window.innerHeight - pixelY - lineHeight;
       const shouldShowAbove = spaceBelow < estimatedSuggestionHeight;
 
-      setCursorPosition({ 
-        x: pixelX, 
+      setCursorPosition({
+        x: pixelX,
         y: pixelY,
-        showAbove: shouldShowAbove
+        showAbove: shouldShowAbove,
       });
     } catch (error) {
-      console.error('更新光标位置失败:', error);
+      console.error("更新光标位置失败:", error);
     }
   }, [suggestions.length]);
 
@@ -654,7 +684,7 @@ const WebTerminal = ({
           if (processId && window.terminalAPI?.notifyEditorModeChange) {
             window.terminalAPI.notifyEditorModeChange(processId, true);
           }
-          
+
           // 隐藏命令建议
           setShowSuggestions(false);
           setSuggestions([]);
@@ -719,7 +749,7 @@ const WebTerminal = ({
         // 只有在非Tab补全状态下才处理退格
         if (!tabCompletionUsed && currentInputBuffer.length > 0) {
           currentInputBuffer = currentInputBuffer.slice(0, -1);
-          
+
           // 更新当前输入状态并触发建议搜索
           if (!inEditorMode) {
             setCurrentInput(currentInputBuffer);
@@ -745,7 +775,7 @@ const WebTerminal = ({
         tabCompletionUsed = true;
         // 清空当前输入缓冲区，避免记录不完整的命令
         currentInputBuffer = "";
-        
+
         // 存储当前行内容，以便于之后获取Tab补全后的完整命令
         currentLineBeforeTab = {
           y: term.buffer.active.cursorY,
@@ -774,7 +804,7 @@ const WebTerminal = ({
       if (data === "\r" || data === "\n") {
         // 设置命令执行状态，防止显示建议
         setIsCommandExecuting(true);
-        
+
         try {
           // 获取终端的最后一行内容（可能包含用户输入的命令）
           const lastLine =
@@ -832,13 +862,16 @@ const WebTerminal = ({
           // 注意：inEditorMode可能已经被buffer类型检测器更新
           if (command && command !== lastExecutedCommand && !inEditorMode) {
             lastExecutedCommand = command;
-            
+
             // 记录执行的命令和时间，用于防止后续显示该命令的建议
             lastExecutedCommandRef.current = command;
             lastExecutedCommandTimeRef.current = Date.now();
-            
+
             // 只有不是通过建议选择的命令才添加到历史记录
-            if (!suggestionSelectedRef.current && window.terminalAPI?.addToCommandHistory) {
+            if (
+              !suggestionSelectedRef.current &&
+              window.terminalAPI?.addToCommandHistory
+            ) {
               window.terminalAPI.addToCommandHistory(command);
             }
           }
@@ -846,19 +879,19 @@ const WebTerminal = ({
           // 重置Tab补全状态（立即重置，因为已经处理完命令）
           tabCompletionUsed = false;
           currentLineBeforeTab = null;
-          
+
           // 重置当前输入缓冲区
           currentInputBuffer = "";
-          
+
           // 重置建议选择标记
           suggestionSelectedRef.current = false;
-          
+
           // 隐藏命令建议
           setShowSuggestions(false);
           setSuggestions([]);
           setCurrentInput("");
           setSuggestionsHiddenByEsc(false);
-          
+
           // 延迟重置命令执行状态，给足够时间让输出完成
           setTimeout(() => {
             setIsCommandExecuting(false);
@@ -899,9 +932,15 @@ const WebTerminal = ({
         if (!tabCompletionUsed) {
           currentInputBuffer += data;
         }
-        
+
         // 更新当前输入状态并触发建议搜索（仅在普通字符输入时，且不在Tab补全状态）
-        if (!inEditorMode && !tabCompletionUsed && data.length === 1 && data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
+        if (
+          !inEditorMode &&
+          !tabCompletionUsed &&
+          data.length === 1 &&
+          data.charCodeAt(0) >= 32 &&
+          data.charCodeAt(0) <= 126
+        ) {
           setCurrentInput(currentInputBuffer);
           updateCursorPosition();
           // 只有在非命令执行状态下才触发建议搜索
@@ -979,7 +1018,7 @@ const WebTerminal = ({
             ) {
               // 更新当前输入缓冲区为Tab补全后的命令，用于后续回车时记录
               currentInputBuffer = commandMatch[1].trim();
-              
+
               // 同时更新显示状态
               if (!inEditorMode) {
                 setCurrentInput(currentInputBuffer);
@@ -1098,7 +1137,11 @@ const WebTerminal = ({
     };
 
     // 使用EventManager管理事件监听器
-    eventManager.addEventListener(window, "settingsChanged", handleSettingsChanged);
+    eventManager.addEventListener(
+      window,
+      "settingsChanged",
+      handleSettingsChanged,
+    );
   }, [tabId, eventManager]);
 
   useEffect(() => {
@@ -1128,7 +1171,7 @@ const WebTerminal = ({
 
         // 重新打开终端并附加到DOM
         term.open(terminalRef.current);
-        
+
         // 如果标签页不活跃，避免立即触发resize以减少性能影响
         if (isActive) {
           // 使用EventManager管理确保适配容器大小
@@ -1156,7 +1199,7 @@ const WebTerminal = ({
           copyOnSelect: false, // 选中后不自动复制
           // 添加选择相关的配置
           selectionScrollSpeed: 5, // 选择时的滚动速度
-          fastScrollModifier: 'shift', // 快速滚动修饰键
+          fastScrollModifier: "shift", // 快速滚动修饰键
           // 优化字符渲染
           letterSpacing: 0, // 字符间距
           lineHeight: 1.0, // 行高
@@ -1454,33 +1497,36 @@ const WebTerminal = ({
             selectionElements.forEach((elem, index) => {
               if (index > 0) {
                 // 使用多种方式彻底隐藏重复元素
-                elem.style.display = 'none';
-                elem.style.opacity = '0';
-                elem.style.visibility = 'hidden';
-                elem.style.transform = '';
-                elem.style.willChange = '';
-                elem.style.pointerEvents = 'none';
+                elem.style.display = "none";
+                elem.style.opacity = "0";
+                elem.style.visibility = "hidden";
+                elem.style.transform = "";
+                elem.style.willChange = "";
+                elem.style.pointerEvents = "none";
                 // 添加标记类以便CSS规则识别
-                elem.classList.add('xterm-selection-duplicate');
+                elem.classList.add("xterm-selection-duplicate");
               } else {
                 // 确保第一个元素完全可见
-                elem.style.display = '';
-                elem.style.opacity = '1';
-                elem.style.visibility = 'visible';
-                elem.classList.remove('xterm-selection-duplicate');
+                elem.style.display = "";
+                elem.style.opacity = "1";
+                elem.style.visibility = "visible";
+                elem.classList.remove("xterm-selection-duplicate");
               }
             });
           }
 
           // 同时检查是否有多个选择容器
-          const allSelectionContainers = terminalElement.querySelectorAll('.xterm-selection');
+          const allSelectionContainers =
+            terminalElement.querySelectorAll(".xterm-selection");
           if (allSelectionContainers.length > 1) {
-            console.log(`检测到${allSelectionContainers.length}个选择容器，隐藏重复容器`);
+            console.log(
+              `检测到${allSelectionContainers.length}个选择容器，隐藏重复容器`,
+            );
             allSelectionContainers.forEach((container, index) => {
               if (index > 0) {
-                container.style.display = 'none';
-                container.style.opacity = '0';
-                container.style.visibility = 'hidden';
+                container.style.display = "none";
+                container.style.opacity = "0";
+                container.style.visibility = "hidden";
               }
             });
           }
@@ -1498,40 +1544,52 @@ const WebTerminal = ({
           const currentTop = parseFloat(computedStyle.top) || 0;
 
           // 计算需要的偏移量（更温和的调整）
-          const leftOffset = (currentLeft - metrics.screenOffset.x) % metrics.charWidth;
-          const topOffset = (currentTop - metrics.screenOffset.y) % metrics.charHeight;
+          const leftOffset =
+            (currentLeft - metrics.screenOffset.x) % metrics.charWidth;
+          const topOffset =
+            (currentTop - metrics.screenOffset.y) % metrics.charHeight;
 
           // 只有当偏移量超过阈值时才进行调整
           const threshold = 3; // 增加阈值以减少不必要的调整
-          if (Math.abs(leftOffset) > threshold || Math.abs(topOffset) > threshold) {
-            const adjustX = leftOffset > metrics.charWidth / 2 ?
-                           metrics.charWidth - leftOffset : -leftOffset;
-            const adjustY = topOffset > metrics.charHeight / 2 ?
-                           metrics.charHeight - topOffset : -topOffset;
+          if (
+            Math.abs(leftOffset) > threshold ||
+            Math.abs(topOffset) > threshold
+          ) {
+            const adjustX =
+              leftOffset > metrics.charWidth / 2
+                ? metrics.charWidth - leftOffset
+                : -leftOffset;
+            const adjustY =
+              topOffset > metrics.charHeight / 2
+                ? metrics.charHeight - topOffset
+                : -topOffset;
 
             // 只对主要元素应用调整
             primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
-            primaryElement.style.willChange = 'transform';
-            primaryElement.style.opacity = '1'; // 确保主要元素可见
+            primaryElement.style.willChange = "transform";
+            primaryElement.style.opacity = "1"; // 确保主要元素可见
           }
-
         } catch (error) {
-          console.warn('选择元素调整失败:', error);
+          console.warn("选择元素调整失败:", error);
           // 简化的回退处理 - 清理所有transform
           const selectionElements = document.querySelectorAll(
             ".xterm .xterm-selection div",
           );
           selectionElements.forEach((elem) => {
-            elem.style.transform = '';
-            elem.style.willChange = '';
-            elem.style.opacity = '';
+            elem.style.transform = "";
+            elem.style.willChange = "";
+            elem.style.opacity = "";
           });
         }
       };
 
       // 使用EventManager添加鼠标事件监听
       if (terminalRef.current) {
-        eventManager.addEventListener(terminalRef.current, "mousedown", handleMouseDown);
+        eventManager.addEventListener(
+          terminalRef.current,
+          "mousedown",
+          handleMouseDown,
+        );
 
         // 简化的鼠标事件处理 - 减少频繁调整
         const handleMouseMove = (e) => {
@@ -1547,13 +1605,25 @@ const WebTerminal = ({
           }
         };
 
-        eventManager.addEventListener(terminalRef.current, "mousemove", handleMouseMove);
-        eventManager.addEventListener(terminalRef.current, "mouseup", handleMouseUp);
+        eventManager.addEventListener(
+          terminalRef.current,
+          "mousemove",
+          handleMouseMove,
+        );
+        eventManager.addEventListener(
+          terminalRef.current,
+          "mouseup",
+          handleMouseUp,
+        );
       }
 
       // 使用EventManager添加右键菜单事件监听
       if (terminalRef.current) {
-        eventManager.addEventListener(terminalRef.current, "contextmenu", handleContextMenu);
+        eventManager.addEventListener(
+          terminalRef.current,
+          "contextmenu",
+          handleContextMenu,
+        );
       }
 
       // 处理窗口调整大小
@@ -1658,12 +1728,15 @@ const WebTerminal = ({
             const currentWidth = termRef.current.element.clientWidth;
             const currentHeight = termRef.current.element.clientHeight;
 
-            if (Math.abs(width - currentWidth) > 5 || Math.abs(height - currentHeight) > 5) {
+            if (
+              Math.abs(width - currentWidth) > 5 ||
+              Math.abs(height - currentHeight) > 5
+            ) {
               handleResize();
             }
           }
         },
-        { debounceTime: 100 } // 100ms防抖
+        { debounceTime: 100 }, // 100ms防抖
       );
 
       // 使用EventManager管理window resize事件作为备用
@@ -1671,12 +1744,20 @@ const WebTerminal = ({
 
       // 优化的可见性变化处理，使用防抖减少频繁调用
       const handleVisibilityChange = debounce(() => {
-        if (!document.hidden && termRef.current && isElementVisible(terminalRef.current)) {
+        if (
+          !document.hidden &&
+          termRef.current &&
+          isElementVisible(terminalRef.current)
+        ) {
           handleResize();
         }
       }, 50);
 
-      eventManager.addEventListener(document, "visibilitychange", handleVisibilityChange);
+      eventManager.addEventListener(
+        document,
+        "visibilitychange",
+        handleVisibilityChange,
+      );
 
       // 创建一个MutationObserver来检测元素的可见性变化
       const observer = new MutationObserver((mutations) => {
@@ -1959,7 +2040,9 @@ const WebTerminal = ({
       // EventManager会自动清理所有事件监听器、定时器和观察者
       return () => {
         // 这个函数现在很简洁，因为EventManager处理了大部分清理工作
-        console.log(`WebTerminal ${tabId} 组件卸载，资源清理由EventManager处理`);
+        console.log(
+          `WebTerminal ${tabId} 组件卸载，资源清理由EventManager处理`,
+        );
       };
     }
   }, [tabId, usePowershell, refreshKey, sshConfig, eventManager]);

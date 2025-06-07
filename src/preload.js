@@ -342,14 +342,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("command-history:getSuggestions", input, maxResults),
   incrementCommandUsage: (command) =>
     ipcRenderer.invoke("command-history:incrementUsage", command),
-  clearCommandHistory: () =>
-    ipcRenderer.invoke("command-history:clear"),
+  clearCommandHistory: () => ipcRenderer.invoke("command-history:clear"),
   getCommandHistoryStatistics: () =>
     ipcRenderer.invoke("command-history:getStatistics"),
-  
+
   // 新增：历史命令管理API
-  getAllCommandHistory: () =>
-    ipcRenderer.invoke("command-history:getAll"),
+  getAllCommandHistory: () => ipcRenderer.invoke("command-history:getAll"),
   deleteCommandHistory: (command) =>
     ipcRenderer.invoke("command-history:delete", command),
   deleteCommandHistoryBatch: (commands) =>

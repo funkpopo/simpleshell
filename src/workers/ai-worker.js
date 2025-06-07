@@ -42,7 +42,6 @@ async function processAIPrompt(prompt, settings) {
     // 使用指定的API URL发送请求
     return await sendToAPI(prompt, settings);
   } catch (error) {
-    console.error("Error processing AI prompt in worker:", error);
     return { error: `处理请求时出错: ${error.message}` };
   }
 }
@@ -146,9 +145,7 @@ async function processStreamingPrompt(prompt, settings, id) {
                   });
                 }
               }
-            } catch (e) {
-              console.error("解析响应行出错:", e);
-            }
+            } catch (e) {}
           }
         }
       }

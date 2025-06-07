@@ -42,7 +42,7 @@ import {
   ResourceMonitorWithSuspense as ResourceMonitor,
   AIAssistantWithSuspense as AIAssistant,
   FileManagerWithSuspense as FileManager,
-  preloadComponents
+  preloadComponents,
 } from "./components/LazyComponents.jsx";
 import AIIcon from "./components/AIIcon.jsx";
 import Settings from "./components/Settings.jsx";
@@ -168,7 +168,6 @@ function AboutDialog({ open, onClose }) {
   const handleOpenExternalLink = (url) => {
     if (window.terminalAPI?.openExternal) {
       window.terminalAPI.openExternal(url).catch((error) => {
-        console.error("打开外部链接失败:", error);
         alert(t("app.cannotOpenLinkAlert", { url }));
       });
     } else {
@@ -211,7 +210,6 @@ function AboutDialog({ open, onClose }) {
         }
       })
       .catch((error) => {
-        console.error("检查更新失败:", error);
         setUpdateStatus(t("about.updateError", { error: error.message }));
       })
       .finally(() => {
@@ -336,7 +334,6 @@ function App() {
           }
         }
       } catch (error) {
-        console.error("加载主题设置失败:", error);
         // 如果加载失败，尝试从 localStorage 恢复作为备选
         const fallbackTheme = localStorage.getItem("terminalDarkMode");
         if (fallbackTheme !== null) {
@@ -415,7 +412,7 @@ function App() {
 
   React.useEffect(() => {
     let calculatedMargin = 0;
-    
+
     // 检查哪个边栏当前是开启的
     const getSidebarWidth = () => {
       if (aiAssistantOpen && lastOpenedSidebar === "ai") {
@@ -434,7 +431,8 @@ function App() {
         // Fallback if lastOpenedSidebar isn't set but one is open
         if (aiAssistantOpen) return SIDEBAR_WIDTHS.AI_ASSISTANT;
         else if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-        else if (connectionManagerOpen) return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
+        else if (connectionManagerOpen)
+          return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
         else if (fileManagerOpen) return SIDEBAR_WIDTHS.FILE_MANAGER;
         else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
         else if (commandHistoryOpen) return SIDEBAR_WIDTHS.COMMAND_HISTORY;
@@ -443,13 +441,16 @@ function App() {
     };
 
     const sidebarWidth = getSidebarWidth();
-    
+
     // 始终为右侧按钮栏预留空间，即使没有侧边栏开启
     calculatedMargin = SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH;
-    
+
     if (sidebarWidth > 0) {
       // 边栏宽度 + 右侧按钮栏宽度 + 额外安全边距
-      calculatedMargin = sidebarWidth + SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH + SIDEBAR_WIDTHS.SAFETY_MARGIN;
+      calculatedMargin =
+        sidebarWidth +
+        SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH +
+        SIDEBAR_WIDTHS.SAFETY_MARGIN;
     }
 
     setActiveSidebarMargin(calculatedMargin);
@@ -641,7 +642,6 @@ function App() {
       // 同时更新 localStorage 作为备选（向后兼容）
       localStorage.setItem("terminalDarkMode", newDarkMode.toString());
     } catch (error) {
-      console.error("保存主题设置失败:", error);
       // 如果保存失败，至少更新 localStorage
       localStorage.setItem("terminalDarkMode", (!darkMode).toString());
     }
@@ -954,9 +954,9 @@ function App() {
   // 更新文件管理路径记忆
   const updateFileManagerPath = (tabId, path) => {
     if (tabId && path) {
-      setFileManagerPaths(prev => ({
+      setFileManagerPaths((prev) => ({
         ...prev,
-        [tabId]: path
+        [tabId]: path,
       }));
     }
   };
@@ -1015,8 +1015,9 @@ function App() {
           window.terminalAPI.sendToProcess(processId, command + "\r");
           return { success: true };
         } else {
-          const reason = processId ? t("app.apiNotFound") : t("app.processIdNotFound");
-          console.error(t("app.cannotSendCommandConsole", { reason }));
+          const reason = processId
+            ? t("app.apiNotFound")
+            : t("app.processIdNotFound");
           return { success: false, error: reason };
         }
       } else {
@@ -1076,7 +1077,6 @@ function App() {
           }
         }
       } catch (error) {
-        console.error("Failed to load initial UI settings:", error);
         // 使用默认字体大小
         document.documentElement.style.fontSize = "14px";
       }
@@ -1328,7 +1328,9 @@ function App() {
                       visibility: isActive ? "visible" : "hidden",
                       opacity: isActive ? 1 : 0,
                       pointerEvents: isActive ? "auto" : "none",
-                      transition: isActive ? "opacity 0.2s ease-in-out" : "none",
+                      transition: isActive
+                        ? "opacity 0.2s ease-in-out"
+                        : "none",
                     }}
                   >
                     {terminalInstances[tab.id] && (

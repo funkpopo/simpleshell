@@ -26,7 +26,6 @@ function getConfigPath() {
       return path.join(exeDir, "config.json");
     }
   } catch (error) {
-    console.error("获取配置路径失败:", error);
     // 如果获取路径失败，使用当前目录
     return path.join(__dirname, "..", "..", "..", "config.json");
   }
@@ -61,7 +60,6 @@ function processConnectionsForLoad(items) {
         processedItem.passphrase = decryptText(processedItem.passphrase);
       }
     } catch (error) {
-      console.error("解密连接配置失败:", error);
       // 如果解密失败，保持原值（可能是未加密的旧数据）
     }
 
@@ -86,7 +84,6 @@ const loadConnectionsConfig = () => {
 
     return processConnectionsForLoad(config.connections);
   } catch (error) {
-    console.error("加载连接配置失败:", error);
     return [];
   }
 };
@@ -110,7 +107,6 @@ const saveConnectionsConfig = (connections) => {
 
     return true;
   } catch (error) {
-    console.error("保存连接配置失败:", error);
     return false;
   }
 };
@@ -154,7 +150,6 @@ async function loadUISettings() {
 
     return uiSettings;
   } catch (error) {
-    console.error("加载UI设置失败:", error);
     // 出错时返回默认设置
     return {
       language: "zh-CN",
@@ -191,7 +186,6 @@ async function saveUISettings(settings) {
 
     return { success: true };
   } catch (error) {
-    console.error("保存UI设置失败:", error);
     return { success: false, error: error.message };
   }
 }
@@ -222,7 +216,6 @@ function loadLogSettings() {
       ...config.logSettings,
     };
   } catch (error) {
-    console.error("加载日志设置失败:", error);
     // 出错时返回默认设置
     return DEFAULT_LOG_CONFIG;
   }
@@ -255,7 +248,6 @@ function saveLogSettings(settings) {
 
     return { success: true };
   } catch (error) {
-    console.error("保存日志设置失败:", error);
     return { success: false, error: error.message };
   }
 }
@@ -300,7 +292,6 @@ const initializeConfig = () => {
 
     return { success: true, path: configPath };
   } catch (error) {
-    console.error("初始化配置失败:", error);
     return { success: false, error: error.message };
   }
 };

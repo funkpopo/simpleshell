@@ -29,12 +29,12 @@ class SSHConnectionPool {
 
   cleanup() {
     this.stopHealthCheck();
-    
+
     // 关闭所有连接
     for (const [key, connectionInfo] of this.connections) {
       this.closeConnection(key);
     }
-    
+
     this.connections.clear();
     this.connectionQueue.clear();
     this.tabReferences.clear();
@@ -48,11 +48,11 @@ class SSHConnectionPool {
 
   async getConnection(sshConfig) {
     const connectionKey = this.generateConnectionKey(sshConfig);
-    
+
     // 检查是否已有可用连接
     if (this.connections.has(connectionKey)) {
       const connectionInfo = this.connections.get(connectionKey);
-      
+
       // 检查连接是否健康
       if (this.isConnectionHealthy(connectionInfo)) {
         connectionInfo.lastUsed = Date.now();
@@ -92,7 +92,7 @@ class SSHConnectionPool {
         refCount: 1,
         ready: false,
         stream: null,
-        listeners: new Set()
+        listeners: new Set(),
       };
 
       // 设置连接超时
@@ -106,7 +106,7 @@ class SSHConnectionPool {
         clearTimeout(timeout);
         connectionInfo.ready = true;
         this.connections.set(connectionKey, connectionInfo);
-        
+
         logToFile(`SSH连接建立成功: ${connectionKey}`, "INFO");
         resolve(connectionInfo);
       });
@@ -153,14 +153,17 @@ class SSHConnectionPool {
     if (connectionInfo) {
       connectionInfo.refCount = Math.max(0, connectionInfo.refCount - 1);
       connectionInfo.lastUsed = Date.now();
-      
+
       // 如果提供了tabId，从标签页引用中移除
       if (tabId && this.tabReferences.has(tabId)) {
         this.tabReferences.delete(tabId);
         logToFile(`移除标签页引用: ${tabId} -> ${connectionKey}`, "INFO");
       }
-      
-      logToFile(`释放连接引用: ${connectionKey}, 剩余引用: ${connectionInfo.refCount}`, "INFO");
+
+      logToFile(
+        `释放连接引用: ${connectionKey}, 剩余引用: ${connectionInfo.refCount}`,
+        "INFO",
+      );
     }
   }
 
@@ -184,23 +187,31 @@ class SSHConnectionPool {
     const connectionInfo = this.connections.get(connectionKey);
     if (connectionInfo) {
       try {
-        if (connectionInfo.client && typeof connectionInfo.client.end === "function") {
+        if (
+          connectionInfo.client &&
+          typeof connectionInfo.client.end === "function"
+        ) {
           connectionInfo.client.end();
         }
       } catch (error) {
-        logToFile(`关闭连接时出错: ${connectionKey} - ${error.message}`, "ERROR");
+        logToFile(
+          `关闭连接时出错: ${connectionKey} - ${error.message}`,
+          "ERROR",
+        );
       }
-      
+
       this.connections.delete(connectionKey);
       logToFile(`连接已关闭: ${connectionKey}`, "INFO");
     }
   }
 
   isConnectionHealthy(connectionInfo) {
-    return connectionInfo && 
-           connectionInfo.ready && 
-           connectionInfo.client && 
-           !connectionInfo.client.destroyed;
+    return (
+      connectionInfo &&
+      connectionInfo.ready &&
+      connectionInfo.client &&
+      !connectionInfo.client.destroyed
+    );
   }
 
   cleanupIdleConnections(count = 1) {
@@ -211,10 +222,11 @@ class SSHConnectionPool {
     for (const [key, connectionInfo] of this.connections) {
       // 检查连接是否真正空闲：无引用计数且未被标签页引用且超过空闲时间
       const hasTabReference = this.isConnectionReferencedByTabs(key);
-      const isIdle = connectionInfo.refCount === 0 && 
-                    !hasTabReference && 
-                    (now - connectionInfo.lastUsed) > IDLE_TIMEOUT;
-      
+      const isIdle =
+        connectionInfo.refCount === 0 &&
+        !hasTabReference &&
+        now - connectionInfo.lastUsed > IDLE_TIMEOUT;
+
       if (isIdle) {
         idleConnections.push({ key, lastUsed: connectionInfo.lastUsed });
       }
@@ -270,9 +282,11 @@ class SSHConnectionPool {
 
       // 检查是否超过空闲时间且无引用且未被标签页引用
       const hasTabReference = this.isConnectionReferencedByTabs(key);
-      if (connectionInfo.refCount === 0 && 
-          !hasTabReference &&
-          (now - connectionInfo.lastUsed) > IDLE_TIMEOUT) {
+      if (
+        connectionInfo.refCount === 0 &&
+        !hasTabReference &&
+        now - connectionInfo.lastUsed > IDLE_TIMEOUT
+      ) {
         unhealthyConnections.push(key);
       }
     }
@@ -289,10 +303,12 @@ class SSHConnectionPool {
 
   getStatus() {
     const activeConnections = this.connections.size;
-    const connectionsWithRefs = Array.from(this.connections.values())
-      .filter(conn => conn.refCount > 0).length;
-    const idleConnections = Array.from(this.connections.values())
-      .filter(conn => conn.refCount === 0).length;
+    const connectionsWithRefs = Array.from(this.connections.values()).filter(
+      (conn) => conn.refCount > 0,
+    ).length;
+    const idleConnections = Array.from(this.connections.values()).filter(
+      (conn) => conn.refCount === 0,
+    ).length;
 
     const status = {
       activeConnections,
@@ -300,19 +316,24 @@ class SSHConnectionPool {
       idleConnections,
       maxConnections: this.maxConnections,
       isInitialized: this.isInitialized,
-      connectionDetails: Array.from(this.connections.entries()).map(([key, conn]) => ({
-        key,
-        refCount: conn.refCount,
-        createdAt: new Date(conn.createdAt).toISOString(),
-        lastUsed: new Date(conn.lastUsed).toISOString(),
-        ready: conn.ready,
-        host: conn.config.host
-      }))
+      connectionDetails: Array.from(this.connections.entries()).map(
+        ([key, conn]) => ({
+          key,
+          refCount: conn.refCount,
+          createdAt: new Date(conn.createdAt).toISOString(),
+          lastUsed: new Date(conn.lastUsed).toISOString(),
+          ready: conn.ready,
+          host: conn.config.host,
+        }),
+      ),
     };
 
     // 定期记录连接池状态
     if (activeConnections > 0) {
-      logToFile(`连接池状态 - 活跃: ${activeConnections}, 使用中: ${connectionsWithRefs}, 空闲: ${idleConnections}`, "INFO");
+      logToFile(
+        `连接池状态 - 活跃: ${activeConnections}, 使用中: ${connectionsWithRefs}, 空闲: ${idleConnections}`,
+        "INFO",
+      );
     }
 
     return status;
@@ -324,15 +345,25 @@ class SSHConnectionPool {
 
     const stats = {
       totalConnections: connections.length,
-      healthyConnections: connections.filter(conn => this.isConnectionHealthy(conn)).length,
-      connectionsWithRefs: connections.filter(conn => conn.refCount > 0).length,
-      oldestConnection: connections.length > 0 ?
-        Math.min(...connections.map(conn => conn.createdAt)) : null,
-      newestConnection: connections.length > 0 ?
-        Math.max(...connections.map(conn => conn.createdAt)) : null,
-      averageAge: connections.length > 0 ?
-        connections.reduce((sum, conn) => sum + (now - conn.createdAt), 0) / connections.length : 0,
-      totalRefCount: connections.reduce((sum, conn) => sum + conn.refCount, 0)
+      healthyConnections: connections.filter((conn) =>
+        this.isConnectionHealthy(conn),
+      ).length,
+      connectionsWithRefs: connections.filter((conn) => conn.refCount > 0)
+        .length,
+      oldestConnection:
+        connections.length > 0
+          ? Math.min(...connections.map((conn) => conn.createdAt))
+          : null,
+      newestConnection:
+        connections.length > 0
+          ? Math.max(...connections.map((conn) => conn.createdAt))
+          : null,
+      averageAge:
+        connections.length > 0
+          ? connections.reduce((sum, conn) => sum + (now - conn.createdAt), 0) /
+            connections.length
+          : 0,
+      totalRefCount: connections.reduce((sum, conn) => sum + conn.refCount, 0),
     };
 
     return stats;

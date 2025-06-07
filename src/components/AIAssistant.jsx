@@ -28,9 +28,9 @@ import StopIcon from "@mui/icons-material/Stop";
 import ListItemButton from "@mui/material/ListItemButton";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Switch from "@mui/material/Switch";
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 
 // 消息样式
 const MessageItem = styled(ListItem)(({ theme, isuser }) => ({
@@ -335,7 +335,6 @@ function AIAssistant({ open, onClose }) {
           }
         }
       } catch (error) {
-        console.error("Failed to load AI settings:", error);
         setError("无法加载AI设置");
       }
     };
@@ -680,9 +679,7 @@ function AIAssistant({ open, onClose }) {
                   });
                 }
               }
-            } catch (e) {
-              console.error("解析响应行出错:", e);
-            }
+            } catch (e) {}
           }
         }
       }
@@ -707,9 +704,11 @@ function AIAssistant({ open, onClose }) {
   // 处理标准响应
   const handleStandardResponse = async (apiUrl, requestOptions) => {
     try {
-      const requestOptionsWithMaxTokens = { // 添加 max_tokens 到请求选项
+      const requestOptionsWithMaxTokens = {
+        // 添加 max_tokens 到请求选项
         ...requestOptions,
-        body: JSON.stringify({ // 重新构造 body
+        body: JSON.stringify({
+          // 重新构造 body
           ...JSON.parse(requestOptions.body),
           max_tokens: apiSettings.current.maxTokens,
         }),
@@ -832,7 +831,6 @@ function AIAssistant({ open, onClose }) {
         setIsSending(false);
       }
     } catch (error) {
-      console.error("发送消息出错:", error);
       // 添加错误消息
       const errorMessageId = `error-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
       const errorMessage = {
@@ -956,7 +954,6 @@ function AIAssistant({ open, onClose }) {
       // 提示用户保存设置
       setInfoMessage('测试成功！请点击"保存设置"按钮保存您的配置。');
     } catch (error) {
-      console.error("API测试失败:", error);
       setTestResult({
         success: false,
         message: `测试失败: ${error.message || "未知错误"}`,
@@ -1002,7 +999,7 @@ function AIAssistant({ open, onClose }) {
   const handleEditConfigChange = (e) => {
     const { name, value, checked } = e.target;
     let processedValue;
-    
+
     if (name === "streamEnabled") {
       processedValue = checked;
     } else if (name === "maxTokens") {
@@ -1012,7 +1009,7 @@ function AIAssistant({ open, onClose }) {
     } else {
       processedValue = value;
     }
-    
+
     setCurrentEditConfig((prev) => ({
       ...prev,
       [name]: processedValue,
@@ -1056,7 +1053,6 @@ function AIAssistant({ open, onClose }) {
         const success = await window.terminalAPI.saveApiConfig(configToSave);
 
         if (!success) {
-          console.error("保存配置失败");
           setError("保存配置失败");
           return;
         }
@@ -1068,11 +1064,9 @@ function AIAssistant({ open, onClose }) {
           );
 
           if (!currentSuccess) {
-            console.error("设置当前配置失败");
             setError("设置当前配置失败");
           }
         } else {
-          console.error("配置ID无效，无法设置为当前配置");
           setError("配置ID无效");
           return;
         }
@@ -1094,23 +1088,18 @@ function AIAssistant({ open, onClose }) {
               setSettingsSaved(true);
               setError(null);
             } else {
-              console.error("无法在加载的设置中找到已保存的配置");
               setError("保存的配置未正确加载");
             }
           } else {
-            console.error("加载设置返回无效数据");
             setError("无法加载更新后的设置");
           }
         } catch (loadError) {
-          console.error("加载设置时出错:", loadError);
           setError(`加载设置失败: ${loadError.message || "未知错误"}`);
         }
       } else {
-        console.error("saveApiConfig API不可用");
         setError("保存API不可用");
       }
     } catch (error) {
-      console.error("保存设置时发生错误:", error);
       setError(`保存设置失败: ${error.message || "未知错误"}`);
     }
   };
@@ -1136,7 +1125,6 @@ function AIAssistant({ open, onClose }) {
         }
       }
     } catch (error) {
-      console.error("设置当前配置时发生错误:", error);
       setError(`切换配置失败: ${error.message || "未知错误"}`);
     }
   };
@@ -1163,7 +1151,6 @@ function AIAssistant({ open, onClose }) {
         }
       }
     } catch (error) {
-      console.error("删除配置时发生错误:", error);
       setError(`删除配置失败: ${error.message || "未知错误"}`);
     }
   };
@@ -1298,7 +1285,6 @@ function AIAssistant({ open, onClose }) {
             await sendParseRequest(prompt, apiSettings.current);
           }
         } catch (error) {
-          console.error("解析文本时出错:", error);
           // 添加错误消息
           addNewAIMessage(`解析文本时出错: ${error.message}`);
         }
@@ -1537,24 +1523,54 @@ function AIAssistant({ open, onClose }) {
                                 remarkPlugins={[remarkGfm]}
                                 rehypePlugins={[rehypeHighlight]}
                                 components={{
-                                  a: ({node, ...props}) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-                                  code: ({node, inline, className, children, ...props}) => {
+                                  a: ({ node, ...props }) => (
+                                    <a
+                                      {...props}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    />
+                                  ),
+                                  code: ({
+                                    node,
+                                    inline,
+                                    className,
+                                    children,
+                                    ...props
+                                  }) => {
                                     if (inline) {
-                                      return <code className={className} {...props}>{children}</code>;
+                                      return (
+                                        <code className={className} {...props}>
+                                          {children}
+                                        </code>
+                                      );
                                     }
                                     return (
-                                      <code className={`${className} hljs`} {...props}>
+                                      <code
+                                        className={`${className} hljs`}
+                                        {...props}
+                                      >
                                         {children}
                                       </code>
                                     );
                                   },
-                                  pre: ({node, children, ...props}) => (
-                                    <pre {...props} style={{ margin: '0.5em 0', overflow: 'auto' }}>
+                                  pre: ({ node, children, ...props }) => (
+                                    <pre
+                                      {...props}
+                                      style={{
+                                        margin: "0.5em 0",
+                                        overflow: "auto",
+                                      }}
+                                    >
                                       {children}
                                     </pre>
                                   ),
-                                  table: ({node, children, ...props}) => (
-                                    <div style={{ overflow: 'auto', maxWidth: '100%' }}>
+                                  table: ({ node, children, ...props }) => (
+                                    <div
+                                      style={{
+                                        overflow: "auto",
+                                        maxWidth: "100%",
+                                      }}
+                                    >
                                       <table {...props}>{children}</table>
                                     </div>
                                   ),
@@ -1859,7 +1875,7 @@ function AIAssistant({ open, onClose }) {
                       size="small"
                       inputProps={{
                         min: 1,
-                        step: 1
+                        step: 1,
                       }}
                     />
 

@@ -12,9 +12,6 @@ let mainConfigPath = null;
 
 function init(appInstance, loggerModule, cryptoModule) {
   if (!appInstance || !loggerModule || !cryptoModule) {
-    console.error(
-      "ConfigManager init failed: Missing one or more dependencies (app, logger, crypto).",
-    );
     return;
   }
   app = appInstance;
@@ -26,38 +23,28 @@ function init(appInstance, loggerModule, cryptoModule) {
     typeof logToFile !== "function" ||
     typeof encryptText !== "function" ||
     typeof decryptText !== "function"
-  ) {
-    console.error(
-      "ConfigManager init warning: One or more functions (logToFile, encryptText, decryptText) are missing or not functions in injected modules.",
-    );
-    // We can still proceed, but some functionalities might be impaired or log errors.
-  }
-
-  try {
-    mainConfigPath = _getMainConfigPathInternal(); // Call the renamed internal function
-    if (logToFile) {
-      logToFile(
-        "ConfigManager initialized. Main config path: " + mainConfigPath,
-        "INFO",
-      );
+  )
+    try {
+      mainConfigPath = _getMainConfigPathInternal(); // Call the renamed internal function
+      if (logToFile) {
+        logToFile(
+          "ConfigManager initialized. Main config path: " + mainConfigPath,
+          "INFO",
+        );
+      }
+    } catch (error) {
+      if (logToFile) {
+        logToFile(
+          "ConfigManager: Error setting paths during init - " + error.message,
+          "ERROR",
+        );
+      }
     }
-  } catch (error) {
-    console.error("ConfigManager: Failed to set paths during init:", error);
-    if (logToFile) {
-      logToFile(
-        "ConfigManager: Error setting paths during init - " + error.message,
-        "ERROR",
-      );
-    }
-  }
 }
 
 function _getMainConfigPathInternal() {
   // Renamed to avoid conflict if we export a public getConfigPath later
   if (!app) {
-    console.error(
-      "ConfigManager: app instance not available for _getMainConfigPathInternal. Was init called properly?",
-    );
     // Attempt a graceful fallback, though this indicates an issue with initialization order or dependency injection.
     const fallbackCwd =
       typeof process !== "undefined" && process.cwd ? process.cwd() : ".";
@@ -71,10 +58,6 @@ function _getMainConfigPathInternal() {
       return path.join(path.dirname(app.getPath("exe")), "config.json");
     }
   } catch (error) {
-    console.error(
-      "ConfigManager: Failed to determine main config path:",
-      error,
-    );
     if (logToFile) {
       logToFile(
         "ConfigManager: Error getting main config path - " + error.message,
@@ -159,7 +142,6 @@ function loadConnections() {
         "ConfigManager: Failed to load connections config - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to load connections config:", error);
   }
   return [];
 }
@@ -194,7 +176,7 @@ function saveConnections(connections) {
         "ConfigManager: Failed to save connections config - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to save connections config:", error);
+
     return false;
   }
 }
@@ -269,7 +251,6 @@ function loadAISettings() {
         "ConfigManager: Failed to load AI settings - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to load AI settings:", error);
   }
   return {
     configs: [],
@@ -351,7 +332,7 @@ function saveAISettings(settings) {
         "ConfigManager: Failed to save AI settings - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to save AI settings:", error);
+
     return false;
   }
 }
@@ -387,7 +368,6 @@ function loadUISettings() {
         "ConfigManager: Failed to load UI settings - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to load UI settings:", error);
   }
   return { language: "zh-CN", fontSize: 14, darkMode: true };
 }
@@ -421,7 +401,7 @@ function saveUISettings(settings) {
         "ConfigManager: Failed to save UI settings - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to save UI settings:", error);
+
     return false;
   }
 }
@@ -485,7 +465,6 @@ function loadShortcutCommands() {
         "ConfigManager: Error loading shortcut commands - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Error loading shortcut commands:", error);
   }
   return defaultShortcuts;
 }
@@ -527,7 +506,7 @@ function saveShortcutCommands(data) {
         "ConfigManager: Error saving shortcut commands - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Error saving shortcut commands:", error);
+
     return false;
   }
 }
@@ -580,7 +559,6 @@ function loadLogSettings() {
         "ERROR",
       );
     }
-    console.error("ConfigManager: Failed to load log settings:", error);
   }
 
   // 返回默认日志设置
@@ -634,16 +612,13 @@ function saveLogSettings(settings) {
         "ERROR",
       );
     }
-    console.error("ConfigManager: Failed to save log settings:", error);
+
     return false;
   }
 }
 
 function initializeMainConfig() {
   if (!mainConfigPath) {
-    console.error(
-      "ConfigManager: initializeMainConfig called before mainConfigPath was set.",
-    );
     return { success: false, error: "Configuration path not set" };
   }
 
@@ -813,7 +788,7 @@ function initializeMainConfig() {
         "ConfigManager: Failed to initialize main config - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to initialize main config:", error);
+
     return { success: false, error: error.message };
   }
 }
@@ -832,7 +807,7 @@ function loadCommandHistory() {
     if (fs.existsSync(mainConfigPath)) {
       const data = fs.readFileSync(mainConfigPath, "utf8");
       const config = JSON.parse(data);
-      
+
       if (config.commandHistory && Array.isArray(config.commandHistory)) {
         if (logToFile)
           logToFile(
@@ -848,9 +823,8 @@ function loadCommandHistory() {
         "ConfigManager: Failed to load command history - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to load command history:", error);
   }
-  
+
   return [];
 }
 
@@ -873,7 +847,7 @@ function saveCommandHistory(history) {
 
     config.commandHistory = Array.isArray(history) ? history : [];
     fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
-    
+
     if (logToFile)
       logToFile(
         `ConfigManager: Saved ${config.commandHistory.length} command history entries.`,
@@ -886,7 +860,7 @@ function saveCommandHistory(history) {
         "ConfigManager: Failed to save command history - " + error.message,
         "ERROR",
       );
-    console.error("ConfigManager: Failed to save command history:", error);
+
     return false;
   }
 }

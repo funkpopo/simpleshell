@@ -70,21 +70,14 @@ function getWorkerPath() {
     return workerPath;
   }
 
-  // 如果都找不到，记录错误并返回null
-  console.error("无法找到AI worker文件。已尝试以下路径:");
-  console.error(path.join(__dirname, "workers", "ai-worker.js"));
-  console.error(path.join(__dirname, "..", "src", "workers", "ai-worker.js"));
+  // 如果都找不到，返回null
   throw new Error("找不到AI worker文件");
 }
 
 // 创建AI Worker线程
 function createAIWorker() {
   if (aiWorker) {
-    try {
-      aiWorker.terminate();
-    } catch (error) {
-      console.error("Error terminating existing AI worker:", error);
-    }
+    aiWorker.terminate();
   }
 
   try {
@@ -110,7 +103,6 @@ function createAIWorker() {
 
     // 处理worker错误
     aiWorker.on("error", (error) => {
-      console.error("AI Worker error:", error);
       // 向所有待处理的请求返回错误
       for (const [id, callback] of aiRequestMap.entries()) {
         callback.reject(
@@ -139,8 +131,7 @@ function createAIWorker() {
     });
 
     return aiWorker;
-  } catch (error) {
-    console.error(`无法创建AI worker:`, error);
+  } catch (error) {    
     return null;
   }
 }
@@ -243,16 +234,22 @@ app.whenReady().then(() => {
 
   createWindow();
   createAIWorker();
-  
+
   // 初始化命令历史服务
   try {
     const commandHistory = configManager.loadCommandHistory();
     commandHistoryService.initialize(commandHistory);
-    logToFile(`Command history service initialized with ${commandHistory.length} entries`, "INFO");
+    logToFile(
+      `Command history service initialized with ${commandHistory.length} entries`,
+      "INFO",
+    );
   } catch (error) {
-    logToFile(`Failed to initialize command history service: ${error.message}`, "ERROR");
+    logToFile(
+      `Failed to initialize command history service: ${error.message}`,
+      "ERROR",
+    );
   }
-  
+
   logToFile("Application ready and window created", "INFO");
 });
 
@@ -349,14 +346,20 @@ app.on("before-quit", () => {
   }
   // 清空进程映射
   childProcesses.clear();
-  
+
   // 保存命令历史
   try {
     const historyToSave = commandHistoryService.exportHistory();
     configManager.saveCommandHistory(historyToSave);
-    logToFile(`Saved ${historyToSave.length} command history entries on app quit`, "INFO");
+    logToFile(
+      `Saved ${historyToSave.length} command history entries on app quit`,
+      "INFO",
+    );
   } catch (error) {
-    logToFile(`Failed to save command history on quit: ${error.message}`, "ERROR");
+    logToFile(
+      `Failed to save command history on quit: ${error.message}`,
+      "ERROR",
+    );
   }
 });
 
@@ -2829,7 +2832,10 @@ function setupIPC(mainWindow) {
             const historyToSave = commandHistoryService.exportHistory();
             configManager.saveCommandHistory(historyToSave);
           } catch (saveError) {
-            logToFile(`Failed to save command history: ${saveError.message}`, "ERROR");
+            logToFile(
+              `Failed to save command history: ${saveError.message}`,
+              "ERROR",
+            );
           }
         }, 1000); // 延迟1秒保存，避免频繁写入
       }
@@ -2840,15 +2846,24 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("command-history:getSuggestions", async (event, input, maxResults = 10) => {
-    try {
-      const suggestions = commandHistoryService.getSuggestions(input, maxResults);
-      return { success: true, suggestions };
-    } catch (error) {
-      logToFile(`Error getting command suggestions: ${error.message}`, "ERROR");
-      return { success: false, error: error.message, suggestions: [] };
-    }
-  });
+  ipcMain.handle(
+    "command-history:getSuggestions",
+    async (event, input, maxResults = 10) => {
+      try {
+        const suggestions = commandHistoryService.getSuggestions(
+          input,
+          maxResults,
+        );
+        return { success: true, suggestions };
+      } catch (error) {
+        logToFile(
+          `Error getting command suggestions: ${error.message}`,
+          "ERROR",
+        );
+        return { success: false, error: error.message, suggestions: [] };
+      }
+    },
+  );
 
   ipcMain.handle("command-history:incrementUsage", async (event, command) => {
     try {
@@ -2876,7 +2891,10 @@ function setupIPC(mainWindow) {
       const stats = commandHistoryService.getStatistics();
       return { success: true, statistics: stats };
     } catch (error) {
-      logToFile(`Error getting command history statistics: ${error.message}`, "ERROR");
+      logToFile(
+        `Error getting command history statistics: ${error.message}`,
+        "ERROR",
+      );
       return { success: false, error: error.message, statistics: null };
     }
   });
@@ -2901,7 +2919,10 @@ function setupIPC(mainWindow) {
       configManager.saveCommandHistory(historyToSave);
       return { success: true };
     } catch (error) {
-      logToFile(`Error deleting command from history: ${error.message}`, "ERROR");
+      logToFile(
+        `Error deleting command from history: ${error.message}`,
+        "ERROR",
+      );
       return { success: false, error: error.message };
     }
   });
@@ -2912,18 +2933,21 @@ function setupIPC(mainWindow) {
       if (!Array.isArray(commands)) {
         throw new Error("Commands must be an array");
       }
-      
-      commands.forEach(command => {
+
+      commands.forEach((command) => {
         commandHistoryService.removeCommand(command);
       });
-      
+
       // 保存到配置文件
       const historyToSave = commandHistoryService.exportHistory();
       configManager.saveCommandHistory(historyToSave);
-      
+
       return { success: true };
     } catch (error) {
-      logToFile(`Error batch deleting commands from history: ${error.message}`, "ERROR");
+      logToFile(
+        `Error batch deleting commands from history: ${error.message}`,
+        "ERROR",
+      );
       return { success: false, error: error.message };
     }
   });

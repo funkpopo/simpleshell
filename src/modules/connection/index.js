@@ -82,7 +82,10 @@ class ConnectionManager {
       this.sshConnectionPool.closeConnection(connectionKey);
       logToFile(`手动关闭SSH连接: ${connectionKey}`, "INFO");
     } catch (error) {
-      logToFile(`关闭SSH连接失败: ${connectionKey} - ${error.message}`, "ERROR");
+      logToFile(
+        `关闭SSH连接失败: ${connectionKey} - ${error.message}`,
+        "ERROR",
+      );
       throw error;
     }
   }

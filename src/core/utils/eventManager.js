@@ -22,20 +22,18 @@ class EventManager {
    */
   addEventListener(target, event, handler, options = {}) {
     if (this.isDestroyed) {
-      console.warn('EventManager已销毁，无法添加新的事件监听器');
+      console.warn("EventManager已销毁，无法添加新的事件监听器");
       return () => {};
     }
 
     // 生成唯一标识
     const id = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     // 包装处理函数以便调试
     const wrappedHandler = (...args) => {
       try {
         return handler(...args);
-      } catch (error) {
-        console.error(`事件处理器执行失败 [${event}]:`, error);
-      }
+      } catch (error) {}
     };
 
     // 添加事件监听器
@@ -47,7 +45,7 @@ class EventManager {
       event,
       handler: wrappedHandler,
       options,
-      originalHandler: handler
+      originalHandler: handler,
     });
 
     // 返回移除函数
@@ -76,19 +74,17 @@ class EventManager {
    */
   addTimer(callback, delay, isInterval = false) {
     if (this.isDestroyed) {
-      console.warn('EventManager已销毁，无法添加新的定时器');
+      console.warn("EventManager已销毁，无法添加新的定时器");
       return () => {};
     }
 
     const wrappedCallback = () => {
       try {
         callback();
-      } catch (error) {
-        console.error('定时器回调执行失败:', error);
-      }
+      } catch (error) {}
     };
 
-    const timerId = isInterval 
+    const timerId = isInterval
       ? setInterval(wrappedCallback, delay)
       : setTimeout(wrappedCallback, delay);
 
@@ -129,7 +125,7 @@ class EventManager {
     } else {
       clearTimeout(timerId);
     }
-    
+
     // 从集合中移除
     for (const timer of this.timers) {
       if (timer.id === timerId) {
@@ -146,7 +142,7 @@ class EventManager {
    */
   addObserver(observer) {
     if (this.isDestroyed) {
-      console.warn('EventManager已销毁，无法添加新的观察者');
+      console.warn("EventManager已销毁，无法添加新的观察者");
       return () => {};
     }
 
@@ -161,7 +157,7 @@ class EventManager {
    * @param {Object} observer - 观察者对象
    */
   removeObserver(observer) {
-    if (observer && typeof observer.disconnect === 'function') {
+    if (observer && typeof observer.disconnect === "function") {
       observer.disconnect();
     }
     this.observers.delete(observer);
@@ -174,7 +170,7 @@ class EventManager {
    */
   addCleanup(cleanupFn) {
     if (this.isDestroyed) {
-      console.warn('EventManager已销毁，无法添加新的清理函数');
+      console.warn("EventManager已销毁，无法添加新的清理函数");
       return () => {};
     }
 
@@ -194,7 +190,7 @@ class EventManager {
       timers: this.timers.size,
       observers: this.observers.size,
       cleanupFunctions: this.cleanupFunctions.size,
-      isDestroyed: this.isDestroyed
+      isDestroyed: this.isDestroyed,
     };
   }
 
@@ -205,8 +201,6 @@ class EventManager {
     if (this.isDestroyed) {
       return;
     }
-
-    console.log('开始清理EventManager资源...', this.getStats());
 
     // 清理所有事件监听器
     for (const [id, listener] of this.listeners) {
@@ -236,11 +230,11 @@ class EventManager {
     // 清理所有观察者
     for (const observer of this.observers) {
       try {
-        if (observer && typeof observer.disconnect === 'function') {
+        if (observer && typeof observer.disconnect === "function") {
           observer.disconnect();
         }
       } catch (error) {
-        console.warn('断开观察者失败:', error);
+        console.warn("断开观察者失败:", error);
       }
     }
     this.observers.clear();
@@ -250,13 +244,12 @@ class EventManager {
       try {
         cleanupFn();
       } catch (error) {
-        console.warn('执行清理函数失败:', error);
+        console.warn("执行清理函数失败:", error);
       }
     }
     this.cleanupFunctions.clear();
 
     this.isDestroyed = true;
-    console.log('EventManager资源清理完成');
   }
 }
 
@@ -265,7 +258,7 @@ class EventManager {
  * @returns {EventManager} EventManager实例
  */
 export function useEventManager() {
-  const { useRef, useEffect } = require('react');
+  const { useRef, useEffect } = require("react");
   const managerRef = useRef(null);
 
   if (!managerRef.current) {
@@ -274,7 +267,7 @@ export function useEventManager() {
 
   useEffect(() => {
     const manager = managerRef.current;
-    
+
     return () => {
       if (manager && !manager.isDestroyed) {
         manager.destroy();
@@ -285,4 +278,4 @@ export function useEventManager() {
   return managerRef.current;
 }
 
-export default EventManager; 
+export default EventManager;

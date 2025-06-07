@@ -140,7 +140,7 @@ body {
   color: #333;
   background: #f8f8f8;
   border-radius: 6px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
   font-size: 0.875em;
   line-height: 1.4;
 }
@@ -307,7 +307,7 @@ body {
   background-color: rgba(175, 184, 193, 0.2);
   padding: 0.2em 0.4em;
   border-radius: 3px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
   font-size: 0.85em;
   color: #e36209;
 }
@@ -358,11 +358,15 @@ body {
   border-radius: 4px;
 }
 
-[data-mui-color-scheme="dark"] .ai-message-content pre::-webkit-scrollbar-track {
+[data-mui-color-scheme="dark"]
+  .ai-message-content
+  pre::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.1);
 }
 
-[data-mui-color-scheme="dark"] .ai-message-content pre::-webkit-scrollbar-thumb {
+[data-mui-color-scheme="dark"]
+  .ai-message-content
+  pre::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.3);
 }
 
@@ -370,7 +374,9 @@ body {
   background: rgba(0, 0, 0, 0.5);
 }
 
-[data-mui-color-scheme="dark"] .ai-message-content pre::-webkit-scrollbar-thumb:hover {
+[data-mui-color-scheme="dark"]
+  .ai-message-content
+  pre::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
 }
 

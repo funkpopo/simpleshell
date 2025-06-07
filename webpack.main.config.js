@@ -63,8 +63,6 @@ module.exports = {
                 fs.copyFileSync(srcFilePath, destFilePath);
               }
             });
-          } else {
-            console.error(`Assets directory not found at ${assetsSrcDir}`);
           }
         });
       },

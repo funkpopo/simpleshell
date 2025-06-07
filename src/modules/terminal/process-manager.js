@@ -75,7 +75,8 @@ class ProcessManager {
     try {
       // 使用连接池获取SSH连接
       const connectionManager = require("../connection");
-      const connectionInfo = await connectionManager.getSSHConnection(sshConfig);
+      const connectionInfo =
+        await connectionManager.getSSHConnection(sshConfig);
 
       // 存储进程信息 - 使用连接池中的连接
       const processInfo = {
@@ -92,7 +93,7 @@ class ProcessManager {
         connectionKey: connectionInfo.key, // 存储连接键用于释放
         connectionInfo: connectionInfo, // 存储完整连接信息
         tabId: sshConfig.tabId, // 存储标签页ID
-        keepAlive: true // 标记为需要保活的连接
+        keepAlive: true, // 标记为需要保活的连接
       };
 
       this.childProcesses.set(processId, processInfo);
@@ -101,20 +102,26 @@ class ProcessManager {
       if (sshConfig.tabId) {
         this.childProcesses.set(sshConfig.tabId, {
           ...processInfo,
-          listeners: new Set() // 为tabId创建独立的监听器集合
+          listeners: new Set(), // 为tabId创建独立的监听器集合
         });
-        
+
         // 在连接池中添加标签页引用
         const connectionManager = require("../connection");
         if (connectionManager.addTabReference) {
-          connectionManager.addTabReference(sshConfig.tabId, connectionInfo.key);
+          connectionManager.addTabReference(
+            sshConfig.tabId,
+            connectionInfo.key,
+          );
         }
       }
 
       logToFile(`SSH连接已从连接池获取: ${sshConfig.host}`, "INFO");
       return processId;
     } catch (error) {
-      logToFile(`Failed to get SSH connection from pool: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to get SSH connection from pool: ${error.message}`,
+        "ERROR",
+      );
       throw error;
     }
   }
@@ -157,8 +164,14 @@ class ProcessManager {
         if (processInfo.connectionKey) {
           const connectionManager = require("../connection");
           // 传递tabId以便连接池正确管理标签页引用
-          connectionManager.releaseSSHConnection(processInfo.connectionKey, processInfo.tabId);
-          logToFile(`释放连接池连接: ${processInfo.connectionKey}, 标签页: ${processInfo.tabId}`, "INFO");
+          connectionManager.releaseSSHConnection(
+            processInfo.connectionKey,
+            processInfo.tabId,
+          );
+          logToFile(
+            `释放连接池连接: ${processInfo.connectionKey}, 标签页: ${processInfo.tabId}`,
+            "INFO",
+          );
         }
 
         // 注意：不直接关闭SSH连接，由连接池管理
