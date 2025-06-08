@@ -23,23 +23,28 @@ function init(appInstance, loggerModule, cryptoModule) {
     typeof logToFile !== "function" ||
     typeof encryptText !== "function" ||
     typeof decryptText !== "function"
-  )
-    try {
-      mainConfigPath = _getMainConfigPathInternal(); // Call the renamed internal function
-      if (logToFile) {
-        logToFile(
-          "ConfigManager initialized. Main config path: " + mainConfigPath,
-          "INFO",
-        );
-      }
-    } catch (error) {
-      if (logToFile) {
-        logToFile(
-          "ConfigManager: Error setting paths during init - " + error.message,
-          "ERROR",
-        );
-      }
+  ) {
+    // 如果依赖函数不完整，记录错误但不继续初始化
+    console.error("ConfigManager: Required functions are not available");
+    return;
+  }
+
+  try {
+    mainConfigPath = _getMainConfigPathInternal(); // Call the renamed internal function
+    if (logToFile) {
+      logToFile(
+        "ConfigManager initialized. Main config path: " + mainConfigPath,
+        "INFO",
+      );
     }
+  } catch (error) {
+    if (logToFile) {
+      logToFile(
+        "ConfigManager: Error setting paths during init - " + error.message,
+        "ERROR",
+      );
+    }
+  }
 }
 
 function _getMainConfigPathInternal() {
@@ -51,7 +56,7 @@ function _getMainConfigPathInternal() {
     return path.join(fallbackCwd, "config.json_fallback_no_app");
   }
   try {
-    const isDev = process.env.NODE_ENV === "development";
+    const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
     if (isDev) {
       return path.join(process.cwd(), "config.json");
     } else {
