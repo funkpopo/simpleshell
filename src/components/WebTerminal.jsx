@@ -305,46 +305,41 @@ const debugSelectionAlignment = (term) => {
 // 优化的终端尺寸调整函数，使用防抖机制减少频繁调用
 const forceResizeTerminal = debounce(
   (term, container, processId, tabId, fitAddon) => {
-    if (!term || !container || !fitAddon) return;
-
     try {
-      // 检查元素可见性，避免在隐藏状态下进行无效计算
-      if (!isElementVisible(container)) return;
+      if (container && term && fitAddon) {
+        // 直接使用实际容器尺寸进行适配
+        const rect = container.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          // 容器不可见，跳过调整
+          return;
+        }
 
-      // 强制重新计算DOM大小
-      const currentWidth = container.clientWidth;
-      const currentHeight = container.clientHeight;
+        // 强制适配
+        fitAddon.fit();
 
-      // 确保终端完全填充容器
-      if (term && term.element) {
-        term.element.style.width = `${currentWidth}px`;
-        term.element.style.height = `${currentHeight}px`;
+        // 获取实际的终端尺寸
+        const cols = term.cols;
+        const rows = term.rows;
 
-        // 添加强制重排的代码
-        term.element.getBoundingClientRect();
-      }
-
-      // 适配终端大小
-      fitAddon.fit();
-
-      // 获取当前终端的大小
-      const cols = Math.max(Math.floor(term.cols || 120), 1);
-      const rows = Math.max(Math.floor(term.rows || 30), 1);
-
-      // 通知后端调整终端大小
-      if (window.terminalAPI && window.terminalAPI.resizeTerminal) {
-        window.terminalAPI
-          .resizeTerminal(processId || tabId, cols, rows)
-          .catch((err) => {
-            // 终端大小强制调整失败
-          });
+        // 通知后端进程调整PTY大小
+        if (
+          processId &&
+          window.terminalAPI &&
+          window.terminalAPI.resizeTerminal
+        ) {
+          window.terminalAPI
+            .resizeTerminal(processId || tabId, cols, rows)
+            .catch((err) => {
+              // 终端大小调整失败，但不影响用户体验
+            });
+        }
       }
     } catch (error) {
-      // 终端尺寸调整失败
+      // Error in forceResizeTerminal
     }
   },
-  100,
-); // 100ms防抖延迟
+  30, // 从默认防抖时间减少到30ms，提高响应速度
+);
 
 // 添加辅助函数，用于处理多行粘贴文本，防止注释符号和缩进异常
 const processMultilineInput = (text, options = {}) => {
@@ -1713,11 +1708,45 @@ const WebTerminal = ({
             }
           }
         },
-        { debounceTime: 100 }, // 100ms防抖
+        { debounceTime: 50 }, // 从100ms优化到50ms防抖，提高响应速度
       );
 
       // 使用EventManager管理window resize事件作为备用
       eventManager.addEventListener(window, "resize", handleResize);
+
+      // 添加侧边栏变化事件监听，实现快速响应
+      const handleSidebarChanged = (event) => {
+        if (
+          event.detail &&
+          terminalRef.current &&
+          fitAddonRef.current &&
+          termRef.current
+        ) {
+          // 侧边栏变化时立即触发resize，无需防抖
+          setTimeout(() => {
+            forceResizeTerminal(
+              termRef.current,
+              terminalRef.current,
+              processCache[tabId],
+              tabId,
+              fitAddonRef.current,
+            );
+          }, 10);
+
+          // 添加一个短延迟的二次调整确保完全适配
+          setTimeout(() => {
+            if (terminalRef.current && fitAddonRef.current && termRef.current) {
+              handleResize();
+            }
+          }, 60);
+        }
+      };
+
+      eventManager.addEventListener(
+        window,
+        "sidebarChanged",
+        handleSidebarChanged,
+      );
 
       // 优化的可见性变化处理，使用防抖减少频繁调用
       const handleVisibilityChange = debounce(() => {
