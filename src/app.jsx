@@ -409,9 +409,6 @@ function App() {
   const [commandHistoryOpen, setCommandHistoryOpen] = React.useState(false);
 
   React.useEffect(() => {
-    let calculatedMargin = 0;
-
-    // 检查哪个边栏当前是开启的
     const getSidebarWidth = () => {
       if (aiAssistantOpen && lastOpenedSidebar === "ai") {
         return SIDEBAR_WIDTHS.AI_ASSISTANT;
@@ -425,26 +422,23 @@ function App() {
         return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
       } else if (commandHistoryOpen && lastOpenedSidebar === "history") {
         return SIDEBAR_WIDTHS.COMMAND_HISTORY;
-      } else {
-        // Fallback if lastOpenedSidebar isn't set but one is open
-        if (aiAssistantOpen) return SIDEBAR_WIDTHS.AI_ASSISTANT;
-        else if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-        else if (connectionManagerOpen)
-          return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
-        else if (fileManagerOpen) return SIDEBAR_WIDTHS.FILE_MANAGER;
-        else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
-        else if (commandHistoryOpen) return SIDEBAR_WIDTHS.COMMAND_HISTORY;
       }
+      // Fallback if lastOpenedSidebar isn't set but one is open
+      if (aiAssistantOpen) return SIDEBAR_WIDTHS.AI_ASSISTANT;
+      else if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
+      else if (connectionManagerOpen) return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
+      else if (fileManagerOpen) return SIDEBAR_WIDTHS.FILE_MANAGER;
+      else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
+      else if (commandHistoryOpen) return SIDEBAR_WIDTHS.COMMAND_HISTORY;
       return 0;
     };
 
     const sidebarWidth = getSidebarWidth();
-
+    let calculatedMargin;
     // 始终为右侧按钮栏预留空间，即使没有侧边栏开启
     calculatedMargin = SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH;
 
     if (sidebarWidth > 0) {
-      // 边栏宽度 + 右侧按钮栏宽度 + 额外安全边距
       calculatedMargin =
         sidebarWidth +
         SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH +
@@ -452,6 +446,19 @@ function App() {
     }
 
     setActiveSidebarMargin(calculatedMargin);
+
+    // 触发自定义事件，通知WebTerminal组件进行侧边栏变化适配
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("sidebarChanged", {
+          detail: {
+            margin: calculatedMargin,
+            sidebarWidth: sidebarWidth,
+            timestamp: Date.now(),
+          },
+        }),
+      );
+    }, 10);
   }, [
     aiAssistantOpen,
     resourceMonitorOpen,
@@ -725,6 +732,11 @@ function App() {
         return prev;
       });
     }
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   // 关闭连接管理侧边栏
@@ -903,6 +915,11 @@ function App() {
         return prev;
       });
     }
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   // 关闭资源监控侧边栏
@@ -912,15 +929,21 @@ function App() {
 
   // 切换AI助手侧边栏
   const toggleAIAssistant = () => {
-    setAiAssistantOpen((prev) => {
-      if (!prev) {
-        // 打开AI助手时，更新最后打开的侧边栏
-        setLastOpenedSidebar("ai");
-        return true;
-      } else {
-        return false;
-      }
-    });
+    setAiAssistantOpen(!aiAssistantOpen);
+
+    // 打开AI助手时，更新最后打开的侧边栏
+    if (!aiAssistantOpen) {
+      setLastOpenedSidebar("ai");
+      setResourceMonitorOpen((prev) => {
+        // 如果资源监控已打开，不关闭它，只确保z-index关系
+        return prev;
+      });
+    }
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   // 关闭AI助手侧边栏
@@ -940,11 +963,21 @@ function App() {
     if (!fileManagerOpen) {
       setLastOpenedSidebar("file");
     }
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   // 关闭文件管理侧边栏
   const handleCloseFileManager = () => {
     setFileManagerOpen(false);
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   // 更新文件管理路径记忆
@@ -964,40 +997,61 @@ function App() {
 
   // 添加切换快捷命令侧边栏的函数
   const toggleShortcutCommands = () => {
-    if (shortcutCommandsOpen) {
-      setShortcutCommandsOpen(false);
-    } else {
-      setShortcutCommandsOpen(true);
+    setShortcutCommandsOpen(!shortcutCommandsOpen);
+    if (!shortcutCommandsOpen) {
       setLastOpenedSidebar("shortcut");
     }
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   const handleCloseShortcutCommands = () => {
     setShortcutCommandsOpen(false);
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   // 添加切换历史命令侧边栏的函数
   const toggleCommandHistory = () => {
-    if (commandHistoryOpen) {
-      setCommandHistoryOpen(false);
-    } else {
-      setCommandHistoryOpen(true);
+    setCommandHistoryOpen(!commandHistoryOpen);
+    if (!commandHistoryOpen) {
       setLastOpenedSidebar("history");
     }
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   const handleCloseCommandHistory = () => {
     setCommandHistoryOpen(false);
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   // 更新关闭所有侧边栏的函数
   const closeAllSidebars = () => {
-    setAiAssistantOpen(false);
-    setResourceMonitorOpen(false);
     setConnectionManagerOpen(false);
+    setResourceMonitorOpen(false);
+    setAiAssistantOpen(false);
     setFileManagerOpen(false);
     setShortcutCommandsOpen(false);
     setCommandHistoryOpen(false);
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
   };
 
   // 添加发送快捷命令到终端的函数
