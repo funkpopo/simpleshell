@@ -10,15 +10,18 @@ import {
   Tooltip,
   CircularProgress,
   Alert,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  useTheme,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import StopIcon from "@mui/icons-material/Stop";
 import SettingsIcon from "@mui/icons-material/Settings";
-import ClearIcon from "@mui/icons-material/Clear";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CloseIcon from "@mui/icons-material/Close";
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
-import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import { Resizable } from "react-resizable";
 import ReactMarkdown from "react-markdown";
@@ -60,6 +63,11 @@ const AIChatWindow = ({ windowState, onClose }) => {
   const messagesEndRef = useRef(null);
   const currentRequestRef = useRef(null); // 用于跟踪当前请求以便中止
   const errorTimeoutRef = useRef(null); // 用于错误消息自动清除的定时器
+
+  // API选择相关状态
+  const [apiConfigs, setApiConfigs] = useState([]);
+  const [currentApiId, setCurrentApiId] = useState(null);
+  const [currentApiName, setCurrentApiName] = useState("");
 
   // 窗口位置和尺寸状态
   const [windowSize, setWindowSize] = useState({ width: 350, height: 450 });
@@ -111,6 +119,47 @@ const AIChatWindow = ({ windowState, onClose }) => {
       window.removeEventListener('resize', updateMaxConstraints);
     };
   }, [calculateMaxConstraints]);
+
+  // 加载API配置
+  useEffect(() => {
+    loadApiConfigs();
+  }, []);
+
+  const loadApiConfigs = async () => {
+    try {
+      const settings = await window.terminalAPI?.loadAISettings();
+      if (settings) {
+        setApiConfigs(settings.configs || []);
+        if (settings.current) {
+          setCurrentApiId(settings.current.id || null);
+          setCurrentApiName(settings.current.name || "");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load API configs:", error);
+    }
+  };
+
+  // 切换API配置
+  const handleApiChange = async (apiId) => {
+    try {
+      const result = await window.terminalAPI.setCurrentApiConfig(apiId);
+      if (result) {
+        // 重新加载配置以更新当前API
+        await loadApiConfigs();
+
+        // 显示切换成功消息
+        const selectedApi = apiConfigs.find(api => api.id === apiId);
+        if (selectedApi) {
+          setErrorWithAutoClean(t("aiSettings.apiSwitched", { name: selectedApi.name }));
+        }
+      } else {
+        setError(t("aiSettings.setCurrentFailed"));
+      }
+    } catch (error) {
+      setError(t("aiSettings.setCurrentFailed"));
+    }
+  };
 
   // 滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -605,9 +654,58 @@ const AIChatWindow = ({ windowState, onClose }) => {
             },
           }}
         >
-          <Typography variant="subtitle2" fontWeight="medium">
-            {t("aiAssistant.title")}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+            <Typography variant="subtitle2" fontWeight="medium">
+              {t("aiAssistant.title")}
+            </Typography>
+
+            {/* API选择器 */}
+            {apiConfigs.length > 0 && (
+              <FormControl
+                size="small"
+                sx={{
+                  minWidth: 120,
+                  '& .MuiOutlinedInput-root': {
+                    color: 'inherit',
+                    fontSize: '0.75rem',
+                    '& fieldset': {
+                      borderColor: 'rgba(255, 255, 255, 0.3)',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: 'rgba(255, 255, 255, 0.5)',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: 'rgba(255, 255, 255, 0.7)',
+                    },
+                  },
+                  '& .MuiSelect-icon': {
+                    color: 'inherit',
+                  },
+                }}
+              >
+                <Select
+                  value={currentApiId || ""}
+                  onChange={(e) => handleApiChange(e.target.value)}
+                  displayEmpty
+                  variant="outlined"
+                  sx={{
+                    color: 'inherit',
+                    fontSize: '0.75rem',
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()} // 防止拖拽，但不影响Select的正常功能
+                >
+                  {apiConfigs.map((api) => (
+                    <MenuItem key={api.id} value={api.id}>
+                      <Typography variant="body2" fontSize="0.75rem">
+                        {api.name}
+                      </Typography>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          </Box>
+
           <Box className="window-controls">
             <Tooltip title={t("aiAssistant.clear")}>
               <IconButton onClick={handleClearMessages} size="small" sx={{ color: "inherit" }}>
@@ -826,7 +924,11 @@ const AIChatWindow = ({ windowState, onClose }) => {
         {/* AI设置对话框 */}
         <AISettings
           open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false);
+            // 设置关闭后重新加载API配置
+            loadApiConfigs();
+          }}
         />
       </Paper>
     </Resizable>

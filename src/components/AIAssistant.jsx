@@ -13,6 +13,9 @@ import {
   Alert,
   Fade,
   Slide,
+  Select,
+  MenuItem,
+  FormControl,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import StopIcon from "@mui/icons-material/Stop";
@@ -40,6 +43,11 @@ const AIAssistant = ({ open, onClose }) => {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const errorTimeoutRef = useRef(null); // 用于错误消息自动清除的定时器
+
+  // API选择相关状态
+  const [apiConfigs, setApiConfigs] = useState([]);
+  const [currentApiId, setCurrentApiId] = useState(null);
+  const [currentApiName, setCurrentApiName] = useState("");
 
   // 清除错误消息定时器
   const clearErrorTimeout = () => {
@@ -155,6 +163,49 @@ const AIAssistant = ({ open, onClose }) => {
       }
     };
   }, [t, currentSessionId]);
+
+  // 加载API配置
+  useEffect(() => {
+    if (open) {
+      loadApiConfigs();
+    }
+  }, [open]);
+
+  const loadApiConfigs = async () => {
+    try {
+      const settings = await window.terminalAPI?.loadAISettings();
+      if (settings) {
+        setApiConfigs(settings.configs || []);
+        if (settings.current) {
+          setCurrentApiId(settings.current.id || null);
+          setCurrentApiName(settings.current.name || "");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load API configs:", error);
+    }
+  };
+
+  // 切换API配置
+  const handleApiChange = async (apiId) => {
+    try {
+      const result = await window.terminalAPI.setCurrentApiConfig(apiId);
+      if (result) {
+        // 重新加载配置以更新当前API
+        await loadApiConfigs();
+
+        // 显示切换成功消息
+        const selectedApi = apiConfigs.find(api => api.id === apiId);
+        if (selectedApi) {
+          setErrorWithAutoClean(t("aiSettings.apiSwitched", { name: selectedApi.name }));
+        }
+      } else {
+        setError(t("aiSettings.setCurrentFailed"));
+      }
+    } catch (error) {
+      setError(t("aiSettings.setCurrentFailed"));
+    }
+  };
 
   // 组件卸载时清理定时器
   useEffect(() => {
@@ -428,33 +479,57 @@ const AIAssistant = ({ open, onClose }) => {
         <Box
           sx={{
             display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
+            flexDirection: "column",
             p: 2,
             borderBottom: `1px solid ${theme.palette.divider}`,
             bgcolor: "background.paper",
           }}
         >
-          <Typography variant="subtitle1" fontWeight="medium">
-            {t("aiAssistant.title")}
-          </Typography>
-          <Box>
-            <Tooltip title={t("aiAssistant.clear")}>
-              <IconButton onClick={handleClearMessages} size="small">
-                <ClearIcon />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t("aiAssistant.settings")}>
-              <IconButton onClick={() => setSettingsOpen(true)} size="small">
-                <SettingsIcon />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t("aiAssistant.close")}>
-              <IconButton onClick={onClose} size="small">
-                <CloseIcon />
-              </IconButton>
-            </Tooltip>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
+            <Typography variant="subtitle1" fontWeight="medium">
+              {t("aiAssistant.title")}
+            </Typography>
+            <Box>
+              <Tooltip title={t("aiAssistant.clear")}>
+                <IconButton onClick={handleClearMessages} size="small">
+                  <ClearIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t("aiAssistant.settings")}>
+                <IconButton onClick={() => setSettingsOpen(true)} size="small">
+                  <SettingsIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t("aiAssistant.close")}>
+                <IconButton onClick={onClose} size="small">
+                  <CloseIcon />
+                </IconButton>
+              </Tooltip>
+            </Box>
           </Box>
+
+          {/* API选择器 */}
+          {apiConfigs.length > 0 && (
+            <FormControl size="small" fullWidth>
+              <Select
+                value={currentApiId || ""}
+                onChange={(e) => handleApiChange(e.target.value)}
+                displayEmpty
+                variant="outlined"
+                sx={{
+                  fontSize: '0.8rem',
+                }}
+              >
+                {apiConfigs.map((api) => (
+                  <MenuItem key={api.id} value={api.id}>
+                    <Typography variant="body2" fontSize="0.8rem">
+                      {api.name}
+                    </Typography>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
         </Box>
 
         {/* 错误提示 */}
@@ -648,7 +723,11 @@ const AIAssistant = ({ open, onClose }) => {
         {/* AI设置对话框 */}
         <AISettings
           open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false);
+            // 设置关闭后重新加载API配置
+            loadApiConfigs();
+          }}
         />
       </Paper>
     </Slide>

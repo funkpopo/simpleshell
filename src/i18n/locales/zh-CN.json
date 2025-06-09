@@ -173,7 +173,9 @@
       "minimize": "最小化",
       "maximize": "最大化",
       "close": "关闭",
-      "requestCancelled": "请求已取消"
+      "requestCancelled": "请求已取消",
+      "selectApi": "选择API",
+      "currentApi": "当前: {{name}}"
     },
     "aiSettings": {
       "title": "AI设置",
@@ -196,7 +198,24 @@
       "modelRequired": "模型名称不能为空",
       "invalidUrl": "请输入有效的URL地址",
       "temperatureRange": "温度值应在0-2之间",
-      "maxTokensRange": "最大令牌数应在1-32000之间"
+      "maxTokensRange": "最大令牌数应在1-32000之间",
+      "apiManagement": "API管理",
+      "apiList": "API配置列表",
+      "addApi": "添加API",
+      "editApi": "编辑API",
+      "deleteApi": "删除API",
+      "setAsCurrent": "设为当前",
+      "apiName": "配置名称",
+      "apiNameRequired": "配置名称不能为空",
+      "deleteConfirm": "确定要删除此API配置吗？",
+      "deleteSuccess": "API配置已删除",
+      "deleteFailed": "删除API配置失败",
+      "setCurrentSuccess": "已设置为当前API",
+      "setCurrentFailed": "设置当前API失败",
+      "noApiConfigs": "暂无API配置，请先添加",
+      "currentApi": "当前API",
+      "selectApi": "选择API",
+      "apiSwitched": "已切换到: {{name}}"
     }
   }
 }
