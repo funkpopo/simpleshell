@@ -40,7 +40,6 @@ import TabPanel from "./components/TabPanel.jsx";
 import ConnectionManager from "./components/ConnectionManager.jsx";
 import {
   ResourceMonitorWithSuspense as ResourceMonitor,
-  AIAssistantWithSuspense as AIAssistant,
   FileManagerWithSuspense as FileManager,
   preloadComponents,
 } from "./components/LazyComponents.jsx";
@@ -384,9 +383,6 @@ function App() {
   // 资源监控侧边栏状态
   const [resourceMonitorOpen, setResourceMonitorOpen] = React.useState(false);
 
-  // AI助手侧边栏状态
-  const [aiAssistantOpen, setAiAssistantOpen] = React.useState(false);
-
   // 文件管理侧边栏状态
   const [fileManagerOpen, setFileManagerOpen] = React.useState(false);
 
@@ -410,9 +406,7 @@ function App() {
 
   React.useEffect(() => {
     const getSidebarWidth = () => {
-      if (aiAssistantOpen && lastOpenedSidebar === "ai") {
-        return SIDEBAR_WIDTHS.AI_ASSISTANT;
-      } else if (resourceMonitorOpen && lastOpenedSidebar === "resource") {
+      if (resourceMonitorOpen && lastOpenedSidebar === "resource") {
         return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
       } else if (connectionManagerOpen && lastOpenedSidebar === "connection") {
         return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
@@ -424,8 +418,7 @@ function App() {
         return SIDEBAR_WIDTHS.COMMAND_HISTORY;
       }
       // Fallback if lastOpenedSidebar isn't set but one is open
-      if (aiAssistantOpen) return SIDEBAR_WIDTHS.AI_ASSISTANT;
-      else if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
+      if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
       else if (connectionManagerOpen) return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
       else if (fileManagerOpen) return SIDEBAR_WIDTHS.FILE_MANAGER;
       else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
@@ -460,7 +453,6 @@ function App() {
       );
     }, 10);
   }, [
-    aiAssistantOpen,
     resourceMonitorOpen,
     connectionManagerOpen,
     fileManagerOpen,
@@ -489,9 +481,6 @@ function App() {
 
     // 延迟预加载组件，避免影响应用启动性能
     const preloadTimer = setTimeout(() => {
-      // 预加载AI助手组件（最常用）
-      preloadComponents.aiAssistant().catch(() => {});
-
       // 再延迟一点预加载其他组件
       setTimeout(() => {
         preloadComponents.resourceMonitor().catch(() => {});
@@ -927,35 +916,6 @@ function App() {
     setResourceMonitorOpen(false);
   };
 
-  // 切换AI助手侧边栏
-  const toggleAIAssistant = () => {
-    setAiAssistantOpen(!aiAssistantOpen);
-
-    // 打开AI助手时，更新最后打开的侧边栏
-    if (!aiAssistantOpen) {
-      setLastOpenedSidebar("ai");
-      setResourceMonitorOpen((prev) => {
-        // 如果资源监控已打开，不关闭它，只确保z-index关系
-        return prev;
-      });
-    }
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
-  };
-
-  // 关闭AI助手侧边栏
-  const handleCloseAIAssistant = () => {
-    // 清理会话记录，提高性能
-    // 注意：懒加载组件可能还未加载，所以需要检查ref是否存在
-    if (window.aiAssistantRef && window.aiAssistantRef.current) {
-      window.aiAssistantRef.current.clearMessages();
-    }
-    setAiAssistantOpen(false);
-  };
-
   // 切换文件管理侧边栏
   const toggleFileManager = () => {
     setFileManagerOpen(!fileManagerOpen);
@@ -1043,7 +1003,6 @@ function App() {
   const closeAllSidebars = () => {
     setConnectionManagerOpen(false);
     setResourceMonitorOpen(false);
-    setAiAssistantOpen(false);
     setFileManagerOpen(false);
     setShortcutCommandsOpen(false);
     setCommandHistoryOpen(false);
@@ -1415,43 +1374,6 @@ function App() {
               zIndex: 90,
             }}
           >
-            {/* 遮罩层 - 当侧边栏开启时显示 */}
-            {(connectionManagerOpen ||
-              resourceMonitorOpen ||
-              aiAssistantOpen ||
-              fileManagerOpen) && (
-              <Box
-                sx={{
-                  position: "fixed",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  bgcolor: "rgba(0, 0, 0, 0.1)",
-                  zIndex: 89,
-                  display: { xs: "block", md: "none" },
-                }}
-                onClick={closeAllSidebars}
-              />
-            )}
-
-            {/* AI助手侧边栏 */}
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "ai" ? 102 : 97,
-                height: "100%",
-                display: "flex",
-              }}
-            >
-              <AIAssistant
-                open={aiAssistantOpen}
-                onClose={handleCloseAIAssistant}
-              />
-            </Box>
-
             {/* 资源监控侧边栏 */}
             <Box
               sx={{
@@ -1594,26 +1516,6 @@ function App() {
               <Tooltip title={t("sidebar.theme")} placement="left">
                 <IconButton onClick={toggleTheme} color="primary">
                   {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
-                </IconButton>
-              </Tooltip>
-
-              {/* AI助手按钮 */}
-              <Tooltip title={t("sidebar.ai")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleAIAssistant}
-                  sx={{
-                    bgcolor: aiAssistantOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
-                      bgcolor: aiAssistantOpen
-                        ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                >
-                  <AIIcon />
                 </IconButton>
               </Tooltip>
 
