@@ -23,7 +23,6 @@ import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import MonitorHeartIcon from "@mui/icons-material/MonitorHeart";
 import LinkIcon from "@mui/icons-material/Link";
-import AddIcon from "@mui/icons-material/Add";
 import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PowerOffIcon from "@mui/icons-material/PowerOff";
@@ -37,7 +36,6 @@ import InfoIcon from "@mui/icons-material/Info";
 import ExitToAppIcon from "@mui/icons-material/ExitToApp";
 import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
-import TabPanel from "./components/TabPanel.jsx";
 import ConnectionManager from "./components/ConnectionManager.jsx";
 import {
   ResourceMonitorWithSuspense as ResourceMonitor,
@@ -46,7 +44,6 @@ import {
 } from "./components/LazyComponents.jsx";
 
 import Settings from "./components/Settings.jsx";
-import Divider from "@mui/material/Divider";
 import ShortcutCommands from "./components/ShortcutCommands.jsx";
 import CommandHistory from "./components/CommandHistory.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";

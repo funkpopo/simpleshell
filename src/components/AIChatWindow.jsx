@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Box,
   Paper,
@@ -22,6 +22,20 @@ import { Resizable } from "react-resizable";
 import AISettings from "./AISettings.jsx";
 import "react-resizable/css/styles.css";
 
+// 防抖工具函数
+const useDebounce = (callback, delay) => {
+  const timeoutRef = useRef(null);
+
+  return useCallback((...args) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    timeoutRef.current = setTimeout(() => {
+      callback(...args);
+    }, delay);
+  }, [callback, delay]);
+};
+
 // 窗口状态枚举
 const WINDOW_STATE = {
   VISIBLE: 'visible',
@@ -42,7 +56,21 @@ const AIChatWindow = ({ windowState, onClose }) => {
   const [windowSize, setWindowSize] = useState({ width: 350, height: 450 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [maxConstraints, setMaxConstraints] = useState([800, 600]);
   const windowRef = useRef(null);
+
+  // 动态计算最大尺寸限制
+  const calculateMaxConstraints = useCallback(() => {
+    const margin = 40; // 保留边距
+    const maxWidth = Math.min(window.innerWidth - margin, 1000); // 最大不超过1000px
+    const maxHeight = Math.min(window.innerHeight - margin, 800); // 最大不超过800px
+    return [Math.max(400, maxWidth), Math.max(400, maxHeight)]; // 确保最小值
+  }, []);
+
+  // 防抖的尺寸更新函数
+  const debouncedSetWindowSize = useDebounce((size) => {
+    setWindowSize(size);
+  }, 16); // 约60fps的更新频率
 
   // 计算初始位置（右下角）
   const calculateInitialPosition = () => {
@@ -56,6 +84,24 @@ const AIChatWindow = ({ windowState, onClose }) => {
   };
 
   const [windowPosition, setWindowPosition] = useState(calculateInitialPosition);
+
+  // 初始化最大尺寸约束
+  useEffect(() => {
+    const updateMaxConstraints = () => {
+      const newConstraints = calculateMaxConstraints();
+      setMaxConstraints(newConstraints);
+    };
+
+    // 初始设置
+    updateMaxConstraints();
+
+    // 监听窗口尺寸变化
+    window.addEventListener('resize', updateMaxConstraints);
+
+    return () => {
+      window.removeEventListener('resize', updateMaxConstraints);
+    };
+  }, [calculateMaxConstraints]);
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -255,10 +301,14 @@ const AIChatWindow = ({ windowState, onClose }) => {
     }
   };
 
-  // 尺寸调整处理
-  const handleResize = (_, { size }) => {
+  // 尺寸调整处理（使用防抖优化）
+  const handleResize = useCallback((_, { size }) => {
+    // 立即更新尺寸以保持响应性
     setWindowSize(size);
-  };
+
+    // 防抖处理其他相关更新
+    debouncedSetWindowSize(size);
+  }, [debouncedSetWindowSize]);
 
   // 添加全局鼠标事件监听
   useEffect(() => {
@@ -293,7 +343,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
       height={windowSize.height}
       onResize={handleResize}
       minConstraints={[280, 300]}
-      maxConstraints={[800, 600]}
+      maxConstraints={maxConstraints}
       resizeHandles={['se', 'e', 's']}
     >
       <Paper
@@ -314,7 +364,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
           border: `1px solid ${theme.palette.divider}`,
           cursor: isDragging ? 'grabbing' : 'default',
           opacity: windowState === WINDOW_STATE.VISIBLE ? 1 : 0.9,
-          transition: 'opacity 0.3s ease-in-out, height 0.3s ease-in-out',
+          transition: 'opacity 0.3s ease-in-out, width 0.1s ease-out, height 0.1s ease-out',
           userSelect: isDragging ? 'none' : 'auto',
         }}
       >
