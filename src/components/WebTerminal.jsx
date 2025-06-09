@@ -58,6 +58,19 @@ const terminalStyles = `
   width: 100% !important;
   height: 100% !important;
 }
+.xterm-scrollable-element {
+  width: 100% !important;
+  height: 100% !important;
+}
+.terminal-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
 /* 优化终端选择文本的显示效果 */
 .xterm-selection {
   opacity: 1 !important;
@@ -110,15 +123,6 @@ const terminalStyles = `
 
 .xterm .xterm-selection div:not(:first-of-type) {
   display: none !important;
-}
-.terminal-container {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
 }
 `;
 
