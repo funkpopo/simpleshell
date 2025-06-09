@@ -172,7 +172,8 @@
       "floatingButton": "AI助手",
       "minimize": "最小化",
       "maximize": "最大化",
-      "close": "关闭"
+      "close": "关闭",
+      "requestCancelled": "请求已取消"
     },
     "aiSettings": {
       "title": "AI设置",

@@ -54,6 +54,9 @@ let globalEvent = null;
 // 用于保存流式请求的引用，以便取消
 let activeAPIRequest = null;
 
+// 跟踪当前活跃的会话ID
+let currentSessionId = null;
+
 // 获取worker文件路径
 function getWorkerPath() {
   // 先尝试相对于__dirname的路径
@@ -1524,6 +1527,9 @@ function setupIPC(mainWindow) {
       }
 
       if (isStream) {
+        // 保存当前会话ID
+        currentSessionId = requestData.sessionId;
+
         // 处理流式请求
         const https = require("https");
         const http = require("http");
@@ -1546,6 +1552,7 @@ function setupIPC(mainWindow) {
           if (res.statusCode !== 200) {
             event.sender.send("stream-error", {
               tabId: "ai",
+              sessionId: requestData.sessionId,
               error: {
                 message: `API请求失败: ${res.statusCode} ${res.statusMessage}`,
               },
@@ -1571,8 +1578,8 @@ function setupIPC(mainWindow) {
                       const chunkData = {
                         tabId: "ai",
                         chunk: jsonData.choices[0].delta.content,
+                        sessionId: requestData.sessionId,
                       };
-                      console.log("主进程 - 发送流式数据块:", chunkData);
                       event.sender.send("stream-chunk", chunkData);
                     }
                   } catch (e) {}
@@ -1584,10 +1591,13 @@ function setupIPC(mainWindow) {
           });
 
           res.on("end", () => {
-            console.log("主进程 - 流式响应结束");
-            event.sender.send("stream-end", { tabId: "ai" });
-            // 清理请求引用
+            event.sender.send("stream-end", {
+              tabId: "ai",
+              sessionId: requestData.sessionId
+            });
+            // 清理请求引用和会话ID
             activeAPIRequest = null;
+            currentSessionId = null;
           });
         });
 
@@ -1595,10 +1605,12 @@ function setupIPC(mainWindow) {
           logToFile(`请求出错: ${error.message}`, "ERROR");
           event.sender.send("stream-error", {
             tabId: "ai",
+            sessionId: requestData.sessionId,
             error: { message: error.message },
           });
-          // 清理请求引用
+          // 清理请求引用和会话ID
           activeAPIRequest = null;
+          currentSessionId = null;
         });
 
         // 保存请求引用以便后续中断
@@ -1730,11 +1742,13 @@ function setupIPC(mainWindow) {
           globalEvent.sender.send("stream-end", {
             tabId: "ai",
             aborted: true,
+            sessionId: currentSessionId, // 使用当前会话ID而不是null
           });
         }
 
-        // 清理请求引用
+        // 清理请求引用和会话ID
         activeAPIRequest = null;
+        currentSessionId = null;
 
         return { success: true, message: "请求已中断" };
       } else {
