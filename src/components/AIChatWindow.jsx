@@ -10,7 +10,6 @@ import {
   Tooltip,
   CircularProgress,
   Alert,
-  Fade,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -20,7 +19,9 @@ import MinimizeIcon from "@mui/icons-material/Minimize";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
+import { Resizable } from "react-resizable";
 import AISettings from "./AISettings.jsx";
+import "react-resizable/css/styles.css";
 
 const AIChatWindow = ({ open, onClose, onMinimize }) => {
   const { t } = useTranslation();
@@ -31,6 +32,13 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // 窗口位置和尺寸状态
+  const [windowPosition, setWindowPosition] = useState({ x: 20, y: 20 });
+  const [windowSize, setWindowSize] = useState({ width: 350, height: 450 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const windowRef = useRef(null);
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -161,7 +169,7 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -181,18 +189,73 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
     }
   };
 
+  // 拖拽事件处理
+  const handleMouseDown = (e) => {
+    if (e.target.closest('.window-controls')) return; // 不在控制按钮上拖拽
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX - windowPosition.x,
+      y: e.clientY - windowPosition.y,
+    });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+
+    const newX = e.clientX - dragStart.x;
+    const newY = e.clientY - dragStart.y;
+
+    // 边界限制
+    const maxX = window.innerWidth - windowSize.width;
+    const maxY = window.innerHeight - windowSize.height;
+
+    setWindowPosition({
+      x: Math.max(0, Math.min(newX, maxX)),
+      y: Math.max(0, Math.min(newY, maxY)),
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // 尺寸调整处理
+  const handleResize = (_, { size }) => {
+    setWindowSize(size);
+  };
+
+  // 添加全局鼠标事件监听
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, dragStart, windowPosition, windowSize]);
+
   if (!open) return null;
 
   return (
-    <Fade in={open}>
+    <Resizable
+      width={windowSize.width}
+      height={windowSize.height}
+      onResize={handleResize}
+      minConstraints={[280, 300]}
+      maxConstraints={[800, 600]}
+      resizeHandles={['se', 'e', 's']}
+    >
       <Paper
+        ref={windowRef}
         elevation={8}
         sx={{
           position: "fixed",
-          bottom: 20,
-          right: 20,
-          width: 350,
-          height: 450,
+          left: windowPosition.x,
+          top: windowPosition.y,
+          width: windowSize.width,
+          height: windowSize.height,
           display: "flex",
           flexDirection: "column",
           borderRadius: 2,
@@ -200,10 +263,14 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
           overflow: "hidden",
           backdropFilter: "blur(10px)",
           border: `1px solid ${theme.palette.divider}`,
+          cursor: isDragging ? 'grabbing' : 'default',
+          opacity: open ? 1 : 0,
+          transition: 'opacity 0.3s ease-in-out',
         }}
       >
         {/* 标题栏 */}
         <Box
+          onMouseDown={handleMouseDown}
           sx={{
             display: "flex",
             justifyContent: "space-between",
@@ -211,12 +278,16 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
             p: 1.5,
             bgcolor: "primary.main",
             color: "primary.contrastText",
+            cursor: 'grab',
+            '&:active': {
+              cursor: 'grabbing',
+            },
           }}
         >
           <Typography variant="subtitle2" fontWeight="medium">
             {t("aiAssistant.title")}
           </Typography>
-          <Box>
+          <Box className="window-controls">
             <Tooltip title={t("aiAssistant.clear")}>
               <IconButton onClick={handleClearMessages} size="small" sx={{ color: "inherit" }}>
                 <ClearIcon fontSize="small" />
@@ -331,7 +402,7 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
             <TextField
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyDown}
               placeholder={t("aiAssistant.placeholder")}
               multiline
               maxRows={2}
@@ -363,7 +434,7 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
           onClose={() => setSettingsOpen(false)}
         />
       </Paper>
-    </Fade>
+    </Resizable>
   );
 };
 
