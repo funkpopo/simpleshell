@@ -1568,10 +1568,12 @@ function setupIPC(mainWindow) {
                       jsonData.choices[0].delta &&
                       jsonData.choices[0].delta.content
                     ) {
-                      event.sender.send("stream-chunk", {
+                      const chunkData = {
                         tabId: "ai",
                         chunk: jsonData.choices[0].delta.content,
-                      });
+                      };
+                      console.log("主进程 - 发送流式数据块:", chunkData);
+                      event.sender.send("stream-chunk", chunkData);
                     }
                   } catch (e) {}
                 }
@@ -1582,6 +1584,7 @@ function setupIPC(mainWindow) {
           });
 
           res.on("end", () => {
+            console.log("主进程 - 流式响应结束");
             event.sender.send("stream-end", { tabId: "ai" });
             // 清理请求引用
             activeAPIRequest = null;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Box,
   Paper,
@@ -35,13 +35,32 @@ const AIAssistant = ({ open, onClose }) => {
   const inputRef = useRef(null);
 
   // 滚动到底部
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const scrollToBottom = useCallback(() => {
+    if (messagesEndRef.current) {
+      // 使用 setTimeout 确保 DOM 更新后再滚动
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+          inline: "nearest"
+        });
+      }, 10);
+    }
+  }, []);
 
+  // 监听消息变化并自动滚动
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, scrollToBottom]);
+
+  // 专门处理流式响应时的滚动
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.streaming) {
+      // 流式响应时更频繁地滚动，确保用户能看到实时内容
+      scrollToBottom();
+    }
+  }, [messages, scrollToBottom]);
 
   // 监听流式响应
   useEffect(() => {
@@ -255,6 +274,23 @@ const AIAssistant = ({ open, onClose }) => {
             flex: 1,
             overflow: "auto",
             p: 1,
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0, // 确保flex子元素能正确收缩
+            // 自定义滚动条样式
+            '&::-webkit-scrollbar': {
+              width: '6px',
+            },
+            '&::-webkit-scrollbar-track': {
+              background: 'transparent',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: 'rgba(0,0,0,0.2)',
+              borderRadius: '3px',
+            },
+            '&::-webkit-scrollbar-thumb:hover': {
+              background: 'rgba(0,0,0,0.3)',
+            },
           }}
         >
           {messages.length === 0 ? (
@@ -273,7 +309,7 @@ const AIAssistant = ({ open, onClose }) => {
               </Typography>
             </Box>
           ) : (
-            <List sx={{ p: 0 }}>
+            <List sx={{ p: 0, flex: 1 }}>
               {messages.map((message, index) => (
                 <ListItem
                   key={index}
@@ -282,16 +318,24 @@ const AIAssistant = ({ open, onClose }) => {
                     p: 1,
                     mb: 1,
                     borderRadius: 1,
-                    bgcolor: message.role === "user" 
-                      ? "primary.main" 
+                    bgcolor: message.role === "user"
+                      ? "primary.main"
                       : "background.default",
-                    color: message.role === "user" 
-                      ? "primary.contrastText" 
+                    color: message.role === "user"
+                      ? "primary.contrastText"
                       : "text.primary",
                   }}
                 >
                   <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <Typography variant="body2" sx={{ flex: 1, whiteSpace: "pre-wrap" }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        flex: 1,
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word", // 确保长文本能正确换行
+                        lineHeight: 1.4,
+                      }}
+                    >
                       {message.content}
                       {message.streaming && (
                         <CircularProgress size={12} sx={{ ml: 1 }} />
@@ -300,30 +344,32 @@ const AIAssistant = ({ open, onClose }) => {
                     <IconButton
                       size="small"
                       onClick={() => handleCopyMessage(message.content)}
-                      sx={{ 
-                        ml: 1, 
-                        color: message.role === "user" 
-                          ? "primary.contrastText" 
-                          : "text.secondary" 
+                      sx={{
+                        ml: 1,
+                        color: message.role === "user"
+                          ? "primary.contrastText"
+                          : "text.secondary"
                       }}
                     >
                       <ContentCopyIcon fontSize="small" />
                     </IconButton>
                   </Box>
-                  <Typography 
-                    variant="caption" 
-                    sx={{ 
+                  <Typography
+                    variant="caption"
+                    sx={{
                       opacity: 0.7,
-                      color: message.role === "user" 
-                        ? "primary.contrastText" 
-                        : "text.secondary" 
+                      color: message.role === "user"
+                        ? "primary.contrastText"
+                        : "text.secondary",
+                      mt: 0.5,
+                      display: "block"
                     }}
                   >
                     {formatTimestamp(message.timestamp)}
                   </Typography>
                 </ListItem>
               ))}
-              <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} style={{ height: '1px' }} />
             </List>
           )}
         </Box>
