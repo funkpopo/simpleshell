@@ -145,12 +145,6 @@ const CommandSuggestion = ({
     switch (matchType) {
       case "prefix":
         return "前缀匹配";
-      case "contains":
-        return "包含匹配";
-      case "fuzzy":
-        return "模糊匹配";
-      case "recent":
-        return "最近使用";
       default:
         return "";
     }
