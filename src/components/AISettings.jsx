@@ -243,13 +243,15 @@ const AISettings = ({ open, onClose }) => {
                 value={config.maxTokens}
                 onChange={(e, value) => handleConfigChange("maxTokens", value)}
                 min={100}
-                max={8000}
+                max={32000}
                 step={100}
                 marks={[
                   { value: 100, label: "100" },
                   { value: 2000, label: "2000" },
                   { value: 4000, label: "4000" },
                   { value: 8000, label: "8000" },
+                  { value: 16000, label: "16000" },
+                  { value: 32000, label: "32000" },
                 ]}
               />
             </Box>

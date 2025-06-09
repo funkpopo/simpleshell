@@ -113,14 +113,24 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   on: (channel, callback) => {
     const validChannels = ["stream-chunk", "stream-end", "stream-error"];
     if (validChannels.includes(channel)) {
-      ipcRenderer.on(channel, callback);
+      // 包装回调函数，确保正确传递数据
+      const wrappedCallback = (event, data) => {
+        callback(data);
+      };
+      ipcRenderer.on(channel, wrappedCallback);
+      // 存储原始回调和包装回调的映射，用于后续移除
+      if (!callback._wrappedCallback) {
+        callback._wrappedCallback = wrappedCallback;
+      }
     }
   },
   // 添加事件监听器移除方法
   removeListener: (channel, callback) => {
     const validChannels = ["stream-chunk", "stream-end", "stream-error"];
     if (validChannels.includes(channel)) {
-      ipcRenderer.removeListener(channel, callback);
+      // 使用包装的回调函数进行移除
+      const wrappedCallback = callback._wrappedCallback || callback;
+      ipcRenderer.removeListener(channel, wrappedCallback);
     }
   },
 

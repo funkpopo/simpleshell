@@ -104,32 +104,62 @@ const AIChatWindow = ({ windowState, onClose }) => {
   }, [calculateMaxConstraints]);
 
   // 滚动到底部
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const scrollToBottom = useCallback(() => {
+    if (messagesEndRef.current) {
+      // 使用 setTimeout 确保 DOM 更新后再滚动
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+          inline: "nearest"
+        });
+      }, 10);
+    }
+  }, []);
 
+  // 监听消息变化并自动滚动
   useEffect(() => {
+    console.log("AIChatWindow - 消息列表更新:", messages);
     scrollToBottom();
-  }, [messages]);
+  }, [messages, scrollToBottom]);
+
+  // 专门处理流式响应时的滚动
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.streaming) {
+      // 流式响应时更频繁地滚动，确保用户能看到实时内容
+      scrollToBottom();
+    }
+  }, [messages, scrollToBottom]);
 
   // 监听流式响应
   useEffect(() => {
-    if (!window.terminalAPI?.on) return;
+    if (!window.terminalAPI?.on) {
+      console.log("AIChatWindow - terminalAPI.on 不可用");
+      return;
+    }
+
+    console.log("AIChatWindow - 注册流式响应事件监听器");
 
     const handleStreamChunk = (data) => {
+      console.log("AIChatWindow - 收到流式数据:", data);
       if (data.tabId === "ai" && data.chunk) {
+        console.log("AIChatWindow - 处理流式数据块:", data.chunk);
         setMessages(prev => {
           const newMessages = [...prev];
           const lastMessage = newMessages[newMessages.length - 1];
           if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
             lastMessage.content += data.chunk;
+            console.log("AIChatWindow - 更新现有消息:", lastMessage.content);
           } else {
-            newMessages.push({
+            const newMessage = {
               role: "assistant",
               content: data.chunk,
               timestamp: Date.now(),
               streaming: true,
-            });
+            };
+            newMessages.push(newMessage);
+            console.log("AIChatWindow - 创建新消息:", newMessage);
           }
           return newMessages;
         });
@@ -137,12 +167,14 @@ const AIChatWindow = ({ windowState, onClose }) => {
     };
 
     const handleStreamEnd = (data) => {
+      console.log("AIChatWindow - 流式响应结束:", data);
       if (data.tabId === "ai") {
         setMessages(prev => {
           const newMessages = [...prev];
           const lastMessage = newMessages[newMessages.length - 1];
           if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
             lastMessage.streaming = false;
+            console.log("AIChatWindow - 标记消息完成:", lastMessage);
           }
           return newMessages;
         });
@@ -151,6 +183,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
     };
 
     const handleStreamError = (data) => {
+      console.log("AIChatWindow - 流式响应错误:", data);
       if (data.tabId === "ai") {
         setError(data.error?.message || t("aiAssistant.error"));
         setIsLoading(false);
@@ -211,6 +244,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
       };
 
       if (streamEnabled) {
+        console.log("AIChatWindow - 发送流式API请求:", requestData);
         await window.terminalAPI.sendAPIRequest(requestData, true);
       } else {
         const result = await window.terminalAPI.sendAPIRequest(requestData, false);
@@ -423,68 +457,108 @@ const AIChatWindow = ({ windowState, onClose }) => {
             overflow: "auto",
             p: 1,
             bgcolor: "background.default",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0, // 确保flex子元素能正确收缩
+            // 自定义滚动条样式
+            '&::-webkit-scrollbar': {
+              width: '6px',
+            },
+            '&::-webkit-scrollbar-track': {
+              background: 'transparent',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: 'rgba(0,0,0,0.2)',
+              borderRadius: '3px',
+            },
+            '&::-webkit-scrollbar-thumb:hover': {
+              background: 'rgba(0,0,0,0.3)',
+            },
           }}
         >
-              {messages.length === 0 ? (
-                <Box
+          {messages.length === 0 ? (
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                textAlign: "center",
+                color: "text.secondary",
+              }}
+            >
+              <Typography variant="body2">
+                {t("aiAssistant.noMessages")}
+              </Typography>
+            </Box>
+          ) : (
+            <List sx={{ p: 0, flex: 1 }}>
+              {messages.map((message, index) => (
+                <ListItem
+                  key={index}
                   sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    height: "100%",
-                    textAlign: "center",
-                    color: "text.secondary",
+                    display: "block",
+                    p: 1,
+                    mb: 1,
+                    borderRadius: 1,
+                    bgcolor: message.role === "user"
+                      ? "primary.main"
+                      : "background.paper",
+                    color: message.role === "user"
+                      ? "primary.contrastText"
+                      : "text.primary",
+                    boxShadow: 1,
                   }}
                 >
-                  <Typography variant="body2">
-                    {t("aiAssistant.noMessages")}
-                  </Typography>
-                </Box>
-              ) : (
-                <List sx={{ p: 0 }}>
-                  {messages.map((message, index) => (
-                    <ListItem
-                      key={index}
+                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <Typography
+                      variant="body2"
                       sx={{
-                        display: "block",
-                        p: 1,
-                        mb: 1,
-                        borderRadius: 1,
-                        bgcolor: message.role === "user"
-                          ? "primary.main"
-                          : "background.paper",
-                        color: message.role === "user"
-                          ? "primary.contrastText"
-                          : "text.primary",
-                        boxShadow: 1,
+                        flex: 1,
+                        whiteSpace: "pre-wrap",
+                        fontSize: "0.8rem",
+                        wordBreak: "break-word", // 确保长文本能正确换行
+                        lineHeight: 1.4,
                       }}
                     >
-                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <Typography variant="body2" sx={{ flex: 1, whiteSpace: "pre-wrap", fontSize: "0.8rem" }}>
-                          {message.content}
-                          {message.streaming && (
-                            <CircularProgress size={10} sx={{ ml: 1 }} />
-                          )}
-                        </Typography>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleCopyMessage(message.content)}
-                          sx={{
-                            ml: 1,
-                            color: message.role === "user"
-                              ? "primary.contrastText"
-                              : "text.secondary"
-                          }}
-                        >
-                          <ContentCopyIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    </ListItem>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </List>
-              )}
-            </Box>
+                      {message.content}
+                      {message.streaming && (
+                        <CircularProgress size={10} sx={{ ml: 1 }} />
+                      )}
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleCopyMessage(message.content)}
+                      sx={{
+                        ml: 1,
+                        color: message.role === "user"
+                          ? "primary.contrastText"
+                          : "text.secondary"
+                      }}
+                    >
+                      <ContentCopyIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      opacity: 0.7,
+                      color: message.role === "user"
+                        ? "primary.contrastText"
+                        : "text.secondary",
+                      fontSize: "0.7rem",
+                      mt: 0.5,
+                      display: "block"
+                    }}
+                  >
+                    {new Date(message.timestamp).toLocaleTimeString()}
+                  </Typography>
+                </ListItem>
+              ))}
+              <div ref={messagesEndRef} style={{ height: '1px' }} />
+            </List>
+          )}
+        </Box>
 
         {/* 输入区域 */}
         <Box
