@@ -29,6 +29,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import PowerOffIcon from "@mui/icons-material/PowerOff";
 import FolderIcon from "@mui/icons-material/Folder";
 import SettingsIcon from "@mui/icons-material/Settings";
+import AIIcon from "./components/AIIcon.jsx";
 import Tooltip from "@mui/material/Tooltip";
 import Paper from "@mui/material/Paper";
 import HistoryIcon from "@mui/icons-material/History";
@@ -43,12 +44,13 @@ import {
   FileManagerWithSuspense as FileManager,
   preloadComponents,
 } from "./components/LazyComponents.jsx";
-import AIIcon from "./components/AIIcon.jsx";
+
 import Settings from "./components/Settings.jsx";
 import Divider from "@mui/material/Divider";
 import ShortcutCommands from "./components/ShortcutCommands.jsx";
 import CommandHistory from "./components/CommandHistory.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
+import AIChatWindow from "./components/AIChatWindow.jsx";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -404,6 +406,11 @@ function App() {
   // 历史命令侧边栏状态
   const [commandHistoryOpen, setCommandHistoryOpen] = React.useState(false);
 
+  // 全局AI聊天窗口状态
+  const [globalAiChatWindowOpen, setGlobalAiChatWindowOpen] = React.useState(false);
+
+
+
   React.useEffect(() => {
     const getSidebarWidth = () => {
       if (resourceMonitorOpen && lastOpenedSidebar === "resource") {
@@ -485,6 +492,7 @@ function App() {
       setTimeout(() => {
         preloadComponents.resourceMonitor().catch(() => {});
         preloadComponents.fileManager().catch(() => {});
+        preloadComponents.aiAssistant().catch(() => {});
       }, 2000);
     }, 3000);
 
@@ -999,6 +1007,21 @@ function App() {
     }, 15);
   };
 
+  // 全局AI聊天窗口处理函数
+  const handleToggleGlobalAiChatWindow = () => {
+    setGlobalAiChatWindowOpen(!globalAiChatWindowOpen);
+  };
+
+  const handleCloseGlobalAiChatWindow = () => {
+    setGlobalAiChatWindowOpen(false);
+  };
+
+  const handleMinimizeGlobalAiChatWindow = () => {
+    setGlobalAiChatWindowOpen(false);
+  };
+
+
+
   // 更新关闭所有侧边栏的函数
   const closeAllSidebars = () => {
     setConnectionManagerOpen(false);
@@ -1062,7 +1085,13 @@ function App() {
       }
     };
 
+    // 处理欢迎页AI按钮点击事件
+    const handleToggleGlobalAI = () => {
+      handleToggleGlobalAiChatWindow();
+    };
+
     window.addEventListener("settingsChanged", handleSettingsChanged);
+    window.addEventListener("toggleGlobalAI", handleToggleGlobalAI);
 
     // 初始化应用设置
     const loadInitialSettings = async () => {
@@ -1095,6 +1124,7 @@ function App() {
 
     return () => {
       window.removeEventListener("settingsChanged", handleSettingsChanged);
+      window.removeEventListener("toggleGlobalAI", handleToggleGlobalAI);
     };
   }, [darkMode]); // 添加 darkMode 依赖
 
@@ -1496,6 +1526,8 @@ function App() {
               />
             </Box>
 
+
+
             {/* 右侧边栏 */}
             <Paper
               elevation={3}
@@ -1628,10 +1660,38 @@ function App() {
                   <HistoryIcon />
                 </IconButton>
               </Tooltip>
+
+              {/* AI助手按钮 */}
+              <Tooltip title={t("sidebar.ai")} placement="left">
+                <IconButton
+                  color="primary"
+                  onClick={handleToggleGlobalAiChatWindow}
+                  sx={{
+                    bgcolor: globalAiChatWindowOpen
+                      ? "action.selected"
+                      : "transparent",
+                    "&:hover": {
+                      bgcolor: globalAiChatWindowOpen
+                        ? "action.selected"
+                        : "action.hover",
+                    },
+                  }}
+                >
+                  <AIIcon />
+                </IconButton>
+              </Tooltip>
+
             </Paper>
           </Box>
         </Box>
       </Box>
+
+      {/* 全局AI聊天窗口 */}
+      <AIChatWindow
+        open={globalAiChatWindowOpen}
+        onClose={handleCloseGlobalAiChatWindow}
+        onMinimize={handleMinimizeGlobalAiChatWindow}
+      />
 
       {/* 关于对话框 */}
       <AboutDialog open={aboutDialogOpen} onClose={handleCloseAbout} />
