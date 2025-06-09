@@ -17,6 +17,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import ClearIcon from "@mui/icons-material/Clear";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CloseIcon from "@mui/icons-material/Close";
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import { Resizable } from "react-resizable";
@@ -610,7 +611,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
           <Box className="window-controls">
             <Tooltip title={t("aiAssistant.clear")}>
               <IconButton onClick={handleClearMessages} size="small" sx={{ color: "inherit" }}>
-                <ClearIcon fontSize="small" />
+                <CleaningServicesIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title={t("aiAssistant.settings")}>
