@@ -136,87 +136,29 @@ class CommandHistoryService {
 
   getSuggestions(input, maxResults = 10) {
     if (!input || typeof input !== "string" || input.trim().length === 0) {
-      // 如果没有输入，返回最近使用的命令
-      return this.getRecentCommands(maxResults);
+      // 如果没有输入，不返回任何建议
+      return [];
     }
 
     const trimmedInput = input.trim().toLowerCase();
-    const suggestions = [];
 
-    // 1. 精确前缀匹配（优先级最高）
+    // 仅保留精确前缀匹配
     const prefixMatches = this.history.filter((item) =>
       item.command.toLowerCase().startsWith(trimmedInput),
     );
 
-    // 2. 包含匹配
-    const containsMatches = this.history.filter(
-      (item) =>
-        !item.command.toLowerCase().startsWith(trimmedInput) &&
-        item.command.toLowerCase().includes(trimmedInput),
-    );
-
-    // 3. 模糊匹配
-    const fuzzyMatches = this.history.filter(
-      (item) =>
-        !item.command.toLowerCase().includes(trimmedInput) &&
-        this.fuzzyMatch(item.command.toLowerCase(), trimmedInput),
-    );
-
-    // 合并结果并按优先级排序
-    const allMatches = [
-      ...prefixMatches.map((item) => ({
-        ...item,
-        matchType: "prefix",
-        score: 3,
-      })),
-      ...containsMatches.map((item) => ({
-        ...item,
-        matchType: "contains",
-        score: 2,
-      })),
-      ...fuzzyMatches.map((item) => ({
-        ...item,
-        matchType: "fuzzy",
-        score: 1,
-      })),
-    ];
-
-    // 按分数、使用次数和时间排序
-    allMatches.sort((a, b) => {
-      if (a.score !== b.score) return b.score - a.score;
+    // 按使用次数和时间排序
+    prefixMatches.sort((a, b) => {
       if (a.count !== b.count) return (b.count || 1) - (a.count || 1);
       return b.timestamp - a.timestamp;
     });
 
-    return allMatches.slice(0, maxResults).map((item) => ({
+    return prefixMatches.slice(0, maxResults).map((item) => ({
       command: item.command,
-      matchType: item.matchType,
+      matchType: "prefix",
       count: item.count || 1,
       timestamp: item.timestamp,
     }));
-  }
-
-  getRecentCommands(maxResults = 10) {
-    return this.history.slice(0, maxResults).map((item) => ({
-      command: item.command,
-      matchType: "recent",
-      count: item.count || 1,
-      timestamp: item.timestamp,
-    }));
-  }
-
-  fuzzyMatch(text, pattern) {
-    let textIndex = 0;
-    let patternIndex = 0;
-
-    while (textIndex < text.length && patternIndex < pattern.length) {
-      if (text[textIndex] === pattern[patternIndex]) {
-        patternIndex++;
-      }
-      textIndex++;
-    }
-
-    return patternIndex === pattern.length;
   }
 
   clearHistory() {
