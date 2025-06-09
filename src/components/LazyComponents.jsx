@@ -21,19 +21,6 @@ const LazyFileManager = React.lazy(() =>
   }),
 );
 
-// AI助手懒加载组件
-const LazyAIAssistant = React.lazy(() =>
-  import("./AIAssistant.jsx").catch((error) => {
-    return {
-      default: () => (
-        <div style={{ padding: "20px", textAlign: "center" }}>
-          AI助手组件加载失败，请刷新页面重试
-        </div>
-      ),
-    };
-  }),
-);
-
 // 资源监控懒加载组件
 const LazyResourceMonitor = React.lazy(() =>
   import("./ResourceMonitor.jsx").catch((error) => {
@@ -59,17 +46,6 @@ export const FileManagerWithSuspense = (props) => (
 );
 
 /**
- * 带有Suspense和ErrorBoundary包装的AI助手组件
- */
-export const AIAssistantWithSuspense = (props) => (
-  <ErrorBoundary componentName="AI助手">
-    <Suspense fallback={<LoadingFallback message="正在加载AI助手..." />}>
-      <LazyAIAssistant {...props} />
-    </Suspense>
-  </ErrorBoundary>
-);
-
-/**
  * 带有Suspense和ErrorBoundary包装的资源监控组件
  */
 export const ResourceMonitorWithSuspense = (props) => (
@@ -85,7 +61,6 @@ export const ResourceMonitorWithSuspense = (props) => (
  */
 export const preloadComponents = {
   fileManager: () => import("./FileManager.jsx"),
-  aiAssistant: () => import("./AIAssistant.jsx"),
   resourceMonitor: () => import("./ResourceMonitor.jsx"),
 };
 
@@ -101,4 +76,4 @@ export const preloadAllComponents = () => {
 };
 
 // 导出懒加载组件以供直接使用（如果需要）
-export { LazyFileManager, LazyAIAssistant, LazyResourceMonitor };
+export { LazyFileManager, LazyResourceMonitor };
