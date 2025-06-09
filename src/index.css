@@ -100,6 +100,15 @@ body {
 .xterm-screen {
   width: 100% !important;
   height: 100% !important;
+  min-height: 100% !important;
+  display: block !important;
+}
+
+.xterm-scrollable-element {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  display: block !important;
 }
 
 /* 确保MUI容器正确工作 */
