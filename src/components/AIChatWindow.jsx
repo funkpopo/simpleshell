@@ -15,7 +15,6 @@ import SendIcon from "@mui/icons-material/Send";
 import SettingsIcon from "@mui/icons-material/Settings";
 import ClearIcon from "@mui/icons-material/Clear";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import MinimizeIcon from "@mui/icons-material/Minimize";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
@@ -23,7 +22,13 @@ import { Resizable } from "react-resizable";
 import AISettings from "./AISettings.jsx";
 import "react-resizable/css/styles.css";
 
-const AIChatWindow = ({ open, onClose, onMinimize }) => {
+// 窗口状态枚举
+const WINDOW_STATE = {
+  VISIBLE: 'visible',
+  CLOSED: 'closed'
+};
+
+const AIChatWindow = ({ windowState, onClose }) => {
   const { t } = useTranslation();
   const theme = useTheme();
   const [messages, setMessages] = useState([]);
@@ -34,11 +39,23 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
   const messagesEndRef = useRef(null);
 
   // 窗口位置和尺寸状态
-  const [windowPosition, setWindowPosition] = useState({ x: 20, y: 20 });
   const [windowSize, setWindowSize] = useState({ width: 350, height: 450 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const windowRef = useRef(null);
+
+  // 计算初始位置（右下角）
+  const calculateInitialPosition = () => {
+    const margin = 20; // 距离边缘的边距
+    const x = window.innerWidth - windowSize.width - margin;
+    const y = window.innerHeight - windowSize.height - margin;
+    return {
+      x: Math.max(margin, x),
+      y: Math.max(margin, y)
+    };
+  };
+
+  const [windowPosition, setWindowPosition] = useState(calculateInitialPosition);
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -192,11 +209,23 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
   // 拖拽事件处理
   const handleMouseDown = (e) => {
     if (e.target.closest('.window-controls')) return; // 不在控制按钮上拖拽
+
+    // 阻止默认行为，防止选中文本
+    e.preventDefault();
+
     setIsDragging(true);
     setDragStart({
       x: e.clientX - windowPosition.x,
       y: e.clientY - windowPosition.y,
     });
+
+    // 添加全局样式，防止拖拽时选中内容
+    document.body.style.userSelect = 'none';
+    document.body.style.pointerEvents = 'none';
+    // 保持窗口的pointer-events
+    if (windowRef.current) {
+      windowRef.current.style.pointerEvents = 'auto';
+    }
   };
 
   const handleMouseMove = (e) => {
@@ -217,6 +246,13 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
 
   const handleMouseUp = () => {
     setIsDragging(false);
+
+    // 恢复全局样式
+    document.body.style.userSelect = '';
+    document.body.style.pointerEvents = '';
+    if (windowRef.current) {
+      windowRef.current.style.pointerEvents = '';
+    }
   };
 
   // 尺寸调整处理
@@ -236,7 +272,20 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
     }
   }, [isDragging, dragStart, windowPosition, windowSize]);
 
-  if (!open) return null;
+  // 窗口尺寸变化时重新计算位置（确保不超出边界）
+  useEffect(() => {
+    const margin = 20;
+    const maxX = window.innerWidth - windowSize.width - margin;
+    const maxY = window.innerHeight - windowSize.height - margin;
+
+    setWindowPosition(prev => ({
+      x: Math.max(margin, Math.min(prev.x, maxX)),
+      y: Math.max(margin, Math.min(prev.y, maxY))
+    }));
+  }, [windowSize]);
+
+  // 根据窗口状态决定是否显示
+  if (windowState === WINDOW_STATE.CLOSED) return null;
 
   return (
     <Resizable
@@ -264,8 +313,9 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
           backdropFilter: "blur(10px)",
           border: `1px solid ${theme.palette.divider}`,
           cursor: isDragging ? 'grabbing' : 'default',
-          opacity: open ? 1 : 0,
-          transition: 'opacity 0.3s ease-in-out',
+          opacity: windowState === WINDOW_STATE.VISIBLE ? 1 : 0.9,
+          transition: 'opacity 0.3s ease-in-out, height 0.3s ease-in-out',
+          userSelect: isDragging ? 'none' : 'auto',
         }}
       >
         {/* 标题栏 */}
@@ -278,7 +328,8 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
             p: 1.5,
             bgcolor: "primary.main",
             color: "primary.contrastText",
-            cursor: 'grab',
+            cursor: isDragging ? 'grabbing' : 'grab',
+            userSelect: 'none', // 防止标题栏文字被选中
             '&:active': {
               cursor: 'grabbing',
             },
@@ -296,11 +347,6 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
             <Tooltip title={t("aiAssistant.settings")}>
               <IconButton onClick={() => setSettingsOpen(true)} size="small" sx={{ color: "inherit" }}>
                 <SettingsIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t("aiAssistant.minimize")}>
-              <IconButton onClick={onMinimize} size="small" sx={{ color: "inherit" }}>
-                <MinimizeIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title={t("aiAssistant.close")}>
@@ -329,66 +375,66 @@ const AIChatWindow = ({ open, onClose, onMinimize }) => {
             bgcolor: "background.default",
           }}
         >
-          {messages.length === 0 ? (
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                textAlign: "center",
-                color: "text.secondary",
-              }}
-            >
-              <Typography variant="body2">
-                {t("aiAssistant.noMessages")}
-              </Typography>
-            </Box>
-          ) : (
-            <List sx={{ p: 0 }}>
-              {messages.map((message, index) => (
-                <ListItem
-                  key={index}
+              {messages.length === 0 ? (
+                <Box
                   sx={{
-                    display: "block",
-                    p: 1,
-                    mb: 1,
-                    borderRadius: 1,
-                    bgcolor: message.role === "user" 
-                      ? "primary.main" 
-                      : "background.paper",
-                    color: message.role === "user" 
-                      ? "primary.contrastText" 
-                      : "text.primary",
-                    boxShadow: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: "100%",
+                    textAlign: "center",
+                    color: "text.secondary",
                   }}
                 >
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <Typography variant="body2" sx={{ flex: 1, whiteSpace: "pre-wrap", fontSize: "0.8rem" }}>
-                      {message.content}
-                      {message.streaming && (
-                        <CircularProgress size={10} sx={{ ml: 1 }} />
-                      )}
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleCopyMessage(message.content)}
-                      sx={{ 
-                        ml: 1, 
-                        color: message.role === "user" 
-                          ? "primary.contrastText" 
-                          : "text.secondary" 
+                  <Typography variant="body2">
+                    {t("aiAssistant.noMessages")}
+                  </Typography>
+                </Box>
+              ) : (
+                <List sx={{ p: 0 }}>
+                  {messages.map((message, index) => (
+                    <ListItem
+                      key={index}
+                      sx={{
+                        display: "block",
+                        p: 1,
+                        mb: 1,
+                        borderRadius: 1,
+                        bgcolor: message.role === "user"
+                          ? "primary.main"
+                          : "background.paper",
+                        color: message.role === "user"
+                          ? "primary.contrastText"
+                          : "text.primary",
+                        boxShadow: 1,
                       }}
                     >
-                      <ContentCopyIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </ListItem>
-              ))}
-              <div ref={messagesEndRef} />
-            </List>
-          )}
-        </Box>
+                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <Typography variant="body2" sx={{ flex: 1, whiteSpace: "pre-wrap", fontSize: "0.8rem" }}>
+                          {message.content}
+                          {message.streaming && (
+                            <CircularProgress size={10} sx={{ ml: 1 }} />
+                          )}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleCopyMessage(message.content)}
+                          sx={{
+                            ml: 1,
+                            color: message.role === "user"
+                              ? "primary.contrastText"
+                              : "text.secondary"
+                          }}
+                        >
+                          <ContentCopyIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    </ListItem>
+                  ))}
+                  <div ref={messagesEndRef} />
+                </List>
+              )}
+            </Box>
 
         {/* 输入区域 */}
         <Box

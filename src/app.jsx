@@ -407,7 +407,7 @@ function App() {
   const [commandHistoryOpen, setCommandHistoryOpen] = React.useState(false);
 
   // 全局AI聊天窗口状态
-  const [globalAiChatWindowOpen, setGlobalAiChatWindowOpen] = React.useState(false);
+  const [globalAiChatWindowState, setGlobalAiChatWindowState] = React.useState('closed'); // 'visible', 'closed'
 
 
 
@@ -1009,15 +1009,13 @@ function App() {
 
   // 全局AI聊天窗口处理函数
   const handleToggleGlobalAiChatWindow = () => {
-    setGlobalAiChatWindowOpen(!globalAiChatWindowOpen);
+    setGlobalAiChatWindowState(prev =>
+      prev === 'visible' ? 'closed' : 'visible'
+    );
   };
 
   const handleCloseGlobalAiChatWindow = () => {
-    setGlobalAiChatWindowOpen(false);
-  };
-
-  const handleMinimizeGlobalAiChatWindow = () => {
-    setGlobalAiChatWindowOpen(false);
+    setGlobalAiChatWindowState('closed');
   };
 
 
@@ -1667,11 +1665,11 @@ function App() {
                   color="primary"
                   onClick={handleToggleGlobalAiChatWindow}
                   sx={{
-                    bgcolor: globalAiChatWindowOpen
+                    bgcolor: globalAiChatWindowState === 'visible'
                       ? "action.selected"
                       : "transparent",
                     "&:hover": {
-                      bgcolor: globalAiChatWindowOpen
+                      bgcolor: globalAiChatWindowState === 'visible'
                         ? "action.selected"
                         : "action.hover",
                     },
@@ -1688,9 +1686,8 @@ function App() {
 
       {/* 全局AI聊天窗口 */}
       <AIChatWindow
-        open={globalAiChatWindowOpen}
+        windowState={globalAiChatWindowState}
         onClose={handleCloseGlobalAiChatWindow}
-        onMinimize={handleMinimizeGlobalAiChatWindow}
       />
 
       {/* 关于对话框 */}
