@@ -15,13 +15,18 @@ import {
   Slide,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
+import StopIcon from "@mui/icons-material/Stop";
 import SettingsIcon from "@mui/icons-material/Settings";
 import ClearIcon from "@mui/icons-material/Clear";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import AISettings from "./AISettings.jsx";
+import "highlight.js/styles/github.css"; // 代码高亮样式
 
 const AIAssistant = ({ open, onClose }) => {
   const { t } = useTranslation();
@@ -30,9 +35,31 @@ const AIAssistant = ({ open, onClose }) => {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [currentSessionId, setCurrentSessionId] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const errorTimeoutRef = useRef(null); // 用于错误消息自动清除的定时器
+
+  // 清除错误消息定时器
+  const clearErrorTimeout = () => {
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = null;
+    }
+  };
+
+  // 设置错误消息并启动自动清除定时器
+  const setErrorWithAutoClean = (errorMessage) => {
+    clearErrorTimeout(); // 清除之前的定时器
+    setError(errorMessage);
+
+    // 3秒后自动清除错误消息
+    errorTimeoutRef.current = setTimeout(() => {
+      setError("");
+      errorTimeoutRef.current = null;
+    }, 3000);
+  };
 
   // 滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -67,7 +94,8 @@ const AIAssistant = ({ open, onClose }) => {
     if (!window.terminalAPI?.on) return;
 
     const handleStreamChunk = (data) => {
-      if (data.tabId === "ai" && data.chunk) {
+      // 验证会话ID，防止接收到上一次对话的回复
+      if (data.tabId === "ai" && data.chunk && data.sessionId === currentSessionId) {
         setMessages(prev => {
           const newMessages = [...prev];
           const lastMessage = newMessages[newMessages.length - 1];
@@ -83,11 +111,13 @@ const AIAssistant = ({ open, onClose }) => {
           }
           return newMessages;
         });
+      } else if (data.sessionId !== currentSessionId) {
+        console.log("AIAssistant - 忽略过期会话的数据:", data.sessionId, "当前会话:", currentSessionId);
       }
     };
 
     const handleStreamEnd = (data) => {
-      if (data.tabId === "ai") {
+      if (data.tabId === "ai" && data.sessionId === currentSessionId) {
         setMessages(prev => {
           const newMessages = [...prev];
           const lastMessage = newMessages[newMessages.length - 1];
@@ -97,6 +127,11 @@ const AIAssistant = ({ open, onClose }) => {
           return newMessages;
         });
         setIsLoading(false);
+
+        // 如果是中断结束，清理会话ID
+        if (data.aborted) {
+          setCurrentSessionId(null);
+        }
       }
     };
 
@@ -119,10 +154,21 @@ const AIAssistant = ({ open, onClose }) => {
         window.terminalAPI.removeListener("stream-error", handleStreamError);
       }
     };
-  }, [t]);
+  }, [t, currentSessionId]);
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      clearErrorTimeout();
+    };
+  }, []);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
+
+    // 生成新的会话ID
+    const sessionId = Date.now().toString() + Math.random().toString(36).substring(2, 11);
+    setCurrentSessionId(sessionId);
 
     const userMessage = {
       role: "user",
@@ -133,6 +179,8 @@ const AIAssistant = ({ open, onClose }) => {
     setMessages(prev => [...prev, userMessage]);
     setInputValue("");
     setIsLoading(true);
+    // 清除错误状态和定时器
+    clearErrorTimeout();
     setError("");
 
     try {
@@ -156,6 +204,7 @@ const AIAssistant = ({ open, onClose }) => {
         url: apiUrl,
         apiKey: apiKey,
         model: model,
+        sessionId: sessionId,
         messages: [...messages, userMessage].map(msg => ({
           role: msg.role,
           content: msg.content
@@ -186,7 +235,7 @@ const AIAssistant = ({ open, onClose }) => {
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -195,6 +244,7 @@ const AIAssistant = ({ open, onClose }) => {
 
   const handleClearMessages = () => {
     setMessages([]);
+    clearErrorTimeout();
     setError("");
   };
 
@@ -205,6 +255,154 @@ const AIAssistant = ({ open, onClose }) => {
     } catch (err) {
       console.error("Failed to copy:", err);
     }
+  };
+
+  // 中止当前请求
+  const handleStopRequest = () => {
+    if (isLoading) {
+      setIsLoading(false);
+      setErrorWithAutoClean(t("aiAssistant.requestCancelled"));
+
+      // 如果有正在进行的流式响应，标记最后一条消息为完成状态
+      setMessages(prev => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
+          lastMessage.streaming = false;
+        }
+        return newMessages;
+      });
+
+      // 清理当前会话ID，确保下次请求是新会话
+      setCurrentSessionId(null);
+
+      // 通知后端中止请求（如果API支持）
+      if (window.terminalAPI?.cancelAPIRequest) {
+        window.terminalAPI.cancelAPIRequest();
+      }
+    }
+  };
+
+  // Markdown渲染配置
+  const markdownComponents = {
+    // 自定义代码块样式
+    code: ({ node, inline, className, children, ...props }) => {
+      return !inline ? (
+        <Box
+          component="pre"
+          sx={{
+            bgcolor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100',
+            p: 1.5,
+            borderRadius: 1,
+            overflow: 'auto',
+            fontSize: '0.75rem',
+            fontFamily: 'monospace',
+            border: `1px solid ${theme.palette.divider}`,
+            my: 1,
+            maxWidth: '100%',
+            wordBreak: 'break-all',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          <code className={className} {...props}>
+            {children}
+          </code>
+        </Box>
+      ) : (
+        <Box
+          component="code"
+          sx={{
+            bgcolor: theme.palette.mode === 'dark' ? 'grey.800' : 'grey.200',
+            px: 0.5,
+            py: 0.25,
+            borderRadius: 0.5,
+            fontSize: '0.75rem',
+            fontFamily: 'monospace',
+            wordBreak: 'break-all',
+          }}
+          {...props}
+        >
+          {children}
+        </Box>
+      );
+    },
+    // 自定义段落样式
+    p: ({ children }) => (
+      <Typography
+        variant="body2"
+        sx={{
+          fontSize: '0.8rem',
+          lineHeight: 1.4,
+          mb: 1,
+          wordBreak: 'break-word',
+          overflowWrap: 'break-word',
+          '&:last-child': { mb: 0 },
+        }}
+      >
+        {children}
+      </Typography>
+    ),
+    // 自定义列表样式
+    ul: ({ children }) => (
+      <Box component="ul" sx={{
+        pl: 2,
+        my: 1,
+        fontSize: '0.8rem',
+        wordBreak: 'break-word',
+        overflowWrap: 'break-word',
+      }}>
+        {children}
+      </Box>
+    ),
+    ol: ({ children }) => (
+      <Box component="ol" sx={{
+        pl: 2,
+        my: 1,
+        fontSize: '0.8rem',
+        wordBreak: 'break-word',
+        overflowWrap: 'break-word',
+      }}>
+        {children}
+      </Box>
+    ),
+    // 自定义表格样式
+    table: ({ children }) => (
+      <Box
+        component="table"
+        sx={{
+          width: '100%',
+          maxWidth: '100%',
+          borderCollapse: 'collapse',
+          my: 1,
+          fontSize: '0.75rem',
+          overflow: 'auto',
+          display: 'block',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {children}
+      </Box>
+    ),
+    // 自定义链接样式
+    a: ({ children, href }) => (
+      <Box
+        component="a"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        sx={{
+          color: 'primary.main',
+          textDecoration: 'underline',
+          wordBreak: 'break-all',
+          overflowWrap: 'break-word',
+          '&:hover': {
+            color: 'primary.dark',
+          },
+        }}
+      >
+        {children}
+      </Box>
+    ),
   };
 
   const formatTimestamp = (timestamp) => {
@@ -262,7 +460,10 @@ const AIAssistant = ({ open, onClose }) => {
         {/* 错误提示 */}
         {error && (
           <Box sx={{ p: 1 }}>
-            <Alert severity="error" size="small" onClose={() => setError("")}>
+            <Alert severity="error" size="small" onClose={() => {
+              clearErrorTimeout();
+              setError("");
+            }}>
               {error}
             </Alert>
           </Box>
@@ -327,20 +528,50 @@ const AIAssistant = ({ open, onClose }) => {
                   }}
                 >
                   <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <Typography
-                      variant="body2"
+                    <Box
                       sx={{
                         flex: 1,
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word", // 确保长文本能正确换行
-                        lineHeight: 1.4,
+                        maxWidth: '100%',
+                        wordBreak: "break-word",
+                        overflowWrap: 'break-word',
+                        '& > *:first-of-type': { mt: 0 },
+                        '& > *:last-child': { mb: 0 },
+                        '& pre': {
+                          maxWidth: '100%',
+                          overflow: 'auto',
+                        },
+                        '& table': {
+                          maxWidth: '100%',
+                          overflow: 'auto',
+                          display: 'block',
+                        },
                       }}
                     >
-                      {message.content}
-                      {message.streaming && (
-                        <CircularProgress size={12} sx={{ ml: 1 }} />
+                      {message.role === "assistant" ? (
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          rehypePlugins={[rehypeHighlight]}
+                          components={markdownComponents}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      ) : (
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            whiteSpace: "pre-wrap",
+                            fontSize: "0.8rem",
+                            lineHeight: 1.4,
+                            m: 0,
+                          }}
+                        >
+                          {message.content}
+                        </Typography>
                       )}
-                    </Typography>
+                      {message.streaming && (
+                        <CircularProgress size={12} sx={{ ml: 1, display: 'inline-block' }} />
+                      )}
+                    </Box>
                     <IconButton
                       size="small"
                       onClick={() => handleCopyMessage(message.content)}
@@ -386,8 +617,15 @@ const AIAssistant = ({ open, onClose }) => {
             <TextField
               ref={inputRef}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                // 用户开始输入时立即清除错误消息
+                if (error) {
+                  clearErrorTimeout();
+                  setError("");
+                }
+              }}
+              onKeyDown={handleKeyDown}
               placeholder={t("aiAssistant.placeholder")}
               multiline
               maxRows={3}
@@ -397,12 +635,12 @@ const AIAssistant = ({ open, onClose }) => {
               variant="outlined"
             />
             <IconButton
-              onClick={handleSendMessage}
-              disabled={!inputValue.trim() || isLoading}
-              color="primary"
+              onClick={isLoading ? handleStopRequest : handleSendMessage}
+              disabled={!isLoading && !inputValue.trim()}
+              color={isLoading ? "error" : "primary"}
               sx={{ alignSelf: "flex-end" }}
             >
-              {isLoading ? <CircularProgress size={20} /> : <SendIcon />}
+              {isLoading ? <StopIcon /> : <SendIcon />}
             </IconButton>
           </Box>
         </Box>

@@ -246,10 +246,10 @@ const AISettings = ({ open, onClose }) => {
                 max={32000}
                 step={100}
                 marks={[
-                  { value: 100, label: "100" },
-                  { value: 2000, label: "2000" },
+                  { value: 1000, label: "1000" },
                   { value: 4000, label: "4000" },
                   { value: 8000, label: "8000" },
+                  { value: 12000, label: "12000" },
                   { value: 16000, label: "16000" },
                   { value: 32000, label: "32000" },
                 ]}
@@ -266,6 +266,7 @@ const AISettings = ({ open, onClose }) => {
                 step={0.1}
                 marks={[
                   { value: 0, label: "0" },
+                  { value: 0.5, label: "0.5" },
                   { value: 0.7, label: "0.7" },
                   { value: 1, label: "1" },
                   { value: 2, label: "2" },

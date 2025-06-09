@@ -102,7 +102,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   sendAPIRequest: (requestData, isStream) =>
     ipcRenderer.invoke("ai:sendAPIRequest", requestData, isStream),
   // 新增: 中断API请求的方法
-  abortAPIRequest: () => ipcRenderer.invoke("ai:abortAPIRequest"),
+  cancelAPIRequest: () => ipcRenderer.invoke("ai:abortAPIRequest"),
   // 新增: API配置管理方法
   saveApiConfig: (config) => ipcRenderer.invoke("ai:saveApiConfig", config),
   deleteApiConfig: (configId) =>

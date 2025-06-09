@@ -173,7 +173,8 @@
       "floatingButton": "AI Assistant",
       "minimize": "Minimize",
       "maximize": "Maximize",
-      "close": "Close"
+      "close": "Close",
+      "requestCancelled": "Request cancelled"
     },
     "aiSettings": {
       "title": "AI Settings",
