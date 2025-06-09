@@ -4,6 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 const SftpClient = require("ssh2-sftp-client"); // For direct SFTP operations if not going through sftpCore's queue for all parts.
+const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 
 let logToFile = null;
 let sftpCore = null; // To access getSftpSession, enqueueSftpOperation, calculateDynamicTimeout
@@ -120,28 +121,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
           keepaliveCountMax: 3, // 最多3次keepalive失败
           readyTimeout: 60000, // 连接准备超时60秒
           timeout: 0, // 不设置全局超时，让操作级别的超时来控制
-          algorithms: {
-            serverHostKey: [
-              "ssh-rsa",
-              "ssh-dss",
-              "ecdsa-sha2-nistp256",
-              "ecdsa-sha2-nistp384",
-              "ecdsa-sha2-nistp521",
-            ],
-            kex: [
-              "diffie-hellman-group14-sha256",
-              "diffie-hellman-group14-sha1",
-              "diffie-hellman-group-exchange-sha256",
-            ],
-            cipher: [
-              "aes128-ctr",
-              "aes192-ctr",
-              "aes256-ctr",
-              "aes128-gcm",
-              "aes256-gcm",
-            ],
-            hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
-          },
+          algorithms: getBasicSSHAlgorithms(),
         });
 
         const stats = await sftp.stat(remotePath);
@@ -374,28 +354,7 @@ async function handleUploadFile(
           keepaliveCountMax: 3, // 最多3次keepalive失败
           readyTimeout: 60000, // 连接准备超时60秒
           timeout: 0, // 不设置全局超时，让操作级别的超时来控制
-          algorithms: {
-            serverHostKey: [
-              "ssh-rsa",
-              "ssh-dss",
-              "ecdsa-sha2-nistp256",
-              "ecdsa-sha2-nistp384",
-              "ecdsa-sha2-nistp521",
-            ],
-            kex: [
-              "diffie-hellman-group14-sha256",
-              "diffie-hellman-group14-sha1",
-              "diffie-hellman-group-exchange-sha256",
-            ],
-            cipher: [
-              "aes128-ctr",
-              "aes192-ctr",
-              "aes256-ctr",
-              "aes128-gcm",
-              "aes256-gcm",
-            ],
-            hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
-          },
+          algorithms: getBasicSSHAlgorithms(),
         });
 
         // Ensure target directory exists
@@ -881,28 +840,7 @@ async function handleUploadFolder(
           keepaliveCountMax: 3, // 最多3次keepalive失败
           readyTimeout: 60000, // 连接准备超时60秒
           timeout: 0, // 不设置全局超时，让操作级别的超时来控制
-          algorithms: {
-            serverHostKey: [
-              "ssh-rsa",
-              "ssh-dss",
-              "ecdsa-sha2-nistp256",
-              "ecdsa-sha2-nistp384",
-              "ecdsa-sha2-nistp521",
-            ],
-            kex: [
-              "diffie-hellman-group14-sha256",
-              "diffie-hellman-group14-sha1",
-              "diffie-hellman-group-exchange-sha256",
-            ],
-            cipher: [
-              "aes128-ctr",
-              "aes192-ctr",
-              "aes256-ctr",
-              "aes128-gcm",
-              "aes256-gcm",
-            ],
-            hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
-          },
+          algorithms: getBasicSSHAlgorithms(),
         });
         logToFile(
           `sftpTransfer: SFTP connected for folder upload to ${sshConfig.host}. TransferKey: ${transferKey}`,
@@ -1325,28 +1263,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           keepaliveCountMax: 3, // 最多3次keepalive失败
           readyTimeout: 60000, // 连接准备超时60秒
           timeout: 0, // 不设置全局超时，让操作级别的超时来控制
-          algorithms: {
-            serverHostKey: [
-              "ssh-rsa",
-              "ssh-dss",
-              "ecdsa-sha2-nistp256",
-              "ecdsa-sha2-nistp384",
-              "ecdsa-sha2-nistp521",
-            ],
-            kex: [
-              "diffie-hellman-group14-sha256",
-              "diffie-hellman-group14-sha1",
-              "diffie-hellman-group-exchange-sha256",
-            ],
-            cipher: [
-              "aes128-ctr",
-              "aes192-ctr",
-              "aes256-ctr",
-              "aes128-gcm",
-              "aes256-gcm",
-            ],
-            hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
-          },
+          algorithms: getBasicSSHAlgorithms(),
         });
         logToFile(
           `sftpTransfer: SFTP connected for folder download from ${sshConfig.host}. TransferKey: ${transferKey}`,

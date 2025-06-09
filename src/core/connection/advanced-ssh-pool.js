@@ -1,6 +1,7 @@
 const { EventEmitter } = require("events");
 const Client = require("ssh2").Client;
 const { logToFile } = require("../../core/utils/logger");
+const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 
 // 连接池配置
 const DEFAULT_CONFIG = {
@@ -329,6 +330,7 @@ class AdvancedSSHPool extends EventEmitter {
       keepaliveInterval: 30000,
       keepaliveCountMax: 3,
       readyTimeout: this.config.connectionTimeout,
+      algorithms: getBasicSSHAlgorithms(),
     };
 
     if (sshConfig.password) {

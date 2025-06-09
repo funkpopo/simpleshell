@@ -1,5 +1,6 @@
 const Client = require("ssh2").Client;
 const { logToFile } = require("../../core/utils/logger");
+const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 
 // 连接池配置常量
 const MAX_CONNECTIONS = 10; // 最大连接数
@@ -130,6 +131,7 @@ class SSHConnectionPool {
         host: sshConfig.host,
         port: sshConfig.port || 22,
         username: sshConfig.username,
+        algorithms: getBasicSSHAlgorithms(),
       };
 
       // 添加认证方式
