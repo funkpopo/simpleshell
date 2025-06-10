@@ -380,7 +380,7 @@ const AIAssistant = ({ open, onClose }) => {
 
       // 如果有思考内容，也包含在复制内容中
       if (message.thinkContent) {
-        contentToCopy = `<think>\n${message.thinkContent}\n</think>\n\n${contentToCopy}`;
+        contentToCopy = `<think>${message.thinkContent}</think>${contentToCopy}`;
       }
 
       await navigator.clipboard.writeText(contentToCopy);
