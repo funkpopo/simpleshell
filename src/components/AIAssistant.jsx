@@ -167,6 +167,12 @@ const AIAssistant = ({ open, onClose }) => {
         if (streamThinkProcessorRef.current) {
           const finalResult = streamThinkProcessorRef.current.finalize();
 
+          console.log("[AIAssistant] 流式响应结束，最终处理结果:", {
+            thinkContentLength: finalResult.thinkContent.length,
+            normalContentLength: finalResult.normalContent.length,
+            sessionId: currentSessionId
+          });
+
           setMessages((prev) => {
             const newMessages = [...prev];
             const lastMessage = newMessages[newMessages.length - 1];
@@ -175,9 +181,28 @@ const AIAssistant = ({ open, onClose }) => {
               lastMessage.role === "assistant" &&
               lastMessage.streaming
             ) {
+              // 额外的安全检查：对最终内容进行强制二次处理
+              const combinedRawContent = (finalResult.thinkContent ? `<think>${finalResult.thinkContent}</think>` : '') +
+                                       finalResult.normalContent;
+
+              const { thinkContent: finalThinkContent, normalContent: finalNormalContent } =
+                parseThinkContent(combinedRawContent);
+
+              console.log("[AIAssistant] 强制二次处理结果:", {
+                beforeThinkLength: finalResult.thinkContent.length,
+                afterThinkLength: finalThinkContent.length,
+                beforeNormalLength: finalResult.normalContent.length,
+                afterNormalLength: finalNormalContent.length
+              });
+
               lastMessage.streaming = false;
-              lastMessage.content = finalResult.normalContent;
-              lastMessage.thinkContent = finalResult.thinkContent;
+              lastMessage.content = finalNormalContent;
+              lastMessage.thinkContent = finalThinkContent;
+
+              // 添加处理完成的标记，便于调试
+              lastMessage.processedAt = Date.now();
+              lastMessage.hasThinkContent = !!finalThinkContent;
+              lastMessage.finalProcessed = true;
             }
             return newMessages;
           });

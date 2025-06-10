@@ -65,6 +65,8 @@ export class StreamThinkProcessor {
     this.currentThinkContent = "";
     this.normalContent = "";
     this.pendingThinkContent = "";
+    // 保存原始流式内容，用于最终的二次处理
+    this.rawStreamContent = "";
   }
 
   /**
@@ -82,6 +84,8 @@ export class StreamThinkProcessor {
       };
     }
 
+    // 保存原始流式内容
+    this.rawStreamContent += chunk;
     this.buffer += chunk;
     let hasUpdate = false;
     let newThinkContent = "";
@@ -183,10 +187,131 @@ export class StreamThinkProcessor {
       this.normalContent += this.buffer;
     }
 
+    console.log("[StreamThinkProcessor] finalize - 开始最终处理:", {
+      rawStreamContentLength: this.rawStreamContent.length,
+      currentThinkContentLength: this.currentThinkContent.length,
+      normalContentLength: this.normalContent.length,
+      isInThinkTag: this.isInThinkTag,
+      bufferLength: this.buffer.length
+    });
+
+    // 关键改进：直接对原始流式内容进行完整的二次处理
+    const rawProcessingResult = parseThinkContent(this.rawStreamContent);
+
+    console.log("[StreamThinkProcessor] 原始内容二次处理结果:", {
+      rawThinkContentLength: rawProcessingResult.thinkContent.length,
+      rawNormalContentLength: rawProcessingResult.normalContent.length
+    });
+
+    // 如果原始内容处理得到了更好的结果，使用它
+    if (rawProcessingResult.thinkContent.length > this.currentThinkContent.length ||
+        (rawProcessingResult.thinkContent.length > 0 && this.currentThinkContent.length === 0)) {
+      console.log("[StreamThinkProcessor] 使用原始内容处理结果");
+      return {
+        thinkContent: rawProcessingResult.thinkContent,
+        normalContent: rawProcessingResult.normalContent,
+      };
+    }
+
+    // 否则使用流式处理的结果
     return {
       thinkContent: this.currentThinkContent.trim(),
       normalContent: this.normalContent.trim(),
     };
+  }
+
+  /**
+   * 重新构建完整内容，包括可能被分离的think标签
+   * @returns {string} - 重新构建的完整内容
+   */
+  reconstructFullContent() {
+    // 如果有思考内容，需要重新包装成完整的标签格式
+    let fullContent = "";
+
+    if (this.currentThinkContent.trim()) {
+      fullContent += `<think>${this.currentThinkContent.trim()}</think>\n\n`;
+    }
+
+    if (this.normalContent.trim()) {
+      fullContent += this.normalContent.trim();
+    }
+
+    console.log("[StreamThinkProcessor] 重新构建内容:", {
+      hasThinkContent: !!this.currentThinkContent.trim(),
+      hasNormalContent: !!this.normalContent.trim(),
+      fullContentLength: fullContent.length,
+      fullContentPreview: fullContent.substring(0, 100) + (fullContent.length > 100 ? "..." : "")
+    });
+
+    return fullContent;
+  }
+
+  /**
+   * 执行二次处理，修复可能的标签截断问题
+   * @param {string} fullContent - 重新构建的完整内容
+   * @returns {Object} - { thinkContent: string, normalContent: string }
+   */
+  performSecondaryProcessing(fullContent) {
+    if (!fullContent || !fullContent.trim()) {
+      return {
+        thinkContent: this.currentThinkContent.trim(),
+        normalContent: this.normalContent.trim(),
+      };
+    }
+
+    // 总是执行二次处理，确保标签被正确解析
+    console.log("[StreamThinkProcessor] 执行二次处理，重新解析完整内容");
+
+    // 使用parseThinkContent重新处理整个内容
+    const reprocessedResult = parseThinkContent(fullContent);
+
+    console.log("[StreamThinkProcessor] 二次处理结果:", {
+      originalThinkLength: this.currentThinkContent.length,
+      originalNormalLength: this.normalContent.length,
+      reprocessedThinkLength: reprocessedResult.thinkContent.length,
+      reprocessedNormalLength: reprocessedResult.normalContent.length,
+      hasImprovement: reprocessedResult.thinkContent.length > this.currentThinkContent.length ||
+                     reprocessedResult.normalContent.length !== this.normalContent.length
+    });
+
+    // 如果二次处理发现了更多内容，使用二次处理的结果
+    if (reprocessedResult.thinkContent.length > 0 ||
+        reprocessedResult.normalContent.length !== this.normalContent.length) {
+      return reprocessedResult;
+    }
+
+    // 否则返回原始结果
+    return {
+      thinkContent: this.currentThinkContent.trim(),
+      normalContent: this.normalContent.trim(),
+    };
+  }
+
+  /**
+   * 检查是否需要二次处理
+   * @param {string} content - 要检查的内容
+   * @returns {boolean} - 是否需要二次处理
+   */
+  needsSecondaryProcessing(content) {
+    if (!content) return false;
+
+    // 检查是否有不完整的think标签
+    const hasIncompleteOpenTag = /<think(?!>)/i.test(content);
+    const hasIncompleteCloseTag = /<\/think(?!>)/i.test(content);
+    const hasUnmatchedTags = this.hasUnmatchedThinkTags(content);
+
+    return hasIncompleteOpenTag || hasIncompleteCloseTag || hasUnmatchedTags;
+  }
+
+  /**
+   * 检查是否有不匹配的think标签
+   * @param {string} content - 要检查的内容
+   * @returns {boolean} - 是否有不匹配的标签
+   */
+  hasUnmatchedThinkTags(content) {
+    const openTags = (content.match(/<think>/gi) || []).length;
+    const closeTags = (content.match(/<\/think>/gi) || []).length;
+    return openTags !== closeTags;
   }
 
   /**
@@ -198,6 +323,7 @@ export class StreamThinkProcessor {
     this.currentThinkContent = "";
     this.normalContent = "";
     this.pendingThinkContent = "";
+    this.rawStreamContent = "";
   }
 
   /**
@@ -243,4 +369,110 @@ export function cleanIncompleteThinkTags(content) {
   content = content.replace(/(?<!<think>[\s\S]*?)<\/think>/gi, "");
 
   return content;
+}
+
+/**
+ * 验证think标签的完整性
+ * @param {string} content - 要验证的内容
+ * @returns {Object} - 验证结果 { isValid: boolean, issues: string[] }
+ */
+export function validateThinkTags(content) {
+  if (!content || typeof content !== "string") {
+    return { isValid: true, issues: [] };
+  }
+
+  const issues = [];
+
+  // 检查不完整的开始标签
+  const incompleteOpenTags = content.match(/<think(?!>)/gi);
+  if (incompleteOpenTags) {
+    issues.push(`发现${incompleteOpenTags.length}个不完整的开始标签`);
+  }
+
+  // 检查不完整的结束标签
+  const incompleteCloseTags = content.match(/<\/think(?!>)/gi);
+  if (incompleteCloseTags) {
+    issues.push(`发现${incompleteCloseTags.length}个不完整的结束标签`);
+  }
+
+  // 检查标签匹配
+  const openTags = (content.match(/<think>/gi) || []).length;
+  const closeTags = (content.match(/<\/think>/gi) || []).length;
+
+  if (openTags !== closeTags) {
+    issues.push(`标签不匹配：${openTags}个开始标签，${closeTags}个结束标签`);
+  }
+
+  return {
+    isValid: issues.length === 0,
+    issues,
+    stats: { openTags, closeTags }
+  };
+}
+
+/**
+ * 修复think内容的完整性问题
+ * @param {string} content - 要修复的内容
+ * @returns {Object} - 修复结果 { thinkContent: string, normalContent: string, repaired: boolean }
+ */
+export function repairThinkContent(content) {
+  if (!content || typeof content !== "string") {
+    return {
+      thinkContent: "",
+      normalContent: content || "",
+      repaired: false
+    };
+  }
+
+  const validation = validateThinkTags(content);
+
+  if (validation.isValid) {
+    // 内容完整，直接解析
+    const result = parseThinkContent(content);
+    return {
+      ...result,
+      repaired: false
+    };
+  }
+
+  console.log("[repairThinkContent] 检测到标签问题，尝试修复:", validation.issues);
+
+  // 尝试修复内容
+  let repairedContent = content;
+
+  // 移除不完整的标签片段
+  repairedContent = repairedContent.replace(/<think(?!>)[^>]*$/gi, "");
+  repairedContent = repairedContent.replace(/<\/think(?!>)[^>]*$/gi, "");
+  repairedContent = repairedContent.replace(/^[^<]*?(?=<think>|<\/think>|$)/gi, "");
+
+  // 如果有未匹配的开始标签，尝试添加结束标签
+  const openTags = (repairedContent.match(/<think>/gi) || []).length;
+  const closeTags = (repairedContent.match(/<\/think>/gi) || []).length;
+
+  if (openTags > closeTags) {
+    const missingCloseTags = openTags - closeTags;
+    repairedContent += "</think>".repeat(missingCloseTags);
+    console.log(`[repairThinkContent] 添加了${missingCloseTags}个缺失的结束标签`);
+  } else if (closeTags > openTags) {
+    // 移除多余的结束标签
+    const extraCloseTags = closeTags - openTags;
+    for (let i = 0; i < extraCloseTags; i++) {
+      repairedContent = repairedContent.replace(/<\/think>/, "");
+    }
+    console.log(`[repairThinkContent] 移除了${extraCloseTags}个多余的结束标签`);
+  }
+
+  const result = parseThinkContent(repairedContent);
+
+  console.log("[repairThinkContent] 修复完成:", {
+    originalLength: content.length,
+    repairedLength: repairedContent.length,
+    thinkContentLength: result.thinkContent.length,
+    normalContentLength: result.normalContent.length
+  });
+
+  return {
+    ...result,
+    repaired: true
+  };
 }
