@@ -28,6 +28,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import AISettings from "./AISettings.jsx";
+import ThinkContent from "./ThinkContent.jsx";
+import { StreamThinkProcessor, parseThinkContent } from "../utils/thinkContentProcessor.js";
 import "react-resizable/css/styles.css";
 import "highlight.js/styles/github.css"; // 代码高亮样式
 
@@ -68,6 +70,9 @@ const AIChatWindow = ({ windowState, onClose }) => {
   const [apiConfigs, setApiConfigs] = useState([]);
   const [currentApiId, setCurrentApiId] = useState(null);
   const [currentApiName, setCurrentApiName] = useState("");
+
+  // 思考内容处理器
+  const streamThinkProcessorRef = useRef(null);
 
   // 窗口位置和尺寸状态
   const [windowSize, setWindowSize] = useState({ width: 350, height: 450 });
@@ -198,15 +203,28 @@ const AIChatWindow = ({ windowState, onClose }) => {
     const handleStreamChunk = (data) => {
       // 验证会话ID，防止接收到上一次对话的回复
       if (data.tabId === "ai" && data.chunk && data.sessionId === currentSessionId) {
+        // 初始化思考内容处理器（如果还没有）
+        if (!streamThinkProcessorRef.current) {
+          streamThinkProcessorRef.current = new StreamThinkProcessor();
+        }
+
+        // 处理数据块
+        const result = streamThinkProcessorRef.current.processChunk(data.chunk);
+
         setMessages(prev => {
           const newMessages = [...prev];
           const lastMessage = newMessages[newMessages.length - 1];
+
           if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
-            lastMessage.content += data.chunk;
+            // 更新现有消息
+            lastMessage.content = result.normalContent;
+            lastMessage.thinkContent = result.thinkContent;
           } else {
+            // 创建新消息
             const newMessage = {
               role: "assistant",
-              content: data.chunk,
+              content: result.normalContent,
+              thinkContent: result.thinkContent,
               timestamp: Date.now(),
               streaming: true,
             };
@@ -219,14 +237,34 @@ const AIChatWindow = ({ windowState, onClose }) => {
 
     const handleStreamEnd = (data) => {
       if (data.tabId === "ai" && data.sessionId === currentSessionId) {
-        setMessages(prev => {
-          const newMessages = [...prev];
-          const lastMessage = newMessages[newMessages.length - 1];
-          if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
-            lastMessage.streaming = false;
-          }
-          return newMessages;
-        });
+        // 完成思考内容处理
+        if (streamThinkProcessorRef.current) {
+          const finalResult = streamThinkProcessorRef.current.finalize();
+
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastMessage = newMessages[newMessages.length - 1];
+            if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
+              lastMessage.streaming = false;
+              lastMessage.content = finalResult.normalContent;
+              lastMessage.thinkContent = finalResult.thinkContent;
+            }
+            return newMessages;
+          });
+
+          // 重置处理器
+          streamThinkProcessorRef.current = null;
+        } else {
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastMessage = newMessages[newMessages.length - 1];
+            if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
+              lastMessage.streaming = false;
+            }
+            return newMessages;
+          });
+        }
+
         setIsLoading(false);
 
         // 如果是中断结束，清理会话ID
@@ -308,9 +346,13 @@ const AIChatWindow = ({ windowState, onClose }) => {
       } else {
         const result = await window.terminalAPI.sendAPIRequest(requestData, false);
         if (result && result.choices && result.choices[0]) {
+          const rawContent = result.choices[0].message.content;
+          const { thinkContent, normalContent } = parseThinkContent(rawContent);
+
           const assistantMessage = {
             role: "assistant",
-            content: result.choices[0].message.content,
+            content: normalContent,
+            thinkContent: thinkContent,
             timestamp: Date.now(),
           };
           setMessages(prev => [...prev, assistantMessage]);
@@ -338,9 +380,16 @@ const AIChatWindow = ({ windowState, onClose }) => {
     setError("");
   };
 
-  const handleCopyMessage = async (content) => {
+  const handleCopyMessage = async (message) => {
     try {
-      await navigator.clipboard.writeText(content);
+      let contentToCopy = message.content || '';
+
+      // 如果有思考内容，也包含在复制内容中
+      if (message.thinkContent) {
+        contentToCopy = `<think>\n${message.thinkContent}\n</think>\n\n${contentToCopy}`;
+      }
+
+      await navigator.clipboard.writeText(contentToCopy);
     } catch (err) {
       console.error("Failed to copy:", err);
     }
@@ -818,13 +867,27 @@ const AIChatWindow = ({ windowState, onClose }) => {
                       }}
                     >
                       {message.role === "assistant" ? (
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[rehypeHighlight]}
-                          components={markdownComponents}
-                        >
-                          {message.content}
-                        </ReactMarkdown>
+                        <Box>
+                          {/* 思考内容 */}
+                          {message.thinkContent && (
+                            <ThinkContent
+                              content={message.thinkContent}
+                              defaultExpanded={false}
+                              variant="minimal"
+                            />
+                          )}
+
+                          {/* 正常回复内容 */}
+                          {message.content && (
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              rehypePlugins={[rehypeHighlight]}
+                              components={markdownComponents}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
+                          )}
+                        </Box>
                       ) : (
                         <Typography
                           variant="body2"
@@ -844,7 +907,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
                     </Box>
                     <IconButton
                       size="small"
-                      onClick={() => handleCopyMessage(message.content)}
+                      onClick={() => handleCopyMessage(message)}
                       sx={{
                         ml: 1,
                         color: message.role === "user"
