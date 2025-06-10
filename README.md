@@ -2,55 +2,57 @@
   <img src="src/assets/SimpleShell.png" style="width:100px"/>
 </p>
 
-# SimpleShell - Electron + React 终端应用
+[中文](README_zh.md)
 
-这是一个使用 Electron 和 React 构建的终端应用，结合了 Electron 的桌面应用能力和 React 的现代 Web 开发体验。
+# **SimpleShell - An Electron + React Terminal Application**
 
-## 特性
+This is a terminal application built with Electron and React, combining the desktop application capabilities of Electron with the modern web development experience of React.
 
-- 使用Electron-forge构建
-- 使用 React 和 Material UI 组件库
-- 支持暗黑模式
-- 离线使用
-- 跨平台支持 (Windows, macOS, Linux)
-- 使用Xterm.js和SSH2实现SSH和SFTP功能
-- 允许SFTP上传下载文件夹
-- AI支持
+## **Features**
 
-## 开发
+* Built with Electron-forge  
+* Uses React and the Material UI component library  
+* Dark mode support  
+* Offline usage  
+* Cross-platform support (Windows, macOS, Linux)  
+* Implements SSH and SFTP functionality using Xterm.js and SSH2  
+* Allows SFTP folder uploads and downloads  
+* AI support
 
-### 前提条件
+## **Development**
 
-- Node.js 22+ 和 npm
+### **Prerequisites**
 
-### 安装依赖
+* Node.js 22+ and npm
+
+### **Install Dependencies**
 
 ```bash
 npm install
 ```
 
-### 开发模式
+### **Development Mode**
 
 ```bash
 npm run start
 ```
 
-这将启动 React 开发服务器和 Electron 应用。
+This will start the React development server and the Electron application.
 
-### 构建应用
+### **Build Application**
 
 ```bash
-npm run build
+npm run make
 ```
 
-这将构建 React 应用和 Electron 应用，并生成可分发的安装包。
+This will build the React application and the Electron application, and generate distributable installers.
 
-## 技术栈
+## **Tech Stack**
 
-- [Electron](https://www.electronjs.org/) - 跨平台桌面应用框架
-- [Material UI](https://mui.com/material-ui/) - 组件库
-- [TypeScript](https://www.typescriptlang.org/) - 类型安全的 JavaScript
+* [Electron](https://www.electronjs.org/) \- Cross-platform desktop application framework  
+* [Material UI](https://mui.com/material-ui/) \- Component library  
+* [TypeScript](https://www.typescriptlang.org/) \- Typed JavaScript
 
-## 许可证
+## **License**
 
-Apache - 2.0
+Apache \- 2.0
