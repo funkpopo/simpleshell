@@ -34,9 +34,9 @@ function init(
   }
   sftpCore = core;
 
-  if (!electronDialog) dialog = electronDialog;
+  if (electronDialog) dialog = electronDialog;
 
-  if (!electronShell) shell = electronShell;
+  if (electronShell) shell = electronShell;
 
   if (typeof getChildProcessInfoFunc !== "function") {
   }
