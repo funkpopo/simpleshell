@@ -10,20 +10,20 @@ This is a terminal application built with Electron and React, combining the desk
 
 ## **Features**
 
-* Built with Electron-forge  
-* Uses React and the Material UI component library  
-* Dark mode support  
-* Offline usage  
-* Cross-platform support (Windows, macOS, Linux)  
-* Implements SSH and SFTP functionality using Xterm.js and SSH2  
-* Allows SFTP folder uploads and downloads  
-* AI support
+- Built with Electron-forge
+- Uses React and the Material UI component library
+- Dark mode support
+- Offline usage
+- Cross-platform support (Windows, macOS, Linux)
+- Implements SSH and SFTP functionality using Xterm.js and SSH2
+- Allows SFTP folder uploads and downloads
+- AI support
 
 ## **Development**
 
 ### **Prerequisites**
 
-* Node.js 22+ and npm
+- Node.js 22+ and npm
 
 ### **Install Dependencies**
 
@@ -49,9 +49,9 @@ This will build the React application and the Electron application, and generate
 
 ## **Tech Stack**
 
-* [Electron](https://www.electronjs.org/) \- Cross-platform desktop application framework  
-* [Material UI](https://mui.com/material-ui/) \- Component library  
-* [TypeScript](https://www.typescriptlang.org/) \- Typed JavaScript
+- [Electron](https://www.electronjs.org/) \- Cross-platform desktop application framework
+- [Material UI](https://mui.com/material-ui/) \- Component library
+- [TypeScript](https://www.typescriptlang.org/) \- Typed JavaScript
 
 ## **License**
 

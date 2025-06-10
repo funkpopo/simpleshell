@@ -9,43 +9,49 @@
  * @returns {Object} - { thinkContent: string, normalContent: string }
  */
 export function parseThinkContent(content) {
-  if (!content || typeof content !== 'string') {
-    return { thinkContent: '', normalContent: content || '' };
+  if (!content || typeof content !== "string") {
+    return { thinkContent: "", normalContent: content || "" };
   }
 
-  // 使用正则表达式匹配<think></think>标签
-  const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
+  // 使用更严格的正则表达式匹配<think></think>标签
+  const thinkRegex = /<think>\s*([\s\S]*?)\s*<\/think>/gi;
   const matches = [];
   let match;
 
   // 提取所有思考内容
   while ((match = thinkRegex.exec(content)) !== null) {
-    matches.push({
-      fullMatch: match[0],
-      thinkContent: match[1].trim(),
-      startIndex: match.index,
-      endIndex: match.index + match[0].length
-    });
+    const thinkContent = match[1].trim();
+    if (thinkContent) {
+      // 只添加非空的思考内容
+      matches.push({
+        fullMatch: match[0],
+        thinkContent: thinkContent,
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+      });
+    }
   }
 
   if (matches.length === 0) {
-    return { thinkContent: '', normalContent: content };
+    return { thinkContent: "", normalContent: content };
   }
 
   // 合并所有思考内容
-  const thinkContent = matches.map(m => m.thinkContent).join('\n\n');
+  const thinkContent = matches.map((m) => m.thinkContent).join("\n\n");
 
   // 移除思考标签，保留正常内容
   let normalContent = content;
-  matches.reverse().forEach(match => {
-    normalContent = normalContent.substring(0, match.startIndex) + 
-                   normalContent.substring(match.endIndex);
+  matches.reverse().forEach((match) => {
+    normalContent =
+      normalContent.substring(0, match.startIndex) +
+      normalContent.substring(match.endIndex);
   });
 
-  return {
+  const result = {
     thinkContent: thinkContent.trim(),
-    normalContent: normalContent.trim()
+    normalContent: normalContent.trim(),
   };
+  return result;
 }
 
 /**
@@ -54,11 +60,11 @@ export function parseThinkContent(content) {
  */
 export class StreamThinkProcessor {
   constructor() {
-    this.buffer = '';
+    this.buffer = "";
     this.isInThinkTag = false;
-    this.currentThinkContent = '';
-    this.normalContent = '';
-    this.pendingThinkContent = '';
+    this.currentThinkContent = "";
+    this.normalContent = "";
+    this.pendingThinkContent = "";
   }
 
   /**
@@ -68,13 +74,18 @@ export class StreamThinkProcessor {
    */
   processChunk(chunk) {
     if (!chunk) {
-      return { hasUpdate: false, thinkContent: '', normalContent: '', isComplete: true };
+      return {
+        hasUpdate: false,
+        thinkContent: "",
+        normalContent: "",
+        isComplete: true,
+      };
     }
 
     this.buffer += chunk;
     let hasUpdate = false;
-    let newThinkContent = '';
-    let newNormalContent = '';
+    let newThinkContent = "";
+    let newNormalContent = "";
 
     // 检查是否有完整的<think>标签
     const openTagRegex = /<think>/gi;
@@ -88,7 +99,7 @@ export class StreamThinkProcessor {
       if (!this.isInThinkTag) {
         // 进入思考模式
         this.isInThinkTag = true;
-        
+
         // 将开始标签之前的内容作为正常内容
         const beforeTag = this.buffer.substring(0, openMatch.index);
         if (beforeTag) {
@@ -97,7 +108,9 @@ export class StreamThinkProcessor {
         }
 
         // 更新缓冲区，移除已处理的内容
-        this.buffer = this.buffer.substring(openMatch.index + openMatch[0].length);
+        this.buffer = this.buffer.substring(
+          openMatch.index + openMatch[0].length,
+        );
         openTagRegex.lastIndex = 0; // 重置正则表达式索引
         break;
       }
@@ -107,47 +120,51 @@ export class StreamThinkProcessor {
     if (this.isInThinkTag) {
       closeTagRegex.lastIndex = 0;
       closeMatch = closeTagRegex.exec(this.buffer);
-      
+
       if (closeMatch) {
         // 找到结束标签，提取思考内容
         const thinkText = this.buffer.substring(0, closeMatch.index);
-        newThinkContent = this.pendingThinkContent + thinkText;
-        this.pendingThinkContent = '';
-        
+        newThinkContent = (this.pendingThinkContent + thinkText).trim();
+        this.pendingThinkContent = "";
+
         // 退出思考模式
         this.isInThinkTag = false;
         hasUpdate = true;
 
         // 更新缓冲区，移除已处理的内容
-        this.buffer = this.buffer.substring(closeMatch.index + closeMatch[0].length);
+        this.buffer = this.buffer.substring(
+          closeMatch.index + closeMatch[0].length,
+        );
       } else {
         // 还没有找到结束标签，将当前内容暂存
         this.pendingThinkContent += this.buffer;
-        this.buffer = '';
+        this.buffer = "";
       }
     } else {
       // 不在思考模式中，所有内容都是正常内容
       if (this.buffer) {
         newNormalContent += this.buffer;
-        this.buffer = '';
+        this.buffer = "";
         hasUpdate = true;
       }
     }
 
     // 更新累积内容
     if (newThinkContent) {
-      this.currentThinkContent += (this.currentThinkContent ? '\n\n' : '') + newThinkContent;
+      this.currentThinkContent +=
+        (this.currentThinkContent ? "\n\n" : "") + newThinkContent;
     }
     if (newNormalContent) {
       this.normalContent += newNormalContent;
     }
 
-    return {
+    const result = {
       hasUpdate,
       thinkContent: this.currentThinkContent,
       normalContent: this.normalContent,
-      isComplete: !this.isInThinkTag && this.buffer === ''
+      isComplete: !this.isInThinkTag && this.buffer === "",
     };
+    return result;
   }
 
   /**
@@ -157,8 +174,10 @@ export class StreamThinkProcessor {
   finalize() {
     // 如果还在思考标签中，将剩余内容作为思考内容
     if (this.isInThinkTag && this.buffer) {
-      this.currentThinkContent += (this.currentThinkContent ? '\n\n' : '') + 
-                                  this.pendingThinkContent + this.buffer;
+      this.currentThinkContent +=
+        (this.currentThinkContent ? "\n\n" : "") +
+        this.pendingThinkContent +
+        this.buffer;
     } else if (this.buffer) {
       // 否则作为正常内容
       this.normalContent += this.buffer;
@@ -166,7 +185,7 @@ export class StreamThinkProcessor {
 
     return {
       thinkContent: this.currentThinkContent.trim(),
-      normalContent: this.normalContent.trim()
+      normalContent: this.normalContent.trim(),
     };
   }
 
@@ -174,11 +193,11 @@ export class StreamThinkProcessor {
    * 重置处理器状态
    */
   reset() {
-    this.buffer = '';
+    this.buffer = "";
     this.isInThinkTag = false;
-    this.currentThinkContent = '';
-    this.normalContent = '';
-    this.pendingThinkContent = '';
+    this.currentThinkContent = "";
+    this.normalContent = "";
+    this.pendingThinkContent = "";
   }
 
   /**
@@ -190,7 +209,7 @@ export class StreamThinkProcessor {
       isInThinkTag: this.isInThinkTag,
       hasThinkContent: this.currentThinkContent.length > 0,
       hasNormalContent: this.normalContent.length > 0,
-      bufferLength: this.buffer.length
+      bufferLength: this.buffer.length,
     };
   }
 }
@@ -201,7 +220,7 @@ export class StreamThinkProcessor {
  * @returns {boolean} - 是否包含思考标签
  */
 export function hasThinkTags(content) {
-  if (!content || typeof content !== 'string') {
+  if (!content || typeof content !== "string") {
     return false;
   }
   return /<think>[\s\S]*?<\/think>/i.test(content);
@@ -213,15 +232,15 @@ export function hasThinkTags(content) {
  * @returns {string} - 清理后的内容
  */
 export function cleanIncompleteThinkTags(content) {
-  if (!content || typeof content !== 'string') {
-    return content || '';
+  if (!content || typeof content !== "string") {
+    return content || "";
   }
 
   // 移除不完整的开始标签
-  content = content.replace(/<think>(?![\s\S]*?<\/think>)/gi, '');
-  
+  content = content.replace(/<think>(?![\s\S]*?<\/think>)/gi, "");
+
   // 移除不完整的结束标签
-  content = content.replace(/(?<!<think>[\s\S]*?)<\/think>/gi, '');
+  content = content.replace(/(?<!<think>[\s\S]*?)<\/think>/gi, "");
 
   return content;
 }

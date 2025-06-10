@@ -21,7 +21,7 @@ import StopIcon from "@mui/icons-material/Stop";
 import SettingsIcon from "@mui/icons-material/Settings";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CloseIcon from "@mui/icons-material/Close";
-import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
+import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
 import { useTranslation } from "react-i18next";
 import { Resizable } from "react-resizable";
 import ReactMarkdown from "react-markdown";
@@ -29,7 +29,10 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import AISettings from "./AISettings.jsx";
 import ThinkContent from "./ThinkContent.jsx";
-import { StreamThinkProcessor, parseThinkContent } from "../utils/thinkContentProcessor.js";
+import {
+  StreamThinkProcessor,
+  parseThinkContent,
+} from "../utils/thinkContentProcessor.js";
 import "react-resizable/css/styles.css";
 import "highlight.js/styles/github.css"; // 代码高亮样式
 
@@ -37,20 +40,23 @@ import "highlight.js/styles/github.css"; // 代码高亮样式
 const useDebounce = (callback, delay) => {
   const timeoutRef = useRef(null);
 
-  return useCallback((...args) => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    timeoutRef.current = setTimeout(() => {
-      callback(...args);
-    }, delay);
-  }, [callback, delay]);
+  return useCallback(
+    (...args) => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => {
+        callback(...args);
+      }, delay);
+    },
+    [callback, delay],
+  );
 };
 
 // 窗口状态枚举
 const WINDOW_STATE = {
-  VISIBLE: 'visible',
-  CLOSED: 'closed'
+  VISIBLE: "visible",
+  CLOSED: "closed",
 };
 
 const AIChatWindow = ({ windowState, onClose }) => {
@@ -101,11 +107,13 @@ const AIChatWindow = ({ windowState, onClose }) => {
     const y = window.innerHeight - windowSize.height - margin;
     return {
       x: Math.max(margin, x),
-      y: Math.max(margin, y)
+      y: Math.max(margin, y),
     };
   };
 
-  const [windowPosition, setWindowPosition] = useState(calculateInitialPosition);
+  const [windowPosition, setWindowPosition] = useState(
+    calculateInitialPosition,
+  );
 
   // 初始化最大尺寸约束
   useEffect(() => {
@@ -118,10 +126,10 @@ const AIChatWindow = ({ windowState, onClose }) => {
     updateMaxConstraints();
 
     // 监听窗口尺寸变化
-    window.addEventListener('resize', updateMaxConstraints);
+    window.addEventListener("resize", updateMaxConstraints);
 
     return () => {
-      window.removeEventListener('resize', updateMaxConstraints);
+      window.removeEventListener("resize", updateMaxConstraints);
     };
   }, [calculateMaxConstraints]);
 
@@ -154,9 +162,11 @@ const AIChatWindow = ({ windowState, onClose }) => {
         await loadApiConfigs();
 
         // 显示切换成功消息
-        const selectedApi = apiConfigs.find(api => api.id === apiId);
+        const selectedApi = apiConfigs.find((api) => api.id === apiId);
         if (selectedApi) {
-          setErrorWithAutoClean(t("aiSettings.apiSwitched", { name: selectedApi.name }));
+          setErrorWithAutoClean(
+            t("aiSettings.apiSwitched", { name: selectedApi.name }),
+          );
         }
       } else {
         setError(t("aiSettings.setCurrentFailed"));
@@ -174,7 +184,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
         messagesEndRef.current?.scrollIntoView({
           behavior: "smooth",
           block: "end",
-          inline: "nearest"
+          inline: "nearest",
         });
       }, 10);
     }
@@ -202,7 +212,11 @@ const AIChatWindow = ({ windowState, onClose }) => {
 
     const handleStreamChunk = (data) => {
       // 验证会话ID，防止接收到上一次对话的回复
-      if (data.tabId === "ai" && data.chunk && data.sessionId === currentSessionId) {
+      if (
+        data.tabId === "ai" &&
+        data.chunk &&
+        data.sessionId === currentSessionId
+      ) {
         // 初始化思考内容处理器（如果还没有）
         if (!streamThinkProcessorRef.current) {
           streamThinkProcessorRef.current = new StreamThinkProcessor();
@@ -211,27 +225,33 @@ const AIChatWindow = ({ windowState, onClose }) => {
         // 处理数据块
         const result = streamThinkProcessorRef.current.processChunk(data.chunk);
 
-        setMessages(prev => {
-          const newMessages = [...prev];
-          const lastMessage = newMessages[newMessages.length - 1];
+        if (result.hasUpdate) {
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            const lastMessage = newMessages[newMessages.length - 1];
 
-          if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
-            // 更新现有消息
-            lastMessage.content = result.normalContent;
-            lastMessage.thinkContent = result.thinkContent;
-          } else {
-            // 创建新消息
-            const newMessage = {
-              role: "assistant",
-              content: result.normalContent,
-              thinkContent: result.thinkContent,
-              timestamp: Date.now(),
-              streaming: true,
-            };
-            newMessages.push(newMessage);
-          }
-          return newMessages;
-        });
+            if (
+              lastMessage &&
+              lastMessage.role === "assistant" &&
+              lastMessage.streaming
+            ) {
+              // 更新现有消息
+              lastMessage.content = result.normalContent;
+              lastMessage.thinkContent = result.thinkContent;
+            } else {
+              // 创建新消息
+              const newMessage = {
+                role: "assistant",
+                content: result.normalContent,
+                thinkContent: result.thinkContent,
+                timestamp: Date.now(),
+                streaming: true,
+              };
+              newMessages.push(newMessage);
+            }
+            return newMessages;
+          });
+        }
       }
     };
 
@@ -241,10 +261,14 @@ const AIChatWindow = ({ windowState, onClose }) => {
         if (streamThinkProcessorRef.current) {
           const finalResult = streamThinkProcessorRef.current.finalize();
 
-          setMessages(prev => {
+          setMessages((prev) => {
             const newMessages = [...prev];
             const lastMessage = newMessages[newMessages.length - 1];
-            if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
+            if (
+              lastMessage &&
+              lastMessage.role === "assistant" &&
+              lastMessage.streaming
+            ) {
               lastMessage.streaming = false;
               lastMessage.content = finalResult.normalContent;
               lastMessage.thinkContent = finalResult.thinkContent;
@@ -255,10 +279,14 @@ const AIChatWindow = ({ windowState, onClose }) => {
           // 重置处理器
           streamThinkProcessorRef.current = null;
         } else {
-          setMessages(prev => {
+          setMessages((prev) => {
             const newMessages = [...prev];
             const lastMessage = newMessages[newMessages.length - 1];
-            if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
+            if (
+              lastMessage &&
+              lastMessage.role === "assistant" &&
+              lastMessage.streaming
+            ) {
               lastMessage.streaming = false;
             }
             return newMessages;
@@ -298,7 +326,8 @@ const AIChatWindow = ({ windowState, onClose }) => {
     if (!inputValue.trim() || isLoading) return;
 
     // 生成新的会话ID
-    const sessionId = Date.now().toString() + Math.random().toString(36).substring(2, 11);
+    const sessionId =
+      Date.now().toString() + Math.random().toString(36).substring(2, 11);
     setCurrentSessionId(sessionId);
 
     const userMessage = {
@@ -307,7 +336,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
       timestamp: Date.now(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setIsLoading(true);
     // 清除错误状态和定时器
@@ -323,7 +352,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
       }
 
       const { apiUrl, apiKey, model, streamEnabled } = settings.current;
-      
+
       if (!apiUrl || !apiKey || !model) {
         setError(t("aiAssistant.apiError"));
         setIsLoading(false);
@@ -335,16 +364,19 @@ const AIChatWindow = ({ windowState, onClose }) => {
         apiKey: apiKey,
         model: model,
         sessionId: sessionId,
-        messages: [...messages, userMessage].map(msg => ({
+        messages: [...messages, userMessage].map((msg) => ({
           role: msg.role,
-          content: msg.content
-        }))
+          content: msg.content,
+        })),
       };
 
       if (streamEnabled) {
         await window.terminalAPI.sendAPIRequest(requestData, true);
       } else {
-        const result = await window.terminalAPI.sendAPIRequest(requestData, false);
+        const result = await window.terminalAPI.sendAPIRequest(
+          requestData,
+          false,
+        );
         if (result && result.choices && result.choices[0]) {
           const rawContent = result.choices[0].message.content;
           const { thinkContent, normalContent } = parseThinkContent(rawContent);
@@ -355,7 +387,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
             thinkContent: thinkContent,
             timestamp: Date.now(),
           };
-          setMessages(prev => [...prev, assistantMessage]);
+          setMessages((prev) => [...prev, assistantMessage]);
         } else if (result && result.error) {
           setError(result.error);
         }
@@ -382,7 +414,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
 
   const handleCopyMessage = async (message) => {
     try {
-      let contentToCopy = message.content || '';
+      let contentToCopy = message.content || "";
 
       // 如果有思考内容，也包含在复制内容中
       if (message.thinkContent) {
@@ -422,10 +454,14 @@ const AIChatWindow = ({ windowState, onClose }) => {
       setErrorWithAutoClean(t("aiAssistant.requestCancelled"));
 
       // 如果有正在进行的流式响应，标记最后一条消息为完成状态
-      setMessages(prev => {
+      setMessages((prev) => {
         const newMessages = [...prev];
         const lastMessage = newMessages[newMessages.length - 1];
-        if (lastMessage && lastMessage.role === "assistant" && lastMessage.streaming) {
+        if (
+          lastMessage &&
+          lastMessage.role === "assistant" &&
+          lastMessage.streaming
+        ) {
           lastMessage.streaming = false;
         }
         return newMessages;
@@ -449,17 +485,17 @@ const AIChatWindow = ({ windowState, onClose }) => {
         <Box
           component="pre"
           sx={{
-            bgcolor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100',
+            bgcolor: theme.palette.mode === "dark" ? "grey.900" : "grey.100",
             p: 1.5,
             borderRadius: 1,
-            overflow: 'auto',
-            fontSize: '0.75rem',
-            fontFamily: 'monospace',
+            overflow: "auto",
+            fontSize: "0.75rem",
+            fontFamily: "monospace",
             border: `1px solid ${theme.palette.divider}`,
             my: 1,
-            maxWidth: '100%',
-            wordBreak: 'break-all',
-            whiteSpace: 'pre-wrap',
+            maxWidth: "100%",
+            wordBreak: "break-all",
+            whiteSpace: "pre-wrap",
           }}
         >
           <code className={className} {...props}>
@@ -470,13 +506,13 @@ const AIChatWindow = ({ windowState, onClose }) => {
         <Box
           component="code"
           sx={{
-            bgcolor: theme.palette.mode === 'dark' ? 'grey.800' : 'grey.200',
+            bgcolor: theme.palette.mode === "dark" ? "grey.800" : "grey.200",
             px: 0.5,
             py: 0.25,
             borderRadius: 0.5,
-            fontSize: '0.75rem',
-            fontFamily: 'monospace',
-            wordBreak: 'break-all',
+            fontSize: "0.75rem",
+            fontFamily: "monospace",
+            wordBreak: "break-all",
           }}
           {...props}
         >
@@ -489,12 +525,12 @@ const AIChatWindow = ({ windowState, onClose }) => {
       <Typography
         variant="body2"
         sx={{
-          fontSize: '0.8rem',
+          fontSize: "0.8rem",
           lineHeight: 1.4,
           mb: 1,
-          wordBreak: 'break-word',
-          overflowWrap: 'break-word',
-          '&:last-child': { mb: 0 },
+          wordBreak: "break-word",
+          overflowWrap: "break-word",
+          "&:last-child": { mb: 0 },
         }}
       >
         {children}
@@ -502,24 +538,30 @@ const AIChatWindow = ({ windowState, onClose }) => {
     ),
     // 自定义列表样式
     ul: ({ children }) => (
-      <Box component="ul" sx={{
-        pl: 2,
-        my: 1,
-        fontSize: '0.8rem',
-        wordBreak: 'break-word',
-        overflowWrap: 'break-word',
-      }}>
+      <Box
+        component="ul"
+        sx={{
+          pl: 2,
+          my: 1,
+          fontSize: "0.8rem",
+          wordBreak: "break-word",
+          overflowWrap: "break-word",
+        }}
+      >
         {children}
       </Box>
     ),
     ol: ({ children }) => (
-      <Box component="ol" sx={{
-        pl: 2,
-        my: 1,
-        fontSize: '0.8rem',
-        wordBreak: 'break-word',
-        overflowWrap: 'break-word',
-      }}>
+      <Box
+        component="ol"
+        sx={{
+          pl: 2,
+          my: 1,
+          fontSize: "0.8rem",
+          wordBreak: "break-word",
+          overflowWrap: "break-word",
+        }}
+      >
         {children}
       </Box>
     ),
@@ -528,14 +570,14 @@ const AIChatWindow = ({ windowState, onClose }) => {
       <Box
         component="table"
         sx={{
-          width: '100%',
-          maxWidth: '100%',
-          borderCollapse: 'collapse',
+          width: "100%",
+          maxWidth: "100%",
+          borderCollapse: "collapse",
           my: 1,
-          fontSize: '0.75rem',
-          overflow: 'auto',
-          display: 'block',
-          whiteSpace: 'nowrap',
+          fontSize: "0.75rem",
+          overflow: "auto",
+          display: "block",
+          whiteSpace: "nowrap",
         }}
       >
         {children}
@@ -549,12 +591,12 @@ const AIChatWindow = ({ windowState, onClose }) => {
         target="_blank"
         rel="noopener noreferrer"
         sx={{
-          color: 'primary.main',
-          textDecoration: 'underline',
-          wordBreak: 'break-all',
-          overflowWrap: 'break-word',
-          '&:hover': {
-            color: 'primary.dark',
+          color: "primary.main",
+          textDecoration: "underline",
+          wordBreak: "break-all",
+          overflowWrap: "break-word",
+          "&:hover": {
+            color: "primary.dark",
           },
         }}
       >
@@ -565,7 +607,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
 
   // 拖拽事件处理
   const handleMouseDown = (e) => {
-    if (e.target.closest('.window-controls')) return; // 不在控制按钮上拖拽
+    if (e.target.closest(".window-controls")) return; // 不在控制按钮上拖拽
 
     // 阻止默认行为，防止选中文本
     e.preventDefault();
@@ -577,11 +619,11 @@ const AIChatWindow = ({ windowState, onClose }) => {
     });
 
     // 添加全局样式，防止拖拽时选中内容
-    document.body.style.userSelect = 'none';
-    document.body.style.pointerEvents = 'none';
+    document.body.style.userSelect = "none";
+    document.body.style.pointerEvents = "none";
     // 保持窗口的pointer-events
     if (windowRef.current) {
-      windowRef.current.style.pointerEvents = 'auto';
+      windowRef.current.style.pointerEvents = "auto";
     }
   };
 
@@ -605,30 +647,33 @@ const AIChatWindow = ({ windowState, onClose }) => {
     setIsDragging(false);
 
     // 恢复全局样式
-    document.body.style.userSelect = '';
-    document.body.style.pointerEvents = '';
+    document.body.style.userSelect = "";
+    document.body.style.pointerEvents = "";
     if (windowRef.current) {
-      windowRef.current.style.pointerEvents = '';
+      windowRef.current.style.pointerEvents = "";
     }
   };
 
   // 尺寸调整处理（使用防抖优化）
-  const handleResize = useCallback((_, { size }) => {
-    // 立即更新尺寸以保持响应性
-    setWindowSize(size);
+  const handleResize = useCallback(
+    (_, { size }) => {
+      // 立即更新尺寸以保持响应性
+      setWindowSize(size);
 
-    // 防抖处理其他相关更新
-    debouncedSetWindowSize(size);
-  }, [debouncedSetWindowSize]);
+      // 防抖处理其他相关更新
+      debouncedSetWindowSize(size);
+    },
+    [debouncedSetWindowSize],
+  );
 
   // 添加全局鼠标事件监听
   useEffect(() => {
     if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
       return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
       };
     }
   }, [isDragging, dragStart, windowPosition, windowSize]);
@@ -639,9 +684,9 @@ const AIChatWindow = ({ windowState, onClose }) => {
     const maxX = window.innerWidth - windowSize.width - margin;
     const maxY = window.innerHeight - windowSize.height - margin;
 
-    setWindowPosition(prev => ({
+    setWindowPosition((prev) => ({
       x: Math.max(margin, Math.min(prev.x, maxX)),
-      y: Math.max(margin, Math.min(prev.y, maxY))
+      y: Math.max(margin, Math.min(prev.y, maxY)),
     }));
   }, [windowSize]);
 
@@ -662,7 +707,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
       onResize={handleResize}
       minConstraints={[280, 300]}
       maxConstraints={maxConstraints}
-      resizeHandles={['se', 'e', 's']}
+      resizeHandles={["se", "e", "s"]}
     >
       <Paper
         ref={windowRef}
@@ -680,10 +725,11 @@ const AIChatWindow = ({ windowState, onClose }) => {
           overflow: "hidden",
           backdropFilter: "blur(10px)",
           border: `1px solid ${theme.palette.divider}`,
-          cursor: isDragging ? 'grabbing' : 'default',
+          cursor: isDragging ? "grabbing" : "default",
           opacity: windowState === WINDOW_STATE.VISIBLE ? 1 : 0.9,
-          transition: 'opacity 0.3s ease-in-out, width 0.1s ease-out, height 0.1s ease-out',
-          userSelect: isDragging ? 'none' : 'auto',
+          transition:
+            "opacity 0.3s ease-in-out, width 0.1s ease-out, height 0.1s ease-out",
+          userSelect: isDragging ? "none" : "auto",
         }}
       >
         {/* 标题栏 */}
@@ -696,14 +742,14 @@ const AIChatWindow = ({ windowState, onClose }) => {
             p: 1.5,
             bgcolor: "primary.main",
             color: "primary.contrastText",
-            cursor: isDragging ? 'grabbing' : 'grab',
-            userSelect: 'none', // 防止标题栏文字被选中
-            '&:active': {
-              cursor: 'grabbing',
+            cursor: isDragging ? "grabbing" : "grab",
+            userSelect: "none", // 防止标题栏文字被选中
+            "&:active": {
+              cursor: "grabbing",
             },
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1 }}>
             <Typography variant="subtitle2" fontWeight="medium">
               {t("aiAssistant.title")}
             </Typography>
@@ -714,21 +760,21 @@ const AIChatWindow = ({ windowState, onClose }) => {
                 size="small"
                 sx={{
                   minWidth: 120,
-                  '& .MuiOutlinedInput-root': {
-                    color: 'inherit',
-                    fontSize: '0.75rem',
-                    '& fieldset': {
-                      borderColor: 'rgba(255, 255, 255, 0.3)',
+                  "& .MuiOutlinedInput-root": {
+                    color: "inherit",
+                    fontSize: "0.75rem",
+                    "& fieldset": {
+                      borderColor: "rgba(255, 255, 255, 0.3)",
                     },
-                    '&:hover fieldset': {
-                      borderColor: 'rgba(255, 255, 255, 0.5)',
+                    "&:hover fieldset": {
+                      borderColor: "rgba(255, 255, 255, 0.5)",
                     },
-                    '&.Mui-focused fieldset': {
-                      borderColor: 'rgba(255, 255, 255, 0.7)',
+                    "&.Mui-focused fieldset": {
+                      borderColor: "rgba(255, 255, 255, 0.7)",
                     },
                   },
-                  '& .MuiSelect-icon': {
-                    color: 'inherit',
+                  "& .MuiSelect-icon": {
+                    color: "inherit",
                   },
                 }}
               >
@@ -738,8 +784,8 @@ const AIChatWindow = ({ windowState, onClose }) => {
                   displayEmpty
                   variant="outlined"
                   sx={{
-                    color: 'inherit',
-                    fontSize: '0.75rem',
+                    color: "inherit",
+                    fontSize: "0.75rem",
                   }}
                   onMouseDown={(e) => e.stopPropagation()} // 防止拖拽，但不影响Select的正常功能
                 >
@@ -757,17 +803,29 @@ const AIChatWindow = ({ windowState, onClose }) => {
 
           <Box className="window-controls">
             <Tooltip title={t("aiAssistant.clear")}>
-              <IconButton onClick={handleClearMessages} size="small" sx={{ color: "inherit" }}>
+              <IconButton
+                onClick={handleClearMessages}
+                size="small"
+                sx={{ color: "inherit" }}
+              >
                 <CleaningServicesIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title={t("aiAssistant.settings")}>
-              <IconButton onClick={() => setSettingsOpen(true)} size="small" sx={{ color: "inherit" }}>
+              <IconButton
+                onClick={() => setSettingsOpen(true)}
+                size="small"
+                sx={{ color: "inherit" }}
+              >
                 <SettingsIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title={t("aiAssistant.close")}>
-              <IconButton onClick={onClose} size="small" sx={{ color: "inherit" }}>
+              <IconButton
+                onClick={onClose}
+                size="small"
+                sx={{ color: "inherit" }}
+              >
                 <CloseIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -777,10 +835,14 @@ const AIChatWindow = ({ windowState, onClose }) => {
         {/* 错误提示 */}
         {error && (
           <Box sx={{ p: 1 }}>
-            <Alert severity="error" size="small" onClose={() => {
-              clearErrorTimeout();
-              setError("");
-            }}>
+            <Alert
+              severity="error"
+              size="small"
+              onClose={() => {
+                clearErrorTimeout();
+                setError("");
+              }}
+            >
               {error}
             </Alert>
           </Box>
@@ -797,18 +859,18 @@ const AIChatWindow = ({ windowState, onClose }) => {
             flexDirection: "column",
             minHeight: 0, // 确保flex子元素能正确收缩
             // 自定义滚动条样式
-            '&::-webkit-scrollbar': {
-              width: '6px',
+            "&::-webkit-scrollbar": {
+              width: "6px",
             },
-            '&::-webkit-scrollbar-track': {
-              background: 'transparent',
+            "&::-webkit-scrollbar-track": {
+              background: "transparent",
             },
-            '&::-webkit-scrollbar-thumb': {
-              background: 'rgba(0,0,0,0.2)',
-              borderRadius: '3px',
+            "&::-webkit-scrollbar-thumb": {
+              background: "rgba(0,0,0,0.2)",
+              borderRadius: "3px",
             },
-            '&::-webkit-scrollbar-thumb:hover': {
-              background: 'rgba(0,0,0,0.3)',
+            "&::-webkit-scrollbar-thumb:hover": {
+              background: "rgba(0,0,0,0.3)",
             },
           }}
         >
@@ -837,32 +899,40 @@ const AIChatWindow = ({ windowState, onClose }) => {
                     p: 1,
                     mb: 1,
                     borderRadius: 1,
-                    bgcolor: message.role === "user"
-                      ? "primary.main"
-                      : "background.paper",
-                    color: message.role === "user"
-                      ? "primary.contrastText"
-                      : "text.primary",
+                    bgcolor:
+                      message.role === "user"
+                        ? "primary.main"
+                        : "background.paper",
+                    color:
+                      message.role === "user"
+                        ? "primary.contrastText"
+                        : "text.primary",
                     boxShadow: 1,
                   }}
                 >
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                    }}
+                  >
                     <Box
                       sx={{
                         flex: 1,
-                        maxWidth: '100%',
+                        maxWidth: "100%",
                         wordBreak: "break-word",
-                        overflowWrap: 'break-word',
-                        '& > *:first-of-type': { mt: 0 },
-                        '& > *:last-child': { mb: 0 },
-                        '& pre': {
-                          maxWidth: '100%',
-                          overflow: 'auto',
+                        overflowWrap: "break-word",
+                        "& > *:first-of-type": { mt: 0 },
+                        "& > *:last-child": { mb: 0 },
+                        "& pre": {
+                          maxWidth: "100%",
+                          overflow: "auto",
                         },
-                        '& table': {
-                          maxWidth: '100%',
-                          overflow: 'auto',
-                          display: 'block',
+                        "& table": {
+                          maxWidth: "100%",
+                          overflow: "auto",
+                          display: "block",
                         },
                       }}
                     >
@@ -902,7 +972,10 @@ const AIChatWindow = ({ windowState, onClose }) => {
                         </Typography>
                       )}
                       {message.streaming && (
-                        <CircularProgress size={10} sx={{ ml: 1, display: 'inline-block' }} />
+                        <CircularProgress
+                          size={10}
+                          sx={{ ml: 1, display: "inline-block" }}
+                        />
                       )}
                     </Box>
                     <IconButton
@@ -910,9 +983,10 @@ const AIChatWindow = ({ windowState, onClose }) => {
                       onClick={() => handleCopyMessage(message)}
                       sx={{
                         ml: 1,
-                        color: message.role === "user"
-                          ? "primary.contrastText"
-                          : "text.secondary"
+                        color:
+                          message.role === "user"
+                            ? "primary.contrastText"
+                            : "text.secondary",
                       }}
                     >
                       <ContentCopyIcon fontSize="small" />
@@ -922,19 +996,20 @@ const AIChatWindow = ({ windowState, onClose }) => {
                     variant="caption"
                     sx={{
                       opacity: 0.7,
-                      color: message.role === "user"
-                        ? "primary.contrastText"
-                        : "text.secondary",
+                      color:
+                        message.role === "user"
+                          ? "primary.contrastText"
+                          : "text.secondary",
                       fontSize: "0.7rem",
                       mt: 0.5,
-                      display: "block"
+                      display: "block",
                     }}
                   >
                     {new Date(message.timestamp).toLocaleTimeString()}
                   </Typography>
                 </ListItem>
               ))}
-              <div ref={messagesEndRef} style={{ height: '1px' }} />
+              <div ref={messagesEndRef} style={{ height: "1px" }} />
             </List>
           )}
         </Box>
@@ -969,7 +1044,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
               sx={{
                 "& .MuiOutlinedInput-root": {
                   fontSize: "0.8rem",
-                }
+                },
               }}
             />
             <IconButton
@@ -979,7 +1054,11 @@ const AIChatWindow = ({ windowState, onClose }) => {
               size="small"
               sx={{ alignSelf: "flex-end" }}
             >
-              {isLoading ? <StopIcon fontSize="small" /> : <SendIcon fontSize="small" />}
+              {isLoading ? (
+                <StopIcon fontSize="small" />
+              ) : (
+                <SendIcon fontSize="small" />
+              )}
             </IconButton>
           </Box>
         </Box>

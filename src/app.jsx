@@ -404,9 +404,8 @@ function App() {
   const [commandHistoryOpen, setCommandHistoryOpen] = React.useState(false);
 
   // 全局AI聊天窗口状态
-  const [globalAiChatWindowState, setGlobalAiChatWindowState] = React.useState('closed'); // 'visible', 'closed'
-
-
+  const [globalAiChatWindowState, setGlobalAiChatWindowState] =
+    React.useState("closed"); // 'visible', 'closed'
 
   React.useEffect(() => {
     const getSidebarWidth = () => {
@@ -1006,16 +1005,14 @@ function App() {
 
   // 全局AI聊天窗口处理函数
   const handleToggleGlobalAiChatWindow = () => {
-    setGlobalAiChatWindowState(prev =>
-      prev === 'visible' ? 'closed' : 'visible'
+    setGlobalAiChatWindowState((prev) =>
+      prev === "visible" ? "closed" : "visible",
     );
   };
 
   const handleCloseGlobalAiChatWindow = () => {
-    setGlobalAiChatWindowState('closed');
+    setGlobalAiChatWindowState("closed");
   };
-
-
 
   // 更新关闭所有侧边栏的函数
   const closeAllSidebars = () => {
@@ -1521,8 +1518,6 @@ function App() {
               />
             </Box>
 
-
-
             {/* 右侧边栏 */}
             <Paper
               elevation={3}
@@ -1662,20 +1657,21 @@ function App() {
                   color="primary"
                   onClick={handleToggleGlobalAiChatWindow}
                   sx={{
-                    bgcolor: globalAiChatWindowState === 'visible'
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
-                      bgcolor: globalAiChatWindowState === 'visible'
+                    bgcolor:
+                      globalAiChatWindowState === "visible"
                         ? "action.selected"
-                        : "action.hover",
+                        : "transparent",
+                    "&:hover": {
+                      bgcolor:
+                        globalAiChatWindowState === "visible"
+                          ? "action.selected"
+                          : "action.hover",
                     },
                   }}
                 >
                   <AIIcon />
                 </IconButton>
               </Tooltip>
-
             </Paper>
           </Box>
         </Box>

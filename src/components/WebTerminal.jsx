@@ -454,8 +454,6 @@ const WebTerminal = ({
   const inputDebounceRef = useRef(null);
   const suggestionSelectedRef = useRef(false);
 
-
-
   // 命令执行状态跟踪
   const [isCommandExecuting, setIsCommandExecuting] = useState(false);
   const lastExecutedCommandTimeRef = useRef(0);
@@ -2801,8 +2799,6 @@ const WebTerminal = ({
         terminalElement={terminalRef.current}
         currentInput={currentInput}
       />
-
-
     </Box>
   );
 };

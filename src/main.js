@@ -1593,7 +1593,7 @@ function setupIPC(mainWindow) {
           res.on("end", () => {
             event.sender.send("stream-end", {
               tabId: "ai",
-              sessionId: requestData.sessionId
+              sessionId: requestData.sessionId,
             });
             // 清理请求引用和会话ID
             activeAPIRequest = null;
