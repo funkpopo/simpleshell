@@ -121,9 +121,9 @@ const AISettings = ({ open, onClose }) => {
   };
 
   const handleConfigChange = (field, value) => {
-    setConfig(prev => ({
+    setConfig((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
     setError("");
     setSuccess("");
@@ -262,7 +262,13 @@ const AISettings = ({ open, onClose }) => {
         // 列表模式：保存整体设置（兼容旧版本）
         const settings = {
           current: config,
-          configs: [{ ...config, id: Date.now().toString(), name: config.name || "Default" }]
+          configs: [
+            {
+              ...config,
+              id: Date.now().toString(),
+              name: config.name || "Default",
+            },
+          ],
         };
 
         const result = await window.terminalAPI.saveAISettings(settings);
@@ -284,25 +290,32 @@ const AISettings = ({ open, onClose }) => {
 
   const handleTest = async () => {
     if (!validateConfig()) return;
-    
+
     setTesting(true);
     setError("");
     setSuccess("");
-    
+
     try {
       if (window.terminalAPI?.sendAPIRequest) {
         const requestData = {
           url: config.apiUrl,
           apiKey: config.apiKey,
           model: config.model,
-          messages: [{ role: "user", content: "Hello" }]
+          messages: [{ role: "user", content: "Hello" }],
         };
-        
-        const result = await window.terminalAPI.sendAPIRequest(requestData, false);
+
+        const result = await window.terminalAPI.sendAPIRequest(
+          requestData,
+          false,
+        );
         if (result && !result.error) {
           setSuccess(t("aiSettings.testSuccess"));
         } else {
-          setError(t("aiSettings.testFailed") + ": " + (result?.error || "Unknown error"));
+          setError(
+            t("aiSettings.testFailed") +
+              ": " +
+              (result?.error || "Unknown error"),
+          );
         }
       }
     } catch (err) {
@@ -328,16 +341,22 @@ const AISettings = ({ open, onClose }) => {
         sx: {
           borderRadius: 2,
           backdropFilter: "blur(10px)",
-        }
+        },
       }}
     >
-      <DialogTitle sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <DialogTitle
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
         <Typography variant="h6">{t("aiSettings.title")}</Typography>
         <IconButton onClick={handleClose} size="small">
           <CloseIcon />
         </IconButton>
       </DialogTitle>
-      
+
       <DialogContent dividers sx={{ p: 0 }}>
         {loading && (
           <Box display="flex" justifyContent="center" p={4}>
@@ -351,23 +370,40 @@ const AISettings = ({ open, onClose }) => {
             <Tabs
               value={tabValue}
               onChange={(e, newValue) => setTabValue(newValue)}
-              sx={{ borderBottom: 1, borderColor: 'divider' }}
+              sx={{ borderBottom: 1, borderColor: "divider" }}
             >
               <Tab label={t("aiSettings.apiManagement")} />
             </Tabs>
 
             {/* 标签页内容 */}
             <Box sx={{ p: 3 }}>
-              {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-              {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+              {error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {error}
+                </Alert>
+              )}
+              {success && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  {success}
+                </Alert>
+              )}
 
               {tabValue === 0 && (
                 <Box>
                   {!editMode ? (
                     // API列表模式
                     <Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                        <Typography variant="h6">{t("aiSettings.apiList")}</Typography>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          mb: 2,
+                        }}
+                      >
+                        <Typography variant="h6">
+                          {t("aiSettings.apiList")}
+                        </Typography>
                         <Button
                           variant="contained"
                           startIcon={<AddIcon />}
@@ -379,20 +415,42 @@ const AISettings = ({ open, onClose }) => {
                       </Box>
 
                       {apiConfigs.length === 0 ? (
-                        <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Box sx={{ textAlign: "center", py: 4 }}>
                           <Typography color="text.secondary">
                             {t("aiSettings.noApiConfigs")}
                           </Typography>
                         </Box>
                       ) : (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 2,
+                          }}
+                        >
                           {apiConfigs.map((apiConfig) => (
                             <Card key={apiConfig.id} variant="outlined">
                               <CardContent sx={{ pb: 1 }}>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <Box
+                                  sx={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "flex-start",
+                                  }}
+                                >
                                   <Box sx={{ flex: 1 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                      <Typography variant="subtitle1" fontWeight="medium">
+                                    <Box
+                                      sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 1,
+                                        mb: 1,
+                                      }}
+                                    >
+                                      <Typography
+                                        variant="subtitle1"
+                                        fontWeight="medium"
+                                      >
                                         {apiConfig.name}
                                       </Typography>
                                       {currentApiId === apiConfig.id && (
@@ -404,20 +462,32 @@ const AISettings = ({ open, onClose }) => {
                                         />
                                       )}
                                     </Box>
-                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                      sx={{ mb: 0.5 }}
+                                    >
                                       {t("aiSettings.model")}: {apiConfig.model}
                                     </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                      {t("aiSettings.apiUrl")}: {apiConfig.apiUrl}
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                    >
+                                      {t("aiSettings.apiUrl")}:{" "}
+                                      {apiConfig.apiUrl}
                                     </Typography>
                                   </Box>
                                 </Box>
                               </CardContent>
-                              <CardActions sx={{ pt: 0, justifyContent: 'flex-end' }}>
+                              <CardActions
+                                sx={{ pt: 0, justifyContent: "flex-end" }}
+                              >
                                 {currentApiId !== apiConfig.id && (
                                   <Button
                                     size="small"
-                                    onClick={() => handleSetCurrent(apiConfig.id)}
+                                    onClick={() =>
+                                      handleSetCurrent(apiConfig.id)
+                                    }
                                   >
                                     {t("aiSettings.setAsCurrent")}
                                   </Button>
@@ -433,7 +503,9 @@ const AISettings = ({ open, onClose }) => {
                                 <Tooltip title={t("aiSettings.deleteApi")}>
                                   <IconButton
                                     size="small"
-                                    onClick={() => handleDeleteApi(apiConfig.id)}
+                                    onClick={() =>
+                                      handleDeleteApi(apiConfig.id)
+                                    }
                                     color="error"
                                   >
                                     <DeleteIcon />
@@ -447,17 +519,29 @@ const AISettings = ({ open, onClose }) => {
                     </Box>
                   ) : (
                     // 编辑模式
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box
+                      sx={{ display: "flex", flexDirection: "column", gap: 3 }}
+                    >
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
                         <Typography variant="h6">
-                          {editingConfig ? t("aiSettings.editApi") : t("aiSettings.addApi")}
+                          {editingConfig
+                            ? t("aiSettings.editApi")
+                            : t("aiSettings.addApi")}
                         </Typography>
                       </Box>
 
                       <TextField
                         label={t("aiSettings.apiName")}
                         value={config.name}
-                        onChange={(e) => handleConfigChange("name", e.target.value)}
+                        onChange={(e) =>
+                          handleConfigChange("name", e.target.value)
+                        }
                         fullWidth
                         placeholder="My API"
                         variant="outlined"
@@ -467,7 +551,9 @@ const AISettings = ({ open, onClose }) => {
                       <TextField
                         label={t("aiSettings.apiUrl")}
                         value={config.apiUrl}
-                        onChange={(e) => handleConfigChange("apiUrl", e.target.value)}
+                        onChange={(e) =>
+                          handleConfigChange("apiUrl", e.target.value)
+                        }
                         fullWidth
                         placeholder="https://api.openai.com/v1/chat/completions"
                         variant="outlined"
@@ -477,7 +563,9 @@ const AISettings = ({ open, onClose }) => {
                       <TextField
                         label={t("aiSettings.apiKey")}
                         value={config.apiKey}
-                        onChange={(e) => handleConfigChange("apiKey", e.target.value)}
+                        onChange={(e) =>
+                          handleConfigChange("apiKey", e.target.value)
+                        }
                         fullWidth
                         type="password"
                         placeholder="sk-..."
@@ -488,7 +576,9 @@ const AISettings = ({ open, onClose }) => {
                       <TextField
                         label={t("aiSettings.model")}
                         value={config.model}
-                        onChange={(e) => handleConfigChange("model", e.target.value)}
+                        onChange={(e) =>
+                          handleConfigChange("model", e.target.value)
+                        }
                         fullWidth
                         placeholder="gpt-3.5-turbo"
                         variant="outlined"
@@ -496,10 +586,14 @@ const AISettings = ({ open, onClose }) => {
                       />
 
                       <Box>
-                        <Typography gutterBottom>{t("aiSettings.maxTokens")}: {config.maxTokens}</Typography>
+                        <Typography gutterBottom>
+                          {t("aiSettings.maxTokens")}: {config.maxTokens}
+                        </Typography>
                         <Slider
                           value={config.maxTokens}
-                          onChange={(_, value) => handleConfigChange("maxTokens", value)}
+                          onChange={(_, value) =>
+                            handleConfigChange("maxTokens", value)
+                          }
                           min={100}
                           max={32000}
                           step={100}
@@ -515,10 +609,14 @@ const AISettings = ({ open, onClose }) => {
                       </Box>
 
                       <Box>
-                        <Typography gutterBottom>{t("aiSettings.temperature")}: {config.temperature}</Typography>
+                        <Typography gutterBottom>
+                          {t("aiSettings.temperature")}: {config.temperature}
+                        </Typography>
                         <Slider
                           value={config.temperature}
-                          onChange={(_, value) => handleConfigChange("temperature", value)}
+                          onChange={(_, value) =>
+                            handleConfigChange("temperature", value)
+                          }
                           min={0}
                           max={2}
                           step={0.1}
@@ -536,7 +634,12 @@ const AISettings = ({ open, onClose }) => {
                         control={
                           <Switch
                             checked={config.streamEnabled}
-                            onChange={(e) => handleConfigChange("streamEnabled", e.target.checked)}
+                            onChange={(e) =>
+                              handleConfigChange(
+                                "streamEnabled",
+                                e.target.checked,
+                              )
+                            }
                           />
                         }
                         label={t("aiSettings.streamEnabled")}
@@ -549,12 +652,16 @@ const AISettings = ({ open, onClose }) => {
           </Box>
         )}
       </DialogContent>
-      
+
       <DialogActions sx={{ p: 2, gap: 1 }}>
         {editMode ? (
           // 编辑模式的按钮
           <>
-            <Button onClick={handleTest} disabled={loading || testing} variant="outlined">
+            <Button
+              onClick={handleTest}
+              disabled={loading || testing}
+              variant="outlined"
+            >
               {testing ? t("aiSettings.testing") : t("aiSettings.test")}
             </Button>
             <Button onClick={handleCancelEdit} disabled={loading}>
