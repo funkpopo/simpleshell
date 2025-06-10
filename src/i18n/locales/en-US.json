@@ -88,7 +88,9 @@
       "edit": "Edit",
       "add": "Add",
       "name": "Name",
-      "description": "Description"
+      "description": "Description",
+      "expand": "Expand",
+      "collapse": "Collapse"
     },
     "shortcutCommands": {
       "title": "Shortcut Commands",
@@ -176,7 +178,8 @@
       "close": "Close",
       "requestCancelled": "Request cancelled",
       "selectApi": "Select API",
-      "currentApi": "Current: {{name}}"
+      "currentApi": "Current: {{name}}",
+      "thinkingProcess": "Thinking Process"
     },
     "aiSettings": {
       "title": "AI Settings",

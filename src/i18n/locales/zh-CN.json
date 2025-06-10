@@ -87,7 +87,9 @@
       "edit": "编辑",
       "add": "添加",
       "name": "名称",
-      "description": "描述"
+      "description": "描述",
+      "expand": "展开",
+      "collapse": "折叠"
     },
     "shortcutCommands": {
       "title": "快捷命令",
@@ -175,7 +177,8 @@
       "close": "关闭",
       "requestCancelled": "请求已取消",
       "selectApi": "选择API",
-      "currentApi": "当前: {{name}}"
+      "currentApi": "当前: {{name}}",
+      "thinkingProcess": "思考过程"
     },
     "aiSettings": {
       "title": "AI设置",
