@@ -545,18 +545,7 @@ function App() {
     [darkMode],
   );
 
-  // 处理主题过渡效果
-  React.useEffect(() => {
-    // 当主题变化时，添加过渡类
-    const transitionTimeout = setTimeout(() => {
-      document.body.classList.remove("theme-transition");
-    }, 300); // 匹配CSS中的过渡时间
 
-    return () => {
-      clearTimeout(transitionTimeout);
-      document.body.classList.remove("theme-transition");
-    };
-  }, [darkMode]);
 
   // 处理菜单打开
   const handleMenu = (event) => {
@@ -1330,11 +1319,6 @@ function App() {
                     width: "100%",
                     height: "100%",
                     zIndex: 1,
-                    animation: "fadeIn 0.2s ease-in-out",
-                    "@keyframes fadeIn": {
-                      from: { opacity: 0 },
-                      to: { opacity: 1 },
-                    },
                   }}
                 >
                   <WelcomePage />
