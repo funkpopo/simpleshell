@@ -13,7 +13,6 @@ import {
   Select,
   MenuItem,
   FormControl,
-  InputLabel,
   useTheme,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
@@ -82,10 +81,16 @@ const AIChatWindow = ({ windowState, onClose }) => {
 
   // 窗口位置和尺寸状态
   const [windowSize, setWindowSize] = useState({ width: 350, height: 450 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  // const [isDragging, setIsDragging] = useState(false); // Replaced by isDraggingRef
+  // const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Replaced by dragStartOffsetRef
   const [maxConstraints, setMaxConstraints] = useState([800, 600]);
   const windowRef = useRef(null);
+
+  // Refs for optimized dragging
+  const isDraggingRef = useRef(false);
+  const dragStartOffsetRef = useRef({ x: 0, y: 0 });
+  const currentPositionRef = useRef({ x: 0, y: 0 });
+  const animationFrameRef = useRef(null);
 
   // 动态计算最大尺寸限制
   const calculateMaxConstraints = useCallback(() => {
@@ -114,6 +119,12 @@ const AIChatWindow = ({ windowState, onClose }) => {
   const [windowPosition, setWindowPosition] = useState(
     calculateInitialPosition,
   );
+  
+  // Initialize currentPositionRef with the initial window position
+  useEffect(() => {
+    currentPositionRef.current = calculateInitialPosition();
+  }, []); // Empty dependency array ensures this runs once on mount
+
 
   // 初始化最大尺寸约束
   useEffect(() => {
@@ -630,78 +641,107 @@ const AIChatWindow = ({ windowState, onClose }) => {
     ),
   };
 
-  // 拖拽事件处理
-  const handleMouseDown = (e) => {
-    if (e.target.closest(".window-controls")) return; // 不在控制按钮上拖拽
+  // Optimized Drag Event Handling
 
-    // 阻止默认行为，防止选中文本
-    e.preventDefault();
-
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX - windowPosition.x,
-      y: e.clientY - windowPosition.y,
-    });
-
-    // 添加全局样式，防止拖拽时选中内容
-    document.body.style.userSelect = "none";
-    document.body.style.pointerEvents = "none";
-    // 保持窗口的pointer-events
-    if (windowRef.current) {
-      windowRef.current.style.pointerEvents = "auto";
+  const updateWindowStyleOnDrag = useCallback(() => {
+    if (windowRef.current && currentPositionRef.current) {
+      const { x, y } = currentPositionRef.current;
+      windowRef.current.style.left = `${x}px`;
+      windowRef.current.style.top = `${y}px`;
     }
-  };
+    animationFrameRef.current = null;
+  }, []);
 
-  const handleMouseMove = (e) => {
-    if (!isDragging) return;
+  const handleGlobalMouseMove = useCallback(
+    (e) => {
+      if (!isDraggingRef.current) return;
 
-    const newX = e.clientX - dragStart.x;
-    const newY = e.clientY - dragStart.y;
+      let newX = e.clientX - dragStartOffsetRef.current.x;
+      let newY = e.clientY - dragStartOffsetRef.current.y;
 
-    // 边界限制
-    const maxX = window.innerWidth - windowSize.width;
-    const maxY = window.innerHeight - windowSize.height;
+      // Boundary checks
+      const maxX = window.innerWidth - windowSize.width;
+      const maxY = window.innerHeight - windowSize.height;
+      newX = Math.max(0, Math.min(newX, maxX));
+      newY = Math.max(0, Math.min(newY, maxY));
 
-    setWindowPosition({
-      x: Math.max(0, Math.min(newX, maxX)),
-      y: Math.max(0, Math.min(newY, maxY)),
-    });
-  };
+      currentPositionRef.current = { x: newX, y: newY };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
+      if (animationFrameRef.current === null) {
+        animationFrameRef.current =
+          requestAnimationFrame(updateWindowStyleOnDrag);
+      }
+    },
+    [windowSize.width, windowSize.height, updateWindowStyleOnDrag],
+  );
 
-    // 恢复全局样式
+  const handleGlobalMouseUp = useCallback(() => {
+    if (!isDraggingRef.current) return;
+
+    isDraggingRef.current = false;
+    document.removeEventListener("mousemove", handleGlobalMouseMove);
+    document.removeEventListener("mouseup", handleGlobalMouseUp);
     document.body.style.userSelect = "";
-    document.body.style.pointerEvents = "";
-    if (windowRef.current) {
-      windowRef.current.style.pointerEvents = "";
+
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
-  };
+
+    // Sync React state with the final position
+    if (currentPositionRef.current) {
+      setWindowPosition(currentPositionRef.current);
+    }
+  }, [handleGlobalMouseMove]);
+
+  const handleMouseDown = useCallback(
+    (e) => {
+      if (e.target.closest(".window-controls") || e.target.closest(".MuiSelect-root")) {
+        // Do not start drag if clicking on window controls or the select component
+        return;
+      }
+      e.preventDefault();
+
+      isDraggingRef.current = true;
+      dragStartOffsetRef.current = {
+        x: e.clientX - windowPosition.x,
+        y: e.clientY - windowPosition.y,
+      };
+      // currentPositionRef.current is already up-to-date from setWindowPosition or initial state
+      // No need to set it here if windowPosition is the source of truth before drag starts
+
+      document.addEventListener("mousemove", handleGlobalMouseMove);
+      document.addEventListener("mouseup", handleGlobalMouseUp);
+      document.body.style.userSelect = "none";
+    },
+    [windowPosition.x, windowPosition.y, handleGlobalMouseMove, handleGlobalMouseUp],
+  );
 
   // 尺寸调整处理（使用防抖优化）
   const handleResize = useCallback(
     (_, { size }) => {
       // 立即更新尺寸以保持响应性
       setWindowSize(size);
-
       // 防抖处理其他相关更新
       debouncedSetWindowSize(size);
     },
     [debouncedSetWindowSize],
   );
-
-  // 添加全局鼠标事件监听
+  
+  // Cleanup global listeners if component unmounts while dragging
   useEffect(() => {
-    if (isDragging) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-      return () => {
-        document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp);
-      };
-    }
-  }, [isDragging, dragStart, windowPosition, windowSize]);
+    return () => {
+      if (isDraggingRef.current) {
+        document.removeEventListener("mousemove", handleGlobalMouseMove);
+        document.removeEventListener("mouseup", handleGlobalMouseUp);
+        document.body.style.userSelect = "";
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+      }
+    };
+  }, [handleGlobalMouseMove, handleGlobalMouseUp]);
+
 
   // 窗口尺寸变化时重新计算位置（确保不超出边界）
   useEffect(() => {
@@ -739,8 +779,8 @@ const AIChatWindow = ({ windowState, onClose }) => {
         elevation={8}
         sx={{
           position: "fixed",
-          left: windowPosition.x,
-          top: windowPosition.y,
+          left: windowPosition.x, // Initial position from state
+          top: windowPosition.y,  // Initial position from state
           width: windowSize.width,
           height: windowSize.height,
           display: "flex",
@@ -750,16 +790,16 @@ const AIChatWindow = ({ windowState, onClose }) => {
           overflow: "hidden",
           backdropFilter: "blur(10px)",
           border: `1px solid ${theme.palette.divider}`,
-          cursor: isDragging ? "grabbing" : "default",
+          // cursor will be set by onMouseDown logic
           opacity: windowState === WINDOW_STATE.VISIBLE ? 1 : 0.9,
           transition:
             "opacity 0.3s ease-in-out, width 0.1s ease-out, height 0.1s ease-out",
-          userSelect: isDragging ? "none" : "auto",
+          // userSelect is handled globally during drag
         }}
       >
         {/* 标题栏 */}
         <Box
-          onMouseDown={handleMouseDown}
+          onMouseDown={handleMouseDown} // Apply to the drag handle
           sx={{
             display: "flex",
             justifyContent: "space-between",
@@ -767,10 +807,10 @@ const AIChatWindow = ({ windowState, onClose }) => {
             p: 1.5,
             bgcolor: "primary.main",
             color: "primary.contrastText",
-            cursor: isDragging ? "grabbing" : "grab",
-            userSelect: "none", // 防止标题栏文字被选中
+            cursor: "grab", // Default cursor for draggable area
+            userSelect: "none", // Prevent text selection on the title bar
             "&:active": {
-              cursor: "grabbing",
+              cursor: "grabbing", // Cursor while dragging
             },
           }}
         >
@@ -1061,7 +1101,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
               onKeyDown={handleKeyDown}
               placeholder={t("aiAssistant.placeholder")}
               multiline
-              maxRows={2}
+              maxRows={6} // <--- Changed from 2 to 6
               fullWidth
               size="small"
               disabled={isLoading}
