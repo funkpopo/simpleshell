@@ -71,58 +71,39 @@ const terminalStyles = `
   overflow: hidden;
   position: relative;
 }
-/* 优化终端选择文本的显示效果 */
+
+/* Refined CSS for xterm selection highlighting */
 .xterm-selection {
   opacity: 1 !important;
   z-index: 10 !important;
-  pointer-events: none !important; /* 确保选择区域不会干扰鼠标事件 */
-  position: absolute !important; /* 确保定位正确 */
-}
-
-/* 确保选中区域准确反映实际选择内容 */
-.xterm .xterm-selection div {
+  pointer-events: none !important;
   position: absolute !important;
-  box-sizing: border-box !important;
-  /* 保持简单的样式以确保稳定性 */
 }
 
-/* 更强力的重复元素隐藏规则 */
-.xterm .xterm-selection div:nth-child(n+2) {
+/* Hide all selection divs by default */
+.xterm .xterm-selection div {
   display: none !important;
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
+  position: absolute !important; /* Ensure position is maintained for potential transform later */
+  box-sizing: border-box !important;
 }
 
-/* 针对可能的多层选择容器 */
-.xterm-selection:nth-child(n+2) {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-}
-
-/* 确保只有第一个选择元素可见 */
-.xterm .xterm-selection div:first-child {
+/* Specifically make only the first direct child div of the first .xterm-selection container visible */
+/* This is to prevent multiple .xterm-selection containers from showing their divs */
+.xterm .xterm-selection:first-of-type div:first-child {
   display: block !important;
   opacity: 1 !important;
   visibility: visible !important;
 }
 
-/* 针对标记为重复的选择元素 */
-.xterm-selection-duplicate {
+/* Additional rule to hide any .xterm-selection containers beyond the first one, if they somehow appear */
+.xterm-selection:not(:first-of-type) {
   display: none !important;
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
-}
-
-/* 强制隐藏所有可能的重复选择 */
-.xterm .xterm-selection:not(:first-of-type) {
-  display: none !important;
-}
-
-.xterm .xterm-selection div:not(:first-of-type) {
-  display: none !important;
 }
 `;
 
@@ -203,21 +184,29 @@ const getCharacterMetrics = (term) => {
 
   try {
     // 获取终端的实际字符尺寸
-    const charWidth =
-      term._core?._renderService?._renderer?.dimensions?.actualCellWidth ||
-      term._core?._renderService?.dimensions?.actualCellWidth ||
-      term.element
-        .querySelector(".xterm-char-measure-element")
-        ?.getBoundingClientRect()?.width ||
-      9; // 默认字符宽度
+    const charMeasureElement = term.element.querySelector(".xterm-char-measure-element");
+    let charWidth = 9; // Default
+    let charHeight = 17; // Default
 
-    const charHeight =
-      term._core?._renderService?._renderer?.dimensions?.actualCellHeight ||
-      term._core?._renderService?.dimensions?.actualCellHeight ||
-      term.element
-        .querySelector(".xterm-char-measure-element")
-        ?.getBoundingClientRect()?.height ||
-      17; // 默认字符高度
+    if (term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0) {
+      charWidth = term._core._renderService._renderer.dimensions.actualCellWidth;
+    } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) { // Older path
+      charWidth = term._core._renderService.dimensions.actualCellWidth;
+    } else if (charMeasureElement) {
+      charWidth = charMeasureElement.getBoundingClientRect().width;
+    }
+
+    if (term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0) {
+      charHeight = term._core._renderService._renderer.dimensions.actualCellHeight;
+    } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) { // Older path
+      charHeight = term._core._renderService.dimensions.actualCellHeight;
+    } else if (charMeasureElement) {
+      charHeight = charMeasureElement.getBoundingClientRect().height;
+    }
+    
+    // Ensure dimensions are at least 1 to avoid division by zero or negative values
+    charWidth = Math.max(1, Math.round(charWidth));
+    charHeight = Math.max(1, Math.round(charHeight));
 
     // 获取终端视口的偏移量
     const viewport = term.element.querySelector(".xterm-viewport");
@@ -1532,24 +1521,40 @@ const WebTerminal = ({
             (currentTop - metrics.screenOffset.y) % metrics.charHeight;
 
           // 只有当偏移量超过阈值时才进行调整
-          const threshold = 3; // 增加阈值以减少不必要的调整
-          if (
-            Math.abs(leftOffset) > threshold ||
-            Math.abs(topOffset) > threshold
-          ) {
-            const adjustX =
-              leftOffset > metrics.charWidth / 2
-                ? metrics.charWidth - leftOffset
-                : -leftOffset;
-            const adjustY =
-              topOffset > metrics.charHeight / 2
-                ? metrics.charHeight - topOffset
-                : -topOffset;
+          // const threshold = 3; // Original value
+          const threshold = 1; // Reduce threshold for finer adjustments
 
-            // 只对主要元素应用调整
+          // Only apply transform if the offset is significant enough AND the element is not already aligned.
+          // The condition for applying transform should be based on whether an actual adjustment is needed.
+          let needsAdjustmentX = Math.abs(leftOffset) > 0.1 && Math.abs(leftOffset) < metrics.charWidth;
+          let needsAdjustmentY = Math.abs(topOffset) > 0.1 && Math.abs(topOffset) < metrics.charHeight;
+          let adjustX, adjustY;
+
+          // If leftOffset is very close to charWidth, it means it's almost aligned to the next char, so no adjustment or negative.
+          if (Math.abs(metrics.charWidth - leftOffset) < threshold) {
+            adjustX = metrics.charWidth - leftOffset;
+            needsAdjustmentX = true;
+          } else {
+            adjustX = -leftOffset;
+          }
+
+          if (Math.abs(metrics.charHeight - topOffset) < threshold) {
+            adjustY = metrics.charHeight - topOffset;
+            needsAdjustmentY = true;
+          } else {
+            adjustY = -topOffset;
+          }
+          
+          // Only apply transform if an adjustment is actually computed and exceeds a minimal pixel change.
+          // This avoids applying tiny transforms like 0.001px.
+          const minPixelChange = 0.5;
+          if ((needsAdjustmentX && Math.abs(adjustX) > minPixelChange) || (needsAdjustmentY && Math.abs(adjustY) > minPixelChange)) {
             primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
             primaryElement.style.willChange = "transform";
-            primaryElement.style.opacity = "1"; // 确保主要元素可见
+          } else {
+            // If no significant adjustment is needed, clear any existing transform
+            primaryElement.style.transform = "";
+            primaryElement.style.willChange = "";
           }
         } catch (error) {
           // 选择元素调整失败，简化的回退处理 - 清理所有transform
