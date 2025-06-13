@@ -448,6 +448,9 @@ const WebTerminal = ({
   const lastExecutedCommandTimeRef = useRef(0);
   const lastExecutedCommandRef = useRef("");
 
+  // 新增：确认提示状态
+  const [isConfirmationPromptActive, setIsConfirmationPromptActive] = useState(false);
+
   // 获取命令建议的防抖函数
   const getSuggestions = useCallback(
     debounce(async (input) => {
@@ -773,6 +776,9 @@ const WebTerminal = ({
 
       // 检测回车键（命令执行的触发）
       if (data === "\r" || data === "\n") {
+        // 重置确认提示状态
+        setIsConfirmationPromptActive(false);
+
         // 设置命令执行状态，防止显示建议
         setIsCommandExecuting(true);
 
@@ -2418,9 +2424,17 @@ const WebTerminal = ({
         // 更新内容状态标志，表示终端内容已更新
         setContentUpdated(true);
 
+        const dataStr = data.toString();
+
+        // 检测确认提示
+        const confirmationPromptRegex = /\[y\/n\]|\[yes\/no\]/i;
+        if (confirmationPromptRegex.test(dataStr)) {
+          setIsConfirmationPromptActive(true);
+        }
+
         // 检测全屏应用启动并触发重新调整大小
         // 通常像top, htop, vim, nano等全屏应用会发送特定的ANSI转义序列
-        const dataStr = data.toString();
+        // const dataStr = data.toString(); // Already defined above
 
         // 检测常见的全屏应用启动特征
         if (
@@ -2804,7 +2818,7 @@ const WebTerminal = ({
       {/* 命令建议组件 */}
       <CommandSuggestion
         suggestions={suggestions}
-        visible={showSuggestions}
+        visible={showSuggestions && !isConfirmationPromptActive}
         position={cursorPosition}
         onSelectSuggestion={handleSuggestionSelect}
         onClose={closeSuggestions}
