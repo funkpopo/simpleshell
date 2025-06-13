@@ -1413,6 +1413,13 @@ const WebTerminal = ({
         // 鼠标中键点击 (e.button === 1 表示鼠标中键)
         if (e.button === 1) {
           e.preventDefault();
+
+          // 隐藏命令建议窗口，避免与粘贴操作冲突
+          setShowSuggestions(false);
+          setSuggestions([]);
+          setCurrentInput("");
+          setSuggestionsHiddenByEsc(false);
+
           navigator.clipboard.readText().then((text) => {
             if (text && processCache[tabId]) {
               // 使用预处理函数处理多行文本，防止注释和缩进问题
