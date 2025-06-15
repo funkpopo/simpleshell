@@ -28,6 +28,24 @@ module.exports = [
       options: {
         exclude: /node_modules/,
         presets: ["@babel/preset-react"],
+        plugins: [
+          // 配置 Material-UI 图标按需导入
+          [
+            "import",
+            {
+              libraryName: "@mui/icons-material",
+              libraryDirectory: "",
+              camel2DashComponentName: false,
+            },
+            "core",
+          ],
+        ],
+        // 解决大文件优化警告
+        compact: false,
+        // 启用缓存提升构建性能
+        cacheDirectory: true,
+        // 配置环境变量
+        envName: process.env.NODE_ENV || "development",
       },
     },
   },
