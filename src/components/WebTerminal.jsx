@@ -12,6 +12,8 @@ import {
   isElementVisible,
 } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
+import { renderingEngine } from "../utils/renderingEngine.js";
+import { imageSupport } from "../utils/imageSupport.js";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -1162,13 +1164,13 @@ const WebTerminal = ({
           theme: terminalTheme, // 使用固定的终端主题
           fontFamily: 'Consolas, "Courier New", monospace',
           fontSize: 14, // 默认大小，稍后会更新
-          scrollback: 10000,
+          scrollback: 50000, // 增加滚动缓冲以支持更多历史记录
           allowTransparency: true,
           cols: 120, // 设置更宽的初始列数
           rows: 30, // 设置初始行数
           convertEol: true, // 自动将行尾换行符转换为CRLF
           disableStdin: false,
-          rendererType: "canvas", // 使用canvas渲染器以保持稳定性
+          rendererType: "canvas", // 初始使用canvas，稍后会升级到WebGL
           termName: "xterm-256color", // 使用更高级的终端类型
           allowProposedApi: true, // 允许使用提议的API
           rightClickSelectsWord: false, // 禁用右键点击选中单词，使用自定义右键菜单
@@ -1179,6 +1181,9 @@ const WebTerminal = ({
           // 优化字符渲染
           letterSpacing: 0, // 字符间距
           lineHeight: 1.0, // 行高
+          // 性能优化配置
+          smoothScrollDuration: 0, // 禁用平滑滚动提升性能
+          windowsMode: navigator.platform?.toLowerCase().includes('win') || false,
           // 禁用一些可能影响选择精度的特性
           macOptionIsMeta: false,
           macOptionClickForcesSelection: false,
@@ -1225,6 +1230,29 @@ const WebTerminal = ({
 
         // 打开终端
         term.open(terminalRef.current);
+
+        // 初始化渲染器和图像支持
+        (async () => {
+          try {
+            // 初始化渲染引擎
+            const renderResult = await renderingEngine.initializeRenderer(term);
+            if (renderResult.success) {
+              console.log(`渲染器初始化成功: ${renderResult.renderer}`);
+            } else {
+              console.warn(`渲染器初始化失败: ${renderResult.error}`);
+            }
+
+            // 初始化图像支持
+            const imageResult = await imageSupport.initialize(term);
+            if (imageResult) {
+              console.log('图像支持初始化成功');
+            } else {
+              console.warn('图像支持初始化失败');
+            }
+          } catch (error) {
+            console.error('高级功能初始化失败:', error);
+          }
+        })();
 
         // 使用EventManager管理确保适配容器大小
         eventManager.setTimeout(() => {

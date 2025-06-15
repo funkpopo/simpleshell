@@ -349,7 +349,17 @@ function loadUISettings() {
         "ConfigManager: Main config path not set. Cannot load UI settings.",
         "ERROR",
       );
-    return { language: "zh-CN", fontSize: 14, darkMode: true };
+    return {
+    language: "zh-CN",
+    fontSize: 14,
+    darkMode: true,
+    performance: {
+      webglEnabled: true,
+      imageSupported: true,
+      cacheEnabled: true,
+      prefetchEnabled: true
+    }
+  };
   }
   if (logToFile)
     logToFile(
@@ -362,9 +372,19 @@ function loadUISettings() {
       const data = fs.readFileSync(mainConfigPath, "utf8");
       const config = JSON.parse(data);
       if (config.uiSettings) {
+        // 确保性能设置存在
+        const uiSettings = {
+          ...config.uiSettings,
+          performance: {
+            webglEnabled: config.uiSettings.performance?.webglEnabled !== false,
+            imageSupported: config.uiSettings.performance?.imageSupported !== false,
+            cacheEnabled: config.uiSettings.performance?.cacheEnabled !== false,
+            prefetchEnabled: config.uiSettings.performance?.prefetchEnabled !== false
+          }
+        };
         if (logToFile)
           logToFile("ConfigManager: UI settings loaded successfully.", "INFO");
-        return config.uiSettings;
+        return uiSettings;
       }
     }
   } catch (error) {

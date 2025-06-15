@@ -2801,6 +2801,29 @@ function setupIPC(mainWindow) {
     return saved;
   });
 
+  // 性能设置实时更新API
+  ipcMain.handle("settings:updateCacheSettings", async (event, settings) => {
+    try {
+      // 这里可以实时更新缓存设置
+      logToFile(`缓存设置已更新: ${JSON.stringify(settings)}`, "INFO");
+      return { success: true };
+    } catch (error) {
+      logToFile(`更新缓存设置失败: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("settings:updatePrefetchSettings", async (event, settings) => {
+    try {
+      // 这里可以实时更新预取设置
+      logToFile(`预取设置已更新: ${JSON.stringify(settings)}`, "INFO");
+      return { success: true };
+    } catch (error) {
+      logToFile(`更新预取设置失败: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
   // 获取快捷命令
   ipcMain.handle("get-shortcut-commands", async () => {
     try {

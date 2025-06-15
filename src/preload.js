@@ -322,6 +322,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   saveLogSettings: (settings) =>
     ipcRenderer.invoke("settings:saveLogSettings", settings),
 
+  // 性能设置实时更新API
+  updateCacheSettings: (settings) =>
+    ipcRenderer.invoke("settings:updateCacheSettings", settings),
+  updatePrefetchSettings: (settings) =>
+    ipcRenderer.invoke("settings:updatePrefetchSettings", settings),
+
   // 窗口重新加载
   reloadWindow: () => ipcRenderer.invoke("app:reloadWindow"),
 
