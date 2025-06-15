@@ -407,6 +407,9 @@ function App() {
   const [globalAiChatWindowState, setGlobalAiChatWindowState] =
     React.useState("closed"); // 'visible', 'closed'
 
+  // AI助手预设输入值
+  const [aiInputPreset, setAiInputPreset] = React.useState("");
+
   React.useEffect(() => {
     const getSidebarWidth = () => {
       if (resourceMonitorOpen && lastOpenedSidebar === "resource") {
@@ -1001,6 +1004,14 @@ function App() {
 
   const handleCloseGlobalAiChatWindow = () => {
     setGlobalAiChatWindowState("closed");
+    // 清除预设输入值
+    setAiInputPreset("");
+  };
+
+  // 发送文本到AI助手
+  const handleSendToAI = (text) => {
+    setAiInputPreset(text);
+    setGlobalAiChatWindowState("visible");
   };
 
   // 更新关闭所有侧边栏的函数
@@ -1071,8 +1082,14 @@ function App() {
       handleToggleGlobalAiChatWindow();
     };
 
+    // 监听发送到AI助手事件
+    const handleSendToAIEvent = (event) => {
+      handleSendToAI(event.detail.text);
+    };
+
     window.addEventListener("settingsChanged", handleSettingsChanged);
     window.addEventListener("toggleGlobalAI", handleToggleGlobalAI);
+    window.addEventListener("sendToAI", handleSendToAIEvent);
 
     // 初始化应用设置
     const loadInitialSettings = async () => {
@@ -1106,6 +1123,7 @@ function App() {
     return () => {
       window.removeEventListener("settingsChanged", handleSettingsChanged);
       window.removeEventListener("toggleGlobalAI", handleToggleGlobalAI);
+      window.removeEventListener("sendToAI", handleSendToAIEvent);
     };
   }, [darkMode]); // 添加 darkMode 依赖
 
@@ -1665,6 +1683,8 @@ function App() {
       <AIChatWindow
         windowState={globalAiChatWindowState}
         onClose={handleCloseGlobalAiChatWindow}
+        presetInput={aiInputPreset}
+        onInputPresetUsed={() => setAiInputPreset("")}
       />
 
       {/* 关于对话框 */}
