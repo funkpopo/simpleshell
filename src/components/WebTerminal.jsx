@@ -22,6 +22,7 @@ import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SearchIcon from "@mui/icons-material/Search";
 import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import CloseIcon from "@mui/icons-material/Close";
+import SmartToyIcon from "@mui/icons-material/SmartToy";
 import Divider from "@mui/material/Divider";
 import Tooltip from "@mui/material/Tooltip";
 import IconButton from "@mui/material/IconButton";
@@ -2379,6 +2380,17 @@ const WebTerminal = ({
     handleClose();
   };
 
+  // 发送选中文本到AI助手
+  const handleSendToAI = () => {
+    if (selectedText) {
+      // 触发全局事件，将选中文本发送到AI助手
+      window.dispatchEvent(new CustomEvent('sendToAI', {
+        detail: { text: selectedText }
+      }));
+    }
+    handleClose();
+  };
+
   // 清空终端
   const handleClear = () => {
     if (termRef.current) {
@@ -2797,6 +2809,12 @@ const WebTerminal = ({
           </ListItemIcon>
           <ListItemText>粘贴</ListItemText>
           <div style={{ marginLeft: 8, opacity: 0.7 }}>Ctrl+Alt+V / 中键</div>
+        </MenuItem>
+        <MenuItem onClick={handleSendToAI} disabled={!selectedText}>
+          <ListItemIcon>
+            <SmartToyIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>发送到AI助手</ListItemText>
         </MenuItem>
         <Divider />
         <MenuItem onClick={handleSearchFromMenu}>

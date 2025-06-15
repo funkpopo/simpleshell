@@ -58,7 +58,7 @@ const WINDOW_STATE = {
   CLOSED: "closed",
 };
 
-const AIChatWindow = ({ windowState, onClose }) => {
+const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) => {
   const { t } = useTranslation();
   const theme = useTheme();
   const [messages, setMessages] = useState([]);
@@ -78,6 +78,26 @@ const AIChatWindow = ({ windowState, onClose }) => {
 
   // 思考内容处理器
   const streamThinkProcessorRef = useRef(null);
+
+  // 输入框引用
+  const inputRef = useRef(null);
+
+  // 处理预设输入值
+  useEffect(() => {
+    if (presetInput && windowState === WINDOW_STATE.VISIBLE) {
+      setInputValue(presetInput);
+      // 通知父组件预设输入已被使用
+      if (onInputPresetUsed) {
+        onInputPresetUsed();
+      }
+      // 聚焦到输入框
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 100);
+    }
+  }, [presetInput, windowState, onInputPresetUsed]);
 
   // 窗口位置和尺寸状态
   const [windowSize, setWindowSize] = useState({ width: 350, height: 450 });
@@ -1089,6 +1109,7 @@ const AIChatWindow = ({ windowState, onClose }) => {
         >
           <Box sx={{ display: "flex", gap: 1 }}>
             <TextField
+              ref={inputRef}
               value={inputValue}
               onChange={(e) => {
                 setInputValue(e.target.value);
