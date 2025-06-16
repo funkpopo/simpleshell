@@ -16,6 +16,7 @@ const sftpTransfer = require("./modules/sftp/sftpTransfer");
 const systemInfo = require("./modules/system-info");
 const terminalManager = require("./modules/terminal");
 const commandHistoryService = require("./modules/terminal/command-history");
+const fileCache = require("./core/utils/fileCache");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -235,6 +236,10 @@ app.whenReady().then(() => {
     },
   );
 
+  // Initialize file cache module
+  fileCache.init(logToFile, app);
+  fileCache.startPeriodicCleanup(); // 启动定期清理
+
   createWindow();
   createAIWorker();
 
@@ -349,6 +354,21 @@ app.on("before-quit", () => {
   }
   // 清空进程映射
   childProcesses.clear();
+
+  // 清理所有缓存文件
+  fileCache.cleanupAllCaches()
+    .then((cleanedCount) => {
+      logToFile(
+        `Cleaned up ${cleanedCount} cache files on app quit`,
+        "INFO",
+      );
+    })
+    .catch((error) => {
+      logToFile(
+        `Failed to cleanup cache files on quit: ${error.message}`,
+        "ERROR",
+      );
+    });
 
   // 保存命令历史
   try {
@@ -2530,8 +2550,8 @@ function setupIPC(mainWindow) {
         try {
           const sftp = await sftpCore.getSftpSession(tabId);
 
-          return new Promise((resolve, reject) => {
-            sftp.readFile(filePath, (err, data) => {
+          return new Promise(async (resolve, reject) => {
+            sftp.readFile(filePath, async (err, data) => {
               if (err) {
                 logToFile(
                   `Failed to read file as base64 for session ${tabId}: ${err.message}`,
@@ -2543,14 +2563,34 @@ function setupIPC(mainWindow) {
                 });
               }
 
-              // 转换为base64
-              const base64Data = data.toString("base64");
+              try {
+                // 缓存文件到本地
+                const fileName = path.basename(filePath);
+                const cacheFilePath = await fileCache.cacheFile(fileName, data, tabId);
 
-              resolve({
-                success: true,
-                content: base64Data,
-                filePath,
-              });
+                // 转换为base64
+                const base64Data = data.toString("base64");
+
+                resolve({
+                  success: true,
+                  content: base64Data,
+                  filePath,
+                  cacheFilePath, // 返回缓存文件路径
+                });
+              } catch (cacheError) {
+                logToFile(
+                  `Failed to cache file ${filePath}: ${cacheError.message}`,
+                  "WARN",
+                );
+                
+                // 即使缓存失败，仍然返回base64数据
+                const base64Data = data.toString("base64");
+                resolve({
+                  success: true,
+                  content: base64Data,
+                  filePath,
+                });
+              }
             });
           });
         } catch (error) {
@@ -2563,6 +2603,38 @@ function setupIPC(mainWindow) {
         "ERROR",
       );
       return { success: false, error: `读取文件内容失败: ${error.message}` };
+    }
+  });
+
+  // 清理文件缓存
+  ipcMain.handle("cleanupFileCache", async (event, cacheFilePath) => {
+    try {
+      if (cacheFilePath) {
+        const success = await fileCache.cleanupCacheFile(cacheFilePath);
+        return { success };
+      } else {
+        return { success: false, error: "缓存文件路径不能为空" };
+      }
+    } catch (error) {
+      logToFile(
+        `Failed to cleanup cache file ${cacheFilePath}: ${error.message}`,
+        "ERROR",
+      );
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 清理标签页缓存
+  ipcMain.handle("cleanupTabCache", async (event, tabId) => {
+    try {
+      const cleanedCount = await fileCache.cleanupTabCaches(tabId);
+      return { success: true, cleanedCount };
+    } catch (error) {
+      logToFile(
+        `Failed to cleanup tab cache for ${tabId}: ${error.message}`,
+        "ERROR",
+      );
+      return { success: false, error: error.message };
     }
   });
 
