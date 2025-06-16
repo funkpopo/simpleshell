@@ -368,4 +368,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("command-history:delete", command),
   deleteCommandHistoryBatch: (commands) =>
     ipcRenderer.invoke("command-history:deleteBatch", commands),
+
+  // 文件缓存管理API
+  cleanupFileCache: (cacheFilePath) =>
+    ipcRenderer.invoke("cleanupFileCache", cacheFilePath),
+  cleanupTabCache: (tabId) =>
+    ipcRenderer.invoke("cleanupTabCache", tabId),
 });
