@@ -39,6 +39,7 @@ import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import FilePreview from "./FilePreview.jsx";
 import VirtualizedFileList from "./VirtualizedFileList.jsx";
+import TransferProgressManager from "./TransferProgressManager.jsx";
 import {
   formatFileSize,
   formatTransferSpeed,
@@ -83,7 +84,7 @@ const FileManager = ({
   const [showPreview, setShowPreview] = useState(false);
   const [pathInput, setPathInput] = useState("");
   const [isEditing, setIsEditing] = useState(false);
-  const [transferProgress, setTransferProgress] = useState(null);
+  const [transferProgressList, setTransferProgressList] = useState([]);
   const [transferCancelled, setTransferCancelled] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -93,6 +94,56 @@ const FileManager = ({
 
   // 自动刷新相关参数
   const USER_ACTIVITY_REFRESH_DELAY = 1000; // 用户活动后刷新延迟
+
+  // 传输进度管理函数
+  const generateTransferId = () => {
+    return `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  };
+
+  // 添加新的传输任务
+  const addTransferProgress = (transferData) => {
+    const transferId = transferData.transferId || generateTransferId();
+    const newTransfer = {
+      transferId,
+      ...transferData,
+      startTime: Date.now(),
+    };
+    
+    setTransferProgressList(prev => [...prev, newTransfer]);
+    return transferId;
+  };
+
+  // 更新传输进度
+  const updateTransferProgress = (transferId, updateData) => {
+    setTransferProgressList(prev => 
+      prev.map(transfer => 
+        transfer.transferId === transferId 
+          ? { ...transfer, ...updateData }
+          : transfer
+      )
+    );
+  };
+
+  // 移除传输任务
+  const removeTransferProgress = (transferId) => {
+    setTransferProgressList(prev => 
+      prev.filter(transfer => transfer.transferId !== transferId)
+    );
+  };
+
+  // 清理已完成的传输任务
+  const clearCompletedTransfers = () => {
+    setTransferProgressList(prev =>
+      prev.filter(transfer => 
+        transfer.progress < 100 && !transfer.isCancelled && !transfer.error
+      )
+    );
+  };
+
+  // 清理所有传输任务
+  const clearAllTransfers = () => {
+    setTransferProgressList([]);
+  };
 
   // 检查错误消息是否与用户取消操作相关
   const isUserCancellationError = (error) => {
@@ -564,11 +615,11 @@ const FileManager = ({
       }
 
       if (window.terminalAPI && window.terminalAPI.uploadFile) {
-        // 设置初始传输进度状态
-        setTransferProgress({
+        // 创建新的传输任务
+        const transferId = addTransferProgress({
           type: "upload",
           progress: 0,
-          fileName: "",
+          fileName: "准备上传...",
           transferredBytes: 0,
           totalBytes: 0,
           transferSpeed: 0,
@@ -599,8 +650,7 @@ const FileManager = ({
             const validTransferSpeed = Math.max(0, transferSpeed || 0);
             const validRemainingTime = Math.max(0, remainingTime || 0);
 
-            setTransferProgress({
-              type: "upload",
+            updateTransferProgress(transferId, {
               progress: validProgress,
               fileName: fileName || "",
               transferredBytes: validTransferredBytes,
@@ -615,8 +665,14 @@ const FileManager = ({
         );
 
         if (result?.success) {
-          // 上传完成后清除进度状态
-          setTimeout(() => setTransferProgress(null), 1500);
+          // 标记传输完成
+          updateTransferProgress(transferId, {
+            progress: 100,
+            fileName: result.message || "上传完成",
+          });
+
+          // 传输完成后延迟移除
+          setTimeout(() => removeTransferProgress(transferId), 3000);
 
           // 切换到上传的目标路径
           updateCurrentPath(targetPath);
@@ -632,17 +688,27 @@ const FileManager = ({
           if (isUserCancellationError(result)) {
             logToFile("FileManager: 上传被用户取消，跳过错误显示", "INFO");
             setTransferCancelled(true);
+            updateTransferProgress(transferId, {
+              isCancelled: true,
+              cancelMessage: "用户已取消",
+            });
           }
         } else if (!transferCancelled) {
           // 检查是否是取消操作相关的错误
           if (!isUserCancellationError(result)) {
             // 只有在不是用户主动取消的情况下才显示错误
             setError(result.error || "上传文件失败");
+            updateTransferProgress(transferId, {
+              error: result.error || "上传文件失败",
+            });
           } else {
             logToFile("FileManager: 检测到用户取消操作，跳过错误显示", "INFO");
             setTransferCancelled(true);
+            updateTransferProgress(transferId, {
+              isCancelled: true,
+              cancelMessage: "用户已取消",
+            });
           }
-          setTransferProgress(null);
         }
 
         // 无论上传结果如何，都刷新文件列表
@@ -658,15 +724,29 @@ const FileManager = ({
         !error.message?.includes("reply was never sent")
       ) {
         setError("上传文件失败: " + (error.message || "未知错误"));
+        // 更新所有未完成的传输为错误状态
+        setTransferProgressList(prev => 
+          prev.map(transfer => 
+            transfer.progress < 100 && !transfer.isCancelled
+              ? { ...transfer, error: error.message || "未知错误" }
+              : transfer
+          )
+        );
       } else {
         logToFile(
           `FileManager: 跳过取消操作错误显示: ${error.message}`,
           "INFO",
         );
         setTransferCancelled(true);
+        // 标记所有未完成的传输为取消状态
+        setTransferProgressList(prev => 
+          prev.map(transfer => 
+            transfer.progress < 100 && !transfer.isCancelled
+              ? { ...transfer, isCancelled: true, cancelMessage: "用户已取消" }
+              : transfer
+          )
+        );
       }
-
-      setTransferProgress(null);
 
       // 无论上传结果如何，都刷新文件列表
       refreshAfterUserActivity();
@@ -702,11 +782,11 @@ const FileManager = ({
       }
 
       if (window.terminalAPI && window.terminalAPI.uploadFolder) {
-        // 设置初始传输进度状态
-        setTransferProgress({
+        // 创建新的文件夹传输任务
+        const transferId = addTransferProgress({
           type: "upload-folder",
           progress: 0,
-          fileName: "",
+          fileName: "准备上传文件夹...",
           currentFile: "",
           transferredBytes: 0,
           totalBytes: 0,
@@ -741,8 +821,7 @@ const FileManager = ({
             const validProcessedFiles = Math.max(0, processedFiles || 0);
             const validTotalFiles = Math.max(0, totalFiles || 0);
 
-            setTransferProgress({
-              type: "upload-folder",
+            updateTransferProgress(transferId, {
               progress: validProgress,
               fileName: fileName || "",
               currentFile: currentFile || "",
@@ -758,8 +837,14 @@ const FileManager = ({
         );
 
         if (result?.success) {
-          // 上传完成后清除进度状态
-          setTimeout(() => setTransferProgress(null), 1500);
+          // 标记传输完成
+          updateTransferProgress(transferId, {
+            progress: 100,
+            fileName: result.message || "文件夹上传完成",
+          });
+
+          // 传输完成后延迟移除
+          setTimeout(() => removeTransferProgress(transferId), 3000);
 
           // 切换到上传的目标路径
           updateCurrentPath(targetPath);
@@ -778,17 +863,27 @@ const FileManager = ({
               "INFO",
             );
             setTransferCancelled(true);
+            updateTransferProgress(transferId, {
+              isCancelled: true,
+              cancelMessage: "用户已取消",
+            });
           }
         } else if (!transferCancelled) {
           // 检查是否是取消操作相关的错误
           if (!isUserCancellationError(result)) {
             // 只有在不是用户主动取消的情况下才显示错误
             setError(result.error || "上传文件夹失败");
+            updateTransferProgress(transferId, {
+              error: result.error || "上传文件夹失败",
+            });
           } else {
             logToFile("FileManager: 检测到用户取消操作，跳过错误显示", "INFO");
             setTransferCancelled(true);
+            updateTransferProgress(transferId, {
+              isCancelled: true,
+              cancelMessage: "用户已取消",
+            });
           }
-          setTransferProgress(null);
         }
 
         // 无论上传结果如何，都刷新文件列表
@@ -811,8 +906,6 @@ const FileManager = ({
         );
         setTransferCancelled(true);
       }
-
-      setTransferProgress(null);
 
       // 无论上传结果如何，都刷新文件列表
       refreshAfterUserActivity();
@@ -943,84 +1036,91 @@ const FileManager = ({
   };
 
   // 处理取消传输
-  const handleCancelTransfer = async () => {
-    if (!transferProgress || !window.terminalAPI) {
+  const handleCancelTransfer = async (transferId) => {
+    if (!window.terminalAPI) {
+      return;
+    }
+
+    // 如果没有提供transferId，取消所有活跃传输
+    const transfersToCancel = transferId 
+      ? transferProgressList.filter(t => t.transferId === transferId)
+      : transferProgressList.filter(t => t.progress < 100 && !t.isCancelled && !t.error);
+
+    if (transfersToCancel.length === 0) {
       return;
     }
 
     try {
-      // 检查传输是否已经完成或已经取消
-      if (transferProgress.isCancelled || transferProgress.progress === 100) {
-        // 传输已完成或已取消，直接隐藏进度界面并刷新文件列表
-        setTransferProgress(null);
-        refreshAfterUserActivity();
-        return;
-      }
-
       // 标记传输已取消，用于避免显示错误消息
       setTransferCancelled(true);
 
-      // 获取传输键值，用于取消特定的传输任务
-      const transferKey = transferProgress.transferKey;
+      for (const transfer of transfersToCancel) {
+        const transferKey = transfer.transferKey;
 
-      // 只有在传输进行中且API可用时才调用取消传输API
-      if (
-        !transferProgress.isCancelled &&
-        transferProgress.progress < 100 &&
-        window.terminalAPI.cancelTransfer
-      ) {
         // 显示取消中状态
-        setTransferProgress({
-          ...transferProgress,
+        updateTransferProgress(transfer.transferId, {
           cancelInProgress: true,
           cancelMessage: "正在取消传输...",
         });
 
         // 调用取消API传递transferKey
-        const result = await window.terminalAPI.cancelTransfer(
-          tabId,
-          transferKey,
-        );
+        if (window.terminalAPI.cancelTransfer && transferKey) {
+          try {
+            const result = await window.terminalAPI.cancelTransfer(
+              tabId,
+              transferKey,
+            );
 
-        if (result.success) {
-          // 更新UI以显示已取消
-          setTransferProgress({
-            ...transferProgress,
-            progress: 0,
-            isCancelled: true,
-            cancelMessage: "传输已取消",
-          });
+            if (result.success) {
+              // 更新UI以显示已取消
+              updateTransferProgress(transfer.transferId, {
+                progress: 0,
+                isCancelled: true,
+                cancelMessage: "传输已取消",
+              });
 
-          // 短暂延迟后移除进度条
-          setTimeout(() => setTransferProgress(null), 1500);
+              // 记录取消成功
+              logToFile(`FileManager: 传输 ${transferKey} 已成功取消`, "INFO");
+            } else {
+              // 仍然更新UI以避免用户困惑
+              updateTransferProgress(transfer.transferId, {
+                progress: 0,
+                isCancelled: true,
+                cancelMessage: "传输已中断",
+              });
 
-          // 记录取消成功
-          logToFile(`FileManager: 传输 ${transferKey} 已成功取消`, "INFO");
+              // 记录取消失败但显示为成功
+              logToFile(
+                `FileManager: 传输取消API返回失败，但界面仍显示已取消: ${result.error || "未知错误"}`,
+                "WARN",
+              );
+            }
+          } catch (apiError) {
+            // API调用失败，但仍标记为取消
+            updateTransferProgress(transfer.transferId, {
+              progress: 0,
+              isCancelled: true,
+              cancelMessage: "传输已中断",
+            });
+
+            logToFile(
+              `FileManager: 取消传输API调用失败: ${apiError.message}`,
+              "ERROR",
+            );
+          }
         } else {
-          // 仍然更新UI以避免用户困惑
-          setTransferProgress({
-            ...transferProgress,
+          // API不可用，直接标记为取消
+          updateTransferProgress(transfer.transferId, {
             progress: 0,
             isCancelled: true,
             cancelMessage: "传输已中断",
           });
 
-          // 短暂延迟后移除进度条
-          setTimeout(() => setTransferProgress(null), 1500);
-
-          // 记录取消失败但显示为成功
           logToFile(
-            `FileManager: 传输取消API返回失败，但界面仍显示已取消: ${result.error || "未知错误"}`,
-            "WARN",
+            "FileManager: 取消API不可用，直接标记传输为已取消",
+            "INFO",
           );
         }
-      } else {
-        // API不可用，直接隐藏进度界面
-        logToFile(
-          "FileManager: 取消API不可用或传输已经结束，直接隐藏进度条",
-          "INFO",
-        );
-        setTransferProgress(null);
       }
 
       // 添加额外延迟，确保取消操作完成后再刷新
@@ -1033,13 +1133,18 @@ const FileManager = ({
       }, 800); // 延迟800ms等待后端处理完成
     } catch (error) {
       // 取消传输失败
+      logToFile(
+        `FileManager: 取消传输过程中发生错误: ${error.message}`,
+        "ERROR",
+      );
 
-      // 即使出现错误，也更新UI表明传输已中断
-      setTransferProgress({
-        ...transferProgress,
-        progress: 0,
-        isCancelled: true,
-        cancelMessage: "传输已中断",
+      // 即使出现错误，也标记相关传输为已中断
+      transfersToCancel.forEach(transfer => {
+        updateTransferProgress(transfer.transferId, {
+          progress: 0,
+          isCancelled: true,
+          cancelMessage: "传输已中断",
+        });
       });
 
       // 发生错误时也刷新文件列表，确保UI状态一致
@@ -1047,9 +1152,6 @@ const FileManager = ({
         refreshAfterUserActivity();
         loadDirectory(currentPath, 0, true);
       }, 800);
-
-      // 短暂延迟后移除进度条
-      setTimeout(() => setTransferProgress(null), 1500);
     }
   };
 
@@ -1166,7 +1268,7 @@ const FileManager = ({
 
   // 处理创建文件
   const handleCreateFile = () => {
-    setNewFileName2("");
+    setNewFileName("");
     setShowCreateFileDialog(true);
     handleBlankContextMenuClose();
   };
@@ -1175,7 +1277,7 @@ const FileManager = ({
   const handleCreateFileSubmit = async (e) => {
     e.preventDefault();
 
-    if (!newFileName2.trim() || !sshConnection) {
+    if (!newFileName.trim() || !sshConnection) {
       setShowCreateFileDialog(false);
       return;
     }
@@ -1185,8 +1287,8 @@ const FileManager = ({
     try {
       const fullPath =
         currentPath === "/"
-          ? "/" + newFileName2.trim()
-          : currentPath + "/" + newFileName2.trim();
+          ? "/" + newFileName.trim()
+          : currentPath + "/" + newFileName.trim();
 
       if (window.terminalAPI && window.terminalAPI.createFile) {
         const result = await window.terminalAPI.createFile(tabId, fullPath);
@@ -1262,8 +1364,8 @@ const FileManager = ({
             : savedSelectedFile.name;
 
       if (window.terminalAPI && window.terminalAPI.downloadFile) {
-        // 设置初始传输进度状态
-        setTransferProgress({
+        // 创建新的下载传输任务
+        const transferId = addTransferProgress({
           type: "download",
           progress: 0,
           fileName: savedSelectedFile.name,
@@ -1274,7 +1376,7 @@ const FileManager = ({
         });
 
         // 使用progressCallback处理进度更新
-        await window.terminalAPI.downloadFile(
+        const result = await window.terminalAPI.downloadFile(
           tabId,
           fullPath,
           (
@@ -1286,8 +1388,7 @@ const FileManager = ({
             remainingTime,
             transferKey,
           ) => {
-            setTransferProgress({
-              type: "download",
+            updateTransferProgress(transferId, {
               progress,
               fileName,
               transferredBytes,
@@ -1299,8 +1400,18 @@ const FileManager = ({
           },
         );
 
-        // 下载完成后清除进度状态
-        setTimeout(() => setTransferProgress(null), 1500);
+        // 处理下载结果
+        if (result?.success) {
+          updateTransferProgress(transferId, {
+            progress: 100,
+            fileName: result.message || "下载完成",
+          });
+          setTimeout(() => removeTransferProgress(transferId), 3000);
+        } else if (result?.error) {
+          updateTransferProgress(transferId, {
+            error: result.error,
+          });
+        }
       }
     } catch (error) {
       // 下载文件失败
@@ -1311,9 +1422,15 @@ const FileManager = ({
         !error.message?.includes("reply was never sent")
       ) {
         setError("下载文件失败: " + (error.message || "未知错误"));
+        // 更新所有未完成的传输为错误状态
+        setTransferProgressList(prev => 
+          prev.map(transfer => 
+            transfer.progress < 100 && !transfer.isCancelled
+              ? { ...transfer, error: error.message || "未知错误" }
+              : transfer
+          )
+        );
       }
-
-      setTransferProgress(null);
     }
     handleContextMenuClose();
   };
@@ -1389,8 +1506,8 @@ const FileManager = ({
       })();
 
       if (window.terminalAPI && window.terminalAPI.downloadFolder) {
-        // 设置初始传输进度状态
-        setTransferProgress({
+        // 创建新的文件夹下载传输任务
+        const transferId = addTransferProgress({
           type: "download-folder",
           progress: 0,
           fileName: savedSelectedFile.name,
@@ -1419,8 +1536,7 @@ const FileManager = ({
               totalFiles,
               transferKey,
             ) => {
-              setTransferProgress({
-                type: "download-folder",
+              updateTransferProgress(transferId, {
                 progress,
                 fileName: savedSelectedFile.name,
                 currentFile,
@@ -1435,9 +1551,15 @@ const FileManager = ({
             },
           );
 
-          // 下载完成后清除进度状态
+          // 标记传输完成
+          updateTransferProgress(transferId, {
+            progress: 100,
+            fileName: "文件夹下载完成",
+          });
+
+          // 下载完成后延迟移除
           setTimeout(() => {
-            setTransferProgress(null);
+            removeTransferProgress(transferId);
 
             // 显示详细的成功通知
             if (downloadResult && downloadResult.downloadPath) {
@@ -1588,7 +1710,14 @@ const FileManager = ({
         }, 3000);
       }
 
-      setTransferProgress(null);
+      // 标记所有未完成的传输为错误状态
+      setTransferProgressList(prev => 
+        prev.map(transfer => 
+          transfer.progress < 100 && !transfer.isCancelled
+            ? { ...transfer, error: error.message || "未知错误" }
+            : transfer
+        )
+      );
     }
     handleContextMenuClose();
   };
@@ -1711,24 +1840,42 @@ const FileManager = ({
   // 处理关闭文件管理器
   const handleClose = () => {
     // 检查是否有正在进行的传输
-    if (
-      transferProgress &&
-      !transferProgress.isCancelled &&
-      transferProgress.progress < 100
-    ) {
+    const activeTransfers = transferProgressList.filter(
+      t => t.progress < 100 && !t.isCancelled && !t.error
+    );
+
+    if (activeTransfers.length > 0) {
+      // 构建传输类型描述
+      const hasUpload = activeTransfers.some(t => 
+        t.type === "upload" || t.type === "upload-folder"
+      );
+      const hasDownload = activeTransfers.some(t => 
+        t.type === "download" || t.type === "download-folder"
+      );
+      
+      let transferTypeDescription = "";
+      if (hasUpload && hasDownload) {
+        transferTypeDescription = "上传和下载";
+      } else if (hasUpload) {
+        transferTypeDescription = "上传";
+      } else {
+        transferTypeDescription = "下载";
+      }
+
       // 显示确认对话框，询问用户是否确定要取消传输
       const isConfirmed = window.confirm(
-        `有正在进行的${transferProgress.type === "upload" || transferProgress.type === "upload-folder" ? "上传" : "下载"}任务，关闭窗口将中断传输。是否继续？`,
+        `有正在进行的${transferTypeDescription}任务，关闭窗口将中断传输。是否继续？`,
       );
 
       if (isConfirmed) {
         // 先禁用关闭按钮防止用户多次点击
         setIsClosing(true);
 
-        // 显示取消中的状态
-        setTransferProgress({
-          ...transferProgress,
-          cancelMessage: "正在取消传输...",
+        // 标记所有传输为取消中状态
+        activeTransfers.forEach(transfer => {
+          updateTransferProgress(transfer.transferId, {
+            cancelMessage: "正在取消传输...",
+          });
         });
 
         // 执行取消传输操作
@@ -1971,130 +2118,7 @@ const FileManager = ({
         {renderFileList()}
       </Box>
 
-      {/* 文件传输进度 */}
-      {transferProgress && (
-        <Box
-          sx={{
-            p: 1.5,
-            borderTop: `1px solid ${theme.palette.divider}`,
-            backgroundColor: theme.palette.background.paper,
-            flexShrink: 0, // 不收缩
-          }}
-        >
-          <Box
-            sx={{
-              mb: 0.5,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <Typography variant="caption" noWrap sx={{ maxWidth: "60%" }}>
-              {transferProgress.type === "upload"
-                ? "上传: "
-                : transferProgress.type === "upload-folder"
-                  ? "上传文件夹: "
-                  : transferProgress.type === "download-folder"
-                    ? "下载文件夹: "
-                    : "下载: "}
-              {transferProgress.fileName}
-              {transferProgress.totalFiles > 1 &&
-                ` (${transferProgress.currentFileIndex || 0}/${transferProgress.totalFiles})`}
-            </Typography>
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <Typography variant="caption" sx={{ mr: 1 }}>
-                {transferProgress.isCancelled
-                  ? transferProgress.cancelMessage
-                  : `${transferProgress.progress}%`}
-              </Typography>
-              <IconButton
-                size="small"
-                onClick={handleCancelTransfer}
-                sx={{ padding: 0.5 }}
-              >
-                <CancelIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          </Box>
 
-          {/* 多文件上传时显示当前正在处理的文件 */}
-          {transferProgress.type === "upload" &&
-            transferProgress.totalFiles > 1 &&
-            transferProgress.fileName && (
-              <Typography
-                variant="caption"
-                noWrap
-                sx={{ display: "block", mb: 0.5, color: "text.secondary" }}
-              >
-                当前文件: {transferProgress.fileName}
-              </Typography>
-            )}
-
-          {/* 文件夹传输时显示当前正在处理的文件 */}
-          {(transferProgress.type === "upload-folder" ||
-            transferProgress.type === "download-folder") &&
-            transferProgress.currentFile && (
-              <Typography
-                variant="caption"
-                noWrap
-                sx={{ display: "block", mb: 0.5, color: "text.secondary" }}
-              >
-                当前文件: {transferProgress.currentFile}
-              </Typography>
-            )}
-
-          <LinearProgress
-            variant="determinate"
-            value={transferProgress.progress}
-            sx={{
-              mb: 0.5,
-              ...(transferProgress.isCancelled && {
-                "& .MuiLinearProgress-bar": {
-                  backgroundColor: theme.palette.error.main,
-                },
-              }),
-            }}
-          />
-
-          <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-            <Typography variant="caption">
-              {formatFileSize(transferProgress.transferredBytes)} /{" "}
-              {formatFileSize(transferProgress.totalBytes)}
-            </Typography>
-            <Typography variant="caption">
-              {!transferProgress.isCancelled &&
-                formatTransferSpeed(transferProgress.transferSpeed)}
-            </Typography>
-          </Box>
-
-          {/* 显示文件数量信息 */}
-          {transferProgress.type === "upload" &&
-            transferProgress.totalFiles > 1 && (
-              <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
-                {transferProgress.currentFileIndex || 0} /{" "}
-                {transferProgress.totalFiles} 个文件
-              </Typography>
-            )}
-
-          {/* 文件夹传输时显示文件进度 */}
-          {(transferProgress.type === "upload-folder" ||
-            transferProgress.type === "download-folder") && (
-            <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
-              {transferProgress.processedFiles} / {transferProgress.totalFiles}{" "}
-              个文件
-            </Typography>
-          )}
-
-          {!transferProgress.isCancelled && (
-            <Typography
-              variant="caption"
-              sx={{ display: "block", textAlign: "right" }}
-            >
-              剩余: {formatRemainingTime(transferProgress.remainingTime)}
-            </Typography>
-          )}
-        </Box>
-      )}
 
       {/* 文件右键菜单 */}
       <Menu
@@ -2379,8 +2403,8 @@ const FileManager = ({
               <TextField
                 fullWidth
                 label="文件名称"
-                value={newFileName2}
-                onChange={(e) => setNewFileName2(e.target.value)}
+                value={newFileName}
+                onChange={(e) => setNewFileName(e.target.value)}
                 autoFocus
                 variant="outlined"
                 size="small"
@@ -2462,6 +2486,14 @@ const FileManager = ({
           </Alert>
         )}
       </Snackbar>
+
+      {/* 传输进度管理器 */}
+      <TransferProgressManager
+        transferList={transferProgressList}
+        onCancelTransfer={handleCancelTransfer}
+        onClearCompleted={clearCompletedTransfers}
+        onClearAll={clearAllTransfers}
+      />
     </Paper>
   );
 };
