@@ -192,7 +192,7 @@ export class StreamThinkProcessor {
       currentThinkContentLength: this.currentThinkContent.length,
       normalContentLength: this.normalContent.length,
       isInThinkTag: this.isInThinkTag,
-      bufferLength: this.buffer.length
+      bufferLength: this.buffer.length,
     });
 
     // 关键改进：直接对原始流式内容进行完整的二次处理
@@ -200,12 +200,16 @@ export class StreamThinkProcessor {
 
     console.log("[StreamThinkProcessor] 原始内容二次处理结果:", {
       rawThinkContentLength: rawProcessingResult.thinkContent.length,
-      rawNormalContentLength: rawProcessingResult.normalContent.length
+      rawNormalContentLength: rawProcessingResult.normalContent.length,
     });
 
     // 如果原始内容处理得到了更好的结果，使用它
-    if (rawProcessingResult.thinkContent.length > this.currentThinkContent.length ||
-        (rawProcessingResult.thinkContent.length > 0 && this.currentThinkContent.length === 0)) {
+    if (
+      rawProcessingResult.thinkContent.length >
+        this.currentThinkContent.length ||
+      (rawProcessingResult.thinkContent.length > 0 &&
+        this.currentThinkContent.length === 0)
+    ) {
       console.log("[StreamThinkProcessor] 使用原始内容处理结果");
       return {
         thinkContent: rawProcessingResult.thinkContent,
@@ -240,7 +244,8 @@ export class StreamThinkProcessor {
       hasThinkContent: !!this.currentThinkContent.trim(),
       hasNormalContent: !!this.normalContent.trim(),
       fullContentLength: fullContent.length,
-      fullContentPreview: fullContent.substring(0, 100) + (fullContent.length > 100 ? "..." : "")
+      fullContentPreview:
+        fullContent.substring(0, 100) + (fullContent.length > 100 ? "..." : ""),
     });
 
     return fullContent;
@@ -270,13 +275,17 @@ export class StreamThinkProcessor {
       originalNormalLength: this.normalContent.length,
       reprocessedThinkLength: reprocessedResult.thinkContent.length,
       reprocessedNormalLength: reprocessedResult.normalContent.length,
-      hasImprovement: reprocessedResult.thinkContent.length > this.currentThinkContent.length ||
-                     reprocessedResult.normalContent.length !== this.normalContent.length
+      hasImprovement:
+        reprocessedResult.thinkContent.length >
+          this.currentThinkContent.length ||
+        reprocessedResult.normalContent.length !== this.normalContent.length,
     });
 
     // 如果二次处理发现了更多内容，使用二次处理的结果
-    if (reprocessedResult.thinkContent.length > 0 ||
-        reprocessedResult.normalContent.length !== this.normalContent.length) {
+    if (
+      reprocessedResult.thinkContent.length > 0 ||
+      reprocessedResult.normalContent.length !== this.normalContent.length
+    ) {
       return reprocessedResult;
     }
 
@@ -406,7 +415,7 @@ export function validateThinkTags(content) {
   return {
     isValid: issues.length === 0,
     issues,
-    stats: { openTags, closeTags }
+    stats: { openTags, closeTags },
   };
 }
 
@@ -420,7 +429,7 @@ export function repairThinkContent(content) {
     return {
       thinkContent: "",
       normalContent: content || "",
-      repaired: false
+      repaired: false,
     };
   }
 
@@ -431,11 +440,14 @@ export function repairThinkContent(content) {
     const result = parseThinkContent(content);
     return {
       ...result,
-      repaired: false
+      repaired: false,
     };
   }
 
-  console.log("[repairThinkContent] 检测到标签问题，尝试修复:", validation.issues);
+  console.log(
+    "[repairThinkContent] 检测到标签问题，尝试修复:",
+    validation.issues,
+  );
 
   // 尝试修复内容
   let repairedContent = content;
@@ -443,7 +455,10 @@ export function repairThinkContent(content) {
   // 移除不完整的标签片段
   repairedContent = repairedContent.replace(/<think(?!>)[^>]*$/gi, "");
   repairedContent = repairedContent.replace(/<\/think(?!>)[^>]*$/gi, "");
-  repairedContent = repairedContent.replace(/^[^<]*?(?=<think>|<\/think>|$)/gi, "");
+  repairedContent = repairedContent.replace(
+    /^[^<]*?(?=<think>|<\/think>|$)/gi,
+    "",
+  );
 
   // 如果有未匹配的开始标签，尝试添加结束标签
   const openTags = (repairedContent.match(/<think>/gi) || []).length;
@@ -452,7 +467,9 @@ export function repairThinkContent(content) {
   if (openTags > closeTags) {
     const missingCloseTags = openTags - closeTags;
     repairedContent += "</think>".repeat(missingCloseTags);
-    console.log(`[repairThinkContent] 添加了${missingCloseTags}个缺失的结束标签`);
+    console.log(
+      `[repairThinkContent] 添加了${missingCloseTags}个缺失的结束标签`,
+    );
   } else if (closeTags > openTags) {
     // 移除多余的结束标签
     const extraCloseTags = closeTags - openTags;
@@ -468,11 +485,11 @@ export function repairThinkContent(content) {
     originalLength: content.length,
     repairedLength: repairedContent.length,
     thinkContentLength: result.thinkContent.length,
-    normalContentLength: result.normalContent.length
+    normalContentLength: result.normalContent.length,
   });
 
   return {
     ...result,
-    repaired: true
+    repaired: true,
   };
 }

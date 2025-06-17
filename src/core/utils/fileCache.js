@@ -18,7 +18,10 @@ class FileCache {
     this.logToFile = logToFile || (() => {});
     this.cacheDir = this.getCacheDirectory(app);
     this.ensureCacheDirectory();
-    this.logToFile(`File cache initialized with directory: ${this.cacheDir}`, "INFO");
+    this.logToFile(
+      `File cache initialized with directory: ${this.cacheDir}`,
+      "INFO",
+    );
   }
 
   /**
@@ -52,7 +55,10 @@ class FileCache {
         this.logToFile(`Created cache directory: ${this.cacheDir}`, "INFO");
       }
     } catch (error) {
-      this.logToFile(`Failed to create cache directory: ${error.message}`, "ERROR");
+      this.logToFile(
+        `Failed to create cache directory: ${error.message}`,
+        "ERROR",
+      );
       throw error;
     }
   }
@@ -91,19 +97,19 @@ class FileCache {
         tabId: tabId,
         createdAt: Date.now(),
       };
-      
+
       this.activeCaches.set(cacheFilePath, cacheInfo);
 
       this.logToFile(
         `File cached: ${originalFileName} -> ${cacheFilePath} (tabId: ${tabId})`,
-        "DEBUG"
+        "DEBUG",
       );
 
       return cacheFilePath;
     } catch (error) {
       this.logToFile(
         `Failed to cache file ${originalFileName}: ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
       throw error;
     }
@@ -127,7 +133,7 @@ class FileCache {
     } catch (error) {
       this.logToFile(
         `Failed to cleanup cache file ${cacheFilePath}: ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -160,7 +166,7 @@ class FileCache {
     if (cleanedCount > 0) {
       this.logToFile(
         `Cleaned up ${cleanedCount} cache files for tabId: ${tabId}`,
-        "INFO"
+        "INFO",
       );
     }
 
@@ -194,7 +200,8 @@ class FileCache {
    * @param {number} maxAgeMs 最大存活时间（毫秒）
    * @returns {Promise<number>} 清理的文件数量
    */
-  async cleanupExpiredCaches(maxAgeMs = 3600000) { // 默认1小时
+  async cleanupExpiredCaches(maxAgeMs = 3600000) {
+    // 默认1小时
     let cleanedCount = 0;
     const now = Date.now();
     const filesToClean = [];
@@ -215,10 +222,7 @@ class FileCache {
     }
 
     if (cleanedCount > 0) {
-      this.logToFile(
-        `Cleaned up ${cleanedCount} expired cache files`,
-        "INFO"
-      );
+      this.logToFile(`Cleaned up ${cleanedCount} expired cache files`, "INFO");
     }
 
     return cleanedCount;
@@ -232,7 +236,7 @@ class FileCache {
     return {
       totalFiles: this.activeCaches.size,
       cacheDirectory: this.cacheDir,
-      files: Array.from(this.activeCaches.values()).map(info => ({
+      files: Array.from(this.activeCaches.values()).map((info) => ({
         originalName: info.originalName,
         tabId: info.tabId,
         createdAt: new Date(info.createdAt).toISOString(),
@@ -246,25 +250,26 @@ class FileCache {
    * @param {number} intervalMs 清理间隔（毫秒）
    * @param {number} maxAgeMs 文件最大存活时间（毫秒）
    */
-  startPeriodicCleanup(intervalMs = 1800000, maxAgeMs = 3600000) { // 默认30分钟清理一次，1小时过期
+  startPeriodicCleanup(intervalMs = 1800000, maxAgeMs = 3600000) {
+    // 默认30分钟清理一次，1小时过期
     setInterval(async () => {
       try {
         await this.cleanupExpiredCaches(maxAgeMs);
       } catch (error) {
         this.logToFile(
           `Error during periodic cache cleanup: ${error.message}`,
-          "ERROR"
+          "ERROR",
         );
       }
     }, intervalMs);
 
     this.logToFile(
       `Started periodic cache cleanup (interval: ${intervalMs}ms, maxAge: ${maxAgeMs}ms)`,
-      "INFO"
+      "INFO",
     );
   }
 }
 
 // 导出单例实例
 const fileCache = new FileCache();
-module.exports = fileCache; 
+module.exports = fileCache;

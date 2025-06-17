@@ -350,16 +350,16 @@ function loadUISettings() {
         "ERROR",
       );
     return {
-    language: "zh-CN",
-    fontSize: 14,
-    darkMode: true,
-    performance: {
-      webglEnabled: true,
-      imageSupported: true,
-      cacheEnabled: true,
-      prefetchEnabled: true
-    }
-  };
+      language: "zh-CN",
+      fontSize: 14,
+      darkMode: true,
+      performance: {
+        webglEnabled: true,
+        imageSupported: true,
+        cacheEnabled: true,
+        prefetchEnabled: true,
+      },
+    };
   }
   if (logToFile)
     logToFile(
@@ -377,10 +377,12 @@ function loadUISettings() {
           ...config.uiSettings,
           performance: {
             webglEnabled: config.uiSettings.performance?.webglEnabled !== false,
-            imageSupported: config.uiSettings.performance?.imageSupported !== false,
+            imageSupported:
+              config.uiSettings.performance?.imageSupported !== false,
             cacheEnabled: config.uiSettings.performance?.cacheEnabled !== false,
-            prefetchEnabled: config.uiSettings.performance?.prefetchEnabled !== false
-          }
+            prefetchEnabled:
+              config.uiSettings.performance?.prefetchEnabled !== false,
+          },
         };
         if (logToFile)
           logToFile("ConfigManager: UI settings loaded successfully.", "INFO");

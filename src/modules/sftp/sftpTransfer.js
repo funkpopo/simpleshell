@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const SftpClient = require("ssh2-sftp-client"); // For direct SFTP operations if not going through sftpCore's queue for all parts.
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
+const { createSftpAdapter, init: initSftpAdapter } = require("./sftpAdapter");
 
 let logToFile = null;
 let sftpCore = null; // To access getSftpSession, enqueueSftpOperation, calculateDynamicTimeout
@@ -14,6 +15,30 @@ let getChildProcessInfo = null; // To get SSH config from childProcesses map in 
 let sendToRenderer = null; // Function to send progress/status to renderer
 
 const activeTransfers = new Map(); // Manages active transfer operations for cancellation
+
+// 判断是否是需要会话恢复的错误类型
+function isSessionError(error) {
+  if (!error || !error.message) return false;
+
+  const sessionErrorMessages = [
+    "ECONNRESET",
+    "EOF",
+    "Connection lost",
+    "socket hang up",
+    "SSH connection closed",
+    "SFTP stream closed",
+    "No response from server",
+    "Connection timed out",
+    "disconnected",
+    "Channel closed",
+    "not connected",
+  ];
+
+  const message = error.message.toLowerCase();
+  return sessionErrorMessages.some((errorType) =>
+    message.includes(errorType.toLowerCase()),
+  );
+}
 
 function init(
   logger,
@@ -51,6 +76,10 @@ function init(
   } else {
     sendToRenderer = sendToRendererFunc;
   }
+
+  // 初始化SFTP适配器
+  initSftpAdapter(logger);
+
   logToFile("sftpTransfer initialized.", "INFO");
 }
 
@@ -95,7 +124,8 @@ async function handleDownloadFile(event, tabId, remotePath) {
         return { success: false, cancelled: true, error: "用户取消下载" };
       }
 
-      const sftp = new SftpClient(); // Using a new SftpClient instance for transfer as in main.js
+      // 使用SFTP适配器复用现有会话，而不是创建新连接
+      const sftp = await createSftpAdapter(tabId, sftpCore);
       const transferKey = `${tabId}-download-${Date.now()}`;
       activeTransfers.set(transferKey, {
         sftp,
@@ -104,25 +134,11 @@ async function handleDownloadFile(event, tabId, remotePath) {
       });
 
       try {
-        await sftp.connect({
-          host: sshConfig.host,
-          port: sshConfig.port || 22,
-          username: sshConfig.username,
-          password: sshConfig.password,
-          privateKey: sshConfig.privateKeyPath
-            ? fs.readFileSync(sshConfig.privateKeyPath, "utf8")
-            : undefined,
-          passphrase:
-            sshConfig.privateKeyPath && sshConfig.password
-              ? sshConfig.password
-              : undefined,
-          // 优化连接参数以改善大文件传输稳定性
-          keepaliveInterval: 30000, // 30秒发送一次keepalive
-          keepaliveCountMax: 3, // 最多3次keepalive失败
-          readyTimeout: 60000, // 连接准备超时60秒
-          timeout: 0, // 不设置全局超时，让操作级别的超时来控制
-          algorithms: getBasicSSHAlgorithms(),
-        });
+        // 适配器已经连接，无需再次连接
+        logToFile(
+          `sftpTransfer: 复用SFTP会话进行下载 ${remotePath} (tab: ${tabId})`,
+          "INFO",
+        );
 
         const stats = await sftp.stat(remotePath);
         const totalBytes = stats.size;
@@ -227,6 +243,24 @@ async function handleDownloadFile(event, tabId, remotePath) {
           `sftpTransfer: Download file error for ${remotePath} on ${tabId}: ${error.message}`,
           "ERROR",
         );
+
+        // 检查是否是会话相关错误，如果是则尝试恢复会话
+        if (isSessionError(error) && sftpCore) {
+          logToFile(
+            `sftpTransfer: 检测到会话错误，尝试恢复SFTP会话 (tab: ${tabId})`,
+            "WARN",
+          );
+          try {
+            await sftpCore.ensureSftpSession(tabId);
+            logToFile(`sftpTransfer: SFTP会话恢复成功 (tab: ${tabId})`, "INFO");
+          } catch (recoveryError) {
+            logToFile(
+              `sftpTransfer: SFTP会话恢复失败 (tab: ${tabId}): ${recoveryError.message}`,
+              "ERROR",
+            );
+          }
+        }
+
         await sftp.end().catch(() => {});
         activeTransfers.delete(transferKey);
         if (fs.existsSync(filePath + ".part"))
@@ -326,7 +360,8 @@ async function handleUploadFile(
       }
       const sshConfig = processInfo.config;
 
-      const sftp = new SftpClient();
+      // 使用SFTP适配器复用现有会话
+      const sftp = await createSftpAdapter(tabId, sftpCore);
       // Create a more unique transferKey if multiple `handleUploadFile` calls can be concurrent for the same tabId
       // For now, assuming one major upload operation per tabId from this handler.
       const transferKey = `${tabId}-upload-multifile-${Date.now()}`;
@@ -337,25 +372,11 @@ async function handleUploadFile(
       });
 
       try {
-        await sftp.connect({
-          host: sshConfig.host,
-          port: sshConfig.port || 22,
-          username: sshConfig.username,
-          password: sshConfig.password,
-          privateKey: sshConfig.privateKeyPath
-            ? fs.readFileSync(sshConfig.privateKeyPath, "utf8")
-            : undefined,
-          passphrase:
-            sshConfig.privateKeyPath && sshConfig.password
-              ? sshConfig.password
-              : undefined,
-          // 优化连接参数以改善大文件传输稳定性
-          keepaliveInterval: 30000, // 30秒发送一次keepalive
-          keepaliveCountMax: 3, // 最多3次keepalive失败
-          readyTimeout: 60000, // 连接准备超时60秒
-          timeout: 0, // 不设置全局超时，让操作级别的超时来控制
-          algorithms: getBasicSSHAlgorithms(),
-        });
+        // 适配器已经连接，无需再次连接
+        logToFile(
+          `sftpTransfer: 复用SFTP会话进行多文件上传 (tab: ${tabId})`,
+          "INFO",
+        );
 
         // Ensure target directory exists
         try {
@@ -664,6 +685,23 @@ async function handleUploadFile(
           };
         }
 
+        // 检查是否是会话相关错误，如果是则尝试恢复会话
+        if (isSessionError(error) && sftpCore) {
+          logToFile(
+            `sftpTransfer: 检测到会话错误，尝试恢复SFTP会话 (tab: ${tabId})`,
+            "WARN",
+          );
+          try {
+            await sftpCore.ensureSftpSession(tabId);
+            logToFile(`sftpTransfer: SFTP会话恢复成功 (tab: ${tabId})`, "INFO");
+          } catch (recoveryError) {
+            logToFile(
+              `sftpTransfer: SFTP会话恢复失败 (tab: ${tabId}): ${recoveryError.message}`,
+              "ERROR",
+            );
+          }
+        }
+
         // 如果是其他错误，保持原有的错误返回逻辑
         return {
           success: false,
@@ -762,7 +800,8 @@ async function handleUploadFolder(
       }
       const sshConfig = processInfo.config;
 
-      const sftp = new SftpClient();
+      // 使用SFTP适配器复用现有会话
+      const sftp = await createSftpAdapter(tabId, sftpCore);
       const transferKey = `${tabId}-upload-folder-${Date.now()}`;
       activeTransfers.set(transferKey, {
         sftp,
@@ -823,27 +862,9 @@ async function handleUploadFolder(
           };
         }
 
-        await sftp.connect({
-          host: sshConfig.host,
-          port: sshConfig.port || 22,
-          username: sshConfig.username,
-          password: sshConfig.password,
-          privateKey: sshConfig.privateKeyPath
-            ? fs.readFileSync(sshConfig.privateKeyPath, "utf8")
-            : undefined,
-          passphrase:
-            sshConfig.privateKeyPath && sshConfig.password
-              ? sshConfig.password
-              : undefined,
-          // 优化连接参数以改善大文件传输稳定性
-          keepaliveInterval: 30000, // 30秒发送一次keepalive
-          keepaliveCountMax: 3, // 最多3次keepalive失败
-          readyTimeout: 60000, // 连接准备超时60秒
-          timeout: 0, // 不设置全局超时，让操作级别的超时来控制
-          algorithms: getBasicSSHAlgorithms(),
-        });
+        // 适配器已经连接，无需再次连接
         logToFile(
-          `sftpTransfer: SFTP connected for folder upload to ${sshConfig.host}. TransferKey: ${transferKey}`,
+          `sftpTransfer: 复用SFTP会话进行文件夹上传 (tab: ${tabId}). TransferKey: ${transferKey}`,
           "INFO",
         );
 
@@ -1065,6 +1086,24 @@ async function handleUploadFolder(
           `sftpTransfer: uploadFolder error for "${localFolderPath}" to "${remoteBaseUploadPath}": ${error.message}`,
           "ERROR",
         );
+
+        // 检查是否是会话相关错误，如果是则尝试恢复会话
+        if (isSessionError(error) && sftpCore) {
+          logToFile(
+            `sftpTransfer: 检测到会话错误，尝试恢复SFTP会话 (tab: ${tabId})`,
+            "WARN",
+          );
+          try {
+            await sftpCore.ensureSftpSession(tabId);
+            logToFile(`sftpTransfer: SFTP会话恢复成功 (tab: ${tabId})`, "INFO");
+          } catch (recoveryError) {
+            logToFile(
+              `sftpTransfer: SFTP会话恢复失败 (tab: ${tabId}): ${recoveryError.message}`,
+              "ERROR",
+            );
+          }
+        }
+
         // Send a final error status to renderer for the whole operation
         if (progressChannel) {
           // Check if progressChannel is provided
@@ -1191,7 +1230,8 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
       }
       const sshConfig = processInfo.config;
 
-      const sftp = new SftpClient();
+      // 使用SFTP适配器复用现有会话
+      const sftp = await createSftpAdapter(tabId, sftpCore);
       const transferKey = `${tabId}-download-folder-${Date.now()}`;
       activeTransfers.set(transferKey, {
         sftp,
@@ -1237,36 +1277,18 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
               remotePath: entryRemotePath,
               relativePath: entryRelativePath,
               name: entry.name,
-              size: entry.attrs.size, // ssh2-sftp-client uses entry.attrs.size
+              size: entry.size, // 使用适配器统一的size属性
             });
-            totalBytesToDownload += entry.attrs.size;
+            totalBytesToDownload += entry.size;
             totalFilesToDownload++;
           }
         }
       }
 
       try {
-        await sftp.connect({
-          host: sshConfig.host,
-          port: sshConfig.port || 22,
-          username: sshConfig.username,
-          password: sshConfig.password,
-          privateKey: sshConfig.privateKeyPath
-            ? fs.readFileSync(sshConfig.privateKeyPath, "utf8")
-            : undefined,
-          passphrase:
-            sshConfig.privateKeyPath && sshConfig.password
-              ? sshConfig.password
-              : undefined,
-          // 优化连接参数以改善大文件传输稳定性
-          keepaliveInterval: 30000, // 30秒发送一次keepalive
-          keepaliveCountMax: 3, // 最多3次keepalive失败
-          readyTimeout: 60000, // 连接准备超时60秒
-          timeout: 0, // 不设置全局超时，让操作级别的超时来控制
-          algorithms: getBasicSSHAlgorithms(),
-        });
+        // 适配器已经连接，无需再次连接
         logToFile(
-          `sftpTransfer: SFTP connected for folder download from ${sshConfig.host}. TransferKey: ${transferKey}`,
+          `sftpTransfer: 复用SFTP会话进行文件夹下载 (tab: ${tabId}). TransferKey: ${transferKey}`,
           "INFO",
         );
 
@@ -1456,6 +1478,24 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           `sftpTransfer: downloadFolder error for "${remoteFolderPath}" to "${localBaseDownloadPath}": ${error.message}`,
           "ERROR",
         );
+
+        // 检查是否是会话相关错误，如果是则尝试恢复会话
+        if (isSessionError(error) && sftpCore) {
+          logToFile(
+            `sftpTransfer: 检测到会话错误，尝试恢复SFTP会话 (tab: ${tabId})`,
+            "WARN",
+          );
+          try {
+            await sftpCore.ensureSftpSession(tabId);
+            logToFile(`sftpTransfer: SFTP会话恢复成功 (tab: ${tabId})`, "INFO");
+          } catch (recoveryError) {
+            logToFile(
+              `sftpTransfer: SFTP会话恢复失败 (tab: ${tabId}): ${recoveryError.message}`,
+              "ERROR",
+            );
+          }
+        }
+
         sendToRenderer("download-folder-progress", {
           tabId,
           transferKey,

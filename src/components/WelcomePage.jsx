@@ -68,7 +68,6 @@ const WelcomePage = () => {
               color: "primary.main",
               mb: 2,
               filter: `drop-shadow(0 4px 6px ${theme.palette.primary.main}40)`,
-
             }}
           />
         </Box>

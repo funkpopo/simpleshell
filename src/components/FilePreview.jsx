@@ -39,7 +39,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 
 // 配置PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
+  "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url,
 ).toString();
 
@@ -158,12 +158,12 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [modified, setModified] = useState(false);
   const [savingFile, setSavingFile] = useState(false);
   const [notification, setNotification] = useState(null);
-  
+
   // PDF相关状态
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1.0);
-  
+
   // 缓存文件路径状态
   const [cacheFilePath, setCacheFilePath] = useState(null);
 
@@ -227,11 +227,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
               }
-              
+
               // react-pdf需要包含data属性的对象
               const pdfData = { data: bytes };
               setContent(pdfData);
-              
+
               // 保存缓存文件路径
               if (response.cacheFilePath) {
                 setCacheFilePath(response.cacheFilePath);
@@ -354,24 +354,28 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   };
 
   const goToPrevPage = () => {
-    setPageNumber(prev => Math.max(prev - 1, 1));
+    setPageNumber((prev) => Math.max(prev - 1, 1));
   };
 
   const goToNextPage = () => {
-    setPageNumber(prev => Math.min(prev + 1, numPages || 1));
+    setPageNumber((prev) => Math.min(prev + 1, numPages || 1));
   };
 
   const zoomIn = () => {
-    setScale(prev => Math.min(prev + 0.2, 3.0));
+    setScale((prev) => Math.min(prev + 0.2, 3.0));
   };
 
   const zoomOut = () => {
-    setScale(prev => Math.max(prev - 0.2, 0.5));
+    setScale((prev) => Math.max(prev - 0.2, 0.5));
   };
 
   // 清理缓存文件
   const cleanupCache = async () => {
-    if (cacheFilePath && window.terminalAPI && window.terminalAPI.cleanupFileCache) {
+    if (
+      cacheFilePath &&
+      window.terminalAPI &&
+      window.terminalAPI.cleanupFileCache
+    ) {
       try {
         await window.terminalAPI.cleanupFileCache(cacheFilePath);
         setCacheFilePath(null);
@@ -542,12 +546,20 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
             <ButtonGroup size="small" variant="outlined">
               <Tooltip title="放大">
-                <IconButton onClick={zoomIn} disabled={scale >= 3.0} size="small">
+                <IconButton
+                  onClick={zoomIn}
+                  disabled={scale >= 3.0}
+                  size="small"
+                >
                   <ZoomInIcon />
                 </IconButton>
               </Tooltip>
               <Tooltip title="缩小">
-                <IconButton onClick={zoomOut} disabled={scale <= 0.5} size="small">
+                <IconButton
+                  onClick={zoomOut}
+                  disabled={scale <= 0.5}
+                  size="small"
+                >
                   <ZoomOutIcon />
                 </IconButton>
               </Tooltip>

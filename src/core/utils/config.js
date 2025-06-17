@@ -139,8 +139,8 @@ async function loadUISettings() {
           webglEnabled: true,
           imageSupported: true,
           cacheEnabled: true,
-          prefetchEnabled: true
-        }
+          prefetchEnabled: true,
+        },
       };
     }
 
@@ -156,8 +156,9 @@ async function loadUISettings() {
         webglEnabled: config.uiSettings.performance?.webglEnabled !== false,
         imageSupported: config.uiSettings.performance?.imageSupported !== false,
         cacheEnabled: config.uiSettings.performance?.cacheEnabled !== false,
-        prefetchEnabled: config.uiSettings.performance?.prefetchEnabled !== false
-      }
+        prefetchEnabled:
+          config.uiSettings.performance?.prefetchEnabled !== false,
+      },
     };
 
     return uiSettings;
@@ -171,8 +172,8 @@ async function loadUISettings() {
         webglEnabled: true,
         imageSupported: true,
         cacheEnabled: true,
-        prefetchEnabled: true
-      }
+        prefetchEnabled: true,
+      },
     };
   }
 }
@@ -198,8 +199,8 @@ async function saveUISettings(settings) {
         webglEnabled: settings.performance?.webglEnabled !== false,
         imageSupported: settings.performance?.imageSupported !== false,
         cacheEnabled: settings.performance?.cacheEnabled !== false,
-        prefetchEnabled: settings.performance?.prefetchEnabled !== false
-      }
+        prefetchEnabled: settings.performance?.prefetchEnabled !== false,
+      },
     };
 
     // 更新UI设置

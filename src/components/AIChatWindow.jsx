@@ -58,7 +58,12 @@ const WINDOW_STATE = {
   CLOSED: "closed",
 };
 
-const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) => {
+const AIChatWindow = ({
+  windowState,
+  onClose,
+  presetInput,
+  onInputPresetUsed,
+}) => {
   const { t } = useTranslation();
   const theme = useTheme();
   const [messages, setMessages] = useState([]);
@@ -139,12 +144,11 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
   const [windowPosition, setWindowPosition] = useState(
     calculateInitialPosition,
   );
-  
+
   // Initialize currentPositionRef with the initial window position
   useEffect(() => {
     currentPositionRef.current = calculateInitialPosition();
   }, []); // Empty dependency array ensures this runs once on mount
-
 
   // 初始化最大尺寸约束
   useEffect(() => {
@@ -295,7 +299,7 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
           console.log("[AIChatWindow] 流式响应结束，最终处理结果:", {
             thinkContentLength: finalResult.thinkContent.length,
             normalContentLength: finalResult.normalContent.length,
-            sessionId: currentSessionId
+            sessionId: currentSessionId,
           });
 
           setMessages((prev) => {
@@ -307,17 +311,21 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
               lastMessage.streaming
             ) {
               // 额外的安全检查：对最终内容进行强制二次处理
-              const combinedRawContent = (finalResult.thinkContent ? `<think>${finalResult.thinkContent}</think>` : '') +
-                                       finalResult.normalContent;
+              const combinedRawContent =
+                (finalResult.thinkContent
+                  ? `<think>${finalResult.thinkContent}</think>`
+                  : "") + finalResult.normalContent;
 
-              const { thinkContent: finalThinkContent, normalContent: finalNormalContent } =
-                parseThinkContent(combinedRawContent);
+              const {
+                thinkContent: finalThinkContent,
+                normalContent: finalNormalContent,
+              } = parseThinkContent(combinedRawContent);
 
               console.log("[AIChatWindow] 强制二次处理结果:", {
                 beforeThinkLength: finalResult.thinkContent.length,
                 afterThinkLength: finalThinkContent.length,
                 beforeNormalLength: finalResult.normalContent.length,
-                afterNormalLength: finalNormalContent.length
+                afterNormalLength: finalNormalContent.length,
               });
 
               lastMessage.streaming = false;
@@ -688,8 +696,9 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
       currentPositionRef.current = { x: newX, y: newY };
 
       if (animationFrameRef.current === null) {
-        animationFrameRef.current =
-          requestAnimationFrame(updateWindowStyleOnDrag);
+        animationFrameRef.current = requestAnimationFrame(
+          updateWindowStyleOnDrag,
+        );
       }
     },
     [windowSize.width, windowSize.height, updateWindowStyleOnDrag],
@@ -716,7 +725,10 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
 
   const handleMouseDown = useCallback(
     (e) => {
-      if (e.target.closest(".window-controls") || e.target.closest(".MuiSelect-root")) {
+      if (
+        e.target.closest(".window-controls") ||
+        e.target.closest(".MuiSelect-root")
+      ) {
         // Do not start drag if clicking on window controls or the select component
         return;
       }
@@ -734,7 +746,12 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
       document.addEventListener("mouseup", handleGlobalMouseUp);
       document.body.style.userSelect = "none";
     },
-    [windowPosition.x, windowPosition.y, handleGlobalMouseMove, handleGlobalMouseUp],
+    [
+      windowPosition.x,
+      windowPosition.y,
+      handleGlobalMouseMove,
+      handleGlobalMouseUp,
+    ],
   );
 
   // 尺寸调整处理（使用防抖优化）
@@ -747,7 +764,7 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
     },
     [debouncedSetWindowSize],
   );
-  
+
   // Cleanup global listeners if component unmounts while dragging
   useEffect(() => {
     return () => {
@@ -761,7 +778,6 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
       }
     };
   }, [handleGlobalMouseMove, handleGlobalMouseUp]);
-
 
   // 窗口尺寸变化时重新计算位置（确保不超出边界）
   useEffect(() => {
@@ -800,7 +816,7 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
         sx={{
           position: "fixed",
           left: windowPosition.x, // Initial position from state
-          top: windowPosition.y,  // Initial position from state
+          top: windowPosition.y, // Initial position from state
           width: windowSize.width,
           height: windowSize.height,
           display: "flex",
