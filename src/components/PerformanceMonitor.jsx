@@ -33,7 +33,6 @@ import {
   Image as ImageIcon,
   Computer as ComputerIcon,
 } from "@mui/icons-material";
-import { renderingEngine } from "../utils/renderingEngine.js";
 import { imageSupport } from "../utils/imageSupport.js";
 
 const PerformanceMonitor = ({ isVisible = false }) => {
@@ -71,10 +70,6 @@ const PerformanceMonitor = ({ isVisible = false }) => {
   // 更新性能数据
   const updatePerformanceData = () => {
     try {
-      // 获取渲染器性能指标
-      const metrics = renderingEngine.getPerformanceMetrics();
-      const rendererInfo = renderingEngine.getRendererInfo();
-
       setPerformanceData({
         fps: Math.round(metrics.fps || 0),
         averageFps: Math.round(metrics.averageFps || 0),

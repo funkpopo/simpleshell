@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, memo } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -12,8 +12,6 @@ import {
   isElementVisible,
 } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
-import { renderingEngine } from "../utils/renderingEngine.js";
-import { imageSupport } from "../utils/imageSupport.js";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -187,36 +185,26 @@ const getCharacterMetrics = (term) => {
 
   try {
     // 获取终端的实际字符尺寸
-    const charMeasureElement = term.element.querySelector(
-      ".xterm-char-measure-element",
-    );
+    const charMeasureElement = term.element.querySelector(".xterm-char-measure-element");
     let charWidth = 9; // Default
     let charHeight = 17; // Default
 
-    if (
-      term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0
-    ) {
-      charWidth =
-        term._core._renderService._renderer.dimensions.actualCellWidth;
-    } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) {
-      // Older path
+    if (term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0) {
+      charWidth = term._core._renderService._renderer.dimensions.actualCellWidth;
+    } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) { // Older path
       charWidth = term._core._renderService.dimensions.actualCellWidth;
     } else if (charMeasureElement) {
       charWidth = charMeasureElement.getBoundingClientRect().width;
     }
 
-    if (
-      term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0
-    ) {
-      charHeight =
-        term._core._renderService._renderer.dimensions.actualCellHeight;
-    } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) {
-      // Older path
+    if (term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0) {
+      charHeight = term._core._renderService._renderer.dimensions.actualCellHeight;
+    } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) { // Older path
       charHeight = term._core._renderService.dimensions.actualCellHeight;
     } else if (charMeasureElement) {
       charHeight = charMeasureElement.getBoundingClientRect().height;
     }
-
+    
     // Ensure dimensions are at least 1 to avoid division by zero or negative values
     charWidth = Math.max(1, Math.round(charWidth));
     charHeight = Math.max(1, Math.round(charHeight));
@@ -462,8 +450,7 @@ const WebTerminal = ({
   const lastExecutedCommandRef = useRef("");
 
   // 新增：确认提示状态
-  const [isConfirmationPromptActive, setIsConfirmationPromptActive] =
-    useState(false);
+  const [isConfirmationPromptActive, setIsConfirmationPromptActive] = useState(false);
 
   // 获取命令建议的防抖函数
   const getSuggestions = useCallback(
@@ -1175,13 +1162,13 @@ const WebTerminal = ({
           theme: terminalTheme, // 使用固定的终端主题
           fontFamily: 'Consolas, "Courier New", monospace',
           fontSize: 14, // 默认大小，稍后会更新
-          scrollback: 50000, // 增加滚动缓冲以支持更多历史记录
+          scrollback: 10000,
           allowTransparency: true,
           cols: 120, // 设置更宽的初始列数
           rows: 30, // 设置初始行数
           convertEol: true, // 自动将行尾换行符转换为CRLF
           disableStdin: false,
-          rendererType: "canvas", // 初始使用canvas，稍后会升级到WebGL
+          rendererType: "canvas", // 使用canvas渲染器以保持稳定性
           termName: "xterm-256color", // 使用更高级的终端类型
           allowProposedApi: true, // 允许使用提议的API
           rightClickSelectsWord: false, // 禁用右键点击选中单词，使用自定义右键菜单
@@ -1192,10 +1179,6 @@ const WebTerminal = ({
           // 优化字符渲染
           letterSpacing: 0, // 字符间距
           lineHeight: 1.0, // 行高
-          // 性能优化配置
-          smoothScrollDuration: 0, // 禁用平滑滚动提升性能
-          windowsMode:
-            navigator.platform?.toLowerCase().includes("win") || false,
           // 禁用一些可能影响选择精度的特性
           macOptionIsMeta: false,
           macOptionClickForcesSelection: false,
@@ -1242,29 +1225,6 @@ const WebTerminal = ({
 
         // 打开终端
         term.open(terminalRef.current);
-
-        // 初始化渲染器和图像支持
-        (async () => {
-          try {
-            // 初始化渲染引擎
-            const renderResult = await renderingEngine.initializeRenderer(term);
-            if (renderResult.success) {
-              console.log(`渲染器初始化成功: ${renderResult.renderer}`);
-            } else {
-              console.warn(`渲染器初始化失败: ${renderResult.error}`);
-            }
-
-            // 初始化图像支持
-            const imageResult = await imageSupport.initialize(term);
-            if (imageResult) {
-              console.log("图像支持初始化成功");
-            } else {
-              console.warn("图像支持初始化失败");
-            }
-          } catch (error) {
-            console.error("高级功能初始化失败:", error);
-          }
-        })();
 
         // 使用EventManager管理确保适配容器大小
         eventManager.setTimeout(() => {
@@ -1573,12 +1533,8 @@ const WebTerminal = ({
 
           // Only apply transform if the offset is significant enough AND the element is not already aligned.
           // The condition for applying transform should be based on whether an actual adjustment is needed.
-          let needsAdjustmentX =
-            Math.abs(leftOffset) > 0.1 &&
-            Math.abs(leftOffset) < metrics.charWidth;
-          let needsAdjustmentY =
-            Math.abs(topOffset) > 0.1 &&
-            Math.abs(topOffset) < metrics.charHeight;
+          let needsAdjustmentX = Math.abs(leftOffset) > 0.1 && Math.abs(leftOffset) < metrics.charWidth;
+          let needsAdjustmentY = Math.abs(topOffset) > 0.1 && Math.abs(topOffset) < metrics.charHeight;
           let adjustX, adjustY;
 
           // If leftOffset is very close to charWidth, it means it's almost aligned to the next char, so no adjustment or negative.
@@ -1595,14 +1551,11 @@ const WebTerminal = ({
           } else {
             adjustY = -topOffset;
           }
-
+          
           // Only apply transform if an adjustment is actually computed and exceeds a minimal pixel change.
           // This avoids applying tiny transforms like 0.001px.
           const minPixelChange = 0.5;
-          if (
-            (needsAdjustmentX && Math.abs(adjustX) > minPixelChange) ||
-            (needsAdjustmentY && Math.abs(adjustY) > minPixelChange)
-          ) {
+          if ((needsAdjustmentX && Math.abs(adjustX) > minPixelChange) || (needsAdjustmentY && Math.abs(adjustY) > minPixelChange)) {
             primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
             primaryElement.style.willChange = "transform";
           } else {
@@ -2431,11 +2384,9 @@ const WebTerminal = ({
   const handleSendToAI = () => {
     if (selectedText) {
       // 触发全局事件，将选中文本发送到AI助手
-      window.dispatchEvent(
-        new CustomEvent("sendToAI", {
-          detail: { text: selectedText },
-        }),
-      );
+      window.dispatchEvent(new CustomEvent('sendToAI', {
+        detail: { text: selectedText }
+      }));
     }
     handleClose();
   };
@@ -2896,19 +2847,4 @@ const WebTerminal = ({
   );
 };
 
-// 自定义比较函数 - 只比较核心 props，确保不影响现有功能
-const areEqualWebTerminal = (prevProps, nextProps) => {
-  return (
-    prevProps.tabId === nextProps.tabId &&
-    prevProps.refreshKey === nextProps.refreshKey &&
-    prevProps.usePowershell === nextProps.usePowershell &&
-    prevProps.isActive === nextProps.isActive &&
-    JSON.stringify(prevProps.sshConfig) === JSON.stringify(nextProps.sshConfig)
-  );
-};
-
-// 使用 memo 包装组件，保持所有现有功能不变
-const MemoizedWebTerminal = memo(WebTerminal, areEqualWebTerminal);
-MemoizedWebTerminal.displayName = "WebTerminal";
-
-export default MemoizedWebTerminal;
+export default WebTerminal;
