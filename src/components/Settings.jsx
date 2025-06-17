@@ -120,7 +120,6 @@ const Settings = memo(({ open, onClose }) => {
   const [isLoading, setIsLoading] = React.useState(true);
 
   // 性能设置状态
-  const [webglEnabled, setWebglEnabled] = React.useState(true);
   const [imageSupported, setImageSupported] = React.useState(true);
   const [cacheEnabled, setCacheEnabled] = React.useState(true);
   const [prefetchEnabled, setPrefetchEnabled] = React.useState(true);
@@ -148,13 +147,11 @@ const Settings = memo(({ open, onClose }) => {
 
             // 加载性能设置
             const performanceSettings = settings.performance || {
-              webglEnabled: true,
               imageSupported: true,
               cacheEnabled: true,
               prefetchEnabled: true,
             };
 
-            setWebglEnabled(performanceSettings.webglEnabled !== false);
             setImageSupported(performanceSettings.imageSupported !== false);
             setCacheEnabled(performanceSettings.cacheEnabled !== false);
             setPrefetchEnabled(performanceSettings.prefetchEnabled !== false);
@@ -220,20 +217,17 @@ const Settings = memo(({ open, onClose }) => {
   // 检查性能设置是否需要重启
   const checkIfRestartNeeded = (newSettings) => {
     const current = {
-      webglEnabled,
       imageSupported,
       cacheEnabled,
       prefetchEnabled,
       ...newSettings,
     };
 
-    // WebGL和图像支持的变更需要重启
-    const needsRestartForWebGL =
-      current.webglEnabled !== originalPerformanceSettings.webglEnabled;
+    // 图像支持的变更需要重启
     const needsRestartForImage =
       current.imageSupported !== originalPerformanceSettings.imageSupported;
 
-    return needsRestartForWebGL || needsRestartForImage;
+    return needsRestartForImage;
   };
 
   // Handle performance settings change
@@ -241,9 +235,6 @@ const Settings = memo(({ open, onClose }) => {
     const newSettings = { [setting]: value };
 
     switch (setting) {
-      case "webglEnabled":
-        setWebglEnabled(value);
-        break;
       case "imageSupported":
         setImageSupported(value);
         break;
@@ -277,7 +268,6 @@ const Settings = memo(({ open, onClose }) => {
           fontSize,
           darkMode,
           performance: {
-            webglEnabled,
             imageSupported,
             cacheEnabled,
             prefetchEnabled,
@@ -473,55 +463,6 @@ const Settings = memo(({ open, onClose }) => {
           )}
 
           <Grid container spacing={2}>
-            {/* WebGL渲染器 */}
-            <Grid item xs={12} sm={6}>
-              <Card variant="outlined" sx={{ height: "100%" }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
-                    <SpeedIcon sx={{ mr: 1, color: "primary.main" }} />
-                    <Typography variant="h6" component="div">
-                      {t("settings.webglRenderer", "WebGL渲染器")}
-                    </Typography>
-                    {needsRestart &&
-                      webglEnabled !==
-                        originalPerformanceSettings.webglEnabled && (
-                        <Chip
-                          label={t("settings.needsRestart", "需重启")}
-                          size="small"
-                          color="warning"
-                          sx={{ ml: 1 }}
-                        />
-                      )}
-                  </Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={webglEnabled}
-                        onChange={(e) =>
-                          handlePerformanceChange(
-                            "webglEnabled",
-                            e.target.checked,
-                          )
-                        }
-                        color="primary"
-                      />
-                    }
-                    label={t("settings.enableWebGL", "启用WebGL渲染器")}
-                  />
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 1 }}
-                  >
-                    {t(
-                      "settings.webglDescription",
-                      "提升终端渲染性能30-50%，但可能在某些设备上不稳定",
-                    )}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-
             {/* 图像支持 */}
             <Grid item xs={12} sm={6}>
               <Card variant="outlined" sx={{ height: "100%" }}>

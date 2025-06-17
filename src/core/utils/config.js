@@ -153,7 +153,6 @@ async function loadUISettings() {
           ? config.uiSettings.darkMode
           : true,
       performance: {
-        webglEnabled: config.uiSettings.performance?.webglEnabled !== false,
         imageSupported: config.uiSettings.performance?.imageSupported !== false,
         cacheEnabled: config.uiSettings.performance?.cacheEnabled !== false,
         prefetchEnabled:
@@ -169,7 +168,6 @@ async function loadUISettings() {
       fontSize: 14,
       darkMode: true,
       performance: {
-        webglEnabled: true,
         imageSupported: true,
         cacheEnabled: true,
         prefetchEnabled: true,
@@ -196,7 +194,6 @@ async function saveUISettings(settings) {
       fontSize: settings.fontSize || 14,
       darkMode: settings.darkMode !== undefined ? settings.darkMode : true,
       performance: {
-        webglEnabled: settings.performance?.webglEnabled !== false,
         imageSupported: settings.performance?.imageSupported !== false,
         cacheEnabled: settings.performance?.cacheEnabled !== false,
         prefetchEnabled: settings.performance?.prefetchEnabled !== false,
