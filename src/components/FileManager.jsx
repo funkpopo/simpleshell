@@ -88,6 +88,10 @@ const FileManager = ({
   const [transferCancelled, setTransferCancelled] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [uploadMenuAnchor, setUploadMenuAnchor] = useState(null);
+
+  // 用于存储延迟移除定时器的引用
+  const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
 
   // 缓存过期时间（毫秒）
   const CACHE_EXPIRY_TIME = 10000; // 10秒
@@ -122,6 +126,32 @@ const FileManager = ({
           : transfer
       )
     );
+
+    // 如果传输被标记为取消，启动延迟移除定时器
+    if (updateData.isCancelled) {
+      // 清除已存在的定时器（如果有）
+      setAutoRemoveTimers(prev => {
+        const newTimers = new Map(prev);
+        const existingTimer = newTimers.get(transferId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
+
+        // 设置新的延迟移除定时器
+        const timer = setTimeout(() => {
+          removeTransferProgress(transferId);
+          // 清理定时器引用
+          setAutoRemoveTimers(current => {
+            const updated = new Map(current);
+            updated.delete(transferId);
+            return updated;
+          });
+        }, 1000); // 1秒延迟
+
+        newTimers.set(transferId, timer);
+        return newTimers;
+      });
+    }
   };
 
   // 移除传输任务
@@ -129,6 +159,17 @@ const FileManager = ({
     setTransferProgressList(prev => 
       prev.filter(transfer => transfer.transferId !== transferId)
     );
+    
+    // 清理对应的定时器
+    setAutoRemoveTimers(prev => {
+      const newTimers = new Map(prev);
+      const timer = newTimers.get(transferId);
+      if (timer) {
+        clearTimeout(timer);
+        newTimers.delete(transferId);
+      }
+      return newTimers;
+    });
   };
 
   // 清理已完成的传输任务
@@ -1910,6 +1951,38 @@ const FileManager = ({
     }
   };
 
+  // 处理上传菜单打开
+  const handleUploadMenuOpen = (event) => {
+    setUploadMenuAnchor(event.currentTarget);
+  };
+
+  // 处理上传菜单关闭
+  const handleUploadMenuClose = () => {
+    setUploadMenuAnchor(null);
+  };
+
+  // 处理上传文件菜单项点击
+  const handleUploadFileFromMenu = () => {
+    handleUploadMenuClose();
+    handleUploadFile();
+  };
+
+  // 处理上传文件夹菜单项点击
+  const handleUploadFolderFromMenu = () => {
+    handleUploadMenuClose();
+    handleUploadFolder();
+  };
+
+  // 组件卸载时清理所有定时器
+  useEffect(() => {
+    return () => {
+      // 清理所有延迟移除定时器
+      autoRemoveTimers.forEach(timer => {
+        clearTimeout(timer);
+      });
+    };
+  }, [autoRemoveTimers]);
+
   return (
     <Paper
       sx={{
@@ -2017,8 +2090,8 @@ const FileManager = ({
         </Tooltip>
 
         {/* 添加上传按钮 */}
-        <Tooltip title="上传文件到当前文件夹">
-          <IconButton size="small" onClick={handleUploadFile}>
+        <Tooltip title="上传">
+          <IconButton size="small" onClick={handleUploadMenuOpen}>
             <UploadFileIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -2494,6 +2567,34 @@ const FileManager = ({
         onClearCompleted={clearCompletedTransfers}
         onClearAll={clearAllTransfers}
       />
+
+      {/* 上传菜单 */}
+      <Menu
+        open={Boolean(uploadMenuAnchor)}
+        onClose={handleUploadMenuClose}
+        anchorEl={uploadMenuAnchor}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'left',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'left',
+        }}
+      >
+        <MenuItem onClick={handleUploadFileFromMenu}>
+          <ListItemIcon>
+            <UploadFileIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>上传文件</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={handleUploadFolderFromMenu}>
+          <ListItemIcon>
+            <CreateNewFolderIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>上传文件夹</ListItemText>
+        </MenuItem>
+      </Menu>
     </Paper>
   );
 };
