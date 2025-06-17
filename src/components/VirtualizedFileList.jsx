@@ -313,7 +313,10 @@ const VirtualizedFileList = ({
           overscanCount={5} // 预渲染5个项目以提高滚动性能
           onItemsRendered={({ visibleStartIndex, visibleStopIndex }) => {
             // 性能监控：记录可见项目范围
-            if (typeof window !== 'undefined' && window.location?.hostname === 'localhost') {
+            if (
+              typeof window !== "undefined" &&
+              window.location?.hostname === "localhost"
+            ) {
               console.debug(
                 `虚拟化列表渲染: ${visibleStartIndex}-${visibleStopIndex} / ${processedFiles.length}`,
               );

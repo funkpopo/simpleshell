@@ -51,7 +51,7 @@ const ENHANCED_CONFIG = {
 class EnhancedMemoryPool extends EventEmitter {
   constructor(config = {}) {
     super();
-    
+
     this.config = { ...ENHANCED_CONFIG, ...config };
     this.pools = new Map();
     this.allocatedBuffers = new Map();
@@ -70,12 +70,12 @@ class EnhancedMemoryPool extends EventEmitter {
       allocationHistory: [],
       performanceHistory: [],
     };
-    
+
     this.allocationPatterns = new Map();
     this.cleanupTimer = null;
     this.metricsTimer = null;
     this.isInitialized = false;
-    
+
     this.init();
   }
 
@@ -100,11 +100,11 @@ class EnhancedMemoryPool extends EventEmitter {
       }
 
       this.isInitialized = true;
-      this.emit('initialized', { pools: this.pools.size });
-      
-      logToFile('增强内存池初始化成功', 'INFO');
+      this.emit("initialized", { pools: this.pools.size });
+
+      logToFile("增强内存池初始化成功", "INFO");
     } catch (error) {
-      logToFile(`增强内存池初始化失败: ${error.message}`, 'ERROR');
+      logToFile(`增强内存池初始化失败: ${error.message}`, "ERROR");
       throw error;
     }
   }
@@ -136,8 +136,11 @@ class EnhancedMemoryPool extends EventEmitter {
 
     this.pools.set(name, pool);
     this.freeBuffers.set(name, pool.available);
-    
-    logToFile(`内存池 ${name} 初始化完成: ${config.size} bytes x ${preAllocCount}`, 'DEBUG');
+
+    logToFile(
+      `内存池 ${name} 初始化完成: ${config.size} bytes x ${preAllocCount}`,
+      "DEBUG",
+    );
   }
 
   /**
@@ -145,18 +148,18 @@ class EnhancedMemoryPool extends EventEmitter {
    */
   allocate(size, options = {}) {
     const startTime = performance.now();
-    
+
     try {
       // 选择最适合的池
       const poolName = this.selectOptimalPool(size);
       const pool = this.pools.get(poolName);
-      
+
       if (!pool) {
         throw new Error(`未找到适合大小 ${size} 的内存池`);
       }
 
       let buffer;
-      
+
       // 尝试从池中获取缓冲区
       if (pool.available.length > 0) {
         buffer = pool.available.pop();
@@ -170,7 +173,7 @@ class EnhancedMemoryPool extends EventEmitter {
         } else {
           // 池已满，触发垃圾回收
           this.performGarbageCollection();
-          
+
           // 再次尝试
           if (pool.available.length > 0) {
             buffer = pool.available.pop();
@@ -178,10 +181,10 @@ class EnhancedMemoryPool extends EventEmitter {
           } else {
             // 仍然没有可用缓冲区，创建临时缓冲区
             buffer = Buffer.allocUnsafe(size);
-            logToFile(`内存池 ${poolName} 已满，创建临时缓冲区`, 'WARN');
+            logToFile(`内存池 ${poolName} 已满，创建临时缓冲区`, "WARN");
           }
         }
-        
+
         pool.missCount++;
         this.metrics.missRate = this.calculateMissRate();
       }
@@ -200,20 +203,23 @@ class EnhancedMemoryPool extends EventEmitter {
       this.allocatedBuffers.set(allocationId, allocation);
       pool.allocated.add(allocationId);
       pool.totalAllocated++;
-      
+
       // 更新指标
       this.metrics.totalAllocated++;
       this.metrics.allocationCount++;
       this.metrics.currentUsage += buffer.length;
-      this.metrics.peakUsage = Math.max(this.metrics.peakUsage, this.metrics.currentUsage);
+      this.metrics.peakUsage = Math.max(
+        this.metrics.peakUsage,
+        this.metrics.currentUsage,
+      );
 
       // 记录分配模式
       this.recordAllocationPattern(size, poolName);
-      
+
       // 记录性能
       const allocTime = performance.now() - startTime;
       this.metrics.performanceHistory.push({
-        operation: 'allocate',
+        operation: "allocate",
         size,
         time: allocTime,
         timestamp: Date.now(),
@@ -221,14 +227,19 @@ class EnhancedMemoryPool extends EventEmitter {
 
       // 保持性能历史记录在合理范围内
       if (this.metrics.performanceHistory.length > 1000) {
-        this.metrics.performanceHistory = this.metrics.performanceHistory.slice(-500);
+        this.metrics.performanceHistory =
+          this.metrics.performanceHistory.slice(-500);
       }
 
-      this.emit('allocated', { id: allocationId, size: buffer.length, pool: poolName });
-      
+      this.emit("allocated", {
+        id: allocationId,
+        size: buffer.length,
+        pool: poolName,
+      });
+
       return { buffer, id: allocationId };
     } catch (error) {
-      logToFile(`内存分配失败: ${error.message}`, 'ERROR');
+      logToFile(`内存分配失败: ${error.message}`, "ERROR");
       throw error;
     }
   }
@@ -238,17 +249,17 @@ class EnhancedMemoryPool extends EventEmitter {
    */
   free(allocationId) {
     const startTime = performance.now();
-    
+
     try {
       const allocation = this.allocatedBuffers.get(allocationId);
       if (!allocation) {
-        logToFile(`尝试释放未知的分配ID: ${allocationId}`, 'WARN');
+        logToFile(`尝试释放未知的分配ID: ${allocationId}`, "WARN");
         return false;
       }
 
       const pool = this.pools.get(allocation.poolName);
       if (!pool) {
-        logToFile(`未找到内存池: ${allocation.poolName}`, 'ERROR');
+        logToFile(`未找到内存池: ${allocation.poolName}`, "ERROR");
         return false;
       }
 
@@ -275,17 +286,21 @@ class EnhancedMemoryPool extends EventEmitter {
       // 记录性能
       const freeTime = performance.now() - startTime;
       this.metrics.performanceHistory.push({
-        operation: 'free',
+        operation: "free",
         size: allocation.size,
         time: freeTime,
         timestamp: Date.now(),
       });
 
-      this.emit('freed', { id: allocationId, size: allocation.size, pool: allocation.poolName });
-      
+      this.emit("freed", {
+        id: allocationId,
+        size: allocation.size,
+        pool: allocation.poolName,
+      });
+
       return true;
     } catch (error) {
-      logToFile(`内存释放失败: ${error.message}`, 'ERROR');
+      logToFile(`内存释放失败: ${error.message}`, "ERROR");
       return false;
     }
   }
@@ -319,7 +334,7 @@ class EnhancedMemoryPool extends EventEmitter {
    */
   performGarbageCollection() {
     const startTime = performance.now();
-    
+
     try {
       let freedCount = 0;
       const now = Date.now();
@@ -334,13 +349,16 @@ class EnhancedMemoryPool extends EventEmitter {
       }
 
       this.metrics.gcCount++;
-      
+
       const gcTime = performance.now() - startTime;
-      logToFile(`垃圾回收完成: 释放 ${freedCount} 个分配，耗时 ${gcTime.toFixed(2)}ms`, 'DEBUG');
-      
-      this.emit('garbageCollected', { freedCount, time: gcTime });
+      logToFile(
+        `垃圾回收完成: 释放 ${freedCount} 个分配，耗时 ${gcTime.toFixed(2)}ms`,
+        "DEBUG",
+      );
+
+      this.emit("garbageCollected", { freedCount, time: gcTime });
     } catch (error) {
-      logToFile(`垃圾回收失败: ${error.message}`, 'ERROR');
+      logToFile(`垃圾回收失败: ${error.message}`, "ERROR");
     }
   }
 
@@ -358,10 +376,10 @@ class EnhancedMemoryPool extends EventEmitter {
 
     pattern.count++;
     pattern.lastAccess = Date.now();
-    
+
     const poolCount = pattern.pools.get(poolName) || 0;
     pattern.pools.set(poolName, poolCount + 1);
-    
+
     this.allocationPatterns.set(size, pattern);
   }
 
@@ -369,8 +387,16 @@ class EnhancedMemoryPool extends EventEmitter {
    * 计算命中率
    */
   calculateHitRate() {
-    const totalHits = Array.from(this.pools.values()).reduce((sum, pool) => sum + pool.hitCount, 0);
-    const totalRequests = totalHits + Array.from(this.pools.values()).reduce((sum, pool) => sum + pool.missCount, 0);
+    const totalHits = Array.from(this.pools.values()).reduce(
+      (sum, pool) => sum + pool.hitCount,
+      0,
+    );
+    const totalRequests =
+      totalHits +
+      Array.from(this.pools.values()).reduce(
+        (sum, pool) => sum + pool.missCount,
+        0,
+      );
     return totalRequests > 0 ? (totalHits / totalRequests) * 100 : 0;
   }
 
@@ -378,8 +404,16 @@ class EnhancedMemoryPool extends EventEmitter {
    * 计算未命中率
    */
   calculateMissRate() {
-    const totalMisses = Array.from(this.pools.values()).reduce((sum, pool) => sum + pool.missCount, 0);
-    const totalRequests = totalMisses + Array.from(this.pools.values()).reduce((sum, pool) => sum + pool.hitCount, 0);
+    const totalMisses = Array.from(this.pools.values()).reduce(
+      (sum, pool) => sum + pool.missCount,
+      0,
+    );
+    const totalRequests =
+      totalMisses +
+      Array.from(this.pools.values()).reduce(
+        (sum, pool) => sum + pool.hitCount,
+        0,
+      );
     return totalRequests > 0 ? (totalMisses / totalRequests) * 100 : 0;
   }
 
@@ -396,7 +430,7 @@ class EnhancedMemoryPool extends EventEmitter {
   startCleanupTimer() {
     this.cleanupTimer = setInterval(() => {
       this.performGarbageCollection();
-      
+
       // 检查是否需要碎片整理
       if (this.shouldDefragment()) {
         this.performDefragmentation();
@@ -439,13 +473,14 @@ class EnhancedMemoryPool extends EventEmitter {
     }
 
     this.metrics.allocationHistory.push(metrics);
-    
+
     // 保持历史记录在合理范围内
     if (this.metrics.allocationHistory.length > 1000) {
-      this.metrics.allocationHistory = this.metrics.allocationHistory.slice(-500);
+      this.metrics.allocationHistory =
+        this.metrics.allocationHistory.slice(-500);
     }
 
-    this.emit('metricsCollected', metrics);
+    this.emit("metricsCollected", metrics);
   }
 
   /**
@@ -454,18 +489,19 @@ class EnhancedMemoryPool extends EventEmitter {
   checkMemoryAlerts() {
     if (!this.config.monitoring.enableAlerts) return;
 
-    const usagePercent = (this.metrics.currentUsage / this.config.management.maxPoolMemory) * 100;
-    
+    const usagePercent =
+      (this.metrics.currentUsage / this.config.management.maxPoolMemory) * 100;
+
     if (usagePercent > 90) {
-      this.emit('memoryAlert', {
-        level: 'critical',
+      this.emit("memoryAlert", {
+        level: "critical",
         message: `内存使用率过高: ${usagePercent.toFixed(1)}%`,
         usage: this.metrics.currentUsage,
         limit: this.config.management.maxPoolMemory,
       });
     } else if (usagePercent > 80) {
-      this.emit('memoryAlert', {
-        level: 'warning',
+      this.emit("memoryAlert", {
+        level: "warning",
         message: `内存使用率较高: ${usagePercent.toFixed(1)}%`,
         usage: this.metrics.currentUsage,
         limit: this.config.management.maxPoolMemory,
@@ -493,7 +529,7 @@ class EnhancedMemoryPool extends EventEmitter {
       totalCapacity += pool.maxCount;
     }
 
-    return totalCapacity > 0 ? (totalFragments / totalCapacity) : 0;
+    return totalCapacity > 0 ? totalFragments / totalCapacity : 0;
   }
 
   /**
@@ -501,7 +537,7 @@ class EnhancedMemoryPool extends EventEmitter {
    */
   performDefragmentation() {
     const startTime = performance.now();
-    
+
     try {
       // 简化的碎片整理：重新组织可用缓冲区
       for (const pool of this.pools.values()) {
@@ -510,13 +546,13 @@ class EnhancedMemoryPool extends EventEmitter {
       }
 
       this.metrics.defragCount++;
-      
+
       const defragTime = performance.now() - startTime;
-      logToFile(`碎片整理完成，耗时 ${defragTime.toFixed(2)}ms`, 'DEBUG');
-      
-      this.emit('defragmented', { time: defragTime });
+      logToFile(`碎片整理完成，耗时 ${defragTime.toFixed(2)}ms`, "DEBUG");
+
+      this.emit("defragmented", { time: defragTime });
     } catch (error) {
-      logToFile(`碎片整理失败: ${error.message}`, 'ERROR');
+      logToFile(`碎片整理失败: ${error.message}`, "ERROR");
     }
   }
 
@@ -539,10 +575,12 @@ class EnhancedMemoryPool extends EventEmitter {
             missCount: pool.missCount,
             utilization: (pool.allocated.size / pool.maxCount) * 100,
           },
-        ])
+        ]),
       ),
       fragmentation: this.calculateFragmentation(),
-      usagePercent: (this.metrics.currentUsage / this.config.management.maxPoolMemory) * 100,
+      usagePercent:
+        (this.metrics.currentUsage / this.config.management.maxPoolMemory) *
+        100,
     };
   }
 
@@ -571,9 +609,9 @@ class EnhancedMemoryPool extends EventEmitter {
     this.allocationPatterns.clear();
 
     this.isInitialized = false;
-    this.emit('disposed');
-    
-    logToFile('增强内存池已清理', 'INFO');
+    this.emit("disposed");
+
+    logToFile("增强内存池已清理", "INFO");
   }
 }
 

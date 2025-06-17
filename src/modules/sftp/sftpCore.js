@@ -729,11 +729,90 @@ function clearPendingOperationsForTab(tabId, options = {}) {
   }
 }
 
+// 添加获取原生SFTP会话的方法，用于传输模块直接使用
+async function getRawSftpSession(tabId) {
+  try {
+    // 直接返回原生ssh2 SFTP对象，供传输模块使用
+    return await getSftpSession(tabId);
+  } catch (error) {
+    logToFile(
+      `sftpCore: Error getting raw SFTP session for tab ${tabId}: ${error.message}`,
+      "ERROR",
+    );
+    throw error;
+  }
+}
+
+// 获取SFTP会话的连接配置信息
+function getSftpSessionInfo(tabId) {
+  if (!sftpSessions.has(tabId)) {
+    return null;
+  }
+
+  const session = sftpSessions.get(tabId);
+  return {
+    active: session.active,
+    createdAt: session.createdAt,
+    lastUsed: session.lastUsed,
+    lastChecked: session.lastChecked,
+  };
+}
+
+// 批量清理会话，用于性能优化
+async function optimizeSftpSessions() {
+  try {
+    logToFile(
+      `sftpCore: Starting SFTP session optimization, current sessions: ${sftpSessions.size}`,
+      "INFO",
+    );
+
+    const now = Date.now();
+    let optimizedCount = 0;
+
+    for (const [tabId, session] of sftpSessions.entries()) {
+      const idleTime = now - session.lastUsed;
+
+      // 如果会话空闲时间超过一半的超时时间，进行健康检查
+      if (idleTime > SFTP_SESSION_IDLE_TIMEOUT / 2) {
+        try {
+          await checkSessionAlive(tabId, session);
+          optimizedCount++;
+        } catch (error) {
+          logToFile(
+            `sftpCore: Session optimization failed for ${tabId}, will be closed: ${error.message}`,
+            "WARN",
+          );
+          // checkSessionAlive内部会处理关闭
+        }
+      }
+    }
+
+    logToFile(
+      `sftpCore: SFTP session optimization completed, checked ${optimizedCount} sessions`,
+      "INFO",
+    );
+    return {
+      success: true,
+      optimizedCount,
+      remainingSessions: sftpSessions.size,
+    };
+  } catch (error) {
+    logToFile(
+      `sftpCore: Error during SFTP session optimization: ${error.message}`,
+      "ERROR",
+    );
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   init,
   startSftpHealthCheck,
   stopSftpHealthCheck,
   getSftpSession,
+  getRawSftpSession, // 新增：直接获取原生SFTP会话
+  getSftpSessionInfo, // 新增：获取会话信息
+  optimizeSftpSessions, // 新增：会话优化
   closeSftpSession,
   enqueueSftpOperation,
   clearPendingOperationsForTab, // 导出新函数

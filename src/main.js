@@ -356,12 +356,10 @@ app.on("before-quit", () => {
   childProcesses.clear();
 
   // 清理所有缓存文件
-  fileCache.cleanupAllCaches()
+  fileCache
+    .cleanupAllCaches()
     .then((cleanedCount) => {
-      logToFile(
-        `Cleaned up ${cleanedCount} cache files on app quit`,
-        "INFO",
-      );
+      logToFile(`Cleaned up ${cleanedCount} cache files on app quit`, "INFO");
     })
     .catch((error) => {
       logToFile(
@@ -2566,7 +2564,11 @@ function setupIPC(mainWindow) {
               try {
                 // 缓存文件到本地
                 const fileName = path.basename(filePath);
-                const cacheFilePath = await fileCache.cacheFile(fileName, data, tabId);
+                const cacheFilePath = await fileCache.cacheFile(
+                  fileName,
+                  data,
+                  tabId,
+                );
 
                 // 转换为base64
                 const base64Data = data.toString("base64");
@@ -2582,7 +2584,7 @@ function setupIPC(mainWindow) {
                   `Failed to cache file ${filePath}: ${cacheError.message}`,
                   "WARN",
                 );
-                
+
                 // 即使缓存失败，仍然返回base64数据
                 const base64Data = data.toString("base64");
                 resolve({

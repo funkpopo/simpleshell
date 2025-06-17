@@ -187,26 +187,36 @@ const getCharacterMetrics = (term) => {
 
   try {
     // 获取终端的实际字符尺寸
-    const charMeasureElement = term.element.querySelector(".xterm-char-measure-element");
+    const charMeasureElement = term.element.querySelector(
+      ".xterm-char-measure-element",
+    );
     let charWidth = 9; // Default
     let charHeight = 17; // Default
 
-    if (term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0) {
-      charWidth = term._core._renderService._renderer.dimensions.actualCellWidth;
-    } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) { // Older path
+    if (
+      term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0
+    ) {
+      charWidth =
+        term._core._renderService._renderer.dimensions.actualCellWidth;
+    } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) {
+      // Older path
       charWidth = term._core._renderService.dimensions.actualCellWidth;
     } else if (charMeasureElement) {
       charWidth = charMeasureElement.getBoundingClientRect().width;
     }
 
-    if (term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0) {
-      charHeight = term._core._renderService._renderer.dimensions.actualCellHeight;
-    } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) { // Older path
+    if (
+      term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0
+    ) {
+      charHeight =
+        term._core._renderService._renderer.dimensions.actualCellHeight;
+    } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) {
+      // Older path
       charHeight = term._core._renderService.dimensions.actualCellHeight;
     } else if (charMeasureElement) {
       charHeight = charMeasureElement.getBoundingClientRect().height;
     }
-    
+
     // Ensure dimensions are at least 1 to avoid division by zero or negative values
     charWidth = Math.max(1, Math.round(charWidth));
     charHeight = Math.max(1, Math.round(charHeight));
@@ -452,7 +462,8 @@ const WebTerminal = ({
   const lastExecutedCommandRef = useRef("");
 
   // 新增：确认提示状态
-  const [isConfirmationPromptActive, setIsConfirmationPromptActive] = useState(false);
+  const [isConfirmationPromptActive, setIsConfirmationPromptActive] =
+    useState(false);
 
   // 获取命令建议的防抖函数
   const getSuggestions = useCallback(
@@ -1183,7 +1194,8 @@ const WebTerminal = ({
           lineHeight: 1.0, // 行高
           // 性能优化配置
           smoothScrollDuration: 0, // 禁用平滑滚动提升性能
-          windowsMode: navigator.platform?.toLowerCase().includes('win') || false,
+          windowsMode:
+            navigator.platform?.toLowerCase().includes("win") || false,
           // 禁用一些可能影响选择精度的特性
           macOptionIsMeta: false,
           macOptionClickForcesSelection: false,
@@ -1245,12 +1257,12 @@ const WebTerminal = ({
             // 初始化图像支持
             const imageResult = await imageSupport.initialize(term);
             if (imageResult) {
-              console.log('图像支持初始化成功');
+              console.log("图像支持初始化成功");
             } else {
-              console.warn('图像支持初始化失败');
+              console.warn("图像支持初始化失败");
             }
           } catch (error) {
-            console.error('高级功能初始化失败:', error);
+            console.error("高级功能初始化失败:", error);
           }
         })();
 
@@ -1561,8 +1573,12 @@ const WebTerminal = ({
 
           // Only apply transform if the offset is significant enough AND the element is not already aligned.
           // The condition for applying transform should be based on whether an actual adjustment is needed.
-          let needsAdjustmentX = Math.abs(leftOffset) > 0.1 && Math.abs(leftOffset) < metrics.charWidth;
-          let needsAdjustmentY = Math.abs(topOffset) > 0.1 && Math.abs(topOffset) < metrics.charHeight;
+          let needsAdjustmentX =
+            Math.abs(leftOffset) > 0.1 &&
+            Math.abs(leftOffset) < metrics.charWidth;
+          let needsAdjustmentY =
+            Math.abs(topOffset) > 0.1 &&
+            Math.abs(topOffset) < metrics.charHeight;
           let adjustX, adjustY;
 
           // If leftOffset is very close to charWidth, it means it's almost aligned to the next char, so no adjustment or negative.
@@ -1579,11 +1595,14 @@ const WebTerminal = ({
           } else {
             adjustY = -topOffset;
           }
-          
+
           // Only apply transform if an adjustment is actually computed and exceeds a minimal pixel change.
           // This avoids applying tiny transforms like 0.001px.
           const minPixelChange = 0.5;
-          if ((needsAdjustmentX && Math.abs(adjustX) > minPixelChange) || (needsAdjustmentY && Math.abs(adjustY) > minPixelChange)) {
+          if (
+            (needsAdjustmentX && Math.abs(adjustX) > minPixelChange) ||
+            (needsAdjustmentY && Math.abs(adjustY) > minPixelChange)
+          ) {
             primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
             primaryElement.style.willChange = "transform";
           } else {
@@ -2412,9 +2431,11 @@ const WebTerminal = ({
   const handleSendToAI = () => {
     if (selectedText) {
       // 触发全局事件，将选中文本发送到AI助手
-      window.dispatchEvent(new CustomEvent('sendToAI', {
-        detail: { text: selectedText }
-      }));
+      window.dispatchEvent(
+        new CustomEvent("sendToAI", {
+          detail: { text: selectedText },
+        }),
+      );
     }
     handleClose();
   };

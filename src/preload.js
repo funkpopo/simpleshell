@@ -372,6 +372,5 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 文件缓存管理API
   cleanupFileCache: (cacheFilePath) =>
     ipcRenderer.invoke("cleanupFileCache", cacheFilePath),
-  cleanupTabCache: (tabId) =>
-    ipcRenderer.invoke("cleanupTabCache", tabId),
+  cleanupTabCache: (tabId) => ipcRenderer.invoke("cleanupTabCache", tabId),
 });

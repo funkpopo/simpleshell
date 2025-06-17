@@ -8,26 +8,26 @@ const { logToFile } = require("../utils/logger");
 
 // 缓存级别定义
 const CACHE_LEVEL = {
-  L1: 'l1', // 内存缓存
-  L2: 'l2', // 持久化缓存
-  L3: 'l3', // 远程缓存（预留）
+  L1: "l1", // 内存缓存
+  L2: "l2", // 持久化缓存
+  L3: "l3", // 远程缓存（预留）
 };
 
 // 缓存策略
 const CACHE_STRATEGY = {
-  LRU: 'lru',
-  LFU: 'lfu',
-  FIFO: 'fifo',
-  TTL: 'ttl',
-  ADAPTIVE: 'adaptive',
+  LRU: "lru",
+  LFU: "lfu",
+  FIFO: "fifo",
+  TTL: "ttl",
+  ADAPTIVE: "adaptive",
 };
 
 // 预取策略
 const PREFETCH_STRATEGY = {
-  SEQUENTIAL: 'sequential',
-  PATTERN: 'pattern',
-  PREDICTIVE: 'predictive',
-  NONE: 'none',
+  SEQUENTIAL: "sequential",
+  PATTERN: "pattern",
+  PREDICTIVE: "predictive",
+  NONE: "none",
 };
 
 /**
@@ -129,8 +129,8 @@ class LRUCache {
 
   calculateSize(value) {
     if (Buffer.isBuffer(value)) return value.length;
-    if (typeof value === 'string') return value.length * 2; // Unicode字符
-    if (typeof value === 'object') return JSON.stringify(value).length * 2;
+    if (typeof value === "string") return value.length * 2; // Unicode字符
+    if (typeof value === "object") return JSON.stringify(value).length * 2;
     return 8; // 基本类型默认8字节
   }
 
@@ -171,7 +171,7 @@ class LRUCache {
 class MultiLevelCache extends EventEmitter {
   constructor(options = {}) {
     super();
-    
+
     this.options = {
       // L1缓存配置
       l1: {
@@ -179,7 +179,7 @@ class MultiLevelCache extends EventEmitter {
         maxAge: options.l1?.maxAge || 5 * 60 * 1000, // 5分钟
         strategy: options.l1?.strategy || CACHE_STRATEGY.LRU,
       },
-      
+
       // L2缓存配置
       l2: {
         maxSize: options.l2?.maxSize || 5000,
@@ -187,7 +187,7 @@ class MultiLevelCache extends EventEmitter {
         strategy: options.l2?.strategy || CACHE_STRATEGY.LRU,
         persistent: options.l2?.persistent || false,
       },
-      
+
       // 预取配置
       prefetch: {
         enabled: options.prefetch?.enabled !== false,
@@ -195,25 +195,31 @@ class MultiLevelCache extends EventEmitter {
         lookahead: options.prefetch?.lookahead || 3,
         maxConcurrent: options.prefetch?.maxConcurrent || 5,
       },
-      
+
       // 监控配置
       monitoring: {
         enabled: options.monitoring?.enabled !== false,
         metricsInterval: options.monitoring?.metricsInterval || 30000,
       },
-      
-      ...options
+
+      ...options,
     };
 
     // 初始化缓存层
-    this.l1Cache = new LRUCache(this.options.l1.maxSize, this.options.l1.maxAge);
-    this.l2Cache = new LRUCache(this.options.l2.maxSize, this.options.l2.maxAge);
-    
+    this.l1Cache = new LRUCache(
+      this.options.l1.maxSize,
+      this.options.l1.maxAge,
+    );
+    this.l2Cache = new LRUCache(
+      this.options.l2.maxSize,
+      this.options.l2.maxAge,
+    );
+
     // 预取相关
     this.prefetchQueue = new Map();
     this.prefetchPatterns = new Map();
     this.accessHistory = [];
-    
+
     // 统计信息
     this.stats = {
       l1: { hits: 0, misses: 0, evictions: 0 },
@@ -234,8 +240,8 @@ class MultiLevelCache extends EventEmitter {
    * 初始化缓存系统
    */
   init() {
-    logToFile('多级缓存系统初始化', 'INFO');
-    this.emit('initialized');
+    logToFile("多级缓存系统初始化", "INFO");
+    this.emit("initialized");
   }
 
   /**
@@ -244,17 +250,21 @@ class MultiLevelCache extends EventEmitter {
   async get(key, options = {}) {
     const startTime = performance.now();
     this.stats.total.requests++;
-    
+
     try {
       // 记录访问历史
       this.recordAccess(key);
-      
+
       // L1缓存查找
       let value = this.l1Cache.get(key);
       if (value !== null) {
         this.stats.l1.hits++;
         this.stats.total.hits++;
-        this.emit('cacheHit', { level: CACHE_LEVEL.L1, key, time: performance.now() - startTime });
+        this.emit("cacheHit", {
+          level: CACHE_LEVEL.L1,
+          key,
+          time: performance.now() - startTime,
+        });
         return value;
       }
       this.stats.l1.misses++;
@@ -264,11 +274,15 @@ class MultiLevelCache extends EventEmitter {
       if (value !== null) {
         this.stats.l2.hits++;
         this.stats.total.hits++;
-        
+
         // 将数据提升到L1缓存
         this.l1Cache.set(key, value);
-        
-        this.emit('cacheHit', { level: CACHE_LEVEL.L2, key, time: performance.now() - startTime });
+
+        this.emit("cacheHit", {
+          level: CACHE_LEVEL.L2,
+          key,
+          time: performance.now() - startTime,
+        });
         return value;
       }
       this.stats.l2.misses++;
@@ -279,10 +293,10 @@ class MultiLevelCache extends EventEmitter {
         this.triggerPrefetch(key);
       }
 
-      this.emit('cacheMiss', { key, time: performance.now() - startTime });
+      this.emit("cacheMiss", { key, time: performance.now() - startTime });
       return null;
     } catch (error) {
-      logToFile(`缓存获取失败: ${error.message}`, 'ERROR');
+      logToFile(`缓存获取失败: ${error.message}`, "ERROR");
       return null;
     }
   }
@@ -292,11 +306,11 @@ class MultiLevelCache extends EventEmitter {
    */
   async set(key, value, options = {}) {
     const startTime = performance.now();
-    
+
     try {
       const level = options.level || CACHE_LEVEL.L1;
       const ttl = options.ttl;
-      
+
       // 根据级别设置缓存
       switch (level) {
         case CACHE_LEVEL.L1:
@@ -314,11 +328,16 @@ class MultiLevelCache extends EventEmitter {
 
       // 更新访问模式
       this.updateAccessPattern(key);
-      
-      this.emit('cacheSet', { level, key, size: this.calculateSize(value), time: performance.now() - startTime });
+
+      this.emit("cacheSet", {
+        level,
+        key,
+        size: this.calculateSize(value),
+        time: performance.now() - startTime,
+      });
       return true;
     } catch (error) {
-      logToFile(`缓存设置失败: ${error.message}`, 'ERROR');
+      logToFile(`缓存设置失败: ${error.message}`, "ERROR");
       return false;
     }
   }
@@ -330,11 +349,11 @@ class MultiLevelCache extends EventEmitter {
     try {
       const l1Deleted = this.l1Cache.delete(key);
       const l2Deleted = this.l2Cache.delete(key);
-      
-      this.emit('cacheDelete', { key, l1Deleted, l2Deleted });
+
+      this.emit("cacheDelete", { key, l1Deleted, l2Deleted });
       return l1Deleted || l2Deleted;
     } catch (error) {
-      logToFile(`缓存删除失败: ${error.message}`, 'ERROR');
+      logToFile(`缓存删除失败: ${error.message}`, "ERROR");
       return false;
     }
   }
@@ -350,11 +369,11 @@ class MultiLevelCache extends EventEmitter {
       if (!level || level === CACHE_LEVEL.L2) {
         this.l2Cache.clear();
       }
-      
-      this.emit('cacheCleared', { level });
+
+      this.emit("cacheCleared", { level });
       return true;
     } catch (error) {
-      logToFile(`缓存清空失败: ${error.message}`, 'ERROR');
+      logToFile(`缓存清空失败: ${error.message}`, "ERROR");
       return false;
     }
   }
@@ -374,9 +393,9 @@ class MultiLevelCache extends EventEmitter {
       key,
       timestamp: Date.now(),
     };
-    
+
     this.accessHistory.push(access);
-    
+
     // 保持历史记录在合理范围内
     if (this.accessHistory.length > 1000) {
       this.accessHistory = this.accessHistory.slice(-500);
@@ -388,22 +407,23 @@ class MultiLevelCache extends EventEmitter {
    */
   updateAccessPattern(key) {
     if (!this.options.prefetch.enabled) return;
-    
+
     const pattern = this.prefetchPatterns.get(key) || {
       count: 0,
       lastAccess: 0,
       frequency: 0,
       relatedKeys: new Set(),
     };
-    
+
     pattern.count++;
     pattern.lastAccess = Date.now();
-    pattern.frequency = pattern.count / (Date.now() - (pattern.firstAccess || Date.now()));
-    
+    pattern.frequency =
+      pattern.count / (Date.now() - (pattern.firstAccess || Date.now()));
+
     if (!pattern.firstAccess) {
       pattern.firstAccess = Date.now();
     }
-    
+
     this.prefetchPatterns.set(key, pattern);
   }
 
@@ -412,9 +432,9 @@ class MultiLevelCache extends EventEmitter {
    */
   triggerPrefetch(key) {
     if (!this.options.prefetch.enabled) return;
-    
+
     const strategy = this.options.prefetch.strategy;
-    
+
     switch (strategy) {
       case PREFETCH_STRATEGY.SEQUENTIAL:
         this.prefetchSequential(key);
@@ -436,18 +456,18 @@ class MultiLevelCache extends EventEmitter {
     try {
       const baseKey = key.toString();
       const match = baseKey.match(/(\d+)$/);
-      
+
       if (match) {
         const num = parseInt(match[1]);
         const prefix = baseKey.substring(0, match.index);
-        
+
         for (let i = 1; i <= this.options.prefetch.lookahead; i++) {
           const nextKey = prefix + (num + i);
           this.schedulePrefetch(nextKey);
         }
       }
     } catch (error) {
-      logToFile(`顺序预取失败: ${error.message}`, 'DEBUG');
+      logToFile(`顺序预取失败: ${error.message}`, "DEBUG");
     }
   }
 
@@ -457,7 +477,7 @@ class MultiLevelCache extends EventEmitter {
   prefetchByPattern(key) {
     const pattern = this.prefetchPatterns.get(key);
     if (!pattern || pattern.relatedKeys.size === 0) return;
-    
+
     // 预取相关的键
     for (const relatedKey of pattern.relatedKeys) {
       if (!this.has(relatedKey)) {
@@ -472,8 +492,8 @@ class MultiLevelCache extends EventEmitter {
   prefetchPredictive(key) {
     // 基于访问历史进行预测
     const recentAccess = this.accessHistory.slice(-10);
-    const keyIndex = recentAccess.findIndex(access => access.key === key);
-    
+    const keyIndex = recentAccess.findIndex((access) => access.key === key);
+
     if (keyIndex >= 0 && keyIndex < recentAccess.length - 1) {
       // 预取历史上经常跟随的键
       const nextKey = recentAccess[keyIndex + 1].key;
@@ -487,12 +507,12 @@ class MultiLevelCache extends EventEmitter {
   schedulePrefetch(key) {
     if (this.prefetchQueue.has(key)) return;
     if (this.prefetchQueue.size >= this.options.prefetch.maxConcurrent) return;
-    
+
     this.prefetchQueue.set(key, Date.now());
     this.stats.prefetch.requests++;
-    
+
     // 触发预取事件，由外部处理实际的数据获取
-    this.emit('prefetchRequest', { key });
+    this.emit("prefetchRequest", { key });
   }
 
   /**
@@ -500,7 +520,7 @@ class MultiLevelCache extends EventEmitter {
    */
   onPrefetchComplete(key, value, success = true) {
     this.prefetchQueue.delete(key);
-    
+
     if (success && value !== null) {
       this.stats.prefetch.hits++;
       // 将预取的数据存入L2缓存
@@ -508,8 +528,8 @@ class MultiLevelCache extends EventEmitter {
     } else {
       this.stats.prefetch.misses++;
     }
-    
-    this.emit('prefetchComplete', { key, success });
+
+    this.emit("prefetchComplete", { key, success });
   }
 
   /**
@@ -517,8 +537,8 @@ class MultiLevelCache extends EventEmitter {
    */
   calculateSize(value) {
     if (Buffer.isBuffer(value)) return value.length;
-    if (typeof value === 'string') return value.length * 2;
-    if (typeof value === 'object') return JSON.stringify(value).length * 2;
+    if (typeof value === "string") return value.length * 2;
+    if (typeof value === "object") return JSON.stringify(value).length * 2;
     return 8;
   }
 
@@ -533,7 +553,10 @@ class MultiLevelCache extends EventEmitter {
       prefetchQueueSize: this.prefetchQueue.size,
       accessHistorySize: this.accessHistory.length,
       patternCount: this.prefetchPatterns.size,
-      hitRate: this.stats.total.requests > 0 ? (this.stats.total.hits / this.stats.total.requests) * 100 : 0,
+      hitRate:
+        this.stats.total.requests > 0
+          ? (this.stats.total.hits / this.stats.total.requests) * 100
+          : 0,
     };
   }
 
@@ -543,14 +566,14 @@ class MultiLevelCache extends EventEmitter {
   startMonitoring() {
     setInterval(() => {
       const stats = this.getStats();
-      this.emit('metricsUpdate', stats);
-      
+      this.emit("metricsUpdate", stats);
+
       // 检查性能告警
       if (stats.hitRate < 50) {
-        this.emit('performanceAlert', {
-          type: 'low_hit_rate',
+        this.emit("performanceAlert", {
+          type: "low_hit_rate",
           value: stats.hitRate,
-          message: `缓存命中率过低: ${stats.hitRate.toFixed(1)}%`
+          message: `缓存命中率过低: ${stats.hitRate.toFixed(1)}%`,
         });
       }
     }, this.options.monitoring.metricsInterval);
@@ -564,10 +587,15 @@ class MultiLevelCache extends EventEmitter {
     this.prefetchQueue.clear();
     this.prefetchPatterns.clear();
     this.accessHistory = [];
-    
-    this.emit('disposed');
-    logToFile('多级缓存系统已清理', 'INFO');
+
+    this.emit("disposed");
+    logToFile("多级缓存系统已清理", "INFO");
   }
 }
 
-module.exports = { MultiLevelCache, CACHE_LEVEL, CACHE_STRATEGY, PREFETCH_STRATEGY };
+module.exports = {
+  MultiLevelCache,
+  CACHE_LEVEL,
+  CACHE_STRATEGY,
+  PREFETCH_STRATEGY,
+};

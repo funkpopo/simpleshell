@@ -115,7 +115,8 @@ const Settings = ({ open, onClose }) => {
 
   // 需要重启的设置变更标志
   const [needsRestart, setNeedsRestart] = React.useState(false);
-  const [originalPerformanceSettings, setOriginalPerformanceSettings] = React.useState({});
+  const [originalPerformanceSettings, setOriginalPerformanceSettings] =
+    React.useState({});
 
   // Load settings from config.json via API
   React.useEffect(() => {
@@ -138,7 +139,7 @@ const Settings = ({ open, onClose }) => {
               webglEnabled: true,
               imageSupported: true,
               cacheEnabled: true,
-              prefetchEnabled: true
+              prefetchEnabled: true,
             };
 
             setWebglEnabled(performanceSettings.webglEnabled !== false);
@@ -211,12 +212,14 @@ const Settings = ({ open, onClose }) => {
       imageSupported,
       cacheEnabled,
       prefetchEnabled,
-      ...newSettings
+      ...newSettings,
     };
 
     // WebGL和图像支持的变更需要重启
-    const needsRestartForWebGL = current.webglEnabled !== originalPerformanceSettings.webglEnabled;
-    const needsRestartForImage = current.imageSupported !== originalPerformanceSettings.imageSupported;
+    const needsRestartForWebGL =
+      current.webglEnabled !== originalPerformanceSettings.webglEnabled;
+    const needsRestartForImage =
+      current.imageSupported !== originalPerformanceSettings.imageSupported;
 
     return needsRestartForWebGL || needsRestartForImage;
   };
@@ -226,20 +229,20 @@ const Settings = ({ open, onClose }) => {
     const newSettings = { [setting]: value };
 
     switch (setting) {
-      case 'webglEnabled':
+      case "webglEnabled":
         setWebglEnabled(value);
         break;
-      case 'imageSupported':
+      case "imageSupported":
         setImageSupported(value);
         break;
-      case 'cacheEnabled':
+      case "cacheEnabled":
         setCacheEnabled(value);
         // 缓存设置可以实时生效
         if (window.terminalAPI?.updateCacheSettings) {
           window.terminalAPI.updateCacheSettings({ enabled: value });
         }
         break;
-      case 'prefetchEnabled':
+      case "prefetchEnabled":
         setPrefetchEnabled(value);
         // 预取设置可以实时生效
         if (window.terminalAPI?.updatePrefetchSettings) {
@@ -265,8 +268,8 @@ const Settings = ({ open, onClose }) => {
             webglEnabled,
             imageSupported,
             cacheEnabled,
-            prefetchEnabled
-          }
+            prefetchEnabled,
+          },
         };
         await window.terminalAPI.saveUISettings(settings);
       }
@@ -437,8 +440,8 @@ const Settings = ({ open, onClose }) => {
 
         {/* 性能设置 */}
         <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-            <TuneIcon sx={{ mr: 1, color: 'primary.main' }} />
+          <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+            <TuneIcon sx={{ mr: 1, color: "primary.main" }} />
             <Typography variant="subtitle1">
               {t("settings.performanceSettings", "性能设置")}
             </Typography>
@@ -447,37 +450,61 @@ const Settings = ({ open, onClose }) => {
           {/* 重启提示 */}
           {needsRestart && (
             <Alert severity="warning" sx={{ mb: 2 }}>
-              <AlertTitle>{t("settings.restartRequired", "需要重启")}</AlertTitle>
-              {t("settings.restartMessage", "某些性能设置需要重启应用程序才能生效。保存设置后请重启应用。")}
+              <AlertTitle>
+                {t("settings.restartRequired", "需要重启")}
+              </AlertTitle>
+              {t(
+                "settings.restartMessage",
+                "某些性能设置需要重启应用程序才能生效。保存设置后请重启应用。",
+              )}
             </Alert>
           )}
 
           <Grid container spacing={2}>
             {/* WebGL渲染器 */}
             <Grid item xs={12} sm={6}>
-              <Card variant="outlined" sx={{ height: '100%' }}>
+              <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <SpeedIcon sx={{ mr: 1, color: 'primary.main' }} />
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                    <SpeedIcon sx={{ mr: 1, color: "primary.main" }} />
                     <Typography variant="h6" component="div">
                       {t("settings.webglRenderer", "WebGL渲染器")}
                     </Typography>
-                    {needsRestart && (webglEnabled !== originalPerformanceSettings.webglEnabled) && (
-                      <Chip label={t("settings.needsRestart", "需重启")} size="small" color="warning" sx={{ ml: 1 }} />
-                    )}
+                    {needsRestart &&
+                      webglEnabled !==
+                        originalPerformanceSettings.webglEnabled && (
+                        <Chip
+                          label={t("settings.needsRestart", "需重启")}
+                          size="small"
+                          color="warning"
+                          sx={{ ml: 1 }}
+                        />
+                      )}
                   </Box>
                   <FormControlLabel
                     control={
                       <Switch
                         checked={webglEnabled}
-                        onChange={(e) => handlePerformanceChange('webglEnabled', e.target.checked)}
+                        onChange={(e) =>
+                          handlePerformanceChange(
+                            "webglEnabled",
+                            e.target.checked,
+                          )
+                        }
                         color="primary"
                       />
                     }
                     label={t("settings.enableWebGL", "启用WebGL渲染器")}
                   />
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    {t("settings.webglDescription", "提升终端渲染性能30-50%，但可能在某些设备上不稳定")}
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mt: 1 }}
+                  >
+                    {t(
+                      "settings.webglDescription",
+                      "提升终端渲染性能30-50%，但可能在某些设备上不稳定",
+                    )}
                   </Typography>
                 </CardContent>
               </Card>
@@ -485,29 +512,48 @@ const Settings = ({ open, onClose }) => {
 
             {/* 图像支持 */}
             <Grid item xs={12} sm={6}>
-              <Card variant="outlined" sx={{ height: '100%' }}>
+              <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <ImageIcon sx={{ mr: 1, color: 'primary.main' }} />
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                    <ImageIcon sx={{ mr: 1, color: "primary.main" }} />
                     <Typography variant="h6" component="div">
                       {t("settings.imageSupport", "图像支持")}
                     </Typography>
-                    {needsRestart && (imageSupported !== originalPerformanceSettings.imageSupported) && (
-                      <Chip label={t("settings.needsRestart", "需重启")} size="small" color="warning" sx={{ ml: 1 }} />
-                    )}
+                    {needsRestart &&
+                      imageSupported !==
+                        originalPerformanceSettings.imageSupported && (
+                        <Chip
+                          label={t("settings.needsRestart", "需重启")}
+                          size="small"
+                          color="warning"
+                          sx={{ ml: 1 }}
+                        />
+                      )}
                   </Box>
                   <FormControlLabel
                     control={
                       <Switch
                         checked={imageSupported}
-                        onChange={(e) => handlePerformanceChange('imageSupported', e.target.checked)}
+                        onChange={(e) =>
+                          handlePerformanceChange(
+                            "imageSupported",
+                            e.target.checked,
+                          )
+                        }
                         color="primary"
                       />
                     }
                     label={t("settings.enableImageSupport", "启用图像支持")}
                   />
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    {t("settings.imageDescription", "支持在终端中显示Sixel和iTerm图像协议")}
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mt: 1 }}
+                  >
+                    {t(
+                      "settings.imageDescription",
+                      "支持在终端中显示Sixel和iTerm图像协议",
+                    )}
                   </Typography>
                 </CardContent>
               </Card>
@@ -515,27 +561,44 @@ const Settings = ({ open, onClose }) => {
 
             {/* 智能缓存 */}
             <Grid item xs={12} sm={6}>
-              <Card variant="outlined" sx={{ height: '100%' }}>
+              <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <MemoryIcon sx={{ mr: 1, color: 'success.main' }} />
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                    <MemoryIcon sx={{ mr: 1, color: "success.main" }} />
                     <Typography variant="h6" component="div">
                       {t("settings.smartCache", "智能缓存")}
                     </Typography>
-                    <Chip label={t("settings.realTime", "实时生效")} size="small" color="success" sx={{ ml: 1 }} />
+                    <Chip
+                      label={t("settings.realTime", "实时生效")}
+                      size="small"
+                      color="success"
+                      sx={{ ml: 1 }}
+                    />
                   </Box>
                   <FormControlLabel
                     control={
                       <Switch
                         checked={cacheEnabled}
-                        onChange={(e) => handlePerformanceChange('cacheEnabled', e.target.checked)}
+                        onChange={(e) =>
+                          handlePerformanceChange(
+                            "cacheEnabled",
+                            e.target.checked,
+                          )
+                        }
                         color="primary"
                       />
                     }
                     label={t("settings.enableCache", "启用多级缓存")}
                   />
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    {t("settings.cacheDescription", "L1/L2缓存提升文件列表加载速度40-60%")}
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mt: 1 }}
+                  >
+                    {t(
+                      "settings.cacheDescription",
+                      "L1/L2缓存提升文件列表加载速度40-60%",
+                    )}
                   </Typography>
                 </CardContent>
               </Card>
@@ -543,27 +606,44 @@ const Settings = ({ open, onClose }) => {
 
             {/* 智能预取 */}
             <Grid item xs={12} sm={6}>
-              <Card variant="outlined" sx={{ height: '100%' }}>
+              <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <CachedIcon sx={{ mr: 1, color: 'success.main' }} />
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                    <CachedIcon sx={{ mr: 1, color: "success.main" }} />
                     <Typography variant="h6" component="div">
                       {t("settings.smartPrefetch", "智能预取")}
                     </Typography>
-                    <Chip label={t("settings.realTime", "实时生效")} size="small" color="success" sx={{ ml: 1 }} />
+                    <Chip
+                      label={t("settings.realTime", "实时生效")}
+                      size="small"
+                      color="success"
+                      sx={{ ml: 1 }}
+                    />
                   </Box>
                   <FormControlLabel
                     control={
                       <Switch
                         checked={prefetchEnabled}
-                        onChange={(e) => handlePerformanceChange('prefetchEnabled', e.target.checked)}
+                        onChange={(e) =>
+                          handlePerformanceChange(
+                            "prefetchEnabled",
+                            e.target.checked,
+                          )
+                        }
                         color="primary"
                       />
                     }
                     label={t("settings.enablePrefetch", "启用预测性预取")}
                   />
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    {t("settings.prefetchDescription", "基于访问模式智能预加载数据，减少等待时间")}
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mt: 1 }}
+                  >
+                    {t(
+                      "settings.prefetchDescription",
+                      "基于访问模式智能预加载数据，减少等待时间",
+                    )}
                   </Typography>
                 </CardContent>
               </Card>
