@@ -1,222 +1,215 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  memo,
+  useMemo,
+} from "react";
 import { createPortal } from "react-dom";
 import { Box, Typography, Paper } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 
-const CommandSuggestion = ({
-  suggestions = [],
-  visible = false,
-  position = { x: 0, y: 0 },
-  onSelectSuggestion,
-  onClose,
-  terminalElement = null,
-  currentInput = "",
-}) => {
-  const theme = useTheme();
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const suggestionRef = useRef(null);
-  const [isKeyboardNavigation, setIsKeyboardNavigation] = useState(false);
+// 自定义比较函数
+const areEqual = (prevProps, nextProps) => {
+  return (
+    prevProps.visible === nextProps.visible &&
+    prevProps.suggestions === nextProps.suggestions &&
+    prevProps.position.x === nextProps.position.x &&
+    prevProps.position.y === nextProps.position.y &&
+    prevProps.position.showAbove === nextProps.position.showAbove &&
+    prevProps.currentInput === nextProps.currentInput &&
+    prevProps.onSelectSuggestion === nextProps.onSelectSuggestion &&
+    prevProps.onClose === nextProps.onClose &&
+    prevProps.terminalElement === nextProps.terminalElement
+  );
+};
 
-  // 重置选中索引当建议列表变化时
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [suggestions]);
+const CommandSuggestion = memo(
+  ({
+    suggestions = [],
+    visible = false,
+    position = { x: 0, y: 0 },
+    onSelectSuggestion,
+    onClose,
+    terminalElement = null,
+    currentInput = "",
+  }) => {
+    const theme = useTheme();
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const suggestionRef = useRef(null);
+    const [isKeyboardNavigation, setIsKeyboardNavigation] = useState(false);
 
-  // 处理键盘事件
-  const handleKeyDown = useCallback(
-    (event) => {
-      if (!visible || suggestions.length === 0) return;
+    // 重置选中索引当建议列表变化时
+    useEffect(() => {
+      setSelectedIndex(0);
+    }, [suggestions]);
 
-      switch (event.key) {
-        case "ArrowDown":
-          event.preventDefault();
-          event.stopPropagation();
-          setIsKeyboardNavigation(true);
-          setSelectedIndex((prev) => (prev + 1) % suggestions.length);
-          break;
-        case "ArrowUp":
-          event.preventDefault();
-          event.stopPropagation();
-          setIsKeyboardNavigation(true);
-          setSelectedIndex((prev) =>
-            prev === 0 ? suggestions.length - 1 : prev - 1,
-          );
-          break;
-        case "Enter":
-          if (suggestions[selectedIndex]) {
+    // 处理键盘事件
+    const handleKeyDown = useCallback(
+      (event) => {
+        if (!visible || suggestions.length === 0) return;
+
+        switch (event.key) {
+          case "ArrowDown":
             event.preventDefault();
             event.stopPropagation();
-            onSelectSuggestion?.(suggestions[selectedIndex]);
-          }
-          break;
-        case "Escape":
-          event.preventDefault();
-          event.stopPropagation();
-          onClose?.();
-          break;
-        default:
-          // 其他键不影响导航状态
-          break;
-      }
-    },
-    [visible, suggestions, selectedIndex, onSelectSuggestion, onClose],
-  );
-
-  // 添加全局键盘事件监听
-  useEffect(() => {
-    if (visible) {
-      document.addEventListener("keydown", handleKeyDown, true);
-      return () => {
-        document.removeEventListener("keydown", handleKeyDown, true);
-      };
-    }
-  }, [visible, handleKeyDown]);
-
-  // 处理鼠标悬停
-  const handleMouseEnter = useCallback(
-    (index) => {
-      if (!isKeyboardNavigation) {
-        setSelectedIndex(index);
-      }
-    },
-    [isKeyboardNavigation],
-  );
-
-  // 处理鼠标点击
-  const handleMouseClick = useCallback(
-    (suggestion) => {
-      onSelectSuggestion?.(suggestion);
-    },
-    [onSelectSuggestion],
-  );
-
-  // 重置键盘导航状态当鼠标移动时
-  const handleMouseMove = useCallback(() => {
-    setIsKeyboardNavigation(false);
-  }, []);
-
-  // 计算建议窗口的位置
-  const calculatePosition = useCallback(() => {
-    if (!suggestionRef.current) {
-      // 根据showAbove决定初始位置
-      const offsetY = position.showAbove ? -200 : 20;
-      return { top: position.y + offsetY, left: position.x };
-    }
-
-    const suggestionRect = suggestionRef.current.getBoundingClientRect();
-
-    // 根据showAbove决定显示位置
-    let top;
-    if (position.showAbove) {
-      // 显示在光标上方
-      top = position.y - suggestionRect.height - 5;
-    } else {
-      // 显示在光标下方
-      top = position.y + 25;
-    }
-
-    let left = position.x;
-
-    // 确保窗口不会超出屏幕右边界
-    if (left + suggestionRect.width > window.innerWidth) {
-      left = window.innerWidth - suggestionRect.width - 10;
-    }
-
-    // 确保窗口不会超出屏幕左边界
-    if (left < 10) {
-      left = 10;
-    }
-
-    // 确保窗口不会超出屏幕上边界
-    if (top < 10) {
-      top = 10;
-    }
-
-    // 确保窗口不会超出屏幕下边界
-    if (top + suggestionRect.height > window.innerHeight) {
-      top = window.innerHeight - suggestionRect.height - 10;
-    }
-
-    return { top, left };
-  }, [position]);
-
-  // 获取匹配类型的显示文本
-  const getMatchTypeText = (matchType) => {
-    switch (matchType) {
-      case "prefix":
-        return "前缀匹配";
-      default:
-        return "";
-    }
-  };
-
-  // 高亮匹配的文本
-  const highlightMatch = (command, input) => {
-    if (!input || input.trim() === "") return command;
-
-    const inputLower = input.toLowerCase();
-    const commandLower = command.toLowerCase();
-    const index = commandLower.indexOf(inputLower);
-
-    if (index === -1) return command;
-
-    const before = command.slice(0, index);
-    const match = command.slice(index, index + input.length);
-    const after = command.slice(index + input.length);
-
-    return (
-      <>
-        {before}
-        <span
-          style={{
-            backgroundColor: theme.palette.warning.main,
-            color: theme.palette.warning.contrastText,
-            fontWeight: "bold",
-          }}
-        >
-          {match}
-        </span>
-        {after}
-      </>
+            setIsKeyboardNavigation(true);
+            setSelectedIndex((prev) => (prev + 1) % suggestions.length);
+            break;
+          case "ArrowUp":
+            event.preventDefault();
+            event.stopPropagation();
+            setIsKeyboardNavigation(true);
+            setSelectedIndex((prev) =>
+              prev === 0 ? suggestions.length - 1 : prev - 1,
+            );
+            break;
+          case "Enter":
+            if (suggestions[selectedIndex]) {
+              event.preventDefault();
+              event.stopPropagation();
+              onSelectSuggestion?.(suggestions[selectedIndex]);
+            }
+            break;
+          case "Escape":
+            event.preventDefault();
+            event.stopPropagation();
+            onClose?.();
+            break;
+          default:
+            // 其他键不影响导航状态
+            break;
+        }
+      },
+      [visible, suggestions, selectedIndex, onSelectSuggestion, onClose],
     );
-  };
 
-  if (!visible || suggestions.length === 0) {
-    return null;
-  }
+    // 添加全局键盘事件监听
+    useEffect(() => {
+      if (visible) {
+        document.addEventListener("keydown", handleKeyDown, true);
+        return () => {
+          document.removeEventListener("keydown", handleKeyDown, true);
+        };
+      }
+    }, [visible, handleKeyDown]);
 
-  const suggestionContent = (
-    <Paper
-      ref={suggestionRef}
-      sx={{
-        position: "fixed",
-        ...calculatePosition(),
-        zIndex: 9999,
-        maxWidth: 600,
-        maxHeight: 300,
-        overflow: "auto",
-        backgroundColor:
-          theme.palette.mode === "dark"
-            ? "rgba(30, 30, 30, 0.95)"
-            : "rgba(255, 255, 255, 0.95)",
-        backdropFilter: "blur(10px)",
-        border: `1px solid ${theme.palette.divider}`,
-        borderRadius: 1,
-        boxShadow: theme.shadows[8],
-        "&::-webkit-scrollbar": {
-          width: 6,
-        },
-        "&::-webkit-scrollbar-track": {
-          background: "transparent",
-        },
-        "&::-webkit-scrollbar-thumb": {
-          background: theme.palette.action.disabled,
-          borderRadius: 3,
-        },
-      }}
-      onMouseMove={handleMouseMove}
-    >
-      {suggestions.map((suggestion, index) => (
+    // 处理鼠标悬停
+    const handleMouseEnter = useCallback(
+      (index) => {
+        if (!isKeyboardNavigation) {
+          setSelectedIndex(index);
+        }
+      },
+      [isKeyboardNavigation],
+    );
+
+    // 处理鼠标点击
+    const handleMouseClick = useCallback(
+      (suggestion) => {
+        onSelectSuggestion?.(suggestion);
+      },
+      [onSelectSuggestion],
+    );
+
+    // 重置键盘导航状态当鼠标移动时
+    const handleMouseMove = useCallback(() => {
+      setIsKeyboardNavigation(false);
+    }, []);
+
+    // 计算建议窗口的位置
+    const calculatePosition = useCallback(() => {
+      if (!suggestionRef.current) {
+        // 根据showAbove决定初始位置
+        const offsetY = position.showAbove ? -200 : 20;
+        return { top: position.y + offsetY, left: position.x };
+      }
+
+      const suggestionRect = suggestionRef.current.getBoundingClientRect();
+
+      // 根据showAbove决定显示位置
+      let top;
+      if (position.showAbove) {
+        // 显示在光标上方
+        top = position.y - suggestionRect.height - 5;
+      } else {
+        // 显示在光标下方
+        top = position.y + 25;
+      }
+
+      let left = position.x;
+
+      // 确保窗口不会超出屏幕右边界
+      if (left + suggestionRect.width > window.innerWidth) {
+        left = window.innerWidth - suggestionRect.width - 10;
+      }
+
+      // 确保窗口不会超出屏幕左边界
+      if (left < 10) {
+        left = 10;
+      }
+
+      // 确保窗口不会超出屏幕上边界
+      if (top < 10) {
+        top = 10;
+      }
+
+      // 确保窗口不会超出屏幕下边界
+      if (top + suggestionRect.height > window.innerHeight) {
+        top = window.innerHeight - suggestionRect.height - 10;
+      }
+
+      return { top, left };
+    }, [position]);
+
+    // 获取匹配类型的显示文本
+    const getMatchTypeText = useCallback((matchType) => {
+      switch (matchType) {
+        case "prefix":
+          return "前缀匹配";
+        default:
+          return "";
+      }
+    }, []);
+
+    // 高亮匹配的文本 - 使用 useMemo 优化
+    const highlightMatch = useCallback(
+      (command, input) => {
+        if (!input || input.trim() === "") return command;
+
+        const inputLower = input.toLowerCase();
+        const commandLower = command.toLowerCase();
+        const index = commandLower.indexOf(inputLower);
+
+        if (index === -1) return command;
+
+        const before = command.slice(0, index);
+        const match = command.slice(index, index + input.length);
+        const after = command.slice(index + input.length);
+
+        return (
+          <>
+            {before}
+            <span
+              style={{
+                backgroundColor: theme.palette.warning.main,
+                color: theme.palette.warning.contrastText,
+                fontWeight: "bold",
+              }}
+            >
+              {match}
+            </span>
+            {after}
+          </>
+        );
+      },
+      [theme.palette.warning.main, theme.palette.warning.contrastText],
+    );
+
+    // 使用 useMemo 优化建议列表渲染
+    const suggestionItems = useMemo(() => {
+      return suggestions.map((suggestion, index) => (
         <Box
           key={`${suggestion.command}-${index}`}
           sx={{
@@ -294,31 +287,83 @@ const CommandSuggestion = ({
             </Typography>
           </Box>
         </Box>
-      ))}
+      ));
+    }, [
+      suggestions,
+      selectedIndex,
+      theme,
+      currentInput,
+      handleMouseEnter,
+      handleMouseClick,
+      highlightMatch,
+      getMatchTypeText,
+    ]);
 
-      {/* 底部提示 */}
-      <Box
+    if (!visible || suggestions.length === 0) {
+      return null;
+    }
+
+    const suggestionContent = (
+      <Paper
+        ref={suggestionRef}
         sx={{
-          padding: "6px 12px",
-          backgroundColor: theme.palette.action.hover,
-          borderTop: `1px solid ${theme.palette.divider}`,
+          position: "fixed",
+          ...calculatePosition(),
+          zIndex: 9999,
+          maxWidth: 600,
+          maxHeight: 300,
+          overflow: "auto",
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? "rgba(30, 30, 30, 0.95)"
+              : "rgba(255, 255, 255, 0.95)",
+          backdropFilter: "blur(10px)",
+          border: `1px solid ${theme.palette.divider}`,
+          borderRadius: 1,
+          boxShadow: theme.shadows[8],
+          "&::-webkit-scrollbar": {
+            width: 6,
+          },
+          "&::-webkit-scrollbar-track": {
+            background: "transparent",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            background: theme.palette.action.disabled,
+            borderRadius: 3,
+          },
         }}
+        onMouseMove={handleMouseMove}
       >
-        <Typography
-          variant="caption"
+        {suggestionItems}
+
+        {/* 底部提示 */}
+        <Box
           sx={{
-            color: theme.palette.text.secondary,
-            fontSize: "10px",
+            padding: "6px 12px",
+            backgroundColor: theme.palette.action.hover,
+            borderTop: `1px solid ${theme.palette.divider}`,
           }}
         >
-          ↑↓ 选择 • Enter 确认 • Esc 关闭
-        </Typography>
-      </Box>
-    </Paper>
-  );
+          <Typography
+            variant="caption"
+            sx={{
+              color: theme.palette.text.secondary,
+              fontSize: "10px",
+            }}
+          >
+            ↑↓ 选择 • Enter 确认 • Esc 关闭
+          </Typography>
+        </Box>
+      </Paper>
+    );
 
-  // 使用 Portal 渲染到 body，确保在最顶层
-  return createPortal(suggestionContent, document.body);
-};
+    // 使用 Portal 渲染到 body，确保在最顶层
+    return createPortal(suggestionContent, document.body);
+  },
+  areEqual,
+);
+
+// 设置显示名称用于调试
+CommandSuggestion.displayName = "CommandSuggestion";
 
 export default CommandSuggestion;

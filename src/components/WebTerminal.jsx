@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, memo } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -2896,4 +2896,19 @@ const WebTerminal = ({
   );
 };
 
-export default WebTerminal;
+// 自定义比较函数 - 只比较核心 props，确保不影响现有功能
+const areEqualWebTerminal = (prevProps, nextProps) => {
+  return (
+    prevProps.tabId === nextProps.tabId &&
+    prevProps.refreshKey === nextProps.refreshKey &&
+    prevProps.usePowershell === nextProps.usePowershell &&
+    prevProps.isActive === nextProps.isActive &&
+    JSON.stringify(prevProps.sshConfig) === JSON.stringify(nextProps.sshConfig)
+  );
+};
+
+// 使用 memo 包装组件，保持所有现有功能不变
+const MemoizedWebTerminal = memo(WebTerminal, areEqualWebTerminal);
+MemoizedWebTerminal.displayName = "WebTerminal";
+
+export default MemoizedWebTerminal;

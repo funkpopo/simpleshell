@@ -1,4 +1,5 @@
 import * as React from "react";
+import { memo, useCallback, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
@@ -48,6 +49,7 @@ import ShortcutCommands from "./components/ShortcutCommands.jsx";
 import CommandHistory from "./components/CommandHistory.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import AIChatWindow from "./components/AIChatWindow.jsx";
+import CustomTab from "./components/CustomTab.jsx";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -55,73 +57,6 @@ import { changeLanguage } from "./i18n/i18n";
 import "./index.css";
 import { styled } from "@mui/material/styles";
 import { SIDEBAR_WIDTHS } from "./constants/layout.js";
-
-// 自定义标签页组件
-function CustomTab(props) {
-  const {
-    label,
-    onClose,
-    onContextMenu,
-    index,
-    onDragStart,
-    onDragOver,
-    onDrop,
-    ...other
-  } = props;
-
-  return (
-    <Tab
-      {...other}
-      onContextMenu={onContextMenu}
-      draggable="true"
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      label={
-        <Box sx={{ display: "flex", alignItems: "center" }}>
-          <Typography variant="body2" component="span" sx={{ mr: 1 }}>
-            {label}
-          </Typography>
-          {onClose && (
-            <CloseIcon
-              fontSize="small"
-              sx={{
-                width: 16,
-                height: 16,
-                "&:hover": {
-                  color: "error.main",
-                },
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose();
-              }}
-            />
-          )}
-        </Box>
-      }
-      sx={{
-        textTransform: "none",
-        minWidth: "auto",
-        minHeight: 40,
-        py: 0,
-        cursor: "pointer",
-        userSelect: "none",
-        // 确保标签颜色跟随主题变化
-        color: "text.secondary",
-        "&.Mui-selected": {
-          color: "text.primary",
-          backgroundColor: (theme) =>
-            theme.palette.mode === "dark"
-              ? "rgba(255, 255, 255, 0.1)"
-              : "rgba(245, 245, 245, 0.91)",
-          borderRadius: "4px 4px 0 0",
-          fontWeight: "bold",
-        },
-      }}
-    />
-  );
-}
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
@@ -140,7 +75,7 @@ const GlassDialog = styled(Dialog)(({ theme }) => ({
 }));
 
 // 关于对话框组件
-function AboutDialog({ open, onClose }) {
+const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   const { t } = useTranslation();
   const [checkingForUpdate, setCheckingForUpdate] = React.useState(false);
   const [updateStatus, setUpdateStatus] = React.useState(null);
@@ -161,18 +96,21 @@ function AboutDialog({ open, onClose }) {
   }, []);
 
   // 在外部浏览器打开链接
-  const handleOpenExternalLink = (url) => {
-    if (window.terminalAPI?.openExternal) {
-      window.terminalAPI.openExternal(url).catch((error) => {
-        alert(t("app.cannotOpenLinkAlert", { url }));
-      });
-    } else {
-      // 降级方案：尝试使用window.open
-      window.open(url, "_blank");
-    }
-  };
+  const handleOpenExternalLink = useCallback(
+    (url) => {
+      if (window.terminalAPI?.openExternal) {
+        window.terminalAPI.openExternal(url).catch((error) => {
+          alert(t("app.cannotOpenLinkAlert", { url }));
+        });
+      } else {
+        // 降级方案：尝试使用window.open
+        window.open(url, "_blank");
+      }
+    },
+    [t],
+  );
 
-  const handleCheckForUpdate = () => {
+  const handleCheckForUpdate = useCallback(() => {
     setCheckingForUpdate(true);
     setUpdateStatus(t("about.checkingUpdate"));
 
@@ -211,7 +149,7 @@ function AboutDialog({ open, onClose }) {
       .finally(() => {
         setCheckingForUpdate(false);
       });
-  };
+  }, [t, appVersion]);
 
   return (
     <GlassDialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -303,7 +241,9 @@ function AboutDialog({ open, onClose }) {
       </DialogActions>
     </GlassDialog>
   );
-}
+});
+
+AboutDialog.displayName = "AboutDialog";
 
 function App() {
   const { t, i18n } = useTranslation();
@@ -549,47 +489,47 @@ function App() {
   );
 
   // 处理菜单打开
-  const handleMenu = (event) => {
+  const handleMenu = useCallback((event) => {
     setAnchorEl(event.currentTarget);
-  };
+  }, []);
 
   // 处理菜单关闭
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setAnchorEl(null);
-  };
+  }, []);
 
   // 打开关于对话框
-  const handleOpenAbout = () => {
+  const handleOpenAbout = useCallback(() => {
     setAnchorEl(null);
     setAboutDialogOpen(true);
-  };
+  }, []);
 
   // 关闭关于对话框
-  const handleCloseAbout = () => {
+  const handleCloseAbout = useCallback(() => {
     setAboutDialogOpen(false);
-  };
+  }, []);
 
   // 打开设置对话框
-  const handleOpenSettings = () => {
+  const handleOpenSettings = useCallback(() => {
     setAnchorEl(null);
     setSettingsDialogOpen(true);
-  };
+  }, []);
 
   // 关闭设置对话框
-  const handleCloseSettings = () => {
+  const handleCloseSettings = useCallback(() => {
     setSettingsDialogOpen(false);
-  };
+  }, []);
 
   // 处理应用退出
-  const handleExit = () => {
+  const handleExit = useCallback(() => {
     if (window.terminalAPI && window.terminalAPI.closeApp) {
       window.terminalAPI.closeApp();
     }
     setAnchorEl(null);
-  };
+  }, []);
 
   // 切换主题模式
-  const toggleTheme = async () => {
+  const toggleTheme = useCallback(async () => {
     try {
       const newDarkMode = !darkMode;
 
@@ -631,52 +571,58 @@ function App() {
       // 如果保存失败，至少更新 localStorage
       localStorage.setItem("terminalDarkMode", (!darkMode).toString());
     }
-  };
+  }, [darkMode]);
 
   // 标签页相关函数
-  const handleTabChange = (event, newValue) => {
-    setCurrentTab(newValue);
+  const handleTabChange = useCallback(
+    (event, newValue) => {
+      setCurrentTab(newValue);
 
-    // 触发自定义事件，通知WebTerminal组件进行大小调整
-    if (newValue < tabs.length) {
-      const currentTabId = tabs[newValue]?.id;
-      if (currentTabId) {
-        // 使用自定义事件通知特定标签页的WebTerminal组件
-        window.dispatchEvent(
-          new CustomEvent("tabChanged", {
-            detail: { tabId: currentTabId, index: newValue },
-          }),
-        );
+      // 触发自定义事件，通知WebTerminal组件进行大小调整
+      if (newValue < tabs.length) {
+        const currentTabId = tabs[newValue]?.id;
+        if (currentTabId) {
+          // 使用自定义事件通知特定标签页的WebTerminal组件
+          window.dispatchEvent(
+            new CustomEvent("tabChanged", {
+              detail: { tabId: currentTabId, index: newValue },
+            }),
+          );
 
-        // 触发窗口resize事件，作为备用机制确保布局更新
-        setTimeout(() => {
-          window.dispatchEvent(new Event("resize"));
-        }, 100);
+          // 触发窗口resize事件，作为备用机制确保布局更新
+          setTimeout(() => {
+            window.dispatchEvent(new Event("resize"));
+          }, 100);
+        }
       }
-    }
-  };
+    },
+    [tabs],
+  );
 
   // 标签页右键菜单打开
-  const handleTabContextMenu = (event, index) => {
-    event.preventDefault();
-    // 欢迎页不显示右键菜单
-    if (tabs[index].id === "welcome") return;
+  const handleTabContextMenu = useCallback(
+    (event, index) => {
+      event.preventDefault();
+      // 欢迎页不显示右键菜单
+      if (tabs[index].id === "welcome") return;
 
-    setTabContextMenu({
-      mouseX: event.clientX,
-      mouseY: event.clientY,
-      tabIndex: index,
-    });
-  };
+      setTabContextMenu({
+        mouseX: event.clientX,
+        mouseY: event.clientY,
+        tabIndex: index,
+      });
+    },
+    [tabs],
+  );
 
   // 标签页右键菜单关闭
-  const handleTabContextMenuClose = () => {
+  const handleTabContextMenuClose = useCallback(() => {
     setTabContextMenu({
       mouseX: null,
       mouseY: null,
       tabIndex: null,
     });
-  };
+  }, []);
 
   // 刷新终端连接
   const handleRefreshTerminal = () => {
@@ -705,7 +651,7 @@ function App() {
   };
 
   // 切换连接管理侧边栏
-  const toggleConnectionManager = () => {
+  const toggleConnectionManager = useCallback(() => {
     setConnectionManagerOpen(!connectionManagerOpen);
     // 如果要打开连接管理侧边栏，确保它显示在上层
     if (!connectionManagerOpen) {
@@ -720,12 +666,12 @@ function App() {
     setTimeout(() => {
       window.dispatchEvent(new Event("resize"));
     }, 15);
-  };
+  }, [connectionManagerOpen]);
 
   // 关闭连接管理侧边栏
-  const handleCloseConnectionManager = () => {
+  const handleCloseConnectionManager = useCallback(() => {
     setConnectionManagerOpen(false);
-  };
+  }, []);
 
   // 关闭终端连接
   const handleCloseConnection = () => {
@@ -888,7 +834,7 @@ function App() {
   };
 
   // 切换资源监控侧边栏
-  const toggleResourceMonitor = () => {
+  const toggleResourceMonitor = useCallback(() => {
     setResourceMonitorOpen(!resourceMonitorOpen);
     // 如果要打开资源监控侧边栏，确保它显示在上层
     if (!resourceMonitorOpen) {
@@ -903,12 +849,12 @@ function App() {
     setTimeout(() => {
       window.dispatchEvent(new Event("resize"));
     }, 15);
-  };
+  }, [resourceMonitorOpen]);
 
   // 关闭资源监控侧边栏
-  const handleCloseResourceMonitor = () => {
+  const handleCloseResourceMonitor = useCallback(() => {
     setResourceMonitorOpen(false);
-  };
+  }, []);
 
   // 切换文件管理侧边栏
   const toggleFileManager = () => {
@@ -1694,5 +1640,9 @@ function App() {
   );
 }
 
+// 为 App 组件添加 memo 优化
+const NotebyApp = memo(App);
+NotebyApp.displayName = "App";
+
 const root = createRoot(document.getElementById("root"));
-root.render(<App />);
+root.render(<NotebyApp />);
