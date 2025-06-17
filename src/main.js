@@ -50,11 +50,8 @@ let nextRequestId = 1;
 // 全局变量
 const terminalProcesses = new Map(); // 存储终端进程ID映射
 
-// 保存全局事件对象，用于流式响应
-let globalEvent = null;
-
-// 用于保存流式请求的引用，以便取消
-let activeAPIRequest = null;
+// 用于跟踪流式请求的会话
+const streamSessions = new Map(); // 存储会话ID -> 请求ID的映射
 
 // 跟踪当前活跃的会话ID
 let currentSessionId = null;
@@ -87,13 +84,22 @@ function createAIWorker() {
 
   try {
     const workerPath = getWorkerPath();
+    logToFile(`创建AI Worker: ${workerPath}`, "INFO");
+    
     // 创建worker实例
     aiWorker = new Worker(workerPath);
 
     // 监听worker线程的消息
     aiWorker.on("message", (message) => {
-      const { id, result, error } = message;
-      // 查找对应的请求处理函数
+      const { id, type, result, error, data } = message;
+      
+      // 处理不同类型的消息
+      if (type) {
+        handleWorkerTypeMessage(type, id, data, result, error);
+        return;
+      }
+      
+      // 处理标准请求响应
       const callback = aiRequestMap.get(id);
       if (callback) {
         if (error) {
@@ -103,11 +109,15 @@ function createAIWorker() {
         }
         // 处理完成后从Map中移除
         aiRequestMap.delete(id);
+      } else {
+        logToFile(`收到未知请求ID的响应: ${id}`, "WARN");
       }
     });
 
     // 处理worker错误
     aiWorker.on("error", (error) => {
+      logToFile(`AI Worker错误: ${error.message}`, "ERROR");
+      
       // 向所有待处理的请求返回错误
       for (const [id, callback] of aiRequestMap.entries()) {
         callback.reject(
@@ -115,13 +125,19 @@ function createAIWorker() {
         );
         aiRequestMap.delete(id);
       }
+      
+      // 清理所有流式会话
+      streamSessions.clear();
     });
 
     // 处理worker退出
     aiWorker.on("exit", (code) => {
+      logToFile(`AI Worker退出，代码: ${code}`, "WARN");
+      
       // 如果退出码不是正常退出(0)，尝试重启worker
       if (code !== 0) {
         setTimeout(() => {
+          logToFile("尝试重启AI Worker", "INFO");
           createAIWorker();
         }, 1000);
       }
@@ -133,11 +149,91 @@ function createAIWorker() {
         );
         aiRequestMap.delete(id);
       }
+      
+      // 清理所有流式会话
+      streamSessions.clear();
     });
 
     return aiWorker;
   } catch (error) {
+    logToFile(`创建AI Worker失败: ${error.message}`, "ERROR");
     return null;
+  }
+}
+
+/**
+ * 处理Worker发送的类型化消息
+ * @param {string} type - 消息类型
+ * @param {string} id - 请求ID
+ * @param {Object} data - 消息数据
+ * @param {Object} result - 结果数据
+ * @param {Object} error - 错误数据
+ */
+function handleWorkerTypeMessage(type, id, data, result, error) {
+  // 获取主窗口
+  const mainWindow = BrowserWindow.getAllWindows()[0];
+  if (!mainWindow || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
+    logToFile("无法发送Worker消息: 主窗口不可用", "ERROR");
+    return;
+  }
+  
+  switch (type) {
+    case 'init':
+      logToFile(`AI Worker初始化完成: ${JSON.stringify(result)}`, "INFO");
+      break;
+      
+    case 'stream_chunk':
+      if (data && data.sessionId) {
+        // 存储会话ID和请求ID的映射
+        streamSessions.set(data.sessionId, id);
+        
+        // 转发流式数据块到渲染进程
+        mainWindow.webContents.send('stream-chunk', {
+          tabId: 'ai',
+          chunk: data.chunk,
+          sessionId: data.sessionId
+        });
+      }
+      break;
+      
+    case 'stream_end':
+      if (data && data.sessionId) {
+        // 转发流结束事件到渲染进程
+        mainWindow.webContents.send('stream-end', {
+          tabId: 'ai',
+          sessionId: data.sessionId,
+          aborted: data.aborted || false
+        });
+        
+        // 清理会话映射
+        streamSessions.delete(data.sessionId);
+      }
+      break;
+      
+    case 'stream_error':
+      if (data && data.sessionId) {
+        // 转发流错误事件到渲染进程
+        mainWindow.webContents.send('stream-error', {
+          tabId: 'ai',
+          sessionId: data.sessionId,
+          error: data.error || { message: '未知错误' }
+        });
+        
+        // 清理会话映射
+        streamSessions.delete(data.sessionId);
+      }
+      break;
+      
+    case 'worker_error':
+      logToFile(`AI Worker内部错误: ${error?.message || '未知错误'}`, "ERROR");
+      break;
+      
+    case 'worker_exit':
+      logToFile(`AI Worker退出事件: ${JSON.stringify(result)}`, "INFO");
+      break;
+      
+    default:
+      logToFile(`未知的Worker消息类型: ${type}`, "WARN");
   }
 }
 
@@ -1463,12 +1559,11 @@ function setupIPC(mainWindow) {
     }
   });
 
-  // 直接处理API请求，绕过CORS限制
+
+
+  // 通过Worker线程处理API请求，绕过CORS限制
   ipcMain.handle("ai:sendAPIRequest", async (event, requestData, isStream) => {
     try {
-      // 保存事件对象，用于后续消息发送
-      globalEvent = event;
-
       // 验证请求数据
       if (
         !requestData.url ||
@@ -1479,230 +1574,100 @@ function setupIPC(mainWindow) {
         throw new Error("请求数据无效，缺少必要参数");
       }
 
-      if (isStream) {
-        // 保存当前会话ID
-        currentSessionId = requestData.sessionId;
-
-        // 处理流式请求
-        const https = require("https");
-        const http = require("http");
-        const url = new URL(requestData.url);
-
-        const requestModule = url.protocol === "https:" ? https : http;
-
-        const options = {
-          method: "POST",
-          hostname: url.hostname,
-          path: url.pathname + url.search,
-          port: url.port || (url.protocol === "https:" ? 443 : 80),
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${requestData.apiKey}`,
-          },
-        };
-
-        const req = requestModule.request(options, (res) => {
-          if (res.statusCode !== 200) {
-            event.sender.send("stream-error", {
-              tabId: "ai",
-              sessionId: requestData.sessionId,
-              error: {
-                message: `API请求失败: ${res.statusCode} ${res.statusMessage}`,
-              },
-            });
-            return;
-          }
-
-          res.on("data", (chunk) => {
-            try {
-              const data = chunk.toString("utf-8");
-              const lines = data.split("\n");
-
-              for (const line of lines) {
-                if (line.startsWith("data: ") && line !== "data: [DONE]") {
-                  try {
-                    const jsonData = JSON.parse(line.substring(6));
-                    if (
-                      jsonData.choices &&
-                      jsonData.choices[0] &&
-                      jsonData.choices[0].delta &&
-                      jsonData.choices[0].delta.content
-                    ) {
-                      const chunkData = {
-                        tabId: "ai",
-                        chunk: jsonData.choices[0].delta.content,
-                        sessionId: requestData.sessionId,
-                      };
-                      event.sender.send("stream-chunk", chunkData);
-                    }
-                  } catch (e) {}
-                }
-              }
-            } catch (error) {
-              logToFile(`处理流数据时出错: ${error.message}`, "ERROR");
-            }
-          });
-
-          res.on("end", () => {
-            event.sender.send("stream-end", {
-              tabId: "ai",
-              sessionId: requestData.sessionId,
-            });
-            // 清理请求引用和会话ID
-            activeAPIRequest = null;
-            currentSessionId = null;
-          });
-        });
-
-        req.on("error", (error) => {
-          logToFile(`请求出错: ${error.message}`, "ERROR");
-          event.sender.send("stream-error", {
-            tabId: "ai",
-            sessionId: requestData.sessionId,
-            error: { message: error.message },
-          });
-          // 清理请求引用和会话ID
-          activeAPIRequest = null;
-          currentSessionId = null;
-        });
-
-        // 保存请求引用以便后续中断
-        activeAPIRequest = req;
-
-        // 发送请求数据
-        req.write(
-          JSON.stringify({
-            model: requestData.model,
-            messages: requestData.messages,
-            stream: true,
-          }),
-        );
-
-        req.end();
-
-        return { success: true, message: "流式请求已开始" };
-      } else {
-        // 处理标准请求
-        return new Promise((resolve, reject) => {
-          try {
-            const https = require("https");
-            const http = require("http");
-            const url = new URL(requestData.url);
-
-            const requestModule = url.protocol === "https:" ? https : http;
-
-            const options = {
-              method: "POST",
-              hostname: url.hostname,
-              path: url.pathname + url.search,
-              port: url.port || (url.protocol === "https:" ? 443 : 80),
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${requestData.apiKey}`,
-              },
-            };
-
-            const req = requestModule.request(options, (res) => {
-              let responseData = "";
-
-              // 处理状态码非200的情况
-              if (res.statusCode !== 200) {
-                resolve({
-                  success: false,
-                  error: `API请求失败: ${res.statusCode} ${res.statusMessage}`,
-                });
-                return;
-              }
-
-              res.on("data", (chunk) => {
-                responseData += chunk.toString("utf-8");
-              });
-
-              res.on("end", () => {
-                try {
-                  // 解析JSON响应
-                  const data = JSON.parse(responseData);
-                  if (
-                    data.choices &&
-                    data.choices[0] &&
-                    data.choices[0].message &&
-                    data.choices[0].message.content
-                  ) {
-                    resolve({
-                      success: true,
-                      content: data.choices[0].message.content,
-                    });
-                  } else {
-                    resolve({
-                      success: false,
-                      error: "无法解析API响应",
-                      rawResponse: responseData,
-                    });
-                  }
-                } catch (error) {
-                  logToFile(`解析API响应时出错: ${error.message}`, "ERROR");
-                  resolve({
-                    success: false,
-                    error: `解析响应失败: ${error.message}`,
-                    rawResponse: responseData.substring(0, 200) + "...",
-                  });
-                }
-              });
-            });
-
-            req.on("error", (error) => {
-              logToFile(`请求出错: ${error.message}`, "ERROR");
-              resolve({
-                success: false,
-                error: `请求失败: ${error.message}`,
-              });
-            });
-
-            // 发送请求数据
-            req.write(
-              JSON.stringify({
-                model: requestData.model,
-                messages: requestData.messages,
-                stream: false,
-              }),
-            );
-
-            req.end();
-          } catch (error) {
-            logToFile(`创建请求时出错: ${error.message}`, "ERROR");
-            resolve({
-              success: false,
-              error: `创建请求失败: ${error.message}`,
-            });
-          }
-        });
+      // 确保Worker已创建
+      if (!aiWorker) {
+        logToFile("AI Worker未初始化，尝试创建", "WARN");
+        aiWorker = createAIWorker();
+        if (!aiWorker) {
+          throw new Error("无法创建AI Worker");
+        }
       }
+
+      // 生成请求ID
+      const requestId = `req_${nextRequestId++}`;
+      
+      // 如果是流式请求，保存会话ID
+      if (isStream) {
+        currentSessionId = requestData.sessionId;
+      }
+
+      // 准备发送到Worker的数据
+      const workerData = {
+        ...requestData,
+        isStream
+      };
+
+      // 发送请求到Worker
+      return new Promise((resolve, reject) => {
+        // 设置请求超时
+        const timeoutId = setTimeout(() => {
+          aiRequestMap.delete(requestId);
+          reject(new Error("请求超时"));
+        }, 60000); // 60秒超时
+        
+        // 存储回调函数
+        aiRequestMap.set(requestId, {
+          resolve: (result) => {
+            clearTimeout(timeoutId);
+            resolve(result);
+          },
+          reject: (error) => {
+            clearTimeout(timeoutId);
+            reject(error);
+          },
+          timestamp: Date.now()
+        });
+        
+        // 发送消息到Worker
+        aiWorker.postMessage({
+          type: 'api_request',
+          id: requestId,
+          data: workerData
+        });
+        
+        // 如果是流式请求，立即返回成功
+        if (isStream) {
+          resolve({ success: true, message: "流式请求已开始" });
+        }
+      });
     } catch (error) {
-      logToFile(`发送API请求时出错: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      logToFile(`处理AI请求时出错: ${error.message}`, "ERROR");
+      return { error: error.message || "处理请求时出错" };
     }
   });
 
   // 处理中断API请求
   ipcMain.handle("ai:abortAPIRequest", async (event) => {
     try {
-      if (activeAPIRequest) {
-        // 中断请求
-        activeAPIRequest.abort();
-
-        // 发送中断消息给渲染进程
-        if (globalEvent) {
-          globalEvent.sender.send("stream-end", {
+      // 检查是否有当前会话ID
+      if (currentSessionId && aiWorker) {
+        // 生成取消请求ID
+        const cancelRequestId = `cancel_${Date.now()}`;
+        
+        // 尝试通过Worker取消请求
+        aiWorker.postMessage({
+          type: 'cancel_request',
+          id: cancelRequestId,
+          data: {
+            sessionId: currentSessionId
+          }
+        });
+        
+        // 获取主窗口
+        const mainWindow = BrowserWindow.getAllWindows()[0];
+        if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+          // 发送中断消息给渲染进程
+          mainWindow.webContents.send("stream-end", {
             tabId: "ai",
             aborted: true,
-            sessionId: currentSessionId, // 使用当前会话ID而不是null
+            sessionId: currentSessionId
           });
         }
-
-        // 清理请求引用和会话ID
-        activeAPIRequest = null;
+        
+        // 清理会话ID和映射
+        streamSessions.delete(currentSessionId);
         currentSessionId = null;
-
+        
         return { success: true, message: "请求已中断" };
       } else {
         return { success: false, message: "没有活跃的请求" };
