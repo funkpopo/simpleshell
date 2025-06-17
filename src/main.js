@@ -17,6 +17,7 @@ const systemInfo = require("./modules/system-info");
 const terminalManager = require("./modules/terminal");
 const commandHistoryService = require("./modules/terminal/command-history");
 const fileCache = require("./core/utils/fileCache");
+const connectionManager = require("./modules/connection");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -240,6 +241,9 @@ app.whenReady().then(() => {
   fileCache.init(logToFile, app);
   fileCache.startPeriodicCleanup(); // 启动定期清理
 
+  // Initialize connection manager
+  connectionManager.initialize();
+
   createWindow();
   createAIWorker();
 
@@ -329,6 +333,25 @@ app.on("before-quit", () => {
         }
       }
 
+      // 如果是SSH连接，释放连接池中的连接引用
+      if (proc.type === "ssh2" && proc.connectionInfo) {
+        try {
+          connectionManager.releaseSSHConnection(
+            proc.connectionInfo.key,
+            proc.config?.tabId
+          );
+          logToFile(
+            `释放SSH连接池引用 (app quit): ${proc.connectionInfo.key}`,
+            "INFO"
+          );
+        } catch (error) {
+          logToFile(
+            `Error releasing SSH connection during app quit: ${error.message}`,
+            "ERROR"
+          );
+        }
+      }
+
       if (proc.process) {
         // 移除所有事件监听器
         if (proc.process.stdout) {
@@ -338,14 +361,27 @@ app.on("before-quit", () => {
           proc.process.stderr.removeAllListeners();
         }
 
-        // 终止进程
-        try {
-          if (typeof proc.process.kill === "function") {
-            // 正常终止进程
-            proc.process.kill();
+        // 对于SSH连接，关闭stream而不是直接kill SSH客户端
+        if (proc.type === "ssh2" && proc.stream) {
+          try {
+            proc.stream.close();
+            logToFile(`关闭SSH stream (app quit): ${id}`, "INFO");
+          } catch (error) {
+            logToFile(
+              `Error closing SSH stream during app quit ${id}: ${error.message}`,
+              "ERROR"
+            );
           }
-        } catch (error) {
-          logToFile(`Error killing process ${id}: ${error.message}`, "ERROR");
+        } else {
+          // 终止其他类型的进程
+          try {
+            if (typeof proc.process.kill === "function") {
+              // 正常终止进程
+              proc.process.kill();
+            }
+          } catch (error) {
+            logToFile(`Error killing process ${id}: ${error.message}`, "ERROR");
+          }
         }
       }
     } catch (error) {
@@ -354,6 +390,9 @@ app.on("before-quit", () => {
   }
   // 清空进程映射
   childProcesses.clear();
+
+  // 清理连接管理器
+  connectionManager.cleanup();
 
   // 清理所有缓存文件
   fileCache
@@ -533,468 +572,267 @@ function setupIPC(mainWindow) {
       throw new Error("Invalid SSH configuration");
     }
 
-    return new Promise((resolve, reject) => {
-      try {
-        // 创建SSH2客户端连接
-        const ssh = new Client();
+    try {
+      // 使用连接池获取SSH连接
+      const connectionInfo = await connectionManager.getSSHConnection(sshConfig);
+      const ssh = connectionInfo.client;
 
-        // 存储进程信息 - 这里保存ssh客户端实例
-        childProcesses.set(processId, {
+      // 添加标签页引用追踪
+      if (sshConfig.tabId) {
+        connectionManager.addTabReference(sshConfig.tabId, connectionInfo.key);
+      }
+
+      // 存储进程信息 - 这里保存连接池返回的连接信息
+      childProcesses.set(processId, {
+        process: ssh,
+        connectionInfo: connectionInfo, // 保存完整的连接信息
+        listeners: new Set(),
+        config: sshConfig,
+        type: "ssh2",
+        ready: connectionInfo.ready, // 使用连接池的就绪状态
+        editorMode: false,
+        commandBuffer: "",
+        lastOutputLines: [],
+        outputBuffer: "",
+        isRemote: true,
+      });
+
+      // 存储相同的SSH客户端，使用tabId
+      if (sshConfig.tabId) {
+        childProcesses.set(sshConfig.tabId, {
           process: ssh,
+          connectionInfo: connectionInfo,
           listeners: new Set(),
           config: sshConfig,
           type: "ssh2",
-          ready: false, // 标记SSH连接状态，默认为未就绪
-          editorMode: false, // 初始化编辑器模式为false
-          commandBuffer: "", // 初始化命令缓冲区
-          lastOutputLines: [], // 存储最近的终端输出行，用于提取远程命令
-          outputBuffer: "", // 用于存储当前未处理完的输出
-          isRemote: true, // 标记为远程SSH会话
+          ready: connectionInfo.ready,
+          editorMode: false,
+          commandBuffer: "",
+          lastOutputLines: [],
+          outputBuffer: "",
+          isRemote: true,
         });
+      }
 
-        // 存储相同的SSH客户端，使用tabId（通常是形如'ssh-timestamp'的标识符）
-        if (sshConfig.tabId) {
-          childProcesses.set(sshConfig.tabId, {
-            process: ssh,
-            listeners: new Set(),
-            config: sshConfig,
-            type: "ssh2",
-            ready: false, // 标记SSH连接状态，默认为未就绪
-            editorMode: false, // 初始化编辑器模式为false
-            commandBuffer: "", // 初始化命令缓冲区
-            lastOutputLines: [], // 存储最近的终端输出行，用于提取远程命令
-            outputBuffer: "", // 用于存储当前未处理完的输出
-            isRemote: true, // 标记为远程SSH会话
-          });
+      // 如果连接已经就绪，直接创建shell
+      if (connectionInfo.ready) {
+        logToFile(`复用现有SSH连接: ${connectionInfo.key}`, "INFO");
+        
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(
+            `process:output:${processId}`,
+            `\r\n*** ${sshConfig.host} SSH连接已建立（复用现有连接） ***\r\n`,
+          );
         }
 
-        // 设置连接超时定时器
-        const connectionTimeout = setTimeout(() => {
-          logToFile("SSH connection timed out after 15 seconds", "ERROR");
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              `\r\n连接超时，请检查网络和服务器状态\r\n`,
-            );
-          }
-          // 不主动断开连接，让用户决定是否关闭
-        }, 15000);
-
-        let connectionTimeoutRejected = false;
-
-        // 监听就绪事件
-        ssh.on("ready", () => {
-          // 清除超时定时器
-          clearTimeout(connectionTimeout);
-
-          // 标记SSH连接为就绪状态
-          const procInfo = childProcesses.get(processId);
-          if (procInfo) {
-            procInfo.ready = true;
-          }
-
-          // 同时更新tabId对应的连接状态
-          if (sshConfig.tabId) {
-            const tabProcInfo = childProcesses.get(sshConfig.tabId);
-            if (tabProcInfo) {
-              tabProcInfo.ready = true;
-            }
-          }
-
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              `\r\n*** ${sshConfig.host} SSH连接已建立 ***\r\n`,
-            );
-          }
-
+        return new Promise((resolve, reject) => {
           // 创建Shell会话
           ssh.shell(
             {
-              term: "xterm-256color", // 使用更高级的终端类型
-              cols: 120, // 设置更宽的初始终端列数
-              rows: 30, // 设置初始终端行数
+              term: "xterm-256color",
+              cols: 120,
+              rows: 30,
             },
             (err, stream) => {
               if (err) {
-                logToFile(
-                  `SSH shell error for processId ${processId}: ${err.message}`,
-                  "ERROR",
-                );
-                // 清理与此进程相关的待处理SFTP操作
-                if (
-                  sftpCore &&
-                  typeof sftpCore.clearPendingOperationsForTab === "function"
-                ) {
-                  sftpCore.clearPendingOperationsForTab(processId);
-                  if (sshConfig && sshConfig.tabId)
-                    sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
-                }
+                logToFile(`SSH shell error for processId ${processId}: ${err.message}`, "ERROR");
+                // 释放连接引用
+                connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+                // 清理进程信息
                 childProcesses.delete(processId);
-                if (sshConfig && sshConfig.tabId)
-                  childProcesses.delete(sshConfig.tabId);
-                try {
-                  ssh.end();
-                } catch (e) {
-                  /* ignore */
-                }
+                if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
                 return reject(err);
               }
 
+              // 更新进程信息中的stream
               const procToUpdate = childProcesses.get(processId);
               if (procToUpdate) {
                 procToUpdate.stream = stream;
               }
-
-              // 监听数据事件 - 使用Buffer拼接确保UTF-8字符完整
-              let buffer = Buffer.from([]);
-
-              stream.on("data", (data) => {
-                try {
-                  // 拼接数据到缓冲区
-                  buffer = Buffer.concat([buffer, data]);
-
-                  // 尝试将缓冲区转换为UTF-8字符串
-                  try {
-                    const output = buffer.toString("utf8");
-
-                    // 处理输出以检测编辑器退出
-                    const processedOutput = terminalManager.processOutput(
-                      processId,
-                      output,
-                    );
-
-                    // 发送到前端
-                    if (mainWindow && !mainWindow.isDestroyed()) {
-                      mainWindow.webContents.send(
-                        `process:output:${processId}`,
-                        processedOutput,
-                      );
-                    }
-
-                    // 重置缓冲区
-                    buffer = Buffer.from([]);
-                  } catch (error) {
-                    // 如果转换失败，说明可能是不完整的UTF-8序列，保留缓冲区继续等待
-                    logToFile(
-                      `Failed to convert buffer to string: ${error.message}`,
-                      "ERROR",
-                    );
-                  }
-                } catch (error) {
-                  logToFile(
-                    `Error handling stream data: ${error.message}`,
-                    "ERROR",
-                  );
-                }
-              });
-
-              // 监听扩展数据（通常是错误消息）
-              stream.on("extended data", (data, type) => {
-                try {
-                  // type为1时表示stderr数据
-                  if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send(
-                      `process:output:${processId}`,
-                      `\x1b[31m${data.toString("utf8")}\x1b[0m`,
-                    );
-                  }
-                } catch (error) {
-                  logToFile(
-                    `Error handling extended data: ${error.message}`,
-                    "ERROR",
-                  );
-                }
-              });
-
-              // 监听关闭事件
-              stream.on("close", () => {
-                logToFile(
-                  `SSH stream closed for processId: ${processId}`,
-                  "INFO",
-                );
-
-                // 向前端发送SSH断开连接的通知（如果连接已经建立）
-                const procInfo = childProcesses.get(processId);
-                if (
-                  procInfo &&
-                  procInfo.ready &&
-                  mainWindow &&
-                  !mainWindow.isDestroyed()
-                ) {
-                  mainWindow.webContents.send(
-                    `process:output:${processId}`,
-                    `\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`,
-                  );
-                }
-
-                // 添加: 清理与此SSH连接相关的活跃SFTP传输
-                if (
-                  sftpTransfer &&
-                  typeof sftpTransfer.cleanupActiveTransfersForTab ===
-                    "function"
-                ) {
-                  try {
-                    sftpTransfer
-                      .cleanupActiveTransfersForTab(processId)
-                      .then((result) => {
-                        if (result.cleanedCount > 0) {
-                          logToFile(
-                            `Cleaned up ${result.cleanedCount} active SFTP transfers for processId ${processId} on stream close`,
-                            "INFO",
-                          );
-                        }
-                      })
-                      .catch((err) => {
-                        logToFile(
-                          `Error cleaning up SFTP transfers for processId ${processId} on stream close: ${err.message}`,
-                          "ERROR",
-                        );
-                      });
-
-                    // 如果有tabId，也清理tabId相关的传输
-                    if (
-                      sshConfig &&
-                      sshConfig.tabId &&
-                      sshConfig.tabId !== processId
-                    ) {
-                      sftpTransfer
-                        .cleanupActiveTransfersForTab(sshConfig.tabId)
-                        .then((result) => {
-                          if (result.cleanedCount > 0) {
-                            logToFile(
-                              `Cleaned up ${result.cleanedCount} active SFTP transfers for tabId ${sshConfig.tabId} on stream close`,
-                              "INFO",
-                            );
-                          }
-                        })
-                        .catch((err) => {
-                          logToFile(
-                            `Error cleaning up SFTP transfers for tabId ${sshConfig.tabId} on stream close: ${err.message}`,
-                            "ERROR",
-                          );
-                        });
-                    }
-                  } catch (cleanupError) {
-                    logToFile(
-                      `Error initiating SFTP transfer cleanup for processId ${processId} on stream close: ${cleanupError.message}`,
-                      "ERROR",
-                    );
-                  }
-                }
-
-                // 清理与此进程相关的待处理SFTP操作
-                if (
-                  sftpCore &&
-                  typeof sftpCore.clearPendingOperationsForTab === "function"
-                ) {
-                  sftpCore.clearPendingOperationsForTab(processId);
-                  if (sshConfig && sshConfig.tabId)
-                    sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
-                }
-                childProcesses.delete(processId);
-                if (sshConfig && sshConfig.tabId)
-                  childProcesses.delete(sshConfig.tabId);
-                try {
-                  ssh.end();
-                } catch (e) {
-                  /* ignore */
-                }
-                // Resolve promise when stream closes after setup, only if not already rejected by connection timeout
-                if (!connectionTimeoutRejected) {
-                  resolve(processId);
-                }
-              });
-            },
-          );
-        });
-
-        // 监听错误事件
-        ssh.on("error", (err) => {
-          logToFile(
-            `SSH connection error for processId ${processId}: ${err.message}`,
-            "ERROR",
-          );
-          clearTimeout(connectionTimeout);
-          // 清理与此进程相关的待处理SFTP操作
-          if (
-            sftpCore &&
-            typeof sftpCore.clearPendingOperationsForTab === "function"
-          ) {
-            sftpCore.clearPendingOperationsForTab(processId);
-            if (sshConfig && sshConfig.tabId)
-              sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
-          }
-          childProcesses.delete(processId);
-          if (sshConfig && sshConfig.tabId)
-            childProcesses.delete(sshConfig.tabId);
-          try {
-            // ssh.end(); // ssh might be in a bad state, end() might throw or hang.
-          } catch (e) {
-            /* ignore */
-          }
-          if (!connectionTimeoutRejected) {
-            // Avoid double rejection
-            reject(err);
-          }
-        });
-
-        // 监听关闭事件
-        ssh.on("close", () => {
-          logToFile(
-            `SSH connection closed for processId: ${processId}`,
-            "INFO",
-          );
-          clearTimeout(connectionTimeout); // Clear timeout on successful close
-
-          // 向前端发送SSH断开连接的通知
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              `\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`,
-            );
-          }
-
-          // 添加: 清理与此SSH连接相关的活跃SFTP传输
-          if (
-            sftpTransfer &&
-            typeof sftpTransfer.cleanupActiveTransfersForTab === "function"
-          ) {
-            try {
-              sftpTransfer
-                .cleanupActiveTransfersForTab(processId)
-                .then((result) => {
-                  if (result.cleanedCount > 0) {
-                    logToFile(
-                      `Cleaned up ${result.cleanedCount} active SFTP transfers for processId ${processId} on SSH close`,
-                      "INFO",
-                    );
-                  }
-                })
-                .catch((err) => {
-                  logToFile(
-                    `Error cleaning up SFTP transfers for processId ${processId} on SSH close: ${err.message}`,
-                    "ERROR",
-                  );
-                });
-
-              // 如果有tabId，也清理tabId相关的传输
-              if (
-                sshConfig &&
-                sshConfig.tabId &&
-                sshConfig.tabId !== processId
-              ) {
-                sftpTransfer
-                  .cleanupActiveTransfersForTab(sshConfig.tabId)
-                  .then((result) => {
-                    if (result.cleanedCount > 0) {
-                      logToFile(
-                        `Cleaned up ${result.cleanedCount} active SFTP transfers for tabId ${sshConfig.tabId} on SSH close`,
-                        "INFO",
-                      );
-                    }
-                  })
-                  .catch((err) => {
-                    logToFile(
-                      `Error cleaning up SFTP transfers for tabId ${sshConfig.tabId} on SSH close: ${err.message}`,
-                      "ERROR",
-                    );
-                  });
+              const tabProcToUpdate = childProcesses.get(sshConfig.tabId);
+              if (tabProcToUpdate) {
+                tabProcToUpdate.stream = stream;
               }
-            } catch (cleanupError) {
-              logToFile(
-                `Error initiating SFTP transfer cleanup for processId ${processId} on SSH close: ${cleanupError.message}`,
-                "ERROR",
-              );
+
+              // 设置stream事件监听器
+              setupStreamEventListeners(stream, processId, sshConfig, connectionInfo);
+
+              resolve(processId);
             }
-          }
-
-          // 通常 stream.on('close') 会先处理清理，但作为双重保险或处理未成功建立shell的情况
-          if (
-            sftpCore &&
-            typeof sftpCore.clearPendingOperationsForTab === "function"
-          ) {
-            sftpCore.clearPendingOperationsForTab(processId);
-            if (sshConfig && sshConfig.tabId)
-              sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
-          }
-
-          childProcesses.delete(processId);
-          if (sshConfig && sshConfig.tabId)
-            childProcesses.delete(sshConfig.tabId);
-          // No reject here as it's a normal close, resolve might have happened on stream ready/close
+          );
         });
-
-        // 监听键盘交互事件（用于处理密码认证）
-        ssh.on(
-          "keyboard-interactive",
-          (name, instructions, lang, prompts, finish) => {
-            if (
-              prompts.length > 0 &&
-              prompts[0].prompt.toLowerCase().includes("password")
-            ) {
-              finish([sshConfig.password || ""]);
-            } else {
-              finish([]);
-            }
-          },
-        );
-
-        // 开始连接
-        const connectConfig = {
-          host: sshConfig.host,
-          port: sshConfig.port || 22,
-          username: sshConfig.username,
-          readyTimeout: 10000, // 10秒连接超时
-          keepaliveInterval: 30000, // 30秒发送一次心跳保持连接
-        };
-
-        // 根据是否有密码和私钥设置不同的认证方式
-        if (sshConfig.privateKeyPath) {
-          try {
-            // 读取私钥文件
-            const privateKey = fs.readFileSync(
-              sshConfig.privateKeyPath,
-              "utf8",
-            );
-            connectConfig.privateKey = privateKey;
-
-            // 如果私钥有密码保护
-            if (sshConfig.password) {
-              connectConfig.passphrase = sshConfig.password;
-            }
-          } catch (error) {
-            logToFile(
-              `Error reading private key file: ${error.message}`,
-              "ERROR",
-            );
+      } else {
+        // 新连接，等待就绪事件
+        return new Promise((resolve, reject) => {
+          const connectionTimeout = setTimeout(() => {
+            logToFile("SSH connection timed out after 15 seconds", "ERROR");
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send(
                 `process:output:${processId}`,
-                `\r\n\x1b[31m*** 读取私钥文件错误: ${error.message} ***\x1b[0m\r\n`,
+                `\r\n连接超时，请检查网络和服务器状态\r\n`,
               );
             }
-            reject(error);
-            return;
+            // 释放连接引用
+            connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+            reject(new Error("SSH connection timeout"));
+          }, 15000);
+
+          // 监听就绪事件
+          ssh.on("ready", () => {
+            clearTimeout(connectionTimeout);
+
+            // 更新进程状态
+            const procInfo = childProcesses.get(processId);
+            if (procInfo) {
+              procInfo.ready = true;
+            }
+            if (sshConfig.tabId) {
+              const tabProcInfo = childProcesses.get(sshConfig.tabId);
+              if (tabProcInfo) {
+                tabProcInfo.ready = true;
+              }
+            }
+
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send(
+                `process:output:${processId}`,
+                `\r\n*** ${sshConfig.host} SSH连接已建立 ***\r\n`,
+              );
+            }
+
+            // 创建Shell会话
+            ssh.shell(
+              {
+                term: "xterm-256color",
+                cols: 120,
+                rows: 30,
+              },
+              (err, stream) => {
+                if (err) {
+                  logToFile(`SSH shell error for processId ${processId}: ${err.message}`, "ERROR");
+                  // 释放连接引用
+                  connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+                  // 清理进程信息
+                  childProcesses.delete(processId);
+                  if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+                  return reject(err);
+                }
+
+                // 更新进程信息中的stream
+                const procToUpdate = childProcesses.get(processId);
+                if (procToUpdate) {
+                  procToUpdate.stream = stream;
+                }
+                const tabProcToUpdate = childProcesses.get(sshConfig.tabId);
+                if (tabProcToUpdate) {
+                  tabProcToUpdate.stream = stream;
+                }
+
+                // 设置stream事件监听器
+                setupStreamEventListeners(stream, processId, sshConfig, connectionInfo);
+
+                resolve(processId);
+              }
+            );
+          });
+
+          // 监听错误事件
+          ssh.on("error", (err) => {
+            clearTimeout(connectionTimeout);
+            logToFile(`SSH connection error for processId ${processId}: ${err.message}`, "ERROR");
+            // 释放连接引用
+            connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+            // 清理进程信息
+            childProcesses.delete(processId);
+            if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+            reject(err);
+          });
+        });
+      }
+    } catch (error) {
+      logToFile(`Failed to start SSH connection: ${error.message}`, "ERROR");
+      throw error;
+    }
+  });
+
+  // SSH Stream事件监听器设置函数
+  function setupStreamEventListeners(stream, processId, sshConfig, connectionInfo) {
+    let buffer = Buffer.from([]);
+
+    // 监听数据事件
+    stream.on("data", (data) => {
+      try {
+        buffer = Buffer.concat([buffer, data]);
+        try {
+          const output = buffer.toString("utf8");
+          const processedOutput = terminalManager.processOutput(processId, output);
+          
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
           }
-        } else if (sshConfig.password) {
-          // 使用密码认证
-          connectConfig.password = sshConfig.password;
-          // 同时启用键盘交互认证，某些服务器可能需要
-          connectConfig.tryKeyboard = true;
+          
+          buffer = Buffer.from([]);
+        } catch (error) {
+          logToFile(`Failed to convert buffer to string: ${error.message}`, "ERROR");
         }
-
-        // 连接到SSH服务器
-        ssh.connect(connectConfig);
-
-        // 返回进程ID
-        resolve(processId);
       } catch (error) {
-        logToFile(`Failed to start SSH connection: ${error.message}`, "ERROR");
-        reject(error);
+        logToFile(`Error handling stream data: ${error.message}`, "ERROR");
       }
     });
-  });
+
+    // 监听扩展数据（stderr）
+    stream.on("extended data", (data, type) => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(
+            `process:output:${processId}`,
+            `\x1b[31m${data.toString("utf8")}\x1b[0m`,
+          );
+        }
+      } catch (error) {
+        logToFile(`Error handling extended data: ${error.message}`, "ERROR");
+      }
+    });
+
+    // 监听关闭事件
+    stream.on("close", () => {
+      logToFile(`SSH stream closed for processId: ${processId}`, "INFO");
+
+      // 发送断开连接通知
+      const procInfo = childProcesses.get(processId);
+      if (procInfo && procInfo.ready && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(
+          `process:output:${processId}`,
+          `\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`,
+        );
+      }
+
+      // 清理SFTP传输
+      if (sftpTransfer && typeof sftpTransfer.cleanupActiveTransfersForTab === "function") {
+        sftpTransfer.cleanupActiveTransfersForTab(processId).catch((err) => {
+          logToFile(`Error cleaning up SFTP transfers: ${err.message}`, "ERROR");
+        });
+        if (sshConfig.tabId && sshConfig.tabId !== processId) {
+          sftpTransfer.cleanupActiveTransfersForTab(sshConfig.tabId).catch((err) => {
+            logToFile(`Error cleaning up SFTP transfers for tabId: ${err.message}`, "ERROR");
+          });
+        }
+      }
+
+      // 清理SFTP操作
+      if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === "function") {
+        sftpCore.clearPendingOperationsForTab(processId);
+        if (sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
+      }
+
+      // 释放连接引用
+      connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+
+      // 清理进程信息
+      childProcesses.delete(processId);
+      if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+    });
+  }
 
   // 发送数据到进程
   ipcMain.handle("terminal:sendToProcess", async (event, processId, data) => {
@@ -1174,6 +1012,15 @@ function setupIPC(mainWindow) {
           }
         }
 
+        // 如果是SSH连接，释放连接池中的连接引用
+        if (proc.type === "ssh2" && proc.connectionInfo) {
+          connectionManager.releaseSSHConnection(
+            proc.connectionInfo.key,
+            proc.config?.tabId
+          );
+          logToFile(`释放SSH连接池引用: ${proc.connectionInfo.key}`, "INFO");
+        }
+
         // 移除stdout和stderr的监听器，防止在进程被kill后继续触发
         if (proc.process.stdout) {
           proc.process.stdout.removeAllListeners();
@@ -1182,18 +1029,38 @@ function setupIPC(mainWindow) {
           proc.process.stderr.removeAllListeners();
         }
 
-        // 终止进程
-        try {
-          if (typeof proc.process.kill === "function") {
-            // 正常终止进程
-            proc.process.kill();
+        // 对于SSH连接，关闭stream而不是直接kill SSH客户端
+        if (proc.type === "ssh2" && proc.stream) {
+          try {
+            proc.stream.close();
+            logToFile(`关闭SSH stream for processId: ${processId}`, "INFO");
+          } catch (error) {
+            logToFile(
+              `Error closing SSH stream ${processId}: ${error.message}`,
+              "ERROR",
+            );
           }
-        } catch (error) {
-          logToFile(
-            `Error killing process ${processId}: ${error.message}`,
-            "ERROR",
-          );
+        } else {
+          // 终止其他类型的进程
+          try {
+            if (typeof proc.process.kill === "function") {
+              // 正常终止进程
+              proc.process.kill();
+            }
+          } catch (error) {
+            logToFile(
+              `Error killing process ${processId}: ${error.message}`,
+              "ERROR",
+            );
+          }
         }
+
+        // 清理进程映射
+        childProcesses.delete(processId);
+        if (proc.config?.tabId && proc.config.tabId !== processId) {
+          childProcesses.delete(proc.config.tabId);
+        }
+
       } catch (error) {
         logToFile(`Error handling process kill: ${error.message}`, "ERROR");
       }
