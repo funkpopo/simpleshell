@@ -1,4 +1,5 @@
 import * as React from "react";
+import { memo, useCallback, useMemo } from "react";
 import { styled } from "@mui/material/styles";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -50,7 +51,7 @@ const GlassDialog = styled(Dialog)(({ theme }) => ({
 }));
 
 // Custom styled dialog title
-const BootstrapDialogTitle = (props) => {
+const BootstrapDialogTitle = memo((props) => {
   const { children, onClose, ...other } = props;
 
   return (
@@ -72,32 +73,43 @@ const BootstrapDialogTitle = (props) => {
       ) : null}
     </DialogTitle>
   );
-};
+});
 
-const Settings = ({ open, onClose }) => {
+BootstrapDialogTitle.displayName = "BootstrapDialogTitle";
+
+const Settings = memo(({ open, onClose }) => {
   const { t, i18n } = useTranslation();
 
   // Define available languages
-  const languages = [
-    { code: "zh-CN", name: t("languages.zh-CN") },
-    { code: "en-US", name: t("languages.en-US") },
-  ];
+  const languages = useMemo(
+    () => [
+      { code: "zh-CN", name: t("languages.zh-CN") },
+      { code: "en-US", name: t("languages.en-US") },
+    ],
+    [t],
+  );
 
   // Define font size options
-  const fontSizes = [
-    { value: 12, label: t("settings.fontSizeLabels.small") },
-    { value: 14, label: t("settings.fontSizeLabels.medium") },
-    { value: 16, label: t("settings.fontSizeLabels.large") },
-    { value: 18, label: t("settings.fontSizeLabels.xlarge") },
-  ];
+  const fontSizes = useMemo(
+    () => [
+      { value: 12, label: t("settings.fontSizeLabels.small") },
+      { value: 14, label: t("settings.fontSizeLabels.medium") },
+      { value: 16, label: t("settings.fontSizeLabels.large") },
+      { value: 18, label: t("settings.fontSizeLabels.xlarge") },
+    ],
+    [t],
+  );
 
   // Define log level options
-  const logLevels = [
-    { value: "DEBUG", label: "DEBUG" },
-    { value: "INFO", label: "INFO" },
-    { value: "WARN", label: "WARN" },
-    { value: "ERROR", label: "ERROR" },
-  ];
+  const logLevels = useMemo(
+    () => [
+      { value: "DEBUG", label: "DEBUG" },
+      { value: "INFO", label: "INFO" },
+      { value: "WARN", label: "WARN" },
+      { value: "ERROR", label: "ERROR" },
+    ],
+    [],
+  );
 
   // Initial states
   const [language, setLanguage] = React.useState("");
@@ -177,33 +189,33 @@ const Settings = ({ open, onClose }) => {
   }, [open]);
 
   // Handle language change
-  const handleLanguageChange = (event) => {
+  const handleLanguageChange = useCallback((event) => {
     setLanguage(event.target.value);
-  };
+  }, []);
 
   // Handle font size change
-  const handleFontSizeChange = (event, newValue) => {
+  const handleFontSizeChange = useCallback((event, newValue) => {
     setFontSize(newValue);
-  };
+  }, []);
 
   // Handle theme mode change
-  const handleDarkModeChange = (event) => {
+  const handleDarkModeChange = useCallback((event) => {
     setDarkMode(event.target.value === "dark");
-  };
+  }, []);
 
   // Handle log level change
-  const handleLogLevelChange = (event) => {
+  const handleLogLevelChange = useCallback((event) => {
     setLogLevel(event.target.value);
-  };
+  }, []);
 
   // Handle max file size change
-  const handleMaxFileSizeChange = (event) => {
+  const handleMaxFileSizeChange = useCallback((event) => {
     const value = event.target.value;
     // 确保输入的是数字，且大于0
     if (!isNaN(value) && Number(value) > 0) {
       setMaxFileSize(Number(value));
     }
-  };
+  }, []);
 
   // 检查性能设置是否需要重启
   const checkIfRestartNeeded = (newSettings) => {
@@ -661,6 +673,8 @@ const Settings = ({ open, onClose }) => {
       </DialogActions>
     </GlassDialog>
   );
-};
+});
+
+Settings.displayName = "Settings";
 
 export default Settings;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo, useCallback } from "react";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
@@ -27,7 +27,7 @@ function formatBytes(bytes, decimals = 2) {
 }
 
 // 资源监控组件
-const ResourceMonitor = ({ open, onClose, currentTabId }) => {
+const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   const theme = useTheme();
   const [systemInfo, setSystemInfo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -83,9 +83,9 @@ const ResourceMonitor = ({ open, onClose, currentTabId }) => {
   }, [open, currentTabId]);
 
   // 手动刷新
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     fetchSystemInfo();
-  };
+  }, []);
 
   return (
     <Paper
@@ -343,6 +343,8 @@ const ResourceMonitor = ({ open, onClose, currentTabId }) => {
       )}
     </Paper>
   );
-};
+});
+
+ResourceMonitor.displayName = "ResourceMonitor";
 
 export default ResourceMonitor;

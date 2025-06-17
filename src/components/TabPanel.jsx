@@ -1,8 +1,17 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, memo } from "react";
 import { Box } from "@mui/material";
 
+// 自定义比较函数，只有当 value 或 index 变化时才重新渲染
+const areEqual = (prevProps, nextProps) => {
+  return (
+    prevProps.value === nextProps.value &&
+    prevProps.index === nextProps.index &&
+    prevProps.children === nextProps.children
+  );
+};
+
 // 标签页面板组件 - 只有当前选中标签页的内容会显示
-const TabPanel = (props) => {
+const TabPanel = memo((props) => {
   const { children, value, index, ...other } = props;
   const previousValueRef = useRef(value);
   const panelRef = useRef(null);
@@ -64,6 +73,9 @@ const TabPanel = (props) => {
       </Box>
     </div>
   );
-};
+}, areEqual);
+
+// 设置显示名称用于调试
+TabPanel.displayName = "TabPanel";
 
 export default TabPanel;

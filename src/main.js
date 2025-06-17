@@ -338,16 +338,16 @@ app.on("before-quit", () => {
         try {
           connectionManager.releaseSSHConnection(
             proc.connectionInfo.key,
-            proc.config?.tabId
+            proc.config?.tabId,
           );
           logToFile(
             `释放SSH连接池引用 (app quit): ${proc.connectionInfo.key}`,
-            "INFO"
+            "INFO",
           );
         } catch (error) {
           logToFile(
             `Error releasing SSH connection during app quit: ${error.message}`,
-            "ERROR"
+            "ERROR",
           );
         }
       }
@@ -369,7 +369,7 @@ app.on("before-quit", () => {
           } catch (error) {
             logToFile(
               `Error closing SSH stream during app quit ${id}: ${error.message}`,
-              "ERROR"
+              "ERROR",
             );
           }
         } else {
@@ -574,7 +574,8 @@ function setupIPC(mainWindow) {
 
     try {
       // 使用连接池获取SSH连接
-      const connectionInfo = await connectionManager.getSSHConnection(sshConfig);
+      const connectionInfo =
+        await connectionManager.getSSHConnection(sshConfig);
       const ssh = connectionInfo.client;
 
       // 添加标签页引用追踪
@@ -617,7 +618,7 @@ function setupIPC(mainWindow) {
       // 如果连接已经就绪，直接创建shell
       if (connectionInfo.ready) {
         logToFile(`复用现有SSH连接: ${connectionInfo.key}`, "INFO");
-        
+
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(
             `process:output:${processId}`,
@@ -635,9 +636,15 @@ function setupIPC(mainWindow) {
             },
             (err, stream) => {
               if (err) {
-                logToFile(`SSH shell error for processId ${processId}: ${err.message}`, "ERROR");
+                logToFile(
+                  `SSH shell error for processId ${processId}: ${err.message}`,
+                  "ERROR",
+                );
                 // 释放连接引用
-                connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+                connectionManager.releaseSSHConnection(
+                  connectionInfo.key,
+                  sshConfig.tabId,
+                );
                 // 清理进程信息
                 childProcesses.delete(processId);
                 if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
@@ -655,10 +662,15 @@ function setupIPC(mainWindow) {
               }
 
               // 设置stream事件监听器
-              setupStreamEventListeners(stream, processId, sshConfig, connectionInfo);
+              setupStreamEventListeners(
+                stream,
+                processId,
+                sshConfig,
+                connectionInfo,
+              );
 
               resolve(processId);
-            }
+            },
           );
         });
       } else {
@@ -673,7 +685,10 @@ function setupIPC(mainWindow) {
               );
             }
             // 释放连接引用
-            connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+            connectionManager.releaseSSHConnection(
+              connectionInfo.key,
+              sshConfig.tabId,
+            );
             reject(new Error("SSH connection timeout"));
           }, 15000);
 
@@ -709,9 +724,15 @@ function setupIPC(mainWindow) {
               },
               (err, stream) => {
                 if (err) {
-                  logToFile(`SSH shell error for processId ${processId}: ${err.message}`, "ERROR");
+                  logToFile(
+                    `SSH shell error for processId ${processId}: ${err.message}`,
+                    "ERROR",
+                  );
                   // 释放连接引用
-                  connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+                  connectionManager.releaseSSHConnection(
+                    connectionInfo.key,
+                    sshConfig.tabId,
+                  );
                   // 清理进程信息
                   childProcesses.delete(processId);
                   if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
@@ -729,19 +750,30 @@ function setupIPC(mainWindow) {
                 }
 
                 // 设置stream事件监听器
-                setupStreamEventListeners(stream, processId, sshConfig, connectionInfo);
+                setupStreamEventListeners(
+                  stream,
+                  processId,
+                  sshConfig,
+                  connectionInfo,
+                );
 
                 resolve(processId);
-              }
+              },
             );
           });
 
           // 监听错误事件
           ssh.on("error", (err) => {
             clearTimeout(connectionTimeout);
-            logToFile(`SSH connection error for processId ${processId}: ${err.message}`, "ERROR");
+            logToFile(
+              `SSH connection error for processId ${processId}: ${err.message}`,
+              "ERROR",
+            );
             // 释放连接引用
-            connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+            connectionManager.releaseSSHConnection(
+              connectionInfo.key,
+              sshConfig.tabId,
+            );
             // 清理进程信息
             childProcesses.delete(processId);
             if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
@@ -756,7 +788,12 @@ function setupIPC(mainWindow) {
   });
 
   // SSH Stream事件监听器设置函数
-  function setupStreamEventListeners(stream, processId, sshConfig, connectionInfo) {
+  function setupStreamEventListeners(
+    stream,
+    processId,
+    sshConfig,
+    connectionInfo,
+  ) {
     let buffer = Buffer.from([]);
 
     // 监听数据事件
@@ -765,15 +802,24 @@ function setupIPC(mainWindow) {
         buffer = Buffer.concat([buffer, data]);
         try {
           const output = buffer.toString("utf8");
-          const processedOutput = terminalManager.processOutput(processId, output);
-          
+          const processedOutput = terminalManager.processOutput(
+            processId,
+            output,
+          );
+
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
+            mainWindow.webContents.send(
+              `process:output:${processId}`,
+              processedOutput,
+            );
           }
-          
+
           buffer = Buffer.from([]);
         } catch (error) {
-          logToFile(`Failed to convert buffer to string: ${error.message}`, "ERROR");
+          logToFile(
+            `Failed to convert buffer to string: ${error.message}`,
+            "ERROR",
+          );
         }
       } catch (error) {
         logToFile(`Error handling stream data: ${error.message}`, "ERROR");
@@ -800,7 +846,12 @@ function setupIPC(mainWindow) {
 
       // 发送断开连接通知
       const procInfo = childProcesses.get(processId);
-      if (procInfo && procInfo.ready && mainWindow && !mainWindow.isDestroyed()) {
+      if (
+        procInfo &&
+        procInfo.ready &&
+        mainWindow &&
+        !mainWindow.isDestroyed()
+      ) {
         mainWindow.webContents.send(
           `process:output:${processId}`,
           `\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`,
@@ -808,25 +859,43 @@ function setupIPC(mainWindow) {
       }
 
       // 清理SFTP传输
-      if (sftpTransfer && typeof sftpTransfer.cleanupActiveTransfersForTab === "function") {
+      if (
+        sftpTransfer &&
+        typeof sftpTransfer.cleanupActiveTransfersForTab === "function"
+      ) {
         sftpTransfer.cleanupActiveTransfersForTab(processId).catch((err) => {
-          logToFile(`Error cleaning up SFTP transfers: ${err.message}`, "ERROR");
+          logToFile(
+            `Error cleaning up SFTP transfers: ${err.message}`,
+            "ERROR",
+          );
         });
         if (sshConfig.tabId && sshConfig.tabId !== processId) {
-          sftpTransfer.cleanupActiveTransfersForTab(sshConfig.tabId).catch((err) => {
-            logToFile(`Error cleaning up SFTP transfers for tabId: ${err.message}`, "ERROR");
-          });
+          sftpTransfer
+            .cleanupActiveTransfersForTab(sshConfig.tabId)
+            .catch((err) => {
+              logToFile(
+                `Error cleaning up SFTP transfers for tabId: ${err.message}`,
+                "ERROR",
+              );
+            });
         }
       }
 
       // 清理SFTP操作
-      if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === "function") {
+      if (
+        sftpCore &&
+        typeof sftpCore.clearPendingOperationsForTab === "function"
+      ) {
         sftpCore.clearPendingOperationsForTab(processId);
-        if (sshConfig.tabId) sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
+        if (sshConfig.tabId)
+          sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
       }
 
       // 释放连接引用
-      connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+      connectionManager.releaseSSHConnection(
+        connectionInfo.key,
+        sshConfig.tabId,
+      );
 
       // 清理进程信息
       childProcesses.delete(processId);
@@ -1016,7 +1085,7 @@ function setupIPC(mainWindow) {
         if (proc.type === "ssh2" && proc.connectionInfo) {
           connectionManager.releaseSSHConnection(
             proc.connectionInfo.key,
-            proc.config?.tabId
+            proc.config?.tabId,
           );
           logToFile(`释放SSH连接池引用: ${proc.connectionInfo.key}`, "INFO");
         }
@@ -1060,7 +1129,6 @@ function setupIPC(mainWindow) {
         if (proc.config?.tabId && proc.config.tabId !== processId) {
           childProcesses.delete(proc.config.tabId);
         }
-
       } catch (error) {
         logToFile(`Error handling process kill: ${error.message}`, "ERROR");
       }

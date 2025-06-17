@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo, useCallback, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -37,108 +37,96 @@ import { Droppable } from "./CustomDragDrop.jsx";
 import { arrayMoveImmutable } from "array-move";
 import { alpha } from "@mui/material/styles";
 
-const ConnectionManager = ({
-  open,
-  onClose,
-  initialConnections = [],
-  onConnectionsUpdate,
-  onOpenConnection,
-}) => {
-  const theme = useTheme();
-  const [connections, setConnections] = useState(initialConnections);
-  const [isLoading, setIsLoading] = useState(!initialConnections.length);
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: "",
-    severity: "info",
-  });
+// 自定义比较函数
+const areEqual = (prevProps, nextProps) => {
+  return (
+    prevProps.open === nextProps.open &&
+    prevProps.initialConnections === nextProps.initialConnections &&
+    prevProps.onClose === nextProps.onClose &&
+    prevProps.onConnectionsUpdate === nextProps.onConnectionsUpdate &&
+    prevProps.onOpenConnection === nextProps.onOpenConnection
+  );
+};
 
-  // 初始加载数据
-  useEffect(() => {
-    if (open && isLoading) {
-      try {
-        if (window.terminalAPI && window.terminalAPI.loadConnections) {
-          window.terminalAPI
-            .loadConnections()
-            .then((data) => {
-              if (data && Array.isArray(data)) {
-                setConnections(data);
-                if (onConnectionsUpdate) {
-                  onConnectionsUpdate(data);
+const ConnectionManager = memo(
+  ({
+    open,
+    onClose,
+    initialConnections = [],
+    onConnectionsUpdate,
+    onOpenConnection,
+  }) => {
+    const theme = useTheme();
+    const [connections, setConnections] = useState(initialConnections);
+    const [isLoading, setIsLoading] = useState(!initialConnections.length);
+    const [snackbar, setSnackbar] = useState({
+      open: false,
+      message: "",
+      severity: "info",
+    });
+
+    // 初始加载数据
+    useEffect(() => {
+      if (open && isLoading) {
+        try {
+          if (window.terminalAPI && window.terminalAPI.loadConnections) {
+            window.terminalAPI
+              .loadConnections()
+              .then((data) => {
+                if (data && Array.isArray(data)) {
+                  setConnections(data);
+                  if (onConnectionsUpdate) {
+                    onConnectionsUpdate(data);
+                  }
                 }
-              }
-              setIsLoading(false);
-            })
-            .catch((error) => {
-              setSnackbar({
-                open: true,
-                message: "加载连接配置失败",
-                severity: "error",
+                setIsLoading(false);
+              })
+              .catch((error) => {
+                setSnackbar({
+                  open: true,
+                  message: "加载连接配置失败",
+                  severity: "error",
+                });
+                setIsLoading(false);
               });
-              setIsLoading(false);
-            });
-        } else {
+          } else {
+            setIsLoading(false);
+          }
+        } catch (error) {
           setIsLoading(false);
         }
-      } catch (error) {
+      }
+    }, [open, isLoading, onConnectionsUpdate]);
+
+    // 当接收到新的initialConnections时更新
+    useEffect(() => {
+      if (
+        initialConnections.length > 0 &&
+        JSON.stringify(connections) !== JSON.stringify(initialConnections)
+      ) {
+        setConnections(initialConnections);
         setIsLoading(false);
       }
-    }
-  }, [open, isLoading, onConnectionsUpdate]);
+    }, [initialConnections, connections]);
 
-  // 当接收到新的initialConnections时更新
-  useEffect(() => {
-    if (
-      initialConnections.length > 0 &&
-      JSON.stringify(connections) !== JSON.stringify(initialConnections)
-    ) {
-      setConnections(initialConnections);
-      setIsLoading(false);
-    }
-  }, [initialConnections]);
+    // 当连接数据变化时保存到文件
+    useEffect(() => {
+      if (!isLoading && onConnectionsUpdate) {
+        onConnectionsUpdate(connections);
+      }
+    }, [connections, isLoading, onConnectionsUpdate]);
 
-  // 当连接数据变化时保存到文件
-  useEffect(() => {
-    if (!isLoading && onConnectionsUpdate) {
-      onConnectionsUpdate(connections);
-    }
-  }, [connections, isLoading, onConnectionsUpdate]);
+    // 关闭消息提示
+    const handleSnackbarClose = useCallback(() => {
+      setSnackbar((prev) => ({ ...prev, open: false }));
+    }, []);
 
-  // 关闭消息提示
-  const handleSnackbarClose = () => {
-    setSnackbar({ ...snackbar, open: false });
-  };
-
-  // 对话框状态
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogType, setDialogType] = useState(""); // 'connection' 或 'group'
-  const [dialogMode, setDialogMode] = useState(""); // 'add' 或 'edit'
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    host: "",
-    port: 22,
-    username: "",
-    password: "",
-    authType: "password",
-    privateKeyPath: "",
-    parentGroup: "",
-  });
-
-  // 处理组的展开/折叠
-  const handleToggleGroup = (groupId) => {
-    setConnections((prevConnections) =>
-      prevConnections.map((item) =>
-        item.id === groupId ? { ...item, expanded: !item.expanded } : item,
-      ),
-    );
-  };
-
-  // 打开添加连接对话框
-  const handleAddConnection = (parentGroupId = null) => {
-    setDialogType("connection");
-    setDialogMode("add");
-    setFormData({
+    // 对话框状态
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [dialogType, setDialogType] = useState(""); // 'connection' 或 'group'
+    const [dialogMode, setDialogMode] = useState(""); // 'add' 或 'edit'
+    const [selectedItem, setSelectedItem] = useState(null);
+    const [formData, setFormData] = useState({
       name: "",
       host: "",
       port: 22,
@@ -146,779 +134,809 @@ const ConnectionManager = ({
       password: "",
       authType: "password",
       privateKeyPath: "",
-      parentGroup: parentGroupId || "",
+      parentGroup: "",
     });
-    setDialogOpen(true);
-  };
 
-  // 打开添加组对话框
-  const handleAddGroup = () => {
-    setDialogType("group");
-    setDialogMode("add");
-    setFormData({
-      name: "",
-    });
-    setDialogOpen(true);
-  };
-
-  // 打开编辑对话框
-  const handleEdit = (item, parentGroup = null) => {
-    setSelectedItem({
-      ...item,
-      parentGroupId: parentGroup ? parentGroup.id : null,
-    });
-    setDialogMode("edit");
-
-    if (item.type === "group") {
-      setDialogType("group");
-      setFormData({
-        name: item.name,
-      });
-    } else {
-      setDialogType("connection");
-      setFormData({
-        name: item.name,
-        host: item.host,
-        port: item.port || 22,
-        username: item.username || "",
-        password: item.password || "",
-        authType: item.authType || "password",
-        privateKeyPath: item.privateKeyPath || "",
-        parentGroup: parentGroup ? parentGroup.id : "",
-      });
-    }
-
-    setDialogOpen(true);
-  };
-
-  // 删除项目
-  const handleDelete = (itemId, parentGroup = null) => {
-    if (parentGroup) {
-      // 删除组内的连接
+    // 处理组的展开/折叠
+    const handleToggleGroup = useCallback((groupId) => {
       setConnections((prevConnections) =>
-        prevConnections.map((group) =>
-          group.id === parentGroup.id
-            ? {
-                ...group,
-                items: group.items.filter((item) => item.id !== itemId),
-              }
-            : group,
+        prevConnections.map((item) =>
+          item.id === groupId ? { ...item, expanded: !item.expanded } : item,
         ),
       );
-    } else {
-      // 删除最顶层的项目（组或连接）
-      setConnections((prevConnections) =>
-        prevConnections.filter((item) => item.id !== itemId),
-      );
-    }
-  };
+    }, []);
 
-  // 处理对话框关闭
-  const handleDialogClose = () => {
-    setDialogOpen(false);
-  };
+    // 打开添加连接对话框
+    const handleAddConnection = useCallback((parentGroupId = null) => {
+      setDialogType("connection");
+      setDialogMode("add");
+      setFormData({
+        name: "",
+        host: "",
+        port: 22,
+        username: "",
+        password: "",
+        authType: "password",
+        privateKeyPath: "",
+        parentGroup: parentGroupId || "",
+      });
+      setDialogOpen(true);
+    }, []);
 
-  // 处理表单变化
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value === null ? "" : value }));
-  };
+    // 打开添加组对话框
+    const handleAddGroup = useCallback(() => {
+      setDialogType("group");
+      setDialogMode("add");
+      setFormData({
+        name: "",
+      });
+      setDialogOpen(true);
+    }, []);
 
-  // 保存表单数据
-  const handleSave = () => {
-    const newId = `${dialogType}-${Date.now()}`;
+    // 打开编辑对话框
+    const handleEdit = useCallback((item, parentGroup = null) => {
+      setSelectedItem({
+        ...item,
+        parentGroupId: parentGroup ? parentGroup.id : null,
+      });
+      setDialogMode("edit");
 
-    if (dialogMode === "add") {
-      if (dialogType === "connection") {
-        const newConnection = {
-          id: newId,
-          name: formData.name,
-          host: formData.host,
-          port: formData.port,
-          username: formData.username,
-          password: formData.password,
-          type: "connection",
-          authType: formData.authType,
-          privateKeyPath: formData.privateKeyPath,
-        };
-
-        if (formData.parentGroup) {
-          // 添加到指定组
-          setConnections((prevConnections) =>
-            prevConnections.map((group) =>
-              group.id === formData.parentGroup
-                ? { ...group, items: [...group.items, newConnection] }
-                : group,
-            ),
-          );
-        } else {
-          // 添加到顶层
-          setConnections((prev) => [...prev, newConnection]);
-        }
-      } else if (dialogType === "group") {
-        // 添加新组
-        setConnections((prev) => [
-          ...prev,
-          {
-            id: newId,
-            name: formData.name,
-            type: "group",
-            expanded: false,
-            items: [],
-          },
-        ]);
+      if (item.type === "group") {
+        setDialogType("group");
+        setFormData({
+          name: item.name,
+        });
+      } else {
+        setDialogType("connection");
+        setFormData({
+          name: item.name,
+          host: item.host,
+          port: item.port || 22,
+          username: item.username || "",
+          password: item.password || "",
+          authType: item.authType || "password",
+          privateKeyPath: item.privateKeyPath || "",
+          parentGroup: parentGroup ? parentGroup.id : "",
+        });
       }
-    } else if (dialogMode === "edit") {
+
+      setDialogOpen(true);
+    }, []);
+
+    // 删除项目
+    const handleDelete = useCallback((itemId, parentGroup = null) => {
+      if (parentGroup) {
+        // 删除组内的连接
+        setConnections((prevConnections) =>
+          prevConnections.map((group) =>
+            group.id === parentGroup.id
+              ? {
+                  ...group,
+                  items: group.items.filter((item) => item.id !== itemId),
+                }
+              : group,
+          ),
+        );
+      } else {
+        // 删除顶级项目
+        setConnections((prevConnections) =>
+          prevConnections.filter((item) => item.id !== itemId),
+        );
+      }
+    }, []);
+
+    const handleDialogClose = useCallback(() => {
+      setDialogOpen(false);
+    }, []);
+
+    const handleFormChange = useCallback((e) => {
+      const { name, value } = e.target;
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }, []);
+
+    const handleSave = useCallback(() => {
+      // 验证必填字段
+      if (!formData.name.trim()) {
+        setSnackbar({
+          open: true,
+          message: "名称不能为空",
+          severity: "error",
+        });
+        return;
+      }
+
       if (dialogType === "connection") {
-        const updatedConnection = {
-          ...selectedItem,
+        if (!formData.host.trim()) {
+          setSnackbar({
+            open: true,
+            message: "主机地址不能为空",
+            severity: "error",
+          });
+          return;
+        }
+
+        const connectionData = {
+          id: selectedItem?.id || `conn_${Date.now()}`,
+          type: "connection",
           name: formData.name,
           host: formData.host,
-          port: formData.port,
+          port: parseInt(formData.port) || 22,
           username: formData.username,
           password: formData.password,
           authType: formData.authType,
           privateKeyPath: formData.privateKeyPath,
         };
 
-        // 判断是否需要移动连接到不同的组
-        if (
-          (formData.parentGroup &&
-            selectedItem.parentGroupId !== formData.parentGroup) ||
-          (!formData.parentGroup && selectedItem.parentGroupId)
-        ) {
-          // 从原组中删除
-          if (selectedItem.parentGroupId) {
-            setConnections((prevConnections) =>
-              prevConnections.map((group) =>
-                group.id === selectedItem.parentGroupId
-                  ? {
-                      ...group,
-                      items: group.items.filter(
-                        (item) => item.id !== selectedItem.id,
-                      ),
-                    }
-                  : group,
-              ),
-            );
-          } else {
-            // 从顶层删除
-            setConnections((prev) =>
-              prev.filter((item) => item.id !== selectedItem.id),
-            );
-          }
-
-          // 如果有新组，添加到新组；否则添加到顶层
+        if (dialogMode === "add") {
           if (formData.parentGroup) {
-            // 添加到新组
+            // 添加到组内
             setConnections((prevConnections) =>
-              prevConnections.map((group) =>
-                group.id === formData.parentGroup
-                  ? { ...group, items: [...group.items, updatedConnection] }
-                  : group,
+              prevConnections.map((item) =>
+                item.id === formData.parentGroup
+                  ? { ...item, items: [...(item.items || []), connectionData] }
+                  : item,
               ),
             );
           } else {
-            // 添加到顶层
-            setConnections((prev) => [...prev, updatedConnection]);
+            // 添加到顶级
+            setConnections((prevConnections) => [
+              ...prevConnections,
+              connectionData,
+            ]);
           }
         } else {
-          // 更新当前位置
+          // 编辑连接
           if (selectedItem.parentGroupId) {
+            // 在组内编辑
             setConnections((prevConnections) =>
               prevConnections.map((group) =>
                 group.id === selectedItem.parentGroupId
                   ? {
                       ...group,
                       items: group.items.map((item) =>
-                        item.id === selectedItem.id ? updatedConnection : item,
+                        item.id === selectedItem.id ? connectionData : item,
                       ),
                     }
                   : group,
               ),
             );
           } else {
-            setConnections((prev) =>
-              prev.map((item) =>
-                item.id === selectedItem.id ? updatedConnection : item,
+            // 在顶级编辑
+            setConnections((prevConnections) =>
+              prevConnections.map((item) =>
+                item.id === selectedItem.id ? connectionData : item,
               ),
             );
           }
         }
-      } else if (dialogType === "group") {
-        // 更新组
-        setConnections((prev) =>
-          prev.map((item) =>
-            item.id === selectedItem.id
-              ? { ...item, name: formData.name }
-              : item,
-          ),
-        );
+      } else {
+        // 处理组
+        const groupData = {
+          id: selectedItem?.id || `group_${Date.now()}`,
+          type: "group",
+          name: formData.name,
+          items: selectedItem?.items || [],
+          expanded: selectedItem?.expanded || false,
+        };
+
+        if (dialogMode === "add") {
+          setConnections((prevConnections) => [...prevConnections, groupData]);
+        } else {
+          setConnections((prevConnections) =>
+            prevConnections.map((item) =>
+              item.id === selectedItem.id ? groupData : item,
+            ),
+          );
+        }
       }
-    }
 
-    setDialogOpen(false);
-  };
+      setDialogOpen(false);
+      setSnackbar({
+        open: true,
+        message: `${dialogMode === "add" ? "创建" : "更新"}成功`,
+        severity: "success",
+      });
+    }, [dialogType, dialogMode, formData, selectedItem]);
 
-  // 处理打开连接
-  const handleOpenConnection = (connection) => {
-    if (onOpenConnection && connection) {
-      onOpenConnection(connection);
-      // 可选：关闭连接管理器
-      onClose();
-    }
-  };
-
-  // 处理拖拽结束事件
-  const handleDragEnd = (result) => {
-    const { destination, source, type } = result;
-
-    // 如果没有目标位置，则不执行任何操作
-    if (!destination) return;
-
-    // 如果源位置和目标位置相同，不执行任何操作
-    if (
-      destination.droppableId === source.droppableId &&
-      destination.index === source.index
-    ) {
-      return;
-    }
-
-    // 顶层项目拖拽
-    if (type === "connection-list") {
-      const newConnections = arrayMoveImmutable(
-        connections,
-        source.index,
-        destination.index,
-      );
-      setConnections(newConnections);
-      return;
-    }
-
-    // 组内项目拖拽
-    if (type.startsWith("group-items-")) {
-      const groupId = type.replace("group-items-", "");
-      const group = connections.find((item) => item.id === groupId);
-      if (group) {
-        const newItems = arrayMoveImmutable(
-          group.items,
-          source.index,
-          destination.index,
-        );
-        setConnections((prevConnections) =>
-          prevConnections.map((item) =>
-            item.id === groupId ? { ...item, items: newItems } : item,
-          ),
-        );
-      }
-      return;
-    }
-  };
-
-  // 渲染连接项
-  const renderConnectionItem = (connection, parentGroup = null, index) => {
-    return (
-      <Draggable key={connection.id} draggableId={connection.id} index={index}>
-        {(provided, snapshot) => (
-          <ListItem
-            ref={provided.innerRef}
-            {...provided.draggableProps}
-            disablePadding
-            sx={{
-              pl: parentGroup ? 4 : 1,
-              minHeight: "36px", // 改为最小高度而非固定高度
-              "&:hover": {
-                backgroundColor:
-                  theme.palette.mode === "dark"
-                    ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
-                    : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
-              },
-              ...(snapshot.isDragging
-                ? {
-                    background:
-                      theme.palette.mode === "dark"
-                        ? theme.palette.grey[700]
-                        : theme.palette.grey[200],
-                    boxShadow: theme.shadows[4],
-                  }
-                : {}),
-            }}
-            secondaryAction={
-              <Box>
-                <IconButton
-                  edge="end"
-                  size="small"
-                  onClick={() => handleEdit(connection, parentGroup)}
-                >
-                  <EditIcon fontSize="small" />
-                </IconButton>
-                <IconButton
-                  edge="end"
-                  size="small"
-                  onClick={() => handleDelete(connection.id, parentGroup)}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Box>
-            }
-          >
-            <Box
-              {...provided.dragHandleProps}
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                cursor: "grab",
-                "&:active": { cursor: "grabbing" },
-              }}
-            >
-              <DragIndicatorIcon
-                fontSize="small"
-                sx={{ color: "text.secondary", mr: 1 }}
-              />
-            </Box>
-            <ListItemButton
-              onClick={() => handleOpenConnection(connection)}
-              dense
-              sx={{
-                flexGrow: 1,
-                py: 0.5, // 减小上下内边距
-                "&:hover": {
-                  backgroundColor: "transparent", // 防止ListItemButton自身的hover效果
-                },
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 36 }}>
-                <ComputerIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary={connection.name || connection.host}
-                secondary={
-                  connection.username
-                    ? `${connection.username}@${connection.host}`
-                    : connection.host
-                }
-                sx={{ my: 0 }}
-              />
-            </ListItemButton>
-          </ListItem>
-        )}
-      </Draggable>
+    const handleOpenConnection = useCallback(
+      (connection) => {
+        if (onOpenConnection) {
+          onOpenConnection(connection);
+        }
+      },
+      [onOpenConnection],
     );
-  };
 
-  // 渲染组
-  const renderGroup = (group, index) => (
-    <Draggable key={group.id} draggableId={group.id} index={index}>
-      {(provided, snapshot) => (
-        <React.Fragment>
-          <ListItem
-            disablePadding
-            ref={provided.innerRef}
-            {...provided.draggableProps}
-            sx={{
-              minHeight: "36px", // 添加最小高度
-              "&:hover": {
-                backgroundColor:
-                  theme.palette.mode === "dark"
-                    ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
-                    : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
-              },
-              ...(snapshot.isDragging
-                ? {
-                    background:
-                      theme.palette.mode === "dark"
-                        ? theme.palette.grey[700]
-                        : theme.palette.grey[200],
-                    boxShadow: theme.shadows[4],
-                  }
-                : {}),
-            }}
-            secondaryAction={
-              <Box sx={{ display: "flex", gap: 0.5 }}>
-                <IconButton
-                  edge="end"
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAddConnection(group.id);
-                  }}
-                >
-                  <AddIcon fontSize="small" />
-                </IconButton>
-                <IconButton
-                  edge="end"
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEdit(group);
-                  }}
-                >
-                  <EditIcon fontSize="small" />
-                </IconButton>
-                <IconButton
-                  edge="end"
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(group.id);
-                  }}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Box>
-            }
+    const handleDragEnd = useCallback(
+      (result) => {
+        if (!result.destination) return;
+
+        const { source, destination, type } = result;
+
+        // 处理顶级项目拖拽
+        if (type === "connection-list") {
+          const newConnections = arrayMoveImmutable(
+            connections,
+            source.index,
+            destination.index,
+          );
+          setConnections(newConnections);
+          return;
+        }
+
+        // 处理组内项目拖拽
+        if (type.startsWith("group-items-")) {
+          const groupId = type.replace("group-items-", "");
+          const group = connections.find((item) => item.id === groupId);
+          if (group) {
+            const newItems = arrayMoveImmutable(
+              group.items,
+              source.index,
+              destination.index,
+            );
+            setConnections((prevConnections) =>
+              prevConnections.map((item) =>
+                item.id === groupId ? { ...item, items: newItems } : item,
+              ),
+            );
+          }
+          return;
+        }
+      },
+      [connections],
+    );
+
+    // 使用 useMemo 优化渲染连接项
+    const renderConnectionItem = useCallback(
+      (connection, parentGroup = null, index) => {
+        return (
+          <Draggable
+            key={connection.id}
+            draggableId={connection.id}
+            index={index}
           >
+            {(provided, snapshot) => (
+              <ListItem
+                ref={provided.innerRef}
+                {...provided.draggableProps}
+                disablePadding
+                sx={{
+                  pl: parentGroup ? 4 : 1,
+                  minHeight: "36px", // 改为最小高度而非固定高度
+                  "&:hover": {
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
+                        : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
+                  },
+                  ...(snapshot.isDragging
+                    ? {
+                        background:
+                          theme.palette.mode === "dark"
+                            ? theme.palette.grey[700]
+                            : theme.palette.grey[200],
+                        boxShadow: theme.shadows[4],
+                      }
+                    : {}),
+                }}
+                secondaryAction={
+                  <Box>
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      onClick={() => handleEdit(connection, parentGroup)}
+                    >
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      onClick={() => handleDelete(connection.id, parentGroup)}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                }
+              >
+                <Box
+                  {...provided.dragHandleProps}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    cursor: "grab",
+                    "&:active": { cursor: "grabbing" },
+                  }}
+                >
+                  <DragIndicatorIcon
+                    fontSize="small"
+                    sx={{ color: "text.secondary", mr: 1 }}
+                  />
+                </Box>
+                <ListItemButton
+                  onClick={() => handleOpenConnection(connection)}
+                  dense
+                  sx={{
+                    flexGrow: 1,
+                    py: 0.5, // 减小上下内边距
+                    "&:hover": {
+                      backgroundColor: "transparent", // 防止ListItemButton自身的hover效果
+                    },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <ComputerIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={connection.name || connection.host}
+                    secondary={
+                      connection.username
+                        ? `${connection.username}@${connection.host}`
+                        : connection.host
+                    }
+                    sx={{ my: 0 }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            )}
+          </Draggable>
+        );
+      },
+      [theme, handleEdit, handleDelete, handleOpenConnection],
+    );
+
+    // 使用 useMemo 优化渲染组
+    const renderGroup = useCallback(
+      (group, index) => (
+        <Draggable key={group.id} draggableId={group.id} index={index}>
+          {(provided, snapshot) => (
+            <React.Fragment>
+              <ListItem
+                disablePadding
+                ref={provided.innerRef}
+                {...provided.draggableProps}
+                sx={{
+                  minHeight: "36px", // 添加最小高度
+                  "&:hover": {
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
+                        : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
+                  },
+                  ...(snapshot.isDragging
+                    ? {
+                        background:
+                          theme.palette.mode === "dark"
+                            ? theme.palette.grey[700]
+                            : theme.palette.grey[200],
+                        boxShadow: theme.shadows[4],
+                      }
+                    : {}),
+                }}
+                secondaryAction={
+                  <Box sx={{ display: "flex", gap: 0.5 }}>
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAddConnection(group.id);
+                      }}
+                    >
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(group);
+                      }}
+                    >
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(group.id);
+                      }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                }
+              >
+                <Box
+                  {...provided.dragHandleProps}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    cursor: "grab",
+                    "&:active": { cursor: "grabbing" },
+                  }}
+                >
+                  <DragIndicatorIcon
+                    fontSize="small"
+                    sx={{ color: "text.secondary", ml: 1, mr: 1 }}
+                  />
+                </Box>
+                <ListItemButton
+                  onClick={() => handleToggleGroup(group.id)}
+                  sx={{
+                    py: 0.5,
+                    flexGrow: 1,
+                    "&:hover": {
+                      backgroundColor: "transparent",
+                    },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    {group.expanded ? (
+                      <FolderOpenIcon fontSize="small" />
+                    ) : (
+                      <FolderIcon fontSize="small" />
+                    )}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={group.name}
+                    primaryTypographyProps={{
+                      variant: "body2",
+                      fontWeight: "medium",
+                      margin: 0,
+                    }}
+                    sx={{ my: 0 }} // 减小外边距
+                  />
+                </ListItemButton>
+              </ListItem>
+
+              <Collapse in={group.expanded} timeout="auto" unmountOnExit>
+                <Droppable
+                  droppableId={group.id}
+                  type={`group-items-${group.id}`}
+                >
+                  {(provided) => (
+                    <List
+                      component="div"
+                      disablePadding
+                      sx={{ pl: 2 }}
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                    >
+                      {group.items.map((item, itemIndex) =>
+                        renderConnectionItem(item, group, itemIndex),
+                      )}
+                      {provided.placeholder}
+                      {group.items.length === 0 && (
+                        <ListItem sx={{ pl: 2 }}>
+                          <ListItemText
+                            primary="没有连接项"
+                            primaryTypographyProps={{
+                              variant: "caption",
+                              sx: {
+                                fontStyle: "italic",
+                                color: "text.disabled",
+                              },
+                            }}
+                          />
+                        </ListItem>
+                      )}
+                    </List>
+                  )}
+                </Droppable>
+              </Collapse>
+            </React.Fragment>
+          )}
+        </Draggable>
+      ),
+      [
+        theme,
+        handleAddConnection,
+        handleEdit,
+        handleDelete,
+        handleToggleGroup,
+        renderConnectionItem,
+      ],
+    );
+
+    // 使用 useMemo 优化连接列表渲染
+    const connectionsList = useMemo(() => {
+      return connections.map((item, index) =>
+        item.type === "group"
+          ? renderGroup(item, index)
+          : renderConnectionItem(item, null, index),
+      );
+    }, [connections, renderGroup, renderConnectionItem]);
+
+    // 使用 useMemo 优化分组选择器选项
+    const groupOptions = useMemo(() => {
+      return connections
+        .filter((c) => c.type === "group")
+        .map((group) => (
+          <MenuItem key={group.id} value={group.id}>
+            {group.name}
+          </MenuItem>
+        ));
+    }, [connections]);
+
+    return (
+      <Paper
+        sx={{
+          width: open ? 300 : 0,
+          height: "100%",
+          overflow: "hidden",
+          transition: theme.transitions.create("width", {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
+          borderLeft: `1px solid ${theme.palette.divider}`,
+          display: "flex",
+          flexDirection: "column",
+          borderRadius: 0,
+        }}
+        elevation={4}
+      >
+        {open && (
+          <>
+            {/* 头部 */}
             <Box
-              {...provided.dragHandleProps}
               sx={{
+                p: 2,
+                borderBottom: 1,
+                borderColor: "divider",
                 display: "flex",
                 alignItems: "center",
-                cursor: "grab",
-                "&:active": { cursor: "grabbing" },
+                justifyContent: "space-between",
               }}
             >
-              <DragIndicatorIcon
-                fontSize="small"
-                sx={{ color: "text.secondary", ml: 1, mr: 1 }}
-              />
+              <Typography variant="h6">连接管理</Typography>
+              <IconButton size="small" onClick={onClose}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
             </Box>
-            <ListItemButton
-              onClick={() => handleToggleGroup(group.id)}
+
+            {/* 操作按钮区 */}
+            <Box
               sx={{
-                py: 0.5,
-                flexGrow: 1,
-                "&:hover": {
-                  backgroundColor: "transparent",
-                },
+                p: 1,
+                display: "flex",
+                justifyContent: "flex-end",
+                borderBottom: 1,
+                borderColor: "divider",
+                gap: 1,
               }}
             >
-              <ListItemIcon sx={{ minWidth: 36 }}>
-                {group.expanded ? (
-                  <FolderOpenIcon fontSize="small" />
-                ) : (
-                  <FolderIcon fontSize="small" />
-                )}
-              </ListItemIcon>
-              <ListItemText
-                primary={group.name}
-                primaryTypographyProps={{
-                  variant: "body2",
-                  fontWeight: "medium",
-                  margin: 0,
-                }}
-                sx={{ my: 0 }} // 减小外边距
-              />
-            </ListItemButton>
-          </ListItem>
-
-          <Collapse in={group.expanded} timeout="auto" unmountOnExit>
-            <Droppable droppableId={group.id} type={`group-items-${group.id}`}>
-              {(provided) => (
-                <List
-                  component="div"
-                  disablePadding
-                  sx={{ pl: 2 }}
-                  ref={provided.innerRef}
-                  {...provided.droppableProps}
-                >
-                  {group.items.map((item, itemIndex) =>
-                    renderConnectionItem(item, group, itemIndex),
-                  )}
-                  {provided.placeholder}
-                  {group.items.length === 0 && (
-                    <ListItem sx={{ pl: 2 }}>
-                      <ListItemText
-                        primary="没有连接项"
-                        primaryTypographyProps={{
-                          variant: "caption",
-                          sx: { fontStyle: "italic", color: "text.disabled" },
-                        }}
-                      />
-                    </ListItem>
-                  )}
-                </List>
-              )}
-            </Droppable>
-          </Collapse>
-        </React.Fragment>
-      )}
-    </Draggable>
-  );
-
-  return (
-    <Paper
-      sx={{
-        width: open ? 300 : 0,
-        height: "100%",
-        overflow: "hidden",
-        transition: theme.transitions.create("width", {
-          easing: theme.transitions.easing.sharp,
-          duration: theme.transitions.duration.enteringScreen,
-        }),
-        borderLeft: `1px solid ${theme.palette.divider}`,
-        display: "flex",
-        flexDirection: "column",
-        borderRadius: 0,
-      }}
-      elevation={4}
-    >
-      {open && (
-        <>
-          {/* 头部 */}
-          <Box
-            sx={{
-              p: 2,
-              borderBottom: 1,
-              borderColor: "divider",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <Typography variant="h6">连接管理</Typography>
-            <IconButton size="small" onClick={onClose}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Box>
-
-          {/* 操作按钮区 */}
-          <Box
-            sx={{
-              p: 1,
-              display: "flex",
-              justifyContent: "flex-end",
-              borderBottom: 1,
-              borderColor: "divider",
-              gap: 1,
-            }}
-          >
-            <Button
-              size="small"
-              startIcon={<AddIcon />}
-              onClick={() => handleAddConnection()}
-              sx={{ fontSize: "0.75rem" }}
-            >
-              新建连接
-            </Button>
-            <Button
-              size="small"
-              startIcon={<FolderIcon />}
-              onClick={handleAddGroup}
-              sx={{ fontSize: "0.75rem" }}
-            >
-              新建分组
-            </Button>
-          </Box>
-
-          {/* 连接列表区域 */}
-          <Box
-            sx={{ flexGrow: 1, overflow: "auto", height: "calc(100% - 120px)" }}
-          >
-            <DragDropContext onDragEnd={handleDragEnd}>
-              <Droppable droppableId="connection-list" type="connection-list">
-                {(provided) => (
-                  <List
-                    dense
-                    sx={{ p: 1 }}
-                    ref={provided.innerRef}
-                    {...provided.droppableProps}
-                  >
-                    {connections.map((item, index) =>
-                      item.type === "group"
-                        ? renderGroup(item, index)
-                        : renderConnectionItem(item, null, index),
-                    )}
-                    {provided.placeholder}
-                    {connections.length === 0 && (
-                      <ListItem>
-                        <ListItemText
-                          primary="没有连接项"
-                          primaryTypographyProps={{
-                            variant: "body2",
-                            sx: {
-                              fontStyle: "italic",
-                              color: "text.secondary",
-                              textAlign: "center",
-                            },
-                          }}
-                        />
-                      </ListItem>
-                    )}
-                  </List>
-                )}
-              </Droppable>
-            </DragDropContext>
-          </Box>
-
-          {/* 添加/编辑对话框 */}
-          <Dialog
-            open={dialogOpen}
-            onClose={handleDialogClose}
-            maxWidth="sm"
-            fullWidth
-          >
-            <DialogTitle>
-              {dialogMode === "add" ? "新建" : "编辑"}
-              {dialogType === "connection" ? "连接" : "分组"}
-            </DialogTitle>
-            <DialogContent dividers>
-              <Box
-                sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}
+              <Button
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() => handleAddConnection()}
+                sx={{ fontSize: "0.75rem" }}
               >
-                <TextField
-                  label="名称"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleFormChange}
-                  fullWidth
-                  size="small"
-                  required
-                />
-
-                {dialogType === "connection" && (
-                  <>
-                    <TextField
-                      label="主机地址"
-                      name="host"
-                      value={formData.host}
-                      onChange={handleFormChange}
-                      fullWidth
-                      size="small"
-                      required
-                    />
-
-                    <TextField
-                      label="端口"
-                      name="port"
-                      type="number"
-                      value={formData.port}
-                      onChange={handleFormChange}
-                      fullWidth
-                      size="small"
-                    />
-
-                    <TextField
-                      label="用户名"
-                      name="username"
-                      value={formData.username}
-                      onChange={handleFormChange}
-                      fullWidth
-                      size="small"
-                    />
-
-                    <TextField
-                      label="密码"
-                      name="password"
-                      type="password"
-                      value={formData.password}
-                      onChange={handleFormChange}
-                      fullWidth
-                      size="small"
-                      disabled={formData.authType === "privateKey"}
-                    />
-
-                    <FormControl fullWidth size="small" sx={{ mt: 1 }}>
-                      <InputLabel>认证方式</InputLabel>
-                      <Select
-                        name="authType"
-                        value={formData.authType || "password"}
-                        label="认证方式"
-                        onChange={handleFormChange}
-                      >
-                        <MenuItem value="password">密码认证</MenuItem>
-                        <MenuItem value="privateKey">密钥认证</MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    {formData.authType === "privateKey" && (
-                      <Box sx={{ display: "flex", mt: 1 }}>
-                        <TextField
-                          label="私钥路径"
-                          name="privateKeyPath"
-                          value={formData.privateKeyPath}
-                          onChange={handleFormChange}
-                          fullWidth
-                          size="small"
-                          sx={{ flexGrow: 1 }}
-                        />
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          sx={{ ml: 1 }}
-                          onClick={() => {
-                            if (
-                              window.terminalAPI &&
-                              window.terminalAPI.selectKeyFile
-                            ) {
-                              window.terminalAPI
-                                .selectKeyFile()
-                                .then((filePath) => {
-                                  if (filePath) {
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      privateKeyPath: filePath,
-                                    }));
-                                  }
-                                });
-                            }
-                          }}
-                        >
-                          浏览...
-                        </Button>
-                      </Box>
-                    )}
-
-                    <FormControl fullWidth size="small">
-                      <InputLabel>分组</InputLabel>
-                      <Select
-                        name="parentGroup"
-                        value={formData.parentGroup || ""}
-                        label="分组"
-                        onChange={handleFormChange}
-                      >
-                        <MenuItem value="">
-                          <em>不分组</em>
-                        </MenuItem>
-                        {connections
-                          .filter((c) => c.type === "group")
-                          .map((group) => (
-                            <MenuItem key={group.id} value={group.id}>
-                              {group.name}
-                            </MenuItem>
-                          ))}
-                      </Select>
-                    </FormControl>
-                  </>
-                )}
-              </Box>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={handleDialogClose}>取消</Button>
-              <Button onClick={handleSave} variant="contained">
-                保存
+                新建连接
               </Button>
-            </DialogActions>
-          </Dialog>
+              <Button
+                size="small"
+                startIcon={<FolderIcon />}
+                onClick={handleAddGroup}
+                sx={{ fontSize: "0.75rem" }}
+              >
+                新建分组
+              </Button>
+            </Box>
 
-          {/* 消息提示组件 */}
-          <Snackbar
-            open={snackbar.open}
-            autoHideDuration={4000}
-            onClose={handleSnackbarClose}
-            anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-          >
-            <Alert
-              onClose={handleSnackbarClose}
-              severity={snackbar.severity}
-              sx={{ width: "100%" }}
+            {/* 连接列表区域 */}
+            <Box
+              sx={{
+                flexGrow: 1,
+                overflow: "auto",
+                height: "calc(100% - 120px)",
+              }}
             >
-              {snackbar.message}
-            </Alert>
-          </Snackbar>
-        </>
-      )}
-    </Paper>
-  );
-};
+              <DragDropContext onDragEnd={handleDragEnd}>
+                <Droppable droppableId="connection-list" type="connection-list">
+                  {(provided) => (
+                    <List
+                      dense
+                      sx={{ p: 1 }}
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                    >
+                      {connectionsList}
+                      {provided.placeholder}
+                      {connections.length === 0 && (
+                        <ListItem>
+                          <ListItemText
+                            primary="没有连接项"
+                            primaryTypographyProps={{
+                              variant: "body2",
+                              sx: {
+                                fontStyle: "italic",
+                                color: "text.secondary",
+                                textAlign: "center",
+                              },
+                            }}
+                          />
+                        </ListItem>
+                      )}
+                    </List>
+                  )}
+                </Droppable>
+              </DragDropContext>
+            </Box>
+
+            {/* 添加/编辑对话框 */}
+            <Dialog
+              open={dialogOpen}
+              onClose={handleDialogClose}
+              maxWidth="sm"
+              fullWidth
+            >
+              <DialogTitle>
+                {dialogMode === "add" ? "新建" : "编辑"}
+                {dialogType === "connection" ? "连接" : "分组"}
+              </DialogTitle>
+              <DialogContent dividers>
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                    pt: 1,
+                  }}
+                >
+                  <TextField
+                    label="名称"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleFormChange}
+                    fullWidth
+                    size="small"
+                    required
+                  />
+
+                  {dialogType === "connection" && (
+                    <>
+                      <TextField
+                        label="主机地址"
+                        name="host"
+                        value={formData.host}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        required
+                      />
+
+                      <TextField
+                        label="端口"
+                        name="port"
+                        type="number"
+                        value={formData.port}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                      />
+
+                      <TextField
+                        label="用户名"
+                        name="username"
+                        value={formData.username}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                      />
+
+                      <TextField
+                        label="密码"
+                        name="password"
+                        type="password"
+                        value={formData.password}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        disabled={formData.authType === "privateKey"}
+                      />
+
+                      <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                        <InputLabel>认证方式</InputLabel>
+                        <Select
+                          name="authType"
+                          value={formData.authType || "password"}
+                          label="认证方式"
+                          onChange={handleFormChange}
+                        >
+                          <MenuItem value="password">密码认证</MenuItem>
+                          <MenuItem value="privateKey">密钥认证</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      {formData.authType === "privateKey" && (
+                        <Box sx={{ display: "flex", mt: 1 }}>
+                          <TextField
+                            label="私钥路径"
+                            name="privateKeyPath"
+                            value={formData.privateKeyPath}
+                            onChange={handleFormChange}
+                            fullWidth
+                            size="small"
+                            sx={{ flexGrow: 1 }}
+                          />
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            sx={{ ml: 1 }}
+                            onClick={() => {
+                              if (
+                                window.terminalAPI &&
+                                window.terminalAPI.selectKeyFile
+                              ) {
+                                window.terminalAPI
+                                  .selectKeyFile()
+                                  .then((filePath) => {
+                                    if (filePath) {
+                                      setFormData((prev) => ({
+                                        ...prev,
+                                        privateKeyPath: filePath,
+                                      }));
+                                    }
+                                  });
+                              }
+                            }}
+                          >
+                            浏览...
+                          </Button>
+                        </Box>
+                      )}
+
+                      <FormControl fullWidth size="small">
+                        <InputLabel>分组</InputLabel>
+                        <Select
+                          name="parentGroup"
+                          value={formData.parentGroup || ""}
+                          label="分组"
+                          onChange={handleFormChange}
+                        >
+                          <MenuItem value="">
+                            <em>不分组</em>
+                          </MenuItem>
+                          {groupOptions}
+                        </Select>
+                      </FormControl>
+                    </>
+                  )}
+                </Box>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={handleDialogClose}>取消</Button>
+                <Button onClick={handleSave} variant="contained">
+                  保存
+                </Button>
+              </DialogActions>
+            </Dialog>
+
+            {/* 消息提示组件 */}
+            <Snackbar
+              open={snackbar.open}
+              autoHideDuration={4000}
+              onClose={handleSnackbarClose}
+              anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+            >
+              <Alert
+                onClose={handleSnackbarClose}
+                severity={snackbar.severity}
+                sx={{ width: "100%" }}
+              >
+                {snackbar.message}
+              </Alert>
+            </Snackbar>
+          </>
+        )}
+      </Paper>
+    );
+  },
+  areEqual,
+);
+
+// 设置显示名称用于调试
+ConnectionManager.displayName = "ConnectionManager";
 
 export default ConnectionManager;
