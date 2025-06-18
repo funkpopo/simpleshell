@@ -1,5 +1,5 @@
 const { EventEmitter } = require("events");
-const AdvancedSSHPool = require("./advanced-ssh-pool");
+const SSHPool = require("./ssh-pool");
 const { logToFile } = require("../utils/logger");
 
 // 连接管理器配置
@@ -310,7 +310,7 @@ class ConnectionManager extends EventEmitter {
         maxConnections: this.config.poolConfig.defaultPoolSize,
       };
 
-      pool = new AdvancedSSHPool(poolConfig);
+      pool = new SSHPool(poolConfig);
 
       // 监听池事件
       this.setupPoolEventListeners(pool, serverKey);
