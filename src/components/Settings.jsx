@@ -27,7 +27,6 @@ import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import Grid from "@mui/material/Grid";
 import TuneIcon from "@mui/icons-material/Tune";
-import SpeedIcon from "@mui/icons-material/Speed";
 import ImageIcon from "@mui/icons-material/Image";
 import MemoryIcon from "@mui/icons-material/Memory";
 import CachedIcon from "@mui/icons-material/Cached";

@@ -7,11 +7,9 @@ import {
   IconButton,
   List,
   ListItem,
-  Divider,
   Tooltip,
   CircularProgress,
   Alert,
-  Fade,
   Slide,
   Select,
   MenuItem,
@@ -52,7 +50,7 @@ const AIAssistant = ({ open, onClose }) => {
   // API选择相关状态
   const [apiConfigs, setApiConfigs] = useState([]);
   const [currentApiId, setCurrentApiId] = useState(null);
-  const [currentApiName, setCurrentApiName] = useState("");
+  const [setCurrentApiName] = useState("");
 
   // 思考内容处理器
   const streamThinkProcessorRef = useRef(null);

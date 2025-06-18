@@ -9,7 +9,6 @@ import "@xterm/xterm/css/xterm.css";
 import {
   debounce,
   createResizeObserver,
-  isElementVisible,
 } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
 import Menu from "@mui/material/Menu";
@@ -20,7 +19,6 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import PasteIcon from "@mui/icons-material/ContentPaste";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SearchIcon from "@mui/icons-material/Search";
-import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import CloseIcon from "@mui/icons-material/Close";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
 import Divider from "@mui/material/Divider";
@@ -1629,9 +1627,6 @@ const WebTerminal = ({
             const container = terminalRef.current;
             const currentWidth = container.clientWidth;
             const currentHeight = container.clientHeight;
-
-            // 记录调整前的大小信息
-            // logTerminalSize("调整前", term, container);
 
             // 确保终端完全填充容器
             if (term && term.element) {

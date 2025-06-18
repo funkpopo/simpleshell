@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Paper,
@@ -11,7 +11,6 @@ import {
   ListItemText,
   TextField,
   Button,
-  Divider,
   Tooltip,
   Menu,
   MenuItem,
@@ -22,7 +21,6 @@ import {
   FormControl,
   InputLabel,
   Select,
-  Chip,
   Tabs,
   Tab,
   InputAdornment,
@@ -41,11 +39,9 @@ import SendIcon from "@mui/icons-material/Send";
 import FolderIcon from "@mui/icons-material/Folder";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import HistoryIcon from "@mui/icons-material/History";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import CategoryIcon from "@mui/icons-material/Category";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
 import { useTranslation } from "react-i18next";
 
 function ShortcutCommands({ open, onClose, onSendCommand }) {

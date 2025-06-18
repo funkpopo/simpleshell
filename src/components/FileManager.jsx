@@ -4,11 +4,8 @@ import {
   Paper,
   Typography,
   IconButton,
-  List,
-  ListItem,
   ListItemIcon,
   ListItemText,
-  ListItemButton,
   Divider,
   CircularProgress,
   TextField,
@@ -17,13 +14,11 @@ import {
   Menu,
   MenuItem,
   Button,
-  LinearProgress,
   Alert,
   Snackbar,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import FolderIcon from "@mui/icons-material/Folder";
-import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import HomeIcon from "@mui/icons-material/Home";
@@ -34,17 +29,12 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import DownloadIcon from "@mui/icons-material/Download";
 import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
 import LinkIcon from "@mui/icons-material/Link";
-import CancelIcon from "@mui/icons-material/Cancel";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import FilePreview from "./FilePreview.jsx";
 import VirtualizedFileList from "./VirtualizedFileList.jsx";
 import TransferProgressManager from "./TransferProgressManager.jsx";
 import {
-  formatFileSize,
-  formatTransferSpeed,
-  formatRemainingTime,
-  formatDate,
   formatLastRefreshTime,
 } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
@@ -66,10 +56,6 @@ const FileManager = memo(
     const [error, setError] = useState(null);
     const [lastRefreshTime, setLastRefreshTime] = useState(null);
     const [directoryCache, setDirectoryCache] = useState({});
-    const [currentSorting, setCurrentSorting] = useState({
-      field: "name",
-      direction: "asc",
-    });
     const [contextMenu, setContextMenu] = useState(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [showSearch, setShowSearch] = useState(false);
@@ -84,7 +70,6 @@ const FileManager = memo(
     const [filePreview, setFilePreview] = useState(null);
     const [showPreview, setShowPreview] = useState(false);
     const [pathInput, setPathInput] = useState("");
-    const [isEditing, setIsEditing] = useState(false);
     const [transferProgressList, setTransferProgressList] = useState([]);
     const [transferCancelled, setTransferCancelled] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
@@ -2034,7 +2019,6 @@ const FileManager = memo(
         }}
         tabIndex={0} // 使得Paper元素可以接收键盘事件
       >
-        {/* 标题栏 */}
         <Box
           sx={{
             display: "flex",
@@ -2060,7 +2044,6 @@ const FileManager = memo(
           </IconButton>
         </Box>
 
-        {/* 路径导航和工具栏 */}
         <Box
           sx={{
             p: 1,
@@ -2121,7 +2104,6 @@ const FileManager = memo(
             </IconButton>
           </Tooltip>
 
-          {/* 添加上传按钮 */}
           <Tooltip title="上传">
             <IconButton size="small" onClick={handleUploadMenuOpen}>
               <UploadFileIcon fontSize="small" />
@@ -2129,7 +2111,6 @@ const FileManager = memo(
           </Tooltip>
         </Box>
 
-        {/* 搜索框 */}
         {showSearch && (
           <Box
             sx={{
@@ -2167,7 +2148,6 @@ const FileManager = memo(
           </Box>
         )}
 
-        {/* 当前路径 */}
         <Box
           sx={{
             px: 1,
@@ -2207,7 +2187,6 @@ const FileManager = memo(
           />
         </Box>
 
-        {/* 文件列表 */}
         <Box
           sx={{
             flexGrow: 1,
@@ -2223,7 +2202,6 @@ const FileManager = memo(
           {renderFileList()}
         </Box>
 
-        {/* 文件右键菜单 */}
         <Menu
           open={contextMenu !== null}
           onClose={handleContextMenuClose}
@@ -2294,7 +2272,6 @@ const FileManager = memo(
           </MenuItem>
         </Menu>
 
-        {/* 空白区域右键菜单 */}
         <Menu
           open={blankContextMenu !== null}
           onClose={handleBlankContextMenuClose}
@@ -2343,7 +2320,6 @@ const FileManager = memo(
           </MenuItem>
         </Menu>
 
-        {/* 重命名对话框 */}
         {showRenameDialog && (
           <Box
             sx={{
@@ -2409,7 +2385,6 @@ const FileManager = memo(
           </Box>
         )}
 
-        {/* 创建文件夹对话框 */}
         {showCreateFolderDialog && (
           <Box
             sx={{
@@ -2475,7 +2450,6 @@ const FileManager = memo(
           </Box>
         )}
 
-        {/* 创建文件对话框 */}
         {showCreateFileDialog && (
           <Box
             sx={{
@@ -2541,7 +2515,6 @@ const FileManager = memo(
           </Box>
         )}
 
-        {/* 文件预览 */}
         {showPreview && filePreview && (
           <FilePreview
             open={showPreview}
@@ -2552,7 +2525,6 @@ const FileManager = memo(
           />
         )}
 
-        {/* 通知系统 - 增强版 */}
         <Snackbar
           open={notification !== null}
           autoHideDuration={
@@ -2590,7 +2562,6 @@ const FileManager = memo(
           )}
         </Snackbar>
 
-        {/* 传输进度管理器 */}
         <TransferProgressManager
           transferList={transferProgressList}
           onCancelTransfer={handleCancelTransfer}
@@ -2598,7 +2569,6 @@ const FileManager = memo(
           onClearAll={clearAllTransfers}
         />
 
-        {/* 上传菜单 */}
         <Menu
           open={Boolean(uploadMenuAnchor)}
           onClose={handleUploadMenuClose}

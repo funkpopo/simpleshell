@@ -32,7 +32,6 @@ const CommandSuggestion = memo(
     position = { x: 0, y: 0 },
     onSelectSuggestion,
     onClose,
-    terminalElement = null,
     currentInput = "",
   }) => {
     const theme = useTheme();

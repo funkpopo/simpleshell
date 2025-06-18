@@ -8,9 +8,6 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import { useTheme } from "@mui/material/styles";
 
-/**
- * 错误边界组件，用于捕获和处理懒加载组件的错误
- */
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);

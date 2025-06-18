@@ -11,7 +11,6 @@ import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Tabs from "@mui/material/Tabs";
-import Tab from "@mui/material/Tab";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
@@ -24,7 +23,6 @@ import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import MonitorHeartIcon from "@mui/icons-material/MonitorHeart";
 import LinkIcon from "@mui/icons-material/Link";
-import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PowerOffIcon from "@mui/icons-material/PowerOff";
 import FolderIcon from "@mui/icons-material/Folder";
@@ -162,17 +160,17 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
           <Typography variant="body1" gutterBottom>
             {t("about.version")}: {appVersion}
           </Typography>
-          <Typography variant="body2" color="text.secondary" paragraph>
+          <Typography variant="body2" color="text.secondary">
             {t("about.description")}
           </Typography>
 
           <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
             {t("about.author")}
           </Typography>
-          <Typography variant="body2" paragraph>
+          <Typography variant="body2">
             {t("about.author")}: funkpopo
           </Typography>
-          <Typography variant="body2" paragraph>
+          <Typography variant="body2">
             {t("about.email")}:{" "}
             <Link
               href="#"
@@ -197,7 +195,6 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
                     ? "success.main"
                     : "text.secondary"
                 }
-                paragraph
               >
                 {updateStatus}
               </Typography>

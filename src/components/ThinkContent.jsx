@@ -18,10 +18,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 
-/**
- * 思考内容显示组件
- * 用于显示AI的思考过程，支持折叠/展开
- */
 const ThinkContent = ({
   content,
   defaultExpanded = false,

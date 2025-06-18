@@ -1,8 +1,3 @@
-/**
- * 统一的事件监听器管理系统
- * 用于集中管理组件的事件监听器，确保在组件卸载时所有监听器都能被正确清理
- */
-
 class EventManager {
   constructor() {
     this.listeners = new Map(); // 存储所有事件监听器
@@ -12,14 +7,6 @@ class EventManager {
     this.isDestroyed = false;
   }
 
-  /**
-   * 添加事件监听器
-   * @param {EventTarget} target - 事件目标
-   * @param {string} event - 事件名称
-   * @param {Function} handler - 事件处理函数
-   * @param {Object} options - 事件选项
-   * @returns {Function} 移除该监听器的函数
-   */
   addEventListener(target, event, handler, options = {}) {
     if (this.isDestroyed) {
       // EventManager已销毁，无法添加新的事件监听器
@@ -54,10 +41,6 @@ class EventManager {
     return () => this.removeEventListener(id);
   }
 
-  /**
-   * 移除特定的事件监听器
-   * @param {string} id - 监听器ID
-   */
   removeEventListener(id) {
     const listener = this.listeners.get(id);
     if (listener) {
@@ -67,13 +50,6 @@ class EventManager {
     }
   }
 
-  /**
-   * 添加定时器管理
-   * @param {Function} callback - 回调函数
-   * @param {number} delay - 延迟时间
-   * @param {boolean} isInterval - 是否为间隔定时器
-   * @returns {Function} 清除定时器的函数
-   */
   addTimer(callback, delay, isInterval = false) {
     if (this.isDestroyed) {
       // EventManager已销毁，无法添加新的定时器
@@ -98,31 +74,14 @@ class EventManager {
     return () => this.clearTimer(timerId, isInterval);
   }
 
-  /**
-   * 添加setTimeout
-   * @param {Function} callback - 回调函数
-   * @param {number} delay - 延迟时间
-   * @returns {Function} 清除定时器的函数
-   */
   setTimeout(callback, delay) {
     return this.addTimer(callback, delay, false);
   }
 
-  /**
-   * 添加setInterval
-   * @param {Function} callback - 回调函数
-   * @param {number} interval - 间隔时间
-   * @returns {Function} 清除定时器的函数
-   */
   setInterval(callback, interval) {
     return this.addTimer(callback, interval, true);
   }
 
-  /**
-   * 清除定时器
-   * @param {number} timerId - 定时器ID
-   * @param {boolean} isInterval - 是否为间隔定时器
-   */
   clearTimer(timerId, isInterval) {
     if (isInterval) {
       clearInterval(timerId);
@@ -139,11 +98,6 @@ class EventManager {
     }
   }
 
-  /**
-   * 添加观察者管理
-   * @param {Object} observer - 观察者对象（MutationObserver, ResizeObserver, IntersectionObserver等）
-   * @returns {Function} 断开观察者的函数
-   */
   addObserver(observer) {
     if (this.isDestroyed) {
       // EventManager已销毁，无法添加新的观察者
@@ -156,10 +110,6 @@ class EventManager {
     return () => this.removeObserver(observer);
   }
 
-  /**
-   * 移除观察者
-   * @param {Object} observer - 观察者对象
-   */
   removeObserver(observer) {
     if (observer && typeof observer.disconnect === "function") {
       observer.disconnect();
@@ -167,11 +117,6 @@ class EventManager {
     this.observers.delete(observer);
   }
 
-  /**
-   * 添加自定义清理函数
-   * @param {Function} cleanupFn - 清理函数
-   * @returns {Function} 移除该清理函数的函数
-   */
   addCleanup(cleanupFn) {
     if (this.isDestroyed) {
       // EventManager已销毁，无法添加新的清理函数
@@ -184,10 +129,6 @@ class EventManager {
     return () => this.cleanupFunctions.delete(cleanupFn);
   }
 
-  /**
-   * 获取当前管理的资源数量统计
-   * @returns {Object} 资源统计信息
-   */
   getStats() {
     return {
       listeners: this.listeners.size,
@@ -198,9 +139,6 @@ class EventManager {
     };
   }
 
-  /**
-   * 销毁管理器，清理所有资源
-   */
   destroy() {
     if (this.isDestroyed) {
       return;
@@ -257,10 +195,7 @@ class EventManager {
   }
 }
 
-/**
- * 创建React Hook用于在组件中使用EventManager
- * @returns {EventManager} EventManager实例
- */
+
 export function useEventManager() {
   const { useRef, useEffect } = require("react");
   const managerRef = useRef(null);

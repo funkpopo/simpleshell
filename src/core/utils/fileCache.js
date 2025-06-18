@@ -9,11 +9,6 @@ class FileCache {
     this.logToFile = null;
   }
 
-  /**
-   * 初始化缓存管理器
-   * @param {Function} logToFile 日志记录函数
-   * @param {Object} app Electron app对象
-   */
   init(logToFile, app = null) {
     this.logToFile = logToFile || (() => {});
     this.cacheDir = this.getCacheDirectory(app);
@@ -24,11 +19,6 @@ class FileCache {
     );
   }
 
-  /**
-   * 获取缓存目录路径
-   * @param {Object} app Electron app对象
-   * @returns {string} 缓存目录路径
-   */
   getCacheDirectory(app) {
     if (process.env.NODE_ENV === "development") {
       // 开发环境：项目根目录下的temp目录
@@ -45,9 +35,6 @@ class FileCache {
     }
   }
 
-  /**
-   * 确保缓存目录存在
-   */
   ensureCacheDirectory() {
     try {
       if (!fs.existsSync(this.cacheDir)) {
@@ -63,11 +50,6 @@ class FileCache {
     }
   }
 
-  /**
-   * 生成唯一的缓存文件名
-   * @param {string} originalFileName 原始文件名
-   * @returns {string} 缓存文件名
-   */
   generateCacheFileName(originalFileName) {
     const ext = path.extname(originalFileName);
     const baseName = path.basename(originalFileName, ext);
@@ -75,13 +57,6 @@ class FileCache {
     return `${baseName}_${uniqueId}${ext}`;
   }
 
-  /**
-   * 缓存文件数据
-   * @param {string} originalFileName 原始文件名
-   * @param {Buffer} data 文件数据
-   * @param {string} tabId 标签页ID（用于跟踪）
-   * @returns {Promise<string>} 缓存文件路径
-   */
   async cacheFile(originalFileName, data, tabId) {
     try {
       const cacheFileName = this.generateCacheFileName(originalFileName);
@@ -115,11 +90,6 @@ class FileCache {
     }
   }
 
-  /**
-   * 清理指定的缓存文件
-   * @param {string} cacheFilePath 缓存文件路径
-   * @returns {Promise<boolean>} 是否成功清理
-   */
   async cleanupCacheFile(cacheFilePath) {
     try {
       if (fs.existsSync(cacheFilePath)) {
@@ -139,11 +109,6 @@ class FileCache {
     }
   }
 
-  /**
-   * 清理指定标签页的所有缓存文件
-   * @param {string} tabId 标签页ID
-   * @returns {Promise<number>} 清理的文件数量
-   */
   async cleanupTabCaches(tabId) {
     let cleanedCount = 0;
     const filesToClean = [];
@@ -173,10 +138,6 @@ class FileCache {
     return cleanedCount;
   }
 
-  /**
-   * 清理所有缓存文件
-   * @returns {Promise<number>} 清理的文件数量
-   */
   async cleanupAllCaches() {
     let cleanedCount = 0;
     const allFiles = [...this.activeCaches.keys()];
@@ -195,11 +156,6 @@ class FileCache {
     return cleanedCount;
   }
 
-  /**
-   * 清理过期的缓存文件（超过指定时间的文件）
-   * @param {number} maxAgeMs 最大存活时间（毫秒）
-   * @returns {Promise<number>} 清理的文件数量
-   */
   async cleanupExpiredCaches(maxAgeMs = 3600000) {
     // 默认1小时
     let cleanedCount = 0;
@@ -228,10 +184,6 @@ class FileCache {
     return cleanedCount;
   }
 
-  /**
-   * 获取缓存统计信息
-   * @returns {Object} 缓存统计信息
-   */
   getCacheStats() {
     return {
       totalFiles: this.activeCaches.size,
@@ -245,11 +197,6 @@ class FileCache {
     };
   }
 
-  /**
-   * 启动定期清理任务
-   * @param {number} intervalMs 清理间隔（毫秒）
-   * @param {number} maxAgeMs 文件最大存活时间（毫秒）
-   */
   startPeriodicCleanup(intervalMs = 1800000, maxAgeMs = 3600000) {
     // 默认30分钟清理一次，1小时过期
     setInterval(async () => {
