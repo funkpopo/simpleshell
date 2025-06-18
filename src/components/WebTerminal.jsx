@@ -450,6 +450,98 @@ const WebTerminal = ({
   // 新增：确认提示状态
   const [isConfirmationPromptActive, setIsConfirmationPromptActive] = useState(false);
 
+  // 密码提示检测模式（支持多语言和格式）
+  const passwordPromptPatterns = [
+    // 英文密码提示
+    /password\s*[:：]/i,
+    /passwd\s*[:：]/i,
+    /enter\s+password/i,
+    /\(password\)/i,
+    /passphrase\s*[:：]/i,
+    
+    // SSH相关
+    /'s\s+password\s*[:：]/,
+    /ssh\s+password/i,
+    
+    // sudo相关
+    /\[sudo\]\s+password\s+for/i,
+    /sudo\s+password/i,
+    
+    // 中文密码提示
+    /密码\s*[:：]/,
+    /请输入密码/,
+    /输入密码/,
+    
+    // PIN和Token
+    /\bPIN\s*[:：]/i,
+    /\btoken\s*[:：]/i,
+    /authentication\s*[:：]/i,
+    /authenticate/i,
+    
+    // 其他认证提示
+    /enter\s+passphrase/i,
+    /enter\s+pin/i,
+    /security\s+code/i,
+    /verification\s+code/i,
+    /验证码/,
+    
+    // 数据库相关
+    /database\s+password/i,
+    /db\s+password/i,
+    
+    // 常见的密码输入提示结尾
+    /password\s*$/i,
+    /密码\s*$/
+  ];
+
+  // 确认提示检测模式
+  const confirmationPromptPatterns = [
+    /\(yes\/no\)/i,
+    /\(y\/n\)/i,
+    /\[Y\/n\]/,
+    /\[y\/N\]/,
+    /continue\s*\?/i,
+    /proceed\s*\?/i,
+    /是\/否/,
+    /确认/,
+    /\(确定\/取消\)/
+  ];
+
+  // 密码输入保护：跟踪是否正在等待密码输入
+  const isPasswordPromptActiveRef = useRef(false);
+
+  // 检测密码提示的函数
+  const checkForPasswordPrompt = useCallback((data) => {
+    // 确保数据存在
+    if (!data) return;
+    
+    // 转换为字符串
+    const dataStr = typeof data === 'string' ? data : data.toString();
+    
+    // 忽略ANSI转义序列
+    const cleanData = dataStr.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+    
+    // 检查是否包含密码提示
+    const hasPasswordPrompt = passwordPromptPatterns.some(pattern => 
+      pattern.test(cleanData)
+    );
+    
+    // 检查是否包含确认提示
+    const hasConfirmationPrompt = confirmationPromptPatterns.some(pattern => 
+      pattern.test(cleanData)
+    );
+    
+    if (hasPasswordPrompt) {
+      isPasswordPromptActiveRef.current = true;
+      // 同时更新React状态
+      setIsConfirmationPromptActive(true);
+    } else if (hasConfirmationPrompt) {
+      // 对于确认提示，也设置标志避免记录到历史
+      isPasswordPromptActiveRef.current = true;
+      setIsConfirmationPromptActive(true);
+    }
+  }, [passwordPromptPatterns, confirmationPromptPatterns]);
+
   // 获取命令建议的防抖函数
   const getSuggestions = useCallback(
     debounce(async (input) => {
@@ -775,9 +867,6 @@ const WebTerminal = ({
 
       // 检测回车键（命令执行的触发）
       if (data === "\r" || data === "\n") {
-        // 重置确认提示状态
-        setIsConfirmationPromptActive(false);
-
         // 设置命令执行状态，防止显示建议
         setIsCommandExecuting(true);
 
@@ -834,9 +923,18 @@ const WebTerminal = ({
             }
           }
 
+          // 密码输入保护：如果当前处于密码输入状态，不记录到历史
+          const shouldSkipHistory = isPasswordPromptActiveRef.current;
+          
+          // 重置密码输入状态（用户已经输入并按下回车）
+          if (isPasswordPromptActiveRef.current) {
+            isPasswordPromptActiveRef.current = false;
+            setIsConfirmationPromptActive(false);
+          }
+
           // 确保命令不为空且不与上一次执行的命令相同，并且不在编辑器模式中
           // 注意：inEditorMode可能已经被buffer类型检测器更新
-          if (command && command !== lastExecutedCommand && !inEditorMode) {
+          if (command && command !== lastExecutedCommand && !inEditorMode && !shouldSkipHistory) {
             lastExecutedCommand = command;
 
             // 记录执行的命令和时间，用于防止后续显示该命令的建议
@@ -1256,8 +1354,13 @@ const WebTerminal = ({
                   // 设置数据接收监听
                   setupDataListener(processId, term);
 
-                  // 设置命令检测
-                  setupCommandDetection(term, processId);
+                        // 设置命令检测（包含密码提示检测）
+      setupCommandDetection(term, processId);
+      
+      // 监听数据输出以检测密码提示（补充命令检测中的输出监听）
+      term.onWriteParsed((data) => {
+        checkForPasswordPrompt(data);
+      });
 
                   // 使用EventManager管理连接成功后多次尝试同步终端大小
                   eventManager.setTimeout(() => {
@@ -2433,11 +2536,8 @@ const WebTerminal = ({
 
         const dataStr = data.toString();
 
-        // 检测确认提示
-        const confirmationPromptRegex = /\[y\/n\]|\[yes\/no\]/i;
-        if (confirmationPromptRegex.test(dataStr)) {
-          setIsConfirmationPromptActive(true);
-        }
+        // 检测密码和确认提示
+        checkForPasswordPrompt(dataStr);
 
         // 检测全屏应用启动并触发重新调整大小
         // 通常像top, htop, vim, nano等全屏应用会发送特定的ANSI转义序列
