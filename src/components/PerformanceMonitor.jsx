@@ -1,8 +1,3 @@
-/**
- * 性能监控组件
- * 显示终端渲染性能、内存使用和图像统计信息
- */
-
 import React, { useState, useEffect, useRef } from "react";
 import {
   Box,

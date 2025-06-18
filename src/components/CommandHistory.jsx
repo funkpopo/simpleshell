@@ -12,7 +12,6 @@ import {
   TextField,
   Button,
   Divider,
-  Tooltip,
   Menu,
   MenuItem,
   Dialog,
@@ -25,7 +24,6 @@ import {
   Snackbar,
   Alert,
   Checkbox,
-  FormControlLabel,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
@@ -51,7 +49,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
   // 对话框状态
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [currentCommand, setCurrentCommand] = useState(null);
+  const [setCurrentCommand] = useState(null);
   const [editedCommand, setEditedCommand] = useState("");
 
   // 菜单状态

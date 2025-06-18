@@ -1,8 +1,3 @@
-/**
- * 增强内存池管理器
- * 提供智能内存分配、回收和监控功能
- */
-
 const { EventEmitter } = require("events");
 const { logToFile } = require("../utils/logger");
 
@@ -79,9 +74,6 @@ class EnhancedMemoryPool extends EventEmitter {
     this.init();
   }
 
-  /**
-   * 初始化内存池
-   */
   init() {
     try {
       // 初始化各种大小的内存池
@@ -109,9 +101,6 @@ class EnhancedMemoryPool extends EventEmitter {
     }
   }
 
-  /**
-   * 初始化单个内存池
-   */
   initializePool(name, config) {
     const pool = {
       name,
@@ -143,9 +132,6 @@ class EnhancedMemoryPool extends EventEmitter {
     );
   }
 
-  /**
-   * 智能分配内存
-   */
   allocate(size, options = {}) {
     const startTime = performance.now();
 
@@ -244,9 +230,6 @@ class EnhancedMemoryPool extends EventEmitter {
     }
   }
 
-  /**
-   * 释放内存
-   */
   free(allocationId) {
     const startTime = performance.now();
 
@@ -305,9 +288,6 @@ class EnhancedMemoryPool extends EventEmitter {
     }
   }
 
-  /**
-   * 选择最优内存池
-   */
   selectOptimalPool(size) {
     // 找到能容纳请求大小的最小池
     let bestPool = null;
@@ -329,9 +309,6 @@ class EnhancedMemoryPool extends EventEmitter {
     return bestPool;
   }
 
-  /**
-   * 执行垃圾回收
-   */
   performGarbageCollection() {
     const startTime = performance.now();
 
@@ -362,9 +339,6 @@ class EnhancedMemoryPool extends EventEmitter {
     }
   }
 
-  /**
-   * 记录分配模式
-   */
   recordAllocationPattern(size, poolName) {
     if (!this.config.monitoring.allocationPatternAnalysis) return;
 
@@ -383,9 +357,6 @@ class EnhancedMemoryPool extends EventEmitter {
     this.allocationPatterns.set(size, pattern);
   }
 
-  /**
-   * 计算命中率
-   */
   calculateHitRate() {
     const totalHits = Array.from(this.pools.values()).reduce(
       (sum, pool) => sum + pool.hitCount,
@@ -400,9 +371,6 @@ class EnhancedMemoryPool extends EventEmitter {
     return totalRequests > 0 ? (totalHits / totalRequests) * 100 : 0;
   }
 
-  /**
-   * 计算未命中率
-   */
   calculateMissRate() {
     const totalMisses = Array.from(this.pools.values()).reduce(
       (sum, pool) => sum + pool.missCount,
@@ -417,16 +385,10 @@ class EnhancedMemoryPool extends EventEmitter {
     return totalRequests > 0 ? (totalMisses / totalRequests) * 100 : 0;
   }
 
-  /**
-   * 生成分配ID
-   */
   generateAllocationId() {
     return `alloc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  /**
-   * 启动清理定时器
-   */
   startCleanupTimer() {
     this.cleanupTimer = setInterval(() => {
       this.performGarbageCollection();
@@ -438,9 +400,6 @@ class EnhancedMemoryPool extends EventEmitter {
     }, this.config.management.cleanupInterval);
   }
 
-  /**
-   * 启动指标收集
-   */
   startMetricsCollection() {
     this.metricsTimer = setInterval(() => {
       this.collectMetrics();
@@ -448,9 +407,6 @@ class EnhancedMemoryPool extends EventEmitter {
     }, this.config.monitoring.metricsInterval);
   }
 
-  /**
-   * 收集指标
-   */
   collectMetrics() {
     const metrics = {
       timestamp: Date.now(),
@@ -483,9 +439,6 @@ class EnhancedMemoryPool extends EventEmitter {
     this.emit("metricsCollected", metrics);
   }
 
-  /**
-   * 检查内存告警
-   */
   checkMemoryAlerts() {
     if (!this.config.monitoring.enableAlerts) return;
 
@@ -509,17 +462,11 @@ class EnhancedMemoryPool extends EventEmitter {
     }
   }
 
-  /**
-   * 判断是否需要碎片整理
-   */
   shouldDefragment() {
     const fragmentationRatio = this.calculateFragmentation();
     return fragmentationRatio > this.config.management.defragmentThreshold;
   }
 
-  /**
-   * 计算碎片率
-   */
   calculateFragmentation() {
     let totalFragments = 0;
     let totalCapacity = 0;
@@ -532,9 +479,6 @@ class EnhancedMemoryPool extends EventEmitter {
     return totalCapacity > 0 ? totalFragments / totalCapacity : 0;
   }
 
-  /**
-   * 执行碎片整理
-   */
   performDefragmentation() {
     const startTime = performance.now();
 
@@ -556,9 +500,6 @@ class EnhancedMemoryPool extends EventEmitter {
     }
   }
 
-  /**
-   * 获取内存统计信息
-   */
   getStats() {
     return {
       ...this.metrics,
@@ -584,9 +525,6 @@ class EnhancedMemoryPool extends EventEmitter {
     };
   }
 
-  /**
-   * 清理资源
-   */
   dispose() {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);

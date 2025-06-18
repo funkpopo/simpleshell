@@ -4,13 +4,6 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
-/**
- * 懒加载组件的统一加载状态组件
- * @param {Object} props - 组件属性
- * @param {string} props.message - 加载提示信息
- * @param {number} props.size - 加载指示器大小
- * @param {boolean} props.showMessage - 是否显示加载信息
- */
 const LoadingFallback = ({
   message = "正在加载组件...",
   size = 40,

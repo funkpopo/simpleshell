@@ -2,9 +2,6 @@ const EventEmitter = require("events");
 const zlib = require("zlib");
 const LRU = require("lru-cache");
 
-/**
- * 优化中间件 - 提供压缩、缓存、预取等性能优化功能
- */
 class OptimizationMiddleware extends EventEmitter {
   constructor(options = {}) {
     super();
@@ -55,9 +52,6 @@ class OptimizationMiddleware extends EventEmitter {
     this.init();
   }
 
-  /**
-   * 初始化中间件
-   */
   init() {
     // 初始化缓存
     if (this.options.cache.enabled) {
@@ -80,9 +74,6 @@ class OptimizationMiddleware extends EventEmitter {
     }
   }
 
-  /**
-   * 设置压缩算法
-   */
   setupCompressionAlgorithms() {
     this.compressionAlgorithms.set("gzip", {
       compress: (data, level) => zlib.gzipSync(data, { level }),
@@ -103,9 +94,6 @@ class OptimizationMiddleware extends EventEmitter {
     });
   }
 
-  /**
-   * 处理输出数据（压缩、缓存）
-   */
   async processOutput(data, options = {}) {
     const startTime = Date.now();
     let processedData = data;
@@ -155,9 +143,6 @@ class OptimizationMiddleware extends EventEmitter {
     }
   }
 
-  /**
-   * 处理输入数据（解压缩）
-   */
   async processInput(data, metadata = {}) {
     const startTime = Date.now();
     let processedData = data;
@@ -178,9 +163,6 @@ class OptimizationMiddleware extends EventEmitter {
     }
   }
 
-  /**
-   * 预取数据
-   */
   async prefetchData(paths, options = {}) {
     if (!this.options.prefetch.enabled || !Array.isArray(paths)) {
       return;
@@ -201,9 +183,6 @@ class OptimizationMiddleware extends EventEmitter {
     }
   }
 
-  /**
-   * 调度预取任务
-   */
   async schedulePrefetch(path, options) {
     const cacheKey = this.generateCacheKey(path, options);
 
@@ -227,9 +206,6 @@ class OptimizationMiddleware extends EventEmitter {
     }
   }
 
-  /**
-   * 压缩数据
-   */
   async compressData(data) {
     const algorithm = this.compressionAlgorithms.get(
       this.options.compression.algorithm,
@@ -243,9 +219,6 @@ class OptimizationMiddleware extends EventEmitter {
     return algorithm.compress(data, this.options.compression.level);
   }
 
-  /**
-   * 解压缩数据
-   */
   async decompressData(data) {
     const algorithm = this.compressionAlgorithms.get(
       this.options.compression.algorithm,
@@ -259,9 +232,6 @@ class OptimizationMiddleware extends EventEmitter {
     return algorithm.decompress(data);
   }
 
-  /**
-   * 判断是否应该压缩
-   */
   shouldCompress(data, options = {}) {
     if (!this.options.compression.enabled) return false;
     if (options.skipCompression) return false;
@@ -287,18 +257,12 @@ class OptimizationMiddleware extends EventEmitter {
     return true;
   }
 
-  /**
-   * 生成缓存键
-   */
   generateCacheKey(data, options = {}) {
     const crypto = require("crypto");
     const keyData = typeof data === "string" ? data : JSON.stringify(options);
     return crypto.createHash("md5").update(keyData).digest("hex");
   }
 
-  /**
-   * 更新性能指标
-   */
   updateMetrics(type, value) {
     const metrics = this.performanceMetrics;
     const window = this.options.adaptive.sampleWindow;
@@ -327,18 +291,12 @@ class OptimizationMiddleware extends EventEmitter {
     }
   }
 
-  /**
-   * 启动自适应调整
-   */
   startAdaptiveAdjustment() {
     this.adaptiveTimer = setInterval(() => {
       this.performAdaptiveAdjustment();
     }, this.options.adaptive.adjustInterval);
   }
 
-  /**
-   * 执行自适应调整
-   */
   performAdaptiveAdjustment() {
     const metrics = this.performanceMetrics;
 
@@ -399,9 +357,6 @@ class OptimizationMiddleware extends EventEmitter {
     });
   }
 
-  /**
-   * 数组分块
-   */
   chunkArray(array, chunkSize) {
     const chunks = [];
     for (let i = 0; i < array.length; i += chunkSize) {
@@ -410,9 +365,6 @@ class OptimizationMiddleware extends EventEmitter {
     return chunks;
   }
 
-  /**
-   * 获取性能统计
-   */
   getStats() {
     const metrics = this.performanceMetrics;
 
@@ -447,9 +399,6 @@ class OptimizationMiddleware extends EventEmitter {
     };
   }
 
-  /**
-   * 清理资源
-   */
   destroy() {
     if (this.adaptiveTimer) {
       clearInterval(this.adaptiveTimer);

@@ -1,8 +1,3 @@
-/**
- * SimpleShell 新架构核心模块入口
- * 统一导出所有优化后的连接池和传输组件
- */
-
 // 连接管理模块
 const connectionManager = require("./connection/connection-manager");
 const AdvancedSSHPool = require("./connection/advanced-ssh-pool");
@@ -24,10 +19,6 @@ const {
 // 工具模块
 const { logToFile } = require("./utils/logger");
 
-/**
- * 新架构核心管理器
- * 统一初始化和管理所有子系统
- */
 class SimpleShellCore {
   constructor(config = {}) {
     this.config = config;
@@ -49,9 +40,6 @@ class SimpleShellCore {
     };
   }
 
-  /**
-   * 初始化所有子系统
-   */
   async initialize() {
     if (this.isInitialized) {
       return;
@@ -97,12 +85,6 @@ class SimpleShellCore {
     }
   }
 
-  /**
-   * 获取SSH连接
-   * @param {Object} sshConfig SSH配置
-   * @param {Object} options 连接选项
-   * @returns {Object} SSH连接对象
-   */
   async getConnection(sshConfig, options = {}) {
     if (!this.isInitialized) {
       await this.initialize();
@@ -112,23 +94,10 @@ class SimpleShellCore {
     return await this.connectionManager.getConnection(sshConfig, options);
   }
 
-  /**
-   * 释放SSH连接
-   * @param {string} connectionId 连接ID
-   * @param {string} sessionId 会话ID
-   */
   releaseConnection(connectionId, sessionId = null) {
     this.connectionManager.releaseConnection(connectionId, sessionId);
   }
 
-  /**
-   * 文件上传
-   * @param {Object} sftpConnection SFTP连接
-   * @param {string} localPath 本地文件路径
-   * @param {string} remotePath 远程文件路径
-   * @param {Object} options 传输选项
-   * @returns {Object} 传输统计信息
-   */
   async uploadFile(sftpConnection, localPath, remotePath, options = {}) {
     if (!this.isInitialized) {
       await this.initialize();
@@ -143,14 +112,6 @@ class SimpleShellCore {
     );
   }
 
-  /**
-   * 文件下载
-   * @param {Object} sftpConnection SFTP连接
-   * @param {string} remotePath 远程文件路径
-   * @param {string} localPath 本地文件路径
-   * @param {Object} options 传输选项
-   * @returns {Object} 传输统计信息
-   */
   async downloadFile(sftpConnection, remotePath, localPath, options = {}) {
     if (!this.isInitialized) {
       await this.initialize();
@@ -165,10 +126,6 @@ class SimpleShellCore {
     );
   }
 
-  /**
-   * 获取系统状态
-   * @returns {Object} 系统状态信息
-   */
   getSystemStatus() {
     return {
       isInitialized: this.isInitialized,
@@ -186,10 +143,6 @@ class SimpleShellCore {
     };
   }
 
-  /**
-   * 获取性能指标
-   * @returns {Object} 性能指标
-   */
   getPerformanceMetrics() {
     const systemStatus = this.getSystemStatus();
 
@@ -228,9 +181,6 @@ class SimpleShellCore {
     };
   }
 
-  /**
-   * 优雅关闭系统
-   */
   async shutdown() {
     if (!this.isInitialized) {
       return;
@@ -267,7 +217,7 @@ class SimpleShellCore {
 // 创建单例实例
 const simpleShellCore = new SimpleShellCore();
 
-// 向后兼容的工厂函数
+// 创建单例实例
 function createSSHPool(config = {}) {
   return new AdvancedSSHPool(config);
 }
@@ -294,7 +244,6 @@ module.exports = {
   createSSHPool,
   createConnectionMonitor,
 
-  // 向后兼容的方法
   async getConnection(sshConfig, options) {
     return await simpleShellCore.getConnection(sshConfig, options);
   },

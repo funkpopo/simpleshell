@@ -1,14 +1,4 @@
-/**
- * AI Worker - 处理AI API请求的Worker线程
- * 
- * 该Worker负责:
- * 1. 处理AI API的网络请求
- * 2. 处理流式和非流式响应
- * 3. 解析和预处理响应数据
- * 4. 错误处理和重试
- */
-
-const { parentPort, workerData } = require('worker_threads');
+const { parentPort } = require('worker_threads');
 const https = require('https');
 const http = require('http');
 

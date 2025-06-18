@@ -1,9 +1,3 @@
-/**
- * 终端图像支持工具
- * 提供Sixel和iTerm图像协议支持
- */
-
-// 前端日志函数（替代后端logger）
 const logToFile = (message, level = "INFO") => {
   // 在开发环境下输出日志
   if (
@@ -30,9 +24,6 @@ export const SUPPORTED_FORMATS = {
   BMP: "image/bmp",
 };
 
-/**
- * 检测图像支持能力
- */
 export const detectImageSupport = () => {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -67,9 +58,6 @@ export const detectImageSupport = () => {
   };
 };
 
-/**
- * 获取最大纹理尺寸
- */
 const getMaxTextureSize = (ctx) => {
   try {
     const gl = document.createElement("canvas").getContext("webgl");
@@ -99,9 +87,6 @@ const getEstimatedMemoryLimit = () => {
   return Math.floor(deviceMemory * 1024 * 1024 * 1024 * memoryRatio); // 字节
 };
 
-/**
- * 图像支持管理类
- */
 export class ImageSupportManager {
   constructor(options = {}) {
     this.options = {
@@ -132,9 +117,6 @@ export class ImageSupportManager {
     this.memoryUsage = 0;
   }
 
-  /**
-   * 初始化图像支持
-   */
   async initialize(terminal) {
     try {
       const support = detectImageSupport();
@@ -173,9 +155,6 @@ export class ImageSupportManager {
     }
   }
 
-  /**
-   * 设置图像事件监听器
-   */
   setupImageEventListeners() {
     if (!this.imageAddon) return;
 
@@ -195,9 +174,6 @@ export class ImageSupportManager {
     });
   }
 
-  /**
-   * 处理图像加载事件
-   */
   handleImageLoad(event) {
     const { imageId, width, height, size } = event;
 
@@ -224,9 +200,6 @@ export class ImageSupportManager {
     logToFile(`图像加载失败: ${imageId} - ${error}`, "WARN");
   }
 
-  /**
-   * 处理存储变化事件
-   */
   handleStorageChange(event) {
     const { storageUsage, storageLimit } = event;
     this.memoryUsage = storageUsage;
@@ -238,9 +211,6 @@ export class ImageSupportManager {
     }
   }
 
-  /**
-   * 获取图像在缓冲区位置的数据
-   */
   getImageAtPosition(x, y) {
     if (!this.imageAddon || !this.isInitialized) {
       return null;
@@ -254,9 +224,6 @@ export class ImageSupportManager {
     }
   }
 
-  /**
-   * 提取图像瓦片
-   */
   extractImageTile(x, y) {
     if (!this.imageAddon || !this.isInitialized) {
       return null;
@@ -270,9 +237,6 @@ export class ImageSupportManager {
     }
   }
 
-  /**
-   * 清理图像缓存
-   */
   clearImageCache() {
     this.imageCache.clear();
     this.memoryUsage = 0;
@@ -284,9 +248,6 @@ export class ImageSupportManager {
     logToFile("图像缓存已清理", "INFO");
   }
 
-  /**
-   * 获取图像统计信息
-   */
   getImageStats() {
     const stats = {
       totalImages: this.imageCache.size,
@@ -305,9 +266,6 @@ export class ImageSupportManager {
     return stats;
   }
 
-  /**
-   * 更新配置
-   */
   updateConfig(newOptions) {
     this.options = { ...this.options, ...newOptions };
 
@@ -323,16 +281,10 @@ export class ImageSupportManager {
     logToFile("图像支持配置已更新", "INFO");
   }
 
-  /**
-   * 检查图像格式支持
-   */
   isFormatSupported(mimeType) {
     return Object.values(SUPPORTED_FORMATS).includes(mimeType);
   }
 
-  /**
-   * 获取支持信息
-   */
   getSupportInfo() {
     return {
       initialized: this.isInitialized,
@@ -350,9 +302,6 @@ export class ImageSupportManager {
     };
   }
 
-  /**
-   * 清理资源
-   */
   dispose() {
     this.clearImageCache();
 

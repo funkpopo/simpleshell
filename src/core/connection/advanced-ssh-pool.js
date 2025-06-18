@@ -5,7 +5,7 @@ const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 
 // 连接池配置
 const DEFAULT_CONFIG = {
-  maxConnections: 20, // 最大连接数
+  maxConnections: 30, // 最大连接数
   minConnections: 5, // 最小连接数
   idleTimeout: 15 * 60 * 1000, // 空闲超时（15分钟）
   connectionTimeout: 10 * 1000, // 连接超时（10秒）

@@ -1,13 +1,3 @@
-/**
- * 思考内容处理工具
- * 用于解析AI回复中的<think></think>标签，支持流式响应处理
- */
-
-/**
- * 解析完整的消息内容，提取思考内容和正常内容
- * @param {string} content - 完整的消息内容
- * @returns {Object} - { thinkContent: string, normalContent: string }
- */
 export function parseThinkContent(content) {
   if (!content || typeof content !== "string") {
     return { thinkContent: "", normalContent: content || "" };
@@ -54,10 +44,6 @@ export function parseThinkContent(content) {
   return result;
 }
 
-/**
- * 流式响应的思考内容处理器
- * 用于处理流式响应中可能被分割的<think>标签
- */
 export class StreamThinkProcessor {
   constructor() {
     this.buffer = "";
@@ -69,11 +55,6 @@ export class StreamThinkProcessor {
     this.rawStreamContent = "";
   }
 
-  /**
-   * 处理新的数据块
-   * @param {string} chunk - 新的数据块
-   * @returns {Object} - { hasUpdate: boolean, thinkContent: string, normalContent: string, isComplete: boolean }
-   */
   processChunk(chunk) {
     if (!chunk) {
       return {
@@ -171,10 +152,6 @@ export class StreamThinkProcessor {
     return result;
   }
 
-  /**
-   * 完成处理，返回最终结果
-   * @returns {Object} - { thinkContent: string, normalContent: string }
-   */
   finalize() {
     // 如果还在思考标签中，将剩余内容作为思考内容
     if (this.isInThinkTag && this.buffer) {
@@ -224,10 +201,6 @@ export class StreamThinkProcessor {
     };
   }
 
-  /**
-   * 重新构建完整内容，包括可能被分离的think标签
-   * @returns {string} - 重新构建的完整内容
-   */
   reconstructFullContent() {
     // 如果有思考内容，需要重新包装成完整的标签格式
     let fullContent = "";
@@ -251,11 +224,6 @@ export class StreamThinkProcessor {
     return fullContent;
   }
 
-  /**
-   * 执行二次处理，修复可能的标签截断问题
-   * @param {string} fullContent - 重新构建的完整内容
-   * @returns {Object} - { thinkContent: string, normalContent: string }
-   */
   performSecondaryProcessing(fullContent) {
     if (!fullContent || !fullContent.trim()) {
       return {
@@ -296,11 +264,6 @@ export class StreamThinkProcessor {
     };
   }
 
-  /**
-   * 检查是否需要二次处理
-   * @param {string} content - 要检查的内容
-   * @returns {boolean} - 是否需要二次处理
-   */
   needsSecondaryProcessing(content) {
     if (!content) return false;
 
@@ -312,20 +275,12 @@ export class StreamThinkProcessor {
     return hasIncompleteOpenTag || hasIncompleteCloseTag || hasUnmatchedTags;
   }
 
-  /**
-   * 检查是否有不匹配的think标签
-   * @param {string} content - 要检查的内容
-   * @returns {boolean} - 是否有不匹配的标签
-   */
   hasUnmatchedThinkTags(content) {
     const openTags = (content.match(/<think>/gi) || []).length;
     const closeTags = (content.match(/<\/think>/gi) || []).length;
     return openTags !== closeTags;
   }
 
-  /**
-   * 重置处理器状态
-   */
   reset() {
     this.buffer = "";
     this.isInThinkTag = false;
@@ -335,10 +290,6 @@ export class StreamThinkProcessor {
     this.rawStreamContent = "";
   }
 
-  /**
-   * 获取当前状态
-   * @returns {Object} - 当前处理状态
-   */
   getState() {
     return {
       isInThinkTag: this.isInThinkTag,
@@ -349,11 +300,6 @@ export class StreamThinkProcessor {
   }
 }
 
-/**
- * 检查内容是否包含思考标签
- * @param {string} content - 要检查的内容
- * @returns {boolean} - 是否包含思考标签
- */
 export function hasThinkTags(content) {
   if (!content || typeof content !== "string") {
     return false;
@@ -361,11 +307,6 @@ export function hasThinkTags(content) {
   return /<think>[\s\S]*?<\/think>/i.test(content);
 }
 
-/**
- * 清理不完整的思考标签
- * @param {string} content - 要清理的内容
- * @returns {string} - 清理后的内容
- */
 export function cleanIncompleteThinkTags(content) {
   if (!content || typeof content !== "string") {
     return content || "";
@@ -380,11 +321,6 @@ export function cleanIncompleteThinkTags(content) {
   return content;
 }
 
-/**
- * 验证think标签的完整性
- * @param {string} content - 要验证的内容
- * @returns {Object} - 验证结果 { isValid: boolean, issues: string[] }
- */
 export function validateThinkTags(content) {
   if (!content || typeof content !== "string") {
     return { isValid: true, issues: [] };
@@ -419,11 +355,6 @@ export function validateThinkTags(content) {
   };
 }
 
-/**
- * 修复think内容的完整性问题
- * @param {string} content - 要修复的内容
- * @returns {Object} - 修复结果 { thinkContent: string, normalContent: string, repaired: boolean }
- */
 export function repairThinkContent(content) {
   if (!content || typeof content !== "string") {
     return {

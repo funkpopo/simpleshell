@@ -1,8 +1,3 @@
-/**
- * 多级缓存系统
- * 提供L1内存缓存、L2持久化缓存和智能预取功能
- */
-
 const { EventEmitter } = require("events");
 const { logToFile } = require("../utils/logger");
 

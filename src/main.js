@@ -2,8 +2,6 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
-const Client = require("ssh2").Client;
-const os = require("os");
 const { Worker } = require("worker_threads");
 const {
   logToFile,
