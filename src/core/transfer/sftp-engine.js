@@ -667,7 +667,7 @@ class SftpTransfer extends EventEmitter {
   }
 }
 
-class AdvancedSftpEngine extends EventEmitter {
+class SftpEngine extends EventEmitter {
   constructor(config = {}) {
     super();
     this.config = { ...SFTP_ENGINE_CONFIG, ...config };
@@ -974,12 +974,12 @@ class AdvancedSftpEngine extends EventEmitter {
 }
 
 // 导出
-const advancedSftpEngine = new AdvancedSftpEngine();
+const SftpEngine = new SftpEngine();
 
 module.exports = {
-  AdvancedSftpEngine,
+  SftpEngine,
   SftpTransfer,
   TRANSFER_TYPE,
   TRANSFER_STATUS,
-  advancedSftpEngine,
+  SftpEngine,
 };

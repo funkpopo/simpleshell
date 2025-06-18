@@ -1,6 +1,6 @@
 // 连接管理模块
 const connectionManager = require("./connection/connection-manager");
-const AdvancedSSHPool = require("./connection/advanced-ssh-pool");
+const SSHPool = require("./connection/ssh-pool");
 const ConnectionMonitor = require("./connection/connection-monitor");
 
 // 内存管理模块
@@ -11,7 +11,7 @@ const zeroCopyEngine = require("./transfer/zero-copy-engine");
 const {
   backpressureController,
 } = require("./transfer/backpressure-controller");
-const { advancedSftpEngine } = require("./transfer/advanced-sftp-engine");
+const { SftpEngine } = require("./transfer/sftp-engine");
 const {
   optimizationMiddleware,
 } = require("./transfer/optimization-middleware");
@@ -29,7 +29,7 @@ class SimpleShellCore {
     this.memoryPool = memoryPoolManager;
     this.zeroCopy = zeroCopyEngine;
     this.backpressure = backpressureController;
-    this.sftpEngine = advancedSftpEngine;
+    this.sftpEngine = SftpEngine;
     this.optimization = optimizationMiddleware;
 
     this.stats = {
@@ -219,7 +219,7 @@ const simpleShellCore = new SimpleShellCore();
 
 // 创建单例实例
 function createSSHPool(config = {}) {
-  return new AdvancedSSHPool(config);
+  return new SSHPool(config);
 }
 
 function createConnectionMonitor(config = {}) {
@@ -237,7 +237,7 @@ module.exports = {
   memoryPoolManager,
   zeroCopyEngine,
   backpressureController,
-  advancedSftpEngine,
+  SftpEngine,
   optimizationMiddleware,
 
   // 工厂函数

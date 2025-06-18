@@ -38,7 +38,7 @@ const QUALITY_SCORE = {
   BAD: 20,
 };
 
-class AdvancedSSHPool extends EventEmitter {
+class SSHPool extends EventEmitter {
   constructor(config = {}) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -738,4 +738,4 @@ class AdvancedSSHPool extends EventEmitter {
   }
 }
 
-module.exports = AdvancedSSHPool;
+module.exports = SSHPool;
