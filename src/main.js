@@ -54,6 +54,9 @@ const streamSessions = new Map(); // 存储会话ID -> 请求ID的映射
 // 跟踪当前活跃的会话ID
 let currentSessionId = null;
 
+// 导入IP地址查询模块
+const ipQuery = require("./modules/system-info/ip-query");
+
 // 获取worker文件路径
 function getWorkerPath() {
   // 先尝试相对于__dirname的路径
@@ -2975,6 +2978,19 @@ function setupIPC(mainWindow) {
         "ERROR",
       );
       return { success: false, error: error.message };
+    }
+  });
+
+  // 添加IP地址查询API处理函数
+  ipcMain.handle("ip:query", async (event, ip = "") => {
+    try {
+      return await ipQuery.queryIpAddress(ip, logToFile);
+    } catch (error) {
+      logToFile(`IP地址查询失败: ${error.message}`, "ERROR");
+      return {
+        ret: "failed",
+        msg: error.message
+      };
     }
   });
 } // Closing brace for setupIPC function

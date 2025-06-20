@@ -33,12 +33,14 @@ import Paper from "@mui/material/Paper";
 import HistoryIcon from "@mui/icons-material/History";
 import InfoIcon from "@mui/icons-material/Info";
 import ExitToAppIcon from "@mui/icons-material/ExitToApp";
+import PublicIcon from "@mui/icons-material/Public";
 import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
 import ConnectionManager from "./components/ConnectionManager.jsx";
 import {
   ResourceMonitorWithSuspense as ResourceMonitor,
   FileManagerWithSuspense as FileManager,
+  IPAddressQueryWithSuspense as IPAddressQuery,
   preloadComponents,
 } from "./components/LazyComponents.jsx";
 
@@ -322,6 +324,9 @@ function App() {
   // 文件管理侧边栏状态
   const [fileManagerOpen, setFileManagerOpen] = React.useState(false);
 
+  // IP地址查询侧边栏状态
+  const [ipAddressQueryOpen, setIpAddressQueryOpen] = React.useState(false);
+
   // 文件管理路径记忆状态 - 为每个SSH连接记住最后访问的路径
   const [fileManagerPaths, setFileManagerPaths] = React.useState({});
 
@@ -359,6 +364,8 @@ function App() {
         return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
       } else if (commandHistoryOpen && lastOpenedSidebar === "history") {
         return SIDEBAR_WIDTHS.COMMAND_HISTORY;
+      } else if (ipAddressQueryOpen && lastOpenedSidebar === "ipquery") {
+        return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
       }
       // Fallback if lastOpenedSidebar isn't set but one is open
       if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
@@ -366,6 +373,7 @@ function App() {
       else if (fileManagerOpen) return SIDEBAR_WIDTHS.FILE_MANAGER;
       else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
       else if (commandHistoryOpen) return SIDEBAR_WIDTHS.COMMAND_HISTORY;
+      else if (ipAddressQueryOpen) return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
       return 0;
     };
 
@@ -401,6 +409,7 @@ function App() {
     fileManagerOpen,
     shortcutCommandsOpen,
     commandHistoryOpen,
+    ipAddressQueryOpen,
     lastOpenedSidebar,
     SIDEBAR_WIDTHS,
   ]);
@@ -429,6 +438,7 @@ function App() {
         preloadComponents.resourceMonitor().catch(() => {});
         preloadComponents.fileManager().catch(() => {});
         preloadComponents.aiAssistant().catch(() => {});
+        preloadComponents.ipAddressQuery().catch(() => {});
       }, 2000);
     }, 3000);
 
@@ -955,6 +965,29 @@ function App() {
     setGlobalAiChatWindowState("visible");
   };
 
+  // 切换IP地址查询侧边栏
+  const toggleIpAddressQuery = () => {
+    setIpAddressQueryOpen(!ipAddressQueryOpen);
+    if (!ipAddressQueryOpen) {
+      setLastOpenedSidebar("ipquery");
+    }
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
+  };
+
+  // 关闭IP地址查询侧边栏
+  const handleCloseIpAddressQuery = () => {
+    setIpAddressQueryOpen(false);
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
+  };
+
   // 更新关闭所有侧边栏的函数
   const closeAllSidebars = () => {
     setConnectionManagerOpen(false);
@@ -962,6 +995,7 @@ function App() {
     setFileManagerOpen(false);
     setShortcutCommandsOpen(false);
     setCommandHistoryOpen(false);
+    setIpAddressQueryOpen(false);
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
@@ -1461,6 +1495,23 @@ function App() {
               />
             </Box>
 
+            {/* IP地址查询侧边栏 */}
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                right: 48,
+                zIndex: lastOpenedSidebar === "ipquery" ? 106 : 93,
+                height: "100%",
+                display: "flex",
+              }}
+            >
+              <IPAddressQuery
+                open={ipAddressQueryOpen}
+                onClose={handleCloseIpAddressQuery}
+              />
+            </Box>
+
             {/* 右侧边栏 */}
             <Paper
               elevation={3}
@@ -1593,6 +1644,34 @@ function App() {
                   <HistoryIcon />
                 </IconButton>
               </Tooltip>
+
+              {/* IP地址查询按钮 */}
+              <Tooltip title={t("sidebar.ipQuery")} placement="left">
+                <IconButton
+                  color="primary"
+                  onClick={toggleIpAddressQuery}
+                  sx={{
+                    bgcolor: ipAddressQueryOpen ? "action.selected" : "transparent",
+                    "&:hover": {
+                      bgcolor: ipAddressQueryOpen
+                        ? "action.selected"
+                        : "action.hover",
+                    },
+                  }}
+                >
+                  <PublicIcon />
+                </IconButton>
+              </Tooltip>
+
+              {/* 分隔符 */}
+              <Box
+                sx={{
+                  height: "1px",
+                  width: "30px",
+                  bgcolor: "divider",
+                  my: 1,
+                }}
+              />
 
               {/* AI助手按钮 */}
               <Tooltip title={t("sidebar.ai")} placement="left">

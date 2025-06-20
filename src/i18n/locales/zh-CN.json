@@ -81,7 +81,28 @@
       "connections": "连接管理",
       "files": "文件管理",
       "history": "历史命令",
-      "shortcutCommands": "快捷命令"
+      "shortcutCommands": "快捷命令",
+      "ipQuery": "IP地址查询"
+    },
+    "ipAddressQuery": {
+      "title": "IP地址查询",
+      "inputPlaceholder": "请输入IP地址...",
+      "queryButton": "查询",
+      "queryYourIP": "查询本机IP",
+      "loading": "查询中...",
+      "ipInfo": "IP信息",
+      "location": "位置",
+      "noData": "暂无数据",
+      "errorOccurred": "发生错误",
+      "retry": "重试",
+      "networkError": "网络连接错误，请检查网络设置",
+      "invalidIp": "无效的IP地址",
+      "ipAddress": "IP地址",
+      "country": "国家/地区",
+      "province": "省份",
+      "city": "城市",
+      "isp": "ISP",
+      "organization": "组织"
     },
     "welcome": {
       "title": "欢迎使用 SimpleShell",
