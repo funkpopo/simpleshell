@@ -64,7 +64,28 @@
       "connections": "Connections",
       "files": "File Manager",
       "history": "Command History",
-      "shortcutCommands": "Shortcut Commands"
+      "shortcutCommands": "Shortcut Commands",
+      "ipQuery": "IP Address Query"
+    },
+    "ipAddressQuery": {
+      "title": "IP Address Query",
+      "inputPlaceholder": "Enter IP address...",
+      "queryButton": "Query",
+      "queryYourIP": "Query Your IP",
+      "loading": "Querying...",
+      "ipInfo": "IP Information",
+      "location": "Location",
+      "noData": "No data available",
+      "errorOccurred": "Error occurred",
+      "retry": "Retry",
+      "networkError": "Network connection error, please check network settings",
+      "invalidIp": "Invalid IP address",
+      "ipAddress": "IP Address",
+      "country": "Country",
+      "province": "Province/State",
+      "city": "City",
+      "isp": "ISP",
+      "organization": "Organization"
     },
     "welcome": {
       "title": "Welcome to SimpleShell",

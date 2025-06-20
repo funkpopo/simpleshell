@@ -373,4 +373,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   cleanupFileCache: (cacheFilePath) =>
     ipcRenderer.invoke("cleanupFileCache", cacheFilePath),
   cleanupTabCache: (tabId) => ipcRenderer.invoke("cleanupTabCache", tabId),
+
+  // IP地址查询API
+  queryIpAddress: (ip = "") => ipcRenderer.invoke("ip:query", ip),
 });
