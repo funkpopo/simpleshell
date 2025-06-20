@@ -496,22 +496,99 @@ const WebTerminal = ({
 
   // 确认提示检测模式
   const confirmationPromptPatterns = [
+    // 标准确认提示格式
     /\(yes\/no\)/i,
     /\(y\/n\)/i,
     /\[Y\/n\]/,
     /\[y\/N\]/,
+    /\[yes\/no\]/i,
+    /\[YES\/NO\]/i,
+    // 带问号的确认提示
     /continue\s*\?/i,
     /proceed\s*\?/i,
+    /confirm\s*\?/i,
+    /are\s+you\s+sure\s*\?/i,
+    // 带冒号的确认提示
+    /\(y\/n\)\s*:/i,
+    /\[y\/n\]\s*:/i,
+    /confirm\s*:/i,
+    // 中文确认提示
     /是\/否/,
     /确认/,
-    /\(确定\/取消\)/
+    /\(确定\/取消\)/,
+    /\[是\/否\]/,
+    /\[Y\/N\]/,
+    // 确认提示在句子中间
+    /\s+\(y\/n\)\s+/i,
+    /\s+\[y\/n\]\s+/i,
+    // 确认提示在句子开头
+    /^\s*\(y\/n\)\s+/i,
+    /^\s*\[y\/n\]\s+/i,
+    // 确认提示在句子末尾
+    /\s+\(y\/n\)\s*$/i,
+    /\s+\[y\/n\]\s*$/i,
+    // 带有yes/no的提示
+    /yes\s+or\s+no/i,
+    /y\s+or\s+n/i,
+    // 其他常见格式
+    /type\s+['"]*y['"]*\s+to\s+/i,
+    /press\s+['"]*y['"]*\s+to\s+/i,
+    /enter\s+['"]*y['"]*\s+to\s+/i
   ];
 
   // 密码输入保护：跟踪是否正在等待密码输入
   const isPasswordPromptActiveRef = useRef(false);
 
-  // 检测密码提示的函数
-  const checkForPasswordPrompt = useCallback((data) => {
+  // 跟踪最近的终端输出行，用于上下文分析
+  const recentOutputLinesRef = useRef([]);
+  // 最大保存的输出行数
+  const MAX_RECENT_LINES = 10;
+
+  // 分析确认对话上下文的函数
+  const analyzeConfirmationContext = useCallback((cleanData) => {
+    // 将当前输出添加到最近输出行
+    if (cleanData && cleanData.trim()) {
+      const lines = cleanData.split(/\r?\n/).filter(line => line.trim());
+      if (lines.length > 0) {
+        // 添加新行并保持最大行数限制
+        recentOutputLinesRef.current = [
+          ...lines,
+          ...recentOutputLinesRef.current
+        ].slice(0, MAX_RECENT_LINES);
+      }
+    }
+
+    // 检查最近几行是否构成确认对话上下文
+    // 1. 检查是否有确认提示
+    const hasExplicitPrompt = recentOutputLinesRef.current.some(line => 
+      confirmationPromptPatterns.some(pattern => pattern.test(line))
+    );
+    
+    if (hasExplicitPrompt) {
+      return true;
+    }
+
+    // 2. 检查是否有隐含的确认对话特征
+    // 例如：短问题后跟空行，等待用户输入y/n
+    if (recentOutputLinesRef.current.length >= 2) {
+      const lastLine = recentOutputLinesRef.current[0].trim();
+      const prevLine = recentOutputLinesRef.current[1].trim();
+      
+      // 检查最后一行是否为空或只有提示符，前一行是否是问句
+      const isLastLineEmpty = lastLine === '' || /[>$#]\s*$/.test(lastLine);
+      const isPrevLineQuestion = /\?\s*$/.test(prevLine) || 
+                                /continue|proceed|confirm|overwrite|replace|delete/i.test(prevLine);
+      
+      if (isLastLineEmpty && isPrevLineQuestion) {
+        return true;
+      }
+    }
+
+    return false;
+  }, [confirmationPromptPatterns]);
+
+  // 检测提示的函数（包括密码提示和确认提示）
+  const checkForPrompts = useCallback((data) => {
     // 确保数据存在
     if (!data) return;
     
@@ -526,21 +603,24 @@ const WebTerminal = ({
       pattern.test(cleanData)
     );
     
-    // 检查是否包含确认提示
-    const hasConfirmationPrompt = confirmationPromptPatterns.some(pattern => 
+    // 检查是否包含确认提示（直接匹配或通过上下文分析）
+    const hasDirectConfirmationPrompt = confirmationPromptPatterns.some(pattern => 
       pattern.test(cleanData)
     );
+    
+    // 通过上下文分析检测确认对话
+    const hasConfirmationContext = analyzeConfirmationContext(cleanData);
     
     if (hasPasswordPrompt) {
       isPasswordPromptActiveRef.current = true;
       // 同时更新React状态
       setIsConfirmationPromptActive(true);
-    } else if (hasConfirmationPrompt) {
+    } else if (hasDirectConfirmationPrompt || hasConfirmationContext) {
       // 对于确认提示，也设置标志避免记录到历史
       isPasswordPromptActiveRef.current = true;
       setIsConfirmationPromptActive(true);
     }
-  }, [passwordPromptPatterns, confirmationPromptPatterns]);
+  }, [passwordPromptPatterns, confirmationPromptPatterns, analyzeConfirmationContext]);
 
   // 获取命令建议的防抖函数
   const getSuggestions = useCallback(
@@ -731,6 +811,9 @@ const WebTerminal = ({
     let tabCompletionUsed = false;
     // 用于临时存储当前行位置和内容，以便在Tab补全后能恢复正确位置
     let currentLineBeforeTab = null;
+
+    // 清空最近输出行缓存，确保每个新会话都从空白开始
+    recentOutputLinesRef.current = [];
 
     // 识别编辑器命令的正则表达式
     const editorCommandRegex =
@@ -932,9 +1015,18 @@ const WebTerminal = ({
             setIsConfirmationPromptActive(false);
           }
 
+          // 检查是否是确认响应输入（y/n/yes/no等）
+          const isConfirmationResponse = 
+            /^(y|n|yes|no|是|否|确认|取消)$/i.test(command) || 
+            /^[yYnN]$/i.test(command);
+
           // 确保命令不为空且不与上一次执行的命令相同，并且不在编辑器模式中
           // 注意：inEditorMode可能已经被buffer类型检测器更新
-          if (command && command !== lastExecutedCommand && !inEditorMode && !shouldSkipHistory) {
+          if (command && 
+              command !== lastExecutedCommand && 
+              !inEditorMode && 
+              !shouldSkipHistory && 
+              !isConfirmationResponse) {
             lastExecutedCommand = command;
 
             // 记录执行的命令和时间，用于防止后续显示该命令的建议
@@ -1359,7 +1451,7 @@ const WebTerminal = ({
       
       // 监听数据输出以检测密码提示（补充命令检测中的输出监听）
       term.onWriteParsed((data) => {
-        checkForPasswordPrompt(data);
+        checkForPrompts(data);
       });
 
                   // 使用EventManager管理连接成功后多次尝试同步终端大小
@@ -2537,7 +2629,7 @@ const WebTerminal = ({
         const dataStr = data.toString();
 
         // 检测密码和确认提示
-        checkForPasswordPrompt(dataStr);
+        checkForPrompts(dataStr);
 
         // 检测全屏应用启动并触发重新调整大小
         // 通常像top, htop, vim, nano等全屏应用会发送特定的ANSI转义序列
@@ -2756,6 +2848,14 @@ const WebTerminal = ({
       // ... 其余代码保持不变
     }
   };
+
+  // 清理最近输出行缓存
+  useEffect(() => {
+    return () => {
+      // 组件卸载时清理最近输出行缓存
+      recentOutputLinesRef.current = [];
+    };
+  }, []);
 
   return (
     <Box
