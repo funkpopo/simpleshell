@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, useMemo } from "react";
+import React, { useState, useEffect, memo, useCallback, useMemo, useRef } from "react";
 import {
   Box,
   Typography,
@@ -65,6 +65,9 @@ const ConnectionManager = memo(
       severity: "info",
     });
 
+    // 使用 useRef 存储稳定的渲染函数引用
+    const renderConnectionItemRef = useRef();
+
     // 初始加载数据
     useEffect(() => {
       if (open && isLoading) {
@@ -98,20 +101,23 @@ const ConnectionManager = memo(
       }
     }, [open, isLoading, onConnectionsUpdate]);
 
-    // 当接收到新的initialConnections时更新
+    // 当接收到新的initialConnections时更新 - 优化比较逻辑避免循环
     useEffect(() => {
       if (
         initialConnections.length > 0 &&
+        initialConnections !== connections &&
         JSON.stringify(connections) !== JSON.stringify(initialConnections)
       ) {
         setConnections(initialConnections);
         setIsLoading(false);
       }
-    }, [initialConnections, connections]);
+    }, [initialConnections]); // 移除connections依赖避免循环
 
-    // 当连接数据变化时保存到文件
+    // 当连接数据变化时保存到文件 - 添加条件防止不必要的调用
+    const connectionsRef = useRef(connections);
     useEffect(() => {
-      if (!isLoading && onConnectionsUpdate) {
+      if (!isLoading && onConnectionsUpdate && connectionsRef.current !== connections) {
+        connectionsRef.current = connections;
         onConnectionsUpdate(connections);
       }
     }, [connections, isLoading, onConnectionsUpdate]);
@@ -137,13 +143,20 @@ const ConnectionManager = memo(
       parentGroup: "",
     });
 
-    // 处理组的展开/折叠
+    // 处理组的展开/折叠 - 添加防抖和状态检查
     const handleToggleGroup = useCallback((groupId) => {
-      setConnections((prevConnections) =>
-        prevConnections.map((item) =>
-          item.id === groupId ? { ...item, expanded: !item.expanded } : item,
-        ),
-      );
+      setConnections((prevConnections) => {
+        // 检查当前状态，避免重复更新
+        const targetGroup = prevConnections.find(item => item.id === groupId && item.type === "group");
+        if (!targetGroup) return prevConnections;
+        
+        return prevConnections.map((item) => {
+          if (item.id === groupId && item.type === "group") {
+            return { ...item, expanded: !item.expanded };
+          }
+          return item;
+        });
+      });
     }, []);
 
     // 打开添加连接对话框
@@ -386,7 +399,7 @@ const ConnectionManager = memo(
       [connections],
     );
 
-    // 使用 useMemo 优化渲染连接项
+    // 渲染连接项 - 使用 useCallback 但移除不必要的依赖
     const renderConnectionItem = useCallback(
       (connection, parentGroup = null, index) => {
         return (
@@ -484,7 +497,10 @@ const ConnectionManager = memo(
       [theme, handleEdit, handleDelete, handleOpenConnection],
     );
 
-    // 使用 useMemo 优化渲染组
+    // 存储最新的 renderConnectionItem 引用
+    renderConnectionItemRef.current = renderConnectionItem;
+
+    // 渲染组 - 移除 renderConnectionItem 依赖，使用 ref 引用
     const renderGroup = useCallback(
       (group, index) => (
         <Draggable key={group.id} draggableId={group.id} index={index}>
@@ -604,7 +620,7 @@ const ConnectionManager = memo(
                       {...provided.droppableProps}
                     >
                       {group.items.map((item, itemIndex) =>
-                        renderConnectionItem(item, group, itemIndex),
+                        renderConnectionItemRef.current(item, group, itemIndex),
                       )}
                       {provided.placeholder}
                       {group.items.length === 0 && (
@@ -635,18 +651,19 @@ const ConnectionManager = memo(
         handleEdit,
         handleDelete,
         handleToggleGroup,
-        renderConnectionItem,
       ],
     );
 
-    // 使用 useMemo 优化连接列表渲染
+    // 使用 useMemo 优化连接列表渲染 - 移除 renderConnectionItem 依赖
     const connectionsList = useMemo(() => {
       return connections.map((item, index) =>
         item.type === "group"
           ? renderGroup(item, index)
-          : renderConnectionItem(item, null, index),
+          : renderConnectionItemRef.current 
+            ? renderConnectionItemRef.current(item, null, index)
+            : renderConnectionItem(item, null, index),
       );
-    }, [connections, renderGroup, renderConnectionItem]);
+    }, [connections, renderGroup]);
 
     // 使用 useMemo 优化分组选择器选项
     const groupOptions = useMemo(() => {
