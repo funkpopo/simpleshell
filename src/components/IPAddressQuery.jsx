@@ -33,7 +33,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
       // 通过preload API进行查询
       if (window.terminalAPI?.queryIpAddress) {
         const result = await window.terminalAPI.queryIpAddress(ip);
-        
+
         if (result.ret === "ok") {
           setIpInfo(result);
         } else {
@@ -99,7 +99,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             variant="outlined"
             color="primary"
             startIcon={<RefreshIcon />}
-            onClick={() => ipAddress ? handleQuery() : handleQueryMyIP()}
+            onClick={() => (ipAddress ? handleQuery() : handleQueryMyIP())}
             sx={{ mt: 1 }}
           >
             {t("ipAddressQuery.retry")}
@@ -111,7 +111,9 @@ const IPAddressQuery = memo(({ open, onClose }) => {
     if (!ipInfo) {
       return (
         <Box sx={{ py: 4, textAlign: "center" }}>
-          <PublicIcon sx={{ fontSize: 60, color: "text.secondary", opacity: 0.7 }} />
+          <PublicIcon
+            sx={{ fontSize: 60, color: "text.secondary", opacity: 0.7 }}
+          />
           <Typography color="text.secondary" sx={{ mt: 2 }}>
             {t("ipAddressQuery.noData")}
           </Typography>
@@ -124,29 +126,30 @@ const IPAddressQuery = memo(({ open, onClose }) => {
         <Typography variant="subtitle1" gutterBottom fontWeight="bold">
           {t("ipAddressQuery.ipInfo")}
         </Typography>
-        
+
         <Paper
           elevation={2}
           sx={{
             p: 2,
             borderRadius: 1,
             borderLeft: `4px solid ${theme.palette.primary.main}`,
-            mb: 2
+            mb: 2,
           }}
         >
           <Grid container spacing={1}>
             <Grid item xs={12}>
               <Typography variant="body2">
-                <strong>{t("ipAddressQuery.ipAddress")}:</strong> {ipInfo.data?.ip}
+                <strong>{t("ipAddressQuery.ipAddress")}:</strong>{" "}
+                {ipInfo.data?.ip}
               </Typography>
             </Grid>
           </Grid>
         </Paper>
-        
+
         <Typography variant="subtitle1" gutterBottom fontWeight="bold">
           {t("ipAddressQuery.location")}
         </Typography>
-        
+
         <Paper
           elevation={2}
           sx={{
@@ -159,31 +162,35 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             {ipInfo.data?.location && ipInfo.data.location.length >= 1 && (
               <Grid item xs={12}>
                 <Typography variant="body2">
-                  <strong>{t("ipAddressQuery.country")}:</strong> {ipInfo.data.location[0]}
+                  <strong>{t("ipAddressQuery.country")}:</strong>{" "}
+                  {ipInfo.data.location[0]}
                 </Typography>
               </Grid>
             )}
-            
+
             {ipInfo.data?.location && ipInfo.data.location.length >= 2 && (
               <Grid item xs={12}>
                 <Typography variant="body2">
-                  <strong>{t("ipAddressQuery.province")}:</strong> {ipInfo.data.location[1]}
+                  <strong>{t("ipAddressQuery.province")}:</strong>{" "}
+                  {ipInfo.data.location[1]}
                 </Typography>
               </Grid>
             )}
-            
+
             {ipInfo.data?.location && ipInfo.data.location.length >= 3 && (
               <Grid item xs={12}>
                 <Typography variant="body2">
-                  <strong>{t("ipAddressQuery.city")}:</strong> {ipInfo.data.location[2]}
+                  <strong>{t("ipAddressQuery.city")}:</strong>{" "}
+                  {ipInfo.data.location[2]}
                 </Typography>
               </Grid>
             )}
-            
+
             {ipInfo.data?.location && ipInfo.data.location.length >= 4 && (
               <Grid item xs={12}>
                 <Typography variant="body2">
-                  <strong>{t("ipAddressQuery.isp")}:</strong> {ipInfo.data.location[4] || ipInfo.data.location[3]}
+                  <strong>{t("ipAddressQuery.isp")}:</strong>{" "}
+                  {ipInfo.data.location[4] || ipInfo.data.location[3]}
                 </Typography>
               </Grid>
             )}
@@ -289,4 +296,4 @@ const IPAddressQuery = memo(({ open, onClose }) => {
 
 IPAddressQuery.displayName = "IPAddressQuery";
 
-export default IPAddressQuery; 
+export default IPAddressQuery;

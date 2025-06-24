@@ -51,10 +51,12 @@ async function createRemoteDirectoryRecursive(sftp, remotePath) {
       await new Promise((resolve, reject) => {
         sftp.stat(currentPath, (err, stats) => {
           if (err) {
-            if (err.code === 2) { // No such file
+            if (err.code === 2) {
+              // No such file
               // 目录不存在，创建它
               sftp.mkdir(currentPath, (mkdirErr) => {
-                if (mkdirErr && mkdirErr.code !== 4) { // 4 表示目录已存在
+                if (mkdirErr && mkdirErr.code !== 4) {
+                  // 4 表示目录已存在
                   reject(mkdirErr);
                 } else {
                   resolve();
@@ -147,7 +149,8 @@ async function handleDownloadFile(event, tabId, remotePath) {
       const { canceled, filePath } = await dialog.showSaveDialog({
         title: "保存文件",
         defaultPath: path.join(
-          sshConfig.downloadPath || (dialog.app ? dialog.app.getPath("downloads") : ""),
+          sshConfig.downloadPath ||
+            (dialog.app ? dialog.app.getPath("downloads") : ""),
           fileName,
         ),
         buttonLabel: "下载",
@@ -181,7 +184,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
             }
           });
         });
-        
+
         const totalBytes = stats.size;
         let transferredBytes = 0;
         let lastProgressUpdate = 0;
@@ -233,18 +236,23 @@ async function handleDownloadFile(event, tabId, remotePath) {
             const progress = Math.floor((transferredBytes / totalBytes) * 100);
             const now = Date.now();
 
-            if (now - lastProgressUpdate >= 100) { // Report every 100ms
+            if (now - lastProgressUpdate >= 100) {
+              // Report every 100ms
               // 计算传输速度（字节/秒）
-              const timeElapsedSinceLastUpdate = (now - lastTransferTime) / 1000; // 转换为秒
+              const timeElapsedSinceLastUpdate =
+                (now - lastTransferTime) / 1000; // 转换为秒
               if (timeElapsedSinceLastUpdate > 0) {
-                const bytesTransferredSinceLastUpdate = transferredBytes - lastBytesTransferred;
-                const instantSpeed = bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
+                const bytesTransferredSinceLastUpdate =
+                  transferredBytes - lastBytesTransferred;
+                const instantSpeed =
+                  bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
 
                 // 使用平滑因子计算平滑速度，避免数值剧烈波动
                 if (currentTransferSpeed === 0) {
                   currentTransferSpeed = instantSpeed; // 初始值
                 } else {
-                  currentTransferSpeed = speedSmoothingFactor * instantSpeed + 
+                  currentTransferSpeed =
+                    speedSmoothingFactor * instantSpeed +
                     (1 - speedSmoothingFactor) * currentTransferSpeed;
                 }
 
@@ -451,7 +459,7 @@ async function handleUploadFile(
               }
             });
           });
-          
+
           if (!folderStat.isDirectory()) {
             activeTransfers.delete(transferKey);
             return {
@@ -546,15 +554,21 @@ async function handleUploadFile(
               highWaterMark: chunkSize,
             });
             const writeStream = sftp.createWriteStream(remoteFilePath);
-            
+
             await new Promise((resolve, reject) => {
               readStream.on("error", (error) => {
-                logToFile(`sftpTransfer: 读取流错误: ${error.message}`, "ERROR");
+                logToFile(
+                  `sftpTransfer: 读取流错误: ${error.message}`,
+                  "ERROR",
+                );
                 reject(error);
               });
 
               writeStream.on("error", (error) => {
-                logToFile(`sftpTransfer: 写入流错误: ${error.message}`, "ERROR");
+                logToFile(
+                  `sftpTransfer: 写入流错误: ${error.message}`,
+                  "ERROR",
+                );
                 readStream.destroy();
                 reject(error);
               });
@@ -1127,7 +1141,7 @@ async function handleUploadFolder(
             highWaterMark: chunkSize,
           });
           const writeStream = sftp.createWriteStream(remoteFilePath);
-          
+
           await new Promise((resolve, reject) => {
             readStream.on("error", (error) => {
               logToFile(`sftpTransfer: 读取流错误: ${error.message}`, "ERROR");
@@ -1381,7 +1395,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
             }
           });
         });
-        
+
         for (const entry of entries) {
           if (entry.name === "." || entry.name === "..") continue;
 
@@ -1552,7 +1566,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           const readStream = sftp.createReadStream(file.remotePath, {
             highWaterMark: 32768,
           });
-          
+
           await new Promise((resolve, reject) => {
             writeStream.on("error", (error) => {
               logToFile(`sftpTransfer: 写入流错误: ${error.message}`, "ERROR");
@@ -1948,7 +1962,6 @@ async function cleanupActiveTransfersForTab(tabId) {
       const transfer = activeTransfers.get(transferKey);
 
       if (transfer && transfer.sftp) {
-
         logToFile(
           `sftpTransfer: SFTP connection for ${transferKey} is managed by sftpCore, no need to close it manually`,
           "INFO",

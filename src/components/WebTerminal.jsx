@@ -6,10 +6,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
 import "@xterm/xterm/css/xterm.css";
-import {
-  debounce,
-  createResizeObserver,
-} from "../core/utils/performance.js";
+import { debounce, createResizeObserver } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
@@ -183,26 +180,36 @@ const getCharacterMetrics = (term) => {
 
   try {
     // 获取终端的实际字符尺寸
-    const charMeasureElement = term.element.querySelector(".xterm-char-measure-element");
+    const charMeasureElement = term.element.querySelector(
+      ".xterm-char-measure-element",
+    );
     let charWidth = 9; // Default
     let charHeight = 17; // Default
 
-    if (term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0) {
-      charWidth = term._core._renderService._renderer.dimensions.actualCellWidth;
-    } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) { // Older path
+    if (
+      term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0
+    ) {
+      charWidth =
+        term._core._renderService._renderer.dimensions.actualCellWidth;
+    } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) {
+      // Older path
       charWidth = term._core._renderService.dimensions.actualCellWidth;
     } else if (charMeasureElement) {
       charWidth = charMeasureElement.getBoundingClientRect().width;
     }
 
-    if (term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0) {
-      charHeight = term._core._renderService._renderer.dimensions.actualCellHeight;
-    } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) { // Older path
+    if (
+      term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0
+    ) {
+      charHeight =
+        term._core._renderService._renderer.dimensions.actualCellHeight;
+    } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) {
+      // Older path
       charHeight = term._core._renderService.dimensions.actualCellHeight;
     } else if (charMeasureElement) {
       charHeight = charMeasureElement.getBoundingClientRect().height;
     }
-    
+
     // Ensure dimensions are at least 1 to avoid division by zero or negative values
     charWidth = Math.max(1, Math.round(charWidth));
     charHeight = Math.max(1, Math.round(charHeight));
@@ -448,7 +455,8 @@ const WebTerminal = ({
   const lastExecutedCommandRef = useRef("");
 
   // 新增：确认提示状态
-  const [isConfirmationPromptActive, setIsConfirmationPromptActive] = useState(false);
+  const [isConfirmationPromptActive, setIsConfirmationPromptActive] =
+    useState(false);
 
   // 密码提示检测模式（支持多语言和格式）
   const passwordPromptPatterns = [
@@ -458,40 +466,40 @@ const WebTerminal = ({
     /enter\s+password/i,
     /\(password\)/i,
     /passphrase\s*[:：]/i,
-    
+
     // SSH相关
     /'s\s+password\s*[:：]/,
     /ssh\s+password/i,
-    
+
     // sudo相关
     /\[sudo\]\s+password\s+for/i,
     /sudo\s+password/i,
-    
+
     // 中文密码提示
     /密码\s*[:：]/,
     /请输入密码/,
     /输入密码/,
-    
+
     // PIN和Token
     /\bPIN\s*[:：]/i,
     /\btoken\s*[:：]/i,
     /authentication\s*[:：]/i,
     /authenticate/i,
-    
+
     // 其他认证提示
     /enter\s+passphrase/i,
     /enter\s+pin/i,
     /security\s+code/i,
     /verification\s+code/i,
     /验证码/,
-    
+
     // 数据库相关
     /database\s+password/i,
     /db\s+password/i,
-    
+
     // 常见的密码输入提示结尾
     /password\s*$/i,
-    /密码\s*$/
+    /密码\s*$/,
   ];
 
   // 确认提示检测模式
@@ -533,7 +541,7 @@ const WebTerminal = ({
     // 其他常见格式
     /type\s+['"]*y['"]*\s+to\s+/i,
     /press\s+['"]*y['"]*\s+to\s+/i,
-    /enter\s+['"]*y['"]*\s+to\s+/i
+    /enter\s+['"]*y['"]*\s+to\s+/i,
   ];
 
   // 密码输入保护：跟踪是否正在等待密码输入
@@ -545,82 +553,93 @@ const WebTerminal = ({
   const MAX_RECENT_LINES = 10;
 
   // 分析确认对话上下文的函数
-  const analyzeConfirmationContext = useCallback((cleanData) => {
-    // 将当前输出添加到最近输出行
-    if (cleanData && cleanData.trim()) {
-      const lines = cleanData.split(/\r?\n/).filter(line => line.trim());
-      if (lines.length > 0) {
-        // 添加新行并保持最大行数限制
-        recentOutputLinesRef.current = [
-          ...lines,
-          ...recentOutputLinesRef.current
-        ].slice(0, MAX_RECENT_LINES);
+  const analyzeConfirmationContext = useCallback(
+    (cleanData) => {
+      // 将当前输出添加到最近输出行
+      if (cleanData && cleanData.trim()) {
+        const lines = cleanData.split(/\r?\n/).filter((line) => line.trim());
+        if (lines.length > 0) {
+          // 添加新行并保持最大行数限制
+          recentOutputLinesRef.current = [
+            ...lines,
+            ...recentOutputLinesRef.current,
+          ].slice(0, MAX_RECENT_LINES);
+        }
       }
-    }
 
-    // 检查最近几行是否构成确认对话上下文
-    // 1. 检查是否有确认提示
-    const hasExplicitPrompt = recentOutputLinesRef.current.some(line => 
-      confirmationPromptPatterns.some(pattern => pattern.test(line))
-    );
-    
-    if (hasExplicitPrompt) {
-      return true;
-    }
+      // 检查最近几行是否构成确认对话上下文
+      // 1. 检查是否有确认提示
+      const hasExplicitPrompt = recentOutputLinesRef.current.some((line) =>
+        confirmationPromptPatterns.some((pattern) => pattern.test(line)),
+      );
 
-    // 2. 检查是否有隐含的确认对话特征
-    // 例如：短问题后跟空行，等待用户输入y/n
-    if (recentOutputLinesRef.current.length >= 2) {
-      const lastLine = recentOutputLinesRef.current[0].trim();
-      const prevLine = recentOutputLinesRef.current[1].trim();
-      
-      // 检查最后一行是否为空或只有提示符，前一行是否是问句
-      const isLastLineEmpty = lastLine === '' || /[>$#]\s*$/.test(lastLine);
-      const isPrevLineQuestion = /\?\s*$/.test(prevLine) || 
-                                /continue|proceed|confirm|overwrite|replace|delete/i.test(prevLine);
-      
-      if (isLastLineEmpty && isPrevLineQuestion) {
+      if (hasExplicitPrompt) {
         return true;
       }
-    }
 
-    return false;
-  }, [confirmationPromptPatterns]);
+      // 2. 检查是否有隐含的确认对话特征
+      // 例如：短问题后跟空行，等待用户输入y/n
+      if (recentOutputLinesRef.current.length >= 2) {
+        const lastLine = recentOutputLinesRef.current[0].trim();
+        const prevLine = recentOutputLinesRef.current[1].trim();
+
+        // 检查最后一行是否为空或只有提示符，前一行是否是问句
+        const isLastLineEmpty = lastLine === "" || /[>$#]\s*$/.test(lastLine);
+        const isPrevLineQuestion =
+          /\?\s*$/.test(prevLine) ||
+          /continue|proceed|confirm|overwrite|replace|delete/i.test(prevLine);
+
+        if (isLastLineEmpty && isPrevLineQuestion) {
+          return true;
+        }
+      }
+
+      return false;
+    },
+    [confirmationPromptPatterns],
+  );
 
   // 检测提示的函数（包括密码提示和确认提示）
-  const checkForPrompts = useCallback((data) => {
-    // 确保数据存在
-    if (!data) return;
-    
-    // 转换为字符串
-    const dataStr = typeof data === 'string' ? data : data.toString();
-    
-    // 忽略ANSI转义序列
-    const cleanData = dataStr.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-    
-    // 检查是否包含密码提示
-    const hasPasswordPrompt = passwordPromptPatterns.some(pattern => 
-      pattern.test(cleanData)
-    );
-    
-    // 检查是否包含确认提示（直接匹配或通过上下文分析）
-    const hasDirectConfirmationPrompt = confirmationPromptPatterns.some(pattern => 
-      pattern.test(cleanData)
-    );
-    
-    // 通过上下文分析检测确认对话
-    const hasConfirmationContext = analyzeConfirmationContext(cleanData);
-    
-    if (hasPasswordPrompt) {
-      isPasswordPromptActiveRef.current = true;
-      // 同时更新React状态
-      setIsConfirmationPromptActive(true);
-    } else if (hasDirectConfirmationPrompt || hasConfirmationContext) {
-      // 对于确认提示，也设置标志避免记录到历史
-      isPasswordPromptActiveRef.current = true;
-      setIsConfirmationPromptActive(true);
-    }
-  }, [passwordPromptPatterns, confirmationPromptPatterns, analyzeConfirmationContext]);
+  const checkForPrompts = useCallback(
+    (data) => {
+      // 确保数据存在
+      if (!data) return;
+
+      // 转换为字符串
+      const dataStr = typeof data === "string" ? data : data.toString();
+
+      // 忽略ANSI转义序列
+      const cleanData = dataStr.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+
+      // 检查是否包含密码提示
+      const hasPasswordPrompt = passwordPromptPatterns.some((pattern) =>
+        pattern.test(cleanData),
+      );
+
+      // 检查是否包含确认提示（直接匹配或通过上下文分析）
+      const hasDirectConfirmationPrompt = confirmationPromptPatterns.some(
+        (pattern) => pattern.test(cleanData),
+      );
+
+      // 通过上下文分析检测确认对话
+      const hasConfirmationContext = analyzeConfirmationContext(cleanData);
+
+      if (hasPasswordPrompt) {
+        isPasswordPromptActiveRef.current = true;
+        // 同时更新React状态
+        setIsConfirmationPromptActive(true);
+      } else if (hasDirectConfirmationPrompt || hasConfirmationContext) {
+        // 对于确认提示，也设置标志避免记录到历史
+        isPasswordPromptActiveRef.current = true;
+        setIsConfirmationPromptActive(true);
+      }
+    },
+    [
+      passwordPromptPatterns,
+      confirmationPromptPatterns,
+      analyzeConfirmationContext,
+    ],
+  );
 
   // 获取命令建议的防抖函数
   const getSuggestions = useCallback(
@@ -1008,7 +1027,7 @@ const WebTerminal = ({
 
           // 密码输入保护：如果当前处于密码输入状态，不记录到历史
           const shouldSkipHistory = isPasswordPromptActiveRef.current;
-          
+
           // 重置密码输入状态（用户已经输入并按下回车）
           if (isPasswordPromptActiveRef.current) {
             isPasswordPromptActiveRef.current = false;
@@ -1016,17 +1035,19 @@ const WebTerminal = ({
           }
 
           // 检查是否是确认响应输入（y/n/yes/no等）
-          const isConfirmationResponse = 
-            /^(y|n|yes|no|是|否|确认|取消)$/i.test(command) || 
+          const isConfirmationResponse =
+            /^(y|n|yes|no|是|否|确认|取消)$/i.test(command) ||
             /^[yYnN]$/i.test(command);
 
           // 确保命令不为空且不与上一次执行的命令相同，并且不在编辑器模式中
           // 注意：inEditorMode可能已经被buffer类型检测器更新
-          if (command && 
-              command !== lastExecutedCommand && 
-              !inEditorMode && 
-              !shouldSkipHistory && 
-              !isConfirmationResponse) {
+          if (
+            command &&
+            command !== lastExecutedCommand &&
+            !inEditorMode &&
+            !shouldSkipHistory &&
+            !isConfirmationResponse
+          ) {
             lastExecutedCommand = command;
 
             // 记录执行的命令和时间，用于防止后续显示该命令的建议
@@ -1446,13 +1467,13 @@ const WebTerminal = ({
                   // 设置数据接收监听
                   setupDataListener(processId, term);
 
-                        // 设置命令检测（包含密码提示检测）
-      setupCommandDetection(term, processId);
-      
-      // 监听数据输出以检测密码提示（补充命令检测中的输出监听）
-      term.onWriteParsed((data) => {
-        checkForPrompts(data);
-      });
+                  // 设置命令检测（包含密码提示检测）
+                  setupCommandDetection(term, processId);
+
+                  // 监听数据输出以检测密码提示（补充命令检测中的输出监听）
+                  term.onWriteParsed((data) => {
+                    checkForPrompts(data);
+                  });
 
                   // 使用EventManager管理连接成功后多次尝试同步终端大小
                   eventManager.setTimeout(() => {
@@ -1726,8 +1747,12 @@ const WebTerminal = ({
 
           // Only apply transform if the offset is significant enough AND the element is not already aligned.
           // The condition for applying transform should be based on whether an actual adjustment is needed.
-          let needsAdjustmentX = Math.abs(leftOffset) > 0.1 && Math.abs(leftOffset) < metrics.charWidth;
-          let needsAdjustmentY = Math.abs(topOffset) > 0.1 && Math.abs(topOffset) < metrics.charHeight;
+          let needsAdjustmentX =
+            Math.abs(leftOffset) > 0.1 &&
+            Math.abs(leftOffset) < metrics.charWidth;
+          let needsAdjustmentY =
+            Math.abs(topOffset) > 0.1 &&
+            Math.abs(topOffset) < metrics.charHeight;
           let adjustX, adjustY;
 
           // If leftOffset is very close to charWidth, it means it's almost aligned to the next char, so no adjustment or negative.
@@ -1744,11 +1769,14 @@ const WebTerminal = ({
           } else {
             adjustY = -topOffset;
           }
-          
+
           // Only apply transform if an adjustment is actually computed and exceeds a minimal pixel change.
           // This avoids applying tiny transforms like 0.001px.
           const minPixelChange = 0.5;
-          if ((needsAdjustmentX && Math.abs(adjustX) > minPixelChange) || (needsAdjustmentY && Math.abs(adjustY) > minPixelChange)) {
+          if (
+            (needsAdjustmentX && Math.abs(adjustX) > minPixelChange) ||
+            (needsAdjustmentY && Math.abs(adjustY) > minPixelChange)
+          ) {
             primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
             primaryElement.style.willChange = "transform";
           } else {
@@ -2574,9 +2602,11 @@ const WebTerminal = ({
   const handleSendToAI = () => {
     if (selectedText) {
       // 触发全局事件，将选中文本发送到AI助手
-      window.dispatchEvent(new CustomEvent('sendToAI', {
-        detail: { text: selectedText }
-      }));
+      window.dispatchEvent(
+        new CustomEvent("sendToAI", {
+          detail: { text: selectedText },
+        }),
+      );
     }
     handleClose();
   };

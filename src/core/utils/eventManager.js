@@ -195,7 +195,6 @@ class EventManager {
   }
 }
 
-
 export function useEventManager() {
   const { useRef, useEffect } = require("react");
   const managerRef = useRef(null);

@@ -1,4 +1,11 @@
-import React, { useState, useEffect, memo, useCallback, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import {
   Box,
   Typography,
@@ -116,7 +123,11 @@ const ConnectionManager = memo(
     // 当连接数据变化时保存到文件 - 添加条件防止不必要的调用
     const connectionsRef = useRef(connections);
     useEffect(() => {
-      if (!isLoading && onConnectionsUpdate && connectionsRef.current !== connections) {
+      if (
+        !isLoading &&
+        onConnectionsUpdate &&
+        connectionsRef.current !== connections
+      ) {
         connectionsRef.current = connections;
         onConnectionsUpdate(connections);
       }
@@ -147,9 +158,11 @@ const ConnectionManager = memo(
     const handleToggleGroup = useCallback((groupId) => {
       setConnections((prevConnections) => {
         // 检查当前状态，避免重复更新
-        const targetGroup = prevConnections.find(item => item.id === groupId && item.type === "group");
+        const targetGroup = prevConnections.find(
+          (item) => item.id === groupId && item.type === "group",
+        );
         if (!targetGroup) return prevConnections;
-        
+
         return prevConnections.map((item) => {
           if (item.id === groupId && item.type === "group") {
             return { ...item, expanded: !item.expanded };
@@ -645,13 +658,7 @@ const ConnectionManager = memo(
           )}
         </Draggable>
       ),
-      [
-        theme,
-        handleAddConnection,
-        handleEdit,
-        handleDelete,
-        handleToggleGroup,
-      ],
+      [theme, handleAddConnection, handleEdit, handleDelete, handleToggleGroup],
     );
 
     // 使用 useMemo 优化连接列表渲染 - 移除 renderConnectionItem 依赖
@@ -659,7 +666,7 @@ const ConnectionManager = memo(
       return connections.map((item, index) =>
         item.type === "group"
           ? renderGroup(item, index)
-          : renderConnectionItemRef.current 
+          : renderConnectionItemRef.current
             ? renderConnectionItemRef.current(item, null, index)
             : renderConnectionItem(item, null, index),
       );
