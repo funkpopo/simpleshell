@@ -307,8 +307,43 @@ class SSHPool extends EventEmitter {
         clearTimeout(timeout);
         connection.state = CONNECTION_STATE.ERROR;
         connection.errors++;
-        logToFile(`SSH连接错误: ${connection.id} - ${err.message}`, "ERROR");
-        reject(err);
+
+        // 增强错误信息
+        let errorMessage = err.message;
+        if (
+          err.message.includes("All configured authentication methods failed")
+        ) {
+          errorMessage = `SSH认证失败: ${err.message}. 请检查用户名、密码或私钥文件是否正确`;
+
+          // 如果配置了私钥路径但没有私钥内容，提供具体提示
+          if (
+            connection.config.privateKeyPath &&
+            !connection.config.privateKey
+          ) {
+            errorMessage += `. 私钥文件路径: ${connection.config.privateKeyPath} 可能无法读取`;
+          }
+        } else if (err.message.includes("connect ECONNREFUSED")) {
+          errorMessage = `连接被拒绝: 无法连接到 ${connection.config.host}:${connection.config.port || 22}`;
+        } else if (err.message.includes("getaddrinfo ENOTFOUND")) {
+          errorMessage = `主机不存在: 无法解析主机名 ${connection.config.host}`;
+        }
+
+        logToFile(`SSH连接错误: ${connection.id} - ${errorMessage}`, "ERROR");
+
+        // 创建增强的错误对象
+        const enhancedError = new Error(errorMessage);
+        enhancedError.originalError = err;
+        enhancedError.connectionId = connection.id;
+        enhancedError.sshConfig = {
+          host: connection.config.host,
+          port: connection.config.port || 22,
+          username: connection.config.username,
+          hasPassword: !!connection.config.password,
+          hasPrivateKey: !!connection.config.privateKey,
+          hasPrivateKeyPath: !!connection.config.privateKeyPath,
+        };
+
+        reject(enhancedError);
       });
 
       ssh.on("close", () => {
@@ -323,24 +358,29 @@ class SSHPool extends EventEmitter {
   }
 
   buildConnectionOptions(sshConfig) {
+    const { processSSHPrivateKey } = require("../utils/ssh-utils");
+
+    // 处理私钥文件路径，转换为私钥内容
+    const processedConfig = processSSHPrivateKey(sshConfig);
+
     const options = {
-      host: sshConfig.host,
-      port: sshConfig.port || 22,
-      username: sshConfig.username,
+      host: processedConfig.host,
+      port: processedConfig.port || 22,
+      username: processedConfig.username,
       keepaliveInterval: 30000,
       keepaliveCountMax: 3,
       readyTimeout: this.config.connectionTimeout,
       algorithms: getBasicSSHAlgorithms(),
     };
 
-    if (sshConfig.password) {
-      options.password = sshConfig.password;
+    if (processedConfig.password) {
+      options.password = processedConfig.password;
     }
 
-    if (sshConfig.privateKey) {
-      options.privateKey = sshConfig.privateKey;
-      if (sshConfig.passphrase) {
-        options.passphrase = sshConfig.passphrase;
+    if (processedConfig.privateKey) {
+      options.privateKey = processedConfig.privateKey;
+      if (processedConfig.passphrase) {
+        options.passphrase = processedConfig.passphrase;
       }
     }
 

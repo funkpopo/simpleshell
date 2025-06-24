@@ -86,20 +86,20 @@ function createAIWorker() {
   try {
     const workerPath = getWorkerPath();
     logToFile(`创建AI Worker: ${workerPath}`, "INFO");
-    
+
     // 创建worker实例
     aiWorker = new Worker(workerPath);
 
     // 监听worker线程的消息
     aiWorker.on("message", (message) => {
       const { id, type, result, error, data } = message;
-      
+
       // 处理不同类型的消息
       if (type) {
         handleWorkerTypeMessage(type, id, data, result, error);
         return;
       }
-      
+
       // 处理标准请求响应
       const callback = aiRequestMap.get(id);
       if (callback) {
@@ -118,7 +118,7 @@ function createAIWorker() {
     // 处理worker错误
     aiWorker.on("error", (error) => {
       logToFile(`AI Worker错误: ${error.message}`, "ERROR");
-      
+
       // 向所有待处理的请求返回错误
       for (const [id, callback] of aiRequestMap.entries()) {
         callback.reject(
@@ -126,7 +126,7 @@ function createAIWorker() {
         );
         aiRequestMap.delete(id);
       }
-      
+
       // 清理所有流式会话
       streamSessions.clear();
     });
@@ -134,7 +134,7 @@ function createAIWorker() {
     // 处理worker退出
     aiWorker.on("exit", (code) => {
       logToFile(`AI Worker退出，代码: ${code}`, "WARN");
-      
+
       // 如果退出码不是正常退出(0)，尝试重启worker
       if (code !== 0) {
         setTimeout(() => {
@@ -150,7 +150,7 @@ function createAIWorker() {
         );
         aiRequestMap.delete(id);
       }
-      
+
       // 清理所有流式会话
       streamSessions.clear();
     });
@@ -173,66 +173,70 @@ function createAIWorker() {
 function handleWorkerTypeMessage(type, id, data, result, error) {
   // 获取主窗口
   const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
+  if (
+    !mainWindow ||
+    !mainWindow.webContents ||
+    mainWindow.webContents.isDestroyed()
+  ) {
     logToFile("无法发送Worker消息: 主窗口不可用", "ERROR");
     return;
   }
-  
+
   switch (type) {
-    case 'init':
+    case "init":
       logToFile(`AI Worker初始化完成: ${JSON.stringify(result)}`, "INFO");
       break;
-      
-    case 'stream_chunk':
+
+    case "stream_chunk":
       if (data && data.sessionId) {
         // 存储会话ID和请求ID的映射
         streamSessions.set(data.sessionId, id);
-        
+
         // 转发流式数据块到渲染进程
-        mainWindow.webContents.send('stream-chunk', {
-          tabId: 'ai',
+        mainWindow.webContents.send("stream-chunk", {
+          tabId: "ai",
           chunk: data.chunk,
-          sessionId: data.sessionId
+          sessionId: data.sessionId,
         });
       }
       break;
-      
-    case 'stream_end':
+
+    case "stream_end":
       if (data && data.sessionId) {
         // 转发流结束事件到渲染进程
-        mainWindow.webContents.send('stream-end', {
-          tabId: 'ai',
+        mainWindow.webContents.send("stream-end", {
+          tabId: "ai",
           sessionId: data.sessionId,
-          aborted: data.aborted || false
+          aborted: data.aborted || false,
         });
-        
+
         // 清理会话映射
         streamSessions.delete(data.sessionId);
       }
       break;
-      
-    case 'stream_error':
+
+    case "stream_error":
       if (data && data.sessionId) {
         // 转发流错误事件到渲染进程
-        mainWindow.webContents.send('stream-error', {
-          tabId: 'ai',
+        mainWindow.webContents.send("stream-error", {
+          tabId: "ai",
           sessionId: data.sessionId,
-          error: data.error || { message: '未知错误' }
+          error: data.error || { message: "未知错误" },
         });
-        
+
         // 清理会话映射
         streamSessions.delete(data.sessionId);
       }
       break;
-      
-    case 'worker_error':
-      logToFile(`AI Worker内部错误: ${error?.message || '未知错误'}`, "ERROR");
+
+    case "worker_error":
+      logToFile(`AI Worker内部错误: ${error?.message || "未知错误"}`, "ERROR");
       break;
-      
-    case 'worker_exit':
+
+    case "worker_exit":
       logToFile(`AI Worker退出事件: ${JSON.stringify(result)}`, "INFO");
       break;
-      
+
     default:
       logToFile(`未知的Worker消息类型: ${type}`, "WARN");
   }
@@ -1560,8 +1564,6 @@ function setupIPC(mainWindow) {
     }
   });
 
-
-
   // 通过Worker线程处理API请求，绕过CORS限制
   ipcMain.handle("ai:sendAPIRequest", async (event, requestData, isStream) => {
     try {
@@ -1586,7 +1588,7 @@ function setupIPC(mainWindow) {
 
       // 生成请求ID
       const requestId = `req_${nextRequestId++}`;
-      
+
       // 如果是流式请求，保存会话ID
       if (isStream) {
         currentSessionId = requestData.sessionId;
@@ -1595,7 +1597,7 @@ function setupIPC(mainWindow) {
       // 准备发送到Worker的数据
       const workerData = {
         ...requestData,
-        isStream
+        isStream,
       };
 
       // 发送请求到Worker
@@ -1605,7 +1607,7 @@ function setupIPC(mainWindow) {
           aiRequestMap.delete(requestId);
           reject(new Error("请求超时"));
         }, 60000); // 60秒超时
-        
+
         // 存储回调函数
         aiRequestMap.set(requestId, {
           resolve: (result) => {
@@ -1616,16 +1618,16 @@ function setupIPC(mainWindow) {
             clearTimeout(timeoutId);
             reject(error);
           },
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
-        
+
         // 发送消息到Worker
         aiWorker.postMessage({
-          type: 'api_request',
+          type: "api_request",
           id: requestId,
-          data: workerData
+          data: workerData,
         });
-        
+
         // 如果是流式请求，立即返回成功
         if (isStream) {
           resolve({ success: true, message: "流式请求已开始" });
@@ -1644,16 +1646,16 @@ function setupIPC(mainWindow) {
       if (currentSessionId && aiWorker) {
         // 生成取消请求ID
         const cancelRequestId = `cancel_${Date.now()}`;
-        
+
         // 尝试通过Worker取消请求
         aiWorker.postMessage({
-          type: 'cancel_request',
+          type: "cancel_request",
           id: cancelRequestId,
           data: {
-            sessionId: currentSessionId
-          }
+            sessionId: currentSessionId,
+          },
         });
-        
+
         // 获取主窗口
         const mainWindow = BrowserWindow.getAllWindows()[0];
         if (mainWindow && !mainWindow.webContents.isDestroyed()) {
@@ -1661,14 +1663,14 @@ function setupIPC(mainWindow) {
           mainWindow.webContents.send("stream-end", {
             tabId: "ai",
             aborted: true,
-            sessionId: currentSessionId
+            sessionId: currentSessionId,
           });
         }
-        
+
         // 清理会话ID和映射
         streamSessions.delete(currentSessionId);
         currentSessionId = null;
-        
+
         return { success: true, message: "请求已中断" };
       } else {
         return { success: false, message: "没有活跃的请求" };
@@ -2989,7 +2991,7 @@ function setupIPC(mainWindow) {
       logToFile(`IP地址查询失败: ${error.message}`, "ERROR");
       return {
         ret: "failed",
-        msg: error.message
+        msg: error.message,
       };
     }
   });

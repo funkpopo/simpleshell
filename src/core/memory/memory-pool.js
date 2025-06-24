@@ -530,7 +530,7 @@ class MemoryPool extends EventEmitter {
     if (this.isInitialized) {
       return;
     }
-    
+
     // 重新初始化
     this.init();
     this.emit("started");
@@ -542,7 +542,7 @@ class MemoryPool extends EventEmitter {
     if (!this.isInitialized) {
       return;
     }
-    
+
     this.dispose();
     this.emit("stopped");
     logToFile("内存池已停止", "INFO");
@@ -580,4 +580,3 @@ class MemoryPool extends EventEmitter {
 const memoryPool = new MemoryPool();
 
 module.exports = memoryPool;
-

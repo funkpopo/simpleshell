@@ -34,9 +34,7 @@ import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import FilePreview from "./FilePreview.jsx";
 import VirtualizedFileList from "./VirtualizedFileList.jsx";
 import TransferProgressManager from "./TransferProgressManager.jsx";
-import {
-  formatLastRefreshTime,
-} from "../core/utils/formatters.js";
+import { formatLastRefreshTime } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 
 const FileManager = memo(

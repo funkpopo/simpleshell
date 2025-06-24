@@ -169,9 +169,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
           <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
             {t("about.author")}
           </Typography>
-          <Typography variant="body2">
-            {t("about.author")}: funkpopo
-          </Typography>
+          <Typography variant="body2">{t("about.author")}: funkpopo</Typography>
           <Typography variant="body2">
             {t("about.email")}:{" "}
             <Link
@@ -1651,7 +1649,9 @@ function App() {
                   color="primary"
                   onClick={toggleIpAddressQuery}
                   sx={{
-                    bgcolor: ipAddressQueryOpen ? "action.selected" : "transparent",
+                    bgcolor: ipAddressQueryOpen
+                      ? "action.selected"
+                      : "transparent",
                     "&:hover": {
                       bgcolor: ipAddressQueryOpen
                         ? "action.selected"

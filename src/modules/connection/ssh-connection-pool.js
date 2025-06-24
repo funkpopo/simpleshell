@@ -115,9 +115,41 @@ class SSHConnectionPool {
       // 监听错误事件
       ssh.on("error", (err) => {
         clearTimeout(timeout);
-        logToFile(`SSH连接错误: ${connectionKey} - ${err.message}`, "ERROR");
+
+        // 增强错误信息
+        let errorMessage = err.message;
+        if (
+          err.message.includes("All configured authentication methods failed")
+        ) {
+          errorMessage = `SSH认证失败: ${err.message}. 请检查用户名、密码或私钥文件是否正确`;
+
+          // 如果配置了私钥路径但没有私钥内容，提供具体提示
+          if (sshConfig.privateKeyPath && !processedConfig.privateKey) {
+            errorMessage += `. 私钥文件路径: ${sshConfig.privateKeyPath} 可能无法读取`;
+          }
+        } else if (err.message.includes("connect ECONNREFUSED")) {
+          errorMessage = `连接被拒绝: 无法连接到 ${sshConfig.host}:${sshConfig.port || 22}`;
+        } else if (err.message.includes("getaddrinfo ENOTFOUND")) {
+          errorMessage = `主机不存在: 无法解析主机名 ${sshConfig.host}`;
+        }
+
+        logToFile(`SSH连接错误: ${connectionKey} - ${errorMessage}`, "ERROR");
         this.connections.delete(connectionKey);
-        reject(err);
+
+        // 创建增强的错误对象
+        const enhancedError = new Error(errorMessage);
+        enhancedError.originalError = err;
+        enhancedError.connectionKey = connectionKey;
+        enhancedError.sshConfig = {
+          host: sshConfig.host,
+          port: sshConfig.port || 22,
+          username: sshConfig.username,
+          hasPassword: !!sshConfig.password,
+          hasPrivateKey: !!processedConfig.privateKey,
+          hasPrivateKeyPath: !!sshConfig.privateKeyPath,
+        };
+
+        reject(enhancedError);
       });
 
       // 监听关闭事件
@@ -134,15 +166,19 @@ class SSHConnectionPool {
         algorithms: getBasicSSHAlgorithms(),
       };
 
+      // 处理私钥文件路径
+      const { processSSHPrivateKey } = require("../../core/utils/ssh-utils");
+      const processedConfig = processSSHPrivateKey(sshConfig);
+
       // 添加认证方式
-      if (sshConfig.password) {
-        connectionOptions.password = sshConfig.password;
+      if (processedConfig.password) {
+        connectionOptions.password = processedConfig.password;
       }
 
-      if (sshConfig.privateKey) {
-        connectionOptions.privateKey = sshConfig.privateKey;
-        if (sshConfig.passphrase) {
-          connectionOptions.passphrase = sshConfig.passphrase;
+      if (processedConfig.privateKey) {
+        connectionOptions.privateKey = processedConfig.privateKey;
+        if (processedConfig.passphrase) {
+          connectionOptions.passphrase = processedConfig.passphrase;
         }
       }
 
