@@ -771,6 +771,32 @@ const WebTerminal = ({
     setSuggestions([]);
     setSuggestionsHiddenByEsc(true);
   }, [setShowSuggestions, setSuggestions, setSuggestionsHiddenByEsc]);
+  // 删除建议的回调函数
+  const handleDeleteSuggestion = useCallback(
+    async (suggestion) => {
+      try {
+        if (window.terminalAPI?.deleteCommandHistory) {
+          const result = await window.terminalAPI.deleteCommandHistory(
+            suggestion.command,
+          );
+          if (result.success) {
+            // 删除成功后，重新获取建议列表
+            if (currentInput) {
+              getSuggestions(currentInput);
+            } else {
+              // 如果没有当前输入，则关闭建议窗口
+              closeSuggestions();
+            }
+          } else {
+            console.error("删除命令失败:", result.error);
+          }
+        }
+      } catch (error) {
+        console.error("删除建议失败:", error);
+      }
+    },
+    [currentInput, getSuggestions, closeSuggestions],
+  );
 
   // 更新光标位置用于建议窗口定位
   const updateCursorPosition = useCallback(() => {
@@ -3064,6 +3090,7 @@ const WebTerminal = ({
         visible={showSuggestions && !isConfirmationPromptActive}
         position={cursorPosition}
         onSelectSuggestion={handleSuggestionSelect}
+        onDeleteSuggestion={handleDeleteSuggestion}
         onClose={closeSuggestions}
         terminalElement={terminalRef.current}
         currentInput={currentInput}

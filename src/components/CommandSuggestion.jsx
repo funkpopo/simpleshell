@@ -31,6 +31,7 @@ const CommandSuggestion = memo(
     visible = false,
     position = { x: 0, y: 0 },
     onSelectSuggestion,
+    onDeleteSuggestion,
     onClose,
     currentInput = "",
   }) => {
@@ -43,6 +44,26 @@ const CommandSuggestion = memo(
     useEffect(() => {
       setSelectedIndex(0);
     }, [suggestions]);
+
+    // 处理删除建议
+    const handleDeleteSuggestion = useCallback(
+      async (suggestion) => {
+        if (onDeleteSuggestion) {
+          try {
+            await onDeleteSuggestion(suggestion);
+            // 删除成功后，如果当前选中的是最后一项，则向前移动选中索引
+            setSelectedIndex((prev) => {
+              const newLength = suggestions.length - 1;
+              if (newLength === 0) return 0;
+              return prev >= newLength ? newLength - 1 : prev;
+            });
+          } catch (error) {
+            console.error("删除建议失败:", error);
+          }
+        }
+      },
+      [onDeleteSuggestion, suggestions.length],
+    );
 
     // 处理键盘事件
     const handleKeyDown = useCallback(
@@ -71,6 +92,13 @@ const CommandSuggestion = memo(
               onSelectSuggestion?.(suggestions[selectedIndex]);
             }
             break;
+          case "Delete":
+            if (suggestions[selectedIndex]) {
+              event.preventDefault();
+              event.stopPropagation();
+              handleDeleteSuggestion(suggestions[selectedIndex]);
+            }
+            break;
           case "Escape":
             event.preventDefault();
             event.stopPropagation();
@@ -81,7 +109,14 @@ const CommandSuggestion = memo(
             break;
         }
       },
-      [visible, suggestions, selectedIndex, onSelectSuggestion, onClose],
+      [
+        visible,
+        suggestions,
+        selectedIndex,
+        onSelectSuggestion,
+        onClose,
+        handleDeleteSuggestion,
+      ],
     );
 
     // 添加全局键盘事件监听
@@ -350,7 +385,7 @@ const CommandSuggestion = memo(
               fontSize: "10px",
             }}
           >
-            ↑↓ 选择 • Enter 确认 • Esc 关闭
+            ↑↓ 选择 • Enter 确认 • Delete 删除 • Esc 关闭
           </Typography>
         </Box>
       </Paper>
