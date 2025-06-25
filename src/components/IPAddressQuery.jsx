@@ -10,10 +10,9 @@ import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PublicIcon from "@mui/icons-material/Public";
 import { useTheme } from "@mui/material/styles";
-import Tooltip from "@mui/material/Tooltip";
 import Grid from "@mui/material/Grid";
-import Divider from "@mui/material/Divider";
 import { useTranslation } from "react-i18next";
+import WorldMap from "./WorldMap";
 
 // IP地址查询组件
 const IPAddressQuery = memo(({ open, onClose }) => {
@@ -196,6 +195,25 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             )}
           </Grid>
         </Paper>
+
+        {ipInfo.data?.latitude && ipInfo.data?.longitude && (
+          <Box sx={{ 
+            mt: 2, 
+            mb: 1, 
+            borderRadius: 1, 
+            overflow: 'hidden',
+            height: '200px',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: theme.palette.background.default,
+          }}>
+            <WorldMap
+              latitude={ipInfo.data.latitude}
+              longitude={ipInfo.data.longitude}
+            />
+          </Box>
+        )}
       </Box>
     );
   };
@@ -261,7 +279,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
                 color="primary"
                 onClick={handleQuery}
                 disabled={loading}
-                fullWidth
+                sx={{ flex: 1 }}
               >
                 {loading ? (
                   <CircularProgress size={24} color="inherit" />
@@ -273,6 +291,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
                 variant="outlined"
                 onClick={handleQueryMyIP}
                 disabled={loading}
+                sx={{ flex: 1 }}
               >
                 {t("ipAddressQuery.queryYourIP")}
               </Button>
