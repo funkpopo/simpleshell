@@ -50,7 +50,7 @@ const WorldMap = ({ latitude, longitude }) => {
       {isValidCoordinates && (
         <Marker coordinates={[lon, lat]}>
           <g
-            fill={theme.palette.primary.main}
+            fill={theme.palette.error.main}
             stroke="#FFFFFF"
             strokeWidth="2"
             strokeLinecap="round"
