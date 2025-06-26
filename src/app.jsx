@@ -34,6 +34,7 @@ import HistoryIcon from "@mui/icons-material/History";
 import InfoIcon from "@mui/icons-material/Info";
 import ExitToAppIcon from "@mui/icons-material/ExitToApp";
 import PublicIcon from "@mui/icons-material/Public";
+import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
 import ConnectionManager from "./components/ConnectionManager.jsx";
@@ -47,6 +48,7 @@ import {
 import Settings from "./components/Settings.jsx";
 import ShortcutCommands from "./components/ShortcutCommands.jsx";
 import CommandHistory from "./components/CommandHistory.jsx";
+import RandomPasswordGenerator from "./components/RandomPasswordGenerator.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import AIChatWindow from "./components/AIChatWindow.jsx";
 import CustomTab from "./components/CustomTab.jsx";
@@ -325,6 +327,9 @@ function App() {
   // IP地址查询侧边栏状态
   const [ipAddressQueryOpen, setIpAddressQueryOpen] = React.useState(false);
 
+  // 随机密码生成器侧边栏状态
+  const [randomPasswordGeneratorOpen, setRandomPasswordGeneratorOpen] = React.useState(false);
+
   // 文件管理路径记忆状态 - 为每个SSH连接记住最后访问的路径
   const [fileManagerPaths, setFileManagerPaths] = React.useState({});
 
@@ -364,6 +369,8 @@ function App() {
         return SIDEBAR_WIDTHS.COMMAND_HISTORY;
       } else if (ipAddressQueryOpen && lastOpenedSidebar === "ipquery") {
         return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
+      } else if (randomPasswordGeneratorOpen && lastOpenedSidebar === "password") {
+        return SIDEBAR_WIDTHS.RANDOM_PASSWORD_GENERATOR;
       }
       // Fallback if lastOpenedSidebar isn't set but one is open
       if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
@@ -372,6 +379,7 @@ function App() {
       else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
       else if (commandHistoryOpen) return SIDEBAR_WIDTHS.COMMAND_HISTORY;
       else if (ipAddressQueryOpen) return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
+      else if (randomPasswordGeneratorOpen) return SIDEBAR_WIDTHS.RANDOM_PASSWORD_GENERATOR;
       return 0;
     };
 
@@ -408,6 +416,7 @@ function App() {
     shortcutCommandsOpen,
     commandHistoryOpen,
     ipAddressQueryOpen,
+    randomPasswordGeneratorOpen,
     lastOpenedSidebar,
     SIDEBAR_WIDTHS,
   ]);
@@ -986,6 +995,14 @@ function App() {
     }, 15);
   };
 
+  // 切换随机密码生成器侧边栏
+  const toggleRandomPasswordGenerator = () => {
+    setRandomPasswordGeneratorOpen(!randomPasswordGeneratorOpen);
+    if (!randomPasswordGeneratorOpen) {
+      setLastOpenedSidebar("password");
+    }
+  };
+
   // 更新关闭所有侧边栏的函数
   const closeAllSidebars = () => {
     setConnectionManagerOpen(false);
@@ -994,6 +1011,7 @@ function App() {
     setShortcutCommandsOpen(false);
     setCommandHistoryOpen(false);
     setIpAddressQueryOpen(false);
+    setRandomPasswordGeneratorOpen(false);
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
@@ -1510,6 +1528,23 @@ function App() {
               />
             </Box>
 
+            {/* 随机密码生成器侧边栏 */}
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                right: 48,
+                zIndex: lastOpenedSidebar === "password" ? 107 : 92,
+                height: "100%",
+                display: "flex",
+              }}
+            >
+              <RandomPasswordGenerator
+                open={randomPasswordGeneratorOpen}
+                onClose={() => setRandomPasswordGeneratorOpen(false)}
+              />
+            </Box>
+
             {/* 右侧边栏 */}
             <Paper
               elevation={3}
@@ -1660,6 +1695,26 @@ function App() {
                   }}
                 >
                   <PublicIcon />
+                </IconButton>
+              </Tooltip>
+
+              {/* 随机密码生成器按钮 */}
+              <Tooltip title={t("sidebar.randomPassword")} placement="left">
+                <IconButton
+                  color="primary"
+                  onClick={toggleRandomPasswordGenerator}
+                  sx={{
+                    bgcolor: randomPasswordGeneratorOpen
+                      ? "action.selected"
+                      : "transparent",
+                    "&:hover": {
+                      bgcolor: randomPasswordGeneratorOpen
+                        ? "action.selected"
+                        : "action.hover",
+                    },
+                  }}
+                >
+                  <VpnKeyIcon />
                 </IconButton>
               </Tooltip>
 

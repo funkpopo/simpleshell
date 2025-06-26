@@ -65,7 +65,8 @@
       "files": "File Manager",
       "history": "Command History",
       "shortcutCommands": "Shortcut Commands",
-      "ipQuery": "IP Address Query"
+      "ipQuery": "IP Address Query",
+      "randomPassword": "Random Password"
     },
     "ipAddressQuery": {
       "title": "IP Address Query",
@@ -241,6 +242,18 @@
       "currentApi": "Current API",
       "selectApi": "Select API",
       "apiSwitched": "Switched to: {{name}}"
+    },
+    "randomPassword": {
+      "title": "Random Password Generator",
+      "length": "Password Length",
+      "uppercase": "Include Uppercase",
+      "lowercase": "Include Lowercase",
+      "numbers": "Include Numbers",
+      "symbols": "Include Symbols",
+      "generatedPassword": "Generated Password",
+      "copy": "Copy",
+      "copied": "Copied!",
+      "regenerate": "Regenerate"
     }
   }
 }
