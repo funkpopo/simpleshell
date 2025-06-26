@@ -71,7 +71,7 @@
       "checkUpdateButton": "检查更新",
       "viewLatestButton": "查看最新版本",
       "close": "关闭",
-      "visitGithub": "访问 GitHub 发布页",
+      "visitGithub": "访问GitHub",
       "updateNotAvailable": "无法检查更新：未找到更新检查API"
     },
     "sidebar": {
@@ -82,7 +82,8 @@
       "files": "文件管理",
       "history": "历史命令",
       "shortcutCommands": "快捷命令",
-      "ipQuery": "IP地址查询"
+      "ipQuery": "IP地址查询",
+      "randomPassword": "随机密码"
     },
     "ipAddressQuery": {
       "title": "IP地址查询",
@@ -257,6 +258,18 @@
       "currentApi": "当前API",
       "selectApi": "选择API",
       "apiSwitched": "已切换到: {{name}}"
+    },
+    "randomPassword": {
+      "title": "随机密码生成器",
+      "length": "密码长度",
+      "uppercase": "包含大写字母",
+      "lowercase": "包含小写字母",
+      "numbers": "包含数字",
+      "symbols": "包含特殊符号",
+      "generatedPassword": "生成的密码",
+      "copy": "复制",
+      "copied": "已复制!",
+      "regenerate": "重新生成"
     }
   }
 }
