@@ -354,6 +354,15 @@ function App() {
 
   // AI助手预设输入值
   const [aiInputPreset, setAiInputPreset] = React.useState("");
+  
+  const [prevTabsLength, setPrevTabsLength] = React.useState(tabs.length);
+
+  React.useEffect(() => {
+    if (tabs.length > prevTabsLength) {
+      setCurrentTab(tabs.length - 1);
+    }
+    setPrevTabsLength(tabs.length);
+  }, [tabs]);
 
   React.useEffect(() => {
     const getSidebarWidth = () => {
@@ -726,8 +735,7 @@ function App() {
     }));
 
     // 添加标签并切换到新标签
-    setTabs([...tabs, newTab]);
-    setCurrentTab(tabs.length);
+        setTabs((prevTabs) => [...prevTabs, newTab]);
   };
 
   // 处理从连接管理器打开连接

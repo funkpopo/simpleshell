@@ -44,6 +44,11 @@ class SSHConnectionPool {
   }
 
   generateConnectionKey(config) {
+    // 优先使用 tabId 来确保每个标签页都有独立的连接
+    if (config.tabId) {
+      return `${config.host}:${config.port || 22}:${config.username}:${config.tabId}`;
+    }
+    // 回退到旧的逻辑，以支持可能没有tabId的场景
     return `${config.host}:${config.port || 22}:${config.username}`;
   }
 
