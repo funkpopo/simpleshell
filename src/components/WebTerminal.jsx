@@ -68,7 +68,7 @@ const terminalStyles = `
   position: relative;
 }
 
-/* Refined CSS for xterm selection highlighting */
+/* 增强版选中高亮样式 */
 .xterm-selection {
   opacity: 1 !important;
   z-index: 10 !important;
@@ -76,30 +76,49 @@ const terminalStyles = `
   position: absolute !important;
 }
 
-/* Hide all selection divs by default */
+/* 默认隐藏所有选择div */
 .xterm .xterm-selection div {
   display: none !important;
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
-  position: absolute !important; /* Ensure position is maintained for potential transform later */
+  position: absolute !important;
   box-sizing: border-box !important;
 }
 
-/* Specifically make only the first direct child div of the first .xterm-selection container visible */
-/* This is to prevent multiple .xterm-selection containers from showing their divs */
+/* 仅显示第一个选择容器中的第一个div */
 .xterm .xterm-selection:first-of-type div:first-child {
   display: block !important;
   opacity: 1 !important;
   visibility: visible !important;
+  will-change: transform, width, height !important;
+  transition: transform 0.05s ease !important; /* 平滑过渡效果 */
+  box-sizing: border-box !important;
 }
 
-/* Additional rule to hide any .xterm-selection containers beyond the first one, if they somehow appear */
+/* 彻底隐藏任何额外的选择容器 */
 .xterm-selection:not(:first-of-type) {
   display: none !important;
   opacity: 0 !important;
   visibility: hidden !important;
+}
+
+/* 标记为重复的选择元素彻底隐藏 */
+.xterm-selection-duplicate {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* 确保选择高亮颜色正确显示，并有合适的半透明效果 */
+.xterm .xterm-selection div {
+  background-color: rgba(255, 255, 255, 0.3) !important; /* 浅色主题 */
+}
+
+/* 深色主题下的选择高亮 */
+.dark-theme .xterm .xterm-selection div {
+  background-color: rgba(255, 255, 170, 0.3) !important;
 }
 `;
 
@@ -181,68 +200,101 @@ const getCharacterMetrics = (term) => {
   try {
     // 获取终端的实际字符尺寸
     const charMeasureElement = term.element.querySelector(
-      ".xterm-char-measure-element",
+      ".xterm-char-measure-element"
     );
-    let charWidth = 9; // Default
-    let charHeight = 17; // Default
+    let charWidth = 9; // 默认值
+    let charHeight = 17; // 默认值
 
-    if (
-      term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0
-    ) {
-      charWidth =
-        term._core._renderService._renderer.dimensions.actualCellWidth;
+    // 尝试多种方法获取精确的字符宽度
+    if (term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0) {
+      // 优先使用渲染器提供的精确值
+      charWidth = term._core._renderService._renderer.dimensions.actualCellWidth;
     } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) {
-      // Older path
+      // 兼容旧版本的路径
       charWidth = term._core._renderService.dimensions.actualCellWidth;
     } else if (charMeasureElement) {
+      // 回退到DOM元素测量
       charWidth = charMeasureElement.getBoundingClientRect().width;
     }
 
-    if (
-      term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0
-    ) {
-      charHeight =
-        term._core._renderService._renderer.dimensions.actualCellHeight;
+    // 尝试多种方法获取精确的字符高度
+    if (term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0) {
+      // 优先使用渲染器提供的精确值
+      charHeight = term._core._renderService._renderer.dimensions.actualCellHeight;
     } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) {
-      // Older path
+      // 兼容旧版本的路径
       charHeight = term._core._renderService.dimensions.actualCellHeight;
     } else if (charMeasureElement) {
+      // 回退到DOM元素测量
       charHeight = charMeasureElement.getBoundingClientRect().height;
     }
 
-    // Ensure dimensions are at least 1 to avoid division by zero or negative values
-    charWidth = Math.max(1, Math.round(charWidth));
-    charHeight = Math.max(1, Math.round(charHeight));
+    // 确保尺寸至少为1，避免0或负值
+    charWidth = Math.max(1, Math.round(charWidth * 100) / 100);
+    charHeight = Math.max(1, Math.round(charHeight * 100) / 100);
 
-    // 获取终端视口的偏移量
+    // 获取终端视口和屏幕的元素
     const viewport = term.element.querySelector(".xterm-viewport");
     const screen = term.element.querySelector(".xterm-screen");
 
-    const viewportRect = viewport?.getBoundingClientRect() || {
-      left: 0,
-      top: 0,
-    };
+    // 获取视口和屏幕的位置信息
+    const viewportRect = viewport?.getBoundingClientRect() || { left: 0, top: 0 };
     const screenRect = screen?.getBoundingClientRect() || { left: 0, top: 0 };
 
+    // 计算滚动偏移量
+    const scrollTop = viewport ? viewport.scrollTop : 0;
+    const scrollLeft = viewport ? viewport.scrollLeft : 0;
+
+    // 考虑终端的滚动状态
+    const terminalScrollPosition = term.buffer?.active?.viewportY || 0;
+    const terminalHasScrolled = terminalScrollPosition > 0;
+
+    // 计算偏移量时考虑终端的缩放因子
+    const termScale = term._core?.scaleFactor || 1;
+
     return {
-      charWidth: Math.round(charWidth),
-      charHeight: Math.round(charHeight),
+      charWidth,
+      charHeight,
       viewportOffset: {
         x: viewportRect.left,
         y: viewportRect.top,
+        scrollLeft,
+        scrollTop
       },
       screenOffset: {
         x: screenRect.left,
-        y: screenRect.top,
+        y: screenRect.top
       },
+      scrollPosition: terminalScrollPosition,
+      hasScrolled: terminalHasScrolled,
+      scaleFactor: termScale,
+      // 附加调试信息，用于排查问题
+      debug: {
+        viewportRect: {
+          left: viewportRect.left,
+          top: viewportRect.top,
+          width: viewportRect.width,
+          height: viewportRect.height
+        },
+        screenRect: {
+          left: screenRect.left,
+          top: screenRect.top,
+          width: screenRect.width,
+          height: screenRect.height
+        }
+      }
     };
   } catch (error) {
     // 获取字符度量失败，使用默认值
+    console.warn("Failed to get character metrics:", error);
     return {
       charWidth: 9,
       charHeight: 17,
-      viewportOffset: { x: 0, y: 0 },
+      viewportOffset: { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 },
       screenOffset: { x: 0, y: 0 },
+      scrollPosition: 0,
+      hasScrolled: false,
+      scaleFactor: 1
     };
   }
 };
@@ -551,6 +603,253 @@ const WebTerminal = ({
   const recentOutputLinesRef = useRef([]);
   // 最大保存的输出行数
   const MAX_RECENT_LINES = 10;
+
+  // 优化的选择元素调整函数 - 避免重复高亮
+  const adjustSelectionElements = () => {
+    if (!termRef.current) return;
+
+    try {
+      // 获取终端DOM元素
+      const terminalElement = termRef.current.element;
+      if (!terminalElement) return;
+
+      // 获取所有选择相关元素
+      const selectionElements = terminalElement.querySelectorAll(
+        ".xterm-selection div"
+      );
+
+      // 如果没有选择元素，直接返回
+      if (selectionElements.length === 0) return;
+
+      // 彻底处理重复的选择元素
+      if (selectionElements.length > 1) {
+        // 保留第一个元素，彻底隐藏其他重复元素
+        selectionElements.forEach((elem, index) => {
+          if (index > 0) {
+            // 使用多种方式彻底隐藏重复元素
+            elem.style.display = "none";
+            elem.style.opacity = "0";
+            elem.style.visibility = "hidden";
+            elem.style.pointerEvents = "none";
+            // 添加标记类以便CSS规则识别
+            elem.classList.add("xterm-selection-duplicate");
+          } else {
+            // 确保第一个元素完全可见
+            elem.style.display = "";
+            elem.style.opacity = "1";
+            elem.style.visibility = "visible";
+            elem.classList.remove("xterm-selection-duplicate");
+          }
+        });
+      }
+
+      // 同时检查是否有多个选择容器
+      const allSelectionContainers =
+        terminalElement.querySelectorAll(".xterm-selection");
+      if (allSelectionContainers.length > 1) {
+        allSelectionContainers.forEach((container, index) => {
+          if (index > 0) {
+            container.style.display = "none";
+            container.style.opacity = "0";
+            container.style.visibility = "hidden";
+          }
+        });
+      }
+
+      // 只对第一个（主要的）选择元素进行调整
+      const primaryElement = selectionElements[0];
+      if (!primaryElement) return;
+
+      // 获取字符度量信息
+      const metrics = getCharacterMetrics(termRef.current);
+      if (!metrics) return;
+
+      // 获取选择元素的当前位置
+      const computedStyle = window.getComputedStyle(primaryElement);
+      const currentLeft = parseFloat(computedStyle.left) || 0;
+      const currentTop = parseFloat(computedStyle.top) || 0;
+      const currentWidth = parseFloat(computedStyle.width) || 0;
+      const currentHeight = parseFloat(computedStyle.height) || 0;
+
+      // 计算需要的偏移量
+      const leftOffset = (currentLeft - metrics.screenOffset.x) % metrics.charWidth;
+      const topOffset = (currentTop - metrics.screenOffset.y) % metrics.charHeight;
+
+      // 计算更精确的调整值
+      let adjustX = 0;
+      let adjustY = 0;
+
+      // 判断是否需要调整X轴
+      if (Math.abs(leftOffset) > 0.5) {
+        // 如果偏移接近字符宽度，则对齐到下一个字符位置
+        if (Math.abs(metrics.charWidth - leftOffset) < 1.5) {
+          adjustX = metrics.charWidth - leftOffset;
+        } else {
+          // 否则对齐到当前字符位置
+          adjustX = -leftOffset;
+        }
+      }
+
+      // 判断是否需要调整Y轴
+      if (Math.abs(topOffset) > 0.5) {
+        // 如果偏移接近字符高度，则对齐到下一行
+        if (Math.abs(metrics.charHeight - topOffset) < 1.5) {
+          adjustY = metrics.charHeight - topOffset;
+        } else {
+          // 否则对齐到当前行
+          adjustY = -topOffset;
+        }
+      }
+
+      // 仅在需要调整时应用变换
+      if (Math.abs(adjustX) > 0.5 || Math.abs(adjustY) > 0.5) {
+        primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
+        primaryElement.style.willChange = "transform";
+      } else {
+        // 如果不需要调整，清除变换
+        primaryElement.style.transform = "";
+        primaryElement.style.willChange = "";
+      }
+
+      // 确保选择元素的宽度是字符宽度的整数倍
+      if (currentWidth > 0) {
+        const widthInChars = Math.round(currentWidth / metrics.charWidth);
+        const idealWidth = widthInChars * metrics.charWidth;
+        const widthDifference = idealWidth - currentWidth;
+        
+        // 如果宽度差异较大，应用宽度调整
+        if (Math.abs(widthDifference) > 1) {
+          primaryElement.style.width = `${idealWidth}px`;
+        }
+      }
+    } catch (error) {
+      // 选择元素调整失败，简化的回退处理 - 清理所有transform
+      const selectionElements = document.querySelectorAll(
+        ".xterm .xterm-selection div"
+      );
+      selectionElements.forEach((elem) => {
+        elem.style.transform = "";
+        elem.style.willChange = "";
+        elem.style.opacity = "";
+      });
+    }
+  };
+
+  // 简化的选择监控 - 只在选择完成后进行调整
+  const scheduleSelectionAdjustment = () => {
+    // 使用EventManager管理定时器
+    eventManager.setTimeout(() => {
+      requestAnimationFrame(adjustSelectionElements);
+    }, 50); // 减少延迟以提高响应速度
+  };
+
+  // 添加选择事件监听，确保在用户通过键盘选择时也能调整选择区域
+  const handleSelectionChange = (e) => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().length > 0) {
+      // 只有当选择发生在终端内部时才进行调整
+      const isInTerminal = selection.anchorNode && 
+        termRef.current && 
+        termRef.current.element && 
+        (termRef.current.element.contains(selection.anchorNode) || 
+         termRef.current.element.contains(selection.focusNode));
+      
+      if (isInTerminal) {
+        scheduleSelectionAdjustment();
+      }
+    }
+  };
+
+  // 添加鼠标中键粘贴功能
+  const handleMouseDown = (e) => {
+    // 鼠标中键点击 (e.button === 1 表示鼠标中键)
+    if (e.button === 1) {
+      e.preventDefault();
+
+      // 隐藏命令建议窗口，避免与粘贴操作冲突
+      setShowSuggestions(false);
+      setSuggestions([]);
+      setCurrentInput("");
+      setSuggestionsHiddenByEsc(false);
+
+      navigator.clipboard.readText().then((text) => {
+        if (text && processCache[tabId]) {
+          // 使用预处理函数处理多行文本，防止注释和缩进问题
+          const processedText = processMultilineInput(text);
+
+          // 检查是否需要逐行发送（含有注释的多行文本）
+          if (
+            processedText &&
+            typeof processedText === "object" &&
+            processedText.type === "multiline-with-comments"
+          ) {
+            // 使用EventManager管理逐行发送文本的延迟
+            processedText.lines.forEach((line, index) => {
+              eventManager.setTimeout(() => {
+                window.terminalAPI.sendToProcess(
+                  processCache[tabId],
+                  line +
+                    (index < processedText.lines.length - 1 ? "\n" : ""),
+                );
+              }, index * 50); // 50毫秒的延迟，可以根据实际情况调整
+            });
+          } else {
+            // 正常发送处理后的文本
+            window.terminalAPI.sendToProcess(
+              processCache[tabId],
+              processedText,
+            );
+          }
+        }
+      });
+    }
+
+    // 在mousedown时记录选择开始，帮助确保选择行为的准确性
+    if (e.button === 0 && termRef.current) {
+      // 左键点击 - 标记选择开始
+      const isTextSelection = e.target && 
+        (e.target.closest('.xterm-screen') || e.target.closest('.terminal-container'));
+      
+      // 如果是在终端内容区点击，准备进行选择操作
+      if (isTextSelection) {
+        // 立即调整一次，确保初始选择状态正确
+        setTimeout(() => {
+          adjustSelectionElements();
+        }, 0);
+      }
+    }
+  };
+
+  // 简化的鼠标事件处理 - 减少频繁调整
+  const handleMouseMove = (e) => {
+    // 检测是否正在进行选择操作
+    if (e.buttons === 1) { // 左键按下
+      const isTextSelection = window.getSelection()?.toString()?.length > 0;
+      if (isTextSelection && termRef.current) {
+        // 延迟调整选择，避免频繁调整影响性能
+        // 不需要做任何操作，将在mouseup时进行调整
+      }
+    }
+  };
+
+  const handleMouseUp = (e) => {
+    // 鼠标释放时进行一次性选择区域调整
+    if (termRef.current) {
+      const selection = window.getSelection?.();
+      const hasSelection = selection && selection.toString().length > 0;
+      
+      // 只有当确实存在选中文本时才进行调整
+      if (hasSelection) {
+        // 使用调度函数进行延迟调整
+        scheduleSelectionAdjustment();
+        
+        // 额外添加一个延时调整，处理某些浏览器选择完成后的渲染延迟
+        setTimeout(() => {
+          adjustSelectionElements();
+        }, 150);
+      }
+    }
+  };
 
   // 分析确认对话上下文的函数
   const analyzeConfirmationContext = useCallback(
@@ -1636,193 +1935,6 @@ const WebTerminal = ({
       // 使用EventManager添加键盘事件监听
       eventManager.addEventListener(document, "keydown", handleKeyDown);
 
-      // 简化的选择监控 - 只在选择完成后进行调整
-      const scheduleSelectionAdjustment = () => {
-        // 使用EventManager管理定时器
-        eventManager.setTimeout(() => {
-          requestAnimationFrame(adjustSelectionElements);
-        }, 100); // 增加延迟以减少频繁调整
-      };
-
-      // 添加鼠标中键粘贴功能
-      const handleMouseDown = (e) => {
-        // 鼠标中键点击 (e.button === 1 表示鼠标中键)
-        if (e.button === 1) {
-          e.preventDefault();
-
-          // 隐藏命令建议窗口，避免与粘贴操作冲突
-          setShowSuggestions(false);
-          setSuggestions([]);
-          setCurrentInput("");
-          setSuggestionsHiddenByEsc(false);
-
-          navigator.clipboard.readText().then((text) => {
-            if (text && processCache[tabId]) {
-              // 使用预处理函数处理多行文本，防止注释和缩进问题
-              const processedText = processMultilineInput(text);
-
-              // 检查是否需要逐行发送（含有注释的多行文本）
-              if (
-                processedText &&
-                typeof processedText === "object" &&
-                processedText.type === "multiline-with-comments"
-              ) {
-                // 使用EventManager管理逐行发送文本的延迟
-                processedText.lines.forEach((line, index) => {
-                  eventManager.setTimeout(() => {
-                    window.terminalAPI.sendToProcess(
-                      processCache[tabId],
-                      line +
-                        (index < processedText.lines.length - 1 ? "\n" : ""),
-                    );
-                  }, index * 50); // 50毫秒的延迟，可以根据实际情况调整
-                });
-              } else {
-                // 正常发送处理后的文本
-                window.terminalAPI.sendToProcess(
-                  processCache[tabId],
-                  processedText,
-                );
-              }
-            }
-          });
-        }
-
-        // 在mousedown时记录选择开始，帮助确保选择行为的准确性
-        if (e.button === 0 && termRef.current) {
-          // 左键点击 - 使用调度函数进行温和的调整
-          scheduleSelectionAdjustment();
-        }
-      };
-
-      // 优化的选择元素调整函数 - 避免重复高亮
-      const adjustSelectionElements = () => {
-        if (!termRef.current) return;
-
-        try {
-          // 获取终端DOM元素
-          const terminalElement = termRef.current.element;
-          if (!terminalElement) return;
-
-          // 获取所有选择相关元素
-          const selectionElements = terminalElement.querySelectorAll(
-            ".xterm-selection div",
-          );
-
-          // 如果没有选择元素，直接返回
-          if (selectionElements.length === 0) return;
-
-          // 彻底处理重复的选择元素
-          if (selectionElements.length > 1) {
-            // 保留第一个元素，彻底隐藏其他重复元素
-            selectionElements.forEach((elem, index) => {
-              if (index > 0) {
-                // 使用多种方式彻底隐藏重复元素
-                elem.style.display = "none";
-                elem.style.opacity = "0";
-                elem.style.visibility = "hidden";
-                elem.style.transform = "";
-                elem.style.willChange = "";
-                elem.style.pointerEvents = "none";
-                // 添加标记类以便CSS规则识别
-                elem.classList.add("xterm-selection-duplicate");
-              } else {
-                // 确保第一个元素完全可见
-                elem.style.display = "";
-                elem.style.opacity = "1";
-                elem.style.visibility = "visible";
-                elem.classList.remove("xterm-selection-duplicate");
-              }
-            });
-          }
-
-          // 同时检查是否有多个选择容器
-          const allSelectionContainers =
-            terminalElement.querySelectorAll(".xterm-selection");
-          if (allSelectionContainers.length > 1) {
-            allSelectionContainers.forEach((container, index) => {
-              if (index > 0) {
-                container.style.display = "none";
-                container.style.opacity = "0";
-                container.style.visibility = "hidden";
-              }
-            });
-          }
-
-          // 只对第一个（主要的）选择元素进行调整
-          const primaryElement = selectionElements[0];
-          if (!primaryElement) return;
-
-          // 获取字符度量信息
-          const metrics = getCharacterMetrics(termRef.current);
-          if (!metrics) return;
-
-          const computedStyle = window.getComputedStyle(primaryElement);
-          const currentLeft = parseFloat(computedStyle.left) || 0;
-          const currentTop = parseFloat(computedStyle.top) || 0;
-
-          // 计算需要的偏移量（更温和的调整）
-          const leftOffset =
-            (currentLeft - metrics.screenOffset.x) % metrics.charWidth;
-          const topOffset =
-            (currentTop - metrics.screenOffset.y) % metrics.charHeight;
-
-          // 只有当偏移量超过阈值时才进行调整
-          // const threshold = 3; // Original value
-          const threshold = 1; // Reduce threshold for finer adjustments
-
-          // Only apply transform if the offset is significant enough AND the element is not already aligned.
-          // The condition for applying transform should be based on whether an actual adjustment is needed.
-          let needsAdjustmentX =
-            Math.abs(leftOffset) > 0.1 &&
-            Math.abs(leftOffset) < metrics.charWidth;
-          let needsAdjustmentY =
-            Math.abs(topOffset) > 0.1 &&
-            Math.abs(topOffset) < metrics.charHeight;
-          let adjustX, adjustY;
-
-          // If leftOffset is very close to charWidth, it means it's almost aligned to the next char, so no adjustment or negative.
-          if (Math.abs(metrics.charWidth - leftOffset) < threshold) {
-            adjustX = metrics.charWidth - leftOffset;
-            needsAdjustmentX = true;
-          } else {
-            adjustX = -leftOffset;
-          }
-
-          if (Math.abs(metrics.charHeight - topOffset) < threshold) {
-            adjustY = metrics.charHeight - topOffset;
-            needsAdjustmentY = true;
-          } else {
-            adjustY = -topOffset;
-          }
-
-          // Only apply transform if an adjustment is actually computed and exceeds a minimal pixel change.
-          // This avoids applying tiny transforms like 0.001px.
-          const minPixelChange = 0.5;
-          if (
-            (needsAdjustmentX && Math.abs(adjustX) > minPixelChange) ||
-            (needsAdjustmentY && Math.abs(adjustY) > minPixelChange)
-          ) {
-            primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
-            primaryElement.style.willChange = "transform";
-          } else {
-            // If no significant adjustment is needed, clear any existing transform
-            primaryElement.style.transform = "";
-            primaryElement.style.willChange = "";
-          }
-        } catch (error) {
-          // 选择元素调整失败，简化的回退处理 - 清理所有transform
-          const selectionElements = document.querySelectorAll(
-            ".xterm .xterm-selection div",
-          );
-          selectionElements.forEach((elem) => {
-            elem.style.transform = "";
-            elem.style.willChange = "";
-            elem.style.opacity = "";
-          });
-        }
-      };
-
       // 使用EventManager添加鼠标事件监听
       if (terminalRef.current) {
         eventManager.addEventListener(
@@ -1830,20 +1942,6 @@ const WebTerminal = ({
           "mousedown",
           handleMouseDown,
         );
-
-        // 简化的鼠标事件处理 - 减少频繁调整
-        const handleMouseMove = (e) => {
-          // 移除实时调整以避免闪烁
-          // 选择调整将在鼠标释放时进行
-        };
-
-        const handleMouseUp = (e) => {
-          // 鼠标释放时进行一次性选择区域调整
-          if (termRef.current) {
-            // 使用调度函数进行延迟调整
-            scheduleSelectionAdjustment();
-          }
-        };
 
         eventManager.addEventListener(
           terminalRef.current,
@@ -1854,6 +1952,15 @@ const WebTerminal = ({
           terminalRef.current,
           "mouseup",
           handleMouseUp,
+        );
+      }
+
+      // 添加选择变化事件监听
+      if (document.onselectionchange !== undefined) {
+        eventManager.addEventListener(
+          document,
+          "selectionchange",
+          handleSelectionChange
         );
       }
 
@@ -2312,13 +2419,34 @@ const WebTerminal = ({
         }
       });
 
+      // 添加选择变化事件监听
+      if (document.onselectionchange !== undefined) {
+        eventManager.addEventListener(
+          document,
+          "selectionchange",
+          handleSelectionChange
+        );
+      }
+
       // EventManager会自动清理所有事件监听器、定时器和观察者
       return () => {
+        // 移除选择变化事件监听器
+        eventManager.removeEventListener(
+          document,
+          "selectionchange",
+          handleSelectionChange
+        );
+
+        // 移除样式元素
+        if (styleElement && styleElement.parentNode) {
+          styleElement.parentNode.removeChild(styleElement);
+        }
+
         // 这个函数现在很简洁，因为EventManager处理了大部分清理工作
         // 组件卸载时的清理工作由EventManager处理
       };
     }
-  }, [tabId, usePowershell, refreshKey, sshConfig, eventManager]);
+  }, [tabId, usePowershell, refreshKey, sshConfig, isActive, eventManager]);
 
   // 启动PowerShell的辅助函数
   const startPowerShell = (term, tabId) => {
@@ -3100,3 +3228,4 @@ const WebTerminal = ({
 };
 
 export default WebTerminal;
+
