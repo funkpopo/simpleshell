@@ -12,19 +12,7 @@ import MemoryIcon from "@mui/icons-material/Memory";
 import StorageIcon from "@mui/icons-material/Storage";
 import { useTheme } from "@mui/material/styles";
 import Tooltip from "@mui/material/Tooltip";
-
-// 将字节转换为可读大小
-function formatBytes(bytes, decimals = 2) {
-  if (bytes === 0) return "0 Bytes";
-
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ["Bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
-}
+import { formatFileSize } from "../../core/utils/formatters";
 
 // 资源监控组件
 const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
@@ -284,16 +272,16 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                   <Box sx={{ ml: 4 }}>
                     <Typography variant="body2" gutterBottom>
                       <strong>总内存:</strong>{" "}
-                      {formatBytes(systemInfo.memory.total)}
+                      {formatFileSize(systemInfo.memory.total)}
                     </Typography>
                     <Typography variant="body2" gutterBottom>
                       <strong>已用内存:</strong>{" "}
-                      {formatBytes(systemInfo.memory.used)} (
+                      {formatFileSize(systemInfo.memory.used)} (
                       {systemInfo.memory.usagePercent}%)
                     </Typography>
                     <Typography variant="body2" gutterBottom>
                       <strong>空闲内存:</strong>{" "}
-                      {formatBytes(systemInfo.memory.free)}
+                      {formatFileSize(systemInfo.memory.free)}
                     </Typography>
 
                     <Box sx={{ mt: 1, mb: 0.5 }}>
