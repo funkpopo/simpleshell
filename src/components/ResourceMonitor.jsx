@@ -12,7 +12,7 @@ import MemoryIcon from "@mui/icons-material/Memory";
 import StorageIcon from "@mui/icons-material/Storage";
 import { useTheme } from "@mui/material/styles";
 import Tooltip from "@mui/material/Tooltip";
-import { formatFileSize } from "../../core/utils/formatters";
+import { formatFileSize } from "../core/utils/formatters";
 
 // 资源监控组件
 const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
