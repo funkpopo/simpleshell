@@ -481,6 +481,9 @@ const WebTerminal = ({
   const eventManager = useEventManager(); // 使用统一的事件管理器
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
+  
+  // 添加最近粘贴时间引用，用于防止重复粘贴
+  const lastPasteTimeRef = useRef(0);
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState(null);
@@ -765,6 +768,17 @@ const WebTerminal = ({
     // 鼠标中键点击 (e.button === 1 表示鼠标中键)
     if (e.button === 1) {
       e.preventDefault();
+      e.stopPropagation(); // 阻止事件传播，进一步防止默认行为
+
+      // 检查是否是重复粘贴（100毫秒内的操作视为重复）
+      const now = Date.now();
+      if (now - lastPasteTimeRef.current < 100) {
+        // 忽略短时间内的重复粘贴请求
+        return;
+      }
+      
+      // 更新最后粘贴时间
+      lastPasteTimeRef.current = now;
 
       // 隐藏命令建议窗口，避免与粘贴操作冲突
       setShowSuggestions(false);
@@ -1885,6 +1899,17 @@ const WebTerminal = ({
         // Ctrl+Alt+V 粘贴 (改为Ctrl+Alt+V)
         else if (e.ctrlKey && e.altKey && e.key === "v") {
           e.preventDefault();
+          
+          // 检查是否是重复粘贴（100毫秒内的操作视为重复）
+          const now = Date.now();
+          if (now - lastPasteTimeRef.current < 100) {
+            // 忽略短时间内的重复粘贴请求
+            return;
+          }
+          
+          // 更新最后粘贴时间
+          lastPasteTimeRef.current = now;
+          
           navigator.clipboard.readText().then((text) => {
             if (text && processCache[tabId]) {
               // 使用预处理函数处理多行文本，防止注释和缩进问题
@@ -2715,6 +2740,17 @@ const WebTerminal = ({
 
   // 粘贴剪贴板内容
   const handlePaste = () => {
+    // 检查是否是重复粘贴（100毫秒内的操作视为重复）
+    const now = Date.now();
+    if (now - lastPasteTimeRef.current < 100) {
+      // 忽略短时间内的重复粘贴请求
+      handleClose();
+      return;
+    }
+    
+    // 更新最后粘贴时间
+    lastPasteTimeRef.current = now;
+    
     navigator.clipboard
       .readText()
       .then((text) => {
