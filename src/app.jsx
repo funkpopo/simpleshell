@@ -483,12 +483,12 @@ function App() {
   }, []);
 
   // 保存更新后的连接配置
-  const handleConnectionsUpdate = (updatedConnections) => {
+  const handleConnectionsUpdate = useCallback((updatedConnections) => {
     setConnections(updatedConnections);
     if (window.terminalAPI && window.terminalAPI.saveConnections) {
       window.terminalAPI.saveConnections(updatedConnections);
     }
-  };
+  }, []);
 
   // 创建动态主题
   const theme = React.useMemo(
@@ -1338,7 +1338,11 @@ function App() {
                     zIndex: 1,
                   }}
                 >
-                  <WelcomePage />
+                  <WelcomePage
+                    connections={connections}
+                    onOpenConnection={handleOpenConnection}
+                    onConnectionsUpdate={handleConnectionsUpdate}
+                  />
                 </Box>
               )}
 
