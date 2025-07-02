@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   loadConnections: () => ipcRenderer.invoke("terminal:loadConnections"),
   saveConnections: (connections) =>
     ipcRenderer.invoke("terminal:saveConnections", connections),
+  loadTopConnections: () => ipcRenderer.invoke("terminal:loadTopConnections"),
 
   // 选择密钥文件
   selectKeyFile: () => ipcRenderer.invoke("terminal:selectKeyFile"),
