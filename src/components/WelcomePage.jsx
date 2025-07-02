@@ -60,6 +60,9 @@ const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
               {connection.os}
             </Typography>
           )}
+          {connection.connectionType && (
+            <Chip label={connection.connectionType} size="small" variant="outlined" />
+          )}
           {connection.country && countries[connection.country] && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <span
