@@ -43,6 +43,7 @@ import { DragDropContext, Draggable } from "react-beautiful-dnd";
 import { Droppable } from "./CustomDragDrop.jsx";
 import { arrayMoveImmutable } from "array-move";
 import { alpha } from "@mui/material/styles";
+import { countries } from 'countries-list';
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -152,6 +153,8 @@ const ConnectionManager = memo(
       authType: "password",
       privateKeyPath: "",
       parentGroup: "",
+      country: "",
+      os: "",
     });
 
     // 处理组的展开/折叠 - 添加防抖和状态检查
@@ -185,6 +188,8 @@ const ConnectionManager = memo(
         authType: "password",
         privateKeyPath: "",
         parentGroup: parentGroupId || "",
+        country: "",
+        os: "",
       });
       setDialogOpen(true);
     }, []);
@@ -223,6 +228,8 @@ const ConnectionManager = memo(
           authType: item.authType || "password",
           privateKeyPath: item.privateKeyPath || "",
           parentGroup: parentGroup ? parentGroup.id : "",
+          country: item.country || "",
+          os: item.os || "",
         });
       }
 
@@ -291,6 +298,8 @@ const ConnectionManager = memo(
           password: formData.password,
           authType: formData.authType,
           privateKeyPath: formData.privateKeyPath,
+          country: formData.country,
+          os: formData.os,
         };
 
         if (dialogMode === "add") {
@@ -683,6 +692,14 @@ const ConnectionManager = memo(
         ));
     }, [connections]);
 
+    const countryOptions = useMemo(() => {
+        return Object.entries(countries).map(([code, country]) => (
+            <MenuItem key={code} value={code}>
+                {`(${country.native}) - ${country.name}`}
+            </MenuItem>
+        ));
+    }, []);
+
     return (
       <Paper
         sx={{
@@ -848,6 +865,44 @@ const ConnectionManager = memo(
                         fullWidth
                         size="small"
                       />
+
+                      <FormControl fullWidth size="small">
+                        <InputLabel>操作系统</InputLabel>
+                        <Select
+                          name="os"
+                          value={formData.os || ""}
+                          label="操作系统"
+                          onChange={handleFormChange}
+                        >
+                          <MenuItem value=""><em>无</em></MenuItem>
+                          <MenuItem value="Linux">Linux</MenuItem>
+                          <MenuItem value="Windows">Windows</MenuItem>
+                          <MenuItem value="macOS">macOS</MenuItem>
+                          <MenuItem value="Other">其他</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      <FormControl fullWidth size="small">
+                        <InputLabel>国家/地区</InputLabel>
+                        <Select
+                          name="country"
+                          value={formData.country || ""}
+                          label="国家/地区"
+                          onChange={handleFormChange}
+                          MenuProps={{
+                            PaperProps: {
+                              style: {
+                                maxHeight: 200,
+                              },
+                            },
+                          }}
+                        >
+                          <MenuItem value="">
+                            <em>无</em>
+                          </MenuItem>
+                          {countryOptions}
+                        </Select>
+                      </FormControl>
 
                       <TextField
                         label="密码"

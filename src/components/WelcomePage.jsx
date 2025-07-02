@@ -15,6 +15,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import ComputerIcon from "@mui/icons-material/Computer";
 import { useTranslation } from "react-i18next";
+import { countries } from "countries-list";
 
 const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
   const theme = useTheme();
@@ -51,15 +52,23 @@ const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
         </ListItemIcon>
         <ListItemText
           primary={connection.name || connection.host}
-          secondary={connection.host}
           primaryTypographyProps={{ variant: "body1", fontWeight: "medium" }}
-          secondaryTypographyProps={{ variant: "body2", color: "text.secondary" }}
         />
-        {connection.type && (
-          <Box sx={{ ml: 2, flexShrink: 0 }}>
-            <Chip label={connection.type} size="small" />
-          </Box>
-        )}
+        <Box sx={{ ml: 2, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          {connection.os && (
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              {connection.os}
+            </Typography>
+          )}
+          {connection.country && countries[connection.country] && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <span
+                    className={`fi fi-${connection.country.toLowerCase()}`}
+                    title={countries[connection.country].name}
+                ></span>
+            </Box>
+          )}
+        </Box>
       </ListItemButton>
     </ListItem>
   );
