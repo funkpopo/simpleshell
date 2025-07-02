@@ -24,6 +24,7 @@ class SSHConnectionPool {
     this.tabReferences = new Map(); // 存储标签页对连接的引用关系
     this.healthCheckTimer = null;
     this.isInitialized = false;
+    this.connectionUsage = new Map();
   }
 
   initialize() {
@@ -64,8 +65,23 @@ class SSHConnectionPool {
     return `${config.host}:${config.port || 22}:${config.username}`;
   }
 
+  recordConnectionUsage(connectionId) {
+    if (!connectionId) return;
+    const currentCount = this.connectionUsage.get(connectionId) || 0;
+    this.connectionUsage.set(connectionId, currentCount + 1);
+  }
+
+  getTopConnections(count = 5) {
+    if (this.connectionUsage.size === 0) return [];
+
+    const sorted = [...this.connectionUsage.entries()].sort((a, b) => b[1] - a[1]);
+    return sorted.slice(0, count).map(entry => entry[0]);
+  }
+
   async getConnection(sshConfig) {
     const connectionKey = this.generateConnectionKey(sshConfig);
+
+    this.recordConnectionUsage(sshConfig.id);
 
     // 检查是否已有可用连接
     if (this.connections.has(connectionKey)) {

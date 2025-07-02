@@ -338,6 +338,7 @@ function App() {
 
   // 连接配置状态
   const [connections, setConnections] = React.useState([]);
+  const [topConnections, setTopConnections] = React.useState([]);
 
   // 设置对话框状态
   const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false);
@@ -432,12 +433,34 @@ function App() {
 
   // 应用启动时加载连接配置和预加载组件
   React.useEffect(() => {
-    const loadConnections = async () => {
+    const findConnectionsByIds = (ids, allConnections) => {
+      const found = [];
+      const search = (items) => {
+        for (const item of items) {
+          if (item.type === 'group') {
+            search(item.items || []);
+          } else if (ids.includes(item.id)) {
+            found.push(item);
+          }
+        }
+      };
+      search(allConnections);
+      // Preserve the order from the ids array
+      return ids.map(id => found.find(c => c.id === id)).filter(Boolean);
+    };
+
+    const loadData = async () => {
       try {
-        if (window.terminalAPI && window.terminalAPI.loadConnections) {
-          const loadedConnections = await window.terminalAPI.loadConnections();
-          if (loadedConnections && Array.isArray(loadedConnections)) {
+        if (window.terminalAPI) {
+          const loadedConnections = await window.terminalAPI.loadConnections() || [];
+          if (Array.isArray(loadedConnections)) {
             setConnections(loadedConnections);
+
+            const topConnectionIds = await window.terminalAPI.loadTopConnections() || [];
+            if (Array.isArray(topConnectionIds) && topConnectionIds.length > 0) {
+              const topConns = findConnectionsByIds(topConnectionIds, loadedConnections);
+              setTopConnections(topConns);
+            }
           }
         }
       } catch (error) {
@@ -445,7 +468,7 @@ function App() {
       }
     };
 
-    loadConnections();
+    loadData();
 
     // 延迟预加载组件，避免影响应用启动性能
     const preloadTimer = setTimeout(() => {
@@ -1340,6 +1363,7 @@ function App() {
                 >
                   <WelcomePage
                     connections={connections}
+                    topConnections={topConnections}
                     onOpenConnection={handleOpenConnection}
                     onConnectionsUpdate={handleConnectionsUpdate}
                   />

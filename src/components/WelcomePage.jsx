@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useCallback } from "react";
 import {
   Box,
   Typography,
@@ -8,39 +8,17 @@ import {
   ListItemText,
   ListItemIcon,
   ListItemButton,
-  Collapse,
   alpha,
+  Divider,
+  Chip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import ComputerIcon from "@mui/icons-material/Computer";
-import FolderIcon from "@mui/icons-material/Folder";
-import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import { useTranslation } from "react-i18next";
 
-const WelcomePage = ({ connections, onOpenConnection }) => {
+const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const [internalConnections, setInternalConnections] = useState(connections || []);
-
-  useEffect(() => {
-    // 当从props接收的connections更新时，同步到内部状态
-    setInternalConnections(connections || []);
-  }, [connections]);
-
-  const handleToggleGroup = useCallback((groupId) => {
-    const toggle = (items) => {
-      return items.map((item) => {
-        if (item.id === groupId && item.type === "group") {
-          return { ...item, expanded: !item.expanded };
-        }
-        if (item.type === "group" && item.items) {
-          return { ...item, items: toggle(item.items) };
-        }
-        return item;
-      });
-    };
-    setInternalConnections((prevConnections) => toggle(prevConnections));
-  }, []);
 
   const handleOpenConnection = useCallback((connection) => {
     if (onOpenConnection) {
@@ -48,76 +26,43 @@ const WelcomePage = ({ connections, onOpenConnection }) => {
     }
   }, [onOpenConnection]);
 
-  const renderConnectionItem = (connection, level = 0) => (
-    <ListItem key={connection.id} disablePadding>
+  const renderTopConnectionItem = (connection) => (
+    <ListItem
+      key={connection.id}
+      disablePadding
+      sx={{ mb: 1 }}
+    >
       <ListItemButton
         onClick={() => handleOpenConnection(connection)}
         sx={{
-          pl: 2 + level * 2,
+          py: 0.1,
+          borderRadius: 1,
+          border: '1px solid',
+          borderColor: 'divider',
+          backgroundColor: alpha(theme.palette.background.paper, 0.7),
           "&:hover": {
             backgroundColor: alpha(theme.palette.primary.main, 0.1),
+            borderColor: 'primary.main',
           },
         }}
       >
-        <ListItemIcon sx={{ minWidth: 36 }}>
-          <ComputerIcon fontSize="small" />
+        <ListItemIcon sx={{ minWidth: 40 }}>
+          <ComputerIcon />
         </ListItemIcon>
         <ListItemText
           primary={connection.name || connection.host}
-          primaryTypographyProps={{ variant: "body2" }}
+          secondary={connection.host}
+          primaryTypographyProps={{ variant: "body1", fontWeight: "medium" }}
+          secondaryTypographyProps={{ variant: "body2", color: "text.secondary" }}
         />
+        {connection.type && (
+          <Box sx={{ ml: 2, flexShrink: 0 }}>
+            <Chip label={connection.type} size="small" />
+          </Box>
+        )}
       </ListItemButton>
     </ListItem>
   );
-
-  const renderGroup = (group, level = 0) => (
-    <React.Fragment key={group.id}>
-      <ListItem disablePadding>
-        <ListItemButton
-          onClick={() => handleToggleGroup(group.id)}
-          sx={{
-            pl: 2 + level * 2,
-            "&:hover": {
-              backgroundColor: alpha(theme.palette.primary.main, 0.05),
-            },
-          }}
-        >
-          <ListItemIcon sx={{ minWidth: 36 }}>
-            {group.expanded ? (
-              <FolderOpenIcon fontSize="small" />
-            ) : (
-              <FolderIcon fontSize="small" />
-            )}
-          </ListItemIcon>
-          <ListItemText
-            primary={group.name}
-            primaryTypographyProps={{
-              fontWeight: "medium",
-              variant: "body2",
-            }}
-          />
-        </ListItemButton>
-      </ListItem>
-      <Collapse in={group.expanded} timeout="auto" unmountOnExit>
-        <List component="div" disablePadding>
-          {group.items && group.items.map((item) =>
-            item.type === "group"
-              ? renderGroup(item, level + 1)
-              : renderConnectionItem(item, level + 1)
-          )}
-        </List>
-      </Collapse>
-    </React.Fragment>
-  );
-
-  const renderTree = (items) => {
-    return items.map((item) => {
-      if (item.type === "group") {
-        return renderGroup(item, 0);
-      }
-      return renderConnectionItem(item, 0);
-    });
-  };
 
   return (
     <Box
@@ -138,7 +83,7 @@ const WelcomePage = ({ connections, onOpenConnection }) => {
           p: 4,
           borderRadius: 2,
           width: '100%',
-          maxWidth: 600,
+          maxWidth: 400,
           bgcolor: "background.paper",
           boxShadow: `0 8px 32px 0 ${theme.palette.primary.main}20`,
           border: `1px solid ${theme.palette.divider}`,
@@ -165,8 +110,15 @@ const WelcomePage = ({ connections, onOpenConnection }) => {
           SimpleShell
         </Typography>
         <Box sx={{ overflow: 'auto', flexGrow: 1 }}>
-          {connections.length > 0 ? (
-            <List>{renderTree(internalConnections)}</List>
+          {topConnections && topConnections.length > 0 ? (
+            <>
+              <Typography variant="h6" sx={{ mb: 2, px: 2, fontWeight: 'medium' }}>
+                {t('上一次连接的服务器')}
+              </Typography>
+              <List sx={{ px: 1 }}>
+                {topConnections.map((conn) => renderTopConnectionItem(conn))}
+              </List>
+            </>
           ) : (
             <Box
               sx={{

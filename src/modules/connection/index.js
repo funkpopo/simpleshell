@@ -52,6 +52,10 @@ class ConnectionManager {
     this.sshManager.resizeTerminal(processId, cols, rows);
   }
 
+  getTopConnections(count) {
+    return this.sshConnectionPool.getTopConnections(count);
+  }
+
   // 连接池相关方法
   async getSSHConnection(sshConfig) {
     return this.sshConnectionPool.getConnection(sshConfig);

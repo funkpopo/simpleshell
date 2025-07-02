@@ -890,6 +890,56 @@ function saveCommandHistory(history) {
   }
 }
 
+function loadTopConnections() {
+  if (!mainConfigPath) {
+    if (logToFile) {
+      logToFile("ConfigManager: Main config path not set. Cannot load top connections.", "ERROR");
+    }
+    return [];
+  }
+  try {
+    if (fs.existsSync(mainConfigPath)) {
+      const data = fs.readFileSync(mainConfigPath, "utf8");
+      const config = JSON.parse(data);
+      if (config.topConnections && Array.isArray(config.topConnections)) {
+        return config.topConnections;
+      }
+    }
+  } catch (error) {
+    if (logToFile) {
+      logToFile("ConfigManager: Failed to load top connections - " + error.message, "ERROR");
+    }
+  }
+  return [];
+}
+
+function saveTopConnections(connections) {
+  if (!mainConfigPath) {
+    if (logToFile) {
+      logToFile("ConfigManager: Main config path not set. Cannot save top connections.", "ERROR");
+    }
+    return false;
+  }
+  try {
+    let config = {};
+    if (fs.existsSync(mainConfigPath)) {
+      const data = fs.readFileSync(mainConfigPath, "utf8");
+      config = JSON.parse(data);
+    }
+    config.topConnections = connections;
+    fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
+    if (logToFile) {
+      logToFile("ConfigManager: Top connections saved successfully.", "INFO");
+    }
+    return true;
+  } catch (error) {
+    if (logToFile) {
+      logToFile("ConfigManager: Failed to save top connections - " + error.message, "ERROR");
+    }
+    return false;
+  }
+}
+
 module.exports = {
   init,
   initializeMainConfig,
@@ -905,6 +955,8 @@ module.exports = {
   saveLogSettings,
   loadCommandHistory,
   saveCommandHistory,
+  loadTopConnections,
+  saveTopConnections,
   // Do not export _getMainConfigPathInternal, _processConnectionsForSave, _processConnectionsForLoad
   // as they are intended to be private helper functions.
 };

@@ -522,6 +522,17 @@ app.on("before-quit", () => {
       "ERROR",
     );
   }
+
+  // Save top connections
+  try {
+    const topConnections = connectionManager.getTopConnections(5);
+    if (topConnections && topConnections.length > 0) {
+      configManager.saveTopConnections(topConnections);
+      logToFile(`Saved ${topConnections.length} top connections on app quit`, "INFO");
+    }
+  } catch (error) {
+    logToFile(`Failed to save top connections on quit: ${error.message}`, "ERROR");
+  }
 });
 
 // 关闭所有窗口时退出应用（macOS除外）
@@ -1284,6 +1295,11 @@ function setupIPC(mainWindow) {
   // 保存连接配置
   ipcMain.handle("terminal:saveConnections", async (event, connections) => {
     return configManager.saveConnections(connections);
+  });
+
+  // Load top connections
+  ipcMain.handle("terminal:loadTopConnections", async () => {
+    return configManager.loadTopConnections();
   });
 
   // 选择密钥文件
