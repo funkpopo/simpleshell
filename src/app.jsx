@@ -59,6 +59,7 @@ import { changeLanguage } from "./i18n/i18n";
 import "./index.css";
 import { styled } from "@mui/material/styles";
 import { SIDEBAR_WIDTHS } from "./constants/layout.js";
+import "flag-icons/css/flag-icons.min.css";
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
@@ -504,6 +505,38 @@ function App() {
       );
     };
   }, []);
+
+  // 当连接列表更新时，同步更新置顶连接列表
+  React.useEffect(() => {
+    const findConnectionsByIds = (ids, allConnections) => {
+      const found = [];
+      const search = (items) => {
+        for (const item of items) {
+          if (item.type === 'group') {
+            search(item.items || []);
+          } else if (ids.includes(item.id)) {
+            found.push(item);
+          }
+        }
+      };
+      search(allConnections);
+      return ids.map(id => found.find(c => c.id === id)).filter(Boolean);
+    };
+
+    if (window.terminalAPI?.loadTopConnections) {
+      window.terminalAPI.loadTopConnections().then(topConnectionIds => {
+        if (Array.isArray(topConnectionIds) && topConnectionIds.length > 0) {
+          const topConns = findConnectionsByIds(topConnectionIds, connections);
+          // 只有当计算出的列表与当前状态不同时才更新，避免不必要的渲染
+          if (JSON.stringify(topConns) !== JSON.stringify(topConnections)) {
+            setTopConnections(topConns);
+          }
+        }
+      }).catch(error => {
+        // 处理加载置顶连接失败的情况
+      });
+    }
+  }, [connections]); // 依赖于 connections state
 
   // 保存更新后的连接配置
   const handleConnectionsUpdate = useCallback((updatedConnections) => {
