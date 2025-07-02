@@ -155,6 +155,7 @@ const ConnectionManager = memo(
       parentGroup: "",
       country: "",
       os: "",
+      connectionType: "",
     });
 
     // 处理组的展开/折叠 - 添加防抖和状态检查
@@ -190,6 +191,7 @@ const ConnectionManager = memo(
         parentGroup: parentGroupId || "",
         country: "",
         os: "",
+        connectionType: "",
       });
       setDialogOpen(true);
     }, []);
@@ -230,6 +232,7 @@ const ConnectionManager = memo(
           parentGroup: parentGroup ? parentGroup.id : "",
           country: item.country || "",
           os: item.os || "",
+          connectionType: item.connectionType || "",
         });
       }
 
@@ -300,6 +303,7 @@ const ConnectionManager = memo(
           privateKeyPath: formData.privateKeyPath,
           country: formData.country,
           os: formData.os,
+          connectionType: formData.connectionType,
         };
 
         if (dialogMode === "add") {
@@ -866,44 +870,6 @@ const ConnectionManager = memo(
                         size="small"
                       />
 
-                      <FormControl fullWidth size="small">
-                        <InputLabel>操作系统</InputLabel>
-                        <Select
-                          name="os"
-                          value={formData.os || ""}
-                          label="操作系统"
-                          onChange={handleFormChange}
-                        >
-                          <MenuItem value=""><em>无</em></MenuItem>
-                          <MenuItem value="Linux">Linux</MenuItem>
-                          <MenuItem value="Windows">Windows</MenuItem>
-                          <MenuItem value="macOS">macOS</MenuItem>
-                          <MenuItem value="Other">其他</MenuItem>
-                        </Select>
-                      </FormControl>
-
-                      <FormControl fullWidth size="small">
-                        <InputLabel>国家/地区</InputLabel>
-                        <Select
-                          name="country"
-                          value={formData.country || ""}
-                          label="国家/地区"
-                          onChange={handleFormChange}
-                          MenuProps={{
-                            PaperProps: {
-                              style: {
-                                maxHeight: 200,
-                              },
-                            },
-                          }}
-                        >
-                          <MenuItem value="">
-                            <em>无</em>
-                          </MenuItem>
-                          {countryOptions}
-                        </Select>
-                      </FormControl>
-
                       <TextField
                         label="密码"
                         name="password"
@@ -978,6 +944,60 @@ const ConnectionManager = memo(
                             <em>不分组</em>
                           </MenuItem>
                           {groupOptions}
+                        </Select>
+                      </FormControl>
+
+                      <FormControl fullWidth size="small">
+                        <InputLabel>类型</InputLabel>
+                        <Select
+                          name="connectionType"
+                          value={formData.connectionType || ""}
+                          label="类型"
+                          onChange={handleFormChange}
+                        >
+                          <MenuItem value=""><em>无</em></MenuItem>
+                          <MenuItem value="VPS">VPS</MenuItem>
+                          <MenuItem value="NAS">NAS</MenuItem>
+                          <MenuItem value="BareMetal">裸金属</MenuItem>
+                          <MenuItem value="Other">其他</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      <FormControl fullWidth size="small">
+                        <InputLabel>操作系统</InputLabel>
+                        <Select
+                          name="os"
+                          value={formData.os || ""}
+                          label="操作系统"
+                          onChange={handleFormChange}
+                        >
+                          <MenuItem value=""><em>无</em></MenuItem>
+                          <MenuItem value="Linux">Linux</MenuItem>
+                          <MenuItem value="Windows">Windows</MenuItem>
+                          <MenuItem value="macOS">macOS</MenuItem>
+                          <MenuItem value="Other">其他</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      <FormControl fullWidth size="small">
+                        <InputLabel>国家/地区</InputLabel>
+                        <Select
+                          name="country"
+                          value={formData.country || ""}
+                          label="国家/地区"
+                          onChange={handleFormChange}
+                          MenuProps={{
+                            PaperProps: {
+                              style: {
+                                maxHeight: 200,
+                              },
+                            },
+                          }}
+                        >
+                          <MenuItem value="">
+                            <em>无</em>
+                          </MenuItem>
+                          {countryOptions}
                         </Select>
                       </FormControl>
                     </>
