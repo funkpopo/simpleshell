@@ -6,14 +6,12 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon,
   ListItemButton,
   alpha,
   Divider,
   Chip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import ComputerIcon from "@mui/icons-material/Computer";
 import { useTranslation } from "react-i18next";
 import { countries } from "countries-list";
 
@@ -47,9 +45,6 @@ const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
           },
         }}
       >
-        <ListItemIcon sx={{ minWidth: 40 }}>
-          <ComputerIcon />
-        </ListItemIcon>
         <ListItemText
           primary={connection.name || connection.host}
           primaryTypographyProps={{ variant: "body1", fontWeight: "medium" }}
@@ -142,14 +137,6 @@ const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
                 py: 5,
               }}
             >
-              <ComputerIcon
-                sx={{
-                  fontSize: 60,
-                  color: "primary.main",
-                  mb: 2,
-                  filter: `drop-shadow(0 4px 6px ${theme.palette.primary.main}30)`,
-                }}
-              />
               <Typography
                 variant="h5"
                 gutterBottom
