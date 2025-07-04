@@ -10,13 +10,13 @@ const sftpSessionLocks = new Map();
 let pendingOperations = new Map(); // key: tabId, value: Array of pending operations
 
 // SFTP 会话池配置 (Consider making these configurable via init or a config module later)
-const SFTP_SESSION_IDLE_TIMEOUT = 120000; // 空闲超时时间（毫秒）
+const SFTP_SESSION_IDLE_TIMEOUT = 600000; // 空闲超时时间（10分钟）
 const MAX_SFTP_SESSIONS_PER_TAB = 1; // 每个标签页的最大会话数量
 const MAX_TOTAL_SFTP_SESSIONS = 50; // 总的最大会话数量
 const SFTP_HEALTH_CHECK_INTERVAL = 90000; // 健康检查间隔（毫秒）
-const SFTP_OPERATION_TIMEOUT = 60000; // 操作超时时间（毫秒），增加到60秒
+const SFTP_OPERATION_TIMEOUT = 86400000; // 操作超时时间（毫秒），增加到24小时
 const SFTP_LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 大文件阈值（100MB）
-const SFTP_LARGE_FILE_TIMEOUT = 3000000; // 大文件传输超时时间（50分钟）
+const SFTP_LARGE_FILE_TIMEOUT = 86400000; // 大文件传输超时时间（24小时）
 
 let sftpHealthCheckTimer = null;
 

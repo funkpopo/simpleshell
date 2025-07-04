@@ -11,6 +11,7 @@ log
 .prettierrc.yaml
 .prettierignore
 issues
+todo.md
 
 .cursorignore
 
