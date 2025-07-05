@@ -151,7 +151,15 @@ class CommandHistoryService {
 
     // 按使用次数和时间排序
     prefixMatches.sort((a, b) => {
-      if (a.count !== b.count) return (b.count || 1) - (a.count || 1);
+      // 首先按命令长度升序排序
+      if (a.command.length !== b.command.length) {
+        return a.command.length - b.command.length;
+      }
+      // 如果长度相同，按使用次数降序排序
+      if (a.count !== b.count) {
+        return (b.count || 1) - (a.count || 1);
+      }
+      // 如果使用次数也相同，按时间戳降序排序
       return b.timestamp - a.timestamp;
     });
 
