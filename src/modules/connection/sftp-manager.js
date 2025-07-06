@@ -1,4 +1,3 @@
-const SftpClient = require("ssh2-sftp-client");
 const { logToFile } = require("../../core/utils/logger");
 
 // SFTP会话池配置

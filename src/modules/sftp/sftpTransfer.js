@@ -3,7 +3,6 @@
 
 const fs = require("fs");
 const path = require("path");
-const SftpClient = require("ssh2-sftp-client"); // For direct SFTP operations if not going through sftpCore's queue for all parts.
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 
 let logToFile = null;
@@ -361,8 +360,7 @@ async function handleUploadFile(
     !sendToRenderer ||
     !logToFile ||
     !fs ||
-    !path ||
-    !SftpClient
+    !path
   ) {
     logToFile("sftpTransfer not properly initialized for uploadFile.", "ERROR");
     return { success: false, error: "SFTP Transfer module not initialized." };
@@ -848,8 +846,7 @@ async function handleUploadFolder(
     !sendToRenderer ||
     !logToFile ||
     !fs ||
-    !path ||
-    !SftpClient
+    !path
   ) {
     logToFile(
       "sftpTransfer: Not properly initialized for uploadFolder.",
@@ -1278,8 +1275,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
     !sendToRenderer ||
     !logToFile ||
     !fs ||
-    !path ||
-    !SftpClient
+    !path
   ) {
     logToFile(
       "sftpTransfer: Not properly initialized for downloadFolder.",
