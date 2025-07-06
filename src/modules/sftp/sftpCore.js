@@ -1,4 +1,3 @@
-const SftpClient = require("ssh2-sftp-client"); // This might be used by transfer operations, ensure it's available if needed by sftpCore itself later. Or it might be passed in if only transfer uses it.
 // For now, assuming ssh2.Client's sftp method is primarily used for core operations.
 
 let logToFile = null;
