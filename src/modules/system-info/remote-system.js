@@ -12,6 +12,7 @@ async function getRemoteSystemInfo(sshClient) {
       },
       cpu: { model: "未知", cores: 0, usage: 0 },
       memory: { total: 0, free: 0, used: 0, usagePercent: 0 },
+      processes: [], // Initially empty, will be fetched on demand
     };
 
     // 获取基本操作系统信息
@@ -414,6 +415,58 @@ async function getRemoteSystemInfo(sshClient) {
   });
 }
 
+async function getRemoteProcessList(sshClient) {
+  return new Promise((resolve, reject) => {
+    // 使用ps命令获取进程列表，--no-headers避免输出标题行
+    // 输出格式：PID,PPID,CPU使用率,内存使用率,用户,命令名
+    const command = "ps -axo pid,ppid,%cpu,%mem,user:20,comm --no-headers";
+
+    sshClient.exec(command, (err, stream) => {
+      if (err) {
+        return reject(
+          new Error(`Failed to execute process list command: ${err.message}`),
+        );
+      }
+
+      let output = "";
+      stream.on("data", (data) => {
+        output += data.toString();
+      });
+
+      stream.on("close", () => {
+        try {
+          const processes = output
+            .trim()
+            .split("\n")
+            .map((line) => {
+              const parts = line.trim().split(/\s+/);
+              if (parts.length < 6) return null;
+
+              // 最后一个元素是命令，前面的都是固定列
+              const commandName = parts.slice(5).join(" ");
+
+              return {
+                pid: parseInt(parts[0], 10),
+                ppid: parseInt(parts[1], 10),
+                cpu: parseFloat(parts[2]),
+                memory: parseFloat(parts[3]),
+                user: parts[4],
+                name: commandName,
+              };
+            })
+            .filter(Boolean) // 过滤掉解析失败的行
+            .sort((a, b) => b.memory - a.memory);
+
+          resolve(processes);
+        } catch (parseError) {
+          reject(new Error(`Failed to parse process list: ${parseError.message}`));
+        }
+      });
+    });
+  });
+}
+
 module.exports = {
   getRemoteSystemInfo,
+  getRemoteProcessList,
 };

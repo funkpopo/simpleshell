@@ -1470,6 +1470,33 @@ function setupIPC(mainWindow) {
     }
   });
 
+  // 获取进程列表
+  ipcMain.handle("terminal:getProcessList", async (event, processId) => {
+    try {
+      if (!processId || !childProcesses.has(processId)) {
+        return systemInfo.getProcessList();
+      } else {
+        const processObj = childProcesses.get(processId);
+        if (
+          (processObj.type === "ssh2" || processObj.type === "ssh") &&
+          (processObj.process || processObj.client || processObj.channel)
+        ) {
+          const sshClient =
+            processObj.client || processObj.process || processObj.channel;
+          return systemInfo.getRemoteProcessList(sshClient);
+        } else {
+          return systemInfo.getProcessList();
+        }
+      }
+    } catch (error) {
+      logToFile(`Failed to get process list: ${error.message}`, "ERROR");
+      return {
+        error: "获取进程列表失败",
+        message: error.message,
+      };
+    }
+  });
+
   // AI设置相关IPC处理
   ipcMain.handle("ai:loadSettings", async () => {
     return configManager.loadAISettings();
