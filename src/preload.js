@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 资源监控API
   getSystemInfo: (processId) =>
     ipcRenderer.invoke("terminal:getSystemInfo", processId),
+  getProcessList: (processId) =>
+    ipcRenderer.invoke("terminal:getProcessList", processId),
 
   // 快捷命令API
   getShortcutCommands: () => ipcRenderer.invoke("get-shortcut-commands"),

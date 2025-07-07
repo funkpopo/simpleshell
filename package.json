@@ -88,6 +88,7 @@
     "react-window-infinite-loader": "^1.0.10",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
-    "ssh2": "^1.16.0"
+    "ssh2": "^1.16.0",
+    "systeminformation": "^5.27.7"
   }
 }

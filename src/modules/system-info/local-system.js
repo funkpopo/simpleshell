@@ -1,4 +1,23 @@
 const os = require("os");
+const si = require("systeminformation");
+
+async function getProcessList() {
+  try {
+    const processes = await si.processes();
+    return processes.list
+      .map((p) => ({
+        pid: p.pid,
+        name: p.name,
+        cpu: p.cpu,
+        memory: p.mem, // Memory usage in percent
+        memoryBytes: p.mem_rss * 1024, // mem_rss is in KB
+      }))
+      .sort((a, b) => b.memory - a.memory);
+  } catch (error) {
+    console.error("Error getting process list:", error);
+    return [];
+  }
+}
 
 function getCpuUsage() {
   const cpus = os.cpus();
@@ -111,10 +130,12 @@ function getLocalSystemInfo() {
         ((os.totalmem() - os.freemem()) / os.totalmem()) * 100,
       ),
     },
+    processes: [], // Initially empty, will be fetched on demand
   };
 }
 
 module.exports = {
   getLocalSystemInfo,
   getCpuUsage,
+  getProcessList,
 };
