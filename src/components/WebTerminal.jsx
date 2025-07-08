@@ -1373,10 +1373,14 @@ const WebTerminal = ({
             setIsConfirmationPromptActive(false);
           }
 
-          // 检查是否是确认响应输入（y/n/yes/no等）
-          const isConfirmationResponse =
-            /^(y|n|yes|no|是|否|确认|取消)$/i.test(command) ||
-            /^[yYnN]$/i.test(command);
+          // 增强的确认响应检测：检查整行是否包含确认对话特征
+          const hasConfirmationPromptInLine = /(\[?[yY]\/[nN]\]?|\(?[yY]\/[nN]\)?|yes\/no|YES\/NO|是\/否)/i.test(lastLine);
+          
+          // 检查用户输入是否为确认响应
+          const isUserConfirmationInput = /^(y|n|yes|no|是|否|确认|取消)$/i.test(command) || /^[yYnN]$/i.test(command);
+          
+          // 只有当整行包含确认提示且用户输入为确认响应时，才认定为确认响应
+          const isConfirmationResponse = hasConfirmationPromptInLine && isUserConfirmationInput;
 
           // 确保命令不为空且不与上一次执行的命令相同，并且不在编辑器模式中
           // 注意：inEditorMode可能已经被buffer类型检测器更新
