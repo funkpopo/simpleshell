@@ -20,6 +20,64 @@ import ListItem from "@mui/material/ListItem";
 import Grid from "@mui/material/Grid";
 import Memory from "@mui/icons-material/Memory"; // For Processes icon
 
+// 百分比背景条组件
+const PercentageBar = memo(({ value, theme }) => {
+  const percentage = Math.min(Math.max(value, 0), 100);
+  
+  // 根据百分比确定颜色
+  const getColor = (val) => {
+    if (val >= 80) return theme.palette.error.main;
+    if (val >= 60) return theme.palette.warning.main;
+    return theme.palette.success.main;
+  };
+
+  const backgroundColor = getColor(percentage);
+
+  return (
+    <Box 
+      sx={{ 
+        position: 'relative',
+        height: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '4px',
+        overflow: 'hidden',
+        bgcolor: 'rgba(0, 0, 0, 0.04)',
+      }}
+    >
+      {/* 背景条 */}
+      <Box
+        sx={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          height: '100%',
+          width: `${percentage}%`,
+          backgroundColor: backgroundColor,
+          opacity: 0.3,
+          borderRadius: '4px',
+          transition: 'width 0.3s ease-in-out',
+        }}
+      />
+      {/* 文字 */}
+      <Typography 
+        variant="body2" 
+        sx={{ 
+          position: 'relative',
+          zIndex: 1,
+          fontWeight: 500,
+          color: theme.palette.text.primary,
+        }}
+      >
+        {value.toFixed(1)}%
+      </Typography>
+    </Box>
+  );
+});
+
+PercentageBar.displayName = "PercentageBar";
+
 const AccordionHeader = ({ title, icon, expanded, onClick }) => {
   const theme = useTheme();
   return (
@@ -154,7 +212,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   return (
     <Paper
       sx={{
-        width: open ? 350 : 0, // 稍宽一点以容纳进程列表
+        width: open ? 300 : 0,
         height: "100%",
         overflow: "hidden",
         transition: theme.transitions.create("width", {
@@ -380,15 +438,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                                     </Typography>
                                   </Tooltip>
                                 </Box>
-                                <Box flex="0 0 25%" textAlign="right" px={1} sx={{ borderLeft: `1px solid ${theme.palette.divider}` }}>
-                                  <Typography variant="body2" noWrap>
-                                    {p.cpu.toFixed(1)}%
-                                  </Typography>
+                                <Box flex="0 0 25%" px={1} sx={{ borderLeft: `1px solid ${theme.palette.divider}` }}>
+                                  <PercentageBar value={p.cpu} theme={theme} />
                                 </Box>
-                                <Box flex="0 0 25%" textAlign="right" pl={1} sx={{ borderLeft: `1px solid ${theme.palette.divider}` }}>
-                                  <Typography variant="body2" noWrap>
-                                    {p.memory.toFixed(1)}%
-                                  </Typography>
+                                <Box flex="0 0 25%" pl={1} sx={{ borderLeft: `1px solid ${theme.palette.divider}` }}>
+                                  <PercentageBar value={p.memory} theme={theme} />
                                 </Box>
                               </Box>
                             </ListItem>
