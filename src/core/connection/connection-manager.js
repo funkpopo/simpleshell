@@ -307,7 +307,7 @@ class ConnectionManager extends EventEmitter {
 
       const poolConfig = {
         ...this.config.poolConfig,
-        maxConnections: this.config.poolConfig.defaultPoolSize,
+        maxConnections: this.config.poolConfig.maxConnections, // 统一使用全局maxConnections
       };
 
       pool = new SSHPool(poolConfig);
