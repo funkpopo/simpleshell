@@ -2724,6 +2724,10 @@ const WebTerminal = ({
   const handleContextMenu = (event) => {
     event.preventDefault();
 
+    // 新增：右键菜单弹出时自动隐藏命令提示浮动窗口
+    setShowSuggestions(false);
+    setSuggestions([]);
+
     // 检查是否有选中的文本
     if (termRef.current) {
       const selection = termRef.current.getSelection();
@@ -2758,6 +2762,10 @@ const WebTerminal = ({
 
   // 粘贴剪贴板内容
   const handlePaste = () => {
+    // 新增：粘贴时自动隐藏命令提示浮动窗口
+    setShowSuggestions(false);
+    setSuggestions([]);
+
     // 检查是否是重复粘贴（100毫秒内的操作视为重复）
     const now = Date.now();
     if (now - lastPasteTimeRef.current < 100) {
