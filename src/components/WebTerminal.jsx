@@ -22,6 +22,7 @@ import Divider from "@mui/material/Divider";
 import Tooltip from "@mui/material/Tooltip";
 import IconButton from "@mui/material/IconButton";
 import CommandSuggestion from "./CommandSuggestion.jsx";
+import { findGroupByTab } from '../core/syncInputGroups';
 
 // 添加全局样式以确保xterm正确填满容器
 const terminalStyles = `
@@ -3102,6 +3103,26 @@ const WebTerminal = ({
       recentOutputLinesRef.current = [];
     };
   }, []);
+
+  // 输入同步广播封装
+  const broadcastInputToGroup = useCallback((input) => {
+    const group = findGroupByTab(tabId);
+    if (group && group.members && group.members.length > 1) {
+      group.members.forEach(targetTabId => {
+        if (targetTabId !== tabId && window.terminalAPI && window.terminalAPI.sendToProcess && processCache[targetTabId]) {
+          window.terminalAPI.sendToProcess(processCache[targetTabId], input);
+        }
+      });
+    }
+  }, [tabId]);
+
+  // 示例：假设有如下输入处理函数
+  const handleUserInput = (input) => {
+    if (window.terminalAPI && window.terminalAPI.sendToProcess && processCache[tabId]) {
+      window.terminalAPI.sendToProcess(processCache[tabId], input);
+      broadcastInputToGroup(input);
+    }
+  };
 
   return (
     <Box

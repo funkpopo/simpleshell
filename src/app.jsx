@@ -60,6 +60,11 @@ import "./index.css";
 import { styled } from "@mui/material/styles";
 import { SIDEBAR_WIDTHS } from "./constants/layout.js";
 import "flag-icons/css/flag-icons.min.css";
+import { findGroupByTab, getGroups, addGroup, addTabToGroup, removeTabFromGroup } from './core/syncInputGroups';
+import ListItemText from "@mui/material/ListItemText";
+import Divider from "@mui/material/Divider";
+import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
+import AddIcon from "@mui/icons-material/Add";
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
@@ -295,6 +300,7 @@ function App() {
     mouseX: null,
     mouseY: null,
     tabIndex: null,
+    tabId: null,
   });
 
   // 拖动标签状态
@@ -680,15 +686,16 @@ function App() {
 
   // 标签页右键菜单打开
   const handleTabContextMenu = useCallback(
-    (event, index) => {
+    (event, index, tabId) => {
       event.preventDefault();
       // 欢迎页不显示右键菜单
       if (tabs[index].id === "welcome") return;
 
       setTabContextMenu({
-        mouseX: event.clientX,
-        mouseY: event.clientY,
+        mouseX: event.clientX - 2,
+        mouseY: event.clientY - 4,
         tabIndex: index,
+        tabId: tabId,
       });
     },
     [tabs],
@@ -696,11 +703,7 @@ function App() {
 
   // 标签页右键菜单关闭
   const handleTabContextMenuClose = useCallback(() => {
-    setTabContextMenu({
-      mouseX: null,
-      mouseY: null,
-      tabIndex: null,
-    });
+    setTabContextMenu({ mouseX: null, mouseY: null, tabIndex: null, tabId: null });
   }, []);
 
   // 刷新终端连接
@@ -1182,6 +1185,24 @@ function App() {
     };
   }, [darkMode]); // 添加 darkMode 依赖
 
+  // 分组操作回调
+  const handleJoinGroup = (tabId, groupId) => {
+    addTabToGroup(tabId, groupId);
+    setTabs([...tabs]); // 触发刷新
+    handleTabContextMenuClose();
+  };
+  const handleRemoveFromGroup = (tabId) => {
+    removeTabFromGroup(tabId);
+    setTabs([...tabs]);
+    handleTabContextMenuClose();
+  };
+  const handleCreateGroup = (tabId) => {
+    const newGroup = addGroup();
+    addTabToGroup(tabId, newGroup.groupId);
+    setTabs([...tabs]);
+    handleTabContextMenuClose();
+  };
+
   // 在主题加载完成前显示加载状态，避免闪烁
   if (themeLoading) {
     return (
@@ -1313,12 +1334,13 @@ function App() {
                   onClose={
                     tab.id !== "welcome" ? () => handleCloseTab(index) : null
                   }
-                  onContextMenu={(e) => handleTabContextMenu(e, index)}
+                  onContextMenu={(e) => handleTabContextMenu(e, index, tab.id)}
                   onDragStart={(e) => handleDragStart(e, index)}
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={(e) => handleDrop(e, index)}
                   onDragEnd={handleDragEnd}
                   index={index}
+                  tabId={tab.id}
                 />
               ))}
             </Tabs>
@@ -1334,6 +1356,45 @@ function App() {
                   : undefined
               }
             >
+              {/* 分组相关菜单项 */}
+              {(() => {
+                const tabId = tabContextMenu.tabId;
+                if (!tabId) return null;
+                const group = findGroupByTab(tabId);
+                const groups = getGroups();
+                const groupMenuItems = [];
+                if (group) {
+                  groupMenuItems.push(
+                    <MenuItem key="remove-from-group" onClick={() => handleRemoveFromGroup(tabId)}>
+                      <PowerOffIcon fontSize="small" sx={{ color: group.color, mr: 1 }} />
+                      <ListItemText>{`${t("tabMenu.removeFromGroup")} ${group.groupId.replace('G', '')}`}</ListItemText>
+                    </MenuItem>
+                  );
+                } else {
+                  groups.forEach(g => {
+                    groupMenuItems.push(
+                      <MenuItem key={g.groupId} onClick={() => handleJoinGroup(tabId, g.groupId)}>
+                        <AddIcon fontSize="small" sx={{ mr: 1 }} />
+                        <ListItemText>{t("tabMenu.joinGroup")} {g.groupId.replace('G', '')}</ListItemText>
+                      </MenuItem>
+                    );
+                  });
+                  groupMenuItems.push(
+                    <MenuItem key="create-group" onClick={() => handleCreateGroup(tabId)}>
+                      <AddCircleOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+                      <ListItemText>{t("tabMenu.createGroup")}</ListItemText>
+                    </MenuItem>
+                  );
+                }
+                if (groupMenuItems.length > 0) {
+                  return [
+                    <Divider key="group-divider-top" />,
+                    ...groupMenuItems,
+                    <Divider key="group-divider-bottom" />,
+                  ];
+                }
+                return null;
+              })()}
               <MenuItem onClick={handleRefreshTerminal}>
                 <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
                 {t("tabMenu.refresh")}
