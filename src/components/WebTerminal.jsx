@@ -1000,6 +1000,16 @@ const WebTerminal = ({
           8,
         );
         if (result?.success && result.suggestions?.length > 0) {
+          // 新增：如果输入与历史命令完全一致，则不显示建议弹窗
+          const hasExactMatch = result.suggestions.some(
+            (suggestion) => suggestion.command === trimmedInput
+          );
+          if (hasExactMatch) {
+            // 输入与历史命令完全一致，隐藏弹窗
+            setSuggestions([]);
+            setShowSuggestions(false);
+            return;
+          }
           // 只在刚执行命令后的短时间内过滤该命令
           let filteredSuggestions = result.suggestions;
           if (timeSinceLastCommand < 1000) {
