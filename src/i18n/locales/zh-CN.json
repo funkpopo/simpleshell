@@ -54,6 +54,9 @@
       "exit": "退出"
     },
     "tabMenu": {
+      "createGroup": "新建同步分组",
+      "joinGroup": "加入同步分组",
+      "removeFromGroup": "移出同步分组",
       "refresh": "刷新连接",
       "close": "关闭连接"
     },

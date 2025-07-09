@@ -54,6 +54,9 @@
       "exit": "Exit"
     },
     "tabMenu": {
+      "createGroup": "Create Sync Group",
+      "joinGroup": "Join Sync Group",
+      "removeFromGroup": "Remove from Sync Group",
       "refresh": "Refresh Connection",
       "close": "Close Connection"
     },
