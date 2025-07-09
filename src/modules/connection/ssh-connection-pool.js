@@ -3,7 +3,7 @@ const { logToFile } = require("../../core/utils/logger");
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 
 // 连接池配置常量
-const MAX_CONNECTIONS = 10; // 最大连接数
+const MAX_CONNECTIONS = 50; // 最大连接数
 const IDLE_TIMEOUT = 30 * 60 * 1000; // 空闲超时时间（30分钟）- 延长以支持标签页切换
 const HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // 健康检查间隔（5分钟）
 const CONNECTION_TIMEOUT = 15 * 1000; // 连接超时时间（15秒）
@@ -314,17 +314,18 @@ class SSHConnectionPool {
     if (connectionInfo) {
       connectionInfo.refCount = Math.max(0, connectionInfo.refCount - 1);
       connectionInfo.lastUsed = Date.now();
-
-      // 如果提供了tabId，从标签页引用中移除
       if (tabId && this.tabReferences.has(tabId)) {
         this.tabReferences.delete(tabId);
         logToFile(`移除标签页引用: ${tabId} -> ${connectionKey}`, "INFO");
       }
-
       logToFile(
         `释放连接引用: ${connectionKey}, 剩余引用: ${connectionInfo.refCount}`,
         "INFO",
       );
+      // 若refCount为0且无tab引用，自动关闭连接
+      if (connectionInfo.refCount === 0 && !this.isConnectionReferencedByTabs(connectionKey)) {
+        this.closeConnection(connectionKey);
+      }
     }
   }
 
