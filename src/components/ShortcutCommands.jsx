@@ -43,6 +43,7 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import CategoryIcon from "@mui/icons-material/Category";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
+import { dispatchCommandToGroup } from '../core/syncGroupCommandDispatcher';
 
 function ShortcutCommands({ open, onClose, onSendCommand }) {
   const theme = useTheme();
@@ -304,6 +305,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理发送命令
   const handleSendCommand = (command) => {
+    // 需要tabId，假设通过props.currentTabId传递
     if (onSendCommand && typeof onSendCommand === "function") {
       try {
         onSendCommand(command);

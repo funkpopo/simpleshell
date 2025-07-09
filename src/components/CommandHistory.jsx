@@ -37,6 +37,7 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
+import { dispatchCommandToGroup } from '../core/syncGroupCommandDispatcher';
 
 function CommandHistory({ open, onClose, onSendCommand }) {
   const theme = useTheme();
@@ -134,8 +135,9 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     setMenuTargetCommand(null);
   };
 
-  // 发送命令到终端
+  // 处理发送命令
   const handleSendCommand = (command) => {
+    // 需要tabId，假设通过props.currentTabId传递
     if (onSendCommand) {
       const result = onSendCommand(command);
       if (result && result.success === false) {

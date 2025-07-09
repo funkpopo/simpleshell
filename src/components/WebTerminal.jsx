@@ -23,6 +23,7 @@ import Tooltip from "@mui/material/Tooltip";
 import IconButton from "@mui/material/IconButton";
 import CommandSuggestion from "./CommandSuggestion.jsx";
 import { findGroupByTab } from '../core/syncInputGroups';
+import { dispatchCommandToGroup } from '../core/syncGroupCommandDispatcher';
 
 // 添加全局样式以确保xterm正确填满容器
 const terminalStyles = `
@@ -1165,7 +1166,7 @@ const WebTerminal = ({
   }, [suggestions.length]);
 
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
-  const setupCommandDetection = (term, processId) => {
+  const setupCommandDetection = (term, processId, isRemoteInput = false) => {
     // 用于存储用户正在输入的命令
     let currentInputBuffer = "";
     // 标记上一个按键是否是特殊键序列的开始
@@ -1233,6 +1234,10 @@ const WebTerminal = ({
 
     // 监听终端数据输出，用于检测编辑器特征
     term.onData((data) => {
+      // 回环防护：远程同步输入不再广播
+      if (!isRemoteInput) {
+        broadcastInputToGroup(data, tabId);
+      }
       // 检查是否是ESC开头的转义序列（通常是方向键等特殊键）
       if (data === "\x1b") {
         isEscapeSequence = true;
@@ -3105,12 +3110,20 @@ const WebTerminal = ({
   }, []);
 
   // 输入同步广播封装
-  const broadcastInputToGroup = useCallback((input) => {
+  const broadcastInputToGroup = useCallback((input, sourceTabId) => {
     const group = findGroupByTab(tabId);
     if (group && group.members && group.members.length > 1) {
       group.members.forEach(targetTabId => {
-        if (targetTabId !== tabId && window.terminalAPI && window.terminalAPI.sendToProcess && processCache[targetTabId]) {
-          window.terminalAPI.sendToProcess(processCache[targetTabId], input);
+        if (targetTabId !== (sourceTabId || tabId) && window.terminalAPI && window.terminalAPI.sendToProcess && processCache[targetTabId]) {
+          // 通过自定义事件将输入同步到目标终端
+          const event = new CustomEvent('syncTerminalInput', {
+            detail: {
+              input,
+              sourceTabId: sourceTabId || tabId,
+              targetTabId
+            }
+          });
+          window.dispatchEvent(event);
         }
       });
     }
@@ -3118,11 +3131,41 @@ const WebTerminal = ({
 
   // 示例：假设有如下输入处理函数
   const handleUserInput = (input) => {
-    if (window.terminalAPI && window.terminalAPI.sendToProcess && processCache[tabId]) {
-      window.terminalAPI.sendToProcess(processCache[tabId], input);
-      broadcastInputToGroup(input);
-    }
+    dispatchCommandToGroup(tabId, input);
   };
+
+  // 注册表初始化
+  if (typeof window !== 'undefined' && !window.webTerminalRefs) {
+    window.webTerminalRefs = {};
+  }
+
+  useEffect(() => {
+    if (termRef.current && tabId) {
+      window.webTerminalRefs[tabId] = termRef.current;
+    }
+    return () => {
+      if (tabId && window.webTerminalRefs) {
+        delete window.webTerminalRefs[tabId];
+      }
+    };
+  }, [tabId, termRef.current]);
+
+  // 监听来自其它终端的输入同步事件
+  useEffect(() => {
+    const handler = (e) => {
+      const { input, sourceTabId, targetTabId } = e.detail || {};
+      if (targetTabId === tabId && processCache[tabId]) {
+        // 直接写入本地进程，且不再广播，防止回环
+        if (termRef.current) {
+          // 通过setupCommandDetection的isRemoteInput参数，模拟远程输入
+          // 这里只写入进程，不触发本地onData
+          window.terminalAPI.sendToProcess(processCache[tabId], input);
+        }
+      }
+    };
+    window.addEventListener('syncTerminalInput', handler);
+    return () => window.removeEventListener('syncTerminalInput', handler);
+  }, [tabId]);
 
   return (
     <Box

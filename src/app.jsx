@@ -65,6 +65,7 @@ import ListItemText from "@mui/material/ListItemText";
 import Divider from "@mui/material/Divider";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import AddIcon from "@mui/icons-material/Add";
+import { dispatchCommandToGroup } from './core/syncGroupCommandDispatcher';
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
@@ -1091,17 +1092,8 @@ function App() {
     if (currentTab > 0 && tabs[currentTab]) {
       const tab = tabs[currentTab];
       if (tab.type === "ssh") {
-        // 向指定的终端发送命令
-        const processId = terminalInstances[`${tab.id}-processId`];
-        if (processId && window.terminalAPI.sendToProcess) {
-          window.terminalAPI.sendToProcess(processId, command + "\r");
-          return { success: true };
-        } else {
-          const reason = processId
-            ? t("app.apiNotFound")
-            : t("app.processIdNotFound");
-          return { success: false, error: reason };
-        }
+        dispatchCommandToGroup(tab.id, command + "\r");
+        return { success: true };
       } else {
         return { success: false, error: "当前标签页不是SSH连接" };
       }
