@@ -3348,6 +3348,7 @@ const WebTerminal = ({
         onClose={closeSuggestions}
         terminalElement={terminalRef.current}
         currentInput={currentInput}
+        initialSelectedIndex={-1}
       />
     </Box>
   );

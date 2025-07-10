@@ -34,16 +34,17 @@ const CommandSuggestion = memo(
     onDeleteSuggestion,
     onClose,
     currentInput = "",
+    initialSelectedIndex = 0,
   }) => {
     const theme = useTheme();
-    const [selectedIndex, setSelectedIndex] = useState(0);
+    const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex);
     const suggestionRef = useRef(null);
     const [isKeyboardNavigation, setIsKeyboardNavigation] = useState(false);
 
     // 重置选中索引当建议列表变化时
     useEffect(() => {
-      setSelectedIndex(0);
-    }, [suggestions]);
+      setSelectedIndex(initialSelectedIndex);
+    }, [suggestions, initialSelectedIndex]);
 
     // 处理删除建议
     const handleDeleteSuggestion = useCallback(

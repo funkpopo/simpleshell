@@ -17,8 +17,8 @@ class CommandHistoryService {
 
     const trimmedCommand = command.trim();
 
-    // 基本长度检查
-    if (trimmedCommand.length === 0 || trimmedCommand.length < 2) {
+    // 最小长度限制为4，4字符以下不记录历史
+    if (trimmedCommand.length < 4) {
       return false;
     }
 
