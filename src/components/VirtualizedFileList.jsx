@@ -44,7 +44,7 @@ const formatDate = (date) => {
 // 单个文件项组件
 const FileItem = memo(({ index, style, data }) => {
   const theme = useTheme();
-  const { files, onFileActivate, onContextMenu, selectedFile, isScrolling } = data;
+  const { files, onFileActivate, onContextMenu, selectedFile } = data;
   const file = files[index];
 
   const handleFileActivate = useCallback(() => {
@@ -60,45 +60,7 @@ const FileItem = memo(({ index, style, data }) => {
 
   const isSelected = selectedFile && selectedFile.name === file.name;
 
-  // 滚动中使用简化渲染以提高性能
-  if (isScrolling) {
-    return (
-      <div style={style}>
-        <ListItem
-          disablePadding
-          sx={{
-            backgroundColor: isSelected
-              ? theme.palette.action.selected
-              : "transparent",
-          }}
-        >
-          <ListItemButton
-            dense
-            sx={{
-              minHeight: 48,
-              px: 2,
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 36 }}>
-              {file.isDirectory ? (
-                <FolderIcon color="primary" fontSize="small" />
-              ) : (
-                <InsertDriveFileIcon fontSize="small" />
-              )}
-            </ListItemIcon>
-            <ListItemText
-              primary={file.name}
-              primaryTypographyProps={{
-                variant: "body2",
-                noWrap: true,
-              }}
-            />
-          </ListItemButton>
-        </ListItem>
-      </div>
-    );
-  }
-
+  // 直接始终渲染完整内容（含时间戳）
   return (
     <div style={style}>
       <ListItem
@@ -303,16 +265,15 @@ const VirtualizedFileList = ({
     [currentPath]
   );
 
-  // 传递给每个文件项的数据
+  // itemData useMemo移除isScrolling
   const itemData = useMemo(
     () => ({
       files: processedFiles,
       onFileActivate,
       onContextMenu,
       selectedFile,
-      isScrolling,
     }),
-    [processedFiles, onFileActivate, onContextMenu, selectedFile, isScrolling],
+    [processedFiles, onFileActivate, onContextMenu, selectedFile],
   );
 
   // 计算实际使用的高度
@@ -381,7 +342,6 @@ const VirtualizedFileList = ({
             onFileActivate,
             onContextMenu,
             selectedFile,
-            isScrolling: false,
           }}
         />
       ))}
