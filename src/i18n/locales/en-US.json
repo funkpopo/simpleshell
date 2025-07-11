@@ -115,7 +115,7 @@
       "newConnection": "New SSH Connection",
       "recentConnections": "Recent Connections",
       "tips": "Tips",
-      "description": "is a lightweight terminal emulator with a simple interface and powerful features."
+      "description": "A lightweight terminal emulator with a simple interface and powerful features."
     },
     "terminal": {
       "connecting": "Connecting to {{host}}...",
