@@ -10,14 +10,28 @@ This is a terminal application built with Electron and React, combining the desk
 
 ## **Features**
 
-- Built with Electron-forge
-- Uses React and the Material UI component library
-- Dark mode support
-- Offline usage
-- Cross-platform support (Windows, macOS, Linux)
-- Implements SSH and SFTP functionality using Xterm.js and SSH2
-- Allows SFTP folder uploads and downloads
-- AI support
+- **Core Functionality**: 
+  - Integrated `xterm.js` and `ssh2` to provide remote terminal and file transfer capabilities.
+  - File manager for browsing and managing local and remote files.
+  - Support for SFTP folder uploads and downloads.
+- **AI-Powered Assistant**: 
+  - An integrated AI assistant to help users with commands and workflows.
+- **Productivity & User Experience**:
+  - Command history and suggestion features to improve user input efficiency.
+  - Connection manager to save and manage SSH connection configurations.
+  - World map display to show the geographical distribution of servers.
+  - Dark mode and Light mode support.
+  - Cross-platform support (Windows, macOS, Linux).
+  - Internationalization support (English and Chinese).
+- **System & Security Tools**:
+  - Real-time performance and resource monitoring.
+  - Random password generator for enhanced security.
+  - IP address query tool to quickly find network information.
+- **Performance & Architecture**:
+  - Multi-level caching mechanism to improve data access speed.
+  - Zero-copy file transfer engine to enhance SFTP efficiency.
+  - Synchronous command dispatcher for managing group tasks.
+  - Backpressure control and optimization middleware to ensure stable file transfers.
 
 ## **Development**
 
