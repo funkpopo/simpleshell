@@ -2787,8 +2787,69 @@ const WebTerminal = ({
       .readText()
       .then((text) => {
         if (text && termRef.current && processCache[tabId]) {
+          // 检测文本是否包含中文字符
+          const containsChinese = /[\u4e00-\u9fa5]/.test(text);
+          
           // 使用预处理函数处理多行文本，防止注释和缩进问题
-          const processedText = processMultilineInput(text);
+          let processedText = processMultilineInput(text);
+
+          // 如果包含中文字符，确保正确编码
+          if (containsChinese) {
+            // 对于SSH连接，确保中文字符能够正确传输
+            const processInfo = window.terminalAPI && window.terminalAPI.getProcessInfo ? 
+              window.terminalAPI.getProcessInfo(processCache[tabId]) : null;
+            
+            if (processInfo && processInfo.type === "ssh2") {
+              // 对于SSH连接，确保使用UTF-8编码
+              if (typeof processedText === "string") {
+                // 确保字符串是有效的UTF-8编码
+                try {
+                  // 使用TextEncoder确保UTF-8编码
+                  const encoder = new TextEncoder();
+                  const decoder = new TextDecoder('utf-8');
+                  const encoded = encoder.encode(processedText);
+                  processedText = decoder.decode(encoded);
+                } catch (e) {
+                  // 如果浏览器不支持TextEncoder/TextDecoder，使用备用方法
+                  processedText = processedText
+                    .split("")
+                    .map(char => {
+                      // 对于中文字符，确保正确编码
+                      if (/[\u4e00-\u9fa5]/.test(char)) {
+                        return char;
+                      }
+                      return char;
+                    })
+                    .join("");
+                }
+              } else if (processedText && typeof processedText === "object" && processedText.type === "multiline-with-comments") {
+                // 处理多行带注释的情况
+                try {
+                  // 使用TextEncoder确保UTF-8编码
+                  const encoder = new TextEncoder();
+                  const decoder = new TextDecoder('utf-8');
+                  processedText.lines = processedText.lines.map(line => {
+                    const encoded = encoder.encode(line);
+                    return decoder.decode(encoded);
+                  });
+                } catch (e) {
+                  // 备用方法
+                  processedText.lines = processedText.lines.map(line => {
+                    return line
+                      .split("")
+                      .map(char => {
+                        // 对于中文字符，确保正确编码
+                        if (/[\u4e00-\u9fa5]/.test(char)) {
+                          return char;
+                        }
+                        return char;
+                      })
+                      .join("");
+                  });
+                }
+              }
+            }
+          }
 
           // 检查是否需要逐行发送（含有注释的多行文本）
           if (

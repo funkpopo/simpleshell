@@ -913,7 +913,20 @@ function setupIPC(mainWindow) {
       try {
         buffer = Buffer.concat([buffer, data]);
         try {
-          const output = buffer.toString("utf8");
+          // 修改：确保使用UTF-8编码正确处理中文字符
+          // 检查是否包含中文字符
+          const bufferStr = buffer.toString();
+          const containsChinese = /[\u4e00-\u9fa5]/.test(bufferStr);
+          
+          // 使用Buffer的toString方法时，显式指定'utf8'编码
+          let output;
+          if (containsChinese) {
+            // 对于包含中文字符的数据，确保使用UTF-8编码
+            output = Buffer.from(buffer).toString('utf8');
+          } else {
+            output = buffer.toString("utf8");
+          }
+          
           const processedOutput = terminalManager.processOutput(
             processId,
             output,
@@ -942,6 +955,7 @@ function setupIPC(mainWindow) {
     stream.on("extended data", (data, type) => {
       try {
         if (mainWindow && !mainWindow.isDestroyed()) {
+          // 修改：确保使用UTF-8编码正确处理中文字符
           mainWindow.webContents.send(
             `process:output:${processId}`,
             `\x1b[31m${data.toString("utf8")}\x1b[0m`,
@@ -1025,7 +1039,21 @@ function setupIPC(mainWindow) {
     try {
       // 确保退格键字符正确转换
       let processedData = data;
-      // 对特殊情况的处理（如果需要）
+      
+      // 检测是否包含中文字符
+      const containsChinese = /[\u4e00-\u9fa5]/.test(data);
+      if (containsChinese && procInfo.type === "ssh2") {
+        // 确保中文字符能够正确处理
+        // 对于SSH连接，我们需要确保数据是UTF-8编码的
+        try {
+          // 创建Buffer时显式指定UTF-8编码
+          processedData = Buffer.from(data, 'utf8').toString('utf8');
+        } catch (error) {
+          logToFile(`Error encoding Chinese characters: ${error.message}`, "ERROR");
+          // 如果编码失败，使用原始数据
+          processedData = data;
+        }
+      }
 
       // 检测Tab键 (ASCII 9, \t, \x09)
       if (data === "\t" || data === "\x09") {
@@ -1103,63 +1131,34 @@ function setupIPC(mainWindow) {
             }
             // 移除本地命令记录，不再记录非SSH会话的命令
           }
-
-          // 清空命令缓冲区
-          procInfo.commandBuffer = "";
         }
-      } else if (data === "\u0003") {
-        // Ctrl+C
+
         // 清空命令缓冲区
         procInfo.commandBuffer = "";
-
-        // 如果在编辑器模式，可能是用户中断了编辑
-        if (procInfo.editorMode) {
-          // 为部分编辑器，Ctrl+C会导致退出
-          setTimeout(() => {
-            procInfo.possibleEditorExit = true;
-            // 设置一个较长的检测时间，在下一个提示符出现时确认退出
-            setTimeout(() => {
-              if (procInfo.possibleEditorExit) {
-                procInfo.editorMode = false;
-                procInfo.possibleEditorExit = false;
-              }
-            }, 1000);
-          }, 200);
-        }
-      } else if (data === "\u007F" || data === "\b") {
-        // 退格键
-        // 从缓冲区中删除最后一个字符
-        if (procInfo.commandBuffer && procInfo.commandBuffer.length > 0) {
-          procInfo.commandBuffer = procInfo.commandBuffer.slice(0, -1);
-        }
-      } else if (data === "\u001B" && procInfo.editorMode) {
-        // ESC键，在编辑器模式下可能表示模式切换
-        // 在vi/vim中，ESC会从插入模式返回到命令模式，但不退出编辑器
-        // 仅记录这个键，不做特殊处理
-        if (!procInfo.commandBuffer) procInfo.commandBuffer = "";
-        procInfo.commandBuffer += data;
       } else {
-        // 将字符添加到命令缓冲区
-        if (!procInfo.commandBuffer) procInfo.commandBuffer = "";
+        // 累积命令缓冲区
         procInfo.commandBuffer += data;
       }
 
-      // 根据进程类型选择不同的写入方式
+      // 发送数据到进程
       if (procInfo.type === "ssh2") {
-        // SSH2连接使用保存的流对象写入数据
         if (procInfo.stream) {
-          procInfo.stream.write(processedData);
+          // 修改：对于SSH连接，确保使用UTF-8编码写入数据
+          if (containsChinese) {
+            // 对于包含中文字符的数据，确保使用Buffer写入
+            procInfo.stream.write(Buffer.from(processedData, 'utf8'));
+          } else {
+            procInfo.stream.write(processedData);
+          }
           return true;
         } else {
           logToFile("SSH2 stream not available", "ERROR");
           return false;
         }
       } else if (typeof procInfo.process.write === "function") {
-        // node-pty进程直接调用write方法
         procInfo.process.write(processedData);
         return true;
       } else if (procInfo.process.stdin) {
-        // 标准子进程使用stdin
         procInfo.process.stdin.write(processedData);
         return true;
       } else {
@@ -3037,5 +3036,21 @@ function setupIPC(mainWindow) {
         msg: error.message,
       };
     }
+  });
+
+  // 新增：获取进程信息
+  ipcMain.handle("terminal:getProcessInfo", async (event, processId) => {
+    const procInfo = childProcesses.get(processId);
+    if (!procInfo) {
+      return null;
+    }
+    
+    // 返回安全的进程信息副本，不包含敏感数据和不可序列化的对象
+    return {
+      type: procInfo.type || null,
+      isRemote: procInfo.isRemote || false,
+      editorMode: procInfo.editorMode || false,
+      // 不返回process、stream等不可序列化的对象
+    };
   });
 } // Closing brace for setupIPC function

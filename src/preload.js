@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("terminal:setTerminalSize", processId, cols, rows),
   killProcess: (processId) =>
     ipcRenderer.invoke("terminal:killProcess", processId),
+  // 新增：获取进程信息
+  getProcessInfo: (processId) => 
+    ipcRenderer.invoke("terminal:getProcessInfo", processId),
 
   // 资源监控API
   getSystemInfo: (processId) =>
