@@ -416,69 +416,58 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     }
 
     if (isTextFile(file?.name)) {
+      const languageModeFn = getLanguageMode(file.name);
+      const extensions = [];
+      if (languageModeFn) {
+        extensions.push(languageModeFn());
+      }
+
+      if (theme.palette.mode === "dark") {
+        extensions.push(oneDark);
+      }
+
+      const boxSx = {
+        flex: "1 1 auto",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      };
+
+      const cmStyle = {
+        height: "100%",
+        flex: "1 1 auto",
+        overflow: "auto",
+      };
+
       if (isEditing) {
-        // 编辑模式 - 使用 CodeMirror
-        const languageMode = getLanguageMode(file.name);
-        const extensions = [];
-
-        if (languageMode) {
-          extensions.push(languageMode());
-        }
-
-        // 根据主题添加编辑器主题
-        if (theme.palette.mode === "dark") {
-          extensions.push(oneDark);
-        }
-
         return (
-          <Box sx={{ width: "100%", height: "100%", minHeight: "400px" }}>
+          <Box sx={boxSx}>
             <CodeMirror
               value={content || ""}
-              height="400px"
-              width="100%"
+              height="100%"
               extensions={extensions}
-              onChange={handleEditorChange}
               theme={theme.palette.mode}
-              style={{
-                fontSize: "14px",
-                fontFamily: "monospace",
-                border: `1px solid ${theme.palette.divider}`,
-                borderRadius: "4px",
-              }}
+              onChange={handleEditorChange}
+              style={cmStyle}
+              className="file-preview-editor"
             />
           </Box>
         );
-      } else {
-        // 预览模式 - 文本显示
-        // 将文本内容拆分为行
-        const lines = content ? content.split("\n") : [];
-
-        return (
-          <Box
-            component="pre"
-            sx={{
-              width: "100%",
-              maxHeight: "400px",
-              overflowX: "auto",
-              overflowY: "auto",
-              backgroundColor:
-                theme.palette.mode === "dark" ? "#1e1e1e" : "#f5f5f5",
-              color: theme.palette.mode === "dark" ? "#d4d4d4" : "#333333",
-              p: 2,
-              borderRadius: 1,
-              fontSize: "0.875rem",
-              fontFamily: "monospace",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-              margin: 0,
-            }}
-          >
-            {lines.map((line, index) => (
-              <div key={index}>{line}</div>
-            ))}
-          </Box>
-        );
       }
+      // 预览模式
+      return (
+        <Box sx={boxSx}>
+          <CodeMirror
+            value={content || ""}
+            height="100%"
+            extensions={extensions}
+            editable={false}
+            theme={theme.palette.mode}
+            style={cmStyle}
+            className="file-preview-viewer"
+          />
+        </Box>
+      );
     }
 
     if (isImageFile(file?.name)) {
@@ -502,7 +491,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
     if (isPdfFile(file?.name)) {
       return (
-        <Box sx={{ width: "100%", height: "100%" }}>
+        <Box
+          sx={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
           {/* PDF控制栏 */}
           <Box
             sx={{
@@ -568,7 +564,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           {/* PDF内容区域 */}
           <Box
             sx={{
-              height: "calc(100% - 60px)",
+              flex: "1 1 auto",
               overflow: "auto",
               display: "flex",
               justifyContent: "center",
@@ -620,6 +616,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         sx: {
           minHeight: isPdfFile(file?.name) ? "80vh" : "60vh",
           maxHeight: isPdfFile(file?.name) ? "90vh" : "80vh",
+          display: "flex",
+          flexDirection: "column",
         },
       }}
     >
@@ -678,7 +676,16 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           </Box>
         </Box>
       </DialogTitle>
-      <DialogContent dividers>
+      <DialogContent
+        dividers
+        sx={{
+          flex: "1 1 auto",
+          p: 0, // 内边距由renderContent内部处理
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden", // 防止内容溢出
+        }}
+      >
         {savingFile ? (
           <Box
             sx={{
