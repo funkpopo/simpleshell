@@ -1339,6 +1339,7 @@ function App() {
 
             {/* 标签页右键菜单 */}
             <Menu
+              keepMounted
               open={tabContextMenu.mouseY !== null}
               onClose={handleTabContextMenuClose}
               anchorReference="anchorPosition"
@@ -1347,7 +1348,21 @@ function App() {
                   ? { top: tabContextMenu.mouseY, left: tabContextMenu.mouseX }
                   : undefined
               }
+              PaperProps={{
+                style: {
+                  minWidth: "200px",
+                },
+              }}
             >
+
+              <MenuItem onClick={handleRefreshTerminal}>
+                <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
+                {t("tabMenu.refresh")}
+              </MenuItem>
+              <MenuItem onClick={handleCloseConnection}>
+                <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
+                {t("tabMenu.close")}
+              </MenuItem>
               {/* 分组相关菜单项 */}
               {(() => {
                 const tabId = tabContextMenu.tabId;
@@ -1382,19 +1397,10 @@ function App() {
                   return [
                     <Divider key="group-divider-top" />,
                     ...groupMenuItems,
-                    <Divider key="group-divider-bottom" />,
                   ];
                 }
                 return null;
               })()}
-              <MenuItem onClick={handleRefreshTerminal}>
-                <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
-                {t("tabMenu.refresh")}
-              </MenuItem>
-              <MenuItem onClick={handleCloseConnection}>
-                <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
-                {t("tabMenu.close")}
-              </MenuItem>
             </Menu>
           </Toolbar>
         </AppBar>
