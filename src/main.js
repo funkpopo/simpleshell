@@ -899,6 +899,158 @@ function setupIPC(mainWindow) {
     }
   });
 
+  // 启动Telnet连接
+  ipcMain.handle("terminal:startTelnet", async (event, telnetConfig) => {
+    const processId = nextProcessId++;
+
+    if (!telnetConfig || !telnetConfig.host) {
+      logToFile("Invalid Telnet configuration", "ERROR");
+      throw new Error("Invalid Telnet configuration");
+    }
+
+    try {
+      // 使用连接池获取Telnet连接
+      const connectionInfo =
+        await connectionManager.getTelnetConnection(telnetConfig);
+      const telnet = connectionInfo.client;
+
+      // 添加标签页引用追踪
+      if (telnetConfig.tabId) {
+        connectionManager.addTabReference(telnetConfig.tabId, connectionInfo.key);
+      }
+
+      // 存储进程信息 - 这里保存连接池返回的连接信息
+      childProcesses.set(processId, {
+        process: telnet,
+        connectionInfo: connectionInfo, // 保存完整的连接信息
+        listeners: new Set(),
+        config: telnetConfig,
+        type: "telnet",
+        ready: connectionInfo.ready, // 使用连接池的就绪状态
+        editorMode: false,
+        commandBuffer: "",
+        lastOutputLines: [],
+        outputBuffer: "",
+        isRemote: true,
+      });
+
+      // 存储相同的Telnet客户端，使用tabId
+      if (telnetConfig.tabId) {
+        childProcesses.set(telnetConfig.tabId, {
+          process: telnet,
+          connectionInfo: connectionInfo,
+          listeners: new Set(),
+          config: telnetConfig,
+          type: "telnet",
+          ready: connectionInfo.ready,
+          editorMode: false,
+          commandBuffer: "",
+          lastOutputLines: [],
+          outputBuffer: "",
+          isRemote: true,
+        });
+      }
+
+      // 如果连接已经就绪，直接开始交互
+      if (connectionInfo.ready) {
+        logToFile(`复用现有Telnet连接: ${connectionInfo.key}`, "INFO");
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(
+            `process:output:${processId}`,
+            `\r\n*** ${telnetConfig.host} Telnet连接已建立（复用现有连接） ***\r\n`,
+          );
+        }
+
+        // 设置数据监听器
+        setupTelnetEventListeners(telnet, processId, telnetConfig, connectionInfo);
+        
+        return processId;
+      } else {
+        logToFile(`Telnet连接未就绪，这不应该发生`, "ERROR");
+        throw new Error("Telnet connection not ready");
+      }
+    } catch (error) {
+      logToFile(`Failed to start Telnet connection: ${error.message}`, "ERROR");
+      throw error;
+    }
+  });
+
+  // Telnet事件监听器设置函数
+  function setupTelnetEventListeners(
+    telnet,
+    processId,
+    telnetConfig,
+    connectionInfo,
+  ) {
+    // 监听数据事件
+    telnet.on("data", (data) => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(`process:output:${processId}`, data.toString());
+        }
+      } catch (error) {
+        logToFile(`Error handling Telnet data: ${error.message}`, "ERROR");
+      }
+    });
+
+    // 监听错误事件
+    telnet.on("error", (err) => {
+      logToFile(`Telnet error for processId ${processId}: ${err.message}`, "ERROR");
+      
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(
+          `process:output:${processId}`,
+          `\r\n*** Telnet连接错误: ${err.message} ***\r\n`,
+        );
+        mainWindow.webContents.send(`process:exit:${processId}`, {
+          code: 1,
+          signal: null,
+        });
+      }
+
+      // 释放连接引用
+      connectionManager.releaseTelnetConnection(
+        connectionInfo.key,
+        telnetConfig.tabId,
+      );
+    });
+
+    // 监听关闭事件
+    telnet.on("end", () => {
+      logToFile(`Telnet connection ended for processId ${processId}`, "INFO");
+      
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(
+          `process:output:${processId}`,
+          `\r\n*** Telnet连接已关闭 ***\r\n`,
+        );
+        mainWindow.webContents.send(`process:exit:${processId}`, {
+          code: 0,
+          signal: null,
+        });
+      }
+
+      // 释放连接引用
+      connectionManager.releaseTelnetConnection(
+        connectionInfo.key,
+        telnetConfig.tabId,
+      );
+    });
+
+    // 监听超时事件
+    telnet.on("timeout", () => {
+      logToFile(`Telnet connection timeout for processId ${processId}`, "WARN");
+      
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(
+          `process:output:${processId}`,
+          `\r\n*** Telnet连接超时 ***\r\n`,
+        );
+      }
+    });
+  }
+
   // SSH Stream事件监听器设置函数
   function setupStreamEventListeners(
     stream,
@@ -3052,5 +3204,35 @@ function setupIPC(mainWindow) {
       editorMode: procInfo.editorMode || false,
       // 不返回process、stream等不可序列化的对象
     };
+  });
+
+  // 发送输入到进程
+  ipcMain.on("terminal:sendInput", (event, { processId, input }) => {
+    const processInfo = childProcesses.get(processId);
+    if (!processInfo) {
+      logToFile(`Process not found: ${processId}`, "ERROR");
+      return;
+    }
+
+    try {
+      if (processInfo.type === "node-pty") {
+        processInfo.process.write(input);
+      } else if (processInfo.type === "ssh2" && processInfo.stream) {
+        processInfo.stream.write(input);
+      } else if (processInfo.type === "telnet" && processInfo.process) {
+        // 对于Telnet连接，使用shell方法发送数据
+        processInfo.process.shell((err, stream) => {
+          if (err) {
+            logToFile(`Error getting telnet shell: ${err.message}`, "ERROR");
+            return;
+          }
+          stream.write(input);
+        });
+      } else {
+        logToFile(`Invalid process type or stream for input: ${processId}`, "ERROR");
+      }
+    } catch (error) {
+      logToFile(`Error sending input to process ${processId}: ${error.message}`, "ERROR");
+    }
   });
 } // Closing brace for setupIPC function

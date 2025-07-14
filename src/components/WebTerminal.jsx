@@ -1800,14 +1800,18 @@ const WebTerminal = ({
         }, 0);
 
         // 如果有SSH配置，则优先使用SSH连接
-        if (sshConfig && window.terminalAPI && window.terminalAPI.startSSH) {
+        if (sshConfig && window.terminalAPI) {
           // 显示连接信息
           term.writeln(`正在连接到 ${sshConfig.host}...`);
 
           try {
-            // 启动SSH连接
-            window.terminalAPI
-              .startSSH(sshConfig)
+            // 根据协议类型选择连接方式
+            const connectPromise = sshConfig.protocol === "telnet" 
+              ? window.terminalAPI.startTelnet(sshConfig)
+              : window.terminalAPI.startSSH(sshConfig);
+
+            // 启动连接
+            connectPromise
               .then((processId) => {
                 if (processId) {
                   // 存储进程ID
@@ -1816,9 +1820,13 @@ const WebTerminal = ({
                   // 存储到进程缓存中
                   processCache[tabId] = processId;
 
-                  // 触发SSH进程ID更新事件，用于通知其他组件
-                  const event = new CustomEvent("sshProcessIdUpdated", {
-                    detail: { terminalId: tabId, processId },
+                  // 触发进程ID更新事件，用于通知其他组件
+                  const event = new CustomEvent("terminalProcessIdUpdated", {
+                    detail: { 
+                      terminalId: tabId, 
+                      processId,
+                      protocol: sshConfig.protocol || "ssh"
+                    },
                   });
 
                   window.dispatchEvent(event);

@@ -765,37 +765,39 @@ function App() {
     handleTabContextMenuClose();
   };
 
-  // 从连接配置创建SSH连接标签页
+  // 创建远程连接（SSH或Telnet）
   const handleCreateSSHConnection = (connection) => {
     // 创建唯一的标签页ID
-    const terminalId = `ssh-${Date.now()}`;
+    const terminalId = `${connection.protocol || 'ssh'}-${Date.now()}`;
+    
     // 创建标签名（使用连接配置中的名称）
-    const tabName = connection.name || `SSH: ${connection.host}`;
+    const protocol = connection.protocol === 'telnet' ? 'Telnet' : 'SSH';
+    const tabName = connection.name || `${protocol}: ${connection.host}`;
 
     // 创建新标签页
     const newTab = {
       id: terminalId,
       label: tabName,
-      type: "ssh",
+      type: connection.protocol || 'ssh',
       connectionId: connection.id, // 存储连接ID以便后续使用
     };
 
     // 为连接添加tabId以便在main进程中识别
-    const sshConfigWithTabId = {
+    const connectionConfigWithTabId = {
       ...connection,
       tabId: terminalId,
     };
 
-    // 为新标签页创建终端实例缓存，并包含SSH配置
+    // 为新标签页创建终端实例缓存，并包含连接配置
     setTerminalInstances((prev) => ({
       ...prev,
       [terminalId]: true,
-      [`${terminalId}-config`]: sshConfigWithTabId, // 将完整的连接配置存储在缓存中
+      [`${terminalId}-config`]: connectionConfigWithTabId, // 将完整的连接配置存储在缓存中
       [`${terminalId}-processId`]: null, // 预留存储进程ID的位置
     }));
 
     // 添加标签并切换到新标签
-        setTabs((prevTabs) => [...prevTabs, newTab]);
+    setTabs((prevTabs) => [...prevTabs, newTab]);
   };
 
   // 处理从连接管理器打开连接
