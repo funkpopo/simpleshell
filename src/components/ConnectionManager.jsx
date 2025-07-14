@@ -741,7 +741,7 @@ const ConnectionManager = memo(
                 justifyContent: "space-between",
               }}
             >
-              <Typography variant="h6">连接管理</Typography>
+              <Typography variant="subtitle1" fontWeight="medium">连接管理</Typography>
               <IconButton size="small" onClick={onClose}>
                 <CloseIcon fontSize="small" />
               </IconButton>
