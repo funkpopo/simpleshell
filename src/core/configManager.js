@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const zlib = require("zlib");
 
 // Module-level variables to store injected dependencies
 let app = null;
@@ -818,6 +819,77 @@ function initializeMainConfig() {
   }
 }
 
+// 压缩命令历史数据
+function compressCommandHistory(history) {
+  if (!Array.isArray(history) || history.length === 0) {
+    return null;
+  }
+
+  try {
+    const jsonString = JSON.stringify(history);
+    const compressed = zlib.gzipSync(jsonString);
+    const base64 = compressed.toString('base64');
+    
+    const originalSize = Buffer.byteLength(jsonString, 'utf8');
+    const compressedSize = Buffer.byteLength(base64, 'utf8');
+    const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
+    
+    if (logToFile) {
+      logToFile(
+        `ConfigManager: Command history compressed from ${originalSize} bytes to ${compressedSize} bytes (${compressionRatio}% reduction)`,
+        "INFO"
+      );
+    }
+    
+    return {
+      compressed: true,
+      data: base64,
+      originalSize,
+      compressedSize,
+      timestamp: Date.now()
+    };
+  } catch (error) {
+    if (logToFile) {
+      logToFile(
+        `ConfigManager: Failed to compress command history - ${error.message}`,
+        "ERROR"
+      );
+    }
+    return null;
+  }
+}
+
+// 解压缩命令历史数据
+function decompressCommandHistory(compressedData) {
+  if (!compressedData || typeof compressedData !== 'object') {
+    return null;
+  }
+
+  try {
+    const buffer = Buffer.from(compressedData.data, 'base64');
+    const decompressed = zlib.gunzipSync(buffer);
+    const jsonString = decompressed.toString('utf8');
+    const history = JSON.parse(jsonString);
+    
+    if (logToFile) {
+      logToFile(
+        `ConfigManager: Command history decompressed from ${compressedData.compressedSize} bytes to ${compressedData.originalSize} bytes`,
+        "INFO"
+      );
+    }
+    
+    return Array.isArray(history) ? history : [];
+  } catch (error) {
+    if (logToFile) {
+      logToFile(
+        `ConfigManager: Failed to decompress command history - ${error.message}`,
+        "ERROR"
+      );
+    }
+    return null;
+  }
+}
+
 function loadCommandHistory() {
   if (!mainConfigPath) {
     if (logToFile)
@@ -833,13 +905,59 @@ function loadCommandHistory() {
       const data = fs.readFileSync(mainConfigPath, "utf8");
       const config = JSON.parse(data);
 
-      if (config.commandHistory && Array.isArray(config.commandHistory)) {
-        if (logToFile)
-          logToFile(
-            `ConfigManager: Loaded ${config.commandHistory.length} command history entries.`,
-            "INFO",
-          );
-        return config.commandHistory;
+      if (config.commandHistory) {
+        // 检测是否为压缩格式
+        if (typeof config.commandHistory === 'object' && config.commandHistory.compressed === true) {
+          // 解压缩格式
+          const decompressedHistory = decompressCommandHistory(config.commandHistory);
+          if (decompressedHistory) {
+            if (logToFile)
+              logToFile(
+                `ConfigManager: Loaded ${decompressedHistory.length} command history entries (compressed format).`,
+                "INFO",
+              );
+            return decompressedHistory;
+          } else {
+            if (logToFile)
+              logToFile(
+                "ConfigManager: Failed to decompress command history, returning empty array.",
+                "WARN",
+              );
+            return [];
+          }
+        } else if (Array.isArray(config.commandHistory)) {
+          // 旧格式（未压缩数组）- 自动迁移到压缩格式
+          if (logToFile)
+            logToFile(
+              `ConfigManager: Detected legacy command history format with ${config.commandHistory.length} entries, migrating to compressed format.`,
+              "INFO",
+            );
+          
+          // 备份原数据并转换为压缩格式
+          const originalHistory = [...config.commandHistory];
+          const compressedData = compressCommandHistory(originalHistory);
+          
+          if (compressedData) {
+            // 保存压缩格式
+            config.commandHistory = compressedData;
+            try {
+              fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
+              if (logToFile)
+                logToFile(
+                  "ConfigManager: Successfully migrated command history to compressed format.",
+                  "INFO",
+                );
+            } catch (saveError) {
+              if (logToFile)
+                logToFile(
+                  `ConfigManager: Failed to save migrated command history - ${saveError.message}`,
+                  "ERROR",
+                );
+            }
+          }
+          
+          return originalHistory;
+        }
       }
     }
   } catch (error) {
@@ -870,14 +988,31 @@ function saveCommandHistory(history) {
       config = JSON.parse(data);
     }
 
-    config.commandHistory = Array.isArray(history) ? history : [];
+    const historyArray = Array.isArray(history) ? history : [];
+    
+    // 压缩命令历史数据
+    const compressedData = compressCommandHistory(historyArray);
+    
+    if (compressedData) {
+      config.commandHistory = compressedData;
+      
+      if (logToFile)
+        logToFile(
+          `ConfigManager: Saved ${historyArray.length} command history entries in compressed format.`,
+          "INFO",
+        );
+    } else {
+      // 如果压缩失败，回退到原始格式
+      config.commandHistory = historyArray;
+      
+      if (logToFile)
+        logToFile(
+          `ConfigManager: Compression failed, saved ${historyArray.length} command history entries in legacy format.`,
+          "WARN",
+        );
+    }
+    
     fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
-
-    if (logToFile)
-      logToFile(
-        `ConfigManager: Saved ${config.commandHistory.length} command history entries.`,
-        "INFO",
-      );
     return true;
   } catch (error) {
     if (logToFile)
