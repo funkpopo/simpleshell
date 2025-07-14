@@ -2028,7 +2028,8 @@ const FileManager = memo(
         >
           <Typography
             variant="subtitle1"
-            sx={{ flexGrow: 1, fontWeight: "bold" }}
+            sx={{ flexGrow: 1 }}
+            fontWeight="medium"
           >
             {tabName ? `文件管理 - ${tabName}` : "文件管理"}
           </Typography>

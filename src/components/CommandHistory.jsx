@@ -350,12 +350,11 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                 borderBottom: `1px solid ${theme.palette.divider}`,
               }}
             >
-              <Typography variant="h6" component="h2">
-                <HistoryIcon sx={{ mr: 1, verticalAlign: "middle" }} />
+              <Typography variant="subtitle1" fontWeight="medium">
                 {t("commandHistory.title")}
               </Typography>
               <IconButton onClick={onClose} size="small">
-                <CloseIcon />
+                <CloseIcon fontSize="small" />
               </IconButton>
             </Box>
 
