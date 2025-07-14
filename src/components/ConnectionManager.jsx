@@ -156,6 +156,7 @@ const ConnectionManager = memo(
       country: "",
       os: "",
       connectionType: "",
+      protocol: "ssh", // 新增：连接协议，默认为SSH
     });
 
     // 处理组的展开/折叠 - 添加防抖和状态检查
@@ -192,6 +193,7 @@ const ConnectionManager = memo(
         country: "",
         os: "",
         connectionType: "",
+        protocol: "ssh", // 默认为SSH
       });
       setDialogOpen(true);
     }, []);
@@ -221,10 +223,12 @@ const ConnectionManager = memo(
         });
       } else {
         setDialogType("connection");
+        // 确保端口值与协议类型匹配
+        const port = item.port || (item.protocol === "telnet" ? 23 : 22);
         setFormData({
           name: item.name,
           host: item.host,
-          port: item.port || 22,
+          port: port,
           username: item.username || "",
           password: item.password || "",
           authType: item.authType || "password",
@@ -233,6 +237,7 @@ const ConnectionManager = memo(
           country: item.country || "",
           os: item.os || "",
           connectionType: item.connectionType || "",
+          protocol: item.protocol || "ssh",
         });
       }
 
@@ -267,7 +272,18 @@ const ConnectionManager = memo(
 
     const handleFormChange = useCallback((e) => {
       const { name, value } = e.target;
-      setFormData((prev) => ({ ...prev, [name]: value }));
+      
+      setFormData((prev) => {
+        // 如果修改的是协议字段，根据协议类型自动更新端口值
+        if (name === 'protocol') {
+          const defaultPort = value === 'telnet' ? 23 : 22;
+          // 只有在端口是默认值时才更新，如果用户已手动修改则保留
+          if (prev.port === 22 || prev.port === 23) {
+            return { ...prev, [name]: value, port: defaultPort };
+          }
+        }
+        return { ...prev, [name]: value };
+      });
     }, []);
 
     const handleSave = useCallback(() => {
@@ -281,89 +297,69 @@ const ConnectionManager = memo(
         return;
       }
 
-      if (dialogType === "connection") {
-        if (!formData.host.trim()) {
-          setSnackbar({
-            open: true,
-            message: "主机地址不能为空",
-            severity: "error",
-          });
-          return;
-        }
+      if (!formData.host.trim()) {
+        setSnackbar({
+          open: true,
+          message: "主机地址不能为空",
+          severity: "error",
+        });
+        return;
+      }
 
-        const connectionData = {
-          id: selectedItem?.id || `conn_${Date.now()}`,
-          type: "connection",
-          name: formData.name,
-          host: formData.host,
-          port: parseInt(formData.port) || 22,
-          username: formData.username,
-          password: formData.password,
-          authType: formData.authType,
-          privateKeyPath: formData.privateKeyPath,
-          country: formData.country,
-          os: formData.os,
-          connectionType: formData.connectionType,
-        };
+      const connectionData = {
+        id: selectedItem?.id || `conn_${Date.now()}`,
+        type: "connection",
+        name: formData.name,
+        host: formData.host,
+        port: parseInt(formData.port) || (formData.protocol === "ssh" ? 22 : 23),
+        username: formData.username,
+        password: formData.password,
+        authType: formData.authType,
+        privateKeyPath: formData.privateKeyPath,
+        country: formData.country,
+        os: formData.os,
+        connectionType: formData.connectionType,
+        protocol: formData.protocol, // 新增：保存连接协议
+      };
 
-        if (dialogMode === "add") {
-          if (formData.parentGroup) {
-            // 添加到组内
-            setConnections((prevConnections) =>
-              prevConnections.map((item) =>
-                item.id === formData.parentGroup
-                  ? { ...item, items: [...(item.items || []), connectionData] }
-                  : item,
-              ),
-            );
-          } else {
-            // 添加到顶级
-            setConnections((prevConnections) => [
-              ...prevConnections,
-              connectionData,
-            ]);
-          }
-        } else {
-          // 编辑连接
-          if (selectedItem.parentGroupId) {
-            // 在组内编辑
-            setConnections((prevConnections) =>
-              prevConnections.map((group) =>
-                group.id === selectedItem.parentGroupId
-                  ? {
-                      ...group,
-                      items: group.items.map((item) =>
-                        item.id === selectedItem.id ? connectionData : item,
-                      ),
-                    }
-                  : group,
-              ),
-            );
-          } else {
-            // 在顶级编辑
-            setConnections((prevConnections) =>
-              prevConnections.map((item) =>
-                item.id === selectedItem.id ? connectionData : item,
-              ),
-            );
-          }
-        }
-      } else {
-        // 处理组
-        const groupData = {
-          id: selectedItem?.id || `group_${Date.now()}`,
-          type: "group",
-          name: formData.name,
-          items: selectedItem?.items || [],
-          expanded: selectedItem?.expanded || false,
-        };
-
-        if (dialogMode === "add") {
-          setConnections((prevConnections) => [...prevConnections, groupData]);
-        } else {
+      if (dialogMode === "add") {
+        if (formData.parentGroup) {
+          // 添加到组内
           setConnections((prevConnections) =>
             prevConnections.map((item) =>
-              item.id === selectedItem.id ? groupData : item,
+              item.id === formData.parentGroup
+                ? { ...item, items: [...(item.items || []), connectionData] }
+                : item,
+            ),
+          );
+        } else {
+          // 添加到顶级
+          setConnections((prevConnections) => [
+            ...prevConnections,
+            connectionData,
+          ]);
+        }
+      } else {
+        // 编辑连接
+        if (selectedItem.parentGroupId) {
+          // 在组内编辑
+          setConnections((prevConnections) =>
+            prevConnections.map((group) =>
+              group.id === selectedItem.parentGroupId
+                ? {
+                    ...group,
+                    items: group.items.map((item) =>
+                      item.id === selectedItem.id ? connectionData : item,
+                    ),
+                  }
+                : group,
+            ),
+          );
+        } else {
+          // 在顶级编辑
+          setConnections((prevConnections) =>
+            prevConnections.map((item) =>
+              item.id === selectedItem.id ? connectionData : item,
             ),
           );
         }
@@ -428,6 +424,14 @@ const ConnectionManager = memo(
     // 渲染连接项 - 使用 useCallback 但移除不必要的依赖
     const renderConnectionItem = useCallback(
       (connection, parentGroup = null, index) => {
+        // 获取连接协议图标
+        const getProtocolIcon = () => {
+          if (connection.protocol === "telnet") {
+            return <ComputerIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />;
+          }
+          return <ComputerIcon fontSize="small" />;
+        };
+
         return (
           <Draggable
             key={connection.id}
@@ -503,14 +507,17 @@ const ConnectionManager = memo(
                   }}
                 >
                   <ListItemIcon sx={{ minWidth: 36 }}>
-                    <ComputerIcon fontSize="small" />
+                    {getProtocolIcon()}
                   </ListItemIcon>
                   <ListItemText
                     primary={connection.name || connection.host}
                     secondary={
-                      connection.username
-                        ? `${connection.username}@${connection.host}`
-                        : connection.host
+                      <span>
+                        {connection.protocol === "telnet" ? "Telnet://" : "SSH://"}
+                        {connection.username
+                          ? `${connection.username}@${connection.host}`
+                          : connection.host}
+                      </span>
                     }
                     sx={{ my: 0 }}
                   />
@@ -841,6 +848,19 @@ const ConnectionManager = memo(
 
                   {dialogType === "connection" && (
                     <>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>协议</InputLabel>
+                        <Select
+                          name="protocol"
+                          value={formData.protocol || "ssh"}
+                          label="协议"
+                          onChange={handleFormChange}
+                        >
+                          <MenuItem value="ssh">SSH</MenuItem>
+                          <MenuItem value="telnet">Telnet</MenuItem>
+                        </Select>
+                      </FormControl>
+
                       <TextField
                         label="主机地址"
                         name="host"
@@ -859,6 +879,7 @@ const ConnectionManager = memo(
                         onChange={handleFormChange}
                         fullWidth
                         size="small"
+                        placeholder={formData.protocol === "telnet" ? "23" : "22"}
                       />
 
                       <TextField
@@ -878,23 +899,25 @@ const ConnectionManager = memo(
                         onChange={handleFormChange}
                         fullWidth
                         size="small"
-                        disabled={formData.authType === "privateKey"}
+                        disabled={formData.protocol === "ssh" && formData.authType === "privateKey"}
                       />
 
-                      <FormControl fullWidth size="small" sx={{ mt: 1 }}>
-                        <InputLabel>认证方式</InputLabel>
-                        <Select
-                          name="authType"
-                          value={formData.authType || "password"}
-                          label="认证方式"
-                          onChange={handleFormChange}
-                        >
-                          <MenuItem value="password">密码认证</MenuItem>
-                          <MenuItem value="privateKey">密钥认证</MenuItem>
-                        </Select>
-                      </FormControl>
+                      {formData.protocol === "ssh" && (
+                        <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                          <InputLabel>认证方式</InputLabel>
+                          <Select
+                            name="authType"
+                            value={formData.authType || "password"}
+                            label="认证方式"
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value="password">密码认证</MenuItem>
+                            <MenuItem value="privateKey">密钥认证</MenuItem>
+                          </Select>
+                        </FormControl>
+                      )}
 
-                      {formData.authType === "privateKey" && (
+                      {formData.protocol === "ssh" && formData.authType === "privateKey" && (
                         <Box sx={{ display: "flex", mt: 1 }}>
                           <TextField
                             label="私钥路径"

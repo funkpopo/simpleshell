@@ -382,4 +382,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // IP地址查询API
   queryIpAddress: (ip = "") => ipcRenderer.invoke("ip:query", ip),
+
+  // SSH连接相关
+  startSSH: (sshConfig) => ipcRenderer.invoke("terminal:startSSH", sshConfig),
+  
+  // Telnet连接相关
+  startTelnet: (telnetConfig) => ipcRenderer.invoke("terminal:startTelnet", telnetConfig),
 });
