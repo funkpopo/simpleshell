@@ -67,6 +67,7 @@ const ConnectionManager = memo(
     const theme = useTheme();
     const [connections, setConnections] = useState(initialConnections);
     const [isLoading, setIsLoading] = useState(!initialConnections.length);
+    const [searchQuery, setSearchQuery] = useState("");
     const [snackbar, setSnackbar] = useState({
       open: false,
       message: "",
@@ -158,6 +159,33 @@ const ConnectionManager = memo(
       connectionType: "",
       protocol: "ssh", // 新增：连接协议，默认为SSH
     });
+
+    const filteredItems = useMemo(() => {
+      if (!searchQuery) {
+        return connections;
+      }
+      const lowercasedQuery = searchQuery.toLowerCase();
+      return connections.reduce((acc, item) => {
+        if (item.type === "group") {
+          const isGroupNameMatch = item.name.toLowerCase().includes(lowercasedQuery);
+          const matchingConnections = item.items.filter(c =>
+            c.name.toLowerCase().includes(lowercasedQuery)
+          );
+
+          if (isGroupNameMatch || matchingConnections.length > 0) {
+            acc.push({
+              ...item,
+              items: isGroupNameMatch ? item.items : matchingConnections,
+            });
+          }
+        } else {
+          if (item.name.toLowerCase().includes(lowercasedQuery)) {
+            acc.push(item);
+          }
+        }
+        return acc;
+      }, []);
+    }, [connections, searchQuery]);
 
     // 处理组的展开/折叠 - 添加防抖和状态检查
     const handleToggleGroup = useCallback((groupId) => {
@@ -534,9 +562,12 @@ const ConnectionManager = memo(
     renderConnectionItemRef.current = renderConnectionItem;
 
     // 渲染组 - 移除 renderConnectionItem 依赖，使用 ref 引用
-    const renderGroup = useCallback(
-      (group, index) => (
-        <Draggable key={group.id} draggableId={group.id} index={index}>
+    const renderGroupItem = (group, index) => {
+      // 优化渲染逻辑
+      const key = `group-${group.id}`;
+
+      return (
+        <Draggable key={key} draggableId={key} index={index}>
           {(provided, snapshot) => (
             <React.Fragment>
               <ListItem
@@ -643,54 +674,54 @@ const ConnectionManager = memo(
                 <Droppable
                   droppableId={group.id}
                   type={`group-items-${group.id}`}
+                  isDropDisabled={searchQuery.length > 0}
                 >
                   {(provided) => (
-                    <List
-                      component="div"
-                      disablePadding
-                      sx={{ pl: 2 }}
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                    >
-                      {group.items.map((item, itemIndex) =>
-                        renderConnectionItemRef.current(item, group, itemIndex),
-                      )}
-                      {provided.placeholder}
-                      {group.items.length === 0 && (
-                        <ListItem sx={{ pl: 2 }}>
-                          <ListItemText
-                            primary="没有连接项"
-                            primaryTypographyProps={{
-                              variant: "caption",
-                              sx: {
-                                fontStyle: "italic",
-                                color: "text.disabled",
-                              },
-                            }}
-                          />
-                        </ListItem>
-                      )}
-                    </List>
+                    <Box ref={provided.innerRef} {...provided.droppableProps}>
+                      <List
+                        component="div"
+                        disablePadding
+                        sx={{ pl: 2 }}
+                      >
+                        {group.items.map((item, itemIndex) =>
+                          renderConnectionItemRef.current(item, group, itemIndex),
+                        )}
+                        {provided.placeholder}
+                        {group.items.length === 0 && (
+                          <ListItem sx={{ pl: 2 }}>
+                            <ListItemText
+                              primary="没有连接项"
+                              primaryTypographyProps={{
+                                variant: "caption",
+                                sx: {
+                                  fontStyle: "italic",
+                                  color: "text.disabled",
+                                },
+                              }}
+                            />
+                          </ListItem>
+                        )}
+                      </List>
+                    </Box>
                   )}
                 </Droppable>
               </Collapse>
             </React.Fragment>
           )}
         </Draggable>
-      ),
-      [theme, handleAddConnection, handleEdit, handleDelete, handleToggleGroup],
-    );
+      );
+    };
 
     // 使用 useMemo 优化连接列表渲染 - 移除 renderConnectionItem 依赖
     const connectionsList = useMemo(() => {
-      return connections.map((item, index) =>
+      return filteredItems.map((item, index) =>
         item.type === "group"
-          ? renderGroup(item, index)
+          ? renderGroupItem(item, index)
           : renderConnectionItemRef.current
             ? renderConnectionItemRef.current(item, null, index)
             : renderConnectionItem(item, null, index),
       );
-    }, [connections, renderGroup]);
+    }, [filteredItems, renderGroupItem]);
 
     // 使用 useMemo 优化分组选择器选项
     const groupOptions = useMemo(() => {
@@ -776,16 +807,32 @@ const ConnectionManager = memo(
               </Button>
             </Box>
 
+            {/* 搜索框 */}
+            <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
+              <TextField
+                label="搜索..."
+                variant="outlined"
+                size="small"
+                fullWidth
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </Box>
+
             {/* 连接列表区域 */}
             <Box
               sx={{
                 flexGrow: 1,
                 overflow: "auto",
-                height: "calc(100% - 120px)",
+                height: "calc(100% - 160px)", // 调整高度以适应搜索框
               }}
             >
               <DragDropContext onDragEnd={handleDragEnd}>
-                <Droppable droppableId="connection-list" type="connection-list">
+                <Droppable
+                  droppableId="connection-list"
+                  type="connection-list"
+                  isDropDisabled={searchQuery.length > 0}
+                >
                   {(provided) => (
                     <List
                       dense
@@ -824,11 +871,12 @@ const ConnectionManager = memo(
               fullWidth
             >
               <DialogTitle>
-                {dialogMode === "add" ? "新建" : "编辑"}
+                {dialogMode === "add" ? "新建" : "编辑"}{" "}
                 {dialogType === "connection" ? "连接" : "分组"}
               </DialogTitle>
               <DialogContent dividers>
                 <Box
+                  component="form"
                   sx={{
                     display: "flex",
                     flexDirection: "column",
@@ -879,7 +927,9 @@ const ConnectionManager = memo(
                         onChange={handleFormChange}
                         fullWidth
                         size="small"
-                        placeholder={formData.protocol === "telnet" ? "23" : "22"}
+                        placeholder={
+                          formData.protocol === "telnet" ? "23" : "22"
+                        }
                       />
 
                       <TextField
@@ -899,7 +949,10 @@ const ConnectionManager = memo(
                         onChange={handleFormChange}
                         fullWidth
                         size="small"
-                        disabled={formData.protocol === "ssh" && formData.authType === "privateKey"}
+                        disabled={
+                          formData.protocol === "ssh" &&
+                          formData.authType === "privateKey"
+                        }
                       />
 
                       {formData.protocol === "ssh" && (
@@ -917,43 +970,44 @@ const ConnectionManager = memo(
                         </FormControl>
                       )}
 
-                      {formData.protocol === "ssh" && formData.authType === "privateKey" && (
-                        <Box sx={{ display: "flex", mt: 1 }}>
-                          <TextField
-                            label="私钥路径"
-                            name="privateKeyPath"
-                            value={formData.privateKeyPath}
-                            onChange={handleFormChange}
-                            fullWidth
-                            size="small"
-                            sx={{ flexGrow: 1 }}
-                          />
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            sx={{ ml: 1 }}
-                            onClick={() => {
-                              if (
-                                window.terminalAPI &&
-                                window.terminalAPI.selectKeyFile
-                              ) {
-                                window.terminalAPI
-                                  .selectKeyFile()
-                                  .then((filePath) => {
-                                    if (filePath) {
-                                      setFormData((prev) => ({
-                                        ...prev,
-                                        privateKeyPath: filePath,
-                                      }));
-                                    }
-                                  });
-                              }
-                            }}
-                          >
-                            浏览...
-                          </Button>
-                        </Box>
-                      )}
+                      {formData.protocol === "ssh" &&
+                        formData.authType === "privateKey" && (
+                          <Box sx={{ display: "flex", mt: 1 }}>
+                            <TextField
+                              label="私钥路径"
+                              name="privateKeyPath"
+                              value={formData.privateKeyPath}
+                              onChange={handleFormChange}
+                              fullWidth
+                              size="small"
+                              sx={{ flexGrow: 1 }}
+                            />
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              sx={{ ml: 1 }}
+                              onClick={() => {
+                                if (
+                                  window.terminalAPI &&
+                                  window.terminalAPI.selectKeyFile
+                                ) {
+                                  window.terminalAPI
+                                    .selectKeyFile()
+                                    .then((filePath) => {
+                                      if (filePath) {
+                                        setFormData((prev) => ({
+                                          ...prev,
+                                          privateKeyPath: filePath,
+                                        }));
+                                      }
+                                    });
+                                }
+                              }}
+                            >
+                              浏览...
+                            </Button>
+                          </Box>
+                        )}
 
                       <FormControl fullWidth size="small">
                         <InputLabel>分组</InputLabel>
@@ -978,7 +1032,9 @@ const ConnectionManager = memo(
                           label="类型"
                           onChange={handleFormChange}
                         >
-                          <MenuItem value=""><em>无</em></MenuItem>
+                          <MenuItem value="">
+                            <em>无</em>
+                          </MenuItem>
                           <MenuItem value="VPS">VPS</MenuItem>
                           <MenuItem value="NAS">NAS</MenuItem>
                           <MenuItem value="BareMetal">裸金属</MenuItem>
@@ -994,7 +1050,9 @@ const ConnectionManager = memo(
                           label="操作系统"
                           onChange={handleFormChange}
                         >
-                          <MenuItem value=""><em>无</em></MenuItem>
+                          <MenuItem value="">
+                            <em>无</em>
+                          </MenuItem>
                           <MenuItem value="Linux">Linux</MenuItem>
                           <MenuItem value="Windows">Windows</MenuItem>
                           <MenuItem value="macOS">macOS</MenuItem>
