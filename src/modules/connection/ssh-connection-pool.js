@@ -55,11 +55,13 @@ class SSHConnectionPool {
   generateConnectionKey(config) {
     // 优先使用 tabId 来确保每个标签页都有独立的连接
     if (config.tabId) {
-      // 如果有代理配置，将代理信息加入到连接键中
+      // 确保每个标签页使用独立连接，不复用任何连接资源
+      // 将tabId作为连接键的第一部分，确保连接不会被复用
       const proxyString = config.proxy ? 
         `proxy:${config.proxy.host}:${config.proxy.port}:${config.proxy.type}` : '';
       
-      return `${config.host}:${config.port || 22}:${config.username}:${config.tabId}${proxyString ? ':' + proxyString : ''}`;
+      // 使用唯一的连接键格式，确保每个标签页有独立连接
+      return `tab:${config.tabId}:${config.host}:${config.port || 22}:${config.username}${proxyString ? ':' + proxyString : ''}`;
     }
     // 回退到旧的逻辑，以支持可能没有tabId的场景
     return `${config.host}:${config.port || 22}:${config.username}`;
@@ -343,6 +345,33 @@ class SSHConnectionPool {
       }
     }
     return false;
+  }
+
+  /**
+   * 根据标签页ID查找关联的连接
+   * @param {string} tabId - 标签页ID
+   * @returns {object|null} - 连接信息或null
+   */
+  getConnectionByTabId(tabId) {
+    if (!tabId) return null;
+    
+    // 查找标签页引用
+    if (this.tabReferences.has(tabId)) {
+      const connectionKey = this.tabReferences.get(tabId);
+      if (this.connections.has(connectionKey)) {
+        return this.connections.get(connectionKey);
+      }
+    }
+    
+    // 直接通过连接键前缀查找
+    const tabPrefix = `tab:${tabId}:`;
+    for (const [key, connection] of this.connections.entries()) {
+      if (key.startsWith(tabPrefix)) {
+        return connection;
+      }
+    }
+    
+    return null;
   }
 
   closeConnection(connectionKey) {

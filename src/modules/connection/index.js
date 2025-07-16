@@ -25,7 +25,40 @@ class ConnectionManager {
   }
 
   async getSftpSession(tabId) {
-    return this.sftpManager.getSftpSession(tabId);
+    try {
+      // 确保SSH连接已正确关联到此标签页
+      const processInfo = this.sshConnectionPool.getConnectionByTabId && 
+                          this.sshConnectionPool.getConnectionByTabId(tabId);
+      
+      if (!processInfo) {
+        logToFile(`Connection manager: No SSH connection found for tab ${tabId}`, "WARN");
+      }
+      
+      // 对SFTP会话管理器的调用添加额外的错误处理
+      try {
+        return await this.sftpManager.getSftpSession(tabId);
+      } catch (error) {
+        // 如果获取SFTP会话失败，但我们知道有有效的SSH连接，尝试清理并重试
+        if (processInfo && error.message.includes("Invalid SSH connection info")) {
+          logToFile(`Connection manager: SFTP session error, cleaning up and retrying for tab ${tabId}`, "WARN");
+          
+          // 先关闭可能存在的问题会话
+          this.sftpManager.closeSftpSession(tabId);
+          
+          // 短暂延迟
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // 重试获取SFTP会话
+          return await this.sftpManager.getSftpSession(tabId);
+        }
+        
+        // 其他错误直接抛出
+        throw error;
+      }
+    } catch (error) {
+      logToFile(`Connection manager: Failed to get SFTP session for tab ${tabId}: ${error.message}`, "ERROR");
+      throw error;
+    }
   }
 
   closeSftpSession(tabId) {
