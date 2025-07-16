@@ -334,6 +334,33 @@ const ConnectionManager = memo(
         return;
       }
 
+      if (dialogType === "group") {
+        const groupData = {
+          id: selectedItem?.id || `group_${Date.now()}`,
+          type: "group",
+          name: formData.name,
+          items: selectedItem?.items || [],
+        };
+
+        if (dialogMode === "add") {
+          setConnections((prevConnections) => [...prevConnections, groupData]);
+        } else {
+          setConnections((prevConnections) =>
+            prevConnections.map((item) =>
+              item.id === selectedItem.id ? { ...item, name: formData.name } : item
+            )
+          );
+        }
+        setDialogOpen(false);
+        setSnackbar({
+          open: true,
+          message: `${dialogMode === "add" ? "创建" : "更新"}成功`,
+          severity: "success",
+        });
+        return;
+      }
+
+      // 处理连接保存
       const connectionData = {
         id: selectedItem?.id || `conn_${Date.now()}`,
         type: "connection",
@@ -347,7 +374,7 @@ const ConnectionManager = memo(
         country: formData.country,
         os: formData.os,
         connectionType: formData.connectionType,
-        protocol: formData.protocol, // 新增：保存连接协议
+        protocol: formData.protocol,
       };
 
       if (dialogMode === "add") {
@@ -369,27 +396,66 @@ const ConnectionManager = memo(
         }
       } else {
         // 编辑连接
-        if (selectedItem.parentGroupId) {
-          // 在组内编辑
-          setConnections((prevConnections) =>
-            prevConnections.map((group) =>
-              group.id === selectedItem.parentGroupId
-                ? {
-                    ...group,
-                    items: group.items.map((item) =>
-                      item.id === selectedItem.id ? connectionData : item,
-                    ),
-                  }
-                : group,
-            ),
-          );
+        const oldParentId = selectedItem.parentGroupId;
+        const newParentId = formData.parentGroup;
+
+        if (oldParentId === newParentId) {
+          // 分组未改变，原地更新
+          if (oldParentId) {
+            // 在组内编辑
+            setConnections((prevConnections) =>
+              prevConnections.map((group) =>
+                group.id === oldParentId
+                  ? {
+                      ...group,
+                      items: group.items.map((item) =>
+                        item.id === selectedItem.id ? connectionData : item
+                      ),
+                    }
+                  : group
+              )
+            );
+          } else {
+            // 在顶级编辑
+            setConnections((prevConnections) =>
+              prevConnections.map((item) =>
+                item.id === selectedItem.id ? connectionData : item
+              )
+            );
+          }
         } else {
-          // 在顶级编辑
-          setConnections((prevConnections) =>
-            prevConnections.map((item) =>
-              item.id === selectedItem.id ? connectionData : item,
-            ),
-          );
+          // 分组已改变，先删除后添加
+          setConnections((prevConnections) => {
+            let tempConnections = [...prevConnections];
+
+            // 1. 从旧位置移除
+            if (oldParentId) {
+              const oldGroupIndex = tempConnections.findIndex(g => g.id === oldParentId);
+              if (oldGroupIndex > -1) {
+                tempConnections[oldGroupIndex] = {
+                  ...tempConnections[oldGroupIndex],
+                  items: tempConnections[oldGroupIndex].items.filter(i => i.id !== selectedItem.id),
+                };
+              }
+            } else {
+              tempConnections = tempConnections.filter(i => i.id !== selectedItem.id);
+            }
+
+            // 2. 添加到新位置
+            if (newParentId) {
+              const newGroupIndex = tempConnections.findIndex(g => g.id === newParentId);
+              if (newGroupIndex > -1) {
+                tempConnections[newGroupIndex] = {
+                  ...tempConnections[newGroupIndex],
+                  items: [...(tempConnections[newGroupIndex].items || []), connectionData],
+                };
+              }
+            } else {
+              tempConnections.push(connectionData);
+            }
+            
+            return tempConnections;
+          });
         }
       }
 
@@ -562,12 +628,12 @@ const ConnectionManager = memo(
     renderConnectionItemRef.current = renderConnectionItem;
 
     // 渲染组 - 移除 renderConnectionItem 依赖，使用 ref 引用
-    const renderGroupItem = (group, index) => {
+    const renderGroupItem = useCallback((group, index) => {
       // 优化渲染逻辑
       const key = `group-${group.id}`;
 
       return (
-        <Draggable key={key} draggableId={key} index={index}>
+        <Draggable key={group.id} draggableId={group.id} index={index}>
           {(provided, snapshot) => (
             <React.Fragment>
               <ListItem
@@ -710,7 +776,7 @@ const ConnectionManager = memo(
           )}
         </Draggable>
       );
-    };
+    }, [theme, searchQuery, handleToggleGroup, handleAddConnection, handleEdit, handleDelete]);
 
     // 使用 useMemo 优化连接列表渲染 - 移除 renderConnectionItem 依赖
     const connectionsList = useMemo(() => {
@@ -721,7 +787,7 @@ const ConnectionManager = memo(
             ? renderConnectionItemRef.current(item, null, index)
             : renderConnectionItem(item, null, index),
       );
-    }, [filteredItems, renderGroupItem]);
+    }, [filteredItems, renderGroupItem, renderConnectionItem]);
 
     // 使用 useMemo 优化分组选择器选项
     const groupOptions = useMemo(() => {
