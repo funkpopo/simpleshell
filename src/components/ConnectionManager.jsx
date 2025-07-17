@@ -29,6 +29,7 @@ import {
   Select,
   Snackbar,
   Alert,
+  Tooltip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import ComputerIcon from "@mui/icons-material/Computer";
@@ -614,14 +615,24 @@ const ConnectionManager = memo(
                   <ListItemText
                     primary={connection.name || connection.host}
                     secondary={
-                      <span>
-                        {connection.protocol === "telnet" ? "Telnet://" : "SSH://"}
-                        {connection.username
-                          ? `${connection.username}@${connection.host}`
-                          : connection.host}
-                      </span>
+                      <Tooltip title={`${connection.protocol === "telnet" ? "Telnet://" : "SSH://"}${connection.username ? `${connection.username}@${connection.host}` : connection.host}`}>
+                        <span>
+                          {connection.protocol === "telnet" ? "Telnet://" : "SSH://"}
+                          {connection.username
+                            ? `${connection.username}@${connection.host}`
+                            : connection.host}
+                        </span>
+                      </Tooltip>
                     }
-                    sx={{ my: 0 }}
+                    sx={{ 
+                      my: 0,
+                      '& .MuiListItemText-secondary': {
+                        textOverflow: 'ellipsis',
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap',
+                        maxWidth: 'calc(100% - 20px)', // 预留按钮的空间
+                      }
+                    }}
                   />
                 </ListItemButton>
               </ListItem>
