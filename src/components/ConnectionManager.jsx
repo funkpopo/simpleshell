@@ -557,7 +557,15 @@ const ConnectionManager = memo(
                     : {}),
                 }}
                 secondaryAction={
-                  <Box>
+                  <Box
+                    sx={{
+                      opacity: 0, // 默认隐藏
+                      transition: 'opacity 0.2s ease', // 添加过渡效果
+                      '.MuiListItem-root:hover &': {
+                        opacity: 1, // 当ListItem被悬停时显示
+                      },
+                    }}
+                  >
                     <IconButton
                       edge="end"
                       size="small"
@@ -659,7 +667,15 @@ const ConnectionManager = memo(
                     : {}),
                 }}
                 secondaryAction={
-                  <Box sx={{ display: "flex", gap: 0.5 }}>
+                  <Box sx={{ 
+                    display: "flex", 
+                    gap: 0.5,
+                    opacity: 0, // 默认隐藏
+                    transition: 'opacity 0.2s ease', // 添加过渡效果
+                    '.MuiListItem-root:hover &': {
+                      opacity: 1, // 当ListItem被悬停时显示
+                    },
+                  }}>
                     <IconButton
                       edge="end"
                       size="small"
