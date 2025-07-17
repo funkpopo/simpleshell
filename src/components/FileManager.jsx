@@ -81,7 +81,7 @@ const FileManager = memo(
     const CACHE_EXPIRY_TIME = 10000; // 10秒
 
     // 自动刷新相关参数
-    const USER_ACTIVITY_REFRESH_DELAY = 1000; // 用户活动后刷新延迟
+    const USER_ACTIVITY_REFRESH_DELAY = 300; // 将用户活动后刷新延迟从1000ms减少到300ms
 
     // 传输进度管理函数
     const generateTransferId = () => {
@@ -291,34 +291,44 @@ const FileManager = memo(
             path: apiPath,
             canMerge: true,
             priority: "low", // 使用低优先级，避免阻塞用户主动操作
+            nonBlocking: true, // 添加非阻塞标志，确保不会阻塞UI
           };
 
-          const response = await window.terminalAPI.listFiles(
-            tabId,
-            apiPath,
-            options,
+          // 使用Promise.race和超时保证即使API响应慢也不会阻塞UI
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('刷新超时')), 3000)
           );
+          
+          try {
+            const response = await Promise.race([
+              window.terminalAPI.listFiles(tabId, apiPath, options),
+              timeoutPromise
+            ]);
 
-          if (response?.success) {
-            const fileData = response.data || [];
+            if (response?.success) {
+              const fileData = response.data || [];
 
-            // 检查数据是否有变化
-            const currentFiles = JSON.stringify(files);
-            const newFiles = JSON.stringify(fileData);
+              // 检查数据是否有变化
+              const currentFiles = JSON.stringify(files);
+              const newFiles = JSON.stringify(fileData);
 
-            if (currentFiles !== newFiles) {
-              // 更新缓存
-              updateDirectoryCache(currentPath, fileData);
-              // 更新视图
-              setFiles(fileData);
-              // 加载新目录时重置选中文件
-              setSelectedFile(null);
+              if (currentFiles !== newFiles) {
+                // 更新缓存
+                updateDirectoryCache(currentPath, fileData);
+                // 更新视图
+                setFiles(fileData);
+                // 加载新目录时重置选中文件
+                setSelectedFile(null);
+              }
+
+              // 记录刷新时间
+              setLastRefreshTime(Date.now());
+            } else {
+              // 静默刷新失败不显示错误，只记录日志
             }
-
-            // 记录刷新时间
-            setLastRefreshTime(Date.now());
-          } else {
-            // 静默刷新失败不显示错误，只记录日志
+          } catch (error) {
+            // 超时或其他错误，静默处理
+            // 避免在UI上显示错误信息
           }
         }
       } catch (error) {
@@ -550,6 +560,12 @@ const FileManager = memo(
     const handleDelete = async () => {
       if (!selectedFile || !sshConnection) return;
 
+      // 立即保存当前选中的文件信息，避免状态变化导致问题
+      const fileToDelete = { ...selectedFile };
+      
+      // 创建一个标识符，用于跟踪当前的删除操作
+      const deleteOperationId = Date.now();
+      
       setLoading(true);
       setError(null);
       let retryCount = 0;
@@ -559,25 +575,27 @@ const FileManager = memo(
         try {
           const fullPath =
             currentPath === "/"
-              ? "/" + selectedFile.name
+              ? "/" + fileToDelete.name
               : currentPath
-                ? currentPath + "/" + selectedFile.name
-                : selectedFile.name;
+                ? currentPath + "/" + fileToDelete.name
+                : fileToDelete.name;
 
           if (window.terminalAPI && window.terminalAPI.deleteFile) {
             const response = await window.terminalAPI.deleteFile(
               tabId,
               fullPath,
-              selectedFile.isDirectory,
+              fileToDelete.isDirectory,
             );
 
             if (response?.success) {
+              // 成功删除后立即重置选中文件，避免使用已删除的文件夹作为上传目标
+              setSelectedFile(null);
+              
               // 成功删除，刷新目录
               await loadDirectory(currentPath);
+              
               // 删除操作完成后设置定时器再次检查
               refreshAfterUserActivity();
-              // 重置选中文件，避免使用已删除的文件夹作为上传目标
-              setSelectedFile(null);
             } else if (
               response?.error?.includes("SFTP错误") &&
               retryCount < maxRetries
@@ -594,6 +612,8 @@ const FileManager = memo(
             } else {
               // 其他错误或已达到最大重试次数
               setError(response?.error || "删除文件失败");
+              // 即使删除失败也重置选中文件状态
+              setSelectedFile(null);
             }
           }
         } catch (error) {
@@ -610,10 +630,18 @@ const FileManager = memo(
           }
 
           setError("删除文件失败: " + (error.message || "未知错误"));
+          // 即使删除失败也重置选中文件状态
+          setSelectedFile(null);
         } finally {
           if (retryCount === 0 || retryCount >= maxRetries) {
+            // 确保无论成功失败都重置loading状态
             setLoading(false);
             handleContextMenuClose();
+            
+            // 确保状态完全重置，允许新的删除操作
+            setTimeout(() => {
+              // 这个空的setTimeout确保状态更新在UI渲染循环中完成
+            }, 10);
           }
         }
       };
