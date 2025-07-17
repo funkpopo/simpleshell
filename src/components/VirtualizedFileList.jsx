@@ -47,6 +47,9 @@ const FileItem = memo(({ index, style, data }) => {
   const { files, onFileActivate, onContextMenu, selectedFile } = data;
   const file = files[index];
 
+  // 确保文件存在
+  if (!file) return null;
+
   const handleFileActivate = useCallback(() => {
     onFileActivate(file);
   }, [file, onFileActivate]);
@@ -58,7 +61,10 @@ const FileItem = memo(({ index, style, data }) => {
     [file, onContextMenu],
   );
 
-  const isSelected = selectedFile && selectedFile.name === file.name;
+  // 检查是否被选中，使用文件名和修改时间共同判断，避免删除后选中状态错误
+  const isSelected = selectedFile && 
+    selectedFile.name === file.name && 
+    selectedFile.modifyTime === file.modifyTime;
 
   // 直接始终渲染完整内容（含时间戳）
   return (
