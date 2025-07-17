@@ -46,6 +46,29 @@ import { arrayMoveImmutable } from "array-move";
 import { alpha } from "@mui/material/styles";
 import { countries } from 'countries-list';
 
+// 自定义拖拽样式 - 简化计算，使用性能更好的CSS属性
+const getItemStyle = (isDragging, draggableStyle, theme) => ({
+  userSelect: 'none',
+  // 使用简单的背景色而非复杂的阴影效果
+  background: isDragging
+    ? theme.palette.mode === 'dark'
+      ? theme.palette.grey[700]
+      : theme.palette.grey[200]
+    : 'transparent',
+  // 移除阴影效果，减少渲染成本
+  ...draggableStyle,
+});
+
+const getListStyle = (isDraggingOver, theme) => ({
+  // 简化背景色计算
+  background: isDraggingOver
+    ? theme.palette.mode === 'dark'
+      ? 'rgba(64, 64, 64, 0.1)' // 使用固定颜色而非动态计算
+      : 'rgba(240, 240, 240, 0.5)'
+    : 'transparent',
+  // 移除过渡效果，减少渲染成本
+});
+
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
   return (
@@ -56,6 +79,299 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.onOpenConnection === nextProps.onOpenConnection
   );
 };
+
+// 优化连接项组件，使用React.memo包装
+const ConnectionItem = memo(
+  ({ connection, parentGroup, index, onEdit, onDelete, onOpen, theme }) => {
+    // 获取连接协议图标
+    const getProtocolIcon = () => {
+      if (connection.protocol === "telnet") {
+        return <ComputerIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />;
+      }
+      return <ComputerIcon fontSize="small" />;
+    };
+
+    return (
+      <Draggable
+        key={connection.id}
+        draggableId={connection.id}
+        index={index}
+      >
+        {(provided, snapshot) => (
+          <ListItem
+            ref={provided.innerRef}
+            {...provided.draggableProps}
+            disablePadding
+            sx={{
+              pl: parentGroup ? 4 : 1,
+              minHeight: "36px", // 改为最小高度而非固定高度
+              "&:hover": {
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
+                    : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
+              },
+              ...getItemStyle(snapshot.isDragging, provided.draggableProps.style, theme)
+            }}
+            secondaryAction={
+              <Box
+                sx={{
+                  opacity: 0, // 默认隐藏
+                  transition: 'opacity 0.2s ease', // 添加过渡效果
+                  '.MuiListItem-root:hover &': {
+                    opacity: 1, // 当ListItem被悬停时显示
+                  },
+                }}
+              >
+                <IconButton
+                  edge="end"
+                  size="small"
+                  onClick={() => onEdit(connection, parentGroup)}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+                <IconButton
+                  edge="end"
+                  size="small"
+                  onClick={() => onDelete(connection.id, parentGroup)}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            }
+          >
+            <Box
+              {...provided.dragHandleProps}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                cursor: "grab",
+                "&:active": { cursor: "grabbing" },
+              }}
+            >
+              <DragIndicatorIcon
+                fontSize="small"
+                sx={{ color: "text.secondary", mr: 1 }}
+              />
+            </Box>
+            <ListItemButton
+              onClick={() => onOpen(connection)}
+              dense
+              sx={{
+                flexGrow: 1,
+                py: 0.5, // 减小上下内边距
+                "&:hover": {
+                  backgroundColor: "transparent", // 防止ListItemButton自身的hover效果
+                },
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                {getProtocolIcon()}
+              </ListItemIcon>
+              <ListItemText
+                primary={connection.name || connection.host}
+                secondary={
+                  <Tooltip title={`${connection.protocol === "telnet" ? "Telnet://" : "SSH://"}${connection.username ? `${connection.username}@${connection.host}` : connection.host}`}>
+                    <span>
+                      {connection.protocol === "telnet" ? "Telnet://" : "SSH://"}
+                      {connection.username
+                        ? `${connection.username}@${connection.host}`
+                        : connection.host}
+                    </span>
+                  </Tooltip>
+                }
+                sx={{ 
+                  my: 0,
+                  '& .MuiListItemText-secondary': {
+                    textOverflow: 'ellipsis',
+                    overflow: 'hidden',
+                    whiteSpace: 'nowrap',
+                    maxWidth: 'calc(100% - 20px)', // 预留按钮的空间
+                  }
+                }}
+              />
+            </ListItemButton>
+          </ListItem>
+        )}
+      </Draggable>
+    );
+  },
+  (prevProps, nextProps) => {
+    return (
+      prevProps.connection.id === nextProps.connection.id &&
+      prevProps.connection.name === nextProps.connection.name &&
+      prevProps.connection.host === nextProps.connection.host &&
+      prevProps.connection.protocol === nextProps.connection.protocol &&
+      prevProps.connection.username === nextProps.connection.username &&
+      prevProps.index === nextProps.index &&
+      (prevProps.parentGroup?.id === nextProps.parentGroup?.id)
+    );
+  }
+);
+
+// 优化组项组件，使用React.memo包装
+const GroupItem = memo(
+  ({ group, index, onToggle, onEdit, onDelete, onAddConnection, renderConnectionItem, theme, searchQuery }) => {
+    return (
+      <Draggable key={group.id} draggableId={group.id} index={index}>
+        {(provided, snapshot) => (
+          <React.Fragment>
+            <ListItem
+              disablePadding
+              ref={provided.innerRef}
+              {...provided.draggableProps}
+              sx={{
+                minHeight: "36px", // 添加最小高度
+                "&:hover": {
+                  backgroundColor:
+                    theme.palette.mode === "dark"
+                      ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
+                      : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
+                },
+                ...getItemStyle(snapshot.isDragging, provided.draggableProps.style, theme)
+              }}
+              secondaryAction={
+                <Box sx={{ 
+                  display: "flex", 
+                  gap: 0.5,
+                  opacity: 0, // 默认隐藏
+                  transition: 'opacity 0.2s ease', // 添加过渡效果
+                  '.MuiListItem-root:hover &': {
+                    opacity: 1, // 当ListItem被悬停时显示
+                  },
+                }}>
+                  <IconButton
+                    edge="end"
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddConnection(group.id);
+                    }}
+                  >
+                    <AddIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton
+                    edge="end"
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(group);
+                    }}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton
+                    edge="end"
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(group.id);
+                    }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              }
+            >
+              <Box
+                {...provided.dragHandleProps}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: "grab",
+                  "&:active": { cursor: "grabbing" },
+                }}
+              >
+                <DragIndicatorIcon
+                  fontSize="small"
+                  sx={{ color: "text.secondary", ml: 1, mr: 1 }}
+                />
+              </Box>
+              <ListItemButton
+                onClick={() => onToggle(group.id)}
+                sx={{
+                  py: 0.5,
+                  flexGrow: 1,
+                  "&:hover": {
+                    backgroundColor: "transparent",
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  {group.expanded ? (
+                    <FolderOpenIcon fontSize="small" />
+                  ) : (
+                    <FolderIcon fontSize="small" />
+                  )}
+                </ListItemIcon>
+                <ListItemText
+                  primary={group.name}
+                  primaryTypographyProps={{
+                    variant: "body2",
+                    fontWeight: "medium",
+                    margin: 0,
+                  }}
+                  sx={{ my: 0 }} // 减小外边距
+                />
+              </ListItemButton>
+            </ListItem>
+
+            <Collapse in={group.expanded} timeout="auto" unmountOnExit>
+              <Droppable
+                droppableId={`group-${group.id}`}
+                type="connection-item"
+                isDropDisabled={searchQuery.length > 0}
+              >
+                {(provided, snapshot) => (
+                  <Box 
+                    ref={provided.innerRef} 
+                    {...provided.droppableProps}
+                    sx={getListStyle(snapshot.isDraggingOver, theme)}
+                  >
+                    <List
+                      component="div"
+                      disablePadding
+                      sx={{ pl: 2 }}
+                    >
+                      {group.items.map((item, itemIndex) =>
+                        renderConnectionItem(item, group, itemIndex),
+                      )}
+                      {provided.placeholder}
+                      {group.items.length === 0 && (
+                        <ListItem sx={{ pl: 2 }}>
+                          <ListItemText
+                            primary="没有连接项"
+                            primaryTypographyProps={{
+                              variant: "caption",
+                              sx: {
+                                fontStyle: "italic",
+                                color: "text.disabled",
+                              },
+                            }}
+                          />
+                        </ListItem>
+                      )}
+                    </List>
+                  </Box>
+                )}
+              </Droppable>
+            </Collapse>
+          </React.Fragment>
+        )}
+      </Draggable>
+    );
+  },
+  (prevProps, nextProps) => {
+    return (
+      prevProps.group.id === nextProps.group.id &&
+      prevProps.group.name === nextProps.group.name &&
+      prevProps.group.expanded === nextProps.group.expanded &&
+      prevProps.index === nextProps.index &&
+      prevProps.group.items.length === nextProps.group.items.length &&
+      prevProps.searchQuery === nextProps.searchQuery
+    );
+  }
+);
 
 const ConnectionManager = memo(
   ({
@@ -477,333 +793,176 @@ const ConnectionManager = memo(
       [onOpenConnection],
     );
 
+    // 优化handleDragEnd函数，减少不必要的状态更新
     const handleDragEnd = useCallback(
       (result) => {
         if (!result.destination) return;
 
-        const { source, destination, type } = result;
-
-        // 处理顶级项目拖拽
-        if (type === "connection-list") {
-          const newConnections = arrayMoveImmutable(
-            connections,
-            source.index,
-            destination.index,
-          );
-          setConnections(newConnections);
+        const { source, destination, draggableId, type } = result;
+        
+        // 如果拖拽位置没有变化，则不做任何操作
+        if (
+          source.droppableId === destination.droppableId &&
+          source.index === destination.index
+        ) {
           return;
         }
 
-        // 处理组内项目拖拽
-        if (type.startsWith("group-items-")) {
-          const groupId = type.replace("group-items-", "");
-          const group = connections.find((item) => item.id === groupId);
-          if (group) {
-            const newItems = arrayMoveImmutable(
-              group.items,
-              source.index,
-              destination.index,
-            );
-            setConnections((prevConnections) =>
-              prevConnections.map((item) =>
-                item.id === groupId ? { ...item, items: newItems } : item,
-              ),
-            );
+        // 解析source和destination的droppableId
+        const sourceId = source.droppableId;
+        const destinationId = destination.droppableId;
+
+        // 使用单一的状态更新，而不是多次调用setConnections
+        setConnections((prevConnections) => {
+          // 创建连接的深拷贝，避免直接修改状态
+          let newConnections = [...prevConnections];
+          
+          // 从顶级列表到顶级列表的拖拽
+          if (sourceId === 'root' && destinationId === 'root') {
+            return arrayMoveImmutable(newConnections, source.index, destination.index);
           }
-          return;
-        }
+          
+          // 从组内到组内的拖拽（可能是同一组内或跨组）
+          if (sourceId !== 'root' && destinationId !== 'root') {
+            const sourceGroupId = sourceId.replace('group-', '');
+            const destGroupId = destinationId.replace('group-', '');
+            
+            // 同一组内拖拽
+            if (sourceGroupId === destGroupId) {
+              const groupIndex = newConnections.findIndex(item => item.id === sourceGroupId);
+              if (groupIndex === -1) return prevConnections;
+              
+              const group = newConnections[groupIndex];
+              const newItems = arrayMoveImmutable(group.items, source.index, destination.index);
+              
+              newConnections[groupIndex] = { ...group, items: newItems };
+              return newConnections;
+            } else {
+              // 跨组拖拽
+              const sourceGroupIndex = newConnections.findIndex(item => item.id === sourceGroupId);
+              const destGroupIndex = newConnections.findIndex(item => item.id === destGroupId);
+              
+              if (sourceGroupIndex === -1 || destGroupIndex === -1) return prevConnections;
+              
+              // 获取要移动的项目
+              const sourceGroup = newConnections[sourceGroupIndex];
+              const destGroup = newConnections[destGroupIndex];
+              const movedItem = sourceGroup.items[source.index];
+              
+              // 从源组中移除项目
+              const newSourceItems = [...sourceGroup.items];
+              newSourceItems.splice(source.index, 1);
+              
+              // 添加到目标组
+              const newDestItems = [...destGroup.items];
+              newDestItems.splice(destination.index, 0, movedItem);
+              
+              // 更新组
+              newConnections[sourceGroupIndex] = { ...sourceGroup, items: newSourceItems };
+              newConnections[destGroupIndex] = { ...destGroup, items: newDestItems };
+              
+              return newConnections;
+            }
+          }
+          
+          // 从顶级列表到组内的拖拽
+          if (sourceId === 'root' && destinationId !== 'root') {
+            const destGroupId = destinationId.replace('group-', '');
+            
+            // 获取要移动的项目
+            const movedItem = newConnections[source.index];
+            
+            // 确保是连接项而非组
+            if (movedItem.type !== 'connection') return prevConnections;
+            
+            // 从顶级列表中移除项目
+            newConnections.splice(source.index, 1);
+            
+            // 找到目标组
+            const destGroupIndex = newConnections.findIndex((item) => item.id === destGroupId);
+            if (destGroupIndex === -1) return prevConnections;
+            
+            // 添加到目标组
+            const destGroup = newConnections[destGroupIndex];
+            const newDestItems = [...destGroup.items];
+            newDestItems.splice(destination.index, 0, movedItem);
+            
+            newConnections[destGroupIndex] = { ...destGroup, items: newDestItems };
+            
+            return newConnections;
+          }
+          
+          // 从组内到顶级列表的拖拽
+          if (sourceId !== 'root' && destinationId === 'root') {
+            const sourceGroupId = sourceId.replace('group-', '');
+            
+            // 找到源组
+            const sourceGroupIndex = newConnections.findIndex(item => item.id === sourceGroupId);
+            if (sourceGroupIndex === -1) return prevConnections;
+            
+            const sourceGroup = newConnections[sourceGroupIndex];
+            
+            // 获取要移动的项目
+            const movedItem = sourceGroup.items[source.index];
+            
+            // 从源组中移除项目
+            const newSourceItems = [...sourceGroup.items];
+            newSourceItems.splice(source.index, 1);
+            
+            // 更新源组
+            newConnections[sourceGroupIndex] = { ...sourceGroup, items: newSourceItems };
+            
+            // 添加到顶级列表
+            newConnections.splice(destination.index, 0, movedItem);
+            
+            return newConnections;
+          }
+          
+          return prevConnections;
+        });
       },
-      [connections],
+      [],
     );
 
-    // 渲染连接项 - 使用 useCallback 但移除不必要的依赖
+    // 渲染连接项 - 使用优化的ConnectionItem组件
     const renderConnectionItem = useCallback(
       (connection, parentGroup = null, index) => {
-        // 获取连接协议图标
-        const getProtocolIcon = () => {
-          if (connection.protocol === "telnet") {
-            return <ComputerIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />;
-          }
-          return <ComputerIcon fontSize="small" />;
-        };
-
         return (
-          <Draggable
+          <ConnectionItem
             key={connection.id}
-            draggableId={connection.id}
+            connection={connection}
+            parentGroup={parentGroup}
             index={index}
-          >
-            {(provided, snapshot) => (
-              <ListItem
-                ref={provided.innerRef}
-                {...provided.draggableProps}
-                disablePadding
-                sx={{
-                  pl: parentGroup ? 4 : 1,
-                  minHeight: "36px", // 改为最小高度而非固定高度
-                  "&:hover": {
-                    backgroundColor:
-                      theme.palette.mode === "dark"
-                        ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
-                        : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
-                  },
-                  ...(snapshot.isDragging
-                    ? {
-                        background:
-                          theme.palette.mode === "dark"
-                            ? theme.palette.grey[700]
-                            : theme.palette.grey[200],
-                        boxShadow: theme.shadows[4],
-                      }
-                    : {}),
-                }}
-                secondaryAction={
-                  <Box
-                    sx={{
-                      opacity: 0, // 默认隐藏
-                      transition: 'opacity 0.2s ease', // 添加过渡效果
-                      '.MuiListItem-root:hover &': {
-                        opacity: 1, // 当ListItem被悬停时显示
-                      },
-                    }}
-                  >
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      onClick={() => handleEdit(connection, parentGroup)}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      onClick={() => handleDelete(connection.id, parentGroup)}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                }
-              >
-                <Box
-                  {...provided.dragHandleProps}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    cursor: "grab",
-                    "&:active": { cursor: "grabbing" },
-                  }}
-                >
-                  <DragIndicatorIcon
-                    fontSize="small"
-                    sx={{ color: "text.secondary", mr: 1 }}
-                  />
-                </Box>
-                <ListItemButton
-                  onClick={() => handleOpenConnection(connection)}
-                  dense
-                  sx={{
-                    flexGrow: 1,
-                    py: 0.5, // 减小上下内边距
-                    "&:hover": {
-                      backgroundColor: "transparent", // 防止ListItemButton自身的hover效果
-                    },
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    {getProtocolIcon()}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={connection.name || connection.host}
-                    secondary={
-                      <Tooltip title={`${connection.protocol === "telnet" ? "Telnet://" : "SSH://"}${connection.username ? `${connection.username}@${connection.host}` : connection.host}`}>
-                        <span>
-                          {connection.protocol === "telnet" ? "Telnet://" : "SSH://"}
-                          {connection.username
-                            ? `${connection.username}@${connection.host}`
-                            : connection.host}
-                        </span>
-                      </Tooltip>
-                    }
-                    sx={{ 
-                      my: 0,
-                      '& .MuiListItemText-secondary': {
-                        textOverflow: 'ellipsis',
-                        overflow: 'hidden',
-                        whiteSpace: 'nowrap',
-                        maxWidth: 'calc(100% - 20px)', // 预留按钮的空间
-                      }
-                    }}
-                  />
-                </ListItemButton>
-              </ListItem>
-            )}
-          </Draggable>
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onOpen={handleOpenConnection}
+            theme={theme}
+          />
         );
       },
-      [theme, handleEdit, handleDelete, handleOpenConnection],
+      [handleEdit, handleDelete, handleOpenConnection, theme],
     );
 
     // 存储最新的 renderConnectionItem 引用
     renderConnectionItemRef.current = renderConnectionItem;
 
-    // 渲染组 - 移除 renderConnectionItem 依赖，使用 ref 引用
+    // 渲染组 - 使用优化的GroupItem组件
     const renderGroupItem = useCallback((group, index) => {
-      // 优化渲染逻辑
-      const key = `group-${group.id}`;
-
       return (
-        <Draggable key={group.id} draggableId={group.id} index={index}>
-          {(provided, snapshot) => (
-            <React.Fragment>
-              <ListItem
-                disablePadding
-                ref={provided.innerRef}
-                {...provided.draggableProps}
-                sx={{
-                  minHeight: "36px", // 添加最小高度
-                  "&:hover": {
-                    backgroundColor:
-                      theme.palette.mode === "dark"
-                        ? alpha(theme.palette.primary.main, 0.15) // 夜间主题下使用主色调半透明版本
-                        : alpha(theme.palette.primary.main, 0.08), // 日间主题下使用较浅的主色调
-                  },
-                  ...(snapshot.isDragging
-                    ? {
-                        background:
-                          theme.palette.mode === "dark"
-                            ? theme.palette.grey[700]
-                            : theme.palette.grey[200],
-                        boxShadow: theme.shadows[4],
-                      }
-                    : {}),
-                }}
-                secondaryAction={
-                  <Box sx={{ 
-                    display: "flex", 
-                    gap: 0.5,
-                    opacity: 0, // 默认隐藏
-                    transition: 'opacity 0.2s ease', // 添加过渡效果
-                    '.MuiListItem-root:hover &': {
-                      opacity: 1, // 当ListItem被悬停时显示
-                    },
-                  }}>
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAddConnection(group.id);
-                      }}
-                    >
-                      <AddIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(group);
-                      }}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(group.id);
-                      }}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                }
-              >
-                <Box
-                  {...provided.dragHandleProps}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    cursor: "grab",
-                    "&:active": { cursor: "grabbing" },
-                  }}
-                >
-                  <DragIndicatorIcon
-                    fontSize="small"
-                    sx={{ color: "text.secondary", ml: 1, mr: 1 }}
-                  />
-                </Box>
-                <ListItemButton
-                  onClick={() => handleToggleGroup(group.id)}
-                  sx={{
-                    py: 0.5,
-                    flexGrow: 1,
-                    "&:hover": {
-                      backgroundColor: "transparent",
-                    },
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    {group.expanded ? (
-                      <FolderOpenIcon fontSize="small" />
-                    ) : (
-                      <FolderIcon fontSize="small" />
-                    )}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={group.name}
-                    primaryTypographyProps={{
-                      variant: "body2",
-                      fontWeight: "medium",
-                      margin: 0,
-                    }}
-                    sx={{ my: 0 }} // 减小外边距
-                  />
-                </ListItemButton>
-              </ListItem>
-
-              <Collapse in={group.expanded} timeout="auto" unmountOnExit>
-                <Droppable
-                  droppableId={group.id}
-                  type={`group-items-${group.id}`}
-                  isDropDisabled={searchQuery.length > 0}
-                >
-                  {(provided) => (
-                    <Box ref={provided.innerRef} {...provided.droppableProps}>
-                      <List
-                        component="div"
-                        disablePadding
-                        sx={{ pl: 2 }}
-                      >
-                        {group.items.map((item, itemIndex) =>
-                          renderConnectionItemRef.current(item, group, itemIndex),
-                        )}
-                        {provided.placeholder}
-                        {group.items.length === 0 && (
-                          <ListItem sx={{ pl: 2 }}>
-                            <ListItemText
-                              primary="没有连接项"
-                              primaryTypographyProps={{
-                                variant: "caption",
-                                sx: {
-                                  fontStyle: "italic",
-                                  color: "text.disabled",
-                                },
-                              }}
-                            />
-                          </ListItem>
-                        )}
-                      </List>
-                    </Box>
-                  )}
-                </Droppable>
-              </Collapse>
-            </React.Fragment>
-          )}
-        </Draggable>
+        <GroupItem
+          key={group.id}
+          group={group}
+          index={index}
+          onToggle={handleToggleGroup}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onAddConnection={handleAddConnection}
+          renderConnectionItem={renderConnectionItemRef.current}
+          theme={theme}
+          searchQuery={searchQuery}
+        />
       );
-    }, [theme, searchQuery, handleToggleGroup, handleAddConnection, handleEdit, handleDelete]);
+    }, [handleToggleGroup, handleEdit, handleDelete, handleAddConnection, theme, searchQuery]);
 
     // 使用 useMemo 优化连接列表渲染 - 移除 renderConnectionItem 依赖
     const connectionsList = useMemo(() => {
@@ -922,14 +1081,17 @@ const ConnectionManager = memo(
             >
               <DragDropContext onDragEnd={handleDragEnd}>
                 <Droppable
-                  droppableId="connection-list"
-                  type="connection-list"
+                  droppableId="root"
+                  type="connection-item"
                   isDropDisabled={searchQuery.length > 0}
                 >
-                  {(provided) => (
+                  {(provided, snapshot) => (
                     <List
                       dense
-                      sx={{ p: 1 }}
+                      sx={{ 
+                        p: 1,
+                        ...getListStyle(snapshot.isDraggingOver, theme)
+                      }}
                       ref={provided.innerRef}
                       {...provided.droppableProps}
                     >
