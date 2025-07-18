@@ -57,6 +57,22 @@ let currentSessionId = null;
 // 导入IP地址查询模块
 const ipQuery = require("./modules/system-info/ip-query");
 
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // 激活已有主窗口
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 // 获取worker文件路径
 function getWorkerPath() {
   // 先尝试相对于__dirname的路径
