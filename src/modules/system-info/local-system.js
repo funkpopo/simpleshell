@@ -19,23 +19,17 @@ async function getProcessList() {
   }
 }
 
-function getCpuUsage() {
-  const cpus = os.cpus();
-  let totalIdle = 0;
-  let totalTick = 0;
-
-  for (const cpu of cpus) {
-    for (const type in cpu.times) {
-      totalTick += cpu.times[type];
-    }
-    totalIdle += cpu.times.idle;
+async function getCpuUsage() {
+  try {
+    // 使用systeminformation库获取实时CPU使用率
+    const currentLoad = await si.currentLoad();
+    return Math.round(currentLoad.currentLoad);
+  } catch (error) {
+    console.error("Error getting CPU usage with systeminformation:", error);
   }
-
-  const usage = 100 - Math.round((totalIdle / totalTick) * 100);
-  return usage;
 }
 
-function getLocalSystemInfo() {
+async function getLocalSystemInfo() {
   const osInfo = {
     type: os.type(),
     platform: os.platform(),
@@ -120,7 +114,7 @@ function getLocalSystemInfo() {
       model: os.cpus()[0].model,
       cores: os.cpus().length,
       speed: os.cpus()[0].speed,
-      usage: getCpuUsage(),
+      usage: await getCpuUsage(),
     },
     memory: {
       total: os.totalmem(),

@@ -27,7 +27,7 @@ const PercentageBar = memo(({ value, theme }) => {
   // 根据百分比确定颜色
   const getColor = (val) => {
     if (val >= 80) return theme.palette.error.main;
-    if (val >= 60) return theme.palette.warning.main;
+    if (val >= 50) return theme.palette.warning.main;
     return theme.palette.success.main;
   };
 
@@ -121,7 +121,6 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   const [error, setError] = useState(null);
   const [processError, setProcessError] = useState(null);
   const [refreshInterval, setRefreshInterval] = useState(null);
-  const isInitialProcessLoad = useRef(true);
   const [expanded, setExpanded] = useState({
     system: true,
     cpu: true,
@@ -157,9 +156,6 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
 
   const fetchProcessList = useCallback(async () => {
     try {
-      if (isInitialProcessLoad.current) {
-        setProcessesLoading(true);
-      }
       setProcessError(null);
       if (window.terminalAPI && window.terminalAPI.getProcessList) {
         const processList = await window.terminalAPI.getProcessList(
@@ -169,17 +165,12 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
           setProcessError(processList.message || "获取进程列表失败");
         } else {
           setProcesses(processList);
-          if (isInitialProcessLoad.current) {
-            isInitialProcessLoad.current = false;
-          }
         }
       } else {
         setProcessError("API不可用");
       }
     } catch (err) {
       setProcessError(err.message || "获取进程列表时发生错误");
-    } finally {
-      setProcessesLoading(false);
     }
   }, [currentTabId]);
 
@@ -335,12 +326,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                             height: 8,
                             borderRadius: 1,
                             "& .MuiLinearProgress-bar": {
-                              bgcolor:
-                                systemInfo.cpu.usage > 80
-                                  ? theme.palette.error.main
-                                  : systemInfo.cpu.usage > 60
-                                  ? theme.palette.warning.main
-                                  : theme.palette.success.main,
+                              background: systemInfo.cpu.usage > 80
+                                ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
+                                : systemInfo.cpu.usage > 50
+                                ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
+                                : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
                             },
                           }}
                         />
@@ -381,12 +371,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                             height: 8,
                             borderRadius: 1,
                             "& .MuiLinearProgress-bar": {
-                              bgcolor:
-                                systemInfo.memory.usagePercent > 80
-                                  ? theme.palette.error.main
-                                  : systemInfo.memory.usagePercent > 60
-                                  ? theme.palette.warning.main
-                                  : theme.palette.success.main,
+                              background: systemInfo.memory.usagePercent > 80
+                                ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
+                                : systemInfo.memory.usagePercent > 50
+                                ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
+                                : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
                             },
                           }}
                         />

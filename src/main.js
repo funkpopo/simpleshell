@@ -1611,7 +1611,7 @@ function setupIPC(mainWindow) {
     try {
       // 只有当提供了有效的进程ID且该进程存在于childProcesses映射中时才获取远程系统信息
       if (!processId || !childProcesses.has(processId)) {
-        return systemInfo.getLocalSystemInfo();
+        return await systemInfo.getLocalSystemInfo();
       } else {
         // SSH远程系统信息
         const processObj = childProcesses.get(processId);
@@ -1625,7 +1625,7 @@ function setupIPC(mainWindow) {
             processObj.client || processObj.process || processObj.channel;
           return systemInfo.getRemoteSystemInfo(sshClient); // This might be another issue for later
         } else {
-          return systemInfo.getLocalSystemInfo();
+          return await systemInfo.getLocalSystemInfo();
         }
       }
     } catch (error) {
