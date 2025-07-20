@@ -15,14 +15,14 @@ body {
 /* 全局主题过渡效果 - 添加平滑主题切换 */
 .theme-transition * {
   transition:
-    background-color 0.3s ease,
-    background 0.3s ease,
-    color 0.3s ease,
-    border-color 0.3s ease,
-    box-shadow 0.3s ease,
-    fill 0.3s ease,
-    stroke 0.3s ease,
-    filter 0.3s ease !important;
+    background-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    fill 0.15s ease,
+    stroke 0.15s ease,
+    filter 0.15s ease !important;
 }
 
 /* 为特定元素禁用过渡效果 - 如果需要 */
