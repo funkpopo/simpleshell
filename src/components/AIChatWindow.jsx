@@ -42,22 +42,7 @@ import {
 import "react-resizable/css/styles.css";
 import "highlight.js/styles/github.css"; // 代码高亮样式
 
-// 防抖工具函数
-const useDebounce = (callback, delay) => {
-  const timeoutRef = useRef(null);
-
-  return useCallback(
-    (...args) => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-      timeoutRef.current = setTimeout(() => {
-        callback(...args);
-      }, delay);
-    },
-    [callback, delay],
-  );
-};
+// 移除不再使用的useDebounce函数
 
 // 窗口状态枚举
 const WINDOW_STATE = {
@@ -138,10 +123,29 @@ const AIChatWindow = memo(
       return [Math.max(400, maxWidth), Math.max(400, maxHeight)]; // 确保最小值
     }, []);
 
-    // 防抖的尺寸更新函数
-    const debouncedSetWindowSize = useDebounce((size) => {
-      setWindowSize(size);
-    }, 16); // 约60fps的更新频率
+    // 优化的尺寸更新函数 - 使用requestAnimationFrame确保流畅性
+    const resizeFrameRef = useRef(null);
+    const lastResizeTimeRef = useRef(0);
+    
+    const optimizedSetWindowSize = useCallback((size) => {
+      const now = Date.now();
+      const timeSinceLastResize = now - lastResizeTimeRef.current;
+      
+      // 如果距离上次resize时间太短，使用requestAnimationFrame延迟更新
+      if (timeSinceLastResize < 8) { // 约120fps的限制
+        if (resizeFrameRef.current) {
+          cancelAnimationFrame(resizeFrameRef.current);
+        }
+        resizeFrameRef.current = requestAnimationFrame(() => {
+          setWindowSize(size);
+          lastResizeTimeRef.current = Date.now();
+        });
+      } else {
+        // 直接更新，确保响应性
+        setWindowSize(size);
+        lastResizeTimeRef.current = now;
+      }
+    }, []);
 
     // 计算初始位置（右下角）
     const calculateInitialPosition = useCallback(() => {
@@ -551,12 +555,6 @@ const AIChatWindow = memo(
           if (streamThinkProcessorRef.current) {
             const finalResult = streamThinkProcessorRef.current.finalize();
 
-            console.log("[AIChatWindow] 流式响应结束，最终处理结果:", {
-              thinkContentLength: finalResult.thinkContent.length,
-              normalContentLength: finalResult.normalContent.length,
-              sessionId: currentSessionId,
-            });
-
             setMessages((prev) => {
               const newMessages = [...prev];
               const lastMessage = newMessages[newMessages.length - 1];
@@ -575,13 +573,6 @@ const AIChatWindow = memo(
                   thinkContent: finalThinkContent,
                   normalContent: finalNormalContent,
                 } = parseThinkContent(combinedRawContent);
-
-                console.log("[AIChatWindow] 强制二次处理结果:", {
-                  beforeThinkLength: finalResult.thinkContent.length,
-                  afterThinkLength: finalThinkContent.length,
-                  beforeNormalLength: finalResult.normalContent.length,
-                  afterNormalLength: finalNormalContent.length,
-                });
 
                 lastMessage.streaming = false;
                 lastMessage.content = finalNormalContent;
@@ -804,15 +795,13 @@ const AIChatWindow = memo(
       ],
     );
 
-    // 尺寸调整处理（使用防抖优化）
+    // 优化的尺寸调整处理 - 移除防抖，使用requestAnimationFrame优化
     const handleResize = useCallback(
       (_, { size }) => {
-        // 立即更新尺寸以保持响应性
-        setWindowSize(size);
-        // 防抖处理其他相关更新
-        debouncedSetWindowSize(size);
+        // 使用优化的尺寸更新函数，确保流畅的resize体验
+        optimizedSetWindowSize(size);
       },
-      [debouncedSetWindowSize],
+      [optimizedSetWindowSize],
     );
 
     // Cleanup global listeners if component unmounts while dragging
@@ -825,6 +814,10 @@ const AIChatWindow = memo(
           if (animationFrameRef.current) {
             cancelAnimationFrame(animationFrameRef.current);
           }
+        }
+        // 清理resize相关的requestAnimationFrame
+        if (resizeFrameRef.current) {
+          cancelAnimationFrame(resizeFrameRef.current);
         }
       };
     }, [handleGlobalMouseMove, handleGlobalMouseUp]);
@@ -879,7 +872,8 @@ const AIChatWindow = memo(
             // cursor will be set by onMouseDown logic
             opacity: windowState === WINDOW_STATE.VISIBLE ? 1 : 0.9,
             transition:
-              "opacity 0.3s ease-in-out, width 0.1s ease-out, height 0.1s ease-out",
+              "opacity 0.3s ease-in-out",
+            // 移除width和height的transition，避免resize时的延迟感
             // userSelect is handled globally during drag
           }}
         >
