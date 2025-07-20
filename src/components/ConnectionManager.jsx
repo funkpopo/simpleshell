@@ -686,7 +686,6 @@ const ConnectionManager = memo(
                     secondary={
                       <Tooltip title={`${connection.protocol === "telnet" ? "Telnet://" : "SSH://"}${connection.username ? `${connection.username}@${connection.host}` : connection.host}`}>
                         <span>
-                          {connection.protocol === "telnet" ? "Telnet://" : "SSH://"}
                           {connection.username
                             ? `${connection.username}@${connection.host}`
                             : connection.host}
