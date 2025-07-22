@@ -1651,6 +1651,7 @@ const WebTerminal = ({
         // Failed to dispose terminal
       }
       delete terminalCache[tabId];
+      delete fitAddonCache[tabId];
     }
   }, [refreshKey, tabId]);
 
@@ -1801,8 +1802,14 @@ const WebTerminal = ({
 
         // 如果有SSH配置，则优先使用SSH连接
         if (sshConfig && window.terminalAPI) {
-          // 显示连接信息
-          term.writeln(`正在连接到 ${sshConfig.host}...`);
+          // 检查是否是拆分重连模式
+          if (sshConfig.splitReconnect) {
+            // 拆分重连模式：显示重连信息
+            term.writeln(`正在重新连接到 ${sshConfig.host} ...`);
+          } else {
+            // 正常连接模式
+            term.writeln(`正在连接到 ${sshConfig.host}...`);
+          }
 
           try {
             // 根据协议类型选择连接方式
@@ -1825,7 +1832,8 @@ const WebTerminal = ({
                     detail: { 
                       terminalId: tabId, 
                       processId,
-                      protocol: sshConfig.protocol || "ssh"
+                      protocol: sshConfig.protocol || "ssh",
+                      splitReconnect: sshConfig.splitReconnect || false
                     },
                   });
 
@@ -1842,39 +1850,53 @@ const WebTerminal = ({
                     checkForPrompts(data);
                   });
 
+                  // 拆分重连模式需要更快的resize响应
+                  const resizeDelays = sshConfig.splitReconnect ? [200, 500, 1000] : [1000, 2000];
+                  
                   // 使用EventManager管理连接成功后多次尝试同步终端大小
-                  eventManager.setTimeout(() => {
-                    if (terminalRef.current && fitAddonRef.current) {
-                      forceResizeTerminal(
-                        term,
-                        terminalRef.current,
-                        processId,
-                        tabId,
-                        fitAddonRef.current,
-                      );
-                    }
-                  }, 1000);
-
-                  eventManager.setTimeout(() => {
-                    if (terminalRef.current && fitAddonRef.current) {
-                      forceResizeTerminal(
-                        term,
-                        terminalRef.current,
-                        processId,
-                        tabId,
-                        fitAddonRef.current,
-                      );
-                    }
-                  }, 2000);
+                  resizeDelays.forEach(delay => {
+                    eventManager.setTimeout(() => {
+                      if (terminalRef.current && fitAddonRef.current) {
+                        forceResizeTerminal(
+                          term,
+                          terminalRef.current,
+                          processId,
+                          tabId,
+                          fitAddonRef.current,
+                        );
+                      }
+                    }, delay);
+                  });
+                  
+                  // 拆分重连成功后的额外处理
+                  if (sshConfig.splitReconnect) {
+                    term.writeln(`\r\n已建立新连接`);
+                    
+                    // 强制触发终端内容刷新
+                    eventManager.setTimeout(() => {
+                      if (term.refresh) {
+                        term.refresh(0, term.rows - 1);
+                      }
+                    }, 300);
+                  }
                 } else {
-                  term.writeln(`连接失败: 未能获取进程ID`);
+                  const errorMsg = sshConfig.splitReconnect 
+                    ? `重连失败: 未能获取进程ID`
+                    : `连接失败: 未能获取进程ID`;
+                  term.writeln(errorMsg);
                 }
               })
               .catch((error) => {
-                term.writeln(`\r\n连接失败: ${error.message || "未知错误"}`);
+                const errorMsg = sshConfig.splitReconnect 
+                  ? `\r\n重连失败: ${error.message || "未知错误"}`
+                  : `\r\n连接失败: ${error.message || "未知错误"}`;
+                term.writeln(errorMsg);
               });
           } catch (error) {
-            term.writeln(`\r\n连接失败: ${error.message || "未知错误"}`);
+            const errorMsg = sshConfig.splitReconnect 
+              ? `\r\n重连失败: ${error.message || "未知错误"}`
+              : `\r\n连接失败: ${error.message || "未知错误"}`;
+            term.writeln(errorMsg);
           }
         }
         // 连接到本地PowerShell
@@ -3111,22 +3133,131 @@ const WebTerminal = ({
         // 标签激活时设置内容已更新，确保调整生效
         setContentUpdated(true);
 
-        // 使用EventManager管理延迟执行以确保DOM已完全更新
-        eventManager.setTimeout(() => {
-          if (terminalRef.current && fitAddonRef.current && termRef.current) {
-            forceResizeTerminal(
-              termRef.current,
-              terminalRef.current,
-              processCache[tabId],
-              tabId,
-              fitAddonRef.current,
-            );
+        // 如果是强制刷新（如拆分后），立即触发多次resize
+        if (event.detail.forceRefresh) {
+          const executeResize = () => {
+            if (terminalRef.current && fitAddonRef.current && termRef.current) {
+              forceResizeTerminal(
+                termRef.current,
+                terminalRef.current,
+                processCache[tabId],
+                tabId,
+                fitAddonRef.current,
+              );
+            }
+          };
+          
+          // 立即执行一次
+          executeResize();
+          
+          // 针对拆分操作的特殊处理
+          if (event.detail.splitOperation) {
+            // 拆分操作需要更积极的刷新策略
+            const delayTimes = event.detail.finalRefresh 
+              ? [100, 250, 500]  // 最终刷新使用更长的间隔
+              : event.detail.retryAttempt 
+                ? [100, 200, 400] // 重试时使用渐进式延迟
+                : [25, 75, 150, 300, 500, 750]; // 初始拆分使用密集刷新
+            
+            delayTimes.forEach((delay) => {
+              eventManager.setTimeout(() => {
+                // 在每次重试前检查终端状态
+                if (terminalRef.current && fitAddonRef.current && termRef.current) {
+                  const container = terminalRef.current;
+                  const termElement = termRef.current.element;
+                  
+                  // 检查容器是否可见且有正确的尺寸
+                  if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+                    executeResize();
+                    
+                    // 特殊处理：强制刷新终端内容显示
+                    if (termRef.current.refresh) {
+                      setTimeout(() => {
+                        if (termRef.current && termRef.current.refresh) {
+                          termRef.current.refresh(0, termRef.current.rows - 1);
+                          
+                          // 强制触发重绘
+                          if (termRef.current.focus) {
+                            termRef.current.focus();
+                            setTimeout(() => termRef.current.blur(), 10);
+                          }
+                        }
+                      }, 25);
+                    }
+                    
+                    // 额外的DOM刷新
+                    if (termElement) {
+                      termElement.style.opacity = '0.99';
+                      setTimeout(() => {
+                        if (termElement) termElement.style.opacity = '1';
+                      }, 10);
+                    }
+                  } else {
+                    // 如果容器不可见，尝试重新显示
+                    if (container) {
+                      container.style.display = 'block';
+                      container.style.visibility = 'visible';
+                      container.style.opacity = '1';
+                    }
+                  }
+                }
+              }, delay);
+            });
+          } else {
+            // 常规强制刷新的重试机制
+            const delayTimes = event.detail.retryAttempt ? [100, 200, 400] : [50, 150, 300, 500, 800];
+            delayTimes.forEach((delay) => {
+              eventManager.setTimeout(() => {
+                // 在每次重试前检查终端状态
+                if (terminalRef.current && fitAddonRef.current && termRef.current) {
+                  const container = terminalRef.current;
+                  const termElement = termRef.current.element;
+                  
+                  // 检查容器是否可见且有正确的尺寸
+                  if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+                    executeResize();
+                    
+                    // 额外的终端内容刷新
+                    if (termRef.current.refresh) {
+                      setTimeout(() => {
+                        if (termRef.current && termRef.current.refresh) {
+                          termRef.current.refresh(0, termRef.current.rows - 1);
+                        }
+                      }, 50);
+                    }
+                  }
+                }
+              }, delay);
+            });
           }
-        }, 10);
-
-        // 使用EventManager管理多次尝试调整，以处理某些特殊情况
-        const delayTimes = [50, 150, 300];
-        delayTimes.forEach((delay) => {
+          
+          // 最后一次验证和修复
+          setTimeout(() => {
+            if (terminalRef.current && fitAddonRef.current && termRef.current) {
+              const container = terminalRef.current;
+              const termElement = termRef.current.element;
+              
+              // 如果终端仍然没有正确显示，进行最后的修复尝试
+              if (container && (!termElement || termElement.offsetWidth === 0)) {
+                // 强制重新适配
+                fitAddonRef.current.fit();
+                
+                // 触发内容刷新
+                if (termRef.current.refresh) {
+                  termRef.current.refresh(0, termRef.current.rows - 1);
+                }
+                
+                // 同步到后端
+                if (processCache[tabId] && window.terminalAPI?.resizeTerminal) {
+                  const cols = Math.max(Math.floor(termRef.current.cols || 120), 1);
+                  const rows = Math.max(Math.floor(termRef.current.rows || 30), 1);
+                  window.terminalAPI.resizeTerminal(processCache[tabId], cols, rows).catch(() => {});
+                }
+              }
+            }
+          }, event.detail.splitOperation ? 1200 : 1000);
+        } else {
+          // 正常的标签切换处理
           eventManager.setTimeout(() => {
             if (terminalRef.current && fitAddonRef.current && termRef.current) {
               forceResizeTerminal(
@@ -3137,13 +3268,252 @@ const WebTerminal = ({
                 fitAddonRef.current,
               );
             }
-          }, delay);
-        });
+          }, 10);
+
+          // 使用EventManager管理多次尝试调整，以处理某些特殊情况
+          const delayTimes = [50, 150, 300];
+          delayTimes.forEach((delay) => {
+            eventManager.setTimeout(() => {
+              if (terminalRef.current && fitAddonRef.current && termRef.current) {
+                forceResizeTerminal(
+                  termRef.current,
+                  terminalRef.current,
+                  processCache[tabId],
+                  tabId,
+                  fitAddonRef.current,
+                );
+              }
+            }, delay);
+          });
+        }
+      }
+    };
+
+    // 添加专门的终端resize事件监听，用于分屏布局变化
+    const handleTerminalResize = (event) => {
+      const { tabId: eventTabId, layoutType, timestamp } = event.detail || {};
+      
+      // 只处理属于当前终端的事件
+      if (eventTabId === tabId && terminalRef.current && fitAddonRef.current && termRef.current) {
+        // 设置内容已更新标志
+        setContentUpdated(true);
+        
+        // 延迟执行resize，确保DOM布局已经完成
+        const resizeDelay = layoutType === "split" ? 200 : 100;
+        
+        setTimeout(() => {
+          if (terminalRef.current && fitAddonRef.current && termRef.current) {
+            // 强制重新计算容器尺寸
+            const container = terminalRef.current;
+            const currentWidth = container.clientWidth;
+            const currentHeight = container.clientHeight;
+
+            // 确保终端完全填充容器
+            if (termRef.current.element) {
+              termRef.current.element.style.width = `${currentWidth}px`;
+              termRef.current.element.style.height = `${currentHeight}px`;
+              
+              // 强制重排
+              termRef.current.element.getBoundingClientRect();
+            }
+
+            // 执行尺寸适配
+            fitAddonRef.current.fit();
+
+            // 同步到后端进程
+            if (processCache[tabId] && window.terminalAPI?.resizeTerminal) {
+              const cols = Math.max(Math.floor(termRef.current.cols || 120), 1);
+              const rows = Math.max(Math.floor(termRef.current.rows || 30), 1);
+              
+              window.terminalAPI
+                .resizeTerminal(processCache[tabId], cols, rows)
+                .catch((err) => {
+                  // 终端resize失败，但不影响显示
+                });
+            }
+            
+            // 如果是拆分操作，额外进行多次resize确保显示正确
+            if (layoutType === "split") {
+              const additionalDelays = [100, 300, 500];
+              additionalDelays.forEach(delay => {
+                eventManager.setTimeout(() => {
+                  if (fitAddonRef.current && termRef.current) {
+                    fitAddonRef.current.fit();
+                  }
+                }, delay);
+              });
+            }
+          }
+        }, resizeDelay);
+      }
+    };
+
+    // 添加专门的终端强制刷新事件监听
+    const handleTerminalForceRefresh = (event) => {
+      const { tabId: eventTabId, layoutType, timestamp, retryAttempt } = event.detail || {};
+      
+      // 只处理属于当前终端的事件
+      if (eventTabId === tabId && terminalRef.current && fitAddonRef.current && termRef.current) {
+        // 设置内容已更新标志
+        setContentUpdated(true);
+        
+        // 强制刷新终端显示
+        const executeForceRefresh = () => {
+          if (terminalRef.current && fitAddonRef.current && termRef.current) {
+            // 强制重新计算容器尺寸
+            const container = terminalRef.current;
+            const currentWidth = container.clientWidth;
+            const currentHeight = container.clientHeight;
+
+            // 确保终端完全填充容器
+            if (termRef.current.element) {
+              termRef.current.element.style.width = `${currentWidth}px`;
+              termRef.current.element.style.height = `${currentHeight}px`;
+              
+              // 强制重排
+              termRef.current.element.getBoundingClientRect();
+            }
+
+            // 执行尺寸适配
+            fitAddonRef.current.fit();
+
+            // 同步到后端进程
+            if (processCache[tabId] && window.terminalAPI?.resizeTerminal) {
+              const cols = Math.max(Math.floor(termRef.current.cols || 120), 1);
+              const rows = Math.max(Math.floor(termRef.current.rows || 30), 1);
+              
+              window.terminalAPI
+                .resizeTerminal(processCache[tabId], cols, rows)
+                .catch((err) => {
+                  // 终端resize失败，但不影响显示
+                });
+            }
+            
+            // 强制刷新终端内容显示
+            if (termRef.current.refresh) {
+              termRef.current.refresh(0, termRef.current.rows - 1);
+            }
+            
+            // 特殊处理拆分重连后的情况
+            if (layoutType === "post-split-reconnect" || layoutType === "post-split" || layoutType === "post-split-retry") {
+              // 额外的重绘和聚焦操作
+              setTimeout(() => {
+                if (termRef.current && termRef.current.element) {
+                  // 强制DOM重绘
+                  const element = termRef.current.element;
+                  element.style.transform = 'translateZ(0)';
+                  element.offsetHeight; // 触发重排
+                  element.style.transform = '';
+                  
+                  // 尝试聚焦和失焦以触发渲染
+                  if (termRef.current.focus && termRef.current.blur) {
+                    termRef.current.focus();
+                    setTimeout(() => {
+                      if (termRef.current && termRef.current.blur) {
+                        termRef.current.blur();
+                      }
+                    }, 50);
+                  }
+                  
+                  // 拆分重连模式下的特殊处理
+                  if (layoutType === "post-split-reconnect") {
+                    // 检查当前组件的SSH配置中是否有拆分重连标记
+                    if (sshConfig && sshConfig.splitReconnect) {
+                      // 强制刷新终端内容
+                      if (termRef.current.refresh) {
+                        termRef.current.refresh(0, termRef.current.rows - 1);
+                      }
+                      
+                      // 触发窗口resize确保布局正确
+                      window.dispatchEvent(new Event("resize"));
+                    }
+                  }
+                }
+              }, 100);
+            }
+          }
+        };
+        
+        // 立即执行一次
+        executeForceRefresh();
+        
+        // 针对拆分重连的特殊情况，使用更密集的重试策略
+        if (layoutType === "post-split-reconnect" || layoutType === "post-split" || layoutType === "post-split-retry") {
+          const retryDelays = layoutType === "post-split-reconnect"
+            ? [50, 150, 300, 500, 800, 1200] // 重连模式使用更密集的重试
+            : layoutType === "post-split-retry" 
+              ? [100, 300, 600]  // 重试时使用更长间隔
+              : [50, 150, 300, 500, 800]; // 初始拆分时密集重试
+          
+          retryDelays.forEach(delay => {
+            eventManager.setTimeout(() => {
+              if (terminalRef.current && fitAddonRef.current && termRef.current) {
+                const container = terminalRef.current;
+                
+                // 检查容器是否正确显示
+                if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+                  executeForceRefresh();
+                  
+                  // 拆分重连模式的额外验证
+                  if (layoutType === "post-split-reconnect") {
+                    const processId = processCache[tabId];
+                    if (processId) {
+                      // 验证SSH连接是否正常
+                      setTimeout(() => {
+                        if (termRef.current && termRef.current.refresh) {
+                          termRef.current.refresh(0, termRef.current.rows - 1);
+                        }
+                      }, 100);
+                    }
+                  }
+                } else {
+                  // 容器不可见，尝试修复
+                  if (container) {
+                    container.style.display = 'flex';
+                    container.style.visibility = 'visible';
+                    container.style.opacity = '1';
+                    
+                    // 修复后再次执行刷新
+                    setTimeout(() => {
+                      executeForceRefresh();
+                    }, 50);
+                  }
+                }
+              }
+            }, delay);
+          });
+          
+          // 最终保险措施（拆分重连模式下延长验证时间）
+          const finalCheckDelay = layoutType === "post-split-reconnect" ? 2000 : 1500;
+          setTimeout(() => {
+            if (terminalRef.current && fitAddonRef.current && termRef.current) {
+              const container = terminalRef.current;
+              const termElement = termRef.current.element;
+              
+              // 最后检查：如果仍然有问题，进行强制修复
+              if (!termElement || termElement.offsetWidth === 0 || termElement.offsetHeight === 0) {
+                // 强制重新创建终端显示
+                if (fitAddonRef.current && termRef.current) {
+                  fitAddonRef.current.fit();
+                  
+                  if (termRef.current.refresh) {
+                    termRef.current.refresh(0, termRef.current.rows - 1);
+                  }
+                  
+                  // 强制触发窗口resize事件
+                  window.dispatchEvent(new Event("resize"));
+                }
+              }
+            }
+          }, finalCheckDelay);
+        }
       }
     };
 
     // 使用EventManager添加事件监听器
     eventManager.addEventListener(window, "tabChanged", handleTabChanged);
+    eventManager.addEventListener(window, "terminalResize", handleTerminalResize);
+    eventManager.addEventListener(window, "terminalForceRefresh", handleTerminalForceRefresh);
   }, [tabId]);
 
   // 在创建终端前获取当前字体大小

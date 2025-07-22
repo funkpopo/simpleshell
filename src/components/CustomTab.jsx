@@ -17,7 +17,8 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.onContextMenu === nextProps.onContextMenu &&
     prevProps.onDragStart === nextProps.onDragStart &&
     prevProps.onDragOver === nextProps.onDragOver &&
-    prevProps.onDrop === nextProps.onDrop
+    prevProps.onDrop === nextProps.onDrop &&
+    prevProps.isDraggedOver === nextProps.isDraggedOver
   );
 };
 
@@ -32,6 +33,7 @@ const CustomTab = memo((props) => {
     onDragOver,
     onDrop,
     tabId, // 新增：每个Tab需传递tabId
+    isDraggedOver = false, // 新增：是否被拖拽悬停
     ...other
   } = props;
 
@@ -47,13 +49,32 @@ const CustomTab = memo((props) => {
     [onClose],
   );
 
+  // 处理拖拽开始 - 支持分屏功能
+  const handleDragStart = useCallback((e) => {
+    // 设置拖拽数据
+    const dragData = {
+      type: 'tab',
+      tabId: tabId,
+      tabIndex: index,
+      label: label
+    };
+    
+    e.dataTransfer.setData('application/json', JSON.stringify(dragData));
+    e.dataTransfer.effectAllowed = 'move';
+    
+    // 调用原始的拖拽开始处理
+    if (onDragStart) {
+      onDragStart(e);
+    }
+  }, [tabId, index, label, onDragStart]);
+
   return (
     <>
       <Tab
         {...other}
         onContextMenu={onContextMenu}
         draggable="true"
-        onDragStart={onDragStart}
+        onDragStart={handleDragStart}
         onDragOver={onDragOver}
         onDrop={onDrop}
         label={
@@ -114,6 +135,34 @@ const CustomTab = memo((props) => {
           cursor: "pointer",
           userSelect: "none",
           color: "text.secondary",
+          // 拖拽悬停时的特殊样式
+          ...(isDraggedOver && {
+            backgroundColor: (theme) =>
+              theme.palette.mode === "dark"
+                ? "rgba(33, 150, 243, 0.15)"
+                : "rgba(33, 150, 243, 0.08)",
+            borderRadius: "4px",
+            boxShadow: (theme) =>
+              theme.palette.mode === "dark"
+                ? "0 0 0 2px rgba(33, 150, 243, 0.3)"
+                : "0 0 0 2px rgba(33, 150, 243, 0.2)",
+            position: "relative",
+            "&::after": isDraggedOver ? {
+              content: '"合并标签"',
+              position: "absolute",
+              top: -24,
+              left: "50%",
+              transform: "translateX(-50%)",
+              backgroundColor: "primary.main",
+              color: "primary.contrastText",
+              padding: "2px 6px",
+              borderRadius: "4px",
+              fontSize: "10px",
+              whiteSpace: "nowrap",
+              zIndex: 1000,
+              opacity: 0.9,
+            } : {}
+          }),
           "&.Mui-selected": {
             color: "text.primary",
             backgroundColor: (theme) =>

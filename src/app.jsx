@@ -52,6 +52,7 @@ import RandomPasswordGenerator from "./components/RandomPasswordGenerator.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import AIChatWindow from "./components/AIChatWindow.jsx";
 import CustomTab from "./components/CustomTab.jsx";
+import MergedTabContent from "./components/MergedTabContent.jsx";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -306,6 +307,10 @@ function App() {
 
   // 拖动标签状态
   const [draggedTabIndex, setDraggedTabIndex] = React.useState(null);
+  const [dragOverTabIndex, setDragOverTabIndex] = React.useState(null); // 新增：记录拖拽悬停的标签
+
+  // 合并标签状态 - 用于实现分屏显示
+  const [mergedTabs, setMergedTabs] = React.useState({}); // 格式: { tabId: [子标签列表] }
 
   // 主题模式状态
   const [darkMode, setDarkMode] = React.useState(true); // 默认值
@@ -356,6 +361,9 @@ function App() {
 
   // 历史命令侧边栏状态
   const [commandHistoryOpen, setCommandHistoryOpen] = React.useState(false);
+
+  // 进程缓存状态，用于管理SSH连接进程ID
+  const [processCache, setProcessCache] = React.useState({});
 
   // 全局AI聊天窗口状态
   const [globalAiChatWindowState, setGlobalAiChatWindowState] =
@@ -493,9 +501,16 @@ function App() {
     const handleSshProcessIdUpdate = (event) => {
       const { terminalId, processId } = event.detail;
       if (terminalId && processId) {
+        // 更新终端实例中的进程ID
         setTerminalInstances((prev) => ({
           ...prev,
           [`${terminalId}-processId`]: processId,
+        }));
+        
+        // 更新进程缓存
+        setProcessCache((prev) => ({
+          ...prev,
+          [terminalId]: processId,
         }));
       }
     };
@@ -836,19 +851,49 @@ function App() {
 
     const tabToRemove = tabs[index];
 
-    // 从缓存中移除对应的终端实例
-    setTerminalInstances((prev) => {
-      const newInstances = { ...prev };
-      delete newInstances[tabToRemove.id];
-      return newInstances;
-    });
+    // 检查是否是合并的标签，如果是则需要清理合并状态
+    if (mergedTabs[tabToRemove.id]) {
+      const merged = mergedTabs[tabToRemove.id];
+      // 清理所有相关的终端实例
+      merged.forEach(tab => {
+        const newInstances = { ...terminalInstances };
+        delete newInstances[tab.id];
+        setTerminalInstances(newInstances);
+        
+        // 清理文件管理路径记忆
+        setFileManagerPaths((prev) => {
+          const newPaths = { ...prev };
+          delete newPaths[tab.id];
+          return newPaths;
+        });
+      });
+      
+      // 清理合并状态
+      const newMergedTabs = { ...mergedTabs };
+      delete newMergedTabs[tabToRemove.id];
+      setMergedTabs(newMergedTabs);
+    } else {
+      // 从缓存中移除对应的终端实例
+      setTerminalInstances((prev) => {
+        const newInstances = { ...prev };
+        delete newInstances[tabToRemove.id];
+        return newInstances;
+      });
 
-    // 清理文件管理路径记忆
-    setFileManagerPaths((prev) => {
-      const newPaths = { ...prev };
-      delete newPaths[tabToRemove.id];
-      return newPaths;
-    });
+      // 清理进程缓存
+      setProcessCache((prev) => {
+        const newCache = { ...prev };
+        delete newCache[tabToRemove.id];
+        return newCache;
+      });
+
+      // 清理文件管理路径记忆
+      setFileManagerPaths((prev) => {
+        const newPaths = { ...prev };
+        delete newPaths[tabToRemove.id];
+        return newPaths;
+      });
+    }
 
     const newTabs = tabs.filter((_, i) => i !== index);
     setTabs(newTabs);
@@ -888,6 +933,8 @@ function App() {
     // 不是在自身上拖动
     if (draggedTabIndex !== null && draggedTabIndex !== index) {
       e.dataTransfer.dropEffect = "move";
+      // 设置拖拽悬停状态，用于显示分屏预览
+      setDragOverTabIndex(index);
     }
   };
 
@@ -905,30 +952,13 @@ function App() {
       // 不需要拖放到自己身上
       if (sourceIndex === targetIndex) return;
 
-      // 创建新的标签数组
-      const newTabs = [...tabs];
-      // 移除源标签
-      const [movedTab] = newTabs.splice(sourceIndex, 1);
-      // 插入到目标位置
-      newTabs.splice(targetIndex, 0, movedTab);
-
-      // 更新标签数组
-      setTabs(newTabs);
-
-      // 如果当前选中的标签是被移动的标签，更新选中标签索引
-      if (currentTab === sourceIndex) {
-        setCurrentTab(targetIndex);
-      }
-      // 如果当前选中的标签在源和目标之间，需要调整选中索引
-      else if (currentTab > sourceIndex && currentTab <= targetIndex) {
-        setCurrentTab(currentTab - 1);
-      } else if (currentTab < sourceIndex && currentTab >= targetIndex) {
-        setCurrentTab(currentTab + 1);
-      }
+      // 合并标签：将源标签合并到目标标签
+      mergeTabIntoTarget(sourceIndex, targetIndex);
     }
 
     // 重置拖动状态
     setDraggedTabIndex(null);
+    setDragOverTabIndex(null); // 重置拖拽悬停状态
     e.target.style.opacity = "1";
   };
 
@@ -937,7 +967,149 @@ function App() {
     // 恢复透明度
     e.target.style.opacity = "1";
     setDraggedTabIndex(null);
+    setDragOverTabIndex(null); // 重置拖拽悬停状态
   };
+
+  // 合并标签功能
+  const mergeTabIntoTarget = useCallback((sourceIndex, targetIndex) => {
+    if (sourceIndex === targetIndex || !tabs[sourceIndex] || !tabs[targetIndex]) return;
+    
+    const sourceTab = tabs[sourceIndex];
+    const targetTab = tabs[targetIndex];
+    
+    // 不能合并欢迎页
+    if (sourceTab.id === "welcome" || targetTab.id === "welcome") return;
+
+    // 获取目标标签的当前合并状态
+    const targetMerged = mergedTabs[targetTab.id] || [targetTab];
+    
+    // 创建新的合并状态
+    const newMergedTabs = { ...mergedTabs };
+    newMergedTabs[targetTab.id] = [...targetMerged, sourceTab];
+    
+    setMergedTabs(newMergedTabs);
+    
+    // 优化：仅触发布局调整，不重新建立连接
+    setTimeout(() => {
+      // 触发窗口resize事件，确保终端适配新的分屏布局
+      window.dispatchEvent(new Event("resize"));
+      
+      // 触发自定义事件通知MergedTabContent组件进行布局更新
+      window.dispatchEvent(
+        new CustomEvent("splitLayoutChanged", {
+          detail: { 
+            type: "merge",
+            targetTabId: targetTab.id,
+            mergedTabs: newMergedTabs[targetTab.id],
+            timestamp: Date.now()
+          },
+        }),
+      );
+    }, 50);
+    
+    // 从标签列表中移除源标签
+    const newTabs = tabs.filter((_, index) => index !== sourceIndex);
+    setTabs(newTabs);
+    
+    // 调整当前标签索引
+    if (currentTab === sourceIndex) {
+      setCurrentTab(targetIndex > sourceIndex ? targetIndex - 1 : targetIndex);
+    } else if (currentTab > sourceIndex) {
+      setCurrentTab(currentTab - 1);
+    }
+  }, [tabs, mergedTabs, currentTab]);
+
+  // 拆分合并的标签
+  const splitMergedTab = useCallback((mainTabId) => {
+    const merged = mergedTabs[mainTabId];
+    if (!merged || merged.length <= 1) return;
+
+    // 找到主标签在tabs中的位置
+    const mainTabIndex = tabs.findIndex(tab => tab.id === mainTabId);
+    if (mainTabIndex === -1) return;
+
+    // 创建新的标签列表，在主标签后插入子标签
+    const newTabs = [...tabs];
+    const subTabs = merged.slice(1); // 跳过第一个(主标签)
+    
+    // 在主标签后插入子标签
+    newTabs.splice(mainTabIndex + 1, 0, ...subTabs);
+    setTabs(newTabs);
+    
+    // 移除合并状态
+    const newMergedTabs = { ...mergedTabs };
+    delete newMergedTabs[mainTabId];
+    setMergedTabs(newMergedTabs);
+    
+    // 立即触发标签切换到第一个拆分的标签，确保它被激活
+    setTimeout(() => {
+      setCurrentTab(mainTabIndex);
+    }, 10);
+    
+    // 第一阶段：重新建立SSH连接（50ms后）
+    setTimeout(() => {
+      merged.forEach((tab, index) => {
+        if (tab && tab.id) {
+          // 先清除旧的终端实例和连接
+          setTerminalInstances((prev) => {
+            const newInstances = { ...prev };
+            delete newInstances[tab.id];
+            delete newInstances[`${tab.id}-config`];
+            delete newInstances[`${tab.id}-processId`];
+            delete newInstances[`${tab.id}-refresh`];
+            return newInstances;
+          });
+          
+          // 为拆分的标签重新建立连接配置
+          setTimeout(() => {
+            // 获取原始的SSH配置
+            const originalConfig = terminalInstances[`${tab.id}-config`];
+            if (originalConfig && (originalConfig.protocol === 'ssh' || originalConfig.protocol === 'telnet' || tab.type === 'ssh')) {
+              // 创建新的连接配置，带有拆分标记
+              const splitConfig = {
+                ...originalConfig,
+                tabId: tab.id,
+                splitReconnect: true, // 标记这是拆分重连
+                splitTimestamp: Date.now()
+              };
+              
+              // 重新创建终端实例
+              setTerminalInstances((prev) => ({
+                ...prev,
+                [tab.id]: true,
+                [`${tab.id}-config`]: splitConfig,
+                [`${tab.id}-processId`]: null,
+                [`${tab.id}-refresh`]: Date.now(), // 强制刷新
+              }));
+            } else {
+              // 对于本地终端或其他类型
+              setTerminalInstances((prev) => ({
+                ...prev,
+                [tab.id]: true,
+                [`${tab.id}-refresh`]: Date.now(),
+              }));
+            }
+          }, index * 100); // 为每个标签错开重连时间，避免并发问题
+        }
+      });
+      
+      // 触发基础布局调整
+      window.dispatchEvent(new Event("resize"));
+      
+      // 触发自定义事件通知终端组件进行布局更新
+      window.dispatchEvent(
+        new CustomEvent("splitLayoutChanged", {
+          detail: { 
+            type: "split",
+            mainTabId: mainTabId,
+            splitTabs: merged,
+            reconnectMode: true, // 标记这是重连模式
+            timestamp: Date.now()
+          },
+        }),
+      );
+    }, 50);
+  }, [tabs, mergedTabs, terminalInstances, processCache]); // 添加processCache依赖
 
   // 切换资源监控侧边栏
   const toggleResourceMonitor = useCallback(() => {
@@ -1357,6 +1529,7 @@ function App() {
                   onDragEnd={handleDragEnd}
                   index={index}
                   tabId={tab.id}
+                  isDraggedOver={draggedTabIndex !== null && dragOverTabIndex === index && draggedTabIndex !== index}
                 />
               ))}
             </Tabs>
@@ -1383,6 +1556,18 @@ function App() {
                 <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
                 {t("tabMenu.refresh")}
               </MenuItem>
+              
+              {/* 拆分会话选项 - 仅对合并的标签显示 */}
+              {tabContextMenu.tabId && mergedTabs[tabContextMenu.tabId] && mergedTabs[tabContextMenu.tabId].length > 1 && (
+                <MenuItem onClick={() => {
+                  splitMergedTab(tabContextMenu.tabId);
+                  handleTabContextMenuClose();
+                }}>
+                  <TerminalIcon fontSize="small" sx={{ mr: 1 }} />
+                  拆分会话
+                </MenuItem>
+              )}
+              
               <MenuItem onClick={handleCloseConnection}>
                 <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
                 {t("tabMenu.close")}
@@ -1510,18 +1695,10 @@ function App() {
                     }}
                   >
                     {terminalInstances[tab.id] && (
-                      <WebTerminal
-                        tabId={tab.id}
-                        refreshKey={terminalInstances[`${tab.id}-refresh`]}
-                        usePowershell={
-                          tab.type !== "ssh" && terminalInstances.usePowershell
-                        }
-                        sshConfig={
-                          tab.type === "ssh"
-                            ? terminalInstances[`${tab.id}-config`]
-                            : null
-                        }
-                        isActive={isActive}
+                      <MergedTabContent
+                        mergedTabs={mergedTabs[tab.id] || [tab]}
+                        terminalInstances={terminalInstances}
+                        currentTabId={tab.id}
                       />
                     )}
                   </Box>
