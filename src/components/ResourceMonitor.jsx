@@ -17,7 +17,6 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import Collapse from "@mui/material/Collapse";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
-import Grid from "@mui/material/Grid";
 import Memory from "@mui/icons-material/Memory"; // For Processes icon
 
 // 百分比背景条组件
@@ -418,7 +417,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                             </Box>
                           </ListItem>
                           {processes.slice(0, 50).map((p) => ( // Display top 50 processes
-                            <ListItem key={p.pid} divider sx={{py: 0.5}}>
+                            (<ListItem key={p.pid} divider sx={{py: 0.5}}>
                               <Box display="flex" width="100%" alignItems="center">
                                 <Box flex="0 0 50%" pr={1} overflow="hidden">
                                   <Tooltip title={`${p.name} (PID: ${p.pid})`} placement="top-start">
@@ -434,7 +433,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                                   <PercentageBar value={p.memory} theme={theme} />
                                 </Box>
                               </Box>
-                            </ListItem>
+                            </ListItem>)
                           ))}
                         </List>
                       )}

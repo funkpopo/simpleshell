@@ -184,10 +184,13 @@ const PerformanceMonitor = ({ isVisible = false }) => {
           </IconButton>
         </Tooltip>
       </Box>
-
       <Grid container spacing={2}>
         {/* 渲染性能 */}
-        <Grid item xs={12} md={6}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -195,7 +198,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                 <Typography variant="h6">渲染性能</Typography>
               </Box>
               <Grid container spacing={2}>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     当前FPS
                   </Typography>
@@ -205,7 +208,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                     size="small"
                   />
                 </Grid>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     平均FPS
                   </Typography>
@@ -215,7 +218,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                     size="small"
                   />
                 </Grid>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     渲染器
                   </Typography>
@@ -223,7 +226,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                     {performanceData.renderer}
                   </Typography>
                 </Grid>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     状态
                   </Typography>
@@ -237,7 +240,11 @@ const PerformanceMonitor = ({ isVisible = false }) => {
         </Grid>
 
         {/* 内存使用 */}
-        <Grid item xs={12} md={6}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -266,7 +273,11 @@ const PerformanceMonitor = ({ isVisible = false }) => {
         </Grid>
 
         {/* 图像支持 */}
-        <Grid item xs={12} md={6}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -274,7 +285,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                 <Typography variant="h6">图像支持</Typography>
               </Box>
               <Grid container spacing={2}>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     支持状态
                   </Typography>
@@ -284,7 +295,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                     size="small"
                   />
                 </Grid>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     图像数量
                   </Typography>
@@ -292,7 +303,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                     {imageData.totalImages}
                   </Typography>
                 </Grid>
-                <Grid item xs={12}>
+                <Grid size={12}>
                   <Typography variant="body2" color="textSecondary">
                     图像内存: {imageData.memoryUsage}MB /{" "}
                     {imageData.memoryLimit}MB ({imageData.usagePercent}%)
@@ -309,7 +320,11 @@ const PerformanceMonitor = ({ isVisible = false }) => {
         </Grid>
 
         {/* 系统信息 */}
-        <Grid item xs={12} md={6}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 6
+          }}>
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -317,7 +332,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                 <Typography variant="h6">系统信息</Typography>
               </Box>
               <Grid container spacing={2}>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     WebGL支持
                   </Typography>
@@ -327,7 +342,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                     size="small"
                   />
                 </Grid>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     性能等级
                   </Typography>
@@ -337,7 +352,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                     size="small"
                   />
                 </Grid>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     CPU核心
                   </Typography>
@@ -345,7 +360,7 @@ const PerformanceMonitor = ({ isVisible = false }) => {
                     {systemInfo.cores || "N/A"}
                   </Typography>
                 </Grid>
-                <Grid item xs={6}>
+                <Grid size={6}>
                   <Typography variant="body2" color="textSecondary">
                     设备内存
                   </Typography>
@@ -358,7 +373,6 @@ const PerformanceMonitor = ({ isVisible = false }) => {
           </Card>
         </Grid>
       </Grid>
-
       {/* 详细信息 */}
       <Accordion sx={{ mt: 2 }}>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>

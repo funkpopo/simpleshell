@@ -125,7 +125,6 @@ const IPAddressQuery = memo(({ open, onClose }) => {
         <Typography variant="subtitle1" gutterBottom fontWeight="bold">
           {t("ipAddressQuery.ipInfo")}
         </Typography>
-
         <Paper
           elevation={2}
           sx={{
@@ -136,7 +135,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
           }}
         >
           <Grid container spacing={1}>
-            <Grid item xs={12}>
+            <Grid size={12}>
               <Typography variant="body2">
                 <strong>{t("ipAddressQuery.ipAddress")}:</strong>{" "}
                 {ipInfo.data?.ip}
@@ -144,11 +143,9 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             </Grid>
           </Grid>
         </Paper>
-
         <Typography variant="subtitle1" gutterBottom fontWeight="bold">
           {t("ipAddressQuery.location")}
         </Typography>
-
         <Paper
           elevation={2}
           sx={{
@@ -159,7 +156,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
         >
           <Grid container spacing={1}>
             {ipInfo.data?.location && ipInfo.data.location.length >= 1 && (
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <Typography variant="body2">
                   <strong>{t("ipAddressQuery.country")}:</strong>{" "}
                   {ipInfo.data.location[0]}
@@ -168,7 +165,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             )}
 
             {ipInfo.data?.location && ipInfo.data.location.length >= 2 && (
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <Typography variant="body2">
                   <strong>{t("ipAddressQuery.province")}:</strong>{" "}
                   {ipInfo.data.location[1]}
@@ -177,7 +174,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             )}
 
             {ipInfo.data?.location && ipInfo.data.location.length >= 3 && (
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <Typography variant="body2">
                   <strong>{t("ipAddressQuery.city")}:</strong>{" "}
                   {ipInfo.data.location[2]}
@@ -186,7 +183,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             )}
 
             {ipInfo.data?.location && ipInfo.data.location.length >= 4 && (
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <Typography variant="body2">
                   <strong>{t("ipAddressQuery.isp")}:</strong>{" "}
                   {ipInfo.data.location[4] || ipInfo.data.location[3]}
@@ -195,7 +192,6 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             )}
           </Grid>
         </Paper>
-
         {ipInfo.data?.latitude && ipInfo.data?.longitude && (
           <Box sx={{ 
             mt: 2, 

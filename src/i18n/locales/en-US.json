@@ -114,6 +114,7 @@
       "newTerminal": "New Terminal",
       "newConnection": "New SSH Connection",
       "recentConnections": "Recent Connections",
+      "lastConnectedServers": "Last Connected Servers",
       "tips": "Tips",
       "description": "A lightweight terminal emulator with a simple interface and powerful features."
     },

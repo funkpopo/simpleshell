@@ -463,7 +463,11 @@ const Settings = memo(({ open, onClose }) => {
 
           <Grid container spacing={2}>
             {/* 图像支持 */}
-            <Grid item xs={12} sm={6}>
+            <Grid
+              size={{
+                xs: 12,
+                sm: 6
+              }}>
               <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -512,7 +516,11 @@ const Settings = memo(({ open, onClose }) => {
             </Grid>
 
             {/* 智能缓存 */}
-            <Grid item xs={12} sm={6}>
+            <Grid
+              size={{
+                xs: 12,
+                sm: 6
+              }}>
               <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -557,7 +565,11 @@ const Settings = memo(({ open, onClose }) => {
             </Grid>
 
             {/* 智能预取 */}
-            <Grid item xs={12} sm={6}>
+            <Grid
+              size={{
+                xs: 12,
+                sm: 6
+              }}>
               <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>

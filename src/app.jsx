@@ -468,11 +468,11 @@ function App() {
     const loadData = async () => {
       try {
         if (window.terminalAPI) {
-          const loadedConnections = await window.terminalAPI.loadConnections() || [];
+          const loadedConnections = (await window.terminalAPI.loadConnections()) || [];
           if (Array.isArray(loadedConnections)) {
             setConnections(loadedConnections);
 
-            const topConnectionIds = await window.terminalAPI.loadTopConnections() || [];
+            const topConnectionIds = (await window.terminalAPI.loadTopConnections()) || [];
             if (Array.isArray(topConnectionIds) && topConnectionIds.length > 0) {
               const topConns = findConnectionsByIds(topConnectionIds, loadedConnections);
               setTopConnections(topConns);

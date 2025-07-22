@@ -351,7 +351,6 @@ const AISettings = ({ open, onClose }) => {
           <CloseIcon />
         </IconButton>
       </DialogTitle>
-
       <DialogContent dividers sx={{ p: 0 }}>
         {loading && (
           <Box display="flex" justifyContent="center" p={4}>
@@ -387,7 +386,7 @@ const AISettings = ({ open, onClose }) => {
                 <Box>
                   {!editMode ? (
                     // API列表模式
-                    <Box>
+                    (<Box>
                       <Box
                         sx={{
                           display: "flex",
@@ -408,7 +407,6 @@ const AISettings = ({ open, onClose }) => {
                           {t("aiSettings.addApi")}
                         </Button>
                       </Box>
-
                       {apiConfigs.length === 0 ? (
                         <Box sx={{ textAlign: "center", py: 4 }}>
                           <Typography color="text.secondary">
@@ -511,10 +509,10 @@ const AISettings = ({ open, onClose }) => {
                           ))}
                         </Box>
                       )}
-                    </Box>
+                    </Box>)
                   ) : (
                     // 编辑模式
-                    <Box
+                    (<Box
                       sx={{ display: "flex", flexDirection: "column", gap: 3 }}
                     >
                       <Box
@@ -530,7 +528,6 @@ const AISettings = ({ open, onClose }) => {
                             : t("aiSettings.addApi")}
                         </Typography>
                       </Box>
-
                       <TextField
                         label={t("aiSettings.apiName")}
                         value={config.name}
@@ -542,7 +539,6 @@ const AISettings = ({ open, onClose }) => {
                         variant="outlined"
                         required
                       />
-
                       <TextField
                         label={t("aiSettings.apiUrl")}
                         value={config.apiUrl}
@@ -554,7 +550,6 @@ const AISettings = ({ open, onClose }) => {
                         variant="outlined"
                         required
                       />
-
                       <TextField
                         label={t("aiSettings.apiKey")}
                         value={config.apiKey}
@@ -567,7 +562,6 @@ const AISettings = ({ open, onClose }) => {
                         variant="outlined"
                         required
                       />
-
                       <TextField
                         label={t("aiSettings.model")}
                         value={config.model}
@@ -579,7 +573,6 @@ const AISettings = ({ open, onClose }) => {
                         variant="outlined"
                         required
                       />
-
                       <Box>
                         <Typography gutterBottom>
                           {t("aiSettings.maxTokens")}: {config.maxTokens}
@@ -602,7 +595,6 @@ const AISettings = ({ open, onClose }) => {
                           ]}
                         />
                       </Box>
-
                       <Box>
                         <Typography gutterBottom>
                           {t("aiSettings.temperature")}: {config.temperature}
@@ -624,7 +616,6 @@ const AISettings = ({ open, onClose }) => {
                           ]}
                         />
                       </Box>
-
                       <FormControlLabel
                         control={
                           <Switch
@@ -639,7 +630,7 @@ const AISettings = ({ open, onClose }) => {
                         }
                         label={t("aiSettings.streamEnabled")}
                       />
-                    </Box>
+                    </Box>)
                   )}
                 </Box>
               )}
@@ -647,11 +638,10 @@ const AISettings = ({ open, onClose }) => {
           </Box>
         )}
       </DialogContent>
-
       <DialogActions sx={{ p: 2, gap: 1 }}>
         {editMode ? (
           // 编辑模式的按钮
-          <>
+          (<>
             <Button
               onClick={handleTest}
               disabled={loading || testing}
@@ -665,12 +655,12 @@ const AISettings = ({ open, onClose }) => {
             <Button onClick={handleSave} disabled={loading} variant="contained">
               {t("aiSettings.save")}
             </Button>
-          </>
+          </>)
         ) : (
           // 列表模式的按钮
-          <Button onClick={handleClose} disabled={loading}>
+          (<Button onClick={handleClose} disabled={loading}>
             {t("aiSettings.cancel")}
-          </Button>
+          </Button>)
         )}
       </DialogActions>
     </Dialog>
