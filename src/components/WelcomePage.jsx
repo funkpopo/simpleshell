@@ -235,7 +235,7 @@ const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
                     letterSpacing: '0.5px',
                   }}
                 >
-                  {t('上一次连接的服务器')}
+                  {t('welcome.lastConnectedServers')}
                 </Typography>
                 <Box sx={{
                   flexGrow: 1,

@@ -172,7 +172,7 @@ const SplitPane = memo(({
     >
       {isEmpty ? (
         // 空面板
-        <EmptyPaneContent>
+        (<EmptyPaneContent>
           <OpenInNewIcon sx={{ fontSize: 48, mb: 1, opacity: 0.3 }} />
           <Typography variant="body2" sx={{ mb: 0.5 }}>
             {getPositionLabel()}面板
@@ -180,10 +180,10 @@ const SplitPane = memo(({
           <Typography variant="caption" sx={{ opacity: 0.7 }}>
             将标签页拖拽到此处
           </Typography>
-        </EmptyPaneContent>
+        </EmptyPaneContent>)
       ) : (
         // 有内容的面板
-        <>
+        (<>
           <PaneHeader>
             <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: '0.75rem' }}>
               {tab?.label || '未知标签'}
@@ -220,12 +220,11 @@ const SplitPane = memo(({
               </Tooltip>
             </Box>
           </PaneHeader>
-          
           {/* 标签页内容 */}
           <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             {renderTabContent && tabIndex !== null && renderTabContent(tabIndex)}
           </Box>
-        </>
+        </>)
       )}
     </StyledSplitPane>
   );
