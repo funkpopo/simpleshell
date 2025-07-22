@@ -29,41 +29,134 @@ const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
     <ListItem
       key={connection.id}
       disablePadding
-      sx={{ mb: 1 }}
+      sx={{ mb: 0.5 }}
     >
       <ListItemButton
         onClick={() => handleOpenConnection(connection)}
         sx={{
-          py: 0.1,
-          borderRadius: 1,
+          py: 1,
+          px: 1.5,
+          borderRadius: 1.5,
           border: '1px solid',
           borderColor: 'divider',
-          backgroundColor: alpha(theme.palette.background.paper, 0.7),
+          backgroundColor: alpha(theme.palette.background.paper, 0.8),
+          minHeight: 48,
+          maxHeight: 48,
+          transition: 'all 0.2s ease',
           "&:hover": {
-            backgroundColor: alpha(theme.palette.primary.main, 0.1),
+            backgroundColor: alpha(theme.palette.primary.main, 0.08),
             borderColor: 'primary.main',
+            boxShadow: `0 2px 8px ${alpha(theme.palette.primary.main, 0.1)}`,
           },
         }}
       >
-        <ListItemText
-          primary={connection.name || connection.host}
-          primaryTypographyProps={{ variant: "body1", fontWeight: "medium" }}
-        />
-        <Box sx={{ ml: 2, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, justifyContent: 'center' }}>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              fontWeight: 600,
+              color: 'text.primary',
+              mb: 0.2,
+              textOverflow: 'ellipsis',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              fontSize: '0.875rem',
+              lineHeight: 1.2,
+            }}
+          >
+            {connection.name || connection.host}
+          </Typography>
+          <Typography 
+            variant="caption" 
+            sx={{ 
+              color: 'text.secondary',
+              fontSize: '0.7rem',
+              textOverflow: 'ellipsis',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              lineHeight: 1.1,
+            }}
+          >
+            {connection.username ? `${connection.username}@${connection.host}` : connection.host}
+          </Typography>
+        </Box>
+        
+        <Box sx={{ 
+          ml: 1.5, 
+          flexShrink: 0, 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 0.5,
+          flexWrap: 'nowrap',
+          justifyContent: 'flex-end',
+        }}>
+          {connection.protocol && (
+            <Chip 
+              label={connection.protocol?.toUpperCase() || 'SSH'} 
+              size="small" 
+              variant="filled"
+              sx={{
+                backgroundColor: connection.protocol === 'ssh' 
+                  ? alpha(theme.palette.success.main, 0.1)
+                  : alpha(theme.palette.warning.main, 0.1),
+                color: connection.protocol === 'ssh' 
+                  ? theme.palette.success.main
+                  : theme.palette.warning.main,
+                fontWeight: 600,
+                fontSize: '0.65rem',
+                height: 18,
+              }}
+            />
+          )}
+          
           {connection.os && (
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              {connection.os}
-            </Typography>
+            <Chip 
+              label={connection.os} 
+              size="small" 
+              variant="outlined"
+              sx={{
+                borderColor: alpha(theme.palette.info.main, 0.3),
+                color: theme.palette.info.main,
+                fontSize: '0.65rem',
+                height: 18,
+              }}
+            />
           )}
+          
           {connection.connectionType && (
-            <Chip label={connection.connectionType} size="small" variant="outlined" />
+            <Chip 
+              label={connection.connectionType} 
+              size="small" 
+              variant="outlined"
+              sx={{
+                borderColor: alpha(theme.palette.secondary.main, 0.4),
+                color: theme.palette.secondary.main,
+                fontSize: '0.65rem',
+                height: 18,
+              }}
+            />
           )}
+          
           {connection.country && countries[connection.country] && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <span
-                    className={`fi fi-${connection.country.toLowerCase()}`}
-                    title={countries[connection.country].name}
-                ></span>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 0.3,
+              backgroundColor: alpha(theme.palette.background.paper, 0.8),
+              borderRadius: 0.5,
+              px: 0.4,
+              py: 0.1,
+              border: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
+            }}>
+              <span
+                className={`fi fi-${connection.country.toLowerCase()}`}
+                title={countries[connection.country].name}
+                style={{ 
+                  fontSize: '0.8rem',
+                  borderRadius: '1px',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                }}
+              />
             </Box>
           )}
         </Box>
@@ -119,9 +212,52 @@ const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
         <Box sx={{ overflow: 'auto', flexGrow: 1 }}>
           {topConnections && topConnections.length > 0 ? (
             <>
-              <Typography variant="h6" sx={{ mb: 2, px: 2, fontWeight: 'medium' }}>
-                {t('上一次连接的服务器')}
-              </Typography>
+              <Box sx={{ 
+                mb: 3, 
+                px: 2, 
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+              }}>
+                <Box sx={{
+                  width: 4,
+                  height: 24,
+                  backgroundColor: theme.palette.primary.main,
+                  borderRadius: 2,
+                  flexShrink: 0,
+                }} />
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    fontWeight: 700,
+                    color: 'text.primary',
+                    fontSize: '1.1rem',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  {t('上一次连接的服务器')}
+                </Typography>
+                <Box sx={{
+                  flexGrow: 1,
+                  height: 1,
+                  backgroundColor: alpha(theme.palette.primary.main, 0.2),
+                }} />
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    color: 'text.secondary',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                    px: 1,
+                    py: 0.5,
+                    borderRadius: 1,
+                    border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+                  }}
+                >
+                  {topConnections.length}
+                </Typography>
+              </Box>
               <List sx={{ px: 1 }}>
                 {topConnections.map((conn) => renderTopConnectionItem(conn))}
               </List>
