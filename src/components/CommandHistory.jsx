@@ -469,6 +469,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                       disablePadding
                       sx={{
                         borderBottom: `1px solid ${theme.palette.divider}`,
+                        overflow: "hidden",
                       }}
                     >
                       <ListItemButton
@@ -478,11 +479,12 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                             : handleSendCommand(item.command)
                         }
                         sx={{
-                          minHeight: 72,
+                          minHeight: 48,
                           bgcolor:
                             selectMode && selectedCommands.has(item.command)
                               ? "action.selected"
                               : "transparent",
+                          borderRadius: 0,
                         }}
                       >
                         {selectMode && (

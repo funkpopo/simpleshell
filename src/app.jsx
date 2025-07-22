@@ -570,6 +570,28 @@ function App() {
             paper: darkMode ? "#1e1e1e" : "#ffffff",
           },
         },
+        components: {
+          MuiListItem: {
+            styleOverrides: {
+              root: {
+                paddingTop: '4px',
+                paddingBottom: '4px',
+                minHeight: '50px',
+                maxHeight: '50px',
+              },
+              dense: {
+                paddingTop: '2px',
+                paddingBottom: '2px',
+                minHeight: '50px',
+                maxHeight: '50px',
+              },
+              gutters: {
+                paddingLeft: '8px',
+                paddingRight: '8px',
+              },
+            },
+          },
+        },
       }),
     [darkMode],
   );

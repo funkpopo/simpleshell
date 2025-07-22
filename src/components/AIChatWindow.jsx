@@ -42,8 +42,6 @@ import {
 import "react-resizable/css/styles.css";
 import "highlight.js/styles/github.css"; // 代码高亮样式
 
-// 移除不再使用的useDebounce函数
-
 // 窗口状态枚举
 const WINDOW_STATE = {
   VISIBLE: "visible",
@@ -873,7 +871,6 @@ const AIChatWindow = memo(
             opacity: windowState === WINDOW_STATE.VISIBLE ? 1 : 0.9,
             transition:
               "opacity 0.3s ease-in-out",
-            // 移除width和height的transition，避免resize时的延迟感
             // userSelect is handled globally during drag
           }}
         >
