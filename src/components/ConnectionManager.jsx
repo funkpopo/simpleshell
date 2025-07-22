@@ -596,6 +596,31 @@ const ConnectionManager = memo(
           return <ComputerIcon fontSize="small" />;
         };
 
+        // 计算注释文本内容
+        const secondaryText = connection.username
+          ? `${connection.username}@${connection.host}`
+          : connection.host;
+        
+        // 更精准的检测逻辑：考虑实际显示宽度和中文字符
+        // 由于CSS设置了maxWidth: 'calc(100% - 20px)'，我们需要更保守的估算
+        const estimateTextWidth = (text) => {
+          // 粗略估算：中文字符宽度约为英文字符的2倍
+          let width = 0;
+          for (let i = 0; i < text.length; i++) {
+            const char = text.charAt(i);
+            if (/[\u4e00-\u9fff]/.test(char)) {
+              width += 2; // 中文字符
+            } else {
+              width += 1; // 英文字符
+            }
+          }
+          return width;
+        };
+        
+        // 根据显示宽度判断是否会被截断，这里使用更保守的阈值
+        const maxDisplayWidth = 17; // 根据实际容器宽度调整，更保守的值
+        const isSecondaryTextTruncated = estimateTextWidth(secondaryText) > maxDisplayWidth;
+
         return (
           <Draggable
             key={connection.id}
@@ -684,13 +709,18 @@ const ConnectionManager = memo(
                   <ListItemText
                     primary={connection.name || connection.host}
                     secondary={
-                      <Tooltip title={`${connection.protocol === "telnet" ? "Telnet://" : "SSH://"}${connection.username ? `${connection.username}@${connection.host}` : connection.host}`}>
+                      // 只有在注释内容被省略时才显示浮动标签
+                      isSecondaryTextTruncated ? (
+                        <Tooltip title={secondaryText}>
+                          <span>
+                            {secondaryText}
+                          </span>
+                        </Tooltip>
+                      ) : (
                         <span>
-                          {connection.username
-                            ? `${connection.username}@${connection.host}`
-                            : connection.host}
+                          {secondaryText}
                         </span>
-                      </Tooltip>
+                      )
                     }
                     sx={{ 
                       my: 0,
