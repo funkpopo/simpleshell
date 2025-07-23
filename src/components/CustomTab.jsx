@@ -109,7 +109,14 @@ const CustomTab = memo((props) => {
                 {group.groupId.replace('G', '')}
               </Box>
             )}
-            <Typography variant="body2" component="span" sx={{ mr: 1 }}>
+            <Typography variant="body2" component="span" sx={{ 
+              mr: 1,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: "300px", // 限制最大宽度，避免标签页过长
+              display: "inline-block"
+            }}>
               {label}
             </Typography>
             {onClose && (

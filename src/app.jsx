@@ -1658,23 +1658,32 @@ function App() {
                 },
               }}
             >
-              {tabs.map((tab, index) => (
-                <CustomTab
-                  key={tab.id}
-                  label={tab.label}
-                  onClose={
-                    tab.id !== "welcome" ? () => handleCloseTab(index) : null
-                  }
+              {tabs.map((tab, index) => {
+                // 为合并的标签页生成复合名称
+                const displayLabel = mergedTabs[tab.id] && mergedTabs[tab.id].length > 1
+                  ? mergedTabs[tab.id].map(t => t.label).join(" | ")
+                  : tab.label;
+                
+                return (
+                  <CustomTab
+                    key={tab.id}
+                    label={displayLabel}
+                    onClose={
+                      tab.id !== "welcome" ? () => handleCloseTab(index) : null
+                    }
                   onContextMenu={(e) => handleTabContextMenu(e, index, tab.id)}
                   onDragStart={(e) => handleDragStart(e, index)}
                   onDragOver={(e) => handleDragOver(e, index)}
-                  onDrop={(e) => handleDrop(e, index)}
-                  onDragEnd={handleDragEnd}
-                  index={index}
-                  tabId={tab.id}
-                  isDraggedOver={draggedTabIndex !== null && dragOverTabIndex === index && draggedTabIndex !== index}
-                />
-              ))}
+                    onDrop={(e) => handleDrop(e, index)}
+                    onDragEnd={handleDragEnd}
+                    value={index}
+                    selected={currentTab === index}
+                    index={index}
+                    tabId={tab.id}
+                    isDraggedOver={draggedTabIndex !== null && dragOverTabIndex === index && draggedTabIndex !== index}
+                  />
+                );
+              })}
             </Tabs>
 
             {/* 标签页右键菜单 */}
