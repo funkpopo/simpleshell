@@ -4,15 +4,35 @@ import { styled } from '@mui/material/styles';
 import WebTerminal from './WebTerminal.jsx';
 
 // 分屏容器样式
-const SplitContainer = styled(Box)(({ theme, splitCount }) => ({
-  display: 'grid',
-  width: '100%',
-  height: '100%',
-  gap: '2px',
-  backgroundColor: theme.palette.divider,
-  gridTemplateColumns: splitCount <= 2 ? (splitCount === 1 ? '1fr' : '1fr 1fr') : '1fr 1fr',
-  gridTemplateRows: splitCount <= 2 ? '1fr' : '1fr 1fr'
-}));
+const SplitContainer = styled(Box)(({ theme, splitCount }) => {
+  // 三标签特殊布局：上方两个终端，下方一个终端
+  if (splitCount === 3) {
+    return {
+      display: 'grid',
+      width: '100%',
+      height: '100%',
+      gap: '2px',
+      backgroundColor: theme.palette.divider,
+      gridTemplateColumns: '1fr 1fr',
+      gridTemplateRows: '1fr 1fr',
+      gridTemplateAreas: `
+        "top-left top-right"
+        "bottom bottom"
+      `
+    };
+  }
+  
+  // 其他情况保持原有布局
+  return {
+    display: 'grid',
+    width: '100%',
+    height: '100%',
+    gap: '2px',
+    backgroundColor: theme.palette.divider,
+    gridTemplateColumns: splitCount <= 2 ? (splitCount === 1 ? '1fr' : '1fr 1fr') : '1fr 1fr',
+    gridTemplateRows: splitCount <= 2 ? '1fr' : '1fr 1fr'
+  };
+});
 
 // 单个分屏面板样式
 const SplitPane = styled(Paper)(({ theme }) => ({
@@ -161,32 +181,87 @@ const MergedTabContent = memo(({
   
   return (
     <SplitContainer splitCount={validTabs.length}>
-      {validTabs.map((tab, index) => (
-        <SplitPane key={`${tab.id}-split`} elevation={1}> {/* 使用稳定的key */}
-          <SplitHeader>
-            <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: '0.75rem' }}>
-              {tab.label}
-            </Typography>
-          </SplitHeader>
+      {validTabs.map((tab, index) => {
+        // 三标签特殊布局处理
+        if (validTabs.length === 3) {
+          let gridArea;
+          switch (index) {
+            case 0:
+              gridArea = 'top-left';
+              break;
+            case 1:
+              gridArea = 'top-right';
+              break;
+            case 2:
+              gridArea = 'bottom';
+              break;
+            default:
+              gridArea = '';
+          }
           
-          <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-            <WebTerminal
-              key={`${tab.id}-multi`} // 使用稳定的key，避免重新创建
-              tabId={tab.id}
-              refreshKey={terminalInstances[`${tab.id}-refresh`] || layoutUpdateKey}
-              usePowershell={
-                tab.type !== "ssh" && terminalInstances.usePowershell
-              }
-              sshConfig={
-                tab.type === "ssh"
-                  ? terminalInstances[`${tab.id}-config`]
-                  : null
-              }
-              isActive={true}
-            />
-          </Box>
-        </SplitPane>
-      ))}
+          return (
+            <SplitPane 
+              key={`${tab.id}-split`} 
+              elevation={1}
+              sx={{ 
+                gridArea: gridArea,
+                ...(index === 2 && { gridColumn: '1 / -1' }) // 下方终端填满宽度
+              }}
+            >
+              <SplitHeader>
+                <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: '0.75rem' }}>
+                  {tab.label}
+                </Typography>
+              </SplitHeader>
+              
+              <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+                <WebTerminal
+                  key={`${tab.id}-multi`} // 使用稳定的key，避免重新创建
+                  tabId={tab.id}
+                  refreshKey={terminalInstances[`${tab.id}-refresh`] || layoutUpdateKey}
+                  usePowershell={
+                    tab.type !== "ssh" && terminalInstances.usePowershell
+                  }
+                  sshConfig={
+                    tab.type === "ssh"
+                      ? terminalInstances[`${tab.id}-config`]
+                      : null
+                  }
+                  isActive={true}
+                />
+              </Box>
+            </SplitPane>
+          );
+        }
+        
+        // 其他情况保持原有渲染逻辑
+        return (
+          <SplitPane key={`${tab.id}-split`} elevation={1}> {/* 使用稳定的key */}
+            <SplitHeader>
+              <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: '0.75rem' }}>
+                {tab.label}
+              </Typography>
+            </SplitHeader>
+            
+            <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+              <WebTerminal
+                key={`${tab.id}-multi`} // 使用稳定的key，避免重新创建
+                tabId={tab.id}
+                refreshKey={terminalInstances[`${tab.id}-refresh`] || layoutUpdateKey}
+                usePowershell={
+                  tab.type !== "ssh" && terminalInstances.usePowershell
+                }
+                sshConfig={
+                  tab.type === "ssh"
+                    ? terminalInstances[`${tab.id}-config`]
+                    : null
+                }
+                isActive={true}
+              />
+            </Box>
+          </SplitPane>
+        );
+      })}
     </SplitContainer>
   );
 });
