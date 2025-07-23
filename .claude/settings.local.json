@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npm install:*)",
-      "WebFetch(domain:mui.com)"
+      "WebFetch(domain:mui.com)",
+      "Bash(npm run lint)"
     ],
     "deny": []
   }

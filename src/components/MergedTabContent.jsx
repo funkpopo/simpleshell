@@ -4,7 +4,7 @@ import { styled } from '@mui/material/styles';
 import WebTerminal from './WebTerminal.jsx';
 
 // 分屏容器样式
-const SplitContainer = styled(Box)(({ theme, splitCount }) => {
+const SplitContainer = styled(Box)(({ theme, splitCount, paneSizes }) => {
   // 三标签特殊布局：上方两个终端，下方一个终端
   if (splitCount === 3) {
     return {
@@ -13,8 +13,8 @@ const SplitContainer = styled(Box)(({ theme, splitCount }) => {
       height: '100%',
       gap: '2px',
       backgroundColor: theme.palette.divider,
-      gridTemplateColumns: '1fr 1fr',
-      gridTemplateRows: '1fr 1fr',
+      gridTemplateColumns: `${paneSizes?.leftWidth || 50}% ${100 - (paneSizes?.leftWidth || 50)}%`,
+      gridTemplateRows: `${paneSizes?.topHeight || 50}% ${100 - (paneSizes?.topHeight || 50)}%`,
       gridTemplateAreas: `
         "top-left top-right"
         "bottom bottom"
@@ -22,17 +22,65 @@ const SplitContainer = styled(Box)(({ theme, splitCount }) => {
     };
   }
   
-  // 其他情况保持原有布局
+  // 其他情况的动态布局
   return {
     display: 'grid',
     width: '100%',
     height: '100%',
     gap: '2px',
     backgroundColor: theme.palette.divider,
-    gridTemplateColumns: splitCount <= 2 ? (splitCount === 1 ? '1fr' : '1fr 1fr') : '1fr 1fr',
-    gridTemplateRows: splitCount <= 2 ? '1fr' : '1fr 1fr'
+    gridTemplateColumns: splitCount <= 2 ? 
+      (splitCount === 1 ? '1fr' : `${paneSizes?.leftWidth || 50}% ${100 - (paneSizes?.leftWidth || 50)}%`) :
+      `${paneSizes?.leftWidth || 50}% ${100 - (paneSizes?.leftWidth || 50)}%`,
+    gridTemplateRows: splitCount <= 2 ? 
+      '1fr' : 
+      `${paneSizes?.topHeight || 50}% ${100 - (paneSizes?.topHeight || 50)}%`
   };
 });
+
+// 可拖拽分隔条组件
+const ResizeHandle = styled(Box)(({ theme, direction }) => ({
+  position: 'absolute',
+  backgroundColor: 'transparent',
+  zIndex: 10,
+  cursor: direction === 'horizontal' ? 'ew-resize' : 'ns-resize',
+  
+  '&:hover': {
+    backgroundColor: theme.palette.primary.main,
+    opacity: 0.5,
+  },
+  
+  '&:active': {
+    backgroundColor: theme.palette.primary.main,
+    opacity: 0.8,
+  },
+  
+  // 水平分隔条（左右调整）
+  ...(direction === 'horizontal' && {
+    right: -2,
+    top: 0,
+    width: 4,
+    height: '100%',
+  }),
+  
+  // 垂直分隔条（上下调整）
+  ...(direction === 'vertical' && {
+    bottom: -2,
+    left: 0,
+    width: '100%',
+    height: 4,
+  }),
+}));
+
+// 可调整大小的分屏面板
+const ResizableSplitPane = styled(Paper)(({ theme }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+  backgroundColor: theme.palette.background.paper,
+  border: `1px solid ${theme.palette.divider}`,
+  position: 'relative',
+}));
 
 // 单个分屏面板样式
 const SplitPane = styled(Paper)(({ theme }) => ({
@@ -63,6 +111,77 @@ const MergedTabContent = memo(({
 }) => {
   // 添加布局更新状态，用于触发终端适配
   const [layoutUpdateKey, setLayoutUpdateKey] = useState(0);
+  
+  // 分屏大小状态
+  const [paneSizes, setPaneSizes] = useState({
+    leftWidth: 50, // 左侧面板宽度百分比
+    topHeight: 50, // 上侧面板高度百分比
+  });
+  
+  // 拖拽状态
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragType, setDragType] = useState(null); // 'horizontal' | 'vertical'
+  
+  // 处理拖拽开始
+  const handleMouseDown = (e, type) => {
+    e.preventDefault();
+    setIsDragging(true);
+    setDragType(type);
+    document.body.style.cursor = type === 'horizontal' ? 'ew-resize' : 'ns-resize';
+    document.body.style.userSelect = 'none';
+  };
+  
+  // 处理拖拽移动
+  const handleMouseMove = (e) => {
+    if (!isDragging || !dragType) return;
+    
+    const container = document.querySelector('[data-split-container]');
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    
+    if (dragType === 'horizontal') {
+      const newLeftWidth = ((e.clientX - rect.left) / rect.width) * 100;
+      setPaneSizes(prev => ({
+        ...prev,
+        leftWidth: Math.max(20, Math.min(80, newLeftWidth))
+      }));
+    } else if (dragType === 'vertical') {
+      const newTopHeight = ((e.clientY - rect.top) / rect.height) * 100;
+      setPaneSizes(prev => ({
+        ...prev,
+        topHeight: Math.max(20, Math.min(80, newTopHeight))
+      }));
+    }
+  };
+  
+  // 处理拖拽结束
+  const handleMouseUp = () => {
+    if (isDragging) {
+      setIsDragging(false);
+      setDragType(null);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      
+      // 触发终端大小调整
+      setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      }, 100);
+    }
+  };
+  
+  // 添加全局事件监听
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, dragType]);
   
   // 监听分屏布局变化事件，进行布局调整而不是重新创建终端
   useEffect(() => {
@@ -180,7 +299,11 @@ const MergedTabContent = memo(({
   const validTabs = mergedTabs.filter(tab => tab && terminalInstances[tab.id]);
   
   return (
-    <SplitContainer splitCount={validTabs.length}>
+    <SplitContainer 
+      splitCount={validTabs.length} 
+      paneSizes={paneSizes}
+      data-split-container
+    >
       {validTabs.map((tab, index) => {
         // 三标签特殊布局处理
         if (validTabs.length === 3) {
@@ -200,7 +323,7 @@ const MergedTabContent = memo(({
           }
           
           return (
-            <SplitPane 
+            <ResizableSplitPane 
               key={`${tab.id}-split`} 
               elevation={1}
               sx={{ 
@@ -230,13 +353,27 @@ const MergedTabContent = memo(({
                   isActive={true}
                 />
               </Box>
-            </SplitPane>
+              
+              {/* 添加拖拽分隔条 */}
+              {index === 0 && (
+                <ResizeHandle 
+                  direction="horizontal"
+                  onMouseDown={(e) => handleMouseDown(e, 'horizontal')}
+                />
+              )}
+              {index < 2 && (
+                <ResizeHandle 
+                  direction="vertical"
+                  onMouseDown={(e) => handleMouseDown(e, 'vertical')}
+                />
+              )}
+            </ResizableSplitPane>
           );
         }
         
         // 其他情况保持原有渲染逻辑
         return (
-          <SplitPane key={`${tab.id}-split`} elevation={1}> {/* 使用稳定的key */}
+          <ResizableSplitPane key={`${tab.id}-split`} elevation={1}> {/* 使用稳定的key */}
             <SplitHeader>
               <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: '0.75rem' }}>
                 {tab.label}
@@ -259,7 +396,31 @@ const MergedTabContent = memo(({
                 isActive={true}
               />
             </Box>
-          </SplitPane>
+            
+            {/* 添加拖拽分隔条 */}
+            {validTabs.length === 2 && index === 0 && (
+              <ResizeHandle 
+                direction="horizontal"
+                onMouseDown={(e) => handleMouseDown(e, 'horizontal')}
+              />
+            )}
+            {validTabs.length === 4 && (
+              <>
+                {(index === 0 || index === 2) && (
+                  <ResizeHandle 
+                    direction="horizontal"
+                    onMouseDown={(e) => handleMouseDown(e, 'horizontal')}
+                  />
+                )}
+                {index < 2 && (
+                  <ResizeHandle 
+                    direction="vertical"
+                    onMouseDown={(e) => handleMouseDown(e, 'vertical')}
+                  />
+                )}
+              </>
+            )}
+          </ResizableSplitPane>
         );
       })}
     </SplitContainer>
