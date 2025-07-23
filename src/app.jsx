@@ -1087,6 +1087,15 @@ function App() {
     const merged = mergedTabs[mainTabId];
     if (!merged || merged.length <= 1) return;
 
+    // 拆分会话前自动关闭所有已展开的侧边栏
+    setConnectionManagerOpen(false);
+    setResourceMonitorOpen(false);
+    setFileManagerOpen(false);
+    setShortcutCommandsOpen(false);
+    setCommandHistoryOpen(false);
+    setIpAddressQueryOpen(false);
+    setRandomPasswordGeneratorOpen(false);
+
     // 找到主标签在tabs中的位置
     const mainTabIndex = tabs.findIndex(tab => tab.id === mainTabId);
     if (mainTabIndex === -1) return;
@@ -1172,7 +1181,7 @@ function App() {
         }),
       );
     }, 50);
-  }, [tabs, mergedTabs, terminalInstances, processCache]); // 添加processCache依赖
+  }, [tabs, mergedTabs, terminalInstances, processCache, setConnectionManagerOpen, setResourceMonitorOpen, setFileManagerOpen, setShortcutCommandsOpen, setCommandHistoryOpen, setIpAddressQueryOpen, setRandomPasswordGeneratorOpen]); // 添加所有相关依赖
 
   // 切换资源监控侧边栏
   const toggleResourceMonitor = useCallback(() => {
