@@ -321,6 +321,9 @@ function App() {
     { id: "welcome", label: t("terminal.welcome") },
   ]);
   const [currentTab, setCurrentTab] = React.useState(0);
+  
+  // 分屏模式下的活跃标签页状态（用于控制右侧面板）
+  const [activeSplitTabId, setActiveSplitTabId] = React.useState(null);
 
   // 存储终端实例的缓存
   const [terminalInstances, setTerminalInstances] = React.useState({
@@ -517,6 +520,18 @@ function App() {
 
     window.addEventListener("sshProcessIdUpdated", handleSshProcessIdUpdate);
 
+    // 监听分屏活跃标签页变化事件
+    const handleActiveSplitTabChanged = (event) => {
+      const { activeTabId } = event.detail || {};
+      console.log('App收到 activeSplitTabChanged 事件:', activeTabId);
+      if (activeTabId) {
+        setActiveSplitTabId(activeTabId);
+        console.log('App更新 activeSplitTabId:', activeTabId);
+      }
+    };
+
+    window.addEventListener("activeSplitTabChanged", handleActiveSplitTabChanged);
+
     return () => {
       // 清理预加载定时器
       clearTimeout(preloadTimer);
@@ -525,8 +540,56 @@ function App() {
         "sshProcessIdUpdated",
         handleSshProcessIdUpdate,
       );
+      
+      window.removeEventListener(
+        "activeSplitTabChanged", 
+        handleActiveSplitTabChanged,
+      );
     };
   }, []);
+
+  // 当活跃分屏标签页变化时，触发相关组件更新
+  React.useEffect(() => {
+    if (activeSplitTabId) {
+      // 延迟触发，确保状态已经更新
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("activeSplitTabUpdated", {
+            detail: { 
+              activeTabId: activeSplitTabId,
+              timestamp: Date.now()
+            },
+          })
+        );
+      }, 50);
+    }
+  }, [activeSplitTabId]);
+
+  // 当主标签页切换时，重置分屏活跃标签页状态
+  React.useEffect(() => {
+    // 如果当前标签页没有分屏，重置活跃分屏标签页
+    if (currentTab > 0 && tabs[currentTab]) {
+      const currentMainTab = tabs[currentTab];
+      const mergedTabsForCurrentMain = mergedTabs[currentMainTab.id];
+      
+      if (!mergedTabsForCurrentMain || mergedTabsForCurrentMain.length <= 1) {
+        // 当前标签页没有分屏，重置活跃分屏标签页
+        if (activeSplitTabId) {
+          console.log('主标签页切换，重置活跃分屏标签页');
+          setActiveSplitTabId(null);
+        }
+      } else {
+        // 当前标签页有分屏，检查活跃标签是否还有效
+        if (activeSplitTabId && !mergedTabsForCurrentMain.find(tab => tab.id === activeSplitTabId)) {
+          console.log('活跃分屏标签页不在当前分屏中，重置为第一个');
+          setActiveSplitTabId(mergedTabsForCurrentMain[0]?.id || null);
+        } else if (!activeSplitTabId) {
+          console.log('没有活跃分屏标签页，设置为第一个');
+          setActiveSplitTabId(mergedTabsForCurrentMain[0]?.id || null);
+        }
+      }
+    }
+  }, [currentTab, tabs, mergedTabs, activeSplitTabId]);
 
   // 当连接列表更新时，同步更新置顶连接列表
   React.useEffect(() => {
@@ -1285,18 +1348,98 @@ function App() {
 
   // 添加发送快捷命令到终端的函数
   const handleSendCommand = (command) => {
-    if (currentTab > 0 && tabs[currentTab]) {
-      const tab = tabs[currentTab];
-      if (tab.type === "ssh") {
-        dispatchCommandToGroup(tab.id, command + "\r");
-        return { success: true };
-      } else {
-        return { success: false, error: "当前标签页不是SSH连接" };
-      }
+    const panelTab = getCurrentPanelTab();
+    if (panelTab && panelTab.type === "ssh") {      
+      dispatchCommandToGroup(panelTab.id, command);
+      return { success: true };
+    } else if (panelTab) {
+      return { success: false, error: "当前标签页不是SSH连接" };
     } else {
       return { success: false, error: "请先建立SSH连接" };
     }
   };
+  
+  // 获取右侧面板应该使用的当前标签页信息
+  const getCurrentPanelTab = useCallback(() => {
+    console.log('getCurrentPanelTab - activeSplitTabId:', activeSplitTabId);
+    console.log('getCurrentPanelTab - currentTab:', currentTab, 'tabs[currentTab]:', tabs[currentTab]);
+    console.log('getCurrentPanelTab - mergedTabs:', mergedTabs);
+    
+    // 如果在分屏模式下且有活跃的分屏标签页，优先使用分屏标签页
+    if (activeSplitTabId) {
+      // 首先查找是否有当前标签页的合并标签
+      if (currentTab > 0 && tabs[currentTab]) {
+        const currentMainTab = tabs[currentTab];
+        const mergedTabsForCurrentMain = mergedTabs[currentMainTab.id];
+        
+        if (mergedTabsForCurrentMain && mergedTabsForCurrentMain.length > 1) {
+          // 在合并的标签中查找活跃的分屏标签
+          const activeTab = mergedTabsForCurrentMain.find(tab => tab.id === activeSplitTabId);
+          if (activeTab) {
+            console.log('找到活跃的分屏标签:', activeTab);
+            return activeTab;
+          }
+        }
+      }
+      
+      // 如果在合并标签中没找到，则在全局标签中查找
+      const globalTab = tabs.find(t => t.id === activeSplitTabId);
+      if (globalTab) {
+        console.log('在全局标签中找到活跃标签:', globalTab);
+        return globalTab;
+      }
+    }
+    
+    // 否则使用当前主标签页
+    if (currentTab > 0 && tabs[currentTab]) {
+      console.log('使用当前主标签页:', tabs[currentTab]);
+      return tabs[currentTab];
+    }
+    
+    console.log('没有找到有效的标签页');
+    return null;
+  }, [activeSplitTabId, tabs, currentTab, mergedTabs]);
+
+  // 计算右侧面板的当前标签页信息
+  const currentPanelTab = useMemo(() => {
+    const result = getCurrentPanelTab();
+    console.log('当前面板标签页:', result?.id, result?.label);
+    return result;
+  }, [getCurrentPanelTab]);
+  
+  // 计算资源监控的currentTabId
+  const resourceMonitorTabId = useMemo(() => {
+    if (!resourceMonitorOpen || !currentPanelTab || currentPanelTab.type !== "ssh") {
+      return null;
+    }
+    return terminalInstances[`${currentPanelTab.id}-processId`] || currentPanelTab.id;
+  }, [resourceMonitorOpen, currentPanelTab, terminalInstances]);
+
+  // 计算文件管理器的props
+  const fileManagerProps = useMemo(() => {
+    if (!currentPanelTab) {
+      return {
+        tabId: null,
+        tabName: null,
+        sshConnection: null,
+        initialPath: "/"
+      };
+    }
+    
+    return {
+      tabId: currentPanelTab.id,
+      tabName: currentPanelTab.label,
+      sshConnection: currentPanelTab.type === "ssh" 
+        ? terminalInstances[`${currentPanelTab.id}-config`] 
+        : null,
+      initialPath: getFileManagerPath(currentPanelTab.id)
+    };
+  }, [currentPanelTab, terminalInstances]);
+
+  // 计算按钮禁用状态
+  const isSSHButtonDisabled = useMemo(() => {
+    return !currentPanelTab || currentPanelTab.type !== "ssh";
+  }, [currentPanelTab]);
 
   // 处理设置变更
   React.useEffect(() => {
@@ -1732,15 +1875,7 @@ function App() {
               <ResourceMonitor
                 open={resourceMonitorOpen}
                 onClose={handleCloseResourceMonitor}
-                currentTabId={
-                  resourceMonitorOpen &&
-                  currentTab > 0 &&
-                  tabs[currentTab] &&
-                  tabs[currentTab].type === "ssh"
-                    ? terminalInstances[`${tabs[currentTab].id}-processId`] ||
-                      tabs[currentTab].id
-                    : null
-                }
+                currentTabId={resourceMonitorTabId}
               />
             </Box>
 
@@ -1778,28 +1913,10 @@ function App() {
               <FileManager
                 open={fileManagerOpen}
                 onClose={handleCloseFileManager}
-                tabId={
-                  currentTab > 0 && tabs[currentTab]
-                    ? tabs[currentTab].id
-                    : null
-                }
-                tabName={
-                  currentTab > 0 && tabs[currentTab]
-                    ? tabs[currentTab].label
-                    : null
-                }
-                sshConnection={
-                  currentTab > 0 &&
-                  tabs[currentTab] &&
-                  tabs[currentTab].type === "ssh"
-                    ? terminalInstances[`${tabs[currentTab].id}-config`]
-                    : null
-                }
-                initialPath={
-                  currentTab > 0 && tabs[currentTab]
-                    ? getFileManagerPath(tabs[currentTab].id)
-                    : "/"
-                }
+                tabId={fileManagerProps.tabId}
+                tabName={fileManagerProps.tabName}
+                sshConnection={fileManagerProps.sshConnection}
+                initialPath={fileManagerProps.initialPath}
                 onPathChange={updateFileManagerPath}
               />
             </Box>
@@ -1912,6 +2029,7 @@ function App() {
                         : "action.hover",
                     },
                   }}
+                  disabled={isSSHButtonDisabled}
                 >
                   <MonitorHeartIcon />
                 </IconButton>
@@ -1952,11 +2070,7 @@ function App() {
                         : "action.hover",
                     },
                   }}
-                  disabled={
-                    !currentTab ||
-                    currentTab === 0 ||
-                    (tabs[currentTab] && tabs[currentTab].type !== "ssh")
-                  }
+                  disabled={isSSHButtonDisabled}
                 >
                   <FolderIcon />
                 </IconButton>
@@ -1977,11 +2091,7 @@ function App() {
                         : "action.hover",
                     },
                   }}
-                  disabled={
-                    !currentTab ||
-                    currentTab === 0 ||
-                    (tabs[currentTab] && tabs[currentTab].type !== "ssh")
-                  }
+                  disabled={isSSHButtonDisabled}
                 >
                   <TerminalIcon />
                 </IconButton>

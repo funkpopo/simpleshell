@@ -92,16 +92,31 @@ const SplitPane = styled(Paper)(({ theme }) => ({
 }));
 
 // 分屏头部
-const SplitHeader = styled(Box)(({ theme }) => ({
+const SplitHeader = styled(Box)(({ theme, isActive }) => ({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
   padding: theme.spacing(0.5, 1),
-  backgroundColor: theme.palette.mode === 'dark' 
-    ? 'rgba(255, 255, 255, 0.05)'
-    : 'rgba(0, 0, 0, 0.03)',
+  backgroundColor: isActive 
+    ? (theme.palette.mode === 'dark' 
+        ? 'rgba(90, 202, 249, 0.15)'
+        : 'rgba(25, 118, 210, 0.08)')
+    : (theme.palette.mode === 'dark' 
+        ? 'rgba(255, 255, 255, 0.05)'
+        : 'rgba(0, 0, 0, 0.03)'),
   borderBottom: `1px solid ${theme.palette.divider}`,
-  minHeight: 32
+  minHeight: 32,
+  cursor: 'pointer',
+  transition: 'background-color 0.2s ease',
+  '&:hover': {
+    backgroundColor: isActive 
+      ? (theme.palette.mode === 'dark' 
+          ? 'rgba(90, 202, 249, 0.2)'
+          : 'rgba(25, 118, 210, 0.12)')
+      : (theme.palette.mode === 'dark' 
+          ? 'rgba(255, 255, 255, 0.08)'
+          : 'rgba(0, 0, 0, 0.06)')
+  }
 }));
 
 const MergedTabContent = memo(({ 
@@ -112,6 +127,9 @@ const MergedTabContent = memo(({
   // 添加布局更新状态，用于触发终端适配
   const [layoutUpdateKey, setLayoutUpdateKey] = useState(0);
   
+  // 分屏中当前活跃的标签页（用于右侧面板切换）
+  const [activeSplitTabId, setActiveSplitTabId] = useState(null);
+  
   // 分屏大小状态
   const [paneSizes, setPaneSizes] = useState({
     leftWidth: 50, // 左侧面板宽度百分比
@@ -121,6 +139,23 @@ const MergedTabContent = memo(({
   // 拖拽状态
   const [isDragging, setIsDragging] = useState(false);
   const [dragType, setDragType] = useState(null); // 'horizontal' | 'vertical'
+  
+  // 处理分屏头部点击，切换活跃标签页
+  const handleSplitHeaderClick = (tabId) => {
+    console.log('分屏头部点击:', tabId);
+    setActiveSplitTabId(tabId);
+    
+    // 触发自定义事件，通知App组件更新右侧面板的目标标签页
+    window.dispatchEvent(
+      new CustomEvent("activeSplitTabChanged", {
+        detail: { 
+          activeTabId: tabId,
+          timestamp: Date.now()
+        },
+      })
+    );
+    console.log('已触发 activeSplitTabChanged 事件:', tabId);
+  };
   
   // 处理拖拽开始
   const handleMouseDown = (e, type) => {
@@ -182,6 +217,65 @@ const MergedTabContent = memo(({
       };
     }
   }, [isDragging, dragType]);
+  
+  // 初始化活跃标签页状态
+  useEffect(() => {
+    if (mergedTabs && mergedTabs.length > 1) {
+      if (!activeSplitTabId) {
+        // 默认选择第一个标签页作为活跃标签页
+        const firstTabId = mergedTabs[0]?.id;
+        console.log('MergedTabContent初始化活跃分屏标签页:', firstTabId);
+        console.log('可用的分屏标签:', mergedTabs.map(tab => ({ id: tab.id, label: tab.label })));
+        setActiveSplitTabId(firstTabId);
+        
+        // 立即触发事件通知App组件
+        if (firstTabId) {
+          window.dispatchEvent(
+            new CustomEvent("activeSplitTabChanged", {
+              detail: { 
+                activeTabId: firstTabId,
+                timestamp: Date.now()
+              },
+            })
+          );
+          console.log('MergedTabContent已触发 activeSplitTabChanged 事件:', firstTabId);
+        }
+      } else {
+        // 检查当前活跃标签是否在新的分屏标签列表中
+        const isActiveTabInMerged = mergedTabs.find(tab => tab.id === activeSplitTabId);
+        if (!isActiveTabInMerged) {
+          const firstTabId = mergedTabs[0]?.id;
+          console.log('当前活跃标签不在分屏中，重置为第一个:', firstTabId);
+          setActiveSplitTabId(firstTabId);
+          
+          if (firstTabId) {
+            window.dispatchEvent(
+              new CustomEvent("activeSplitTabChanged", {
+                detail: { 
+                  activeTabId: firstTabId,
+                  timestamp: Date.now()
+                },
+              })
+            );
+          }
+        }
+      }
+    } else if (mergedTabs && mergedTabs.length === 1) {
+      // 单个标签页时，重置活跃状态
+      console.log('MergedTabContent重置活跃分屏标签页状态');
+      setActiveSplitTabId(null);
+      
+      // 通知App组件清除活跃分屏标签页
+      window.dispatchEvent(
+        new CustomEvent("activeSplitTabChanged", {
+          detail: { 
+            activeTabId: null,
+            timestamp: Date.now()
+          },
+        })
+      );
+    }
+  }, [mergedTabs]); // 移除activeSplitTabId依赖，避免无限循环
   
   // 监听分屏布局变化事件，进行布局调整而不是重新创建终端
   useEffect(() => {
@@ -331,7 +425,10 @@ const MergedTabContent = memo(({
                 ...(index === 2 && { gridColumn: '1 / -1' }) // 下方终端填满宽度
               }}
             >
-              <SplitHeader>
+              <SplitHeader 
+                isActive={activeSplitTabId === tab.id}
+                onClick={() => handleSplitHeaderClick(tab.id)}
+              >
                 <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: '0.75rem' }}>
                   {tab.label}
                 </Typography>
@@ -374,7 +471,10 @@ const MergedTabContent = memo(({
         // 其他情况保持原有渲染逻辑
         return (
           <ResizableSplitPane key={`${tab.id}-split`} elevation={1}> {/* 使用稳定的key */}
-            <SplitHeader>
+            <SplitHeader 
+              isActive={activeSplitTabId === tab.id}
+              onClick={() => handleSplitHeaderClick(tab.id)}
+            >
               <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: '0.75rem' }}>
                 {tab.label}
               </Typography>
