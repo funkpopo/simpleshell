@@ -1358,6 +1358,18 @@ function App() {
   // 添加发送快捷命令到终端的函数
   const handleSendCommand = (command) => {
     const panelTab = getCurrentPanelTab();
+    
+    // 检查是否在分屏模式下
+    if (currentTab > 0 && tabs[currentTab]) {
+      const currentMainTab = tabs[currentTab];
+      const mergedTabsForCurrentMain = mergedTabs[currentMainTab.id];
+      
+      // 如果当前标签页处于分屏模式（有多个合并标签），则屏蔽历史命令快捷发送功能
+      if (mergedTabsForCurrentMain && mergedTabsForCurrentMain.length > 1) {
+        return { success: false, error: "分屏模式下已禁用历史命令快捷发送功能" };
+      }
+    }
+    
     if (panelTab && panelTab.type === "ssh") {      
       dispatchCommandToGroup(panelTab.id, command);
       return { success: true };
