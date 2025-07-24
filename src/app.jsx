@@ -2059,7 +2059,6 @@ function App() {
                         : "action.hover",
                     },
                   }}
-                  disabled={isSSHButtonDisabled}
                 >
                   <MonitorHeartIcon />
                 </IconButton>
