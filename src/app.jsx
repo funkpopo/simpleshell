@@ -1730,6 +1730,11 @@ function App() {
                 {t("tabMenu.refresh")}
               </MenuItem>
               
+              <MenuItem onClick={handleCloseConnection}>
+                <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
+                {t("tabMenu.close")}
+              </MenuItem>
+              
               {/* 拆分会话选项 - 仅对合并的标签显示 */}
               {tabContextMenu.tabId && mergedTabs[tabContextMenu.tabId] && mergedTabs[tabContextMenu.tabId].length > 1 && (
                 <MenuItem onClick={() => {
@@ -1740,11 +1745,6 @@ function App() {
                   拆分会话
                 </MenuItem>
               )}
-              
-              <MenuItem onClick={handleCloseConnection}>
-                <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
-                {t("tabMenu.close")}
-              </MenuItem>
               {/* 分组相关菜单项 */}
               {(() => {
                 const tabId = tabContextMenu.tabId;
