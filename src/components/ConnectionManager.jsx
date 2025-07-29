@@ -709,7 +709,7 @@ const ConnectionManager = memo(
                 disablePadding
                 sx={{
                   pl: parentGroup ? 4 : 1,
-                  minHeight: "36px", // 改为最小高度而非固定高度
+                  minHeight: "40px", // 统一最小高度
                   "&:hover": {
                     backgroundColor:
                       theme.palette.mode === "dark"
@@ -760,11 +760,13 @@ const ConnectionManager = memo(
                     alignItems: "center",
                     cursor: "grab",
                     "&:active": { cursor: "grabbing" },
+                    minWidth: 32, // 统一拖拽图标容器宽度
+                    justifyContent: "center", // 确保图标居中对齐
                   }}
                 >
                   <DragIndicatorIcon
                     fontSize="small"
-                    sx={{ color: "text.secondary", mr: 1 }}
+                    sx={{ color: "text.secondary" }}
                   />
                 </Box>
                 <ListItemButton
@@ -772,13 +774,13 @@ const ConnectionManager = memo(
                   dense
                   sx={{
                     flexGrow: 1,
-                    py: 0.5, // 减小上下内边距
+                    py: 0.75, // 统一上下内边距
                     "&:hover": {
                       backgroundColor: "transparent", // 防止ListItemButton自身的hover效果
                     },
                   }}
                 >
-                  <ListItemIcon sx={{ minWidth: 36 }}>
+                  <ListItemIcon sx={{ minWidth: 40 }}> {/* 统一图标容器宽度 */}
                     {getProtocolIcon()}
                   </ListItemIcon>
                   <ListItemText
@@ -799,7 +801,11 @@ const ConnectionManager = memo(
                     }
                     sx={{ 
                       my: 0,
+                      '& .MuiListItemText-primary': {
+                        fontSize: '0.875rem', // 统一主文本字体大小
+                      },
                       '& .MuiListItemText-secondary': {
+                        fontSize: '0.75rem', // 统一副文本字体大小
                         textOverflow: 'ellipsis',
                         overflow: 'hidden',
                         whiteSpace: 'nowrap',
@@ -833,7 +839,7 @@ const ConnectionManager = memo(
                 ref={provided.innerRef}
                 {...provided.draggableProps}
                 sx={{
-                  minHeight: "36px", // 添加最小高度
+                  minHeight: "40px", // 统一最小高度
                   "&:hover": {
                     backgroundColor:
                       theme.palette.mode === "dark"
@@ -900,24 +906,26 @@ const ConnectionManager = memo(
                     alignItems: "center",
                     cursor: "grab",
                     "&:active": { cursor: "grabbing" },
+                    minWidth: 32, // 统一拖拽图标容器宽度
+                    justifyContent: "center", // 确保图标居中对齐
                   }}
                 >
                   <DragIndicatorIcon
                     fontSize="small"
-                    sx={{ color: "text.secondary", ml: 1, mr: 1 }}
+                    sx={{ color: "text.secondary" }}
                   />
                 </Box>
                 <ListItemButton
                   onClick={() => handleToggleGroup(group.id)}
                   sx={{
-                    py: 0.5,
+                    py: 0.75, // 统一上下内边距
                     flexGrow: 1,
                     "&:hover": {
                       backgroundColor: "transparent",
                     },
                   }}
                 >
-                  <ListItemIcon sx={{ minWidth: 36 }}>
+                  <ListItemIcon sx={{ minWidth: 40 }}> {/* 统一图标容器宽度 */}
                     {group.expanded ? (
                       <FolderOpenIcon fontSize="small" />
                     ) : (
@@ -930,8 +938,9 @@ const ConnectionManager = memo(
                       variant: "body2",
                       fontWeight: "medium",
                       margin: 0,
+                      fontSize: '0.875rem', // 统一主文本字体大小
                     }}
-                    sx={{ my: 0 }} // 减小外边距
+                    sx={{ my: 0 }}
                   />
                 </ListItemButton>
               </ListItem>
