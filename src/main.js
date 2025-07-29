@@ -1461,7 +1461,19 @@ function setupIPC(mainWindow) {
 
   // 保存连接配置
   ipcMain.handle("terminal:saveConnections", async (event, connections) => {
-    return configManager.saveConnections(connections);
+    const result = configManager.saveConnections(connections);
+    
+    // 保存成功后，通知所有渲染进程连接配置已更新
+    if (result) {
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        if (win && !win.isDestroyed() && win.webContents) {
+          win.webContents.send("connections-changed");
+        }
+      }
+    }
+    
+    return result;
   });
 
   // Load top connections
