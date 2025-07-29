@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm install:*)",
       "WebFetch(domain:mui.com)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

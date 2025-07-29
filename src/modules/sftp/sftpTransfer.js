@@ -1197,7 +1197,8 @@ async function handleUploadFolder(
         const speedSmoothingFactor = 0.3; // 速度平滑因子，较低的值使速度变化更平缓
 
         // 4. Upload files
-        for (const file of allFiles) {
+        for (let fileIndex = 0; fileIndex < allFiles.length; fileIndex++) {
+          const file = allFiles[fileIndex];
           // 增强的取消检查
           const currentTransfer = activeTransfers.get(transferKey);
           if (!currentTransfer || currentTransfer.cancelled) {
@@ -1235,9 +1236,9 @@ async function handleUploadFolder(
           );
           let fileTransferredBytes = 0;
 
-          const reportProgress = (isFinal = false) => {
+          const reportProgress = (isFinal = false, forceUpdate = false) => {
             const now = Date.now();
-            if (isFinal || now - lastProgressUpdateTime >= 100) {
+            if (isFinal || forceUpdate || now - lastProgressUpdateTime >= 100) {
               const totalTransferred =
                 overallUploadedBytes + fileTransferredBytes;
               const progress =
@@ -1283,8 +1284,7 @@ async function handleUploadFolder(
                   progress: Math.min(100, progress),
                   fileName: file.name,
                   currentFile: file.name,
-                  processedFiles:
-                    filesUploadedCount + (isFinal && !file.isDirectory ? 1 : 0),
+                  processedFiles: fileIndex + 1,
                   totalFiles: totalFilesToUpload,
                   transferredBytes: totalTransferred,
                   totalBytes: totalBytesToUpload,
@@ -1295,7 +1295,7 @@ async function handleUploadFolder(
               lastProgressUpdateTime = now;
             }
           };
-          reportProgress(); // Initial progress for the file
+          reportProgress(false, true); // Initial progress for the file, force update
 
           // 根据文件大小动态调整传输参数
           let chunkSize = 32768; // 默认32KB
@@ -1701,7 +1701,8 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         const speedSmoothingFactor = 0.3; // 速度平滑因子，较低的值使速度变化更平缓
 
         // 3. Download files
-        for (const file of allFiles) {
+        for (let fileIndex = 0; fileIndex < allFiles.length; fileIndex++) {
+          const file = allFiles[fileIndex];
           // 增强的取消检查
           const currentTransfer = activeTransfers.get(transferKey);
           if (!currentTransfer || currentTransfer.cancelled) {
@@ -1736,9 +1737,9 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           const tempLocalFilePath = localFilePath + ".part";
           let fileDownloadedBytes = 0;
 
-          const reportProgress = (isFinal = false) => {
+          const reportProgress = (isFinal = false, forceUpdate = false) => {
             const now = Date.now();
-            if (isFinal || now - lastProgressUpdateTime >= 100) {
+            if (isFinal || forceUpdate || now - lastProgressUpdateTime >= 100) {
               const totalTransferred =
                 overallDownloadedBytes + fileDownloadedBytes;
               const progress =
@@ -1781,8 +1782,8 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
                 progress: Math.min(100, progress),
                 currentFileName: file.name,
                 currentFile: file.name, // 确保与前端使用的字段名一致
-                filesProcessed: filesDownloadedCount + (isFinal ? 1 : 0),
-                processedFiles: filesDownloadedCount + (isFinal ? 1 : 0), // 确保与前端使用的字段名一致
+                filesProcessed: fileIndex + 1,
+                processedFiles: fileIndex + 1, // 确保与前端使用的字段名一致
                 totalFiles: totalFilesToDownload,
                 transferredBytes: totalTransferred,
                 totalBytes: totalBytesToDownload,
@@ -1792,7 +1793,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
               lastProgressUpdateTime = now;
             }
           };
-          reportProgress(); // Initial progress for the file
+          reportProgress(false, true); // Initial progress for the file, force update
 
           // 使用原生 SFTP 会话创建读取流和写入流
           const writeStream = fs.createWriteStream(tempLocalFilePath);

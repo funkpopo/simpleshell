@@ -174,6 +174,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           data.totalBytes || 0,
           data.transferSpeed || 0,
           data.remainingTime || 0,
+          data.processedFiles || 0,
+          data.totalFiles || 0,
           data.transferKey || "", // 添加transferKey参数
         );
       }

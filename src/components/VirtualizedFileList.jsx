@@ -72,14 +72,6 @@ const FileItem = memo(({ index, style, data }) => {
       <ListItem
         disablePadding
         onContextMenu={handleContextMenu}
-        sx={{
-          backgroundColor: isSelected
-            ? theme.palette.action.selected
-            : "transparent",
-          "&:hover": {
-            backgroundColor: theme.palette.action.hover,
-          },
-        }}
       >
         <ListItemButton
           onDoubleClick={handleFileActivate}
@@ -87,6 +79,14 @@ const FileItem = memo(({ index, style, data }) => {
           sx={{
             minHeight: 48,
             px: 2,
+            backgroundColor: isSelected
+              ? theme.palette.action.selected
+              : "transparent",
+            "&:hover": {
+              backgroundColor: isSelected 
+                ? theme.palette.action.selected
+                : theme.palette.action.hover,
+            },
           }}
         >
           <ListItemIcon sx={{ minWidth: 36 }}>
