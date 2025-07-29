@@ -201,16 +201,19 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
               {totalFiles > 1 && (
                 <span>
                   {(() => {
-                    // 对于上传类型，使用 currentFileIndex
-                    if (type.includes("upload")) {
-                      const current = Math.max(0, Math.min(currentFileIndex || 0, totalFiles));
+                    // 对于上传多文件类型，使用 currentFileIndex
+                    if (type === "upload-multifile") {
+                      // currentFileIndex 是从 1 开始的，如果为 0 或未定义则显示 0
+                      const current = currentFileIndex > 0 ? Math.min(currentFileIndex, totalFiles) : 0;
                       const total = Math.max(1, totalFiles);
+                      console.log(`Upload multifile - currentFileIndex: ${currentFileIndex}, totalFiles: ${totalFiles}`);
                       return `${current}/${total}`;
                     } 
-                    // 对于下载类型，使用 processedFiles
+                    // 对于其他类型（包括 upload-folder, download, download-folder），使用 processedFiles
                     else {
                       const processed = Math.max(0, Math.min(processedFiles || 0, totalFiles));
                       const total = Math.max(1, totalFiles);
+                      console.log(`${type} - processedFiles: ${processedFiles}, totalFiles: ${totalFiles}`);
                       return `${processed}/${total}`;
                     }
                   })()} 文件

@@ -688,7 +688,7 @@ const FileManager = memo(
             transferSpeed: 0,
             remainingTime: 0,
             currentFileIndex: 0,
-            totalFiles: 0,
+            totalFiles: 1,
           });
 
           // 使用progressCallback处理进度更新
@@ -1453,6 +1453,8 @@ const FileManager = memo(
             totalBytes: savedSelectedFile.size || 0,
             transferSpeed: 0,
             remainingTime: 0,
+            processedFiles: 0,
+            totalFiles: 1,
           });
 
           // 使用progressCallback处理进度更新
@@ -1466,6 +1468,8 @@ const FileManager = memo(
               totalBytes,
               transferSpeed,
               remainingTime,
+              processedFiles,
+              totalFiles,
               transferKey,
             ) => {
               updateTransferProgress(transferId, {
@@ -1475,6 +1479,8 @@ const FileManager = memo(
                 totalBytes,
                 transferSpeed,
                 remainingTime,
+                processedFiles: processedFiles || 0,
+                totalFiles: totalFiles || 1,
                 transferKey, // 添加transferKey到进度状态
               });
             },
