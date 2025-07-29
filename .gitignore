@@ -29,9 +29,6 @@ temp/*
 # vscode
 .vscode
 
-# 忽略所有.vscode文件夹
-.vscode/*
-
 # 忽略.webpack
 .webpack
 .webpack/*

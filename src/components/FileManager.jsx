@@ -680,7 +680,7 @@ const FileManager = memo(
         if (window.terminalAPI && window.terminalAPI.uploadFile) {
           // 创建新的传输任务
           const transferId = addTransferProgress({
-            type: "upload",
+            type: "upload-multifile", // Always use upload-multifile for file uploads
             progress: 0,
             fileName: "准备上传...",
             transferredBytes: 0,
@@ -712,6 +712,8 @@ const FileManager = memo(
               const validTotalBytes = Math.max(0, totalBytes || 0);
               const validTransferSpeed = Math.max(0, transferSpeed || 0);
               const validRemainingTime = Math.max(0, remainingTime || 0);
+              const validCurrentFileIndex = Math.max(0, currentFileIndex || 0);
+              const validTotalFiles = Math.max(0, totalFiles || 0);
 
               updateTransferProgress(transferId, {
                 progress: validProgress,
@@ -720,8 +722,8 @@ const FileManager = memo(
                 totalBytes: validTotalBytes,
                 transferSpeed: validTransferSpeed,
                 remainingTime: validRemainingTime,
-                currentFileIndex: currentFileIndex || 0,
-                totalFiles: totalFiles || 0,
+                currentFileIndex: validCurrentFileIndex,
+                totalFiles: validTotalFiles,
                 transferKey: transferKey || "",
               });
             },
