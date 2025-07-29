@@ -33,7 +33,7 @@ import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import FilePreview from "./FilePreview.jsx";
 import VirtualizedFileList from "./VirtualizedFileList.jsx";
-import TransferProgressManager from "./TransferProgressManager.jsx";
+import TransferProgressFloat from "./TransferProgressFloat.jsx";
 import { formatLastRefreshTime } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 
@@ -2589,11 +2589,11 @@ const FileManager = memo(
           )}
         </Snackbar>
 
-        <TransferProgressManager
+        <TransferProgressFloat
           transferList={transferProgressList}
           onCancelTransfer={handleCancelTransfer}
-          onClearCompleted={clearCompletedTransfers}
-          onClearAll={clearAllTransfers}
+          onClose={() => {clearCompletedTransfers();
+          }}
         />
 
         <Menu
