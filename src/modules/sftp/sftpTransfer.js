@@ -165,6 +165,11 @@ async function handleDownloadFile(event, tabId, remotePath) {
         sftp,
         type: "download",
         path: path.dirname(remotePath),
+        cancelled: false,
+        activeStreams: new Set(),
+        tabId,
+        remotePath,
+        localPath: filePath
       });
 
       try {
@@ -217,6 +222,13 @@ async function handleDownloadFile(event, tabId, remotePath) {
         const readStream = sftp.createReadStream(remotePath, {
           highWaterMark: chunkSize,
         });
+        
+        // 将流添加到 activeStreams 集合中
+        const transfer = activeTransfers.get(transferKey);
+        if (transfer && transfer.activeStreams) {
+          transfer.activeStreams.add(readStream);
+          transfer.activeStreams.add(writeStream);
+        }
 
         await new Promise((resolve, reject) => {
           writeStream.on("error", (error) => {
@@ -231,6 +243,29 @@ async function handleDownloadFile(event, tabId, remotePath) {
           });
 
           readStream.on("data", (chunk) => {
+            // 检查传输是否已被用户取消
+            const currentTransfer = activeTransfers.get(transferKey);
+            if (currentTransfer && currentTransfer.cancelled) {
+              logToFile(
+                `sftpTransfer: Download cancelled by user during data transfer`,
+                "INFO"
+              );
+              readStream.destroy();
+              writeStream.destroy();
+              // 立即从 activeTransfers 中删除
+              activeTransfers.delete(transferKey);
+              // 删除临时文件
+              try {
+                if (fs.existsSync(tempFilePath)) {
+                  fs.unlinkSync(tempFilePath);
+                }
+              } catch (e) {
+                logToFile(`sftpTransfer: Failed to delete temp file: ${e.message}`, "WARN");
+              }
+              reject(new Error("Transfer cancelled by user"));
+              return;
+            }
+
             transferredBytes += chunk.length;
             const progress = Math.floor((transferredBytes / totalBytes) * 100);
             const now = Date.now();
@@ -285,11 +320,24 @@ async function handleDownloadFile(event, tabId, remotePath) {
               `sftpTransfer: 下载完成 ${remotePath}, 传输 ${transferredBytes} 字节`,
               "DEBUG",
             );
+            // 从 activeStreams 中移除
+            const transfer = activeTransfers.get(transferKey);
+            if (transfer && transfer.activeStreams) {
+              transfer.activeStreams.delete(readStream);
+            }
             resolve();
           });
 
           // 通过管道连接流
           readStream.pipe(writeStream);
+          
+          writeStream.on("finish", () => {
+            // 从 activeStreams 中移除
+            const transfer = activeTransfers.get(transferKey);
+            if (transfer && transfer.activeStreams) {
+              transfer.activeStreams.delete(writeStream);
+            }
+          });
         });
 
         fs.renameSync(tempFilePath, filePath);
@@ -437,6 +485,10 @@ async function handleUploadFile(
         sftp,
         type: "upload-multifile",
         path: normalizedTargetFolder || ".",
+        cancelled: false,
+        activeStreams: new Set(),
+        tabId,
+        totalFiles: totalFilesToUpload
       });
 
       try {
@@ -478,6 +530,38 @@ async function handleUploadFile(
         }
 
         for (let i = 0; i < totalFilesToUpload; i++) {
+          // 检查传输是否已被用户取消
+          const currentTransfer = activeTransfers.get(transferKey);
+          if (currentTransfer && currentTransfer.cancelled) {
+            logToFile(
+              `sftpTransfer: Upload cancelled by user during file ${i + 1}/${totalFilesToUpload}`,
+              "INFO"
+            );
+            // 发送取消状态到前端
+            if (progressChannel) {
+              sendToRenderer(progressChannel, {
+                tabId,
+                transferKey,
+                cancelled: true,
+                userCancelled: true,
+                progress: 0,
+                operationComplete: true,
+                successfulFiles: filesUploadedCount,
+                failedFiles: totalFilesToUpload - filesUploadedCount,
+              });
+            }
+            return {
+              success: true,
+              cancelled: true,
+              userCancelled: true,
+              message: "传输已被用户取消",
+              totalFiles: totalFilesToUpload,
+              successfulFiles: filesUploadedCount,
+              failedFiles: totalFilesToUpload - filesUploadedCount,
+              failedFileNames,
+            };
+          }
+
           const localFilePath = filePaths[i];
           const fileName = path.basename(localFilePath);
           const remoteFilePath = path.posix
@@ -552,6 +636,13 @@ async function handleUploadFile(
               highWaterMark: chunkSize,
             });
             const writeStream = sftp.createWriteStream(remoteFilePath);
+            
+            // 将流添加到 activeStreams 集合中
+            const transfer = activeTransfers.get(transferKey);
+            if (transfer && transfer.activeStreams) {
+              transfer.activeStreams.add(readStream);
+              transfer.activeStreams.add(writeStream);
+            }
 
             await new Promise((resolve, reject) => {
               readStream.on("error", (error) => {
@@ -580,6 +671,25 @@ async function handleUploadFile(
               });
 
               readStream.on("data", (chunk) => {
+                // 检查传输是否已被用户取消
+                const currentTransfer = activeTransfers.get(transferKey);
+                if (currentTransfer && currentTransfer.cancelled) {
+                  logToFile(
+                    `sftpTransfer: Upload cancelled by user during file ${i + 1}/${totalFilesToUpload} data transfer`,
+                    "INFO"
+                  );
+                  readStream.destroy();
+                  writeStream.destroy();
+                  // 立即从 activeStreams 中删除这些流
+                  const transfer = activeTransfers.get(transferKey);
+                  if (transfer && transfer.activeStreams) {
+                    transfer.activeStreams.delete(readStream);
+                    transfer.activeStreams.delete(writeStream);
+                  }
+                  reject(new Error("Transfer cancelled by user"));
+                  return;
+                }
+
                 fileTransferredBytes += chunk.length;
                 const currentOverallTransferred =
                   overallUploadedBytes + fileTransferredBytes;
@@ -648,6 +758,22 @@ async function handleUploadFile(
 
               // 通过管道连接流
               readStream.pipe(writeStream);
+              
+              readStream.on('end', () => {
+                // 从 activeStreams 中移除
+                const transfer = activeTransfers.get(transferKey);
+                if (transfer && transfer.activeStreams) {
+                  transfer.activeStreams.delete(readStream);
+                }
+              });
+              
+              writeStream.on('finish', () => {
+                // 从 activeStreams 中移除
+                const transfer = activeTransfers.get(transferKey);
+                if (transfer && transfer.activeStreams) {
+                  transfer.activeStreams.delete(writeStream);
+                }
+              });
             });
             overallUploadedBytes += currentFileSize;
             filesUploadedCount++;
@@ -904,6 +1030,9 @@ async function handleUploadFolder(
         localFolderPath,
         remoteBaseUploadPath,
         path: normalizedTargetFolder || ".",
+        cancelled: false,
+        activeStreams: new Set(),
+        tabId
       });
 
       let overallUploadedBytes = 0;
@@ -987,10 +1116,34 @@ async function handleUploadFolder(
         // 3. Create sub-directory structure
         const createdRemoteDirs = new Set([remoteBaseUploadPath]);
         for (const file of allFiles) {
-          if (!activeTransfers.has(transferKey))
-            throw new Error(
-              "sftpTransfer: Upload cancelled during directory creation.",
+          // 检查取消状态
+          const currentTransfer = activeTransfers.get(transferKey);
+          if (!currentTransfer || currentTransfer.cancelled) {
+            logToFile(
+              `sftpTransfer: Folder upload cancelled by user during directory creation`,
+              "INFO"
             );
+            // 发送取消状态到前端
+            if (progressChannel) {
+              sendToRenderer(progressChannel, {
+                tabId,
+                transferKey,
+                cancelled: true,
+                userCancelled: true,
+                progress: 0,
+                operationComplete: true,
+              });
+            }
+            return {
+              success: true,
+              cancelled: true,
+              userCancelled: true,
+              message: "文件夹上传已被用户取消",
+              totalFiles: totalFilesToUpload,
+              successfulFiles: 0,
+              failedFiles: totalFilesToUpload,
+            };
+          }
           const remoteFileDir = path.posix.dirname(
             path.posix.join(remoteBaseUploadPath, file.relativePath),
           );
@@ -1045,10 +1198,35 @@ async function handleUploadFolder(
 
         // 4. Upload files
         for (const file of allFiles) {
-          if (!activeTransfers.has(transferKey)) {
-            throw new Error(
-              "sftpTransfer: Upload cancelled during file transfer.",
+          // 增强的取消检查
+          const currentTransfer = activeTransfers.get(transferKey);
+          if (!currentTransfer || currentTransfer.cancelled) {
+            logToFile(
+              `sftpTransfer: Folder upload cancelled by user before file ${file.relativePath}`,
+              "INFO"
             );
+            // 发送取消状态到前端
+            if (progressChannel) {
+              sendToRenderer(progressChannel, {
+                tabId,
+                transferKey,
+                cancelled: true,
+                userCancelled: true,
+                progress: 0,
+                operationComplete: true,
+                successfulFiles: filesUploadedCount,
+                failedFiles: totalFilesToUpload - filesUploadedCount,
+              });
+            }
+            return {
+              success: true,
+              cancelled: true,
+              userCancelled: true,
+              message: "文件夹上传已被用户取消",
+              totalFiles: totalFilesToUpload,
+              successfulFiles: filesUploadedCount,
+              failedFiles: totalFilesToUpload - filesUploadedCount,
+            };
           }
 
           const remoteFilePath = path.posix.join(
@@ -1160,6 +1338,19 @@ async function handleUploadFolder(
             });
 
             readStream.on("data", (chunk) => {
+              // 检查传输是否已被用户取消
+              const currentTransfer = activeTransfers.get(transferKey);
+              if (currentTransfer && currentTransfer.cancelled) {
+                logToFile(
+                  `sftpTransfer: Folder upload cancelled by user during file data transfer`,
+                  "INFO"
+                );
+                readStream.destroy();
+                writeStream.destroy();
+                reject(new Error("Transfer cancelled by user"));
+                return;
+              }
+
               fileTransferredBytes += chunk.length;
               reportProgress();
             });
@@ -1353,6 +1544,9 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         remoteFolderPath,
         localBaseDownloadPath,
         path: path.dirname(remoteFolderPath) || ".",
+        cancelled: false,
+        activeStreams: new Set(),
+        tabId
       });
 
       let overallDownloadedBytes = 0;
@@ -1459,10 +1653,32 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
 
         // 2. Create local sub-directory structure
         for (const file of allFiles) {
-          if (!activeTransfers.has(transferKey))
-            throw new Error(
-              "sftpTransfer: Download cancelled during directory creation.",
+          // 检查取消状态
+          const currentTransfer = activeTransfers.get(transferKey);
+          if (!currentTransfer || currentTransfer.cancelled) {
+            logToFile(
+              `sftpTransfer: Folder download cancelled by user during directory creation`,
+              "INFO"
             );
+            // 发送取消状态到前端
+            sendToRenderer("download-folder-progress", {
+              tabId,
+              transferKey,
+              cancelled: true,
+              userCancelled: true,
+              progress: 0,
+              filesProcessed: 0,
+              totalFiles: totalFilesToDownload,
+            });
+            return {
+              success: true,
+              cancelled: true,
+              userCancelled: true,
+              message: "文件夹下载已被用户取消",
+              filesDownloaded: 0,
+              totalFiles: totalFilesToDownload,
+            };
+          }
           const localFileDir = path.dirname(
             path.join(localBaseDownloadPath, file.relativePath),
           );
@@ -1486,10 +1702,31 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
 
         // 3. Download files
         for (const file of allFiles) {
-          if (!activeTransfers.has(transferKey)) {
-            throw new Error(
-              "sftpTransfer: Download cancelled during file transfer.",
+          // 增强的取消检查
+          const currentTransfer = activeTransfers.get(transferKey);
+          if (!currentTransfer || currentTransfer.cancelled) {
+            logToFile(
+              `sftpTransfer: Folder download cancelled by user before file ${file.relativePath}`,
+              "INFO"
             );
+            // 发送取消状态到前端
+            sendToRenderer("download-folder-progress", {
+              tabId,
+              transferKey,
+              cancelled: true,
+              userCancelled: true,
+              progress: 0,
+              filesProcessed: filesDownloadedCount,
+              totalFiles: totalFilesToDownload,
+            });
+            return {
+              success: true,
+              cancelled: true,
+              userCancelled: true,
+              message: "文件夹下载已被用户取消",
+              filesDownloaded: filesDownloadedCount,
+              totalFiles: totalFilesToDownload,
+            };
           }
 
           const localFilePath = path.join(
@@ -1576,6 +1813,19 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
             });
 
             readStream.on("data", (chunk) => {
+              // 检查传输是否已被用户取消
+              const currentTransfer = activeTransfers.get(transferKey);
+              if (currentTransfer && currentTransfer.cancelled) {
+                logToFile(
+                  `sftpTransfer: Folder download cancelled by user during file data transfer`,
+                  "INFO"
+                );
+                readStream.destroy();
+                writeStream.destroy();
+                reject(new Error("Transfer cancelled by user"));
+                return;
+              }
+
               fileDownloadedBytes += chunk.length;
               reportProgress();
             });
@@ -1730,6 +1980,11 @@ async function handleCancelTransfer(event, tabId, transferKey) {
     if (transfer && transfer.sftp) {
       // 添加取消标志
       transfer.cancelled = true;
+      
+      logToFile(
+        `sftpTransfer: Marking transfer ${transferKey} as cancelled and attempting to stop all operations`,
+        "INFO",
+      );
 
       // 使用更强力的方式中断传输
       logToFile(
@@ -1737,7 +1992,29 @@ async function handleCancelTransfer(event, tabId, transferKey) {
         "INFO",
       );
 
-      // 1. 尝试使用abort方法（如果可用）
+      // 1. 尝试中断活跃的流操作
+      let streamsStopped = false;
+      if (transfer.activeStreams) {
+        try {
+          transfer.activeStreams.forEach(stream => {
+            if (stream && typeof stream.destroy === 'function') {
+              stream.destroy(new Error('Transfer cancelled by user'));
+            }
+          });
+          streamsStopped = true;
+          logToFile(
+            `sftpTransfer: Destroyed active streams for transfer ${transferKey}`,
+            "INFO",
+          );
+        } catch (streamError) {
+          logToFile(
+            `sftpTransfer: Error destroying active streams: ${streamError.message}`,
+            "WARN",
+          );
+        }
+      }
+
+      // 2. 尝试使用abort方法（如果可用）
       let abortSuccessful = false;
       if (
         transfer.sftp.currentTransfer &&
@@ -1758,7 +2035,7 @@ async function handleCancelTransfer(event, tabId, transferKey) {
         }
       }
 
-      // 2. 中断SFTP流（如果有）
+      // 3. 中断SFTP流（如果有）
       if (
         !abortSuccessful &&
         transfer.sftp._sftpStream &&
@@ -1780,8 +2057,8 @@ async function handleCancelTransfer(event, tabId, transferKey) {
         }
       }
 
-      // 3. 如果以上方法都失败，强制关闭并重新创建SFTP连接
-      if (!abortSuccessful) {
+      // 4. 如果以上方法都失败，强制关闭并重新创建SFTP连接
+      if (!abortSuccessful && !streamsStopped) {
         logToFile(
           `sftpTransfer: Trying to force close the SFTP connection for ${transferKey}`,
           "INFO",
