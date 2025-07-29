@@ -88,6 +88,19 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   saveConnections: (connections) =>
     ipcRenderer.invoke("terminal:saveConnections", connections),
   loadTopConnections: () => ipcRenderer.invoke("terminal:loadTopConnections"),
+  
+  // 连接配置变化事件监听
+  onConnectionsChanged: (callback) => {
+    const wrappedCallback = () => callback();
+    ipcRenderer.on("connections-changed", wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener("connections-changed", wrappedCallback);
+    };
+  },
+  offConnectionsChanged: (callback) => {
+    const wrappedCallback = () => callback();
+    ipcRenderer.removeListener("connections-changed", wrappedCallback);
+  },
 
   // 选择密钥文件
   selectKeyFile: () => ipcRenderer.invoke("terminal:selectKeyFile"),

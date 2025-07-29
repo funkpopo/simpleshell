@@ -111,6 +111,56 @@ const ConnectionManager = memo(
       }
     }, [open, isLoading, onConnectionsUpdate]);
 
+    // 添加监听配置变化的effect，确保连接列表实时更新
+    useEffect(() => {
+      if (!open) return;
+
+      let isMounted = true; // 添加标志以避免组件卸载后的状态更新
+
+      // 定义重新加载连接的函数
+      const reloadConnections = () => {
+        if (!isMounted || !window.terminalAPI || !window.terminalAPI.loadConnections) {
+          return;
+        }
+
+        window.terminalAPI
+          .loadConnections()
+          .then((data) => {
+            if (isMounted && data && Array.isArray(data)) {
+              // 检查数据是否真的发生了变化，避免不必要的重渲染
+              if (JSON.stringify(data) !== JSON.stringify(connections)) {
+                setConnections(data);
+                if (onConnectionsUpdate) {
+                  onConnectionsUpdate(data);
+                }
+              }
+            }
+          })
+          .catch((error) => {
+            if (isMounted) {
+              setSnackbar({
+                open: true,
+                message: "重新加载连接配置失败",
+                severity: "error",
+              });
+            }
+          });
+      };
+
+      // 监听连接配置变化事件
+      if (window.terminalAPI && window.terminalAPI.onConnectionsChanged) {
+        window.terminalAPI.onConnectionsChanged(reloadConnections);
+      }
+
+      // 组件卸载时清理监听器
+      return () => {
+        isMounted = false; // 设置标志为false
+        if (window.terminalAPI && window.terminalAPI.offConnectionsChanged) {
+          window.terminalAPI.offConnectionsChanged(reloadConnections);
+        }
+      };
+    }, [open, onConnectionsUpdate, connections]);
+
     // 当接收到新的initialConnections时更新 - 优化比较逻辑避免循环
     useEffect(() => {
       if (
@@ -125,14 +175,22 @@ const ConnectionManager = memo(
 
     // 当连接数据变化时保存到文件 - 添加条件防止不必要的调用
     const connectionsRef = useRef(connections);
+    const isUpdatingRef = useRef(false); // 添加一个标志来避免重复更新
+    
     useEffect(() => {
       if (
         !isLoading &&
         onConnectionsUpdate &&
-        connectionsRef.current !== connections
+        connectionsRef.current !== connections &&
+        !isUpdatingRef.current // 避免重复更新
       ) {
         connectionsRef.current = connections;
+        isUpdatingRef.current = true; // 设置更新标志
         onConnectionsUpdate(connections);
+        // 在下一个tick重置标志
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 0);
       }
     }, [connections, isLoading, onConnectionsUpdate]);
 
@@ -279,25 +337,36 @@ const ConnectionManager = memo(
 
     // 删除项目
     const handleDelete = useCallback((itemId, parentGroup = null) => {
+      let newConnections;
       if (parentGroup) {
         // 删除组内的连接
-        setConnections((prevConnections) =>
-          prevConnections.map((group) =>
-            group.id === parentGroup.id
-              ? {
-                  ...group,
-                  items: group.items.filter((item) => item.id !== itemId),
-                }
-              : group,
-          ),
+        newConnections = connections.map((group) =>
+          group.id === parentGroup.id
+            ? {
+                ...group,
+                items: group.items.filter((item) => item.id !== itemId),
+              }
+            : group
         );
       } else {
         // 删除顶级项目
-        setConnections((prevConnections) =>
-          prevConnections.filter((item) => item.id !== itemId),
-        );
+        newConnections = connections.filter((item) => item.id !== itemId);
       }
-    }, []);
+
+      // 更新本地状态
+      setConnections(newConnections);
+      
+      // 保存到配置文件
+      if (window.terminalAPI && window.terminalAPI.saveConnections) {
+        window.terminalAPI.saveConnections(newConnections).catch((error) => {
+          setSnackbar({
+            open: true,
+            message: "保存连接配置失败",
+            severity: "error",
+          });
+        });
+      }
+    }, [connections]);
 
     const handleDialogClose = useCallback(() => {
       setDialogOpen(false);
@@ -321,7 +390,7 @@ const ConnectionManager = memo(
 
     const handleSave = useCallback(() => {
       // 验证必填字段
-      if (!formData.name.trim()) {
+      if (!formData.name || !formData.name.trim()) {
         setSnackbar({
           open: true,
           message: "名称不能为空",
@@ -330,7 +399,8 @@ const ConnectionManager = memo(
         return;
       }
 
-      if (!formData.host.trim()) {
+      // 只有在创建连接时才检查主机地址
+      if (dialogType === "connection" && (!formData.host || !formData.host.trim())) {
         setSnackbar({
           open: true,
           message: "主机地址不能为空",
@@ -382,22 +452,19 @@ const ConnectionManager = memo(
         protocol: formData.protocol,
       };
 
+      // 保存到本地状态
+      let newConnections;
       if (dialogMode === "add") {
         if (formData.parentGroup) {
           // 添加到组内
-          setConnections((prevConnections) =>
-            prevConnections.map((item) =>
-              item.id === formData.parentGroup
-                ? { ...item, items: [...(item.items || []), connectionData] }
-                : item,
-            ),
+          newConnections = connections.map((item) =>
+            item.id === formData.parentGroup
+              ? { ...item, items: [...(item.items || []), connectionData] }
+              : item
           );
         } else {
           // 添加到顶级
-          setConnections((prevConnections) => [
-            ...prevConnections,
-            connectionData,
-          ]);
+          newConnections = [...connections, connectionData];
         }
       } else {
         // 编辑连接
@@ -408,60 +475,68 @@ const ConnectionManager = memo(
           // 分组未改变，原地更新
           if (oldParentId) {
             // 在组内编辑
-            setConnections((prevConnections) =>
-              prevConnections.map((group) =>
-                group.id === oldParentId
-                  ? {
-                      ...group,
-                      items: group.items.map((item) =>
-                        item.id === selectedItem.id ? connectionData : item
-                      ),
-                    }
-                  : group
-              )
+            newConnections = connections.map((group) =>
+              group.id === oldParentId
+                ? {
+                    ...group,
+                    items: group.items.map((item) =>
+                      item.id === selectedItem.id ? connectionData : item
+                    ),
+                  }
+                : group
             );
           } else {
             // 在顶级编辑
-            setConnections((prevConnections) =>
-              prevConnections.map((item) =>
-                item.id === selectedItem.id ? connectionData : item
-              )
+            newConnections = connections.map((item) =>
+              item.id === selectedItem.id ? connectionData : item
             );
           }
         } else {
           // 分组已改变，先删除后添加
-          setConnections((prevConnections) => {
-            let tempConnections = [...prevConnections];
+          let tempConnections = [...connections];
 
-            // 1. 从旧位置移除
-            if (oldParentId) {
-              const oldGroupIndex = tempConnections.findIndex(g => g.id === oldParentId);
-              if (oldGroupIndex > -1) {
-                tempConnections[oldGroupIndex] = {
-                  ...tempConnections[oldGroupIndex],
-                  items: tempConnections[oldGroupIndex].items.filter(i => i.id !== selectedItem.id),
-                };
-              }
-            } else {
-              tempConnections = tempConnections.filter(i => i.id !== selectedItem.id);
+          // 1. 从旧位置移除
+          if (oldParentId) {
+            const oldGroupIndex = tempConnections.findIndex(g => g.id === oldParentId);
+            if (oldGroupIndex > -1) {
+              tempConnections[oldGroupIndex] = {
+                ...tempConnections[oldGroupIndex],
+                items: tempConnections[oldGroupIndex].items.filter(i => i.id !== selectedItem.id),
+              };
             }
+          } else {
+            tempConnections = tempConnections.filter(i => i.id !== selectedItem.id);
+          }
 
-            // 2. 添加到新位置
-            if (newParentId) {
-              const newGroupIndex = tempConnections.findIndex(g => g.id === newParentId);
-              if (newGroupIndex > -1) {
-                tempConnections[newGroupIndex] = {
-                  ...tempConnections[newGroupIndex],
-                  items: [...(tempConnections[newGroupIndex].items || []), connectionData],
-                };
-              }
-            } else {
-              tempConnections.push(connectionData);
+          // 2. 添加到新位置
+          if (newParentId) {
+            const newGroupIndex = tempConnections.findIndex(g => g.id === newParentId);
+            if (newGroupIndex > -1) {
+              tempConnections[newGroupIndex] = {
+                ...tempConnections[newGroupIndex],
+                items: [...(tempConnections[newGroupIndex].items || []), connectionData],
+              };
             }
-            
-            return tempConnections;
-          });
+          } else {
+            tempConnections.push(connectionData);
+          }
+          
+          newConnections = tempConnections;
         }
+      }
+
+      // 更新本地状态
+      setConnections(newConnections);
+      
+      // 保存到配置文件
+      if (window.terminalAPI && window.terminalAPI.saveConnections) {
+        window.terminalAPI.saveConnections(newConnections).catch((error) => {
+          setSnackbar({
+            open: true,
+            message: "保存连接配置失败",
+            severity: "error",
+          });
+        });
       }
 
       setDialogOpen(false);
@@ -470,7 +545,7 @@ const ConnectionManager = memo(
         message: `${dialogMode === "add" ? "创建" : "更新"}成功`,
         severity: "success",
       });
-    }, [dialogType, dialogMode, formData, selectedItem]);
+    }, [dialogType, dialogMode, formData, selectedItem, connections]);
 
     const handleOpenConnection = useCallback(
       (connection) => {
@@ -931,7 +1006,7 @@ const ConnectionManager = memo(
             ? renderConnectionItemRef.current(item, null, index)
             : renderConnectionItem(item, null, index),
       );
-    }, [filteredItems, renderGroupItem, renderConnectionItem]);
+    }, [filteredItems, renderGroupItem]); // 移除 renderConnectionItem 依赖，因为它会频繁变化
 
     // 使用 useMemo 优化分组选择器选项
     const groupOptions = useMemo(() => {
