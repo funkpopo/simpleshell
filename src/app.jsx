@@ -495,7 +495,6 @@ function App() {
       setTimeout(() => {
         preloadComponents.resourceMonitor().catch(() => {});
         preloadComponents.fileManager().catch(() => {});
-        preloadComponents.aiAssistant().catch(() => {});
         preloadComponents.ipAddressQuery().catch(() => {});
       }, 2000);
     }, 3000);
