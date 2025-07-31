@@ -264,6 +264,20 @@
       "selectApi": "Select API",
       "apiSwitched": "Switched to: {{name}}"
     },
+    "ai": {
+      "title": "AI Assistant",
+      "inputPlaceholder": "Type a message...",
+      "startConversation": "Start a conversation, ask your question",
+      "thinking": "Thinking...",
+      "copyMessage": "Copy message",
+      "clearChat": "Clear chat",
+      "settings": "Settings",
+      "manageApis": "Manage API configurations",
+      "noApiConfigured": "Please configure an API first",
+      "requestFailed": "Request failed",
+      "unknownError": "Unknown error",
+      "showThinking": "Show thinking content"
+    },
     "randomPassword": {
       "title": "Random Password Generator",
       "length": "Password Length",

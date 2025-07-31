@@ -1,1100 +1,658 @@
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-  memo,
-  useMemo,
-} from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Box,
-  Paper,
-  Typography,
-  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
   IconButton,
-  List,
-  ListItem,
+  TextField,
+  Box,
+  Typography,
+  Paper,
+  Fab,
   Tooltip,
   CircularProgress,
   Alert,
-  Select,
+  Menu,
   MenuItem,
-  FormControl,
-  useTheme,
+  Chip,
+  Avatar,
+  Divider,
+  Collapse,
+  FormControlLabel,
+  Switch,
 } from "@mui/material";
-import SendIcon from "@mui/icons-material/Send";
-import StopIcon from "@mui/icons-material/Stop";
-import SettingsIcon from "@mui/icons-material/Settings";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CloseIcon from "@mui/icons-material/Close";
-import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
+import SendIcon from "@mui/icons-material/Send";
+import SettingsIcon from "@mui/icons-material/Settings";
+import StopIcon from "@mui/icons-material/Stop";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import DeleteIcon from "@mui/icons-material/Delete";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import AIIcon from "./AIIcon";
+import AISettings from "./AISettings";
 import { useTranslation } from "react-i18next";
-import { Resizable } from "react-resizable";
+import { styled } from "@mui/material/styles";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
-import AISettings from "./AISettings.jsx";
-import ThinkContent from "./ThinkContent.jsx";
-import {
-  StreamThinkProcessor,
-  parseThinkContent,
-} from "../utils/thinkContentProcessor.js";
-import "react-resizable/css/styles.css";
-import "highlight.js/styles/github.css"; // 代码高亮样式
 
-// 窗口状态枚举
-const WINDOW_STATE = {
-  VISIBLE: "visible",
-  CLOSED: "closed",
-};
+// 自定义浮动窗口对话框
+const FloatingDialog = styled(Dialog)(({ theme }) => ({
+  "& .MuiDialog-paper": {
+    position: "fixed",
+    right: 20,
+    bottom: 20,
+    margin: 0,
+    width: 400,
+    maxWidth: "90vw",
+    height: 600,
+    maxHeight: "80vh",
+    backgroundColor: theme.palette.mode === "dark" 
+      ? "rgba(30, 30, 30, 0.95)" 
+      : "rgba(255, 255, 255, 0.95)",
+    backdropFilter: "blur(10px)",
+    borderRadius: 16,
+    boxShadow: theme.palette.mode === "dark"
+      ? "0 10px 40px rgba(0, 0, 0, 0.6)"
+      : "0 10px 40px rgba(0, 0, 0, 0.2)",
+  },
+}));
 
-// 自定义比较函数
-const areEqual = (prevProps, nextProps) => {
+// 消息气泡组件
+const MessageBubble = styled(Paper)(({ theme, isUser }) => ({
+  padding: theme.spacing(1.5, 2),
+  marginBottom: theme.spacing(1.5),
+  maxWidth: "85%",
+  alignSelf: isUser ? "flex-end" : "flex-start",
+  backgroundColor: isUser
+    ? theme.palette.primary.main
+    : theme.palette.mode === "dark"
+      ? theme.palette.grey[800]
+      : theme.palette.grey[100],
+  color: isUser
+    ? theme.palette.primary.contrastText
+    : theme.palette.text.primary,
+  borderRadius: isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+  wordBreak: "break-word",
+  position: "relative",
+}));
+
+// 思考内容组件
+const ThinkContent = ({ content, isExpanded, onToggle }) => {
+  const { t } = useTranslation();
+  
   return (
-    prevProps.windowState === nextProps.windowState &&
-    prevProps.presetInput === nextProps.presetInput &&
-    prevProps.onClose === nextProps.onClose &&
-    prevProps.onInputPresetUsed === nextProps.onInputPresetUsed
+    <Box
+      sx={{
+        mt: 1,
+        p: 1,
+        borderRadius: 1,
+        backgroundColor: "action.hover",
+        cursor: "pointer",
+      }}
+      onClick={onToggle}
+    >
+      <Box display="flex" alignItems="center" justifyContent="space-between">
+        <Typography variant="caption" color="text.secondary">
+          思考内容
+        </Typography>
+        {isExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+      </Box>
+      <Collapse in={isExpanded}>
+        <Typography
+          variant="body2"
+          sx={{ mt: 1, fontStyle: "italic", opacity: 0.8 }}
+        >
+          {content}
+        </Typography>
+      </Collapse>
+    </Box>
   );
 };
 
-const AIChatWindow = memo(
-  ({ windowState, onClose, presetInput, onInputPresetUsed }) => {
-    const { t } = useTranslation();
-    const theme = useTheme();
-    const [messages, setMessages] = useState([]);
-    const [inputValue, setInputValue] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState("");
-    const [currentSessionId, setCurrentSessionId] = useState(null);
-    const [settingsOpen, setSettingsOpen] = useState(false);
-    const messagesEndRef = useRef(null);
-    const currentRequestRef = useRef(null); // 用于跟踪当前请求以便中止
-    const errorTimeoutRef = useRef(null); // 用于错误消息自动清除的定时器
+const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) => {
+  const { t } = useTranslation();
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [currentApi, setCurrentApi] = useState(null);
+  const [showThinking, setShowThinking] = useState(true);
+  const [expandedThinking, setExpandedThinking] = useState({});
+  const [abortController, setAbortController] = useState(null);
+  const [apiMenuAnchor, setApiMenuAnchor] = useState(null);
+  const [availableApis, setAvailableApis] = useState([]);
+  
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
-    // API选择相关状态
-    const [apiConfigs, setApiConfigs] = useState([]);
-    const [currentApiId, setCurrentApiId] = useState(null);
-    const [currentApiName, setCurrentApiName] = useState("");
+  // 滚动到底部
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
-    // 思考内容处理器
-    const streamThinkProcessorRef = useRef(null);
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
-    // 输入框引用
-    const inputRef = useRef(null);
-
-    // 处理预设输入值
-    useEffect(() => {
-      if (presetInput && windowState === WINDOW_STATE.VISIBLE) {
-        setInputValue(presetInput);
-        // 通知父组件预设输入已被使用
-        if (onInputPresetUsed) {
-          onInputPresetUsed();
+  // 加载API配置
+  const loadApiSettings = async () => {
+    try {
+      if (window.terminalAPI?.loadAISettings) {
+        const settings = await window.terminalAPI.loadAISettings();
+        setAvailableApis(settings.configs || []);
+        if (settings.current) {
+          setCurrentApi(settings.current);
+        } else if (settings.configs && settings.configs.length > 0) {
+          setCurrentApi(settings.configs[0]);
         }
-        // 聚焦到输入框
-        setTimeout(() => {
-          if (inputRef.current) {
-            inputRef.current.focus();
-          }
-        }, 100);
       }
-    }, [presetInput, windowState, onInputPresetUsed]);
+    } catch (err) {
+      console.error("Failed to load API settings:", err);
+    }
+  };
 
-    // 窗口位置和尺寸状态
-    const [windowSize, setWindowSize] = useState({ width: 350, height: 450 });
-    // const [isDragging, setIsDragging] = useState(false); // Replaced by isDraggingRef
-    // const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Replaced by dragStartOffsetRef
-    const [maxConstraints, setMaxConstraints] = useState([800, 600]);
-    const windowRef = useRef(null);
+  // 初始化加载设置
+  useEffect(() => {
+    if (windowState === "visible") {
+      loadApiSettings();
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }
+  }, [windowState]);
 
-    // Refs for optimized dragging
-    const isDraggingRef = useRef(false);
-    const dragStartOffsetRef = useRef({ x: 0, y: 0 });
-    const currentPositionRef = useRef({ x: 0, y: 0 });
-    const animationFrameRef = useRef(null);
+  // 处理预设输入
+  useEffect(() => {
+    if (presetInput && windowState === "visible") {
+      setInput(presetInput);
+      onInputPresetUsed();
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }
+  }, [presetInput, windowState, onInputPresetUsed]);
 
-    // 动态计算最大尺寸限制
-    const calculateMaxConstraints = useCallback(() => {
-      const margin = 40; // 保留边距
-      const maxWidth = Math.min(window.innerWidth - margin, 1000); // 最大不超过1000px
-      const maxHeight = Math.min(window.innerHeight - margin, 800); // 最大不超过800px
-      return [Math.max(400, maxWidth), Math.max(400, maxHeight)]; // 确保最小值
-    }, []);
+  // 处理思考内容的处理
+  const processThinkContent = (text) => {
+    const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
 
-    // 优化的尺寸更新函数 - 使用requestAnimationFrame确保流畅性
-    const resizeFrameRef = useRef(null);
-    const lastResizeTimeRef = useRef(0);
-    
-    const optimizedSetWindowSize = useCallback((size) => {
-      const now = Date.now();
-      const timeSinceLastResize = now - lastResizeTimeRef.current;
-      
-      // 如果距离上次resize时间太短，使用requestAnimationFrame延迟更新
-      if (timeSinceLastResize < 8) { // 约120fps的限制
-        if (resizeFrameRef.current) {
-          cancelAnimationFrame(resizeFrameRef.current);
-        }
-        resizeFrameRef.current = requestAnimationFrame(() => {
-          setWindowSize(size);
-          lastResizeTimeRef.current = Date.now();
+    while ((match = thinkRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({
+          type: "text",
+          content: text.slice(lastIndex, match.index),
         });
+      }
+      parts.push({
+        type: "think",
+        content: match[1].trim(),
+      });
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push({
+        type: "text",
+        content: text.slice(lastIndex),
+      });
+    }
+
+    return parts;
+  };
+
+  // 复制消息
+  const handleCopyMessage = async (content) => {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
+  // 发送消息
+  const handleSendMessage = async () => {
+    if (!input.trim() || loading) return;
+    if (!currentApi) {
+      setError(t("ai.noApiConfigured"));
+      return;
+    }
+
+    const userMessage = {
+      id: Date.now(),
+      role: "user",
+      content: input.trim(),
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setLoading(true);
+    setError("");
+
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    try {
+      const requestData = {
+        url: currentApi.apiUrl,
+        apiKey: currentApi.apiKey,
+        model: currentApi.model,
+        messages: [
+          ...messages.map(m => ({ role: m.role, content: m.content })),
+          { role: "user", content: userMessage.content }
+        ],
+        temperature: currentApi.temperature || 0.7,
+        max_tokens: currentApi.maxTokens || 2000,
+        stream: currentApi.streamEnabled !== false,
+      };
+
+      if (currentApi.streamEnabled !== false) {
+        // 流式响应
+        const assistantMessage = {
+          id: Date.now() + 1,
+          role: "assistant",
+          content: "",
+          timestamp: new Date(),
+          isStreaming: true,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+
+        // 生成会话ID
+        const sessionId = `session_${Date.now()}`;
+        requestData.sessionId = sessionId;
+
+        // 设置流式事件监听器
+        const handleStreamChunk = (event, data) => {
+          if (data.sessionId === sessionId) {
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              const lastMessage = newMessages[newMessages.length - 1];
+              if (lastMessage && lastMessage.id === assistantMessage.id) {
+                lastMessage.content += data.chunk;
+              }
+              return newMessages;
+            });
+          }
+        };
+
+        const handleStreamEnd = (event, data) => {
+          if (data.sessionId === sessionId) {
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              const lastMessage = newMessages[newMessages.length - 1];
+              if (lastMessage && lastMessage.id === assistantMessage.id) {
+                lastMessage.isStreaming = false;
+              }
+              return newMessages;
+            });
+            // 清理监听器
+            window.terminalAPI.off("stream-chunk", handleStreamChunk);
+            window.terminalAPI.off("stream-end", handleStreamEnd);
+          }
+        };
+
+        // 注册监听器
+        window.terminalAPI.on("stream-chunk", handleStreamChunk);
+        window.terminalAPI.on("stream-end", handleStreamEnd);
+
+        const response = await window.terminalAPI.sendAPIRequest(requestData, true);
+        
+        if (response && response.error) {
+          // 清理监听器
+          window.terminalAPI.off("stream-chunk", handleStreamChunk);
+          window.terminalAPI.off("stream-end", handleStreamEnd);
+          throw new Error(response.error);
+        }
       } else {
-        // 直接更新，确保响应性
-        setWindowSize(size);
-        lastResizeTimeRef.current = now;
-      }
-    }, []);
+        // 非流式响应
+        const response = await window.terminalAPI.sendAPIRequest(requestData, false);
 
-    // 计算初始位置（右下角）
-    const calculateInitialPosition = useCallback(() => {
-      const margin = 20; // 距离边缘的边距
-      const x = window.innerWidth - windowSize.width - margin;
-      const y = window.innerHeight - windowSize.height - margin;
-      return {
-        x: Math.max(margin, x),
-        y: Math.max(margin, y),
-      };
-    }, [windowSize.width, windowSize.height]);
-
-    const [windowPosition, setWindowPosition] = useState(
-      calculateInitialPosition,
-    );
-
-    // Initialize currentPositionRef with the initial window position
-    useEffect(() => {
-      currentPositionRef.current = calculateInitialPosition();
-    }, [calculateInitialPosition]); // 添加依赖
-
-    // 初始化最大尺寸约束
-    useEffect(() => {
-      const updateMaxConstraints = () => {
-        const newConstraints = calculateMaxConstraints();
-        setMaxConstraints(newConstraints);
-      };
-
-      // 初始设置
-      updateMaxConstraints();
-
-      // 监听窗口尺寸变化
-      window.addEventListener("resize", updateMaxConstraints);
-
-      return () => {
-        window.removeEventListener("resize", updateMaxConstraints);
-      };
-    }, [calculateMaxConstraints]);
-
-    // 加载API配置
-    useEffect(() => {
-      loadApiConfigs();
-    }, []);
-
-    const loadApiConfigs = useCallback(async () => {
-      try {
-        const settings = await window.terminalAPI?.loadAISettings();
-        if (settings) {
-          setApiConfigs(settings.configs || []);
-          if (settings.current) {
-            setCurrentApiId(settings.current.id || null);
-            setCurrentApiName(settings.current.name || "");
-          }
+        if (response && response.content) {
+          const assistantMessage = {
+            id: Date.now() + 1,
+            role: "assistant",
+            content: response.content,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+        } else if (response && response.error) {
+          throw new Error(response.error);
+        } else {
+          throw new Error(t("ai.unknownError"));
         }
-      } catch (error) {
-        console.error("Failed to load API configs:", error);
       }
-    }, []);
-
-    // 切换API配置
-    const handleApiChange = useCallback(
-      async (apiId) => {
-        try {
-          const result = await window.terminalAPI.setCurrentApiConfig(apiId);
-          if (result) {
-            // 重新加载配置以更新当前API
-            await loadApiConfigs();
-
-            // 显示切换成功消息
-            const selectedApi = apiConfigs.find((api) => api.id === apiId);
-            if (selectedApi) {
-              setErrorWithAutoClean(`已切换到 ${selectedApi.name}`);
-            }
-          }
-        } catch (error) {
-          console.error("Failed to switch API:", error);
-          setErrorWithAutoClean("切换API失败");
-        }
-      },
-      [apiConfigs, loadApiConfigs],
-    );
-
-    // 优化事件处理函数
-    const handleKeyDown = useCallback((e) => {
-      if (e.key === "Enter" && e.ctrlKey) {
-        handleSendMessage();
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        setError(err.message || t("ai.requestFailed"));
       }
-    }, []);
+    } finally {
+      setLoading(false);
+      setAbortController(null);
+    }
+  };
 
-    const handleClearMessages = useCallback(() => {
-      setMessages([]);
-    }, []);
+  // 中断请求
+  const handleAbortRequest = () => {
+    if (abortController) {
+      abortController.abort();
+      setLoading(false);
+      setAbortController(null);
+    }
+  };
 
-    const handleCopyMessage = useCallback(
-      async (message) => {
-        try {
-          await navigator.clipboard.writeText(message.content);
-          setErrorWithAutoClean(t("aiAssistant.copySuccess"));
-        } catch (error) {
-          console.error("Copy failed:", error);
-          setErrorWithAutoClean(t("aiAssistant.copyFailed"));
-        }
-      },
-      [t],
-    );
+  // 清空对话
+  const handleClearChat = () => {
+    setMessages([]);
+    setError("");
+  };
 
-    const clearErrorTimeout = useCallback(() => {
-      if (errorTimeoutRef.current) {
-        clearTimeout(errorTimeoutRef.current);
-        errorTimeoutRef.current = null;
-      }
-    }, []);
+  // 切换思考内容展开状态
+  const toggleThinking = (messageId) => {
+    setExpandedThinking((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
+  };
 
-    const setErrorWithAutoClean = useCallback(
-      (errorMessage) => {
-        clearErrorTimeout();
-        setError(errorMessage);
-        errorTimeoutRef.current = setTimeout(() => {
-          setError("");
-          errorTimeoutRef.current = null;
-        }, 5000);
-      },
-      [clearErrorTimeout],
-    );
+  // 切换API
+  const handleApiChange = (api) => {
+    setCurrentApi(api);
+    window.terminalAPI.setCurrentApiConfig(api.id);
+    setApiMenuAnchor(null);
+  };
 
-    const handleStopRequest = useCallback(() => {
-      if (currentRequestRef.current) {
-        currentRequestRef.current.abort();
-        currentRequestRef.current = null;
-        setIsLoading(false);
-      }
-    }, []);
-
-    // 使用 useMemo 优化 markdown 组件配置
-    const markdownComponents = useMemo(
-      () => ({
-        code({ node, inline, className, children, ...props }) {
-          const match = /language-(\w+)/.exec(className || "");
-          return !inline && match ? (
-            <pre className={className} {...props}>
-              <code>{children}</code>
-            </pre>
-          ) : (
-            <code className={className} {...props}>
-              {children}
-            </code>
-          );
-        },
-        table({ children }) {
-          return (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                {children}
-              </table>
-            </div>
-          );
-        },
-        th({ children }) {
-          return (
-            <th
-              style={{
-                border: "1px solid #ddd",
-                padding: "8px",
-                backgroundColor: "#f5f5f5",
-                textAlign: "left",
-              }}
-            >
-              {children}
-            </th>
-          );
-        },
-        td({ children }) {
-          return (
-            <td style={{ border: "1px solid #ddd", padding: "8px" }}>
-              {children}
-            </td>
-          );
-        },
-      }),
-      [],
-    );
-
-    // 使用 useMemo 优化消息列表渲染
-    const messagesList = useMemo(() => {
-      return messages.map((message, index) => (
-        <ListItem
-          key={index}
+  return (
+    <FloatingDialog
+      open={windowState === "visible"}
+      onClose={onClose}
+      hideBackdrop
+      disableEscapeKeyDown={loading}
+    >
+      <DialogTitle
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          pb: 1,
+        }}
+      >
+        <Box display="flex" alignItems="center" gap={1}>
+          <AIIcon fontSize="small" />
+          <Typography variant="h6">{t("ai.title")}</Typography>
+        </Box>
+        <Box display="flex" alignItems="center" gap={0.5}>
+          {currentApi && (
+            <Chip
+              label={currentApi.name || currentApi.model}
+              size="small"
+              onClick={(e) => setApiMenuAnchor(e.currentTarget)}
+              sx={{ cursor: "pointer" }}
+            />
+          )}
+          <Menu
+            anchorEl={apiMenuAnchor}
+            open={Boolean(apiMenuAnchor)}
+            onClose={() => setApiMenuAnchor(null)}
+          >
+            {availableApis.map((api) => (
+              <MenuItem
+                key={api.id}
+                onClick={() => handleApiChange(api)}
+                selected={currentApi?.id === api.id}
+              >
+                {api.name} ({api.model})
+              </MenuItem>
+            ))}
+            <Divider />
+            <MenuItem onClick={() => setSettingsOpen(true)}>
+              <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
+              {t("ai.manageApis")}
+            </MenuItem>
+          </Menu>
+          <Tooltip title={t("ai.clearChat")}>
+            <IconButton size="small" onClick={handleClearChat}>
+              <DeleteIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t("ai.settings")}>
+            <IconButton size="small" onClick={() => setSettingsOpen(true)}>
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
+          <IconButton size="small" onClick={onClose}>
+            <CloseIcon />
+          </IconButton>
+        </Box>
+      </DialogTitle>
+      <Divider />
+      <DialogContent
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          p: 2,
+          overflow: "hidden",
+        }}
+      >
+        {/* 消息列表 */}
+        <Box
           sx={{
-            display: "block",
-            p: 1,
-            mb: 1,
-            borderRadius: 1,
-            bgcolor:
-              message.role === "user" ? "primary.main" : "background.paper",
-            color:
-              message.role === "user" ? "primary.contrastText" : "text.primary",
-            boxShadow: 1,
+            flex: 1,
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            mb: 2,
+            pr: 1,
           }}
         >
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-            }}
-          >
+          {messages.length === 0 && (
             <Box
               sx={{
                 flex: 1,
-                maxWidth: "100%",
-                wordBreak: "break-word",
-                overflowWrap: "break-word",
-                "& > *:first-of-type": { mt: 0 },
-                "& > *:last-child": { mb: 0 },
-                "& pre": {
-                  maxWidth: "100%",
-                  overflow: "auto",
-                },
-                "& table": {
-                  maxWidth: "100%",
-                  overflow: "auto",
-                  display: "block",
-                },
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {message.role === "assistant" ? (
-                <Box>
-                  {/* 思考内容 */}
-                  {message.thinkContent && (
-                    <ThinkContent
-                      content={message.thinkContent}
-                      defaultExpanded={false}
-                      variant="minimal"
-                    />
-                  )}
-
-                  {/* 正常回复内容 */}
-                  {message.content && (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeHighlight]}
-                      components={markdownComponents}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
-                  )}
-                </Box>
-              ) : (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    whiteSpace: "pre-wrap",
-                    fontSize: "0.8rem",
-                    lineHeight: 1.4,
-                    m: 0,
-                  }}
-                >
-                  {message.content}
-                </Typography>
-              )}
-              {message.streaming && (
-                <CircularProgress
-                  size={10}
-                  sx={{ ml: 1, display: "inline-block" }}
-                />
-              )}
-            </Box>
-            <IconButton
-              size="small"
-              onClick={() => handleCopyMessage(message)}
-              sx={{
-                ml: 1,
-                color:
-                  message.role === "user"
-                    ? "primary.contrastText"
-                    : "text.secondary",
-              }}
-            >
-              <ContentCopyIcon fontSize="small" />
-            </IconButton>
-          </Box>
-          <Typography
-            variant="caption"
-            sx={{
-              opacity: 0.7,
-              color:
-                message.role === "user"
-                  ? "primary.contrastText"
-                  : "text.secondary",
-              fontSize: "0.7rem",
-              mt: 0.5,
-              display: "block",
-            }}
-          >
-            {new Date(message.timestamp).toLocaleTimeString()}
-          </Typography>
-        </ListItem>
-      ));
-    }, [messages, markdownComponents, handleCopyMessage]);
-
-    // 使用 useMemo 优化 API 选择器选项
-    const apiOptions = useMemo(() => {
-      return apiConfigs.map((config) => (
-        <MenuItem key={config.id} value={config.id}>
-          {config.name}
-        </MenuItem>
-      ));
-    }, [apiConfigs]);
-
-    // 处理输入变化
-    const handleInputChange = useCallback(
-      (e) => {
-        setInputValue(e.target.value);
-        // 用户开始输入时立即清除错误消息
-        if (error) {
-          clearErrorTimeout();
-          setError("");
-        }
-      },
-      [error, clearErrorTimeout],
-    );
-
-    // 滚动到底部
-    const scrollToBottom = useCallback(() => {
-      if (messagesEndRef.current) {
-        // 使用 setTimeout 确保 DOM 更新后再滚动
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({
-            behavior: "smooth",
-            block: "end",
-            inline: "nearest",
-          });
-        }, 10);
-      }
-    }, []);
-
-    // 监听消息变化并自动滚动
-    useEffect(() => {
-      scrollToBottom();
-    }, [messages, scrollToBottom]);
-
-    // 专门处理流式响应时的滚动
-    useEffect(() => {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage && lastMessage.streaming) {
-        // 流式响应时更频繁地滚动，确保用户能看到实时内容
-        scrollToBottom();
-      }
-    }, [messages, scrollToBottom]);
-
-    // 监听流式响应
-    useEffect(() => {
-      if (!window.terminalAPI?.on) {
-        return;
-      }
-
-      const handleStreamChunk = (data) => {
-        // 验证会话ID，防止接收到上一次对话的回复
-        if (
-          data.tabId === "ai" &&
-          data.chunk &&
-          data.sessionId === currentSessionId
-        ) {
-          // 初始化思考内容处理器（如果还没有）
-          if (!streamThinkProcessorRef.current) {
-            streamThinkProcessorRef.current = new StreamThinkProcessor();
-          }
-
-          // 处理数据块
-          const result = streamThinkProcessorRef.current.processChunk(
-            data.chunk,
-          );
-
-          if (result.hasUpdate) {
-            setMessages((prev) => {
-              const newMessages = [...prev];
-              const lastMessage = newMessages[newMessages.length - 1];
-
-              if (
-                lastMessage &&
-                lastMessage.role === "assistant" &&
-                lastMessage.streaming
-              ) {
-                // 更新现有消息
-                lastMessage.content = result.normalContent;
-                lastMessage.thinkContent = result.thinkContent;
-              } else {
-                // 创建新消息
-                const newMessage = {
-                  role: "assistant",
-                  content: result.normalContent,
-                  thinkContent: result.thinkContent,
-                  timestamp: Date.now(),
-                  streaming: true,
-                };
-                newMessages.push(newMessage);
-              }
-              return newMessages;
-            });
-          }
-        }
-      };
-
-      const handleStreamEnd = (data) => {
-        if (data.tabId === "ai" && data.sessionId === currentSessionId) {
-          // 完成思考内容处理
-          if (streamThinkProcessorRef.current) {
-            const finalResult = streamThinkProcessorRef.current.finalize();
-
-            setMessages((prev) => {
-              const newMessages = [...prev];
-              const lastMessage = newMessages[newMessages.length - 1];
-              if (
-                lastMessage &&
-                lastMessage.role === "assistant" &&
-                lastMessage.streaming
-              ) {
-                // 额外的安全检查：对最终内容进行强制二次处理
-                const combinedRawContent =
-                  (finalResult.thinkContent
-                    ? `<think>${finalResult.thinkContent}</think>`
-                    : "") + finalResult.normalContent;
-
-                const {
-                  thinkContent: finalThinkContent,
-                  normalContent: finalNormalContent,
-                } = parseThinkContent(combinedRawContent);
-
-                lastMessage.streaming = false;
-                lastMessage.content = finalNormalContent;
-                lastMessage.thinkContent = finalThinkContent;
-
-                // 添加处理完成的标记，便于调试
-                lastMessage.processedAt = Date.now();
-                lastMessage.hasThinkContent = !!finalThinkContent;
-                lastMessage.finalProcessed = true;
-              }
-              return newMessages;
-            });
-
-            // 重置处理器
-            streamThinkProcessorRef.current = null;
-          } else {
-            setMessages((prev) => {
-              const newMessages = [...prev];
-              const lastMessage = newMessages[newMessages.length - 1];
-              if (
-                lastMessage &&
-                lastMessage.role === "assistant" &&
-                lastMessage.streaming
-              ) {
-                lastMessage.streaming = false;
-              }
-              return newMessages;
-            });
-          }
-
-          setIsLoading(false);
-
-          // 如果是中断结束，清理会话ID
-          if (data.aborted) {
-            setCurrentSessionId(null);
-          }
-        }
-      };
-
-      const handleStreamError = (data) => {
-        if (data.tabId === "ai") {
-          setError(data.error?.message || t("aiAssistant.error"));
-          setIsLoading(false);
-        }
-      };
-
-      window.terminalAPI.on("stream-chunk", handleStreamChunk);
-      window.terminalAPI.on("stream-end", handleStreamEnd);
-      window.terminalAPI.on("stream-error", handleStreamError);
-
-      return () => {
-        if (window.terminalAPI?.removeListener) {
-          window.terminalAPI.removeListener("stream-chunk", handleStreamChunk);
-          window.terminalAPI.removeListener("stream-end", handleStreamEnd);
-          window.terminalAPI.removeListener("stream-error", handleStreamError);
-        }
-      };
-    }, [t, currentSessionId]);
-
-    const handleSendMessage = async () => {
-      if (!inputValue.trim() || isLoading) return;
-
-      // 生成新的会话ID
-      const sessionId =
-        Date.now().toString() + Math.random().toString(36).substring(2, 11);
-      setCurrentSessionId(sessionId);
-
-      const userMessage = {
-        role: "user",
-        content: inputValue.trim(),
-        timestamp: Date.now(),
-      };
-
-      setMessages((prev) => [...prev, userMessage]);
-      setInputValue("");
-      setIsLoading(true);
-      // 清除错误状态和定时器
-      clearErrorTimeout();
-      setError("");
-
-      try {
-        const settings = await window.terminalAPI?.loadAISettings();
-        if (!settings || !settings.current) {
-          setError(t("aiAssistant.apiError"));
-          setIsLoading(false);
-          return;
-        }
-
-        const { apiUrl, apiKey, model, streamEnabled } = settings.current;
-
-        if (!apiUrl || !apiKey || !model) {
-          setError(t("aiAssistant.apiError"));
-          setIsLoading(false);
-          return;
-        }
-
-        const requestData = {
-          url: apiUrl,
-          apiKey: apiKey,
-          model: model,
-          sessionId: sessionId,
-          messages: [...messages, userMessage].map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          })),
-        };
-
-        if (streamEnabled) {
-          await window.terminalAPI.sendAPIRequest(requestData, true);
-        } else {
-          const result = await window.terminalAPI.sendAPIRequest(
-            requestData,
-            false,
-          );
-          if (result && result.choices && result.choices[0]) {
-            const rawContent = result.choices[0].message.content;
-            const { thinkContent, normalContent } =
-              parseThinkContent(rawContent);
-
-            const assistantMessage = {
-              role: "assistant",
-              content: normalContent,
-              thinkContent: thinkContent,
-              timestamp: Date.now(),
-            };
-            setMessages((prev) => [...prev, assistantMessage]);
-          } else if (result && result.error) {
-            setError(result.error);
-          }
-          setIsLoading(false);
-        }
-      } catch (err) {
-        setError(err.message || t("aiAssistant.networkError"));
-        setIsLoading(false);
-      }
-    };
-
-    // Optimized Drag Event Handling
-
-    const updateWindowStyleOnDrag = useCallback(() => {
-      if (windowRef.current && currentPositionRef.current) {
-        const { x, y } = currentPositionRef.current;
-        windowRef.current.style.left = `${x}px`;
-        windowRef.current.style.top = `${y}px`;
-      }
-      animationFrameRef.current = null;
-    }, []);
-
-    const handleGlobalMouseMove = useCallback(
-      (e) => {
-        if (!isDraggingRef.current) return;
-
-        let newX = e.clientX - dragStartOffsetRef.current.x;
-        let newY = e.clientY - dragStartOffsetRef.current.y;
-
-        // Boundary checks
-        const maxX = window.innerWidth - windowSize.width;
-        const maxY = window.innerHeight - windowSize.height;
-        newX = Math.max(0, Math.min(newX, maxX));
-        newY = Math.max(0, Math.min(newY, maxY));
-
-        currentPositionRef.current = { x: newX, y: newY };
-
-        if (animationFrameRef.current === null) {
-          animationFrameRef.current = requestAnimationFrame(
-            updateWindowStyleOnDrag,
-          );
-        }
-      },
-      [windowSize.width, windowSize.height, updateWindowStyleOnDrag],
-    );
-
-    const handleGlobalMouseUp = useCallback(() => {
-      if (!isDraggingRef.current) return;
-
-      isDraggingRef.current = false;
-      document.removeEventListener("mousemove", handleGlobalMouseMove);
-      document.removeEventListener("mouseup", handleGlobalMouseUp);
-      document.body.style.userSelect = "";
-
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-      }
-
-      // Sync React state with the final position
-      if (currentPositionRef.current) {
-        setWindowPosition(currentPositionRef.current);
-      }
-    }, [handleGlobalMouseMove]);
-
-    const handleMouseDown = useCallback(
-      (e) => {
-        if (
-          e.target.closest(".window-controls") ||
-          e.target.closest(".MuiSelect-root")
-        ) {
-          // Do not start drag if clicking on window controls or the select component
-          return;
-        }
-        e.preventDefault();
-
-        isDraggingRef.current = true;
-        dragStartOffsetRef.current = {
-          x: e.clientX - windowPosition.x,
-          y: e.clientY - windowPosition.y,
-        };
-        // currentPositionRef.current is already up-to-date from setWindowPosition or initial state
-        // No need to set it here if windowPosition is the source of truth before drag starts
-
-        document.addEventListener("mousemove", handleGlobalMouseMove);
-        document.addEventListener("mouseup", handleGlobalMouseUp);
-        document.body.style.userSelect = "none";
-      },
-      [
-        windowPosition.x,
-        windowPosition.y,
-        handleGlobalMouseMove,
-        handleGlobalMouseUp,
-      ],
-    );
-
-    // 优化的尺寸调整处理 - 移除防抖，使用requestAnimationFrame优化
-    const handleResize = useCallback(
-      (_, { size }) => {
-        // 使用优化的尺寸更新函数，确保流畅的resize体验
-        optimizedSetWindowSize(size);
-      },
-      [optimizedSetWindowSize],
-    );
-
-    // Cleanup global listeners if component unmounts while dragging
-    useEffect(() => {
-      return () => {
-        if (isDraggingRef.current) {
-          document.removeEventListener("mousemove", handleGlobalMouseMove);
-          document.removeEventListener("mouseup", handleGlobalMouseUp);
-          document.body.style.userSelect = "";
-          if (animationFrameRef.current) {
-            cancelAnimationFrame(animationFrameRef.current);
-          }
-        }
-        // 清理resize相关的requestAnimationFrame
-        if (resizeFrameRef.current) {
-          cancelAnimationFrame(resizeFrameRef.current);
-        }
-      };
-    }, [handleGlobalMouseMove, handleGlobalMouseUp]);
-
-    // 窗口尺寸变化时重新计算位置（确保不超出边界）
-    useEffect(() => {
-      const margin = 20;
-      const maxX = window.innerWidth - windowSize.width - margin;
-      const maxY = window.innerHeight - windowSize.height - margin;
-
-      setWindowPosition((prev) => ({
-        x: Math.max(margin, Math.min(prev.x, maxX)),
-        y: Math.max(margin, Math.min(prev.y, maxY)),
-      }));
-    }, [windowSize]);
-
-    // 组件卸载时清理定时器
-    useEffect(() => {
-      return () => {
-        clearErrorTimeout();
-      };
-    }, []);
-
-    // 根据窗口状态决定是否显示
-    if (windowState === WINDOW_STATE.CLOSED) return null;
-
-    return (
-      <Resizable
-        width={windowSize.width}
-        height={windowSize.height}
-        onResize={handleResize}
-        minConstraints={[280, 300]}
-        maxConstraints={maxConstraints}
-        resizeHandles={["se", "e", "s"]}
-      >
-        <Paper
-          ref={windowRef}
-          elevation={8}
-          sx={{
-            position: "fixed",
-            left: windowPosition.x, // Initial position from state
-            top: windowPosition.y, // Initial position from state
-            width: windowSize.width,
-            height: windowSize.height,
-            display: "flex",
-            flexDirection: "column",
-            borderRadius: 2,
-            zIndex: 1300,
-            overflow: "hidden",
-            backdropFilter: "blur(10px)",
-            border: `1px solid ${theme.palette.divider}`,
-            // cursor will be set by onMouseDown logic
-            opacity: windowState === WINDOW_STATE.VISIBLE ? 1 : 0.9,
-            transition:
-              "opacity 0.3s ease-in-out",
-            // userSelect is handled globally during drag
-          }}
-        >
-          {/* 标题栏 */}
-          <Box
-            onMouseDown={handleMouseDown} // Apply to the drag handle
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              p: 1.5,
-              bgcolor: "primary.main",
-              color: "primary.contrastText",
-              cursor: "grab", // Default cursor for draggable area
-              userSelect: "none", // Prevent text selection on the title bar
-              "&:active": {
-                cursor: "grabbing", // Cursor while dragging
-              },
-            }}
-          >
-            <Box
-              sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1 }}
-            >
-              <Typography variant="subtitle2" fontWeight="medium">
-                {t("aiAssistant.title")}
+              <Typography color="text.secondary" variant="body2">
+                {t("ai.startConversation")}
               </Typography>
-
-              {/* API选择器 */}
-              {apiConfigs.length > 0 && (
-                <FormControl
-                  size="small"
-                  sx={{
-                    minWidth: 120,
-                    "& .MuiOutlinedInput-root": {
-                      color: "inherit",
-                      fontSize: "0.75rem",
-                      "& fieldset": {
-                        borderColor: "rgba(255, 255, 255, 0.3)",
-                      },
-                      "&:hover fieldset": {
-                        borderColor: "rgba(255, 255, 255, 0.5)",
-                      },
-                      "&.Mui-focused fieldset": {
-                        borderColor: "rgba(255, 255, 255, 0.7)",
-                      },
-                    },
-                    "& .MuiSelect-icon": {
-                      color: "inherit",
-                    },
-                  }}
-                >
-                  <Select
-                    value={currentApiId || ""}
-                    onChange={(e) => handleApiChange(e.target.value)}
-                    displayEmpty
-                    variant="outlined"
-                    sx={{
-                      color: "inherit",
-                      fontSize: "0.75rem",
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()} // 防止拖拽，但不影响Select的正常功能
-                  >
-                    {apiOptions}
-                  </Select>
-                </FormControl>
-              )}
-            </Box>
-
-            <Box className="window-controls">
-              <Tooltip title={t("aiAssistant.clear")}>
-                <IconButton
-                  onClick={handleClearMessages}
-                  size="small"
-                  sx={{ color: "inherit" }}
-                >
-                  <CleaningServicesIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title={t("aiAssistant.settings")}>
-                <IconButton
-                  onClick={() => setSettingsOpen(true)}
-                  size="small"
-                  sx={{ color: "inherit" }}
-                >
-                  <SettingsIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title={t("aiAssistant.close")}>
-                <IconButton
-                  onClick={onClose}
-                  size="small"
-                  sx={{ color: "inherit" }}
-                >
-                  <CloseIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-          </Box>
-
-          {/* 错误提示 */}
-          {error && (
-            <Box sx={{ p: 1 }}>
-              <Alert
-                severity="error"
-                size="small"
-                onClose={() => {
-                  clearErrorTimeout();
-                  setError("");
-                }}
-              >
-                {error}
-              </Alert>
             </Box>
           )}
-
-          {/* 消息列表 */}
-          <Box
-            sx={{
-              flex: 1,
-              overflow: "auto",
-              p: 1,
-              bgcolor: "background.default",
-              display: "flex",
-              flexDirection: "column",
-              minHeight: 0, // 确保flex子元素能正确收缩
-              // 自定义滚动条样式
-              "&::-webkit-scrollbar": {
-                width: "6px",
-              },
-              "&::-webkit-scrollbar-track": {
-                background: "transparent",
-              },
-              "&::-webkit-scrollbar-thumb": {
-                background: "rgba(0,0,0,0.2)",
-                borderRadius: "3px",
-              },
-              "&::-webkit-scrollbar-thumb:hover": {
-                background: "rgba(0,0,0,0.3)",
-              },
-            }}
-          >
-            {messages.length === 0 ? (
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  textAlign: "center",
-                  color: "text.secondary",
-                }}
-              >
-                <Typography variant="body2">
-                  {t("aiAssistant.noMessages")}
-                </Typography>
+          {messages.map((message) => (
+            <MessageBubble key={message.id} isUser={message.role === "user"}>
+              <Box display="flex" alignItems="flex-start" gap={1}>
+                <Box flex={1}>
+                  {message.role === "assistant" && showThinking ? (
+                    processThinkContent(message.content).map((part, index) => (
+                      <Box key={index}>
+                        {part.type === "text" ? (
+                          <ReactMarkdown
+                            components={{
+                              p: ({ children }) => (
+                                <Typography variant="body2" sx={{ mb: 1 }}>
+                                  {children}
+                                </Typography>
+                              ),
+                              code: ({ className, children }) => (
+                                <Box
+                                  component="code"
+                                  sx={{
+                                    backgroundColor: "rgba(0, 0, 0, 0.1)",
+                                    borderRadius: 1,
+                                    px: 0.5,
+                                    py: 0.2,
+                                    fontFamily: "monospace",
+                                    fontSize: "0.875em",
+                                  }}
+                                >
+                                  {children}
+                                </Box>
+                              ),
+                              pre: ({ children }) => (
+                                <Box
+                                  sx={{
+                                    backgroundColor: "rgba(0, 0, 0, 0.1)",
+                                    borderRadius: 1,
+                                    p: 1.5,
+                                    my: 1,
+                                    overflowX: "auto",
+                                  }}
+                                >
+                                  {children}
+                                </Box>
+                              ),
+                            }}
+                          >
+                            {part.content}
+                          </ReactMarkdown>
+                        ) : (
+                          <ThinkContent
+                            content={part.content}
+                            isExpanded={expandedThinking[message.id]}
+                            onToggle={() => toggleThinking(message.id)}
+                          />
+                        )}
+                      </Box>
+                    ))
+                  ) : (
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => (
+                          <Typography variant="body2" sx={{ mb: 1 }}>
+                            {children}
+                          </Typography>
+                        ),
+                        code: ({ className, children }) => (
+                          <Box
+                            component="code"
+                            sx={{
+                              backgroundColor: "rgba(0, 0, 0, 0.1)",
+                              borderRadius: 1,
+                              px: 0.5,
+                              py: 0.2,
+                              fontFamily: "monospace",
+                              fontSize: "0.875em",
+                            }}
+                          >
+                            {children}
+                          </Box>
+                        ),
+                        pre: ({ children }) => (
+                          <Box
+                            sx={{
+                              backgroundColor: "rgba(0, 0, 0, 0.1)",
+                              borderRadius: 1,
+                              p: 1.5,
+                              my: 1,
+                              overflowX: "auto",
+                            }}
+                          >
+                            {children}
+                          </Box>
+                        ),
+                      }}
+                    >
+                      {message.content.replace(/<think>[\s\S]*?<\/think>/g, "")}
+                    </ReactMarkdown>
+                  )}
+                  {message.isStreaming && (
+                    <CircularProgress size={12} sx={{ ml: 1 }} />
+                  )}
+                </Box>
+                <Tooltip title={t("ai.copyMessage")}>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleCopyMessage(message.content)}
+                    sx={{ opacity: 0.7 }}
+                  >
+                    <ContentCopyIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               </Box>
-            ) : (
-              <List sx={{ p: 0, flex: 1 }}>
-                {messagesList}
-                <div ref={messagesEndRef} style={{ height: "1px" }} />
-              </List>
-            )}
-          </Box>
+            </MessageBubble>
+          ))}
+          <div ref={messagesEndRef} />
+        </Box>
 
-          {/* 输入区域 */}
-          <Box
-            sx={{
-              p: 1.5,
-              bgcolor: "background.paper",
-              borderTop: `1px solid ${theme.palette.divider}`,
-            }}
-          >
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <TextField
-                ref={inputRef}
-                value={inputValue}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder={t("aiAssistant.placeholder")}
-                multiline
-                maxRows={6} // <--- Changed from 2 to 6
-                fullWidth
-                size="small"
-                disabled={isLoading}
-                variant="outlined"
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    fontSize: "0.8rem",
-                  },
-                }}
-              />
-              <IconButton
-                onClick={isLoading ? handleStopRequest : handleSendMessage}
-                disabled={!isLoading && !inputValue.trim()}
-                color={isLoading ? "error" : "primary"}
-                size="small"
-                sx={{ alignSelf: "flex-end" }}
-              >
-                {isLoading ? (
-                  <StopIcon fontSize="small" />
-                ) : (
-                  <SendIcon fontSize="small" />
-                )}
-              </IconButton>
-            </Box>
-          </Box>
+        {/* 错误提示 */}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError("")}>
+            {error}
+          </Alert>
+        )}
 
-          {/* AI设置对话框 */}
-          <AISettings
-            open={settingsOpen}
-            onClose={() => {
-              setSettingsOpen(false);
-              // 设置关闭后重新加载API配置
-              loadApiConfigs();
+        {/* 输入区域 */}
+        <Box display="flex" gap={1} alignItems="flex-end">
+          <TextField
+            fullWidth
+            multiline
+            maxRows={4}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
             }}
+            placeholder={t("ai.inputPlaceholder")}
+            disabled={loading}
+            inputRef={inputRef}
+            variant="outlined"
+            size="small"
           />
-        </Paper>
-      </Resizable>
-    );
-  },
-  areEqual,
-);
+          {loading ? (
+            <Fab
+              size="small"
+              color="error"
+              onClick={handleAbortRequest}
+              sx={{ flexShrink: 0 }}
+            >
+              <StopIcon />
+            </Fab>
+          ) : (
+            <Fab
+              size="small"
+              color="primary"
+              onClick={handleSendMessage}
+              disabled={!input.trim() || !currentApi}
+              sx={{ flexShrink: 0 }}
+            >
+              <SendIcon />
+            </Fab>
+          )}
+        </Box>
 
-// 设置显示名称用于调试
-AIChatWindow.displayName = "AIChatWindow";
+        {/* 显示思考内容开关 */}
+        <Box sx={{ mt: 1 }}>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={showThinking}
+                onChange={(e) => setShowThinking(e.target.checked)}
+              />
+            }
+            label={t("ai.showThinking")}
+          />
+        </Box>
+      </DialogContent>
+
+      {/* AI设置对话框 */}
+      <AISettings
+        open={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+          loadApiSettings();
+        }}
+      />
+    </FloatingDialog>
+  );
+};
 
 export default AIChatWindow;

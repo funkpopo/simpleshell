@@ -264,6 +264,20 @@
       "selectApi": "选择API",
       "apiSwitched": "已切换到: {{name}}"
     },
+    "ai": {
+      "title": "AI助手",
+      "inputPlaceholder": "输入消息...",
+      "startConversation": "开始对话，输入您的问题",
+      "thinking": "思考中...",
+      "copyMessage": "复制消息",
+      "clearChat": "清空对话",
+      "settings": "设置",
+      "manageApis": "管理API配置",
+      "noApiConfigured": "请先配置API",
+      "requestFailed": "请求失败",
+      "unknownError": "未知错误",
+      "showThinking": "显示思考内容"
+    },
     "randomPassword": {
       "title": "随机密码生成器",
       "length": "密码长度",

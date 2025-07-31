@@ -29,18 +29,7 @@ const ResourceMonitor = lazy(() =>
   }),
 );
 
-// AI助手懒加载组件
-const AIAssistant = lazy(() =>
-  import("./AIAssistant.jsx").catch((error) => {
-    return {
-      default: () => (
-        <div style={{ padding: "20px", textAlign: "center" }}>
-          AI助手组件加载失败，请刷新页面重试
-        </div>
-      ),
-    };
-  }),
-);
+// AI助手懒加载组件 - 已移除，不再使用懒加载
 
 // IP地址查询组件的懒加载实现
 const IPAddressQuery = lazy(() =>
@@ -91,7 +80,6 @@ export const IPAddressQueryWithSuspense = (props) => (
 const preloadComponents = {
   fileManager: () => import("./FileManager.jsx"),
   resourceMonitor: () => import("./ResourceMonitor.jsx"),
-  aiAssistant: () => import("./AIAssistant.jsx"),
   ipAddressQuery: () => import("./IPAddressQuery.jsx"),
 };
 
@@ -99,7 +87,6 @@ const preloadComponents = {
 export {
   FileManager,
   ResourceMonitor,
-  AIAssistant,
   IPAddressQuery,
   preloadComponents,
 };
