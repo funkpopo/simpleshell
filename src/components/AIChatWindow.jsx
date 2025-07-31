@@ -123,6 +123,8 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
   const [abortController, setAbortController] = useState(null);
   const [apiMenuAnchor, setApiMenuAnchor] = useState(null);
   const [availableApis, setAvailableApis] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const streamHandlersRef = useRef({});
   
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -265,10 +267,11 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
         // 生成会话ID
         const sessionId = `session_${Date.now()}`;
         requestData.sessionId = sessionId;
+        setCurrentSessionId(sessionId);
 
         // 设置流式事件监听器
         const handleStreamChunk = (event, data) => {
-          if (data.sessionId === sessionId) {
+          if (data.sessionId === sessionId && controller.signal && !controller.signal.aborted) {
             setMessages((prev) => {
               const newMessages = [...prev];
               const lastMessage = newMessages[newMessages.length - 1];
@@ -290,22 +293,37 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
               }
               return newMessages;
             });
+            setLoading(false);
+            setAbortController(null);
+            setCurrentSessionId(null);
             // 清理监听器
             window.terminalAPI.off("stream-chunk", handleStreamChunk);
             window.terminalAPI.off("stream-end", handleStreamEnd);
+            delete streamHandlersRef.current[sessionId];
           }
         };
 
         // 注册监听器
         window.terminalAPI.on("stream-chunk", handleStreamChunk);
         window.terminalAPI.on("stream-end", handleStreamEnd);
+        
+        // 保存监听器引用
+        streamHandlersRef.current[sessionId] = {
+          chunk: handleStreamChunk,
+          end: handleStreamEnd
+        };
 
+        // 注册abort事件处理
+        requestData.signal = controller.signal;
+        
         const response = await window.terminalAPI.sendAPIRequest(requestData, true);
         
         if (response && response.error) {
           // 清理监听器
           window.terminalAPI.off("stream-chunk", handleStreamChunk);
           window.terminalAPI.off("stream-end", handleStreamEnd);
+          delete streamHandlersRef.current[sessionId];
+          setCurrentSessionId(null);
           throw new Error(response.error);
         }
       } else {
@@ -330,9 +348,33 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
       if (err.name !== "AbortError") {
         setError(err.message || t("ai.requestFailed"));
       }
+      // 如果是中断错误，确保消息状态正确
+      if (err.name === "AbortError") {
+        // 清理所有监听器
+        if (currentSessionId && window.terminalAPI) {
+          const handlers = streamHandlersRef.current[currentSessionId];
+          if (handlers) {
+            window.terminalAPI.off("stream-chunk", handlers.chunk);
+            window.terminalAPI.off("stream-end", handlers.end);
+            delete streamHandlersRef.current[currentSessionId];
+          }
+        }
+        setCurrentSessionId(null);
+        
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          const lastMessage = newMessages[newMessages.length - 1];
+          if (lastMessage && lastMessage.role === "assistant" && lastMessage.isStreaming) {
+            lastMessage.isStreaming = false;
+          }
+          return newMessages;
+        });
+      }
     } finally {
-      setLoading(false);
-      setAbortController(null);
+      if (!currentApi.streamEnabled || currentApi.streamEnabled === false) {
+        setLoading(false);
+        setAbortController(null);
+      }
     }
   };
 
@@ -342,6 +384,27 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
       abortController.abort();
       setLoading(false);
       setAbortController(null);
+      
+      // 如果有当前会话，立即清理监听器
+      if (currentSessionId && window.terminalAPI) {
+        const handlers = streamHandlersRef.current[currentSessionId];
+        if (handlers) {
+          window.terminalAPI.off("stream-chunk", handlers.chunk);
+          window.terminalAPI.off("stream-end", handlers.end);
+          delete streamHandlersRef.current[currentSessionId];
+        }
+        setCurrentSessionId(null);
+      }
+      
+      // 标记最后一条消息为非流式状态
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage && lastMessage.role === "assistant" && lastMessage.isStreaming) {
+          lastMessage.isStreaming = false;
+        }
+        return newMessages;
+      });
     }
   };
 
