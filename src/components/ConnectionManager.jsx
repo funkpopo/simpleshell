@@ -708,7 +708,7 @@ const ConnectionManager = memo(
                 {...provided.draggableProps}
                 disablePadding
                 sx={{
-                  pl: parentGroup ? 4 : 1,
+                  pl: parentGroup ? 2 : 1,
                   minHeight: "40px", // 统一最小高度
                   "&:hover": {
                     backgroundColor:
@@ -784,7 +784,20 @@ const ConnectionManager = memo(
                     {getProtocolIcon()}
                   </ListItemIcon>
                   <ListItemText
-                    primary={connection.name || connection.host}
+                    primary={
+                      // 检查主文本是否需要省略
+                      estimateTextWidth(connection.name || connection.host) > maxDisplayWidth ? (
+                        <Tooltip title={connection.name || connection.host}>
+                          <span>
+                            {connection.name || connection.host}
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        <span>
+                          {connection.name || connection.host}
+                        </span>
+                      )
+                    }
                     secondary={
                       // 只有在注释内容被省略时才显示浮动标签
                       isSecondaryTextTruncated ? (
@@ -803,6 +816,10 @@ const ConnectionManager = memo(
                       my: 0,
                       '& .MuiListItemText-primary': {
                         fontSize: '0.875rem', // 统一主文本字体大小
+                        textOverflow: 'ellipsis',
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap',
+                        maxWidth: 'calc(100% - 20px)', // 预留按钮的空间
                       },
                       '& .MuiListItemText-secondary': {
                         fontSize: '0.75rem', // 统一副文本字体大小
@@ -963,7 +980,7 @@ const ConnectionManager = memo(
                           : alpha(theme.palette.primary.main, 0.1))
                         : 'transparent',
                       transition: 'all 0.2s ease',
-                      maxHeight: group.expanded ? '1000px' : snapshot.isDraggingOver ? '40px' : '0px',
+                      maxHeight: group.expanded ? 'none' : snapshot.isDraggingOver ? '40px' : '0px',
                       opacity: group.expanded ? 1 : snapshot.isDraggingOver ? 0.8 : 0,
                       overflow: 'hidden',
                       borderRadius: !group.expanded && snapshot.isDraggingOver ? 1 : 0,
