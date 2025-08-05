@@ -50,7 +50,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
   // 对话框状态
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [setCurrentCommand] = useState(null);
+  const [currentCommand, setCurrentCommand] = useState(null);
   const [editedCommand, setEditedCommand] = useState("");
 
   // 菜单状态
