@@ -308,6 +308,8 @@ function App() {
   // 拖动标签状态
   const [draggedTabIndex, setDraggedTabIndex] = React.useState(null);
   const [dragOverTabIndex, setDragOverTabIndex] = React.useState(null); // 新增：记录拖拽悬停的标签
+  const [dragOperation, setDragOperation] = React.useState(null); // 新增：记录拖拽操作类型 ('sort' | 'merge')
+  const [dragInsertPosition, setDragInsertPosition] = React.useState(null); // 新增：记录插入位置 ('before' | 'after')
 
   // 合并标签状态 - 用于实现分屏显示
   const [mergedTabs, setMergedTabs] = React.useState({}); // 格式: { tabId: [子标签列表] }
@@ -994,9 +996,43 @@ function App() {
 
     // 不是在自身上拖动
     if (draggedTabIndex !== null && draggedTabIndex !== index) {
-      e.dataTransfer.dropEffect = "move";
-      // 设置拖拽悬停状态，用于显示分屏预览
-      setDragOverTabIndex(index);
+      // 获取鼠标在目标标签内的相对位置来决定拖拽效果
+      const rect = e.currentTarget.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const tabWidth = rect.width;
+      
+      // 使用更精确的区域划分：左右各20%用于排序，中间60%用于合并
+      const sortThreshold = tabWidth * 0.2;
+      
+      if (mouseX <= sortThreshold) {
+        // 左边缘：在目标标签之前插入
+        e.dataTransfer.dropEffect = "move";
+        setDragOperation('sort');
+        setDragOverTabIndex(index);
+        setDragInsertPosition('before');
+      } else if (mouseX >= tabWidth - sortThreshold) {
+        // 右边缘：在目标标签之后插入
+        e.dataTransfer.dropEffect = "move";
+        setDragOperation('sort');
+        setDragOverTabIndex(index);
+        setDragInsertPosition('after');
+      } else {
+        // 中心区域：合并操作
+        e.dataTransfer.dropEffect = "copy";
+        setDragOperation('merge');
+        setDragOverTabIndex(index);
+        setDragInsertPosition(null);
+      }
+    }
+  };
+
+  // 处理拖动离开
+  const handleDragLeave = (e) => {
+    // 只有当鼠标真正离开目标元素时才清理状态
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setDragOverTabIndex(null);
+      setDragOperation(null);
+      setDragInsertPosition(null);
     }
   };
 
@@ -1014,13 +1050,25 @@ function App() {
       // 不需要拖放到自己身上
       if (sourceIndex === targetIndex) return;
 
-      // 合并标签：将源标签合并到目标标签
-      mergeTabIntoTarget(sourceIndex, targetIndex);
+      // 根据拖拽操作类型执行不同的操作
+      if (dragOperation === 'sort') {
+        // 排序操作：根据插入位置决定目标索引
+        let insertIndex = targetIndex;
+        if (dragInsertPosition === 'after') {
+          insertIndex = targetIndex + 1;
+        }
+        reorderTab(sourceIndex, insertIndex);
+      } else if (dragOperation === 'merge') {
+        // 合并操作：将源标签合并到目标标签
+        mergeTabIntoTarget(sourceIndex, targetIndex);
+      }
     }
 
     // 重置拖动状态
     setDraggedTabIndex(null);
-    setDragOverTabIndex(null); // 重置拖拽悬停状态
+    setDragOverTabIndex(null);
+    setDragOperation(null);
+    setDragInsertPosition(null);
     e.target.style.opacity = "1";
   };
 
@@ -1029,8 +1077,36 @@ function App() {
     // 恢复透明度
     e.target.style.opacity = "1";
     setDraggedTabIndex(null);
-    setDragOverTabIndex(null); // 重置拖拽悬停状态
+    setDragOverTabIndex(null);
+    setDragOperation(null);
+    setDragInsertPosition(null);
   };
+
+  // 标签排序功能
+  const reorderTab = useCallback((sourceIndex, targetIndex) => {
+    if (sourceIndex === targetIndex || !tabs[sourceIndex]) return;
+    
+    // 不能移动欢迎页
+    if (tabs[sourceIndex].id === "welcome") return;
+    
+    const newTabs = [...tabs];
+    const [draggedTab] = newTabs.splice(sourceIndex, 1);
+    
+    // 调整插入位置
+    const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    newTabs.splice(adjustedTargetIndex, 0, draggedTab);
+    
+    setTabs(newTabs);
+    
+    // 更新当前标签页索引
+    if (currentTab === sourceIndex) {
+      setCurrentTab(adjustedTargetIndex);
+    } else if (currentTab > sourceIndex && currentTab <= adjustedTargetIndex) {
+      setCurrentTab(currentTab - 1);
+    } else if (currentTab < sourceIndex && currentTab >= adjustedTargetIndex) {
+      setCurrentTab(currentTab + 1);
+    }
+  }, [tabs, currentTab]);
 
   // 合并标签功能
   const mergeTabIntoTarget = useCallback((sourceIndex, targetIndex) => {
@@ -1694,6 +1770,7 @@ function App() {
                   onContextMenu={(e) => handleTabContextMenu(e, index, tab.id)}
                   onDragStart={(e) => handleDragStart(e, index)}
                   onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, index)}
                     onDragEnd={handleDragEnd}
                     value={index}
@@ -1701,6 +1778,8 @@ function App() {
                     index={index}
                     tabId={tab.id}
                     isDraggedOver={draggedTabIndex !== null && dragOverTabIndex === index && draggedTabIndex !== index}
+                    dragOperation={draggedTabIndex !== null && dragOverTabIndex === index ? dragOperation : null}
+                    dragInsertPosition={draggedTabIndex !== null && dragOverTabIndex === index ? dragInsertPosition : null}
                   />
                 );
               })}

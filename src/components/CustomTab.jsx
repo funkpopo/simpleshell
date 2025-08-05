@@ -1,10 +1,35 @@
 import React, { memo, useCallback, useState } from "react";
-import { Box, Typography, Tab, Menu, MenuItem, ListItemIcon, ListItemText } from "@mui/material";
+import { Box, Typography, Tab, Menu, MenuItem, ListItemIcon, ListItemText, GlobalStyles } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import GroupAddIcon from "@mui/icons-material/GroupAdd";
 import GroupRemoveIcon from "@mui/icons-material/GroupRemove";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import { findGroupByTab, getGroups, addGroup, addTabToGroup, removeTabFromGroup } from '../core/syncInputGroups';
+
+// 添加拖拽指示器动画的全局样式
+const dragIndicatorStyles = (
+  <GlobalStyles
+    styles={{
+      '@keyframes dragIndicator': {
+        '0%': {
+          opacity: 0.7,
+          transform: 'scaleY(0.9) scaleX(0.95)',
+          boxShadow: '0 0 8px rgba(76, 175, 80, 0.5)',
+        },
+        '50%': {
+          opacity: 1,
+          transform: 'scaleY(1) scaleX(1)',
+          boxShadow: '0 0 20px rgba(76, 175, 80, 0.9)',
+        },
+        '100%': {
+          opacity: 0.7,
+          transform: 'scaleY(0.9) scaleX(0.95)',
+          boxShadow: '0 0 8px rgba(76, 175, 80, 0.5)',
+        },
+      },
+    }}
+  />
+);
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -17,8 +42,11 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.onContextMenu === nextProps.onContextMenu &&
     prevProps.onDragStart === nextProps.onDragStart &&
     prevProps.onDragOver === nextProps.onDragOver &&
+    prevProps.onDragLeave === nextProps.onDragLeave &&
     prevProps.onDrop === nextProps.onDrop &&
-    prevProps.isDraggedOver === nextProps.isDraggedOver
+    prevProps.isDraggedOver === nextProps.isDraggedOver &&
+    prevProps.dragOperation === nextProps.dragOperation &&
+    prevProps.dragInsertPosition === nextProps.dragInsertPosition
   );
 };
 
@@ -31,9 +59,12 @@ const CustomTab = memo((props) => {
     index,
     onDragStart,
     onDragOver,
+    onDragLeave,
     onDrop,
     tabId, // 新增：每个Tab需传递tabId
     isDraggedOver = false, // 新增：是否被拖拽悬停
+    dragOperation = null, // 新增：拖拽操作类型 ('sort' | 'merge')
+    dragInsertPosition = null, // 新增：插入位置 ('before' | 'after')
     ...other
   } = props;
 
@@ -70,12 +101,14 @@ const CustomTab = memo((props) => {
 
   return (
     <>
+      {dragIndicatorStyles}
       <Tab
         {...other}
         onContextMenu={onContextMenu}
         draggable="true"
         onDragStart={handleDragStart}
         onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
         onDrop={onDrop}
         label={
           <Box sx={{ display: "flex", alignItems: "center", position: 'relative' }}>
@@ -139,36 +172,105 @@ const CustomTab = memo((props) => {
           minWidth: "auto",
           minHeight: 40,
           py: 0,
-          cursor: "pointer",
+          cursor: isDraggedOver && dragOperation === 'sort' ? "grab" : "pointer",
           userSelect: "none",
           color: "text.secondary",
           // 拖拽悬停时的特殊样式
           ...(isDraggedOver && {
             backgroundColor: (theme) =>
-              theme.palette.mode === "dark"
-                ? "rgba(33, 150, 243, 0.15)"
-                : "rgba(33, 150, 243, 0.08)",
+              dragOperation === 'sort' 
+                ? (theme.palette.mode === "dark"
+                    ? "rgba(76, 175, 80, 0.12)"
+                    : "rgba(76, 175, 80, 0.08)")
+                : (theme.palette.mode === "dark"
+                    ? "rgba(33, 150, 243, 0.15)"
+                    : "rgba(33, 150, 243, 0.08)"),
             borderRadius: "4px",
             boxShadow: (theme) =>
-              theme.palette.mode === "dark"
-                ? "0 0 0 2px rgba(33, 150, 243, 0.3)"
-                : "0 0 0 2px rgba(33, 150, 243, 0.2)",
+              dragOperation === 'sort'
+                ? (theme.palette.mode === "dark"
+                    ? "0 0 0 2px rgba(76, 175, 80, 0.4)"
+                    : "0 0 0 2px rgba(76, 175, 80, 0.3)")
+                : (theme.palette.mode === "dark"
+                    ? "0 0 0 2px rgba(33, 150, 243, 0.3)"
+                    : "0 0 0 2px rgba(33, 150, 243, 0.2)"),
             position: "relative",
-            "&::after": isDraggedOver ? {
-              content: '"合并标签"',
-              position: "absolute",
-              top: -24,
-              left: "50%",
-              transform: "translateX(-50%)",
-              backgroundColor: "primary.main",
-              color: "primary.contrastText",
-              padding: "2px 6px",
-              borderRadius: "4px",
-              fontSize: "10px",
-              whiteSpace: "nowrap",
-              zIndex: 1000,
-              opacity: 0.9,
-            } : {}
+            transform: dragOperation === 'sort' ? 'scale(1.02)' : 'scale(1)',
+            transition: 'all 0.2s ease-in-out',
+            
+            // 根据拖拽操作类型显示不同的指示器
+            ...(dragOperation === 'merge' && {
+              "&::after": {
+                content: '"合并标签"',
+                position: "absolute",
+                top: -26,
+                left: "50%",
+                transform: "translateX(-50%)",
+                backgroundColor: "primary.main",
+                color: "primary.contrastText",
+                padding: "3px 8px",
+                borderRadius: "6px",
+                fontSize: "11px",
+                fontWeight: 500,
+                whiteSpace: "nowrap",
+                zIndex: 1002,
+                opacity: 0.95,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+              }
+            }),
+            
+            // 排序操作的插入位置指示器
+            ...(dragOperation === 'sort' && dragInsertPosition === 'before' && {
+              "&::before": {
+                content: '""',
+                position: "absolute",
+                left: -4,
+                top: 1,
+                bottom: 1,
+                width: 6,
+                background: (theme) => 
+                  theme.palette.mode === "dark" 
+                    ? "linear-gradient(180deg, #81c784 0%, #4caf50 50%, #388e3c 100%)"
+                    : "linear-gradient(180deg, #66bb6a 0%, #4caf50 50%, #388e3c 100%)",
+                borderRadius: "3px",
+                zIndex: 1001,
+                boxShadow: (theme) =>
+                  theme.palette.mode === "dark"
+                    ? "0 0 16px rgba(76, 175, 80, 0.9), inset 0 1px 0 rgba(255,255,255,0.4)"
+                    : "0 0 12px rgba(76, 175, 80, 0.7), inset 0 1px 0 rgba(255,255,255,0.5)",
+                animation: "dragIndicator 0.6s ease-in-out infinite alternate",
+                border: (theme) => 
+                  theme.palette.mode === "dark" 
+                    ? "1px solid rgba(129, 199, 132, 0.3)" 
+                    : "1px solid rgba(76, 175, 80, 0.4)",
+              }
+            }),
+            
+            ...(dragOperation === 'sort' && dragInsertPosition === 'after' && {
+              "&::after": {
+                content: '""',
+                position: "absolute",
+                right: -4,
+                top: 1,
+                bottom: 1,
+                width: 6,
+                background: (theme) => 
+                  theme.palette.mode === "dark" 
+                    ? "linear-gradient(180deg, #81c784 0%, #4caf50 50%, #388e3c 100%)"
+                    : "linear-gradient(180deg, #66bb6a 0%, #4caf50 50%, #388e3c 100%)",
+                borderRadius: "3px",
+                zIndex: 1001,
+                boxShadow: (theme) =>
+                  theme.palette.mode === "dark"
+                    ? "0 0 16px rgba(76, 175, 80, 0.9), inset 0 1px 0 rgba(255,255,255,0.4)"
+                    : "0 0 12px rgba(76, 175, 80, 0.7), inset 0 1px 0 rgba(255,255,255,0.5)",
+                animation: "dragIndicator 0.6s ease-in-out infinite alternate",
+                border: (theme) => 
+                  theme.palette.mode === "dark" 
+                    ? "1px solid rgba(129, 199, 132, 0.3)" 
+                    : "1px solid rgba(76, 175, 80, 0.4)",
+              }
+            }),
           }),
           "&.Mui-selected": {
             color: "text.primary",
