@@ -14,17 +14,17 @@ const dragIndicatorStyles = (
         '0%': {
           opacity: 0.7,
           transform: 'scaleY(0.9) scaleX(0.95)',
-          boxShadow: '0 0 8px rgba(76, 175, 80, 0.5)',
+          boxShadow: '0 0 8px rgba(46, 125, 50, 0.6)',
         },
         '50%': {
           opacity: 1,
           transform: 'scaleY(1) scaleX(1)',
-          boxShadow: '0 0 20px rgba(76, 175, 80, 0.9)',
+          boxShadow: '0 0 24px rgba(46, 125, 50, 1.0)',
         },
         '100%': {
           opacity: 0.7,
           transform: 'scaleY(0.9) scaleX(0.95)',
-          boxShadow: '0 0 8px rgba(76, 175, 80, 0.5)',
+          boxShadow: '0 0 8px rgba(46, 125, 50, 0.6)',
         },
       },
     }}
@@ -181,19 +181,19 @@ const CustomTab = memo((props) => {
               dragOperation === 'sort' 
                 ? (theme.palette.mode === "dark"
                     ? "rgba(76, 175, 80, 0.12)"
-                    : "rgba(76, 175, 80, 0.08)")
+                    : "rgba(46, 125, 50, 0.15)")
                 : (theme.palette.mode === "dark"
                     ? "rgba(33, 150, 243, 0.15)"
-                    : "rgba(33, 150, 243, 0.08)"),
+                    : "rgba(25, 118, 210, 0.12)"),
             borderRadius: "4px",
             boxShadow: (theme) =>
               dragOperation === 'sort'
                 ? (theme.palette.mode === "dark"
                     ? "0 0 0 2px rgba(76, 175, 80, 0.4)"
-                    : "0 0 0 2px rgba(76, 175, 80, 0.3)")
+                    : "0 0 0 3px rgba(46, 125, 50, 0.5), 0 2px 8px rgba(46, 125, 50, 0.2)")
                 : (theme.palette.mode === "dark"
                     ? "0 0 0 2px rgba(33, 150, 243, 0.3)"
-                    : "0 0 0 2px rgba(33, 150, 243, 0.2)"),
+                    : "0 0 0 3px rgba(25, 118, 210, 0.4), 0 2px 8px rgba(25, 118, 210, 0.15)"),
             position: "relative",
             transform: dragOperation === 'sort' ? 'scale(1.02)' : 'scale(1)',
             transition: 'all 0.2s ease-in-out',
@@ -206,16 +206,26 @@ const CustomTab = memo((props) => {
                 top: -26,
                 left: "50%",
                 transform: "translateX(-50%)",
-                backgroundColor: "primary.main",
-                color: "primary.contrastText",
+                backgroundColor: (theme) => 
+                  theme.palette.mode === "dark" 
+                    ? "rgba(33, 150, 243, 0.95)"
+                    : "rgba(25, 118, 210, 1)",
+                color: "white",
                 padding: "3px 8px",
                 borderRadius: "6px",
                 fontSize: "11px",
-                fontWeight: 500,
+                fontWeight: 600,
                 whiteSpace: "nowrap",
                 zIndex: 1002,
-                opacity: 0.95,
-                boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                opacity: 1,
+                boxShadow: (theme) =>
+                  theme.palette.mode === "dark"
+                    ? "0 2px 8px rgba(0,0,0,0.2)"
+                    : "0 3px 12px rgba(25, 118, 210, 0.4), 0 1px 4px rgba(0,0,0,0.2)",
+                border: (theme) => 
+                  theme.palette.mode === "dark" 
+                    ? "1px solid rgba(255,255,255,0.1)"
+                    : "1px solid rgba(25, 118, 210, 0.8)",
               }
             }),
             
@@ -224,25 +234,25 @@ const CustomTab = memo((props) => {
               "&::before": {
                 content: '""',
                 position: "absolute",
-                left: -4,
-                top: 1,
-                bottom: 1,
-                width: 6,
+                left: -5,
+                top: 0,
+                bottom: 0,
+                width: 7,
                 background: (theme) => 
                   theme.palette.mode === "dark" 
                     ? "linear-gradient(180deg, #81c784 0%, #4caf50 50%, #388e3c 100%)"
-                    : "linear-gradient(180deg, #66bb6a 0%, #4caf50 50%, #388e3c 100%)",
+                    : "linear-gradient(180deg, #2e7d32 0%, #388e3c 50%, #1b5e20 100%)",
                 borderRadius: "3px",
                 zIndex: 1001,
                 boxShadow: (theme) =>
                   theme.palette.mode === "dark"
                     ? "0 0 16px rgba(76, 175, 80, 0.9), inset 0 1px 0 rgba(255,255,255,0.4)"
-                    : "0 0 12px rgba(76, 175, 80, 0.7), inset 0 1px 0 rgba(255,255,255,0.5)",
+                    : "0 0 16px rgba(46, 125, 50, 0.8), 0 0 4px rgba(27, 94, 32, 0.6), inset 0 1px 0 rgba(255,255,255,0.6)",
                 animation: "dragIndicator 0.6s ease-in-out infinite alternate",
                 border: (theme) => 
                   theme.palette.mode === "dark" 
                     ? "1px solid rgba(129, 199, 132, 0.3)" 
-                    : "1px solid rgba(76, 175, 80, 0.4)",
+                    : "2px solid rgba(46, 125, 50, 0.7)",
               }
             }),
             
@@ -250,25 +260,25 @@ const CustomTab = memo((props) => {
               "&::after": {
                 content: '""',
                 position: "absolute",
-                right: -4,
-                top: 1,
-                bottom: 1,
-                width: 6,
+                right: -5,
+                top: 0,
+                bottom: 0,
+                width: 7,
                 background: (theme) => 
                   theme.palette.mode === "dark" 
                     ? "linear-gradient(180deg, #81c784 0%, #4caf50 50%, #388e3c 100%)"
-                    : "linear-gradient(180deg, #66bb6a 0%, #4caf50 50%, #388e3c 100%)",
+                    : "linear-gradient(180deg, #2e7d32 0%, #388e3c 50%, #1b5e20 100%)",
                 borderRadius: "3px",
                 zIndex: 1001,
                 boxShadow: (theme) =>
                   theme.palette.mode === "dark"
                     ? "0 0 16px rgba(76, 175, 80, 0.9), inset 0 1px 0 rgba(255,255,255,0.4)"
-                    : "0 0 12px rgba(76, 175, 80, 0.7), inset 0 1px 0 rgba(255,255,255,0.5)",
+                    : "0 0 16px rgba(46, 125, 50, 0.8), 0 0 4px rgba(27, 94, 32, 0.6), inset 0 1px 0 rgba(255,255,255,0.6)",
                 animation: "dragIndicator 0.6s ease-in-out infinite alternate",
                 border: (theme) => 
                   theme.palette.mode === "dark" 
                     ? "1px solid rgba(129, 199, 132, 0.3)" 
-                    : "1px solid rgba(76, 175, 80, 0.4)",
+                    : "2px solid rgba(46, 125, 50, 0.7)",
               }
             }),
           }),
