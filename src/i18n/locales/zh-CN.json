@@ -150,6 +150,7 @@
       "noCommandsFound": "未找到匹配的命令",
       "allCommands": "所有命令",
       "categories": "分类",
+      "commands": "条命令",
       "addCategory": "添加分类",
       "editCategory": "编辑分类",
       "categoryName": "分类名称",

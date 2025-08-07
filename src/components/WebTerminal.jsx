@@ -195,6 +195,9 @@ const terminalCache = {};
 const fitAddonCache = {};
 const processCache = {};
 
+// 将processCache暴露到全局window对象，以便其他模块可以访问进程ID映射
+window.processCache = processCache;
+
 // 字符度量计算辅助函数
 const getCharacterMetrics = (term) => {
   if (!term || !term.element) return null;

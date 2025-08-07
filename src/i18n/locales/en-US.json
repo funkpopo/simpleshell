@@ -150,6 +150,7 @@
       "noCommandsFound": "No matching commands found",
       "allCommands": "All Commands",
       "categories": "Categories",
+      "commands": "commands",
       "addCategory": "Add Category",
       "editCategory": "Edit Category",
       "categoryName": "Category Name",
