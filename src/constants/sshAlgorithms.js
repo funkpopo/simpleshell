@@ -93,18 +93,36 @@ function getBasicSSHAlgorithms() {
       "ssh-dss",
     ],
     kex: [
+      "curve25519-sha256", // Modern key exchange
+      "curve25519-sha256@libssh.org", // libssh variant
+      "ecdh-sha2-nistp256",
+      "ecdh-sha2-nistp384", 
+      "ecdh-sha2-nistp521",
+      "diffie-hellman-group16-sha512",
       "diffie-hellman-group14-sha256",
       "diffie-hellman-group14-sha1",
       "diffie-hellman-group-exchange-sha256",
+      "diffie-hellman-group-exchange-sha1", // Fallback for older servers
+      "diffie-hellman-group1-sha1", // Very old compatibility
     ],
     cipher: [
       "aes128-ctr",
-      "aes192-ctr",
+      "aes192-ctr", 
       "aes256-ctr",
       "aes128-gcm",
       "aes256-gcm",
+      "aes128-cbc", // Fallback for older servers
+      "aes192-cbc",
+      "aes256-cbc",
+      "3des-cbc", // Very old compatibility
     ],
-    hmac: ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"],
+    hmac: [
+      "hmac-sha2-256", 
+      "hmac-sha2-512", 
+      "hmac-sha1",
+      "hmac-sha1-96", // Additional fallback
+      "hmac-md5", // Very old compatibility
+    ],
   };
 }
 

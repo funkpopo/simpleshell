@@ -416,7 +416,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     }
 
     return (
-      <List sx={{ width: "100%", p: 0 }} dense={false}>
+      <List sx={{ width: "100%", p: 0, overflowX: "hidden" }} dense={false}>
         {filteredCommands.map((cmd) => (
           <ListItem
             key={cmd.id}
@@ -427,6 +427,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               borderRadius: 1,
               overflow: "hidden",
               minHeight: 72,
+              width: "calc(100% - 8px)",
+              boxSizing: "border-box",
             }}
           >
             <ListItemButton 
@@ -437,6 +439,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                 borderRadius: 1,
                 position: "relative",
                 py: 1,
+                width: "100%",
+                boxSizing: "border-box",
                 "&:hover": {
                   backgroundColor: theme.palette.action.hover,
                   "& .command-actions": {
@@ -446,6 +450,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               }}
             >
               <ListItemText
+                sx={{
+                  flex: 1,
+                  minWidth: 0,
+                  mr: 1,
+                }}
                 primary={
                   <Typography 
                     variant="subtitle2" 
@@ -453,13 +462,16 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                     sx={{
                       color: theme.palette.text.primary,
                       mb: 0.5,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
                     }}
                   >
                     {cmd.name}
                   </Typography>
                 }
                 secondary={
-                  <Box>
+                  <Box sx={{ minWidth: 0 }}>
                     <Typography
                       variant="body2"
                       component="div"
@@ -474,7 +486,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        maxWidth: "180px",
                         mb: cmd.description ? 0.4 : 0,
                       }}
                     >
@@ -489,7 +500,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
-                          maxWidth: "180px",
                         }}
                       >
                         {cmd.description}
@@ -509,6 +519,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                   right: 8,
                   top: "50%",
                   transform: "translateY(-50%)",
+                  flexShrink: 0,
                 }}
               >
                 <Tooltip title={t("shortcutCommands.sendCommand")}>
@@ -596,7 +607,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     }
 
     return (
-      <List sx={{ width: "100%", p: 0 }} dense={false}>
+      <List sx={{ width: "100%", p: 0, overflowX: "hidden" }} dense={false}>
         {commandsByCategory.map((category) => (
           <Box key={category.id} sx={{ mb: 1 }}>
             <ListItem
@@ -671,7 +682,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               timeout="auto"
               unmountOnExit
             >
-              <Box sx={{ ml: 1.5, mr: 0.5, mt: 0.5 }}>
+              <Box sx={{ ml: 1.5, mr: 0.5, mt: 0.5, overflowX: "hidden" }}>
                 {category.commands.map((cmd) => (
                   <ListItem
                     key={cmd.id}
@@ -681,6 +692,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                       borderRadius: 1,
                       overflow: "hidden",
                       minHeight: 66,
+                      width: "100%",
+                      boxSizing: "border-box",
                     }}
                   >
                     <ListItemButton 
@@ -691,6 +704,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                         borderRadius: 1,
                         position: "relative",
                         py: 1,
+                        width: "100%",
+                        boxSizing: "border-box",
                         backgroundColor: theme.palette.mode === "dark" 
                           ? "rgba(255, 255, 255, 0.02)" 
                           : "rgba(0, 0, 0, 0.02)",
@@ -703,17 +718,27 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                       }}
                     >
                       <ListItemText
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          mr: 1,
+                        }}
                         primary={
                           <Typography 
                             variant="body2" 
                             fontWeight="medium"
-                            sx={{ mb: 0.5 }}
+                            sx={{ 
+                              mb: 0.5,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
                           >
                             {cmd.name}
                           </Typography>
                         }
                         secondary={
-                          <Box>
+                          <Box sx={{ minWidth: 0 }}>
                             <Typography
                               variant="caption"
                               component="div"
@@ -728,7 +753,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
-                                maxWidth: "140px",
                                 mb: cmd.description ? 0.25 : 0,
                               }}
                             >
@@ -743,7 +767,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                                   whiteSpace: "nowrap",
                                   overflow: "hidden",
                                   textOverflow: "ellipsis",
-                                  maxWidth: "140px",
                                   fontSize: "0.65rem",
                                 }}
                               >
@@ -764,6 +787,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                           right: 6,
                           top: "50%",
                           transform: "translateY(-50%)",
+                          flexShrink: 0,
                         }}
                       >
                         <Tooltip title={t("shortcutCommands.sendCommand")}>
@@ -1113,7 +1137,20 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                 width: "8px",
               },
               "&::-webkit-scrollbar-thumb": {
-                backgroundColor: "rgba(0,0,0,0.2)",
+                backgroundColor: theme.palette.mode === "dark" 
+                  ? "rgba(255,255,255,0.3)" 
+                  : "rgba(0,0,0,0.3)",
+                borderRadius: "4px",
+                "&:hover": {
+                  backgroundColor: theme.palette.mode === "dark" 
+                    ? "rgba(255,255,255,0.5)" 
+                    : "rgba(0,0,0,0.5)",
+                },
+              },
+              "&::-webkit-scrollbar-track": {
+                backgroundColor: theme.palette.mode === "dark" 
+                  ? "rgba(255,255,255,0.05)" 
+                  : "rgba(0,0,0,0.05)",
                 borderRadius: "4px",
               },
             }}
