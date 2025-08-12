@@ -42,12 +42,13 @@ import {
   ResourceMonitorWithSuspense as ResourceMonitor,
   FileManagerWithSuspense as FileManager,
   IPAddressQueryWithSuspense as IPAddressQuery,
+  SettingsWithSuspense as Settings,
+  CommandHistoryWithSuspense as CommandHistory,
+  ShortcutCommandsWithSuspense as ShortcutCommands,
   preloadComponents,
+  smartPreload,
 } from "./components/LazyComponents.jsx";
 
-import Settings from "./components/Settings.jsx";
-import ShortcutCommands from "./components/ShortcutCommands.jsx";
-import CommandHistory from "./components/CommandHistory.jsx";
 import RandomPasswordGenerator from "./components/RandomPasswordGenerator.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import AIChatWindow from "./components/AIChatWindow.jsx";
@@ -1598,6 +1599,9 @@ function App() {
     };
 
     loadInitialSettings();
+
+    // 智能预加载侧边栏组件，提升用户体验
+    smartPreload.preloadSidebarComponents();
 
     return () => {
       window.removeEventListener("settingsChanged", handleSettingsChanged);
