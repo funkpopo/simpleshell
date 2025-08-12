@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { FixedSizeList as List } from "react-window";
 import {
   Box,
   Paper,
   Typography,
   IconButton,
-  List,
   ListItem,
   ListItemButton,
   ListItemIcon,
@@ -39,6 +39,112 @@ import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
 import { dispatchCommandToGroup } from '../core/syncGroupCommandDispatcher';
 
+// 虚拟化历史记录项组件
+const HistoryItem = React.memo(({ index, style, data }) => {
+  const theme = useTheme();
+  const { t } = useTranslation();
+  const { 
+    filteredHistory, 
+    selectMode, 
+    selectedCommands, 
+    toggleCommandSelection, 
+    handleSendCommand, 
+    handleMenuOpen,
+    formatTime 
+  } = data;
+  
+  const item = filteredHistory[index];
+  if (!item) return null;
+
+  return (
+    <div style={style}>
+      <ListItem
+        disablePadding
+        sx={{
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          overflow: "hidden",
+        }}
+      >
+        <ListItemButton
+          onClick={() =>
+            selectMode
+              ? toggleCommandSelection(item.command)
+              : handleSendCommand(item.command)
+          }
+          sx={{
+            minHeight: 48,
+            bgcolor:
+              selectMode && selectedCommands.has(item.command)
+                ? "action.selected"
+                : "transparent",
+            borderRadius: 0,
+          }}
+        >
+          {selectMode && (
+            <ListItemIcon sx={{ minWidth: 36 }}>
+              <Checkbox
+                checked={selectedCommands.has(item.command)}
+                onChange={() =>
+                  toggleCommandSelection(item.command)
+                }
+                size="small"
+              />
+            </ListItemIcon>
+          )}
+
+          <ListItemText
+            primary={
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{
+                    flex: 1,
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {item.command}
+                </Typography>
+                {item.count > 1 && (
+                  <Chip
+                    label={`${item.count}次`}
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontSize: "0.7rem", height: 20 }}
+                  />
+                )}
+              </Box>
+            }
+            secondary={
+              <Typography
+                variant="caption"
+                color="text.secondary"
+              >
+                {formatTime(item.timestamp)}
+              </Typography>
+            }
+          />
+
+          {!selectMode && (
+            <IconButton
+              size="small"
+              onClick={(e) => handleMenuOpen(e, item)}
+              sx={{ ml: 1 }}
+            >
+              <MoreVertIcon />
+            </IconButton>
+          )}
+        </ListItemButton>
+      </ListItem>
+    </div>
+  );
+});
+
 function CommandHistory({ open, onClose, onSendCommand }) {
   const theme = useTheme();
   const { t } = useTranslation();
@@ -47,6 +153,8 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCommands, setSelectedCommands] = useState(new Set());
   const [selectMode, setSelectMode] = useState(false);
+  const [containerHeight, setContainerHeight] = useState(400);
+  const containerRef = useRef(null);
 
   // 对话框状态
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -70,6 +178,36 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     if (open) {
       loadHistory();
     }
+  }, [open]);
+
+  // 动态计算容器高度
+  useEffect(() => {
+    const updateHeight = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        if (rect.height > 0) {
+          setContainerHeight(rect.height);
+        }
+      }
+    };
+
+    updateHeight();
+
+    let resizeObserver;
+    try {
+      resizeObserver = new ResizeObserver(updateHeight);
+      if (containerRef.current) {
+        resizeObserver.observe(containerRef.current);
+      }
+    } catch (error) {
+      // ResizeObserver 不可用，使用默认高度
+    }
+
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
   }, [open]);
 
   // 加载历史记录
@@ -111,15 +249,21 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   };
 
   // 获取过滤后的历史记录
-  const getFilteredHistory = () => {
+  const filteredHistory = useMemo(() => {
     if (!searchTerm.trim()) {
       return history;
     }
-
     const searchTermLower = searchTerm.toLowerCase();
     return history.filter((item) =>
       item.command.toLowerCase().includes(searchTermLower),
     );
+  }, [history, searchTerm]);
+
+  // 格式化时间
+  const formatTime = (timestamp) => {
+    if (!timestamp) return "";
+    const date = new Date(timestamp);
+    return date.toLocaleString();
   };
 
   // 处理菜单打开
@@ -149,6 +293,41 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       showNotification(t("commandHistory.sendCommandHandlerMissing"), "error");
     }
     handleMenuClose();
+  };
+
+  // 选择/取消选择命令
+  const toggleCommandSelection = (command) => {
+    const newSelected = new Set(selectedCommands);
+    if (newSelected.has(command)) {
+      newSelected.delete(command);
+    } else {
+      newSelected.add(command);
+    }
+    setSelectedCommands(newSelected);
+  };
+
+  // 虚拟化列表的数据
+  const listItemData = useMemo(() => ({
+    filteredHistory,
+    selectMode,
+    selectedCommands,
+    toggleCommandSelection,
+    handleSendCommand,
+    handleMenuOpen,
+    formatTime,
+  }), [
+    filteredHistory,
+    selectMode,
+    selectedCommands,
+    toggleCommandSelection,
+    handleSendCommand,
+    handleMenuOpen,
+    formatTime,
+  ]);
+
+  // 获取过滤后的历史记录
+  const getFilteredHistory = () => {
+    return filteredHistory;
   };
 
   // 复制命令到剪贴板
@@ -244,20 +423,8 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     setSelectedCommands(new Set());
   };
 
-  // 选择/取消选择命令
-  const toggleCommandSelection = (command) => {
-    const newSelected = new Set(selectedCommands);
-    if (newSelected.has(command)) {
-      newSelected.delete(command);
-    } else {
-      newSelected.add(command);
-    }
-    setSelectedCommands(newSelected);
-  };
-
   // 全选/取消全选
   const toggleSelectAll = () => {
-    const filteredHistory = getFilteredHistory();
     if (selectedCommands.size === filteredHistory.length) {
       setSelectedCommands(new Set());
     } else {
@@ -310,15 +477,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       showNotification(t("commandHistory.clearAllFailed"), "error");
     }
   };
-
-  // 格式化时间
-  const formatTime = (timestamp) => {
-    if (!timestamp) return "";
-    const date = new Date(timestamp);
-    return date.toLocaleString();
-  };
-
-  const filteredHistory = getFilteredHistory();
 
   return (
     <>
@@ -430,6 +588,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
             {/* 历史记录列表 */}
             <Box
+              ref={containerRef}
               sx={{
                 flex: 1,
                 overflow: "auto",
@@ -474,95 +633,32 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                       : t("commandHistory.noCommands")}
                   </Typography>
                 </Box>
-              ) : (
-                <List dense>
+              ) : filteredHistory.length < 50 ? (
+                // 对于少量数据，使用传统渲染以避免虚拟化开销
+                <Box sx={{ height: "100%", overflow: "auto" }}>
                   {filteredHistory.map((item, index) => (
-                    <ListItem
+                    <HistoryItem
                       key={`${item.command}-${item.timestamp}-${index}`}
-                      disablePadding
-                      sx={{
-                        borderBottom: `1px solid ${theme.palette.divider}`,
-                        overflow: "hidden",
-                      }}
-                    >
-                      <ListItemButton
-                        onClick={() =>
-                          selectMode
-                            ? toggleCommandSelection(item.command)
-                            : handleSendCommand(item.command)
-                        }
-                        sx={{
-                          minHeight: 48,
-                          bgcolor:
-                            selectMode && selectedCommands.has(item.command)
-                              ? "action.selected"
-                              : "transparent",
-                          borderRadius: 0,
-                        }}
-                      >
-                        {selectMode && (
-                          <ListItemIcon sx={{ minWidth: 36 }}>
-                            <Checkbox
-                              checked={selectedCommands.has(item.command)}
-                              onChange={() =>
-                                toggleCommandSelection(item.command)
-                              }
-                              size="small"
-                            />
-                          </ListItemIcon>
-                        )}
-
-                        <ListItemText
-                          primary={
-                            <Box
-                              sx={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 1,
-                              }}
-                            >
-                              <Typography
-                                variant="body2"
-                                sx={{
-                                  flex: 1,
-                                  wordBreak: "break-all",
-                                }}
-                              >
-                                {item.command}
-                              </Typography>
-                              {item.count > 1 && (
-                                <Chip
-                                  label={`${item.count}次`}
-                                  size="small"
-                                  variant="outlined"
-                                  sx={{ fontSize: "0.7rem", height: 20 }}
-                                />
-                              )}
-                            </Box>
-                          }
-                          secondary={
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              {formatTime(item.timestamp)}
-                            </Typography>
-                          }
-                        />
-
-                        {!selectMode && (
-                          <IconButton
-                            size="small"
-                            onClick={(e) => handleMenuOpen(e, item)}
-                            sx={{ ml: 1 }}
-                          >
-                            <MoreVertIcon />
-                          </IconButton>
-                        )}
-                      </ListItemButton>
-                    </ListItem>
+                      index={index}
+                      style={{ height: 48 }}
+                      data={listItemData}
+                    />
                   ))}
-                </List>
+                </Box>
+              ) : (
+                // 对于大量数据，使用虚拟化渲染
+                containerHeight > 0 && (
+                  <List
+                    height={containerHeight}
+                    itemCount={filteredHistory.length}
+                    itemSize={48}
+                    itemData={listItemData}
+                    overscanCount={15}
+                    width="100%"
+                  >
+                    {HistoryItem}
+                  </List>
+                )
               )}
             </Box>
 

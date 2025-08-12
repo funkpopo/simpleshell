@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { FixedSizeList as List } from "react-window";
 import {
   Box,
   Paper,
   Typography,
   IconButton,
-  List,
   ListItem,
   ListItemButton,
   ListItemIcon,
@@ -45,6 +45,179 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
 import { dispatchCommandToGroup } from '../core/syncGroupCommandDispatcher';
 
+// 虚拟化命令项组件
+const CommandItem = React.memo(({ index, style, data }) => {
+  const theme = useTheme();
+  const { t } = useTranslation();
+  const { commands, handleSendCommand, handleCopyCommand, handleMenuOpen } = data;
+  const cmd = commands[index];
+
+  if (!cmd) return null;
+
+  return (
+    <div style={style}>
+      <ListItem
+        disablePadding
+        sx={{
+          mb: 0.5,
+          mx: 0.5,
+          borderRadius: 1,
+          overflow: "hidden",
+          minHeight: 72,
+          width: "calc(100% - 8px)",
+          boxSizing: "border-box",
+        }}
+      >
+        <ListItemButton 
+          sx={{ 
+            pl: 1,
+            pr: 1,
+            minHeight: 72,
+            borderRadius: 1,
+            position: "relative",
+            py: 1,
+            width: "100%",
+            boxSizing: "border-box",
+            "&:hover": {
+              backgroundColor: theme.palette.action.hover,
+              "& .command-actions": {
+                opacity: 1,
+              },
+            },
+          }}
+        >
+          <ListItemText
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              mr: 1,
+            }}
+            primary={
+              <Typography 
+                variant="subtitle2" 
+                fontWeight="medium"
+                sx={{
+                  color: theme.palette.text.primary,
+                  mb: 0.5,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {cmd.name}
+              </Typography>
+            }
+            secondary={
+              <Box sx={{ minWidth: 0 }}>
+                <Typography
+                  variant="body2"
+                  component="div"
+                  sx={{
+                    fontFamily: "monospace",
+                    backgroundColor: theme.palette.action.hover,
+                    color: theme.palette.text.secondary,
+                    px: 1,
+                    py: 0.4,
+                    borderRadius: 0.5,
+                    fontSize: "0.75rem",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    mb: cmd.description ? 0.4 : 0,
+                  }}
+                >
+                  {cmd.command}
+                </Typography>
+                {cmd.description && (
+                  <Typography
+                    variant="caption"
+                    component="div"
+                    sx={{
+                      color: "text.secondary",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {cmd.description}
+                  </Typography>
+                )}
+              </Box>
+            }
+          />
+          <Box 
+            className="command-actions"
+            sx={{
+              display: "flex",
+              gap: 0.5,
+              opacity: 0,
+              transition: "opacity 0.2s",
+              position: "absolute",
+              right: 8,
+              top: "50%",
+              transform: "translateY(-50%)",
+              flexShrink: 0,
+            }}
+          >
+            <Tooltip title={t("shortcutCommands.sendCommand")}>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSendCommand(cmd.command);
+                }}
+                sx={{
+                  backgroundColor: theme.palette.primary.main,
+                  color: "white",
+                  "&:hover": {
+                    backgroundColor: theme.palette.primary.dark,
+                  },
+                }}
+              >
+                <SendIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={t("shortcutCommands.copyCommand")}>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyCommand(cmd.command);
+                }}
+                sx={{
+                  backgroundColor: theme.palette.grey[600],
+                  color: "white",
+                  "&:hover": {
+                    backgroundColor: theme.palette.grey[700],
+                  },
+                }}
+              >
+                <ContentCopyIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMenuOpen(e, cmd.id, "command");
+              }}
+              sx={{
+                backgroundColor: theme.palette.grey[500],
+                color: "white",
+                "&:hover": {
+                  backgroundColor: theme.palette.grey[600],
+                },
+              }}
+            >
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        </ListItemButton>
+      </ListItem>
+    </div>
+  );
+});
+
 function ShortcutCommands({ open, onClose, onSendCommand }) {
   const theme = useTheme();
   const { t } = useTranslation();
@@ -55,6 +228,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [tabValue, setTabValue] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState({});
+  const [containerHeight, setContainerHeight] = useState(400);
+  const containerRef = useRef(null);
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -80,6 +255,36 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     if (open) {
       loadCommands();
     }
+  }, [open]);
+
+  // 动态计算容器高度
+  useEffect(() => {
+    const updateHeight = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        if (rect.height > 0) {
+          setContainerHeight(rect.height);
+        }
+      }
+    };
+
+    updateHeight();
+
+    let resizeObserver;
+    try {
+      resizeObserver = new ResizeObserver(updateHeight);
+      if (containerRef.current) {
+        resizeObserver.observe(containerRef.current);
+      }
+    } catch (error) {
+      // ResizeObserver 不可用，使用默认高度
+    }
+
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
   }, [open]);
 
   // 加载命令数据
@@ -342,7 +547,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   };
 
   // 过滤命令
-  const getFilteredCommands = () => {
+  const filteredCommands = useMemo(() => {
     return commands.filter((cmd) => {
       // 根据搜索词过滤
       const matchesSearch =
@@ -357,10 +562,23 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
       return matchesSearch && matchesCategory;
     });
+  }, [commands, searchTerm, selectedCategory]);
+
+  // 虚拟化列表的数据
+  const listItemData = useMemo(() => ({
+    commands: filteredCommands,
+    handleSendCommand,
+    handleCopyCommand,
+    handleMenuOpen,
+  }), [filteredCommands, handleSendCommand, handleCopyCommand, handleMenuOpen]);
+
+  // 过滤命令 (保留原函数以兼容其他地方的调用)
+  const getFilteredCommands = () => {
+    return filteredCommands;
   };
 
   // 获取按分类分组的命令
-  const getCommandsByCategory = () => {
+  const commandsByCategory = useMemo(() => {
     const result = {};
 
     // 添加未分类组
@@ -380,7 +598,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     });
 
     // 将命令添加到相应分类
-    const filteredCommands = getFilteredCommands();
     filteredCommands.forEach((cmd) => {
       const categoryId =
         cmd.category && result[cmd.category] ? cmd.category : "uncategorized";
@@ -389,12 +606,15 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
     // 过滤掉没有命令的分类
     return Object.values(result).filter((cat) => cat.commands.length > 0);
+  }, [categories, filteredCommands, t]);
+
+  // 获取按分类分组的命令 (保留原函数以兼容其他地方的调用)
+  const getCommandsByCategory = () => {
+    return commandsByCategory;
   };
 
   // 渲染命令列表
   const renderCommandList = () => {
-    const filteredCommands = getFilteredCommands();
-
     if (loading) {
       return (
         <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
@@ -415,177 +635,41 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       );
     }
 
+    // 对于少量命令，使用传统渲染以避免虚拟化开销
+    if (filteredCommands.length < 30) {
+      return (
+        <Box sx={{ width: "100%", p: 0, overflowX: "hidden", height: "100%", overflow: "auto" }}>
+          {filteredCommands.map((cmd) => (
+            <CommandItem
+              key={cmd.id}
+              index={filteredCommands.indexOf(cmd)}
+              style={{ height: 72 }}
+              data={listItemData}
+            />
+          ))}
+        </Box>
+      );
+    }
+
+    // 对于大量命令，使用虚拟化渲染
     return (
-      <List sx={{ width: "100%", p: 0, overflowX: "hidden" }} dense={false}>
-        {filteredCommands.map((cmd) => (
-          <ListItem
-            key={cmd.id}
-            disablePadding
-            sx={{
-              mb: 0.5,
-              mx: 0.5,
-              borderRadius: 1,
-              overflow: "hidden",
-              minHeight: 72,
-              width: "calc(100% - 8px)",
-              boxSizing: "border-box",
-            }}
-          >
-            <ListItemButton 
-              sx={{ 
-                pl: 1,
-                pr: 1,
-                minHeight: 72,
-                borderRadius: 1,
-                position: "relative",
-                py: 1,
-                width: "100%",
-                boxSizing: "border-box",
-                "&:hover": {
-                  backgroundColor: theme.palette.action.hover,
-                  "& .command-actions": {
-                    opacity: 1,
-                  },
-                },
-              }}
-            >
-              <ListItemText
-                sx={{
-                  flex: 1,
-                  minWidth: 0,
-                  mr: 1,
-                }}
-                primary={
-                  <Typography 
-                    variant="subtitle2" 
-                    fontWeight="medium"
-                    sx={{
-                      color: theme.palette.text.primary,
-                      mb: 0.5,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {cmd.name}
-                  </Typography>
-                }
-                secondary={
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography
-                      variant="body2"
-                      component="div"
-                      sx={{
-                        fontFamily: "monospace",
-                        backgroundColor: theme.palette.action.hover,
-                        color: theme.palette.text.secondary,
-                        px: 1,
-                        py: 0.4,
-                        borderRadius: 0.5,
-                        fontSize: "0.75rem",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        mb: cmd.description ? 0.4 : 0,
-                      }}
-                    >
-                      {cmd.command}
-                    </Typography>
-                    {cmd.description && (
-                      <Typography
-                        variant="caption"
-                        component="div"
-                        sx={{
-                          color: "text.secondary",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {cmd.description}
-                      </Typography>
-                    )}
-                  </Box>
-                }
-              />
-              <Box 
-                className="command-actions"
-                sx={{
-                  display: "flex",
-                  gap: 0.5,
-                  opacity: 0,
-                  transition: "opacity 0.2s",
-                  position: "absolute",
-                  right: 8,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  flexShrink: 0,
-                }}
-              >
-                <Tooltip title={t("shortcutCommands.sendCommand")}>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSendCommand(cmd.command);
-                    }}
-                    sx={{
-                      backgroundColor: theme.palette.primary.main,
-                      color: "white",
-                      "&:hover": {
-                        backgroundColor: theme.palette.primary.dark,
-                      },
-                    }}
-                  >
-                    <SendIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title={t("shortcutCommands.copyCommand")}>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCopyCommand(cmd.command);
-                    }}
-                    sx={{
-                      backgroundColor: theme.palette.grey[600],
-                      color: "white",
-                      "&:hover": {
-                        backgroundColor: theme.palette.grey[700],
-                      },
-                    }}
-                  >
-                    <ContentCopyIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                <IconButton
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleMenuOpen(e, cmd.id, "command");
-                  }}
-                  sx={{
-                    backgroundColor: theme.palette.grey[500],
-                    color: "white",
-                    "&:hover": {
-                      backgroundColor: theme.palette.grey[600],
-                    },
-                  }}
-                >
-                  <MoreVertIcon fontSize="small" />
-                </IconButton>
-              </Box>
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
+      containerHeight > 0 && (
+        <List
+          height={containerHeight}
+          itemCount={filteredCommands.length}
+          itemSize={72}
+          itemData={listItemData}
+          overscanCount={10}
+          width="100%"
+        >
+          {CommandItem}
+        </List>
+      )
     );
   };
 
   // 渲染分类视图
   const renderCategoriesView = () => {
-    const commandsByCategory = getCommandsByCategory();
-
     if (loading) {
       return (
         <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
@@ -1128,6 +1212,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
           {/* 内容区域 */}
           <Box
+            ref={containerRef}
             sx={{
               flexGrow: 1,
               overflow: "auto",
