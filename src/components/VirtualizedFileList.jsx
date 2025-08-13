@@ -41,7 +41,7 @@ const formatDate = (date) => {
   }).format(date);
 };
 
-// 单个文件项组件
+// 单个文件项组件 - 优化版本
 const FileItem = memo(({ index, style, data }) => {
   const theme = useTheme();
   const { files, onFileActivate, onContextMenu, selectedFile } = data;
@@ -49,6 +49,15 @@ const FileItem = memo(({ index, style, data }) => {
 
   // 确保文件存在
   if (!file) return null;
+
+  // 使用useMemo缓存文件的格式化信息，避免每次渲染都计算
+  const fileInfo = useMemo(() => ({
+    formattedDate: file.modifyTime ? formatDate(new Date(file.modifyTime)) : '',
+    formattedSize: file.size && !file.isDirectory ? formatFileSize(file.size) : '',
+    isSelected: selectedFile && 
+      selectedFile.name === file.name && 
+      selectedFile.modifyTime === file.modifyTime
+  }), [file.modifyTime, file.size, file.isDirectory, selectedFile, file.name]);
 
   const handleFileActivate = useCallback(() => {
     onFileActivate(file);
@@ -61,10 +70,27 @@ const FileItem = memo(({ index, style, data }) => {
     [file, onContextMenu],
   );
 
-  // 检查是否被选中，使用文件名和修改时间共同判断，避免删除后选中状态错误
-  const isSelected = selectedFile && 
-    selectedFile.name === file.name && 
-    selectedFile.modifyTime === file.modifyTime;
+  // 缓存的二级文本内容，避免每次渲染都重新组合
+  const secondaryText = useMemo(() => {
+    const parts = [];
+    if (fileInfo.formattedDate) parts.push(fileInfo.formattedDate);
+    if (fileInfo.formattedSize) parts.push(fileInfo.formattedSize);
+    return parts.join(' • ');
+  }, [fileInfo.formattedDate, fileInfo.formattedSize]);
+
+  // 缓存按钮样式对象
+  const buttonSx = useMemo(() => ({
+    minHeight: 48,
+    px: 2,
+    backgroundColor: fileInfo.isSelected
+      ? theme.palette.action.selected
+      : "transparent",
+    "&:hover": {
+      backgroundColor: fileInfo.isSelected 
+        ? theme.palette.action.selected
+        : theme.palette.action.hover,
+    },
+  }), [fileInfo.isSelected, theme.palette.action.selected, theme.palette.action.hover]);
 
   // 直接始终渲染完整内容（含时间戳）
   return (
@@ -76,18 +102,7 @@ const FileItem = memo(({ index, style, data }) => {
         <ListItemButton
           onDoubleClick={handleFileActivate}
           dense
-          sx={{
-            minHeight: 48,
-            px: 2,
-            backgroundColor: isSelected
-              ? theme.palette.action.selected
-              : "transparent",
-            "&:hover": {
-              backgroundColor: isSelected 
-                ? theme.palette.action.selected
-                : theme.palette.action.hover,
-            },
-          }}
+          sx={buttonSx}
         >
           <ListItemIcon sx={{ minWidth: 36 }}>
             {file.isDirectory ? (
@@ -98,14 +113,7 @@ const FileItem = memo(({ index, style, data }) => {
           </ListItemIcon>
           <ListItemText
             primary={file.name}
-            secondary={
-              <>
-                {file.modifyTime && formatDate(new Date(file.modifyTime))}
-                {file.size &&
-                  !file.isDirectory &&
-                  ` • ${formatFileSize(file.size)}`}
-              </>
-            }
+            secondary={secondaryText}
             primaryTypographyProps={{
               variant: "body2",
               noWrap: true,
@@ -291,30 +299,33 @@ const VirtualizedFileList = ({
     [processedFiles.length, devicePerformance]
   );
 
+  // 优化的空状态组件 - 缓存以避免不必要的重新渲染
+  const EmptyStateComponent = useMemo(() => (
+    <Box
+      ref={containerRef}
+      sx={{
+        height: height === "100%" ? "100%" : height,
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 2,
+      }}
+      onContextMenu={onBlankContextMenu}
+    >
+      <Typography variant="body2" color="text.secondary">
+        {searchTerm ? "没有找到匹配的文件" : "此目录为空"}
+      </Typography>
+    </Box>
+  ), [height, searchTerm, onBlankContextMenu, containerRef]);
+
   // 如果没有文件，显示空状态
   if (processedFiles.length === 0) {
-    return (
-      <Box
-        ref={containerRef}
-        sx={{
-          height: height === "100%" ? "100%" : height,
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 2,
-        }}
-        onContextMenu={onBlankContextMenu}
-      >
-        <Typography variant="body2" color="text.secondary">
-          {searchTerm ? "没有找到匹配的文件" : "此目录为空"}
-        </Typography>
-      </Box>
-    );
+    return EmptyStateComponent;
   }
 
-  // 降级到传统列表渲染
-  const renderFallbackList = () => (
+  // 降级到传统列表渲染 - 优化版本，使用useMemo缓存
+  const FallbackListComponent = useMemo(() => (
     <Box
       ref={containerRef}
       sx={{
@@ -352,7 +363,10 @@ const VirtualizedFileList = ({
         />
       ))}
     </Box>
-  );
+  ), [containerRef, height, theme.palette.action.hover, theme.palette.action.disabled, theme.palette.action.focus, onBlankContextMenu, processedFiles, itemHeight, onFileActivate, onContextMenu, selectedFile]);
+
+  // 降级到传统列表渲染的函数
+  const renderFallbackList = useCallback(() => FallbackListComponent, [FallbackListComponent]);
 
   // 如果虚拟化被禁用或出现错误，使用降级渲染
   if (
@@ -360,7 +374,7 @@ const VirtualizedFileList = ({
     virtualizationError ||
     processedFiles.length < 50
   ) {
-    return renderFallbackList();
+    return FallbackListComponent;
   }
 
   return (

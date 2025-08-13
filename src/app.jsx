@@ -972,8 +972,8 @@ function App() {
     }
   };
 
-  // 处理拖动开始
-  const handleDragStart = (e, index) => {
+  // 优化的拖动开始处理函数 - 使用useCallback减少重建
+  const handleDragStart = useCallback((e, index) => {
     // 不允许拖动欢迎标签
     if (tabs[index].id === "welcome") {
       e.preventDefault();
@@ -987,7 +987,7 @@ function App() {
 
     // 使拖动的元素半透明
     e.target.style.opacity = "0.5";
-  };
+  }, [tabs]);
 
   // 处理拖动中
   const handleDragOver = (e, index) => {
