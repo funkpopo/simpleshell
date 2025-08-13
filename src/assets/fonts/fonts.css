@@ -1,0 +1,87 @@
+/* Font Face Declarations for File Preview/Editing */
+
+/* Fira Code - Popular monospace font with programming ligatures */
+@font-face {
+  font-family: 'Fira Code';
+  src: local('Fira Code'), local('FiraCode-Regular'),
+       url('./FiraCode-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Fira Code';
+  src: local('Fira Code Bold'), local('FiraCode-Bold'),
+       url('./FiraCode-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Space Mono - Clean monospace font */
+@font-face {
+  font-family: 'Space Mono';
+  src: local('Space Mono'), local('SpaceMono-Regular'),
+       url('./SpaceMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  src: local('Space Mono Bold'), local('SpaceMono-Bold'),
+       url('./SpaceMono-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Font fallback cascade for better compatibility */
+.font-fira-code {
+  font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-variant-ligatures: common-ligatures;
+  font-feature-settings: "liga" 1, "calt" 1;
+}
+
+.font-space-mono {
+  font-family: 'Space Mono', 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.font-consolas {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.font-system {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* CodeMirror font customizations */
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+.cm-editor .cm-content {
+  font-variant-ligatures: inherit;
+  font-feature-settings: inherit;
+}
+
+/* File preview specific font classes */
+.file-preview-editor .cm-content,
+.file-preview-viewer .cm-content {
+  font-variant-ligatures: inherit;
+  font-feature-settings: inherit;
+}
+
+/* Specific CodeMirror font overrides */
+.cm-editor .cm-content {
+  font-variant-ligatures: inherit;
+  font-feature-settings: inherit;
+}
+
+/* Ensure Fira Code ligatures work in CodeMirror */
+.cm-editor .cm-content.font-fira-code {
+  font-variant-ligatures: common-ligatures;
+  font-feature-settings: "liga" 1, "calt" 1;
+}

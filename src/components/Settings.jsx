@@ -99,6 +99,17 @@ const Settings = memo(({ open, onClose }) => {
     [t],
   );
 
+  // Define font family options for file preview/editing
+  const editorFonts = useMemo(
+    () => [
+      { value: "system", label: t("settings.fonts.system", "系统默认") },
+      { value: "fira-code", label: "Fira Code" },
+      { value: "consolas", label: "Consolas" },
+      { value: "space-mono", label: "Space Mono" },
+    ],
+    [t],
+  );
+
   // Define log level options
   const logLevels = useMemo(
     () => [
@@ -113,6 +124,7 @@ const Settings = memo(({ open, onClose }) => {
   // Initial states
   const [language, setLanguage] = React.useState("");
   const [fontSize, setFontSize] = React.useState(14);
+  const [editorFont, setEditorFont] = React.useState("system");
   const [darkMode, setDarkMode] = React.useState(true);
   const [logLevel, setLogLevel] = React.useState("WARN");
   const [maxFileSize, setMaxFileSize] = React.useState(5);
@@ -140,6 +152,7 @@ const Settings = memo(({ open, onClose }) => {
           if (settings) {
             setLanguage(settings.language || "zh-CN");
             setFontSize(settings.fontSize || 14);
+            setEditorFont(settings.editorFont || "system");
             setDarkMode(
               settings.darkMode !== undefined ? settings.darkMode : true,
             );
@@ -192,6 +205,11 @@ const Settings = memo(({ open, onClose }) => {
   // Handle font size change
   const handleFontSizeChange = useCallback((event, newValue) => {
     setFontSize(newValue);
+  }, []);
+
+  // Handle font family change
+  const handleEditorFontChange = useCallback((event) => {
+    setEditorFont(event.target.value);
   }, []);
 
   // Handle theme mode change
@@ -265,6 +283,7 @@ const Settings = memo(({ open, onClose }) => {
         const settings = {
           language,
           fontSize,
+          editorFont,
           darkMode,
           performance: {
             imageSupported,
@@ -296,7 +315,7 @@ const Settings = memo(({ open, onClose }) => {
       // Notify app to apply changes
       window.dispatchEvent(
         new CustomEvent("settingsChanged", {
-          detail: { language, fontSize, darkMode },
+          detail: { language, fontSize, editorFont, darkMode },
         }),
       );
 
@@ -385,6 +404,40 @@ const Settings = memo(({ open, onClose }) => {
               max={18}
             />
           </Box>
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="subtitle1" gutterBottom>
+            {t("settings.editorFont", "文件预览/编辑字体")}
+          </Typography>
+          <FormControl fullWidth variant="outlined" size="small">
+            <InputLabel id="editor-font-select-label">
+              {t("settings.editorFont", "文件预览/编辑字体")}
+            </InputLabel>
+            <Select
+              labelId="editor-font-select-label"
+              id="editor-font-select"
+              value={editorFont}
+              onChange={handleEditorFontChange}
+              label={t("settings.editorFont", "文件预览/编辑字体")}
+            >
+              {editorFonts.map((font) => (
+                <MenuItem key={font.value} value={font.value}>
+                  <span style={{ 
+                    fontFamily: font.value === 'system' ? 'Consolas, Monaco, "Courier New", monospace' : 
+                               font.value === 'fira-code' ? '"Fira Code", Consolas, Monaco, "Courier New", monospace' : 
+                               font.value === 'consolas' ? 'Consolas, Monaco, "Courier New", monospace' : 
+                               font.value === 'space-mono' ? '"Space Mono", Consolas, Monaco, "Courier New", monospace' : 
+                               'inherit' 
+                  }}>
+                    {font.label} - {t("settings.fonts.sample", "Hello World! 123")}
+                  </span>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Box>
 
         <Divider sx={{ my: 2 }} />

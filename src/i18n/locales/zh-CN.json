@@ -16,6 +16,14 @@
       "cancel": "取消",
       "save": "保存",
       "saveError": "保存设置失败，请重试。",
+      "editorFont": "文件预览/编辑字体",
+      "fonts": {
+        "system": "系统默认",
+        "fira-code": "Fira Code",
+        "consolas": "Consolas",
+        "space-mono": "Space Mono",
+        "sample": "Hello World! 123"
+      },
       "logSettingsTitle": "日志设置",
       "logLevelLabel": "日志记录等级",
       "logFileSizeLimitLabel": "日志文件大小上限",

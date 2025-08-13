@@ -353,6 +353,7 @@ function loadUISettings() {
     return {
       language: "zh-CN",
       fontSize: 14,
+      editorFont: "system",
       darkMode: true,
       performance: {
         imageSupported: true,
@@ -375,6 +376,7 @@ function loadUISettings() {
         // 确保性能设置存在
         const uiSettings = {
           ...config.uiSettings,
+          editorFont: config.uiSettings.editorFont || "system",
           performance: {
             imageSupported:
               config.uiSettings.performance?.imageSupported !== false,
@@ -395,7 +397,7 @@ function loadUISettings() {
         "ERROR",
       );
   }
-  return { language: "zh-CN", fontSize: 14, darkMode: true };
+  return { language: "zh-CN", fontSize: 14, editorFont: "system", darkMode: true };
 }
 
 function saveUISettings(settings) {
@@ -662,6 +664,7 @@ function initializeMainConfig() {
         uiSettings: {
           language: "zh-CN",
           fontSize: 14,
+          editorFont: "system",
           darkMode: true,
         },
         aiSettings: {
@@ -728,6 +731,7 @@ function initializeMainConfig() {
         config.uiSettings = {
           language: "zh-CN",
           fontSize: 14,
+          editorFont: "system",
           darkMode: true,
         };
         changed = true;
@@ -743,6 +747,10 @@ function initializeMainConfig() {
         }
         if (config.uiSettings.darkMode === undefined) {
           config.uiSettings.darkMode = true;
+          changed = true;
+        }
+        if (!config.uiSettings.editorFont) {
+          config.uiSettings.editorFont = "system";
           changed = true;
         }
       }
