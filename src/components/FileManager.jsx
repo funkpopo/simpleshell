@@ -58,6 +58,9 @@ const FileManager = memo(
     const [searchTerm, setSearchTerm] = useState("");
     const [showSearch, setShowSearch] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
+    const [selectedFiles, setSelectedFiles] = useState([]); // 多选文件列表
+    const [lastSelectedIndex, setLastSelectedIndex] = useState(-1); // 用于Shift范围选择
+    const [anchorIndex, setAnchorIndex] = useState(-1); // Shift选择的锚点索引
     const [showRenameDialog, setShowRenameDialog] = useState(false);
     const [newName, setNewName] = useState("");
     const [blankContextMenu, setBlankContextMenu] = useState(null);
@@ -319,6 +322,9 @@ const FileManager = memo(
                 setFiles(fileData);
                 // 加载新目录时重置选中文件
                 setSelectedFile(null);
+                setSelectedFiles([]);
+                setLastSelectedIndex(-1);
+                setAnchorIndex(-1);
               }
 
               // 记录刷新时间
@@ -393,6 +399,9 @@ const FileManager = memo(
             setPathInput(path);
             // 加载新目录时重置选中文件
             setSelectedFile(null);
+            setSelectedFiles([]);
+            setLastSelectedIndex(-1);
+            setAnchorIndex(-1);
 
             // 记录刷新时间
             setLastRefreshTime(Date.now());
@@ -541,10 +550,120 @@ const FileManager = memo(
       }
     };
 
+    // 多选文件管理函数
+    const isFileSelected = useCallback((file) => {
+      return selectedFiles.some(selectedFile => 
+        selectedFile.name === file.name && selectedFile.modifyTime === file.modifyTime
+      );
+    }, [selectedFiles]);
+
+    // 清理重复选择项的辅助函数
+    const deduplicateSelectedFiles = useCallback((files) => {
+      const seen = new Set();
+      return files.filter(file => {
+        const key = `${file.name}-${file.modifyTime}`;
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+    }, []);
+
+    // 过滤和排序文件列表（根据搜索词） - 优化版本，使用useMemo缓存
+    const filteredFiles = useMemo(() => {
+      let processedFiles = files;
+
+      // 搜索过滤
+      if (searchTerm) {
+        processedFiles = files.filter((file) =>
+          file.name.toLowerCase().includes(searchTerm.toLowerCase()),
+        );
+      }
+
+      // 排序：目录在前，然后按名称排序
+      return [...processedFiles].sort((a, b) => {
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    }, [files, searchTerm]);
+
+    const handleFileSelect = useCallback((file, index, event) => {
+      const isMultiSelect = event.ctrlKey || event.metaKey;
+      const isRangeSelect = event.shiftKey;
+      
+      if (isRangeSelect && anchorIndex !== -1) {
+        // Shift范围选择 - 使用排序后的文件列表
+        const start = Math.min(anchorIndex, index);
+        const end = Math.max(anchorIndex, index);
+        const rangeFiles = filteredFiles.slice(start, end + 1);
+        
+        // 直接设置范围内的文件为选中状态（完全替换之前的选择）
+        setSelectedFiles(deduplicateSelectedFiles(rangeFiles));
+        setSelectedFile(file);
+        setLastSelectedIndex(index);
+        // 保持锚点不变，这样连续的Shift选择都从同一个起点开始
+      } else if (isMultiSelect) {
+        // Ctrl多选
+        if (isFileSelected(file)) {
+          // 取消选择 - 从当前选择中移除该文件
+          const newSelectedFiles = selectedFiles.filter(f => 
+            !(f.name === file.name && f.modifyTime === file.modifyTime)
+          );
+          setSelectedFiles(newSelectedFiles);
+          
+          // 如果取消选择的是当前的selectedFile，更新selectedFile
+          if (selectedFile && selectedFile.name === file.name && selectedFile.modifyTime === file.modifyTime) {
+            setSelectedFile(newSelectedFiles.length > 0 ? newSelectedFiles[0] : null);
+          }
+        } else {
+          // 添加到选择 - 防止重复添加
+          setSelectedFiles(prev => {
+            // 检查是否已经在选择列表中
+            const alreadySelected = prev.some(f => 
+              f.name === file.name && f.modifyTime === file.modifyTime
+            );
+            // 如果还没选中，则添加到列表
+            return alreadySelected ? prev : [...prev, file];
+          });
+          setSelectedFile(file);
+        }
+        setLastSelectedIndex(index);
+        setAnchorIndex(index); // Ctrl点击设置新的锚点
+      } else {
+        // 单选 - 清除所有选择，选中当前文件
+        setSelectedFiles([file]);
+        setSelectedFile(file);
+        setLastSelectedIndex(index);
+        setAnchorIndex(index); // 单击设置锚点，为后续的Shift选择做准备
+      }
+    }, [anchorIndex, filteredFiles, isFileSelected, selectedFile, selectedFiles, deduplicateSelectedFiles]);
+
+    // 获取当前选中的文件列表（用于批量操作）
+    const getSelectedFiles = useCallback(() => {
+      return selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : []);
+    }, [selectedFiles, selectedFile]);
+
+    // 处理批量操作确认
+    const handleBatchOperationConfirm = useCallback((operation, files) => {
+      const fileCount = files.length;
+      const fileList = files.map(f => f.name).join(', ');
+      const message = `确认${operation} ${fileCount} 个文件？\n${fileList}`;
+      return window.confirm(message);
+    }, []);
+
     // 处理右键菜单
-    const handleContextMenu = (event, file) => {
+    const handleContextMenu = (event, file, index) => {
       event.preventDefault();
-      setSelectedFile(file);
+      
+      // 如果右键点击的文件没有被选中，则单选该文件
+      if (!isFileSelected(file)) {
+        setSelectedFiles([file]);
+        setSelectedFile(file);
+        setLastSelectedIndex(index);
+      }
+      
       setContextMenu({
         mouseX: event.clientX,
         mouseY: event.clientY,
@@ -556,12 +675,68 @@ const FileManager = memo(
       setContextMenu(null);
     };
 
+    // 处理批量删除
+    const handleBatchDelete = async () => {
+      const filesToDelete = getSelectedFiles();
+      if (filesToDelete.length === 0) return;
+      
+      if (!handleBatchOperationConfirm('删除', filesToDelete)) {
+        return;
+      }
+      
+      setLoading(true);
+      setError(null);
+      
+      try {
+        for (const file of filesToDelete) {
+          const fullPath =
+            currentPath === "/"
+              ? "/" + file.name
+              : currentPath
+                ? currentPath + "/" + file.name
+                : file.name;
+
+          if (window.terminalAPI && window.terminalAPI.deleteFile) {
+            const response = await window.terminalAPI.deleteFile(
+              tabId,
+              fullPath,
+              file.isDirectory,
+            );
+
+            if (!response?.success) {
+              setError(`删除 ${file.name} 失败: ${response?.error || "未知错误"}`);
+              break;
+            }
+          }
+        }
+        
+        // 清除选择状态
+        setSelectedFile(null);
+        setSelectedFiles([]);
+        setLastSelectedIndex(-1);
+        setAnchorIndex(-1);
+        
+        // 刷新目录
+        await loadDirectory(currentPath);
+        refreshAfterUserActivity();
+      } catch (error) {
+        setError("批量删除失败: " + (error.message || "未知错误"));
+      } finally {
+        setLoading(false);
+        handleContextMenuClose();
+      }
+    };
+
     // 处理删除
     const handleDelete = async () => {
-      if (!selectedFile || !sshConnection) return;
-
-      // 立即保存当前选中的文件信息，避免状态变化导致问题
-      const fileToDelete = { ...selectedFile };
+      const filesToDelete = getSelectedFiles();
+      if (filesToDelete.length === 0) return;
+      
+      if (filesToDelete.length > 1) {
+        return handleBatchDelete();
+      }
+      
+      const fileToDelete = filesToDelete[0];
       
       // 创建一个标识符，用于跟踪当前的删除操作
       const deleteOperationId = Date.now();
@@ -590,6 +765,9 @@ const FileManager = memo(
             if (response?.success) {
               // 成功删除后立即重置选中文件，避免使用已删除的文件夹作为上传目标
               setSelectedFile(null);
+              setSelectedFiles([]);
+              setLastSelectedIndex(-1);
+              setAnchorIndex(-1);
               
               // 成功删除，刷新目录
               await loadDirectory(currentPath);
@@ -614,6 +792,9 @@ const FileManager = memo(
               setError(response?.error || "删除文件失败");
               // 即使删除失败也重置选中文件状态
               setSelectedFile(null);
+              setSelectedFiles([]);
+              setLastSelectedIndex(-1);
+              setAnchorIndex(-1);
             }
           }
         } catch (error) {
@@ -632,6 +813,9 @@ const FileManager = memo(
           setError("删除文件失败: " + (error.message || "未知错误"));
           // 即使删除失败也重置选中文件状态
           setSelectedFile(null);
+          setSelectedFiles([]);
+          setLastSelectedIndex(-1);
+          setAnchorIndex(-1);
         } finally {
           if (retryCount === 0 || retryCount >= maxRetries) {
             // 确保无论成功失败都重置loading状态
@@ -1015,15 +1199,31 @@ const FileManager = memo(
       handleContextMenuClose();
     };
 
-  // 过滤文件列表（根据搜索词） - 优化版本，使用useMemo缓存
-  const filteredFiles = useMemo(() => {
-    if (!searchTerm) return files;
-    
-    const searchTermLower = searchTerm.toLowerCase();
-    return files.filter((file) =>
-      file.name.toLowerCase().includes(searchTermLower),
-    );
-  }, [files, searchTerm]);
+  // 当搜索条件改变时重置选择状态
+  useEffect(() => {
+    // 重置所有选择状态
+    setSelectedFiles([]);
+    setSelectedFile(null);
+    setLastSelectedIndex(-1);
+    setAnchorIndex(-1);
+  }, [searchTerm]);
+
+  // 确保selectedFiles没有重复项
+  useEffect(() => {
+    if (selectedFiles.length > 0) {
+      const deduplicatedFiles = deduplicateSelectedFiles(selectedFiles);
+      if (deduplicatedFiles.length !== selectedFiles.length) {
+        console.warn('发现重复的选中文件，已自动去重', {
+          原数量: selectedFiles.length,
+          去重后数量: deduplicatedFiles.length,
+          重复文件: selectedFiles.filter((file, index, arr) => 
+            arr.findIndex(f => f.name === file.name && f.modifyTime === file.modifyTime) !== index
+          )
+        });
+        setSelectedFiles(deduplicatedFiles);
+      }
+    }
+  }, [selectedFiles, deduplicateSelectedFiles]);
 
     // 渲染文件列表
     const renderFileList = () => {
@@ -1064,10 +1264,13 @@ const FileManager = memo(
       // 使用虚拟化文件列表组件
       return (
         <VirtualizedFileList
-          files={files}
+          files={filteredFiles}
           onFileActivate={handleFileActivate}
           onContextMenu={handleContextMenu}
+          onFileSelect={handleFileSelect}
           selectedFile={selectedFile}
+          selectedFiles={selectedFiles}
+          isFileSelected={isFileSelected}
           height="100%"
           itemHeight={48}
           searchTerm={searchTerm}
@@ -1903,13 +2106,18 @@ const FileManager = memo(
       // 只有当文件管理器打开时才处理键盘事件
       if (!open) return;
 
+      // 防止在输入框中触发快捷键
+      if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      const selectedFilesData = getSelectedFiles();
+
       // Ctrl+D: 下载文件/文件夹
       if (event.ctrlKey && event.key === "d") {
-        event.preventDefault(); // 阻止默认行为
-
-        // 如果有选中的文件/文件夹，则触发下载
-        if (selectedFile) {
-          if (selectedFile.isDirectory) {
+        event.preventDefault();
+        if (selectedFilesData.length > 0) {
+          if (selectedFilesData.some(f => f.isDirectory)) {
             handleDownloadFolder();
           } else {
             handleDownload();
@@ -1917,6 +2125,86 @@ const FileManager = memo(
         } else {
           showNotification("请先选择要下载的文件或文件夹", "warning");
         }
+      }
+
+      // Delete: 删除文件/文件夹
+      if (event.key === "Delete") {
+        event.preventDefault();
+        if (selectedFilesData.length > 0) {
+          handleDelete();
+        } else {
+          showNotification("请先选择要删除的文件或文件夹", "warning");
+        }
+      }
+
+      // F2: 重命名
+      if (event.key === "F2") {
+        event.preventDefault();
+        if (selectedFilesData.length === 1) {
+          handleRename();
+        } else if (selectedFilesData.length > 1) {
+          showNotification("无法批量重命名，请选择单个文件", "warning");
+        } else {
+          showNotification("请先选择要重命名的文件", "warning");
+        }
+      }
+
+      // F5: 刷新
+      if (event.key === "F5") {
+        event.preventDefault();
+        handleRefresh();
+      }
+
+      // Ctrl+A: 全选
+      if (event.ctrlKey && event.key === "a") {
+        event.preventDefault();
+        setSelectedFiles([...filteredFiles]);
+        setSelectedFile(filteredFiles[0] || null);
+        setLastSelectedIndex(0);
+        setAnchorIndex(0); // 设置锚点为第一个文件
+      }
+
+      // Escape: 取消选择
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSelectedFiles([]);
+        setSelectedFile(null);
+        setLastSelectedIndex(-1);
+        setAnchorIndex(-1);
+      }
+
+      // Ctrl+Shift+C: 复制绝对路径
+      if (event.ctrlKey && event.shiftKey && event.key === "C") {
+        event.preventDefault();
+        if (selectedFilesData.length === 1) {
+          handleCopyAbsolutePath();
+        } else {
+          showNotification("只能复制单个文件的路径", "warning");
+        }
+      }
+
+      // Ctrl+N: 创建文件
+      if (event.ctrlKey && !event.shiftKey && event.key === "n") {
+        event.preventDefault();
+        handleCreateFile();
+      }
+
+      // Ctrl+Shift+N: 创建文件夹
+      if (event.ctrlKey && event.shiftKey && event.key === "N") {
+        event.preventDefault();
+        handleCreateFolder();
+      }
+
+      // Ctrl+U: 上传文件
+      if (event.ctrlKey && !event.shiftKey && event.key === "u") {
+        event.preventDefault();
+        handleUploadFile();
+      }
+
+      // Ctrl+Shift+U: 上传文件夹
+      if (event.ctrlKey && event.shiftKey && event.key === "U") {
+        event.preventDefault();
+        handleUploadFolder();
       }
     };
 
@@ -1930,7 +2218,7 @@ const FileManager = memo(
       return () => {
         window.removeEventListener("keydown", handleKeyDown);
       };
-    }, [open, selectedFile, handleDownload, handleDownloadFolder]); // 添加所有需要的依赖项
+    }, [open, handleKeyDown]); // 简化依赖项
 
     // 处理关闭文件管理器
     const handleClose = () => {
@@ -2250,23 +2538,36 @@ const FileManager = memo(
               : undefined
           }
         >
-          <MenuItem onClick={handleRename}>
-            <ListItemIcon>
-              <DriveFileRenameOutlineIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>重命名</ListItemText>
-          </MenuItem>
+          {/* 仅在单选时显示重命名 */}
+          {selectedFiles.length <= 1 && (
+            <MenuItem onClick={handleRename}>
+              <ListItemIcon>
+                <DriveFileRenameOutlineIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>重命名</ListItemText>
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                F2
+              </Typography>
+            </MenuItem>
+          )}
 
-          <MenuItem onClick={handleCopyAbsolutePath}>
-            <ListItemIcon>
-              <LinkIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>复制绝对路径</ListItemText>
-          </MenuItem>
+          {/* 仅在单选时显示复制路径 */}
+          {selectedFiles.length <= 1 && (
+            <MenuItem onClick={handleCopyAbsolutePath}>
+              <ListItemIcon>
+                <LinkIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>复制绝对路径</ListItemText>
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                Ctrl+Shift+C
+              </Typography>
+            </MenuItem>
+          )}
 
-          <Divider />
+          {selectedFiles.length <= 1 && <Divider />}
 
-          {selectedFile?.isDirectory && (
+          {/* 上传操作：仅在选中单个目录时显示 */}
+          {selectedFiles.length === 1 && selectedFile?.isDirectory && (
             <MenuItem onClick={handleUploadFile}>
               <ListItemIcon>
                 <UploadFileIcon fontSize="small" />
@@ -2275,7 +2576,7 @@ const FileManager = memo(
             </MenuItem>
           )}
 
-          {selectedFile?.isDirectory && (
+          {selectedFiles.length === 1 && selectedFile?.isDirectory && (
             <MenuItem onClick={handleUploadFolder}>
               <ListItemIcon>
                 <UploadFileIcon fontSize="small" />
@@ -2284,29 +2585,48 @@ const FileManager = memo(
             </MenuItem>
           )}
 
-          {!selectedFile?.isDirectory && (
+          {/* 下载操作：支持单选和多选 */}
+          {getSelectedFiles().some(f => !f.isDirectory) && (
             <MenuItem onClick={handleDownload}>
               <ListItemIcon>
                 <DownloadIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>下载文件</ListItemText>
+              <ListItemText>
+                {selectedFiles.length > 1 ? `下载 ${selectedFiles.filter(f => !f.isDirectory).length} 个文件` : '下载文件'}
+              </ListItemText>
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                Ctrl+D
+              </Typography>
             </MenuItem>
           )}
 
-          {selectedFile?.isDirectory && (
+          {getSelectedFiles().some(f => f.isDirectory) && (
             <MenuItem onClick={handleDownloadFolder}>
               <ListItemIcon>
                 <DownloadIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>下载文件夹</ListItemText>
+              <ListItemText>
+                {selectedFiles.length > 1 ? `下载 ${selectedFiles.filter(f => f.isDirectory).length} 个文件夹` : '下载文件夹'}
+              </ListItemText>
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                Ctrl+D
+              </Typography>
             </MenuItem>
           )}
 
+          <Divider />
+
+          {/* 删除操作：支持单选和多选 */}
           <MenuItem onClick={handleDelete}>
             <ListItemIcon>
               <DeleteIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>删除</ListItemText>
+            <ListItemText>
+              {selectedFiles.length > 1 ? `删除 ${selectedFiles.length} 个项目` : '删除'}
+            </ListItemText>
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              Delete
+            </Typography>
           </MenuItem>
         </Menu>
 
@@ -2325,6 +2645,9 @@ const FileManager = memo(
               <CreateNewFolderIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>创建文件夹</ListItemText>
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              Ctrl+Shift+N
+            </Typography>
           </MenuItem>
 
           <MenuItem onClick={handleCreateFile}>
@@ -2332,20 +2655,31 @@ const FileManager = memo(
               <NoteAddIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>创建文件</ListItemText>
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              Ctrl+N
+            </Typography>
           </MenuItem>
+
+          <Divider />
 
           <MenuItem onClick={handleUploadFile}>
             <ListItemIcon>
               <UploadFileIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>上传文件至当前文件夹</ListItemText>
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              Ctrl+U
+            </Typography>
           </MenuItem>
 
           <MenuItem onClick={handleUploadFolder}>
             <ListItemIcon>
-              <UploadFileIcon fontSize="small" />
+              <CreateNewFolderIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>上传文件夹至当前文件夹</ListItemText>
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              Ctrl+Shift+U
+            </Typography>
           </MenuItem>
 
           <Divider />
@@ -2355,6 +2689,9 @@ const FileManager = memo(
               <RefreshIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>刷新目录</ListItemText>
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              F5
+            </Typography>
           </MenuItem>
         </Menu>
 

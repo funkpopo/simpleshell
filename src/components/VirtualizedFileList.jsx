@@ -44,20 +44,30 @@ const formatDate = (date) => {
 // 单个文件项组件 - 优化版本
 const FileItem = memo(({ index, style, data }) => {
   const theme = useTheme();
-  const { files, onFileActivate, onContextMenu, selectedFile } = data;
+  const { files, onFileActivate, onContextMenu, onFileSelect, selectedFile, selectedFiles, isFileSelected } = data;
   const file = files[index];
 
   // 确保文件存在
   if (!file) return null;
 
+  // 检查文件是否被选中 - 优先使用传入的isFileSelected函数
+  const isCurrentFileSelected = useMemo(() => {
+    if (isFileSelected) {
+      return isFileSelected(file);
+    }
+    // 备用逻辑：检查是否在selectedFiles中或者是当前selectedFile
+    if (selectedFiles && selectedFiles.length > 0) {
+      return selectedFiles.some(f => f.name === file.name && f.modifyTime === file.modifyTime);
+    }
+    return selectedFile && selectedFile.name === file.name && selectedFile.modifyTime === file.modifyTime;
+  }, [file, isFileSelected, selectedFiles, selectedFile]);
+
   // 使用useMemo缓存文件的格式化信息，避免每次渲染都计算
   const fileInfo = useMemo(() => ({
     formattedDate: file.modifyTime ? formatDate(new Date(file.modifyTime)) : '',
     formattedSize: file.size && !file.isDirectory ? formatFileSize(file.size) : '',
-    isSelected: selectedFile && 
-      selectedFile.name === file.name && 
-      selectedFile.modifyTime === file.modifyTime
-  }), [file.modifyTime, file.size, file.isDirectory, selectedFile, file.name]);
+    isSelected: isCurrentFileSelected
+  }), [file.modifyTime, file.size, file.isDirectory, isCurrentFileSelected]);
 
   const handleFileActivate = useCallback(() => {
     onFileActivate(file);
@@ -65,10 +75,16 @@ const FileItem = memo(({ index, style, data }) => {
 
   const handleContextMenu = useCallback(
     (e) => {
-      onContextMenu(e, file);
+      onContextMenu(e, file, index);
     },
-    [file, onContextMenu],
+    [file, onContextMenu, index],
   );
+
+  const handleFileClick = useCallback((e) => {
+    if (onFileSelect) {
+      onFileSelect(file, index, e);
+    }
+  }, [file, index, onFileSelect]);
 
   // 缓存的二级文本内容，避免每次渲染都重新组合
   const secondaryText = useMemo(() => {
@@ -100,6 +116,7 @@ const FileItem = memo(({ index, style, data }) => {
         onContextMenu={handleContextMenu}
       >
         <ListItemButton
+          onClick={handleFileClick}
           onDoubleClick={handleFileActivate}
           dense
           sx={buttonSx}
@@ -172,7 +189,10 @@ const VirtualizedFileList = ({
   files = [],
   onFileActivate,
   onContextMenu,
+  onFileSelect,
   selectedFile,
+  selectedFiles,
+  isFileSelected,
   height = 400,
   itemHeight = 48,
   searchTerm = "",
@@ -226,23 +246,16 @@ const VirtualizedFileList = ({
     };
   }, []);
 
-  // 过滤和排序文件 - 确保在使用前定义
+  // 过滤文件（如果还有额外的搜索过滤需求）
   const processedFiles = useMemo(() => {
-    let filteredFiles = files;
-
-    // 搜索过滤
+    // 如果有searchTerm，进行额外过滤（虽然通常在父组件已经处理）
     if (searchTerm) {
-      filteredFiles = files.filter((file) =>
+      return files.filter((file) =>
         file.name.toLowerCase().includes(searchTerm.toLowerCase()),
       );
     }
-
-    // 排序：目录在前，然后按名称排序
-    return [...filteredFiles].sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
+    // 直接返回已经排序和过滤的文件列表
+    return files;
   }, [files, searchTerm]);
 
   // 恢复滚动位置 - 现在processedFiles已定义
@@ -285,9 +298,12 @@ const VirtualizedFileList = ({
       files: processedFiles,
       onFileActivate,
       onContextMenu,
+      onFileSelect,
       selectedFile,
+      selectedFiles,
+      isFileSelected,
     }),
-    [processedFiles, onFileActivate, onContextMenu, selectedFile],
+    [processedFiles, onFileActivate, onContextMenu, onFileSelect, selectedFile, selectedFiles, isFileSelected],
   );
 
   // 计算实际使用的高度
@@ -358,12 +374,15 @@ const VirtualizedFileList = ({
             files: processedFiles,
             onFileActivate,
             onContextMenu,
+            onFileSelect,
             selectedFile,
+            selectedFiles,
+            isFileSelected,
           }}
         />
       ))}
     </Box>
-  ), [containerRef, height, theme.palette.action.hover, theme.palette.action.disabled, theme.palette.action.focus, onBlankContextMenu, processedFiles, itemHeight, onFileActivate, onContextMenu, selectedFile]);
+  ), [containerRef, height, theme.palette.action.hover, theme.palette.action.disabled, theme.palette.action.focus, onBlankContextMenu, processedFiles, itemHeight, onFileActivate, onContextMenu, onFileSelect, selectedFile, selectedFiles, isFileSelected]);
 
   // 降级到传统列表渲染的函数
   const renderFallbackList = useCallback(() => FallbackListComponent, [FallbackListComponent]);
