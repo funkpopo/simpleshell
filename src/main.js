@@ -2271,6 +2271,123 @@ function setupIPC(mainWindow) {
     }
   });
 
+  // 设置文件权限
+  ipcMain.handle("setFilePermissions", async (event, tabId, filePath, permissions) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return sftpCore.enqueueSftpOperation(tabId, async () => {
+        try {
+          // 查找对应的SSH客户端
+          const processInfo = childProcesses.get(tabId);
+          if (
+            !processInfo ||
+            !processInfo.process ||
+            processInfo.type !== "ssh2"
+          ) {
+            return { success: false, error: "无效的SSH连接" };
+          }
+          const sshClient = processInfo.process;
+          return new Promise((resolve, reject) => {
+            // 使用SSH执行chmod命令设置权限
+            const command = `chmod ${permissions} "${filePath}"`;
+            sshClient.exec(command, (err, stream) => {
+              if (err) {
+                logToFile(
+                  `Failed to set file permissions for session ${tabId}: ${err.message}`,
+                  "ERROR",
+                );
+                return resolve({
+                  success: false,
+                  error: `设置权限失败: ${err.message}`,
+                });
+              }
+              
+              let stderr = '';
+              stream.on('close', (code, signal) => {
+                if (code === 0) {
+                  logToFile(
+                    `Successfully set permissions ${permissions} for file ${filePath} in session ${tabId}`,
+                    "INFO",
+                  );
+                  resolve({ success: true });
+                } else {
+                  const errorMsg = stderr || `chmod命令执行失败，退出码: ${code}`;
+                  logToFile(
+                    `Failed to set permissions for session ${tabId}: ${errorMsg}`,
+                    "ERROR",
+                  );
+                  resolve({
+                    success: false,
+                    error: `设置权限失败: ${errorMsg}`,
+                  });
+                }
+              }).on('data', (data) => {
+                // 标准输出通常没有内容
+              }).stderr.on('data', (data) => {
+                stderr += data.toString();
+              });
+            });
+          });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(
+        `Set file permissions error for session ${tabId}: ${error.message}`,
+        "ERROR",
+      );
+      return { success: false, error: `设置权限失败: ${error.message}` };
+    }
+  });
+
+  // 获取文件权限
+  ipcMain.handle("getFilePermissions", async (event, tabId, filePath) => {
+    try {
+      // 使用 SFTP 会话池获取会话
+      return sftpCore.enqueueSftpOperation(tabId, async () => {
+        try {
+          const sftp = await sftpCore.getSftpSession(tabId);
+          return new Promise((resolve, reject) => {
+            // 使用SFTP的stat方法获取文件信息
+            sftp.stat(filePath, (err, stats) => {
+              if (err) {
+                logToFile(
+                  `Failed to get file permissions for session ${tabId}: ${err.message}`,
+                  "ERROR",
+                );
+                return resolve({
+                  success: false,
+                  error: `获取权限失败: ${err.message}`,
+                });
+              }
+              
+              // 从stats中提取权限信息
+              const mode = stats.mode;
+              // 提取权限位（去掉文件类型位）
+              const permissions = (mode & parseInt('777', 8)).toString(8);
+              
+              resolve({ 
+                success: true, 
+                permissions: permissions.padStart(3, '0'),
+                mode: mode,
+                stats: stats
+              });
+            });
+          });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      logToFile(
+        `Get file permissions error for session ${tabId}: ${error.message}`,
+        "ERROR",
+      );
+      return { success: false, error: `获取权限失败: ${error.message}` };
+    }
+  });
+
   ipcMain.handle("downloadFile", async (event, tabId, remotePath) => {
     if (
       !sftpTransfer ||

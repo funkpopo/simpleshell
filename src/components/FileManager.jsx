@@ -34,6 +34,7 @@ import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import FilePreview from "./FilePreview.jsx";
 import VirtualizedFileList from "./VirtualizedFileList.jsx";
 import TransferProgressFloat from "./TransferProgressFloat.jsx";
+import FilePermissionEditor from "./FilePermissionEditor.jsx";
 import { formatLastRefreshTime } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 
@@ -63,6 +64,8 @@ const FileManager = memo(
     const [anchorIndex, setAnchorIndex] = useState(-1); // Shift选择的锚点索引
     const [showRenameDialog, setShowRenameDialog] = useState(false);
     const [newName, setNewName] = useState("");
+    const [filePermissions, setFilePermissions] = useState("644");
+    const [permissionsChanged, setPermissionsChanged] = useState(false);
     const [blankContextMenu, setBlankContextMenu] = useState(null);
     const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
@@ -2021,9 +2024,35 @@ const FileManager = memo(
     };
 
     // 处理重命名
-    const handleRename = () => {
+    const handleRename = async () => {
       if (!selectedFile) return;
       setNewName(selectedFile.name);
+      
+      // 先设置默认权限
+      const defaultPermissions = selectedFile.isDirectory ? "755" : "644";
+      setFilePermissions(defaultPermissions);
+      
+      // 获取当前文件的权限
+      try {
+        const fullPath =
+          currentPath === "/"
+            ? "/" + selectedFile.name
+            : currentPath
+              ? currentPath + "/" + selectedFile.name
+              : selectedFile.name;
+              
+        if (window.terminalAPI && window.terminalAPI.getFilePermissions) {
+          const response = await window.terminalAPI.getFilePermissions(tabId, fullPath);
+          if (response?.success && response.permissions) {
+            setFilePermissions(response.permissions);
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to get file permissions:", error);
+        // 继续使用默认权限
+      }
+      
+      setPermissionsChanged(false);
       setShowRenameDialog(true);
       handleContextMenuClose();
     };
@@ -2033,14 +2062,20 @@ const FileManager = memo(
       e.preventDefault();
       setShowRenameDialog(false);
 
-      if (!selectedFile || !newName || newName === selectedFile.name) return;
+      if (!selectedFile) return;
+
+      // 检查是否有更改
+      const nameChanged = newName && newName !== selectedFile.name;
+      const needsUpdate = nameChanged || permissionsChanged;
+      
+      if (!needsUpdate) return;
 
       setLoading(true);
       setError(null);
       let retryCount = 0;
       const maxRetries = 3;
 
-      const attemptRename = async () => {
+      const attemptUpdate = async () => {
         try {
           const oldPath =
             currentPath === "/"
@@ -2049,48 +2084,83 @@ const FileManager = memo(
                 ? currentPath + "/" + selectedFile.name
                 : selectedFile.name;
 
-          if (window.terminalAPI && window.terminalAPI.renameFile) {
-            const response = await window.terminalAPI.renameFile(
+          let finalPath = oldPath;
+
+          // 如果需要重命名
+          if (nameChanged && window.terminalAPI && window.terminalAPI.renameFile) {
+            const renameResponse = await window.terminalAPI.renameFile(
               tabId,
               oldPath,
               newName,
             );
 
-            if (response?.success) {
-              // 成功重命名，刷新目录
-              await loadDirectory(currentPath);
-              // 重命名操作完成后设置定时器再次检查
-              refreshAfterUserActivity();
+            if (renameResponse?.success) {
+              // 重命名成功，更新最终路径
+              const dirPath =
+                currentPath === "/"
+                  ? "/"
+                  : currentPath || "/";
+              finalPath = dirPath === "/" ? `/${newName}` : `${dirPath}/${newName}`;
             } else if (
-              response?.error?.includes("SFTP错误") &&
+              renameResponse?.error?.includes("SFTP错误") &&
               retryCount < maxRetries
             ) {
               // SFTP错误，尝试重试
               retryCount++;
-              setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
-
-              // 添加延迟后重试
-              setTimeout(attemptRename, 500 * retryCount);
+              setError(`更新失败，正在重试 (${retryCount}/${maxRetries})...`);
+              setTimeout(attemptUpdate, 500 * retryCount);
               return;
             } else {
-              // 其他错误或已达到最大重试次数
-              setError(response?.error || "重命名失败");
+              // 重命名失败
+              setError(renameResponse?.error || "重命名失败");
+              return;
             }
           }
-        } catch (error) {
-          // 重命名失败
 
+          // 如果需要设置权限
+          if (permissionsChanged && window.terminalAPI && window.terminalAPI.setFilePermissions) {
+            const permResponse = await window.terminalAPI.setFilePermissions(
+              tabId,
+              finalPath,
+              filePermissions,
+            );
+
+            if (!permResponse?.success) {
+              if (
+                permResponse?.error?.includes("SFTP错误") &&
+                retryCount < maxRetries
+              ) {
+                // SFTP错误，尝试重试
+                retryCount++;
+                setError(`设置权限失败，正在重试 (${retryCount}/${maxRetries})...`);
+                setTimeout(attemptUpdate, 500 * retryCount);
+                return;
+              } else {
+                // 设置权限失败，但如果重命名成功了，我们仍然显示警告而不是错误
+                if (nameChanged) {
+                  setError(`文件已重命名，但权限设置失败: ${permResponse?.error || "未知错误"}`);
+                } else {
+                  setError(permResponse?.error || "设置权限失败");
+                  return;
+                }
+              }
+            }
+          }
+
+          // 操作成功，刷新目录
+          await loadDirectory(currentPath);
+          refreshAfterUserActivity();
+        } catch (error) {
+          // 操作失败
           if (retryCount < maxRetries) {
             // 发生异常，尝试重试
             retryCount++;
-            setError(`重命名失败，正在重试 (${retryCount}/${maxRetries})...`);
-
-            // 添加延迟后重试
-            setTimeout(attemptRename, 500 * retryCount);
+            setError(`更新失败，正在重试 (${retryCount}/${maxRetries})...`);
+            setTimeout(attemptUpdate, 500 * retryCount);
             return;
           }
 
-          setError("重命名失败: " + (error.message || "未知错误"));
+          setError("更新失败: " + (error.message || "未知错误"));
         } finally {
           if (retryCount === 0 || retryCount >= maxRetries) {
             setLoading(false);
@@ -2098,7 +2168,13 @@ const FileManager = memo(
         }
       };
 
-      attemptRename();
+      attemptUpdate();
+    };
+
+    // 处理权限变化
+    const handlePermissionChange = (newPermissions) => {
+      setFilePermissions(newPermissions);
+      setPermissionsChanged(true);
     };
 
     // 处理键盘快捷键
@@ -2544,7 +2620,7 @@ const FileManager = memo(
               <ListItemIcon>
                 <DriveFileRenameOutlineIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>重命名</ListItemText>
+              <ListItemText>编辑</ListItemText>
               <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
                 F2
               </Typography>
@@ -2712,48 +2788,58 @@ const FileManager = memo(
           >
             <Paper
               sx={{
-                width: "80%",
-                maxWidth: 400,
-                p: 2,
+                width: "90%",
+                maxWidth: 600,
+                maxHeight: "80vh",
+                p: 3,
                 display: "flex",
                 flexDirection: "column",
                 gap: 2,
+                overflow: "auto",
               }}
             >
-              <Typography variant="subtitle1">重命名</Typography>
+              <Typography variant="subtitle1">编辑文件/文件夹</Typography>
               <form onSubmit={handleRenameSubmit}>
-                <TextField
-                  fullWidth
-                  label="新名称"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  autoFocus
-                  variant="outlined"
-                  size="small"
-                />
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    mt: 2,
-                    gap: 1,
-                  }}
-                >
-                  <Button
-                    onClick={() => setShowRenameDialog(false)}
-                    color="inherit"
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <TextField
+                    fullWidth
+                    label="新名称"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    autoFocus
+                    variant="outlined"
                     size="small"
+                  />
+                  
+                  <FilePermissionEditor
+                    permissions={filePermissions}
+                    onChange={handlePermissionChange}
+                  />
+                  
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      mt: 2,
+                      gap: 1,
+                    }}
                   >
-                    取消
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    color="primary"
-                    size="small"
-                  >
-                    确定
-                  </Button>
+                    <Button
+                      onClick={() => setShowRenameDialog(false)}
+                      color="inherit"
+                      size="small"
+                    >
+                      取消
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      color="primary"
+                      size="small"
+                    >
+                      确定
+                    </Button>
+                  </Box>
                 </Box>
               </form>
             </Paper>

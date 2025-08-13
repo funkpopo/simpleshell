@@ -214,6 +214,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 新增API
   renameFile: (tabId, oldPath, newName) =>
     ipcRenderer.invoke("renameFile", tabId, oldPath, newName),
+  
+  // 权限设置API
+  setFilePermissions: (tabId, filePath, permissions) =>
+    ipcRenderer.invoke("setFilePermissions", tabId, filePath, permissions),
+  getFilePermissions: (tabId, filePath) =>
+    ipcRenderer.invoke("getFilePermissions", tabId, filePath),
+  
   uploadFile: (tabId, targetFolder, progressCallback) => {
     // Unique channel for this specific upload
     const progressChannel = `upload-progress-${tabId}-${Date.now()}`;
