@@ -19,6 +19,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
 import Divider from "@mui/material/Divider";
+import Typography from "@mui/material/Typography";
 import Tooltip from "@mui/material/Tooltip";
 import IconButton from "@mui/material/IconButton";
 import CommandSuggestion from "./CommandSuggestion.jsx";
@@ -3748,14 +3749,18 @@ const WebTerminal = ({
             <ContentCopyIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>复制</ListItemText>
-          <div style={{ marginLeft: 8, opacity: 0.7 }}>Ctrl+Alt+C</div>
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+            Ctrl+Alt+C
+          </Typography>
         </MenuItem>
         <MenuItem onClick={handlePaste}>
           <ListItemIcon>
             <PasteIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>粘贴</ListItemText>
-          <div style={{ marginLeft: 8, opacity: 0.7 }}>Ctrl+Alt+V / 中键</div>
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+            Ctrl+Alt+V / 中键
+          </Typography>
         </MenuItem>
         <MenuItem onClick={handleSendToAI} disabled={!selectedText}>
           <ListItemIcon>
@@ -3769,7 +3774,9 @@ const WebTerminal = ({
             <SearchIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>搜索</ListItemText>
-          <div style={{ marginLeft: 8, opacity: 0.7 }}>Ctrl+Alt+F</div>
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+            Ctrl+Alt+F
+          </Typography>
         </MenuItem>
         <Divider />
         <MenuItem onClick={handleClear}>
@@ -3777,6 +3784,9 @@ const WebTerminal = ({
             <ClearAllIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>清空</ListItemText>
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+            Ctrl+L
+          </Typography>
         </MenuItem>
       </Menu>
 
