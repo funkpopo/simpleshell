@@ -676,16 +676,26 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         extensions.push(oneDark);
       }
 
-      // 添加字体样式扩展
+      // 添加字体样式扩展和自适应宽度设置
       const fontExtension = EditorView.theme({
-        '.cm-content': {
-          fontFamily: getFontFamily(editorFont) + ' !important',
-        },
         '.cm-editor': {
           fontFamily: getFontFamily(editorFont) + ' !important',
+          width: '100%',
+        },
+        '.cm-scroller': {
+          overflow: 'auto',
+        },
+        '.cm-content': {
+          fontFamily: getFontFamily(editorFont) + ' !important',
+          whiteSpace: 'pre-wrap', // 允许换行
+          wordBreak: 'break-word', // 长单词换行
+          overflowWrap: 'break-word', // 强制换行
         }
       });
       extensions.push(fontExtension);
+
+      // 添加扩展禁用水平滚动
+      extensions.push(EditorView.lineWrapping);
 
       const boxSx = {
         flex: "1 1 auto",
@@ -697,7 +707,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       const cmStyle = {
         height: "100%",
         flex: "1 1 auto",
-        overflow: "auto",
+        overflow: "hidden", // 禁止容器级别的滚动条
+        width: "100%",
+        maxWidth: "100%",
       };
 
       if (isEditing) {
@@ -739,14 +751,21 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           sx={{
             display: "flex",
             justifyContent: "center",
+            alignItems: "center",
             height: "100%",
-            overflow: "auto",
+            overflow: "hidden", // 防止溢出
+            padding: 2,
           }}
         >
           <img
             src={`data:${getMimeType(file.name)};base64,${content}`}
             alt={file.name}
-            style={{ maxWidth: "100%", objectFit: "contain" }}
+            style={{ 
+              maxWidth: "100%", 
+              maxHeight: "100%",
+              objectFit: "contain",
+              display: "block"
+            }}
           />
         </Box>
       );
@@ -771,6 +790,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               p: 1,
               borderBottom: `1px solid ${theme.palette.divider}`,
               backgroundColor: theme.palette.background.paper,
+              flexWrap: "wrap", // 允许换行
+              gap: 1, // 添加间距
+              minHeight: "48px", // 确保最小高度
             }}
           >
             <ButtonGroup size="small" variant="outlined">
@@ -828,7 +850,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           <Box
             sx={{
               flex: "1 1 auto",
-              overflow: "auto",
+              overflow: "hidden", // 防止溢出
               display: "flex",
               justifyContent: "center",
               alignItems: "flex-start",
@@ -947,6 +969,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           display: "flex",
           flexDirection: "column",
           overflow: "hidden", // 防止内容溢出
+          width: "100%",
+          maxWidth: "100%",
         }}
       >
         {savingFile ? (
