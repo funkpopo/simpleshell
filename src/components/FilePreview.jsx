@@ -25,12 +25,21 @@ import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import { useTheme } from "@mui/material/styles";
 import CodeMirror from "@uiw/react-codemirror";
+import { EditorView } from "@codemirror/view";
 import { javascript } from "@codemirror/lang-javascript";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { json } from "@codemirror/lang-json";
 import { python } from "@codemirror/lang-python";
 import { xml } from "@codemirror/lang-xml";
+import { php } from "@codemirror/lang-php";
+import { java } from "@codemirror/lang-java";
+import { cpp } from "@codemirror/lang-cpp";
+import { rust } from "@codemirror/lang-rust";
+import { go } from "@codemirror/lang-go";
+import { yaml } from "@codemirror/lang-yaml";
+import { markdown } from "@codemirror/lang-markdown";
+import { sql } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -58,8 +67,10 @@ const isTextFile = (filename) => {
     "js",
     "jsx",
     "html",
+    "htm",
     "css",
     "scss",
+    "sass",
     "less",
     "md",
     "markdown",
@@ -67,25 +78,106 @@ const isTextFile = (filename) => {
     "yml",
     "yaml",
     "conf",
+    "config",
     "ini",
+    "env",
     "sh",
     "bash",
+    "zsh",
+    "fish",
+    "ps1",
     "py",
+    "pyw",
     "java",
+    "class",
     "c",
     "cpp",
+    "cc",
+    "cxx",
     "h",
+    "hpp",
+    "hxx",
     "php",
+    "phtml",
     "rb",
     "go",
+    "rs",
     "ts",
     "tsx",
     "vue",
     "sql",
+    "mysql",
+    "pgsql",
+    "sqlite",
+    "dockerfile",
+    "dockerignore",
     "gitignore",
+    "gitattributes",
+    "makefile",
+    "cmake",
+    "gradle",
+    "properties",
+    "toml",
+    "cfg",
+    "editorconfig",
+    "eslintrc",
+    "prettierrc",
+    "babelrc",
+    "npmrc",
+    "yarnrc",
+    "gemfile",
+    "podfile",
+    "requirements",
+    "package",
+    "lock",
+    "manifest",
+    "cargo",
+    "pyproject",
+    "composer",
+    "bower",
+    "webpack",
+    "vite",
+    "rollup",
+    "gulpfile",
+    "gruntfile",
+    "readme",
+    "license",
+    "changelog",
+    "authors",
+    "contributors",
+    "todo",
+    "fixme"
   ];
   const ext = getFileExtension(filename);
-  return textExtensions.includes(ext);
+  const baseName = filename.toLowerCase();
+  
+  // 检查扩展名
+  if (textExtensions.includes(ext)) {
+    return true;
+  }
+  
+  // 检查特殊文件名（没有扩展名的文件）
+  const specialFiles = [
+    "dockerfile",
+    "makefile",
+    "gemfile",
+    "podfile",
+    "vagrantfile",
+    "gulpfile",
+    "gruntfile",
+    "rakefile",
+    "procfile",
+    "cmakelists",
+    "readme",
+    "license",
+    "changelog",
+    "authors",
+    "contributors",
+    "todo",
+    "fixme"
+  ];
+  
+  return specialFiles.some(name => baseName.includes(name));
 };
 
 // 判断是否是图片文件
@@ -129,23 +221,150 @@ const getMimeType = (filename) => {
 // 获取文件对应的语言模式
 const getLanguageMode = (filename) => {
   const ext = getFileExtension(filename);
+  const baseName = filename.toLowerCase();
+  
+  // 主要通过扩展名判断
   const langMap = {
+    // JavaScript/TypeScript
     js: javascript,
     jsx: javascript,
     ts: javascript,
     tsx: javascript,
+    mjs: javascript,
+    cjs: javascript,
+    
+    // Web 前端
     html: html,
     htm: html,
+    xhtml: html,
     css: css,
     scss: css,
+    sass: css,
     less: css,
+    
+    // 数据格式
     json: json,
+    jsonc: json,
+    json5: json,
+    
+    // Python
     py: python,
-    python: python,
+    pyw: python,
+    pyi: python,
+    
+    // Java
+    java: java,
+    
+    // C/C++
+    c: cpp,
+    cpp: cpp,
+    cc: cpp,
+    cxx: cpp,
+    h: cpp,
+    hpp: cpp,
+    hxx: cpp,
+    
+    // PHP
+    php: php,
+    phtml: php,
+    php3: php,
+    php4: php,
+    php5: php,
+    
+    // Go
+    go: go,
+    
+    // Rust
+    rs: rust,
+    
+    // SQL
+    sql: sql,
+    mysql: sql,
+    pgsql: sql,
+    sqlite: sql,
+    
+    // Markup
     xml: xml,
     svg: xml,
+    xsl: xml,
+    xslt: xml,
+    
+    // YAML
+    yml: yaml,
+    yaml: yaml,
+    
+    // Markdown
+    md: markdown,
+    markdown: markdown,
+    mdown: markdown,
+    mkd: markdown,
+    mdx: markdown
   };
-  return langMap[ext] || null;
+  
+  // 首先检查扩展名
+  if (langMap[ext]) {
+    return langMap[ext];
+  }
+  
+  // 特殊文件名处理（无扩展名）
+  if (baseName === 'dockerfile' || baseName.startsWith('dockerfile.')) {
+    return null; // Dockerfile 使用默认高亮
+  }
+  
+  if (baseName === 'makefile' || baseName === 'gnumakefile' || baseName.startsWith('makefile.')) {
+    return null; // Makefile 使用默认高亮
+  }
+  
+  if (baseName === 'gemfile' || baseName === 'rakefile' || baseName === 'guardfile') {
+    return null; // Ruby 文件，目前使用默认高亮
+  }
+  
+  if (baseName === 'package.json' || baseName === 'composer.json' || baseName === 'bower.json') {
+    return json;
+  }
+  
+  if (baseName.includes('requirements') && (baseName.endsWith('.txt') || !baseName.includes('.'))) {
+    return null; // Python requirements 文件
+  }
+  
+  if (baseName === 'cargo.toml' || baseName === 'pyproject.toml') {
+    return null; // TOML 文件，使用默认高亮
+  }
+  
+  // 配置文件
+  if (baseName.endsWith('.toml')) {
+    return null; // TOML
+  }
+  
+  if (baseName.endsWith('.ini') || baseName.endsWith('.cfg') || baseName.endsWith('.conf')) {
+    return null; // 配置文件
+  }
+  
+  if (baseName.endsWith('.env') || baseName.startsWith('.env')) {
+    return null; // 环境变量文件
+  }
+  
+  // Shell 脚本
+  if (baseName.endsWith('.sh') || baseName.endsWith('.bash') || baseName.endsWith('.zsh') || baseName.endsWith('.fish')) {
+    return null; // Shell 脚本，使用默认高亮
+  }
+  
+  return null;
+};
+
+// 获取字体族名称
+const getFontFamily = (fontSetting) => {
+  switch (fontSetting) {
+    case "fira-code":
+      return '"Fira Code", "Consolas", "Monaco", "Courier New", monospace';
+    case "consolas":
+      return '"Consolas", "Monaco", "Courier New", monospace';
+    case "space-mono":
+      return '"Space Mono", "Consolas", "Monaco", "Courier New", monospace';
+    case "system":
+    default:
+      return '"Consolas", "Monaco", "Courier New", monospace';
+  }
 };
 
 const FilePreview = ({ open, onClose, file, path, tabId }) => {
@@ -157,6 +376,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [modified, setModified] = useState(false);
   const [savingFile, setSavingFile] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [editorFont, setEditorFont] = useState("system");
 
   // PDF相关状态
   const [numPages, setNumPages] = useState(null);
@@ -167,6 +387,36 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [cacheFilePath, setCacheFilePath] = useState(null);
 
   const fullPath = path === "/" ? "/" + file?.name : path + "/" + file?.name;
+
+  // 加载字体设置
+  useEffect(() => {
+    const loadFontSetting = async () => {
+      try {
+        if (window.terminalAPI?.loadUISettings) {
+          const settings = await window.terminalAPI.loadUISettings();
+          if (settings?.editorFont) {
+            setEditorFont(settings.editorFont);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load font setting:", error);
+      }
+    };
+
+    loadFontSetting();
+
+    // 监听设置变更
+    const handleSettingsChange = (event) => {
+      if (event.detail?.editorFont) {
+        setEditorFont(event.detail.editorFont);
+      }
+    };
+
+    window.addEventListener("settingsChanged", handleSettingsChange);
+    return () => {
+      window.removeEventListener("settingsChanged", handleSettingsChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open || !file) return;
@@ -426,6 +676,17 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         extensions.push(oneDark);
       }
 
+      // 添加字体样式扩展
+      const fontExtension = EditorView.theme({
+        '.cm-content': {
+          fontFamily: getFontFamily(editorFont) + ' !important',
+        },
+        '.cm-editor': {
+          fontFamily: getFontFamily(editorFont) + ' !important',
+        }
+      });
+      extensions.push(fontExtension);
+
       const boxSx = {
         flex: "1 1 auto",
         display: "flex",
@@ -443,6 +704,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         return (
           <Box sx={boxSx}>
             <CodeMirror
+              key={`editor-${editorFont}`}
               value={content || ""}
               height="100%"
               extensions={extensions}
@@ -458,6 +720,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       return (
         <Box sx={boxSx}>
           <CodeMirror
+            key={`viewer-${editorFont}`}
             value={content || ""}
             height="100%"
             extensions={extensions}

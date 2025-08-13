@@ -16,6 +16,14 @@
       "cancel": "Cancel",
       "save": "Save",
       "saveError": "Failed to save settings. Please try again.",
+      "editorFont": "File Preview/Edit Font",
+      "fonts": {
+        "system": "System Default",
+        "fira-code": "Fira Code",
+        "consolas": "Consolas",
+        "space-mono": "Space Mono",
+        "sample": "Hello World! 123"
+      },
       "logSettingsTitle": "Log Settings",
       "logLevelLabel": "Log Level",
       "logFileSizeLimitLabel": "Log File Size Limit",

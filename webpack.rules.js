@@ -21,6 +21,14 @@ module.exports = [
     test: /\.(ico|png|jpe?g|gif|svg)$/i,
     type: "asset/resource",
   },
+  // 添加字体文件的支持
+  {
+    test: /\.(woff|woff2|eot|ttf|otf)$/i,
+    type: "asset/resource",
+    generator: {
+      filename: 'fonts/[name].[hash][ext]',
+    },
+  },
   {
     test: /\.jsx?$/,
     use: {
