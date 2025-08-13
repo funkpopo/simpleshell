@@ -13,6 +13,10 @@ import {
   Snackbar,
   Alert,
   ButtonGroup,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -367,6 +371,14 @@ const getFontFamily = (fontSetting) => {
   }
 };
 
+// 字体选项定义
+const fontOptions = [
+  { value: "system", label: "系统默认" },
+  { value: "consolas", label: "Consolas" },
+  { value: "fira-code", label: "Fira Code" },
+  { value: "space-mono", label: "Space Mono" },
+];
+
 const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const theme = useTheme();
   const [loading, setLoading] = useState(true);
@@ -392,10 +404,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   useEffect(() => {
     const loadFontSetting = async () => {
       try {
+        // 从config.json加载文件预览字体设置
         if (window.terminalAPI?.loadUISettings) {
           const settings = await window.terminalAPI.loadUISettings();
-          if (settings?.editorFont) {
-            setEditorFont(settings.editorFont);
+          if (settings?.filePreviewFont) {
+            setEditorFont(settings.filePreviewFont);
           }
         }
       } catch (error) {
@@ -404,18 +417,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     };
 
     loadFontSetting();
-
-    // 监听设置变更
-    const handleSettingsChange = (event) => {
-      if (event.detail?.editorFont) {
-        setEditorFont(event.detail.editorFont);
-      }
-    };
-
-    window.addEventListener("settingsChanged", handleSettingsChange);
-    return () => {
-      window.removeEventListener("settingsChanged", handleSettingsChange);
-    };
   }, []);
 
   useEffect(() => {
@@ -585,6 +586,33 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   // 切换编辑/预览模式
   const toggleEditMode = () => {
     setIsEditing(!isEditing);
+  };
+
+  // 处理字体选择变更
+  const handleFontChange = async (event) => {
+    const newFont = event.target.value;
+    setEditorFont(newFont);
+    
+    try {
+      // 保存到config.json
+      if (window.terminalAPI?.saveUISettings) {
+        // 先获取当前设置
+        const currentSettings = await window.terminalAPI.loadUISettings() || {};
+        // 更新文件预览字体设置
+        const updatedSettings = {
+          ...currentSettings,
+          filePreviewFont: newFont
+        };
+        // 保存更新后的设置
+        await window.terminalAPI.saveUISettings(updatedSettings);
+      }
+    } catch (error) {
+      console.error("Failed to save font setting:", error);
+      setNotification({
+        message: "字体设置保存失败",
+        severity: "error",
+      });
+    }
   };
 
   // 处理通知关闭
@@ -907,13 +935,33 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       }}
     >
       <DialogTitle>
-        <Box sx={{ display: "flex", alignItems: "center" }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             {file?.name}
             {modified && (
               <span style={{ color: theme.palette.warning.main }}> *</span>
             )}
           </Typography>
+          
+          {/* 字体选择下拉菜单 - 仅在文本文件时显示 */}
+          {isTextFile(file?.name) && (
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <InputLabel id="font-select-label">字体</InputLabel>
+              <Select
+                labelId="font-select-label"
+                value={editorFont}
+                label="字体"
+                onChange={handleFontChange}
+              >
+                {fontOptions.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          
           <Box>
             {isTextFile(file?.name) && (
               <>
