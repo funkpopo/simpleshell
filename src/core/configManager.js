@@ -355,6 +355,8 @@ function loadUISettings() {
       fontSize: 14,
       editorFont: "system",
       darkMode: true,
+      terminalFont: "Consolas",
+      terminalFontSize: 14,
       performance: {
         imageSupported: true,
         cacheEnabled: true,
@@ -377,6 +379,8 @@ function loadUISettings() {
         const uiSettings = {
           ...config.uiSettings,
           editorFont: config.uiSettings.editorFont || "system",
+          terminalFont: config.uiSettings.terminalFont || "Fira Code",
+          terminalFontSize: config.uiSettings.terminalFontSize || 14,
           performance: {
             imageSupported:
               config.uiSettings.performance?.imageSupported !== false,
@@ -397,7 +401,7 @@ function loadUISettings() {
         "ERROR",
       );
   }
-  return { language: "zh-CN", fontSize: 14, editorFont: "system", darkMode: true };
+  return { language: "zh-CN", fontSize: 14, editorFont: "system", darkMode: true, terminalFont: "Fira Code", terminalFontSize: 14 };
 }
 
 function saveUISettings(settings) {
@@ -666,6 +670,8 @@ function initializeMainConfig() {
           fontSize: 14,
           editorFont: "system",
           darkMode: true,
+          terminalFont: "Fira Code",
+          terminalFontSize: 14,
         },
         aiSettings: {
           configs: [],
@@ -733,6 +739,8 @@ function initializeMainConfig() {
           fontSize: 14,
           editorFont: "system",
           darkMode: true,
+          terminalFont: "Fira Code",
+          terminalFontSize: 14,
         };
         changed = true;
       } else {
@@ -751,6 +759,14 @@ function initializeMainConfig() {
         }
         if (!config.uiSettings.editorFont) {
           config.uiSettings.editorFont = "system";
+          changed = true;
+        }
+        if (!config.uiSettings.terminalFont) {
+          config.uiSettings.terminalFont = "Fira Code";
+          changed = true;
+        }
+        if (config.uiSettings.terminalFontSize === undefined) {
+          config.uiSettings.terminalFontSize = 14;
           changed = true;
         }
       }

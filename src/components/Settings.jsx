@@ -99,6 +99,16 @@ const Settings = memo(({ open, onClose }) => {
     [t],
   );
 
+  // Define terminal font family options (only fonts available in /src/assets/fonts)
+  const terminalFonts = useMemo(
+    () => [
+      { value: "Fira Code", label: "Fira Code", description: "支持编程连字的等宽字体" },
+      { value: "Space Mono", label: "Space Mono", description: "简洁的等宽字体" },
+      { value: "Consolas", label: "Consolas", description: "系统默认字体" },
+    ],
+    [],
+  );
+
   // Define log level options
   const logLevels = useMemo(
     () => [
@@ -113,6 +123,8 @@ const Settings = memo(({ open, onClose }) => {
   // Initial states
   const [language, setLanguage] = React.useState("");
   const [fontSize, setFontSize] = React.useState(14);
+  const [terminalFont, setTerminalFont] = React.useState("Fira Code");
+  const [terminalFontSize, setTerminalFontSize] = React.useState(14);
   const [darkMode, setDarkMode] = React.useState(true);
   const [logLevel, setLogLevel] = React.useState("WARN");
   const [maxFileSize, setMaxFileSize] = React.useState(5);
@@ -140,6 +152,8 @@ const Settings = memo(({ open, onClose }) => {
           if (settings) {
             setLanguage(settings.language || "zh-CN");
             setFontSize(settings.fontSize || 14);
+            setTerminalFont(settings.terminalFont || "Fira Code");
+            setTerminalFontSize(settings.terminalFontSize || 14);
             setDarkMode(
               settings.darkMode !== undefined ? settings.darkMode : true,
             );
@@ -192,6 +206,16 @@ const Settings = memo(({ open, onClose }) => {
   // Handle font size change
   const handleFontSizeChange = useCallback((event, newValue) => {
     setFontSize(newValue);
+  }, []);
+
+  // Handle terminal font change
+  const handleTerminalFontChange = useCallback((event) => {
+    setTerminalFont(event.target.value);
+  }, []);
+
+  // Handle terminal font size change
+  const handleTerminalFontSizeChange = useCallback((event, newValue) => {
+    setTerminalFontSize(newValue);
   }, []);
 
   // Handle theme mode change
@@ -265,6 +289,8 @@ const Settings = memo(({ open, onClose }) => {
         const settings = {
           language,
           fontSize,
+          terminalFont,
+          terminalFontSize,
           darkMode,
           performance: {
             imageSupported,
@@ -296,7 +322,7 @@ const Settings = memo(({ open, onClose }) => {
       // Notify app to apply changes
       window.dispatchEvent(
         new CustomEvent("settingsChanged", {
-          detail: { language, fontSize, darkMode },
+          detail: { language, fontSize, terminalFont, terminalFontSize, darkMode },
         }),
       );
 
@@ -384,6 +410,70 @@ const Settings = memo(({ open, onClose }) => {
               min={12}
               max={18}
             />
+          </Box>
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="subtitle1" gutterBottom>
+            {"终端字体设置"}
+          </Typography>
+          
+          <Box sx={{ mb: 2 }}>
+            <FormControl fullWidth variant="outlined" size="small">
+              <InputLabel id="terminal-font-select-label">
+                {"终端字体族"}
+              </InputLabel>
+              <Select
+                labelId="terminal-font-select-label"
+                id="terminal-font-select"
+                value={terminalFont}
+                onChange={handleTerminalFontChange}
+                label={"终端字体族"}
+              >
+                {terminalFonts.map((font) => (
+                  <MenuItem key={font.value} value={font.value}>
+                    <Box>
+                      <Typography
+                        component="span"
+                        style={{ fontFamily: font.value }}
+                        sx={{ display: "block" }}
+                      >
+                        {font.label}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block" }}
+                      >
+                        {font.description}
+                      </Typography>
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" gutterBottom>
+              {"终端字体大小"}
+            </Typography>
+            <Box sx={{ px: 2, pt: 1 }}>
+              <Slider
+                value={terminalFontSize}
+                onChange={handleTerminalFontSizeChange}
+                aria-labelledby="terminal-font-size-slider"
+                step={null}
+                marks={fontSizes.map((size) => ({
+                  value: size.value,
+                  label: size.label,
+                }))}
+                min={12}
+                max={18}
+              />
+            </Box>
           </Box>
         </Box>
 

@@ -1620,17 +1620,33 @@ const WebTerminal = ({
     brightWhite: "#eeeeec",
   };
 
-  // 获取存储的字体大小或使用默认值
-  const getFontSize = async () => {
+  // 根据字体名称生成完整的字体族字符串
+  const getFontFamilyString = (fontName) => {
+    const fontFamilyMap = {
+      "Fira Code": '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
+      "Space Mono": '"Space Mono", "Consolas", "Monaco", "Courier New", monospace',
+      "Consolas": '"Consolas", "Monaco", "Courier New", monospace',
+    };
+    return fontFamilyMap[fontName] || fontFamilyMap["Fira Code"];
+  };
+
+  // 获取存储的字体大小和字体族或使用默认值
+  const getFontSettings = async () => {
     try {
       if (window.terminalAPI?.loadUISettings) {
         const settings = await window.terminalAPI.loadUISettings();
-        return settings.fontSize || 14;
+        return {
+          fontSize: settings.terminalFontSize || 14,
+          fontFamily: getFontFamilyString(settings.terminalFont || "Fira Code")
+        };
       }
     } catch (error) {
-      // Failed to load font size from config
+      // Failed to load font settings from config
     }
-    return 14;
+    return {
+      fontSize: 14,
+      fontFamily: getFontFamilyString("Fira Code")
+    };
   };
 
   // 如果refreshKey变化，清除缓存强制重新创建终端
@@ -1662,11 +1678,16 @@ const WebTerminal = ({
   // 监听设置变更事件
   useEffect(() => {
     const handleSettingsChanged = async (event) => {
-      const { fontSize } = event.detail;
+      const { terminalFontSize, terminalFont } = event.detail;
 
       if (terminalRef.current && terminalCache[tabId] && fitAddonRef.current) {
-        // 更新终端字体大小
-        terminalCache[tabId].options.fontSize = parseInt(fontSize, 10);
+        // 更新终端字体设置
+        if (terminalFontSize !== undefined) {
+          terminalCache[tabId].options.fontSize = parseInt(terminalFontSize, 10);
+        }
+        if (terminalFont !== undefined) {
+          terminalCache[tabId].options.fontFamily = getFontFamilyString(terminalFont);
+        }
 
         // 使用EventManager管理定时器
         eventManager.setTimeout(() => {
@@ -1733,7 +1754,7 @@ const WebTerminal = ({
         term = new Terminal({
           cursorBlink: true,
           theme: terminalTheme, // 使用固定的终端主题
-          fontFamily: 'Consolas, "Courier New", monospace',
+          fontFamily: '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
           fontSize: 14, // 默认大小，稍后会更新
           scrollback: 10000,
           allowTransparency: true,
@@ -1757,19 +1778,20 @@ const WebTerminal = ({
           macOptionClickForcesSelection: false,
         });
 
-        // 异步加载字体大小设置并应用
+        // 异步加载字体设置并应用
         (async () => {
           try {
-            const fontSize = await getFontSize();
-            term.options.fontSize = fontSize;
-            // 使用EventManager管理应用字体大小后自动调整大小
+            const fontSettings = await getFontSettings();
+            term.options.fontSize = fontSettings.fontSize;
+            term.options.fontFamily = fontSettings.fontFamily;
+            // 使用EventManager管理应用字体设置后自动调整大小
             eventManager.setTimeout(() => {
               if (fitAddon) {
                 fitAddon.fit();
               }
             }, 0);
           } catch (error) {
-            // Failed to apply font size
+            // Failed to apply font settings
           }
         })();
 
@@ -3520,11 +3542,11 @@ const WebTerminal = ({
     eventManager.addEventListener(window, "terminalForceRefresh", handleTerminalForceRefresh);
   }, [tabId]);
 
-  // 在创建终端前获取当前字体大小
+  // 在创建终端前获取当前字体设置
   const createTerminal = () => {
     if (terminalRef.current) {
-      // 根据存储的设置获取字体大小
-      const currentFontSize = getFontSize();
+      // 根据存储的设置获取字体设置
+      const currentFontSettings = getFontSettings();
 
       // 创建新的终端实例
       const newTerm = new Terminal({
@@ -3532,8 +3554,8 @@ const WebTerminal = ({
         cursorStyle: "block",
         scrollback: 10000,
         theme: terminalTheme,
-        fontSize: currentFontSize, // 使用存储的字体大小
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        fontSize: currentFontSettings.fontSize, // 使用存储的字体大小
+        fontFamily: currentFontSettings.fontFamily, // 使用存储的字体族
         allowTransparency: true,
         disableStdin: false, // 允许用户输入
         convertEol: true, // 将回车转换为换行
