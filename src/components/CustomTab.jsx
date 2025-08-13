@@ -6,7 +6,7 @@ import GroupRemoveIcon from "@mui/icons-material/GroupRemove";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import { findGroupByTab, getGroups, addGroup, addTabToGroup, removeTabFromGroup } from '../core/syncInputGroups';
 
-// 添加拖拽指示器动画的全局样式
+// 添加拖拽指示器动画和磁吸效果的全局样式
 const dragIndicatorStyles = (
   <GlobalStyles
     styles={{
@@ -25,6 +25,25 @@ const dragIndicatorStyles = (
           opacity: 0.7,
           transform: 'scaleY(0.9) scaleX(0.95)',
           boxShadow: '0 0 8px rgba(46, 125, 50, 0.6)',
+        },
+      },
+      '@keyframes magneticPull': {
+        '0%': {
+          transform: 'scale(1) translateY(0)',
+        },
+        '50%': {
+          transform: 'scale(1.02) translateY(-1px)',
+        },
+        '100%': {
+          transform: 'scale(1.05) translateY(-2px)',
+        },
+      },
+      '@keyframes magneticGlow': {
+        '0%': {
+          boxShadow: '0 0 0 rgba(25, 118, 210, 0)',
+        },
+        '100%': {
+          boxShadow: '0 0 20px rgba(25, 118, 210, 0.6), 0 0 40px rgba(25, 118, 210, 0.4)',
         },
       },
     }}
@@ -80,7 +99,7 @@ const CustomTab = memo((props) => {
     [onClose],
   );
 
-  // 处理拖拽开始 - 支持分屏功能
+  // 处理拖拽开始 - 支持分屏功能和幽灵元素预览
   const handleDragStart = useCallback((e) => {
     // 设置拖拽数据
     const dragData = {
@@ -92,6 +111,49 @@ const CustomTab = memo((props) => {
     
     e.dataTransfer.setData('application/json', JSON.stringify(dragData));
     e.dataTransfer.effectAllowed = 'move';
+    
+    // 创建幽灵元素预览
+    const createDragPreview = () => {
+      const preview = document.createElement('div');
+      preview.style.cssText = `
+        padding: 8px 16px;
+        background: linear-gradient(135deg, 
+          rgba(25, 118, 210, 0.9) 0%, 
+          rgba(21, 101, 192, 0.9) 50%, 
+          rgba(13, 71, 161, 0.9) 100%);
+        color: white;
+        border-radius: 8px;
+        font-family: 'Roboto', sans-serif;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 8px 32px rgba(25, 118, 210, 0.4), 
+                    0 2px 8px rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(10px);
+        transform: rotate(-2deg);
+        white-space: nowrap;
+        pointer-events: none;
+        z-index: 10000;
+        position: absolute;
+        left: -1000px;
+        top: -1000px;
+      `;
+      preview.textContent = `📝 ${label}`;
+      document.body.appendChild(preview);
+      
+      // 设置拖拽预览图像
+      e.dataTransfer.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
+      
+      // 延迟移除预览元素，给浏览器时间捕获它
+      setTimeout(() => {
+        if (document.body.contains(preview)) {
+          document.body.removeChild(preview);
+        }
+      }, 0);
+    };
+    
+    // 使用requestAnimationFrame确保在下一帧创建预览
+    requestAnimationFrame(createDragPreview);
     
     // 调用原始的拖拽开始处理
     if (onDragStart) {
@@ -175,7 +237,7 @@ const CustomTab = memo((props) => {
           cursor: isDraggedOver && dragOperation === 'sort' ? "grab" : "pointer",
           userSelect: "none",
           color: "text.secondary",
-          // 拖拽悬停时的特殊样式
+          // 拖拽悬停时的特殊样式，添加磁吸效果
           ...(isDraggedOver && {
             backgroundColor: (theme) =>
               dragOperation === 'sort' 
@@ -197,6 +259,13 @@ const CustomTab = memo((props) => {
             position: "relative",
             transform: dragOperation === 'sort' ? 'scale(1.02)' : 'scale(1)',
             transition: 'all 0.2s ease-in-out',
+            
+            // 磁吸效果动画
+            animation: dragOperation === 'merge' 
+              ? 'magneticPull 0.3s ease-out forwards, magneticGlow 0.3s ease-out forwards'
+              : dragOperation === 'sort'
+              ? 'magneticPull 0.2s ease-out forwards'
+              : 'none',
             
             // 根据拖拽操作类型显示不同的指示器
             ...(dragOperation === 'merge' && {

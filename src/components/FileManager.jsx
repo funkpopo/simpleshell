@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from "react";
+import React, { useState, useEffect, memo, useCallback, useMemo } from "react";
 import {
   Box,
   Paper,
@@ -528,10 +528,10 @@ const FileManager = memo(
       throttleLoadDirectory("~");
     };
 
-    // 处理搜索
-    const handleSearchChange = (e) => {
+    // 优化的搜索处理函数，使用useCallback清理依赖
+    const handleSearchChange = useCallback((e) => {
       setSearchTerm(e.target.value);
-    };
+    }, []);
 
     // 切换搜索框显示
     const toggleSearch = () => {
@@ -1015,12 +1015,15 @@ const FileManager = memo(
       handleContextMenuClose();
     };
 
-    // 过滤文件列表（根据搜索词）
-    const filteredFiles = searchTerm
-      ? files.filter((file) =>
-          file.name.toLowerCase().includes(searchTerm.toLowerCase()),
-        )
-      : files;
+  // 过滤文件列表（根据搜索词） - 优化版本，使用useMemo缓存
+  const filteredFiles = useMemo(() => {
+    if (!searchTerm) return files;
+    
+    const searchTermLower = searchTerm.toLowerCase();
+    return files.filter((file) =>
+      file.name.toLowerCase().includes(searchTermLower),
+    );
+  }, [files, searchTerm]);
 
     // 渲染文件列表
     const renderFileList = () => {
