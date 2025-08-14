@@ -62,126 +62,44 @@ const getFileExtension = (filename) => {
     .toLowerCase();
 };
 
-// 判断是否是文本文件
+// 判断是否是文本文件 - 支持绝大多数文件类型
 const isTextFile = (filename) => {
-  const textExtensions = [
-    "txt",
-    "log",
-    "json",
-    "js",
-    "jsx",
-    "html",
-    "htm",
-    "css",
-    "scss",
-    "sass",
-    "less",
-    "md",
-    "markdown",
-    "xml",
-    "yml",
-    "yaml",
-    "conf",
-    "config",
-    "ini",
-    "env",
-    "sh",
-    "bash",
-    "zsh",
-    "fish",
-    "ps1",
-    "py",
-    "pyw",
-    "java",
-    "class",
-    "c",
-    "cpp",
-    "cc",
-    "cxx",
-    "h",
-    "hpp",
-    "hxx",
-    "php",
-    "phtml",
-    "rb",
-    "go",
-    "rs",
-    "ts",
-    "tsx",
-    "vue",
-    "sql",
-    "mysql",
-    "pgsql",
-    "sqlite",
-    "dockerfile",
-    "dockerignore",
-    "gitignore",
-    "gitattributes",
-    "makefile",
-    "cmake",
-    "gradle",
-    "properties",
-    "toml",
-    "cfg",
-    "editorconfig",
-    "eslintrc",
-    "prettierrc",
-    "babelrc",
-    "npmrc",
-    "yarnrc",
-    "gemfile",
-    "podfile",
-    "requirements",
-    "package",
-    "lock",
-    "manifest",
-    "cargo",
-    "pyproject",
-    "composer",
-    "bower",
-    "webpack",
-    "vite",
-    "rollup",
-    "gulpfile",
-    "gruntfile",
-    "readme",
-    "license",
-    "changelog",
-    "authors",
-    "contributors",
-    "todo",
-    "fixme"
-  ];
-  const ext = getFileExtension(filename);
-  const baseName = filename.toLowerCase();
-  
-  // 检查扩展名
-  if (textExtensions.includes(ext)) {
-    return true;
+  // 首先检查是否是明确的非文本文件类型
+  if (isImageFile(filename) || isPdfFile(filename) || isBinaryFile(filename)) {
+    return false;
   }
   
-  // 检查特殊文件名（没有扩展名的文件）
-  const specialFiles = [
-    "dockerfile",
-    "makefile",
-    "gemfile",
-    "podfile",
-    "vagrantfile",
-    "gulpfile",
-    "gruntfile",
-    "rakefile",
-    "procfile",
-    "cmakelists",
-    "readme",
-    "license",
-    "changelog",
-    "authors",
-    "contributors",
-    "todo",
-    "fixme"
+  // 对于其他所有文件，默认允许作为文本处理
+  return true;
+};
+
+// 判断是否是二进制文件（不应该作为文本处理的文件）
+const isBinaryFile = (filename) => {
+  const binaryExtensions = [
+    // 压缩文件
+    "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tar.gz", "tar.bz2", "tar.xz",
+    // 可执行文件
+    "exe", "dll", "so", "dylib", "app", "deb", "rpm", "msi", "pkg",
+    // 音频文件
+    "mp3", "wav", "flac", "aac", "ogg", "wma", "m4a", "opus",
+    // 视频文件
+    "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v", "3gp",
+    // 字体文件
+    "ttf", "otf", "woff", "woff2", "eot",
+    // Office文档（二进制格式）
+    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp",
+    // 其他二进制格式
+    "bin", "dat", "db", "sqlite", "sqlite3", "mdb", "accdb",
+    // 游戏/模拟器文件
+    "rom", "iso", "img", "dmg",
+    // 设计文件
+    "psd", "ai", "sketch", "fig",
+    // 数据库文件
+    "frm", "myd", "myi", "ibd",
   ];
   
-  return specialFiles.some(name => baseName.includes(name));
+  const ext = getFileExtension(filename);
+  return binaryExtensions.includes(ext);
 };
 
 // 判断是否是图片文件
@@ -427,19 +345,48 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setError(null);
 
       try {
+        // 检查文件大小限制 (10MB = 10 * 1024 * 1024 bytes)
+        const maxFileSize = 10 * 1024 * 1024;
+        if (file.size && file.size > maxFileSize) {
+          setError(`文件大小为 ${formatFileSize(file.size)}，超过了 10MB 的预览限制。请下载文件后在本地查看和编辑。`);
+          setLoading(false);
+          return;
+        }
         if (isTextFile(file.name)) {
-          // 读取文本文件
+          // 尝试读取文本文件
           if (window.terminalAPI && window.terminalAPI.readFileContent) {
             const response = await window.terminalAPI.readFileContent(
               tabId,
               fullPath,
             );
             if (response.success) {
-              setContent(response.content);
-              // 重置修改状态
-              setModified(false);
+              // 检查内容是否可能是二进制数据
+              const content = response.content;
+              if (typeof content === 'string') {
+                // 简单检查是否包含大量不可打印字符（可能是二进制文件）
+                const nonPrintableCount = (content.match(/[\x00-\x08\x0E-\x1F\x7F-\xFF]/g) || []).length;
+                const nonPrintableRatio = content.length > 0 ? nonPrintableCount / content.length : 0;
+                
+                if (nonPrintableRatio > 0.3) {
+                  // 如果不可打印字符超过30%，可能是二进制文件
+                  setError("该文件可能包含二进制数据，无法安全地作为文本显示。您可以尝试下载文件以在本地查看。");
+                } else {
+                  setContent(content);
+                  // 重置修改状态
+                  setModified(false);
+                }
+              } else {
+                setContent(response.content);
+                setModified(false);
+              }
             } else {
-              setError(response.error || "读取文件内容失败");
+              // 如果读取失败，提供更友好的错误信息
+              const errorMsg = response.error || "读取文件内容失败";
+              if (errorMsg.includes("binary") || errorMsg.includes("二进制")) {
+                setError("该文件包含二进制数据，无法作为文本显示。您可以下载文件以在本地查看。");
+              } else {
+                setError(errorMsg + "。如果这是文本文件，您可以尝试下载后查看。");
+              }
             }
           } else {
             setError("文件读取API不可用");
@@ -497,7 +444,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             setError("文件读取API不可用");
           }
         } else {
-          setError("不支持预览此类型的文件");
+          setError("此文件类型被识别为二进制文件，无法作为文本预览。您可以下载文件在本地查看。");
         }
       } catch (err) {
         setError("预览文件失败: " + (err.message || "未知错误"));
@@ -938,6 +885,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             {file?.name}
+            {file?.size && (
+              <Typography variant="caption" component="span" sx={{ ml: 1, color: 'text.secondary' }}>
+                ({formatFileSize(file.size)})
+              </Typography>
+            )}
             {modified && (
               <span style={{ color: theme.palette.warning.main }}> *</span>
             )}
