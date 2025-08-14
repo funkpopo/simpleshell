@@ -31,6 +31,7 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
+import ClearIcon from "@mui/icons-material/Clear";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -1179,7 +1180,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                 endAdornment: searchTerm && (
                   <InputAdornment position="end">
                     <IconButton size="small" onClick={() => setSearchTerm("")}>
-                      <CloseIcon fontSize="small" />
+                      <ClearIcon fontSize="small" />
                     </IconButton>
                   </InputAdornment>
                 ),

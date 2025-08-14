@@ -25,6 +25,7 @@ import HomeIcon from "@mui/icons-material/Home";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
+import ClearIcon from "@mui/icons-material/Clear";
 import DeleteIcon from "@mui/icons-material/Delete";
 import DownloadIcon from "@mui/icons-material/Download";
 import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
@@ -2557,7 +2558,7 @@ const FileManager = memo(
                       onClick={() => setSearchTerm("")}
                       edge="end"
                     >
-                      <CloseIcon fontSize="small" />
+                      <ClearIcon fontSize="small" />
                     </IconButton>
                   </InputAdornment>
                 ),
