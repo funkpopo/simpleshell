@@ -38,6 +38,15 @@ import FilePermissionEditor from "./FilePermissionEditor.jsx";
 import { formatLastRefreshTime } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 
+// 格式化文件大小
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
 const FileManager = memo(
   ({
     open,
@@ -1619,6 +1628,13 @@ const FileManager = memo(
 
         handleEnterDirectory(newPath);
       } else {
+        // 检查文件大小限制 (10MB)
+        const maxFileSize = 10 * 1024 * 1024;
+        if (file.size && file.size > maxFileSize) {
+          setError(`文件 "${file.name}" 大小为 ${formatFileSize(file.size)}，超过了 10MB 的预览限制。请下载文件后在本地查看。`);
+          return;
+        }
+        
         // 如果是文件，打开预览
         setFilePreview(file);
         setShowPreview(true);
