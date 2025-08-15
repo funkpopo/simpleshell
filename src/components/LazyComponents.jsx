@@ -30,44 +30,44 @@ const createLazyComponent = (importFn, fallbackMessage, componentName) => {
 export const FileManagerWithSuspense = createLazyComponent(
   () => import("./FileManager.jsx"),
   "正在加载文件管理器...",
-  "文件管理器"
+  "文件管理器",
 );
 
 export const ResourceMonitorWithSuspense = createLazyComponent(
   () => import("./ResourceMonitor.jsx"),
   "正在加载资源监控...",
-  "资源监控"
+  "资源监控",
 );
 
 export const IPAddressQueryWithSuspense = createLazyComponent(
   () => import("./IPAddressQuery.jsx"),
   "正在加载IP地址查询...",
-  "IP地址查询"
+  "IP地址查询",
 );
 
 export const SettingsWithSuspense = createLazyComponent(
   () => import("./Settings.jsx"),
   "正在加载设置...",
-  "设置"
+  "设置",
 );
 
 export const CommandHistoryWithSuspense = createLazyComponent(
   () => import("./CommandHistory.jsx"),
   "正在加载命令历史...",
-  "命令历史"
+  "命令历史",
 );
 
 export const ShortcutCommandsWithSuspense = createLazyComponent(
   () => import("./ShortcutCommands.jsx"),
   "正在加载快捷命令...",
-  "快捷命令"
+  "快捷命令",
 );
 
 // AI助手组件（如果存在）- 保持兼容性
 export const AIAssistantWithSuspense = createLazyComponent(
   () => import("./AIChatWindow.jsx"),
   "正在加载AI助手...",
-  "AI助手"
+  "AI助手",
 );
 
 // 为了向后兼容，创建直接的懒加载组件引用
@@ -92,7 +92,7 @@ const preloadComponents = {
 const smartPreload = {
   // 预加载所有侧边栏组件（在应用空闲时）
   preloadSidebarComponents: () => {
-    if (typeof requestIdleCallback === 'function') {
+    if (typeof requestIdleCallback === "function") {
       requestIdleCallback(() => {
         Promise.all([
           preloadComponents.settings(),

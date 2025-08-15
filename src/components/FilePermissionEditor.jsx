@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -9,9 +9,9 @@ import {
   Divider,
   FormGroup,
   Alert,
-} from '@mui/material';
+} from "@mui/material";
 
-const FilePermissionEditor = ({ permissions = '644', onChange }) => {
+const FilePermissionEditor = ({ permissions = "644", onChange }) => {
   const [octalValue, setOctalValue] = useState(permissions);
   const [permissionBits, setPermissionBits] = useState({
     ownerRead: false,
@@ -27,10 +27,10 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
 
   // 将八进制权限转换为权限位
   const octalToPermissionBits = useCallback((octal) => {
-    const octalStr = String(octal).padStart(3, '0');
-    const owner = parseInt(octalStr[0] || '0', 10);
-    const group = parseInt(octalStr[1] || '0', 10);
-    const other = parseInt(octalStr[2] || '0', 10);
+    const octalStr = String(octal).padStart(3, "0");
+    const owner = parseInt(octalStr[0] || "0", 10);
+    const group = parseInt(octalStr[1] || "0", 10);
+    const other = parseInt(octalStr[2] || "0", 10);
 
     return {
       ownerRead: (owner & 4) !== 0,
@@ -47,10 +47,19 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
 
   // 将权限位转换为八进制权限
   const permissionBitsToOctal = useCallback((bits) => {
-    const owner = (bits.ownerRead ? 4 : 0) + (bits.ownerWrite ? 2 : 0) + (bits.ownerExecute ? 1 : 0);
-    const group = (bits.groupRead ? 4 : 0) + (bits.groupWrite ? 2 : 0) + (bits.groupExecute ? 1 : 0);
-    const other = (bits.otherRead ? 4 : 0) + (bits.otherWrite ? 2 : 0) + (bits.otherExecute ? 1 : 0);
-    
+    const owner =
+      (bits.ownerRead ? 4 : 0) +
+      (bits.ownerWrite ? 2 : 0) +
+      (bits.ownerExecute ? 1 : 0);
+    const group =
+      (bits.groupRead ? 4 : 0) +
+      (bits.groupWrite ? 2 : 0) +
+      (bits.groupExecute ? 1 : 0);
+    const other =
+      (bits.otherRead ? 4 : 0) +
+      (bits.otherWrite ? 2 : 0) +
+      (bits.otherExecute ? 1 : 0);
+
     return `${owner}${group}${other}`;
   }, []);
 
@@ -92,7 +101,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
       [permission]: event.target.checked,
     };
     setPermissionBits(newBits);
-    
+
     const newOctal = permissionBitsToOctal(newBits);
     setOctalValue(newOctal);
     onChange && onChange(newOctal);
@@ -101,30 +110,30 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
   // 获取权限说明 - 使用useMemo优化性能
   const description = useMemo(() => {
     const descriptions = {
-      '0': '无权限',
-      '1': '执行',
-      '2': '写入',
-      '3': '写入+执行',
-      '4': '读取',
-      '5': '读取+执行',
-      '6': '读取+写入',
-      '7': '读取+写入+执行',
+      0: "无权限",
+      1: "执行",
+      2: "写入",
+      3: "写入+执行",
+      4: "读取",
+      5: "读取+执行",
+      6: "读取+写入",
+      7: "读取+写入+执行",
     };
-    
-    const octalStr = String(octalValue).padStart(3, '0');
+
+    const octalStr = String(octalValue).padStart(3, "0");
     return {
-      owner: descriptions[octalStr[0]] || '无效',
-      group: descriptions[octalStr[1]] || '无效',
-      other: descriptions[octalStr[2]] || '无效',
+      owner: descriptions[octalStr[0]] || "无效",
+      group: descriptions[octalStr[1]] || "无效",
+      other: descriptions[octalStr[2]] || "无效",
     };
   }, [octalValue]);
 
   return (
-    <Box sx={{ width: '100%' }}>
+    <Box sx={{ width: "100%" }}>
       <Typography variant="subtitle2" sx={{ mb: 2 }}>
         文件权限设置
       </Typography>
-      
+
       {/* 八进制输入框 */}
       <Box sx={{ mb: 3 }}>
         <TextField
@@ -133,11 +142,14 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
           onChange={handleOctalChange}
           size="small"
           inputProps={{
-            pattern: '[0-7]{3}',
+            pattern: "[0-7]{3}",
             maxLength: 3,
           }}
           helperText="输入三位八进制数字 (000-777)"
-          error={octalValue.length > 0 && (octalValue.length !== 3 || !/^[0-7]{3}$/.test(octalValue))}
+          error={
+            octalValue.length > 0 &&
+            (octalValue.length !== 3 || !/^[0-7]{3}$/.test(octalValue))
+          }
         />
       </Box>
 
@@ -154,7 +166,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
               control={
                 <Checkbox
                   checked={permissionBits.ownerRead}
-                  onChange={handlePermissionChange('ownerRead')}
+                  onChange={handlePermissionChange("ownerRead")}
                   size="small"
                 />
               }
@@ -164,7 +176,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
               control={
                 <Checkbox
                   checked={permissionBits.ownerWrite}
-                  onChange={handlePermissionChange('ownerWrite')}
+                  onChange={handlePermissionChange("ownerWrite")}
                   size="small"
                 />
               }
@@ -174,7 +186,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
               control={
                 <Checkbox
                   checked={permissionBits.ownerExecute}
-                  onChange={handlePermissionChange('ownerExecute')}
+                  onChange={handlePermissionChange("ownerExecute")}
                   size="small"
                 />
               }
@@ -192,7 +204,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
               control={
                 <Checkbox
                   checked={permissionBits.groupRead}
-                  onChange={handlePermissionChange('groupRead')}
+                  onChange={handlePermissionChange("groupRead")}
                   size="small"
                 />
               }
@@ -202,7 +214,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
               control={
                 <Checkbox
                   checked={permissionBits.groupWrite}
-                  onChange={handlePermissionChange('groupWrite')}
+                  onChange={handlePermissionChange("groupWrite")}
                   size="small"
                 />
               }
@@ -212,7 +224,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
               control={
                 <Checkbox
                   checked={permissionBits.groupExecute}
-                  onChange={handlePermissionChange('groupExecute')}
+                  onChange={handlePermissionChange("groupExecute")}
                   size="small"
                 />
               }
@@ -230,7 +242,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
               control={
                 <Checkbox
                   checked={permissionBits.otherRead}
-                  onChange={handlePermissionChange('otherRead')}
+                  onChange={handlePermissionChange("otherRead")}
                   size="small"
                 />
               }
@@ -240,7 +252,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
               control={
                 <Checkbox
                   checked={permissionBits.otherWrite}
-                  onChange={handlePermissionChange('otherWrite')}
+                  onChange={handlePermissionChange("otherWrite")}
                   size="small"
                 />
               }
@@ -250,7 +262,7 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
               control={
                 <Checkbox
                   checked={permissionBits.otherExecute}
-                  onChange={handlePermissionChange('otherExecute')}
+                  onChange={handlePermissionChange("otherExecute")}
                   size="small"
                 />
               }
@@ -267,21 +279,16 @@ const FilePermissionEditor = ({ permissions = '644', onChange }) => {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           权限说明:
         </Typography>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <Typography variant="caption">
-            所有者: {description.owner}
-          </Typography>
-          <Typography variant="caption">
-            组: {description.group}
-          </Typography>
-          <Typography variant="caption">
-            其他: {description.other}
-          </Typography>
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+          <Typography variant="caption">所有者: {description.owner}</Typography>
+          <Typography variant="caption">组: {description.group}</Typography>
+          <Typography variant="caption">其他: {description.other}</Typography>
         </Box>
-        
+
         {octalValue.length === 3 && (
           <Alert severity="info" sx={{ mt: 2 }}>
-            当前权限: {octalValue} ({description.owner} / {description.group} / {description.other})
+            当前权限: {octalValue} ({description.owner} / {description.group} /{" "}
+            {description.other})
           </Alert>
         )}
       </Box>

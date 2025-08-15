@@ -14,7 +14,8 @@ const WorldMap = ({ latitude, longitude }) => {
   const lat = Number(latitude);
   const lon = Number(longitude);
 
-  const isValidCoordinates = latitude != null && longitude != null && !isNaN(lat) && !isNaN(lon);
+  const isValidCoordinates =
+    latitude != null && longitude != null && !isNaN(lat) && !isNaN(lon);
 
   return (
     <ComposableMap
@@ -66,4 +67,4 @@ const WorldMap = ({ latitude, longitude }) => {
   );
 };
 
-export default memo(WorldMap); 
+export default memo(WorldMap);

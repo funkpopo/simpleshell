@@ -1,4 +1,4 @@
-const Telnet = require('telnet-client');
+const Telnet = require("telnet-client");
 const { logToFile } = require("../../core/utils/logger");
 
 // 连接池配置常量
@@ -61,8 +61,10 @@ class TelnetConnectionPool {
   getTopConnections(count = 5) {
     if (this.connectionUsage.size === 0) return [];
 
-    const sorted = [...this.connectionUsage.entries()].sort((a, b) => b[1] - a[1]);
-    return sorted.slice(0, count).map(entry => entry[0]);
+    const sorted = [...this.connectionUsage.entries()].sort(
+      (a, b) => b[1] - a[1],
+    );
+    return sorted.slice(0, count).map((entry) => entry[0]);
   }
 
   async getConnection(telnetConfig) {
@@ -101,7 +103,7 @@ class TelnetConnectionPool {
 
   async createConnection(telnetConfig, connectionKey) {
     logToFile(`创建新Telnet连接: ${connectionKey}`, "INFO");
-    
+
     return new Promise((resolve, reject) => {
       const telnet = new Telnet();
       const connectionInfo = {
@@ -129,7 +131,7 @@ class TelnetConnectionPool {
       };
 
       // 监听错误事件
-      telnet.on('error', (err) => {
+      telnet.on("error", (err) => {
         logToFile(`Telnet连接错误: ${connectionKey} - ${err.message}`, "ERROR");
         this.connections.delete(connectionKey);
 
@@ -148,7 +150,8 @@ class TelnetConnectionPool {
       });
 
       // 连接Telnet服务器
-      telnet.connect(params)
+      telnet
+        .connect(params)
         .then(() => {
           connectionInfo.ready = true;
           this.connections.set(connectionKey, connectionInfo);
@@ -156,8 +159,11 @@ class TelnetConnectionPool {
           resolve(connectionInfo);
         })
         .catch((err) => {
-          logToFile(`Telnet连接失败: ${connectionKey} - ${err.message}`, "ERROR");
-          
+          logToFile(
+            `Telnet连接失败: ${connectionKey} - ${err.message}`,
+            "ERROR",
+          );
+
           // 创建增强的错误对象
           const enhancedError = new Error(`Telnet连接失败: ${err.message}`);
           enhancedError.originalError = err;
@@ -168,7 +174,7 @@ class TelnetConnectionPool {
             username: telnetConfig.username,
             hasPassword: !!telnetConfig.password,
           };
-          
+
           reject(enhancedError);
         });
     });
@@ -181,7 +187,10 @@ class TelnetConnectionPool {
 
     const connectionInfo = this.connections.get(connectionKey);
     connectionInfo.refCount--;
-    logToFile(`释放Telnet连接引用: ${connectionKey}, 剩余引用: ${connectionInfo.refCount}`, "INFO");
+    logToFile(
+      `释放Telnet连接引用: ${connectionKey}, 剩余引用: ${connectionInfo.refCount}`,
+      "INFO",
+    );
 
     // 如果有tabId，从标签页引用中移除
     if (tabId && this.tabReferences.has(tabId)) {
@@ -190,7 +199,10 @@ class TelnetConnectionPool {
     }
 
     // 如果没有引用并且没有标签页引用，关闭连接
-    if (connectionInfo.refCount <= 0 && !this.isConnectionReferencedByTabs(connectionKey)) {
+    if (
+      connectionInfo.refCount <= 0 &&
+      !this.isConnectionReferencedByTabs(connectionKey)
+    ) {
       this.closeConnection(connectionKey);
     }
   }
@@ -222,7 +234,10 @@ class TelnetConnectionPool {
         logToFile(`关闭Telnet连接: ${connectionKey}`, "INFO");
       }
     } catch (error) {
-      logToFile(`关闭Telnet连接时出错: ${connectionKey} - ${error.message}`, "ERROR");
+      logToFile(
+        `关闭Telnet连接时出错: ${connectionKey} - ${error.message}`,
+        "ERROR",
+      );
     }
 
     this.connections.delete(connectionKey);
@@ -242,7 +257,7 @@ class TelnetConnectionPool {
 
     // 按最后使用时间排序
     const sortedConnections = [...this.connections.entries()].sort(
-      (a, b) => a[1].lastUsed - b[1].lastUsed
+      (a, b) => a[1].lastUsed - b[1].lastUsed,
     );
 
     let cleanedCount = 0;
@@ -278,15 +293,25 @@ class TelnetConnectionPool {
       return;
     }
 
-    logToFile(`执行Telnet连接健康检查，当前连接数: ${this.connections.size}`, "INFO");
+    logToFile(
+      `执行Telnet连接健康检查，当前连接数: ${this.connections.size}`,
+      "INFO",
+    );
 
     // 检查每个连接的健康状态
     for (const [key, info] of this.connections) {
       if (!this.isConnectionHealthy(info)) {
         logToFile(`检测到不健康的Telnet连接: ${key}，准备关闭`, "INFO");
         this.closeConnection(key);
-      } else if (Date.now() - info.lastUsed > IDLE_TIMEOUT && info.refCount <= 0 && !this.isConnectionReferencedByTabs(key)) {
-        logToFile(`关闭空闲Telnet连接: ${key}, 空闲时间: ${(Date.now() - info.lastUsed) / 1000}秒`, "INFO");
+      } else if (
+        Date.now() - info.lastUsed > IDLE_TIMEOUT &&
+        info.refCount <= 0 &&
+        !this.isConnectionReferencedByTabs(key)
+      ) {
+        logToFile(
+          `关闭空闲Telnet连接: ${key}, 空闲时间: ${(Date.now() - info.lastUsed) / 1000}秒`,
+          "INFO",
+        );
         this.closeConnection(key);
       }
     }
@@ -336,4 +361,4 @@ class TelnetConnectionPool {
 // 创建单例实例
 const telnetConnectionPool = new TelnetConnectionPool();
 
-module.exports = telnetConnectionPool; 
+module.exports = telnetConnectionPool;

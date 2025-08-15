@@ -96,7 +96,7 @@ function getBasicSSHAlgorithms() {
       "curve25519-sha256", // Modern key exchange
       "curve25519-sha256@libssh.org", // libssh variant
       "ecdh-sha2-nistp256",
-      "ecdh-sha2-nistp384", 
+      "ecdh-sha2-nistp384",
       "ecdh-sha2-nistp521",
       "diffie-hellman-group16-sha512",
       "diffie-hellman-group14-sha256",
@@ -107,7 +107,7 @@ function getBasicSSHAlgorithms() {
     ],
     cipher: [
       "aes128-ctr",
-      "aes192-ctr", 
+      "aes192-ctr",
       "aes256-ctr",
       "aes128-gcm",
       "aes256-gcm",
@@ -117,8 +117,8 @@ function getBasicSSHAlgorithms() {
       "3des-cbc", // Very old compatibility
     ],
     hmac: [
-      "hmac-sha2-256", 
-      "hmac-sha2-512", 
+      "hmac-sha2-256",
+      "hmac-sha2-512",
       "hmac-sha1",
       "hmac-sha1-96", // Additional fallback
       "hmac-md5", // Very old compatibility

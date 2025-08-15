@@ -169,7 +169,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
         activeStreams: new Set(),
         tabId,
         remotePath,
-        localPath: filePath
+        localPath: filePath,
       });
 
       try {
@@ -222,7 +222,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
         const readStream = sftp.createReadStream(remotePath, {
           highWaterMark: chunkSize,
         });
-        
+
         // 将流添加到 activeStreams 集合中
         const transfer = activeTransfers.get(transferKey);
         if (transfer && transfer.activeStreams) {
@@ -248,7 +248,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
             if (currentTransfer && currentTransfer.cancelled) {
               logToFile(
                 `sftpTransfer: Download cancelled by user during data transfer`,
-                "INFO"
+                "INFO",
               );
               readStream.destroy();
               writeStream.destroy();
@@ -260,7 +260,10 @@ async function handleDownloadFile(event, tabId, remotePath) {
                   fs.unlinkSync(tempFilePath);
                 }
               } catch (e) {
-                logToFile(`sftpTransfer: Failed to delete temp file: ${e.message}`, "WARN");
+                logToFile(
+                  `sftpTransfer: Failed to delete temp file: ${e.message}`,
+                  "WARN",
+                );
               }
               reject(new Error("Transfer cancelled by user"));
               return;
@@ -330,7 +333,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
 
           // 通过管道连接流
           readStream.pipe(writeStream);
-          
+
           writeStream.on("finish", () => {
             // 从 activeStreams 中移除
             const transfer = activeTransfers.get(transferKey);
@@ -488,7 +491,7 @@ async function handleUploadFile(
         cancelled: false,
         activeStreams: new Set(),
         tabId,
-        totalFiles: totalFilesToUpload
+        totalFiles: totalFilesToUpload,
       });
 
       try {
@@ -535,7 +538,7 @@ async function handleUploadFile(
           if (currentTransfer && currentTransfer.cancelled) {
             logToFile(
               `sftpTransfer: Upload cancelled by user during file ${i + 1}/${totalFilesToUpload}`,
-              "INFO"
+              "INFO",
             );
             // 发送取消状态到前端
             if (progressChannel) {
@@ -636,7 +639,7 @@ async function handleUploadFile(
               highWaterMark: chunkSize,
             });
             const writeStream = sftp.createWriteStream(remoteFilePath);
-            
+
             // 将流添加到 activeStreams 集合中
             const transfer = activeTransfers.get(transferKey);
             if (transfer && transfer.activeStreams) {
@@ -676,7 +679,7 @@ async function handleUploadFile(
                 if (currentTransfer && currentTransfer.cancelled) {
                   logToFile(
                     `sftpTransfer: Upload cancelled by user during file ${i + 1}/${totalFilesToUpload} data transfer`,
-                    "INFO"
+                    "INFO",
                   );
                   readStream.destroy();
                   writeStream.destroy();
@@ -758,16 +761,16 @@ async function handleUploadFile(
 
               // 通过管道连接流
               readStream.pipe(writeStream);
-              
-              readStream.on('end', () => {
+
+              readStream.on("end", () => {
                 // 从 activeStreams 中移除
                 const transfer = activeTransfers.get(transferKey);
                 if (transfer && transfer.activeStreams) {
                   transfer.activeStreams.delete(readStream);
                 }
               });
-              
-              writeStream.on('finish', () => {
+
+              writeStream.on("finish", () => {
                 // 从 activeStreams 中移除
                 const transfer = activeTransfers.get(transferKey);
                 if (transfer && transfer.activeStreams) {
@@ -1032,7 +1035,7 @@ async function handleUploadFolder(
         path: normalizedTargetFolder || ".",
         cancelled: false,
         activeStreams: new Set(),
-        tabId
+        tabId,
       });
 
       let overallUploadedBytes = 0;
@@ -1121,7 +1124,7 @@ async function handleUploadFolder(
           if (!currentTransfer || currentTransfer.cancelled) {
             logToFile(
               `sftpTransfer: Folder upload cancelled by user during directory creation`,
-              "INFO"
+              "INFO",
             );
             // 发送取消状态到前端
             if (progressChannel) {
@@ -1204,7 +1207,7 @@ async function handleUploadFolder(
           if (!currentTransfer || currentTransfer.cancelled) {
             logToFile(
               `sftpTransfer: Folder upload cancelled by user before file ${file.relativePath}`,
-              "INFO"
+              "INFO",
             );
             // 发送取消状态到前端
             if (progressChannel) {
@@ -1343,7 +1346,7 @@ async function handleUploadFolder(
               if (currentTransfer && currentTransfer.cancelled) {
                 logToFile(
                   `sftpTransfer: Folder upload cancelled by user during file data transfer`,
-                  "INFO"
+                  "INFO",
                 );
                 readStream.destroy();
                 writeStream.destroy();
@@ -1546,7 +1549,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         path: path.dirname(remoteFolderPath) || ".",
         cancelled: false,
         activeStreams: new Set(),
-        tabId
+        tabId,
       });
 
       let overallDownloadedBytes = 0;
@@ -1658,7 +1661,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           if (!currentTransfer || currentTransfer.cancelled) {
             logToFile(
               `sftpTransfer: Folder download cancelled by user during directory creation`,
-              "INFO"
+              "INFO",
             );
             // 发送取消状态到前端
             sendToRenderer("download-folder-progress", {
@@ -1708,7 +1711,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           if (!currentTransfer || currentTransfer.cancelled) {
             logToFile(
               `sftpTransfer: Folder download cancelled by user before file ${file.relativePath}`,
-              "INFO"
+              "INFO",
             );
             // 发送取消状态到前端
             sendToRenderer("download-folder-progress", {
@@ -1819,7 +1822,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
               if (currentTransfer && currentTransfer.cancelled) {
                 logToFile(
                   `sftpTransfer: Folder download cancelled by user during file data transfer`,
-                  "INFO"
+                  "INFO",
                 );
                 readStream.destroy();
                 writeStream.destroy();
@@ -1981,7 +1984,7 @@ async function handleCancelTransfer(event, tabId, transferKey) {
     if (transfer && transfer.sftp) {
       // 添加取消标志
       transfer.cancelled = true;
-      
+
       logToFile(
         `sftpTransfer: Marking transfer ${transferKey} as cancelled and attempting to stop all operations`,
         "INFO",
@@ -1997,9 +2000,9 @@ async function handleCancelTransfer(event, tabId, transferKey) {
       let streamsStopped = false;
       if (transfer.activeStreams) {
         try {
-          transfer.activeStreams.forEach(stream => {
-            if (stream && typeof stream.destroy === 'function') {
-              stream.destroy(new Error('Transfer cancelled by user'));
+          transfer.activeStreams.forEach((stream) => {
+            if (stream && typeof stream.destroy === "function") {
+              stream.destroy(new Error("Transfer cancelled by user"));
             }
           });
           streamsStopped = true;

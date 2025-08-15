@@ -44,13 +44,14 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import CategoryIcon from "@mui/icons-material/Category";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
-import { dispatchCommandToGroup } from '../core/syncGroupCommandDispatcher';
+import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 
 // 虚拟化命令项组件
 const CommandItem = React.memo(({ index, style, data }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { commands, handleSendCommand, handleCopyCommand, handleMenuOpen } = data;
+  const { commands, handleSendCommand, handleCopyCommand, handleMenuOpen } =
+    data;
   const cmd = commands[index];
 
   if (!cmd) return null;
@@ -69,8 +70,8 @@ const CommandItem = React.memo(({ index, style, data }) => {
           boxSizing: "border-box",
         }}
       >
-        <ListItemButton 
-          sx={{ 
+        <ListItemButton
+          sx={{
             pl: 1,
             pr: 1,
             minHeight: 72,
@@ -94,8 +95,8 @@ const CommandItem = React.memo(({ index, style, data }) => {
               mr: 1,
             }}
             primary={
-              <Typography 
-                variant="subtitle2" 
+              <Typography
+                variant="subtitle2"
                 fontWeight="medium"
                 sx={{
                   color: theme.palette.text.primary,
@@ -146,7 +147,7 @@ const CommandItem = React.memo(({ index, style, data }) => {
               </Box>
             }
           />
-          <Box 
+          <Box
             className="command-actions"
             sx={{
               display: "flex",
@@ -566,12 +567,15 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   }, [commands, searchTerm, selectedCategory]);
 
   // 虚拟化列表的数据
-  const listItemData = useMemo(() => ({
-    commands: filteredCommands,
-    handleSendCommand,
-    handleCopyCommand,
-    handleMenuOpen,
-  }), [filteredCommands, handleSendCommand, handleCopyCommand, handleMenuOpen]);
+  const listItemData = useMemo(
+    () => ({
+      commands: filteredCommands,
+      handleSendCommand,
+      handleCopyCommand,
+      handleMenuOpen,
+    }),
+    [filteredCommands, handleSendCommand, handleCopyCommand, handleMenuOpen],
+  );
 
   // 过滤命令 (保留原函数以兼容其他地方的调用)
   const getFilteredCommands = () => {
@@ -639,7 +643,15 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     // 对于少量命令，使用传统渲染以避免虚拟化开销
     if (filteredCommands.length < 30) {
       return (
-        <Box sx={{ width: "100%", p: 0, overflowX: "hidden", height: "100%", overflow: "auto" }}>
+        <Box
+          sx={{
+            width: "100%",
+            p: 0,
+            overflowX: "hidden",
+            height: "100%",
+            overflow: "auto",
+          }}
+        >
           {filteredCommands.map((cmd) => (
             <CommandItem
               key={cmd.id}
@@ -707,24 +719,26 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               <ListItemButton
                 onClick={() => toggleCategoryExpand(category.id)}
                 sx={{
-                  backgroundColor: theme.palette.mode === "dark" 
-                    ? "rgba(255, 255, 255, 0.08)" 
-                    : "rgba(0, 0, 0, 0.04)",
+                  backgroundColor:
+                    theme.palette.mode === "dark"
+                      ? "rgba(255, 255, 255, 0.08)"
+                      : "rgba(0, 0, 0, 0.04)",
                   borderRadius: 1,
                   px: 2,
                   py: 1.5,
                   minHeight: 60,
                   "&:hover": {
-                    backgroundColor: theme.palette.mode === "dark" 
-                      ? "rgba(255, 255, 255, 0.12)" 
-                      : "rgba(0, 0, 0, 0.08)",
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(255, 255, 255, 0.12)"
+                        : "rgba(0, 0, 0, 0.08)",
                   },
                 }}
               >
                 <ListItemIcon sx={{ minWidth: 36 }}>
                   <FolderIcon sx={{ color: category.color, fontSize: 20 }} />
                 </ListItemIcon>
-                <ListItemText 
+                <ListItemText
                   primary={
                     <Typography variant="subtitle2" fontWeight="medium">
                       {category.name}
@@ -732,7 +746,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                   }
                   secondary={
                     <Typography variant="caption" color="text.secondary">
-                      {category.commands.length} {t("shortcutCommands.commands")}
+                      {category.commands.length}{" "}
+                      {t("shortcutCommands.commands")}
                     </Typography>
                   }
                 />
@@ -748,7 +763,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                       e.stopPropagation();
                       handleMenuOpen(e, category.id, "category");
                     }}
-                    sx={{ 
+                    sx={{
                       ml: 1,
                       opacity: 0.7,
                       "&:hover": {
@@ -781,8 +796,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                       boxSizing: "border-box",
                     }}
                   >
-                    <ListItemButton 
-                      sx={{ 
+                    <ListItemButton
+                      sx={{
                         pl: 1,
                         pr: 1,
                         minHeight: 66,
@@ -791,9 +806,10 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                         py: 1,
                         width: "100%",
                         boxSizing: "border-box",
-                        backgroundColor: theme.palette.mode === "dark" 
-                          ? "rgba(255, 255, 255, 0.02)" 
-                          : "rgba(0, 0, 0, 0.02)",
+                        backgroundColor:
+                          theme.palette.mode === "dark"
+                            ? "rgba(255, 255, 255, 0.02)"
+                            : "rgba(0, 0, 0, 0.02)",
                         "&:hover": {
                           backgroundColor: theme.palette.action.hover,
                           "& .command-actions": {
@@ -809,10 +825,10 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                           mr: 1,
                         }}
                         primary={
-                          <Typography 
-                            variant="body2" 
+                          <Typography
+                            variant="body2"
                             fontWeight="medium"
-                            sx={{ 
+                            sx={{
                               mb: 0.5,
                               whiteSpace: "nowrap",
                               overflow: "hidden",
@@ -861,7 +877,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                           </Box>
                         }
                       />
-                      <Box 
+                      <Box
                         className="command-actions"
                         sx={{
                           display: "flex",
@@ -1223,20 +1239,23 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                 width: "8px",
               },
               "&::-webkit-scrollbar-thumb": {
-                backgroundColor: theme.palette.mode === "dark" 
-                  ? "rgba(255,255,255,0.3)" 
-                  : "rgba(0,0,0,0.3)",
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? "rgba(255,255,255,0.3)"
+                    : "rgba(0,0,0,0.3)",
                 borderRadius: "4px",
                 "&:hover": {
-                  backgroundColor: theme.palette.mode === "dark" 
-                    ? "rgba(255,255,255,0.5)" 
-                    : "rgba(0,0,0,0.5)",
+                  backgroundColor:
+                    theme.palette.mode === "dark"
+                      ? "rgba(255,255,255,0.5)"
+                      : "rgba(0,0,0,0.5)",
                 },
               },
               "&::-webkit-scrollbar-track": {
-                backgroundColor: theme.palette.mode === "dark" 
-                  ? "rgba(255,255,255,0.05)" 
-                  : "rgba(0,0,0,0.05)",
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? "rgba(255,255,255,0.05)"
+                    : "rgba(0,0,0,0.05)",
                 borderRadius: "4px",
               },
             }}

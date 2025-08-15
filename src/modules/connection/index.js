@@ -27,36 +27,49 @@ class ConnectionManager {
   async getSftpSession(tabId) {
     try {
       // 确保SSH连接已正确关联到此标签页
-      const processInfo = this.sshConnectionPool.getConnectionByTabId && 
-                          this.sshConnectionPool.getConnectionByTabId(tabId);
-      
+      const processInfo =
+        this.sshConnectionPool.getConnectionByTabId &&
+        this.sshConnectionPool.getConnectionByTabId(tabId);
+
       if (!processInfo) {
-        logToFile(`Connection manager: No SSH connection found for tab ${tabId}`, "WARN");
+        logToFile(
+          `Connection manager: No SSH connection found for tab ${tabId}`,
+          "WARN",
+        );
       }
-      
+
       // 对SFTP会话管理器的调用添加额外的错误处理
       try {
         return await this.sftpManager.getSftpSession(tabId);
       } catch (error) {
         // 如果获取SFTP会话失败，但我们知道有有效的SSH连接，尝试清理并重试
-        if (processInfo && error.message.includes("Invalid SSH connection info")) {
-          logToFile(`Connection manager: SFTP session error, cleaning up and retrying for tab ${tabId}`, "WARN");
-          
+        if (
+          processInfo &&
+          error.message.includes("Invalid SSH connection info")
+        ) {
+          logToFile(
+            `Connection manager: SFTP session error, cleaning up and retrying for tab ${tabId}`,
+            "WARN",
+          );
+
           // 先关闭可能存在的问题会话
           this.sftpManager.closeSftpSession(tabId);
-          
+
           // 短暂延迟
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
+          await new Promise((resolve) => setTimeout(resolve, 300));
+
           // 重试获取SFTP会话
           return await this.sftpManager.getSftpSession(tabId);
         }
-        
+
         // 其他错误直接抛出
         throw error;
       }
     } catch (error) {
-      logToFile(`Connection manager: Failed to get SFTP session for tab ${tabId}: ${error.message}`, "ERROR");
+      logToFile(
+        `Connection manager: Failed to get SFTP session for tab ${tabId}: ${error.message}`,
+        "ERROR",
+      );
       throw error;
     }
   }
@@ -92,8 +105,9 @@ class ConnectionManager {
   getTopConnections(count) {
     // 合并SSH和Telnet的热门连接
     const sshTopConnections = this.sshConnectionPool.getTopConnections(count);
-    const telnetTopConnections = this.telnetConnectionPool.getTopConnections(count);
-    
+    const telnetTopConnections =
+      this.telnetConnectionPool.getTopConnections(count);
+
     // 合并并按使用次数排序
     const allConnections = [...sshTopConnections, ...telnetTopConnections];
     return allConnections.slice(0, count);
@@ -120,7 +134,7 @@ class ConnectionManager {
   // 添加标签页引用追踪
   addTabReference(tabId, connectionKey) {
     // 根据连接键前缀判断是SSH还是Telnet
-    if (connectionKey.startsWith('telnet:')) {
+    if (connectionKey.startsWith("telnet:")) {
       if (this.telnetConnectionPool.addTabReference) {
         this.telnetConnectionPool.addTabReference(tabId, connectionKey);
       }
@@ -134,14 +148,14 @@ class ConnectionManager {
   getConnectionPoolStatus() {
     return {
       ssh: this.sshConnectionPool.getStatus(),
-      telnet: this.telnetConnectionPool.getStatus()
+      telnet: this.telnetConnectionPool.getStatus(),
     };
   }
 
   getConnectionPoolStats() {
     return {
       ssh: this.sshConnectionPool.getDetailedStats(),
-      telnet: this.telnetConnectionPool.getDetailedStats()
+      telnet: this.telnetConnectionPool.getDetailedStats(),
     };
   }
 
@@ -149,7 +163,7 @@ class ConnectionManager {
   async closeConnection(connectionKey) {
     try {
       // 根据连接键前缀判断是SSH还是Telnet
-      if (connectionKey.startsWith('telnet:')) {
+      if (connectionKey.startsWith("telnet:")) {
         this.telnetConnectionPool.closeConnection(connectionKey);
         logToFile(`手动关闭Telnet连接: ${connectionKey}`, "INFO");
       } else {
@@ -157,18 +171,19 @@ class ConnectionManager {
         logToFile(`手动关闭SSH连接: ${connectionKey}`, "INFO");
       }
     } catch (error) {
-      logToFile(
-        `关闭连接失败: ${connectionKey} - ${error.message}`,
-        "ERROR",
-      );
+      logToFile(`关闭连接失败: ${connectionKey} - ${error.message}`, "ERROR");
       throw error;
     }
   }
 
   // 清理空闲连接
   cleanupIdleConnections(count = 1) {
-    const sshCleaned = this.sshConnectionPool.cleanupIdleConnections(Math.ceil(count / 2));
-    const telnetCleaned = this.telnetConnectionPool.cleanupIdleConnections(Math.ceil(count / 2));
+    const sshCleaned = this.sshConnectionPool.cleanupIdleConnections(
+      Math.ceil(count / 2),
+    );
+    const telnetCleaned = this.telnetConnectionPool.cleanupIdleConnections(
+      Math.ceil(count / 2),
+    );
     return sshCleaned || telnetCleaned;
   }
 

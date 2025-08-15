@@ -23,8 +23,8 @@ import Typography from "@mui/material/Typography";
 import Tooltip from "@mui/material/Tooltip";
 import IconButton from "@mui/material/IconButton";
 import CommandSuggestion from "./CommandSuggestion.jsx";
-import { findGroupByTab } from '../core/syncInputGroups';
-import { dispatchCommandToGroup } from '../core/syncGroupCommandDispatcher';
+import { findGroupByTab } from "../core/syncInputGroups";
+import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 
 // 添加全局样式以确保xterm正确填满容器
 const terminalStyles = `
@@ -206,15 +206,18 @@ const getCharacterMetrics = (term) => {
   try {
     // 获取终端的实际字符尺寸
     const charMeasureElement = term.element.querySelector(
-      ".xterm-char-measure-element"
+      ".xterm-char-measure-element",
     );
     let charWidth = 9; // 默认值
     let charHeight = 17; // 默认值
 
     // 尝试多种方法获取精确的字符宽度
-    if (term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0) {
+    if (
+      term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0
+    ) {
       // 优先使用渲染器提供的精确值
-      charWidth = term._core._renderService._renderer.dimensions.actualCellWidth;
+      charWidth =
+        term._core._renderService._renderer.dimensions.actualCellWidth;
     } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) {
       // 兼容旧版本的路径
       charWidth = term._core._renderService.dimensions.actualCellWidth;
@@ -224,9 +227,12 @@ const getCharacterMetrics = (term) => {
     }
 
     // 尝试多种方法获取精确的字符高度
-    if (term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0) {
+    if (
+      term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0
+    ) {
       // 优先使用渲染器提供的精确值
-      charHeight = term._core._renderService._renderer.dimensions.actualCellHeight;
+      charHeight =
+        term._core._renderService._renderer.dimensions.actualCellHeight;
     } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) {
       // 兼容旧版本的路径
       charHeight = term._core._renderService.dimensions.actualCellHeight;
@@ -244,7 +250,10 @@ const getCharacterMetrics = (term) => {
     const screen = term.element.querySelector(".xterm-screen");
 
     // 获取视口和屏幕的位置信息
-    const viewportRect = viewport?.getBoundingClientRect() || { left: 0, top: 0 };
+    const viewportRect = viewport?.getBoundingClientRect() || {
+      left: 0,
+      top: 0,
+    };
     const screenRect = screen?.getBoundingClientRect() || { left: 0, top: 0 };
 
     // 计算滚动偏移量
@@ -265,11 +274,11 @@ const getCharacterMetrics = (term) => {
         x: viewportRect.left,
         y: viewportRect.top,
         scrollLeft,
-        scrollTop
+        scrollTop,
       },
       screenOffset: {
         x: screenRect.left,
-        y: screenRect.top
+        y: screenRect.top,
       },
       scrollPosition: terminalScrollPosition,
       hasScrolled: terminalHasScrolled,
@@ -280,15 +289,15 @@ const getCharacterMetrics = (term) => {
           left: viewportRect.left,
           top: viewportRect.top,
           width: viewportRect.width,
-          height: viewportRect.height
+          height: viewportRect.height,
         },
         screenRect: {
           left: screenRect.left,
           top: screenRect.top,
           width: screenRect.width,
-          height: screenRect.height
-        }
-      }
+          height: screenRect.height,
+        },
+      },
     };
   } catch (error) {
     // 获取字符度量失败，使用默认值
@@ -300,7 +309,7 @@ const getCharacterMetrics = (term) => {
       screenOffset: { x: 0, y: 0 },
       scrollPosition: 0,
       hasScrolled: false,
-      scaleFactor: 1
+      scaleFactor: 1,
     };
   }
 };
@@ -487,7 +496,7 @@ const WebTerminal = ({
   const eventManager = useEventManager(); // 使用统一的事件管理器
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
-  
+
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
 
@@ -624,7 +633,7 @@ const WebTerminal = ({
 
       // 获取所有选择相关元素
       const selectionElements = terminalElement.querySelectorAll(
-        ".xterm-selection div"
+        ".xterm-selection div",
       );
 
       // 如果没有选择元素，直接返回
@@ -681,8 +690,10 @@ const WebTerminal = ({
       const currentHeight = parseFloat(computedStyle.height) || 0;
 
       // 计算需要的偏移量
-      const leftOffset = (currentLeft - metrics.screenOffset.x) % metrics.charWidth;
-      const topOffset = (currentTop - metrics.screenOffset.y) % metrics.charHeight;
+      const leftOffset =
+        (currentLeft - metrics.screenOffset.x) % metrics.charWidth;
+      const topOffset =
+        (currentTop - metrics.screenOffset.y) % metrics.charHeight;
 
       // 计算更精确的调整值
       let adjustX = 0;
@@ -725,7 +736,7 @@ const WebTerminal = ({
         const widthInChars = Math.round(currentWidth / metrics.charWidth);
         const idealWidth = widthInChars * metrics.charWidth;
         const widthDifference = idealWidth - currentWidth;
-        
+
         // 如果宽度差异较大，应用宽度调整
         if (Math.abs(widthDifference) > 1) {
           primaryElement.style.width = `${idealWidth}px`;
@@ -734,7 +745,7 @@ const WebTerminal = ({
     } catch (error) {
       // 选择元素调整失败，简化的回退处理 - 清理所有transform
       const selectionElements = document.querySelectorAll(
-        ".xterm .xterm-selection div"
+        ".xterm .xterm-selection div",
       );
       selectionElements.forEach((elem) => {
         elem.style.transform = "";
@@ -757,12 +768,13 @@ const WebTerminal = ({
     const selection = window.getSelection();
     if (selection && selection.toString().length > 0) {
       // 只有当选择发生在终端内部时才进行调整
-      const isInTerminal = selection.anchorNode && 
-        termRef.current && 
-        termRef.current.element && 
-        (termRef.current.element.contains(selection.anchorNode) || 
-         termRef.current.element.contains(selection.focusNode));
-      
+      const isInTerminal =
+        selection.anchorNode &&
+        termRef.current &&
+        termRef.current.element &&
+        (termRef.current.element.contains(selection.anchorNode) ||
+          termRef.current.element.contains(selection.focusNode));
+
       if (isInTerminal) {
         scheduleSelectionAdjustment();
       }
@@ -782,7 +794,7 @@ const WebTerminal = ({
         // 忽略短时间内的重复粘贴请求
         return;
       }
-      
+
       // 更新最后粘贴时间
       lastPasteTimeRef.current = now;
 
@@ -808,8 +820,7 @@ const WebTerminal = ({
               eventManager.setTimeout(() => {
                 window.terminalAPI.sendToProcess(
                   processCache[tabId],
-                  line +
-                    (index < processedText.lines.length - 1 ? "\n" : ""),
+                  line + (index < processedText.lines.length - 1 ? "\n" : ""),
                 );
               }, index * 50); // 50毫秒的延迟，可以根据实际情况调整
             });
@@ -827,9 +838,11 @@ const WebTerminal = ({
     // 在mousedown时记录选择开始，帮助确保选择行为的准确性
     if (e.button === 0 && termRef.current) {
       // 左键点击 - 标记选择开始
-      const isTextSelection = e.target && 
-        (e.target.closest('.xterm-screen') || e.target.closest('.terminal-container'));
-      
+      const isTextSelection =
+        e.target &&
+        (e.target.closest(".xterm-screen") ||
+          e.target.closest(".terminal-container"));
+
       // 如果是在终端内容区点击，准备进行选择操作
       if (isTextSelection) {
         // 立即调整一次，确保初始选择状态正确
@@ -843,7 +856,8 @@ const WebTerminal = ({
   // 简化的鼠标事件处理 - 减少频繁调整
   const handleMouseMove = (e) => {
     // 检测是否正在进行选择操作
-    if (e.buttons === 1) { // 左键按下
+    if (e.buttons === 1) {
+      // 左键按下
       const isTextSelection = window.getSelection()?.toString()?.length > 0;
       if (isTextSelection && termRef.current) {
         // 延迟调整选择，避免频繁调整影响性能
@@ -857,12 +871,12 @@ const WebTerminal = ({
     if (termRef.current) {
       const selection = window.getSelection?.();
       const hasSelection = selection && selection.toString().length > 0;
-      
+
       // 只有当确实存在选中文本时才进行调整
       if (hasSelection) {
         // 使用调度函数进行延迟调整
         scheduleSelectionAdjustment();
-        
+
         // 额外添加一个延时调整，处理某些浏览器选择完成后的渲染延迟
         setTimeout(() => {
           adjustSelectionElements();
@@ -1008,7 +1022,7 @@ const WebTerminal = ({
         if (result?.success && result.suggestions?.length > 0) {
           // 新增：如果输入与历史命令完全一致，则不显示建议弹窗
           const hasExactMatch = result.suggestions.some(
-            (suggestion) => suggestion.command === trimmedInput
+            (suggestion) => suggestion.command === trimmedInput,
           );
           if (hasExactMatch) {
             // 输入与历史命令完全一致，隐藏弹窗
@@ -1394,13 +1408,19 @@ const WebTerminal = ({
           }
 
           // 增强的确认响应检测：检查整行是否包含确认对话特征
-          const hasConfirmationPromptInLine = /(\[?[yY]\/[nN]\]?|\(?[yY]\/[nN]\)?|yes\/no|YES\/NO|是\/否)/i.test(lastLine);
-          
+          const hasConfirmationPromptInLine =
+            /(\[?[yY]\/[nN]\]?|\(?[yY]\/[nN]\)?|yes\/no|YES\/NO|是\/否)/i.test(
+              lastLine,
+            );
+
           // 检查用户输入是否为确认响应
-          const isUserConfirmationInput = /^(y|n|yes|no|是|否|确认|取消)$/i.test(command) || /^[yYnN]$/i.test(command);
-          
+          const isUserConfirmationInput =
+            /^(y|n|yes|no|是|否|确认|取消)$/i.test(command) ||
+            /^[yYnN]$/i.test(command);
+
           // 只有当整行包含确认提示且用户输入为确认响应时，才认定为确认响应
-          const isConfirmationResponse = hasConfirmationPromptInLine && isUserConfirmationInput;
+          const isConfirmationResponse =
+            hasConfirmationPromptInLine && isUserConfirmationInput;
 
           // 确保命令不为空且不与上一次执行的命令相同，并且不在编辑器模式中
           // 注意：inEditorMode可能已经被buffer类型检测器更新
@@ -1623,9 +1643,11 @@ const WebTerminal = ({
   // 根据字体名称生成完整的字体族字符串
   const getFontFamilyString = (fontName) => {
     const fontFamilyMap = {
-      "Fira Code": '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
-      "Space Mono": '"Space Mono", "Consolas", "Monaco", "Courier New", monospace',
-      "Consolas": '"Consolas", "Monaco", "Courier New", monospace',
+      "Fira Code":
+        '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
+      "Space Mono":
+        '"Space Mono", "Consolas", "Monaco", "Courier New", monospace',
+      Consolas: '"Consolas", "Monaco", "Courier New", monospace',
     };
     return fontFamilyMap[fontName] || fontFamilyMap["Fira Code"];
   };
@@ -1637,7 +1659,7 @@ const WebTerminal = ({
         const settings = await window.terminalAPI.loadUISettings();
         return {
           fontSize: settings.terminalFontSize || 14,
-          fontFamily: getFontFamilyString(settings.terminalFont || "Fira Code")
+          fontFamily: getFontFamilyString(settings.terminalFont || "Fira Code"),
         };
       }
     } catch (error) {
@@ -1645,7 +1667,7 @@ const WebTerminal = ({
     }
     return {
       fontSize: 14,
-      fontFamily: getFontFamilyString("Fira Code")
+      fontFamily: getFontFamilyString("Fira Code"),
     };
   };
 
@@ -1683,10 +1705,14 @@ const WebTerminal = ({
       if (terminalRef.current && terminalCache[tabId] && fitAddonRef.current) {
         // 更新终端字体设置
         if (terminalFontSize !== undefined) {
-          terminalCache[tabId].options.fontSize = parseInt(terminalFontSize, 10);
+          terminalCache[tabId].options.fontSize = parseInt(
+            terminalFontSize,
+            10,
+          );
         }
         if (terminalFont !== undefined) {
-          terminalCache[tabId].options.fontFamily = getFontFamilyString(terminalFont);
+          terminalCache[tabId].options.fontFamily =
+            getFontFamilyString(terminalFont);
         }
 
         // 使用EventManager管理定时器
@@ -1754,7 +1780,8 @@ const WebTerminal = ({
         term = new Terminal({
           cursorBlink: true,
           theme: terminalTheme, // 使用固定的终端主题
-          fontFamily: '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
+          fontFamily:
+            '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
           fontSize: 14, // 默认大小，稍后会更新
           scrollback: 10000,
           allowTransparency: true,
@@ -1839,9 +1866,10 @@ const WebTerminal = ({
 
           try {
             // 根据协议类型选择连接方式
-            const connectPromise = sshConfig.protocol === "telnet" 
-              ? window.terminalAPI.startTelnet(sshConfig)
-              : window.terminalAPI.startSSH(sshConfig);
+            const connectPromise =
+              sshConfig.protocol === "telnet"
+                ? window.terminalAPI.startTelnet(sshConfig)
+                : window.terminalAPI.startSSH(sshConfig);
 
             // 启动连接
             connectPromise
@@ -1855,11 +1883,11 @@ const WebTerminal = ({
 
                   // 触发进程ID更新事件，用于通知其他组件
                   const event = new CustomEvent("terminalProcessIdUpdated", {
-                    detail: { 
-                      terminalId: tabId, 
+                    detail: {
+                      terminalId: tabId,
                       processId,
                       protocol: sshConfig.protocol || "ssh",
-                      splitReconnect: sshConfig.splitReconnect || false
+                      splitReconnect: sshConfig.splitReconnect || false,
                     },
                   });
 
@@ -1877,10 +1905,12 @@ const WebTerminal = ({
                   });
 
                   // 拆分重连模式需要更快的resize响应
-                  const resizeDelays = sshConfig.splitReconnect ? [200, 500, 1000] : [1000, 2000];
-                  
+                  const resizeDelays = sshConfig.splitReconnect
+                    ? [200, 500, 1000]
+                    : [1000, 2000];
+
                   // 使用EventManager管理连接成功后多次尝试同步终端大小
-                  resizeDelays.forEach(delay => {
+                  resizeDelays.forEach((delay) => {
                     eventManager.setTimeout(() => {
                       if (terminalRef.current && fitAddonRef.current) {
                         forceResizeTerminal(
@@ -1893,11 +1923,11 @@ const WebTerminal = ({
                       }
                     }, delay);
                   });
-                  
+
                   // 拆分重连成功后的额外处理
                   if (sshConfig.splitReconnect) {
                     term.writeln(`\r\n已建立新连接`);
-                    
+
                     // 强制触发终端内容刷新
                     eventManager.setTimeout(() => {
                       if (term.refresh) {
@@ -1906,20 +1936,20 @@ const WebTerminal = ({
                     }, 300);
                   }
                 } else {
-                  const errorMsg = sshConfig.splitReconnect 
+                  const errorMsg = sshConfig.splitReconnect
                     ? `重连失败: 未能获取进程ID`
                     : `连接失败: 未能获取进程ID`;
                   term.writeln(errorMsg);
                 }
               })
               .catch((error) => {
-                const errorMsg = sshConfig.splitReconnect 
+                const errorMsg = sshConfig.splitReconnect
                   ? `\r\n重连失败: ${error.message || "未知错误"}`
                   : `\r\n连接失败: ${error.message || "未知错误"}`;
                 term.writeln(errorMsg);
               });
           } catch (error) {
-            const errorMsg = sshConfig.splitReconnect 
+            const errorMsg = sshConfig.splitReconnect
               ? `\r\n重连失败: ${error.message || "未知错误"}`
               : `\r\n连接失败: ${error.message || "未知错误"}`;
             term.writeln(errorMsg);
@@ -1975,17 +2005,17 @@ const WebTerminal = ({
         // Ctrl+Alt+V 粘贴 (改为Ctrl+Alt+V)
         else if (e.ctrlKey && e.altKey && e.key === "v") {
           e.preventDefault();
-          
+
           // 检查是否是重复粘贴（100毫秒内的操作视为重复）
           const now = Date.now();
           if (now - lastPasteTimeRef.current < 100) {
             // 忽略短时间内的重复粘贴请求
             return;
           }
-          
+
           // 更新最后粘贴时间
           lastPasteTimeRef.current = now;
-          
+
           navigator.clipboard.readText().then((text) => {
             if (text && processCache[tabId]) {
               // 使用预处理函数处理多行文本，防止注释和缩进问题
@@ -2061,7 +2091,7 @@ const WebTerminal = ({
         eventManager.addEventListener(
           document,
           "selectionchange",
-          handleSelectionChange
+          handleSelectionChange,
         );
       }
 
@@ -2525,7 +2555,7 @@ const WebTerminal = ({
         eventManager.addEventListener(
           document,
           "selectionchange",
-          handleSelectionChange
+          handleSelectionChange,
         );
       }
 
@@ -2535,7 +2565,7 @@ const WebTerminal = ({
         eventManager.removeEventListener(
           document,
           "selectionchange",
-          handleSelectionChange
+          handleSelectionChange,
         );
 
         // 移除样式元素
@@ -2835,26 +2865,28 @@ const WebTerminal = ({
       handleClose();
       return;
     }
-    
+
     // 更新最后粘贴时间
     lastPasteTimeRef.current = now;
-    
+
     navigator.clipboard
       .readText()
       .then((text) => {
         if (text && termRef.current && processCache[tabId]) {
           // 检测文本是否包含中文字符
           const containsChinese = /[\u4e00-\u9fa5]/.test(text);
-          
+
           // 使用预处理函数处理多行文本，防止注释和缩进问题
           let processedText = processMultilineInput(text);
 
           // 如果包含中文字符，确保正确编码
           if (containsChinese) {
             // 对于SSH连接，确保中文字符能够正确传输
-            const processInfo = window.terminalAPI && window.terminalAPI.getProcessInfo ? 
-              window.terminalAPI.getProcessInfo(processCache[tabId]) : null;
-            
+            const processInfo =
+              window.terminalAPI && window.terminalAPI.getProcessInfo
+                ? window.terminalAPI.getProcessInfo(processCache[tabId])
+                : null;
+
             if (processInfo && processInfo.type === "ssh2") {
               // 对于SSH连接，确保使用UTF-8编码
               if (typeof processedText === "string") {
@@ -2862,14 +2894,14 @@ const WebTerminal = ({
                 try {
                   // 使用TextEncoder确保UTF-8编码
                   const encoder = new TextEncoder();
-                  const decoder = new TextDecoder('utf-8');
+                  const decoder = new TextDecoder("utf-8");
                   const encoded = encoder.encode(processedText);
                   processedText = decoder.decode(encoded);
                 } catch (e) {
                   // 如果浏览器不支持TextEncoder/TextDecoder，使用备用方法
                   processedText = processedText
                     .split("")
-                    .map(char => {
+                    .map((char) => {
                       // 对于中文字符，确保正确编码
                       if (/[\u4e00-\u9fa5]/.test(char)) {
                         return char;
@@ -2878,22 +2910,26 @@ const WebTerminal = ({
                     })
                     .join("");
                 }
-              } else if (processedText && typeof processedText === "object" && processedText.type === "multiline-with-comments") {
+              } else if (
+                processedText &&
+                typeof processedText === "object" &&
+                processedText.type === "multiline-with-comments"
+              ) {
                 // 处理多行带注释的情况
                 try {
                   // 使用TextEncoder确保UTF-8编码
                   const encoder = new TextEncoder();
-                  const decoder = new TextDecoder('utf-8');
-                  processedText.lines = processedText.lines.map(line => {
+                  const decoder = new TextDecoder("utf-8");
+                  processedText.lines = processedText.lines.map((line) => {
                     const encoded = encoder.encode(line);
                     return decoder.decode(encoded);
                   });
                 } catch (e) {
                   // 备用方法
-                  processedText.lines = processedText.lines.map(line => {
+                  processedText.lines = processedText.lines.map((line) => {
                     return line
                       .split("")
-                      .map(char => {
+                      .map((char) => {
                         // 对于中文字符，确保正确编码
                         if (/[\u4e00-\u9fa5]/.test(char)) {
                           return char;
@@ -3172,36 +3208,44 @@ const WebTerminal = ({
               );
             }
           };
-          
+
           // 立即执行一次
           executeResize();
-          
+
           // 针对拆分操作的特殊处理
           if (event.detail.splitOperation) {
             // 拆分操作需要更积极的刷新策略
-            const delayTimes = event.detail.finalRefresh 
-              ? [100, 250, 500]  // 最终刷新使用更长的间隔
-              : event.detail.retryAttempt 
+            const delayTimes = event.detail.finalRefresh
+              ? [100, 250, 500] // 最终刷新使用更长的间隔
+              : event.detail.retryAttempt
                 ? [100, 200, 400] // 重试时使用渐进式延迟
                 : [25, 75, 150, 300, 500, 750]; // 初始拆分使用密集刷新
-            
+
             delayTimes.forEach((delay) => {
               eventManager.setTimeout(() => {
                 // 在每次重试前检查终端状态
-                if (terminalRef.current && fitAddonRef.current && termRef.current) {
+                if (
+                  terminalRef.current &&
+                  fitAddonRef.current &&
+                  termRef.current
+                ) {
                   const container = terminalRef.current;
                   const termElement = termRef.current.element;
-                  
+
                   // 检查容器是否可见且有正确的尺寸
-                  if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+                  if (
+                    container &&
+                    container.offsetWidth > 0 &&
+                    container.offsetHeight > 0
+                  ) {
                     executeResize();
-                    
+
                     // 特殊处理：强制刷新终端内容显示
                     if (termRef.current.refresh) {
                       setTimeout(() => {
                         if (termRef.current && termRef.current.refresh) {
                           termRef.current.refresh(0, termRef.current.rows - 1);
-                          
+
                           // 强制触发重绘
                           if (termRef.current.focus) {
                             termRef.current.focus();
@@ -3210,20 +3254,20 @@ const WebTerminal = ({
                         }
                       }, 25);
                     }
-                    
+
                     // 额外的DOM刷新
                     if (termElement) {
-                      termElement.style.opacity = '0.99';
+                      termElement.style.opacity = "0.99";
                       setTimeout(() => {
-                        if (termElement) termElement.style.opacity = '1';
+                        if (termElement) termElement.style.opacity = "1";
                       }, 10);
                     }
                   } else {
                     // 如果容器不可见，尝试重新显示
                     if (container) {
-                      container.style.display = 'block';
-                      container.style.visibility = 'visible';
-                      container.style.opacity = '1';
+                      container.style.display = "block";
+                      container.style.visibility = "visible";
+                      container.style.opacity = "1";
                     }
                   }
                 }
@@ -3231,18 +3275,28 @@ const WebTerminal = ({
             });
           } else {
             // 常规强制刷新的重试机制
-            const delayTimes = event.detail.retryAttempt ? [100, 200, 400] : [50, 150, 300, 500, 800];
+            const delayTimes = event.detail.retryAttempt
+              ? [100, 200, 400]
+              : [50, 150, 300, 500, 800];
             delayTimes.forEach((delay) => {
               eventManager.setTimeout(() => {
                 // 在每次重试前检查终端状态
-                if (terminalRef.current && fitAddonRef.current && termRef.current) {
+                if (
+                  terminalRef.current &&
+                  fitAddonRef.current &&
+                  termRef.current
+                ) {
                   const container = terminalRef.current;
                   const termElement = termRef.current.element;
-                  
+
                   // 检查容器是否可见且有正确的尺寸
-                  if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+                  if (
+                    container &&
+                    container.offsetWidth > 0 &&
+                    container.offsetHeight > 0
+                  ) {
                     executeResize();
-                    
+
                     // 额外的终端内容刷新
                     if (termRef.current.refresh) {
                       setTimeout(() => {
@@ -3256,32 +3310,53 @@ const WebTerminal = ({
               }, delay);
             });
           }
-          
+
           // 最后一次验证和修复
-          setTimeout(() => {
-            if (terminalRef.current && fitAddonRef.current && termRef.current) {
-              const container = terminalRef.current;
-              const termElement = termRef.current.element;
-              
-              // 如果终端仍然没有正确显示，进行最后的修复尝试
-              if (container && (!termElement || termElement.offsetWidth === 0)) {
-                // 强制重新适配
-                fitAddonRef.current.fit();
-                
-                // 触发内容刷新
-                if (termRef.current.refresh) {
-                  termRef.current.refresh(0, termRef.current.rows - 1);
-                }
-                
-                // 同步到后端
-                if (processCache[tabId] && window.terminalAPI?.resizeTerminal) {
-                  const cols = Math.max(Math.floor(termRef.current.cols || 120), 1);
-                  const rows = Math.max(Math.floor(termRef.current.rows || 30), 1);
-                  window.terminalAPI.resizeTerminal(processCache[tabId], cols, rows).catch(() => {});
+          setTimeout(
+            () => {
+              if (
+                terminalRef.current &&
+                fitAddonRef.current &&
+                termRef.current
+              ) {
+                const container = terminalRef.current;
+                const termElement = termRef.current.element;
+
+                // 如果终端仍然没有正确显示，进行最后的修复尝试
+                if (
+                  container &&
+                  (!termElement || termElement.offsetWidth === 0)
+                ) {
+                  // 强制重新适配
+                  fitAddonRef.current.fit();
+
+                  // 触发内容刷新
+                  if (termRef.current.refresh) {
+                    termRef.current.refresh(0, termRef.current.rows - 1);
+                  }
+
+                  // 同步到后端
+                  if (
+                    processCache[tabId] &&
+                    window.terminalAPI?.resizeTerminal
+                  ) {
+                    const cols = Math.max(
+                      Math.floor(termRef.current.cols || 120),
+                      1,
+                    );
+                    const rows = Math.max(
+                      Math.floor(termRef.current.rows || 30),
+                      1,
+                    );
+                    window.terminalAPI
+                      .resizeTerminal(processCache[tabId], cols, rows)
+                      .catch(() => {});
+                  }
                 }
               }
-            }
-          }, event.detail.splitOperation ? 1200 : 1000);
+            },
+            event.detail.splitOperation ? 1200 : 1000,
+          );
         } else {
           // 正常的标签切换处理
           eventManager.setTimeout(() => {
@@ -3300,7 +3375,11 @@ const WebTerminal = ({
           const delayTimes = [50, 150, 300];
           delayTimes.forEach((delay) => {
             eventManager.setTimeout(() => {
-              if (terminalRef.current && fitAddonRef.current && termRef.current) {
+              if (
+                terminalRef.current &&
+                fitAddonRef.current &&
+                termRef.current
+              ) {
                 forceResizeTerminal(
                   termRef.current,
                   terminalRef.current,
@@ -3318,15 +3397,20 @@ const WebTerminal = ({
     // 添加专门的终端resize事件监听，用于分屏布局变化
     const handleTerminalResize = (event) => {
       const { tabId: eventTabId, layoutType, timestamp } = event.detail || {};
-      
+
       // 只处理属于当前终端的事件
-      if (eventTabId === tabId && terminalRef.current && fitAddonRef.current && termRef.current) {
+      if (
+        eventTabId === tabId &&
+        terminalRef.current &&
+        fitAddonRef.current &&
+        termRef.current
+      ) {
         // 设置内容已更新标志
         setContentUpdated(true);
-        
+
         // 延迟执行resize，确保DOM布局已经完成
         const resizeDelay = layoutType === "split" ? 200 : 100;
-        
+
         setTimeout(() => {
           if (terminalRef.current && fitAddonRef.current && termRef.current) {
             // 强制重新计算容器尺寸
@@ -3338,7 +3422,7 @@ const WebTerminal = ({
             if (termRef.current.element) {
               termRef.current.element.style.width = `${currentWidth}px`;
               termRef.current.element.style.height = `${currentHeight}px`;
-              
+
               // 强制重排
               termRef.current.element.getBoundingClientRect();
             }
@@ -3350,18 +3434,18 @@ const WebTerminal = ({
             if (processCache[tabId] && window.terminalAPI?.resizeTerminal) {
               const cols = Math.max(Math.floor(termRef.current.cols || 120), 1);
               const rows = Math.max(Math.floor(termRef.current.rows || 30), 1);
-              
+
               window.terminalAPI
                 .resizeTerminal(processCache[tabId], cols, rows)
                 .catch((err) => {
                   // 终端resize失败，但不影响显示
                 });
             }
-            
+
             // 如果是拆分操作，额外进行多次resize确保显示正确
             if (layoutType === "split") {
               const additionalDelays = [100, 300, 500];
-              additionalDelays.forEach(delay => {
+              additionalDelays.forEach((delay) => {
                 eventManager.setTimeout(() => {
                   if (fitAddonRef.current && termRef.current) {
                     fitAddonRef.current.fit();
@@ -3376,13 +3460,23 @@ const WebTerminal = ({
 
     // 添加专门的终端强制刷新事件监听
     const handleTerminalForceRefresh = (event) => {
-      const { tabId: eventTabId, layoutType, timestamp, retryAttempt } = event.detail || {};
-      
+      const {
+        tabId: eventTabId,
+        layoutType,
+        timestamp,
+        retryAttempt,
+      } = event.detail || {};
+
       // 只处理属于当前终端的事件
-      if (eventTabId === tabId && terminalRef.current && fitAddonRef.current && termRef.current) {
+      if (
+        eventTabId === tabId &&
+        terminalRef.current &&
+        fitAddonRef.current &&
+        termRef.current
+      ) {
         // 设置内容已更新标志
         setContentUpdated(true);
-        
+
         // 强制刷新终端显示
         const executeForceRefresh = () => {
           if (terminalRef.current && fitAddonRef.current && termRef.current) {
@@ -3395,7 +3489,7 @@ const WebTerminal = ({
             if (termRef.current.element) {
               termRef.current.element.style.width = `${currentWidth}px`;
               termRef.current.element.style.height = `${currentHeight}px`;
-              
+
               // 强制重排
               termRef.current.element.getBoundingClientRect();
             }
@@ -3407,30 +3501,34 @@ const WebTerminal = ({
             if (processCache[tabId] && window.terminalAPI?.resizeTerminal) {
               const cols = Math.max(Math.floor(termRef.current.cols || 120), 1);
               const rows = Math.max(Math.floor(termRef.current.rows || 30), 1);
-              
+
               window.terminalAPI
                 .resizeTerminal(processCache[tabId], cols, rows)
                 .catch((err) => {
                   // 终端resize失败，但不影响显示
                 });
             }
-            
+
             // 强制刷新终端内容显示
             if (termRef.current.refresh) {
               termRef.current.refresh(0, termRef.current.rows - 1);
             }
-            
+
             // 特殊处理拆分重连后的情况
-            if (layoutType === "post-split-reconnect" || layoutType === "post-split" || layoutType === "post-split-retry") {
+            if (
+              layoutType === "post-split-reconnect" ||
+              layoutType === "post-split" ||
+              layoutType === "post-split-retry"
+            ) {
               // 额外的重绘和聚焦操作
               setTimeout(() => {
                 if (termRef.current && termRef.current.element) {
                   // 强制DOM重绘
                   const element = termRef.current.element;
-                  element.style.transform = 'translateZ(0)';
+                  element.style.transform = "translateZ(0)";
                   element.offsetHeight; // 触发重排
-                  element.style.transform = '';
-                  
+                  element.style.transform = "";
+
                   // 尝试聚焦和失焦以触发渲染
                   if (termRef.current.focus && termRef.current.blur) {
                     termRef.current.focus();
@@ -3440,7 +3538,7 @@ const WebTerminal = ({
                       }
                     }, 50);
                   }
-                  
+
                   // 拆分重连模式下的特殊处理
                   if (layoutType === "post-split-reconnect") {
                     // 检查当前组件的SSH配置中是否有拆分重连标记
@@ -3449,7 +3547,7 @@ const WebTerminal = ({
                       if (termRef.current.refresh) {
                         termRef.current.refresh(0, termRef.current.rows - 1);
                       }
-                      
+
                       // 触发窗口resize确保布局正确
                       window.dispatchEvent(new Event("resize"));
                     }
@@ -3459,27 +3557,40 @@ const WebTerminal = ({
             }
           }
         };
-        
+
         // 立即执行一次
         executeForceRefresh();
-        
+
         // 针对拆分重连的特殊情况，使用更密集的重试策略
-        if (layoutType === "post-split-reconnect" || layoutType === "post-split" || layoutType === "post-split-retry") {
-          const retryDelays = layoutType === "post-split-reconnect"
-            ? [50, 150, 300, 500, 800, 1200] // 重连模式使用更密集的重试
-            : layoutType === "post-split-retry" 
-              ? [100, 300, 600]  // 重试时使用更长间隔
-              : [50, 150, 300, 500, 800]; // 初始拆分时密集重试
-          
-          retryDelays.forEach(delay => {
+        if (
+          layoutType === "post-split-reconnect" ||
+          layoutType === "post-split" ||
+          layoutType === "post-split-retry"
+        ) {
+          const retryDelays =
+            layoutType === "post-split-reconnect"
+              ? [50, 150, 300, 500, 800, 1200] // 重连模式使用更密集的重试
+              : layoutType === "post-split-retry"
+                ? [100, 300, 600] // 重试时使用更长间隔
+                : [50, 150, 300, 500, 800]; // 初始拆分时密集重试
+
+          retryDelays.forEach((delay) => {
             eventManager.setTimeout(() => {
-              if (terminalRef.current && fitAddonRef.current && termRef.current) {
+              if (
+                terminalRef.current &&
+                fitAddonRef.current &&
+                termRef.current
+              ) {
                 const container = terminalRef.current;
-                
+
                 // 检查容器是否正确显示
-                if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+                if (
+                  container &&
+                  container.offsetWidth > 0 &&
+                  container.offsetHeight > 0
+                ) {
                   executeForceRefresh();
-                  
+
                   // 拆分重连模式的额外验证
                   if (layoutType === "post-split-reconnect") {
                     const processId = processCache[tabId];
@@ -3495,10 +3606,10 @@ const WebTerminal = ({
                 } else {
                   // 容器不可见，尝试修复
                   if (container) {
-                    container.style.display = 'flex';
-                    container.style.visibility = 'visible';
-                    container.style.opacity = '1';
-                    
+                    container.style.display = "flex";
+                    container.style.visibility = "visible";
+                    container.style.opacity = "1";
+
                     // 修复后再次执行刷新
                     setTimeout(() => {
                       executeForceRefresh();
@@ -3508,24 +3619,29 @@ const WebTerminal = ({
               }
             }, delay);
           });
-          
+
           // 最终保险措施（拆分重连模式下延长验证时间）
-          const finalCheckDelay = layoutType === "post-split-reconnect" ? 2000 : 1500;
+          const finalCheckDelay =
+            layoutType === "post-split-reconnect" ? 2000 : 1500;
           setTimeout(() => {
             if (terminalRef.current && fitAddonRef.current && termRef.current) {
               const container = terminalRef.current;
               const termElement = termRef.current.element;
-              
+
               // 最后检查：如果仍然有问题，进行强制修复
-              if (!termElement || termElement.offsetWidth === 0 || termElement.offsetHeight === 0) {
+              if (
+                !termElement ||
+                termElement.offsetWidth === 0 ||
+                termElement.offsetHeight === 0
+              ) {
                 // 强制重新创建终端显示
                 if (fitAddonRef.current && termRef.current) {
                   fitAddonRef.current.fit();
-                  
+
                   if (termRef.current.refresh) {
                     termRef.current.refresh(0, termRef.current.rows - 1);
                   }
-                  
+
                   // 强制触发窗口resize事件
                   window.dispatchEvent(new Event("resize"));
                 }
@@ -3538,8 +3654,16 @@ const WebTerminal = ({
 
     // 使用EventManager添加事件监听器
     eventManager.addEventListener(window, "tabChanged", handleTabChanged);
-    eventManager.addEventListener(window, "terminalResize", handleTerminalResize);
-    eventManager.addEventListener(window, "terminalForceRefresh", handleTerminalForceRefresh);
+    eventManager.addEventListener(
+      window,
+      "terminalResize",
+      handleTerminalResize,
+    );
+    eventManager.addEventListener(
+      window,
+      "terminalForceRefresh",
+      handleTerminalForceRefresh,
+    );
   }, [tabId]);
 
   // 在创建终端前获取当前字体设置
@@ -3575,24 +3699,32 @@ const WebTerminal = ({
   }, []);
 
   // 输入同步广播封装
-  const broadcastInputToGroup = useCallback((input, sourceTabId) => {
-    const group = findGroupByTab(tabId);
-    if (group && group.members && group.members.length > 1) {
-      group.members.forEach(targetTabId => {
-        if (targetTabId !== (sourceTabId || tabId) && window.terminalAPI && window.terminalAPI.sendToProcess && processCache[targetTabId]) {
-          // 通过自定义事件将输入同步到目标终端
-          const event = new CustomEvent('syncTerminalInput', {
-            detail: {
-              input,
-              sourceTabId: sourceTabId || tabId,
-              targetTabId
-            }
-          });
-          window.dispatchEvent(event);
-        }
-      });
-    }
-  }, [tabId]);
+  const broadcastInputToGroup = useCallback(
+    (input, sourceTabId) => {
+      const group = findGroupByTab(tabId);
+      if (group && group.members && group.members.length > 1) {
+        group.members.forEach((targetTabId) => {
+          if (
+            targetTabId !== (sourceTabId || tabId) &&
+            window.terminalAPI &&
+            window.terminalAPI.sendToProcess &&
+            processCache[targetTabId]
+          ) {
+            // 通过自定义事件将输入同步到目标终端
+            const event = new CustomEvent("syncTerminalInput", {
+              detail: {
+                input,
+                sourceTabId: sourceTabId || tabId,
+                targetTabId,
+              },
+            });
+            window.dispatchEvent(event);
+          }
+        });
+      }
+    },
+    [tabId],
+  );
 
   // 示例：假设有如下输入处理函数
   const handleUserInput = (input) => {
@@ -3600,7 +3732,7 @@ const WebTerminal = ({
   };
 
   // 注册表初始化
-  if (typeof window !== 'undefined' && !window.webTerminalRefs) {
+  if (typeof window !== "undefined" && !window.webTerminalRefs) {
     window.webTerminalRefs = {};
   }
 
@@ -3628,8 +3760,8 @@ const WebTerminal = ({
         }
       }
     };
-    window.addEventListener('syncTerminalInput', handler);
-    return () => window.removeEventListener('syncTerminalInput', handler);
+    window.addEventListener("syncTerminalInput", handler);
+    return () => window.removeEventListener("syncTerminalInput", handler);
   }, [tabId]);
 
   return (
@@ -3829,4 +3961,3 @@ const WebTerminal = ({
 };
 
 export default WebTerminal;
-

@@ -11,6 +11,6 @@ module.exports = {
     rules,
   },
   resolve: {
-    extensions: ['.js', '.jsx', '.json', '.ts', '.tsx'],
+    extensions: [".js", ".jsx", ".json", ".ts", ".tsx"],
   },
 };

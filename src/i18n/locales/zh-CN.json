@@ -298,6 +298,72 @@
       "copy": "复制",
       "copied": "已复制!",
       "regenerate": "重新生成"
+    },
+    "fileManager": {
+      "title": "文件管理器",
+      "loading": "加载中...",
+      "refresh": "刷新",
+      "back": "返回",
+      "home": "主目录",
+      "upload": "上传",
+      "search": "搜索文件...",
+      "enterPath": "输入路径...",
+      "sort": "排序",
+      "sortByName": "按名称排序",
+      "sortByTime": "按修改时间排序",
+      "createFolder": "新建文件夹",
+      "createFile": "新建文件",
+      "rename": "重命名",
+      "delete": "删除",
+      "download": "下载",
+      "copy": "复制",
+      "cut": "剪切",
+      "paste": "粘贴",
+      "properties": "属性",
+      "permissions": "权限设置",
+      "createSymlink": "创建符号链接",
+      "errors": {
+        "loadDirectoryFailed": "加载目录失败",
+        "fileApiNotAvailable": "文件管理API不可用",
+        "missingConnectionInfo": "缺少SSH连接信息",
+        "deleteFailed": "删除失败",
+        "uploadFailed": "上传文件失败",
+        "downloadFailed": "下载文件失败",
+        "renameFailed": "重命名失败",
+        "createFolderFailed": "创建文件夹失败",
+        "unknownError": "未知错误",
+        "refreshTimeout": "刷新超时",
+        "userCancelled": "用户已取消",
+        "operationCancelled": "操作已取消",
+        "sftpError": "SFTP错误",
+        "connectionNotReady": "SSH连接尚未就绪"
+      },
+      "messages": {
+        "preparingUpload": "准备上传...",
+        "uploadComplete": "上传完成",
+        "retrying": "正在重试 ({{current}}/{{max}})...",
+        "batchDeleteConfirm": "确定要删除选中的 {{count}} 个文件吗？",
+        "deleteConfirm": "确定要删除 {{name}} 吗？",
+        "operationInProgress": "操作进行中..."
+      },
+      "fileTypes": {
+        "folder": "文件夹",
+        "file": "文件",
+        "symlink": "符号链接",
+        "unknown": "未知类型"
+      },
+      "units": {
+        "bytes": "字节",
+        "kb": "KB",
+        "mb": "MB",
+        "gb": "GB",
+        "tb": "TB"
+      },
+      "statusBar": {
+        "totalItems": "共 {{count}} 项",
+        "selectedItems": "已选择 {{count}} 项",
+        "lastRefresh": "最后刷新: {{time}}"
+      }
     }
   }
 }

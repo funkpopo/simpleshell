@@ -17,7 +17,7 @@ import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import CheckIcon from '@mui/icons-material/Check';
+import CheckIcon from "@mui/icons-material/Check";
 
 const RandomPasswordGenerator = ({ open, onClose }) => {
   const { t } = useTranslation();
@@ -117,11 +117,12 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
           <Box
             sx={{
               flexGrow: 1,
-              overflow: "auto",
+              overflow: "hidden",
+              overflowY: "auto",
               p: 1.5,
             }}
           >
-            <Box sx={{ mb: 1.5 }}>
+            <Box sx={{ mb: 1.5, px: 1 }}>
               <Typography gutterBottom sx={{ fontSize: "0.9rem" }}>
                 {t("randomPassword.length")}: {length}
               </Typography>
@@ -131,15 +132,20 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                 aria-labelledby="password-length-slider"
                 valueLabelDisplay="auto"
                 step={1}
-                marks
                 min={4}
                 max={32}
                 sx={{
-                  '& .MuiSlider-markLabel': {
-                    fontSize: '0.7rem',
+                  width: "100%",
+                  "& .MuiSlider-valueLabel": {
+                    fontSize: "0.75rem",
                   },
-                  '& .MuiSlider-valueLabel': {
-                    fontSize: '0.75rem',
+                  "& .MuiSlider-thumb": {
+                    "&:hover, &.Mui-focusVisible": {
+                      boxShadow: "none",
+                    },
+                  },
+                  "& .MuiSlider-track": {
+                    border: "none",
                   },
                 }}
               />
@@ -147,27 +153,71 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
 
             <FormGroup sx={{ mb: 1.5 }}>
               <FormControlLabel
-                control={<Checkbox checked={options.uppercase} onChange={handleOptionChange} name="uppercase" size="small" />}
-                label={<Typography sx={{ fontSize: "0.85rem" }}>{t("randomPassword.uppercase")}</Typography>}
+                control={
+                  <Checkbox
+                    checked={options.uppercase}
+                    onChange={handleOptionChange}
+                    name="uppercase"
+                    size="small"
+                  />
+                }
+                label={
+                  <Typography sx={{ fontSize: "0.85rem" }}>
+                    {t("randomPassword.uppercase")}
+                  </Typography>
+                }
                 sx={{ ml: 0 }}
               />
               <FormControlLabel
-                control={<Checkbox checked={options.lowercase} onChange={handleOptionChange} name="lowercase" size="small" />}
-                label={<Typography sx={{ fontSize: "0.85rem" }}>{t("randomPassword.lowercase")}</Typography>}
+                control={
+                  <Checkbox
+                    checked={options.lowercase}
+                    onChange={handleOptionChange}
+                    name="lowercase"
+                    size="small"
+                  />
+                }
+                label={
+                  <Typography sx={{ fontSize: "0.85rem" }}>
+                    {t("randomPassword.lowercase")}
+                  </Typography>
+                }
                 sx={{ ml: 0 }}
               />
               <FormControlLabel
-                control={<Checkbox checked={options.numbers} onChange={handleOptionChange} name="numbers" size="small" />}
-                label={<Typography sx={{ fontSize: "0.85rem" }}>{t("randomPassword.numbers")}</Typography>}
+                control={
+                  <Checkbox
+                    checked={options.numbers}
+                    onChange={handleOptionChange}
+                    name="numbers"
+                    size="small"
+                  />
+                }
+                label={
+                  <Typography sx={{ fontSize: "0.85rem" }}>
+                    {t("randomPassword.numbers")}
+                  </Typography>
+                }
                 sx={{ ml: 0 }}
               />
               <FormControlLabel
-                control={<Checkbox checked={options.symbols} onChange={handleOptionChange} name="symbols" size="small" />}
-                label={<Typography sx={{ fontSize: "0.85rem" }}>{t("randomPassword.symbols")}</Typography>}
+                control={
+                  <Checkbox
+                    checked={options.symbols}
+                    onChange={handleOptionChange}
+                    name="symbols"
+                    size="small"
+                  />
+                }
+                label={
+                  <Typography sx={{ fontSize: "0.85rem" }}>
+                    {t("randomPassword.symbols")}
+                  </Typography>
+                }
                 sx={{ ml: 0 }}
               />
             </FormGroup>
-            
+
             <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
               <TextField
                 value={password}
@@ -179,17 +229,35 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                   readOnly: true,
                 }}
               />
-              <Tooltip 
-                title={copySuccess ? t("randomPassword.copied") : t("randomPassword.copy")}
+              <Tooltip
+                title={
+                  copySuccess
+                    ? t("randomPassword.copied")
+                    : t("randomPassword.copy")
+                }
                 onClose={() => setCopySuccess(false)}
               >
-                <IconButton onClick={copyToClipboard} sx={{ ml: 1 }} size="small">
-                  {copySuccess ? <CheckIcon color="success" /> : <ContentCopyIcon />}
+                <IconButton
+                  onClick={copyToClipboard}
+                  sx={{ ml: 1 }}
+                  size="small"
+                >
+                  {copySuccess ? (
+                    <CheckIcon color="success" />
+                  ) : (
+                    <ContentCopyIcon />
+                  )}
                 </IconButton>
               </Tooltip>
             </Box>
-            
-            <Button variant="contained" onClick={generatePassword} startIcon={<RefreshIcon />} size="small" fullWidth>
+
+            <Button
+              variant="contained"
+              onClick={generatePassword}
+              startIcon={<RefreshIcon />}
+              size="small"
+              fullWidth
+            >
               {t("randomPassword.regenerate")}
             </Button>
           </Box>
@@ -199,4 +267,4 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
   );
 };
 
-export default RandomPasswordGenerator; 
+export default RandomPasswordGenerator;

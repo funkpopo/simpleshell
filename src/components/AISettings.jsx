@@ -386,7 +386,7 @@ const AISettings = ({ open, onClose }) => {
                 <Box>
                   {!editMode ? (
                     // API列表模式
-                    (<Box>
+                    <Box>
                       <Box
                         sx={{
                           display: "flex",
@@ -509,10 +509,10 @@ const AISettings = ({ open, onClose }) => {
                           ))}
                         </Box>
                       )}
-                    </Box>)
+                    </Box>
                   ) : (
                     // 编辑模式
-                    (<Box
+                    <Box
                       sx={{ display: "flex", flexDirection: "column", gap: 3 }}
                     >
                       <Box
@@ -630,7 +630,7 @@ const AISettings = ({ open, onClose }) => {
                         }
                         label={t("aiSettings.streamEnabled")}
                       />
-                    </Box>)
+                    </Box>
                   )}
                 </Box>
               )}
@@ -641,7 +641,7 @@ const AISettings = ({ open, onClose }) => {
       <DialogActions sx={{ p: 2, gap: 1 }}>
         {editMode ? (
           // 编辑模式的按钮
-          (<>
+          <>
             <Button
               onClick={handleTest}
               disabled={loading || testing}
@@ -655,12 +655,12 @@ const AISettings = ({ open, onClose }) => {
             <Button onClick={handleSave} disabled={loading} variant="contained">
               {t("aiSettings.save")}
             </Button>
-          </>)
+          </>
         ) : (
           // 列表模式的按钮
-          (<Button onClick={handleClose} disabled={loading}>
+          <Button onClick={handleClose} disabled={loading}>
             {t("aiSettings.cancel")}
-          </Button>)
+          </Button>
         )}
       </DialogActions>
     </Dialog>

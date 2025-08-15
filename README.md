@@ -10,11 +10,11 @@ This is a terminal application built with Electron and React, combining the desk
 
 ## **Features**
 
-- **Core Functionality**: 
+- **Core Functionality**:
   - Integrated `xterm.js` and `ssh2` to provide remote terminal and file transfer capabilities.
   - File manager for browsing and managing local and remote files.
   - Support for SFTP folder uploads and downloads.
-- **AI-Powered Assistant**: 
+- **AI-Powered Assistant**:
   - An integrated AI assistant to help users with commands and workflows.
 - **Productivity & User Experience**:
   - Command history and suggestion features to improve user input efficiency.

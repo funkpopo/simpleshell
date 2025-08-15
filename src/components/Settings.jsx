@@ -102,8 +102,16 @@ const Settings = memo(({ open, onClose }) => {
   // Define terminal font family options (only fonts available in /src/assets/fonts)
   const terminalFonts = useMemo(
     () => [
-      { value: "Fira Code", label: "Fira Code", description: "支持编程连字的等宽字体" },
-      { value: "Space Mono", label: "Space Mono", description: "简洁的等宽字体" },
+      {
+        value: "Fira Code",
+        label: "Fira Code",
+        description: "支持编程连字的等宽字体",
+      },
+      {
+        value: "Space Mono",
+        label: "Space Mono",
+        description: "简洁的等宽字体",
+      },
       { value: "Consolas", label: "Consolas", description: "系统默认字体" },
     ],
     [],
@@ -322,7 +330,13 @@ const Settings = memo(({ open, onClose }) => {
       // Notify app to apply changes
       window.dispatchEvent(
         new CustomEvent("settingsChanged", {
-          detail: { language, fontSize, terminalFont, terminalFontSize, darkMode },
+          detail: {
+            language,
+            fontSize,
+            terminalFont,
+            terminalFontSize,
+            darkMode,
+          },
         }),
       );
 
@@ -419,7 +433,7 @@ const Settings = memo(({ open, onClose }) => {
           <Typography variant="subtitle1" gutterBottom>
             {"终端字体设置"}
           </Typography>
-          
+
           <Box sx={{ mb: 2 }}>
             <FormControl fullWidth variant="outlined" size="small">
               <InputLabel id="terminal-font-select-label">
@@ -556,8 +570,9 @@ const Settings = memo(({ open, onClose }) => {
             <Grid
               size={{
                 xs: 12,
-                sm: 6
-              }}>
+                sm: 6,
+              }}
+            >
               <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -609,8 +624,9 @@ const Settings = memo(({ open, onClose }) => {
             <Grid
               size={{
                 xs: 12,
-                sm: 6
-              }}>
+                sm: 6,
+              }}
+            >
               <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -658,8 +674,9 @@ const Settings = memo(({ open, onClose }) => {
             <Grid
               size={{
                 xs: 12,
-                sm: 6
-              }}>
+                sm: 6,
+              }}
+            >
               <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>

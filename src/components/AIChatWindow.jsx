@@ -47,14 +47,16 @@ const FloatingDialog = styled(Dialog)(({ theme }) => ({
     maxWidth: "90vw",
     height: 600,
     maxHeight: "80vh",
-    backgroundColor: theme.palette.mode === "dark" 
-      ? "rgba(30, 30, 30, 0.95)" 
-      : "rgba(255, 255, 255, 0.95)",
+    backgroundColor:
+      theme.palette.mode === "dark"
+        ? "rgba(30, 30, 30, 0.95)"
+        : "rgba(255, 255, 255, 0.95)",
     backdropFilter: "blur(10px)",
     borderRadius: 16,
-    boxShadow: theme.palette.mode === "dark"
-      ? "0 10px 40px rgba(0, 0, 0, 0.6)"
-      : "0 10px 40px rgba(0, 0, 0, 0.2)",
+    boxShadow:
+      theme.palette.mode === "dark"
+        ? "0 10px 40px rgba(0, 0, 0, 0.6)"
+        : "0 10px 40px rgba(0, 0, 0, 0.2)",
   },
 }));
 
@@ -80,7 +82,7 @@ const MessageBubble = styled(Paper)(({ theme, isUser }) => ({
 // 思考内容组件
 const ThinkContent = ({ content, isExpanded, onToggle }) => {
   const { t } = useTranslation();
-  
+
   return (
     <Box
       sx={{
@@ -96,7 +98,11 @@ const ThinkContent = ({ content, isExpanded, onToggle }) => {
         <Typography variant="caption" color="text.secondary">
           思考内容
         </Typography>
-        {isExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+        {isExpanded ? (
+          <ExpandLessIcon fontSize="small" />
+        ) : (
+          <ExpandMoreIcon fontSize="small" />
+        )}
       </Box>
       <Collapse in={isExpanded}>
         <Typography
@@ -110,7 +116,12 @@ const ThinkContent = ({ content, isExpanded, onToggle }) => {
   );
 };
 
-const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) => {
+const AIChatWindow = ({
+  windowState,
+  onClose,
+  presetInput,
+  onInputPresetUsed,
+}) => {
   const { t } = useTranslation();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -125,7 +136,7 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
   const [availableApis, setAvailableApis] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const streamHandlersRef = useRef({});
-  
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -245,8 +256,8 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
         apiKey: currentApi.apiKey,
         model: currentApi.model,
         messages: [
-          ...messages.map(m => ({ role: m.role, content: m.content })),
-          { role: "user", content: userMessage.content }
+          ...messages.map((m) => ({ role: m.role, content: m.content })),
+          { role: "user", content: userMessage.content },
         ],
         temperature: currentApi.temperature || 0.7,
         max_tokens: currentApi.maxTokens || 2000,
@@ -271,7 +282,11 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
 
         // 设置流式事件监听器
         const handleStreamChunk = (event, data) => {
-          if (data.sessionId === sessionId && controller.signal && !controller.signal.aborted) {
+          if (
+            data.sessionId === sessionId &&
+            controller.signal &&
+            !controller.signal.aborted
+          ) {
             setMessages((prev) => {
               const newMessages = [...prev];
               const lastMessage = newMessages[newMessages.length - 1];
@@ -306,18 +321,21 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
         // 注册监听器
         window.terminalAPI.on("stream-chunk", handleStreamChunk);
         window.terminalAPI.on("stream-end", handleStreamEnd);
-        
+
         // 保存监听器引用
         streamHandlersRef.current[sessionId] = {
           chunk: handleStreamChunk,
-          end: handleStreamEnd
+          end: handleStreamEnd,
         };
 
         // 注册abort事件处理
         requestData.signal = controller.signal;
-        
-        const response = await window.terminalAPI.sendAPIRequest(requestData, true);
-        
+
+        const response = await window.terminalAPI.sendAPIRequest(
+          requestData,
+          true,
+        );
+
         if (response && response.error) {
           // 清理监听器
           window.terminalAPI.off("stream-chunk", handleStreamChunk);
@@ -328,7 +346,10 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
         }
       } else {
         // 非流式响应
-        const response = await window.terminalAPI.sendAPIRequest(requestData, false);
+        const response = await window.terminalAPI.sendAPIRequest(
+          requestData,
+          false,
+        );
 
         if (response && response.content) {
           const assistantMessage = {
@@ -360,11 +381,15 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
           }
         }
         setCurrentSessionId(null);
-        
+
         setMessages((prev) => {
           const newMessages = [...prev];
           const lastMessage = newMessages[newMessages.length - 1];
-          if (lastMessage && lastMessage.role === "assistant" && lastMessage.isStreaming) {
+          if (
+            lastMessage &&
+            lastMessage.role === "assistant" &&
+            lastMessage.isStreaming
+          ) {
             lastMessage.isStreaming = false;
           }
           return newMessages;
@@ -384,7 +409,7 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
       abortController.abort();
       setLoading(false);
       setAbortController(null);
-      
+
       // 如果有当前会话，立即清理监听器
       if (currentSessionId && window.terminalAPI) {
         const handlers = streamHandlersRef.current[currentSessionId];
@@ -395,12 +420,16 @@ const AIChatWindow = ({ windowState, onClose, presetInput, onInputPresetUsed }) 
         }
         setCurrentSessionId(null);
       }
-      
+
       // 标记最后一条消息为非流式状态
       setMessages((prev) => {
         const newMessages = [...prev];
         const lastMessage = newMessages[newMessages.length - 1];
-        if (lastMessage && lastMessage.role === "assistant" && lastMessage.isStreaming) {
+        if (
+          lastMessage &&
+          lastMessage.role === "assistant" &&
+          lastMessage.isStreaming
+        ) {
           lastMessage.isStreaming = false;
         }
         return newMessages;

@@ -217,18 +217,18 @@ async function ensureSftpSession(tabId) {
           "WARN",
         );
         await closeSftpSession(tabId);
-        
+
         // 添加重试逻辑
         try {
           return await acquireSftpSession(tabId);
         } catch (retryError) {
           logToFile(
             `sftpCore: First retry failed for tab ${tabId}, attempting one more time: ${retryError.message}`,
-            "WARN"
+            "WARN",
           );
-          
+
           // 短暂延迟后再次尝试
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 500));
           return await acquireSftpSession(tabId);
         }
       }
@@ -252,7 +252,7 @@ async function ensureSftpSession(tabId) {
 
       // 无会话，直接创建新的
       logToFile(`sftpCore: No session for tab ${tabId}, creating new`, "INFO");
-      
+
       // 添加重试逻辑
       try {
         return await acquireSftpSession(tabId);
@@ -261,22 +261,22 @@ async function ensureSftpSession(tabId) {
         if (initialError.message.includes("No SSH connection info found")) {
           throw initialError;
         }
-        
+
         logToFile(
           `sftpCore: Initial SFTP session creation failed for tab ${tabId}, retrying: ${initialError.message}`,
-          "WARN"
+          "WARN",
         );
-        
+
         // 短暂延迟后重试
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
         // 最多尝试两次
         try {
           return await acquireSftpSession(tabId);
         } catch (retryError) {
           logToFile(
             `sftpCore: All SFTP session creation attempts failed for tab ${tabId}: ${retryError.message}`,
-            "ERROR"
+            "ERROR",
           );
           throw retryError;
         }
@@ -344,34 +344,50 @@ async function acquireSftpSession(tabId) {
 
     // 增强获取SSH连接的逻辑
     const processInfo = getChildProcessInfo(tabId); // Critical dependency
-    
+
     // 更详细的SSH连接验证
     if (!processInfo) {
       sftpSessionLocks.delete(tabId);
-      logToFile(`sftpCore: No SSH process info found for tab ${tabId}`, "ERROR");
-      throw new Error(`sftpCore: No SSH connection info found for tab ${tabId}`);
+      logToFile(
+        `sftpCore: No SSH process info found for tab ${tabId}`,
+        "ERROR",
+      );
+      throw new Error(
+        `sftpCore: No SSH connection info found for tab ${tabId}`,
+      );
     }
-    
+
     if (!processInfo.process) {
       sftpSessionLocks.delete(tabId);
-      logToFile(`sftpCore: SSH process exists but no client instance for tab ${tabId}`, "ERROR");
-      throw new Error(`sftpCore: SSH client instance not found for tab ${tabId}`);
+      logToFile(
+        `sftpCore: SSH process exists but no client instance for tab ${tabId}`,
+        "ERROR",
+      );
+      throw new Error(
+        `sftpCore: SSH client instance not found for tab ${tabId}`,
+      );
     }
-    
+
     if (processInfo.type !== "ssh2") {
       sftpSessionLocks.delete(tabId);
-      logToFile(`sftpCore: Connection type is not SSH for tab ${tabId}, got ${processInfo.type}`, "ERROR");
+      logToFile(
+        `sftpCore: Connection type is not SSH for tab ${tabId}, got ${processInfo.type}`,
+        "ERROR",
+      );
       throw new Error(
         `sftpCore: Invalid connection type (${processInfo.type}) for SFTP session, must be SSH.`,
       );
     }
-    
+
     const sshClient = processInfo.process; // This is ssh2.Client instance
 
     // 验证SSH客户端实例的有效性
-    if (!sshClient || typeof sshClient.sftp !== 'function') {
+    if (!sshClient || typeof sshClient.sftp !== "function") {
       sftpSessionLocks.delete(tabId);
-      logToFile(`sftpCore: Invalid SSH client instance for tab ${tabId}`, "ERROR");
+      logToFile(
+        `sftpCore: Invalid SSH client instance for tab ${tabId}`,
+        "ERROR",
+      );
       throw new Error(
         "sftpCore: Invalid SSH connection info in acquireSftpSession.",
       );
@@ -437,7 +453,7 @@ async function acquireSftpSession(tabId) {
             reject(new Error(`sftpCore: SFTP error: ${err.message}`));
             return;
           }
-          
+
           // 创建一个全新的会话对象
           const now = Date.now();
           const session = {
@@ -451,15 +467,15 @@ async function acquireSftpSession(tabId) {
             lastChecked: now,
             sshClient: sshClient, // 存储SSH客户端引用，便于追踪
           };
-          
+
           // 先关闭可能存在的旧会话
           if (sftpSessions.has(tabId)) {
             closeSftpSession(tabId);
           }
-          
+
           sftpSessions.set(tabId, session);
           sftpSessionLocks.delete(tabId);
-          
+
           // 监听SFTP会话事件
           sftp.on("error", (sftpErr) => {
             logToFile(

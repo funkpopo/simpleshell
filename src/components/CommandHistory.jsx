@@ -38,22 +38,22 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
-import { dispatchCommandToGroup } from '../core/syncGroupCommandDispatcher';
+import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 
 // 虚拟化历史记录项组件
 const HistoryItem = React.memo(({ index, style, data }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { 
-    filteredHistory, 
-    selectMode, 
-    selectedCommands, 
-    toggleCommandSelection, 
-    handleSendCommand, 
+  const {
+    filteredHistory,
+    selectMode,
+    selectedCommands,
+    toggleCommandSelection,
+    handleSendCommand,
     handleMenuOpen,
-    formatTime 
+    formatTime,
   } = data;
-  
+
   const item = filteredHistory[index];
   if (!item) return null;
 
@@ -85,9 +85,7 @@ const HistoryItem = React.memo(({ index, style, data }) => {
             <ListItemIcon sx={{ minWidth: 36 }}>
               <Checkbox
                 checked={selectedCommands.has(item.command)}
-                onChange={() =>
-                  toggleCommandSelection(item.command)
-                }
+                onChange={() => toggleCommandSelection(item.command)}
                 size="small"
               />
             </ListItemIcon>
@@ -128,10 +126,7 @@ const HistoryItem = React.memo(({ index, style, data }) => {
               </Box>
             }
             secondary={
-              <Typography
-                variant="caption"
-                color="text.secondary"
-              >
+              <Typography variant="caption" color="text.secondary">
                 {formatTime(item.timestamp)}
               </Typography>
             }
@@ -314,23 +309,26 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   };
 
   // 虚拟化列表的数据
-  const listItemData = useMemo(() => ({
-    filteredHistory,
-    selectMode,
-    selectedCommands,
-    toggleCommandSelection,
-    handleSendCommand,
-    handleMenuOpen,
-    formatTime,
-  }), [
-    filteredHistory,
-    selectMode,
-    selectedCommands,
-    toggleCommandSelection,
-    handleSendCommand,
-    handleMenuOpen,
-    formatTime,
-  ]);
+  const listItemData = useMemo(
+    () => ({
+      filteredHistory,
+      selectMode,
+      selectedCommands,
+      toggleCommandSelection,
+      handleSendCommand,
+      handleMenuOpen,
+      formatTime,
+    }),
+    [
+      filteredHistory,
+      selectMode,
+      selectedCommands,
+      toggleCommandSelection,
+      handleSendCommand,
+      handleMenuOpen,
+      formatTime,
+    ],
+  );
 
   // 获取过滤后的历史记录
   const getFilteredHistory = () => {
@@ -543,7 +541,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                     <InputAdornment position="end">
                       <IconButton
                         size="small"
-                        onClick={() => setSearchTerm('')}
+                        onClick={() => setSearchTerm("")}
                         edge="end"
                       >
                         <ClearIcon fontSize="small" />
@@ -618,20 +616,23 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                   width: "8px",
                 },
                 "&::-webkit-scrollbar-thumb": {
-                  backgroundColor: theme.palette.mode === "dark" 
-                    ? "rgba(255,255,255,0.3)" 
-                    : "rgba(0,0,0,0.3)",
+                  backgroundColor:
+                    theme.palette.mode === "dark"
+                      ? "rgba(255,255,255,0.3)"
+                      : "rgba(0,0,0,0.3)",
                   borderRadius: "4px",
                   "&:hover": {
-                    backgroundColor: theme.palette.mode === "dark" 
-                      ? "rgba(255,255,255,0.5)" 
-                      : "rgba(0,0,0,0.5)",
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(255,255,255,0.5)"
+                        : "rgba(0,0,0,0.5)",
                   },
                 },
                 "&::-webkit-scrollbar-track": {
-                  backgroundColor: theme.palette.mode === "dark" 
-                    ? "rgba(255,255,255,0.05)" 
-                    : "rgba(0,0,0,0.05)",
+                  backgroundColor:
+                    theme.palette.mode === "dark"
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.05)",
                   borderRadius: "4px",
                 },
               }}

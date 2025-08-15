@@ -22,7 +22,7 @@ import Memory from "@mui/icons-material/Memory"; // For Processes icon
 // 百分比背景条组件
 const PercentageBar = memo(({ value, theme }) => {
   const percentage = Math.min(Math.max(value, 0), 100);
-  
+
   // 根据百分比确定颜色
   const getColor = (val) => {
     if (val >= 80) return theme.palette.error.main;
@@ -33,37 +33,37 @@ const PercentageBar = memo(({ value, theme }) => {
   const backgroundColor = getColor(percentage);
 
   return (
-    <Box 
-      sx={{ 
-        position: 'relative',
-        height: '20px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: '4px',
-        overflow: 'hidden',
-        bgcolor: 'rgba(0, 0, 0, 0.04)',
+    <Box
+      sx={{
+        position: "relative",
+        height: "20px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: "4px",
+        overflow: "hidden",
+        bgcolor: "rgba(0, 0, 0, 0.04)",
       }}
     >
       {/* 背景条 */}
       <Box
         sx={{
-          position: 'absolute',
+          position: "absolute",
           left: 0,
           top: 0,
-          height: '100%',
+          height: "100%",
           width: `${percentage}%`,
           backgroundColor: backgroundColor,
           opacity: 0.3,
-          borderRadius: '4px',
-          transition: 'width 0.3s ease-in-out',
+          borderRadius: "4px",
+          transition: "width 0.3s ease-in-out",
         }}
       />
       {/* 文字 */}
-      <Typography 
-        variant="body2" 
-        sx={{ 
-          position: 'relative',
+      <Typography
+        variant="body2"
+        sx={{
+          position: "relative",
           zIndex: 1,
           fontWeight: 500,
           color: theme.palette.text.primary,
@@ -95,7 +95,12 @@ const AccordionHeader = ({ title, icon, expanded, onClick }) => {
       }}
     >
       {icon}
-      <Typography variant="subtitle1" component="h3" fontWeight="bold" sx={{ flexGrow: 1, ml: 1 }}>
+      <Typography
+        variant="subtitle1"
+        component="h3"
+        fontWeight="bold"
+        sx={{ flexGrow: 1, ml: 1 }}
+      >
         {title}
       </Typography>
       <ExpandMoreIcon
@@ -157,9 +162,8 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
     try {
       setProcessError(null);
       if (window.terminalAPI && window.terminalAPI.getProcessList) {
-        const processList = await window.terminalAPI.getProcessList(
-          currentTabId,
-        );
+        const processList =
+          await window.terminalAPI.getProcessList(currentTabId);
         if (processList.error) {
           setProcessError(processList.message || "获取进程列表失败");
         } else {
@@ -254,7 +258,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
               height: "calc(100% - 56px)",
             }}
           >
-            {(loading && !systemInfo) ? (
+            {loading && !systemInfo ? (
               <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
                 <CircularProgress />
               </Box>
@@ -270,7 +274,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 <Paper elevation={2} sx={{ borderRadius: 1 }}>
                   <AccordionHeader
                     title={systemInfo.isLocal ? "本地系统" : "远程系统"}
-                    icon={<ComputerIcon sx={{ mr: 1, color: theme.palette.primary.main }} />}
+                    icon={
+                      <ComputerIcon
+                        sx={{ mr: 1, color: theme.palette.primary.main }}
+                      />
+                    }
                     expanded={expanded.system}
                     onClick={handleExpansion("system")}
                   />
@@ -278,8 +286,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                     <Box sx={{ p: 2, pt: 0 }}>
                       <Typography variant="body2" gutterBottom>
                         <strong>操作系统:</strong> {systemInfo.os.type}
-                        {systemInfo.os.distro &&
-                        systemInfo.os.distro !== "未知"
+                        {systemInfo.os.distro && systemInfo.os.distro !== "未知"
                           ? ` (${systemInfo.os.distro})`
                           : ""}
                         {systemInfo.os.version &&
@@ -301,7 +308,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 <Paper elevation={2} sx={{ borderRadius: 1 }}>
                   <AccordionHeader
                     title="CPU"
-                    icon={<MemoryIcon sx={{ mr: 1, color: theme.palette.warning.main }} />}
+                    icon={
+                      <MemoryIcon
+                        sx={{ mr: 1, color: theme.palette.warning.main }}
+                      />
+                    }
                     expanded={expanded.cpu}
                     onClick={handleExpansion("cpu")}
                   />
@@ -325,11 +336,12 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                             height: 8,
                             borderRadius: 1,
                             "& .MuiLinearProgress-bar": {
-                              background: systemInfo.cpu.usage > 80
-                                ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
-                                : systemInfo.cpu.usage > 50
-                                ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
-                                : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
+                              background:
+                                systemInfo.cpu.usage > 80
+                                  ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
+                                  : systemInfo.cpu.usage > 50
+                                    ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
+                                    : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
                             },
                           }}
                         />
@@ -342,7 +354,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 <Paper elevation={2} sx={{ borderRadius: 1 }}>
                   <AccordionHeader
                     title="内存"
-                    icon={<StorageIcon sx={{ mr: 1, color: theme.palette.info.main }} />}
+                    icon={
+                      <StorageIcon
+                        sx={{ mr: 1, color: theme.palette.info.main }}
+                      />
+                    }
                     expanded={expanded.memory}
                     onClick={handleExpansion("memory")}
                   />
@@ -370,11 +386,12 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                             height: 8,
                             borderRadius: 1,
                             "& .MuiLinearProgress-bar": {
-                              background: systemInfo.memory.usagePercent > 80
-                                ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
-                                : systemInfo.memory.usagePercent > 50
-                                ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
-                                : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
+                              background:
+                                systemInfo.memory.usagePercent > 80
+                                  ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
+                                  : systemInfo.memory.usagePercent > 50
+                                    ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
+                                    : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
                             },
                           }}
                         />
@@ -387,14 +404,30 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 <Paper elevation={2} sx={{ borderRadius: 1 }}>
                   <AccordionHeader
                     title="进程"
-                    icon={<Memory sx={{ mr: 1, color: theme.palette.secondary.main }} />}
+                    icon={
+                      <Memory
+                        sx={{ mr: 1, color: theme.palette.secondary.main }}
+                      />
+                    }
                     expanded={expanded.processes}
                     onClick={handleExpansion("processes")}
                   />
-                  <Collapse in={expanded.processes} timeout="auto" unmountOnExit>
-                    <Box sx={{ p: 2, pt: 0, maxHeight: 300, overflowY: "auto" }}>
+                  <Collapse
+                    in={expanded.processes}
+                    timeout="auto"
+                    unmountOnExit
+                  >
+                    <Box
+                      sx={{ p: 2, pt: 0, maxHeight: 300, overflowY: "auto" }}
+                    >
                       {processesLoading ? (
-                        <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            justifyContent: "center",
+                            py: 2,
+                          }}
+                        >
                           <CircularProgress size={24} />
                         </Box>
                       ) : processError ? (
@@ -404,37 +437,90 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                       ) : (
                         <List dense>
                           <ListItem divider>
-                            <Box display="flex" width="100%" alignItems="center">
+                            <Box
+                              display="flex"
+                              width="100%"
+                              alignItems="center"
+                            >
                               <Box flex="0 0 50%" pr={1} overflow="hidden">
-                                <Typography variant="caption" fontWeight="bold">名称</Typography>
+                                <Typography variant="caption" fontWeight="bold">
+                                  名称
+                                </Typography>
                               </Box>
-                              <Box flex="0 0 25%" textAlign="right" px={1} sx={{ borderLeft: `1px solid ${theme.palette.divider}` }}>
-                                <Typography variant="caption" fontWeight="bold">CPU</Typography>
+                              <Box
+                                flex="0 0 25%"
+                                textAlign="right"
+                                px={1}
+                                sx={{
+                                  borderLeft: `1px solid ${theme.palette.divider}`,
+                                }}
+                              >
+                                <Typography variant="caption" fontWeight="bold">
+                                  CPU
+                                </Typography>
                               </Box>
-                              <Box flex="0 0 25%" textAlign="right" pl={1} sx={{ borderLeft: `1px solid ${theme.palette.divider}` }}>
-                                <Typography variant="caption" fontWeight="bold">内存</Typography>
+                              <Box
+                                flex="0 0 25%"
+                                textAlign="right"
+                                pl={1}
+                                sx={{
+                                  borderLeft: `1px solid ${theme.palette.divider}`,
+                                }}
+                              >
+                                <Typography variant="caption" fontWeight="bold">
+                                  内存
+                                </Typography>
                               </Box>
                             </Box>
                           </ListItem>
-                          {processes.slice(0, 50).map((p) => ( // Display top 50 processes
-                            (<ListItem key={p.pid} divider sx={{py: 0.5}}>
-                              <Box display="flex" width="100%" alignItems="center">
-                                <Box flex="0 0 50%" pr={1} overflow="hidden">
-                                  <Tooltip title={`${p.name} (PID: ${p.pid})`} placement="top-start">
-                                    <Typography variant="body2" noWrap>
-                                      {p.name}
-                                    </Typography>
-                                  </Tooltip>
+                          {processes.slice(0, 50).map(
+                            (
+                              p, // Display top 50 processes
+                            ) => (
+                              <ListItem key={p.pid} divider sx={{ py: 0.5 }}>
+                                <Box
+                                  display="flex"
+                                  width="100%"
+                                  alignItems="center"
+                                >
+                                  <Box flex="0 0 50%" pr={1} overflow="hidden">
+                                    <Tooltip
+                                      title={`${p.name} (PID: ${p.pid})`}
+                                      placement="top-start"
+                                    >
+                                      <Typography variant="body2" noWrap>
+                                        {p.name}
+                                      </Typography>
+                                    </Tooltip>
+                                  </Box>
+                                  <Box
+                                    flex="0 0 25%"
+                                    px={1}
+                                    sx={{
+                                      borderLeft: `1px solid ${theme.palette.divider}`,
+                                    }}
+                                  >
+                                    <PercentageBar
+                                      value={p.cpu}
+                                      theme={theme}
+                                    />
+                                  </Box>
+                                  <Box
+                                    flex="0 0 25%"
+                                    pl={1}
+                                    sx={{
+                                      borderLeft: `1px solid ${theme.palette.divider}`,
+                                    }}
+                                  >
+                                    <PercentageBar
+                                      value={p.memory}
+                                      theme={theme}
+                                    />
+                                  </Box>
                                 </Box>
-                                <Box flex="0 0 25%" px={1} sx={{ borderLeft: `1px solid ${theme.palette.divider}` }}>
-                                  <PercentageBar value={p.cpu} theme={theme} />
-                                </Box>
-                                <Box flex="0 0 25%" pl={1} sx={{ borderLeft: `1px solid ${theme.palette.divider}` }}>
-                                  <PercentageBar value={p.memory} theme={theme} />
-                                </Box>
-                              </Box>
-                            </ListItem>)
-                          ))}
+                              </ListItem>
+                            ),
+                          )}
                         </List>
                       )}
                     </Box>

@@ -32,18 +32,28 @@ import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutli
 import LinkIcon from "@mui/icons-material/Link";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
+import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import FilePreview from "./FilePreview.jsx";
 import VirtualizedFileList from "./VirtualizedFileList.jsx";
 import TransferProgressFloat from "./TransferProgressFloat.jsx";
 import FilePermissionEditor from "./FilePermissionEditor.jsx";
 import { formatLastRefreshTime } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
+import { useTranslation } from "react-i18next";
 
 // 格式化文件大小
-const formatFileSize = (bytes) => {
-  if (bytes === 0) return "0 Bytes";
+const formatFileSize = (bytes, t) => {
+  if (bytes === 0) return `0 ${t("fileManager.units.bytes")}`;
   const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const sizes = [
+    t("fileManager.units.bytes"),
+    t("fileManager.units.kb"),
+    t("fileManager.units.mb"),
+    t("fileManager.units.gb"),
+    t("fileManager.units.tb")
+  ];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 };
@@ -59,6 +69,7 @@ const FileManager = memo(
     onPathChange,
   }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const [currentPath, setCurrentPath] = useState("/");
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -89,6 +100,8 @@ const FileManager = memo(
     const [isClosing, setIsClosing] = useState(false);
     const [notification, setNotification] = useState(null);
     const [uploadMenuAnchor, setUploadMenuAnchor] = useState(null);
+  const [sortMode, setSortMode] = useState("name"); // "name" or "time"
+  const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
 
     // 用于存储延迟移除定时器的引用
     const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
@@ -197,7 +210,7 @@ const FileManager = memo(
         return (
           error.includes("cancel") ||
           error.includes("abort") ||
-          error.includes("用户已取消") ||
+          error.includes(t("fileManager.errors.userCancelled")) ||
           error.includes("用户取消") ||
           error.includes("已中断")
         );
@@ -208,7 +221,7 @@ const FileManager = memo(
         return (
           error.message.includes("cancel") ||
           error.message.includes("abort") ||
-          error.message.includes("用户已取消") ||
+          error.message.includes(t("fileManager.errors.userCancelled")) ||
           error.message.includes("用户取消") ||
           error.message.includes("已中断")
         );
@@ -219,7 +232,7 @@ const FileManager = memo(
         return (
           error.error.includes("cancel") ||
           error.error.includes("abort") ||
-          error.error.includes("用户已取消") ||
+          error.error.includes(t("fileManager.errors.userCancelled")) ||
           error.error.includes("用户取消") ||
           error.error.includes("已中断") ||
           error.userCancelled ||
@@ -312,7 +325,7 @@ const FileManager = memo(
 
           // 使用Promise.race和超时保证即使API响应慢也不会阻塞UI
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('刷新超时')), 3000)
+            setTimeout(() => reject(new Error(t('fileManager.errors.refreshTimeout'))), 3000)
           );
           
           try {
@@ -362,7 +375,7 @@ const FileManager = memo(
       forceRefresh = false,
     ) => {
       if (!sshConnection || !tabId) {
-        setError("缺少SSH连接信息");
+        setError(t("fileManager.errors.missingConnectionInfo"));
         return;
       }
 
@@ -434,7 +447,7 @@ const FileManager = memo(
                   5000,
                 ); // 最长等待5秒
 
-                setError(`加载目录失败，正在重试 (${retryCount + 1}/5)...`);
+                setError(t("fileManager.messages.retrying", { current: retryCount + 1, max: 5 }));
 
                 // 添加延迟，避免立即重试
                 setTimeout(() => {
@@ -445,10 +458,10 @@ const FileManager = memo(
             }
 
             // 重试失败或其他错误
-            setError(response?.error || "加载目录失败");
+            setError(response?.error || t("fileManager.errors.loadDirectoryFailed"));
           }
         } else {
-          setError("文件管理API不可用");
+          setError(t("fileManager.errors.fileApiNotAvailable"));
         }
       } catch (error) {
         // 加载目录失败
@@ -458,7 +471,7 @@ const FileManager = memo(
           // 增加重试等待时间，指数退避算法
           const waitTime = Math.min(500 * Math.pow(1.5, retryCount), 5000); // 最长等待5秒
 
-          setError(`加载目录失败，正在重试 (${retryCount + 1}/5)...`);
+          setError(t("fileManager.messages.retrying", { current: retryCount + 1, max: 5 }));
 
           // 添加延迟，避免立即重试
           setTimeout(() => {
@@ -467,7 +480,7 @@ const FileManager = memo(
           return;
         }
 
-        setError("加载目录失败：" + (error.message || "未知错误"));
+        setError(t("fileManager.errors.loadDirectoryFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
       } finally {
         if (retryCount === 0 || retryCount >= 5) {
           // 更新重试次数
@@ -594,13 +607,21 @@ const FileManager = memo(
         );
       }
 
-      // 排序：目录在前，然后按名称排序
+      // 排序：按名称时目录在前，按时间时不区分文件类型
       return [...processedFiles].sort((a, b) => {
-        if (a.isDirectory && !b.isDirectory) return -1;
-        if (!a.isDirectory && b.isDirectory) return 1;
-        return a.name.localeCompare(b.name);
+        if (sortMode === "time") {
+          // 按时间排序（最新的在前），不区分文件夹和文件
+          const aTime = new Date(a.modifyTime || 0).getTime();
+          const bTime = new Date(b.modifyTime || 0).getTime();
+          return bTime - aTime;
+        } else {
+          // 按名称排序时，目录在前
+          if (a.isDirectory && !b.isDirectory) return -1;
+          if (!a.isDirectory && b.isDirectory) return 1;
+          return a.name.localeCompare(b.name);
+        }
       });
-    }, [files, searchTerm]);
+    }, [files, searchTerm, sortMode]);
 
     const handleFileSelect = useCallback((file, index, event) => {
       const isMultiSelect = event.ctrlKey || event.metaKey;
@@ -693,7 +714,7 @@ const FileManager = memo(
       const filesToDelete = getSelectedFiles();
       if (filesToDelete.length === 0) return;
       
-      if (!handleBatchOperationConfirm('删除', filesToDelete)) {
+      if (!handleBatchOperationConfirm(t('fileManager.delete'), filesToDelete)) {
         return;
       }
       
@@ -717,7 +738,7 @@ const FileManager = memo(
             );
 
             if (!response?.success) {
-              setError(`删除 ${file.name} 失败: ${response?.error || "未知错误"}`);
+              setError(`${t("fileManager.errors.deleteFailed")} ${file.name}: ${response?.error || t("fileManager.errors.unknownError")}`);
               break;
             }
           }
@@ -733,7 +754,7 @@ const FileManager = memo(
         await loadDirectory(currentPath);
         refreshAfterUserActivity();
       } catch (error) {
-        setError("批量删除失败: " + (error.message || "未知错误"));
+        setError(t("fileManager.errors.deleteFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
       } finally {
         setLoading(false);
         handleContextMenuClose();
@@ -794,7 +815,7 @@ const FileManager = memo(
               // SFTP错误，尝试重试
               retryCount++;
               setError(
-                `删除文件失败，正在重试 (${retryCount}/${maxRetries})...`,
+                t("fileManager.messages.retrying", { current: retryCount, max: maxRetries }),
               );
 
               // 添加延迟后重试
@@ -802,7 +823,7 @@ const FileManager = memo(
               return;
             } else {
               // 其他错误或已达到最大重试次数
-              setError(response?.error || "删除文件失败");
+              setError(response?.error || t("fileManager.errors.deleteFailed"));
               // 即使删除失败也重置选中文件状态
               setSelectedFile(null);
               setSelectedFiles([]);
@@ -816,14 +837,14 @@ const FileManager = memo(
           if (retryCount < maxRetries) {
             // 发生异常，尝试重试
             retryCount++;
-            setError(`删除文件失败，正在重试 (${retryCount}/${maxRetries})...`);
+            setError(t("fileManager.messages.retrying", { current: retryCount, max: maxRetries }));
 
             // 添加延迟后重试
             setTimeout(attemptDelete, 500 * retryCount);
             return;
           }
 
-          setError("删除文件失败: " + (error.message || "未知错误"));
+          setError(t("fileManager.errors.deleteFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
           // 即使删除失败也重置选中文件状态
           setSelectedFile(null);
           setSelectedFiles([]);
@@ -879,7 +900,7 @@ const FileManager = memo(
           const transferId = addTransferProgress({
             type: "upload-multifile", // Always use upload-multifile for file uploads
             progress: 0,
-            fileName: "准备上传...",
+            fileName: t("fileManager.messages.preparingUpload"),
             transferredBytes: 0,
             totalBytes: 0,
             transferSpeed: 0,
@@ -930,7 +951,7 @@ const FileManager = memo(
             // 标记传输完成
             updateTransferProgress(transferId, {
               progress: 100,
-              fileName: result.message || "上传完成",
+              fileName: result.message || t("fileManager.messages.uploadComplete"),
             });
 
             // 传输完成后延迟移除
@@ -952,16 +973,16 @@ const FileManager = memo(
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
-                cancelMessage: "用户已取消",
+                cancelMessage: t("fileManager.errors.userCancelled"),
               });
             }
           } else if (!transferCancelled) {
             // 检查是否是取消操作相关的错误
             if (!isUserCancellationError(result)) {
               // 只有在不是用户主动取消的情况下才显示错误
-              setError(result.error || "上传文件失败");
+              setError(result.error || t("fileManager.errors.uploadFailed"));
               updateTransferProgress(transferId, {
-                error: result.error || "上传文件失败",
+                error: result.error || t("fileManager.errors.uploadFailed"),
               });
             } else {
               logToFile(
@@ -971,7 +992,7 @@ const FileManager = memo(
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
-                cancelMessage: "用户已取消",
+                cancelMessage: t("fileManager.errors.userCancelled"),
               });
             }
           }
@@ -988,12 +1009,12 @@ const FileManager = memo(
           !isUserCancellationError(error) &&
           !error.message?.includes("reply was never sent")
         ) {
-          setError("上传文件失败: " + (error.message || "未知错误"));
+          setError(t("fileManager.errors.uploadFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
           // 更新所有未完成的传输为错误状态
           setTransferProgressList((prev) =>
             prev.map((transfer) =>
               transfer.progress < 100 && !transfer.isCancelled
-                ? { ...transfer, error: error.message || "未知错误" }
+                ? { ...transfer, error: error.message || t("fileManager.errors.unknownError") }
                 : transfer,
             ),
           );
@@ -1010,7 +1031,7 @@ const FileManager = memo(
                 ? {
                     ...transfer,
                     isCancelled: true,
-                    cancelMessage: "用户已取消",
+                    cancelMessage: t("fileManager.errors.userCancelled"),
                   }
                 : transfer,
             ),
@@ -1055,7 +1076,7 @@ const FileManager = memo(
           const transferId = addTransferProgress({
             type: "upload-folder",
             progress: 0,
-            fileName: "准备上传文件夹...",
+            fileName: t("fileManager.messages.preparingUpload"),
             currentFile: "",
             transferredBytes: 0,
             totalBytes: 0,
@@ -1134,16 +1155,16 @@ const FileManager = memo(
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
-                cancelMessage: "用户已取消",
+                cancelMessage: t("fileManager.errors.userCancelled"),
               });
             }
           } else if (!transferCancelled) {
             // 检查是否是取消操作相关的错误
             if (!isUserCancellationError(result)) {
               // 只有在不是用户主动取消的情况下才显示错误
-              setError(result.error || "上传文件夹失败");
+              setError(result.error || t("fileManager.errors.uploadFailed"));
               updateTransferProgress(transferId, {
-                error: result.error || "上传文件夹失败",
+                error: result.error || t("fileManager.errors.uploadFailed"),
               });
             } else {
               logToFile(
@@ -1153,7 +1174,7 @@ const FileManager = memo(
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
-                cancelMessage: "用户已取消",
+                cancelMessage: t("fileManager.errors.userCancelled"),
               });
             }
           }
@@ -1162,7 +1183,7 @@ const FileManager = memo(
           refreshAfterUserActivity();
         }
       } catch (error) {
-        // 上传文件夹失败
+        // t("fileManager.errors.uploadFailed")
 
         // 只有在不是用户主动取消的情况下才显示错误
         if (
@@ -1170,7 +1191,7 @@ const FileManager = memo(
           !isUserCancellationError(error) &&
           !error.message?.includes("reply was never sent")
         ) {
-          setError("上传文件夹失败: " + (error.message || "未知错误"));
+          setError(t("fileManager.errors.uploadFailed") + ": " + (error.message || "未知错误"));
         } else {
           logToFile(
             `FileManager: 跳过文件夹上传取消操作错误显示: ${error.message}`,
@@ -1207,7 +1228,7 @@ const FileManager = memo(
           }
         }
       } catch (error) {
-        setError("复制路径失败: " + (error.message || "未知错误"));
+        setError(t("fileManager.errors.unknownError") + ": " + (error.message || t("fileManager.errors.unknownError")));
       }
       handleContextMenuClose();
     };
@@ -1525,7 +1546,7 @@ const FileManager = memo(
               // SFTP错误，尝试重试
               retryCount++;
               setError(
-                `创建文件夹失败，正在重试 (${retryCount}/${maxRetries})...`,
+                `t("fileManager.errors.createFolderFailed")，正在重试 (${retryCount}/${maxRetries})...`,
               );
 
               // 添加延迟后重试
@@ -1533,21 +1554,21 @@ const FileManager = memo(
               return;
             } else {
               // 其他错误或已达到最大重试次数
-              setError(response?.error || "创建文件夹失败");
+              setError(response?.error || t("fileManager.errors.createFolderFailed"));
               setShowCreateFolderDialog(false);
             }
           } else {
-            setError("创建文件夹API不可用");
+            setError(t("fileManager.errors.fileApiNotAvailable"));
             setShowCreateFolderDialog(false);
           }
         } catch (error) {
-          // 创建文件夹失败
+          // t("fileManager.errors.createFolderFailed")
 
           if (retryCount < maxRetries) {
             // 发生异常，尝试重试
             retryCount++;
             setError(
-              `创建文件夹失败，正在重试 (${retryCount}/${maxRetries})...`,
+              `t("fileManager.errors.createFolderFailed")，正在重试 (${retryCount}/${maxRetries})...`,
             );
 
             // 添加延迟后重试
@@ -1555,7 +1576,7 @@ const FileManager = memo(
             return;
           }
 
-          setError("创建文件夹失败: " + (error.message || "未知错误"));
+          setError(t("fileManager.errors.createFolderFailed") + ": " + (error.message || "未知错误"));
           setShowCreateFolderDialog(false);
         } finally {
           if (retryCount === 0 || retryCount >= maxRetries) {
@@ -1598,13 +1619,13 @@ const FileManager = memo(
             // 创建文件操作完成后设置定时器再次检查
             refreshAfterUserActivity();
           } else {
-            setError(`创建文件失败: ${result.error || "未知错误"}`);
+            setError(`${t("fileManager.errors.createFolderFailed")}: ${result.error || t("fileManager.errors.unknownError")}`);
           }
         } else {
-          setError("创建文件API不可用");
+          setError(t("fileManager.errors.fileApiNotAvailable"));
         }
       } catch (error) {
-        setError("创建文件失败: " + (error.message || "未知错误"));
+        setError(t("fileManager.errors.createFolderFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
       } finally {
         setLoading(false);
         setShowCreateFileDialog(false);
@@ -1632,7 +1653,7 @@ const FileManager = memo(
         // 检查文件大小限制 (10MB)
         const maxFileSize = 10 * 1024 * 1024;
         if (file.size && file.size > maxFileSize) {
-          setError(`文件 "${file.name}" 大小为 ${formatFileSize(file.size)}，超过了 10MB 的预览限制。请下载文件后在本地查看。`);
+          setError(`文件 "${file.name}" 大小为 ${formatFileSize(file.size, t)}，超过了 10MB 的预览限制。请下载文件后在本地查看。`);
           return;
         }
         
@@ -1735,12 +1756,12 @@ const FileManager = memo(
           !transferCancelled &&
           !error.message?.includes("reply was never sent")
         ) {
-          setError("下载文件失败: " + (error.message || "未知错误"));
+          setError(t("fileManager.errors.downloadFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
           // 更新所有未完成的传输为错误状态
           setTransferProgressList((prev) =>
             prev.map((transfer) =>
               transfer.progress < 100 && !transfer.isCancelled
-                ? { ...transfer, error: error.message || "未知错误" }
+                ? { ...transfer, error: error.message || t("fileManager.errors.unknownError") }
                 : transfer,
             ),
           );
@@ -2408,6 +2429,22 @@ const FileManager = memo(
       handleUploadFolder();
     };
 
+    // 处理排序菜单打开
+    const handleSortMenuOpen = (event) => {
+      setSortMenuAnchor(event.currentTarget);
+    };
+
+    // 处理排序菜单关闭
+    const handleSortMenuClose = () => {
+      setSortMenuAnchor(null);
+    };
+
+    // 切换排序模式
+    const handleSortModeChange = (mode) => {
+      setSortMode(mode);
+      handleSortMenuClose();
+    };
+
     // 组件卸载时清理所有定时器
     useEffect(() => {
       return () => {
@@ -2451,7 +2488,7 @@ const FileManager = memo(
             sx={{ flexGrow: 1 }}
             fontWeight="medium"
           >
-            {tabName ? `文件管理 - ${tabName}` : "文件管理"}
+            {tabName ? `${t("fileManager.title")} - ${tabName}` : t("fileManager.title")}
           </Typography>
           <IconButton
             size="small"
@@ -2473,7 +2510,7 @@ const FileManager = memo(
             flexShrink: 0, // 不收缩
           }}
         >
-          <Tooltip title="返回上级目录">
+          <Tooltip title={t("fileManager.back")}>
             <span>
               <IconButton
                 size="small"
@@ -2487,13 +2524,13 @@ const FileManager = memo(
             </span>
           </Tooltip>
 
-          <Tooltip title="主目录">
+          <Tooltip title={t("fileManager.home")}>
             <IconButton size="small" onClick={handleGoHome}>
               <HomeIcon fontSize="small" />
             </IconButton>
           </Tooltip>
 
-          <Tooltip title="刷新">
+          <Tooltip title={t("fileManager.refresh")}>
             <IconButton size="small" onClick={handleRefresh}>
               <RefreshIcon fontSize="small" />
             </IconButton>
@@ -2508,22 +2545,22 @@ const FileManager = memo(
               color: theme.palette.text.secondary,
             }}
           >
-            <Tooltip title="上次刷新时间">
+            <Tooltip title={t("fileManager.statusBar.lastRefresh")}>
               <Box component="span" sx={{ fontSize: "0.75rem", opacity: 0.8 }}>
-                上次刷新: {formatLastRefreshTime(lastRefreshTime)}
+                {t("fileManager.statusBar.lastRefresh", { time: formatLastRefreshTime(lastRefreshTime) })}
               </Box>
             </Tooltip>
           </Box>
 
           <Box sx={{ flexGrow: 1 }} />
 
-          <Tooltip title="搜索">
+          <Tooltip title={t("fileManager.search")}>
             <IconButton size="small" onClick={toggleSearch}>
               <SearchIcon fontSize="small" />
             </IconButton>
           </Tooltip>
 
-          <Tooltip title="上传">
+          <Tooltip title={t("fileManager.upload")}>
             <IconButton size="small" onClick={handleUploadMenuOpen}>
               <UploadFileIcon fontSize="small" />
             </IconButton>
@@ -2541,7 +2578,7 @@ const FileManager = memo(
             <TextField
               size="small"
               fullWidth
-              placeholder="搜索文件..."
+              placeholder={t("fileManager.search")}
               value={searchTerm}
               onChange={handleSearchChange}
               variant="outlined"
@@ -2575,6 +2612,9 @@ const FileManager = memo(
             borderBottom: `1px solid ${theme.palette.divider}`,
             zIndex: 1, // 确保路径输入框显示在上层
             flexShrink: 0, // 不收缩
+            display: "flex",
+            alignItems: "center",
+            gap: 0.5,
           }}
         >
           <TextField
@@ -2584,7 +2624,7 @@ const FileManager = memo(
             value={pathInput}
             onChange={handlePathInputChange}
             onKeyDown={handlePathInputSubmit}
-            placeholder="输入路径..."
+            placeholder={t("fileManager.enterPath")}
             InputProps={{
               style: { fontSize: "0.75rem" },
               startAdornment: (
@@ -2604,6 +2644,26 @@ const FileManager = memo(
               },
             }}
           />
+          <Tooltip title="排序方式">
+            <IconButton
+              size="small"
+              onClick={handleSortMenuOpen}
+              sx={{ 
+                ml: 0.5,
+                color: theme.palette.text.secondary,
+                '&:hover': {
+                  color: theme.palette.primary.main,
+                }
+              }}
+            >
+              {sortMode === "time" ? (
+                <AccessTimeIcon fontSize="small" />
+              ) : (
+                <SortByAlphaIcon fontSize="small" />
+              )}
+              <ArrowDropDownIcon fontSize="small" sx={{ ml: -0.5 }} />
+            </IconButton>
+          </Tooltip>
         </Box>
 
         <Box
@@ -2637,7 +2697,7 @@ const FileManager = memo(
               <ListItemIcon>
                 <DriveFileRenameOutlineIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>编辑</ListItemText>
+              <ListItemText>{t("fileManager.rename")}</ListItemText>
               <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
                 F2
               </Typography>
@@ -2650,7 +2710,7 @@ const FileManager = memo(
               <ListItemIcon>
                 <LinkIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>复制绝对路径</ListItemText>
+              <ListItemText>{t("fileManager.copy")}</ListItemText>
               <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
                 Ctrl+Shift+C
               </Typography>
@@ -2665,7 +2725,7 @@ const FileManager = memo(
               <ListItemIcon>
                 <UploadFileIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>上传文件到此文件夹</ListItemText>
+              <ListItemText>{t("fileManager.upload")}</ListItemText>
             </MenuItem>
           )}
 
@@ -2674,7 +2734,7 @@ const FileManager = memo(
               <ListItemIcon>
                 <UploadFileIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>上传文件夹到此文件夹</ListItemText>
+              <ListItemText>{t("fileManager.upload")}</ListItemText>
             </MenuItem>
           )}
 
@@ -2846,7 +2906,7 @@ const FileManager = memo(
                       color="inherit"
                       size="small"
                     >
-                      取消
+                      {t("common.cancel")}
                     </Button>
                     <Button
                       type="submit"
@@ -2854,7 +2914,7 @@ const FileManager = memo(
                       color="primary"
                       size="small"
                     >
-                      确定
+                      {t("common.save")}
                     </Button>
                   </Box>
                 </Box>
@@ -2888,11 +2948,11 @@ const FileManager = memo(
                 gap: 2,
               }}
             >
-              <Typography variant="subtitle1">创建文件夹</Typography>
+              <Typography variant="subtitle1">{t("fileManager.createFolder")}</Typography>
               <form onSubmit={handleCreateFolderSubmit}>
                 <TextField
                   fullWidth
-                  label="文件夹名称"
+                  label={t("fileManager.createFolder")}
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
                   autoFocus
@@ -2912,7 +2972,7 @@ const FileManager = memo(
                     color="inherit"
                     size="small"
                   >
-                    取消
+                    {t("common.cancel")}
                   </Button>
                   <Button
                     type="submit"
@@ -2920,7 +2980,7 @@ const FileManager = memo(
                     color="primary"
                     size="small"
                   >
-                    确定
+                    {t("common.save")}
                   </Button>
                 </Box>
               </form>
@@ -2953,11 +3013,11 @@ const FileManager = memo(
                 gap: 2,
               }}
             >
-              <Typography variant="subtitle1">创建文件</Typography>
+              <Typography variant="subtitle1">{t("fileManager.createFile")}</Typography>
               <form onSubmit={handleCreateFileSubmit}>
                 <TextField
                   fullWidth
-                  label="文件名称"
+                  label={t("fileManager.createFile")}
                   value={newFileName}
                   onChange={(e) => setNewFileName(e.target.value)}
                   autoFocus
@@ -2977,7 +3037,7 @@ const FileManager = memo(
                     color="inherit"
                     size="small"
                   >
-                    取消
+                    {t("common.cancel")}
                   </Button>
                   <Button
                     type="submit"
@@ -2985,7 +3045,7 @@ const FileManager = memo(
                     color="primary"
                     size="small"
                   >
-                    确定
+                    {t("common.save")}
                   </Button>
                 </Box>
               </form>
@@ -3071,6 +3131,39 @@ const FileManager = memo(
               <CreateNewFolderIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>上传文件夹</ListItemText>
+          </MenuItem>
+        </Menu>
+        
+        <Menu
+          open={Boolean(sortMenuAnchor)}
+          onClose={handleSortMenuClose}
+          anchorEl={sortMenuAnchor}
+          anchorOrigin={{
+            vertical: "bottom",
+            horizontal: "left",
+          }}
+          transformOrigin={{
+            vertical: "top",
+            horizontal: "left",
+          }}
+        >
+          <MenuItem 
+            onClick={() => handleSortModeChange("name")}
+            selected={sortMode === "name"}
+          >
+            <ListItemIcon>
+              <SortByAlphaIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>按名称排序</ListItemText>
+          </MenuItem>
+          <MenuItem 
+            onClick={() => handleSortModeChange("time")}
+            selected={sortMode === "time"}
+          >
+            <ListItemIcon>
+              <AccessTimeIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>按时间排序</ListItemText>
           </MenuItem>
         </Menu>
       </Paper>
