@@ -459,7 +459,9 @@ async function getRemoteProcessList(sshClient) {
 
           resolve(processes);
         } catch (parseError) {
-          reject(new Error(`Failed to parse process list: ${parseError.message}`));
+          reject(
+            new Error(`Failed to parse process list: ${parseError.message}`),
+          );
         }
       });
     });

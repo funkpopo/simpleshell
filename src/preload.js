@@ -37,7 +37,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   killProcess: (processId) =>
     ipcRenderer.invoke("terminal:killProcess", processId),
   // 新增：获取进程信息
-  getProcessInfo: (processId) => 
+  getProcessInfo: (processId) =>
     ipcRenderer.invoke("terminal:getProcessInfo", processId),
 
   // 资源监控API
@@ -88,7 +88,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   saveConnections: (connections) =>
     ipcRenderer.invoke("terminal:saveConnections", connections),
   loadTopConnections: () => ipcRenderer.invoke("terminal:loadTopConnections"),
-  
+
   // 连接配置变化事件监听
   onConnectionsChanged: (callback) => {
     const wrappedCallback = () => callback();
@@ -214,13 +214,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 新增API
   renameFile: (tabId, oldPath, newName) =>
     ipcRenderer.invoke("renameFile", tabId, oldPath, newName),
-  
+
   // 权限设置API
   setFilePermissions: (tabId, filePath, permissions) =>
     ipcRenderer.invoke("setFilePermissions", tabId, filePath, permissions),
   getFilePermissions: (tabId, filePath) =>
     ipcRenderer.invoke("getFilePermissions", tabId, filePath),
-  
+
   uploadFile: (tabId, targetFolder, progressCallback) => {
     // Unique channel for this specific upload
     const progressChannel = `upload-progress-${tabId}-${Date.now()}`;
@@ -416,7 +416,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // SSH连接相关
   startSSH: (sshConfig) => ipcRenderer.invoke("terminal:startSSH", sshConfig),
-  
+
   // Telnet连接相关
-  startTelnet: (telnetConfig) => ipcRenderer.invoke("terminal:startTelnet", telnetConfig),
+  startTelnet: (telnetConfig) =>
+    ipcRenderer.invoke("terminal:startTelnet", telnetConfig),
 });

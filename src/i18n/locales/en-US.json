@@ -298,6 +298,72 @@
       "copy": "Copy",
       "copied": "Copied!",
       "regenerate": "Regenerate"
+    },
+    "fileManager": {
+      "title": "File Manager",
+      "loading": "Loading...",
+      "refresh": "Refresh",
+      "back": "Back",
+      "home": "Home",
+      "upload": "Upload",
+      "search": "Search files...",
+      "enterPath": "Enter path...",
+      "sort": "Sort",
+      "sortByName": "Sort by Name",
+      "sortByTime": "Sort by Modified Time",
+      "createFolder": "New Folder",
+      "createFile": "New File",
+      "rename": "Rename",
+      "delete": "Delete",
+      "download": "Download",
+      "copy": "Copy",
+      "cut": "Cut",
+      "paste": "Paste",
+      "properties": "Properties",
+      "permissions": "Permissions",
+      "createSymlink": "Create Symlink",
+      "errors": {
+        "loadDirectoryFailed": "Failed to load directory",
+        "fileApiNotAvailable": "File management API not available",
+        "missingConnectionInfo": "Missing SSH connection information",
+        "deleteFailed": "Delete failed",
+        "uploadFailed": "Upload failed",
+        "downloadFailed": "Download failed",
+        "renameFailed": "Rename failed",
+        "createFolderFailed": "Failed to create folder",
+        "unknownError": "Unknown error",
+        "refreshTimeout": "Refresh timeout",
+        "userCancelled": "User cancelled",
+        "operationCancelled": "Operation cancelled",
+        "sftpError": "SFTP error",
+        "connectionNotReady": "SSH connection not ready"
+      },
+      "messages": {
+        "preparingUpload": "Preparing upload...",
+        "uploadComplete": "Upload complete",
+        "retrying": "Retrying ({{current}}/{{max}})...",
+        "batchDeleteConfirm": "Are you sure you want to delete {{count}} selected files?",
+        "deleteConfirm": "Are you sure you want to delete {{name}}?",
+        "operationInProgress": "Operation in progress..."
+      },
+      "fileTypes": {
+        "folder": "Folder",
+        "file": "File",
+        "symlink": "Symlink",
+        "unknown": "Unknown Type"
+      },
+      "units": {
+        "bytes": "Bytes",
+        "kb": "KB",
+        "mb": "MB",
+        "gb": "GB",
+        "tb": "TB"
+      },
+      "statusBar": {
+        "totalItems": "{{count}} items total",
+        "selectedItems": "{{count}} items selected",
+        "lastRefresh": "Last refresh: {{time}}"
+      }
     }
   }
 }

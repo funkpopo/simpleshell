@@ -189,8 +189,9 @@ const PerformanceMonitor = ({ isVisible = false }) => {
         <Grid
           size={{
             xs: 12,
-            md: 6
-          }}>
+            md: 6,
+          }}
+        >
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -243,8 +244,9 @@ const PerformanceMonitor = ({ isVisible = false }) => {
         <Grid
           size={{
             xs: 12,
-            md: 6
-          }}>
+            md: 6,
+          }}
+        >
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -276,8 +278,9 @@ const PerformanceMonitor = ({ isVisible = false }) => {
         <Grid
           size={{
             xs: 12,
-            md: 6
-          }}>
+            md: 6,
+          }}
+        >
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
@@ -323,8 +326,9 @@ const PerformanceMonitor = ({ isVisible = false }) => {
         <Grid
           size={{
             xs: 12,
-            md: 6
-          }}>
+            md: 6,
+          }}
+        >
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>

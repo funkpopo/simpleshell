@@ -193,17 +193,19 @@ const IPAddressQuery = memo(({ open, onClose }) => {
           </Grid>
         </Paper>
         {ipInfo.data?.latitude && ipInfo.data?.longitude && (
-          <Box sx={{ 
-            mt: 2, 
-            mb: 1, 
-            borderRadius: 1, 
-            overflow: 'hidden',
-            height: '200px',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: theme.palette.background.default,
-          }}>
+          <Box
+            sx={{
+              mt: 2,
+              mb: 1,
+              borderRadius: 1,
+              overflow: "hidden",
+              height: "200px",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              backgroundColor: theme.palette.background.default,
+            }}
+          >
             <WorldMap
               latitude={ipInfo.data.latitude}
               longitude={ipInfo.data.longitude}

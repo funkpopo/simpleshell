@@ -68,7 +68,7 @@ const isTextFile = (filename) => {
   if (isImageFile(filename) || isPdfFile(filename) || isBinaryFile(filename)) {
     return false;
   }
-  
+
   // 对于其他所有文件，默认允许作为文本处理
   return true;
 };
@@ -77,27 +77,86 @@ const isTextFile = (filename) => {
 const isBinaryFile = (filename) => {
   const binaryExtensions = [
     // 压缩文件
-    "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tar.gz", "tar.bz2", "tar.xz",
+    "zip",
+    "rar",
+    "7z",
+    "tar",
+    "gz",
+    "bz2",
+    "xz",
+    "tar.gz",
+    "tar.bz2",
+    "tar.xz",
     // 可执行文件
-    "exe", "dll", "so", "dylib", "app", "deb", "rpm", "msi", "pkg",
+    "exe",
+    "dll",
+    "so",
+    "dylib",
+    "app",
+    "deb",
+    "rpm",
+    "msi",
+    "pkg",
     // 音频文件
-    "mp3", "wav", "flac", "aac", "ogg", "wma", "m4a", "opus",
+    "mp3",
+    "wav",
+    "flac",
+    "aac",
+    "ogg",
+    "wma",
+    "m4a",
+    "opus",
     // 视频文件
-    "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v", "3gp",
+    "mp4",
+    "avi",
+    "mkv",
+    "mov",
+    "wmv",
+    "flv",
+    "webm",
+    "m4v",
+    "3gp",
     // 字体文件
-    "ttf", "otf", "woff", "woff2", "eot",
+    "ttf",
+    "otf",
+    "woff",
+    "woff2",
+    "eot",
     // Office文档（二进制格式）
-    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp",
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "ppt",
+    "pptx",
+    "odt",
+    "ods",
+    "odp",
     // 其他二进制格式
-    "bin", "dat", "db", "sqlite", "sqlite3", "mdb", "accdb",
+    "bin",
+    "dat",
+    "db",
+    "sqlite",
+    "sqlite3",
+    "mdb",
+    "accdb",
     // 游戏/模拟器文件
-    "rom", "iso", "img", "dmg",
+    "rom",
+    "iso",
+    "img",
+    "dmg",
     // 设计文件
-    "psd", "ai", "sketch", "fig",
+    "psd",
+    "ai",
+    "sketch",
+    "fig",
     // 数据库文件
-    "frm", "myd", "myi", "ibd",
+    "frm",
+    "myd",
+    "myi",
+    "ibd",
   ];
-  
+
   const ext = getFileExtension(filename);
   return binaryExtensions.includes(ext);
 };
@@ -144,7 +203,7 @@ const getMimeType = (filename) => {
 const getLanguageMode = (filename) => {
   const ext = getFileExtension(filename);
   const baseName = filename.toLowerCase();
-  
+
   // 主要通过扩展名判断
   const langMap = {
     // JavaScript/TypeScript
@@ -154,7 +213,7 @@ const getLanguageMode = (filename) => {
     tsx: javascript,
     mjs: javascript,
     cjs: javascript,
-    
+
     // Web 前端
     html: html,
     htm: html,
@@ -163,20 +222,20 @@ const getLanguageMode = (filename) => {
     scss: css,
     sass: css,
     less: css,
-    
+
     // 数据格式
     json: json,
     jsonc: json,
     json5: json,
-    
+
     // Python
     py: python,
     pyw: python,
     pyi: python,
-    
+
     // Java
     java: java,
-    
+
     // C/C++
     c: cpp,
     cpp: cpp,
@@ -185,92 +244,116 @@ const getLanguageMode = (filename) => {
     h: cpp,
     hpp: cpp,
     hxx: cpp,
-    
+
     // PHP
     php: php,
     phtml: php,
     php3: php,
     php4: php,
     php5: php,
-    
+
     // Go
     go: go,
-    
+
     // Rust
     rs: rust,
-    
+
     // SQL
     sql: sql,
     mysql: sql,
     pgsql: sql,
     sqlite: sql,
-    
+
     // Markup
     xml: xml,
     svg: xml,
     xsl: xml,
     xslt: xml,
-    
+
     // YAML
     yml: yaml,
     yaml: yaml,
-    
+
     // Markdown
     md: markdown,
     markdown: markdown,
     mdown: markdown,
     mkd: markdown,
-    mdx: markdown
+    mdx: markdown,
   };
-  
+
   // 首先检查扩展名
   if (langMap[ext]) {
     return langMap[ext];
   }
-  
+
   // 特殊文件名处理（无扩展名）
-  if (baseName === 'dockerfile' || baseName.startsWith('dockerfile.')) {
+  if (baseName === "dockerfile" || baseName.startsWith("dockerfile.")) {
     return null; // Dockerfile 使用默认高亮
   }
-  
-  if (baseName === 'makefile' || baseName === 'gnumakefile' || baseName.startsWith('makefile.')) {
+
+  if (
+    baseName === "makefile" ||
+    baseName === "gnumakefile" ||
+    baseName.startsWith("makefile.")
+  ) {
     return null; // Makefile 使用默认高亮
   }
-  
-  if (baseName === 'gemfile' || baseName === 'rakefile' || baseName === 'guardfile') {
+
+  if (
+    baseName === "gemfile" ||
+    baseName === "rakefile" ||
+    baseName === "guardfile"
+  ) {
     return null; // Ruby 文件，目前使用默认高亮
   }
-  
-  if (baseName === 'package.json' || baseName === 'composer.json' || baseName === 'bower.json') {
+
+  if (
+    baseName === "package.json" ||
+    baseName === "composer.json" ||
+    baseName === "bower.json"
+  ) {
     return json;
   }
-  
-  if (baseName.includes('requirements') && (baseName.endsWith('.txt') || !baseName.includes('.'))) {
+
+  if (
+    baseName.includes("requirements") &&
+    (baseName.endsWith(".txt") || !baseName.includes("."))
+  ) {
     return null; // Python requirements 文件
   }
-  
-  if (baseName === 'cargo.toml' || baseName === 'pyproject.toml') {
+
+  if (baseName === "cargo.toml" || baseName === "pyproject.toml") {
     return null; // TOML 文件，使用默认高亮
   }
-  
+
   // 配置文件
-  if (baseName.endsWith('.toml')) {
+  if (baseName.endsWith(".toml")) {
     return null; // TOML
   }
-  
-  if (baseName.endsWith('.ini') || baseName.endsWith('.cfg') || baseName.endsWith('.conf')) {
+
+  if (
+    baseName.endsWith(".ini") ||
+    baseName.endsWith(".cfg") ||
+    baseName.endsWith(".conf")
+  ) {
     return null; // 配置文件
   }
-  
-  if (baseName.endsWith('.env') || baseName.startsWith('.env')) {
+
+  if (baseName.endsWith(".env") || baseName.startsWith(".env")) {
     return null; // 环境变量文件
   }
-  
+
   // Shell 脚本
-  if (baseName.endsWith('.sh') || baseName.endsWith('.bash') || baseName.endsWith('.zsh') || baseName.endsWith('.fish')) {
+  if (
+    baseName.endsWith(".sh") ||
+    baseName.endsWith(".bash") ||
+    baseName.endsWith(".zsh") ||
+    baseName.endsWith(".fish")
+  ) {
     return null; // Shell 脚本，使用默认高亮
   }
-  
+
   return null;
 };
 
@@ -348,7 +431,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         // 检查文件大小限制 (10MB = 10 * 1024 * 1024 bytes)
         const maxFileSize = 10 * 1024 * 1024;
         if (file.size && file.size > maxFileSize) {
-          setError(`文件大小为 ${formatFileSize(file.size)}，超过了 10MB 的预览限制。请下载文件后在本地查看和编辑。`);
+          setError(
+            `文件大小为 ${formatFileSize(file.size)}，超过了 10MB 的预览限制。请下载文件后在本地查看和编辑。`,
+          );
           setLoading(false);
           return;
         }
@@ -362,14 +447,19 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             if (response.success) {
               // 检查内容是否可能是二进制数据
               const content = response.content;
-              if (typeof content === 'string') {
+              if (typeof content === "string") {
                 // 简单检查是否包含大量不可打印字符（可能是二进制文件）
-                const nonPrintableCount = (content.match(/[\x00-\x08\x0E-\x1F\x7F-\xFF]/g) || []).length;
-                const nonPrintableRatio = content.length > 0 ? nonPrintableCount / content.length : 0;
-                
+                const nonPrintableCount = (
+                  content.match(/[\x00-\x08\x0E-\x1F\x7F-\xFF]/g) || []
+                ).length;
+                const nonPrintableRatio =
+                  content.length > 0 ? nonPrintableCount / content.length : 0;
+
                 if (nonPrintableRatio > 0.3) {
                   // 如果不可打印字符超过30%，可能是二进制文件
-                  setError("该文件可能包含二进制数据，无法安全地作为文本显示。您可以尝试下载文件以在本地查看。");
+                  setError(
+                    "该文件可能包含二进制数据，无法安全地作为文本显示。您可以尝试下载文件以在本地查看。",
+                  );
                 } else {
                   setContent(content);
                   // 重置修改状态
@@ -383,9 +473,13 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               // 如果读取失败，提供更友好的错误信息
               const errorMsg = response.error || "读取文件内容失败";
               if (errorMsg.includes("binary") || errorMsg.includes("二进制")) {
-                setError("该文件包含二进制数据，无法作为文本显示。您可以下载文件以在本地查看。");
+                setError(
+                  "该文件包含二进制数据，无法作为文本显示。您可以下载文件以在本地查看。",
+                );
               } else {
-                setError(errorMsg + "。如果这是文本文件，您可以尝试下载后查看。");
+                setError(
+                  errorMsg + "。如果这是文本文件，您可以尝试下载后查看。",
+                );
               }
             }
           } else {
@@ -444,7 +538,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             setError("文件读取API不可用");
           }
         } else {
-          setError("此文件类型被识别为二进制文件，无法作为文本预览。您可以下载文件在本地查看。");
+          setError(
+            "此文件类型被识别为二进制文件，无法作为文本预览。您可以下载文件在本地查看。",
+          );
         }
       } catch (err) {
         setError("预览文件失败: " + (err.message || "未知错误"));
@@ -539,16 +635,17 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const handleFontChange = async (event) => {
     const newFont = event.target.value;
     setEditorFont(newFont);
-    
+
     try {
       // 保存到config.json
       if (window.terminalAPI?.saveUISettings) {
         // 先获取当前设置
-        const currentSettings = await window.terminalAPI.loadUISettings() || {};
+        const currentSettings =
+          (await window.terminalAPI.loadUISettings()) || {};
         // 更新文件预览字体设置
         const updatedSettings = {
           ...currentSettings,
-          filePreviewFont: newFont
+          filePreviewFont: newFont,
         };
         // 保存更新后的设置
         await window.terminalAPI.saveUISettings(updatedSettings);
@@ -653,19 +750,19 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
       // 添加字体样式扩展和自适应宽度设置
       const fontExtension = EditorView.theme({
-        '.cm-editor': {
-          fontFamily: getFontFamily(editorFont) + ' !important',
-          width: '100%',
+        ".cm-editor": {
+          fontFamily: getFontFamily(editorFont) + " !important",
+          width: "100%",
         },
-        '.cm-scroller': {
-          overflow: 'auto',
+        ".cm-scroller": {
+          overflow: "auto",
         },
-        '.cm-content': {
-          fontFamily: getFontFamily(editorFont) + ' !important',
-          whiteSpace: 'pre-wrap', // 允许换行
-          wordBreak: 'break-word', // 长单词换行
-          overflowWrap: 'break-word', // 强制换行
-        }
+        ".cm-content": {
+          fontFamily: getFontFamily(editorFont) + " !important",
+          whiteSpace: "pre-wrap", // 允许换行
+          wordBreak: "break-word", // 长单词换行
+          overflowWrap: "break-word", // 强制换行
+        },
       });
       extensions.push(fontExtension);
 
@@ -735,11 +832,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           <img
             src={`data:${getMimeType(file.name)};base64,${content}`}
             alt={file.name}
-            style={{ 
-              maxWidth: "100%", 
+            style={{
+              maxWidth: "100%",
               maxHeight: "100%",
               objectFit: "contain",
-              display: "block"
+              display: "block",
             }}
           />
         </Box>
@@ -886,7 +983,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             {file?.name}
             {file?.size && (
-              <Typography variant="caption" component="span" sx={{ ml: 1, color: 'text.secondary' }}>
+              <Typography
+                variant="caption"
+                component="span"
+                sx={{ ml: 1, color: "text.secondary" }}
+              >
                 ({formatFileSize(file.size)})
               </Typography>
             )}
@@ -894,7 +995,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               <span style={{ color: theme.palette.warning.main }}> *</span>
             )}
           </Typography>
-          
+
           {/* 字体选择下拉菜单 - 仅在文本文件时显示 */}
           {isTextFile(file?.name) && (
             <FormControl size="small" sx={{ minWidth: 120 }}>
@@ -913,7 +1014,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               </Select>
             </FormControl>
           )}
-          
+
           <Box>
             {isTextFile(file?.name) && (
               <>

@@ -80,7 +80,7 @@ const getTransferColor = (type) => {
 // 获取状态图标
 const getStatusIcon = (transfer) => {
   const { progress, isCancelled, error } = transfer;
-  
+
   if (error) {
     return <Error sx={{ fontSize: 16, color: "#f44336" }} />;
   }
@@ -116,7 +116,7 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
   const isCompleted = progress >= 100;
   const hasError = !!error;
   const statusIcon = getStatusIcon(transfer);
-  
+
   // 最小化时只显示进度条
   if (isMinimized) {
     return (
@@ -129,12 +129,12 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
             borderRadius: 3,
             backgroundColor: "rgba(0,0,0,0.1)",
             "& .MuiLinearProgress-bar": {
-              backgroundColor: hasError 
-                ? "#f44336" 
-                : isCancelled 
-                  ? "#ff9800" 
-                  : isCompleted 
-                    ? "#4caf50" 
+              backgroundColor: hasError
+                ? "#f44336"
+                : isCancelled
+                  ? "#ff9800"
+                  : isCompleted
+                    ? "#4caf50"
                     : getTransferColor(type),
               borderRadius: 3,
             },
@@ -169,7 +169,7 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
         >
           {getTransferIcon(type)}
         </Box>
-        
+
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Typography
             variant="subtitle2"
@@ -184,7 +184,7 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
           >
             {fileName || "传输中..."}
           </Typography>
-          
+
           {/* 当前文件信息 */}
           {(totalFiles > 1 || currentFile) && (
             <Typography
@@ -204,17 +204,24 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
                     // 对于上传多文件类型，使用 currentFileIndex
                     if (type === "upload-multifile") {
                       // currentFileIndex 是从 1 开始的，如果为 0 或未定义则显示 0
-                      const current = currentFileIndex > 0 ? Math.min(currentFileIndex, totalFiles) : 0;
+                      const current =
+                        currentFileIndex > 0
+                          ? Math.min(currentFileIndex, totalFiles)
+                          : 0;
                       const total = Math.max(1, totalFiles);
                       return `${current}/${total}`;
-                    } 
+                    }
                     // 对于其他类型（包括 upload-folder, download, download-folder），使用 processedFiles
                     else {
-                      const processed = Math.max(0, Math.min(processedFiles || 0, totalFiles));
+                      const processed = Math.max(
+                        0,
+                        Math.min(processedFiles || 0, totalFiles),
+                      );
                       const total = Math.max(1, totalFiles);
                       return `${processed}/${total}`;
                     }
-                  })()} 文件
+                  })()}{" "}
+                  文件
                 </span>
               )}
               {currentFile && (
@@ -230,7 +237,7 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
         {/* 状态和操作按钮 */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           {statusIcon}
-          
+
           {/* 进度百分比 */}
           <Chip
             label={`${Math.round(progress)}%`}
@@ -239,23 +246,23 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
               height: 24,
               fontSize: "0.75rem",
               fontWeight: 600,
-              backgroundColor: hasError 
-                ? "#ffebee" 
-                : isCancelled 
-                  ? "#fff3e0" 
-                  : isCompleted 
-                    ? "#e8f5e8" 
+              backgroundColor: hasError
+                ? "#ffebee"
+                : isCancelled
+                  ? "#fff3e0"
+                  : isCompleted
+                    ? "#e8f5e8"
                     : `${getTransferColor(type)}15`,
-              color: hasError 
-                ? "#f44336" 
-                : isCancelled 
-                  ? "#ff9800" 
-                  : isCompleted 
-                    ? "#4caf50" 
+              color: hasError
+                ? "#f44336"
+                : isCancelled
+                  ? "#ff9800"
+                  : isCompleted
+                    ? "#4caf50"
                     : getTransferColor(type),
             }}
           />
-          
+
           {/* 取消按钮 */}
           {!isCompleted && !isCancelled && !hasError && (
             <Tooltip title="中断传输">
@@ -269,15 +276,15 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
                 sx={{
                   width: 28,
                   height: 28,
-                  color: transfer.cancelInProgress 
-                    ? theme.palette.text.disabled 
+                  color: transfer.cancelInProgress
+                    ? theme.palette.text.disabled
                     : theme.palette.text.secondary,
                   "&:hover": {
-                    color: transfer.cancelInProgress 
-                      ? theme.palette.text.disabled 
+                    color: transfer.cancelInProgress
+                      ? theme.palette.text.disabled
                       : "#f44336",
-                    backgroundColor: transfer.cancelInProgress 
-                      ? "transparent" 
+                    backgroundColor: transfer.cancelInProgress
+                      ? "transparent"
                       : "#ffebee",
                   },
                 }}
@@ -299,12 +306,12 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
             borderRadius: 4,
             backgroundColor: "rgba(0,0,0,0.08)",
             "& .MuiLinearProgress-bar": {
-              backgroundColor: hasError 
-                ? "#f44336" 
-                : isCancelled 
-                  ? "#ff9800" 
-                  : isCompleted 
-                    ? "#4caf50" 
+              backgroundColor: hasError
+                ? "#f44336"
+                : isCancelled
+                  ? "#ff9800"
+                  : isCompleted
+                    ? "#4caf50"
                     : getTransferColor(type),
               borderRadius: 4,
               transition: "transform 0.2s ease-in-out",
@@ -314,7 +321,13 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
       </Box>
 
       {/* 详细信息 */}
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
         <Typography
           variant="caption"
           sx={{
@@ -324,7 +337,7 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
         >
           {formatFileSize(transferredBytes)} / {formatFileSize(totalBytes)}
         </Typography>
-        
+
         {!isCancelled && !hasError && transferSpeed > 0 && (
           <Typography
             variant="caption"
@@ -337,7 +350,7 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
             {remainingTime > 0 && ` • 剩余 ${formatTime(remainingTime)}`}
           </Typography>
         )}
-        
+
         {/* 状态文本 */}
         {(hasError || isCancelled || isCompleted) && (
           <Typography
@@ -345,18 +358,10 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
             sx={{
               fontSize: "0.75rem",
               fontWeight: 500,
-              color: hasError 
-                ? "#f44336" 
-                : isCancelled 
-                  ? "#ff9800" 
-                  : "#4caf50",
+              color: hasError ? "#f44336" : isCancelled ? "#ff9800" : "#4caf50",
             }}
           >
-            {hasError 
-              ? "传输失败" 
-              : isCancelled 
-                ? "已取消" 
-                : "传输完成"}
+            {hasError ? "传输失败" : isCancelled ? "已取消" : "传输完成"}
           </Typography>
         )}
       </Box>
@@ -377,13 +382,13 @@ const TransferProgressFloat = ({
 
   // 过滤活跃的传输任务
   const activeTransfers = transferList.filter(
-    (t) => t.progress < 100 && !t.isCancelled && !t.error
+    (t) => t.progress < 100 && !t.isCancelled && !t.error,
   );
-  
+
   // 决定是否显示窗口
   useEffect(() => {
     const hasTransfers = transferList.length > 0;
-    
+
     if (hasTransfers) {
       setShouldShow(true);
       setWasVisible(true);
@@ -400,11 +405,11 @@ const TransferProgressFloat = ({
   // 检测用户取消操作的额外逻辑
   useEffect(() => {
     const hasActiveTransfers = transferList.some(
-      (t) => t.progress < 100 && !t.isCancelled && !t.error
+      (t) => t.progress < 100 && !t.isCancelled && !t.error,
     );
-    const allCancelledOrFailed = transferList.length > 0 && transferList.every(
-      (t) => t.isCancelled || t.error || t.progress >= 100
-    );
+    const allCancelledOrFailed =
+      transferList.length > 0 &&
+      transferList.every((t) => t.isCancelled || t.error || t.progress >= 100);
 
     // 如果所有传输都被取消或失败，在短时间后关闭窗口
     if (allCancelledOrFailed && !hasActiveTransfers) {
@@ -413,7 +418,7 @@ const TransferProgressFloat = ({
         setWasVisible(false);
         setIsMinimized(false);
       }, 1500); // 1.5秒后自动关闭
-      
+
       return () => clearTimeout(timer);
     }
   }, [transferList]);
@@ -475,7 +480,7 @@ const TransferProgressFloat = ({
           >
             传输进度 ({transferList.length})
           </Typography>
-          
+
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
             {/* 最小化按钮 */}
             <Tooltip title={isMinimized ? "展开" : "最小化"}>

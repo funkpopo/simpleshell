@@ -10,10 +10,10 @@ const CONNECTION_TIMEOUT = 15 * 1000; // 连接超时时间（15秒）
 
 // 代理类型常量
 const PROXY_TYPES = {
-  HTTP: 'http',
-  SOCKS4: 'socks4',
-  SOCKS5: 'socks5',
-  NONE: 'none'
+  HTTP: "http",
+  SOCKS4: "socks4",
+  SOCKS5: "socks5",
+  NONE: "none",
 };
 
 class SSHConnectionPool {
@@ -57,11 +57,12 @@ class SSHConnectionPool {
     if (config.tabId) {
       // 确保每个标签页使用独立连接，不复用任何连接资源
       // 将tabId作为连接键的第一部分，确保连接不会被复用
-      const proxyString = config.proxy ? 
-        `proxy:${config.proxy.host}:${config.proxy.port}:${config.proxy.type}` : '';
-      
+      const proxyString = config.proxy
+        ? `proxy:${config.proxy.host}:${config.proxy.port}:${config.proxy.type}`
+        : "";
+
       // 使用唯一的连接键格式，确保每个标签页有独立连接
-      return `tab:${config.tabId}:${config.host}:${config.port || 22}:${config.username}${proxyString ? ':' + proxyString : ''}`;
+      return `tab:${config.tabId}:${config.host}:${config.port || 22}:${config.username}${proxyString ? ":" + proxyString : ""}`;
     }
     // 回退到旧的逻辑，以支持可能没有tabId的场景
     return `${config.host}:${config.port || 22}:${config.username}`;
@@ -76,8 +77,10 @@ class SSHConnectionPool {
   getTopConnections(count = 5) {
     if (this.connectionUsage.size === 0) return [];
 
-    const sorted = [...this.connectionUsage.entries()].sort((a, b) => b[1] - a[1]);
-    return sorted.slice(0, count).map(entry => entry[0]);
+    const sorted = [...this.connectionUsage.entries()].sort(
+      (a, b) => b[1] - a[1],
+    );
+    return sorted.slice(0, count).map((entry) => entry[0]);
   }
 
   async getConnection(sshConfig) {
@@ -122,11 +125,14 @@ class SSHConnectionPool {
    */
   async createConnection(sshConfig, connectionKey) {
     logToFile(`创建新SSH连接: ${connectionKey}`, "INFO");
-    
+
     // 检查是否需要通过代理
     const usingProxy = this.isProxyConfigValid(sshConfig.proxy);
     if (usingProxy) {
-      logToFile(`使用代理: ${sshConfig.proxy.type} ${sshConfig.proxy.host}:${sshConfig.proxy.port}`, "INFO");
+      logToFile(
+        `使用代理: ${sshConfig.proxy.type} ${sshConfig.proxy.host}:${sshConfig.proxy.port}`,
+        "INFO",
+      );
     }
 
     return new Promise((resolve, reject) => {
@@ -156,7 +162,10 @@ class SSHConnectionPool {
         connectionInfo.ready = true;
         this.connections.set(connectionKey, connectionInfo);
 
-        logToFile(`SSH连接建立成功: ${connectionKey}${usingProxy ? ' (通过代理)' : ''}`, "INFO");
+        logToFile(
+          `SSH连接建立成功: ${connectionKey}${usingProxy ? " (通过代理)" : ""}`,
+          "INFO",
+        );
         resolve(connectionInfo);
       });
 
@@ -180,7 +189,7 @@ class SSHConnectionPool {
             isProxyError = true;
           }
         }
-        
+
         // 检测常见SSH错误
         if (!isProxyError) {
           if (
@@ -193,7 +202,7 @@ class SSHConnectionPool {
               errorMessage += `. 私钥文件路径: ${sshConfig.privateKeyPath} 可能无法读取`;
             }
           } else if (err.message.includes("connect ECONNREFUSED")) {
-            errorMessage = `连接被拒绝: 无法连接到 ${sshConfig.host}:${sshConfig.port || 22}${usingProxy ? ' (通过代理)' : ''}`;
+            errorMessage = `连接被拒绝: 无法连接到 ${sshConfig.host}:${sshConfig.port || 22}${usingProxy ? " (通过代理)" : ""}`;
           } else if (err.message.includes("getaddrinfo ENOTFOUND")) {
             errorMessage = `主机不存在: 无法解析主机名 ${sshConfig.host}`;
           }
@@ -215,7 +224,7 @@ class SSHConnectionPool {
           hasPrivateKeyPath: !!sshConfig.privateKeyPath,
           usingProxy: usingProxy,
           proxyType: usingProxy ? sshConfig.proxy.type : null,
-          isProxyError: isProxyError
+          isProxyError: isProxyError,
         };
 
         reject(enhancedError);
@@ -254,13 +263,13 @@ class SSHConnectionPool {
       // 处理代理配置
       if (usingProxy) {
         const proxyConfig = sshConfig.proxy;
-        
+
         connectionOptions.proxy = {
           host: proxyConfig.host,
           port: proxyConfig.port,
-          type: this.getProxyProtocol(proxyConfig.type)
+          type: this.getProxyProtocol(proxyConfig.type),
         };
-        
+
         // 处理代理身份认证
         if (proxyConfig.username) {
           connectionOptions.proxy.username = proxyConfig.username;
@@ -273,7 +282,7 @@ class SSHConnectionPool {
       ssh.connect(connectionOptions);
     });
   }
-  
+
   /**
    * 检查代理配置是否有效
    * @param {object|null} proxyConfig - 代理配置对象
@@ -282,14 +291,14 @@ class SSHConnectionPool {
   isProxyConfigValid(proxyConfig) {
     return (
       proxyConfig &&
-      typeof proxyConfig === 'object' &&
+      typeof proxyConfig === "object" &&
       proxyConfig.host &&
       proxyConfig.port &&
       proxyConfig.type &&
       Object.values(PROXY_TYPES).includes(proxyConfig.type.toLowerCase())
     );
   }
-  
+
   /**
    * 获取适合ssh2库的代理协议字符串
    * @param {string} proxyType - 代理类型
@@ -297,17 +306,17 @@ class SSHConnectionPool {
    */
   getProxyProtocol(proxyType) {
     const type = proxyType.toLowerCase();
-    
+
     switch (type) {
       case PROXY_TYPES.HTTP:
-        return 'http';
+        return "http";
       case PROXY_TYPES.SOCKS4:
-        return 'socks4';
+        return "socks4";
       case PROXY_TYPES.SOCKS5:
-        return 'socks5';
+        return "socks5";
       default:
         // 默认返回http
-        return 'http';
+        return "http";
     }
   }
 
@@ -325,7 +334,10 @@ class SSHConnectionPool {
         "INFO",
       );
       // 若refCount为0且无tab引用，自动关闭连接
-      if (connectionInfo.refCount === 0 && !this.isConnectionReferencedByTabs(connectionKey)) {
+      if (
+        connectionInfo.refCount === 0 &&
+        !this.isConnectionReferencedByTabs(connectionKey)
+      ) {
         this.closeConnection(connectionKey);
       }
     }
@@ -354,7 +366,7 @@ class SSHConnectionPool {
    */
   getConnectionByTabId(tabId) {
     if (!tabId) return null;
-    
+
     // 查找标签页引用
     if (this.tabReferences.has(tabId)) {
       const connectionKey = this.tabReferences.get(tabId);
@@ -362,7 +374,7 @@ class SSHConnectionPool {
         return this.connections.get(connectionKey);
       }
     }
-    
+
     // 直接通过连接键前缀查找
     const tabPrefix = `tab:${tabId}:`;
     for (const [key, connection] of this.connections.entries()) {
@@ -370,7 +382,7 @@ class SSHConnectionPool {
         return connection;
       }
     }
-    
+
     return null;
   }
 
@@ -520,7 +532,7 @@ class SSHConnectionPool {
           ready: conn.ready,
           host: conn.config.host,
           usingProxy: conn.usingProxy,
-          proxyType: conn.usingProxy ? conn.config.proxy.type : null
+          proxyType: conn.usingProxy ? conn.config.proxy.type : null,
         }),
       ),
     };
