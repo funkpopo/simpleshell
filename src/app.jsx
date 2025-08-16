@@ -544,10 +544,8 @@ function App() {
     // 监听分屏活跃标签页变化事件
     const handleActiveSplitTabChanged = (event) => {
       const { activeTabId } = event.detail || {};
-      console.log("App收到 activeSplitTabChanged 事件:", activeTabId);
       if (activeTabId) {
         setActiveSplitTabId(activeTabId);
-        console.log("App更新 activeSplitTabId:", activeTabId);
       }
     };
 
@@ -599,7 +597,6 @@ function App() {
       if (!mergedTabsForCurrentMain || mergedTabsForCurrentMain.length <= 1) {
         // 当前标签页没有分屏，重置活跃分屏标签页
         if (activeSplitTabId) {
-          console.log("主标签页切换，重置活跃分屏标签页");
           setActiveSplitTabId(null);
         }
       } else {
@@ -608,10 +605,8 @@ function App() {
           activeSplitTabId &&
           !mergedTabsForCurrentMain.find((tab) => tab.id === activeSplitTabId)
         ) {
-          console.log("活跃分屏标签页不在当前分屏中，重置为第一个");
           setActiveSplitTabId(mergedTabsForCurrentMain[0]?.id || null);
         } else if (!activeSplitTabId) {
-          console.log("没有活跃分屏标签页，设置为第一个");
           setActiveSplitTabId(mergedTabsForCurrentMain[0]?.id || null);
         }
       }
@@ -1512,12 +1507,9 @@ function App() {
 
   // 添加发送快捷命令到终端的函数
   const handleSendCommand = (command) => {
-    console.log("handleSendCommand called with command:", command);
     const panelTab = getCurrentPanelTab();
-    console.log("Current panel tab:", panelTab);
 
     if (panelTab && panelTab.type === "ssh") {
-      console.log("Dispatching command to SSH tab:", panelTab.id);
       dispatchCommandToGroup(panelTab.id, command);
       return { success: true };
     } else if (panelTab) {
@@ -1531,14 +1523,6 @@ function App() {
 
   // 获取右侧面板应该使用的当前标签页信息
   const getCurrentPanelTab = useCallback(() => {
-    console.log("getCurrentPanelTab - activeSplitTabId:", activeSplitTabId);
-    console.log(
-      "getCurrentPanelTab - currentTab:",
-      currentTab,
-      "tabs[currentTab]:",
-      tabs[currentTab],
-    );
-    console.log("getCurrentPanelTab - mergedTabs:", mergedTabs);
 
     // 如果在分屏模式下且有活跃的分屏标签页，优先使用分屏标签页
     if (activeSplitTabId) {
@@ -1553,7 +1537,6 @@ function App() {
             (tab) => tab.id === activeSplitTabId,
           );
           if (activeTab) {
-            console.log("找到活跃的分屏标签:", activeTab);
             return activeTab;
           }
         }
@@ -1562,25 +1545,20 @@ function App() {
       // 如果在合并标签中没找到，则在全局标签中查找
       const globalTab = tabs.find((t) => t.id === activeSplitTabId);
       if (globalTab) {
-        console.log("在全局标签中找到活跃标签:", globalTab);
         return globalTab;
       }
     }
 
     // 否则使用当前主标签页
     if (currentTab > 0 && tabs[currentTab]) {
-      console.log("使用当前主标签页:", tabs[currentTab]);
       return tabs[currentTab];
     }
-
-    console.log("没有找到有效的标签页");
     return null;
   }, [activeSplitTabId, tabs, currentTab, mergedTabs]);
 
   // 计算右侧面板的当前标签页信息
   const currentPanelTab = useMemo(() => {
     const result = getCurrentPanelTab();
-    console.log("当前面板标签页:", result?.id, result?.label);
     return result;
   }, [getCurrentPanelTab]);
 
