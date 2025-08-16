@@ -1,4 +1,5 @@
 import React, { useState, useEffect, memo, useCallback, useMemo } from "react";
+import useAutoCleanup from "../hooks/useAutoCleanup";
 import {
   Box,
   Paper,
@@ -106,6 +107,9 @@ const FileManager = memo(
     // 用于存储延迟移除定时器的引用
     const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
 
+    // 使用自动清理Hook
+    const { addEventListener, addTimeout } = useAutoCleanup();
+
     // 缓存过期时间（毫秒）
     const CACHE_EXPIRY_TIME = 10000; // 10秒
 
@@ -147,11 +151,11 @@ const FileManager = memo(
           const newTimers = new Map(prev);
           const existingTimer = newTimers.get(transferId);
           if (existingTimer) {
-            clearTimeout(existingTimer);
+            existingTimer(); // 调用清理函数取消之前的定时器
           }
 
           // 设置新的延迟移除定时器
-          const timer = setTimeout(() => {
+          const cleanupTimer = addTimeout(() => {
             removeTransferProgress(transferId);
             // 清理定时器引用
             setAutoRemoveTimers((current) => {
@@ -161,7 +165,7 @@ const FileManager = memo(
             });
           }, 1000); // 1秒延迟
 
-          newTimers.set(transferId, timer);
+          newTimers.set(transferId, cleanupTimer);
           return newTimers;
         });
       }
@@ -955,7 +959,7 @@ const FileManager = memo(
             });
 
             // 传输完成后延迟移除
-            setTimeout(() => removeTransferProgress(transferId), 3000);
+            addTimeout(() => removeTransferProgress(transferId), 3000);
 
             // 切换到上传的目标路径
             updateCurrentPath(targetPath);
@@ -1134,7 +1138,7 @@ const FileManager = memo(
             });
 
             // 传输完成后延迟移除
-            setTimeout(() => removeTransferProgress(transferId), 3000);
+            addTimeout(() => removeTransferProgress(transferId), 3000);
 
             // 切换到上传的目标路径
             updateCurrentPath(targetPath);
@@ -1444,7 +1448,7 @@ const FileManager = memo(
         }
 
         // 添加额外延迟，确保取消操作完成后再刷新
-        setTimeout(() => {
+        addTimeout(() => {
           // 无论是否成功取消传输，都刷新文件列表
           refreshAfterUserActivity();
 
@@ -1468,7 +1472,7 @@ const FileManager = memo(
         });
 
         // 发生错误时也刷新文件列表，确保UI状态一致
-        setTimeout(() => {
+        addTimeout(() => {
           refreshAfterUserActivity();
           loadDirectory(currentPath, 0, true);
         }, 800);
@@ -1788,7 +1792,7 @@ const FileManager = memo(
 
       // 自动关闭通知（除非是错误或指定了更长的持续时间）
       if (severity !== "error" && duration > 0) {
-        setTimeout(() => setNotification(null), duration);
+        addTimeout(() => setNotification(null), duration);
       }
     };
 
@@ -1893,7 +1897,7 @@ const FileManager = memo(
             });
 
             // 下载完成后延迟移除
-            setTimeout(() => {
+            addTimeout(() => {
               removeTransferProgress(transferId);
 
               // 显示详细的成功通知
@@ -1985,7 +1989,7 @@ const FileManager = memo(
             10000,
             true,
             () => {
-              setTimeout(() => handleDownloadFolder(), 500);
+              addTimeout(() => handleDownloadFolder(), 500);
             },
           );
         } else if (error.message?.includes("无法创建本地文件夹结构")) {
@@ -2038,7 +2042,7 @@ const FileManager = memo(
           !transferCancelled &&
           !error.message?.includes("用户取消下载")
         ) {
-          setTimeout(() => {
+          addTimeout(() => {
             showNotification(
               "您可以尝试重新下载文件夹",
               "info",
@@ -2322,17 +2326,13 @@ const FileManager = memo(
       }
     };
 
-    // 添加和移除键盘事件监听器
+    // 添加键盘事件监听器
     useEffect(() => {
       if (open) {
-        window.addEventListener("keydown", handleKeyDown);
+        // 使用 addEventListener 自动管理事件监听器，组件卸载时自动清理
+        addEventListener(window, "keydown", handleKeyDown);
       }
-
-      // 清理函数
-      return () => {
-        window.removeEventListener("keydown", handleKeyDown);
-      };
-    }, [open, handleKeyDown]); // 简化依赖项
+    }, [open, handleKeyDown, addEventListener]); // 简化依赖项
 
     // 处理关闭文件管理器
     const handleClose = () => {
@@ -2379,7 +2379,7 @@ const FileManager = memo(
           handleCancelTransfer()
             .then(() => {
               // 添加短暂延迟确保取消操作完成
-              setTimeout(() => {
+              addTimeout(() => {
                 logToFile &&
                   logToFile(
                     "FileManager: Closing window after cancelling transfer",
@@ -2390,7 +2390,7 @@ const FileManager = memo(
             })
             .catch((error) => {
               // 取消传输失败，即使取消失败也关闭窗口，但添加延迟确保取消请求被发送
-              setTimeout(() => {
+              addTimeout(() => {
                 logToFile &&
                   logToFile(
                     "FileManager: Closing window after transfer cancel error",

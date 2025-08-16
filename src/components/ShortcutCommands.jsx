@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import useAutoCleanup from "../hooks/useAutoCleanup";
 import { FixedSizeList as List } from "react-window";
 import {
   Box,
@@ -223,6 +224,7 @@ const CommandItem = React.memo(({ index, style, data }) => {
 function ShortcutCommands({ open, onClose, onSendCommand }) {
   const theme = useTheme();
   const { t } = useTranslation();
+  const { addResizeObserver } = useAutoCleanup();
   const [commands, setCommands] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -272,22 +274,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
     updateHeight();
 
-    let resizeObserver;
-    try {
-      resizeObserver = new ResizeObserver(updateHeight);
-      if (containerRef.current) {
-        resizeObserver.observe(containerRef.current);
-      }
-    } catch (error) {
-      // ResizeObserver 不可用，使用默认高度
+    // 使用 addResizeObserver 自动管理观察器，组件卸载时自动清理
+    if (containerRef.current) {
+      addResizeObserver(updateHeight, containerRef.current);
     }
-
-    return () => {
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
-    };
-  }, [open]);
+  }, [open, addResizeObserver]);
 
   // 加载命令数据
   const loadCommands = async () => {

@@ -6,6 +6,7 @@ import React, {
   memo,
   useMemo,
 } from "react";
+import useAutoCleanup from "../hooks/useAutoCleanup";
 import { createPortal } from "react-dom";
 import { Box, Typography, Paper } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -40,6 +41,9 @@ const CommandSuggestion = memo(
     const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex);
     const suggestionRef = useRef(null);
     const [isKeyboardNavigation, setIsKeyboardNavigation] = useState(false);
+
+    // 使用自动清理Hook
+    const { addEventListener } = useAutoCleanup();
 
     // 重置选中索引当建议列表变化时
     useEffect(() => {
@@ -123,12 +127,10 @@ const CommandSuggestion = memo(
     // 添加全局键盘事件监听
     useEffect(() => {
       if (visible) {
-        document.addEventListener("keydown", handleKeyDown, true);
-        return () => {
-          document.removeEventListener("keydown", handleKeyDown, true);
-        };
+        // 使用 addEventListener 自动管理事件监听器，组件卸载时自动清理
+        addEventListener(document, "keydown", handleKeyDown, true);
       }
-    }, [visible, handleKeyDown]);
+    }, [visible, handleKeyDown, addEventListener]);
 
     // 处理鼠标悬停
     const handleMouseEnter = useCallback(

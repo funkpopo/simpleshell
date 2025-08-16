@@ -1,4 +1,5 @@
 import React, { memo, useState, useEffect } from "react";
+import useAutoCleanup from "../hooks/useAutoCleanup";
 import { Box, Paper, Typography, IconButton, Divider } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import WebTerminal from "./WebTerminal.jsx";
@@ -141,6 +142,9 @@ const MergedTabContent = memo(
     const [isDragging, setIsDragging] = useState(false);
     const [dragType, setDragType] = useState(null); // 'horizontal' | 'vertical'
 
+    // 使用自动清理Hook
+    const { addEventListener, addTimeout } = useAutoCleanup();
+
     // 处理分屏头部点击，切换活跃标签页
     const handleSplitHeaderClick = (tabId) => {
       setActiveSplitTabId(tabId);
@@ -199,7 +203,7 @@ const MergedTabContent = memo(
         document.body.style.userSelect = "";
 
         // 触发终端大小调整
-        setTimeout(() => {
+        addTimeout(() => {
           window.dispatchEvent(new Event("resize"));
         }, 100);
       }
@@ -208,15 +212,11 @@ const MergedTabContent = memo(
     // 添加全局事件监听
     useEffect(() => {
       if (isDragging) {
-        document.addEventListener("mousemove", handleMouseMove);
-        document.addEventListener("mouseup", handleMouseUp);
-
-        return () => {
-          document.removeEventListener("mousemove", handleMouseMove);
-          document.removeEventListener("mouseup", handleMouseUp);
-        };
+        // 使用 addEventListener 自动管理事件监听器，组件卸载时自动清理
+        addEventListener(document, "mousemove", handleMouseMove);
+        addEventListener(document, "mouseup", handleMouseUp);
       }
-    }, [isDragging, dragType]);
+    }, [isDragging, dragType, addEventListener, handleMouseMove, handleMouseUp]);
 
     // 初始化活跃标签页状态
     useEffect(() => {
@@ -291,7 +291,7 @@ const MergedTabContent = memo(
           setLayoutUpdateKey((prev) => prev + 1);
 
           // 延迟触发resize事件，确保DOM布局已更新
-          setTimeout(() => {
+          addTimeout(() => {
             window.dispatchEvent(new Event("resize"));
 
             // 如果是分屏操作，需要通知所有相关终端进行尺寸适配
@@ -332,19 +332,15 @@ const MergedTabContent = memo(
         }
       };
 
-      window.addEventListener("splitLayoutChanged", handleSplitLayoutChanged);
-      return () =>
-        window.removeEventListener(
-          "splitLayoutChanged",
-          handleSplitLayoutChanged,
-        );
-    }, [currentTabId, mergedTabs]);
+      // 使用 addEventListener 自动管理事件监听器，组件卸载时自动清理
+      addEventListener(window, "splitLayoutChanged", handleSplitLayoutChanged);
+    }, [currentTabId, mergedTabs, addEventListener]);
 
     // 当合并状态改变时，仅进行布局调整
     useEffect(() => {
       if (mergedTabs && mergedTabs.length > 1) {
         // 延迟触发布局调整，确保DOM已经更新
-        const timer = setTimeout(() => {
+        addTimeout(() => {
           setLayoutUpdateKey((prev) => prev + 1);
 
           // 触发resize事件通知终端进行尺寸适配
