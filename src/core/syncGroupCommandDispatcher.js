@@ -6,7 +6,6 @@ import { findGroupByTab } from "./syncInputGroups";
  * @param {string} command - 需要分发的命令（不带回车）
  */
 export function dispatchCommandToGroup(tabId, command) {
-  console.log("dispatchCommandToGroup called:", { tabId, command });
 
   if (!window.terminalAPI || !window.terminalAPI.sendToProcess) {
     console.error("window.terminalAPI.sendToProcess not available");
@@ -21,22 +20,12 @@ export function dispatchCommandToGroup(tabId, command) {
   let members = [tabId];
   if (group && group.members && group.members.length > 1) {
     members = group.members;
-    console.log("Found group members:", members);
-  } else {
-    console.log("No group found, using single tab:", tabId);
   }
-
-  console.log(
-    "Available process IDs in cache:",
-    Object.keys(window.processCache),
-  );
 
   members.forEach((targetTabId) => {
     const pid = window.processCache[targetTabId];
-    console.log(`Sending command to tab ${targetTabId}, pid: ${pid}`);
     if (pid) {
       window.terminalAPI.sendToProcess(pid, command + "\r");
-      console.log(`Command sent successfully to pid ${pid}`);
     } else {
       console.warn(`No process ID found for tab ${targetTabId}`);
     }

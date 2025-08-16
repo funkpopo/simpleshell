@@ -143,7 +143,6 @@ const MergedTabContent = memo(
 
     // 处理分屏头部点击，切换活跃标签页
     const handleSplitHeaderClick = (tabId) => {
-      console.log("分屏头部点击:", tabId);
       setActiveSplitTabId(tabId);
 
       // 触发自定义事件，通知App组件更新右侧面板的目标标签页
@@ -155,7 +154,6 @@ const MergedTabContent = memo(
           },
         }),
       );
-      console.log("已触发 activeSplitTabChanged 事件:", tabId);
     };
 
     // 处理拖拽开始
@@ -226,11 +224,6 @@ const MergedTabContent = memo(
         if (!activeSplitTabId) {
           // 默认选择第一个标签页作为活跃标签页
           const firstTabId = mergedTabs[0]?.id;
-          console.log("MergedTabContent初始化活跃分屏标签页:", firstTabId);
-          console.log(
-            "可用的分屏标签:",
-            mergedTabs.map((tab) => ({ id: tab.id, label: tab.label })),
-          );
           setActiveSplitTabId(firstTabId);
 
           // 立即触发事件通知App组件
@@ -243,10 +236,6 @@ const MergedTabContent = memo(
                 },
               }),
             );
-            console.log(
-              "MergedTabContent已触发 activeSplitTabChanged 事件:",
-              firstTabId,
-            );
           }
         } else {
           // 检查当前活跃标签是否在新的分屏标签列表中
@@ -255,7 +244,6 @@ const MergedTabContent = memo(
           );
           if (!isActiveTabInMerged) {
             const firstTabId = mergedTabs[0]?.id;
-            console.log("当前活跃标签不在分屏中，重置为第一个:", firstTabId);
             setActiveSplitTabId(firstTabId);
 
             if (firstTabId) {
@@ -272,7 +260,6 @@ const MergedTabContent = memo(
         }
       } else if (mergedTabs && mergedTabs.length === 1) {
         // 单个标签页时，重置活跃状态
-        console.log("MergedTabContent重置活跃分屏标签页状态");
         setActiveSplitTabId(null);
 
         // 通知App组件清除活跃分屏标签页
