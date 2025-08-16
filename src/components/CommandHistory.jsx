@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import useAutoCleanup from "../hooks/useAutoCleanup";
 import { FixedSizeList as List } from "react-window";
 import {
   Box,
@@ -182,6 +183,9 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     }
   }, [open]);
 
+  // 使用自动清理Hook
+  const { addResizeObserver } = useAutoCleanup();
+
   // 动态计算容器高度
   useEffect(() => {
     const updateHeight = () => {
@@ -195,22 +199,11 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
     updateHeight();
 
-    let resizeObserver;
-    try {
-      resizeObserver = new ResizeObserver(updateHeight);
-      if (containerRef.current) {
-        resizeObserver.observe(containerRef.current);
-      }
-    } catch (error) {
-      // ResizeObserver 不可用，使用默认高度
+    // 使用 addResizeObserver 自动管理观察器，组件卸载时自动清理
+    if (containerRef.current) {
+      addResizeObserver(updateHeight, containerRef.current);
     }
-
-    return () => {
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
-    };
-  }, [open]);
+  }, [open, addResizeObserver]);
 
   // 加载历史记录
   const loadHistory = async () => {

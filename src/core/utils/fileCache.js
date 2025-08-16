@@ -198,8 +198,13 @@ class FileCache {
   }
 
   startPeriodicCleanup(intervalMs = 1800000, maxAgeMs = 3600000) {
+    // 如果已经有清理定时器在运行，先清理它
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+    }
+
     // 默认30分钟清理一次，1小时过期
-    setInterval(async () => {
+    this.cleanupTimer = setInterval(async () => {
       try {
         await this.cleanupExpiredCaches(maxAgeMs);
       } catch (error) {
@@ -214,6 +219,14 @@ class FileCache {
       `Started periodic cache cleanup (interval: ${intervalMs}ms, maxAge: ${maxAgeMs}ms)`,
       "INFO",
     );
+  }
+
+  stopPeriodicCleanup() {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+      this.logToFile("Stopped periodic cache cleanup", "INFO");
+    }
   }
 }
 

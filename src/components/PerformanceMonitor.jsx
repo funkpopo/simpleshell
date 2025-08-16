@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import useAutoCleanup from "../hooks/useAutoCleanup";
 import {
   Box,
   Card,
@@ -59,8 +60,6 @@ const PerformanceMonitor = ({ isVisible = false }) => {
     cores: 0,
     performanceLevel: "unknown",
   });
-
-  const intervalRef = useRef(null);
 
   // 更新性能数据
   const updatePerformanceData = () => {
@@ -123,24 +122,17 @@ const PerformanceMonitor = ({ isVisible = false }) => {
     updatePerformanceData();
   };
 
+  // 使用自动清理Hook
+  const { addInterval } = useAutoCleanup();
+
   // 定期更新数据
   useEffect(() => {
     if (isVisible) {
       updatePerformanceData();
-      intervalRef.current = setInterval(updatePerformanceData, 2000); // 每2秒更新
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      // 使用 addInterval 自动管理定时器，组件卸载时自动清理
+      addInterval(updatePerformanceData, 2000); // 每2秒更新
     }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [isVisible]);
+  }, [isVisible, addInterval]);
 
   if (!isVisible) {
     return null;

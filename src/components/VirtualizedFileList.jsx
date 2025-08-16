@@ -6,6 +6,7 @@ import React, {
   useState,
   useEffect,
 } from "react";
+import useAutoCleanup from "../hooks/useAutoCleanup";
 import { FixedSizeList as List } from "react-window";
 import {
   ListItem,
@@ -229,6 +230,7 @@ const VirtualizedFileList = ({
   devicePerformance = "medium", // 设备性能等级: 'low', 'medium', 'high'
 }) => {
   const theme = useTheme();
+  const { addResizeObserver, addTimeout } = useAutoCleanup();
   const containerRef = useRef(null);
   const listRef = useRef(null);
   const [containerHeight, setContainerHeight] = useState(400);
@@ -254,24 +256,11 @@ const VirtualizedFileList = ({
     // 初始计算
     updateHeight();
 
-    // 监听窗口大小变化
-    let resizeObserver;
-    try {
-      resizeObserver = new ResizeObserver(updateHeight);
-      if (containerRef.current) {
-        resizeObserver.observe(containerRef.current);
-      }
-    } catch (error) {
-      // ResizeObserver 不可用，降级到传统渲染
-      setVirtualizationError(true);
+    // 使用 addResizeObserver 自动管理观察器，组件卸载时自动清理
+    if (containerRef.current) {
+      addResizeObserver(updateHeight, containerRef.current);
     }
-
-    return () => {
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
-    };
-  }, []);
+  }, [addResizeObserver]);
 
   // 过滤文件（如果还有额外的搜索过滤需求）
   const processedFiles = useMemo(() => {
@@ -312,7 +301,7 @@ const VirtualizedFileList = ({
         clearTimeout(window.scrollingTimeout);
       }
 
-      window.scrollingTimeout = setTimeout(() => {
+      window.scrollingTimeout = addTimeout(() => {
         setIsScrolling(false);
       }, 150);
     },

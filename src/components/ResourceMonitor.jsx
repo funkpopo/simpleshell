@@ -1,4 +1,5 @@
 import React, { useState, useEffect, memo, useCallback, useRef } from "react";
+import useAutoCleanup from "../hooks/useAutoCleanup";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
@@ -124,7 +125,6 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   const [processesLoading, setProcessesLoading] = useState(false);
   const [error, setError] = useState(null);
   const [processError, setProcessError] = useState(null);
-  const [refreshInterval, setRefreshInterval] = useState(null);
   const [expanded, setExpanded] = useState({
     system: true,
     cpu: true,
@@ -177,25 +177,22 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
     }
   }, [currentTabId]);
 
+  // 使用自动清理Hook
+  const { addInterval } = useAutoCleanup();
+
   // 当侧边栏打开或标签页切换时获取信息
   useEffect(() => {
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-    }
-
     if (open) {
       fetchSystemInfo();
       fetchProcessList();
 
-      const interval = setInterval(() => {
+      // 使用 addInterval 自动管理定时器，组件卸载时自动清理
+      addInterval(() => {
         fetchSystemInfo();
         fetchProcessList();
       }, 5000); // 统一5秒刷新
-      setRefreshInterval(interval);
-
-      return () => clearInterval(interval);
     }
-  }, [open, currentTabId, fetchSystemInfo, fetchProcessList]);
+  }, [open, currentTabId, fetchSystemInfo, fetchProcessList, addInterval]);
 
   // 手动刷新
   const handleRefresh = useCallback(() => {

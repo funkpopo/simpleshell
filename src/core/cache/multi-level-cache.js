@@ -559,7 +559,12 @@ class MultiLevelCache extends EventEmitter {
    * 启动监控
    */
   startMonitoring() {
-    setInterval(() => {
+    // 如果已有监控定时器，先清理
+    if (this.monitoringTimer) {
+      clearInterval(this.monitoringTimer);
+    }
+
+    this.monitoringTimer = setInterval(() => {
       const stats = this.getStats();
       this.emit("metricsUpdate", stats);
 
@@ -575,9 +580,20 @@ class MultiLevelCache extends EventEmitter {
   }
 
   /**
+   * 停止监控
+   */
+  stopMonitoring() {
+    if (this.monitoringTimer) {
+      clearInterval(this.monitoringTimer);
+      this.monitoringTimer = null;
+    }
+  }
+
+  /**
    * 清理资源
    */
   dispose() {
+    this.stopMonitoring();
     this.clear();
     this.prefetchQueue.clear();
     this.prefetchPatterns.clear();
