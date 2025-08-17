@@ -118,6 +118,11 @@ const CustomTab = memo((props) => {
   // 处理拖拽开始 - 支持分屏功能和幽灵元素预览
   const handleDragStart = useCallback(
     (e) => {
+      // 先调用父组件的拖拽开始处理
+      if (onDragStart) {
+        onDragStart(e);
+      }
+      
       // 设置拖拽数据
       const dragData = {
         type: "tab",
@@ -175,11 +180,6 @@ const CustomTab = memo((props) => {
 
       // 使用requestAnimationFrame确保在下一帧创建预览
       requestAnimationFrame(createDragPreview);
-
-      // 调用原始的拖拽开始处理
-      if (onDragStart) {
-        onDragStart(e);
-      }
     },
     [tabId, index, label, onDragStart],
   );
