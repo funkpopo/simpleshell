@@ -1015,10 +1015,14 @@ function App() {
       setDraggedTabIndex(index);
       // 设置一些拖动时的数据
       e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", index);
+      
+      // 不再设置text/plain数据，因为CustomTab已经设置了application/json
+      // e.dataTransfer.setData("text/plain", index);
 
       // 使拖动的元素半透明
-      e.target.style.opacity = "0.5";
+      if (e.currentTarget) {
+        e.currentTarget.style.opacity = "0.5";
+      }
     },
     [tabs],
   );
@@ -1083,7 +1087,21 @@ function App() {
       const sourceIndex = draggedTabIndex;
 
       // 不需要拖放到自己身上
-      if (sourceIndex === targetIndex) return;
+      if (sourceIndex === targetIndex) {
+        // 重置拖动状态
+        setDraggedTabIndex(null);
+        setDragOverTabIndex(null);
+        setDragOperation(null);
+        setDragInsertPosition(null);
+        return;
+      }
+
+      console.log('Drop operation:', {
+        sourceIndex,
+        targetIndex,
+        dragOperation,
+        dragInsertPosition
+      });
 
       // 根据拖拽操作类型执行不同的操作
       if (dragOperation === "sort") {
@@ -1095,6 +1113,7 @@ function App() {
         reorderTab(sourceIndex, insertIndex);
       } else if (dragOperation === "merge") {
         // 合并操作：将源标签合并到目标标签
+        console.log('Merging tabs:', sourceIndex, '->', targetIndex);
         mergeTabIntoTarget(sourceIndex, targetIndex);
       }
     }
@@ -1110,7 +1129,9 @@ function App() {
   // 处理拖动结束（无论是否成功放置）
   const handleDragEnd = (e) => {
     // 恢复透明度
-    e.target.style.opacity = "1";
+    if (e.currentTarget) {
+      e.currentTarget.style.opacity = "1";
+    }
     setDraggedTabIndex(null);
     setDragOverTabIndex(null);
     setDragOperation(null);
