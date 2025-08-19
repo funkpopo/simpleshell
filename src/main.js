@@ -16,6 +16,8 @@ const terminalManager = require("./modules/terminal");
 const commandHistoryService = require("./modules/terminal/command-history");
 const fileCache = require("./core/utils/fileCache");
 const connectionManager = require("./modules/connection");
+const { getNetworkStateManager } = require("./core/utils/networkStateManager");
+const { getReconnectionManager } = require("./core/utils/reconnectionManager");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -47,6 +49,12 @@ let nextRequestId = 1;
 
 // 全局变量
 const terminalProcesses = new Map(); // 存储终端进程ID映射
+
+// 网络状态管理器
+let networkStateManager = null;
+
+// 重连管理器
+let reconnectionManager = null;
 
 // 用于跟踪流式请求的会话
 const streamSessions = new Map(); // 存储会话ID -> 请求ID的映射
@@ -91,6 +99,27 @@ function getWorkerPath() {
 
   // 如果都找不到，返回null
   throw new Error("找不到AI worker文件");
+}
+
+// 检查错误是否为网络相关错误
+function isNetworkRelatedError(error) {
+  const networkErrorMessages = [
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'Connection timed out',
+    'Network is unreachable',
+    'Host is unreachable',
+    'Connection refused',
+    'DNS解析失败',
+    'SSH连接超时'
+  ];
+
+  const errorMessage = error.message || error.toString();
+  return networkErrorMessages.some(msg => errorMessage.includes(msg));
 }
 
 // 创建AI Worker线程
@@ -320,8 +349,109 @@ const createWindow = () => {
 };
 
 // 在应用准备好时创建窗口并初始化配置
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initLogger(app); // 初始化日志模块
+  
+  // 初始化网络状态管理器
+  try {
+    networkStateManager = getNetworkStateManager();
+    await networkStateManager.initialize();
+    
+    // 初始化重连管理器
+    reconnectionManager = getReconnectionManager();
+    
+    // 监听网络状态变化
+    networkStateManager.on('online', (data) => {
+      logToFile(`网络已恢复: ${JSON.stringify(data)}`, 'INFO');
+      
+      // 网络恢复时触发重连
+      if (reconnectionManager) {
+        reconnectionManager.onNetworkRestored();
+      }
+      
+      // 通知渲染进程网络状态变化
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('network-state-changed', {
+          isOnline: true,
+          quality: data.quality,
+          offlineDuration: data.offlineDuration
+        });
+      }
+    });
+    
+    networkStateManager.on('offline', (data) => {
+      logToFile(`网络已断开: ${JSON.stringify(data)}`, 'WARN');
+      // 通知渲染进程网络状态变化
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('network-state-changed', {
+          isOnline: false,
+          capabilities: data.capabilities,
+          timestamp: data.timestamp
+        });
+      }
+    });
+    
+    networkStateManager.on('activateOfflineMode', (data) => {
+      logToFile(`激活离线模式: ${data.message}`, 'INFO');
+      // 通知所有组件进入离线模式
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('activate-offline-mode', data);
+      }
+    });
+
+    // 设置重连管理器事件监听
+    if (reconnectionManager) {
+      reconnectionManager.on('execute-reconnection', async (data) => {
+        const { connectionId, config, resultEvent } = data;
+        logToFile(`执行重连请求: ${connectionId}`, 'INFO');
+        
+        try {
+          // 这里根据连接类型执行重连
+          if (config.type === 'ssh') {
+            const connectionInfo = await connectionManager.getSSHConnection(config);
+            reconnectionManager.emit(resultEvent, true);
+            
+            // 通知渲染进程连接已恢复
+            const mainWindow = BrowserWindow.getAllWindows()[0];
+            if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+              mainWindow.webContents.send('connection-restored', {
+                connectionId,
+                config
+              });
+            }
+          } else {
+            reconnectionManager.emit(resultEvent, false);
+          }
+        } catch (error) {
+          logToFile(`重连失败: ${connectionId} - ${error.message}`, 'ERROR');
+          reconnectionManager.emit(resultEvent, false);
+        }
+      });
+
+      reconnectionManager.on('reconnectionSuccess', (data) => {
+        logToFile(`重连成功: ${JSON.stringify(data)}`, 'INFO');
+        const mainWindow = BrowserWindow.getAllWindows()[0];
+        if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+          mainWindow.webContents.send('reconnection-success', data);
+        }
+      });
+
+      reconnectionManager.on('reconnectionFailed', (data) => {
+        logToFile(`重连最终失败: ${JSON.stringify(data)}`, 'WARN');
+        const mainWindow = BrowserWindow.getAllWindows()[0];
+        if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+          mainWindow.webContents.send('reconnection-failed', data);
+        }
+      });
+    }
+    
+  } catch (error) {
+    logToFile(`网络状态管理器初始化失败: ${error.message}`, 'ERROR');
+  }
+  
   // Inject dependencies into configManager
   configManager.init(app, { logToFile }, require("./core/utils/crypto"));
   configManager.initializeMainConfig(); // 初始化主配置文件
@@ -706,6 +836,13 @@ function setupIPC(mainWindow) {
       throw new Error("Invalid SSH configuration");
     }
 
+    // 检查网络状态
+    if (networkStateManager && !networkStateManager.isFeatureAvailable('sshConnections')) {
+      const offlineMessage = networkStateManager.getOfflineMessage('sshConnections');
+      logToFile(`SSH连接被阻止: ${offlineMessage}`, 'WARN');
+      throw new Error(offlineMessage);
+    }
+
     try {
       // 使用连接池获取SSH连接
       const connectionInfo =
@@ -917,6 +1054,16 @@ function setupIPC(mainWindow) {
       }
     } catch (error) {
       logToFile(`Failed to start SSH connection: ${error.message}`, "ERROR");
+      
+      // 如果是网络相关错误且重连管理器可用，注册失败连接
+      if (reconnectionManager && isNetworkRelatedError(error)) {
+        const connectionId = `ssh-${sshConfig.host}-${sshConfig.port || 22}-${sshConfig.username}`;
+        reconnectionManager.registerFailedConnection(connectionId, {
+          ...sshConfig,
+          type: 'ssh'
+        }, error);
+      }
+      
       throw error;
     }
   });
@@ -2144,6 +2291,13 @@ function setupIPC(mainWindow) {
   });
 
   ipcMain.handle("deleteFile", async (event, tabId, filePath, isDirectory) => {
+    // 检查网络状态和文件操作权限
+    if (networkStateManager && !networkStateManager.isFeatureAvailable('fileOperations')) {
+      const offlineMessage = networkStateManager.getOfflineMessage('fileOperations');
+      logToFile(`文件删除操作被阻止: ${offlineMessage}`, 'WARN');
+      return { success: false, error: offlineMessage };
+    }
+
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -3166,6 +3320,87 @@ function setupIPC(mainWindow) {
       return { success: true };
     } catch (error) {
       logToFile(`更新预取设置失败: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 网络状态管理相关API
+  ipcMain.handle("network:getState", async () => {
+    if (!networkStateManager) {
+      return { success: false, error: "网络状态管理器未初始化" };
+    }
+    try {
+      const state = networkStateManager.getNetworkState();
+      return { success: true, data: state };
+    } catch (error) {
+      logToFile(`获取网络状态失败: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("network:checkNow", async () => {
+    if (!networkStateManager) {
+      return { success: false, error: "网络状态管理器未初始化" };
+    }
+    try {
+      const result = await networkStateManager.forceCheck();
+      return { success: true, data: result };
+    } catch (error) {
+      logToFile(`手动网络检测失败: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("network:isFeatureAvailable", async (event, feature) => {
+    if (!networkStateManager) {
+      return { success: true, data: true }; // 如果网络管理器未初始化，默认所有功能可用
+    }
+    try {
+      const available = networkStateManager.isFeatureAvailable(feature);
+      const message = available ? null : networkStateManager.getOfflineMessage(feature);
+      return { success: true, data: { available, message } };
+    } catch (error) {
+      logToFile(`检查功能可用性失败: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 重连管理相关API
+  ipcMain.handle("reconnection:getStatus", async () => {
+    if (!reconnectionManager) {
+      return { success: false, error: "重连管理器未初始化" };
+    }
+    try {
+      const status = reconnectionManager.getReconnectionStatus();
+      return { success: true, data: status };
+    } catch (error) {
+      logToFile(`获取重连状态失败: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("reconnection:manual", async (event, connectionId) => {
+    if (!reconnectionManager) {
+      return { success: false, error: "重连管理器未初始化" };
+    }
+    try {
+      const result = await reconnectionManager.manualReconnect(connectionId);
+      return { success: true, data: result };
+    } catch (error) {
+      logToFile(`手动重连失败: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("reconnection:cancel", async (event, connectionId) => {
+    if (!reconnectionManager) {
+      return { success: false, error: "重连管理器未初始化" };
+    }
+    try {
+      const result = reconnectionManager.cancelReconnection(connectionId);
+      return { success: true, data: result };
+    } catch (error) {
+      logToFile(`取消重连失败: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   });
