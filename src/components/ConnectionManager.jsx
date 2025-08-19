@@ -840,7 +840,11 @@ const ConnectionManager = memo(
                       // 检查主文本是否需要省略
                       estimateTextWidth(connection.name || connection.host) >
                       maxDisplayWidth ? (
-                        <Tooltip title={connection.name || connection.host}>
+                        <Tooltip 
+                          title={connection.name || connection.host}
+                          placement="top"
+                          arrow
+                        >
                           <span>{connection.name || connection.host}</span>
                         </Tooltip>
                       ) : (
@@ -848,14 +852,8 @@ const ConnectionManager = memo(
                       )
                     }
                     secondary={
-                      // 只有在注释内容被省略时才显示浮动标签
-                      isSecondaryTextTruncated ? (
-                        <Tooltip title={secondaryText}>
-                          <span>{secondaryText}</span>
-                        </Tooltip>
-                      ) : (
-                        <span>{secondaryText}</span>
-                      )
+                      // 副文本不再显示tooltip，只显示内容
+                      <span>{secondaryText}</span>
                     }
                     sx={{
                       my: 0,
