@@ -14,7 +14,7 @@ class IPCManager {
       terminal: null,
       file: null,
       settings: null,
-      app: null
+      app: null,
     };
     this.isInitialized = false;
   }
@@ -33,30 +33,36 @@ class IPCManager {
       return;
     }
 
-    const { childProcesses, terminalProcesses, aiWorker, mainWindow } = dependencies;
+    const { childProcesses, terminalProcesses, aiWorker, mainWindow } =
+      dependencies;
 
     try {
       // 创建各个处理器实例
-      this.handlers.terminal = new TerminalHandlers(childProcesses, terminalProcesses);
+      this.handlers.terminal = new TerminalHandlers(
+        childProcesses,
+        terminalProcesses,
+      );
       this.handlers.file = new FileHandlers();
       this.handlers.settings = new SettingsHandlers();
       this.handlers.app = new AppHandlers();
 
       // 注册所有处理器
       this.registerAllHandlers();
-      
+
       // 如果有AI Worker，初始化AI处理器
       if (aiWorker) {
         this.initializeAIHandlers(aiWorker, mainWindow);
       }
 
       this.isInitialized = true;
-      
+
       // 输出统计信息
       const stats = ipcRegistry.getStatistics();
       logToFile(`IPC Manager initialized with ${stats.total} handlers`, "INFO");
-      logToFile(`Handler distribution: ${JSON.stringify(stats.byCategory)}`, "DEBUG");
-      
+      logToFile(
+        `Handler distribution: ${JSON.stringify(stats.byCategory)}`,
+        "DEBUG",
+      );
     } catch (error) {
       logToFile(`Failed to initialize IPC Manager: ${error.message}`, "ERROR");
       throw error;
@@ -71,7 +77,7 @@ class IPCManager {
     if (this.handlers.terminal) {
       const terminalHandlers = this.handlers.terminal.getHandlers();
       ipcRegistry.registerBatch(terminalHandlers);
-      
+
       // 注册终端监听器
       const terminalListeners = this.handlers.terminal.getListeners();
       for (const listener of terminalListeners) {
@@ -108,10 +114,10 @@ class IPCManager {
     try {
       const AIHandlers = require("../ipc/handlers/aiHandlers");
       this.handlers.ai = new AIHandlers(aiWorker, mainWindow);
-      
+
       const aiHandlers = this.handlers.ai.getHandlers();
       ipcRegistry.registerBatch(aiHandlers);
-      
+
       logToFile("AI handlers initialized", "INFO");
     } catch (error) {
       logToFile(`Failed to initialize AI handlers: ${error.message}`, "ERROR");
@@ -124,13 +130,19 @@ class IPCManager {
    */
   cleanupCategory(category) {
     const count = ipcRegistry.unregisterCategory(category);
-    
+
     // 清理处理器实例
-    if (this.handlers[category] && typeof this.handlers[category].cleanup === 'function') {
+    if (
+      this.handlers[category] &&
+      typeof this.handlers[category].cleanup === "function"
+    ) {
       this.handlers[category].cleanup();
     }
-    
-    logToFile(`Cleaned up ${count} handlers from category: ${category}`, "INFO");
+
+    logToFile(
+      `Cleaned up ${count} handlers from category: ${category}`,
+      "INFO",
+    );
     return count;
   }
 
@@ -139,25 +151,31 @@ class IPCManager {
    */
   cleanup() {
     logToFile("Starting IPC Manager cleanup", "INFO");
-    
+
     // 清理所有处理器实例
     for (const [category, handler] of Object.entries(this.handlers)) {
-      if (handler && typeof handler.cleanup === 'function') {
+      if (handler && typeof handler.cleanup === "function") {
         try {
           handler.cleanup();
           logToFile(`Cleaned up ${category} handler instance`, "DEBUG");
         } catch (error) {
-          logToFile(`Error cleaning up ${category} handler: ${error.message}`, "ERROR");
+          logToFile(
+            `Error cleaning up ${category} handler: ${error.message}`,
+            "ERROR",
+          );
         }
       }
     }
-    
+
     // 清理IPC注册表
     const cleanedCount = ipcRegistry.cleanup();
-    
+
     this.isInitialized = false;
-    logToFile(`IPC Manager cleanup complete. Removed ${cleanedCount} handlers`, "INFO");
-    
+    logToFile(
+      `IPC Manager cleanup complete. Removed ${cleanedCount} handlers`,
+      "INFO",
+    );
+
     return cleanedCount;
   }
 
@@ -183,20 +201,20 @@ class IPCManager {
   reloadCategory(category) {
     // 先清理旧的处理器
     this.cleanupCategory(category);
-    
+
     // 重新注册处理器
     if (this.handlers[category]) {
       const handlers = this.handlers[category].getHandlers();
       ipcRegistry.registerBatch(handlers);
-      
+
       // 如果有监听器，也重新注册
-      if (typeof this.handlers[category].getListeners === 'function') {
+      if (typeof this.handlers[category].getListeners === "function") {
         const listeners = this.handlers[category].getListeners();
         for (const listener of listeners) {
           ipcRegistry.on(listener.channel, listener.category, listener.handler);
         }
       }
-      
+
       logToFile(`Reloaded ${category} handlers`, "INFO");
     }
   }

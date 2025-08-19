@@ -56,11 +56,15 @@
   border-radius: 4px;
 }
 
-[data-mui-color-scheme="dark"] .ai-message-content pre::-webkit-scrollbar-track {
+[data-mui-color-scheme="dark"]
+  .ai-message-content
+  pre::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.1);
 }
 
-[data-mui-color-scheme="dark"] .ai-message-content pre::-webkit-scrollbar-thumb {
+[data-mui-color-scheme="dark"]
+  .ai-message-content
+  pre::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.3);
 }
 
@@ -68,7 +72,9 @@
   background: rgba(0, 0, 0, 0.5);
 }
 
-[data-mui-color-scheme="dark"] .ai-message-content pre::-webkit-scrollbar-thumb:hover {
+[data-mui-color-scheme="dark"]
+  .ai-message-content
+  pre::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
 }
 

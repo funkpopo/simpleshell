@@ -15,78 +15,78 @@ class SettingsHandlers {
       {
         channel: "settings:loadUISettings",
         category: "settings",
-        handler: this.loadUISettings.bind(this)
+        handler: this.loadUISettings.bind(this),
       },
       {
         channel: "settings:saveUISettings",
         category: "settings",
-        handler: this.saveUISettings.bind(this)
+        handler: this.saveUISettings.bind(this),
       },
       {
         channel: "settings:loadLogSettings",
         category: "settings",
-        handler: this.loadLogSettings.bind(this)
+        handler: this.loadLogSettings.bind(this),
       },
       {
         channel: "settings:saveLogSettings",
         category: "settings",
-        handler: this.saveLogSettings.bind(this)
+        handler: this.saveLogSettings.bind(this),
       },
       {
         channel: "settings:updateCacheSettings",
         category: "settings",
-        handler: this.updateCacheSettings.bind(this)
+        handler: this.updateCacheSettings.bind(this),
       },
       {
         channel: "settings:updatePrefetchSettings",
         category: "settings",
-        handler: this.updatePrefetchSettings.bind(this)
+        handler: this.updatePrefetchSettings.bind(this),
       },
       {
         channel: "get-shortcut-commands",
         category: "settings",
-        handler: this.getShortcutCommands.bind(this)
+        handler: this.getShortcutCommands.bind(this),
       },
       {
         channel: "save-shortcut-commands",
         category: "settings",
-        handler: this.saveShortcutCommands.bind(this)
+        handler: this.saveShortcutCommands.bind(this),
       },
       {
         channel: "command-history:add",
         category: "settings",
-        handler: this.addCommandHistory.bind(this)
+        handler: this.addCommandHistory.bind(this),
       },
       {
         channel: "command-history:incrementUsage",
         category: "settings",
-        handler: this.incrementCommandUsage.bind(this)
+        handler: this.incrementCommandUsage.bind(this),
       },
       {
         channel: "command-history:clear",
         category: "settings",
-        handler: this.clearCommandHistory.bind(this)
+        handler: this.clearCommandHistory.bind(this),
       },
       {
         channel: "command-history:getStatistics",
         category: "settings",
-        handler: this.getCommandStatistics.bind(this)
+        handler: this.getCommandStatistics.bind(this),
       },
       {
         channel: "command-history:getAll",
         category: "settings",
-        handler: this.getAllCommandHistory.bind(this)
+        handler: this.getAllCommandHistory.bind(this),
       },
       {
         channel: "command-history:delete",
         category: "settings",
-        handler: this.deleteCommand.bind(this)
+        handler: this.deleteCommand.bind(this),
       },
       {
         channel: "command-history:deleteBatch",
         category: "settings",
-        handler: this.deleteCommandBatch.bind(this)
-      }
+        handler: this.deleteCommandBatch.bind(this),
+      },
     ];
   }
 

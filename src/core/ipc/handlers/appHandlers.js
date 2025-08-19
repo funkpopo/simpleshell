@@ -14,33 +14,33 @@ class AppHandlers {
       {
         channel: "app:getVersion",
         category: "app",
-        handler: this.getVersion.bind(this)
+        handler: this.getVersion.bind(this),
       },
       {
         channel: "app:close",
         category: "app",
-        handler: this.closeApp.bind(this)
+        handler: this.closeApp.bind(this),
       },
       {
         channel: "app:reloadWindow",
         category: "app",
-        handler: this.reloadWindow.bind(this)
+        handler: this.reloadWindow.bind(this),
       },
       {
         channel: "app:openExternal",
         category: "app",
-        handler: this.openExternal.bind(this)
+        handler: this.openExternal.bind(this),
       },
       {
         channel: "app:checkForUpdate",
         category: "app",
-        handler: this.checkForUpdate.bind(this)
+        handler: this.checkForUpdate.bind(this),
       },
       {
         channel: "ip:query",
         category: "app",
-        handler: this.queryIP.bind(this)
-      }
+        handler: this.queryIP.bind(this),
+      },
     ];
   }
 
@@ -49,7 +49,7 @@ class AppHandlers {
     try {
       return {
         success: true,
-        version: app.getVersion()
+        version: app.getVersion(),
       };
     } catch (error) {
       logToFile(`Error getting app version: ${error.message}`, "ERROR");
@@ -85,19 +85,22 @@ class AppHandlers {
 
   async openExternal(event, url) {
     try {
-      if (!url || typeof url !== 'string') {
+      if (!url || typeof url !== "string") {
         return { success: false, error: "Invalid URL" };
       }
-      
+
       // 验证URL安全性
-      const allowedProtocols = ['http:', 'https:', 'mailto:'];
+      const allowedProtocols = ["http:", "https:", "mailto:"];
       const urlObj = new URL(url);
-      
+
       if (!allowedProtocols.includes(urlObj.protocol)) {
-        logToFile(`Blocked external URL with protocol: ${urlObj.protocol}`, "WARN");
+        logToFile(
+          `Blocked external URL with protocol: ${urlObj.protocol}`,
+          "WARN",
+        );
         return { success: false, error: "Unsupported protocol" };
       }
-      
+
       await shell.openExternal(url);
       logToFile(`Opened external URL: ${url}`, "INFO");
       return { success: true };
@@ -112,16 +115,16 @@ class AppHandlers {
       // 这里可以实现实际的更新检查逻辑
       // 例如调用 electron-updater 或自定义更新服务
       logToFile("Checking for updates...", "INFO");
-      
+
       // 模拟检查更新
       const currentVersion = app.getVersion();
       const updateInfo = {
         hasUpdate: false,
         currentVersion: currentVersion,
         latestVersion: currentVersion,
-        releaseNotes: ""
+        releaseNotes: "",
       };
-      
+
       return { success: true, updateInfo };
     } catch (error) {
       logToFile(`Error checking for updates: ${error.message}`, "ERROR");

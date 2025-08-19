@@ -149,7 +149,8 @@ class MemoryLeakDetector {
 
     // 检查内存增长
     if (previous.memory && current.memory) {
-      const memoryDiff = current.memory.usedJSHeapSize - previous.memory.usedJSHeapSize;
+      const memoryDiff =
+        current.memory.usedJSHeapSize - previous.memory.usedJSHeapSize;
       const timeDiff = (current.timestamp - previous.timestamp) / 60000; // 分钟
       const growthRate = memoryDiff / 1048576 / timeDiff; // MB per minute
 
@@ -214,7 +215,7 @@ class MemoryLeakDetector {
     window.dispatchEvent(
       new CustomEvent("memoryLeakDetected", {
         detail: report,
-      })
+      }),
     );
   }
 
@@ -289,10 +290,12 @@ class MemoryLeakDetector {
         listener.target.removeEventListener(
           listener.event,
           listener.handler,
-          listener.options
+          listener.options,
         );
       });
-      fixes.push(`清理了 ${window.__unusedEventListeners.size} 个未使用的事件监听器`);
+      fixes.push(
+        `清理了 ${window.__unusedEventListeners.size} 个未使用的事件监听器`,
+      );
     }
 
     // 清理孤立的定时器
@@ -309,7 +312,9 @@ class MemoryLeakDetector {
       window.__disconnectedObservers.forEach((observer) => {
         observer.disconnect();
       });
-      fixes.push(`清理了 ${window.__disconnectedObservers.size} 个断开连接的观察器`);
+      fixes.push(
+        `清理了 ${window.__disconnectedObservers.size} 个断开连接的观察器`,
+      );
     }
 
     console.log("自动修复完成:", fixes);
@@ -343,7 +348,10 @@ class MemoryLeakDetector {
     }
 
     // 基于当前状态提供建议
-    if (latest.resources?.eventListeners > this.warningThresholds.eventListenerCount) {
+    if (
+      latest.resources?.eventListeners >
+      this.warningThresholds.eventListenerCount
+    ) {
       recommendations.push({
         type: "eventListeners",
         priority: "high",

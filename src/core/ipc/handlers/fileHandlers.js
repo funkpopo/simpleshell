@@ -22,113 +22,113 @@ class FileHandlers {
       {
         channel: "listFiles",
         category: "file",
-        handler: this.listFiles.bind(this)
+        handler: this.listFiles.bind(this),
       },
       {
         channel: "copyFile",
         category: "file",
-        handler: this.copyFile.bind(this)
+        handler: this.copyFile.bind(this),
       },
       {
         channel: "moveFile",
         category: "file",
-        handler: this.moveFile.bind(this)
+        handler: this.moveFile.bind(this),
       },
       {
         channel: "deleteFile",
         category: "file",
-        handler: this.deleteFile.bind(this)
+        handler: this.deleteFile.bind(this),
       },
       {
         channel: "createFolder",
         category: "file",
-        handler: this.createFolder.bind(this)
+        handler: this.createFolder.bind(this),
       },
       {
         channel: "createFile",
         category: "file",
-        handler: this.createFile.bind(this)
+        handler: this.createFile.bind(this),
       },
       {
         channel: "renameFile",
         category: "file",
-        handler: this.renameFile.bind(this)
+        handler: this.renameFile.bind(this),
       },
       {
         channel: "downloadFile",
         category: "file",
-        handler: this.downloadFile.bind(this)
+        handler: this.downloadFile.bind(this),
       },
       {
         channel: "downloadFolder",
         category: "file",
-        handler: this.downloadFolder.bind(this)
+        handler: this.downloadFolder.bind(this),
       },
       {
         channel: "getFilePermissions",
         category: "file",
-        handler: this.getFilePermissions.bind(this)
+        handler: this.getFilePermissions.bind(this),
       },
       {
         channel: "getAbsolutePath",
         category: "file",
-        handler: this.getAbsolutePath.bind(this)
+        handler: this.getAbsolutePath.bind(this),
       },
       {
         channel: "readFileContent",
         category: "file",
-        handler: this.readFileContent.bind(this)
+        handler: this.readFileContent.bind(this),
       },
       {
         channel: "readFileAsBase64",
         category: "file",
-        handler: this.readFileAsBase64.bind(this)
+        handler: this.readFileAsBase64.bind(this),
       },
       {
         channel: "saveFileContent",
         category: "file",
-        handler: this.saveFileContent.bind(this)
+        handler: this.saveFileContent.bind(this),
       },
       {
         channel: "checkPathExists",
         category: "file",
-        handler: this.checkPathExists.bind(this)
+        handler: this.checkPathExists.bind(this),
       },
       {
         channel: "showItemInFolder",
         category: "file",
-        handler: this.showItemInFolder.bind(this)
+        handler: this.showItemInFolder.bind(this),
       },
       {
         channel: "cancelTransfer",
         category: "file",
-        handler: this.cancelTransfer.bind(this)
+        handler: this.cancelTransfer.bind(this),
       },
       {
         channel: "getSftpSession",
         category: "file",
-        handler: this.getSftpSession.bind(this)
+        handler: this.getSftpSession.bind(this),
       },
       {
         channel: "enqueueSftpOperation",
         category: "file",
-        handler: this.enqueueSftpOperation.bind(this)
+        handler: this.enqueueSftpOperation.bind(this),
       },
       {
         channel: "processSftpQueue",
         category: "file",
-        handler: this.processSftpQueue.bind(this)
+        handler: this.processSftpQueue.bind(this),
       },
       {
         channel: "cleanupFileCache",
         category: "file",
-        handler: this.cleanupFileCache.bind(this)
+        handler: this.cleanupFileCache.bind(this),
       },
       {
         channel: "cleanupTabCache",
         category: "file",
-        handler: this.cleanupTabCache.bind(this)
-      }
+        handler: this.cleanupTabCache.bind(this),
+      },
     ];
   }
 
@@ -366,10 +366,13 @@ class FileHandlers {
       try {
         sftpTransfer.cancelTransfer(transferKey);
       } catch (error) {
-        logToFile(`Error cleaning up transfer ${key}: ${error.message}`, "ERROR");
+        logToFile(
+          `Error cleaning up transfer ${key}: ${error.message}`,
+          "ERROR",
+        );
       }
     }
-    
+
     this.activeTransfers.clear();
     logToFile("All file transfers cleaned up", "INFO");
   }

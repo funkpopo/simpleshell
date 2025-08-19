@@ -53,7 +53,7 @@ const formatFileSize = (bytes, t) => {
     t("fileManager.units.kb"),
     t("fileManager.units.mb"),
     t("fileManager.units.gb"),
-    t("fileManager.units.tb")
+    t("fileManager.units.tb"),
   ];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
@@ -101,8 +101,8 @@ const FileManager = memo(
     const [isClosing, setIsClosing] = useState(false);
     const [notification, setNotification] = useState(null);
     const [uploadMenuAnchor, setUploadMenuAnchor] = useState(null);
-  const [sortMode, setSortMode] = useState("name"); // "name" or "time"
-  const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
+    const [sortMode, setSortMode] = useState("name"); // "name" or "time"
+    const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
 
     // 用于存储延迟移除定时器的引用
     const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
@@ -328,14 +328,17 @@ const FileManager = memo(
           };
 
           // 使用Promise.race和超时保证即使API响应慢也不会阻塞UI
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(t('fileManager.errors.refreshTimeout'))), 3000)
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error(t("fileManager.errors.refreshTimeout"))),
+              3000,
+            ),
           );
-          
+
           try {
             const response = await Promise.race([
               window.terminalAPI.listFiles(tabId, apiPath, options),
-              timeoutPromise
+              timeoutPromise,
             ]);
 
             if (response?.success) {
@@ -451,7 +454,12 @@ const FileManager = memo(
                   5000,
                 ); // 最长等待5秒
 
-                setError(t("fileManager.messages.retrying", { current: retryCount + 1, max: 5 }));
+                setError(
+                  t("fileManager.messages.retrying", {
+                    current: retryCount + 1,
+                    max: 5,
+                  }),
+                );
 
                 // 添加延迟，避免立即重试
                 setTimeout(() => {
@@ -462,7 +470,9 @@ const FileManager = memo(
             }
 
             // 重试失败或其他错误
-            setError(response?.error || t("fileManager.errors.loadDirectoryFailed"));
+            setError(
+              response?.error || t("fileManager.errors.loadDirectoryFailed"),
+            );
           }
         } else {
           setError(t("fileManager.errors.fileApiNotAvailable"));
@@ -475,7 +485,12 @@ const FileManager = memo(
           // 增加重试等待时间，指数退避算法
           const waitTime = Math.min(500 * Math.pow(1.5, retryCount), 5000); // 最长等待5秒
 
-          setError(t("fileManager.messages.retrying", { current: retryCount + 1, max: 5 }));
+          setError(
+            t("fileManager.messages.retrying", {
+              current: retryCount + 1,
+              max: 5,
+            }),
+          );
 
           // 添加延迟，避免立即重试
           setTimeout(() => {
@@ -484,7 +499,11 @@ const FileManager = memo(
           return;
         }
 
-        setError(t("fileManager.errors.loadDirectoryFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
+        setError(
+          t("fileManager.errors.loadDirectoryFailed") +
+            ": " +
+            (error.message || t("fileManager.errors.unknownError")),
+        );
       } finally {
         if (retryCount === 0 || retryCount >= 5) {
           // 更新重试次数
@@ -581,16 +600,21 @@ const FileManager = memo(
     };
 
     // 多选文件管理函数
-    const isFileSelected = useCallback((file) => {
-      return selectedFiles.some(selectedFile => 
-        selectedFile.name === file.name && selectedFile.modifyTime === file.modifyTime
-      );
-    }, [selectedFiles]);
+    const isFileSelected = useCallback(
+      (file) => {
+        return selectedFiles.some(
+          (selectedFile) =>
+            selectedFile.name === file.name &&
+            selectedFile.modifyTime === file.modifyTime,
+        );
+      },
+      [selectedFiles],
+    );
 
     // 清理重复选择项的辅助函数
     const deduplicateSelectedFiles = useCallback((files) => {
       const seen = new Set();
-      return files.filter(file => {
+      return files.filter((file) => {
         const key = `${file.name}-${file.modifyTime}`;
         if (seen.has(key)) {
           return false;
@@ -627,66 +651,87 @@ const FileManager = memo(
       });
     }, [files, searchTerm, sortMode]);
 
-    const handleFileSelect = useCallback((file, index, event) => {
-      const isMultiSelect = event.ctrlKey || event.metaKey;
-      const isRangeSelect = event.shiftKey;
-      
-      if (isRangeSelect && anchorIndex !== -1) {
-        // Shift范围选择 - 使用排序后的文件列表
-        const start = Math.min(anchorIndex, index);
-        const end = Math.max(anchorIndex, index);
-        const rangeFiles = filteredFiles.slice(start, end + 1);
-        
-        // 直接设置范围内的文件为选中状态（完全替换之前的选择）
-        setSelectedFiles(deduplicateSelectedFiles(rangeFiles));
-        setSelectedFile(file);
-        setLastSelectedIndex(index);
-        // 保持锚点不变，这样连续的Shift选择都从同一个起点开始
-      } else if (isMultiSelect) {
-        // Ctrl多选
-        if (isFileSelected(file)) {
-          // 取消选择 - 从当前选择中移除该文件
-          const newSelectedFiles = selectedFiles.filter(f => 
-            !(f.name === file.name && f.modifyTime === file.modifyTime)
-          );
-          setSelectedFiles(newSelectedFiles);
-          
-          // 如果取消选择的是当前的selectedFile，更新selectedFile
-          if (selectedFile && selectedFile.name === file.name && selectedFile.modifyTime === file.modifyTime) {
-            setSelectedFile(newSelectedFiles.length > 0 ? newSelectedFiles[0] : null);
-          }
-        } else {
-          // 添加到选择 - 防止重复添加
-          setSelectedFiles(prev => {
-            // 检查是否已经在选择列表中
-            const alreadySelected = prev.some(f => 
-              f.name === file.name && f.modifyTime === file.modifyTime
-            );
-            // 如果还没选中，则添加到列表
-            return alreadySelected ? prev : [...prev, file];
-          });
+    const handleFileSelect = useCallback(
+      (file, index, event) => {
+        const isMultiSelect = event.ctrlKey || event.metaKey;
+        const isRangeSelect = event.shiftKey;
+
+        if (isRangeSelect && anchorIndex !== -1) {
+          // Shift范围选择 - 使用排序后的文件列表
+          const start = Math.min(anchorIndex, index);
+          const end = Math.max(anchorIndex, index);
+          const rangeFiles = filteredFiles.slice(start, end + 1);
+
+          // 直接设置范围内的文件为选中状态（完全替换之前的选择）
+          setSelectedFiles(deduplicateSelectedFiles(rangeFiles));
           setSelectedFile(file);
+          setLastSelectedIndex(index);
+          // 保持锚点不变，这样连续的Shift选择都从同一个起点开始
+        } else if (isMultiSelect) {
+          // Ctrl多选
+          if (isFileSelected(file)) {
+            // 取消选择 - 从当前选择中移除该文件
+            const newSelectedFiles = selectedFiles.filter(
+              (f) =>
+                !(f.name === file.name && f.modifyTime === file.modifyTime),
+            );
+            setSelectedFiles(newSelectedFiles);
+
+            // 如果取消选择的是当前的selectedFile，更新selectedFile
+            if (
+              selectedFile &&
+              selectedFile.name === file.name &&
+              selectedFile.modifyTime === file.modifyTime
+            ) {
+              setSelectedFile(
+                newSelectedFiles.length > 0 ? newSelectedFiles[0] : null,
+              );
+            }
+          } else {
+            // 添加到选择 - 防止重复添加
+            setSelectedFiles((prev) => {
+              // 检查是否已经在选择列表中
+              const alreadySelected = prev.some(
+                (f) => f.name === file.name && f.modifyTime === file.modifyTime,
+              );
+              // 如果还没选中，则添加到列表
+              return alreadySelected ? prev : [...prev, file];
+            });
+            setSelectedFile(file);
+          }
+          setLastSelectedIndex(index);
+          setAnchorIndex(index); // Ctrl点击设置新的锚点
+        } else {
+          // 单选 - 清除所有选择，选中当前文件
+          setSelectedFiles([file]);
+          setSelectedFile(file);
+          setLastSelectedIndex(index);
+          setAnchorIndex(index); // 单击设置锚点，为后续的Shift选择做准备
         }
-        setLastSelectedIndex(index);
-        setAnchorIndex(index); // Ctrl点击设置新的锚点
-      } else {
-        // 单选 - 清除所有选择，选中当前文件
-        setSelectedFiles([file]);
-        setSelectedFile(file);
-        setLastSelectedIndex(index);
-        setAnchorIndex(index); // 单击设置锚点，为后续的Shift选择做准备
-      }
-    }, [anchorIndex, filteredFiles, isFileSelected, selectedFile, selectedFiles, deduplicateSelectedFiles]);
+      },
+      [
+        anchorIndex,
+        filteredFiles,
+        isFileSelected,
+        selectedFile,
+        selectedFiles,
+        deduplicateSelectedFiles,
+      ],
+    );
 
     // 获取当前选中的文件列表（用于批量操作）
     const getSelectedFiles = useCallback(() => {
-      return selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : []);
+      return selectedFiles.length > 0
+        ? selectedFiles
+        : selectedFile
+          ? [selectedFile]
+          : [];
     }, [selectedFiles, selectedFile]);
 
     // 处理批量操作确认
     const handleBatchOperationConfirm = useCallback((operation, files) => {
       const fileCount = files.length;
-      const fileList = files.map(f => f.name).join(', ');
+      const fileList = files.map((f) => f.name).join(", ");
       const message = `确认${operation} ${fileCount} 个文件？\n${fileList}`;
       return window.confirm(message);
     }, []);
@@ -694,14 +739,14 @@ const FileManager = memo(
     // 处理右键菜单
     const handleContextMenu = (event, file, index) => {
       event.preventDefault();
-      
+
       // 如果右键点击的文件没有被选中，则单选该文件
       if (!isFileSelected(file)) {
         setSelectedFiles([file]);
         setSelectedFile(file);
         setLastSelectedIndex(index);
       }
-      
+
       setContextMenu({
         mouseX: event.clientX,
         mouseY: event.clientY,
@@ -717,14 +762,16 @@ const FileManager = memo(
     const handleBatchDelete = async () => {
       const filesToDelete = getSelectedFiles();
       if (filesToDelete.length === 0) return;
-      
-      if (!handleBatchOperationConfirm(t('fileManager.delete'), filesToDelete)) {
+
+      if (
+        !handleBatchOperationConfirm(t("fileManager.delete"), filesToDelete)
+      ) {
         return;
       }
-      
+
       setLoading(true);
       setError(null);
-      
+
       try {
         for (const file of filesToDelete) {
           const fullPath =
@@ -742,23 +789,29 @@ const FileManager = memo(
             );
 
             if (!response?.success) {
-              setError(`${t("fileManager.errors.deleteFailed")} ${file.name}: ${response?.error || t("fileManager.errors.unknownError")}`);
+              setError(
+                `${t("fileManager.errors.deleteFailed")} ${file.name}: ${response?.error || t("fileManager.errors.unknownError")}`,
+              );
               break;
             }
           }
         }
-        
+
         // 清除选择状态
         setSelectedFile(null);
         setSelectedFiles([]);
         setLastSelectedIndex(-1);
         setAnchorIndex(-1);
-        
+
         // 刷新目录
         await loadDirectory(currentPath);
         refreshAfterUserActivity();
       } catch (error) {
-        setError(t("fileManager.errors.deleteFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
+        setError(
+          t("fileManager.errors.deleteFailed") +
+            ": " +
+            (error.message || t("fileManager.errors.unknownError")),
+        );
       } finally {
         setLoading(false);
         handleContextMenuClose();
@@ -769,16 +822,16 @@ const FileManager = memo(
     const handleDelete = async () => {
       const filesToDelete = getSelectedFiles();
       if (filesToDelete.length === 0) return;
-      
+
       if (filesToDelete.length > 1) {
         return handleBatchDelete();
       }
-      
+
       const fileToDelete = filesToDelete[0];
-      
+
       // 创建一个标识符，用于跟踪当前的删除操作
       const deleteOperationId = Date.now();
-      
+
       setLoading(true);
       setError(null);
       let retryCount = 0;
@@ -806,10 +859,10 @@ const FileManager = memo(
               setSelectedFiles([]);
               setLastSelectedIndex(-1);
               setAnchorIndex(-1);
-              
+
               // 成功删除，刷新目录
               await loadDirectory(currentPath);
-              
+
               // 删除操作完成后设置定时器再次检查
               refreshAfterUserActivity();
             } else if (
@@ -819,7 +872,10 @@ const FileManager = memo(
               // SFTP错误，尝试重试
               retryCount++;
               setError(
-                t("fileManager.messages.retrying", { current: retryCount, max: maxRetries }),
+                t("fileManager.messages.retrying", {
+                  current: retryCount,
+                  max: maxRetries,
+                }),
               );
 
               // 添加延迟后重试
@@ -841,14 +897,23 @@ const FileManager = memo(
           if (retryCount < maxRetries) {
             // 发生异常，尝试重试
             retryCount++;
-            setError(t("fileManager.messages.retrying", { current: retryCount, max: maxRetries }));
+            setError(
+              t("fileManager.messages.retrying", {
+                current: retryCount,
+                max: maxRetries,
+              }),
+            );
 
             // 添加延迟后重试
             setTimeout(attemptDelete, 500 * retryCount);
             return;
           }
 
-          setError(t("fileManager.errors.deleteFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
+          setError(
+            t("fileManager.errors.deleteFailed") +
+              ": " +
+              (error.message || t("fileManager.errors.unknownError")),
+          );
           // 即使删除失败也重置选中文件状态
           setSelectedFile(null);
           setSelectedFiles([]);
@@ -859,7 +924,7 @@ const FileManager = memo(
             // 确保无论成功失败都重置loading状态
             setLoading(false);
             handleContextMenuClose();
-            
+
             // 确保状态完全重置，允许新的删除操作
             setTimeout(() => {
               // 这个空的setTimeout确保状态更新在UI渲染循环中完成
@@ -955,7 +1020,8 @@ const FileManager = memo(
             // 标记传输完成
             updateTransferProgress(transferId, {
               progress: 100,
-              fileName: result.message || t("fileManager.messages.uploadComplete"),
+              fileName:
+                result.message || t("fileManager.messages.uploadComplete"),
             });
 
             // 传输完成后延迟移除
@@ -1013,12 +1079,20 @@ const FileManager = memo(
           !isUserCancellationError(error) &&
           !error.message?.includes("reply was never sent")
         ) {
-          setError(t("fileManager.errors.uploadFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
+          setError(
+            t("fileManager.errors.uploadFailed") +
+              ": " +
+              (error.message || t("fileManager.errors.unknownError")),
+          );
           // 更新所有未完成的传输为错误状态
           setTransferProgressList((prev) =>
             prev.map((transfer) =>
               transfer.progress < 100 && !transfer.isCancelled
-                ? { ...transfer, error: error.message || t("fileManager.errors.unknownError") }
+                ? {
+                    ...transfer,
+                    error:
+                      error.message || t("fileManager.errors.unknownError"),
+                  }
                 : transfer,
             ),
           );
@@ -1195,7 +1269,11 @@ const FileManager = memo(
           !isUserCancellationError(error) &&
           !error.message?.includes("reply was never sent")
         ) {
-          setError(t("fileManager.errors.uploadFailed") + ": " + (error.message || "未知错误"));
+          setError(
+            t("fileManager.errors.uploadFailed") +
+              ": " +
+              (error.message || "未知错误"),
+          );
         } else {
           logToFile(
             `FileManager: 跳过文件夹上传取消操作错误显示: ${error.message}`,
@@ -1232,36 +1310,44 @@ const FileManager = memo(
           }
         }
       } catch (error) {
-        setError(t("fileManager.errors.unknownError") + ": " + (error.message || t("fileManager.errors.unknownError")));
+        setError(
+          t("fileManager.errors.unknownError") +
+            ": " +
+            (error.message || t("fileManager.errors.unknownError")),
+        );
       }
       handleContextMenuClose();
     };
 
-  // 当搜索条件改变时重置选择状态
-  useEffect(() => {
-    // 重置所有选择状态
-    setSelectedFiles([]);
-    setSelectedFile(null);
-    setLastSelectedIndex(-1);
-    setAnchorIndex(-1);
-  }, [searchTerm]);
+    // 当搜索条件改变时重置选择状态
+    useEffect(() => {
+      // 重置所有选择状态
+      setSelectedFiles([]);
+      setSelectedFile(null);
+      setLastSelectedIndex(-1);
+      setAnchorIndex(-1);
+    }, [searchTerm]);
 
-  // 确保selectedFiles没有重复项
-  useEffect(() => {
-    if (selectedFiles.length > 0) {
-      const deduplicatedFiles = deduplicateSelectedFiles(selectedFiles);
-      if (deduplicatedFiles.length !== selectedFiles.length) {
-        console.warn('发现重复的选中文件，已自动去重', {
-          原数量: selectedFiles.length,
-          去重后数量: deduplicatedFiles.length,
-          重复文件: selectedFiles.filter((file, index, arr) => 
-            arr.findIndex(f => f.name === file.name && f.modifyTime === file.modifyTime) !== index
-          )
-        });
-        setSelectedFiles(deduplicatedFiles);
+    // 确保selectedFiles没有重复项
+    useEffect(() => {
+      if (selectedFiles.length > 0) {
+        const deduplicatedFiles = deduplicateSelectedFiles(selectedFiles);
+        if (deduplicatedFiles.length !== selectedFiles.length) {
+          console.warn("发现重复的选中文件，已自动去重", {
+            原数量: selectedFiles.length,
+            去重后数量: deduplicatedFiles.length,
+            重复文件: selectedFiles.filter(
+              (file, index, arr) =>
+                arr.findIndex(
+                  (f) =>
+                    f.name === file.name && f.modifyTime === file.modifyTime,
+                ) !== index,
+            ),
+          });
+          setSelectedFiles(deduplicatedFiles);
+        }
       }
-    }
-  }, [selectedFiles, deduplicateSelectedFiles]);
+    }, [selectedFiles, deduplicateSelectedFiles]);
 
     // 渲染文件列表
     const renderFileList = () => {
@@ -1558,7 +1644,9 @@ const FileManager = memo(
               return;
             } else {
               // 其他错误或已达到最大重试次数
-              setError(response?.error || t("fileManager.errors.createFolderFailed"));
+              setError(
+                response?.error || t("fileManager.errors.createFolderFailed"),
+              );
               setShowCreateFolderDialog(false);
             }
           } else {
@@ -1580,7 +1668,11 @@ const FileManager = memo(
             return;
           }
 
-          setError(t("fileManager.errors.createFolderFailed") + ": " + (error.message || "未知错误"));
+          setError(
+            t("fileManager.errors.createFolderFailed") +
+              ": " +
+              (error.message || "未知错误"),
+          );
           setShowCreateFolderDialog(false);
         } finally {
           if (retryCount === 0 || retryCount >= maxRetries) {
@@ -1623,13 +1715,19 @@ const FileManager = memo(
             // 创建文件操作完成后设置定时器再次检查
             refreshAfterUserActivity();
           } else {
-            setError(`${t("fileManager.errors.createFolderFailed")}: ${result.error || t("fileManager.errors.unknownError")}`);
+            setError(
+              `${t("fileManager.errors.createFolderFailed")}: ${result.error || t("fileManager.errors.unknownError")}`,
+            );
           }
         } else {
           setError(t("fileManager.errors.fileApiNotAvailable"));
         }
       } catch (error) {
-        setError(t("fileManager.errors.createFolderFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
+        setError(
+          t("fileManager.errors.createFolderFailed") +
+            ": " +
+            (error.message || t("fileManager.errors.unknownError")),
+        );
       } finally {
         setLoading(false);
         setShowCreateFileDialog(false);
@@ -1657,10 +1755,12 @@ const FileManager = memo(
         // 检查文件大小限制 (10MB)
         const maxFileSize = 10 * 1024 * 1024;
         if (file.size && file.size > maxFileSize) {
-          setError(`文件 "${file.name}" 大小为 ${formatFileSize(file.size, t)}，超过了 10MB 的预览限制。请下载文件后在本地查看。`);
+          setError(
+            `文件 "${file.name}" 大小为 ${formatFileSize(file.size, t)}，超过了 10MB 的预览限制。请下载文件后在本地查看。`,
+          );
           return;
         }
-        
+
         // 如果是文件，打开预览
         setFilePreview(file);
         setShowPreview(true);
@@ -1760,12 +1860,20 @@ const FileManager = memo(
           !transferCancelled &&
           !error.message?.includes("reply was never sent")
         ) {
-          setError(t("fileManager.errors.downloadFailed") + ": " + (error.message || t("fileManager.errors.unknownError")));
+          setError(
+            t("fileManager.errors.downloadFailed") +
+              ": " +
+              (error.message || t("fileManager.errors.unknownError")),
+          );
           // 更新所有未完成的传输为错误状态
           setTransferProgressList((prev) =>
             prev.map((transfer) =>
               transfer.progress < 100 && !transfer.isCancelled
-                ? { ...transfer, error: error.message || t("fileManager.errors.unknownError") }
+                ? {
+                    ...transfer,
+                    error:
+                      error.message || t("fileManager.errors.unknownError"),
+                  }
                 : transfer,
             ),
           );
@@ -2069,11 +2177,11 @@ const FileManager = memo(
     const handleRename = async () => {
       if (!selectedFile) return;
       setNewName(selectedFile.name);
-      
+
       // 先设置默认权限
       const defaultPermissions = selectedFile.isDirectory ? "755" : "644";
       setFilePermissions(defaultPermissions);
-      
+
       // 获取当前文件的权限
       try {
         const fullPath =
@@ -2082,9 +2190,12 @@ const FileManager = memo(
             : currentPath
               ? currentPath + "/" + selectedFile.name
               : selectedFile.name;
-              
+
         if (window.terminalAPI && window.terminalAPI.getFilePermissions) {
-          const response = await window.terminalAPI.getFilePermissions(tabId, fullPath);
+          const response = await window.terminalAPI.getFilePermissions(
+            tabId,
+            fullPath,
+          );
           if (response?.success && response.permissions) {
             setFilePermissions(response.permissions);
           }
@@ -2093,7 +2204,7 @@ const FileManager = memo(
         console.warn("Failed to get file permissions:", error);
         // 继续使用默认权限
       }
-      
+
       setPermissionsChanged(false);
       setShowRenameDialog(true);
       handleContextMenuClose();
@@ -2109,7 +2220,7 @@ const FileManager = memo(
       // 检查是否有更改
       const nameChanged = newName && newName !== selectedFile.name;
       const needsUpdate = nameChanged || permissionsChanged;
-      
+
       if (!needsUpdate) return;
 
       setLoading(true);
@@ -2129,7 +2240,11 @@ const FileManager = memo(
           let finalPath = oldPath;
 
           // 如果需要重命名
-          if (nameChanged && window.terminalAPI && window.terminalAPI.renameFile) {
+          if (
+            nameChanged &&
+            window.terminalAPI &&
+            window.terminalAPI.renameFile
+          ) {
             const renameResponse = await window.terminalAPI.renameFile(
               tabId,
               oldPath,
@@ -2138,11 +2253,9 @@ const FileManager = memo(
 
             if (renameResponse?.success) {
               // 重命名成功，更新最终路径
-              const dirPath =
-                currentPath === "/"
-                  ? "/"
-                  : currentPath || "/";
-              finalPath = dirPath === "/" ? `/${newName}` : `${dirPath}/${newName}`;
+              const dirPath = currentPath === "/" ? "/" : currentPath || "/";
+              finalPath =
+                dirPath === "/" ? `/${newName}` : `${dirPath}/${newName}`;
             } else if (
               renameResponse?.error?.includes("SFTP错误") &&
               retryCount < maxRetries
@@ -2160,7 +2273,11 @@ const FileManager = memo(
           }
 
           // 如果需要设置权限
-          if (permissionsChanged && window.terminalAPI && window.terminalAPI.setFilePermissions) {
+          if (
+            permissionsChanged &&
+            window.terminalAPI &&
+            window.terminalAPI.setFilePermissions
+          ) {
             const permResponse = await window.terminalAPI.setFilePermissions(
               tabId,
               finalPath,
@@ -2174,13 +2291,17 @@ const FileManager = memo(
               ) {
                 // SFTP错误，尝试重试
                 retryCount++;
-                setError(`设置权限失败，正在重试 (${retryCount}/${maxRetries})...`);
+                setError(
+                  `设置权限失败，正在重试 (${retryCount}/${maxRetries})...`,
+                );
                 setTimeout(attemptUpdate, 500 * retryCount);
                 return;
               } else {
                 // 设置权限失败，但如果重命名成功了，我们仍然显示警告而不是错误
                 if (nameChanged) {
-                  setError(`文件已重命名，但权限设置失败: ${permResponse?.error || "未知错误"}`);
+                  setError(
+                    `文件已重命名，但权限设置失败: ${permResponse?.error || "未知错误"}`,
+                  );
                 } else {
                   setError(permResponse?.error || "设置权限失败");
                   return;
@@ -2225,7 +2346,10 @@ const FileManager = memo(
       if (!open) return;
 
       // 防止在输入框中触发快捷键
-      if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+      if (
+        event.target.tagName === "INPUT" ||
+        event.target.tagName === "TEXTAREA"
+      ) {
         return;
       }
 
@@ -2235,7 +2359,7 @@ const FileManager = memo(
       if (event.ctrlKey && event.key === "d") {
         event.preventDefault();
         if (selectedFilesData.length > 0) {
-          if (selectedFilesData.some(f => f.isDirectory)) {
+          if (selectedFilesData.some((f) => f.isDirectory)) {
             handleDownloadFolder();
           } else {
             handleDownload();
@@ -2488,7 +2612,9 @@ const FileManager = memo(
             sx={{ flexGrow: 1 }}
             fontWeight="medium"
           >
-            {tabName ? `${t("fileManager.title")} - ${tabName}` : t("fileManager.title")}
+            {tabName
+              ? `${t("fileManager.title")} - ${tabName}`
+              : t("fileManager.title")}
           </Typography>
           <IconButton
             size="small"
@@ -2547,7 +2673,9 @@ const FileManager = memo(
           >
             <Tooltip title={t("fileManager.statusBar.lastRefresh")}>
               <Box component="span" sx={{ fontSize: "0.75rem", opacity: 0.8 }}>
-                {t("fileManager.statusBar.lastRefresh", { time: formatLastRefreshTime(lastRefreshTime) })}
+                {t("fileManager.statusBar.lastRefresh", {
+                  time: formatLastRefreshTime(lastRefreshTime),
+                })}
               </Box>
             </Tooltip>
           </Box>
@@ -2648,12 +2776,12 @@ const FileManager = memo(
             <IconButton
               size="small"
               onClick={handleSortMenuOpen}
-              sx={{ 
+              sx={{
                 ml: 0.5,
                 color: theme.palette.text.secondary,
-                '&:hover': {
+                "&:hover": {
                   color: theme.palette.primary.main,
-                }
+                },
               }}
             >
               {sortMode === "time" ? (
@@ -2698,7 +2826,11 @@ const FileManager = memo(
                 <DriveFileRenameOutlineIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>{t("fileManager.rename")}</ListItemText>
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ ml: 2 }}
+              >
                 F2
               </Typography>
             </MenuItem>
@@ -2711,7 +2843,11 @@ const FileManager = memo(
                 <LinkIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>{t("fileManager.copy")}</ListItemText>
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ ml: 2 }}
+              >
                 Ctrl+Shift+C
               </Typography>
             </MenuItem>
@@ -2739,29 +2875,41 @@ const FileManager = memo(
           )}
 
           {/* 下载操作：支持单选和多选 */}
-          {getSelectedFiles().some(f => !f.isDirectory) && (
+          {getSelectedFiles().some((f) => !f.isDirectory) && (
             <MenuItem onClick={handleDownload}>
               <ListItemIcon>
                 <DownloadIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>
-                {selectedFiles.length > 1 ? `下载 ${selectedFiles.filter(f => !f.isDirectory).length} 个文件` : '下载文件'}
+                {selectedFiles.length > 1
+                  ? `下载 ${selectedFiles.filter((f) => !f.isDirectory).length} 个文件`
+                  : "下载文件"}
               </ListItemText>
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ ml: 2 }}
+              >
                 Ctrl+D
               </Typography>
             </MenuItem>
           )}
 
-          {getSelectedFiles().some(f => f.isDirectory) && (
+          {getSelectedFiles().some((f) => f.isDirectory) && (
             <MenuItem onClick={handleDownloadFolder}>
               <ListItemIcon>
                 <DownloadIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>
-                {selectedFiles.length > 1 ? `下载 ${selectedFiles.filter(f => f.isDirectory).length} 个文件夹` : '下载文件夹'}
+                {selectedFiles.length > 1
+                  ? `下载 ${selectedFiles.filter((f) => f.isDirectory).length} 个文件夹`
+                  : "下载文件夹"}
               </ListItemText>
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ ml: 2 }}
+              >
                 Ctrl+D
               </Typography>
             </MenuItem>
@@ -2775,7 +2923,9 @@ const FileManager = memo(
               <DeleteIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>
-              {selectedFiles.length > 1 ? `删除 ${selectedFiles.length} 个项目` : '删除'}
+              {selectedFiles.length > 1
+                ? `删除 ${selectedFiles.length} 个项目`
+                : "删除"}
             </ListItemText>
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
               Delete
@@ -2887,12 +3037,12 @@ const FileManager = memo(
                     variant="outlined"
                     size="small"
                   />
-                  
+
                   <FilePermissionEditor
                     permissions={filePermissions}
                     onChange={handlePermissionChange}
                   />
-                  
+
                   <Box
                     sx={{
                       display: "flex",
@@ -2948,7 +3098,9 @@ const FileManager = memo(
                 gap: 2,
               }}
             >
-              <Typography variant="subtitle1">{t("fileManager.createFolder")}</Typography>
+              <Typography variant="subtitle1">
+                {t("fileManager.createFolder")}
+              </Typography>
               <form onSubmit={handleCreateFolderSubmit}>
                 <TextField
                   fullWidth
@@ -3013,7 +3165,9 @@ const FileManager = memo(
                 gap: 2,
               }}
             >
-              <Typography variant="subtitle1">{t("fileManager.createFile")}</Typography>
+              <Typography variant="subtitle1">
+                {t("fileManager.createFile")}
+              </Typography>
               <form onSubmit={handleCreateFileSubmit}>
                 <TextField
                   fullWidth
@@ -3103,7 +3257,8 @@ const FileManager = memo(
         <TransferProgressFloat
           transferList={transferProgressList}
           onCancelTransfer={handleCancelTransfer}
-          onClose={() => {clearCompletedTransfers();
+          onClose={() => {
+            clearCompletedTransfers();
           }}
         />
 
@@ -3133,7 +3288,7 @@ const FileManager = memo(
             <ListItemText>上传文件夹</ListItemText>
           </MenuItem>
         </Menu>
-        
+
         <Menu
           open={Boolean(sortMenuAnchor)}
           onClose={handleSortMenuClose}
@@ -3147,7 +3302,7 @@ const FileManager = memo(
             horizontal: "left",
           }}
         >
-          <MenuItem 
+          <MenuItem
             onClick={() => handleSortModeChange("name")}
             selected={sortMode === "name"}
           >
@@ -3156,7 +3311,7 @@ const FileManager = memo(
             </ListItemIcon>
             <ListItemText>按名称排序</ListItemText>
           </MenuItem>
-          <MenuItem 
+          <MenuItem
             onClick={() => handleSortModeChange("time")}
             selected={sortMode === "time"}
           >

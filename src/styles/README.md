@@ -28,6 +28,7 @@ Individual components may have their own CSS files in the `/src/components/` dir
 ### Importing Styles
 
 The main styles are imported once in `app.jsx`:
+
 ```js
 import "./styles/index.css";
 ```
@@ -43,6 +44,7 @@ This automatically includes all modular styles.
 ### CSS Modules vs Material-UI
 
 This project uses a hybrid approach:
+
 - **CSS files** for global styles, utilities, and complex component styling
 - **Material-UI `sx` prop** for component-level styling and theming
 - **Styled components** for complex themed components (e.g., GlassDialog)

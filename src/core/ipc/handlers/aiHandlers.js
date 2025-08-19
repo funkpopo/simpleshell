@@ -22,43 +22,43 @@ class AIHandlers {
       {
         channel: "ai:loadSettings",
         category: "ai",
-        handler: this.loadSettings.bind(this)
+        handler: this.loadSettings.bind(this),
       },
       {
         channel: "ai:saveSettings",
         category: "ai",
-        handler: this.saveSettings.bind(this)
+        handler: this.saveSettings.bind(this),
       },
       {
         channel: "ai:saveApiConfig",
         category: "ai",
-        handler: this.saveApiConfig.bind(this)
+        handler: this.saveApiConfig.bind(this),
       },
       {
         channel: "ai:deleteApiConfig",
         category: "ai",
-        handler: this.deleteApiConfig.bind(this)
+        handler: this.deleteApiConfig.bind(this),
       },
       {
         channel: "ai:setCurrentApiConfig",
         category: "ai",
-        handler: this.setCurrentApiConfig.bind(this)
+        handler: this.setCurrentApiConfig.bind(this),
       },
       {
         channel: "ai:sendPrompt",
         category: "ai",
-        handler: this.sendPrompt.bind(this)
+        handler: this.sendPrompt.bind(this),
       },
       {
         channel: "ai:sendAPIRequest",
         category: "ai",
-        handler: this.sendAPIRequest.bind(this)
+        handler: this.sendAPIRequest.bind(this),
       },
       {
         channel: "ai:abortAPIRequest",
         category: "ai",
-        handler: this.abortAPIRequest.bind(this)
-      }
+        handler: this.abortAPIRequest.bind(this),
+      },
     ];
   }
 
@@ -87,14 +87,16 @@ class AIHandlers {
   async saveApiConfig(event, config) {
     try {
       const currentSettings = configManager.getAISettings() || {};
-      
+
       if (!currentSettings.apiConfigs) {
         currentSettings.apiConfigs = [];
       }
-      
+
       // 如果配置有ID，更新现有配置；否则添加新配置
       if (config.id) {
-        const index = currentSettings.apiConfigs.findIndex(c => c.id === config.id);
+        const index = currentSettings.apiConfigs.findIndex(
+          (c) => c.id === config.id,
+        );
         if (index !== -1) {
           currentSettings.apiConfigs[index] = config;
         } else {
@@ -104,10 +106,10 @@ class AIHandlers {
         config.id = Date.now().toString();
         currentSettings.apiConfigs.push(config);
       }
-      
+
       configManager.saveAISettings(currentSettings);
       logToFile(`API config saved: ${config.name || config.id}`, "INFO");
-      
+
       return { success: true, config };
     } catch (error) {
       logToFile(`Error saving API config: ${error.message}`, "ERROR");
@@ -118,25 +120,27 @@ class AIHandlers {
   async deleteApiConfig(event, configId) {
     try {
       const currentSettings = configManager.getAISettings() || {};
-      
+
       if (!currentSettings.apiConfigs) {
         return { success: false, error: "No API configs found" };
       }
-      
+
       const initialLength = currentSettings.apiConfigs.length;
-      currentSettings.apiConfigs = currentSettings.apiConfigs.filter(c => c.id !== configId);
-      
+      currentSettings.apiConfigs = currentSettings.apiConfigs.filter(
+        (c) => c.id !== configId,
+      );
+
       if (currentSettings.apiConfigs.length < initialLength) {
         // 如果删除的是当前配置，清除当前配置ID
         if (currentSettings.currentApiConfigId === configId) {
           delete currentSettings.currentApiConfigId;
         }
-        
+
         configManager.saveAISettings(currentSettings);
         logToFile(`API config deleted: ${configId}`, "INFO");
         return { success: true };
       }
-      
+
       return { success: false, error: "Config not found" };
     } catch (error) {
       logToFile(`Error deleting API config: ${error.message}`, "ERROR");
@@ -147,20 +151,23 @@ class AIHandlers {
   async setCurrentApiConfig(event, configId) {
     try {
       const currentSettings = configManager.getAISettings() || {};
-      
+
       if (!currentSettings.apiConfigs) {
         return { success: false, error: "No API configs found" };
       }
-      
-      const config = currentSettings.apiConfigs.find(c => c.id === configId);
+
+      const config = currentSettings.apiConfigs.find((c) => c.id === configId);
       if (!config) {
         return { success: false, error: "Config not found" };
       }
-      
+
       currentSettings.currentApiConfigId = configId;
       configManager.saveAISettings(currentSettings);
-      logToFile(`Current API config set to: ${config.name || configId}`, "INFO");
-      
+      logToFile(
+        `Current API config set to: ${config.name || configId}`,
+        "INFO",
+      );
+
       return { success: true };
     } catch (error) {
       logToFile(`Error setting current API config: ${error.message}`, "ERROR");
@@ -172,22 +179,22 @@ class AIHandlers {
     if (!this.aiWorker) {
       throw new Error("AI Worker not initialized");
     }
-    
+
     try {
       const requestId = this.nextRequestId++;
-      
+
       return new Promise((resolve, reject) => {
         // 存储回调
         this.aiRequestMap.set(requestId, { resolve, reject });
-        
+
         // 发送消息到worker
         this.aiWorker.postMessage({
           id: requestId,
           type: "prompt",
           prompt: prompt,
-          settings: settings
+          settings: settings,
         });
-        
+
         // 设置超时
         setTimeout(() => {
           if (this.aiRequestMap.has(requestId)) {
@@ -206,36 +213,36 @@ class AIHandlers {
     if (!this.aiWorker) {
       throw new Error("AI Worker not initialized");
     }
-    
+
     try {
       const requestId = this.nextRequestId++;
       const sessionId = Date.now().toString();
-      
+
       if (isStream) {
         // 存储流式会话
         this.streamSessions.set(sessionId, requestId);
         this.currentSessionId = sessionId;
-        
+
         // 发送消息到worker
         this.aiWorker.postMessage({
           id: requestId,
           type: "stream",
           sessionId: sessionId,
-          requestData: requestData
+          requestData: requestData,
         });
-        
+
         return { sessionId: sessionId };
       } else {
         // 非流式请求
         return new Promise((resolve, reject) => {
           this.aiRequestMap.set(requestId, { resolve, reject });
-          
+
           this.aiWorker.postMessage({
             id: requestId,
             type: "api",
-            requestData: requestData
+            requestData: requestData,
           });
-          
+
           setTimeout(() => {
             if (this.aiRequestMap.has(requestId)) {
               this.aiRequestMap.delete(requestId);
@@ -255,26 +262,29 @@ class AIHandlers {
       if (!this.currentSessionId) {
         return { success: false, error: "No active session" };
       }
-      
+
       const requestId = this.streamSessions.get(this.currentSessionId);
       if (!requestId) {
         return { success: false, error: "Session not found" };
       }
-      
+
       // 发送中止消息到worker
       if (this.aiWorker) {
         this.aiWorker.postMessage({
           type: "abort",
           sessionId: this.currentSessionId,
-          requestId: requestId
+          requestId: requestId,
         });
       }
-      
+
       // 清理会话
       this.streamSessions.delete(this.currentSessionId);
       this.currentSessionId = null;
-      
-      logToFile(`Aborted AI request for session: ${this.currentSessionId}`, "INFO");
+
+      logToFile(
+        `Aborted AI request for session: ${this.currentSessionId}`,
+        "INFO",
+      );
       return { success: true };
     } catch (error) {
       logToFile(`Error aborting API request: ${error.message}`, "ERROR");
@@ -287,16 +297,16 @@ class AIHandlers {
    */
   handleWorkerMessage(message) {
     const { id, type, result, error, data } = message;
-    
+
     if (type === "stream") {
       // 处理流式响应
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         this.mainWindow.webContents.send("ai:streamData", {
           sessionId: data.sessionId,
           data: data.content,
-          done: data.done
+          done: data.done,
         });
-        
+
         if (data.done) {
           this.streamSessions.delete(data.sessionId);
           if (this.currentSessionId === data.sessionId) {
@@ -327,11 +337,11 @@ class AIHandlers {
       callback.reject(new Error("AI handler cleanup"));
     }
     this.aiRequestMap.clear();
-    
+
     // 清理流式会话
     this.streamSessions.clear();
     this.currentSessionId = null;
-    
+
     // 终止Worker
     if (this.aiWorker) {
       try {
