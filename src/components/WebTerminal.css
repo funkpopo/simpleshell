@@ -1,0 +1,37 @@
+/* Terminal container and xterm specific styles */
+.terminal-container {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden;
+}
+
+.xterm {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.xterm-viewport {
+  width: 100% !important;
+  height: 100% !important;
+  overflow-y: auto;
+}
+
+.xterm-screen {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  display: block !important;
+}
+
+.xterm-scrollable-element {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  display: block !important;
+}
+
+/* Terminal font size responsive to global settings */
+.xterm .xterm-viewport {
+  font-size: calc(1rem * 0.9);
+  line-height: calc(1rem * 1.2);
+}

@@ -6,6 +6,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
 import "@xterm/xterm/css/xterm.css";
+import "./WebTerminal.css";
 import { debounce, createResizeObserver } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
 import Menu from "@mui/material/Menu";

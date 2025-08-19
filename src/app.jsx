@@ -59,6 +59,7 @@ import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
 import { changeLanguage } from "./i18n/i18n";
 import "./index.css";
+import "./components/GlassEffect.css";
 import { styled } from "@mui/material/styles";
 import { SIDEBAR_WIDTHS } from "./constants/layout.js";
 import "flag-icons/css/flag-icons.min.css";
