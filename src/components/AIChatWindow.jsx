@@ -35,6 +35,8 @@ import AISettings from "./AISettings";
 import { useTranslation } from "react-i18next";
 import { styled } from "@mui/material/styles";
 import ReactMarkdown from "react-markdown";
+import "./AIChatWindow.css";
+import "./CodeHighlight.css";
 
 // 自定义浮动窗口对话框
 const FloatingDialog = styled(Dialog)(({ theme }) => ({
