@@ -31,7 +31,6 @@ class MemoryLeakDetector {
       this.checkForLeaks();
     }, interval);
 
-    console.log(`内存泄漏检测器已启动，检测间隔: ${interval}ms`);
   }
 
   /**
@@ -41,7 +40,6 @@ class MemoryLeakDetector {
     if (this.monitoringInterval) {
       clearInterval(this.monitoringInterval);
       this.monitoringInterval = null;
-      console.log("内存泄漏检测器已停止");
     }
   }
 
@@ -317,7 +315,6 @@ class MemoryLeakDetector {
       );
     }
 
-    console.log("自动修复完成:", fixes);
     return fixes;
   }
 
