@@ -26,12 +26,12 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  
+
   /* 移除主题过渡效果 */
   .theme-transition * {
     transition: none !important;
   }
-  
+
   /* 移除所有动画 */
   * {
     animation: none !important;

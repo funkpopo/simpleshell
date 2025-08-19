@@ -38,16 +38,13 @@ export function ExampleComponentWithAutoCleanup() {
 
     // 4. 添加 ResizeObserver - 自动清理
     if (containerRef.current) {
-      addResizeObserver(
-        (entries) => {
-          const entry = entries[0];
-          if (entry) {
-            const { width, height } = entry.contentRect;
-            setDimensions({ width, height });
-          }
-        },
-        containerRef.current
-      );
+      addResizeObserver((entries) => {
+        const entry = entries[0];
+        if (entry) {
+          const { width, height } = entry.contentRect;
+          setDimensions({ width, height });
+        }
+      }, containerRef.current);
     }
 
     // 5. 使用 AbortController 处理异步请求 - 自动清理
@@ -87,7 +84,7 @@ export function ExampleComponentWithAutoCleanup() {
             console.log("DOM 变化", mutations);
           },
           containerRef.current,
-          { childList: true, subtree: true }
+          { childList: true, subtree: true },
         );
       }
 
@@ -96,7 +93,7 @@ export function ExampleComponentWithAutoCleanup() {
         console.log("额外的清理逻辑");
       };
     },
-    [] // 依赖数组
+    [], // 依赖数组
   );
 
   // 获取统计信息

@@ -38,7 +38,7 @@ export function useAutoCleanup() {
       target,
       event,
       handler,
-      options
+      options,
     );
   }, []);
 
@@ -47,7 +47,7 @@ export function useAutoCleanup() {
     return cleanupManagerRef.current?.addResizeObserver(
       callback,
       element,
-      options
+      options,
     );
   }, []);
 
@@ -55,7 +55,7 @@ export function useAutoCleanup() {
     return cleanupManagerRef.current?.addIntersectionObserver(
       callback,
       element,
-      options
+      options,
     );
   }, []);
 
@@ -63,7 +63,7 @@ export function useAutoCleanup() {
     return cleanupManagerRef.current?.addMutationObserver(
       callback,
       element,
-      options
+      options,
     );
   }, []);
 
@@ -191,7 +191,7 @@ class CleanupManager {
     return this.addResource(
       "eventListener",
       { target, event, handler: wrappedHandler, options },
-      () => target.removeEventListener(event, wrappedHandler, options)
+      () => target.removeEventListener(event, wrappedHandler, options),
     );
   }
 
@@ -210,7 +210,7 @@ class CleanupManager {
     observer.observe(element, options);
 
     return this.addResource("resizeObserver", observer, () =>
-      observer.disconnect()
+      observer.disconnect(),
     );
   }
 
@@ -229,7 +229,7 @@ class CleanupManager {
     observer.observe(element);
 
     return this.addResource("intersectionObserver", observer, () =>
-      observer.disconnect()
+      observer.disconnect(),
     );
   }
 
@@ -248,7 +248,7 @@ class CleanupManager {
     observer.observe(element, options);
 
     return this.addResource("mutationObserver", observer, () =>
-      observer.disconnect()
+      observer.disconnect(),
     );
   }
 
@@ -372,7 +372,9 @@ class CleanupManager {
     }
 
     for (const id of toRemove) {
-      console.warn(`清理超时资源 (${id}), 年龄: ${(now - this.resources.get(id).createdAt) / 1000}秒`);
+      console.warn(
+        `清理超时资源 (${id}), 年龄: ${(now - this.resources.get(id).createdAt) / 1000}秒`,
+      );
       this.removeResource(id);
     }
 

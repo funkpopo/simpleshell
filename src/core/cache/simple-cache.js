@@ -14,7 +14,7 @@ class SimpleCache extends EventEmitter {
     this.cache = new Map();
     this.accessOrder = new Map();
     this.accessCount = 0;
-    
+
     // 统计信息
     this.stats = {
       hits: 0,
@@ -137,7 +137,8 @@ class SimpleCache extends EventEmitter {
     }
 
     const totalRequests = this.stats.hits + this.stats.misses;
-    const hitRate = totalRequests > 0 ? (this.stats.hits / totalRequests) * 100 : 0;
+    const hitRate =
+      totalRequests > 0 ? (this.stats.hits / totalRequests) * 100 : 0;
 
     return {
       size: this.cache.size,
@@ -160,7 +161,7 @@ class SimpleCache extends EventEmitter {
       }
     }
 
-    keysToDelete.forEach(key => this.delete(key));
+    keysToDelete.forEach((key) => this.delete(key));
     return keysToDelete.length;
   }
 }

@@ -216,7 +216,13 @@ const MergedTabContent = memo(
         addEventListener(document, "mousemove", handleMouseMove);
         addEventListener(document, "mouseup", handleMouseUp);
       }
-    }, [isDragging, dragType, addEventListener, handleMouseMove, handleMouseUp]);
+    }, [
+      isDragging,
+      dragType,
+      addEventListener,
+      handleMouseMove,
+      handleMouseUp,
+    ]);
 
     // 初始化活跃标签页状态
     useEffect(() => {

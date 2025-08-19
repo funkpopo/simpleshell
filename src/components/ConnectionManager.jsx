@@ -840,7 +840,7 @@ const ConnectionManager = memo(
                       // 检查主文本是否需要省略
                       estimateTextWidth(connection.name || connection.host) >
                       maxDisplayWidth ? (
-                        <Tooltip 
+                        <Tooltip
                           title={connection.name || connection.host}
                           placement="top"
                           arrow

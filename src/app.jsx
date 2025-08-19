@@ -1015,7 +1015,7 @@ function App() {
       setDraggedTabIndex(index);
       // 设置一些拖动时的数据
       e.dataTransfer.effectAllowed = "move";
-      
+
       // 不再设置text/plain数据，因为CustomTab已经设置了application/json
       // e.dataTransfer.setData("text/plain", index);
 
@@ -1096,11 +1096,11 @@ function App() {
         return;
       }
 
-      console.log('Drop operation:', {
+      console.log("Drop operation:", {
         sourceIndex,
         targetIndex,
         dragOperation,
-        dragInsertPosition
+        dragInsertPosition,
       });
 
       // 根据拖拽操作类型执行不同的操作
@@ -1113,7 +1113,7 @@ function App() {
         reorderTab(sourceIndex, insertIndex);
       } else if (dragOperation === "merge") {
         // 合并操作：将源标签合并到目标标签
-        console.log('Merging tabs:', sourceIndex, '->', targetIndex);
+        console.log("Merging tabs:", sourceIndex, "->", targetIndex);
         mergeTabIntoTarget(sourceIndex, targetIndex);
       }
     }
@@ -1544,7 +1544,6 @@ function App() {
 
   // 获取右侧面板应该使用的当前标签页信息
   const getCurrentPanelTab = useCallback(() => {
-
     // 如果在分屏模式下且有活跃的分屏标签页，优先使用分屏标签页
     if (activeSplitTabId) {
       // 首先查找是否有当前标签页的合并标签

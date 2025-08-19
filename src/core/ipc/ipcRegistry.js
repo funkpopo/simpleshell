@@ -23,14 +23,14 @@ class IPCRegistry {
       try {
         const startTime = Date.now();
         const result = await handler(event, ...args);
-        
+
         if (options.logPerformance) {
           const duration = Date.now() - startTime;
           if (duration > 100) {
             logToFile(`IPC ${channel} took ${duration}ms`, "WARN");
           }
         }
-        
+
         return result;
       } catch (error) {
         logToFile(`Error in IPC handler ${channel}: ${error.message}`, "ERROR");
@@ -40,13 +40,13 @@ class IPCRegistry {
 
     // 注册处理器
     ipcMain.handle(channel, wrappedHandler);
-    
+
     // 存储元数据
     this.handlers.set(channel, {
       category,
       handler: wrappedHandler,
       originalHandler: handler,
-      options
+      options,
     });
 
     // 按类别分组
@@ -77,26 +77,32 @@ class IPCRegistry {
    */
   on(channel, category, handler) {
     if (this.handlers.has(channel)) {
-      logToFile(`Warning: Overwriting existing listener for ${channel}`, "WARN");
+      logToFile(
+        `Warning: Overwriting existing listener for ${channel}`,
+        "WARN",
+      );
     }
 
     const wrappedHandler = (event, ...args) => {
       try {
         handler(event, ...args);
       } catch (error) {
-        logToFile(`Error in IPC listener ${channel}: ${error.message}`, "ERROR");
+        logToFile(
+          `Error in IPC listener ${channel}: ${error.message}`,
+          "ERROR",
+        );
       }
     };
 
     // 注册监听器
     ipcMain.on(channel, wrappedHandler);
-    
+
     // 存储元数据
     this.handlers.set(channel, {
       category,
       handler: wrappedHandler,
       originalHandler: handler,
-      type: 'listener'
+      type: "listener",
     });
 
     // 按类别分组
@@ -119,7 +125,7 @@ class IPCRegistry {
     }
 
     // 移除IPC处理器
-    if (handlerInfo.type === 'listener') {
+    if (handlerInfo.type === "listener") {
       ipcMain.removeAllListeners(channel);
     } else {
       ipcMain.removeHandler(channel);
@@ -136,7 +142,7 @@ class IPCRegistry {
 
     // 从处理器映射中移除
     this.handlers.delete(channel);
-    
+
     logToFile(`Unregistered IPC handler: ${channel}`, "DEBUG");
     return true;
   }
@@ -158,7 +164,10 @@ class IPCRegistry {
       }
     }
 
-    logToFile(`Unregistered ${count} handlers from category: ${category}`, "INFO");
+    logToFile(
+      `Unregistered ${count} handlers from category: ${category}`,
+      "INFO",
+    );
     return count;
   }
 
@@ -167,23 +176,26 @@ class IPCRegistry {
    */
   cleanup() {
     let totalCount = 0;
-    
+
     for (const [channel, handlerInfo] of this.handlers) {
       try {
-        if (handlerInfo.type === 'listener') {
+        if (handlerInfo.type === "listener") {
           ipcMain.removeAllListeners(channel);
         } else {
           ipcMain.removeHandler(channel);
         }
         totalCount++;
       } catch (error) {
-        logToFile(`Error cleaning up handler ${channel}: ${error.message}`, "ERROR");
+        logToFile(
+          `Error cleaning up handler ${channel}: ${error.message}`,
+          "ERROR",
+        );
       }
     }
 
     this.handlers.clear();
     this.categories.clear();
-    
+
     logToFile(`Cleaned up ${totalCount} IPC handlers`, "INFO");
     return totalCount;
   }
@@ -195,7 +207,7 @@ class IPCRegistry {
     const stats = {
       total: this.handlers.size,
       byCategory: {},
-      channels: []
+      channels: [],
     };
 
     for (const [category, channels] of this.categories) {
@@ -206,7 +218,7 @@ class IPCRegistry {
       stats.channels.push({
         channel,
         category: info.category,
-        type: info.type || 'handler'
+        type: info.type || "handler",
       });
     }
 

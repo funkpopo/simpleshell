@@ -13,16 +13,25 @@ class TerminalHandlers {
     this.childProcesses = childProcesses;
     this.terminalProcesses = terminalProcesses;
     this.nextProcessId = 1;
-    
+
     // 编辑器相关的正则表达式
-    this.editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
+    this.editorCommandRegex =
+      /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
     this.editorExitCommands = [
-      "q", "quit", "exit", "wq", "ZZ", "x",
-      ":q", ":wq", ":x", "Ctrl+X"
+      "q",
+      "quit",
+      "exit",
+      "wq",
+      "ZZ",
+      "x",
+      ":q",
+      ":wq",
+      ":x",
+      "Ctrl+X",
     ];
     this.editorExitRegex = new RegExp(
       `^(${this.editorExitCommands.join("|").replace(/\+/g, "\\+")}|:\\w+)$`,
-      "i"
+      "i",
     );
   }
 
@@ -34,73 +43,73 @@ class TerminalHandlers {
       {
         channel: "terminal:startPowerShell",
         category: "terminal",
-        handler: this.startPowerShell.bind(this)
+        handler: this.startPowerShell.bind(this),
       },
       {
         channel: "terminal:startSSH",
         category: "terminal",
-        handler: this.startSSH.bind(this)
+        handler: this.startSSH.bind(this),
       },
       {
         channel: "terminal:startTelnet",
         category: "terminal",
-        handler: this.startTelnet.bind(this)
+        handler: this.startTelnet.bind(this),
       },
       {
         channel: "terminal:sendToProcess",
         category: "terminal",
-        handler: this.sendToProcess.bind(this)
+        handler: this.sendToProcess.bind(this),
       },
       {
         channel: "terminal:killProcess",
         category: "terminal",
-        handler: this.killProcess.bind(this)
+        handler: this.killProcess.bind(this),
       },
       {
         channel: "terminal:resize",
         category: "terminal",
-        handler: this.resizeTerminal.bind(this)
+        handler: this.resizeTerminal.bind(this),
       },
       {
         channel: "terminal:command",
         category: "terminal",
-        handler: this.executeCommand.bind(this)
+        handler: this.executeCommand.bind(this),
       },
       {
         channel: "terminal:getSystemInfo",
         category: "terminal",
-        handler: this.getSystemInfo.bind(this)
+        handler: this.getSystemInfo.bind(this),
       },
       {
         channel: "terminal:getProcessList",
         category: "terminal",
-        handler: this.getProcessList.bind(this)
+        handler: this.getProcessList.bind(this),
       },
       {
         channel: "terminal:getProcessInfo",
         category: "terminal",
-        handler: this.getProcessInfo.bind(this)
+        handler: this.getProcessInfo.bind(this),
       },
       {
         channel: "terminal:loadConnections",
         category: "terminal",
-        handler: this.loadConnections.bind(this)
+        handler: this.loadConnections.bind(this),
       },
       {
         channel: "terminal:saveConnections",
         category: "terminal",
-        handler: this.saveConnections.bind(this)
+        handler: this.saveConnections.bind(this),
       },
       {
         channel: "terminal:loadTopConnections",
         category: "terminal",
-        handler: this.loadTopConnections.bind(this)
+        handler: this.loadTopConnections.bind(this),
       },
       {
         channel: "terminal:selectKeyFile",
         category: "terminal",
-        handler: this.selectKeyFile.bind(this)
-      }
+        handler: this.selectKeyFile.bind(this),
+      },
     ];
   }
 
@@ -112,8 +121,8 @@ class TerminalHandlers {
       {
         channel: "terminal:sendInput",
         category: "terminal",
-        handler: this.handleTerminalInput.bind(this)
-      }
+        handler: this.handleTerminalInput.bind(this),
+      },
     ];
   }
 
@@ -125,18 +134,18 @@ class TerminalHandlers {
       const mainWindow = event.sender.getOwnerBrowserWindow();
       const result = await terminalManager.createLocalTerminal(
         processId,
-        mainWindow
+        mainWindow,
       );
-      
+
       if (result.success) {
         this.childProcesses.set(processId, result.process);
         this.terminalProcesses.set(processId, {
           type: "local",
-          process: result.process
+          process: result.process,
         });
         logToFile(`PowerShell terminal created with ID: ${processId}`, "INFO");
       }
-      
+
       return result;
     } catch (error) {
       logToFile(`Error starting PowerShell: ${error.message}`, "ERROR");
@@ -152,18 +161,18 @@ class TerminalHandlers {
       const result = await terminalManager.createSSHTerminal(
         processId,
         sshConfig,
-        mainWindow
+        mainWindow,
       );
-      
+
       if (result.success) {
         this.childProcesses.set(processId, result.connection);
         this.terminalProcesses.set(processId, {
           type: "ssh",
-          connection: result.connection
+          connection: result.connection,
         });
         logToFile(`SSH terminal created with ID: ${processId}`, "INFO");
       }
-      
+
       return result;
     } catch (error) {
       logToFile(`Error starting SSH: ${error.message}`, "ERROR");
@@ -179,18 +188,18 @@ class TerminalHandlers {
       const result = await terminalManager.createTelnetTerminal(
         processId,
         telnetConfig,
-        mainWindow
+        mainWindow,
       );
-      
+
       if (result.success) {
         this.childProcesses.set(processId, result.connection);
         this.terminalProcesses.set(processId, {
           type: "telnet",
-          connection: result.connection
+          connection: result.connection,
         });
         logToFile(`Telnet terminal created with ID: ${processId}`, "INFO");
       }
-      
+
       return result;
     } catch (error) {
       logToFile(`Error starting Telnet: ${error.message}`, "ERROR");
@@ -215,7 +224,10 @@ class TerminalHandlers {
       logToFile(`Process ${processId} terminated`, "INFO");
       return { success: true };
     } catch (error) {
-      logToFile(`Error killing process ${processId}: ${error.message}`, "ERROR");
+      logToFile(
+        `Error killing process ${processId}: ${error.message}`,
+        "ERROR",
+      );
       return { success: false, error: error.message };
     }
   }
@@ -225,7 +237,10 @@ class TerminalHandlers {
       await terminalManager.resizeTerminal(processId, cols, rows);
       return { success: true };
     } catch (error) {
-      logToFile(`Error resizing terminal ${processId}: ${error.message}`, "ERROR");
+      logToFile(
+        `Error resizing terminal ${processId}: ${error.message}`,
+        "ERROR",
+      );
       return { success: false, error: error.message };
     }
   }
@@ -261,8 +276,8 @@ class TerminalHandlers {
         info: {
           id: processId,
           type: process.type,
-          isAlive: !!process.process || !!process.connection
-        }
+          isAlive: !!process.process || !!process.connection,
+        },
       };
     }
     return { success: false, error: "Process not found" };
@@ -300,10 +315,10 @@ class TerminalHandlers {
       properties: ["openFile"],
       filters: [
         { name: "SSH Keys", extensions: ["pem", "ppk", "key", "pub"] },
-        { name: "All Files", extensions: ["*"] }
-      ]
+        { name: "All Files", extensions: ["*"] },
+      ],
     });
-    
+
     if (!result.canceled && result.filePaths.length > 0) {
       return { success: true, path: result.filePaths[0] };
     }
@@ -326,13 +341,13 @@ class TerminalHandlers {
             terminalProcess.process.stdin.write(input);
           }
           break;
-        
+
         case "ssh":
           if (terminalProcess.connection && terminalProcess.connection.stream) {
             terminalProcess.connection.stream.write(input);
           }
           break;
-        
+
         case "telnet":
           if (terminalProcess.connection) {
             terminalProcess.connection.getSocket((err, stream) => {
@@ -342,7 +357,7 @@ class TerminalHandlers {
             });
           }
           break;
-        
+
         default:
           logToFile(`Unknown terminal type: ${terminalProcess.type}`, "ERROR");
       }
@@ -359,10 +374,13 @@ class TerminalHandlers {
       try {
         terminalManager.terminateTerminal(processId);
       } catch (error) {
-        logToFile(`Error cleaning up process ${processId}: ${error.message}`, "ERROR");
+        logToFile(
+          `Error cleaning up process ${processId}: ${error.message}`,
+          "ERROR",
+        );
       }
     }
-    
+
     this.childProcesses.clear();
     this.terminalProcesses.clear();
     logToFile("All terminal processes cleaned up", "INFO");

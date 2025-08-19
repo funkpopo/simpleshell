@@ -6,7 +6,6 @@ import { findGroupByTab } from "./syncInputGroups";
  * @param {string} command - 需要分发的命令（不带回车）
  */
 export function dispatchCommandToGroup(tabId, command) {
-
   if (!window.terminalAPI || !window.terminalAPI.sendToProcess) {
     console.error("window.terminalAPI.sendToProcess not available");
     return;

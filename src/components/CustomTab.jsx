@@ -122,7 +122,7 @@ const CustomTab = memo((props) => {
       if (onDragStart) {
         onDragStart(e);
       }
-      
+
       // 设置拖拽数据
       const dragData = {
         type: "tab",
