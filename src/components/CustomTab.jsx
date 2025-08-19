@@ -62,6 +62,56 @@ const dragIndicatorStyles = (
             "0 0 20px rgba(25, 118, 210, 0.6), 0 0 40px rgba(25, 118, 210, 0.4)",
         },
       },
+      "@keyframes dragEnter": {
+        "0%": {
+          transform: "scale(1) rotate(0deg)",
+          filter: "brightness(1)",
+        },
+        "50%": {
+          transform: "scale(1.08) rotate(1deg)",
+          filter: "brightness(1.1)",
+        },
+        "100%": {
+          transform: "scale(1.05) rotate(0deg)",
+          filter: "brightness(1.05)",
+        },
+      },
+      "@keyframes dragLeave": {
+        "0%": {
+          transform: "scale(1.05)",
+          filter: "brightness(1.05)",
+        },
+        "100%": {
+          transform: "scale(1)",
+          filter: "brightness(1)",
+        },
+      },
+      "@keyframes dropZonePulse": {
+        "0%, 100%": {
+          boxShadow: "0 0 0 0 rgba(46, 125, 50, 0.7)",
+        },
+        "50%": {
+          boxShadow: "0 0 0 6px rgba(46, 125, 50, 0)",
+        },
+      },
+      "@keyframes mergeZonePulse": {
+        "0%, 100%": {
+          boxShadow: "0 0 0 0 rgba(25, 118, 210, 0.7)",
+        },
+        "50%": {
+          boxShadow: "0 0 0 6px rgba(25, 118, 210, 0)",
+        },
+      },
+      "@keyframes slideIn": {
+        "0%": {
+          opacity: 0,
+          transform: "translateY(-10px) scale(0.9)",
+        },
+        "100%": {
+          opacity: 1,
+          transform: "translateY(0) scale(1)",
+        },
+      },
     }}
   />
 );
@@ -138,29 +188,68 @@ const CustomTab = memo((props) => {
       const createDragPreview = () => {
         const preview = document.createElement("div");
         preview.style.cssText = `
-        padding: 8px 16px;
+        padding: 10px 18px;
         background: linear-gradient(135deg, 
-          rgba(25, 118, 210, 0.9) 0%, 
-          rgba(21, 101, 192, 0.9) 50%, 
-          rgba(13, 71, 161, 0.9) 100%);
+          rgba(25, 118, 210, 0.95) 0%, 
+          rgba(21, 101, 192, 0.95) 30%, 
+          rgba(13, 71, 161, 0.95) 70%,
+          rgba(25, 118, 210, 0.95) 100%);
         color: white;
-        border-radius: 8px;
-        font-family: 'Roboto', sans-serif;
+        border-radius: 12px;
+        font-family: 'Roboto', 'Arial', sans-serif;
         font-size: 14px;
-        font-weight: 500;
-        box-shadow: 0 8px 32px rgba(25, 118, 210, 0.4), 
-                    0 2px 8px rgba(0, 0, 0, 0.2);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        backdrop-filter: blur(10px);
-        transform: rotate(-2deg);
+        font-weight: 600;
+        box-shadow: 0 12px 40px rgba(25, 118, 210, 0.5), 
+                    0 4px 16px rgba(0, 0, 0, 0.3),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        backdrop-filter: blur(20px);
+        transform: rotate(-3deg) scale(1.05);
         white-space: nowrap;
         pointer-events: none;
         z-index: 10000;
         position: absolute;
-        left: -1000px;
-        top: -1000px;
+        left: -2000px;
+        top: -2000px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        letter-spacing: 0.5px;
+        animation: dragPreviewPulse 0.8s ease-in-out infinite alternate;
       `;
-        preview.textContent = `📝 ${label}`;
+        
+        // 创建图标元素
+        const icon = document.createElement("span");
+        icon.style.cssText = `
+          display: inline-block;
+          margin-right: 8px;
+          font-size: 16px;
+          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+        `;
+        icon.textContent = "🏷️";
+        
+        // 创建文本元素
+        const text = document.createElement("span");
+        text.textContent = label;
+        
+        preview.appendChild(icon);
+        preview.appendChild(text);
+        
+        // 添加拖拽预览脉冲动画
+        const style = document.createElement("style");
+        style.textContent = `
+          @keyframes dragPreviewPulse {
+            0% { 
+              box-shadow: 0 12px 40px rgba(25, 118, 210, 0.5), 
+                         0 4px 16px rgba(0, 0, 0, 0.3),
+                         inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            }
+            100% { 
+              box-shadow: 0 16px 48px rgba(25, 118, 210, 0.7), 
+                         0 6px 20px rgba(0, 0, 0, 0.4),
+                         inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            }
+          }
+        `;
+        document.head.appendChild(style);
         document.body.appendChild(preview);
 
         // 设置拖拽预览图像
@@ -170,12 +259,15 @@ const CustomTab = memo((props) => {
           preview.offsetHeight / 2,
         );
 
-        // 延迟移除预览元素，给浏览器时间捕获它
+        // 延迟移除预览元素和样式，给浏览器时间捕获它
         setTimeout(() => {
           if (document.body.contains(preview)) {
             document.body.removeChild(preview);
           }
-        }, 0);
+          if (document.head.contains(style)) {
+            document.head.removeChild(style);
+          }
+        }, 100);
       };
 
       // 使用requestAnimationFrame确保在下一帧创建预览
@@ -267,7 +359,7 @@ const CustomTab = memo((props) => {
             isDraggedOver && dragOperation === "sort" ? "grab" : "pointer",
           userSelect: "none",
           color: "text.secondary",
-          // 拖拽悬停时的特殊样式，添加磁吸效果
+          // 拖拽悬停时的特殊样式，添加磁吸效果和增强的动画
           ...(isDraggedOver && {
             backgroundColor: (theme) =>
               dragOperation === "sort"
@@ -277,84 +369,102 @@ const CustomTab = memo((props) => {
                 : theme.palette.mode === "dark"
                   ? "rgba(33, 150, 243, 0.15)"
                   : "rgba(25, 118, 210, 0.12)",
-            borderRadius: "4px",
+            borderRadius: "6px",
             boxShadow: (theme) =>
               dragOperation === "sort"
                 ? theme.palette.mode === "dark"
-                  ? "0 0 0 2px rgba(76, 175, 80, 0.4)"
-                  : "0 0 0 3px rgba(46, 125, 50, 0.5), 0 2px 8px rgba(46, 125, 50, 0.2)"
+                  ? "0 0 0 2px rgba(76, 175, 80, 0.4), 0 4px 16px rgba(76, 175, 80, 0.2)"
+                  : "0 0 0 3px rgba(46, 125, 50, 0.5), 0 4px 20px rgba(46, 125, 50, 0.3), 0 0 0 6px rgba(46, 125, 50, 0.1)"
                 : theme.palette.mode === "dark"
-                  ? "0 0 0 2px rgba(33, 150, 243, 0.3)"
-                  : "0 0 0 3px rgba(25, 118, 210, 0.4), 0 2px 8px rgba(25, 118, 210, 0.15)",
+                  ? "0 0 0 2px rgba(33, 150, 243, 0.4), 0 4px 16px rgba(33, 150, 243, 0.2)"
+                  : "0 0 0 3px rgba(25, 118, 210, 0.5), 0 4px 20px rgba(25, 118, 210, 0.3), 0 0 0 6px rgba(25, 118, 210, 0.1)",
             position: "relative",
-            transform: dragOperation === "sort" ? "scale(1.02)" : "scale(1)",
-            transition: "all 0.2s ease-in-out",
+            transform: dragOperation === "sort" ? "scale(1.03) translateY(-1px)" : "scale(1.02)",
+            transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+            filter: "brightness(1.05) saturate(1.1)",
 
-            // 磁吸效果动画
+            // 增强的磁吸效果动画
             animation:
               dragOperation === "merge"
-                ? "magneticPull 0.3s ease-out forwards, magneticGlow 0.3s ease-out forwards"
+                ? "dragEnter 0.4s ease-out forwards, magneticGlow 0.4s ease-out forwards, mergeZonePulse 1.5s ease-in-out infinite"
                 : dragOperation === "sort"
-                  ? "magneticPull 0.2s ease-out forwards"
-                  : "none",
+                  ? "dragEnter 0.3s ease-out forwards, dropZonePulse 1.2s ease-in-out infinite"
+                  : "dragEnter 0.2s ease-out forwards",
 
             // 根据拖拽操作类型显示不同的指示器
             ...(dragOperation === "merge" && {
-              "&::after": {
-                content: '"合并标签"',
+              "&::before": {
+                content: '""',
                 position: "absolute",
-                top: -26,
+                top: -8,
+                left: -8,
+                right: -8,
+                bottom: -8,
+                background: (theme) =>
+                  theme.palette.mode === "dark"
+                    ? "linear-gradient(45deg, rgba(33, 150, 243, 0.1), rgba(33, 150, 243, 0.2))"
+                    : "linear-gradient(45deg, rgba(25, 118, 210, 0.1), rgba(25, 118, 210, 0.15))",
+                borderRadius: "10px",
+                zIndex: -1,
+                animation: "slideIn 0.3s ease-out forwards",
+              },
+              "&::after": {
+                content: '"🔗 合并标签"',
+                position: "absolute",
+                top: -32,
                 left: "50%",
                 transform: "translateX(-50%)",
                 backgroundColor: (theme) =>
                   theme.palette.mode === "dark"
-                    ? "rgba(33, 150, 243, 0.95)"
+                    ? "rgba(33, 150, 243, 0.98)"
                     : "rgba(25, 118, 210, 1)",
                 color: "white",
-                padding: "3px 8px",
-                borderRadius: "6px",
-                fontSize: "11px",
-                fontWeight: 600,
+                padding: "4px 12px",
+                borderRadius: "8px",
+                fontSize: "12px",
+                fontWeight: 700,
                 whiteSpace: "nowrap",
-                zIndex: 1002,
+                zIndex: 1003,
                 opacity: 1,
                 boxShadow: (theme) =>
                   theme.palette.mode === "dark"
-                    ? "0 2px 8px rgba(0,0,0,0.2)"
-                    : "0 3px 12px rgba(25, 118, 210, 0.4), 0 1px 4px rgba(0,0,0,0.2)",
+                    ? "0 4px 16px rgba(0,0,0,0.3), 0 1px 4px rgba(33, 150, 243, 0.4)"
+                    : "0 6px 20px rgba(25, 118, 210, 0.5), 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.2)",
                 border: (theme) =>
                   theme.palette.mode === "dark"
-                    ? "1px solid rgba(255,255,255,0.1)"
-                    : "1px solid rgba(25, 118, 210, 0.8)",
+                    ? "1px solid rgba(255,255,255,0.15)"
+                    : "1px solid rgba(25, 118, 210, 0.9)",
+                animation: "slideIn 0.3s ease-out 0.1s both",
+                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
               },
             }),
 
-            // 排序操作的插入位置指示器
+            // 排序操作的插入位置指示器 - 增强版本
             ...(dragOperation === "sort" &&
               dragInsertPosition === "before" && {
                 "&::before": {
                   content: '""',
                   position: "absolute",
-                  left: -5,
-                  top: 0,
-                  bottom: 0,
-                  width: 7,
+                  left: -6,
+                  top: -2,
+                  bottom: -2,
+                  width: 8,
                   background: (theme) =>
                     theme.palette.mode === "dark"
-                      ? "linear-gradient(180deg, #81c784 0%, #4caf50 50%, #388e3c 100%)"
-                      : "linear-gradient(180deg, #2e7d32 0%, #388e3c 50%, #1b5e20 100%)",
-                  borderRadius: "3px",
-                  zIndex: 1001,
+                      ? "linear-gradient(180deg, #81c784 0%, #4caf50 30%, #388e3c 70%, #2e7d32 100%)"
+                      : "linear-gradient(180deg, #43a047 0%, #2e7d32 30%, #1b5e20 70%, #0d5016 100%)",
+                  borderRadius: "4px",
+                  zIndex: 1002,
                   boxShadow: (theme) =>
                     theme.palette.mode === "dark"
-                      ? "0 0 16px rgba(76, 175, 80, 0.9), inset 0 1px 0 rgba(255,255,255,0.4)"
-                      : "0 0 16px rgba(46, 125, 50, 0.8), 0 0 4px rgba(27, 94, 32, 0.6), inset 0 1px 0 rgba(255,255,255,0.6)",
+                      ? "0 0 20px rgba(76, 175, 80, 1), 0 0 8px rgba(76, 175, 80, 0.7), inset 0 2px 0 rgba(255,255,255,0.5)"
+                      : "0 0 24px rgba(46, 125, 50, 1), 0 0 12px rgba(27, 94, 32, 0.8), 0 2px 8px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.7)",
                   animation:
-                    "dragIndicator 0.6s ease-in-out infinite alternate",
+                    "dragIndicator 0.5s ease-in-out infinite alternate, slideIn 0.2s ease-out forwards",
                   border: (theme) =>
                     theme.palette.mode === "dark"
-                      ? "1px solid rgba(129, 199, 132, 0.3)"
-                      : "2px solid rgba(46, 125, 50, 0.7)",
+                      ? "2px solid rgba(129, 199, 132, 0.4)"
+                      : "3px solid rgba(46, 125, 50, 0.8)",
                 },
               }),
 
@@ -363,26 +473,26 @@ const CustomTab = memo((props) => {
                 "&::after": {
                   content: '""',
                   position: "absolute",
-                  right: -5,
-                  top: 0,
-                  bottom: 0,
-                  width: 7,
+                  right: -6,
+                  top: -2,
+                  bottom: -2,
+                  width: 8,
                   background: (theme) =>
                     theme.palette.mode === "dark"
-                      ? "linear-gradient(180deg, #81c784 0%, #4caf50 50%, #388e3c 100%)"
-                      : "linear-gradient(180deg, #2e7d32 0%, #388e3c 50%, #1b5e20 100%)",
-                  borderRadius: "3px",
-                  zIndex: 1001,
+                      ? "linear-gradient(180deg, #81c784 0%, #4caf50 30%, #388e3c 70%, #2e7d32 100%)"
+                      : "linear-gradient(180deg, #43a047 0%, #2e7d32 30%, #1b5e20 70%, #0d5016 100%)",
+                  borderRadius: "4px",
+                  zIndex: 1002,
                   boxShadow: (theme) =>
                     theme.palette.mode === "dark"
-                      ? "0 0 16px rgba(76, 175, 80, 0.9), inset 0 1px 0 rgba(255,255,255,0.4)"
-                      : "0 0 16px rgba(46, 125, 50, 0.8), 0 0 4px rgba(27, 94, 32, 0.6), inset 0 1px 0 rgba(255,255,255,0.6)",
+                      ? "0 0 20px rgba(76, 175, 80, 1), 0 0 8px rgba(76, 175, 80, 0.7), inset 0 2px 0 rgba(255,255,255,0.5)"
+                      : "0 0 24px rgba(46, 125, 50, 1), 0 0 12px rgba(27, 94, 32, 0.8), 0 2px 8px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.7)",
                   animation:
-                    "dragIndicator 0.6s ease-in-out infinite alternate",
+                    "dragIndicator 0.5s ease-in-out infinite alternate, slideIn 0.2s ease-out forwards",
                   border: (theme) =>
                     theme.palette.mode === "dark"
-                      ? "1px solid rgba(129, 199, 132, 0.3)"
-                      : "2px solid rgba(46, 125, 50, 0.7)",
+                      ? "2px solid rgba(129, 199, 132, 0.4)"
+                      : "3px solid rgba(46, 125, 50, 0.8)",
                 },
               }),
           }),
