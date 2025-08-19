@@ -201,14 +201,14 @@ const CommandSuggestion = memo(
     }, [position]);
 
     // 获取匹配类型的显示文本
-    const getMatchTypeText = useCallback((matchType) => {
+    const getMatchTypeText = (matchType) => {
       switch (matchType) {
         case "prefix":
           return "前缀匹配";
         default:
           return "";
       }
-    }, []);
+    };
 
     // 高亮匹配的文本 - 使用 useMemo 优化
     const highlightMatch = useCallback(
@@ -241,7 +241,7 @@ const CommandSuggestion = memo(
           </>
         );
       },
-      [theme.palette.warning.main, theme.palette.warning.contrastText],
+      [theme],
     );
 
     // 使用 useMemo 优化建议列表渲染
@@ -333,7 +333,6 @@ const CommandSuggestion = memo(
       handleMouseEnter,
       handleMouseClick,
       highlightMatch,
-      getMatchTypeText,
     ]);
 
     if (!visible || suggestions.length === 0) {
