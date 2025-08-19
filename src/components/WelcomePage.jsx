@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, memo } from "react";
 import {
   Box,
   Typography,
@@ -312,4 +312,4 @@ const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
   );
 };
 
-export default WelcomePage;
+export default memo(WelcomePage);

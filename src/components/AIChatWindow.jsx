@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, memo } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -749,4 +749,4 @@ const AIChatWindow = ({
   );
 };
 
-export default AIChatWindow;
+export default memo(AIChatWindow);

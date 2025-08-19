@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -667,4 +667,4 @@ const AISettings = ({ open, onClose }) => {
   );
 };
 
-export default AISettings;
+export default memo(AISettings);

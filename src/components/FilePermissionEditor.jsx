@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, memo } from "react";
 import {
   Box,
   Typography,
@@ -296,4 +296,4 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
   );
 };
 
-export default FilePermissionEditor;
+export default memo(FilePermissionEditor);
