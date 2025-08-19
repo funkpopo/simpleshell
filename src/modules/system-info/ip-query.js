@@ -274,7 +274,7 @@ function fetchIpInfo(provider, ip, logger) {
   });
 }
 
-async function queryIpAddress(ip = "", logger = console.log) {
+async function queryIpAddress(ip = "", logger = null) {
   try {
     const allProviders = [...DEFAULT_API_PROVIDERS];
     // Dynamically add key-based providers if their keys are present

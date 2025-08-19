@@ -1,6 +1,7 @@
 const logToFile = (message, level = "INFO") => {
   // 在开发环境下输出日志
   if (
+    process.env.NODE_ENV === "development" &&
     typeof window !== "undefined" &&
     window.location?.hostname === "localhost"
   ) {

@@ -1060,12 +1060,6 @@ function App() {
         return;
       }
 
-      console.log("Drop operation:", {
-        sourceIndex,
-        targetIndex,
-        dragOperation,
-        dragInsertPosition,
-      });
 
       // 根据拖拽操作类型执行不同的操作
       if (dragOperation === "sort") {
@@ -1077,7 +1071,6 @@ function App() {
         reorderTab(sourceIndex, insertIndex);
       } else if (dragOperation === "merge") {
         // 合并操作：将源标签合并到目标标签
-        console.log("Merging tabs:", sourceIndex, "->", targetIndex);
         mergeTabIntoTarget(sourceIndex, targetIndex);
       }
     }

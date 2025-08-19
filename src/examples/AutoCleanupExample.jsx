@@ -23,7 +23,7 @@ export function ExampleComponentWithAutoCleanup() {
   React.useEffect(() => {
     // 1. 添加定时器 - 自动清理
     addTimeout(() => {
-      console.log("这个定时器会在5秒后执行，组件卸载时自动清理");
+      // 这个定时器会在5秒后执行，组件卸载时自动清理
     }, 5000);
 
     // 2. 添加间隔定时器 - 自动清理
@@ -33,7 +33,7 @@ export function ExampleComponentWithAutoCleanup() {
 
     // 3. 添加事件监听器 - 自动清理
     addEventListener(window, "resize", () => {
-      console.log("窗口大小改变");
+      // 窗口大小改变
     });
 
     // 4. 添加 ResizeObserver - 自动清理
@@ -52,7 +52,9 @@ export function ExampleComponentWithAutoCleanup() {
     if (controller) {
       fetch("/api/data", { signal: controller.signal })
         .then((res) => res.json())
-        .then((data) => console.log(data))
+        .then((data) => {
+          // Handle data
+        })
         .catch((err) => {
           if (err.name !== "AbortError") {
             console.error(err);
@@ -71,17 +73,17 @@ export function ExampleComponentWithAutoCleanup() {
     (cleanup) => {
       // cleanup 对象包含所有清理方法
       cleanup.addInterval(() => {
-        console.log("自动管理的定时器");
+        // 自动管理的定时器
       }, 2000);
 
       cleanup.addEventListener(document, "click", (e) => {
-        console.log("点击事件", e);
+        // 点击事件
       });
 
       if (containerRef.current) {
         cleanup.addMutationObserver(
           (mutations) => {
-            console.log("DOM 变化", mutations);
+            // DOM 变化
           },
           containerRef.current,
           { childList: true, subtree: true },
@@ -90,7 +92,7 @@ export function ExampleComponentWithAutoCleanup() {
 
       // 返回额外的清理函数（可选）
       return () => {
-        console.log("额外的清理逻辑");
+        // 额外的清理逻辑
       };
     },
     [], // 依赖数组
@@ -99,7 +101,6 @@ export function ExampleComponentWithAutoCleanup() {
   // 获取统计信息
   const handleShowStats = useCallback(() => {
     const stats = getStats();
-    console.log("资源统计:", stats);
   }, [getStats]);
 
   return (
@@ -199,7 +200,7 @@ export function AdvancedUsageExample() {
     let removeTimer = null;
     if (someCondition) {
       removeTimer = addTimeout(() => {
-        console.log("条件性定时器");
+        // 条件性定时器
       }, 3000);
     }
 
@@ -207,14 +208,14 @@ export function AdvancedUsageExample() {
     const ws = new WebSocket("ws://localhost:8080");
     addCleanup(() => {
       ws.close();
-      console.log("WebSocket 已关闭");
+      // WebSocket 已关闭
     });
 
     // 3. 动态管理资源
     const handleClick = () => {
       // 动态添加定时器
       const remove = addTimeout(() => {
-        console.log("动态定时器执行");
+        // 动态定时器执行
       }, 1000);
 
       // 可以立即或稍后移除
@@ -231,7 +232,7 @@ export function AdvancedUsageExample() {
 
     return () => {
       // 可选：额外的清理逻辑
-      console.log("组件清理完成");
+      // 组件清理完成
     };
   }, []);
 
