@@ -1,0 +1,39 @@
+/* Theme transition effects */
+.theme-transition * {
+  transition:
+    background-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    fill 0.15s ease,
+    stroke 0.15s ease,
+    filter 0.15s ease !important;
+}
+
+/* 为特定元素禁用过渡效果 - 如果需要 */
+.no-transition {
+  transition: none !important;
+}
+
+/* 响应式设计：支持 prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  /* 移除主题过渡效果 */
+  .theme-transition * {
+    transition: none !important;
+  }
+  
+  /* 移除所有动画 */
+  * {
+    animation: none !important;
+  }
+}

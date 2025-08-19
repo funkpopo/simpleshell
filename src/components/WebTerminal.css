@@ -30,8 +30,3 @@
   display: block !important;
 }
 
-/* Terminal font size responsive to global settings */
-.xterm .xterm-viewport {
-  font-size: calc(1rem * 0.9);
-  line-height: calc(1rem * 1.2);
-}

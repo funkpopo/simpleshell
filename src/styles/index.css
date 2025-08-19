@@ -1,0 +1,19 @@
+/* Main styles entry point - imports all modular styles */
+
+/* Global base styles */
+@import "./global.css";
+
+/* Theme and transitions */
+@import "./theme-transitions.css";
+
+/* Typography settings */
+@import "./typography.css";
+
+/* Terminal-specific styles */
+@import "./terminal.css";
+
+/* Scrollbar styles */
+@import "./scrollbar.css";
+
+/* Glass effect utilities */
+@import "./glass-effect.css";
