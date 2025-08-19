@@ -1,0 +1,16 @@
+/* Typography responsive settings */
+.MuiTypography-root {
+  font-size: 1rem; /* 使用相对单位，响应html的font-size变化 */
+}
+
+.MuiButton-root {
+  font-size: 0.9rem;
+}
+
+.MuiMenuItem-root {
+  font-size: 0.9rem;
+}
+
+.MuiTab-root {
+  font-size: 0.9rem;
+}

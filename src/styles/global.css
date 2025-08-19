@@ -1,0 +1,33 @@
+/* Global base styles */
+@import "../assets/fonts/fonts.css";
+
+html,
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  /* Base font size will be controlled by Settings */
+  font-size: 14px; /* Default size, will be overridden by JS */
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* 确保MUI容器正确工作 */
+.MuiBox-root.css-7ukeqs,
+.MuiBox-root.css-blwm5h {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+}
