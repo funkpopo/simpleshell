@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "@mui/material/styles";
 import { createUnifiedTheme } from "./theme";
 import CssBaseline from "@mui/material/CssBaseline";
+import { GlobalErrorBoundary } from "./components/ErrorBoundary.jsx";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
@@ -2387,4 +2388,8 @@ const NotebyApp = memo(App);
 NotebyApp.displayName = "App";
 
 const root = createRoot(document.getElementById("root"));
-root.render(<NotebyApp />);
+root.render(
+  <GlobalErrorBoundary>
+    <NotebyApp />
+  </GlobalErrorBoundary>
+);
