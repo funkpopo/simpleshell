@@ -1,7 +1,8 @@
 import * as React from "react";
 import { memo, useCallback, useMemo } from "react";
 import { createRoot } from "react-dom/client";
-import { ThemeProvider, createTheme } from "@mui/material/styles";
+import { ThemeProvider } from "@mui/material/styles";
+import { createUnifiedTheme } from "./theme";
 import CssBaseline from "@mui/material/CssBaseline";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
@@ -661,44 +662,7 @@ function App() {
 
   // 创建动态主题
   const theme = React.useMemo(
-    () =>
-      createTheme({
-        palette: {
-          mode: darkMode ? "dark" : "light",
-          primary: {
-            main: darkMode ? "#90caf9" : "#757575",
-          },
-          secondary: {
-            main: darkMode ? "#f48fb1" : "#dc004e",
-          },
-          background: {
-            default: darkMode ? "#121212" : "#f5f5f5",
-            paper: darkMode ? "#1e1e1e" : "#ffffff",
-          },
-        },
-        components: {
-          MuiListItem: {
-            styleOverrides: {
-              root: {
-                paddingTop: "4px",
-                paddingBottom: "4px",
-                minHeight: "50px",
-                maxHeight: "50px",
-              },
-              dense: {
-                paddingTop: "2px",
-                paddingBottom: "2px",
-                minHeight: "50px",
-                maxHeight: "50px",
-              },
-              gutters: {
-                paddingLeft: "8px",
-                paddingRight: "8px",
-              },
-            },
-          },
-        },
-      }),
+    () => createUnifiedTheme(darkMode),
     [darkMode],
   );
 
@@ -1825,21 +1789,9 @@ function App() {
                 flexGrow: 1,
                 minHeight: 40,
                 "& .MuiTabs-indicator": {
-                  height: 4,
-                  backgroundColor: darkMode
-                    ? "primary.main"
-                    : "#757575 !important",
-                },
-                "& .MuiTab-root": {
-                  color: "text.primary",
-                  opacity: 0.7,
-                  margin: "0 2px",
-                  transition: "all 0.2s",
-                  "&.Mui-selected": {
-                    opacity: 1,
-                    fontWeight: "bold",
-                    margin: "0 2px",
-                  },
+                  height: 3,
+                  backgroundColor: "primary.main",
+                  borderRadius: "1.5px 1.5px 0 0",
                 },
               }}
             >
