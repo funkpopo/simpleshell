@@ -3761,8 +3761,8 @@ const WebTerminal = ({
         }
       }
     };
-    window.addEventListener("syncTerminalInput", handler);
-    return () => window.removeEventListener("syncTerminalInput", handler);
+    const removeListener = eventManager.addEventListener(window, "syncTerminalInput", handler);
+    return removeListener;
   }, [tabId]);
 
   return (

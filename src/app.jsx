@@ -75,6 +75,7 @@ import Divider from "@mui/material/Divider";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import AddIcon from "@mui/icons-material/Add";
 import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
+import { useEventManager } from "./core/utils/eventManager.js";
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
@@ -262,6 +263,7 @@ AboutDialog.displayName = "AboutDialog";
 
 function App() {
   const { t, i18n } = useTranslation();
+  const eventManager = useEventManager(); // 使用统一的事件管理器
   const [activeSidebarMargin, setActiveSidebarMargin] = React.useState(0);
 
   // Update the tabs when language changes
@@ -540,7 +542,7 @@ function App() {
       }
     };
 
-    window.addEventListener("sshProcessIdUpdated", handleSshProcessIdUpdate);
+    const removeSshListener = eventManager.addEventListener(window, "sshProcessIdUpdated", handleSshProcessIdUpdate);
 
     // 监听分屏活跃标签页变化事件
     const handleActiveSplitTabChanged = (event) => {
@@ -550,7 +552,8 @@ function App() {
       }
     };
 
-    window.addEventListener(
+    const removeActiveSplitListener = eventManager.addEventListener(
+      window,
       "activeSplitTabChanged",
       handleActiveSplitTabChanged,
     );
@@ -559,15 +562,8 @@ function App() {
       // 清理预加载定时器
       clearTimeout(preloadTimer);
 
-      window.removeEventListener(
-        "sshProcessIdUpdated",
-        handleSshProcessIdUpdate,
-      );
-
-      window.removeEventListener(
-        "activeSplitTabChanged",
-        handleActiveSplitTabChanged,
-      );
+      removeSshListener();
+      removeActiveSplitListener();
     };
   }, []);
 
@@ -1612,9 +1608,9 @@ function App() {
       handleSendToAI(event.detail.text);
     };
 
-    window.addEventListener("settingsChanged", handleSettingsChanged);
-    window.addEventListener("toggleGlobalAI", handleToggleGlobalAI);
-    window.addEventListener("sendToAI", handleSendToAIEvent);
+    const removeSettingsListener = eventManager.addEventListener(window, "settingsChanged", handleSettingsChanged);
+    const removeToggleListener = eventManager.addEventListener(window, "toggleGlobalAI", handleToggleGlobalAI);
+    const removeSendToAIListener = eventManager.addEventListener(window, "sendToAI", handleSendToAIEvent);
 
     // 初始化应用设置
     const loadInitialSettings = async () => {
@@ -1649,9 +1645,9 @@ function App() {
     smartPreload.preloadSidebarComponents();
 
     return () => {
-      window.removeEventListener("settingsChanged", handleSettingsChanged);
-      window.removeEventListener("toggleGlobalAI", handleToggleGlobalAI);
-      window.removeEventListener("sendToAI", handleSendToAIEvent);
+      removeSettingsListener();
+      removeToggleListener();
+      removeSendToAIListener();
     };
   }, [darkMode]); // 添加 darkMode 依赖
 
