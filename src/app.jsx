@@ -1541,10 +1541,7 @@ function App() {
   }, [activeSplitTabId, tabs, currentTab, mergedTabs]);
 
   // 计算右侧面板的当前标签页信息
-  const currentPanelTab = useMemo(() => {
-    const result = getCurrentPanelTab();
-    return result;
-  }, [getCurrentPanelTab]);
+  const currentPanelTab = getCurrentPanelTab();
 
   // 计算资源监控的currentTabId
   const resourceMonitorTabId = useMemo(() => {

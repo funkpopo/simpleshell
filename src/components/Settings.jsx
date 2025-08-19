@@ -80,53 +80,41 @@ const Settings = memo(({ open, onClose }) => {
   const { t, i18n } = useTranslation();
 
   // Define available languages
-  const languages = useMemo(
-    () => [
-      { code: "zh-CN", name: t("languages.zh-CN") },
-      { code: "en-US", name: t("languages.en-US") },
-    ],
-    [t],
-  );
+  const languages = [
+    { code: "zh-CN", name: t("languages.zh-CN") },
+    { code: "en-US", name: t("languages.en-US") },
+  ];
 
   // Define font size options
-  const fontSizes = useMemo(
-    () => [
-      { value: 12, label: t("settings.fontSizeLabels.small") },
-      { value: 14, label: t("settings.fontSizeLabels.medium") },
-      { value: 16, label: t("settings.fontSizeLabels.large") },
-      { value: 18, label: t("settings.fontSizeLabels.xlarge") },
-    ],
-    [t],
-  );
+  const fontSizes = [
+    { value: 12, label: t("settings.fontSizeLabels.small") },
+    { value: 14, label: t("settings.fontSizeLabels.medium") },
+    { value: 16, label: t("settings.fontSizeLabels.large") },
+    { value: 18, label: t("settings.fontSizeLabels.xlarge") },
+  ];
 
   // Define terminal font family options (only fonts available in /src/assets/fonts)
-  const terminalFonts = useMemo(
-    () => [
-      {
-        value: "Fira Code",
-        label: "Fira Code",
-        description: "支持编程连字的等宽字体",
-      },
-      {
-        value: "Space Mono",
-        label: "Space Mono",
-        description: "简洁的等宽字体",
-      },
-      { value: "Consolas", label: "Consolas", description: "系统默认字体" },
-    ],
-    [],
-  );
+  const terminalFonts = [
+    {
+      value: "Fira Code",
+      label: "Fira Code",
+      description: "支持编程连字的等宽字体",
+    },
+    {
+      value: "Space Mono",
+      label: "Space Mono",
+      description: "简洁的等宽字体",
+    },
+    { value: "Consolas", label: "Consolas", description: "系统默认字体" },
+  ];
 
   // Define log level options
-  const logLevels = useMemo(
-    () => [
-      { value: "DEBUG", label: "DEBUG" },
-      { value: "INFO", label: "INFO" },
-      { value: "WARN", label: "WARN" },
-      { value: "ERROR", label: "ERROR" },
-    ],
-    [],
-  );
+  const logLevels = [
+    { value: "DEBUG", label: "DEBUG" },
+    { value: "INFO", label: "INFO" },
+    { value: "WARN", label: "WARN" },
+    { value: "ERROR", label: "ERROR" },
+  ];
 
   // Initial states
   const [language, setLanguage] = React.useState("");
@@ -207,43 +195,43 @@ const Settings = memo(({ open, onClose }) => {
   }, [open]);
 
   // Handle language change
-  const handleLanguageChange = useCallback((event) => {
+  const handleLanguageChange = (event) => {
     setLanguage(event.target.value);
-  }, []);
+  };
 
   // Handle font size change
-  const handleFontSizeChange = useCallback((event, newValue) => {
+  const handleFontSizeChange = (event, newValue) => {
     setFontSize(newValue);
-  }, []);
+  };
 
   // Handle terminal font change
-  const handleTerminalFontChange = useCallback((event) => {
+  const handleTerminalFontChange = (event) => {
     setTerminalFont(event.target.value);
-  }, []);
+  };
 
   // Handle terminal font size change
-  const handleTerminalFontSizeChange = useCallback((event, newValue) => {
+  const handleTerminalFontSizeChange = (event, newValue) => {
     setTerminalFontSize(newValue);
-  }, []);
+  };
 
   // Handle theme mode change
-  const handleDarkModeChange = useCallback((event) => {
+  const handleDarkModeChange = (event) => {
     setDarkMode(event.target.value === "dark");
-  }, []);
+  };
 
   // Handle log level change
-  const handleLogLevelChange = useCallback((event) => {
+  const handleLogLevelChange = (event) => {
     setLogLevel(event.target.value);
-  }, []);
+  };
 
   // Handle max file size change
-  const handleMaxFileSizeChange = useCallback((event) => {
+  const handleMaxFileSizeChange = (event) => {
     const value = event.target.value;
     // 确保输入的是数字，且大于0
     if (!isNaN(value) && Number(value) > 0) {
       setMaxFileSize(Number(value));
     }
-  }, []);
+  };
 
   // 检查性能设置是否需要重启
   const checkIfRestartNeeded = (newSettings) => {

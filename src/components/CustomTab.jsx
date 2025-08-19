@@ -157,13 +157,10 @@ const CustomTab = memo((props) => {
   const group = findGroupByTab(tabId);
 
   // 优化关闭按钮点击处理
-  const handleCloseClick = useCallback(
-    (e) => {
-      e.stopPropagation();
-      onClose?.();
-    },
-    [onClose],
-  );
+  const handleCloseClick = (e) => {
+    e.stopPropagation();
+    onClose?.();
+  };
 
   // 处理拖拽开始 - 支持分屏功能和幽灵元素预览
   const handleDragStart = useCallback(
