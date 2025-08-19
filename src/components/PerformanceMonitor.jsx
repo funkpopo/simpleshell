@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, memo } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import {
   Box,
@@ -409,4 +409,4 @@ const PerformanceMonitor = ({ isVisible = false }) => {
   );
 };
 
-export default PerformanceMonitor;
+export default memo(PerformanceMonitor);

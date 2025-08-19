@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, memo } from "react";
 import {
   Box,
   Paper,
@@ -267,4 +267,4 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
   );
 };
 
-export default RandomPasswordGenerator;
+export default memo(RandomPasswordGenerator);

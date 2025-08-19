@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo } from "react";
 import {
   Box,
   Paper,
@@ -549,4 +549,4 @@ const TransferProgressFloat = ({
   );
 };
 
-export default TransferProgressFloat;
+export default memo(TransferProgressFloat);
