@@ -35,7 +35,7 @@ const CommandSuggestion = ({
     );
 
     const longestCommand = suggestions.reduce((longest, current) => 
-      current.command.length > longest.length ? current.command : longest.command, 
+      current?.command && current.command.length > longest.length ? current.command : longest, 
       ""
     );
 
@@ -89,13 +89,18 @@ const CommandSuggestion = ({
     const totalHeight = contentHeight + bottomBarHeight;
     
     // 设置最大高度限制，但不设置最小高度，让内容自动决定
-    const maxAllowedHeight = 300;
+    const maxAllowedHeight = 280;
     const finalHeight = Math.min(totalHeight, maxAllowedHeight);
+    
+    // 当达到最大高度时，需要为底部文字预留空间
+    const actualContentHeight = totalHeight > maxAllowedHeight 
+      ? maxAllowedHeight - bottomBarHeight 
+      : contentHeight;
     
     return {
       width: finalWidth,
       height: finalHeight,
-      contentHeight, // 添加内容高度用于后续计算
+      contentHeight: actualContentHeight, // 调整后的内容高度
       needsScrollbar: totalHeight > maxAllowedHeight
     };
   }, [suggestions, visible]); // 依赖项包括visible
