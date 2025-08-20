@@ -77,7 +77,6 @@ import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import AddIcon from "@mui/icons-material/Add";
 import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
 import { useEventManager } from "./core/utils/eventManager.js";
-import NetworkStatusIndicator from "./components/NetworkStatusIndicator.jsx";
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
@@ -1829,10 +1828,6 @@ function App() {
               })}
             </Tabs>
 
-            {/* 网络状态指示器 */}
-            <Box sx={{ ml: 2, display: 'flex', alignItems: 'center' }}>
-              <NetworkStatusIndicator />
-            </Box>
 
             {/* 标签页右键菜单 */}
             <Menu
