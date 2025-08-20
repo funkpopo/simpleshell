@@ -3797,6 +3797,21 @@ const WebTerminal = ({
     }
   }, [inEditorMode, isCommandExecuting, updateCursorPosition]);
 
+  // 监听刷新建议事件
+  useEffect(() => {
+    const handleRefreshSuggestions = (event) => {
+      const { input } = event.detail || {};
+      if (input && !suggestionsHiddenByEsc && !isCommandExecuting) {
+        getSuggestions(input);
+      }
+    };
+
+    window.addEventListener('refreshCommandSuggestions', handleRefreshSuggestions);
+    return () => {
+      window.removeEventListener('refreshCommandSuggestions', handleRefreshSuggestions);
+    };
+  }, [getSuggestions, suggestionsHiddenByEsc, isCommandExecuting]);
+
   const handleSuggestionSelect = useCallback((suggestion) => {
     if (!suggestion || !termRef.current || !processCache[tabId]) {
       setShowSuggestions(false);

@@ -79,8 +79,8 @@ const CommandSuggestion = ({
     });
 
     // 计算更精确的高度，考虑单个项目的高度和底部提示栏
-    const itemHeight = 28; // 每个建议项的高度 - 进一步降低使其更紧凑
-    const bottomBarHeight = 28; // 底部提示栏高度 - 进一步降低
+    const itemHeight = 28; // 每个建议项的高度
+    const bottomBarHeight = 28; // 底部提示栏高度
     const listPadding = 0; // List 组件的内边距
     
     // 计算内容高度：项目数量 * 项目高度 + 内边距
@@ -142,6 +142,34 @@ const CommandSuggestion = ({
     onSelectSuggestion?.(suggestion);
   }, [onSelectSuggestion]);
 
+  // 处理删除建议
+  const handleDeleteSuggestion = useCallback(async (suggestion, index) => {
+    try {
+      console.log('[CommandSuggestion] Deleting suggestion:', suggestion.command);
+      
+      // 调用删除API
+      if (window.terminalAPI && window.terminalAPI.deleteCommandHistory) {
+        await window.terminalAPI.deleteCommandHistory(suggestion.command);
+        console.log('[CommandSuggestion] Successfully deleted command from history');
+        
+        // 触发重新获取建议以更新列表
+        if (currentInput && currentInput.trim()) {
+          // 延迟一点让删除操作完成
+          setTimeout(() => {
+            // 发送自定义事件通知WebTerminal重新获取建议
+            window.dispatchEvent(new CustomEvent('refreshCommandSuggestions', {
+              detail: { input: currentInput }
+            }));
+          }, 100);
+        }
+      } else {
+        console.error('[CommandSuggestion] deleteCommandHistory API not available');
+      }
+    } catch (error) {
+      console.error('[CommandSuggestion] Error deleting command from history:', error);
+    }
+  }, [currentInput]);
+
   // 添加全局键盘事件监听，限制方向键只在建议窗口中工作
   useEffect(() => {
     if (!visible) return;
@@ -149,7 +177,7 @@ const CommandSuggestion = ({
     // 主要的键盘事件处理器
     const keyHandler = (e) => {
       // 只处理建议窗口相关的键
-      const restrictedKeys = ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'];
+      const restrictedKeys = ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape', 'Delete'];
       
       if (restrictedKeys.includes(e.key)) {
         // 阻止事件的默认行为和传播
@@ -178,6 +206,14 @@ const CommandSuggestion = ({
               return currentIndex;
             });
             break;
+          case 'Delete':
+            setSelectedIndex(currentIndex => {
+              if (currentIndex >= 0 && currentIndex < suggestions.length) {
+                handleDeleteSuggestion(suggestions[currentIndex], currentIndex);
+              }
+              return currentIndex;
+            });
+            break;
           case 'Escape':
             onClose?.();
             break;
@@ -191,7 +227,7 @@ const CommandSuggestion = ({
     return () => {
       document.removeEventListener('keydown', keyHandler, { capture: true });
     };
-  }, [visible, suggestions, handleSuggestionSelect, onClose]); // 移除selectedIndex依赖
+  }, [visible, suggestions, handleSuggestionSelect, handleDeleteSuggestion, onClose]); // 移除selectedIndex依赖
 
   // 点击外部关闭
   useEffect(() => {
@@ -322,6 +358,31 @@ const CommandSuggestion = ({
 
   const windowPosition = getWindowPosition();
 
+  // 高亮匹配的文本
+  const highlightMatch = (text, input) => {
+    if (!input || !text) return text;
+    
+    const lowerText = text.toLowerCase();
+    const lowerInput = input.toLowerCase();
+    const index = lowerText.indexOf(lowerInput);
+    
+    if (index === -1) return text;
+    
+    return (
+      <>
+        {text.substring(0, index)}
+        <span style={{ 
+          backgroundColor: theme.palette.primary.main, 
+          color: theme.palette.primary.contrastText,
+          fontWeight: 'bold'
+        }}>
+          {text.substring(index, index + input.length)}
+        </span>
+        {text.substring(index + input.length)}
+      </>
+    );
+  };
+
   return (
     <Paper
       ref={componentRef}
@@ -386,14 +447,15 @@ const CommandSuggestion = ({
             button
             selected={selectedIndex === index}
             onClick={() => handleSuggestionSelect(suggestion)}
+            onMouseEnter={() => setSelectedIndex(index)}
             sx={{
-              padding: '4px 8px', // 调整内边距以匹配28px总高度
+              padding: '4px 8px', 
               cursor: 'pointer',
-              height: '28px', // 明确设置高度为28px
-              minHeight: '28px', // 确保最小高度为28px
-              maxHeight: '28px', // 确保最大高度为28px
+              height: '28px', 
+              minHeight: '28px', 
+              maxHeight: '28px', 
               display: 'flex',
-              alignItems: 'center', // 垂直居中
+              alignItems: 'center', 
               backgroundColor: selectedIndex === index 
                 ? theme.palette.action.selected 
                 : 'transparent',
@@ -412,9 +474,9 @@ const CommandSuggestion = ({
                   variant="body2"
                   sx={{
                     fontFamily: '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
-                    fontSize: '12px', // 减少字体大小使文本更紧凑
+                    fontSize: '12px',
                     color: theme.palette.text.primary,
-                    lineHeight: 1.2, // 减少行高使文本更紧凑
+                    lineHeight: 1.2,
                     // 只有当命令很长时才使用省略号，否则显示完整文本
                     ...(suggestion.command.length > 50 ? {
                       maxWidth: windowPosition.width - 30,
@@ -427,10 +489,17 @@ const CommandSuggestion = ({
                     })
                   }}
                 >
-                  {suggestion.command}
+                  {highlightMatch(suggestion.command, currentInput)}
                 </Typography>
               }
-              sx={{ margin: 0, flex: 1, overflow: 'hidden', display: 'flex', alignItems: 'center' }}
+              secondary={
+                suggestion.count > 1 && (
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '10px' }}>
+                    使用了 {suggestion.count} 次
+                  </Typography>
+                )
+              }
+              sx={{ margin: 0, flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
             />
           </ListItem>
         ))}
@@ -439,16 +508,16 @@ const CommandSuggestion = ({
       {/* 底部提示信息 */}
       <div
         style={{
-          padding: '2px 8px', // 进一步减少内边距，使底部栏更紧凑
+          padding: '4px 8px',
           backgroundColor: theme.palette.background.default,
           borderTop: `1px solid ${theme.palette.divider}`,
-          fontSize: '10px', // 减少字体大小
+          fontSize: '10px',
           color: theme.palette.text.secondary,
           textAlign: 'center'
         }}
       >
         <Typography variant="caption" sx={{ fontSize: '10px' }}>
-          ↑↓ 选择 • Enter/Tab 确认 • Esc 关闭
+          Enter/Tab 确认 • Del 删除
         </Typography>
       </div>
     </Paper>
