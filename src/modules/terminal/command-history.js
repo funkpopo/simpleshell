@@ -17,7 +17,7 @@ class CommandHistoryService {
 
     const trimmedCommand = command.trim();
 
-    // 最小长度限制为4，4字符以下不记录历史
+    // 最小长度限制降低到4
     if (trimmedCommand.length < 4) {
       return false;
     }
@@ -144,6 +144,11 @@ class CommandHistoryService {
     }
 
     const trimmedInput = input.trim().toLowerCase();
+    
+    // 降低最小输入长度要求到1个字符
+    if (trimmedInput.length < 1) {
+      return [];
+    }
 
     // 仅保留精确前缀匹配
     const prefixMatches = this.history.filter((item) =>

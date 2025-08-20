@@ -24,7 +24,24 @@ export function dispatchCommandToGroup(tabId, command) {
   members.forEach((targetTabId) => {
     const pid = window.processCache[targetTabId];
     if (pid) {
-      window.terminalAPI.sendToProcess(pid, command + "\r");
+      // 构造完整命令（包含回车）
+      const commandToSend = command + "\r";
+      
+      // 标记这是来自快捷命令窗口的输入，避免在WebTerminal中重复处理
+      if (window.webTerminalRefs && window.webTerminalRefs[targetTabId]) {
+        // 通过自定义事件通知WebTerminal即将接收外部命令
+        const event = new CustomEvent("externalCommandSending", {
+          detail: { 
+            tabId: targetTabId, 
+            command: commandToSend,
+            timestamp: Date.now()
+          }
+        });
+        window.dispatchEvent(event);
+      }
+      
+      // 发送命令到进程
+      window.terminalAPI.sendToProcess(pid, commandToSend);
     } else {
       console.warn(`No process ID found for tab ${targetTabId}`);
     }
