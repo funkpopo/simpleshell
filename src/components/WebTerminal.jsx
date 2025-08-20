@@ -3619,7 +3619,7 @@ const WebTerminal = ({
             height: cursorRect.height
           });
           
-          const suggestionHeight = Math.min(suggestions.length * 48 + 64, 300);
+          const suggestionHeight = Math.min((suggestions?.length || 0) * 48 + 64, 300);
           const showAbove = cursorRect.bottom + suggestionHeight + 30 > window.innerHeight && 
                            cursorRect.top > suggestionHeight + 30;
           
@@ -3665,7 +3665,7 @@ const WebTerminal = ({
           screenRect: { left: screenRect.left, top: screenRect.top }
         });
         
-        const suggestionHeight = Math.min(suggestions.length * 48 + 64, 300);
+        const suggestionHeight = Math.min((suggestions?.length || 0) * 48 + 64, 300);
         const showAbove = absoluteY + suggestionHeight + 30 > window.innerHeight && 
                          absoluteY > suggestionHeight + 30;
         
@@ -3702,7 +3702,7 @@ const WebTerminal = ({
         setCursorPosition({ x: 100, y: 100 });
       }
     }
-  }, [suggestions.length]);
+  }, [suggestions?.length || 0]);
 
   // 命令建议相关函数
   const getSuggestions = useCallback(async (input) => {
