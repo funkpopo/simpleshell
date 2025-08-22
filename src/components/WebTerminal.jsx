@@ -1897,20 +1897,6 @@ const WebTerminal = ({
             setSuggestionsHiddenByEsc(true);
           }
         }
-        // Tab键显示建议（如果已隐藏）
-        else if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !showSuggestions && !suggestionsHiddenByEsc && currentInput) {
-          e.preventDefault();
-          // 先更新光标位置
-          setTimeout(() => {
-            if (typeof updateCursorPosition === 'function') {
-              updateCursorPosition();
-            }
-            // 稍微延迟显示建议，确保位置已更新
-            setTimeout(() => {
-              getSuggestions(currentInput);
-            }, 10);
-          }, 10);
-        }
         // F3 查找下一个
         else if (e.key === "F3" || (e.ctrlKey && e.key === "g")) {
           if (searchAddonRef.current && searchTerm) {

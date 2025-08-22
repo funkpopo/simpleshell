@@ -182,7 +182,7 @@ const CommandSuggestion = ({
     // 主要的键盘事件处理器
     const keyHandler = (e) => {
       // 只处理建议窗口相关的键
-      const restrictedKeys = ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape', 'Delete'];
+      const restrictedKeys = ['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Delete'];
       
       if (restrictedKeys.includes(e.key)) {
         // 阻止事件的默认行为和传播
@@ -203,7 +203,6 @@ const CommandSuggestion = ({
             );
             break;
           case 'Enter':
-          case 'Tab':
             setSelectedIndex(currentIndex => {
               if (currentIndex >= 0 && currentIndex < suggestions.length) {
                 handleSuggestionSelect(suggestions[currentIndex]);
@@ -522,7 +521,7 @@ const CommandSuggestion = ({
         }}
       >
         <Typography variant="caption" sx={{ fontSize: '10px' }}>
-          Enter/Tab 确认 • Del 删除
+          Enter 确认 • Del 删除
         </Typography>
       </div>
     </Paper>
