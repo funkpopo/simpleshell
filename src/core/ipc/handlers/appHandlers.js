@@ -1,6 +1,7 @@
 const { app, BrowserWindow, shell } = require("electron");
 const { logToFile } = require("../../utils/logger");
 const ipQuery = require("../../../modules/system-info/ip-query");
+const updateService = require("../../update/updateService");
 
 /**
  * 应用级别的IPC处理器
@@ -35,6 +36,26 @@ class AppHandlers {
         channel: "app:checkForUpdate",
         category: "app",
         handler: this.checkForUpdate.bind(this),
+      },
+      {
+        channel: "app:downloadUpdate",
+        category: "app", 
+        handler: this.downloadUpdate.bind(this),
+      },
+      {
+        channel: "app:installUpdate",
+        category: "app",
+        handler: this.installUpdate.bind(this),
+      },
+      {
+        channel: "app:getDownloadProgress",
+        category: "app",
+        handler: this.getDownloadProgress.bind(this),
+      },
+      {
+        channel: "app:cancelDownload",
+        category: "app",
+        handler: this.cancelDownload.bind(this),
       },
       {
         channel: "ip:query",
@@ -112,22 +133,73 @@ class AppHandlers {
 
   async checkForUpdate(event) {
     try {
-      // 这里可以实现实际的更新检查逻辑
-      // 例如调用 electron-updater 或自定义更新服务
-      logToFile("Checking for updates...", "INFO");
-
-      // 模拟检查更新
-      const currentVersion = app.getVersion();
-      const updateInfo = {
-        hasUpdate: false,
-        currentVersion: currentVersion,
-        latestVersion: currentVersion,
-        releaseNotes: "",
-      };
-
-      return { success: true, updateInfo };
+      return await updateService.checkForUpdate();
     } catch (error) {
       logToFile(`Error checking for updates: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async downloadUpdate(event, downloadUrl) {
+    try {
+      if (!downloadUrl || typeof downloadUrl !== "string") {
+        return { success: false, error: "Invalid download URL" };
+      }
+
+      // 设置进度回调
+      const onProgress = (progressData) => {
+        // 发送进度事件到渲染进程
+        event.sender.send("update:downloadProgress", progressData);
+      };
+
+      const filePath = await updateService.downloadUpdate(downloadUrl, onProgress);
+      
+      return { 
+        success: true, 
+        filePath,
+        message: "Download completed successfully" 
+      };
+    } catch (error) {
+      logToFile(`Error downloading update: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async installUpdate(event, filePath) {
+    try {
+      if (!filePath || typeof filePath !== "string") {
+        return { success: false, error: "Invalid file path" };
+      }
+
+      const result = await updateService.installUpdate(filePath);
+      
+      if (result.success) {
+        logToFile("Update installation initiated", "INFO");
+      }
+      
+      return result;
+    } catch (error) {
+      logToFile(`Error installing update: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getDownloadProgress(event) {
+    try {
+      const progress = updateService.getDownloadProgress();
+      return { success: true, progress };
+    } catch (error) {
+      logToFile(`Error getting download progress: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async cancelDownload(event) {
+    try {
+      updateService.cancelDownload();
+      return { success: true, message: "Download cancelled" };
+    } catch (error) {
+      logToFile(`Error cancelling download: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }

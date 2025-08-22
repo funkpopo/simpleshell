@@ -364,6 +364,32 @@
         "selectedItems": "{{count}} items selected",
         "lastRefresh": "Last refresh: {{time}}"
       }
+    },
+    "update": {
+      "title": "Application Update",
+      "checking": "Checking for updates...",
+      "upToDate": "You're up to date!",
+      "available": "Update Available",
+      "downloading": "Downloading Update...",
+      "downloadComplete": "Download Complete",
+      "readyToInstall": "The update is ready to install",
+      "installing": "Installing update...",
+      "currentVersion": "Current Version",
+      "newVersion": "New Version",
+      "releaseDate": "Release Date",
+      "releaseNotes": "Release Notes",
+      "download": "Download Update",
+      "installNow": "Install Now",
+      "retryCheck": "Retry Check",
+      "downloadProgress": "Download progress: {{percent}}%"
+    },
+    "common": {
+      "close": "Close",
+      "cancel": "Cancel",
+      "later": "Later",
+      "ok": "OK",
+      "yes": "Yes",
+      "no": "No"
     }
   }
 }
