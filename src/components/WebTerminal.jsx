@@ -19,6 +19,8 @@ import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
+import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
+import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 import Tooltip from "@mui/material/Tooltip";
@@ -345,29 +347,6 @@ const getCharacterGridPosition = (term, pixelX, pixelY) => {
   }
 };
 
-// 调试辅助函数 - 用于测试和验证选择对齐效果
-const debugSelectionAlignment = (term) => {
-  if (!term || !window.console) return;
-
-  const metrics = getCharacterMetrics(term);
-  if (!metrics) {
-    return;
-  }
-
-  const selectionElements = document.querySelectorAll(
-    ".xterm .xterm-selection div",
-  );
-  if (selectionElements.length > 0) {
-    // 检查是否有重复显示的问题
-    const visibleElements = Array.from(selectionElements).filter(
-      (elem) => window.getComputedStyle(elem).opacity !== "0",
-    );
-    // 只在有重复显示问题时记录警告
-    if (visibleElements.length > 1) {
-      // 可以考虑使用项目的日志系统而不是console
-    }
-  }
-};
 
 // 优化的终端尺寸调整函数，使用防抖机制减少频繁调用
 const forceResizeTerminal = debounce(
@@ -1831,25 +1810,48 @@ const WebTerminal = ({
 
       // 添加键盘快捷键支持
       const handleKeyDown = (e) => {
-        // 如果是在终端内部，则不处理快捷键
-        if (
+        // 如果是在终端内部，则只处理特定的快捷键
+        const isTerminalInput =
           e.target &&
           e.target.classList &&
-          e.target.classList.contains("xterm-helper-textarea")
-        ) {
-          return;
+          e.target.classList.contains("xterm-helper-textarea");
+
+        // 在终端内部时，只允许搜索相关的快捷键
+        if (isTerminalInput) {
+          const allowedKeys = [
+            "/", // Ctrl+/ 搜索
+            "Escape", // 关闭搜索
+            "F3", // 搜索导航
+            ",", // Ctrl+, 搜索上一个
+            ".", // Ctrl+. 搜索下一个
+            ";", // Ctrl+; 复制
+            "'", // Ctrl+' 粘贴
+            "g", // 搜索导航
+          ];
+
+          const isAllowedKey = allowedKeys.includes(e.key) || 
+            (e.key === "g" && e.ctrlKey) || // Ctrl+G
+            (e.key === "/" && e.ctrlKey) || // Ctrl+/
+            (e.key === "," && e.ctrlKey) || // Ctrl+,
+            (e.key === "." && e.ctrlKey) || // Ctrl+.
+            (e.key === ";" && e.ctrlKey) || // Ctrl+;
+            (e.key === "'" && e.ctrlKey); // Ctrl+'
+
+          if (!isAllowedKey) {
+            return;
+          }
         }
 
-        // Ctrl+Alt+C 复制 (改为Ctrl+Alt+C)
-        if (e.ctrlKey && e.altKey && e.key === "c") {
+        // Ctrl+; 复制 (改为Ctrl+;)
+        if (e.ctrlKey && e.key === ";") {
           const selection = term.getSelection();
           if (selection) {
             e.preventDefault();
             navigator.clipboard.writeText(selection);
           }
         }
-        // Ctrl+Alt+V 粘贴 (改为Ctrl+Alt+V)
-        else if (e.ctrlKey && e.altKey && e.key === "v") {
+        // Ctrl+' 粘贴 (改为Ctrl+')
+        else if (e.ctrlKey && e.key === "'") {
           e.preventDefault();
 
           // 检查是否是重复粘贴（100毫秒内的操作视为重复）
@@ -1873,17 +1875,11 @@ const WebTerminal = ({
             }
           });
         }
-        // Ctrl+Alt+F 搜索 (改为Ctrl+Alt+F)
-        else if (e.ctrlKey && e.altKey && e.key === "f") {
+        // Ctrl+/ 搜索 (改为Ctrl+/)
+        else if (e.ctrlKey && e.key === "/") {
           e.preventDefault();
+          e.stopPropagation();
           setShowSearchBar(true);
-        }
-        // Ctrl+Alt+D 调试选择对齐 (开发调试用)
-        else if (e.ctrlKey && e.altKey && e.key === "d") {
-          e.preventDefault();
-          if (termRef.current) {
-            debugSelectionAlignment(termRef.current);
-          }
         }
         // Esc 关闭搜索或建议
         else if (e.key === "Escape") {
@@ -1897,17 +1893,17 @@ const WebTerminal = ({
             setSuggestionsHiddenByEsc(true);
           }
         }
-        // F3 查找下一个
-        else if (e.key === "F3" || (e.ctrlKey && e.key === "g")) {
+        // Ctrl+. 查找下一个
+        else if (e.key === "F3" || (e.ctrlKey && e.key === "g") || (e.ctrlKey && e.key === ".")) {
           if (searchAddonRef.current && searchTerm) {
             e.preventDefault();
             handleSearch();
           }
         }
-        // Shift+F3 查找上一个
+        // Ctrl+, 查找上一个
         else if (
           (e.shiftKey && e.key === "F3") ||
-          (e.ctrlKey && e.shiftKey && e.key === "g")
+          (e.ctrlKey && e.key === ",")
         ) {
           if (searchAddonRef.current && searchTerm) {
             e.preventDefault();
@@ -3934,7 +3930,7 @@ const WebTerminal = ({
         />
 
         {!showSearchBar && (
-          <Tooltip title="搜索 (Ctrl+Alt+F)">
+          <Tooltip title="搜索 (Ctrl+/)">
             <IconButton
               size="small"
               className="search-icon-btn"
@@ -3992,19 +3988,7 @@ const WebTerminal = ({
                     : ""}
               </div>
             )}
-            <Tooltip title="查找下一个 (F3)">
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={handleSearch}
-                  className="search-button"
-                  disabled={!searchTerm || noMatchFound}
-                >
-                  <SearchIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title="查找上一个 (Shift+F3)">
+            <Tooltip title="查找上一个 (Ctrl+,)">
               <span>
                 <IconButton
                   size="small"
@@ -4012,10 +3996,19 @@ const WebTerminal = ({
                   className="search-button"
                   disabled={!searchTerm || noMatchFound}
                 >
-                  <SearchIcon
-                    fontSize="small"
-                    style={{ transform: "rotate(180deg)" }}
-                  />
+                  <NavigateBeforeIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="查找下一个 (Ctrl+.)">
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={handleSearch}
+                  className="search-button"
+                  disabled={!searchTerm || noMatchFound}
+                >
+                  <NavigateNextIcon fontSize="small" />
                 </IconButton>
               </span>
             </Tooltip>
@@ -4054,7 +4047,7 @@ const WebTerminal = ({
           </ListItemIcon>
           <ListItemText>复制</ListItemText>
           <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-            Ctrl+Alt+C
+            Ctrl+;
           </Typography>
         </MenuItem>
         <MenuItem onClick={handlePaste}>
@@ -4063,7 +4056,7 @@ const WebTerminal = ({
           </ListItemIcon>
           <ListItemText>粘贴</ListItemText>
           <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-            Ctrl+Alt+V / 中键
+            Ctrl+' / 中键
           </Typography>
         </MenuItem>
         <MenuItem onClick={handleSendToAI} disabled={!selectedText}>
@@ -4079,7 +4072,7 @@ const WebTerminal = ({
           </ListItemIcon>
           <ListItemText>搜索</ListItemText>
           <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-            Ctrl+Alt+F
+            Ctrl+/
           </Typography>
         </MenuItem>
         <Divider />
