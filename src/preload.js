@@ -368,6 +368,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 窗口重新加载
   reloadWindow: () => ipcRenderer.invoke("app:reloadWindow"),
 
+  // 更新相关API
+  downloadUpdate: (downloadUrl) => ipcRenderer.invoke("app:downloadUpdate", downloadUrl),
+  installUpdate: (filePath) => ipcRenderer.invoke("app:installUpdate", filePath),
+  getDownloadProgress: () => ipcRenderer.invoke("app:getDownloadProgress"),
+  cancelDownload: () => ipcRenderer.invoke("app:cancelDownload"),
+
   // 新增: 通知主进程编辑器模式变化的API
   notifyEditorModeChange: (processId, isEditorMode) =>
     ipcRenderer.invoke(
