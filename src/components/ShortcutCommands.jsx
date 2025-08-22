@@ -229,11 +229,34 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef(null);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [tabValue, setTabValue] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState({});
   const [containerHeight, setContainerHeight] = useState(400);
   const containerRef = useRef(null);
+
+  // 键盘快捷键处理
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // 只在快捷命令管理器打开时处理快捷键
+      if (!open) return;
+
+      // Ctrl+/ 聚焦到搜索框
+      if (e.ctrlKey && e.key === "/") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1172,6 +1195,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
             sx={{ p: 1, borderBottom: `1px solid ${theme.palette.divider}` }}
           >
             <TextField
+              inputRef={searchInputRef}
               placeholder={t("shortcutCommands.search")}
               variant="outlined"
               size="small"
