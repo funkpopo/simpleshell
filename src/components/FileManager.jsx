@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, useMemo } from "react";
+import React, { useState, useEffect, memo, useCallback, useMemo, useRef } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import {
   Box,
@@ -79,6 +79,7 @@ const FileManager = memo(
     const [directoryCache, setDirectoryCache] = useState({});
     const [contextMenu, setContextMenu] = useState(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const searchInputRef = useRef(null);
     const [showSearch, setShowSearch] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [selectedFiles, setSelectedFiles] = useState([]); // 多选文件列表
@@ -106,6 +107,34 @@ const FileManager = memo(
 
     // 用于存储延迟移除定时器的引用
     const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
+
+    // 键盘快捷键处理
+    useEffect(() => {
+      const handleKeyDown = (e) => {
+        // 只在文件管理器打开时处理快捷键
+        if (!open) return;
+
+        // Ctrl+/ 聚焦到搜索框
+        if (e.ctrlKey && e.key === "/") {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!showSearch) {
+            setShowSearch(true);
+          }
+          // 等待一帧后聚焦，确保输入框已渲染
+          setTimeout(() => {
+            if (searchInputRef.current) {
+              searchInputRef.current.focus();
+            }
+          }, 0);
+        }
+      };
+
+      document.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown);
+      };
+    }, [open, showSearch]);
 
     // 使用自动清理Hook
     const { addEventListener, addTimeout } = useAutoCleanup();
@@ -2704,6 +2733,7 @@ const FileManager = memo(
             }}
           >
             <TextField
+              inputRef={searchInputRef}
               size="small"
               fullWidth
               placeholder={t("fileManager.search")}

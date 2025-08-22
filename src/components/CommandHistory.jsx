@@ -154,10 +154,33 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef(null);
   const [selectedCommands, setSelectedCommands] = useState(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [containerHeight, setContainerHeight] = useState(400);
   const containerRef = useRef(null);
+
+  // 键盘快捷键处理
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // 只在历史命令管理器打开时处理快捷键
+      if (!open) return;
+
+      // Ctrl+/ 聚焦到搜索框
+      if (e.ctrlKey && e.key === "/") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
 
   // 对话框状态
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -519,6 +542,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
               sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}
             >
               <TextField
+                inputRef={searchInputRef}
                 fullWidth
                 size="small"
                 placeholder={t("commandHistory.search")}

@@ -71,6 +71,7 @@ const ConnectionManager = memo(
     const [connections, setConnections] = useState(initialConnections);
     const [isLoading, setIsLoading] = useState(!initialConnections.length);
     const [searchQuery, setSearchQuery] = useState("");
+    const searchInputRef = useRef(null);
     const [snackbar, setSnackbar] = useState({
       open: false,
       message: "",
@@ -79,6 +80,28 @@ const ConnectionManager = memo(
 
     // 使用 useRef 存储稳定的渲染函数引用
     const renderConnectionItemRef = useRef();
+
+    // 键盘快捷键处理
+    useEffect(() => {
+      const handleKeyDown = (e) => {
+        // 只在连接管理器打开时处理快捷键
+        if (!open) return;
+
+        // Ctrl+/ 聚焦到搜索框
+        if (e.ctrlKey && e.key === "/") {
+          e.preventDefault();
+          e.stopPropagation();
+          if (searchInputRef.current) {
+            searchInputRef.current.focus();
+          }
+        }
+      };
+
+      document.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown);
+      };
+    }, [open]);
 
     // 初始加载数据
     useEffect(() => {
@@ -1200,6 +1223,7 @@ const ConnectionManager = memo(
             {/* 搜索框 */}
             <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
               <TextField
+                inputRef={searchInputRef}
                 label="搜索..."
                 variant="outlined"
                 size="small"
