@@ -1787,6 +1787,7 @@ function App() {
               scrollButtons="auto"
               sx={{
                 flexGrow: 1,
+                maxWidth: "calc(100% - 120px)",
                 minHeight: 40,
                 "& .MuiTabs-indicator": {
                   height: 3,
