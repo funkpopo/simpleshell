@@ -631,123 +631,6 @@ function setupIPC(mainWindow) {
     logToFile(`本地终端处理器初始化失败: ${error.message}`, "ERROR");
   }
 
-  // 启动PowerShell进程
-  ipcMain.handle("terminal:startPowerShell", async () => {
-    const processId = nextProcessId++;
-
-    // 获取PowerShell路径
-    const powershellPath =
-      process.platform === "win32" ? "powershell.exe" : "pwsh";
-
-    try {
-      // 启动PowerShell进程
-      const ps = spawn(powershellPath, ["-NoLogo"], {
-        env: process.env,
-        cwd: process.env.USERPROFILE || process.env.HOME,
-      });
-
-      // 存储进程信息
-      childProcesses.set(processId, {
-        process: ps,
-        listeners: new Set(),
-        editorMode: false, // 初始化编辑器模式为false
-        commandBuffer: "", // 初始化命令缓冲区
-      });
-
-      // 处理PowerShell输出
-      ps.stdout.on("data", (data) => {
-        try {
-          // 检查主窗口是否还存在且未被销毁
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            const output = data.toString();
-            // 处理输出以检测编辑器退出
-            const processedOutput = terminalManager.processOutput(
-              processId,
-              output,
-            );
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              processedOutput,
-            );
-          }
-        } catch (error) {
-          logToFile(`Error handling stdout data: ${error.message}`, "ERROR");
-        }
-      });
-
-      ps.stderr.on("data", (data) => {
-        try {
-          // 检查主窗口是否还存在且未被销毁
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            const output = data.toString();
-            // 处理输出以检测编辑器退出
-            const processedOutput = terminalManager.processOutput(
-              processId,
-              output,
-            );
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              processedOutput,
-            );
-          }
-        } catch (error) {
-          logToFile(`Error handling stderr data: ${error.message}`, "ERROR");
-        }
-      });
-
-      // 处理进程退出
-      ps.on("exit", (code) => {
-        try {
-          // 检查主窗口是否还存在且未被销毁
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              `\r\nProcess exited with code ${code || 0}\r\n`,
-            );
-          }
-          // 清理与此进程相关的待处理SFTP操作
-          if (
-            sftpCore &&
-            typeof sftpCore.clearPendingOperationsForTab === "function"
-          ) {
-            sftpCore.clearPendingOperationsForTab(processId);
-          }
-          childProcesses.delete(processId);
-        } catch (error) {
-          logToFile(`Error handling process exit: ${error.message}`, "ERROR");
-        }
-      });
-
-      // 处理进程错误
-      ps.on("error", (err) => {
-        try {
-          // 检查主窗口是否还存在且未被销毁
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              `\r\nProcess error: ${err.message}\r\n`,
-            );
-          }
-          // 清理与此进程相关的待处理SFTP操作
-          if (
-            sftpCore &&
-            typeof sftpCore.clearPendingOperationsForTab === "function"
-          ) {
-            sftpCore.clearPendingOperationsForTab(processId);
-          }
-          childProcesses.delete(processId);
-        } catch (error) {
-          logToFile(`Error handling process error: ${error.message}`, "ERROR");
-        }
-      });
-
-      return processId;
-    } catch (error) {
-      logToFile(`Failed to start PowerShell: ${error.message}`, "ERROR");
-      throw error;
-    }
-  });
-
   // 启动SSH连接
   ipcMain.handle("terminal:startSSH", async (event, sshConfig) => {
     const processId = nextProcessId++;
@@ -3366,7 +3249,7 @@ function setupIPC(mainWindow) {
           isConnecting: false,
           quality: "excellent",
           lastUpdate: Date.now(),
-          connectionType: "PowerShell",
+          connectionType: "Local",
           host: "localhost",
         };
         return { success: true, data: connectionState };

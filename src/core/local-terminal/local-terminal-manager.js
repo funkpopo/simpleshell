@@ -86,17 +86,6 @@ class LocalTerminalManager extends EventEmitter {
 
     // 根据终端类型配置参数
     switch (config.type) {
-      case 'powershell-core':
-      case 'powershell':
-        spawnArgs = ['-NoExit', '-NoProfile'];
-        break;
-      case 'cmd':
-        spawnArgs = ['/k'];
-        break;
-      case 'git-bash':
-        spawnArgs = ['--login', '-i'];
-        spawnOptions.shell = false;
-        break;
       case 'wsl':
         // WSL最好通过Windows Terminal启动以避免闪退
         // 检查是否有Windows Terminal可用
@@ -166,7 +155,21 @@ class LocalTerminalManager extends EventEmitter {
       throw new Error(`终端 ${config.name || config.type} 的执行路径未设置`);
     }
     
+    try {
+      // 验证可执行文件是否存在
+      const fs = require('fs');
+      if (!fs.existsSync(config.executablePath)) {
+        throw new Error(`可执行文件不存在: ${config.executablePath}`);
+      }
+    } catch (fsError) {
+      console.warn(`文件检查失败，继续尝试启动: ${fsError.message}`);
+    }
+    
     const childProcess = spawn(config.executablePath, spawnArgs, spawnOptions);
+    
+    if (!childProcess.pid) {
+      throw new Error(`进程启动失败，未获得PID`);
+    }
     
     terminalInfo.process = childProcess;
     terminalInfo.pid = childProcess.pid;
@@ -258,25 +261,9 @@ class LocalTerminalManager extends EventEmitter {
       }
 
       // 使用PowerShell查找窗口句柄
-      const { exec } = require('child_process');
-      const script = `
-        $processes = Get-Process -Id ${pid} -ErrorAction SilentlyContinue
-        if ($processes) {
-          $process = $processes[0]
-          if ($process.MainWindowHandle -ne 0) {
-            $process.MainWindowHandle.ToInt64()
-          }
-        }
-      `;
-
-      exec(`powershell -c "${script}"`, (error, stdout) => {
-        if (error || !stdout.trim()) {
-          resolve(null);
-        } else {
-          const hwnd = parseInt(stdout.trim());
-          resolve(hwnd || null);
-        }
-      });
+      // Window handle detection removed - requires PowerShell
+      // For now, return null as this is not critical functionality
+      resolve(null);
     });
   }
 
@@ -322,17 +309,9 @@ class LocalTerminalManager extends EventEmitter {
         }
       `;
 
-      exec(`powershell -c "${script}"`, (error, stdout) => {
-        if (error || !stdout.trim()) {
-          resolve(null);
-        } else {
-          try {
-            resolve(JSON.parse(stdout.trim()));
-          } catch (parseError) {
-            resolve(null);
-          }
-        }
-      });
+      // Window rect detection removed - requires PowerShell
+      // This functionality is not critical for basic terminal operation
+      resolve(null);
     });
   }
 
@@ -340,77 +319,18 @@ class LocalTerminalManager extends EventEmitter {
    * 设置窗口位置和大小
    */
   async setWindowRect(hwnd, x, y, width, height) {
-    if (!this.isWindows || !hwnd) {
-      return false;
-    }
-
-    return new Promise((resolve) => {
-      const { exec } = require('child_process');
-      const script = `
-        Add-Type -TypeDefinition @"
-          using System;
-          using System.Runtime.InteropServices;
-          public class Win32 {
-            [DllImport("user32.dll")]
-            public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-          }
-"@
-
-        $hwnd = [IntPtr]${hwnd}
-        $HWND_TOP = [IntPtr]0
-        $SWP_SHOWWINDOW = 0x0040
-        [Win32]::SetWindowPos($hwnd, $HWND_TOP, ${x}, ${y}, ${width}, ${height}, $SWP_SHOWWINDOW)
-      `;
-
-      exec(`powershell -c "${script}"`, (error) => {
-        resolve(!error);
-      });
-    });
+    // Window positioning removed - requires PowerShell
+    // This functionality is not critical for basic terminal operation
+    return false;
   }
 
   /**
    * 设置窗口为子窗口
    */
   async setWindowParent(hwnd, parentHwnd) {
-    if (!this.isWindows || !hwnd || !parentHwnd) {
-      return false;
-    }
-
-    return new Promise((resolve) => {
-      const { exec } = require('child_process');
-      const script = `
-        Add-Type -TypeDefinition @"
-          using System;
-          using System.Runtime.InteropServices;
-          public class Win32 {
-            [DllImport("user32.dll")]
-            public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
-            
-            [DllImport("user32.dll")]
-            public static extern bool SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-            
-            public const int GWL_STYLE = -16;
-            public const int WS_CHILD = 0x40000000;
-            public const int WS_POPUP = unchecked((int)0x80000000);
-          }
-"@
-
-        $childHwnd = [IntPtr]${hwnd}
-        $parentHwnd = [IntPtr]${parentHwnd}
-        
-        # 移除窗口边框和标题栏
-        [Win32]::SetWindowLong($childHwnd, [Win32]::GWL_STYLE, [Win32]::WS_CHILD)
-        
-        # 设置父窗口
-        $result = [Win32]::SetParent($childHwnd, $parentHwnd)
-        $result -ne [IntPtr]::Zero
-      `;
-
-      exec(`powershell -c "${script}"`, (error, stdout) => {
-        const success = !error && stdout.trim() === 'True';
-        resolve(success);
-      });
-    });
+    // Window parenting removed - requires PowerShell
+    // This functionality is not critical for basic terminal operation
+    return false;
   }
 
   /**
@@ -529,21 +449,24 @@ class LocalTerminalManager extends EventEmitter {
       
       // 方法3：检查Windows应用包（无窗口方式）
       try {
-        const { stdout } = await execAsync(
-          'powershell -WindowStyle Hidden -c "Get-AppxPackage -Name Microsoft.WindowsTerminal -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name"',
-          { timeout: 5000, windowsHide: true }
-        );
-        if (stdout.trim().includes('Microsoft.WindowsTerminal')) {
-          console.log('通过AppxPackage检测到Windows Terminal');
-          return true;
-        }
+        // Simplified detection - just check if wt.exe exists in PATH
+        const { exec } = require('child_process');
+        return new Promise((resolve) => {
+          exec('where wt.exe', { windowsHide: true }, (error) => {
+            if (!error) {
+              console.log('检测到Windows Terminal (wt.exe)');
+              resolve(true);
+            } else {
+              console.log('未检测到Windows Terminal');
+              resolve(false);
+            }
+          });
+        });
       } catch (error) {
-        // PowerShell检查失败
-        console.log('PowerShell检查失败:', error.message);
+        // 检查失败
+        console.log('Windows Terminal检查失败:', error.message);
+        return false;
       }
-      
-      console.log('未检测到Windows Terminal');
-      return false;
     } catch (error) {
       console.error('检查Windows Terminal可用性时出错:', error.message);
       return false;

@@ -21,11 +21,10 @@ import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
-import { RiTerminalBoxFill, RiTerminalBoxLine } from "react-icons/ri";
-import { VscTerminalCmd, VscTerminalLinux, VscTerminalUbuntu, VscTerminalDebian } from "react-icons/vsc";
+import { RiTerminalBoxLine } from "react-icons/ri";
+import { VscTerminalLinux, VscTerminalUbuntu, VscTerminalDebian } from "react-icons/vsc";
 import { GrArchlinux } from "react-icons/gr";
 import { SiAlpinelinux } from "react-icons/si";
-import { FaGitAlt } from "react-icons/fa6";
 import { useTranslation } from "react-i18next";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 
@@ -43,10 +42,6 @@ const getTerminalIcon = (type, distribution) => {
   
   // 其他终端类型
   const iconMap = {
-    'powershell-core': <RiTerminalBoxFill size={16} />,
-    'powershell': <RiTerminalBoxLine size={16} />,
-    'cmd': <VscTerminalCmd size={16} />,
-    'git-bash': <FaGitAlt size={16} />,
     'wsl': <VscTerminalLinux size={16} />,
   };
   

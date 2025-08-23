@@ -50,68 +50,10 @@ class TerminalDetector {
         name: 'WSL (Ubuntu)',
         type: 'wsl',
         executable: 'wsl.exe',
-        icon: '🐧',
         priority: 12,
         systemCommand: 'wsl.exe',
         launchArgs: ['--distribution', 'Ubuntu'],
         adminRequired: false
-      },
-
-      // PowerShell Core
-      {
-        name: 'PowerShell Core',
-        type: 'powershell-core',
-        executable: 'pwsh.exe',
-        icon: '🔵',
-        priority: 10,
-        checkPaths: [
-          'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
-          'C:\\Program Files\\PowerShell\\6\\pwsh.exe',
-        ],
-        registryPath: 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\pwsh.exe'
-      },
-      
-      // Windows PowerShell
-      {
-        name: 'Windows PowerShell',
-        type: 'powershell',
-        executable: 'powershell.exe',
-        icon: '🔷',
-        priority: 9,
-        checkPaths: [
-          'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
-        ],
-        systemCommand: 'powershell.exe'
-      },
-
-      // Command Prompt
-      {
-        name: 'Command Prompt',
-        type: 'cmd',
-        executable: 'cmd.exe',
-        icon: '⚫',
-        priority: 8,
-        checkPaths: [
-          'C:\\Windows\\System32\\cmd.exe',
-        ],
-        systemCommand: 'cmd.exe'
-      },
-
-      // Git Bash
-      {
-        name: 'Git Bash',
-        type: 'git-bash',
-        executable: 'bash.exe',
-        icon: '🦊',
-        priority: 7,
-        checkPaths: [
-          'C:\\Program Files\\Git\\bin\\bash.exe',
-          'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-          ...(process.env.LOCALAPPDATA ? [process.env.LOCALAPPDATA + '\\Programs\\Git\\bin\\bash.exe'] : []),
-          ...(process.env.ProgramFiles ? [process.env.ProgramFiles + '\\Git\\bin\\bash.exe'] : []),
-          ...(process.env['ProgramFiles(x86)'] ? [process.env['ProgramFiles(x86)'] + '\\Git\\bin\\bash.exe'] : []),
-        ],
-        environmentPaths: ['GIT_INSTALL_ROOT', 'GIT_HOME']
       },
 
       // Windows Terminal
@@ -119,49 +61,8 @@ class TerminalDetector {
         name: 'Windows Terminal',
         type: 'windows-terminal',
         executable: 'wt.exe',
-        icon: '🔳',
         priority: 11,
         packageName: 'Microsoft.WindowsTerminal_8wekyb3d8bbwe'
-      },
-
-      // Visual Studio Code Terminal
-      {
-        name: 'VS Code Terminal',
-        type: 'vscode',
-        executable: 'code.exe',
-        icon: '📝',
-        priority: 6,
-        checkPaths: [
-          'C:\\Users\\' + process.env.USERNAME + '\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe',
-          'C:\\Program Files\\Microsoft VS Code\\Code.exe',
-          'C:\\Program Files (x86)\\Microsoft VS Code\\Code.exe',
-        ]
-      },
-
-      // ConEmu
-      {
-        name: 'ConEmu',
-        type: 'conemu',
-        executable: 'ConEmu64.exe',
-        icon: '🟨',
-        priority: 5,
-        checkPaths: [
-          'C:\\Program Files\\ConEmu\\ConEmu64.exe',
-          process.env.LOCALAPPDATA + '\\ConEmu\\ConEmu64.exe',
-        ]
-      },
-
-      // Cmder
-      {
-        name: 'Cmder',
-        type: 'cmder',
-        executable: 'Cmder.exe',
-        icon: '🟩',
-        priority: 4,
-        checkPaths: [
-          'C:\\cmder\\Cmder.exe',
-          'C:\\tools\\cmder\\Cmder.exe',
-        ]
       }
     ];
 
@@ -192,21 +93,18 @@ class TerminalDetector {
         name: 'Terminal',
         type: 'terminal',
         executable: '/System/Applications/Utilities/Terminal.app',
-        icon: '⚫',
         priority: 10
       },
       {
         name: 'iTerm2',
         type: 'iterm2',
         executable: '/Applications/iTerm.app',
-        icon: '🔷',
         priority: 9
       },
       {
         name: 'Hyper',
         type: 'hyper',
         executable: '/Applications/Hyper.app',
-        icon: '⚡',
         priority: 8
       }
     ];
@@ -237,28 +135,24 @@ class TerminalDetector {
         name: 'GNOME Terminal',
         type: 'gnome-terminal',
         executable: 'gnome-terminal',
-        icon: '🔷',
         priority: 10
       },
       {
         name: 'Konsole',
         type: 'konsole',
         executable: 'konsole',
-        icon: '🔵',
         priority: 9
       },
       {
         name: 'XFCE Terminal',
         type: 'xfce4-terminal',
         executable: 'xfce4-terminal',
-        icon: '🐁',
         priority: 8
       },
       {
         name: 'Terminator',
         type: 'terminator',
         executable: 'terminator',
-        icon: '🤖',
         priority: 7
       }
     ];
@@ -334,11 +228,19 @@ class TerminalDetector {
         console.log(`检查系统命令: ${terminal.systemCommand}`);
         try {
           const whereCommand = this.isWindows ? 'where' : 'which';
-          const { stdout } = await execAsync(`${whereCommand} ${terminal.systemCommand}`, { timeout: 5000 });
+          const { stdout } = await execAsync(`${whereCommand} ${terminal.systemCommand}`, { 
+            timeout: 5000,
+            windowsHide: true
+          });
           if (stdout.trim()) {
-            terminal.executablePath = terminal.systemCommand;
-            console.log(`✓ 在系统PATH找到: ${terminal.systemCommand}`);
-            return true;
+            const foundPaths = stdout.trim().split('\n');
+            // 取第一个找到的路径
+            const firstPath = foundPaths[0].trim();
+            if (firstPath && await this.fileExists(firstPath)) {
+              terminal.executablePath = firstPath;
+              console.log(`✓ 在系统PATH找到: ${firstPath}`);
+              return true;
+            }
           }
         } catch (error) {
           console.log(`系统命令检查失败: ${error.message}`);

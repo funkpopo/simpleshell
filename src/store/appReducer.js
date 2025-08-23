@@ -66,7 +66,7 @@ export const initialState = {
   tabs: [
     {
       id: "default-tab-1",
-      title: "Local PowerShell",
+      title: "Local Terminal",
       type: "local",
       sessionId: `terminal-${Date.now()}`,
     },

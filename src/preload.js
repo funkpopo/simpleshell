@@ -8,9 +8,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 发送命令到主进程处理 (用于模拟终端)
   sendCommand: (command) => ipcRenderer.invoke("terminal:command", command),
 
-  // PowerShell进程管理
-  startPowerShell: (args) =>
-    ipcRenderer.invoke("terminal:startPowerShell", args),
+  // 终端进程管理
   startCmd: (args) => ipcRenderer.invoke("terminal:startCmd", args),
   startBash: (args) => ipcRenderer.invoke("terminal:startBash", args),
   startSSH: (args) => ipcRenderer.invoke("terminal:startSSH", args),

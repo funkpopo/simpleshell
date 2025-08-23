@@ -139,7 +139,7 @@ class ProcessManager {
           processInfo.stream.write(input);
         }
       } else {
-        // PowerShell进程处理
+        // 本地终端进程处理
         if (processInfo.process && processInfo.process.stdin) {
           processInfo.process.stdin.write(input);
         }
@@ -176,7 +176,7 @@ class ProcessManager {
 
         // 注意：不直接关闭SSH连接，由连接池管理
       } else {
-        // PowerShell进程处理
+        // 本地终端进程处理
         if (
           processInfo.process &&
           typeof processInfo.process.kill === "function"
@@ -208,7 +208,7 @@ class ProcessManager {
           processInfo.stream.setWindow(rows, cols);
         }
       }
-      // PowerShell进程通常不需要手动调整大小
+      // 本地终端进程通常不需要手动调整大小
     } catch (error) {
       logToFile(
         `Error resizing terminal ${processId}: ${error.message}`,

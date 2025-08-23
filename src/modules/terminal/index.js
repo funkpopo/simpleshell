@@ -18,6 +18,43 @@ class TerminalManager {
     this.processManager.cleanup();
   }
 
+  async createSSHTerminal(processId, sshConfig, mainWindow) {
+    return this.processManager.startSSH(sshConfig);
+  }
+
+  async createTelnetTerminal(processId, telnetConfig, mainWindow) {
+    // Implement Telnet terminal creation
+    return { success: false, error: "Telnet not implemented" };
+  }
+
+  async terminateTerminal(processId) {
+    return this.processManager.killProcess(processId);
+  }
+
+  async resizeTerminal(processId, cols, rows) {
+    return this.processManager.resizeTerminal(processId, cols, rows);
+  }
+
+  async getSystemInfo(processId) {
+    return this.processManager.getSystemInfo(processId);
+  }
+
+  async getProcessList(processId) {
+    return this.processManager.getProcessList(processId);
+  }
+
+  async loadSavedConnections() {
+    return this.processManager.loadSavedConnections();
+  }
+
+  async saveConnections(connections) {
+    return this.processManager.saveConnections(connections);
+  }
+
+  async getTopConnections() {
+    return this.processManager.getTopConnections();
+  }
+
   async startSSH(sshConfig) {
     return this.processManager.startSSH(sshConfig);
   }
