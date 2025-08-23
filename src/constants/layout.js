@@ -7,6 +7,8 @@ export const SIDEBAR_WIDTHS = {
   COMMAND_HISTORY: 300, // px
   IP_ADDRESS_QUERY: 300, // px
   RANDOM_PASSWORD_GENERATOR: 300, // px
+  SECURITY_TOOLS: 300, // px
+  LOCAL_TERMINAL_SIDEBAR: 300, // px
   // 右侧按钮栏宽度
   SIDEBAR_BUTTONS_WIDTH: 48, // px
   // 额外安全边距，确保内容不会被遮挡

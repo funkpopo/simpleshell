@@ -37,6 +37,7 @@ import InfoIcon from "@mui/icons-material/Info";
 import ExitToAppIcon from "@mui/icons-material/ExitToApp";
 import PublicIcon from "@mui/icons-material/Public";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
+import ComputerIcon from "@mui/icons-material/Computer";
 import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
 import ConnectionManager from "./components/ConnectionManager.jsx";
@@ -47,11 +48,12 @@ import {
   SettingsWithSuspense as Settings,
   CommandHistoryWithSuspense as CommandHistory,
   ShortcutCommandsWithSuspense as ShortcutCommands,
+  LocalTerminalSidebarWithSuspense as LocalTerminalSidebar,
   preloadComponents,
   smartPreload,
 } from "./components/LazyComponents.jsx";
 
-import RandomPasswordGenerator from "./components/RandomPasswordGenerator.jsx";
+import SecurityTools from "./components/SecurityTools.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import AIChatWindow from "./components/AIChatWindow.jsx";
 import CustomTab from "./components/CustomTab.jsx";
@@ -358,7 +360,11 @@ function App() {
   const [ipAddressQueryOpen, setIpAddressQueryOpen] = React.useState(false);
 
   // 随机密码生成器侧边栏状态
-  const [randomPasswordGeneratorOpen, setRandomPasswordGeneratorOpen] =
+  const [securityToolsOpen, setSecurityToolsOpen] =
+    React.useState(false);
+
+  // 本地终端侧边栏状态
+  const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] = 
     React.useState(false);
 
   // 文件管理路径记忆状态 - 为每个SSH连接记住最后访问的路径
@@ -414,10 +420,15 @@ function App() {
       } else if (ipAddressQueryOpen && lastOpenedSidebar === "ipquery") {
         return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
       } else if (
-        randomPasswordGeneratorOpen &&
+        securityToolsOpen &&
         lastOpenedSidebar === "password"
       ) {
-        return SIDEBAR_WIDTHS.RANDOM_PASSWORD_GENERATOR;
+        return SIDEBAR_WIDTHS.SECURITY_TOOLS;
+      } else if (
+        localTerminalSidebarOpen &&
+        lastOpenedSidebar === "localTerminal"
+      ) {
+        return SIDEBAR_WIDTHS.LOCAL_TERMINAL_SIDEBAR;
       }
       // Fallback if lastOpenedSidebar isn't set but one is open
       if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
@@ -426,8 +437,10 @@ function App() {
       else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
       else if (commandHistoryOpen) return SIDEBAR_WIDTHS.COMMAND_HISTORY;
       else if (ipAddressQueryOpen) return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
-      else if (randomPasswordGeneratorOpen)
-        return SIDEBAR_WIDTHS.RANDOM_PASSWORD_GENERATOR;
+      else if (securityToolsOpen)
+        return SIDEBAR_WIDTHS.SECURITY_TOOLS;
+      else if (localTerminalSidebarOpen)
+        return SIDEBAR_WIDTHS.LOCAL_TERMINAL_SIDEBAR;
       return 0;
     };
 
@@ -464,7 +477,8 @@ function App() {
     shortcutCommandsOpen,
     commandHistoryOpen,
     ipAddressQueryOpen,
-    randomPasswordGeneratorOpen,
+    securityToolsOpen,
+    localTerminalSidebarOpen,
     lastOpenedSidebar,
     SIDEBAR_WIDTHS,
   ]);
@@ -1201,7 +1215,7 @@ function App() {
       setShortcutCommandsOpen(false);
       setCommandHistoryOpen(false);
       setIpAddressQueryOpen(false);
-      setRandomPasswordGeneratorOpen(false);
+      setSecurityToolsOpen(false);
 
       // 找到主标签在tabs中的位置
       const mainTabIndex = tabs.findIndex((tab) => tab.id === mainTabId);
@@ -1305,7 +1319,7 @@ function App() {
       setShortcutCommandsOpen,
       setCommandHistoryOpen,
       setIpAddressQueryOpen,
-      setRandomPasswordGeneratorOpen,
+      setSecurityToolsOpen,
     ],
   ); // 添加所有相关依赖
 
@@ -1458,12 +1472,75 @@ function App() {
   };
 
   // 切换随机密码生成器侧边栏
-  const toggleRandomPasswordGenerator = () => {
-    setRandomPasswordGeneratorOpen(!randomPasswordGeneratorOpen);
-    if (!randomPasswordGeneratorOpen) {
+  const toggleSecurityTools = () => {
+    setSecurityToolsOpen(!securityToolsOpen);
+    if (!securityToolsOpen) {
       setLastOpenedSidebar("password");
     }
   };
+
+  // 切换本地终端侧边栏
+  const toggleLocalTerminalSidebar = () => {
+    setLocalTerminalSidebarOpen(!localTerminalSidebarOpen);
+    if (!localTerminalSidebarOpen) {
+      setLastOpenedSidebar("localTerminal");
+    }
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
+  };
+
+  // 关闭本地终端侧边栏
+  const handleCloseLocalTerminalSidebar = () => {
+    setLocalTerminalSidebarOpen(false);
+
+    // 立即触发resize事件，确保终端快速适配新的布局
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
+  };
+
+  // 启动本地终端的处理函数（仅启动外部终端，不在应用中创建标签页）
+  const handleLaunchLocalTerminal = useCallback(async (terminalConfig) => {
+    try {
+      console.log('App中启动终端:', terminalConfig);
+      
+      if (window.terminalAPI?.launchLocalTerminal) {
+        const terminalId = `local-${Date.now()}`;
+        
+        // 确保传递完整的终端配置
+        const completeConfig = {
+          name: terminalConfig.name,
+          type: terminalConfig.type,
+          executablePath: terminalConfig.executablePath,
+          executable: terminalConfig.executable,
+          availableDistributions: terminalConfig.availableDistributions || [],
+          launchArgs: terminalConfig.launchArgs || []
+        };
+        
+        console.log('完整终端配置:', completeConfig);
+        const result = await window.terminalAPI.launchLocalTerminal(completeConfig, terminalId);
+        console.log('启动结果:', result);
+        
+        // 检查API调用是否成功
+        if (!result.success) {
+          throw new Error(result.error || 'Launch failed');
+        }
+        
+        // 不创建标签页，只启动外部终端
+        // 终端将在系统中独立运行，不显示在应用界面中
+        console.log(`Local terminal launched: ${terminalConfig.name} (PID: ${result.data?.pid})`);
+        
+        return result;
+      }
+      throw new Error('Local terminal API not available');
+    } catch (error) {
+      console.error('Failed to launch local terminal:', error);
+      throw error;
+    }
+  }, []);
 
   // 更新关闭所有侧边栏的函数
   const closeAllSidebars = () => {
@@ -1473,7 +1550,8 @@ function App() {
     setShortcutCommandsOpen(false);
     setCommandHistoryOpen(false);
     setIpAddressQueryOpen(false);
-    setRandomPasswordGeneratorOpen(false);
+    setSecurityToolsOpen(false);
+    setLocalTerminalSidebarOpen(false);
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
@@ -2175,9 +2253,27 @@ function App() {
                 display: "flex",
               }}
             >
-              <RandomPasswordGenerator
-                open={randomPasswordGeneratorOpen}
-                onClose={() => setRandomPasswordGeneratorOpen(false)}
+              <SecurityTools
+                open={securityToolsOpen}
+                onClose={() => setSecurityToolsOpen(false)}
+              />
+            </Box>
+
+            {/* 本地终端侧边栏 */}
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                right: 48,
+                zIndex: lastOpenedSidebar === "localTerminal" ? 108 : 91,
+                height: "100%",
+                display: "flex",
+              }}
+            >
+              <LocalTerminalSidebar
+                open={localTerminalSidebarOpen}
+                onClose={handleCloseLocalTerminalSidebar}
+                onLaunchTerminal={handleLaunchLocalTerminal}
               />
             </Box>
 
@@ -2326,17 +2422,17 @@ function App() {
                 </IconButton>
               </Tooltip>
 
-              {/* 随机密码生成器按钮 */}
-              <Tooltip title={t("sidebar.randomPassword")} placement="left">
+              {/* 安全工具按钮 */}
+              <Tooltip title={t("sidebar.securityTool")} placement="left">
                 <IconButton
                   color="primary"
-                  onClick={toggleRandomPasswordGenerator}
+                  onClick={toggleSecurityTools}
                   sx={{
-                    bgcolor: randomPasswordGeneratorOpen
+                    bgcolor: securityToolsOpen
                       ? "action.selected"
                       : "transparent",
                     "&:hover": {
-                      bgcolor: randomPasswordGeneratorOpen
+                      bgcolor: securityToolsOpen
                         ? "action.selected"
                         : "action.hover",
                     },
@@ -2355,6 +2451,26 @@ function App() {
                   my: 1,
                 }}
               />
+
+              {/* 本地终端按钮 */}
+              <Tooltip title={t("sidebar.localTerminal")} placement="left">
+                <IconButton
+                  color="primary"
+                  onClick={toggleLocalTerminalSidebar}
+                  sx={{
+                    bgcolor: localTerminalSidebarOpen
+                      ? "action.selected"
+                      : "transparent",
+                    "&:hover": {
+                      bgcolor: localTerminalSidebarOpen
+                        ? "action.selected"
+                        : "action.hover",
+                    },
+                  }}
+                >
+                  <ComputerIcon />
+                </IconButton>
+              </Tooltip>
 
               {/* AI助手按钮 */}
               <Tooltip title={t("sidebar.ai")} placement="left">

@@ -29,6 +29,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import SaveIcon from "@mui/icons-material/Save";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import KeyIcon from "@mui/icons-material/Key";
+import { SIDEBAR_WIDTHS } from "../constants/layout.js";
 
 const RandomPasswordGenerator = ({ open, onClose }) => {
   const { t } = useTranslation();
@@ -179,7 +180,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
     <Paper
       elevation={4}
       sx={{
-        width: open ? 380 : 0,
+        width: open ? SIDEBAR_WIDTHS.SECURITY_TOOLS : 0,
         height: "100%",
         overflow: "hidden",
         transition: theme.transitions.create("width", {

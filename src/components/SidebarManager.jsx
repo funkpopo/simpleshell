@@ -73,11 +73,11 @@ const SidebarManager = memo(function SidebarManager({
     onSidebarToggle("ipAddressQuery", newState);
   }, [state.ipAddressQueryOpen, dispatch, actions, onSidebarToggle]);
 
-  const handleRandomPasswordGeneratorToggle = useCallback(() => {
-    const newState = !state.randomPasswordGeneratorOpen;
-    dispatch(actions.setRandomPasswordGeneratorOpen(newState));
-    onSidebarToggle("randomPasswordGenerator", newState);
-  }, [state.randomPasswordGeneratorOpen, dispatch, actions, onSidebarToggle]);
+  const handleSecurityToolsToggle = useCallback(() => {
+    const newState = !state.securityToolsOpen;
+    dispatch(actions.setSecurityToolsOpen(newState));
+    onSidebarToggle("securityTools", newState);
+  }, [state.securityToolsOpen, dispatch, actions, onSidebarToggle]);
 
   const handleShortcutCommandsToggle = useCallback(() => {
     const newState = !state.shortcutCommandsOpen;
@@ -142,9 +142,9 @@ const SidebarManager = memo(function SidebarManager({
 
       <SidebarButton
         icon={<VpnKeyIcon />}
-        tooltip={t("randomPasswordGenerator")}
-        onClick={handleRandomPasswordGeneratorToggle}
-        isActive={state.randomPasswordGeneratorOpen}
+        tooltip={t("securityTools")}
+        onClick={handleSecurityToolsToggle}
+        isActive={state.securityToolsOpen}
       />
 
       <SidebarButton

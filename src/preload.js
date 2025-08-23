@@ -40,6 +40,20 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   getProcessInfo: (processId) =>
     ipcRenderer.invoke("terminal:getProcessInfo", processId),
 
+  // 本地终端API
+  detectLocalTerminals: () =>
+    ipcRenderer.invoke("detectLocalTerminals"),
+  launchLocalTerminal: (terminalConfig, tabId) =>
+    ipcRenderer.invoke("launchLocalTerminal", terminalConfig, tabId),
+  closeLocalTerminal: (tabId) =>
+    ipcRenderer.invoke("closeLocalTerminal", tabId),
+  getLocalTerminalInfo: (tabId) =>
+    ipcRenderer.invoke("getLocalTerminalInfo", tabId),
+  resizeEmbeddedTerminal: (tabId, bounds) =>
+    ipcRenderer.invoke("resizeEmbeddedTerminal", tabId, bounds),
+  getAllActiveLocalTerminals: () =>
+    ipcRenderer.invoke("getAllActiveLocalTerminals"),
+
   // 资源监控API
   getSystemInfo: (processId) =>
     ipcRenderer.invoke("terminal:getSystemInfo", processId),

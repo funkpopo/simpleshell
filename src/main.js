@@ -17,6 +17,7 @@ const commandHistoryService = require("./modules/terminal/command-history");
 const fileCache = require("./core/utils/fileCache");
 const connectionManager = require("./modules/connection");
 const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
+const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -60,6 +61,9 @@ const ipQuery = require("./modules/system-info/ip-query");
 
 // 全局延迟处理器实例
 let latencyHandlers = null;
+
+// 全局本地终端处理器实例
+let localTerminalHandlers = null;
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -402,7 +406,17 @@ app.whenReady().then(async () => {
 });
 
 // 在应用退出前清理资源
-app.on("before-quit", () => {
+app.on("before-quit", async () => {
+  // 清理本地终端处理器
+  if (localTerminalHandlers) {
+    try {
+      await localTerminalHandlers.cleanup();
+      logToFile("本地终端处理器已清理", "INFO");
+    } catch (error) {
+      logToFile(`本地终端处理器清理失败: ${error.message}`, "ERROR");
+    }
+  }
+
   // 清理延迟检测服务
   if (latencyHandlers) {
     try {
@@ -609,6 +623,14 @@ app.on("activate", () => {
 
 // 设置IPC通信
 function setupIPC(mainWindow) {
+  // 初始化本地终端处理器
+  try {
+    localTerminalHandlers = new LocalTerminalHandlers(mainWindow);
+    logToFile("本地终端处理器初始化成功", "INFO");
+  } catch (error) {
+    logToFile(`本地终端处理器初始化失败: ${error.message}`, "ERROR");
+  }
+
   // 启动PowerShell进程
   ipcMain.handle("terminal:startPowerShell", async () => {
     const processId = nextProcessId++;
