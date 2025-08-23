@@ -2765,6 +2765,11 @@ const FileManager = memo(
                   </InputAdornment>
                 ),
               }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                }
+              }}
             />
           </Box>
         )}

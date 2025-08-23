@@ -566,7 +566,12 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                     </InputAdornment>
                   ),
                 }}
-                sx={{ mb: 2 }}
+                sx={{ 
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                  }
+                }}
               />
 
               <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>

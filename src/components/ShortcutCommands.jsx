@@ -1216,6 +1216,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                   </InputAdornment>
                 ),
               }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                }
+              }}
             />
           </Box>
 
