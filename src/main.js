@@ -16,6 +16,7 @@ const terminalManager = require("./modules/terminal");
 const commandHistoryService = require("./modules/terminal/command-history");
 const fileCache = require("./core/utils/fileCache");
 const connectionManager = require("./modules/connection");
+const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -56,6 +57,9 @@ let currentSessionId = null;
 
 // 导入IP地址查询模块
 const ipQuery = require("./modules/system-info/ip-query");
+
+// 全局延迟处理器实例
+let latencyHandlers = null;
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -362,6 +366,20 @@ app.whenReady().then(async () => {
   // Initialize connection manager
   connectionManager.initialize();
 
+  // Initialize latency handlers
+  try {
+    latencyHandlers = new LatencyHandlers();
+    const handlers = latencyHandlers.getHandlers();
+
+    handlers.forEach(({ channel, handler }) => {
+      ipcMain.handle(channel, handler);
+    });
+
+    logToFile(`已注册 ${handlers.length} 个延迟检测IPC处理器`, "INFO");
+  } catch (error) {
+    logToFile(`延迟检测服务初始化失败: ${error.message}`, "ERROR");
+  }
+
   createWindow();
   createAIWorker();
 
@@ -385,6 +403,16 @@ app.whenReady().then(async () => {
 
 // 在应用退出前清理资源
 app.on("before-quit", () => {
+  // 清理延迟检测服务
+  if (latencyHandlers) {
+    try {
+      latencyHandlers.cleanup();
+      logToFile("延迟检测服务已清理", "INFO");
+    } catch (error) {
+      logToFile(`延迟检测服务清理失败: ${error.message}`, "ERROR");
+    }
+  }
+
   // 移除所有事件监听器和子进程
   for (const [id, proc] of childProcesses.entries()) {
     try {
@@ -804,6 +832,27 @@ function setupIPC(mainWindow) {
                 connectionInfo,
               );
 
+              // 注册SSH连接的延迟检测（复用连接）
+              if (latencyHandlers && sshConfig.tabId) {
+                try {
+                  latencyHandlers.latencyService.registerSSHConnection(
+                    sshConfig.tabId,
+                    ssh,
+                    sshConfig.host,
+                    sshConfig.port || 22,
+                  );
+                  logToFile(
+                    `已为复用SSH连接注册延迟检测: ${sshConfig.tabId}`,
+                    "DEBUG",
+                  );
+                } catch (latencyError) {
+                  logToFile(
+                    `延迟检测注册失败: ${latencyError.message}`,
+                    "WARN",
+                  );
+                }
+              }
+
               resolve(processId);
             },
           );
@@ -909,6 +958,27 @@ function setupIPC(mainWindow) {
                   sshConfig,
                   connectionInfo,
                 );
+
+                // 注册SSH连接的延迟检测
+                if (latencyHandlers && sshConfig.tabId) {
+                  try {
+                    latencyHandlers.latencyService.registerSSHConnection(
+                      sshConfig.tabId,
+                      ssh,
+                      sshConfig.host,
+                      sshConfig.port || 22,
+                    );
+                    logToFile(
+                      `已为SSH连接注册延迟检测: ${sshConfig.tabId}`,
+                      "DEBUG",
+                    );
+                  } catch (latencyError) {
+                    logToFile(
+                      `延迟检测注册失败: ${latencyError.message}`,
+                      "WARN",
+                    );
+                  }
+                }
 
                 resolve(processId);
               },
@@ -1449,6 +1519,18 @@ function setupIPC(mainWindow) {
             proc.config?.tabId,
           );
           logToFile(`释放SSH连接池引用: ${proc.connectionInfo.key}`, "INFO");
+
+          // 注销延迟检测
+          if (latencyHandlers && proc.config?.tabId) {
+            try {
+              latencyHandlers.latencyService.unregisterConnection(
+                proc.config.tabId,
+              );
+              logToFile(`已注销SSH连接延迟检测: ${proc.config.tabId}`, "DEBUG");
+            } catch (latencyError) {
+              logToFile(`延迟检测注销失败: ${latencyError.message}`, "WARN");
+            }
+          }
         }
 
         // 移除stdout和stderr的监听器，防止在进程被kill后继续触发
