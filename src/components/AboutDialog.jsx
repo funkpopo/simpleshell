@@ -36,7 +36,9 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     if (window.terminalAPI?.getAppVersion) {
       const versionPromise = window.terminalAPI.getAppVersion();
       if (versionPromise instanceof Promise) {
-        versionPromise.then((result) => setAppVersion(result.version || "1.0.0"));
+        versionPromise.then((result) =>
+          setAppVersion(result.version || "1.0.0"),
+        );
       } else {
         setAppVersion(versionPromise || "1.0.0");
       }
@@ -96,7 +98,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
     try {
       const result = await window.terminalAPI.checkForUpdate();
-      
+
       if (result.success) {
         setUpdateInfo(result.updateInfo);
         setUpdateStatus(result.updateInfo.hasUpdate ? "available" : "upToDate");
@@ -125,8 +127,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     setUpdateStatus("downloading");
 
     try {
-      const result = await window.terminalAPI.downloadUpdate(updateInfo.downloadUrl);
-      
+      const result = await window.terminalAPI.downloadUpdate(
+        updateInfo.downloadUrl,
+      );
+
       if (result.success) {
         setDownloadedFilePath(result.filePath);
         setUpdateStatus("downloaded");
@@ -154,7 +158,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
     try {
       const result = await window.terminalAPI.installUpdate(downloadedFilePath);
-      
+
       if (!result.success) {
         setError(result.error || "Installation failed");
         setUpdateStatus("error");
@@ -212,18 +216,17 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
           <Box>
             <Box display="flex" alignItems="center" mb={1}>
               <UpdateIcon color="primary" sx={{ mr: 1 }} />
-              <Typography variant="body2">
-                {t("update.available")}
-              </Typography>
-              <Chip 
-                label={`v${updateInfo?.latestVersion}`} 
-                color="primary" 
-                size="small" 
-                sx={{ ml: 1 }} 
+              <Typography variant="body2">{t("update.available")}</Typography>
+              <Chip
+                label={`v${updateInfo?.latestVersion}`}
+                color="primary"
+                size="small"
+                sx={{ ml: 1 }}
               />
             </Box>
             <Typography variant="caption" color="text.secondary">
-              {t("update.currentVersion")}: {updateInfo?.currentVersion} → {updateInfo?.latestVersion}
+              {t("update.currentVersion")}: {updateInfo?.currentVersion} →{" "}
+              {updateInfo?.latestVersion}
             </Typography>
           </Box>
         );
@@ -231,13 +234,20 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
       case "downloading":
         return (
           <Box>
-            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="space-between"
+              mb={1}
+            >
               <Typography variant="body2">{t("update.downloading")}</Typography>
-              <Typography variant="caption">{Math.round(downloadProgress)}%</Typography>
+              <Typography variant="caption">
+                {Math.round(downloadProgress)}%
+              </Typography>
             </Box>
-            <LinearProgress 
-              variant="determinate" 
-              value={downloadProgress} 
+            <LinearProgress
+              variant="determinate"
+              value={downloadProgress}
               sx={{ mb: 1 }}
             />
           </Box>
@@ -276,7 +286,9 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
             variant="outlined"
             onClick={handleCheckForUpdate}
             disabled={checkingForUpdate}
-            startIcon={checkingForUpdate ? <CircularProgress size={16} /> : null}
+            startIcon={
+              checkingForUpdate ? <CircularProgress size={16} /> : null
+            }
           >
             {t("update.title")}
           </Button>
@@ -385,25 +397,31 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
             <Typography variant="subtitle1" gutterBottom>
               {t("about.updateCheck")}
             </Typography>
-            
+
             {renderUpdateContent()}
-            
+
             {updateInfo?.releaseNotes && updateStatus === "available" && (
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle2" gutterBottom>
                   {t("update.releaseNotes")}
                 </Typography>
-                <Box 
-                  sx={{ 
-                    maxHeight: 120, 
-                    overflow: "auto", 
+                <Box
+                  sx={{
+                    maxHeight: 120,
+                    overflow: "auto",
                     bgcolor: "grey.50",
                     p: 1,
                     borderRadius: 1,
-                    fontSize: "0.75rem"
+                    fontSize: "0.75rem",
                   }}
                 >
-                  <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: "inherit" }}>
+                  <pre
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      margin: 0,
+                      fontSize: "inherit",
+                    }}
+                  >
                     {updateInfo.releaseNotes.slice(0, 300)}
                     {updateInfo.releaseNotes.length > 300 ? "..." : ""}
                   </pre>
@@ -411,17 +429,12 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
               </Box>
             )}
 
-            <Box sx={{ mt: 2 }}>
-              {renderUpdateButtons()}
-            </Box>
+            <Box sx={{ mt: 2 }}>{renderUpdateButtons()}</Box>
           </Box>
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button 
-          onClick={onClose}
-          disabled={updateStatus === "installing"}
-        >
+        <Button onClick={onClose} disabled={updateStatus === "installing"}>
           {t("about.close")}
         </Button>
         <Button

@@ -212,7 +212,7 @@ const CustomTab = memo((props) => {
         letter-spacing: 0.5px;
         animation: dragPreviewPulse 0.8s ease-in-out infinite alternate;
       `;
-        
+
         // 创建图标元素
         const icon = document.createElement("span");
         icon.style.cssText = `
@@ -222,14 +222,14 @@ const CustomTab = memo((props) => {
           filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
         `;
         icon.textContent = "🏷️";
-        
+
         // 创建文本元素
         const text = document.createElement("span");
         text.textContent = label;
-        
+
         preview.appendChild(icon);
         preview.appendChild(text);
-        
+
         // 添加拖拽预览脉冲动画
         const style = document.createElement("style");
         style.textContent = `
@@ -376,7 +376,10 @@ const CustomTab = memo((props) => {
                   ? "0 0 0 2px rgba(33, 150, 243, 0.4), 0 4px 16px rgba(33, 150, 243, 0.2)"
                   : "0 0 0 3px rgba(25, 118, 210, 0.5), 0 4px 20px rgba(25, 118, 210, 0.3), 0 0 0 6px rgba(25, 118, 210, 0.1)",
             position: "relative",
-            transform: dragOperation === "sort" ? "scale(1.03) translateY(-1px)" : "scale(1.02)",
+            transform:
+              dragOperation === "sort"
+                ? "scale(1.03) translateY(-1px)"
+                : "scale(1.02)",
             transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
             filter: "brightness(1.05) saturate(1.1)",
 

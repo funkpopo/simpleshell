@@ -10,7 +10,8 @@ class UpdateService {
   constructor() {
     this.tempDir = path.join(os.tmpdir(), "simpleshell-updates");
     this.currentVersion = app.getVersion();
-    this.updateCheckUrl = "https://api.github.com/repos/funkpopo/simpleshell/releases/latest";
+    this.updateCheckUrl =
+      "https://api.github.com/repos/funkpopo/simpleshell/releases/latest";
     this.isDownloading = false;
     this.downloadProgress = 0;
   }
@@ -53,11 +54,11 @@ class UpdateService {
   async checkForUpdate() {
     try {
       logToFile("Checking for updates...", "INFO");
-      
+
       const response = await fetch(this.updateCheckUrl, {
         headers: {
-          'User-Agent': 'SimpleShell-UpdateChecker'
-        }
+          "User-Agent": "SimpleShell-UpdateChecker",
+        },
       });
 
       if (!response.ok) {
@@ -66,9 +67,10 @@ class UpdateService {
 
       const releaseData = await response.json();
       const latestVersion = releaseData.tag_name.replace(/^v/, "");
-      
-      const hasUpdate = this.compareVersions(latestVersion, this.currentVersion) > 0;
-      
+
+      const hasUpdate =
+        this.compareVersions(latestVersion, this.currentVersion) > 0;
+
       const updateInfo = {
         hasUpdate,
         currentVersion: this.currentVersion,
@@ -76,11 +78,14 @@ class UpdateService {
         releaseNotes: releaseData.body || "",
         downloadUrl: this.getDownloadUrl(releaseData.assets),
         publishedAt: releaseData.published_at,
-        releaseName: releaseData.name || `Version ${latestVersion}`
+        releaseName: releaseData.name || `Version ${latestVersion}`,
       };
 
-      logToFile(`Update check result: ${hasUpdate ? 'Update available' : 'No update'} (Current: ${this.currentVersion}, Latest: ${latestVersion})`, "INFO");
-      
+      logToFile(
+        `Update check result: ${hasUpdate ? "Update available" : "No update"} (Current: ${this.currentVersion}, Latest: ${latestVersion})`,
+        "INFO",
+      );
+
       return { success: true, updateInfo };
     } catch (error) {
       logToFile(`Error checking for updates: ${error.message}`, "ERROR");
@@ -93,27 +98,30 @@ class UpdateService {
    */
   getDownloadUrl(assets) {
     if (!Array.isArray(assets)) return null;
-    
+
     const platform = process.platform;
     let targetAsset = null;
 
     if (platform === "win32") {
-      targetAsset = assets.find(asset => 
-        asset.name.endsWith(".exe") || 
-        asset.name.includes("win") || 
-        asset.name.includes("windows")
+      targetAsset = assets.find(
+        (asset) =>
+          asset.name.endsWith(".exe") ||
+          asset.name.includes("win") ||
+          asset.name.includes("windows"),
       );
     } else if (platform === "darwin") {
-      targetAsset = assets.find(asset => 
-        asset.name.endsWith(".dmg") || 
-        asset.name.includes("mac") || 
-        asset.name.includes("darwin")
+      targetAsset = assets.find(
+        (asset) =>
+          asset.name.endsWith(".dmg") ||
+          asset.name.includes("mac") ||
+          asset.name.includes("darwin"),
       );
     } else if (platform === "linux") {
-      targetAsset = assets.find(asset => 
-        asset.name.endsWith(".AppImage") || 
-        asset.name.endsWith(".deb") || 
-        asset.name.includes("linux")
+      targetAsset = assets.find(
+        (asset) =>
+          asset.name.endsWith(".AppImage") ||
+          asset.name.endsWith(".deb") ||
+          asset.name.includes("linux"),
       );
     }
 
@@ -142,52 +150,52 @@ class UpdateService {
 
       const response = await fetch(downloadUrl, {
         headers: {
-          'User-Agent': 'SimpleShell-UpdateDownloader'
-        }
+          "User-Agent": "SimpleShell-UpdateDownloader",
+        },
       });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const totalSize = parseInt(response.headers.get('content-length'), 10);
+      const totalSize = parseInt(response.headers.get("content-length"), 10);
       let downloadedSize = 0;
 
-      const fileStream = await fs.open(filePath, 'w');
+      const fileStream = await fs.open(filePath, "w");
       const writeStream = fileStream.createWriteStream();
 
       return new Promise((resolve, reject) => {
-        response.body.on('data', (chunk) => {
+        response.body.on("data", (chunk) => {
           downloadedSize += chunk.length;
-          this.downloadProgress = totalSize > 0 ? (downloadedSize / totalSize) * 100 : 0;
-          
+          this.downloadProgress =
+            totalSize > 0 ? (downloadedSize / totalSize) * 100 : 0;
+
           if (onProgress) {
             onProgress({
               downloaded: downloadedSize,
               total: totalSize,
-              progress: this.downloadProgress
+              progress: this.downloadProgress,
             });
           }
         });
 
-        response.body.on('error', (error) => {
+        response.body.on("error", (error) => {
           fileStream.close();
           this.isDownloading = false;
           reject(error);
         });
 
-        response.body.on('end', async () => {
+        response.body.on("end", async () => {
           await fileStream.close();
           this.isDownloading = false;
           this.downloadProgress = 100;
-          
+
           logToFile(`Download completed: ${filePath}`, "INFO");
           resolve(filePath);
         });
 
         response.body.pipe(writeStream);
       });
-
     } catch (error) {
       this.isDownloading = false;
       logToFile(`Download error: ${error.message}`, "ERROR");
@@ -214,11 +222,16 @@ class UpdateService {
       } else if (platform === "darwin" && fileExt === ".dmg") {
         // macOS DMG
         await this.installMacUpdate(filePath);
-      } else if (platform === "linux" && (fileExt === ".appimage" || fileExt === ".deb")) {
+      } else if (
+        platform === "linux" &&
+        (fileExt === ".appimage" || fileExt === ".deb")
+      ) {
         // Linux package
         await this.installLinuxUpdate(filePath);
       } else {
-        throw new Error(`Unsupported installer format: ${fileExt} on ${platform}`);
+        throw new Error(
+          `Unsupported installer format: ${fileExt} on ${platform}`,
+        );
       }
 
       return { success: true };
@@ -236,7 +249,7 @@ class UpdateService {
       // 使用 /S 参数进行静默安装，/D 指定安装目录
       const installer = spawn(filePath, ["/S"], {
         detached: true,
-        stdio: "ignore"
+        stdio: "ignore",
       });
 
       installer.on("error", (error) => {
@@ -295,8 +308,9 @@ class UpdateService {
           dialog.showMessageBox({
             type: "info",
             title: "Update Ready",
-            message: "The update package has been opened. Please drag the app to Applications folder to complete the update.",
-            buttons: ["OK"]
+            message:
+              "The update package has been opened. Please drag the app to Applications folder to complete the update.",
+            buttons: ["OK"],
           });
         }
       });
@@ -308,15 +322,16 @@ class UpdateService {
    */
   async installLinuxUpdate(filePath) {
     const fileExt = path.extname(filePath).toLowerCase();
-    
+
     if (fileExt === ".appimage") {
       // AppImage - 让用户手动替换
       shell.showItemInFolder(filePath);
       dialog.showMessageBox({
         type: "info",
         title: "Update Ready",
-        message: "The update has been downloaded. Please replace your current application with the new AppImage file.",
-        buttons: ["OK"]
+        message:
+          "The update has been downloaded. Please replace your current application with the new AppImage file.",
+        buttons: ["OK"],
       });
     } else if (fileExt === ".deb") {
       // DEB package
@@ -338,19 +353,19 @@ class UpdateService {
    * 版本比较
    */
   compareVersions(version1, version2) {
-    const v1Parts = version1.split('.').map(n => parseInt(n, 10));
-    const v2Parts = version2.split('.').map(n => parseInt(n, 10));
-    
+    const v1Parts = version1.split(".").map((n) => parseInt(n, 10));
+    const v2Parts = version2.split(".").map((n) => parseInt(n, 10));
+
     const maxLength = Math.max(v1Parts.length, v2Parts.length);
-    
+
     for (let i = 0; i < maxLength; i++) {
       const v1Part = v1Parts[i] || 0;
       const v2Part = v2Parts[i] || 0;
-      
+
       if (v1Part > v2Part) return 1;
       if (v1Part < v2Part) return -1;
     }
-    
+
     return 0;
   }
 
@@ -360,7 +375,7 @@ class UpdateService {
   getDownloadProgress() {
     return {
       isDownloading: this.isDownloading,
-      progress: this.downloadProgress
+      progress: this.downloadProgress,
     };
   }
 
