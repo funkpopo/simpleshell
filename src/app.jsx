@@ -56,6 +56,7 @@ import TerminalIcon from "@mui/icons-material/Terminal";
 import AIChatWindow from "./components/AIChatWindow.jsx";
 import CustomTab from "./components/CustomTab.jsx";
 import MergedTabContent from "./components/MergedTabContent.jsx";
+import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -1934,6 +1935,14 @@ function App() {
                 return null;
               })()}
             </Menu>
+
+            {/* 网络延迟指示器 */}
+            <NetworkLatencyIndicator
+              currentTab={currentTab}
+              tabs={tabs}
+              mergedTabs={mergedTabs}
+              activeSplitTabId={activeSplitTabId}
+            />
           </Toolbar>
         </AppBar>
         <Box

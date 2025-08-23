@@ -96,6 +96,23 @@
       "ipQuery": "IP Address Query",
       "randomPassword": "Random Password"
     },
+    "latency": {
+      "connectionInfo": "Connection Info",
+      "host": "Host",
+      "current": "Current Latency",
+      "quality": "Connection Quality",
+      "lastCheck": "Last Check",
+      "never": "Never",
+      "unknown": "Unknown",
+      "checking": "Checking...",
+      "error": "Error",
+      "excellent": "Excellent",
+      "good": "Good",
+      "fair": "Fair",
+      "poor": "Poor",
+      "bad": "Bad",
+      "updateInterval": "Auto-refresh every minute"
+    },
     "ipAddressQuery": {
       "title": "IP Address Query",
       "inputPlaceholder": "Enter IP address...",

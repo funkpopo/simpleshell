@@ -96,6 +96,23 @@
       "ipQuery": "IP地址查询",
       "randomPassword": "随机密码"
     },
+    "latency": {
+      "connectionInfo": "连接信息",
+      "host": "主机",
+      "current": "当前延迟",
+      "quality": "连接质量",
+      "lastCheck": "上次检测",
+      "never": "从未",
+      "unknown": "未知",
+      "checking": "检测中...",
+      "error": "错误",
+      "excellent": "优秀",
+      "good": "良好",
+      "fair": "一般",
+      "poor": "较差",
+      "bad": "糟糕",
+      "updateInterval": "每分钟自动更新"
+    },
     "ipAddressQuery": {
       "title": "IP地址查询",
       "inputPlaceholder": "请输入IP地址...",

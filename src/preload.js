@@ -422,6 +422,32 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // IP地址查询API
   queryIpAddress: (ip = "") => ipcRenderer.invoke("ip:query", ip),
 
+  // 网络延迟检测API
+  registerLatencyDetection: (tabId, host, port) =>
+    ipcRenderer.invoke("latency:register", { tabId, host, port }),
+  unregisterLatencyDetection: (tabId) =>
+    ipcRenderer.invoke("latency:unregister", { tabId }),
+  getLatencyInfo: (tabId) => ipcRenderer.invoke("latency:getInfo", { tabId }),
+  getAllLatencyInfo: () => ipcRenderer.invoke("latency:getAllInfo"),
+  getLatencyServiceStatus: () => ipcRenderer.invoke("latency:getServiceStatus"),
+  // 延迟事件监听
+  onLatencyUpdate: (callback) => {
+    const wrappedCallback = (event, data) => callback(event, data);
+    ipcRenderer.on("latency:updated", wrappedCallback);
+    return () => ipcRenderer.removeListener("latency:updated", wrappedCallback);
+  },
+  onLatencyError: (callback) => {
+    const wrappedCallback = (event, data) => callback(event, data);
+    ipcRenderer.on("latency:error", wrappedCallback);
+    return () => ipcRenderer.removeListener("latency:error", wrappedCallback);
+  },
+  onLatencyDisconnected: (callback) => {
+    const wrappedCallback = (event, data) => callback(event, data);
+    ipcRenderer.on("latency:disconnected", wrappedCallback);
+    return () =>
+      ipcRenderer.removeListener("latency:disconnected", wrappedCallback);
+  },
+
   // SSH连接相关
   startSSH: (sshConfig) => ipcRenderer.invoke("terminal:startSSH", sshConfig),
 

@@ -41,12 +41,14 @@ const WorldMap = ({ latitude, longitude }) => {
 
   if (loading) {
     return (
-      <Box sx={{ 
-        display: "flex", 
-        justifyContent: "center", 
-        alignItems: "center", 
-        height: "200px" 
-      }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "200px",
+        }}
+      >
         <CircularProgress size={24} />
         <Typography sx={{ ml: 1 }} variant="body2">
           加载地图...
@@ -57,12 +59,14 @@ const WorldMap = ({ latitude, longitude }) => {
 
   if (error || !geoData) {
     return (
-      <Box sx={{ 
-        display: "flex", 
-        justifyContent: "center", 
-        alignItems: "center", 
-        height: "200px" 
-      }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "200px",
+        }}
+      >
         <Typography variant="body2" color="error">
           {error || "地图数据不可用"}
         </Typography>
