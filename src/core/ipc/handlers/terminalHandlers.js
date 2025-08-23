@@ -41,11 +41,6 @@ class TerminalHandlers {
   getHandlers() {
     return [
       {
-        channel: "terminal:startPowerShell",
-        category: "terminal",
-        handler: this.startPowerShell.bind(this),
-      },
-      {
         channel: "terminal:startSSH",
         category: "terminal",
         handler: this.startSSH.bind(this),
@@ -127,32 +122,6 @@ class TerminalHandlers {
   }
 
   // 实现各个处理器方法
-  async startPowerShell(event) {
-    // 实现从原main.js中迁移
-    const processId = this.nextProcessId++;
-    try {
-      const mainWindow = event.sender.getOwnerBrowserWindow();
-      const result = await terminalManager.createLocalTerminal(
-        processId,
-        mainWindow,
-      );
-
-      if (result.success) {
-        this.childProcesses.set(processId, result.process);
-        this.terminalProcesses.set(processId, {
-          type: "local",
-          process: result.process,
-        });
-        logToFile(`PowerShell terminal created with ID: ${processId}`, "INFO");
-      }
-
-      return result;
-    } catch (error) {
-      logToFile(`Error starting PowerShell: ${error.message}`, "ERROR");
-      throw error;
-    }
-  }
-
   async startSSH(event, sshConfig) {
     // 实现SSH连接逻辑
     const processId = this.nextProcessId++;

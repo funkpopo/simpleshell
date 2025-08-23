@@ -86,10 +86,6 @@ class ConnectionManager {
     return this.sshManager.startSSH(sshConfig);
   }
 
-  async startPowerShell() {
-    return this.sshManager.startPowerShell();
-  }
-
   sendInput(processId, input) {
     this.sshManager.sendInput(processId, input);
   }

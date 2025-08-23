@@ -463,7 +463,6 @@ const processMultilineInput = (text, options = {}) => {
 const WebTerminal = ({
   tabId,
   refreshKey,
-  usePowershell = true,
   sshConfig = null,
   isActive = true,
 }) => {
@@ -1775,15 +1774,8 @@ const WebTerminal = ({
             term.writeln(errorMsg);
           }
         }
-        // 连接到本地PowerShell
-        else if (
-          usePowershell &&
-          window.terminalAPI &&
-          window.terminalAPI.startPowerShell
-        ) {
-          startPowerShell(term, tabId);
-        } else {
-          // 如果不使用PowerShell或API不可用，使用模拟终端
+        // 使用模拟终端
+        else {
           term.writeln("Welcome to WebTerminal!");
           term.writeln('Type "help" for available commands.');
           term.writeln("");
@@ -2426,38 +2418,7 @@ const WebTerminal = ({
         // 组件卸载时的清理工作由EventManager处理
       };
     }
-  }, [tabId, usePowershell, refreshKey, sshConfig, isActive, eventManager]);
-
-  // 启动PowerShell的辅助函数
-  const startPowerShell = (term, tabId) => {
-    // 先显示连接信息
-    term.writeln("正在连接到 PowerShell...");
-
-    // 启动PowerShell进程
-    window.terminalAPI
-      .startPowerShell()
-      .then((processId) => {
-        // 保存进程ID以便后续可以关闭
-        processCache[tabId] = processId;
-
-        // 设置数据处理
-        window.terminalAPI.onProcessOutput(processId, (data) => {
-          if (data) {
-            term.write(data);
-            // 更新内容状态标志，表示终端内容已更新
-            setContentUpdated(true);
-          }
-        });
-
-        // 设置命令检测
-        setupCommandDetection(term, processId);
-      })
-      .catch((err) => {
-        term.writeln(`连接到PowerShell失败: ${err.message || "未知错误"}`);
-        term.writeln("正在回退到模拟终端模式...");
-        setupSimulatedTerminal(term);
-      });
-  };
+  }, [tabId, refreshKey, sshConfig, isActive, eventManager]);
 
   // 设置模拟终端（用于无法使用IPC API时的回退）
   const setupSimulatedTerminal = (term) => {
