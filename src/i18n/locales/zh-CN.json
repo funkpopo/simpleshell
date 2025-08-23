@@ -316,6 +316,29 @@
       "copied": "已复制!",
       "regenerate": "重新生成"
     },
+    "securityTools": {
+      "title": "安全工具",
+      "passwordTab": "密码",
+      "sshKeyTab": "SSH密钥"
+    },
+    "sshKeyGenerator": {
+      "keyType": "密钥类型",
+      "keySize": "密钥长度",
+      "comment": "注释",
+      "passphrase": "密码短语",
+      "passphraseOptional": "可选",
+      "generate": "生成密钥对",
+      "generating": "生成中...",
+      "generateFailed": "密钥生成失败",
+      "publicKey": "公钥",
+      "privateKey": "私钥",
+      "copy": "复制",
+      "copied": "已复制!",
+      "savePublic": "保存公钥",
+      "savePrivate": "保存私钥",
+      "saveFailed": "保存文件失败",
+      "securityWarning": "请妥善保管您的私钥，不要泄露给他人"
+    },
     "fileManager": {
       "title": "文件管理器",
       "loading": "加载中...",
