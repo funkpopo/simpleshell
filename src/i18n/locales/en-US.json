@@ -94,7 +94,8 @@
       "history": "Command History",
       "shortcutCommands": "Shortcut Commands",
       "ipQuery": "IP Address Query",
-      "randomPassword": "Random Password"
+      "securityTool": "Security Tools",
+      "localTerminal": "Local Terminal"
     },
     "latency": {
       "connectionInfo": "Connection Info",
@@ -158,7 +159,12 @@
       "name": "Name",
       "description": "Description",
       "expand": "Expand",
-      "collapse": "Collapse"
+      "collapse": "Collapse",
+      "close": "Close",
+      "later": "Later",
+      "ok": "OK",
+      "yes": "Yes",
+      "no": "No"
     },
     "shortcutCommands": {
       "title": "Shortcut Commands",
@@ -423,13 +429,32 @@
       "retryCheck": "Retry Check",
       "downloadProgress": "Download progress: {{percent}}%"
     },
-    "common": {
-      "close": "Close",
-      "cancel": "Cancel",
-      "later": "Later",
-      "ok": "OK",
-      "yes": "Yes",
-      "no": "No"
+    "localTerminal": {
+      "title": "Local Terminal",
+      "refresh": "Refresh",
+      "searchPlaceholder": "Search terminals...",
+      "availableTerminals": "Available Terminals",
+      "runningTerminals": "Running Terminals", 
+      "noTerminals": "No terminals detected",
+      "noRunningTerminals": "No running terminals",
+      "detecting": "Detecting terminals...",
+      "launch": "Launch Terminal",
+      "stop": "Stop Terminal",
+      "running": "Running",
+      "detectSuccess": "Detected {{count}} terminals",
+      "detectError": "Failed to detect terminals",
+      "launchSuccess": "Successfully launched {{name}}",
+      "launchError": "Failed to launch terminal: {{error}}",
+      "stopSuccess": "Terminal stopped",
+      "stopError": "Failed to stop terminal: {{error}}",
+      "initializing": "Initializing...",
+      "launching": "Launching terminal...",
+      "ready": "Terminal Ready",
+      "waitingEmbed": "Waiting for window embedding...",
+      "terminated": "Terminal Terminated",
+      "unknownError": "Unknown error occurred",
+      "launchNormal": "Launch Normal",
+      "wslDistributions": "WSL Distributions"
     }
   }
 }

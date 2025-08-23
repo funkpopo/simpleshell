@@ -21,7 +21,7 @@ export const ActionTypes = {
   SET_RESOURCE_MONITOR_OPEN: "SET_RESOURCE_MONITOR_OPEN",
   SET_FILE_MANAGER_OPEN: "SET_FILE_MANAGER_OPEN",
   SET_IP_ADDRESS_QUERY_OPEN: "SET_IP_ADDRESS_QUERY_OPEN",
-  SET_RANDOM_PASSWORD_GENERATOR_OPEN: "SET_RANDOM_PASSWORD_GENERATOR_OPEN",
+  SET_SECURITY_TOOLS_OPEN: "SET_SECURITY_TOOLS_OPEN",
   SET_SHORTCUT_COMMANDS_OPEN: "SET_SHORTCUT_COMMANDS_OPEN",
   SET_COMMAND_HISTORY_OPEN: "SET_COMMAND_HISTORY_OPEN",
   SET_ACTIVE_SIDEBAR_MARGIN: "SET_ACTIVE_SIDEBAR_MARGIN",
@@ -86,7 +86,7 @@ export const initialState = {
   resourceMonitorOpen: false,
   fileManagerOpen: false,
   ipAddressQueryOpen: false,
-  randomPasswordGeneratorOpen: false,
+  securityToolsOpen: false,
   shortcutCommandsOpen: false,
   commandHistoryOpen: false,
   activeSidebarMargin: 0,
@@ -195,7 +195,7 @@ export function appReducer(state = initialState, action) {
       return { ...state, ipAddressQueryOpen: action.payload };
 
     case ActionTypes.SET_RANDOM_PASSWORD_GENERATOR_OPEN:
-      return { ...state, randomPasswordGeneratorOpen: action.payload };
+      return { ...state, securityToolsOpen: action.payload };
 
     case ActionTypes.SET_SHORTCUT_COMMANDS_OPEN:
       return { ...state, shortcutCommandsOpen: action.payload };
@@ -347,7 +347,7 @@ export const actions = {
     type: ActionTypes.SET_IP_ADDRESS_QUERY_OPEN,
     payload: open,
   }),
-  setRandomPasswordGeneratorOpen: (open) => ({
+  setSecurityToolsOpen: (open) => ({
     type: ActionTypes.SET_RANDOM_PASSWORD_GENERATOR_OPEN,
     payload: open,
   }),

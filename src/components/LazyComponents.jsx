@@ -63,6 +63,12 @@ export const ShortcutCommandsWithSuspense = createLazyComponent(
   "快捷命令",
 );
 
+export const LocalTerminalSidebarWithSuspense = createLazyComponent(
+  () => import("./LocalTerminalSidebar.jsx"),
+  "正在加载本地终端...",
+  "本地终端",
+);
+
 // AI助手组件（如果存在）- 保持兼容性
 export const AIAssistantWithSuspense = createLazyComponent(
   () => import("./AIChatWindow.jsx"),
@@ -77,6 +83,7 @@ const IPAddressQuery = lazy(() => import("./IPAddressQuery.jsx"));
 const Settings = lazy(() => import("./Settings.jsx"));
 const CommandHistory = lazy(() => import("./CommandHistory.jsx"));
 const ShortcutCommands = lazy(() => import("./ShortcutCommands.jsx"));
+const LocalTerminalSidebar = lazy(() => import("./LocalTerminalSidebar.jsx"));
 
 // 预加载函数对象，为提高应用启动速度，延迟加载非关键组件
 const preloadComponents = {
@@ -86,6 +93,7 @@ const preloadComponents = {
   settings: () => import("./Settings.jsx"),
   commandHistory: () => import("./CommandHistory.jsx"),
   shortcutCommands: () => import("./ShortcutCommands.jsx"),
+  localTerminalSidebar: () => import("./LocalTerminalSidebar.jsx"),
 };
 
 // 智能预加载策略 - 基于用户交互预测加载侧边栏组件
@@ -133,6 +141,7 @@ export {
   Settings,
   CommandHistory,
   ShortcutCommands,
+  LocalTerminalSidebar,
   preloadComponents,
   smartPreload,
 };

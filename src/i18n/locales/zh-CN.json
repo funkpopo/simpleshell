@@ -94,7 +94,8 @@
       "history": "历史命令",
       "shortcutCommands": "快捷命令",
       "ipQuery": "IP地址查询",
-      "randomPassword": "随机密码"
+      "securityTool": "安全工具",
+      "localTerminal": "本地终端"
     },
     "latency": {
       "connectionInfo": "连接信息",
@@ -158,7 +159,12 @@
       "name": "名称",
       "description": "描述",
       "expand": "展开",
-      "collapse": "折叠"
+      "collapse": "折叠",
+      "close": "关闭",
+      "later": "稍后",
+      "ok": "确定",
+      "yes": "是",
+      "no": "否"
     },
     "shortcutCommands": {
       "title": "快捷命令",
@@ -423,13 +429,32 @@
       "retryCheck": "重试检查",
       "downloadProgress": "下载进度: {{percent}}%"
     },
-    "common": {
-      "close": "关闭",
-      "cancel": "取消",
-      "later": "稍后",
-      "ok": "确定",
-      "yes": "是",
-      "no": "否"
+    "localTerminal": {
+      "title": "本地终端",
+      "refresh": "刷新",
+      "searchPlaceholder": "搜索终端...",
+      "availableTerminals": "可用终端",
+      "runningTerminals": "运行中终端",
+      "noTerminals": "未检测到终端",
+      "noRunningTerminals": "没有运行中的终端",
+      "detecting": "正在检测终端...",
+      "launch": "启动终端",
+      "stop": "停止终端",
+      "running": "运行中",
+      "detectSuccess": "检测到 {{count}} 个终端",
+      "detectError": "检测终端失败",
+      "launchSuccess": "成功启动 {{name}}",
+      "launchError": "启动终端失败: {{error}}",
+      "stopSuccess": "终端已停止",
+      "stopError": "停止终端失败: {{error}}",
+      "initializing": "正在初始化...",
+      "launching": "正在启动终端...",
+      "ready": "终端就绪",
+      "waitingEmbed": "等待窗口嵌入...",
+      "terminated": "终端已终止",
+      "unknownError": "发生未知错误",
+      "launchNormal": "普通启动",
+      "wslDistributions": "WSL发行版"
     }
   }
 }
