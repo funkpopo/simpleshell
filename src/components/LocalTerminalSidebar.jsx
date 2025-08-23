@@ -15,44 +15,42 @@ import {
   Alert,
   Snackbar,
   InputAdornment,
-  Menu,
-  MenuItem,
-  Chip,
-  Divider,
-  Button,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
-import ComputerIcon from "@mui/icons-material/Computer";
-import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import { RiTerminalBoxFill, RiTerminalBoxLine } from "react-icons/ri";
+import { VscTerminalCmd, VscTerminalLinux, VscTerminalUbuntu, VscTerminalDebian } from "react-icons/vsc";
+import { GrArchlinux } from "react-icons/gr";
+import { SiAlpinelinux } from "react-icons/si";
+import { FaGitAlt } from "react-icons/fa6";
 import { useTranslation } from "react-i18next";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 
 // 终端类型图标映射
-const getTerminalIcon = (type, icon) => {
+const getTerminalIcon = (type, distribution) => {
+  // WSL 系统类型检测
+  if (type === 'wsl' && distribution) {
+    const distName = distribution.toLowerCase();
+    if (distName.includes('ubuntu')) return <VscTerminalUbuntu size={16} />;
+    if (distName.includes('debian')) return <VscTerminalDebian size={16} />;
+    if (distName.includes('arch')) return <GrArchlinux size={16} />;
+    if (distName.includes('alpine')) return <SiAlpinelinux size={16} />;
+    return <VscTerminalLinux size={16} />;
+  }
+  
+  // 其他终端类型
   const iconMap = {
-    'powershell-core': '🔵',
-    'powershell': '🔷', 
-    'cmd': '⚫',
-    'git-bash': '🦊',
-    'windows-terminal': '🔳',
-    'wsl': '🐧',
-    'vscode': '📝',
-    'conemu': '🟨',
-    'cmder': '🟩',
-    'terminal': '⚫',
-    'iterm2': '🔷',
-    'hyper': '⚡',
-    'gnome-terminal': '🔷',
-    'konsole': '🔵',
-    'xfce4-terminal': '🐁',
-    'terminator': '🤖'
+    'powershell-core': <RiTerminalBoxFill size={16} />,
+    'powershell': <RiTerminalBoxLine size={16} />,
+    'cmd': <VscTerminalCmd size={16} />,
+    'git-bash': <FaGitAlt size={16} />,
+    'wsl': <VscTerminalLinux size={16} />,
   };
   
-  return iconMap[type] || icon || '💻';
+  return iconMap[type] || <RiTerminalBoxLine size={16} />;
 };
 
 const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
@@ -61,8 +59,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   const [detectedTerminals, setDetectedTerminals] = useState([]);
   const [isDetecting, setIsDetecting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [menuAnchor, setMenuAnchor] = useState(null);
-  const [selectedTerminal, setSelectedTerminal] = useState(null);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -150,14 +146,13 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   }, [detectedTerminals, searchQuery]);
 
   // 启动终端
-  const handleLaunchTerminal = useCallback(async (terminal, options = {}) => {
+  const handleLaunchTerminal = useCallback(async (terminal) => {
     try {
       if (onLaunchTerminal) {
-        await onLaunchTerminal(terminal, options);
-        const distText = options.distribution ? ` (${options.distribution})` : '';
+        await onLaunchTerminal(terminal);
         setSnackbar({
           open: true,
-          message: t("localTerminal.launchSuccess", { name: terminal.name + distText }),
+          message: t("localTerminal.launchSuccess", { name: terminal.name }),
           severity: "success",
         });
       }
@@ -170,27 +165,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     }
   }, [onLaunchTerminal, t]);
 
-  // 处理菜单打开
-  const handleMenuOpen = useCallback((event, terminal) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setMenuAnchor(event.currentTarget);
-    setSelectedTerminal(terminal);
-  }, []);
-
-  // 处理菜单关闭
-  const handleMenuClose = useCallback(() => {
-    setMenuAnchor(null);
-    setSelectedTerminal(null);
-  }, []);
-
-  // 处理终端启动选项
-  const handleTerminalLaunchOption = useCallback(async (options) => {
-    if (selectedTerminal) {
-      await handleLaunchTerminal(selectedTerminal, options);
-    }
-    handleMenuClose();
-  }, [selectedTerminal, handleLaunchTerminal, handleMenuClose]);
 
   // 清空搜索
   const clearSearch = useCallback(() => {
@@ -202,16 +176,14 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
 
   // 终端项组件
   const TerminalItem = useCallback(({ terminal }) => {
-    const hasDistributions = terminal.availableDistributions && terminal.availableDistributions.length > 0;
-    
     return (
       <ListItem disablePadding sx={{ mb: 0.5 }}>
         <ListItemButton
           onClick={() => handleLaunchTerminal(terminal)}
-          onContextMenu={(e) => hasDistributions && handleMenuOpen(e, terminal)}
           sx={{
             borderRadius: 1,
-            minHeight: 60,
+            minHeight: 48,
+            py: 1,
             '&:hover': {
               backgroundColor: theme.palette.action.hover,
             }
@@ -220,71 +192,31 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           <ListItemIcon sx={{ minWidth: 40 }}>
             <Box
               sx={{
-                width: 32,
-                height: 32,
+                width: 28,
+                height: 28,
                 borderRadius: 1,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 backgroundColor: theme.palette.background.paper,
-                fontSize: '16px',
                 border: `1px solid ${theme.palette.divider}`,
               }}
             >
-              {getTerminalIcon(terminal.type, terminal.icon)}
+              {getTerminalIcon(terminal.type, terminal.distribution)}
             </Box>
           </ListItemIcon>
           
           <ListItemText
             primary={
-              <Typography variant="subtitle2" sx={{ fontWeight: 500 }}>
+              <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.875rem' }}>
                 {terminal.name}
               </Typography>
             }
-            secondary={
-              <Box sx={{ mt: 0.5 }}>
-                <Typography variant="caption" color="text.secondary">
-                  {terminal.type}
-                </Typography>
-                {hasDistributions && (
-                  <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                    {terminal.availableDistributions.slice(0, 2).map((dist) => (
-                      <Chip
-                        key={dist.name}
-                        label={dist.name}
-                        size="small"
-                        variant="outlined"
-                        sx={{ 
-                          height: 16, 
-                          fontSize: '10px',
-                          '& .MuiChip-label': { px: 0.5 }
-                        }}
-                      />
-                    ))}
-                    {terminal.availableDistributions.length > 2 && (
-                      <Typography variant="caption" color="text.secondary">
-                        +{terminal.availableDistributions.length - 2}
-                      </Typography>
-                    )}
-                  </Box>
-                )}
-              </Box>
-            }
           />
-
-          {hasDistributions && (
-            <IconButton
-              size="small"
-              onClick={(e) => handleMenuOpen(e, terminal)}
-              sx={{ ml: 1 }}
-            >
-              <ArrowDropDownIcon />
-            </IconButton>
-          )}
         </ListItemButton>
       </ListItem>
     );
-  }, [theme, handleLaunchTerminal, handleMenuOpen]);
+  }, [theme, handleLaunchTerminal]);
 
   if (!open) return null;
 
@@ -311,8 +243,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           gap: 1,
         }}
       >
-        <ComputerIcon color="primary" />
-        <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 600 }}>
+        <Typography variant="subtitle1" fontWeight="medium" sx={{ flexGrow: 1 }}>
           {t("localTerminal.title")}
         </Typography>
         
@@ -409,60 +340,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-
-      {/* 启动选项菜单 */}
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={handleMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-      >
-        {selectedTerminal && (
-          <>
-            <MenuItem onClick={() => handleTerminalLaunchOption({})}>
-              <ListItemIcon>
-                <Box sx={{ fontSize: '16px', mr: 1 }}>
-                  {getTerminalIcon(selectedTerminal.type, selectedTerminal.icon)}
-                </Box>
-              </ListItemIcon>
-              <ListItemText primary={t("localTerminal.launchNormal")} />
-            </MenuItem>
-
-            {selectedTerminal.availableDistributions && selectedTerminal.availableDistributions.length > 0 && (
-              <>
-                <Divider />
-                <MenuItem disabled>
-                  <ListItemText 
-                    primary={t("localTerminal.wslDistributions")}
-                    sx={{ 
-                      '& .MuiListItemText-primary': { 
-                        fontSize: '0.875rem', 
-                        fontWeight: 500,
-                        color: 'text.secondary' 
-                      }
-                    }}
-                  />
-                </MenuItem>
-                {selectedTerminal.availableDistributions.map((dist) => (
-                  <MenuItem 
-                    key={dist.name}
-                    onClick={() => handleTerminalLaunchOption({ distribution: dist.name })}
-                  >
-                    <ListItemIcon>
-                      <Box sx={{ fontSize: '14px', mr: 1 }}>🐧</Box>
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary={dist.name}
-                      secondary={`${dist.version} • ${dist.state}`}
-                    />
-                  </MenuItem>
-                ))}
-              </>
-            )}
-          </>
-        )}
-      </Menu>
     </Paper>
   );
 };
