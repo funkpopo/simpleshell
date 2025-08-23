@@ -455,3 +455,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   startTelnet: (telnetConfig) =>
     ipcRenderer.invoke("terminal:startTelnet", telnetConfig),
 });
+
+// SSH密钥生成器API
+contextBridge.exposeInMainWorld("electronAPI", {
+  // SSH密钥对生成
+  generateSSHKeyPair: (options) =>
+    ipcRenderer.invoke("generateSSHKeyPair", options),
+  
+  // 保存SSH密钥到文件
+  saveSSHKey: (options) =>
+    ipcRenderer.invoke("saveSSHKey", options),
+});

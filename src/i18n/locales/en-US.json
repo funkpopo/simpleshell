@@ -316,6 +316,29 @@
       "copied": "Copied!",
       "regenerate": "Regenerate"
     },
+    "securityTools": {
+      "title": "Security Tools",
+      "passwordTab": "Password",
+      "sshKeyTab": "SSH Key"
+    },
+    "sshKeyGenerator": {
+      "keyType": "Key Type",
+      "keySize": "Key Size",
+      "comment": "Comment",
+      "passphrase": "Passphrase",
+      "passphraseOptional": "Optional",
+      "generate": "Generate Key Pair",
+      "generating": "Generating...",
+      "generateFailed": "Key generation failed",
+      "publicKey": "Public Key",
+      "privateKey": "Private Key",
+      "copy": "Copy",
+      "copied": "Copied!",
+      "savePublic": "Save Public Key",
+      "savePrivate": "Save Private Key",
+      "saveFailed": "Failed to save file",
+      "securityWarning": "Please keep your private key safe and do not share it with others"
+    },
     "fileManager": {
       "title": "File Manager",
       "loading": "Loading...",
