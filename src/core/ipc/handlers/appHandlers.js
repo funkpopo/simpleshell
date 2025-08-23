@@ -39,7 +39,7 @@ class AppHandlers {
       },
       {
         channel: "app:downloadUpdate",
-        category: "app", 
+        category: "app",
         handler: this.downloadUpdate.bind(this),
       },
       {
@@ -152,12 +152,15 @@ class AppHandlers {
         event.sender.send("update:downloadProgress", progressData);
       };
 
-      const filePath = await updateService.downloadUpdate(downloadUrl, onProgress);
-      
-      return { 
-        success: true, 
+      const filePath = await updateService.downloadUpdate(
+        downloadUrl,
+        onProgress,
+      );
+
+      return {
+        success: true,
         filePath,
-        message: "Download completed successfully" 
+        message: "Download completed successfully",
       };
     } catch (error) {
       logToFile(`Error downloading update: ${error.message}`, "ERROR");
@@ -172,11 +175,11 @@ class AppHandlers {
       }
 
       const result = await updateService.installUpdate(filePath);
-      
+
       if (result.success) {
         logToFile("Update installation initiated", "INFO");
       }
-      
+
       return result;
     } catch (error) {
       logToFile(`Error installing update: ${error.message}`, "ERROR");

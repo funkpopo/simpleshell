@@ -543,7 +543,11 @@ function App() {
       }
     };
 
-    const removeSshListener = eventManager.addEventListener(window, "sshProcessIdUpdated", handleSshProcessIdUpdate);
+    const removeSshListener = eventManager.addEventListener(
+      window,
+      "sshProcessIdUpdated",
+      handleSshProcessIdUpdate,
+    );
 
     // 监听分屏活跃标签页变化事件
     const handleActiveSplitTabChanged = (event) => {
@@ -658,10 +662,7 @@ function App() {
   }, []);
 
   // 创建动态主题
-  const theme = React.useMemo(
-    () => createUnifiedTheme(darkMode),
-    [darkMode],
-  );
+  const theme = React.useMemo(() => createUnifiedTheme(darkMode), [darkMode]);
 
   // 处理菜单打开
   const handleMenu = useCallback((event) => {
@@ -1056,7 +1057,6 @@ function App() {
         setDragInsertPosition(null);
         return;
       }
-
 
       // 根据拖拽操作类型执行不同的操作
       if (dragOperation === "sort") {
@@ -1609,9 +1609,21 @@ function App() {
       handleSendToAI(event.detail.text);
     };
 
-    const removeSettingsListener = eventManager.addEventListener(window, "settingsChanged", handleSettingsChanged);
-    const removeToggleListener = eventManager.addEventListener(window, "toggleGlobalAI", handleToggleGlobalAI);
-    const removeSendToAIListener = eventManager.addEventListener(window, "sendToAI", handleSendToAIEvent);
+    const removeSettingsListener = eventManager.addEventListener(
+      window,
+      "settingsChanged",
+      handleSettingsChanged,
+    );
+    const removeToggleListener = eventManager.addEventListener(
+      window,
+      "toggleGlobalAI",
+      handleToggleGlobalAI,
+    );
+    const removeSendToAIListener = eventManager.addEventListener(
+      window,
+      "sendToAI",
+      handleSendToAIEvent,
+    );
 
     // 初始化应用设置
     const loadInitialSettings = async () => {
@@ -1827,7 +1839,6 @@ function App() {
                 );
               })}
             </Tabs>
-
 
             {/* 标签页右键菜单 */}
             <Menu
@@ -2386,5 +2397,5 @@ const root = createRoot(document.getElementById("root"));
 root.render(
   <GlobalErrorBoundary>
     <NotebyApp />
-  </GlobalErrorBoundary>
+  </GlobalErrorBoundary>,
 );

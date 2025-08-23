@@ -30,7 +30,6 @@ class MemoryLeakDetector {
     this.monitoringInterval = setInterval(() => {
       this.checkForLeaks();
     }, interval);
-
   }
 
   /**

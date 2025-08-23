@@ -347,7 +347,6 @@ const getCharacterGridPosition = (term, pixelX, pixelY) => {
   }
 };
 
-
 // 优化的终端尺寸调整函数，使用防抖机制减少频繁调用
 const forceResizeTerminal = debounce(
   (term, container, processId, tabId, fitAddon) => {
@@ -953,10 +952,6 @@ const WebTerminal = ({
     ],
   );
 
-
-
-
-
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
   const setupCommandDetection = (term, processId, isRemoteInput = false) => {
     // 用于存储用户正在输入的命令
@@ -1037,7 +1032,7 @@ const WebTerminal = ({
             // 匹配外部命令，跳过发送到进程
             shouldSkipSendToProcess = true;
             extCmd.processedLength++;
-            
+
             // 如果外部命令完全处理完毕，清理标记
             if (extCmd.processedLength >= extCmd.totalLength) {
               delete term._externalCommand;
@@ -1048,7 +1043,7 @@ const WebTerminal = ({
           }
         }
       }
-      
+
       // 回环防护：远程同步输入不再广播
       if (!isRemoteInput) {
         broadcastInputToGroup(data, tabId);
@@ -1089,7 +1084,7 @@ const WebTerminal = ({
 
           // 实时更新光标位置
           setTimeout(() => {
-            if (typeof updateCursorPosition === 'function') {
+            if (typeof updateCursorPosition === "function") {
               updateCursorPosition();
             }
           }, 10); // 10ms延迟确保终端已处理退格
@@ -1097,7 +1092,7 @@ const WebTerminal = ({
           // 更新当前输入状态并触发建议搜索
           if (!inEditorMode) {
             setCurrentInput(currentInputBuffer);
-            
+
             // 只有在非命令执行状态下才触发建议搜索
             if (!suggestionsHiddenByEsc && !isCommandExecuting) {
               getSuggestions(currentInputBuffer);
@@ -1141,7 +1136,7 @@ const WebTerminal = ({
         if (processId && !shouldSkipSendToProcess) {
           window.terminalAPI.sendToProcess(processId, data);
         }
-        
+
         // 重要：阻止xterm.js的默认Tab处理，避免重复显示
         // 通过不继续执行后续逻辑来防止重复处理
         return;
@@ -1153,7 +1148,7 @@ const WebTerminal = ({
         if (shouldSkipSendToProcess) {
           return;
         }
-        
+
         // 设置命令执行状态，防止显示建议
         setIsCommandExecuting(true);
 
@@ -1308,7 +1303,7 @@ const WebTerminal = ({
             setIsCommandExecuting(false);
           }, 100);
         }
-        
+
         // 发送回车键到进程
         if (processId) {
           window.terminalAPI.sendToProcess(processId, data);
@@ -1322,7 +1317,7 @@ const WebTerminal = ({
 
         // 实时更新光标位置
         setTimeout(() => {
-          if (typeof updateCursorPosition === 'function') {
+          if (typeof updateCursorPosition === "function") {
             updateCursorPosition();
           }
         }, 10); // 10ms延迟确保终端已处理输入
@@ -1336,7 +1331,7 @@ const WebTerminal = ({
           data.charCodeAt(0) <= 126
         ) {
           setCurrentInput(currentInputBuffer);
-          
+
           // 只有在非命令执行状态下才触发建议搜索
           if (!suggestionsHiddenByEsc && !isCommandExecuting) {
             getSuggestions(currentInputBuffer);
@@ -1829,7 +1824,8 @@ const WebTerminal = ({
             "g", // 搜索导航
           ];
 
-          const isAllowedKey = allowedKeys.includes(e.key) || 
+          const isAllowedKey =
+            allowedKeys.includes(e.key) ||
             (e.key === "g" && e.ctrlKey) || // Ctrl+G
             (e.key === "/" && e.ctrlKey) || // Ctrl+/
             (e.key === "," && e.ctrlKey) || // Ctrl+,
@@ -1894,7 +1890,11 @@ const WebTerminal = ({
           }
         }
         // Ctrl+. 查找下一个
-        else if (e.key === "F3" || (e.ctrlKey && e.key === "g") || (e.ctrlKey && e.key === ".")) {
+        else if (
+          e.key === "F3" ||
+          (e.ctrlKey && e.key === "g") ||
+          (e.ctrlKey && e.key === ".")
+        ) {
           if (searchAddonRef.current && searchTerm) {
             e.preventDefault();
             handleSearch();
@@ -3588,97 +3588,117 @@ const WebTerminal = ({
     try {
       const term = termRef.current;
       const container = terminalRef.current;
-      
+
       // 方法1：尝试获取xterm的实际光标元素
-      const cursorElement = term.element?.querySelector('.xterm-cursor');
+      const cursorElement = term.element?.querySelector(".xterm-cursor");
       if (cursorElement) {
         const cursorRect = cursorElement.getBoundingClientRect();
         if (cursorRect.width > 0 && cursorRect.height > 0) {
-          console.log('[CommandSuggestion] Using cursor element position:', {
+          console.log("[CommandSuggestion] Using cursor element position:", {
             x: cursorRect.left,
             y: cursorRect.top,
             width: cursorRect.width,
-            height: cursorRect.height
+            height: cursorRect.height,
           });
-          
-          const suggestionHeight = Math.min((suggestions?.length || 0) * 48 + 64, 300);
-          const showAbove = cursorRect.bottom + suggestionHeight + 30 > window.innerHeight && 
-                           cursorRect.top > suggestionHeight + 30;
-          
-          setCursorPosition({ 
-            x: cursorRect.left, 
+
+          const suggestionHeight = Math.min(
+            (suggestions?.length || 0) * 48 + 64,
+            300,
+          );
+          const showAbove =
+            cursorRect.bottom + suggestionHeight + 30 > window.innerHeight &&
+            cursorRect.top > suggestionHeight + 30;
+
+          setCursorPosition({
+            x: cursorRect.left,
             y: cursorRect.top,
-            showAbove 
+            showAbove,
           });
           return;
         }
       }
-      
+
       // 方法2：使用终端的字符度量计算
       const metrics = getCharacterMetrics(term);
       if (metrics) {
         // 获取当前光标位置（相对于终端buffer）
         const cursorX = term.buffer.active.cursorX;
         const cursorY = term.buffer.active.cursorY;
-        
+
         // 考虑终端滚动位置
         const viewportY = term.buffer.active.viewportY || 0;
         const actualCursorY = cursorY - viewportY;
-        
+
         // 获取终端内容区域
-        const screen = term.element?.querySelector('.xterm-screen') || 
-                      term.element?.querySelector('.xterm-viewport') || 
-                      container;
-        
+        const screen =
+          term.element?.querySelector(".xterm-screen") ||
+          term.element?.querySelector(".xterm-viewport") ||
+          container;
+
         const screenRect = screen.getBoundingClientRect();
-        
+
         // 计算光标的像素位置
         const pixelX = cursorX * metrics.charWidth;
         const pixelY = actualCursorY * metrics.charHeight;
-        
+
         // 计算相对于视口的绝对位置
         const absoluteX = screenRect.left + pixelX;
         const absoluteY = screenRect.top + pixelY;
-        
-        console.log('[CommandSuggestion] Using calculated position:', {
-          cursorX, cursorY, actualCursorY, viewportY,
-          pixelX, pixelY, absoluteX, absoluteY,
-          metrics: { charWidth: metrics.charWidth, charHeight: metrics.charHeight },
-          screenRect: { left: screenRect.left, top: screenRect.top }
+
+        console.log("[CommandSuggestion] Using calculated position:", {
+          cursorX,
+          cursorY,
+          actualCursorY,
+          viewportY,
+          pixelX,
+          pixelY,
+          absoluteX,
+          absoluteY,
+          metrics: {
+            charWidth: metrics.charWidth,
+            charHeight: metrics.charHeight,
+          },
+          screenRect: { left: screenRect.left, top: screenRect.top },
         });
-        
-        const suggestionHeight = Math.min((suggestions?.length || 0) * 48 + 64, 300);
-        const showAbove = absoluteY + suggestionHeight + 30 > window.innerHeight && 
-                         absoluteY > suggestionHeight + 30;
-        
-        setCursorPosition({ 
-          x: absoluteX, 
+
+        const suggestionHeight = Math.min(
+          (suggestions?.length || 0) * 48 + 64,
+          300,
+        );
+        const showAbove =
+          absoluteY + suggestionHeight + 30 > window.innerHeight &&
+          absoluteY > suggestionHeight + 30;
+
+        setCursorPosition({
+          x: absoluteX,
           y: absoluteY,
-          showAbove 
+          showAbove,
         });
         return;
       }
-      
+
       // 方法3：降级到容器相对位置
       const containerRect = container.getBoundingClientRect();
-      console.log('[CommandSuggestion] Using fallback container position:', {
+      console.log("[CommandSuggestion] Using fallback container position:", {
         left: containerRect.left + 20,
-        top: containerRect.top + 20
+        top: containerRect.top + 20,
       });
-      
-      setCursorPosition({ 
-        x: containerRect.left + 20, 
-        y: containerRect.top + 20 
+
+      setCursorPosition({
+        x: containerRect.left + 20,
+        y: containerRect.top + 20,
       });
-      
     } catch (error) {
-      console.error('[CommandSuggestion] Error calculating cursor position:', error);
+      console.error(
+        "[CommandSuggestion] Error calculating cursor position:",
+        error,
+      );
       // 最后的降级方案
       try {
         const containerRect = terminalRef.current.getBoundingClientRect();
-        setCursorPosition({ 
-          x: containerRect.left + 50, 
-          y: containerRect.top + 50 
+        setCursorPosition({
+          x: containerRect.left + 50,
+          y: containerRect.top + 50,
         });
       } catch (fallbackError) {
         setCursorPosition({ x: 100, y: 100 });
@@ -3687,97 +3707,135 @@ const WebTerminal = ({
   }, [suggestions?.length || 0]);
 
   // 命令建议相关函数
-  const getSuggestions = useCallback(async (input) => {
-    console.log('[CommandSuggestion] getSuggestions called with input:', input);
-    console.log('[CommandSuggestion] Current states - inEditorMode:', inEditorMode, 'isCommandExecuting:', isCommandExecuting);
-    
-    if (!input || input.trim() === "" || inEditorMode || isCommandExecuting) {
-      console.log('[CommandSuggestion] Skipping suggestions - empty input or invalid state');
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
+  const getSuggestions = useCallback(
+    async (input) => {
+      console.log(
+        "[CommandSuggestion] getSuggestions called with input:",
+        input,
+      );
+      console.log(
+        "[CommandSuggestion] Current states - inEditorMode:",
+        inEditorMode,
+        "isCommandExecuting:",
+        isCommandExecuting,
+      );
 
-    const trimmedInput = input.trim();
-    
-    // 防止为最近执行的命令显示建议
-    if (
-      lastExecutedCommandRef.current &&
-      trimmedInput === lastExecutedCommandRef.current &&
-      Date.now() - lastExecutedCommandTimeRef.current < 2000
-    ) {
-      console.log('[CommandSuggestion] Skipping suggestions - recent command:', trimmedInput);
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
+      if (!input || input.trim() === "" || inEditorMode || isCommandExecuting) {
+        console.log(
+          "[CommandSuggestion] Skipping suggestions - empty input or invalid state",
+        );
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
 
-    try {
-      console.log('[CommandSuggestion] Checking terminalAPI...');
-      // 从命令历史获取建议
-      if (window.terminalAPI && window.terminalAPI.getCommandSuggestions) {
-        console.log('[CommandSuggestion] Calling getCommandSuggestions...');
-        const response = await window.terminalAPI.getCommandSuggestions(trimmedInput);
-        console.log('[CommandSuggestion] Raw API response:', response);
-        
-        // API返回的是 { success: true, suggestions: [...] } 格式
-        const commandSuggestions = response?.success ? response.suggestions : [];
-        console.log('[CommandSuggestion] Extracted suggestions:', commandSuggestions);
-        
-        if (commandSuggestions && commandSuggestions.length > 0) {
-          // 过滤和排序建议
-          const filteredSuggestions = commandSuggestions
-            .filter(suggestion => 
-              suggestion.command && 
-              suggestion.command.toLowerCase().includes(trimmedInput.toLowerCase()) &&
-              suggestion.command !== trimmedInput // 不显示完全相同的命令
-            )
-            .sort((a, b) => {
-              // 优先显示前缀匹配
-              const aStartsWith = a.command.toLowerCase().startsWith(trimmedInput.toLowerCase());
-              const bStartsWith = b.command.toLowerCase().startsWith(trimmedInput.toLowerCase());
-              
-              if (aStartsWith && !bStartsWith) return -1;
-              if (!aStartsWith && bStartsWith) return 1;
-              
-              // 按使用次数排序
-              return (b.count || 0) - (a.count || 0);
-            })
-            .slice(0, 10); // 最多显示10个建议
+      const trimmedInput = input.trim();
 
-          console.log('[CommandSuggestion] Filtered suggestions:', filteredSuggestions);
+      // 防止为最近执行的命令显示建议
+      if (
+        lastExecutedCommandRef.current &&
+        trimmedInput === lastExecutedCommandRef.current &&
+        Date.now() - lastExecutedCommandTimeRef.current < 2000
+      ) {
+        console.log(
+          "[CommandSuggestion] Skipping suggestions - recent command:",
+          trimmedInput,
+        );
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
 
-          if (filteredSuggestions.length > 0) {
-            setSuggestions(filteredSuggestions);
-            // 立即更新光标位置，然后显示建议
-            updateCursorPosition();
-            // 确保位置更新后再显示建议窗口
-            requestAnimationFrame(() => {
-              setShowSuggestions(true);
-              console.log('[CommandSuggestion] Suggestions displayed with updated position');
-            });
+      try {
+        console.log("[CommandSuggestion] Checking terminalAPI...");
+        // 从命令历史获取建议
+        if (window.terminalAPI && window.terminalAPI.getCommandSuggestions) {
+          console.log("[CommandSuggestion] Calling getCommandSuggestions...");
+          const response =
+            await window.terminalAPI.getCommandSuggestions(trimmedInput);
+          console.log("[CommandSuggestion] Raw API response:", response);
+
+          // API返回的是 { success: true, suggestions: [...] } 格式
+          const commandSuggestions = response?.success
+            ? response.suggestions
+            : [];
+          console.log(
+            "[CommandSuggestion] Extracted suggestions:",
+            commandSuggestions,
+          );
+
+          if (commandSuggestions && commandSuggestions.length > 0) {
+            // 过滤和排序建议
+            const filteredSuggestions = commandSuggestions
+              .filter(
+                (suggestion) =>
+                  suggestion.command &&
+                  suggestion.command
+                    .toLowerCase()
+                    .includes(trimmedInput.toLowerCase()) &&
+                  suggestion.command !== trimmedInput, // 不显示完全相同的命令
+              )
+              .sort((a, b) => {
+                // 优先显示前缀匹配
+                const aStartsWith = a.command
+                  .toLowerCase()
+                  .startsWith(trimmedInput.toLowerCase());
+                const bStartsWith = b.command
+                  .toLowerCase()
+                  .startsWith(trimmedInput.toLowerCase());
+
+                if (aStartsWith && !bStartsWith) return -1;
+                if (!aStartsWith && bStartsWith) return 1;
+
+                // 按使用次数排序
+                return (b.count || 0) - (a.count || 0);
+              })
+              .slice(0, 10); // 最多显示10个建议
+
+            console.log(
+              "[CommandSuggestion] Filtered suggestions:",
+              filteredSuggestions,
+            );
+
+            if (filteredSuggestions.length > 0) {
+              setSuggestions(filteredSuggestions);
+              // 立即更新光标位置，然后显示建议
+              updateCursorPosition();
+              // 确保位置更新后再显示建议窗口
+              requestAnimationFrame(() => {
+                setShowSuggestions(true);
+                console.log(
+                  "[CommandSuggestion] Suggestions displayed with updated position",
+                );
+              });
+            } else {
+              console.log(
+                "[CommandSuggestion] No valid suggestions after filtering",
+              );
+              setSuggestions([]);
+              setShowSuggestions(false);
+            }
           } else {
-            console.log('[CommandSuggestion] No valid suggestions after filtering');
+            console.log("[CommandSuggestion] No suggestions returned from API");
             setSuggestions([]);
             setShowSuggestions(false);
           }
         } else {
-          console.log('[CommandSuggestion] No suggestions returned from API');
+          console.log(
+            "[CommandSuggestion] terminalAPI.getCommandSuggestions not available",
+          );
           setSuggestions([]);
           setShowSuggestions(false);
         }
-      } else {
-        console.log('[CommandSuggestion] terminalAPI.getCommandSuggestions not available');
+      } catch (error) {
+        console.error("[CommandSuggestion] Error getting suggestions:", error);
+        // 获取建议失败，隐藏建议窗口
         setSuggestions([]);
         setShowSuggestions(false);
       }
-    } catch (error) {
-      console.error('[CommandSuggestion] Error getting suggestions:', error);
-      // 获取建议失败，隐藏建议窗口
-      setSuggestions([]);
-      setShowSuggestions(false);
-    }
-  }, [inEditorMode, isCommandExecuting, updateCursorPosition]);
+    },
+    [inEditorMode, isCommandExecuting, updateCursorPosition],
+  );
 
   // 监听刷新建议事件
   useEffect(() => {
@@ -3788,58 +3846,70 @@ const WebTerminal = ({
       }
     };
 
-    window.addEventListener('refreshCommandSuggestions', handleRefreshSuggestions);
+    window.addEventListener(
+      "refreshCommandSuggestions",
+      handleRefreshSuggestions,
+    );
     return () => {
-      window.removeEventListener('refreshCommandSuggestions', handleRefreshSuggestions);
+      window.removeEventListener(
+        "refreshCommandSuggestions",
+        handleRefreshSuggestions,
+      );
     };
   }, [getSuggestions, suggestionsHiddenByEsc, isCommandExecuting]);
 
-  const handleSuggestionSelect = useCallback((suggestion) => {
-    if (!suggestion || !termRef.current || !processCache[tabId]) {
-      setShowSuggestions(false);
-      return;
-    }
-
-    try {
-      // 标记这是通过建议选择的命令
-      suggestionSelectedRef.current = true;
-      
-      // 获取当前终端行
-      const currentLine = termRef.current.buffer.active
-        .getLine(termRef.current.buffer.active.cursorY)
-        ?.translateToString() || "";
-        
-      // 提取当前输入的命令部分（去除提示符）
-      const commandMatch = currentLine.match(
-        /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.*)$/
-      );
-      
-      const currentInputOnLine = commandMatch ? commandMatch[1] : "";
-      const currentInputLength = currentInputOnLine.length;
-      
-      // 计算需要删除的字符数
-      const deleteCount = currentInput.length || currentInputLength;
-      
-      // 发送退格键删除当前输入
-      for (let i = 0; i < deleteCount; i++) {
-        window.terminalAPI.sendToProcess(processCache[tabId], "\b");
+  const handleSuggestionSelect = useCallback(
+    (suggestion) => {
+      if (!suggestion || !termRef.current || !processCache[tabId]) {
+        setShowSuggestions(false);
+        return;
       }
-      
-      // 发送选中的命令
-      window.terminalAPI.sendToProcess(processCache[tabId], suggestion.command);
-      
-      // 更新当前输入状态
-      setCurrentInput(suggestion.command);
-      
-      // 隐藏建议窗口
-      setShowSuggestions(false);
-      setSuggestions([]);
-      
-    } catch (error) {
-      console.error("选择建议失败:", error);
-      setShowSuggestions(false);
-    }
-  }, [tabId, currentInput]);
+
+      try {
+        // 标记这是通过建议选择的命令
+        suggestionSelectedRef.current = true;
+
+        // 获取当前终端行
+        const currentLine =
+          termRef.current.buffer.active
+            .getLine(termRef.current.buffer.active.cursorY)
+            ?.translateToString() || "";
+
+        // 提取当前输入的命令部分（去除提示符）
+        const commandMatch = currentLine.match(
+          /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.*)$/,
+        );
+
+        const currentInputOnLine = commandMatch ? commandMatch[1] : "";
+        const currentInputLength = currentInputOnLine.length;
+
+        // 计算需要删除的字符数
+        const deleteCount = currentInput.length || currentInputLength;
+
+        // 发送退格键删除当前输入
+        for (let i = 0; i < deleteCount; i++) {
+          window.terminalAPI.sendToProcess(processCache[tabId], "\b");
+        }
+
+        // 发送选中的命令
+        window.terminalAPI.sendToProcess(
+          processCache[tabId],
+          suggestion.command,
+        );
+
+        // 更新当前输入状态
+        setCurrentInput(suggestion.command);
+
+        // 隐藏建议窗口
+        setShowSuggestions(false);
+        setSuggestions([]);
+      } catch (error) {
+        console.error("选择建议失败:", error);
+        setShowSuggestions(false);
+      }
+    },
+    [tabId, currentInput],
+  );
 
   const closeSuggestions = useCallback(() => {
     setShowSuggestions(false);
@@ -3879,7 +3949,7 @@ const WebTerminal = ({
         }
       }
     };
-    
+
     // 监听外部命令发送事件，设置临时屏蔽期
     const externalCommandHandler = (e) => {
       const { tabId: eventTabId, command, timestamp } = e.detail || {};
@@ -3889,9 +3959,9 @@ const WebTerminal = ({
           command: command,
           timestamp: timestamp,
           processedLength: 0,
-          totalLength: command.length
+          totalLength: command.length,
         };
-        
+
         // 设置2秒后清理标记，防止影响后续正常输入
         setTimeout(() => {
           if (termRef.current && termRef.current._externalCommand) {
@@ -3900,10 +3970,18 @@ const WebTerminal = ({
         }, 2000);
       }
     };
-    
-    const removeSyncListener = eventManager.addEventListener(window, "syncTerminalInput", handler);
-    const removeExternalListener = eventManager.addEventListener(window, "externalCommandSending", externalCommandHandler);
-    
+
+    const removeSyncListener = eventManager.addEventListener(
+      window,
+      "syncTerminalInput",
+      handler,
+    );
+    const removeExternalListener = eventManager.addEventListener(
+      window,
+      "externalCommandSending",
+      externalCommandHandler,
+    );
+
     return () => {
       removeSyncListener();
       removeExternalListener();

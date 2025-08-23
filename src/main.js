@@ -48,7 +48,6 @@ let nextRequestId = 1;
 // 全局变量
 const terminalProcesses = new Map(); // 存储终端进程ID映射
 
-
 // 用于跟踪流式请求的会话
 const streamSessions = new Map(); // 存储会话ID -> 请求ID的映射
 
@@ -93,7 +92,6 @@ function getWorkerPath() {
   // 如果都找不到，返回null
   throw new Error("找不到AI worker文件");
 }
-
 
 // 创建AI Worker线程
 function createAIWorker() {
@@ -324,8 +322,7 @@ const createWindow = () => {
 // 在应用准备好时创建窗口并初始化配置
 app.whenReady().then(async () => {
   initLogger(app); // 初始化日志模块
-  
-  
+
   // Inject dependencies into configManager
   configManager.init(app, { logToFile }, require("./core/utils/crypto"));
   configManager.initializeMainConfig(); // 初始化主配置文件
@@ -710,7 +707,6 @@ function setupIPC(mainWindow) {
       throw new Error("Invalid SSH configuration");
     }
 
-
     try {
       // 使用连接池获取SSH连接
       const connectionInfo =
@@ -851,16 +847,16 @@ function setupIPC(mainWindow) {
                 const connectionStatus = {
                   isConnected: true,
                   isConnecting: false,
-                  quality: 'excellent',
+                  quality: "excellent",
                   lastUpdate: Date.now(),
-                  connectionType: 'SSH',
+                  connectionType: "SSH",
                   host: sshConfig.host,
                   port: sshConfig.port,
-                  username: sshConfig.username
+                  username: sshConfig.username,
                 };
-                mainWindow.webContents.send('tab-connection-status', {
+                mainWindow.webContents.send("tab-connection-status", {
                   tabId: sshConfig.tabId,
-                  connectionStatus
+                  connectionStatus,
                 });
               }
             }
@@ -932,17 +928,17 @@ function setupIPC(mainWindow) {
               const connectionStatus = {
                 isConnected: false,
                 isConnecting: false,
-                quality: 'offline',
+                quality: "offline",
                 lastUpdate: Date.now(),
-                connectionType: 'SSH',
+                connectionType: "SSH",
                 host: sshConfig.host,
                 port: sshConfig.port,
                 username: sshConfig.username,
-                error: err.message
+                error: err.message,
               };
-              mainWindow.webContents.send('tab-connection-status', {
+              mainWindow.webContents.send("tab-connection-status", {
                 tabId: sshConfig.tabId,
-                connectionStatus
+                connectionStatus,
               });
             }
 
@@ -960,8 +956,7 @@ function setupIPC(mainWindow) {
       }
     } catch (error) {
       logToFile(`Failed to start SSH connection: ${error.message}`, "ERROR");
-      
-      
+
       throw error;
     }
   });
@@ -1205,25 +1200,25 @@ function setupIPC(mainWindow) {
 
       // 发送断开连接通知
       const procInfo = childProcesses.get(processId);
-      
+
       // 发送连接状态变化事件到渲染进程
       if (sshConfig.tabId && mainWindow && !mainWindow.isDestroyed()) {
         const connectionStatus = {
           isConnected: false,
           isConnecting: false,
-          quality: 'offline',
+          quality: "offline",
           lastUpdate: Date.now(),
-          connectionType: 'SSH',
+          connectionType: "SSH",
           host: sshConfig.host,
           port: sshConfig.port,
-          username: sshConfig.username
+          username: sshConfig.username,
         };
-        mainWindow.webContents.send('tab-connection-status', {
+        mainWindow.webContents.send("tab-connection-status", {
           tabId: sshConfig.tabId,
-          connectionStatus
+          connectionStatus,
         });
       }
-      
+
       if (
         procInfo &&
         procInfo.ready &&
@@ -2208,7 +2203,6 @@ function setupIPC(mainWindow) {
   });
 
   ipcMain.handle("deleteFile", async (event, tabId, filePath, isDirectory) => {
-  
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -3235,65 +3229,62 @@ function setupIPC(mainWindow) {
     }
   });
 
-
-
   // 获取标签页连接状态
   ipcMain.handle("connection:getTabStatus", async (event, tabId) => {
     try {
-      if (!tabId || tabId === 'welcome') {
+      if (!tabId || tabId === "welcome") {
         return { success: true, data: null };
       }
 
       // 检查是否有对应的进程信息
       const processInfo = childProcesses.get(tabId);
-      
+
       if (!processInfo) {
         return { success: true, data: null };
       }
 
       // 根据进程类型返回连接状态
-      if (processInfo.type === 'ssh2') {
+      if (processInfo.type === "ssh2") {
         const connectionState = {
           isConnected: processInfo.ready && !!processInfo.stream,
           isConnecting: !processInfo.ready,
-          quality: processInfo.ready ? 'excellent' : 'offline',
+          quality: processInfo.ready ? "excellent" : "offline",
           lastUpdate: Date.now(),
-          connectionType: 'SSH',
+          connectionType: "SSH",
           host: processInfo.config?.host,
           port: processInfo.config?.port,
-          username: processInfo.config?.username
+          username: processInfo.config?.username,
         };
         return { success: true, data: connectionState };
-      } else if (processInfo.type === 'powershell') {
+      } else if (processInfo.type === "powershell") {
         const connectionState = {
           isConnected: true,
           isConnecting: false,
-          quality: 'excellent',
+          quality: "excellent",
           lastUpdate: Date.now(),
-          connectionType: 'PowerShell',
-          host: 'localhost'
+          connectionType: "PowerShell",
+          host: "localhost",
         };
         return { success: true, data: connectionState };
-      } else if (processInfo.type === 'telnet') {
+      } else if (processInfo.type === "telnet") {
         const connectionState = {
           isConnected: processInfo.ready && !!processInfo.process,
           isConnecting: !processInfo.ready,
-          quality: processInfo.ready ? 'good' : 'offline',
+          quality: processInfo.ready ? "good" : "offline",
           lastUpdate: Date.now(),
-          connectionType: 'Telnet',
+          connectionType: "Telnet",
           host: processInfo.config?.host,
-          port: processInfo.config?.port
+          port: processInfo.config?.port,
         };
         return { success: true, data: connectionState };
       }
 
       return { success: true, data: null };
     } catch (error) {
-      logToFile(`获取标签页连接状态失败: ${error.message}`, 'ERROR');
+      logToFile(`获取标签页连接状态失败: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   });
-
 
   // 获取快捷命令
   ipcMain.handle("get-shortcut-commands", async () => {

@@ -133,14 +133,20 @@ class GlobalErrorBoundary extends React.Component {
     // 处理 JavaScript 运行时错误
     if (typeof window !== "undefined") {
       window.addEventListener("error", this.handleGlobalError);
-      window.addEventListener("unhandledrejection", this.handleUnhandledRejection);
+      window.addEventListener(
+        "unhandledrejection",
+        this.handleUnhandledRejection,
+      );
     }
   }
 
   componentWillUnmount() {
     if (typeof window !== "undefined") {
       window.removeEventListener("error", this.handleGlobalError);
-      window.removeEventListener("unhandledrejection", this.handleUnhandledRejection);
+      window.removeEventListener(
+        "unhandledrejection",
+        this.handleUnhandledRejection,
+      );
     }
   }
 
@@ -154,9 +160,12 @@ class GlobalErrorBoundary extends React.Component {
   };
 
   handleUnhandledRejection = (event) => {
-    const error = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
+    const error =
+      event.reason instanceof Error
+        ? event.reason
+        : new Error(String(event.reason));
     this.errorLogger.logError(error, "UnhandledPromiseRejection");
-    
+
     // 阻止默认的未处理 Promise 拒绝行为
     if (!this.props.allowUnhandledRejections) {
       event.preventDefault();
@@ -181,7 +190,7 @@ class GlobalErrorBoundary extends React.Component {
   handleAppRestart = () => {
     // 清除错误日志
     this.errorLogger.clearErrors();
-    
+
     // 重置状态
     this.setState({
       hasError: false,
@@ -287,7 +296,7 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
           <Typography variant="h6" sx={{ mb: 2 }}>
             错误详情
           </Typography>
-          
+
           {error && (
             <Box sx={{ mb: 3 }}>
               <Typography variant="subtitle2" color="error" sx={{ mb: 1 }}>

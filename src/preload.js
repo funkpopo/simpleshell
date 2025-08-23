@@ -369,8 +369,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   reloadWindow: () => ipcRenderer.invoke("app:reloadWindow"),
 
   // 更新相关API
-  downloadUpdate: (downloadUrl) => ipcRenderer.invoke("app:downloadUpdate", downloadUrl),
-  installUpdate: (filePath) => ipcRenderer.invoke("app:installUpdate", filePath),
+  downloadUpdate: (downloadUrl) =>
+    ipcRenderer.invoke("app:downloadUpdate", downloadUrl),
+  installUpdate: (filePath) =>
+    ipcRenderer.invoke("app:installUpdate", filePath),
   getDownloadProgress: () => ipcRenderer.invoke("app:getDownloadProgress"),
   cancelDownload: () => ipcRenderer.invoke("app:cancelDownload"),
 

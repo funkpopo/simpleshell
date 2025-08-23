@@ -79,7 +79,9 @@ const ConnectionItem = memo(({ index, style, data }) => {
         disablePadding
         sx={{
           bgcolor: isSelected ? "action.selected" : "transparent",
-          borderLeft: isSelected ? `3px solid ${theme.palette.primary.main}` : "3px solid transparent",
+          borderLeft: isSelected
+            ? `3px solid ${theme.palette.primary.main}`
+            : "3px solid transparent",
           opacity: isDragging ? 0.5 : 1,
         }}
       >
@@ -111,9 +113,7 @@ const ConnectionItem = memo(({ index, style, data }) => {
             </Box>
           )}
 
-          <ListItemIcon sx={{ minWidth: 36 }}>
-            {itemIcon}
-          </ListItemIcon>
+          <ListItemIcon sx={{ minWidth: 36 }}>{itemIcon}</ListItemIcon>
 
           <ListItemText
             primary={
@@ -182,7 +182,11 @@ const ConnectionItem = memo(({ index, style, data }) => {
 ConnectionItem.displayName = "ConnectionItem";
 
 // Flatten hierarchical connection data for virtualization
-const flattenConnections = (connections, expandedGroups = new Set(), depth = 0) => {
+const flattenConnections = (
+  connections,
+  expandedGroups = new Set(),
+  depth = 0,
+) => {
   const flattened = [];
 
   connections.forEach((item) => {
@@ -196,7 +200,11 @@ const flattenConnections = (connections, expandedGroups = new Set(), depth = 0) 
       expandedGroups.has(item.id) &&
       item.items
     ) {
-      const children = flattenConnections(item.items, expandedGroups, depth + 1);
+      const children = flattenConnections(
+        item.items,
+        expandedGroups,
+        depth + 1,
+      );
       flattened.push(...children);
     }
   });
@@ -205,9 +213,13 @@ const flattenConnections = (connections, expandedGroups = new Set(), depth = 0) 
 };
 
 // Calculate dynamic overscan based on list characteristics
-const calculateOverscan = (itemCount, hasGroups, devicePerformance = "medium") => {
+const calculateOverscan = (
+  itemCount,
+  hasGroups,
+  devicePerformance = "medium",
+) => {
   const baseOverscan = 10;
-  
+
   // Adjust for list size
   let sizeMultiplier = 1;
   if (itemCount > 500) {
@@ -229,8 +241,10 @@ const calculateOverscan = (itemCount, hasGroups, devicePerformance = "medium") =
   };
 
   return Math.floor(
-    baseOverscan * sizeMultiplier * complexityMultiplier * 
-    (performanceMultipliers[devicePerformance] || 1)
+    baseOverscan *
+      sizeMultiplier *
+      complexityMultiplier *
+      (performanceMultipliers[devicePerformance] || 1),
   );
 };
 
@@ -276,18 +290,21 @@ const VirtualizedConnectionList = ({
   }, [addResizeObserver]);
 
   // Track expanded groups
-  const handleToggleGroup = useCallback((groupId) => {
-    setExpandedGroups(prev => {
-      const newExpanded = new Set(prev);
-      if (newExpanded.has(groupId)) {
-        newExpanded.delete(groupId);
-      } else {
-        newExpanded.add(groupId);
-      }
-      return newExpanded;
-    });
-    onToggleGroup?.(groupId);
-  }, [onToggleGroup]);
+  const handleToggleGroup = useCallback(
+    (groupId) => {
+      setExpandedGroups((prev) => {
+        const newExpanded = new Set(prev);
+        if (newExpanded.has(groupId)) {
+          newExpanded.delete(groupId);
+        } else {
+          newExpanded.add(groupId);
+        }
+        return newExpanded;
+      });
+      onToggleGroup?.(groupId);
+    },
+    [onToggleGroup],
+  );
 
   // Filter connections based on search term
   const filteredConnections = useMemo(() => {
@@ -298,20 +315,24 @@ const VirtualizedConnectionList = ({
     const searchLower = searchTerm.toLowerCase();
     const filterRecursive = (items) => {
       return items
-        .map(item => {
+        .map((item) => {
           if (item.type === "group") {
             const filteredItems = item.items ? filterRecursive(item.items) : [];
             // Include group if it has matching children or matches itself
-            if (filteredItems.length > 0 || item.name.toLowerCase().includes(searchLower)) {
+            if (
+              filteredItems.length > 0 ||
+              item.name.toLowerCase().includes(searchLower)
+            ) {
               return { ...item, items: filteredItems };
             }
             return null;
           }
-          
+
           // For connections, check name, host, username
-          const matches = item.name.toLowerCase().includes(searchLower) ||
-                         item.host?.toLowerCase().includes(searchLower) ||
-                         item.username?.toLowerCase().includes(searchLower);
+          const matches =
+            item.name.toLowerCase().includes(searchLower) ||
+            item.host?.toLowerCase().includes(searchLower) ||
+            item.username?.toLowerCase().includes(searchLower);
           return matches ? item : null;
         })
         .filter(Boolean);
@@ -327,31 +348,38 @@ const VirtualizedConnectionList = ({
 
   // Check if we have groups (affects overscan calculation)
   const hasGroups = useMemo(() => {
-    return flattenedItems.some(item => item.type === "group");
+    return flattenedItems.some((item) => item.type === "group");
   }, [flattenedItems]);
 
   // Calculate dynamic overscan
   const dynamicOverscan = useMemo(() => {
-    return calculateOverscan(flattenedItems.length, hasGroups, devicePerformance);
+    return calculateOverscan(
+      flattenedItems.length,
+      hasGroups,
+      devicePerformance,
+    );
   }, [flattenedItems.length, hasGroups, devicePerformance]);
 
   // Prepare data for virtualized items
-  const itemData = useMemo(() => ({
-    flattenedItems,
-    selectedItem,
-    onToggleGroup: handleToggleGroup,
-    onSelectConnection,
-    onDoubleClick,
-    dragHandleProps: enableDragDrop ? { "data-drag-handle": true } : null,
-    isDragging: false,
-  }), [
-    flattenedItems,
-    selectedItem,
-    handleToggleGroup,
-    onSelectConnection,
-    onDoubleClick,
-    enableDragDrop,
-  ]);
+  const itemData = useMemo(
+    () => ({
+      flattenedItems,
+      selectedItem,
+      onToggleGroup: handleToggleGroup,
+      onSelectConnection,
+      onDoubleClick,
+      dragHandleProps: enableDragDrop ? { "data-drag-handle": true } : null,
+      isDragging: false,
+    }),
+    [
+      flattenedItems,
+      selectedItem,
+      handleToggleGroup,
+      onSelectConnection,
+      onDoubleClick,
+      enableDragDrop,
+    ],
+  );
 
   // Empty state
   if (flattenedItems.length === 0) {
@@ -451,9 +479,12 @@ const VirtualizedConnectionList = ({
           width="100%"
           onItemsRendered={({ visibleStartIndex, visibleStopIndex }) => {
             // Performance monitoring in development
-            if (typeof window !== "undefined" && window.location?.hostname === "localhost") {
+            if (
+              typeof window !== "undefined" &&
+              window.location?.hostname === "localhost"
+            ) {
               console.debug(
-                `虚拟化连接列表渲染: ${visibleStartIndex}-${visibleStopIndex} / ${flattenedItems.length}`
+                `虚拟化连接列表渲染: ${visibleStartIndex}-${visibleStopIndex} / ${flattenedItems.length}`,
               );
             }
           }}

@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useState, useEffect } from "react";
 import {
   ComposableMap,
   Geographies,
@@ -6,16 +6,69 @@ import {
   Marker,
 } from "react-simple-maps";
 import { useTheme } from "@mui/material/styles";
-import geoData from "../assets/countries-110m.json";
+import { Box, CircularProgress, Typography } from "@mui/material";
 
 const WorldMap = ({ latitude, longitude }) => {
   const theme = useTheme();
+  const [geoData, setGeoData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const lat = Number(latitude);
   const lon = Number(longitude);
 
   const isValidCoordinates =
     latitude != null && longitude != null && !isNaN(lat) && !isNaN(lon);
+
+  useEffect(() => {
+    const loadGeoData = async () => {
+      try {
+        setLoading(true);
+        // 使用dynamic import来加载JSON文件
+        const data = await import("../assets/countries-110m.json");
+        setGeoData(data.default || data);
+        setError(null);
+      } catch (err) {
+        console.error("Failed to load geography data:", err);
+        setError("无法加载地图数据");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadGeoData();
+  }, []);
+
+  if (loading) {
+    return (
+      <Box sx={{ 
+        display: "flex", 
+        justifyContent: "center", 
+        alignItems: "center", 
+        height: "200px" 
+      }}>
+        <CircularProgress size={24} />
+        <Typography sx={{ ml: 1 }} variant="body2">
+          加载地图...
+        </Typography>
+      </Box>
+    );
+  }
+
+  if (error || !geoData) {
+    return (
+      <Box sx={{ 
+        display: "flex", 
+        justifyContent: "center", 
+        alignItems: "center", 
+        height: "200px" 
+      }}>
+        <Typography variant="body2" color="error">
+          {error || "地图数据不可用"}
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <ComposableMap
