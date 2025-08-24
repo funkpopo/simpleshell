@@ -47,6 +47,17 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("closeLocalTerminal", tabId),
   getLocalTerminalInfo: (tabId) =>
     ipcRenderer.invoke("getLocalTerminalInfo", tabId),
+  
+  // 自定义终端管理API
+  addCustomTerminal: (terminalConfig) =>
+    ipcRenderer.invoke("addCustomTerminal", terminalConfig),
+  updateCustomTerminal: (id, updates) =>
+    ipcRenderer.invoke("updateCustomTerminal", id, updates),
+  deleteCustomTerminal: (id) =>
+    ipcRenderer.invoke("deleteCustomTerminal", id),
+  getCustomTerminals: () =>
+    ipcRenderer.invoke("getCustomTerminals"),
+  
   resizeEmbeddedTerminal: (tabId, bounds) =>
     ipcRenderer.invoke("resizeEmbeddedTerminal", tabId, bounds),
   getAllActiveLocalTerminals: () =>
@@ -477,4 +488,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // 保存SSH密钥到文件
   saveSSHKey: (options) =>
     ipcRenderer.invoke("saveSSHKey", options),
+});
+
+// 文件对话框API
+contextBridge.exposeInMainWorld("dialogAPI", {
+  // 显示打开文件/目录对话框
+  showOpenDialog: (options) =>
+    ipcRenderer.invoke("dialog:showOpenDialog", options),
+  
+  // 显示保存文件对话框
+  showSaveDialog: (options) =>
+    ipcRenderer.invoke("dialog:showSaveDialog", options),
+  
+  // 显示消息框
+  showMessageBox: (options) =>
+    ipcRenderer.invoke("dialog:showMessageBox", options),
 });

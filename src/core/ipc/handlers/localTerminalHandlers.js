@@ -2,6 +2,7 @@ const { ipcMain } = require('electron');
 const TerminalDetector = require('../../local-terminal/terminal-detector');
 const LocalTerminalManager = require('../../local-terminal/local-terminal-manager');
 const WindowEmbedder = require('../../local-terminal/window-embedder');
+const CustomTerminalConfig = require('../../local-terminal/custom-terminal-config');
 
 class LocalTerminalHandlers {
   constructor(mainWindow) {
@@ -9,6 +10,10 @@ class LocalTerminalHandlers {
     this.terminalDetector = new TerminalDetector();
     this.terminalManager = new LocalTerminalManager();
     this.windowEmbedder = new WindowEmbedder(mainWindow);
+    this.customTerminalConfig = new CustomTerminalConfig();
+    
+    // 初始化时添加预设应用
+    this.customTerminalConfig.addPresetApplications();
     
     this.setupEventListeners();
     this.registerHandlers();
@@ -137,15 +142,90 @@ class LocalTerminalHandlers {
     // 检测本地终端
     ipcMain.handle('detectLocalTerminals', async () => {
       try {
-        const terminals = await this.terminalDetector.detectAllTerminals();
-        return terminals;
+        // 获取系统检测到的终端
+        const systemTerminals = await this.terminalDetector.detectAllTerminals();
+        // 获取用户自定义的终端
+        const customTerminals = this.customTerminalConfig.getAllCustomTerminals();
+        
+        // 合并终端列表
+        const allTerminals = [...systemTerminals, ...customTerminals];
+        
+        return allTerminals;
       } catch (error) {
         console.error('Failed to detect local terminals:', error);
         throw error;
       }
     });
 
-    // 启动本地终端
+    // 添加自定义终端
+    ipcMain.handle('addCustomTerminal', async (event, terminalConfig) => {
+      try {
+        const newTerminal = this.customTerminalConfig.addCustomTerminal(terminalConfig);
+        return {
+          success: true,
+          terminal: newTerminal
+        };
+      } catch (error) {
+        console.error('Failed to add custom terminal:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    });
+
+    // 更新自定义终端
+    ipcMain.handle('updateCustomTerminal', async (event, id, updates) => {
+      try {
+        const updatedTerminal = this.customTerminalConfig.updateCustomTerminal(id, updates);
+        return {
+          success: true,
+          terminal: updatedTerminal
+        };
+      } catch (error) {
+        console.error('Failed to update custom terminal:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    });
+
+    // 删除自定义终端
+    ipcMain.handle('deleteCustomTerminal', async (event, id) => {
+      try {
+        const deletedTerminal = this.customTerminalConfig.deleteCustomTerminal(id);
+        return {
+          success: true,
+          terminal: deletedTerminal
+        };
+      } catch (error) {
+        console.error('Failed to delete custom terminal:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    });
+
+    // 获取所有自定义终端
+    ipcMain.handle('getCustomTerminals', async () => {
+      try {
+        const customTerminals = this.customTerminalConfig.getAllCustomTerminals();
+        return {
+          success: true,
+          terminals: customTerminals
+        };
+      } catch (error) {
+        console.error('Failed to get custom terminals:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    });
+
+    // 启动本地终端或应用程序
     ipcMain.handle('launchLocalTerminal', async (event, terminalConfig, tabId, options = {}) => {
       try {
         const result = await this.terminalManager.launchTerminal(terminalConfig, tabId, options);

@@ -14,19 +14,24 @@ class LocalTerminalManager extends EventEmitter {
   }
 
   /**
-   * 启动本地终端
+   * 启动本地终端或应用程序
    * @param {Object} terminalConfig - 终端配置
    * @param {string} tabId - 标签页ID
-   * @param {Object} options - 启动选项 (adminMode, distribution, etc.)
+   * @param {Object} options - 启动选项 (adminMode, distribution, runInBackground, etc.)
    */
   async launchTerminal(terminalConfig, tabId, options = {}) {
     try {
+      // 对于自定义终端/应用程序，支持后台运行多个实例
+      if (terminalConfig.isCustom && terminalConfig.runInBackground) {
+        return await this.launchBackgroundApplication(terminalConfig, tabId, options);
+      }
+      
       // 检查是否已经有相同类型的终端在运行
       const existingTerminal = Array.from(this.activeTerminals.values()).find(
         terminal => terminal.config && terminal.config.type === terminalConfig.type
       );
       
-      if (existingTerminal && existingTerminal.status !== 'exited') {
+      if (existingTerminal && existingTerminal.status !== 'exited' && !terminalConfig.isCustom) {
         console.log(`Terminal of type ${terminalConfig.type} is already running (PID: ${existingTerminal.pid})`);
         // 返回现有终端的信息，而不是启动新的
         return existingTerminal;
@@ -46,16 +51,22 @@ class LocalTerminalManager extends EventEmitter {
         hwnd: null,
         startTime: Date.now(),
         status: 'starting',
-        distribution: options.distribution || null
+        distribution: options.distribution || null,
+        isCustom: terminalConfig.isCustom || false
       };
 
-      // 根据操作系统启动相应的终端
-      if (this.isWindows) {
-        await this.launchWindowsTerminal(terminalInfo);
-      } else if (this.isMacOS) {
-        await this.launchMacOSTerminal(terminalInfo);
-      } else if (this.isLinux) {
-        await this.launchLinuxTerminal(terminalInfo);
+      // 如果是自定义终端，使用特殊处理
+      if (terminalConfig.isCustom) {
+        await this.launchCustomApplication(terminalInfo);
+      } else {
+        // 根据操作系统启动相应的系统终端
+        if (this.isWindows) {
+          await this.launchWindowsTerminal(terminalInfo);
+        } else if (this.isMacOS) {
+          await this.launchMacOSTerminal(terminalInfo);
+        } else if (this.isLinux) {
+          await this.launchLinuxTerminal(terminalInfo);
+        }
       }
 
       this.activeTerminals.set(tabId, terminalInfo);
@@ -70,10 +81,295 @@ class LocalTerminalManager extends EventEmitter {
   }
 
   /**
+   * 启动后台应用程序（不嵌入窗口）
+   */
+  async launchBackgroundApplication(terminalConfig, tabId, options = {}) {
+    try {
+      const { executable, args = [], env = {}, cwd } = terminalConfig;
+      
+      // 使用 Worker 线程来启动后台应用
+      const workerPath = path.join(__dirname, 'application-launcher-worker.js');
+      const worker = new Worker(workerPath, {
+        workerData: {
+          executable,
+          args,
+          env: { ...process.env, ...env },
+          cwd: cwd || process.cwd(),
+          detached: true
+        }
+      });
+
+      const appInfo = {
+        config: terminalConfig,
+        tabId,
+        options,
+        worker,
+        startTime: Date.now(),
+        status: 'running',
+        isBackground: true,
+        isCustom: true
+      };
+
+      // 监听 Worker 消息
+      worker.on('message', (message) => {
+        if (message.type === 'started') {
+          appInfo.pid = message.pid;
+          appInfo.status = 'running';
+          this.emit('terminalReady', { tabId, pid: message.pid });
+        } else if (message.type === 'error') {
+          appInfo.status = 'error';
+          this.emit('terminalError', { tabId, error: message.error });
+        } else if (message.type === 'exited') {
+          appInfo.status = 'exited';
+          this.emit('terminalExited', { tabId, code: message.code });
+          this.activeTerminals.delete(tabId);
+        }
+      });
+
+      worker.on('error', (error) => {
+        console.error('Worker error:', error);
+        this.emit('terminalError', { tabId, error });
+      });
+
+      this.activeTerminals.set(tabId, appInfo);
+      this.emit('terminalLaunched', { tabId, terminalInfo: appInfo });
+      
+      return appInfo;
+    } catch (error) {
+      console.error('Failed to launch background application:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 启动自定义应用程序
+   */
+  async launchCustomApplication(terminalInfo) {
+    const { config, tabId } = terminalInfo;
+    const { executable, args = [], env = {}, cwd } = config;
+    
+    try {
+      // 处理可执行文件路径
+      let executablePath = executable;
+      
+      // 在 Windows 上处理路径
+      if (this.isWindows) {
+        // 标准化路径分隔符
+        executablePath = executablePath.replace(/\//g, '\\');
+      }
+      
+      console.log(`Launching custom application: ${executablePath}`);
+      console.log(`Arguments: ${args.join(' ')}`);
+      console.log(`Working directory: ${cwd || 'default'}`);
+      
+      // 在 Windows 上使用 start 命令来避免权限问题
+      if (this.isWindows) {
+        try {
+          // 使用 Windows 的 start 命令
+          // start 命令格式: start "title" /D "workdir" "program" args...
+          const startArgs = ['/c', 'start'];
+          
+          // 添加空标题（必需的，避免第一个带引号的参数被当作标题）
+          startArgs.push('""');
+          
+          // 如果有工作目录，添加 /D 参数
+          if (cwd && cwd.trim()) {
+            startArgs.push('/D', `"${cwd}"`);
+          }
+          
+          // 添加程序路径（如果包含空格，需要引号）
+          if (executablePath.includes(' ')) {
+            startArgs.push(`"${executablePath}"`);
+          } else {
+            startArgs.push(executablePath);
+          }
+          
+          // 添加程序参数
+          args.forEach(arg => {
+            if (arg.includes(' ')) {
+              startArgs.push(`"${arg}"`);
+            } else {
+              startArgs.push(arg);
+            }
+          });
+          
+          console.log('Using Windows start command:', 'cmd.exe', startArgs.join(' '));
+          
+          // 使用 cmd.exe 执行 start 命令
+          const childProcess = spawn('cmd.exe', startArgs, {
+            shell: false,
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+            env: { ...process.env, ...env }
+          });
+          
+          if (!childProcess || !childProcess.pid) {
+            throw new Error('Failed to start process using start command');
+          }
+          
+          terminalInfo.process = childProcess;
+          terminalInfo.pid = childProcess.pid;
+          terminalInfo.status = 'starting';
+          
+          console.log(`Process started with PID: ${childProcess.pid}`);
+          
+          // start 命令会立即返回，实际程序在新进程中运行
+          setTimeout(() => {
+            terminalInfo.status = 'ready';
+            this.emit('terminalReady', { 
+              tabId, 
+              pid: childProcess.pid,
+              hwnd: null 
+            });
+          }, 500);
+          
+          // 监听 cmd.exe 进程的退出（不是实际应用程序）
+          childProcess.on('exit', (code, signal) => {
+            console.log(`Start command process exited for ${tabId}: code=${code}`);
+            // start 命令正常退出，不影响实际应用程序
+            if (code === 0) {
+              console.log('Application launched successfully');
+            } else {
+              terminalInfo.status = 'exited';
+              this.emit('terminalExited', { tabId, code });
+            }
+          });
+          
+          childProcess.on('error', (error) => {
+            console.error(`Start command error for ${tabId}:`, error);
+            terminalInfo.status = 'error';
+            this.emit('terminalError', { 
+              tabId, 
+              error: { 
+                message: `无法启动程序: ${error.message}`,
+                code: error.code,
+                executable: executablePath
+              }
+            });
+          });
+          
+          return; // 成功启动，提前返回
+          
+        } catch (startError) {
+          console.error('Failed to use start command, trying alternative method:', startError);
+          // 如果 start 命令失败，继续尝试其他方法
+        }
+      }
+      
+      // 备用方案：直接启动（用于非 Windows 系统或 start 命令失败的情况）
+      const spawnOptions = {
+        detached: !config.runInBackground,
+        stdio: config.runInBackground ? 'ignore' : ['ignore', 'ignore', 'ignore'],
+        env: { ...process.env, ...env },
+        windowsHide: false
+      };
+      
+      // 设置工作目录
+      if (cwd && cwd.trim()) {
+        spawnOptions.cwd = cwd;
+      }
+      
+      // 根据文件类型决定是否使用 shell
+      if (this.isWindows) {
+        const ext = path.extname(executablePath).toLowerCase();
+        
+        if (['.bat', '.cmd', '.ps1'].includes(ext)) {
+          spawnOptions.shell = true;
+        } else if (ext === '.exe' && !path.isAbsolute(executablePath)) {
+          spawnOptions.shell = true;
+        }
+        
+        spawnOptions.windowsVerbatimArguments = true;
+      }
+      
+      let childProcess;
+      
+      try {
+        childProcess = spawn(executablePath, args, spawnOptions);
+        
+        if (!childProcess || !childProcess.pid) {
+          throw new Error('Process failed to start - no PID returned');
+        }
+      } catch (spawnError) {
+        console.error(`Failed to spawn process directly: ${spawnError.message}`);
+        throw spawnError;
+      }
+      
+      terminalInfo.process = childProcess;
+      terminalInfo.pid = childProcess.pid;
+      terminalInfo.status = 'starting';
+      
+      console.log(`Process started with PID: ${childProcess.pid}`);
+
+      // 监听进程事件
+      childProcess.on('error', (error) => {
+        console.error(`Custom application error for ${tabId}:`, error);
+        
+        let errorMessage = error.message;
+        if (error.code === 'ENOENT') {
+          errorMessage = `找不到可执行文件: ${executablePath}\n请检查路径是否正确`;
+        } else if (error.code === 'EACCES') {
+          errorMessage = `没有执行权限: ${executablePath}\n请尝试以管理员身份运行或检查文件权限`;
+        } else if (error.code === 'UNKNOWN') {
+          errorMessage = `无法启动程序: ${executablePath}\n可能需要管理员权限或程序被防病毒软件阻止`;
+        }
+        
+        terminalInfo.status = 'error';
+        this.emit('terminalError', { 
+          tabId, 
+          error: { 
+            message: errorMessage,
+            code: error.code,
+            executable: executablePath
+          }
+        });
+      });
+
+      childProcess.on('exit', (code, signal) => {
+        console.log(`Custom application exited for ${tabId}: code=${code}, signal=${signal}`);
+        terminalInfo.status = 'exited';
+        this.emit('terminalExited', { tabId, code });
+      });
+
+      // 标记为就绪
+      setTimeout(() => {
+        if (terminalInfo.status === 'starting') {
+          terminalInfo.status = 'ready';
+          this.emit('terminalReady', { 
+            tabId, 
+            pid: childProcess.pid,
+            hwnd: null 
+          });
+        }
+      }, 1000);
+
+    } catch (error) {
+      console.error(`Failed to launch custom application for ${tabId}:`, error);
+      terminalInfo.status = 'error';
+      
+      // 提供更友好的错误信息
+      const friendlyError = {
+        message: error.message || '启动应用程序失败',
+        executable: executable,
+        suggestion: '请检查可执行文件路径是否正确，以及是否有执行权限。某些程序可能需要管理员权限。'
+      };
+      
+      this.emit('terminalError', { tabId, error: friendlyError });
+      throw friendlyError;
+    }
+  }
+
+  /**
    * 启动Windows终端
    */
   async launchWindowsTerminal(terminalInfo) {
     const { config, tabId, options, distribution } = terminalInfo;
+    
+    // 统一字段名：支持 executable 和 executablePath
+    if (!config.executablePath && config.executable) {
+      config.executablePath = config.executable;
+    }
     
     // 根据终端类型设置启动参数
     let spawnArgs = [];
@@ -89,7 +385,7 @@ class LocalTerminalManager extends EventEmitter {
       case 'wsl':
         // WSL最好通过Windows Terminal启动以避免闪退
         // 检查是否有Windows Terminal可用
-        console.log('检查Windows Terminal可用性...');
+        console.log('检测Windows Terminal可用性...');
         const hasWindowsTerminal = await this.isWindowsTerminalAvailable();
         console.log('Windows Terminal可用:', hasWindowsTerminal);
         
@@ -117,8 +413,9 @@ class LocalTerminalManager extends EventEmitter {
           spawnOptions.detached = false;
           spawnOptions.stdio = ['ignore', 'ignore', 'ignore'];
         } else {
-          // 回退方案：尝试使用conhost直接启动WSL
-          console.log('使用conhost直接启动WSL');
+          // 回退方案：使用系统命令或默认路径
+          console.log('使用系统命令直接启动WSL');
+          config.executablePath = config.systemCommand || config.executable || 'wsl.exe';
           spawnArgs = [];
           if (distribution) {
             spawnArgs.push('--distribution', distribution);
@@ -134,17 +431,17 @@ class LocalTerminalManager extends EventEmitter {
           spawnOptions.detached = true;
           spawnOptions.stdio = ['ignore', 'ignore', 'ignore'];
           spawnOptions.windowsHide = false;
-          
-          // 尝试使用conhost来启动WSL终端
-          const originalPath = config.executablePath;
-          config.executablePath = 'conhost.exe';
-          spawnArgs = [originalPath, ...spawnArgs];
         }
         break;
       case 'windows-terminal':
+        config.executablePath = config.executable || 'wt.exe';
         spawnArgs = ['new-tab'];
         break;
       default:
+        // 默认情况，确保有 executablePath
+        if (!config.executablePath && config.executable) {
+          config.executablePath = config.executable;
+        }
         spawnArgs = [];
     }
 

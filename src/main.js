@@ -631,6 +631,22 @@ function setupIPC(mainWindow) {
     logToFile(`本地终端处理器初始化失败: ${error.message}`, "ERROR");
   }
 
+  // 文件对话框处理器
+  ipcMain.handle("dialog:showOpenDialog", async (event, options) => {
+    const result = await dialog.showOpenDialog(mainWindow, options);
+    return result;
+  });
+
+  ipcMain.handle("dialog:showSaveDialog", async (event, options) => {
+    const result = await dialog.showSaveDialog(mainWindow, options);
+    return result;
+  });
+
+  ipcMain.handle("dialog:showMessageBox", async (event, options) => {
+    const result = await dialog.showMessageBox(mainWindow, options);
+    return result;
+  });
+
   // 启动SSH连接
   ipcMain.handle("terminal:startSSH", async (event, sshConfig) => {
     const processId = nextProcessId++;
