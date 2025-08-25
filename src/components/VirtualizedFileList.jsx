@@ -121,8 +121,11 @@ const FileItem = memo(({ index, style, data }) => {
   // 缓存按钮样式对象
   const buttonSx = useMemo(
     () => ({
-      minHeight: 48,
+      minHeight: 28, // 进一步减少高度
+      maxHeight: 28, // 限制最大高度
       px: 2,
+      py: 0, // 移除垂直内边距以节省空间
+      my: 0.25, // 添加小的垂直外边距以防止重叠
       backgroundColor: fileInfo.isSelected
         ? theme.palette.action.selected
         : "transparent",
@@ -131,6 +134,9 @@ const FileItem = memo(({ index, style, data }) => {
           ? theme.palette.action.selected
           : theme.palette.action.hover,
       },
+      // 确保选中状态的边界清晰
+      borderRadius: 1, // 添加轻微圆角
+      transition: "all 0.1s ease-in-out", // 平滑过渡效果
     }),
     [
       fileInfo.isSelected,
@@ -142,14 +148,21 @@ const FileItem = memo(({ index, style, data }) => {
   // 直接始终渲染完整内容（含时间戳）
   return (
     <div style={style}>
-      <ListItem disablePadding onContextMenu={handleContextMenu}>
+      <ListItem 
+        disablePadding 
+        onContextMenu={handleContextMenu}
+        sx={{ 
+          py: 0, // 移除ListItem的垂直内边距
+          my: 0, // 移除ListItem的垂直外边距
+        }}
+      >
         <ListItemButton
           onClick={handleFileClick}
           onDoubleClick={handleFileActivate}
           dense
           sx={buttonSx}
         >
-          <ListItemIcon sx={{ minWidth: 36 }}>
+          <ListItemIcon sx={{ minWidth: 28, mr: 1 }}> {/* 进一步减少图标宽度并添加右边距 */}
             {file.isDirectory ? (
               <FolderIcon color="primary" fontSize="small" />
             ) : (
@@ -159,14 +172,27 @@ const FileItem = memo(({ index, style, data }) => {
           <ListItemText
             primary={file.name}
             secondary={secondaryText}
+            sx={{
+              my: 0, // 移除ListItemText的垂直边距
+              "& .MuiListItemText-primary": {
+                fontSize: "0.875rem", // 稍微减小主文本字体
+                lineHeight: 1.2,
+              },
+              "& .MuiListItemText-secondary": {
+                fontSize: "0.75rem", // 减小副文本字体
+                lineHeight: 1.1,
+              },
+            }}
             primaryTypographyProps={{
               variant: "body2",
               noWrap: true,
+              sx: { lineHeight: 1.2, mb: 0 }, // 更紧密的行高和无底边距
             }}
             secondaryTypographyProps={{
               variant: "caption",
               color: "text.secondary",
               noWrap: true,
+              sx: { lineHeight: 1.1, mt: 0 }, // 更紧密的行高和无顶边距
             }}
           />
         </ListItemButton>
