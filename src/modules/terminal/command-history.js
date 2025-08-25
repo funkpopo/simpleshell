@@ -17,8 +17,8 @@ class CommandHistoryService {
 
     const trimmedCommand = command.trim();
 
-    // 最小长度限制降低到4
-    if (trimmedCommand.length < 4) {
+    // 最小长度限制降低到2
+    if (trimmedCommand.length < 2) {
       return false;
     }
 
@@ -145,7 +145,7 @@ class CommandHistoryService {
 
     const trimmedInput = input.trim().toLowerCase();
 
-    // 降低最小输入长度要求到1个字符
+    // 降低最小输入长度要求到1个字符，以支持2字符最短命令
     if (trimmedInput.length < 1) {
       return [];
     }
