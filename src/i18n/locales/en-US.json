@@ -156,6 +156,7 @@
       "delete": "Delete",
       "edit": "Edit",
       "add": "Add",
+      "update": "Update",
       "name": "Name",
       "description": "Description",
       "expand": "Expand",
