@@ -29,6 +29,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import PowerOffIcon from "@mui/icons-material/PowerOff";
 import FolderIcon from "@mui/icons-material/Folder";
 import SettingsIcon from "@mui/icons-material/Settings";
+import GroupAddIcon from "@mui/icons-material/GroupAdd";
 import AIIcon from "./components/AIIcon.jsx";
 import Tooltip from "@mui/material/Tooltip";
 import Paper from "@mui/material/Paper";
@@ -327,6 +328,9 @@ function App() {
 
   // 合并标签状态 - 用于实现分屏显示
   const [mergedTabs, setMergedTabs] = React.useState({}); // 格式: { tabId: [子标签列表] }
+
+  // 多选标签状态
+  const [selectedTabs, setSelectedTabs] = React.useState(new Set()); // 存储选中的标签ID
 
   // 主题模式状态
   const [darkMode, setDarkMode] = React.useState(true); // 默认值
@@ -917,6 +921,27 @@ function App() {
     }
   };
 
+  // 处理标签页点击，支持多选
+  const handleTabClick = (e, index) => {
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+点击进行多选
+      const tabId = tabs[index].id;
+      if (tabId !== "welcome") {
+        const newSelectedTabs = new Set(selectedTabs);
+        if (selectedTabs.has(tabId)) {
+          newSelectedTabs.delete(tabId);
+        } else {
+          newSelectedTabs.add(tabId);
+        }
+        setSelectedTabs(newSelectedTabs);
+      }
+    } else {
+      // 普通点击切换标签
+      setCurrentTab(index);
+      setSelectedTabs(new Set()); // 清除多选状态
+    }
+  };
+
   // 关闭标签页
   const handleCloseTab = (index) => {
     // 不能关闭欢迎页
@@ -1004,7 +1029,7 @@ function App() {
     [tabs],
   );
 
-  // 处理拖动中
+  // 处理拖动中 - 简化为仅支持排序
   const handleDragOver = (e, index) => {
     e.preventDefault();
     // 不允许放置到欢迎标签
@@ -1012,32 +1037,24 @@ function App() {
 
     // 不是在自身上拖动
     if (draggedTabIndex !== null && draggedTabIndex !== index) {
-      // 获取鼠标在目标标签内的相对位置来决定拖拽效果
+      // 获取鼠标在目标标签内的相对位置来决定插入位置
       const rect = e.currentTarget.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const tabWidth = rect.width;
 
-      // 使用更精确的区域划分：左右各20%用于排序，中间60%用于合并
-      const sortThreshold = tabWidth * 0.2;
-
-      if (mouseX <= sortThreshold) {
+      // 左半部分插入到前面，右半部分插入到后面
+      if (mouseX <= tabWidth / 2) {
         // 左边缘：在目标标签之前插入
         e.dataTransfer.dropEffect = "move";
         setDragOperation("sort");
         setDragOverTabIndex(index);
         setDragInsertPosition("before");
-      } else if (mouseX >= tabWidth - sortThreshold) {
+      } else {
         // 右边缘：在目标标签之后插入
         e.dataTransfer.dropEffect = "move";
         setDragOperation("sort");
         setDragOverTabIndex(index);
         setDragInsertPosition("after");
-      } else {
-        // 中心区域：合并操作
-        e.dataTransfer.dropEffect = "copy";
-        setDragOperation("merge");
-        setDragOverTabIndex(index);
-        setDragInsertPosition(null);
       }
     }
   };
@@ -1052,7 +1069,7 @@ function App() {
     }
   };
 
-  // 处理放置
+  // 处理放置 - 简化为仅支持排序
   const handleDrop = (e, targetIndex) => {
     e.preventDefault();
 
@@ -1073,17 +1090,13 @@ function App() {
         return;
       }
 
-      // 根据拖拽操作类型执行不同的操作
+      // 仅执行排序操作
       if (dragOperation === "sort") {
-        // 排序操作：根据插入位置决定目标索引
         let insertIndex = targetIndex;
         if (dragInsertPosition === "after") {
           insertIndex = targetIndex + 1;
         }
         reorderTab(sourceIndex, insertIndex);
-      } else if (dragOperation === "merge") {
-        // 合并操作：将源标签合并到目标标签
-        mergeTabIntoTarget(sourceIndex, targetIndex);
       }
     }
 
@@ -1142,6 +1155,80 @@ function App() {
     },
     [tabs, currentTab],
   );
+
+  // 合并选中的标签页
+  const mergeSelectedTabs = useCallback(() => {
+    if (selectedTabs.size < 2) return;
+
+    const selectedTabsArray = Array.from(selectedTabs);
+    const tabIndices = selectedTabsArray.map(tabId => 
+      tabs.findIndex(tab => tab.id === tabId)
+    ).filter(index => index !== -1).sort((a, b) => a - b);
+
+    if (tabIndices.length < 2) return;
+
+    // 使用第一个标签作为主标签
+    const mainTabIndex = tabIndices[0];
+    const mainTab = tabs[mainTabIndex];
+
+    // 获取主标签的当前合并状态
+    const mainMerged = mergedTabs[mainTab.id] || [mainTab];
+
+    // 收集所有要合并的标签
+    const allTabsToMerge = [...mainMerged];
+    const indicesToRemove = [];
+
+    for (let i = 1; i < tabIndices.length; i++) {
+      const tabIndex = tabIndices[i];
+      const tab = tabs[tabIndex];
+      
+      // 如果是已经合并的标签，展开其内容
+      if (mergedTabs[tab.id]) {
+        allTabsToMerge.push(...mergedTabs[tab.id]);
+        // 清理旧的合并状态
+        delete mergedTabs[tab.id];
+      } else {
+        allTabsToMerge.push(tab);
+      }
+      
+      indicesToRemove.push(tabIndex);
+    }
+
+    // 创建新的合并状态
+    const newMergedTabs = { ...mergedTabs };
+    newMergedTabs[mainTab.id] = allTabsToMerge;
+    setMergedTabs(newMergedTabs);
+
+    // 从标签列表中移除被合并的标签（倒序删除避免索引变化）
+    const newTabs = [...tabs];
+    indicesToRemove.reverse().forEach(index => {
+      newTabs.splice(index, 1);
+    });
+    setTabs(newTabs);
+
+    // 调整当前标签索引
+    const removedBeforeMain = indicesToRemove.filter(index => index < mainTabIndex).length;
+    const newMainIndex = mainTabIndex - removedBeforeMain;
+    setCurrentTab(newMainIndex);
+
+    // 清除多选状态
+    setSelectedTabs(new Set());
+
+    // 触发布局更新
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+      window.dispatchEvent(
+        new CustomEvent("splitLayoutChanged", {
+          detail: {
+            type: "merge",
+            targetTabId: mainTab.id,
+            mergedTabs: newMergedTabs[mainTab.id],
+            timestamp: Date.now(),
+          },
+        })
+      );
+    }, 50);
+  }, [selectedTabs, tabs, mergedTabs, currentTab]);
 
   // 合并标签功能
   const mergeTabIntoTarget = useCallback(
@@ -1891,6 +1978,7 @@ function App() {
                     onContextMenu={(e) =>
                       handleTabContextMenu(e, index, tab.id)
                     }
+                    onClick={(e) => handleTabClick(e, index)}
                     onDragStart={(e) => handleDragStart(e, index)}
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDragLeave={handleDragLeave}
@@ -1898,6 +1986,7 @@ function App() {
                     onDragEnd={handleDragEnd}
                     value={index}
                     selected={currentTab === index}
+                    isSelected={selectedTabs.has(tab.id)}
                     index={index}
                     tabId={tab.id}
                     isDraggedOver={
@@ -1946,6 +2035,19 @@ function App() {
                 <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
                 {t("tabMenu.close")}
               </MenuItem>
+
+              {/* 合并选中标签选项 - 仅在有多个标签被选中时显示 */}
+              {selectedTabs.size > 1 && (
+                <MenuItem
+                  onClick={() => {
+                    mergeSelectedTabs();
+                    handleTabContextMenuClose();
+                  }}
+                >
+                  <GroupAddIcon fontSize="small" sx={{ mr: 1 }} />
+                  合并标签页 ({selectedTabs.size})
+                </MenuItem>
+              )}
 
               {/* 拆分会话选项 - 仅对合并的标签显示 */}
               {tabContextMenu.tabId &&

@@ -23,6 +23,19 @@ const SplitContainer = styled(Box)(({ theme, splitCount, paneSizes }) => {
     };
   }
 
+  // 四标签布局：2x2网格
+  if (splitCount === 4) {
+    return {
+      display: "grid",
+      width: "100%",
+      height: "100%",
+      gap: "2px",
+      backgroundColor: theme.palette.divider,
+      gridTemplateColumns: `${paneSizes?.leftWidth || 50}% ${100 - (paneSizes?.leftWidth || 50)}%`,
+      gridTemplateRows: `${paneSizes?.topHeight || 50}% ${100 - (paneSizes?.topHeight || 50)}%`,
+    };
+  }
+
   // 其他情况的动态布局
   return {
     display: "grid",
@@ -346,7 +359,7 @@ const MergedTabContent = memo(
     useEffect(() => {
       if (mergedTabs && mergedTabs.length > 1) {
         // 延迟触发布局调整，确保DOM已经更新
-        addTimeout(() => {
+        const timer = addTimeout(() => {
           setLayoutUpdateKey((prev) => prev + 1);
 
           // 触发resize事件通知终端进行尺寸适配
@@ -368,9 +381,11 @@ const MergedTabContent = memo(
           });
         }, 100);
 
-        return () => clearTimeout(timer);
+        return () => {
+          if (timer) clearTimeout(timer);
+        };
       }
-    }, [mergedTabs]);
+    }, [mergedTabs, addTimeout]);
 
     if (!mergedTabs || mergedTabs.length <= 1) {
       // 单个标签页，直接渲染
