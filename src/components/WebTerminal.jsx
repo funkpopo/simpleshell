@@ -952,7 +952,7 @@ const WebTerminal = ({
   );
 
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
-  const setupCommandDetection = (term, processId, isRemoteInput = false) => {
+  const setupCommandDetection = (term, processId, isRemoteInput = false, disposables = []) => {
     // 用于存储用户正在输入的命令
     let currentInputBuffer = "";
     // 标记上一个按键是否是特殊键序列的开始
@@ -1007,19 +1007,25 @@ const WebTerminal = ({
       },
     };
 
+    // 存储事件监听器的 disposables 以便清理
+    // 使用传入的 disposables 数组
+
     // 监听buffer类型变化
     if (term.buffer && typeof term.buffer.onBufferChange === "function") {
       // 如果xterm.js版本支持此方法
-      term.buffer.onBufferChange((e) => {
+      const bufferDisposable = term.buffer.onBufferChange((e) => {
         bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
       });
+      if (bufferDisposable && typeof bufferDisposable.dispose === 'function') {
+        disposables.push(bufferDisposable);
+      }
 
       // 初始检查当前buffer类型
       bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
     }
 
     // 监听终端数据输出，用于检测编辑器特征
-    term.onData((data) => {
+    const onDataDisposable = term.onData((data) => {
       // 检查是否正在处理外部命令
       let shouldSkipSendToProcess = false;
       if (term._externalCommand) {
@@ -1345,7 +1351,7 @@ const WebTerminal = ({
     });
 
     // 添加输出监听，以检测编辑器退出（仅作为备用方法）
-    term.onLineFeed(() => {
+    const onLineFeedDisposable = term.onLineFeed(() => {
       // 当获得新的一行时，检查是否有shell提示符出现，这可能表示编辑器已退出
       // 注意：如果buffer类型检测可用，此方法是不必要的
       try {
@@ -1380,8 +1386,12 @@ const WebTerminal = ({
       }
     });
 
+    if (onLineFeedDisposable && typeof onLineFeedDisposable.dispose === 'function') {
+      disposables.push(onLineFeedDisposable);
+    }
+
     // 添加终端数据处理监听，用于捕获Tab补全后的内容
-    term.onRender(() => {
+    const onRenderDisposable = term.onRender(() => {
       // 如果使用了Tab补全并且有存储的之前行内容
       if (tabCompletionUsed && currentLineBeforeTab) {
         try {
@@ -1422,6 +1432,15 @@ const WebTerminal = ({
         }
       }
     });
+
+    if (onRenderDisposable && typeof onRenderDisposable.dispose === 'function') {
+      disposables.push(onRenderDisposable);
+    }
+
+    // 添加 onData disposable 到列表
+    if (onDataDisposable && typeof onDataDisposable.dispose === 'function') {
+      disposables.push(onDataDisposable);
+    }
   };
 
   // 定义响应主题模式的终端主题
@@ -1564,6 +1583,9 @@ const WebTerminal = ({
     const styleElement = document.createElement("style");
     styleElement.textContent = terminalStyles + searchBarStyles;
     document.head.appendChild(styleElement);
+
+    // 存储终端事件监听器的 disposables 以便清理
+    const terminalDisposables = [];
 
     // 初始化 xterm.js
     if (terminalRef.current) {
@@ -1716,12 +1738,15 @@ const WebTerminal = ({
                   setupDataListener(processId, term);
 
                   // 设置命令检测（包含密码提示检测）
-                  setupCommandDetection(term, processId);
+                  setupCommandDetection(term, processId, false, terminalDisposables);
 
                   // 监听数据输出以检测密码提示（补充命令检测中的输出监听）
-                  term.onWriteParsed((data) => {
+                  const onWriteParsedDisposable = term.onWriteParsed((data) => {
                     checkForPrompts(data);
                   });
+                  if (onWriteParsedDisposable && typeof onWriteParsedDisposable.dispose === 'function') {
+                    terminalDisposables.push(onWriteParsedDisposable);
+                  }
 
                   // 拆分重连模式需要更快的resize响应
                   const resizeDelays = sshConfig.splitReconnect
@@ -1863,15 +1888,22 @@ const WebTerminal = ({
             }
           });
         }
-        // Ctrl+/ 搜索 (改为Ctrl+/)
+        // Ctrl+/ 搜索切换 (打开/关闭搜索栏)
         else if (e.ctrlKey && e.key === "/") {
+          // 只有当前活跃的终端才处理搜索快捷键
+          if (!isActive) return;
+          
           e.preventDefault();
           e.stopPropagation();
-          setShowSearchBar(true);
+          
+          // 切换搜索栏状态：如果已显示则关闭，如果已关闭则打开
+          setShowSearchBar(prev => !prev);
         }
         // Esc 关闭搜索或建议
         else if (e.key === "Escape") {
           if (showSearchBar) {
+            // 只有当前活跃的终端才处理搜索相关快捷键
+            if (!isActive) return;
             e.preventDefault();
             setShowSearchBar(false);
           } else if (showSuggestions) {
@@ -1888,6 +1920,8 @@ const WebTerminal = ({
           (e.ctrlKey && e.key === ".")
         ) {
           if (searchAddonRef.current && searchTerm) {
+            // 只有当前活跃的终端才处理搜索相关快捷键
+            if (!isActive) return;
             e.preventDefault();
             handleSearch();
           }
@@ -1898,6 +1932,8 @@ const WebTerminal = ({
           (e.ctrlKey && e.key === ",")
         ) {
           if (searchAddonRef.current && searchTerm) {
+            // 只有当前活跃的终端才处理搜索相关快捷键
+            if (!isActive) return;
             e.preventDefault();
             handleSearchPrevious();
           }
@@ -2402,6 +2438,18 @@ const WebTerminal = ({
 
       // EventManager会自动清理所有事件监听器、定时器和观察者
       return () => {
+        // 清理终端事件监听器
+        terminalDisposables.forEach(disposable => {
+          try {
+            if (disposable && typeof disposable.dispose === 'function') {
+              disposable.dispose();
+            }
+          } catch (error) {
+            // 忽略disposal错误
+          }
+        });
+        terminalDisposables.length = 0; // 清空数组
+
         // 移除选择变化事件监听器
         eventManager.removeEventListener(
           document,
@@ -2616,8 +2664,17 @@ const WebTerminal = ({
     }
   }, [searchTerm]);
 
+  // 当终端变为非活跃状态时，隐藏搜索栏
+  useEffect(() => {
+    if (!isActive && showSearchBar) {
+      setShowSearchBar(false);
+    }
+  }, [isActive, showSearchBar]);
+
   // 处理快捷搜索选项
   const handleSearchFromMenu = () => {
+    // 只有当前活跃的终端才处理搜索
+    if (!isActive) return;
     setShowSearchBar(true);
     handleClose();
   };
@@ -3951,6 +4008,7 @@ const WebTerminal = ({
 
   return (
     <Box
+      data-tab-id={tabId}
       sx={{
         width: "100%",
         height: "100%",
@@ -3968,8 +4026,8 @@ const WebTerminal = ({
           }}
         />
 
-        {!showSearchBar && (
-          <Tooltip title="搜索 (Ctrl+/)">
+        {!showSearchBar && isActive && (
+          <Tooltip title="打开搜索 (Ctrl+/)">
             <IconButton
               size="small"
               className="search-icon-btn"
@@ -3986,7 +4044,7 @@ const WebTerminal = ({
           </Tooltip>
         )}
 
-        {showSearchBar && (
+        {showSearchBar && isActive && (
           <div className="search-bar">
             <input
               type="text"
@@ -4051,7 +4109,7 @@ const WebTerminal = ({
                 </IconButton>
               </span>
             </Tooltip>
-            <Tooltip title="关闭">
+            <Tooltip title="关闭搜索 (Ctrl+/ 或 Esc)">
               <IconButton
                 size="small"
                 onClick={() => setShowSearchBar(false)}
@@ -4105,15 +4163,17 @@ const WebTerminal = ({
           <ListItemText>发送到AI助手</ListItemText>
         </MenuItem>
         <Divider />
-        <MenuItem onClick={handleSearchFromMenu}>
-          <ListItemIcon>
-            <SearchIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>搜索</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-            Ctrl+/
-          </Typography>
-        </MenuItem>
+        {isActive && (
+          <MenuItem onClick={handleSearchFromMenu}>
+            <ListItemIcon>
+              <SearchIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>搜索</ListItemText>
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              Ctrl+/
+            </Typography>
+          </MenuItem>
+        )}
         <Divider />
         <MenuItem onClick={handleClear}>
           <ListItemIcon>

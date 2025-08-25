@@ -74,6 +74,16 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     const handleKeyDown = (e) => {
       if (!open) return;
       
+      // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
+      const activeElement = document.activeElement;
+      const isInTerminal = activeElement && (
+        activeElement.classList.contains('xterm-helper-textarea') ||
+        activeElement.classList.contains('xterm-screen')
+      );
+
+      // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
+      if (isInTerminal) return;
+      
       // Ctrl+/ 聚焦到搜索框
       if (e.ctrlKey && e.key === "/") {
         e.preventDefault();

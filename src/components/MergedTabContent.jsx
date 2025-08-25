@@ -5,7 +5,9 @@ import { styled } from "@mui/material/styles";
 import WebTerminal from "./WebTerminal.jsx";
 
 // 分屏容器样式
-const SplitContainer = styled(Box)(({ theme, splitCount, paneSizes }) => {
+const SplitContainer = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'paneSizes' && prop !== 'splitCount',
+})(({ theme, splitCount, paneSizes }) => {
   // 三标签特殊布局：上方两个终端，下方一个终端
   if (splitCount === 3) {
     return {
@@ -110,7 +112,9 @@ const SplitPane = styled(Paper)(({ theme }) => ({
 }));
 
 // 分屏头部
-const SplitHeader = styled(Box)(({ theme, isActive }) => ({
+const SplitHeader = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'isActive',
+})(({ theme, isActive }) => ({
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
@@ -171,6 +175,14 @@ const MergedTabContent = memo(
           },
         }),
       );
+
+      // 延迟确保终端获得焦点
+      setTimeout(() => {
+        const terminalElement = document.querySelector(`[data-tab-id="${tabId}"] .xterm-screen`);
+        if (terminalElement) {
+          terminalElement.focus();
+        }
+      }, 100);
     };
 
     // 处理拖拽开始
@@ -457,7 +469,10 @@ const MergedTabContent = memo(
                   </Typography>
                 </SplitHeader>
 
-                <Box sx={{ flex: 1, overflow: "hidden", position: "relative" }}>
+                <Box 
+                  sx={{ flex: 1, overflow: "hidden", position: "relative" }}
+                  onClick={() => handleSplitHeaderClick(tab.id)}
+                >
                   <WebTerminal
                     key={`${tab.id}-multi`} // 使用稳定的key，避免重新创建
                     tabId={tab.id}
@@ -472,7 +487,7 @@ const MergedTabContent = memo(
                         ? terminalInstances[`${tab.id}-config`]
                         : null
                     }
-                    isActive={true}
+                    isActive={activeSplitTabId === tab.id}
                   />
                 </Box>
 
@@ -510,7 +525,10 @@ const MergedTabContent = memo(
                   {tab.label}
                 </Typography>
               </SplitHeader>
-              <Box sx={{ flex: 1, overflow: "hidden", position: "relative" }}>
+              <Box 
+                sx={{ flex: 1, overflow: "hidden", position: "relative" }}
+                onClick={() => handleSplitHeaderClick(tab.id)}
+              >
                 <WebTerminal
                   key={`${tab.id}-multi`} // 使用稳定的key，避免重新创建
                   tabId={tab.id}
@@ -525,7 +543,7 @@ const MergedTabContent = memo(
                       ? terminalInstances[`${tab.id}-config`]
                       : null
                   }
-                  isActive={true}
+                  isActive={activeSplitTabId === tab.id}
                 />
               </Box>
               {/* 添加拖拽分隔条 */}
