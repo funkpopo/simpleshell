@@ -15,54 +15,23 @@ import {
   Alert,
   Snackbar,
   InputAdornment,
-  Menu,
-  MenuItem,
-  Divider,
-  ListItemSecondaryAction,
-  Chip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
-import AddIcon from "@mui/icons-material/Add";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
-import EditIcon from "@mui/icons-material/Edit";
-import DeleteIcon from "@mui/icons-material/Delete";
 import LaunchIcon from "@mui/icons-material/Launch";
-import TerminalIcon from "@mui/icons-material/Terminal";
-import CodeIcon from "@mui/icons-material/Code";
-import StorageIcon from "@mui/icons-material/Storage";
-import WebIcon from "@mui/icons-material/Web";
-import BuildIcon from "@mui/icons-material/Build";
 import { RiTerminalBoxLine } from "react-icons/ri";
 import { VscTerminalLinux, VscTerminalUbuntu, VscTerminalDebian } from "react-icons/vsc";
 import { GrArchlinux } from "react-icons/gr";
-import { SiAlpinelinux, SiGit } from "react-icons/si";
-import { FaGitAlt } from "react-icons/fa";
+import { SiAlpinelinux } from "react-icons/si";
 import { useTranslation } from "react-i18next";
 import useAutoCleanup from "../hooks/useAutoCleanup";
-import TerminalConfigDialog from "./TerminalConfigDialog";
 
 // 终端类型图标映射
 const getTerminalIcon = (terminal) => {
-  const { type, distribution, icon } = terminal;
-  
-  // 自定义终端图标
-  if (terminal.isCustom && icon) {
-    const iconMap = {
-      'terminal': <TerminalIcon sx={{ fontSize: 20 }} />,
-      'vscode': <CodeIcon sx={{ fontSize: 20 }} />,
-      'git': <FaGitAlt size={20} />,
-      'editor': <EditIcon sx={{ fontSize: 20 }} />,
-      'browser': <WebIcon sx={{ fontSize: 20 }} />,
-      'database': <StorageIcon sx={{ fontSize: 20 }} />,
-      'server': <StorageIcon sx={{ fontSize: 20 }} />,
-      'tool': <BuildIcon sx={{ fontSize: 20 }} />
-    };
-    return iconMap[icon] || <RiTerminalBoxLine size={20} />;
-  }
+  const { type, distribution } = terminal;
   
   // WSL 系统类型检测
   if (type === 'wsl' && distribution) {
@@ -93,10 +62,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     message: "",
     severity: "info",
   });
-  const [contextMenu, setContextMenu] = useState(null);
-  const [selectedTerminal, setSelectedTerminal] = useState(null);
-  const [configDialogOpen, setConfigDialogOpen] = useState(false);
-  const [editingTerminal, setEditingTerminal] = useState(null);
   
   const searchInputRef = useRef(null);
   const sidebarRef = useRef(null);
@@ -240,88 +205,8 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     setSelectedTerminal(null);
   }, []);
 
-  // 添加自定义终端
-  const handleAddCustomTerminal = useCallback(() => {
-    setEditingTerminal(null);
-    setConfigDialogOpen(true);
-    handleCloseContextMenu();
-  }, [handleCloseContextMenu]);
-
-  // 编辑终端
-  const handleEditTerminal = useCallback(() => {
-    if (selectedTerminal) {
-      setEditingTerminal(selectedTerminal);
-      setConfigDialogOpen(true);
-    }
-    handleCloseContextMenu();
-  }, [selectedTerminal, handleCloseContextMenu]);
-
-  // 删除终端
-  const handleDeleteTerminal = useCallback(async () => {
-    if (selectedTerminal && selectedTerminal.isCustom) {
-      try {
-        const result = await window.terminalAPI.deleteCustomTerminal(selectedTerminal.id);
-        if (result.success) {
-          // 刷新终端列表
-          await detectTerminals();
-          setSnackbar({
-            open: true,
-            message: t("localTerminal.deleteSuccess", { name: selectedTerminal.name }),
-            severity: "success",
-          });
-        } else {
-          throw new Error(result.error);
-        }
-      } catch (error) {
-        setSnackbar({
-          open: true,
-          message: t("localTerminal.deleteError", { error: error.message }),
-          severity: "error",
-        });
-      }
-    }
-    handleCloseContextMenu();
-  }, [selectedTerminal, detectTerminals, t, handleCloseContextMenu]);
-
-  // 保存终端配置
-  const handleSaveTerminalConfig = useCallback(async (terminalConfig) => {
-    try {
-      let result;
-      if (editingTerminal && editingTerminal.id) {
-        // 更新现有终端
-        result = await window.terminalAPI.updateCustomTerminal(
-          editingTerminal.id,
-          terminalConfig
-        );
-      } else {
-        // 添加新终端
-        result = await window.terminalAPI.addCustomTerminal(terminalConfig);
-      }
-
-      if (result.success) {
-        // 刷新终端列表
-        await detectTerminals();
-        setSnackbar({
-          open: true,
-          message: editingTerminal
-            ? t("localTerminal.updateSuccess", { name: terminalConfig.name })
-            : t("localTerminal.addSuccess", { name: terminalConfig.name }),
-          severity: "success",
-        });
-        setConfigDialogOpen(false);
-        setEditingTerminal(null);
-      } else {
-        throw new Error(result.error);
-      }
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: t("localTerminal.saveError", { error: error.message }),
-        severity: "error",
-      });
-    }
-  }, [editingTerminal, detectTerminals, t]);
-
+  // 移除自定义终端相关功能
+  // 只保留系统终端检测和启动功能
 
   // 清空搜索
   const clearSearch = useCallback(() => {
@@ -337,7 +222,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       <ListItem 
         disablePadding 
         sx={{ mb: 0.5 }}
-        onContextMenu={(e) => handleContextMenu(e, terminal)}
       >
         <ListItemButton
           onClick={() => handleLaunchTerminal(terminal)}
@@ -345,7 +229,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
             borderRadius: 1,
             minHeight: 48,
             py: 1,
-            pr: terminal.isCustom ? 6 : 2,
+            pr: 2,
             '&:hover': {
               backgroundColor: theme.palette.action.hover,
             }
@@ -360,12 +244,8 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: terminal.isCustom 
-                  ? theme.palette.primary.main + '15'
-                  : theme.palette.background.paper,
-                border: `1px solid ${terminal.isCustom 
-                  ? theme.palette.primary.main + '30'
-                  : theme.palette.divider}`,
+                backgroundColor: theme.palette.background.paper,
+                border: `1px solid ${theme.palette.divider}`,
               }}
             >
               {getTerminalIcon(terminal)}
@@ -378,13 +258,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
                 <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.875rem' }}>
                   {terminal.name}
                 </Typography>
-                {terminal.isCustom && (
-                  <Chip 
-                    label={t('localTerminal.custom')} 
-                    size="small" 
-                    sx={{ height: 18, fontSize: '0.7rem' }}
-                  />
-                )}
               </Box>
             }
             secondary={
@@ -396,24 +269,10 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
             }
           />
           
-          {terminal.isCustom && (
-            <ListItemSecondaryAction>
-              <IconButton
-                edge="end"
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleContextMenu(e, terminal);
-                }}
-              >
-                <MoreVertIcon fontSize="small" />
-              </IconButton>
-            </ListItemSecondaryAction>
-          )}
         </ListItemButton>
       </ListItem>
     );
-  }, [theme, handleLaunchTerminal, handleContextMenu, t]);
+  }, [theme, handleLaunchTerminal, t]);
 
   if (!open) return null;
 
@@ -443,15 +302,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         <Typography variant="subtitle1" fontWeight="medium" sx={{ flexGrow: 1 }}>
           {t("localTerminal.title")}
         </Typography>
-        
-        <Tooltip title={t("localTerminal.addCustom")}>
-          <IconButton
-            size="small"
-            onClick={handleAddCustomTerminal}
-          >
-            <AddIcon />
-          </IconButton>
-        </Tooltip>
         
         <Tooltip title={t("localTerminal.refresh")}>
           <IconButton
@@ -530,57 +380,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           )}
         </Box>
       </Box>
-
-      {/* 右键菜单 */}
-      <Menu
-        open={contextMenu !== null}
-        onClose={handleCloseContextMenu}
-        anchorReference="anchorPosition"
-        anchorPosition={
-          contextMenu !== null
-            ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
-            : undefined
-        }
-      >
-        <MenuItem onClick={() => {
-          if (selectedTerminal) {
-            handleLaunchTerminal(selectedTerminal);
-          }
-          handleCloseContextMenu();
-        }}>
-          <ListItemIcon>
-            <LaunchIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>{t('localTerminal.launch')}</ListItemText>
-        </MenuItem>
-        
-        {selectedTerminal?.isCustom && [
-          <MenuItem key="edit" onClick={handleEditTerminal}>
-            <ListItemIcon>
-              <EditIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>{t('common.edit')}</ListItemText>
-          </MenuItem>,
-          <Divider key="divider" />,
-          <MenuItem key="delete" onClick={handleDeleteTerminal}>
-            <ListItemIcon>
-              <DeleteIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>{t('common.delete')}</ListItemText>
-          </MenuItem>
-        ]}
-      </Menu>
-
-      {/* 终端配置对话框 */}
-      <TerminalConfigDialog
-        open={configDialogOpen}
-        onClose={() => {
-          setConfigDialogOpen(false);
-          setEditingTerminal(null);
-        }}
-        terminal={editingTerminal}
-        onSave={handleSaveTerminalConfig}
-      />
 
       {/* Snackbar消息提示 */}
       <Snackbar
