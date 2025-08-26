@@ -949,11 +949,29 @@ function App() {
 
     const tabToRemove = tabs[index];
 
+    // 检查文件管理器是否为该标签页打开，如果是则关闭它
+    if (fileManagerOpen && fileManagerProps.tabId === tabToRemove.id) {
+      setFileManagerOpen(false);
+    }
+
+    // 检查资源监控是否为该标签页打开，如果是则关闭它
+    if (resourceMonitorOpen && currentPanelTab && currentPanelTab.id === tabToRemove.id) {
+      setResourceMonitorOpen(false);
+    }
+
     // 检查是否是合并的标签，如果是则需要清理合并状态
     if (mergedTabs[tabToRemove.id]) {
       const merged = mergedTabs[tabToRemove.id];
       // 清理所有相关的终端实例
       merged.forEach((tab) => {
+        // 如果合并标签中的任何一个标签正在使用文件管理器或资源监控，也关闭它
+        if (fileManagerOpen && fileManagerProps.tabId === tab.id) {
+          setFileManagerOpen(false);
+        }
+        if (resourceMonitorOpen && currentPanelTab && currentPanelTab.id === tab.id) {
+          setResourceMonitorOpen(false);
+        }
+
         const newInstances = { ...terminalInstances };
         delete newInstances[tab.id];
         setTerminalInstances(newInstances);
