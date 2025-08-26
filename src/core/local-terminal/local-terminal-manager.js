@@ -383,6 +383,43 @@ class LocalTerminalManager extends EventEmitter {
     const info = this.activeTerminals.get(tabId);
     return info && info.status === 'ready';
   }
+
+  /**
+   * 获取所有活动终端
+   */
+  getAllActiveTerminals() {
+    return Array.from(this.activeTerminals.values());
+  }
+
+  /**
+   * 获取单个活动终端
+   */
+  getActiveTerminal(tabId) {
+    return this.activeTerminals.get(tabId);
+  }
+
+  /**
+   * 清理所有终端
+   */
+  async cleanup() {
+    try {
+      // 关闭所有活动的终端
+      for (const [tabId, terminalInfo] of this.activeTerminals.entries()) {
+        try {
+          if (terminalInfo.process && !terminalInfo.process.killed) {
+            terminalInfo.process.kill();
+          }
+        } catch (error) {
+          console.error(`Error closing terminal ${tabId}:`, error);
+        }
+      }
+      
+      this.activeTerminals.clear();
+      this.removeAllListeners();
+    } catch (error) {
+      console.error('Error during terminal manager cleanup:', error);
+    }
+  }
 }
 
 module.exports = LocalTerminalManager;
