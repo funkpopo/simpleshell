@@ -1,5 +1,6 @@
 const { EventEmitter } = require("events");
 const { logToFile } = require("../utils/logger");
+const MemoryLeakDetector = require("./memory-leak-detector");
 
 // 内存池配置
 const MEMORY_POOL_CONFIG = {
@@ -71,6 +72,12 @@ class MemoryPool extends EventEmitter {
     this.metricsTimer = null;
     this.isInitialized = false;
 
+    // 初始化内存泄漏检测器
+    this.leakDetector = null;
+    if (this.config.monitoring.memoryLeakDetection) {
+      this.initializeLeakDetector();
+    }
+
     this.init();
   }
 
@@ -89,6 +96,11 @@ class MemoryPool extends EventEmitter {
       // 启动指标收集
       if (this.config.monitoring.enableMetrics) {
         this.startMetricsCollection();
+      }
+
+      // 启动内存泄漏检测
+      if (this.leakDetector && this.config.monitoring.memoryLeakDetection) {
+        this.leakDetector.start();
       }
 
       this.isInitialized = true;
@@ -130,6 +142,128 @@ class MemoryPool extends EventEmitter {
       `内存池 ${name} 初始化完成: ${config.size} bytes x ${preAllocCount}`,
       "DEBUG",
     );
+  }
+
+  /**
+   * 初始化内存泄漏检测器
+   */
+  initializeLeakDetector() {
+    try {
+      this.leakDetector = new MemoryLeakDetector(this, {
+        checkInterval: 30 * 1000, // 30秒检查间隔
+        thresholds: {
+          consecutiveGrowthLimit: 5,
+          memoryGrowthRateThreshold: 15, // 15%增长率阈值
+          absoluteGrowthThreshold: 100, // 100MB绝对增长阈值
+          memoryUsageThreshold: 85, // 85%使用率阈值
+          longLivedObjectThreshold: 10 * 60 * 1000, // 10分钟长期存活阈值
+          abnormalAllocationThreshold: 50, // 50MB异常分配阈值
+        }
+      });
+
+      // 监听泄漏检测事件
+      this.leakDetector.on('memoryLeakDetected', (alert) => {
+        this.handleMemoryLeakAlert(alert);
+      });
+
+      this.leakDetector.on('started', () => {
+        logToFile("内存泄漏检测器已启动", "INFO");
+      });
+
+      this.leakDetector.on('stopped', () => {
+        logToFile("内存泄漏检测器已停止", "INFO");
+      });
+
+      logToFile("内存泄漏检测器初始化成功", "INFO");
+    } catch (error) {
+      logToFile(`内存泄漏检测器初始化失败: ${error.message}`, "ERROR");
+    }
+  }
+
+  /**
+   * 处理内存泄漏告警
+   */
+  handleMemoryLeakAlert(alert) {
+    const { level, memoryInfo, leakResults, recommendations } = alert;
+    
+    // 记录详细的泄漏信息
+    const leakSummary = Object.entries(leakResults)
+      .filter(([_, result]) => result.detected)
+      .map(([type, result]) => `${type}: ${result.reason}`)
+      .join('; ');
+
+    logToFile(
+      `内存泄漏检测告警 [${level.toUpperCase()}]: ${leakSummary}`, 
+      level === 'critical' ? 'ERROR' : 'WARN'
+    );
+
+    // 打印修复建议
+    if (recommendations && recommendations.length > 0) {
+      logToFile(`修复建议: ${recommendations.join('; ')}`, "INFO");
+    }
+
+    // 发出内存泄漏告警事件
+    this.emit("memoryLeakAlert", {
+      level,
+      timestamp: alert.timestamp,
+      summary: leakSummary,
+      memoryInfo,
+      recommendations,
+      stats: this.getStats()
+    });
+
+    // 如果是关键级别的泄漏，执行紧急清理
+    if (level === 'critical') {
+      this.performEmergencyCleanup();
+    }
+  }
+
+  /**
+   * 执行紧急清理
+   */
+  performEmergencyCleanup() {
+    try {
+      logToFile("执行紧急内存清理", "WARN");
+
+      // 强制垃圾回收
+      this.performGarbageCollection();
+
+      // 如果支持全局垃圾回收
+      if (global.gc) {
+        global.gc();
+        logToFile("执行了全局垃圾回收", "INFO");
+      }
+
+      // 执行碎片整理
+      this.performDefragmentation();
+
+      // 清理分配模式历史
+      if (this.allocationPatterns.size > 100) {
+        const oldPatterns = Array.from(this.allocationPatterns.entries())
+          .sort((a, b) => a[1].lastAccess - b[1].lastAccess)
+          .slice(0, Math.floor(this.allocationPatterns.size / 2));
+        
+        oldPatterns.forEach(([key]) => {
+          this.allocationPatterns.delete(key);
+        });
+        
+        logToFile(`清理了${oldPatterns.length}个旧的分配模式`, "INFO");
+      }
+
+      // 清理性能历史记录
+      if (this.metrics.performanceHistory.length > 500) {
+        this.metrics.performanceHistory = this.metrics.performanceHistory.slice(-100);
+        logToFile("清理了性能历史记录", "INFO");
+      }
+
+      this.emit("emergencyCleanupCompleted", {
+        timestamp: Date.now(),
+        stats: this.getStats()
+      });
+
+    } catch (error) {
+      logToFile(`紧急清理失败: ${error.message}`, "ERROR");
+    }
   }
 
   allocate(size, options = {}) {
@@ -501,7 +635,7 @@ class MemoryPool extends EventEmitter {
   }
 
   getStats() {
-    return {
+    const baseStats = {
       ...this.metrics,
       pools: Object.fromEntries(
         Array.from(this.pools.entries()).map(([name, pool]) => [
@@ -523,6 +657,13 @@ class MemoryPool extends EventEmitter {
         (this.metrics.currentUsage / this.config.management.maxPoolMemory) *
         100,
     };
+
+    // 添加内存泄漏检测器状态
+    if (this.leakDetector) {
+      baseStats.leakDetector = this.leakDetector.getStatus();
+    }
+
+    return baseStats;
   }
 
   // 启动内存池（为了兼容性）
@@ -557,6 +698,12 @@ class MemoryPool extends EventEmitter {
     if (this.metricsTimer) {
       clearInterval(this.metricsTimer);
       this.metricsTimer = null;
+    }
+
+    // 停止内存泄漏检测器
+    if (this.leakDetector) {
+      this.leakDetector.stop();
+      this.leakDetector = null;
     }
 
     // 释放所有分配的内存
