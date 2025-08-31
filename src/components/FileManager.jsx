@@ -28,6 +28,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import FolderIcon from "@mui/icons-material/Folder";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import HomeIcon from "@mui/icons-material/Home";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
@@ -111,6 +112,8 @@ const FileManager = memo(
     const [uploadMenuAnchor, setUploadMenuAnchor] = useState(null);
     const [sortMode, setSortMode] = useState("name"); // "name" or "time"
     const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
+    const [pathHistory, setPathHistory] = useState([]); // 路径历史记录
+    const [historyIndex, setHistoryIndex] = useState(-1); // 当前在历史记录中的位置
 
     // 用于存储延迟移除定时器的引用
     const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
@@ -303,10 +306,15 @@ const FileManager = memo(
     };
 
     // 更新当前路径并通知父组件
-    const updateCurrentPath = (newPath) => {
+    const updateCurrentPath = (newPath, isHistoryNavigation = false) => {
       setCurrentPath(newPath);
       if (onPathChange && tabId) {
         onPathChange(tabId, newPath);
+      }
+      
+      // 只有在非历史导航时才添加到历史记录
+      if (!isHistoryNavigation) {
+        addToHistory(newPath);
       }
     };
 
@@ -421,11 +429,58 @@ const FileManager = memo(
       }
     };
 
+    // 添加路径到历史记录
+    const addToHistory = (path) => {
+      setPathHistory(prev => {
+        // 如果当前不在历史记录的末尾，删除后面的记录
+        const newHistory = historyIndex >= 0 ? prev.slice(0, historyIndex + 1) : [];
+        
+        // 避免连续重复的路径
+        if (newHistory.length === 0 || newHistory[newHistory.length - 1] !== path) {
+          newHistory.push(path);
+        }
+        
+        // 限制历史记录长度为50
+        if (newHistory.length > 50) {
+          newHistory.shift();
+        }
+        
+        return newHistory;
+      });
+      
+      setHistoryIndex(prev => {
+        const newHistory = pathHistory.slice(0, historyIndex + 1);
+        if (newHistory.length === 0 || newHistory[newHistory.length - 1] !== path) {
+          return newHistory.length;
+        }
+        return prev;
+      });
+    };
+
+    // 返回先前路径
+    const handleGoToPreviousPath = () => {
+      if (historyIndex > 0) {
+        const previousPath = pathHistory[historyIndex - 1];
+        setHistoryIndex(historyIndex - 1);
+        loadDirectory(previousPath, 0, false, true); // 最后一个参数表示是历史导航
+      }
+    };
+
+    // 前进到下一个路径
+    const handleGoToNextPath = () => {
+      if (historyIndex < pathHistory.length - 1) {
+        const nextPath = pathHistory[historyIndex + 1];
+        setHistoryIndex(historyIndex + 1);
+        loadDirectory(nextPath, 0, false, true); // 最后一个参数表示是历史导航
+      }
+    };
+
     // 修改loadDirectory，添加刷新时间记录
     const loadDirectory = async (
       path,
       retryCount = 0,
       forceRefresh = false,
+      isHistoryNavigation = false,
     ) => {
       if (!sshConnection || !tabId) {
         setError(t("fileManager.errors.missingConnectionInfo"));
@@ -437,7 +492,7 @@ const FileManager = memo(
         const cachedData = getDirectoryFromCache(path);
         if (cachedData) {
           setFiles(cachedData);
-          updateCurrentPath(path);
+          updateCurrentPath(path, isHistoryNavigation);
           setPathInput(path);
           // 加载新目录时重置选中文件
           setSelectedFile(null);
@@ -474,7 +529,7 @@ const FileManager = memo(
             updateDirectoryCache(path, fileData);
 
             setFiles(fileData);
-            updateCurrentPath(path); // 保持UI中显示~
+            updateCurrentPath(path, isHistoryNavigation); // 保持UI中显示~
             setPathInput(path);
             // 加载新目录时重置选中文件
             setSelectedFile(null);
@@ -2905,6 +2960,18 @@ const FileManager = memo(
                 }
               >
                 <ArrowBackIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+
+          <Tooltip title={t("fileManager.nextPath")}>
+            <span>
+              <IconButton
+                size="small"
+                onClick={handleGoToNextPath}
+                disabled={historyIndex >= pathHistory.length - 1}
+              >
+                <ArrowForwardIcon fontSize="small" />
               </IconButton>
             </span>
           </Tooltip>
