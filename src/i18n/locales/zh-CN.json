@@ -351,6 +351,7 @@
       "loading": "加载中...",
       "refresh": "刷新",
       "back": "返回",
+      "nextPath": "前进",
       "home": "主目录",
       "upload": "上传",
       "search": "搜索文件...",

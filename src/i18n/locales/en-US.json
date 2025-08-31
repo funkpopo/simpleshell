@@ -351,6 +351,7 @@
       "loading": "Loading...",
       "refresh": "Refresh",
       "back": "Back",
+      "nextPath": "Forward",
       "home": "Home",
       "upload": "Upload",
       "search": "Search files...",
