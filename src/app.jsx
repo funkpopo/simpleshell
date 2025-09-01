@@ -364,11 +364,10 @@ function App() {
   const [ipAddressQueryOpen, setIpAddressQueryOpen] = React.useState(false);
 
   // 随机密码生成器侧边栏状态
-  const [securityToolsOpen, setSecurityToolsOpen] =
-    React.useState(false);
+  const [securityToolsOpen, setSecurityToolsOpen] = React.useState(false);
 
   // 本地终端侧边栏状态
-  const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] = 
+  const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] =
     React.useState(false);
 
   // 文件管理路径记忆状态 - 为每个SSH连接记住最后访问的路径
@@ -423,10 +422,7 @@ function App() {
         return SIDEBAR_WIDTHS.COMMAND_HISTORY;
       } else if (ipAddressQueryOpen && lastOpenedSidebar === "ipquery") {
         return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
-      } else if (
-        securityToolsOpen &&
-        lastOpenedSidebar === "password"
-      ) {
+      } else if (securityToolsOpen && lastOpenedSidebar === "password") {
         return SIDEBAR_WIDTHS.SECURITY_TOOLS;
       } else if (
         localTerminalSidebarOpen &&
@@ -441,8 +437,7 @@ function App() {
       else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
       else if (commandHistoryOpen) return SIDEBAR_WIDTHS.COMMAND_HISTORY;
       else if (ipAddressQueryOpen) return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
-      else if (securityToolsOpen)
-        return SIDEBAR_WIDTHS.SECURITY_TOOLS;
+      else if (securityToolsOpen) return SIDEBAR_WIDTHS.SECURITY_TOOLS;
       else if (localTerminalSidebarOpen)
         return SIDEBAR_WIDTHS.LOCAL_TERMINAL_SIDEBAR;
       return 0;
@@ -955,7 +950,11 @@ function App() {
     }
 
     // 检查资源监控是否为该标签页打开，如果是则关闭它
-    if (resourceMonitorOpen && currentPanelTab && currentPanelTab.id === tabToRemove.id) {
+    if (
+      resourceMonitorOpen &&
+      currentPanelTab &&
+      currentPanelTab.id === tabToRemove.id
+    ) {
       setResourceMonitorOpen(false);
     }
 
@@ -968,7 +967,11 @@ function App() {
         if (fileManagerOpen && fileManagerProps.tabId === tab.id) {
           setFileManagerOpen(false);
         }
-        if (resourceMonitorOpen && currentPanelTab && currentPanelTab.id === tab.id) {
+        if (
+          resourceMonitorOpen &&
+          currentPanelTab &&
+          currentPanelTab.id === tab.id
+        ) {
           setResourceMonitorOpen(false);
         }
 
@@ -1179,9 +1182,10 @@ function App() {
     if (selectedTabs.size < 2) return;
 
     const selectedTabsArray = Array.from(selectedTabs);
-    const tabIndices = selectedTabsArray.map(tabId => 
-      tabs.findIndex(tab => tab.id === tabId)
-    ).filter(index => index !== -1).sort((a, b) => a - b);
+    const tabIndices = selectedTabsArray
+      .map((tabId) => tabs.findIndex((tab) => tab.id === tabId))
+      .filter((index) => index !== -1)
+      .sort((a, b) => a - b);
 
     if (tabIndices.length < 2) return;
 
@@ -1199,7 +1203,7 @@ function App() {
     for (let i = 1; i < tabIndices.length; i++) {
       const tabIndex = tabIndices[i];
       const tab = tabs[tabIndex];
-      
+
       // 如果是已经合并的标签，展开其内容
       if (mergedTabs[tab.id]) {
         allTabsToMerge.push(...mergedTabs[tab.id]);
@@ -1208,7 +1212,7 @@ function App() {
       } else {
         allTabsToMerge.push(tab);
       }
-      
+
       indicesToRemove.push(tabIndex);
     }
 
@@ -1219,13 +1223,15 @@ function App() {
 
     // 从标签列表中移除被合并的标签（倒序删除避免索引变化）
     const newTabs = [...tabs];
-    indicesToRemove.reverse().forEach(index => {
+    indicesToRemove.reverse().forEach((index) => {
       newTabs.splice(index, 1);
     });
     setTabs(newTabs);
 
     // 调整当前标签索引
-    const removedBeforeMain = indicesToRemove.filter(index => index < mainTabIndex).length;
+    const removedBeforeMain = indicesToRemove.filter(
+      (index) => index < mainTabIndex,
+    ).length;
     const newMainIndex = mainTabIndex - removedBeforeMain;
     setCurrentTab(newMainIndex);
 
@@ -1243,7 +1249,7 @@ function App() {
             mergedTabs: newMergedTabs[mainTab.id],
             timestamp: Date.now(),
           },
-        })
+        }),
       );
     }, 50);
   }, [selectedTabs, tabs, mergedTabs, currentTab]);
@@ -1610,11 +1616,11 @@ function App() {
   // 启动本地终端的处理函数（仅启动外部终端，不在应用中创建标签页）
   const handleLaunchLocalTerminal = useCallback(async (terminalConfig) => {
     try {
-      console.log('App中启动终端:', terminalConfig);
-      
+      console.log("App中启动终端:", terminalConfig);
+
       if (window.terminalAPI?.launchLocalTerminal) {
         const terminalId = `local-${Date.now()}`;
-        
+
         // 确保传递完整的终端配置
         const completeConfig = {
           name: terminalConfig.name,
@@ -1622,27 +1628,32 @@ function App() {
           executablePath: terminalConfig.executablePath,
           executable: terminalConfig.executable,
           availableDistributions: terminalConfig.availableDistributions || [],
-          launchArgs: terminalConfig.launchArgs || []
+          launchArgs: terminalConfig.launchArgs || [],
         };
-        
-        console.log('完整终端配置:', completeConfig);
-        const result = await window.terminalAPI.launchLocalTerminal(completeConfig, terminalId);
-        console.log('启动结果:', result);
-        
+
+        console.log("完整终端配置:", completeConfig);
+        const result = await window.terminalAPI.launchLocalTerminal(
+          completeConfig,
+          terminalId,
+        );
+        console.log("启动结果:", result);
+
         // 检查API调用是否成功
         if (!result.success) {
-          throw new Error(result.error || 'Launch failed');
+          throw new Error(result.error || "Launch failed");
         }
-        
+
         // 不创建标签页，只启动外部终端
         // 终端将在系统中独立运行，不显示在应用界面中
-        console.log(`Local terminal launched: ${terminalConfig.name} (PID: ${result.data?.pid})`);
-        
+        console.log(
+          `Local terminal launched: ${terminalConfig.name} (PID: ${result.data?.pid})`,
+        );
+
         return result;
       }
-      throw new Error('Local terminal API not available');
+      throw new Error("Local terminal API not available");
     } catch (error) {
-      console.error('Failed to launch local terminal:', error);
+      console.error("Failed to launch local terminal:", error);
       throw error;
     }
   }, []);

@@ -28,6 +28,7 @@ import IconButton from "@mui/material/IconButton";
 import { findGroupByTab } from "../core/syncInputGroups";
 import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 import CommandSuggestion from "./CommandSuggestion";
+import { TerminalSkeleton } from "./SkeletonLoader.jsx";
 
 // 添加全局样式以确保xterm正确填满容器
 const terminalStyles = `
@@ -474,6 +475,8 @@ const WebTerminal = ({
   const eventManager = useEventManager(); // 使用统一的事件管理器
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
+  // 添加终端初始化状态
+  const [isTerminalInitialized, setIsTerminalInitialized] = useState(false);
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
@@ -952,7 +955,12 @@ const WebTerminal = ({
   );
 
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
-  const setupCommandDetection = (term, processId, isRemoteInput = false, disposables = []) => {
+  const setupCommandDetection = (
+    term,
+    processId,
+    isRemoteInput = false,
+    disposables = [],
+  ) => {
     // 用于存储用户正在输入的命令
     let currentInputBuffer = "";
     // 标记上一个按键是否是特殊键序列的开始
@@ -1016,7 +1024,7 @@ const WebTerminal = ({
       const bufferDisposable = term.buffer.onBufferChange((e) => {
         bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
       });
-      if (bufferDisposable && typeof bufferDisposable.dispose === 'function') {
+      if (bufferDisposable && typeof bufferDisposable.dispose === "function") {
         disposables.push(bufferDisposable);
       }
 
@@ -1386,7 +1394,10 @@ const WebTerminal = ({
       }
     });
 
-    if (onLineFeedDisposable && typeof onLineFeedDisposable.dispose === 'function') {
+    if (
+      onLineFeedDisposable &&
+      typeof onLineFeedDisposable.dispose === "function"
+    ) {
       disposables.push(onLineFeedDisposable);
     }
 
@@ -1433,12 +1444,15 @@ const WebTerminal = ({
       }
     });
 
-    if (onRenderDisposable && typeof onRenderDisposable.dispose === 'function') {
+    if (
+      onRenderDisposable &&
+      typeof onRenderDisposable.dispose === "function"
+    ) {
       disposables.push(onRenderDisposable);
     }
 
     // 添加 onData disposable 到列表
-    if (onDataDisposable && typeof onDataDisposable.dispose === 'function') {
+    if (onDataDisposable && typeof onDataDisposable.dispose === "function") {
       disposables.push(onDataDisposable);
     }
   };
@@ -1609,6 +1623,9 @@ const WebTerminal = ({
         // 重新打开终端并附加到DOM
         term.open(terminalRef.current);
 
+        // 标记终端已初始化
+        setIsTerminalInitialized(true);
+
         // 如果标签页不活跃，避免立即触发resize以减少性能影响
         if (isActive) {
           // 使用EventManager管理确保适配容器大小
@@ -1689,6 +1706,9 @@ const WebTerminal = ({
         // 打开终端
         term.open(terminalRef.current);
 
+        // 标记终端已初始化
+        setIsTerminalInitialized(true);
+
         // 使用EventManager管理确保适配容器大小
         eventManager.setTimeout(() => {
           fitAddon.fit();
@@ -1738,13 +1758,21 @@ const WebTerminal = ({
                   setupDataListener(processId, term);
 
                   // 设置命令检测（包含密码提示检测）
-                  setupCommandDetection(term, processId, false, terminalDisposables);
+                  setupCommandDetection(
+                    term,
+                    processId,
+                    false,
+                    terminalDisposables,
+                  );
 
                   // 监听数据输出以检测密码提示（补充命令检测中的输出监听）
                   const onWriteParsedDisposable = term.onWriteParsed((data) => {
                     checkForPrompts(data);
                   });
-                  if (onWriteParsedDisposable && typeof onWriteParsedDisposable.dispose === 'function') {
+                  if (
+                    onWriteParsedDisposable &&
+                    typeof onWriteParsedDisposable.dispose === "function"
+                  ) {
                     terminalDisposables.push(onWriteParsedDisposable);
                   }
 
@@ -1892,12 +1920,12 @@ const WebTerminal = ({
         else if (e.ctrlKey && e.key === "/") {
           // 只有当前活跃的终端才处理搜索快捷键
           if (!isActive) return;
-          
+
           e.preventDefault();
           e.stopPropagation();
-          
+
           // 切换搜索栏状态：如果已显示则关闭，如果已关闭则打开
-          setShowSearchBar(prev => !prev);
+          setShowSearchBar((prev) => !prev);
         }
         // Esc 关闭搜索或建议
         else if (e.key === "Escape") {
@@ -2439,9 +2467,9 @@ const WebTerminal = ({
       // EventManager会自动清理所有事件监听器、定时器和观察者
       return () => {
         // 清理终端事件监听器
-        terminalDisposables.forEach(disposable => {
+        terminalDisposables.forEach((disposable) => {
           try {
-            if (disposable && typeof disposable.dispose === 'function') {
+            if (disposable && typeof disposable.dispose === "function") {
               disposable.dispose();
             }
           } catch (error) {
@@ -4017,14 +4045,18 @@ const WebTerminal = ({
       }}
     >
       <div className="terminal-container">
-        <div
-          ref={terminalRef}
-          style={{
-            width: "100%",
-            height: "100%",
-            padding: "0 0 0 0",
-          }}
-        />
+        {!isTerminalInitialized ? (
+          <TerminalSkeleton />
+        ) : (
+          <div
+            ref={terminalRef}
+            style={{
+              width: "100%",
+              height: "100%",
+              padding: "0 0 0 0",
+            }}
+          />
+        )}
 
         {!showSearchBar && isActive && (
           <Tooltip title="打开搜索 (Ctrl+/)">

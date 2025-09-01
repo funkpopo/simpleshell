@@ -6,7 +6,7 @@ import WebTerminal from "./WebTerminal.jsx";
 
 // 分屏容器样式
 const SplitContainer = styled(Box, {
-  shouldForwardProp: (prop) => prop !== 'paneSizes' && prop !== 'splitCount',
+  shouldForwardProp: (prop) => prop !== "paneSizes" && prop !== "splitCount",
 })(({ theme, splitCount, paneSizes }) => {
   // 三标签特殊布局：上方两个终端，下方一个终端
   if (splitCount === 3) {
@@ -113,7 +113,7 @@ const SplitPane = styled(Paper)(({ theme }) => ({
 
 // 分屏头部
 const SplitHeader = styled(Box, {
-  shouldForwardProp: (prop) => prop !== 'isActive',
+  shouldForwardProp: (prop) => prop !== "isActive",
 })(({ theme, isActive }) => ({
   display: "flex",
   alignItems: "center",
@@ -178,7 +178,9 @@ const MergedTabContent = memo(
 
       // 延迟确保终端获得焦点
       setTimeout(() => {
-        const terminalElement = document.querySelector(`[data-tab-id="${tabId}"] .xterm-screen`);
+        const terminalElement = document.querySelector(
+          `[data-tab-id="${tabId}"] .xterm-screen`,
+        );
         if (terminalElement) {
           terminalElement.focus();
         }
@@ -469,7 +471,7 @@ const MergedTabContent = memo(
                   </Typography>
                 </SplitHeader>
 
-                <Box 
+                <Box
                   sx={{ flex: 1, overflow: "hidden", position: "relative" }}
                   onClick={() => handleSplitHeaderClick(tab.id)}
                 >
@@ -525,7 +527,7 @@ const MergedTabContent = memo(
                   {tab.label}
                 </Typography>
               </SplitHeader>
-              <Box 
+              <Box
                 sx={{ flex: 1, overflow: "hidden", position: "relative" }}
                 onClick={() => handleSplitHeaderClick(tab.id)}
               >

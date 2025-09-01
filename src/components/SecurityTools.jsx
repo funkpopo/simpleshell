@@ -34,10 +34,10 @@ import { SIDEBAR_WIDTHS } from "../constants/layout.js";
 const RandomPasswordGenerator = ({ open, onClose }) => {
   const { t } = useTranslation();
   const theme = useTheme();
-  
+
   // 标签页状态
   const [tabValue, setTabValue] = useState(0);
-  
+
   // 密码生成器状态
   const [length, setLength] = useState(8);
   const [options, setOptions] = useState({
@@ -47,7 +47,11 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
     symbols: false,
   });
   const [password, setPassword] = useState("");
-  const [copySuccess, setCopySuccess] = useState({ password: false, publicKey: false, privateKey: false });
+  const [copySuccess, setCopySuccess] = useState({
+    password: false,
+    publicKey: false,
+    privateKey: false,
+  });
 
   // SSH密钥生成器状态
   const [keyType, setKeyType] = useState("ed25519");
@@ -65,7 +69,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
   const handleKeyTypeChange = (event) => {
     const newKeyType = event.target.value;
     setKeyType(newKeyType);
-    
+
     // 根据密钥类型设置默认长度
     if (newKeyType === "ed25519") {
       setKeySize(256);
@@ -92,20 +96,20 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
   const generateKeyPair = useCallback(async () => {
     setGenerating(true);
     setError("");
-    
+
     try {
       // 通过IPC调用主进程生成SSH密钥对
       const result = await window.electronAPI.generateSSHKeyPair({
         type: keyType,
         bits: keySize,
         comment: comment || `${keyType}-key-${Date.now()}`,
-        passphrase: passphrase
+        passphrase: passphrase,
       });
-      
+
       if (result.success) {
         setKeyPair({
           publicKey: result.publicKey,
-          privateKey: result.privateKey
+          privateKey: result.privateKey,
         });
       } else {
         setError(result.error || t("sshKeyGenerator.generateFailed"));
@@ -159,7 +163,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
     try {
       await window.electronAPI.saveSSHKey({
         content,
-        filename
+        filename,
       });
     } catch (err) {
       setError(err.message || t("sshKeyGenerator.saveFailed"));
@@ -214,27 +218,27 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
 
           {/* 标签页 */}
           <Box sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}>
-            <Tabs 
-              value={tabValue} 
+            <Tabs
+              value={tabValue}
               onChange={(e, newValue) => setTabValue(newValue)}
               variant="fullWidth"
               sx={{
                 minHeight: 40,
-                '& .MuiTab-root': {
+                "& .MuiTab-root": {
                   minHeight: 40,
-                  fontSize: '0.85rem',
-                }
+                  fontSize: "0.85rem",
+                },
               }}
             >
-              <Tab 
-                icon={<VpnKeyIcon fontSize="small" />} 
+              <Tab
+                icon={<VpnKeyIcon fontSize="small" />}
                 iconPosition="start"
-                label={t("securityTools.passwordTab")} 
+                label={t("securityTools.passwordTab")}
               />
-              <Tab 
-                icon={<KeyIcon fontSize="small" />} 
+              <Tab
+                icon={<KeyIcon fontSize="small" />}
                 iconPosition="start"
-                label={t("securityTools.sshKeyTab")} 
+                label={t("securityTools.sshKeyTab")}
               />
             </Tabs>
           </Box>
@@ -363,7 +367,9 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                         ? t("randomPassword.copied")
                         : t("randomPassword.copy")
                     }
-                    onClose={() => setCopySuccess({ ...copySuccess, password: false })}
+                    onClose={() =>
+                      setCopySuccess({ ...copySuccess, password: false })
+                    }
                   >
                     <IconButton
                       onClick={() => copyToClipboard(password, "password")}
@@ -474,7 +480,10 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                 {keyPair.publicKey && (
                   <>
                     <Divider sx={{ mb: 2 }} />
-                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: "medium" }}>
+                    <Typography
+                      variant="subtitle2"
+                      sx={{ mb: 1, fontWeight: "medium" }}
+                    >
                       {t("sshKeyGenerator.publicKey")}
                     </Typography>
                     <TextField
@@ -484,7 +493,11 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                       fullWidth
                       size="small"
                       InputProps={{ readOnly: true }}
-                      sx={{ mb: 1, fontFamily: "monospace", fontSize: "0.8rem" }}
+                      sx={{
+                        mb: 1,
+                        fontFamily: "monospace",
+                        fontSize: "0.8rem",
+                      }}
                     />
                     <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
                       <Tooltip
@@ -496,7 +509,9 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                       >
                         <IconButton
                           size="small"
-                          onClick={() => copyToClipboard(keyPair.publicKey, "publicKey")}
+                          onClick={() =>
+                            copyToClipboard(keyPair.publicKey, "publicKey")
+                          }
                         >
                           {copySuccess.publicKey ? (
                             <CheckIcon color="success" fontSize="small" />
@@ -518,7 +533,10 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                     </Box>
 
                     {/* 私钥 */}
-                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: "medium" }}>
+                    <Typography
+                      variant="subtitle2"
+                      sx={{ mb: 1, fontWeight: "medium" }}
+                    >
                       {t("sshKeyGenerator.privateKey")}
                     </Typography>
                     <TextField
@@ -528,7 +546,11 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                       fullWidth
                       size="small"
                       InputProps={{ readOnly: true }}
-                      sx={{ mb: 1, fontFamily: "monospace", fontSize: "0.8rem" }}
+                      sx={{
+                        mb: 1,
+                        fontFamily: "monospace",
+                        fontSize: "0.8rem",
+                      }}
                     />
                     <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
                       <Tooltip
@@ -540,7 +562,9 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                       >
                         <IconButton
                           size="small"
-                          onClick={() => copyToClipboard(keyPair.privateKey, "privateKey")}
+                          onClick={() =>
+                            copyToClipboard(keyPair.privateKey, "privateKey")
+                          }
                         >
                           {copySuccess.privateKey ? (
                             <CheckIcon color="success" fontSize="small" />
@@ -560,7 +584,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                         </IconButton>
                       </Tooltip>
                     </Box>
-                    
+
                     <Alert severity="warning" sx={{ fontSize: "0.8rem" }}>
                       {t("sshKeyGenerator.securityWarning")}
                     </Alert>

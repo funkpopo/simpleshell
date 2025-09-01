@@ -165,7 +165,17 @@
       "later": "Later",
       "ok": "OK",
       "yes": "Yes",
-      "no": "No"
+      "no": "No",
+      "loading": "Loading...",
+      "skeleton": {
+        "loading": "Loading content...",
+        "terminal": "Initializing terminal...",
+        "fileManager": "Loading file list...",
+        "settings": "Loading settings...",
+        "connections": "Loading connection list...",
+        "resourceMonitor": "Loading system information...",
+        "aiChat": "Initializing AI assistant..."
+      }
     },
     "shortcutCommands": {
       "title": "Shortcut Commands",
@@ -436,7 +446,7 @@
       "refresh": "Refresh",
       "searchPlaceholder": "Search terminals...",
       "availableTerminals": "Available Terminals",
-      "runningTerminals": "Running Terminals", 
+      "runningTerminals": "Running Terminals",
       "noTerminals": "No terminals detected",
       "noRunningTerminals": "No running terminals",
       "detecting": "Detecting terminals...",
@@ -463,7 +473,7 @@
         "addTitle": "Add Custom Terminal",
         "editTitle": "Edit Terminal Config",
         "basicTab": "Basic Settings",
-        "advancedTab": "Advanced Settings", 
+        "advancedTab": "Advanced Settings",
         "basicInfo": "Basic Information",
         "executionConfig": "Execution Configuration",
         "name": "Name",

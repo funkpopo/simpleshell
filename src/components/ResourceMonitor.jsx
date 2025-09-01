@@ -12,6 +12,7 @@ import ComputerIcon from "@mui/icons-material/Computer";
 import MemoryIcon from "@mui/icons-material/Memory";
 import StorageIcon from "@mui/icons-material/Storage";
 import { useTheme } from "@mui/material/styles";
+import { ResourceMonitorSkeleton } from "./SkeletonLoader.jsx";
 import Tooltip from "@mui/material/Tooltip";
 import { formatFileSize } from "../core/utils/formatters";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -256,9 +257,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
             }}
           >
             {loading && !systemInfo ? (
-              <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-                <CircularProgress />
-              </Box>
+              <ResourceMonitorSkeleton />
             ) : error ? (
               <Box sx={{ py: 2 }}>
                 <Typography color="error" align="center">
