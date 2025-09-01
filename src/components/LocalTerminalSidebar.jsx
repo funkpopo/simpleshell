@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   Box,
   Paper,
@@ -23,7 +29,11 @@ import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
 import LaunchIcon from "@mui/icons-material/Launch";
 import { RiTerminalBoxLine } from "react-icons/ri";
-import { VscTerminalLinux, VscTerminalUbuntu, VscTerminalDebian } from "react-icons/vsc";
+import {
+  VscTerminalLinux,
+  VscTerminalUbuntu,
+  VscTerminalDebian,
+} from "react-icons/vsc";
 import { GrArchlinux } from "react-icons/gr";
 import { SiAlpinelinux } from "react-icons/si";
 import { useTranslation } from "react-i18next";
@@ -32,22 +42,22 @@ import useAutoCleanup from "../hooks/useAutoCleanup";
 // 终端类型图标映射
 const getTerminalIcon = (terminal) => {
   const { type, distribution } = terminal;
-  
+
   // WSL 系统类型检测
-  if (type === 'wsl' && distribution) {
+  if (type === "wsl" && distribution) {
     const distName = distribution.toLowerCase();
-    if (distName.includes('ubuntu')) return <VscTerminalUbuntu size={20} />;
-    if (distName.includes('debian')) return <VscTerminalDebian size={20} />;
-    if (distName.includes('arch')) return <GrArchlinux size={20} />;
-    if (distName.includes('alpine')) return <SiAlpinelinux size={20} />;
+    if (distName.includes("ubuntu")) return <VscTerminalUbuntu size={20} />;
+    if (distName.includes("debian")) return <VscTerminalDebian size={20} />;
+    if (distName.includes("arch")) return <GrArchlinux size={20} />;
+    if (distName.includes("alpine")) return <SiAlpinelinux size={20} />;
     return <VscTerminalLinux size={20} />;
   }
-  
+
   // 其他终端类型
   const iconMap = {
-    'wsl': <VscTerminalLinux size={20} />,
+    wsl: <VscTerminalLinux size={20} />,
   };
-  
+
   return iconMap[type] || <RiTerminalBoxLine size={20} />;
 };
 
@@ -62,7 +72,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     message: "",
     severity: "info",
   });
-  
+
   const searchInputRef = useRef(null);
   const sidebarRef = useRef(null);
 
@@ -73,17 +83,17 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!open) return;
-      
+
       // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
       const activeElement = document.activeElement;
-      const isInTerminal = activeElement && (
-        activeElement.classList.contains('xterm-helper-textarea') ||
-        activeElement.classList.contains('xterm-screen')
-      );
+      const isInTerminal =
+        activeElement &&
+        (activeElement.classList.contains("xterm-helper-textarea") ||
+          activeElement.classList.contains("xterm-screen"));
 
       // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
       if (isInTerminal) return;
-      
+
       // Ctrl+/ 聚焦到搜索框
       if (e.ctrlKey && e.key === "/") {
         e.preventDefault();
@@ -105,19 +115,21 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     setIsDetecting(true);
     try {
       if (window.terminalAPI?.detectLocalTerminals) {
-        console.log('开始检测本地终端...');
+        console.log("开始检测本地终端...");
         const terminals = await window.terminalAPI.detectLocalTerminals();
-        console.log('检测到的终端:', terminals);
-        console.log('终端数量:', terminals?.length);
-        
+        console.log("检测到的终端:", terminals);
+        console.log("终端数量:", terminals?.length);
+
         setDetectedTerminals(terminals || []);
         setSnackbar({
           open: true,
-          message: t("localTerminal.detectSuccess", { count: terminals?.length || 0 }),
+          message: t("localTerminal.detectSuccess", {
+            count: terminals?.length || 0,
+          }),
           severity: "success",
         });
       } else {
-        console.error('terminalAPI.detectLocalTerminals 不可用');
+        console.error("terminalAPI.detectLocalTerminals 不可用");
         setSnackbar({
           open: true,
           message: "终端API不可用",
@@ -125,7 +137,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         });
       }
     } catch (error) {
-      console.error('Failed to detect terminals:', error);
+      console.error("Failed to detect terminals:", error);
       setSnackbar({
         open: true,
         message: t("localTerminal.detectError"),
@@ -147,57 +159,63 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   const filteredTerminals = useMemo(() => {
     if (!searchQuery) return detectedTerminals;
     const query = searchQuery.toLowerCase();
-    return detectedTerminals.filter(terminal => 
-      terminal.name.toLowerCase().includes(query) ||
-      terminal.type.toLowerCase().includes(query)
+    return detectedTerminals.filter(
+      (terminal) =>
+        terminal.name.toLowerCase().includes(query) ||
+        terminal.type.toLowerCase().includes(query),
     );
   }, [detectedTerminals, searchQuery]);
 
   // 启动终端
-  const handleLaunchTerminal = useCallback(async (terminal) => {
-    // 添加终端配置检查
-    if (!terminal) {
-      console.error("Terminal configuration is undefined");
-      setSnackbar({
-        open: true,
-        message: t("localTerminal.noTerminalSelected", "请选择一个终端"),
-        severity: "warning",
-      });
-      return;
-    }
-    
-    console.log("尝试启动终端:", terminal);
-    
-    try {
-      if (onLaunchTerminal) {
-        await onLaunchTerminal(terminal);
+  const handleLaunchTerminal = useCallback(
+    async (terminal) => {
+      // 添加终端配置检查
+      if (!terminal) {
+        console.error("Terminal configuration is undefined");
         setSnackbar({
           open: true,
-          message: t("localTerminal.launchSuccess", { name: terminal.name }),
-          severity: "success",
+          message: t("localTerminal.noTerminalSelected", "请选择一个终端"),
+          severity: "warning",
+        });
+        return;
+      }
+
+      console.log("尝试启动终端:", terminal);
+
+      try {
+        if (onLaunchTerminal) {
+          await onLaunchTerminal(terminal);
+          setSnackbar({
+            open: true,
+            message: t("localTerminal.launchSuccess", { name: terminal.name }),
+            severity: "success",
+          });
+        }
+      } catch (error) {
+        console.error("Failed to launch terminal:", error);
+
+        // 提供更详细的错误信息
+        let errorMessage =
+          error.message ||
+          t("localTerminal.launchError", { error: "Unknown error" });
+
+        if (error.executable) {
+          errorMessage = `${errorMessage}\n路径: ${error.executable}`;
+        }
+
+        if (error.suggestion) {
+          errorMessage = `${errorMessage}\n${error.suggestion}`;
+        }
+
+        setSnackbar({
+          open: true,
+          message: errorMessage,
+          severity: "error",
         });
       }
-    } catch (error) {
-      console.error("Failed to launch terminal:", error);
-      
-      // 提供更详细的错误信息
-      let errorMessage = error.message || t("localTerminal.launchError", { error: "Unknown error" });
-      
-      if (error.executable) {
-        errorMessage = `${errorMessage}\n路径: ${error.executable}`;
-      }
-      
-      if (error.suggestion) {
-        errorMessage = `${errorMessage}\n${error.suggestion}`;
-      }
-      
-      setSnackbar({
-        open: true,
-        message: errorMessage,
-        severity: "error",
-      });
-    }
-  }, [onLaunchTerminal, t]);
+    },
+    [onLaunchTerminal, t],
+  );
 
   // 处理右键菜单
   const handleContextMenu = useCallback((event, terminal) => {
@@ -227,62 +245,64 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   }, []);
 
   // 终端项组件
-  const TerminalItem = useCallback(({ terminal }) => {
-    return (
-      <ListItem 
-        disablePadding 
-        sx={{ mb: 0.5 }}
-      >
-        <ListItemButton
-          onClick={() => handleLaunchTerminal(terminal)}
-          sx={{
-            borderRadius: 1,
-            minHeight: 48,
-            py: 1,
-            pr: 2,
-            '&:hover': {
-              backgroundColor: theme.palette.action.hover,
-            }
-          }}
-        >
-          <ListItemIcon sx={{ minWidth: 40 }}>
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: theme.palette.background.paper,
-                border: `1px solid ${theme.palette.divider}`,
-              }}
-            >
-              {getTerminalIcon(terminal)}
-            </Box>
-          </ListItemIcon>
-          
-          <ListItemText
-            primary={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.875rem' }}>
-                  {terminal.name}
-                </Typography>
+  const TerminalItem = useCallback(
+    ({ terminal }) => {
+      return (
+        <ListItem disablePadding sx={{ mb: 0.5 }}>
+          <ListItemButton
+            onClick={() => handleLaunchTerminal(terminal)}
+            sx={{
+              borderRadius: 1,
+              minHeight: 48,
+              py: 1,
+              pr: 2,
+              "&:hover": {
+                backgroundColor: theme.palette.action.hover,
+              },
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <Box
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: theme.palette.background.paper,
+                  border: `1px solid ${theme.palette.divider}`,
+                }}
+              >
+                {getTerminalIcon(terminal)}
               </Box>
-            }
-            secondary={
-              terminal.description && (
-                <Typography variant="caption" color="text.secondary">
-                  {terminal.description}
-                </Typography>
-              )
-            }
-          />
-          
-        </ListItemButton>
-      </ListItem>
-    );
-  }, [theme, handleLaunchTerminal, t]);
+            </ListItemIcon>
+
+            <ListItemText
+              primary={
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{ fontWeight: 500, fontSize: "0.875rem" }}
+                  >
+                    {terminal.name}
+                  </Typography>
+                </Box>
+              }
+              secondary={
+                terminal.description && (
+                  <Typography variant="caption" color="text.secondary">
+                    {terminal.description}
+                  </Typography>
+                )
+              }
+            />
+          </ListItemButton>
+        </ListItem>
+      );
+    },
+    [theme, handleLaunchTerminal, t],
+  );
 
   if (!open) return null;
 
@@ -309,24 +329,24 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           gap: 1,
         }}
       >
-        <Typography variant="subtitle1" fontWeight="medium" sx={{ flexGrow: 1 }}>
+        <Typography
+          variant="subtitle1"
+          fontWeight="medium"
+          sx={{ flexGrow: 1 }}
+        >
           {t("localTerminal.title")}
         </Typography>
-        
+
         <Tooltip title={t("localTerminal.refresh")}>
           <IconButton
             size="small"
             onClick={detectTerminals}
             disabled={isDetecting}
           >
-            {isDetecting ? (
-              <CircularProgress size={18} />
-            ) : (
-              <RefreshIcon />
-            )}
+            {isDetecting ? <CircularProgress size={18} /> : <RefreshIcon />}
           </IconButton>
         </Tooltip>
-        
+
         <Tooltip title={t("common.close")}>
           <IconButton size="small" onClick={onClose}>
             <CloseIcon />
@@ -358,22 +378,33 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
             ),
           }}
           sx={{
-            '& .MuiOutlinedInput-root': {
+            "& .MuiOutlinedInput-root": {
               borderRadius: 2,
-            }
+            },
           }}
         />
       </Box>
 
       {/* 可用终端列表 */}
-      <Box sx={{ flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{
+          flexGrow: 1,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         <Box sx={{ px: 2, pb: 1 }}>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+          <Typography
+            variant="subtitle2"
+            color="text.secondary"
+            sx={{ fontWeight: 500 }}
+          >
             {t("localTerminal.availableTerminals")} ({filteredTerminals.length})
           </Typography>
         </Box>
-        
-        <Box sx={{ px: 2, flex: 1, overflow: 'auto' }}>
+
+        <Box sx={{ px: 2, flex: 1, overflow: "auto" }}>
           {filteredTerminals.length > 0 ? (
             <List disablePadding>
               {filteredTerminals.map((terminal, index) => (
@@ -385,7 +416,9 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
             </List>
           ) : (
             <Alert severity="info" sx={{ mt: 1 }}>
-              {isDetecting ? t("localTerminal.detecting") : t("localTerminal.noTerminals")}
+              {isDetecting
+                ? t("localTerminal.detecting")
+                : t("localTerminal.noTerminals")}
             </Alert>
           )}
         </Box>
@@ -396,12 +429,12 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         open={snackbar.open}
         autoHideDuration={4000}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
-          sx={{ width: '100%' }}
+          sx={{ width: "100%" }}
         >
           {snackbar.message}
         </Alert>

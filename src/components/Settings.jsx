@@ -32,6 +32,7 @@ import MemoryIcon from "@mui/icons-material/Memory";
 import CachedIcon from "@mui/icons-material/Cached";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
+import { SettingsSkeleton } from "./SkeletonLoader.jsx";
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
@@ -346,369 +347,381 @@ const Settings = memo(({ open, onClose }) => {
         {t("settings.title")}
       </BootstrapDialogTitle>
       <DialogContent dividers>
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            {t("settings.language")}
-          </Typography>
-          <FormControl fullWidth variant="outlined" size="small">
-            <InputLabel id="language-select-label">
-              {t("settings.language")}
-            </InputLabel>
-            <Select
-              labelId="language-select-label"
-              id="language-select"
-              value={language}
-              onChange={handleLanguageChange}
-              label={t("settings.language")}
-            >
-              {languages.map((lang) => (
-                <MenuItem key={lang.code} value={lang.code}>
-                  {lang.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
-
-        <Divider sx={{ my: 2 }} />
-
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            {t("settings.theme")}
-          </Typography>
-          <FormControl fullWidth variant="outlined" size="small">
-            <InputLabel id="theme-select-label">
-              {t("settings.theme")}
-            </InputLabel>
-            <Select
-              labelId="theme-select-label"
-              id="theme-select"
-              value={darkMode ? "dark" : "light"}
-              onChange={handleDarkModeChange}
-              label={t("settings.theme")}
-            >
-              <MenuItem value="light">{t("settings.themeLight")}</MenuItem>
-              <MenuItem value="dark">{t("settings.themeDark")}</MenuItem>
-            </Select>
-          </FormControl>
-        </Box>
-
-        <Divider sx={{ my: 2 }} />
-
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            {t("settings.fontSize")}
-          </Typography>
-          <Box sx={{ px: 2, pt: 1 }}>
-            <Slider
-              value={fontSize}
-              onChange={handleFontSizeChange}
-              aria-labelledby="font-size-slider"
-              step={null}
-              marks={fontSizes.map((size) => ({
-                value: size.value,
-                label: size.label,
-              }))}
-              min={12}
-              max={18}
-            />
-          </Box>
-        </Box>
-
-        <Divider sx={{ my: 2 }} />
-
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            {"终端字体设置"}
-          </Typography>
-
-          <Box sx={{ mb: 2 }}>
-            <FormControl fullWidth variant="outlined" size="small">
-              <InputLabel id="terminal-font-select-label">
-                {"终端字体族"}
-              </InputLabel>
-              <Select
-                labelId="terminal-font-select-label"
-                id="terminal-font-select"
-                value={terminalFont}
-                onChange={handleTerminalFontChange}
-                label={"终端字体族"}
-              >
-                {terminalFonts.map((font) => (
-                  <MenuItem key={font.value} value={font.value}>
-                    <Box>
-                      <Typography
-                        component="span"
-                        style={{ fontFamily: font.value }}
-                        sx={{ display: "block" }}
-                      >
-                        {font.label}
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: "block" }}
-                      >
-                        {font.description}
-                      </Typography>
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body2" gutterBottom>
-              {"终端字体大小"}
-            </Typography>
-            <Box sx={{ px: 2, pt: 1 }}>
-              <Slider
-                value={terminalFontSize}
-                onChange={handleTerminalFontSizeChange}
-                aria-labelledby="terminal-font-size-slider"
-                step={null}
-                marks={fontSizes.map((size) => ({
-                  value: size.value,
-                  label: size.label,
-                }))}
-                min={12}
-                max={18}
-              />
+        {isLoading ? (
+          <SettingsSkeleton />
+        ) : (
+          <>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                {t("settings.language")}
+              </Typography>
+              <FormControl fullWidth variant="outlined" size="small">
+                <InputLabel id="language-select-label">
+                  {t("settings.language")}
+                </InputLabel>
+                <Select
+                  labelId="language-select-label"
+                  id="language-select"
+                  value={language}
+                  onChange={handleLanguageChange}
+                  label={t("settings.language")}
+                >
+                  {languages.map((lang) => (
+                    <MenuItem key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Box>
-          </Box>
-        </Box>
 
-        <Divider sx={{ my: 2 }} />
+            <Divider sx={{ my: 2 }} />
 
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            {t("settings.logSettingsTitle")}
-          </Typography>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                {t("settings.theme")}
+              </Typography>
+              <FormControl fullWidth variant="outlined" size="small">
+                <InputLabel id="theme-select-label">
+                  {t("settings.theme")}
+                </InputLabel>
+                <Select
+                  labelId="theme-select-label"
+                  id="theme-select"
+                  value={darkMode ? "dark" : "light"}
+                  onChange={handleDarkModeChange}
+                  label={t("settings.theme")}
+                >
+                  <MenuItem value="light">{t("settings.themeLight")}</MenuItem>
+                  <MenuItem value="dark">{t("settings.themeDark")}</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
 
-          <Box sx={{ mb: 2 }}>
-            <FormControl fullWidth variant="outlined" size="small">
-              <InputLabel id="log-level-select-label">
-                {t("settings.logLevelLabel")}
-              </InputLabel>
-              <Select
-                labelId="log-level-select-label"
-                id="log-level-select"
-                value={logLevel}
-                onChange={handleLogLevelChange}
-                label={t("settings.logLevelLabel")}
-              >
-                {logLevels.map((level) => (
-                  <MenuItem key={level.value} value={level.value}>
-                    {level.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
+            <Divider sx={{ my: 2 }} />
 
-          <Box>
-            <TextField
-              fullWidth
-              label={t("settings.logFileSizeLimitLabel")}
-              variant="outlined"
-              size="small"
-              type="number"
-              value={maxFileSize}
-              onChange={handleMaxFileSizeChange}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">MB</InputAdornment>
-                ),
-              }}
-              inputProps={{
-                min: 1,
-                step: 1,
-              }}
-            />
-          </Box>
-        </Box>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                {t("settings.fontSize")}
+              </Typography>
+              <Box sx={{ px: 2, pt: 1 }}>
+                <Slider
+                  value={fontSize}
+                  onChange={handleFontSizeChange}
+                  aria-labelledby="font-size-slider"
+                  step={null}
+                  marks={fontSizes.map((size) => ({
+                    value: size.value,
+                    label: size.label,
+                  }))}
+                  min={12}
+                  max={18}
+                />
+              </Box>
+            </Box>
 
-        <Divider sx={{ my: 2 }} />
+            <Divider sx={{ my: 2 }} />
 
-        {/* 性能设置 */}
-        <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
-            <TuneIcon sx={{ mr: 1, color: "primary.main" }} />
-            <Typography variant="subtitle1">
-              {t("settings.performanceSettings", "性能设置")}
-            </Typography>
-          </Box>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                {"终端字体设置"}
+              </Typography>
 
-          {/* 重启提示 */}
-          {needsRestart && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              <AlertTitle>
-                {t("settings.restartRequired", "需要重启")}
-              </AlertTitle>
-              {t(
-                "settings.restartMessage",
-                "某些性能设置需要重启应用程序才能生效。保存设置后请重启应用。",
+              <Box sx={{ mb: 2 }}>
+                <FormControl fullWidth variant="outlined" size="small">
+                  <InputLabel id="terminal-font-select-label">
+                    {"终端字体族"}
+                  </InputLabel>
+                  <Select
+                    labelId="terminal-font-select-label"
+                    id="terminal-font-select"
+                    value={terminalFont}
+                    onChange={handleTerminalFontChange}
+                    label={"终端字体族"}
+                  >
+                    {terminalFonts.map((font) => (
+                      <MenuItem key={font.value} value={font.value}>
+                        <Box>
+                          <Typography
+                            component="span"
+                            style={{ fontFamily: font.value }}
+                            sx={{ display: "block" }}
+                          >
+                            {font.label}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: "block" }}
+                          >
+                            {font.description}
+                          </Typography>
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2" gutterBottom>
+                  {"终端字体大小"}
+                </Typography>
+                <Box sx={{ px: 2, pt: 1 }}>
+                  <Slider
+                    value={terminalFontSize}
+                    onChange={handleTerminalFontSizeChange}
+                    aria-labelledby="terminal-font-size-slider"
+                    step={null}
+                    marks={fontSizes.map((size) => ({
+                      value: size.value,
+                      label: size.label,
+                    }))}
+                    min={12}
+                    max={18}
+                  />
+                </Box>
+              </Box>
+            </Box>
+
+            <Divider sx={{ my: 2 }} />
+
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                {t("settings.logSettingsTitle")}
+              </Typography>
+
+              <Box sx={{ mb: 2 }}>
+                <FormControl fullWidth variant="outlined" size="small">
+                  <InputLabel id="log-level-select-label">
+                    {t("settings.logLevelLabel")}
+                  </InputLabel>
+                  <Select
+                    labelId="log-level-select-label"
+                    id="log-level-select"
+                    value={logLevel}
+                    onChange={handleLogLevelChange}
+                    label={t("settings.logLevelLabel")}
+                  >
+                    {logLevels.map((level) => (
+                      <MenuItem key={level.value} value={level.value}>
+                        {level.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+
+              <Box>
+                <TextField
+                  fullWidth
+                  label={t("settings.logFileSizeLimitLabel")}
+                  variant="outlined"
+                  size="small"
+                  type="number"
+                  value={maxFileSize}
+                  onChange={handleMaxFileSizeChange}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">MB</InputAdornment>
+                    ),
+                  }}
+                  inputProps={{
+                    min: 1,
+                    step: 1,
+                  }}
+                />
+              </Box>
+            </Box>
+
+            <Divider sx={{ my: 2 }} />
+
+            {/* 性能设置 */}
+            <Box sx={{ mb: 3 }}>
+              <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+                <TuneIcon sx={{ mr: 1, color: "primary.main" }} />
+                <Typography variant="subtitle1">
+                  {t("settings.performanceSettings", "性能设置")}
+                </Typography>
+              </Box>
+
+              {/* 重启提示 */}
+              {needsRestart && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  <AlertTitle>
+                    {t("settings.restartRequired", "需要重启")}
+                  </AlertTitle>
+                  {t(
+                    "settings.restartMessage",
+                    "某些性能设置需要重启应用程序才能生效。保存设置后请重启应用。",
+                  )}
+                </Alert>
               )}
-            </Alert>
-          )}
 
-          <Grid container spacing={2}>
-            {/* 图像支持 */}
-            <Grid
-              size={{
-                xs: 12,
-                sm: 6,
-              }}
-            >
-              <Card variant="outlined" sx={{ height: "100%" }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
-                    <ImageIcon sx={{ mr: 1, color: "primary.main" }} />
-                    <Typography variant="h6" component="div">
-                      {t("settings.imageSupport", "图像支持")}
-                    </Typography>
-                    {needsRestart &&
-                      imageSupported !==
-                        originalPerformanceSettings.imageSupported && (
+              <Grid container spacing={2}>
+                {/* 图像支持 */}
+                <Grid
+                  size={{
+                    xs: 12,
+                    sm: 6,
+                  }}
+                >
+                  <Card variant="outlined" sx={{ height: "100%" }}>
+                    <CardContent>
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
+                      >
+                        <ImageIcon sx={{ mr: 1, color: "primary.main" }} />
+                        <Typography variant="h6" component="div">
+                          {t("settings.imageSupport", "图像支持")}
+                        </Typography>
+                        {needsRestart &&
+                          imageSupported !==
+                            originalPerformanceSettings.imageSupported && (
+                            <Chip
+                              label={t("settings.needsRestart", "需重启")}
+                              size="small"
+                              color="warning"
+                              sx={{ ml: 1 }}
+                            />
+                          )}
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={imageSupported}
+                            onChange={(e) =>
+                              handlePerformanceChange(
+                                "imageSupported",
+                                e.target.checked,
+                              )
+                            }
+                            color="primary"
+                          />
+                        }
+                        label={t("settings.enableImageSupport", "启用图像支持")}
+                      />
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mt: 1 }}
+                      >
+                        {t(
+                          "settings.imageDescription",
+                          "支持在终端中显示Sixel和iTerm图像协议",
+                        )}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* 智能缓存 */}
+                <Grid
+                  size={{
+                    xs: 12,
+                    sm: 6,
+                  }}
+                >
+                  <Card variant="outlined" sx={{ height: "100%" }}>
+                    <CardContent>
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
+                      >
+                        <MemoryIcon sx={{ mr: 1, color: "success.main" }} />
+                        <Typography variant="h6" component="div">
+                          {t("settings.smartCache", "智能缓存")}
+                        </Typography>
                         <Chip
-                          label={t("settings.needsRestart", "需重启")}
+                          label={t("settings.realTime", "实时生效")}
                           size="small"
-                          color="warning"
+                          color="success"
                           sx={{ ml: 1 }}
                         />
-                      )}
-                  </Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={imageSupported}
-                        onChange={(e) =>
-                          handlePerformanceChange(
-                            "imageSupported",
-                            e.target.checked,
-                          )
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={cacheEnabled}
+                            onChange={(e) =>
+                              handlePerformanceChange(
+                                "cacheEnabled",
+                                e.target.checked,
+                              )
+                            }
+                            color="primary"
+                          />
                         }
-                        color="primary"
+                        label={t("settings.enableCache", "启用多级缓存")}
                       />
-                    }
-                    label={t("settings.enableImageSupport", "启用图像支持")}
-                  />
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 1 }}
-                  >
-                    {t(
-                      "settings.imageDescription",
-                      "支持在终端中显示Sixel和iTerm图像协议",
-                    )}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mt: 1 }}
+                      >
+                        {t(
+                          "settings.cacheDescription",
+                          "L1/L2缓存提升文件列表加载速度40-60%",
+                        )}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
 
-            {/* 智能缓存 */}
-            <Grid
-              size={{
-                xs: 12,
-                sm: 6,
-              }}
-            >
-              <Card variant="outlined" sx={{ height: "100%" }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
-                    <MemoryIcon sx={{ mr: 1, color: "success.main" }} />
-                    <Typography variant="h6" component="div">
-                      {t("settings.smartCache", "智能缓存")}
-                    </Typography>
-                    <Chip
-                      label={t("settings.realTime", "实时生效")}
-                      size="small"
-                      color="success"
-                      sx={{ ml: 1 }}
-                    />
-                  </Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={cacheEnabled}
-                        onChange={(e) =>
-                          handlePerformanceChange(
-                            "cacheEnabled",
-                            e.target.checked,
-                          )
+                {/* 智能预取 */}
+                <Grid
+                  size={{
+                    xs: 12,
+                    sm: 6,
+                  }}
+                >
+                  <Card variant="outlined" sx={{ height: "100%" }}>
+                    <CardContent>
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
+                      >
+                        <CachedIcon sx={{ mr: 1, color: "success.main" }} />
+                        <Typography variant="h6" component="div">
+                          {t("settings.smartPrefetch", "智能预取")}
+                        </Typography>
+                        <Chip
+                          label={t("settings.realTime", "实时生效")}
+                          size="small"
+                          color="success"
+                          sx={{ ml: 1 }}
+                        />
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={prefetchEnabled}
+                            onChange={(e) =>
+                              handlePerformanceChange(
+                                "prefetchEnabled",
+                                e.target.checked,
+                              )
+                            }
+                            color="primary"
+                          />
                         }
-                        color="primary"
+                        label={t("settings.enablePrefetch", "启用预测性预取")}
                       />
-                    }
-                    label={t("settings.enableCache", "启用多级缓存")}
-                  />
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 1 }}
-                  >
-                    {t(
-                      "settings.cacheDescription",
-                      "L1/L2缓存提升文件列表加载速度40-60%",
-                    )}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* 智能预取 */}
-            <Grid
-              size={{
-                xs: 12,
-                sm: 6,
-              }}
-            >
-              <Card variant="outlined" sx={{ height: "100%" }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
-                    <CachedIcon sx={{ mr: 1, color: "success.main" }} />
-                    <Typography variant="h6" component="div">
-                      {t("settings.smartPrefetch", "智能预取")}
-                    </Typography>
-                    <Chip
-                      label={t("settings.realTime", "实时生效")}
-                      size="small"
-                      color="success"
-                      sx={{ ml: 1 }}
-                    />
-                  </Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={prefetchEnabled}
-                        onChange={(e) =>
-                          handlePerformanceChange(
-                            "prefetchEnabled",
-                            e.target.checked,
-                          )
-                        }
-                        color="primary"
-                      />
-                    }
-                    label={t("settings.enablePrefetch", "启用预测性预取")}
-                  />
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 1 }}
-                  >
-                    {t(
-                      "settings.prefetchDescription",
-                      "基于访问模式智能预加载数据，减少等待时间",
-                    )}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        </Box>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mt: 1 }}
+                      >
+                        {t(
+                          "settings.prefetchDescription",
+                          "基于访问模式智能预加载数据，减少等待时间",
+                        )}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+            </Box>
+          </>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} color="primary">

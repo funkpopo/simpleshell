@@ -390,7 +390,7 @@ const CustomTab = memo((props) => {
             isDraggedOver && dragOperation === "sort" ? "grab" : "pointer",
           userSelect: "none",
           color: "text.secondary",
-          
+
           // 多选状态的特殊样式
           ...(isSelected && {
             backgroundColor: (theme) =>
@@ -419,7 +419,8 @@ const CustomTab = memo((props) => {
             transform: "scale(1.03) translateY(-1px)",
             transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
             filter: "brightness(1.05) saturate(1.1)",
-            animation: "dragEnter 0.3s ease-out forwards, dropZonePulse 1.2s ease-in-out infinite",
+            animation:
+              "dragEnter 0.3s ease-out forwards, dropZonePulse 1.2s ease-in-out infinite",
 
             // 排序操作的插入位置指示器
             ...(dragInsertPosition === "before" && {

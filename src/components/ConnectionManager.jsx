@@ -47,6 +47,7 @@ import { Droppable } from "./CustomDragDrop.jsx";
 import { arrayMoveImmutable } from "array-move";
 import { alpha } from "@mui/material/styles";
 import { countries } from "countries-list";
+import { ConnectionManagerSkeleton } from "./SkeletonLoader.jsx";
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -89,10 +90,10 @@ const ConnectionManager = memo(
 
         // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
         const activeElement = document.activeElement;
-        const isInTerminal = activeElement && (
-          activeElement.classList.contains('xterm-helper-textarea') ||
-          activeElement.classList.contains('xterm-screen')
-        );
+        const isInTerminal =
+          activeElement &&
+          (activeElement.classList.contains("xterm-helper-textarea") ||
+            activeElement.classList.contains("xterm-screen"));
 
         // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
         if (isInTerminal) return;
@@ -1286,22 +1287,28 @@ const ConnectionManager = memo(
                       ref={provided.innerRef}
                       {...provided.droppableProps}
                     >
-                      {connectionsList}
-                      {provided.placeholder}
-                      {connections.length === 0 && (
-                        <ListItem>
-                          <ListItemText
-                            primary="没有连接项"
-                            primaryTypographyProps={{
-                              variant: "body2",
-                              sx: {
-                                fontStyle: "italic",
-                                color: "text.secondary",
-                                textAlign: "center",
-                              },
-                            }}
-                          />
-                        </ListItem>
+                      {isLoading ? (
+                        <ConnectionManagerSkeleton />
+                      ) : (
+                        <>
+                          {connectionsList}
+                          {provided.placeholder}
+                          {connections.length === 0 && (
+                            <ListItem>
+                              <ListItemText
+                                primary="没有连接项"
+                                primaryTypographyProps={{
+                                  variant: "body2",
+                                  sx: {
+                                    fontStyle: "italic",
+                                    color: "text.secondary",
+                                    textAlign: "center",
+                                  },
+                                }}
+                              />
+                            </ListItem>
+                          )}
+                        </>
                       )}
                     </List>
                   )}

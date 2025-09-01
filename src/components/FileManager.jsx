@@ -26,6 +26,7 @@ import {
   Snackbar,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import { FileManagerSkeleton } from "./SkeletonLoader.jsx";
 import FolderIcon from "@mui/icons-material/Folder";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
@@ -126,10 +127,10 @@ const FileManager = memo(
 
         // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
         const activeElement = document.activeElement;
-        const isInTerminal = activeElement && (
-          activeElement.classList.contains('xterm-helper-textarea') ||
-          activeElement.classList.contains('xterm-screen')
-        );
+        const isInTerminal =
+          activeElement &&
+          (activeElement.classList.contains("xterm-helper-textarea") ||
+            activeElement.classList.contains("xterm-screen"));
 
         // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
         if (isInTerminal) return;
@@ -311,7 +312,7 @@ const FileManager = memo(
       if (onPathChange && tabId) {
         onPathChange(tabId, newPath);
       }
-      
+
       // 只有在非历史导航时才添加到历史记录
       if (!isHistoryNavigation) {
         addToHistory(newPath);
@@ -431,26 +432,33 @@ const FileManager = memo(
 
     // 添加路径到历史记录
     const addToHistory = (path) => {
-      setPathHistory(prev => {
+      setPathHistory((prev) => {
         // 如果当前不在历史记录的末尾，删除后面的记录
-        const newHistory = historyIndex >= 0 ? prev.slice(0, historyIndex + 1) : [];
-        
+        const newHistory =
+          historyIndex >= 0 ? prev.slice(0, historyIndex + 1) : [];
+
         // 避免连续重复的路径
-        if (newHistory.length === 0 || newHistory[newHistory.length - 1] !== path) {
+        if (
+          newHistory.length === 0 ||
+          newHistory[newHistory.length - 1] !== path
+        ) {
           newHistory.push(path);
         }
-        
+
         // 限制历史记录长度为50
         if (newHistory.length > 50) {
           newHistory.shift();
         }
-        
+
         return newHistory;
       });
-      
-      setHistoryIndex(prev => {
+
+      setHistoryIndex((prev) => {
         const newHistory = pathHistory.slice(0, historyIndex + 1);
-        if (newHistory.length === 0 || newHistory[newHistory.length - 1] !== path) {
+        if (
+          newHistory.length === 0 ||
+          newHistory[newHistory.length - 1] !== path
+        ) {
           return newHistory.length;
         }
         return prev;
@@ -1880,7 +1888,7 @@ const FileManager = memo(
 
     // 处理下载
     const handleDownload = async () => {
-      const filesToDownload = getSelectedFiles().filter(f => !f.isDirectory);
+      const filesToDownload = getSelectedFiles().filter((f) => !f.isDirectory);
       if (filesToDownload.length === 0 || !sshConnection) return;
 
       // 重置取消状态
@@ -1923,40 +1931,40 @@ const FileManager = memo(
                 progress,
                 fileName,
                 transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime,
-              processedFiles,
-              totalFiles,
-              transferKey,
-            ) => {
-              updateTransferProgress(transferId, {
-                progress,
-                fileName,
-                transferredBytes,
                 totalBytes,
                 transferSpeed,
                 remainingTime,
-                processedFiles: processedFiles || 0,
-                totalFiles: totalFiles || 1,
-                transferKey, // 添加transferKey到进度状态
-              });
-            },
-          );
+                processedFiles,
+                totalFiles,
+                transferKey,
+              ) => {
+                updateTransferProgress(transferId, {
+                  progress,
+                  fileName,
+                  transferredBytes,
+                  totalBytes,
+                  transferSpeed,
+                  remainingTime,
+                  processedFiles: processedFiles || 0,
+                  totalFiles: totalFiles || 1,
+                  transferKey, // 添加transferKey到进度状态
+                });
+              },
+            );
 
-          // 处理下载结果
-          if (result?.success) {
-            updateTransferProgress(transferId, {
-              progress: 100,
-              fileName: result.message || "下载完成",
-            });
-            setTimeout(() => removeTransferProgress(transferId), 3000);
-          } else if (result?.error) {
-            updateTransferProgress(transferId, {
-              error: result.error,
-            });
+            // 处理下载结果
+            if (result?.success) {
+              updateTransferProgress(transferId, {
+                progress: 100,
+                fileName: result.message || "下载完成",
+              });
+              setTimeout(() => removeTransferProgress(transferId), 3000);
+            } else if (result?.error) {
+              updateTransferProgress(transferId, {
+                error: result.error,
+              });
+            }
           }
-        }
         } catch (error) {
           // 下载文件失败
 
@@ -1988,14 +1996,17 @@ const FileManager = memo(
         // 多文件下载
         try {
           showNotification(`开始下载 ${filesToDownload.length} 个文件`, "info");
-          
+
           // 创建总体进度跟踪
           const batchTransferId = addTransferProgress({
             type: "download",
             progress: 0,
             fileName: `批量下载 (${filesToDownload.length} 个文件)`,
             transferredBytes: 0,
-            totalBytes: filesToDownload.reduce((sum, file) => sum + (file.size || 0), 0),
+            totalBytes: filesToDownload.reduce(
+              (sum, file) => sum + (file.size || 0),
+              0,
+            ),
             transferSpeed: 0,
             remainingTime: 0,
             processedFiles: 0,
@@ -2004,7 +2015,10 @@ const FileManager = memo(
 
           let completedFiles = 0;
           let totalTransferredBytes = 0;
-          const totalBytes = filesToDownload.reduce((sum, file) => sum + (file.size || 0), 0);
+          const totalBytes = filesToDownload.reduce(
+            (sum, file) => sum + (file.size || 0),
+            0,
+          );
 
           // 逐个下载文件
           for (const file of filesToDownload) {
@@ -2023,10 +2037,19 @@ const FileManager = memo(
                 fullPath,
                 (progress, fileName, transferredBytes, fileBytes) => {
                   // 更新批量进度
-                  const currentFileBytes = Math.min(transferredBytes || 0, file.size || 0);
-                  const batchProgress = totalBytes > 0 ? 
-                    Math.round(((totalTransferredBytes + currentFileBytes) / totalBytes) * 100) : 0;
-                  
+                  const currentFileBytes = Math.min(
+                    transferredBytes || 0,
+                    file.size || 0,
+                  );
+                  const batchProgress =
+                    totalBytes > 0
+                      ? Math.round(
+                          ((totalTransferredBytes + currentFileBytes) /
+                            totalBytes) *
+                            100,
+                        )
+                      : 0;
+
                   updateTransferProgress(batchTransferId, {
                     progress: batchProgress,
                     fileName: `正在下载: ${fileName} (${completedFiles + 1}/${filesToDownload.length})`,
@@ -2041,17 +2064,22 @@ const FileManager = memo(
               if (result?.success) {
                 completedFiles++;
                 totalTransferredBytes += file.size || 0;
-                
+
                 // 更新总体进度
                 updateTransferProgress(batchTransferId, {
-                  progress: Math.round((completedFiles / filesToDownload.length) * 100),
+                  progress: Math.round(
+                    (completedFiles / filesToDownload.length) * 100,
+                  ),
                   fileName: `已完成: ${completedFiles}/${filesToDownload.length} 个文件`,
                   processedFiles: completedFiles,
                   totalFiles: filesToDownload.length,
                   transferredBytes: totalTransferredBytes,
                 });
               } else if (result?.error) {
-                showNotification(`文件 ${file.name} 下载失败: ${result.error}`, "error");
+                showNotification(
+                  `文件 ${file.name} 下载失败: ${result.error}`,
+                  "error",
+                );
               }
             }
           }
@@ -2067,9 +2095,12 @@ const FileManager = memo(
             updateTransferProgress(batchTransferId, {
               error: `部分下载失败，已完成 ${completedFiles}/${filesToDownload.length} 个文件`,
             });
-            showNotification(`部分下载失败，已完成 ${completedFiles}/${filesToDownload.length} 个文件`, "warning");
+            showNotification(
+              `部分下载失败，已完成 ${completedFiles}/${filesToDownload.length} 个文件`,
+              "warning",
+            );
           }
-          
+
           setTimeout(() => removeTransferProgress(batchTransferId), 3000);
         } catch (error) {
           if (
@@ -2128,7 +2159,7 @@ const FileManager = memo(
         return;
       }
 
-      const foldersToDownload = getSelectedFiles().filter(f => f.isDirectory);
+      const foldersToDownload = getSelectedFiles().filter((f) => f.isDirectory);
       if (foldersToDownload.length === 0) {
         showNotification("请先选择要下载的文件夹", "warning");
         return;
@@ -2148,52 +2179,40 @@ const FileManager = memo(
           return handleDownload();
         }
 
-      try {
-        // 构建完整路径，确保处理各种路径情况
-        const fullPath = (() => {
-          if (savedCurrentPath === "/") {
-            return "/" + savedSelectedFile.name;
-          } else if (savedCurrentPath === "~") {
-            return "~/" + savedSelectedFile.name;
-          } else {
-            return savedCurrentPath + "/" + savedSelectedFile.name;
-          }
-        })();
+        try {
+          // 构建完整路径，确保处理各种路径情况
+          const fullPath = (() => {
+            if (savedCurrentPath === "/") {
+              return "/" + savedSelectedFile.name;
+            } else if (savedCurrentPath === "~") {
+              return "~/" + savedSelectedFile.name;
+            } else {
+              return savedCurrentPath + "/" + savedSelectedFile.name;
+            }
+          })();
 
-        if (window.terminalAPI && window.terminalAPI.downloadFolder) {
-          // 创建新的文件夹下载传输任务
-          const transferId = addTransferProgress({
-            type: "download-folder",
-            progress: 0,
-            fileName: savedSelectedFile.name,
-            currentFile: "",
-            transferredBytes: 0,
-            totalBytes: 0,
-            transferSpeed: 0,
-            remainingTime: 0,
-            processedFiles: 0,
-            totalFiles: 0,
-          });
+          if (window.terminalAPI && window.terminalAPI.downloadFolder) {
+            // 创建新的文件夹下载传输任务
+            const transferId = addTransferProgress({
+              type: "download-folder",
+              progress: 0,
+              fileName: savedSelectedFile.name,
+              currentFile: "",
+              transferredBytes: 0,
+              totalBytes: 0,
+              transferSpeed: 0,
+              remainingTime: 0,
+              processedFiles: 0,
+              totalFiles: 0,
+            });
 
-          // 使用progressCallback处理进度更新
-          try {
-            const downloadResult = await window.terminalAPI.downloadFolder(
-              tabId,
-              fullPath,
-              (
-                progress,
-                currentFile,
-                transferredBytes,
-                totalBytes,
-                transferSpeed,
-                remainingTime,
-                processedFiles,
-                totalFiles,
-                transferKey,
-              ) => {
-                updateTransferProgress(transferId, {
+            // 使用progressCallback处理进度更新
+            try {
+              const downloadResult = await window.terminalAPI.downloadFolder(
+                tabId,
+                fullPath,
+                (
                   progress,
-                  fileName: savedSelectedFile.name,
                   currentFile,
                   transferredBytes,
                   totalBytes,
@@ -2201,188 +2220,203 @@ const FileManager = memo(
                   remainingTime,
                   processedFiles,
                   totalFiles,
-                  transferKey, // 添加transferKey到状态
-                });
-              },
-            );
+                  transferKey,
+                ) => {
+                  updateTransferProgress(transferId, {
+                    progress,
+                    fileName: savedSelectedFile.name,
+                    currentFile,
+                    transferredBytes,
+                    totalBytes,
+                    transferSpeed,
+                    remainingTime,
+                    processedFiles,
+                    totalFiles,
+                    transferKey, // 添加transferKey到状态
+                  });
+                },
+              );
 
-            // 标记传输完成
-            updateTransferProgress(transferId, {
-              progress: 100,
-              fileName: "文件夹下载完成",
-            });
+              // 标记传输完成
+              updateTransferProgress(transferId, {
+                progress: 100,
+                fileName: "文件夹下载完成",
+              });
 
-            // 下载完成后延迟移除
-            addTimeout(() => {
-              removeTransferProgress(transferId);
+              // 下载完成后延迟移除
+              addTimeout(() => {
+                removeTransferProgress(transferId);
 
-              // 显示详细的成功通知
-              if (downloadResult && downloadResult.downloadPath) {
-                const normalizedPath = downloadResult.downloadPath.replace(
-                  /\//g,
-                  "\\",
-                );
-                // 验证路径存在
-                window.terminalAPI
-                  .checkPathExists?.(normalizedPath)
-                  .then((exists) => {
-                    if (exists) {
-                      // 显示包含下载路径的成功消息
+                // 显示详细的成功通知
+                if (downloadResult && downloadResult.downloadPath) {
+                  const normalizedPath = downloadResult.downloadPath.replace(
+                    /\//g,
+                    "\\",
+                  );
+                  // 验证路径存在
+                  window.terminalAPI
+                    .checkPathExists?.(normalizedPath)
+                    .then((exists) => {
+                      if (exists) {
+                        // 显示包含下载路径的成功消息
+                        showNotification(
+                          `文件夹 ${savedSelectedFile.name} 已下载到: ${normalizedPath}`,
+                          "success",
+                          15000, // 显示更长时间
+                          true, // 提供打开选项
+                          () => {
+                            // 尝试使用window.shell打开文件夹位置
+                            if (
+                              window.terminalAPI &&
+                              window.terminalAPI.openExternal
+                            ) {
+                              const folderUrl = `file://${normalizedPath}`;
+                              window.terminalAPI
+                                .openExternal(folderUrl)
+                                .catch((e) => {
+                                  // 无法打开文件夹，尝试替代方法
+                                  window.terminalAPI
+                                    .showItemInFolder?.(normalizedPath)
+                                    .catch(() => {
+                                      showNotification(
+                                        `无法自动打开文件夹，位置: ${normalizedPath}`,
+                                        "warning",
+                                      );
+                                    });
+                                });
+                            }
+                          },
+                        );
+                      } else {
+                        showNotification(
+                          `文件夹下载可能未完成，无法在 ${normalizedPath} 找到文件`,
+                          "warning",
+                          10000,
+                        );
+                      }
+                    })
+                    .catch(() => {
+                      // 如果无法验证，仍然显示成功消息
                       showNotification(
-                        `文件夹 ${savedSelectedFile.name} 已下载到: ${normalizedPath}`,
+                        `文件夹 ${savedSelectedFile.name} 下载已完成，但无法验证路径: ${normalizedPath}`,
                         "success",
-                        15000, // 显示更长时间
-                        true, // 提供打开选项
-                        () => {
-                          // 尝试使用window.shell打开文件夹位置
-                          if (
-                            window.terminalAPI &&
-                            window.terminalAPI.openExternal
-                          ) {
-                            const folderUrl = `file://${normalizedPath}`;
-                            window.terminalAPI
-                              .openExternal(folderUrl)
-                              .catch((e) => {
-                                // 无法打开文件夹，尝试替代方法
-                                window.terminalAPI
-                                  .showItemInFolder?.(normalizedPath)
-                                  .catch(() => {
-                                    showNotification(
-                                      `无法自动打开文件夹，位置: ${normalizedPath}`,
-                                      "warning",
-                                    );
-                                  });
-                              });
-                          }
-                        },
-                      );
-                    } else {
-                      showNotification(
-                        `文件夹下载可能未完成，无法在 ${normalizedPath} 找到文件`,
-                        "warning",
                         10000,
                       );
-                    }
-                  })
-                  .catch(() => {
-                    // 如果无法验证，仍然显示成功消息
-                    showNotification(
-                      `文件夹 ${savedSelectedFile.name} 下载已完成，但无法验证路径: ${normalizedPath}`,
-                      "success",
-                      10000,
-                    );
-                  });
-              } else {
-                // 基本成功通知
-                showNotification(
-                  `文件夹 ${savedSelectedFile.name} 下载成功`,
-                  "success",
-                );
-              }
+                    });
+                } else {
+                  // 基本成功通知
+                  showNotification(
+                    `文件夹 ${savedSelectedFile.name} 下载成功`,
+                    "success",
+                  );
+                }
 
-              setError(null); // 清除可能存在的错误信息
-            }, 1500);
-          } catch (downloadError) {
-            // 文件夹下载过程中出错
-            throw downloadError; // 重新抛出错误，让外层 catch 处理
+                setError(null); // 清除可能存在的错误信息
+              }, 1500);
+            } catch (downloadError) {
+              // 文件夹下载过程中出错
+              throw downloadError; // 重新抛出错误，让外层 catch 处理
+            }
+          } else {
+            throw new Error("下载文件夹API不可用");
           }
-        } else {
-          throw new Error("下载文件夹API不可用");
-        }
-      } catch (error) {
-        // 下载文件夹失败
+        } catch (error) {
+          // 下载文件夹失败
 
-        // 处理各种错误情况
-        if (transferCancelled) {
-          showNotification("下载已被用户取消", "info");
-        } else if (error.message?.includes("reply was never sent")) {
-          showNotification("下载进程异常中断，请重试", "warning", 8000);
-        } else if (error.message?.includes("用户取消下载")) {
-          // 特别处理这个可能误报的情况，提供更详细的解释
-          showNotification(
-            "下载路径选择有问题，请重试并确保正确选择下载文件夹",
-            "warning",
-            10000,
-            true,
-            () => {
-              addTimeout(() => handleDownloadFolder(), 500);
-            },
-          );
-        } else if (error.message?.includes("无法创建本地文件夹结构")) {
-          showNotification(
-            `下载失败: 无法创建本地文件夹。请检查您的磁盘空间及权限。`,
-            "error",
-            10000,
-          );
-        } else if (
-          error.message?.includes("权限不足") ||
-          error.message?.includes("拒绝访问") ||
-          error.message?.includes("Access denied")
-        ) {
-          showNotification(
-            `下载失败: 权限不足。请尝试以管理员身份运行或选择其他下载位置。`,
-            "error",
-            10000,
-          );
-        } else if (
-          error.message?.includes("网络") ||
-          error.message?.includes("Network") ||
-          error.message?.includes("timeout")
-        ) {
-          showNotification(
-            `下载失败: 网络连接问题。请检查您的网络连接并重试。`,
-            "error",
-            10000,
-          );
-        } else if (
-          error.message?.includes("路径无效") ||
-          error.message?.includes("选择的下载路径无效")
-        ) {
-          showNotification(
-            `下载失败: 您选择的下载路径无效或不可访问。请选择其他位置。`,
-            "error",
-            10000,
-          );
-        } else {
-          // 通用错误处理
-          showNotification(
-            "下载文件夹失败: " + (error.message || "未知错误"),
-            "error",
-            10000,
-          );
-        }
-
-        // 提供重试选项
-        if (
-          error &&
-          !transferCancelled &&
-          !error.message?.includes("用户取消下载")
-        ) {
-          addTimeout(() => {
+          // 处理各种错误情况
+          if (transferCancelled) {
+            showNotification("下载已被用户取消", "info");
+          } else if (error.message?.includes("reply was never sent")) {
+            showNotification("下载进程异常中断，请重试", "warning", 8000);
+          } else if (error.message?.includes("用户取消下载")) {
+            // 特别处理这个可能误报的情况，提供更详细的解释
             showNotification(
-              "您可以尝试重新下载文件夹",
-              "info",
-              8000,
+              "下载路径选择有问题，请重试并确保正确选择下载文件夹",
+              "warning",
+              10000,
               true,
-              () => handleDownloadFolder(),
+              () => {
+                addTimeout(() => handleDownloadFolder(), 500);
+              },
             );
-          }, 3000);
-        }
+          } else if (error.message?.includes("无法创建本地文件夹结构")) {
+            showNotification(
+              `下载失败: 无法创建本地文件夹。请检查您的磁盘空间及权限。`,
+              "error",
+              10000,
+            );
+          } else if (
+            error.message?.includes("权限不足") ||
+            error.message?.includes("拒绝访问") ||
+            error.message?.includes("Access denied")
+          ) {
+            showNotification(
+              `下载失败: 权限不足。请尝试以管理员身份运行或选择其他下载位置。`,
+              "error",
+              10000,
+            );
+          } else if (
+            error.message?.includes("网络") ||
+            error.message?.includes("Network") ||
+            error.message?.includes("timeout")
+          ) {
+            showNotification(
+              `下载失败: 网络连接问题。请检查您的网络连接并重试。`,
+              "error",
+              10000,
+            );
+          } else if (
+            error.message?.includes("路径无效") ||
+            error.message?.includes("选择的下载路径无效")
+          ) {
+            showNotification(
+              `下载失败: 您选择的下载路径无效或不可访问。请选择其他位置。`,
+              "error",
+              10000,
+            );
+          } else {
+            // 通用错误处理
+            showNotification(
+              "下载文件夹失败: " + (error.message || "未知错误"),
+              "error",
+              10000,
+            );
+          }
 
-        // 标记所有未完成的传输为错误状态
-        setTransferProgressList((prev) =>
-          prev.map((transfer) =>
-            transfer.progress < 100 && !transfer.isCancelled
-              ? { ...transfer, error: error.message || "未知错误" }
-              : transfer,
-          ),
-        );
-      }
+          // 提供重试选项
+          if (
+            error &&
+            !transferCancelled &&
+            !error.message?.includes("用户取消下载")
+          ) {
+            addTimeout(() => {
+              showNotification(
+                "您可以尝试重新下载文件夹",
+                "info",
+                8000,
+                true,
+                () => handleDownloadFolder(),
+              );
+            }, 3000);
+          }
+
+          // 标记所有未完成的传输为错误状态
+          setTransferProgressList((prev) =>
+            prev.map((transfer) =>
+              transfer.progress < 100 && !transfer.isCancelled
+                ? { ...transfer, error: error.message || "未知错误" }
+                : transfer,
+            ),
+          );
+        }
       } else {
         // 多文件夹下载
         try {
-          showNotification(`开始下载 ${foldersToDownload.length} 个文件夹`, "info");
-          
+          showNotification(
+            `开始下载 ${foldersToDownload.length} 个文件夹`,
+            "info",
+          );
+
           let completedFolders = 0;
 
           // 逐个下载文件夹
@@ -2451,14 +2485,16 @@ const FileManager = memo(
                 });
 
                 completedFolders++;
-                
-                setTimeout(() => removeTransferProgress(transferId), 2000);
 
+                setTimeout(() => removeTransferProgress(transferId), 2000);
               } catch (folderError) {
                 updateTransferProgress(transferId, {
                   error: `${folder.name} 下载失败: ${folderError.message}`,
                 });
-                showNotification(`文件夹 ${folder.name} 下载失败: ${folderError.message}`, "error");
+                showNotification(
+                  `文件夹 ${folder.name} 下载失败: ${folderError.message}`,
+                  "error",
+                );
                 setTimeout(() => removeTransferProgress(transferId), 5000);
               }
             }
@@ -2466,11 +2502,16 @@ const FileManager = memo(
 
           // 批量下载完成通知
           if (completedFolders === foldersToDownload.length) {
-            showNotification(`成功下载 ${completedFolders} 个文件夹`, "success");
+            showNotification(
+              `成功下载 ${completedFolders} 个文件夹`,
+              "success",
+            );
           } else {
-            showNotification(`部分下载失败，已完成 ${completedFolders}/${foldersToDownload.length} 个文件夹`, "warning");
+            showNotification(
+              `部分下载失败，已完成 ${completedFolders}/${foldersToDownload.length} 个文件夹`,
+              "warning",
+            );
           }
-
         } catch (error) {
           if (
             !transferCancelled &&
@@ -3056,9 +3097,9 @@ const FileManager = memo(
                 ),
               }}
               sx={{
-                '& .MuiOutlinedInput-root': {
+                "& .MuiOutlinedInput-root": {
                   borderRadius: 2,
-                }
+                },
               }}
             />
           </Box>
@@ -3138,7 +3179,7 @@ const FileManager = memo(
           }}
           onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
         >
-          {renderFileList()}
+          {loading ? <FileManagerSkeleton /> : renderFileList()}
         </Box>
 
         <Menu

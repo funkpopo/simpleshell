@@ -165,7 +165,17 @@
       "later": "稍后",
       "ok": "确定",
       "yes": "是",
-      "no": "否"
+      "no": "否",
+      "loading": "加载中...",
+      "skeleton": {
+        "loading": "正在加载内容...",
+        "terminal": "正在初始化终端...",
+        "fileManager": "正在加载文件列表...",
+        "settings": "正在加载设置...",
+        "connections": "正在加载连接列表...",
+        "resourceMonitor": "正在加载系统信息...",
+        "aiChat": "正在初始化AI助手..."
+      }
     },
     "shortcutCommands": {
       "title": "快捷命令",

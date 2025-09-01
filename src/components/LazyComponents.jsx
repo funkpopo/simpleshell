@@ -1,9 +1,23 @@
 import React, { Suspense, lazy } from "react";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import LoadingFallback from "./LoadingFallback.jsx";
+import {
+  FileManagerSkeleton,
+  ResourceMonitorSkeleton,
+  TerminalSkeleton,
+  SettingsSkeleton,
+  CommandHistorySkeleton,
+  AIChatSkeleton,
+  ConnectionManagerSkeleton,
+} from "./SkeletonLoader.jsx";
 
 // 路由级别的懒加载组件工厂函数
-const createLazyComponent = (importFn, fallbackMessage, componentName) => {
+const createLazyComponent = (
+  importFn,
+  fallbackMessage,
+  componentName,
+  SkeletonComponent,
+) => {
   const LazyComponent = lazy(() =>
     importFn().catch((error) => {
       console.error(`Failed to load ${componentName}:`, error);
@@ -17,9 +31,15 @@ const createLazyComponent = (importFn, fallbackMessage, componentName) => {
     }),
   );
 
+  const fallback = SkeletonComponent ? (
+    <SkeletonComponent />
+  ) : (
+    <LoadingFallback message={fallbackMessage} />
+  );
+
   return (props) => (
     <ErrorBoundary componentName={componentName}>
-      <Suspense fallback={<LoadingFallback message={fallbackMessage} />}>
+      <Suspense fallback={fallback}>
         <LazyComponent {...props} />
       </Suspense>
     </ErrorBoundary>
@@ -31,12 +51,14 @@ export const FileManagerWithSuspense = createLazyComponent(
   () => import("./FileManager.jsx"),
   "正在加载文件管理器...",
   "文件管理器",
+  FileManagerSkeleton,
 );
 
 export const ResourceMonitorWithSuspense = createLazyComponent(
   () => import("./ResourceMonitor.jsx"),
   "正在加载资源监控...",
   "资源监控",
+  ResourceMonitorSkeleton,
 );
 
 export const IPAddressQueryWithSuspense = createLazyComponent(
@@ -49,12 +71,14 @@ export const SettingsWithSuspense = createLazyComponent(
   () => import("./Settings.jsx"),
   "正在加载设置...",
   "设置",
+  SettingsSkeleton,
 );
 
 export const CommandHistoryWithSuspense = createLazyComponent(
   () => import("./CommandHistory.jsx"),
   "正在加载命令历史...",
   "命令历史",
+  CommandHistorySkeleton,
 );
 
 export const ShortcutCommandsWithSuspense = createLazyComponent(
@@ -67,6 +91,7 @@ export const LocalTerminalSidebarWithSuspense = createLazyComponent(
   () => import("./LocalTerminalSidebar.jsx"),
   "正在加载本地终端...",
   "本地终端",
+  TerminalSkeleton,
 );
 
 // AI助手组件（如果存在）- 保持兼容性
@@ -74,6 +99,7 @@ export const AIAssistantWithSuspense = createLazyComponent(
   () => import("./AIChatWindow.jsx"),
   "正在加载AI助手...",
   "AI助手",
+  AIChatSkeleton,
 );
 
 // 为了向后兼容，创建直接的懒加载组件引用

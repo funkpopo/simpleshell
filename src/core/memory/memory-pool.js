@@ -158,19 +158,19 @@ class MemoryPool extends EventEmitter {
           memoryUsageThreshold: 85, // 85%使用率阈值
           longLivedObjectThreshold: 10 * 60 * 1000, // 10分钟长期存活阈值
           abnormalAllocationThreshold: 50, // 50MB异常分配阈值
-        }
+        },
       });
 
       // 监听泄漏检测事件
-      this.leakDetector.on('memoryLeakDetected', (alert) => {
+      this.leakDetector.on("memoryLeakDetected", (alert) => {
         this.handleMemoryLeakAlert(alert);
       });
 
-      this.leakDetector.on('started', () => {
+      this.leakDetector.on("started", () => {
         logToFile("内存泄漏检测器已启动", "INFO");
       });
 
-      this.leakDetector.on('stopped', () => {
+      this.leakDetector.on("stopped", () => {
         logToFile("内存泄漏检测器已停止", "INFO");
       });
 
@@ -185,21 +185,21 @@ class MemoryPool extends EventEmitter {
    */
   handleMemoryLeakAlert(alert) {
     const { level, memoryInfo, leakResults, recommendations } = alert;
-    
+
     // 记录详细的泄漏信息
     const leakSummary = Object.entries(leakResults)
       .filter(([_, result]) => result.detected)
       .map(([type, result]) => `${type}: ${result.reason}`)
-      .join('; ');
+      .join("; ");
 
     logToFile(
-      `内存泄漏检测告警 [${level.toUpperCase()}]: ${leakSummary}`, 
-      level === 'critical' ? 'ERROR' : 'WARN'
+      `内存泄漏检测告警 [${level.toUpperCase()}]: ${leakSummary}`,
+      level === "critical" ? "ERROR" : "WARN",
     );
 
     // 打印修复建议
     if (recommendations && recommendations.length > 0) {
-      logToFile(`修复建议: ${recommendations.join('; ')}`, "INFO");
+      logToFile(`修复建议: ${recommendations.join("; ")}`, "INFO");
     }
 
     // 发出内存泄漏告警事件
@@ -209,11 +209,11 @@ class MemoryPool extends EventEmitter {
       summary: leakSummary,
       memoryInfo,
       recommendations,
-      stats: this.getStats()
+      stats: this.getStats(),
     });
 
     // 如果是关键级别的泄漏，执行紧急清理
-    if (level === 'critical') {
+    if (level === "critical") {
       this.performEmergencyCleanup();
     }
   }
@@ -242,25 +242,25 @@ class MemoryPool extends EventEmitter {
         const oldPatterns = Array.from(this.allocationPatterns.entries())
           .sort((a, b) => a[1].lastAccess - b[1].lastAccess)
           .slice(0, Math.floor(this.allocationPatterns.size / 2));
-        
+
         oldPatterns.forEach(([key]) => {
           this.allocationPatterns.delete(key);
         });
-        
+
         logToFile(`清理了${oldPatterns.length}个旧的分配模式`, "INFO");
       }
 
       // 清理性能历史记录
       if (this.metrics.performanceHistory.length > 500) {
-        this.metrics.performanceHistory = this.metrics.performanceHistory.slice(-100);
+        this.metrics.performanceHistory =
+          this.metrics.performanceHistory.slice(-100);
         logToFile("清理了性能历史记录", "INFO");
       }
 
       this.emit("emergencyCleanupCompleted", {
         timestamp: Date.now(),
-        stats: this.getStats()
+        stats: this.getStats(),
       });
-
     } catch (error) {
       logToFile(`紧急清理失败: ${error.message}`, "ERROR");
     }

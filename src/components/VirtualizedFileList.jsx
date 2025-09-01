@@ -148,10 +148,10 @@ const FileItem = memo(({ index, style, data }) => {
   // 直接始终渲染完整内容（含时间戳）
   return (
     <div style={style}>
-      <ListItem 
-        disablePadding 
+      <ListItem
+        disablePadding
         onContextMenu={handleContextMenu}
-        sx={{ 
+        sx={{
           py: 0, // 移除ListItem的垂直内边距
           my: 0, // 移除ListItem的垂直外边距
         }}
@@ -162,7 +162,9 @@ const FileItem = memo(({ index, style, data }) => {
           dense
           sx={buttonSx}
         >
-          <ListItemIcon sx={{ minWidth: 28, mr: 1 }}> {/* 进一步减少图标宽度并添加右边距 */}
+          <ListItemIcon sx={{ minWidth: 28, mr: 1 }}>
+            {" "}
+            {/* 进一步减少图标宽度并添加右边距 */}
             {file.isDirectory ? (
               <FolderIcon color="primary" fontSize="small" />
             ) : (
