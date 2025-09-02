@@ -132,7 +132,12 @@
       "province": "省份",
       "city": "城市",
       "isp": "ISP",
-      "organization": "组织"
+      "organization": "组织",
+      "historyTitle": "查询历史",
+      "toggleHistory": "展开/折叠历史",
+      "noHistory": "暂无历史记录",
+      "myIp": "我的IP",
+      "apiUnavailable": "API不可用"
     },
     "welcome": {
       "title": "欢迎使用 SimpleShell",

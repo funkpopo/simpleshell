@@ -132,7 +132,12 @@
       "province": "Province/State",
       "city": "City",
       "isp": "ISP",
-      "organization": "Organization"
+      "organization": "Organization",
+      "historyTitle": "Query History",
+      "toggleHistory": "Toggle history",
+      "noHistory": "No history records",
+      "myIp": "My IP",
+      "apiUnavailable": "API unavailable"
     },
     "welcome": {
       "title": "Welcome to SimpleShell",
