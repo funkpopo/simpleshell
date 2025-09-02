@@ -28,7 +28,6 @@ import IconButton from "@mui/material/IconButton";
 import { findGroupByTab } from "../core/syncInputGroups";
 import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 import CommandSuggestion from "./CommandSuggestion";
-import { TerminalSkeleton } from "./SkeletonLoader.jsx";
 
 // 添加全局样式以确保xterm正确填满容器
 const terminalStyles = `
@@ -475,8 +474,6 @@ const WebTerminal = ({
   const eventManager = useEventManager(); // 使用统一的事件管理器
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
-  // 添加终端初始化状态
-  const [isTerminalInitialized, setIsTerminalInitialized] = useState(false);
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
@@ -1623,9 +1620,6 @@ const WebTerminal = ({
         // 重新打开终端并附加到DOM
         term.open(terminalRef.current);
 
-        // 标记终端已初始化
-        setIsTerminalInitialized(true);
-
         // 如果标签页不活跃，避免立即触发resize以减少性能影响
         if (isActive) {
           // 使用EventManager管理确保适配容器大小
@@ -1705,9 +1699,6 @@ const WebTerminal = ({
 
         // 打开终端
         term.open(terminalRef.current);
-
-        // 标记终端已初始化
-        setIsTerminalInitialized(true);
 
         // 使用EventManager管理确保适配容器大小
         eventManager.setTimeout(() => {
@@ -4045,9 +4036,6 @@ const WebTerminal = ({
       }}
     >
       <div className="terminal-container">
-        {!isTerminalInitialized ? (
-          <TerminalSkeleton />
-        ) : (
           <div
             ref={terminalRef}
             style={{
@@ -4056,7 +4044,6 @@ const WebTerminal = ({
               padding: "0 0 0 0",
             }}
           />
-        )}
 
         {!showSearchBar && isActive && (
           <Tooltip title="打开搜索 (Ctrl+/)">
