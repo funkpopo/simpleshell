@@ -253,43 +253,47 @@ const SkeletonLoader = memo(
 
         case "fileList":
           return (
-            <Stack spacing={1}>
+            <Stack spacing={0.5} sx={{ width: "100%" }}>
               {Array.from({ length: lines }, (_, index) => (
-                <Stack
+                <Box
                   key={index}
-                  direction="row"
-                  spacing={2}
-                  alignItems="center"
+                  sx={{
+                    height: 36,
+                    borderRadius: 1,
+                    px: 2,
+                    display: "flex",
+                    alignItems: "center",
+                    backgroundColor: alpha(theme.palette.text.primary, 0.05),
+                  }}
                 >
-                  <Skeleton
-                    variant="rectangular"
-                    width={16}
-                    height={16}
-                    animation={animation}
-                    sx={baseSkeletonSx}
-                  />
-                  <Skeleton
-                    variant="text"
-                    width="70%"
-                    height={16}
-                    animation={animation}
-                    sx={baseSkeletonSx}
-                  />
-                  <Skeleton
-                    variant="text"
-                    width={60}
-                    height={12}
-                    animation={animation}
-                    sx={baseSkeletonSx}
-                  />
-                  <Skeleton
-                    variant="text"
-                    width={80}
-                    height={12}
-                    animation={animation}
-                    sx={baseSkeletonSx}
-                  />
-                </Stack>
+                  <Box sx={{ width: 28, minWidth: 28, mr: 1, display: "flex", justifyContent: "center" }}>
+                    <Skeleton
+                      variant="circular"
+                      width={18}
+                      height={18}
+                      animation={animation}
+                      sx={baseSkeletonSx}
+                    />
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Stack spacing={0.25}>
+                      <Skeleton
+                        variant="text"
+                        width="60%"
+                        height={14}
+                        animation={animation}
+                        sx={baseSkeletonSx}
+                      />
+                      <Skeleton
+                        variant="text"
+                        width="40%"
+                        height={12}
+                        animation={animation}
+                        sx={baseSkeletonSx}
+                      />
+                    </Stack>
+                  </Box>
+                </Box>
               ))}
             </Stack>
           );
@@ -333,22 +337,11 @@ export const ConnectionManagerSkeleton = memo(() => {
 });
 
 export const FileManagerSkeleton = memo(() => {
-  const { t } = useTranslation();
   return (
-    <Box sx={{ p: 1 }}>
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{ mb: 2, display: "block" }}
-      >
-        {t("common.skeleton.fileManager")}
-      </Typography>
-      <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-        <SkeletonLoader width={80} height={32} />
-        <SkeletonLoader width={80} height={32} />
-        <SkeletonLoader width={80} height={32} />
-      </Stack>
-      <SkeletonLoader type="fileList" lines={8} />
+    <Box sx={{ p: 1, height: "100%", overflow: "hidden" }}>
+      <Box sx={{ flex: 1, height: "100%" }}>
+        <SkeletonLoader type="fileList" lines={12} />
+      </Box>
     </Box>
   );
 });

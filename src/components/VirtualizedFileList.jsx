@@ -121,8 +121,8 @@ const FileItem = memo(({ index, style, data }) => {
   // 缓存按钮样式对象
   const buttonSx = useMemo(
     () => ({
-      minHeight: 28, // 进一步减少高度
-      maxHeight: 28, // 限制最大高度
+      minHeight: 36,
+      maxHeight: 36,
       px: 2,
       py: 0, // 移除垂直内边距以节省空间
       my: 0.25, // 添加小的垂直外边距以防止重叠
@@ -250,7 +250,7 @@ const VirtualizedFileList = ({
   selectedFiles,
   isFileSelected,
   height = 400,
-  itemHeight = 48,
+  itemHeight = 36,
   searchTerm = "",
   onBlankContextMenu,
   enableVirtualization = true, // 允许禁用虚拟化作为降级选项
