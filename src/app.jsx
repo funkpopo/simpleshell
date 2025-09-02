@@ -2271,11 +2271,13 @@ function App() {
                 display: "flex",
               }}
             >
-              <ResourceMonitor
-                open={resourceMonitorOpen}
-                onClose={handleCloseResourceMonitor}
-                currentTabId={resourceMonitorTabId}
-              />
+              {resourceMonitorOpen && (
+                <ResourceMonitor
+                  open={resourceMonitorOpen}
+                  onClose={handleCloseResourceMonitor}
+                  currentTabId={resourceMonitorTabId}
+                />
+              )}
             </Box>
 
             {/* 连接管理侧边栏 */}
@@ -2289,13 +2291,15 @@ function App() {
                 display: "flex",
               }}
             >
-              <ConnectionManager
-                open={connectionManagerOpen}
-                onClose={handleCloseConnectionManager}
-                initialConnections={connections}
-                onConnectionsUpdate={handleConnectionsUpdate}
-                onOpenConnection={handleOpenConnection}
-              />
+              {connectionManagerOpen && (
+                <ConnectionManager
+                  open={connectionManagerOpen}
+                  onClose={handleCloseConnectionManager}
+                  initialConnections={connections}
+                  onConnectionsUpdate={handleConnectionsUpdate}
+                  onOpenConnection={handleOpenConnection}
+                />
+              )}
             </Box>
 
             {/* 文件管理侧边栏 */}
@@ -2309,15 +2313,17 @@ function App() {
                 display: "flex",
               }}
             >
-              <FileManager
-                open={fileManagerOpen}
-                onClose={handleCloseFileManager}
-                tabId={fileManagerProps.tabId}
-                tabName={fileManagerProps.tabName}
-                sshConnection={fileManagerProps.sshConnection}
-                initialPath={fileManagerProps.initialPath}
-                onPathChange={updateFileManagerPath}
-              />
+              {fileManagerOpen && (
+                <FileManager
+                  open={fileManagerOpen}
+                  onClose={handleCloseFileManager}
+                  tabId={fileManagerProps.tabId}
+                  tabName={fileManagerProps.tabName}
+                  sshConnection={fileManagerProps.sshConnection}
+                  initialPath={fileManagerProps.initialPath}
+                  onPathChange={updateFileManagerPath}
+                />
+              )}
             </Box>
 
             {/* 添加快捷命令侧边栏 */}
@@ -2331,11 +2337,13 @@ function App() {
                 display: "flex",
               }}
             >
-              <ShortcutCommands
-                open={shortcutCommandsOpen}
-                onClose={handleCloseShortcutCommands}
-                onSendCommand={handleSendCommand}
-              />
+              {shortcutCommandsOpen && (
+                <ShortcutCommands
+                  open={shortcutCommandsOpen}
+                  onClose={handleCloseShortcutCommands}
+                  onSendCommand={handleSendCommand}
+                />
+              )}
             </Box>
 
             {/* 添加历史命令侧边栏 */}
@@ -2349,11 +2357,13 @@ function App() {
                 display: "flex",
               }}
             >
-              <CommandHistory
-                open={commandHistoryOpen}
-                onClose={handleCloseCommandHistory}
-                onSendCommand={handleSendCommand}
-              />
+              {commandHistoryOpen && (
+                <CommandHistory
+                  open={commandHistoryOpen}
+                  onClose={handleCloseCommandHistory}
+                  onSendCommand={handleSendCommand}
+                />
+              )}
             </Box>
 
             {/* IP地址查询侧边栏 */}
@@ -2367,10 +2377,12 @@ function App() {
                 display: "flex",
               }}
             >
-              <IPAddressQuery
-                open={ipAddressQueryOpen}
-                onClose={handleCloseIpAddressQuery}
-              />
+              {ipAddressQueryOpen && (
+                <IPAddressQuery
+                  open={ipAddressQueryOpen}
+                  onClose={handleCloseIpAddressQuery}
+                />
+              )}
             </Box>
 
             {/* 随机密码生成器侧边栏 */}
@@ -2384,10 +2396,12 @@ function App() {
                 display: "flex",
               }}
             >
-              <SecurityTools
-                open={securityToolsOpen}
-                onClose={() => setSecurityToolsOpen(false)}
-              />
+              {securityToolsOpen && (
+                <SecurityTools
+                  open={securityToolsOpen}
+                  onClose={() => setSecurityToolsOpen(false)}
+                />
+              )}
             </Box>
 
             {/* 本地终端侧边栏 */}
@@ -2401,11 +2415,13 @@ function App() {
                 display: "flex",
               }}
             >
-              <LocalTerminalSidebar
-                open={localTerminalSidebarOpen}
-                onClose={handleCloseLocalTerminalSidebar}
-                onLaunchTerminal={handleLaunchLocalTerminal}
-              />
+              {localTerminalSidebarOpen && (
+                <LocalTerminalSidebar
+                  open={localTerminalSidebarOpen}
+                  onClose={handleCloseLocalTerminalSidebar}
+                  onLaunchTerminal={handleLaunchLocalTerminal}
+                />
+              )}
             </Box>
 
             {/* 右侧边栏 */}
