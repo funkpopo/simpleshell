@@ -84,7 +84,7 @@ const WorldMap = ({ latitude, longitude }) => {
       }}
       style={{
         width: "100%",
-        height: "auto",
+        height: "100%",
       }}
       aria-label="World map"
     >
