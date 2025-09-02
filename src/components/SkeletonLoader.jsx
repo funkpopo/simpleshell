@@ -369,6 +369,7 @@ export const TerminalSkeleton = memo(() => {
 
 export const ResourceMonitorSkeleton = memo(() => {
   const { t } = useTranslation();
+  const theme = useTheme();
   return (
     <Box sx={{ p: 2 }}>
       <Typography
@@ -378,11 +379,136 @@ export const ResourceMonitorSkeleton = memo(() => {
       >
         {t("common.skeleton.resourceMonitor")}
       </Typography>
-      <SkeletonLoader type="text" lines={1} height={24} />
-      <Box sx={{ mt: 2, mb: 2 }}>
-        <SkeletonLoader height={200} />
+
+      {/* 系统信息卡片轮廓 */}
+      <Box sx={{ mb: 1, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            py: 1.25,
+            px: 2,
+            borderLeft: `4px solid ${theme.palette.primary.main}`,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Skeleton variant="circular" width={20} height={20} sx={{ mr: 1 }} />
+          <Skeleton variant="text" width={80} height={20} />
+          <Box sx={{ ml: "auto" }}>
+            <Skeleton variant="rectangular" width={18} height={18} />
+          </Box>
+        </Box>
+        <Box sx={{ p: 2 }}>
+          <Skeleton variant="text" width="60%" height={16} sx={{ mb: 1 }} />
+          <Skeleton variant="text" width="40%" height={14} sx={{ mb: 1 }} />
+          <Skeleton variant="text" width="50%" height={14} />
+        </Box>
       </Box>
-      <SkeletonLoader type="table" lines={4} />
+
+      {/* CPU 卡片轮廓 */}
+      <Box sx={{ mb: 1, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            py: 1.25,
+            px: 2,
+            borderLeft: `4px solid ${theme.palette.warning.main}`,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Skeleton variant="circular" width={20} height={20} sx={{ mr: 1 }} />
+          <Skeleton variant="text" width={60} height={20} />
+          <Box sx={{ ml: "auto" }}>
+            <Skeleton variant="rectangular" width={18} height={18} />
+          </Box>
+        </Box>
+        <Box sx={{ p: 2 }}>
+          <Skeleton variant="text" width="30%" height={16} sx={{ mb: 1 }} />
+          <Skeleton
+            variant="rectangular"
+            width="100%"
+            height={8}
+            sx={{ borderRadius: 1 }}
+          />
+        </Box>
+      </Box>
+
+      {/* 内存 卡片轮廓 */}
+      <Box sx={{ mb: 1, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            py: 1.25,
+            px: 2,
+            borderLeft: `4px solid ${theme.palette.info.main}`,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Skeleton variant="circular" width={20} height={20} sx={{ mr: 1 }} />
+          <Skeleton variant="text" width={60} height={20} />
+          <Box sx={{ ml: "auto" }}>
+            <Skeleton variant="rectangular" width={18} height={18} />
+          </Box>
+        </Box>
+        <Box sx={{ p: 2 }}>
+          <Skeleton variant="text" width="50%" height={16} sx={{ mb: 1 }} />
+          <Skeleton variant="text" width="40%" height={14} sx={{ mb: 1 }} />
+          <Skeleton
+            variant="rectangular"
+            width="100%"
+            height={8}
+            sx={{ borderRadius: 1 }}
+          />
+        </Box>
+      </Box>
+
+      {/* 进程列表 卡片轮廓 */}
+      <Box sx={{ mb: 1, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            py: 1.25,
+            px: 2,
+            borderLeft: `4px solid ${theme.palette.secondary.main}`,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Skeleton variant="circular" width={20} height={20} sx={{ mr: 1 }} />
+          <Skeleton variant="text" width={60} height={20} />
+          <Box sx={{ ml: "auto" }}>
+            <Skeleton variant="rectangular" width={18} height={18} />
+          </Box>
+        </Box>
+        <Box sx={{ p: 2 }}>
+          {/* 表头轮廓 */}
+          <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+            <Skeleton variant="text" width="50%" height={14} />
+            <Skeleton variant="text" width="20%" height={14} sx={{ ml: 2 }} />
+            <Skeleton variant="text" width="20%" height={14} sx={{ ml: 2 }} />
+          </Box>
+          {/* 行轮廓 */}
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Box key={i} sx={{ display: "flex", alignItems: "center", py: 0.75 }}>
+              <Skeleton variant="text" width="45%" height={14} />
+              <Skeleton
+                variant="rectangular"
+                width="20%"
+                height={10}
+                sx={{ ml: 2, borderRadius: 1 }}
+              />
+              <Skeleton
+                variant="rectangular"
+                width="20%"
+                height={10}
+                sx={{ ml: 2, borderRadius: 1 }}
+              />
+            </Box>
+          ))}
+        </Box>
+      </Box>
     </Box>
   );
 });
