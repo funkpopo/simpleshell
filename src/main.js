@@ -1741,17 +1741,37 @@ function setupIPC(mainWindow) {
         ) {
           const sshClient =
             processObj.client || processObj.process || processObj.channel;
-          return systemInfo.getRemoteSystemInfo(sshClient); // This might be another issue for later
+
+          // 检查SSH连接是否仍然有效
+          if (
+            !sshClient ||
+            (sshClient._readableState && sshClient._readableState.ended) ||
+            (sshClient._sock &&
+              (!sshClient._sock.readable || !sshClient._sock.writable))
+          ) {
+            logToFile(
+              `SSH connection not available for process ${processId}, falling back to local system info`,
+              "WARN",
+            );
+            return await systemInfo.getLocalSystemInfo();
+          }
+
+          return systemInfo.getRemoteSystemInfo(sshClient);
         } else {
           return await systemInfo.getLocalSystemInfo();
         }
       }
     } catch (error) {
       logToFile(`Failed to get system info: ${error.message}`, "ERROR");
-      return {
-        error: "获取系统信息失败",
-        message: error.message,
-      };
+      // 如果远程系统信息获取失败，回退到本地系统信息
+      try {
+        return await systemInfo.getLocalSystemInfo();
+      } catch (fallbackError) {
+        return {
+          error: "获取系统信息失败",
+          message: error.message,
+        };
+      }
     }
   });
 
@@ -1768,6 +1788,14 @@ function setupIPC(mainWindow) {
         ) {
           const sshClient =
             processObj.client || processObj.process || processObj.channel;
+          
+          // 检查SSH连接是否仍然有效
+          if (!sshClient || (sshClient._readableState && sshClient._readableState.ended) || 
+              (sshClient._sock && (!sshClient._sock.readable || !sshClient._sock.writable))) {
+            logToFile(`SSH connection not available for process ${processId}, falling back to local process list`, "WARN");
+            return systemInfo.getProcessList();
+          }
+          
           return systemInfo.getRemoteProcessList(sshClient);
         } else {
           return systemInfo.getProcessList();
@@ -1775,10 +1803,56 @@ function setupIPC(mainWindow) {
       }
     } catch (error) {
       logToFile(`Failed to get process list: ${error.message}`, "ERROR");
-      return {
-        error: "获取进程列表失败",
-        message: error.message,
-      };
+      // 如果远程进程列表获取失败，回退到本地进程列表
+      try {
+        return systemInfo.getProcessList();
+      } catch (fallbackError) {
+        return {
+          error: "获取进程列表失败",
+          message: error.message,
+        };
+      }
+    }
+  });
+
+  // 清理终端连接（用于连接刷新）
+  ipcMain.handle("terminal:cleanupConnection", async (event, processId) => {
+    try {
+      if (!processId) {
+        logToFile("No processId provided for cleanup", "WARN");
+        return { success: false, error: "No processId provided" };
+      }
+
+      logToFile(`Cleaning up connection for process ${processId}`, "INFO");
+      
+      // 删除子进程映射
+      if (childProcesses.has(processId)) {
+        const processObj = childProcesses.get(processId);
+        
+        // 关闭SSH连接（如果存在）
+        try {
+          if (processObj.client && typeof processObj.client.end === 'function') {
+            processObj.client.end();
+          }
+          if (processObj.process && typeof processObj.process.kill === 'function') {
+            processObj.process.kill();
+          }
+        } catch (cleanupError) {
+          logToFile(`Error during connection cleanup: ${cleanupError.message}`, "WARN");
+        }
+        
+        childProcesses.delete(processId);
+        
+        // 如果有tabId也清理
+        if (processObj.config && processObj.config.tabId) {
+          childProcesses.delete(processObj.config.tabId);
+        }
+      }
+
+      return { success: true };
+    } catch (error) {
+      logToFile(`Failed to cleanup connection: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
     }
   });
 

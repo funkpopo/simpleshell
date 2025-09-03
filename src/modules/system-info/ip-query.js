@@ -1,8 +1,8 @@
 const https = require("https");
 const http = require("http");
-const { SocksProxyAgent } = require('socks-proxy-agent');
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { HttpProxyAgent } = require('http-proxy-agent');
+const { SocksProxyAgent } = require("socks-proxy-agent");
+const { HttpsProxyAgent } = require("https-proxy-agent");
+const { HttpProxyAgent } = require("http-proxy-agent");
 
 const transformGeolocationDB = (data, ip) => {
   if (!data.IPv4) {
@@ -214,13 +214,13 @@ async function getPublicIp(proxyConfig = null) {
     // 添加代理支持
     if (proxyConfig && proxyConfig.host && proxyConfig.port) {
       try {
-        if (proxyConfig.type === 'socks4' || proxyConfig.type === 'socks5') {
+        if (proxyConfig.type === "socks4" || proxyConfig.type === "socks5") {
           // SOCKS代理
-          const socksUrl = `${proxyConfig.type}://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ''}${proxyConfig.host}:${proxyConfig.port}`;
+          const socksUrl = `${proxyConfig.type}://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ""}${proxyConfig.host}:${proxyConfig.port}`;
           options.agent = new SocksProxyAgent(socksUrl);
         } else {
           // HTTP/HTTPS代理
-          const proxyUrl = `http://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ''}${proxyConfig.host}:${proxyConfig.port}`;
+          const proxyUrl = `http://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ""}${proxyConfig.host}:${proxyConfig.port}`;
           options.agent = new HttpsProxyAgent(proxyUrl);
         }
       } catch (proxyError) {
@@ -256,8 +256,7 @@ function fetchIpInfo(provider, ip, logger, proxyConfig = null) {
 
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
-    const requestModule =
-      parsedUrl.protocol === "https:" ? https : http;
+    const requestModule = parsedUrl.protocol === "https:" ? https : http;
     const options = {
       hostname: parsedUrl.hostname,
       path: parsedUrl.pathname + parsedUrl.search,
@@ -269,13 +268,13 @@ function fetchIpInfo(provider, ip, logger, proxyConfig = null) {
     // 添加代理支持
     if (proxyConfig && proxyConfig.host && proxyConfig.port) {
       try {
-        if (proxyConfig.type === 'socks4' || proxyConfig.type === 'socks5') {
+        if (proxyConfig.type === "socks4" || proxyConfig.type === "socks5") {
           // SOCKS代理
-          const socksUrl = `${proxyConfig.type}://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ''}${proxyConfig.host}:${proxyConfig.port}`;
+          const socksUrl = `${proxyConfig.type}://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ""}${proxyConfig.host}:${proxyConfig.port}`;
           options.agent = new SocksProxyAgent(socksUrl);
         } else {
           // HTTP/HTTPS代理
-          const proxyUrl = `http://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ''}${proxyConfig.host}:${proxyConfig.port}`;
+          const proxyUrl = `http://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ""}${proxyConfig.host}:${proxyConfig.port}`;
           if (parsedUrl.protocol === "https:") {
             options.agent = new HttpsProxyAgent(proxyUrl);
           } else {
@@ -335,7 +334,10 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
 
     // 记录代理配置使用情况
     if (proxyConfig && proxyConfig.host && proxyConfig.port) {
-      logger(`使用代理进行IP查询: ${proxyConfig.type} ${proxyConfig.host}:${proxyConfig.port}`, "INFO");
+      logger(
+        `使用代理进行IP查询: ${proxyConfig.type} ${proxyConfig.host}:${proxyConfig.port}`,
+        "INFO",
+      );
     }
 
     if (ip) {

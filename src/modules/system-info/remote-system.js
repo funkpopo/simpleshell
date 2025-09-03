@@ -1,5 +1,16 @@
 async function getRemoteSystemInfo(sshClient) {
   return new Promise((resolve, reject) => {
+    // 检查SSH连接是否有效
+    if (
+      !sshClient ||
+      (sshClient._readableState && sshClient._readableState.ended) ||
+      (sshClient._sock &&
+        (!sshClient._sock.readable || !sshClient._sock.writable))
+    ) {
+      reject(new Error("SSH连接不可用"));
+      return;
+    }
+
     const result = {
       isLocal: false,
       os: {
@@ -233,6 +244,17 @@ async function getRemoteSystemInfo(sshClient) {
         }
 
         function getMemoryInfo() {
+          // 检查连接状态
+          if (
+            !sshClient ||
+            (sshClient._readableState && sshClient._readableState.ended) ||
+            (sshClient._sock &&
+              (!sshClient._sock.readable || !sshClient._sock.writable))
+          ) {
+            getCpuInfo();
+            return;
+          }
+
           // 根据平台决定获取内存命令
           const memCommand =
             result.os.platform === "win32"
@@ -372,6 +394,17 @@ async function getRemoteSystemInfo(sshClient) {
         }
 
         function getCpuUsage() {
+          // 检查连接状态
+          if (
+            !sshClient ||
+            (sshClient._readableState && sshClient._readableState.ended) ||
+            (sshClient._sock &&
+              (!sshClient._sock.readable || !sshClient._sock.writable))
+          ) {
+            finalize();
+            return;
+          }
+
           const usageCommand =
             result.os.platform === "win32"
               ? "wmic cpu get LoadPercentage"
@@ -417,6 +450,13 @@ async function getRemoteSystemInfo(sshClient) {
 
 async function getRemoteProcessList(sshClient) {
   return new Promise((resolve, reject) => {
+    // 检查SSH连接是否有效
+    if (!sshClient || (sshClient._readableState && sshClient._readableState.ended) || 
+        (sshClient._sock && (!sshClient._sock.readable || !sshClient._sock.writable))) {
+      reject(new Error("SSH连接不可用"));
+      return;
+    }
+    
     // 使用ps命令获取进程列表，--no-headers避免输出标题行
     // 输出格式：PID,PPID,CPU使用率,内存使用率,用户,命令名
     const command = "ps -axo pid,ppid,%cpu,%mem,user:20,comm --no-headers";

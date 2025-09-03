@@ -817,10 +817,26 @@ function App() {
   }, []);
 
   // 刷新终端连接
-  const handleRefreshTerminal = () => {
+  const handleRefreshTerminal = async () => {
     const tabIndex = tabContextMenu.tabIndex;
     if (tabIndex !== null && tabIndex < tabs.length) {
       const tabId = tabs[tabIndex].id;
+
+      // 先关闭所有侧边栏以避免连接错误
+      setResourceMonitorOpen(false);
+      setFileManagerOpen(false);
+      setIpAddressQueryOpen(false);
+
+      // 获取当前连接的processId并清理连接
+      try {
+        // 从全局processCache获取processId（WebTerminal组件设置的）
+        const processId = window.processCache && window.processCache[tabId];
+        if (processId && window.terminalAPI && window.terminalAPI.cleanupConnection) {
+          await window.terminalAPI.cleanupConnection(processId);
+        }
+      } catch (cleanupError) {
+        console.warn("Connection cleanup failed:", cleanupError);
+      }
 
       // 从缓存中先移除旧实例
       setTerminalInstances((prev) => {
