@@ -247,6 +247,10 @@ const ConnectionManager = memo(
     const [dialogType, setDialogType] = useState(""); // 'connection' 或 'group'
     const [dialogMode, setDialogMode] = useState(""); // 'add' 或 'edit'
     const [selectedItem, setSelectedItem] = useState(null);
+    
+    // 确认删除对话框状态
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteItem, setDeleteItem] = useState(null);
     const [formData, setFormData] = useState({
       name: "",
       host: "",
@@ -397,41 +401,73 @@ const ConnectionManager = memo(
       setDialogOpen(true);
     }, []);
 
-    // 删除项目
+    // 删除项目 - 显示确认对话框
     const handleDelete = useCallback(
       (itemId, parentGroup = null) => {
-        let newConnections;
-        if (parentGroup) {
-          // 删除组内的连接
-          newConnections = connections.map((group) =>
-            group.id === parentGroup.id
-              ? {
-                  ...group,
-                  items: group.items.filter((item) => item.id !== itemId),
-                }
-              : group,
-          );
-        } else {
-          // 删除顶级项目
-          newConnections = connections.filter((item) => item.id !== itemId);
-        }
-
-        // 更新本地状态
-        setConnections(newConnections);
-
-        // 保存到配置文件
-        if (window.terminalAPI && window.terminalAPI.saveConnections) {
-          window.terminalAPI.saveConnections(newConnections).catch((error) => {
-            setSnackbar({
-              open: true,
-              message: "保存连接配置失败",
-              severity: "error",
-            });
-          });
+        const item = parentGroup 
+          ? parentGroup.items.find(item => item.id === itemId)
+          : connections.find(item => item.id === itemId);
+        
+        if (item) {
+          setDeleteItem({ item, parentGroup, itemId });
+          setDeleteConfirmOpen(true);
         }
       },
       [connections],
     );
+
+    // 确认删除项目
+    const handleConfirmDelete = useCallback(() => {
+      if (!deleteItem) return;
+      
+      const { itemId, parentGroup } = deleteItem;
+      let newConnections;
+      
+      if (parentGroup) {
+        // 删除组内的连接
+        newConnections = connections.map((group) =>
+          group.id === parentGroup.id
+            ? {
+                ...group,
+                items: group.items.filter((item) => item.id !== itemId),
+              }
+            : group,
+        );
+      } else {
+        // 删除顶级项目
+        newConnections = connections.filter((item) => item.id !== itemId);
+      }
+
+      // 更新本地状态
+      setConnections(newConnections);
+
+      // 保存到配置文件
+      if (window.terminalAPI && window.terminalAPI.saveConnections) {
+        window.terminalAPI.saveConnections(newConnections).catch((error) => {
+          setSnackbar({
+            open: true,
+            message: "保存连接配置失败",
+            severity: "error",
+          });
+        });
+      }
+
+      // 关闭确认对话框并清理状态
+      setDeleteConfirmOpen(false);
+      setDeleteItem(null);
+      
+      setSnackbar({
+        open: true,
+        message: "删除成功",
+        severity: "success",
+      });
+    }, [deleteItem, connections]);
+
+    // 取消删除
+    const handleCancelDelete = useCallback(() => {
+      setDeleteConfirmOpen(false);
+      setDeleteItem(null);
+    }, []);
 
     const handleDialogClose = useCallback(() => {
       setDialogOpen(false);
@@ -1680,6 +1716,38 @@ const ConnectionManager = memo(
                 <Button onClick={handleDialogClose}>取消</Button>
                 <Button onClick={handleSave} variant="contained">
                   保存
+                </Button>
+              </DialogActions>
+            </Dialog>
+
+            {/* 删除确认对话框 */}
+            <Dialog
+              open={deleteConfirmOpen}
+              onClose={handleCancelDelete}
+              maxWidth="xs"
+            >
+              <DialogTitle>
+                确认删除
+              </DialogTitle>
+              <DialogContent>
+                <Typography>
+                  {deleteItem?.item?.type === 'group' 
+                    ? `确定要删除分组 "${deleteItem?.item?.name}" 吗？删除分组将同时删除组内的所有连接项。`
+                    : `确定要删除连接 "${deleteItem?.item?.name}" 吗？`
+                  }
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  此操作无法撤销。
+                </Typography>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={handleCancelDelete}>取消</Button>
+                <Button 
+                  onClick={handleConfirmDelete} 
+                  variant="contained" 
+                  color="error"
+                >
+                  删除
                 </Button>
               </DialogActions>
             </Dialog>
