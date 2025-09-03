@@ -61,8 +61,11 @@ const IPAddressQuery = memo(({ open, onClose }) => {
 
         if (result.ret === "ok") {
           setIpInfo(result);
-          const resolvedIp = ip && ip.trim() ? ip.trim() : result.data?.ip || "";
-          const locArr = Array.isArray(result.data?.location) ? result.data.location : [];
+          const resolvedIp =
+            ip && ip.trim() ? ip.trim() : result.data?.ip || "";
+          const locArr = Array.isArray(result.data?.location)
+            ? result.data.location
+            : [];
           const locationText = locArr.filter(Boolean).join(" ");
           const entry = {
             id: Date.now(),
@@ -74,7 +77,12 @@ const IPAddressQuery = memo(({ open, onClose }) => {
           };
           setHistory((prev) => {
             const deduped = prev.filter(
-              (h) => !(h.ip === entry.ip && h.latitude === entry.latitude && h.longitude === entry.longitude)
+              (h) =>
+                !(
+                  h.ip === entry.ip &&
+                  h.latitude === entry.latitude &&
+                  h.longitude === entry.longitude
+                ),
             );
             const next = [entry, ...deduped];
             return next.slice(0, 20);
@@ -370,22 +378,43 @@ const IPAddressQuery = memo(({ open, onClose }) => {
               gap: 1,
             }}
           >
-            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                 <HistoryIcon fontSize="small" color="action" />
-                <Typography variant="subtitle2">{t("ipAddressQuery.historyTitle")}</Typography>
+                <Typography variant="subtitle2">
+                  {t("ipAddressQuery.historyTitle")}
+                </Typography>
               </Box>
               <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <IconButton size="small" onClick={() => setHistoryOpen((v) => !v)} aria-expanded={historyOpen} aria-label={t("ipAddressQuery.toggleHistory")}>
+                <IconButton
+                  size="small"
+                  onClick={() => setHistoryOpen((v) => !v)}
+                  aria-expanded={historyOpen}
+                  aria-label={t("ipAddressQuery.toggleHistory")}
+                >
                   <ExpandMoreIcon
                     fontSize="small"
                     sx={{
-                      transform: historyOpen ? "rotate(0deg)": "rotate(180deg)",
-                      transition: theme.transitions.create("transform", { duration: theme.transitions.duration.shortest }),
+                      transform: historyOpen
+                        ? "rotate(0deg)"
+                        : "rotate(180deg)",
+                      transition: theme.transitions.create("transform", {
+                        duration: theme.transitions.duration.shortest,
+                      }),
                     }}
                   />
                 </IconButton>
-                <IconButton size="small" onClick={() => setHistory([])} disabled={history.length === 0 || loading}>
+                <IconButton
+                  size="small"
+                  onClick={() => setHistory([])}
+                  disabled={history.length === 0 || loading}
+                >
                   <DeleteSweepIcon fontSize="small" />
                 </IconButton>
               </Box>
@@ -393,7 +422,11 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             <Collapse in={historyOpen} timeout="auto" unmountOnExit>
               <Box sx={{ maxHeight: 160, overflow: "auto" }}>
                 {history.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary" sx={{ px: 1, py: 0.5 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ px: 1, py: 0.5 }}
+                  >
                     {t("ipAddressQuery.noHistory")}
                   </Typography>
                 ) : (
@@ -415,8 +448,15 @@ const IPAddressQuery = memo(({ open, onClose }) => {
                             }}
                           >
                             <ListItemText
-                              primaryTypographyProps={{ variant: "body2", noWrap: true }}
-                              secondaryTypographyProps={{ variant: "caption", color: "text.secondary", noWrap: true }}
+                              primaryTypographyProps={{
+                                variant: "body2",
+                                noWrap: true,
+                              }}
+                              secondaryTypographyProps={{
+                                variant: "caption",
+                                color: "text.secondary",
+                                noWrap: true,
+                              }}
                               primary={h.ip || t("ipAddressQuery.myIp")}
                               secondary={`${h.locationText || ""} ${new Date(h.time).toLocaleTimeString()}`}
                             />

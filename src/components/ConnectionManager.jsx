@@ -31,6 +31,9 @@ import {
   Alert,
   Tooltip,
   InputAdornment,
+  Switch,
+  FormControlLabel,
+  Divider,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import ComputerIcon from "@mui/icons-material/Computer";
@@ -257,6 +260,14 @@ const ConnectionManager = memo(
       os: "",
       connectionType: "",
       protocol: "ssh", // 新增：连接协议，默认为SSH
+      // 代理配置
+      enableProxy: false,
+      proxyType: "http",
+      proxyHost: "",
+      proxyPort: 8080,
+      proxyUsername: "",
+      proxyPassword: "",
+      proxyUseDefault: true, // 使用默认代理配置
     });
 
     const filteredItems = useMemo(() => {
@@ -371,6 +382,15 @@ const ConnectionManager = memo(
           os: item.os || "",
           connectionType: item.connectionType || "",
           protocol: item.protocol || "ssh",
+          // 代理配置
+          enableProxy: !!item.proxy,
+          proxyType: item.proxy?.type || "http",
+          proxyHost: item.proxy?.host || "",
+          proxyPort: item.proxy?.port || 8080,
+          proxyUsername: item.proxy?.username || "",
+          proxyPassword: item.proxy?.password || "",
+          proxyUseDefault:
+            item.proxy?.useDefault !== undefined ? item.proxy.useDefault : true,
         });
       }
 
@@ -501,6 +521,17 @@ const ConnectionManager = memo(
         os: formData.os,
         connectionType: formData.connectionType,
         protocol: formData.protocol,
+        // 代理配置
+        proxy: formData.enableProxy
+          ? {
+              type: formData.proxyType,
+              host: formData.proxyHost,
+              port: parseInt(formData.proxyPort) || 8080,
+              username: formData.proxyUsername || undefined,
+              password: formData.proxyPassword || undefined,
+              useDefault: formData.proxyUseDefault,
+            }
+          : null,
       };
 
       // 保存到本地状态
@@ -1534,6 +1565,113 @@ const ConnectionManager = memo(
                           {countryOptions}
                         </Select>
                       </FormControl>
+
+                      {/* 代理配置分割线 */}
+                      <Divider sx={{ my: 2 }}>
+                        <Typography variant="body2" color="text.secondary">
+                          代理配置 (可选)
+                        </Typography>
+                      </Divider>
+
+                      {/* 启用代理开关 */}
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={formData.enableProxy}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                enableProxy: e.target.checked,
+                              }))
+                            }
+                          />
+                        }
+                        label="启用代理"
+                        sx={{ mb: 1 }}
+                      />
+
+                      {/* 代理配置表单 */}
+                      {formData.enableProxy && (
+                        <>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={formData.proxyUseDefault}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    proxyUseDefault: e.target.checked,
+                                  }))
+                                }
+                              />
+                            }
+                            label="使用系统默认代理配置"
+                            sx={{ mb: 1 }}
+                          />
+
+                          {!formData.proxyUseDefault && (
+                            <>
+                              <Box sx={{ display: "flex", gap: 1 }}>
+                                <FormControl
+                                  size="small"
+                                  sx={{ minWidth: 120 }}
+                                >
+                                  <InputLabel>代理类型</InputLabel>
+                                  <Select
+                                    name="proxyType"
+                                    value={formData.proxyType}
+                                    label="代理类型"
+                                    onChange={handleFormChange}
+                                  >
+                                    <MenuItem value="http">HTTP</MenuItem>
+                                    <MenuItem value="socks4">SOCKS4</MenuItem>
+                                    <MenuItem value="socks5">SOCKS5</MenuItem>
+                                  </Select>
+                                </FormControl>
+                                <TextField
+                                  label="代理主机"
+                                  name="proxyHost"
+                                  value={formData.proxyHost}
+                                  onChange={handleFormChange}
+                                  size="small"
+                                  sx={{ flexGrow: 1 }}
+                                  placeholder="例如: 127.0.0.1"
+                                />
+                                <TextField
+                                  label="端口"
+                                  name="proxyPort"
+                                  type="number"
+                                  value={formData.proxyPort}
+                                  onChange={handleFormChange}
+                                  size="small"
+                                  sx={{ width: 100 }}
+                                  placeholder="8080"
+                                />
+                              </Box>
+
+                              <Box sx={{ display: "flex", gap: 1 }}>
+                                <TextField
+                                  label="代理用户名 (可选)"
+                                  name="proxyUsername"
+                                  value={formData.proxyUsername}
+                                  onChange={handleFormChange}
+                                  size="small"
+                                  sx={{ flexGrow: 1 }}
+                                />
+                                <TextField
+                                  label="代理密码 (可选)"
+                                  name="proxyPassword"
+                                  type="password"
+                                  value={formData.proxyPassword}
+                                  onChange={handleFormChange}
+                                  size="small"
+                                  sx={{ flexGrow: 1 }}
+                                />
+                              </Box>
+                            </>
+                          )}
+                        </>
+                      )}
                     </>
                   )}
                 </Box>

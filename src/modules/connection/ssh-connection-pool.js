@@ -1,6 +1,7 @@
 const Client = require("ssh2").Client;
 const { logToFile } = require("../../core/utils/logger");
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
+const proxyManager = require("../../core/proxy/proxy-manager");
 
 // 连接池配置常量
 const MAX_CONNECTIONS = 50; // 最大连接数
@@ -31,6 +32,9 @@ class SSHConnectionPool {
     if (this.isInitialized) {
       return;
     }
+
+    // 初始化代理管理器
+    proxyManager.initialize();
 
     this.startHealthCheck();
     this.isInitialized = true;
@@ -126,11 +130,13 @@ class SSHConnectionPool {
   async createConnection(sshConfig, connectionKey) {
     logToFile(`创建新SSH连接: ${connectionKey}`, "INFO");
 
-    // 检查是否需要通过代理
-    const usingProxy = this.isProxyConfigValid(sshConfig.proxy);
+    // 解析代理配置
+    const resolvedProxyConfig = proxyManager.resolveProxyConfig(sshConfig);
+    const usingProxy = this.isProxyConfigValid(resolvedProxyConfig);
+
     if (usingProxy) {
       logToFile(
-        `使用代理: ${sshConfig.proxy.type} ${sshConfig.proxy.host}:${sshConfig.proxy.port}`,
+        `使用代理: ${resolvedProxyConfig.type} ${resolvedProxyConfig.host}:${resolvedProxyConfig.port}`,
         "INFO",
       );
     }
@@ -223,7 +229,7 @@ class SSHConnectionPool {
           hasPrivateKey: !!processedConfig.privateKey,
           hasPrivateKeyPath: !!sshConfig.privateKeyPath,
           usingProxy: usingProxy,
-          proxyType: usingProxy ? sshConfig.proxy.type : null,
+          proxyType: usingProxy ? resolvedProxyConfig.type : null,
           isProxyError: isProxyError,
         };
 
@@ -262,19 +268,17 @@ class SSHConnectionPool {
 
       // 处理代理配置
       if (usingProxy) {
-        const proxyConfig = sshConfig.proxy;
-
         connectionOptions.proxy = {
-          host: proxyConfig.host,
-          port: proxyConfig.port,
-          type: this.getProxyProtocol(proxyConfig.type),
+          host: resolvedProxyConfig.host,
+          port: resolvedProxyConfig.port,
+          type: this.getProxyProtocol(resolvedProxyConfig.type),
         };
 
         // 处理代理身份认证
-        if (proxyConfig.username) {
-          connectionOptions.proxy.username = proxyConfig.username;
-          if (proxyConfig.password) {
-            connectionOptions.proxy.password = proxyConfig.password;
+        if (resolvedProxyConfig.username) {
+          connectionOptions.proxy.username = resolvedProxyConfig.username;
+          if (resolvedProxyConfig.password) {
+            connectionOptions.proxy.password = resolvedProxyConfig.password;
           }
         }
       }

@@ -1,4 +1,8 @@
 const https = require("https");
+const http = require("http");
+const { SocksProxyAgent } = require('socks-proxy-agent');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { HttpProxyAgent } = require('http-proxy-agent');
 
 const transformGeolocationDB = (data, ip) => {
   if (!data.IPv4) {
@@ -198,7 +202,7 @@ async function geocodeWithAmap(address, key, logger) {
   return null;
 }
 
-async function getPublicIp() {
+async function getPublicIp(proxyConfig = null) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: "api.ip.sb",
@@ -206,6 +210,25 @@ async function getPublicIp() {
       method: "GET",
       headers: { "User-Agent": "SimpleShell-App" },
     };
+
+    // 添加代理支持
+    if (proxyConfig && proxyConfig.host && proxyConfig.port) {
+      try {
+        if (proxyConfig.type === 'socks4' || proxyConfig.type === 'socks5') {
+          // SOCKS代理
+          const socksUrl = `${proxyConfig.type}://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ''}${proxyConfig.host}:${proxyConfig.port}`;
+          options.agent = new SocksProxyAgent(socksUrl);
+        } else {
+          // HTTP/HTTPS代理
+          const proxyUrl = `http://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ''}${proxyConfig.host}:${proxyConfig.port}`;
+          options.agent = new HttpsProxyAgent(proxyUrl);
+        }
+      } catch (proxyError) {
+        reject(new Error(`代理配置错误: ${proxyError.message}`));
+        return;
+      }
+    }
+
     const req = https.request(options, (res) => {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
@@ -226,7 +249,7 @@ async function getPublicIp() {
   });
 }
 
-function fetchIpInfo(provider, ip, logger) {
+function fetchIpInfo(provider, ip, logger, proxyConfig = null) {
   const url = provider.key
     ? provider.buildUrl(ip, provider.key)
     : provider.buildUrl(ip);
@@ -234,7 +257,7 @@ function fetchIpInfo(provider, ip, logger) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
     const requestModule =
-      parsedUrl.protocol === "https:" ? https : require("http");
+      parsedUrl.protocol === "https:" ? https : http;
     const options = {
       hostname: parsedUrl.hostname,
       path: parsedUrl.pathname + parsedUrl.search,
@@ -242,6 +265,28 @@ function fetchIpInfo(provider, ip, logger) {
       headers: { "User-Agent": "SimpleShell-App" },
       timeout: 5000,
     };
+
+    // 添加代理支持
+    if (proxyConfig && proxyConfig.host && proxyConfig.port) {
+      try {
+        if (proxyConfig.type === 'socks4' || proxyConfig.type === 'socks5') {
+          // SOCKS代理
+          const socksUrl = `${proxyConfig.type}://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ''}${proxyConfig.host}:${proxyConfig.port}`;
+          options.agent = new SocksProxyAgent(socksUrl);
+        } else {
+          // HTTP/HTTPS代理
+          const proxyUrl = `http://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ''}${proxyConfig.host}:${proxyConfig.port}`;
+          if (parsedUrl.protocol === "https:") {
+            options.agent = new HttpsProxyAgent(proxyUrl);
+          } else {
+            options.agent = new HttpProxyAgent(proxyUrl);
+          }
+        }
+      } catch (proxyError) {
+        reject(new Error(`代理配置错误: ${proxyError.message}`));
+        return;
+      }
+    }
 
     const req = requestModule.request(options, (res) => {
       if (res.statusCode !== 200) {
@@ -274,7 +319,7 @@ function fetchIpInfo(provider, ip, logger) {
   });
 }
 
-async function queryIpAddress(ip = "", logger = null) {
+async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
   try {
     const allProviders = [...DEFAULT_API_PROVIDERS];
     // Dynamically add key-based providers if their keys are present
@@ -288,11 +333,16 @@ async function queryIpAddress(ip = "", logger = null) {
       }
     }
 
+    // 记录代理配置使用情况
+    if (proxyConfig && proxyConfig.host && proxyConfig.port) {
+      logger(`使用代理进行IP查询: ${proxyConfig.type} ${proxyConfig.host}:${proxyConfig.port}`, "INFO");
+    }
+
     if (ip) {
       logger(`查询IP地址: ${ip}`, "INFO");
       const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
       const promises = lookupProviders.map((provider) =>
-        fetchIpInfo(provider, ip, logger),
+        fetchIpInfo(provider, ip, logger, proxyConfig),
       );
       return await Promise.any(promises);
     } else {
@@ -304,10 +354,10 @@ async function queryIpAddress(ip = "", logger = null) {
       };
 
       const chinesePromise = providers.chinese
-        ? fetchIpInfo(providers.chinese, "", logger)
+        ? fetchIpInfo(providers.chinese, "", logger, proxyConfig)
         : Promise.reject(new Error("Chinese provider not configured"));
       const geoPromise = providers.geo
-        ? fetchIpInfo(providers.geo, "", logger)
+        ? fetchIpInfo(providers.geo, "", logger, proxyConfig)
         : Promise.reject(new Error("Geo provider not configured"));
 
       const results = await Promise.allSettled([chinesePromise, geoPromise]);
@@ -350,10 +400,10 @@ async function queryIpAddress(ip = "", logger = null) {
       // Fallback if primary providers fail or don't exist
       logger("主查询服务失败或未配置，启用备用服务...", "INFO");
       const standardLookupPromise = (async () => {
-        const publicIp = await getPublicIp();
+        const publicIp = await getPublicIp(proxyConfig);
         const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
         const standardPromises = lookupProviders.map((provider) =>
-          fetchIpInfo(provider, publicIp, logger),
+          fetchIpInfo(provider, publicIp, logger, proxyConfig),
         );
         return Promise.any(standardPromises);
       })();

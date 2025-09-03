@@ -1571,6 +1571,27 @@ function setupIPC(mainWindow) {
     return selectKeyFile();
   });
 
+  // 代理配置相关IPC处理程序
+  ipcMain.handle("proxy:getStatus", async () => {
+    const proxyManager = require("./core/proxy/proxy-manager");
+    return proxyManager.getProxyStatus();
+  });
+
+  ipcMain.handle("proxy:getDefaultConfig", async () => {
+    const proxyManager = require("./core/proxy/proxy-manager");
+    return proxyManager.getDefaultProxyConfig();
+  });
+
+  ipcMain.handle("proxy:saveDefaultConfig", async (event, proxyConfig) => {
+    const proxyManager = require("./core/proxy/proxy-manager");
+    return proxyManager.saveDefaultProxyConfig(proxyConfig);
+  });
+
+  ipcMain.handle("proxy:getSystemConfig", async () => {
+    const proxyManager = require("./core/proxy/proxy-manager");
+    return proxyManager.getSystemProxyConfig();
+  });
+
   // 获取应用版本号
   ipcMain.handle("app:getVersion", async () => {
     return app.getVersion();
@@ -3474,7 +3495,9 @@ function setupIPC(mainWindow) {
   // 添加IP地址查询API处理函数
   ipcMain.handle("ip:query", async (event, ip = "") => {
     try {
-      return await ipQuery.queryIpAddress(ip, logToFile);
+      // 获取默认代理配置以用于IP查询
+      const proxyConfig = proxyManager.getDefaultProxyConfig();
+      return await ipQuery.queryIpAddress(ip, logToFile, proxyConfig);
     } catch (error) {
       logToFile(`IP地址查询失败: ${error.message}`, "ERROR");
       return {
