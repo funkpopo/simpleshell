@@ -266,7 +266,15 @@ const SkeletonLoader = memo(
                     backgroundColor: alpha(theme.palette.text.primary, 0.05),
                   }}
                 >
-                  <Box sx={{ width: 28, minWidth: 28, mr: 1, display: "flex", justifyContent: "center" }}>
+                  <Box
+                    sx={{
+                      width: 28,
+                      minWidth: 28,
+                      mr: 1,
+                      display: "flex",
+                      justifyContent: "center",
+                    }}
+                  >
                     <Skeleton
                       variant="circular"
                       width={18}
@@ -381,7 +389,13 @@ export const ResourceMonitorSkeleton = memo(() => {
       </Typography>
 
       {/* 系统信息卡片轮廓 */}
-      <Box sx={{ mb: 1, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+      <Box
+        sx={{
+          mb: 1,
+          borderRadius: 1,
+          border: `1px solid ${theme.palette.divider}`,
+        }}
+      >
         <Box
           sx={{
             display: "flex",
@@ -406,7 +420,13 @@ export const ResourceMonitorSkeleton = memo(() => {
       </Box>
 
       {/* CPU 卡片轮廓 */}
-      <Box sx={{ mb: 1, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+      <Box
+        sx={{
+          mb: 1,
+          borderRadius: 1,
+          border: `1px solid ${theme.palette.divider}`,
+        }}
+      >
         <Box
           sx={{
             display: "flex",
@@ -435,7 +455,13 @@ export const ResourceMonitorSkeleton = memo(() => {
       </Box>
 
       {/* 内存 卡片轮廓 */}
-      <Box sx={{ mb: 1, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+      <Box
+        sx={{
+          mb: 1,
+          borderRadius: 1,
+          border: `1px solid ${theme.palette.divider}`,
+        }}
+      >
         <Box
           sx={{
             display: "flex",
@@ -465,7 +491,13 @@ export const ResourceMonitorSkeleton = memo(() => {
       </Box>
 
       {/* 进程列表 卡片轮廓 */}
-      <Box sx={{ mb: 1, borderRadius: 1, border: `1px solid ${theme.palette.divider}` }}>
+      <Box
+        sx={{
+          mb: 1,
+          borderRadius: 1,
+          border: `1px solid ${theme.palette.divider}`,
+        }}
+      >
         <Box
           sx={{
             display: "flex",
@@ -491,7 +523,10 @@ export const ResourceMonitorSkeleton = memo(() => {
           </Box>
           {/* 行轮廓 */}
           {Array.from({ length: 4 }).map((_, i) => (
-            <Box key={i} sx={{ display: "flex", alignItems: "center", py: 0.75 }}>
+            <Box
+              key={i}
+              sx={{ display: "flex", alignItems: "center", py: 0.75 }}
+            >
               <Skeleton variant="text" width="45%" height={14} />
               <Skeleton
                 variant="rectangular"

@@ -4036,14 +4036,14 @@ const WebTerminal = ({
       }}
     >
       <div className="terminal-container">
-          <div
-            ref={terminalRef}
-            style={{
-              width: "100%",
-              height: "100%",
-              padding: "0 0 0 0",
-            }}
-          />
+        <div
+          ref={terminalRef}
+          style={{
+            width: "100%",
+            height: "100%",
+            padding: "0 0 0 0",
+          }}
+        />
 
         {!showSearchBar && isActive && (
           <Tooltip title="打开搜索 (Ctrl+/)">
