@@ -62,6 +62,8 @@ const AISettings = ({ open, onClose }) => {
   // 加载AI设置
   useEffect(() => {
     if (open) {
+      setEditMode(false);
+      setEditingConfig(null);
       loadSettings();
     }
   }, [open]);
@@ -323,6 +325,8 @@ const AISettings = ({ open, onClose }) => {
   const handleClose = () => {
     setError("");
     setSuccess("");
+    setEditMode(false);
+    setEditingConfig(null);
     onClose();
   };
 
