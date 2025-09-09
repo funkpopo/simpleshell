@@ -3586,6 +3586,7 @@ function setupIPC(mainWindow) {
   ipcMain.handle("ip:query", async (event, ip = "") => {
     try {
       // 获取默认代理配置以用于IP查询
+      const proxyManager = require("./core/proxy/proxy-manager");
       const proxyConfig = proxyManager.getDefaultProxyConfig();
       return await ipQuery.queryIpAddress(ip, logToFile, proxyConfig);
     } catch (error) {
