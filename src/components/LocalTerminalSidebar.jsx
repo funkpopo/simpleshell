@@ -65,8 +65,9 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const [detectedTerminals, setDetectedTerminals] = useState([]);
-  const [isDetecting, setIsDetecting] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(true); // 初始状态设为检测中
   const [searchQuery, setSearchQuery] = useState("");
+  const [hasInitialDetection, setHasInitialDetection] = useState(false); // 跟踪是否已进行初始检测
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -121,15 +122,21 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         console.log("终端数量:", terminals?.length);
 
         setDetectedTerminals(terminals || []);
-        setSnackbar({
-          open: true,
-          message: t("localTerminal.detectSuccess", {
-            count: terminals?.length || 0,
-          }),
-          severity: "success",
-        });
+        setHasInitialDetection(true); // 标记已完成初始检测
+        
+        // 只在手动刷新时显示成功消息，初始检测不显示
+        if (hasInitialDetection) {
+          setSnackbar({
+            open: true,
+            message: t("localTerminal.detectSuccess", {
+              count: terminals?.length || 0,
+            }),
+            severity: "success",
+          });
+        }
       } else {
         console.error("terminalAPI.detectLocalTerminals 不可用");
+        setHasInitialDetection(true);
         setSnackbar({
           open: true,
           message: "终端API不可用",
@@ -138,6 +145,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       }
     } catch (error) {
       console.error("Failed to detect terminals:", error);
+      setHasInitialDetection(true);
       setSnackbar({
         open: true,
         message: t("localTerminal.detectError"),
@@ -146,14 +154,14 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     } finally {
       setIsDetecting(false);
     }
-  }, [t]);
+  }, [t, hasInitialDetection]);
 
   // 初始检测终端
   useEffect(() => {
-    if (open && detectedTerminals.length === 0) {
+    if (open && !hasInitialDetection) {
       detectTerminals();
     }
-  }, [open, detectedTerminals.length, detectTerminals]);
+  }, [open, hasInitialDetection, detectTerminals]);
 
   // 过滤终端列表
   const filteredTerminals = useMemo(() => {
@@ -415,11 +423,14 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
               ))}
             </List>
           ) : (
-            <Alert severity="info" sx={{ mt: 1 }}>
-              {isDetecting
-                ? t("localTerminal.detecting")
-                : t("localTerminal.noTerminals")}
-            </Alert>
+            // 只有在初始检测完成后才显示提示信息
+            hasInitialDetection && (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                {searchQuery
+                  ? t("localTerminal.noSearchResults")
+                  : t("localTerminal.noTerminals")}
+              </Alert>
+            )
           )}
         </Box>
       </Box>

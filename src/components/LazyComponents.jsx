@@ -4,7 +4,7 @@ import LoadingFallback from "./LoadingFallback.jsx";
 import {
   FileManagerSkeleton,
   ResourceMonitorSkeleton,
-  TerminalSkeleton,
+  LocalTerminalSidebarSkeleton,
   SettingsSkeleton,
   CommandHistorySkeleton,
   AIChatSkeleton,
@@ -91,7 +91,7 @@ export const LocalTerminalSidebarWithSuspense = createLazyComponent(
   () => import("./LocalTerminalSidebar.jsx"),
   "正在加载本地终端...",
   "本地终端",
-  TerminalSkeleton,
+  LocalTerminalSidebarSkeleton,
 );
 
 // AI助手组件（如果存在）- 保持兼容性
