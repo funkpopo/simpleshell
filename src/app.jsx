@@ -831,7 +831,11 @@ function App() {
       try {
         // 从全局processCache获取processId（WebTerminal组件设置的）
         const processId = window.processCache && window.processCache[tabId];
-        if (processId && window.terminalAPI && window.terminalAPI.cleanupConnection) {
+        if (
+          processId &&
+          window.terminalAPI &&
+          window.terminalAPI.cleanupConnection
+        ) {
           await window.terminalAPI.cleanupConnection(processId);
         }
       } catch (cleanupError) {

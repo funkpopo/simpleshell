@@ -1788,14 +1788,21 @@ function setupIPC(mainWindow) {
         ) {
           const sshClient =
             processObj.client || processObj.process || processObj.channel;
-          
+
           // 检查SSH连接是否仍然有效
-          if (!sshClient || (sshClient._readableState && sshClient._readableState.ended) || 
-              (sshClient._sock && (!sshClient._sock.readable || !sshClient._sock.writable))) {
-            logToFile(`SSH connection not available for process ${processId}, falling back to local process list`, "WARN");
+          if (
+            !sshClient ||
+            (sshClient._readableState && sshClient._readableState.ended) ||
+            (sshClient._sock &&
+              (!sshClient._sock.readable || !sshClient._sock.writable))
+          ) {
+            logToFile(
+              `SSH connection not available for process ${processId}, falling back to local process list`,
+              "WARN",
+            );
             return systemInfo.getProcessList();
           }
-          
+
           return systemInfo.getRemoteProcessList(sshClient);
         } else {
           return systemInfo.getProcessList();
@@ -1824,25 +1831,34 @@ function setupIPC(mainWindow) {
       }
 
       logToFile(`Cleaning up connection for process ${processId}`, "INFO");
-      
+
       // 删除子进程映射
       if (childProcesses.has(processId)) {
         const processObj = childProcesses.get(processId);
-        
+
         // 关闭SSH连接（如果存在）
         try {
-          if (processObj.client && typeof processObj.client.end === 'function') {
+          if (
+            processObj.client &&
+            typeof processObj.client.end === "function"
+          ) {
             processObj.client.end();
           }
-          if (processObj.process && typeof processObj.process.kill === 'function') {
+          if (
+            processObj.process &&
+            typeof processObj.process.kill === "function"
+          ) {
             processObj.process.kill();
           }
         } catch (cleanupError) {
-          logToFile(`Error during connection cleanup: ${cleanupError.message}`, "WARN");
+          logToFile(
+            `Error during connection cleanup: ${cleanupError.message}`,
+            "WARN",
+          );
         }
-        
+
         childProcesses.delete(processId);
-        
+
         // 如果有tabId也清理
         if (processObj.config && processObj.config.tabId) {
           childProcesses.delete(processObj.config.tabId);

@@ -65,7 +65,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("terminal:getSystemInfo", processId),
   getProcessList: (processId) =>
     ipcRenderer.invoke("terminal:getProcessList", processId),
-  
+
   // 连接管理API
   cleanupConnection: (processId) =>
     ipcRenderer.invoke("terminal:cleanupConnection", processId),
