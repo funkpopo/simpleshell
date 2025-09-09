@@ -605,6 +605,93 @@ export const AIChatSkeleton = memo(() => {
   );
 });
 
+export const LocalTerminalSidebarSkeleton = memo(() => {
+  const theme = useTheme();
+  return (
+    <Box
+      sx={{
+        width: 300,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        backgroundColor: theme.palette.background.paper,
+      }}
+    >
+      {/* 头部骨架 */}
+      <Box
+        sx={{
+          p: 2,
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          display: "flex",
+          alignItems: "center",
+          gap: 1,
+        }}
+      >
+        <Skeleton variant="text" width={120} height={24} />
+        <Box sx={{ flexGrow: 1 }} />
+        <Skeleton variant="circular" width={28} height={28} />
+        <Skeleton variant="circular" width={28} height={28} />
+      </Box>
+
+      {/* 搜索框骨架 */}
+      <Box sx={{ p: 2, pb: 1 }}>
+        <Skeleton
+          variant="rectangular"
+          width="100%"
+          height={36}
+          sx={{ borderRadius: 2 }}
+        />
+      </Box>
+
+      {/* 标题骨架 */}
+      <Box sx={{ px: 2, pb: 1 }}>
+        <Skeleton variant="text" width={150} height={20} />
+      </Box>
+
+      {/* 终端列表骨架 */}
+      <Box sx={{ px: 2, flex: 1, overflow: "hidden" }}>
+        <Stack spacing={1}>
+          {Array.from({ length: 5 }, (_, index) => (
+            <Box
+              key={index}
+              sx={{
+                p: 1.5,
+                borderRadius: 1,
+                backgroundColor: alpha(theme.palette.action.hover, 0.3),
+                display: "flex",
+                alignItems: "center",
+                gap: 1.5,
+              }}
+            >
+              {/* 图标骨架 */}
+              <Box
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: theme.palette.background.paper,
+                  border: `1px solid ${theme.palette.divider}`,
+                }}
+              >
+                <Skeleton variant="circular" width={20} height={20} />
+              </Box>
+              
+              {/* 文本骨架 */}
+              <Box sx={{ flex: 1 }}>
+                <Skeleton variant="text" width="70%" height={18} />
+                <Skeleton variant="text" width="50%" height={14} />
+              </Box>
+            </Box>
+          ))}
+        </Stack>
+      </Box>
+    </Box>
+  );
+});
+
 SkeletonLoader.displayName = "SkeletonLoader";
 
 export default SkeletonLoader;
