@@ -247,7 +247,7 @@ const ConnectionManager = memo(
     const [dialogType, setDialogType] = useState(""); // 'connection' 或 'group'
     const [dialogMode, setDialogMode] = useState(""); // 'add' 或 'edit'
     const [selectedItem, setSelectedItem] = useState(null);
-    
+
     // 确认删除对话框状态
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteItem, setDeleteItem] = useState(null);
@@ -404,10 +404,10 @@ const ConnectionManager = memo(
     // 删除项目 - 显示确认对话框
     const handleDelete = useCallback(
       (itemId, parentGroup = null) => {
-        const item = parentGroup 
-          ? parentGroup.items.find(item => item.id === itemId)
-          : connections.find(item => item.id === itemId);
-        
+        const item = parentGroup
+          ? parentGroup.items.find((item) => item.id === itemId)
+          : connections.find((item) => item.id === itemId);
+
         if (item) {
           setDeleteItem({ item, parentGroup, itemId });
           setDeleteConfirmOpen(true);
@@ -419,10 +419,10 @@ const ConnectionManager = memo(
     // 确认删除项目
     const handleConfirmDelete = useCallback(() => {
       if (!deleteItem) return;
-      
+
       const { itemId, parentGroup } = deleteItem;
       let newConnections;
-      
+
       if (parentGroup) {
         // 删除组内的连接
         newConnections = connections.map((group) =>
@@ -455,7 +455,7 @@ const ConnectionManager = memo(
       // 关闭确认对话框并清理状态
       setDeleteConfirmOpen(false);
       setDeleteItem(null);
-      
+
       setSnackbar({
         open: true,
         message: "删除成功",
@@ -859,8 +859,8 @@ const ConnectionManager = memo(
                 {...provided.draggableProps}
                 disablePadding
                 sx={{
-                  pl: parentGroup ? 2 : 1,
-                  minHeight: "40px", // 统一最小高度
+                  pl: parentGroup ? 1.5 : 0.5, // 减小左侧内边距
+                  minHeight: "32px", // 减小最小高度
                   "&:hover": {
                     backgroundColor:
                       theme.palette.mode === "dark"
@@ -911,8 +911,9 @@ const ConnectionManager = memo(
                     alignItems: "center",
                     cursor: "grab",
                     "&:active": { cursor: "grabbing" },
-                    minWidth: 32, // 统一拖拽图标容器宽度
+                    minWidth: 20, // 进一步减小拖拽图标容器宽度
                     justifyContent: "center", // 确保图标居中对齐
+                    mr: 0.25, // 减小右侧边距
                   }}
                 >
                   <DragIndicatorIcon
@@ -925,15 +926,14 @@ const ConnectionManager = memo(
                   dense
                   sx={{
                     flexGrow: 1,
-                    py: 0.75, // 统一上下内边距
+                    py: 0.5, // 减小上下内边距
                     "&:hover": {
                       backgroundColor: "transparent", // 防止ListItemButton自身的hover效果
                     },
                   }}
                 >
-                  <ListItemIcon sx={{ minWidth: 40 }}>
-                    {" "}
-                    {/* 统一图标容器宽度 */}
+                  <ListItemIcon sx={{ minWidth: 28, ml: -0.5 }}>
+                    {/* 减小图标容器宽度并添加负左边距 */}
                     {getProtocolIcon()}
                   </ListItemIcon>
                   <ListItemText
@@ -959,18 +959,20 @@ const ConnectionManager = memo(
                     sx={{
                       my: 0,
                       "& .MuiListItemText-primary": {
-                        fontSize: "0.875rem", // 统一主文本字体大小
+                        fontSize: "0.85rem", // 稍微减小主文本字体大小
                         textOverflow: "ellipsis",
                         overflow: "hidden",
                         whiteSpace: "nowrap",
                         maxWidth: "calc(100% - 20px)", // 预留按钮的空间
                       },
                       "& .MuiListItemText-secondary": {
-                        fontSize: "0.75rem", // 统一副文本字体大小
+                        fontSize: "0.7rem", // 稍微减小副文本字体大小
                         textOverflow: "ellipsis",
                         overflow: "hidden",
                         whiteSpace: "nowrap",
                         maxWidth: "calc(100% - 20px)", // 预留按钮的空间
+                        lineHeight: 1.2, // 减小行高
+                        mt: 0.25, // 减小上边距
                       },
                     }}
                   />
@@ -1001,7 +1003,8 @@ const ConnectionManager = memo(
                   ref={provided.innerRef}
                   {...provided.draggableProps}
                   sx={{
-                    minHeight: "40px", // 统一最小高度
+                    pl: 0.5, // 减小左侧内边距
+                    minHeight: "32px", // 减小最小高度
                     "&:hover": {
                       backgroundColor:
                         theme.palette.mode === "dark"
@@ -1070,8 +1073,9 @@ const ConnectionManager = memo(
                       alignItems: "center",
                       cursor: "grab",
                       "&:active": { cursor: "grabbing" },
-                      minWidth: 32, // 统一拖拽图标容器宽度
+                      minWidth: 20, // 进一步减小拖拽图标容器宽度
                       justifyContent: "center", // 确保图标居中对齐
+                      mr: 0.25, // 减小右侧边距
                     }}
                   >
                     <DragIndicatorIcon
@@ -1082,16 +1086,15 @@ const ConnectionManager = memo(
                   <ListItemButton
                     onClick={() => handleToggleGroup(group.id)}
                     sx={{
-                      py: 0.75, // 统一上下内边距
+                      py: 0.5, // 减小上下内边距
                       flexGrow: 1,
                       "&:hover": {
                         backgroundColor: "transparent",
                       },
                     }}
                   >
-                    <ListItemIcon sx={{ minWidth: 40 }}>
-                      {" "}
-                      {/* 统一图标容器宽度 */}
+                    <ListItemIcon sx={{ minWidth: 28, ml: -0.5 }}>
+                      {/* 减小图标容器宽度并添加负左边距 */}
                       {group.expanded ? (
                         <FolderOpenIcon fontSize="small" />
                       ) : (
@@ -1104,7 +1107,7 @@ const ConnectionManager = memo(
                         variant: "body2",
                         fontWeight: "medium",
                         margin: 0,
-                        fontSize: "0.875rem", // 统一主文本字体大小
+                        fontSize: "0.85rem", // 稍微减小主文本字体大小
                       }}
                       sx={{ my: 0 }}
                     />
@@ -1152,7 +1155,7 @@ const ConnectionManager = memo(
                         component="div"
                         disablePadding
                         sx={{
-                          pl: 2,
+                          pl: 1.5, // 减小组内项目的左侧内边距
                           display:
                             group.expanded || snapshot.isDraggingOver
                               ? "block"
@@ -1726,25 +1729,26 @@ const ConnectionManager = memo(
               onClose={handleCancelDelete}
               maxWidth="xs"
             >
-              <DialogTitle>
-                确认删除
-              </DialogTitle>
+              <DialogTitle>确认删除</DialogTitle>
               <DialogContent>
                 <Typography>
-                  {deleteItem?.item?.type === 'group' 
+                  {deleteItem?.item?.type === "group"
                     ? `确定要删除分组 "${deleteItem?.item?.name}" 吗？删除分组将同时删除组内的所有连接项。`
-                    : `确定要删除连接 "${deleteItem?.item?.name}" 吗？`
-                  }
+                    : `确定要删除连接 "${deleteItem?.item?.name}" 吗？`}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mt: 1 }}
+                >
                   此操作无法撤销。
                 </Typography>
               </DialogContent>
               <DialogActions>
                 <Button onClick={handleCancelDelete}>取消</Button>
-                <Button 
-                  onClick={handleConfirmDelete} 
-                  variant="contained" 
+                <Button
+                  onClick={handleConfirmDelete}
+                  variant="contained"
                   color="error"
                 >
                   删除

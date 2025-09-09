@@ -451,12 +451,16 @@ async function getRemoteSystemInfo(sshClient) {
 async function getRemoteProcessList(sshClient) {
   return new Promise((resolve, reject) => {
     // 检查SSH连接是否有效
-    if (!sshClient || (sshClient._readableState && sshClient._readableState.ended) || 
-        (sshClient._sock && (!sshClient._sock.readable || !sshClient._sock.writable))) {
+    if (
+      !sshClient ||
+      (sshClient._readableState && sshClient._readableState.ended) ||
+      (sshClient._sock &&
+        (!sshClient._sock.readable || !sshClient._sock.writable))
+    ) {
       reject(new Error("SSH连接不可用"));
       return;
     }
-    
+
     // 使用ps命令获取进程列表，--no-headers避免输出标题行
     // 输出格式：PID,PPID,CPU使用率,内存使用率,用户,命令名
     const command = "ps -axo pid,ppid,%cpu,%mem,user:20,comm --no-headers";
