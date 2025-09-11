@@ -317,6 +317,42 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         ipcRenderer.removeListener(progressChannel, handler);
       });
   },
+  // 新增: 上传拖拽文件API (用于文件管理器拖放功能)
+  uploadDroppedFiles: (tabId, targetFolder, uploadData, progressCallback) => {
+    // Unique channel for this specific upload
+    const progressChannel = `upload-dropped-progress-${tabId}-${Date.now()}`;
+
+    // Listen for progress updates on the unique channel
+    const handler = (event, progressData) => {
+      if (progressCallback && typeof progressCallback === "function") {
+        // 确保传递标准化的进度数据格式
+        progressCallback(
+          progressData.progress || 0,
+          progressData.fileName || "",
+          progressData.transferredBytes || 0,
+          progressData.totalBytes || 0,
+          progressData.transferSpeed || 0,
+          progressData.remainingTime || 0,
+          progressData.currentFileIndex || 0,
+          progressData.totalFiles || 0,
+          progressData.transferKey || "",
+        );
+      }
+      // If operation is complete or cancelled, remove listener
+      if (progressData.operationComplete || progressData.cancelled) {
+        ipcRenderer.removeListener(progressChannel, handler);
+      }
+    };
+    ipcRenderer.on(progressChannel, handler);
+
+    // Invoke the main process to start the upload, passing the unique channel
+    return ipcRenderer
+      .invoke("uploadDroppedFiles", tabId, targetFolder, uploadData, progressChannel)
+      .finally(() => {
+        // Ensure listener is removed if invoke fails or completes without progressData signal
+        ipcRenderer.removeListener(progressChannel, handler);
+      });
+  },
   // 新增: 下载文件夹API
   downloadFolder: (tabId, remoteFolderPath, progressCallback) => {
     // 注册一个临时的进度监听器
