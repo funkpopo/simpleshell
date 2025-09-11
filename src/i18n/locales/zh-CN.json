@@ -396,6 +396,9 @@
         "createFolderFailed": "创建文件夹失败",
         "unknownError": "未知错误",
         "refreshTimeout": "刷新超时",
+        "noFilesSelected": "没有选择文件",
+        "dragDropNotSupported": "不支持拖放上传",
+        "noConnection": "没有可用的SSH连接",
         "userCancelled": "用户已取消",
         "operationCancelled": "操作已取消",
         "sftpError": "SFTP错误",
@@ -404,10 +407,16 @@
       "messages": {
         "preparingUpload": "准备上传...",
         "uploadComplete": "上传完成",
+        "uploadSuccess": "文件上传成功",
+        "uploadFailed": "上传失败",
+        "unknownFile": "未知文件",
         "retrying": "正在重试 ({{current}}/{{max}})...",
         "batchDeleteConfirm": "确定要删除选中的 {{count}} 个文件吗？",
         "deleteConfirm": "确定要删除 {{name}} 吗？",
-        "operationInProgress": "操作进行中..."
+        "operationInProgress": "操作进行中...",
+        "dragDropMessage": "拖放文件到此处上传",
+        "uploadToFolder": "上传到文件夹: {{folder}}",
+        "uploadToCurrentFolder": "上传到当前文件夹"
       },
       "fileTypes": {
         "folder": "文件夹",

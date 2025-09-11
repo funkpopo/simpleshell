@@ -396,6 +396,9 @@
         "createFolderFailed": "Failed to create folder",
         "unknownError": "Unknown error",
         "refreshTimeout": "Refresh timeout",
+        "noFilesSelected": "No files selected",
+        "dragDropNotSupported": "Drag and drop upload is not supported",
+        "noConnection": "No SSH connection available",
         "userCancelled": "User cancelled",
         "operationCancelled": "Operation cancelled",
         "sftpError": "SFTP error",
@@ -404,10 +407,16 @@
       "messages": {
         "preparingUpload": "Preparing upload...",
         "uploadComplete": "Upload complete",
+        "uploadSuccess": "Files uploaded successfully",
+        "uploadFailed": "Upload failed",
+        "unknownFile": "Unknown file",
         "retrying": "Retrying ({{current}}/{{max}})...",
         "batchDeleteConfirm": "Are you sure you want to delete {{count}} selected files?",
         "deleteConfirm": "Are you sure you want to delete {{name}}?",
-        "operationInProgress": "Operation in progress..."
+        "operationInProgress": "Operation in progress...",
+        "dragDropMessage": "Drop files here to upload",
+        "uploadToFolder": "Upload to folder: {{folder}}",
+        "uploadToCurrentFolder": "Upload to current folder"
       },
       "fileTypes": {
         "folder": "Folder",

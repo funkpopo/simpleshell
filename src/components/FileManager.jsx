@@ -115,9 +115,48 @@ const FileManager = memo(
     const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
     const [pathHistory, setPathHistory] = useState([]); // 路径历史记录
     const [historyIndex, setHistoryIndex] = useState(-1); // 当前在历史记录中的位置
+    const [isDragging, setIsDragging] = useState(false); // 拖拽状态
+    const [dragCounter, setDragCounter] = useState(0); // 拖拽计数器，用于处理子元素的dragenter/dragleave
 
     // 用于存储延迟移除定时器的引用
     const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
+
+    // 拖拽事件处理函数
+    const handleDragEnter = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // 增加计数器
+      setDragCounter(prev => prev + 1);
+      
+      // 检查是否包含文件
+      if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+        setIsDragging(true);
+      }
+    }, []);
+
+    const handleDragLeave = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // 减少计数器
+      setDragCounter(prev => {
+        const newCounter = prev - 1;
+        // 只有当计数器为0时才真正离开拖拽区域
+        if (newCounter === 0) {
+          setIsDragging(false);
+        }
+        return newCounter;
+      });
+    }, []);
+
+    const handleDragOver = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // 设置允许的拖拽效果
+      e.dataTransfer.dropEffect = 'copy';
+    }, []);
 
     // 键盘快捷键处理
     useEffect(() => {
@@ -1850,6 +1889,302 @@ const FileManager = memo(
       }
     }, USER_ACTIVITY_REFRESH_DELAY);
 
+    // 处理拖拽的文件和文件夹
+    const handleDroppedItems = useCallback(async (entries) => {
+      setTransferCancelled(false);
+      
+      // 确定目标路径
+      let targetPath = currentPath;
+      if (selectedFile && selectedFile.isDirectory) {
+        if (currentPath === "/") {
+          targetPath = "/" + selectedFile.name;
+        } else if (currentPath === "~") {
+          targetPath = "~/" + selectedFile.name;
+        } else {
+          targetPath = currentPath + "/" + selectedFile.name;
+        }
+      }
+
+      // 收集所有文件信息
+      const allFiles = [];
+      
+      // 递归读取文件夹内容
+      const readEntry = async (entry, path = '') => {
+        if (entry.isFile) {
+          return new Promise((resolve) => {
+            entry.file((file) => {
+              allFiles.push({
+                file: file,
+                relativePath: path + file.name
+              });
+              resolve();
+            }, (error) => {
+              console.error('Error reading file:', error);
+              resolve();
+            });
+          });
+        } else if (entry.isDirectory) {
+          const reader = entry.createReader();
+          return new Promise((resolve) => {
+            const readEntries = () => {
+              reader.readEntries(async (entries) => {
+                if (entries.length === 0) {
+                  resolve();
+                  return;
+                }
+                
+                for (const childEntry of entries) {
+                  await readEntry(childEntry, path + entry.name + '/');
+                }
+                
+                // 继续读取（一次可能读不完所有文件）
+                readEntries();
+              }, (error) => {
+                console.error('Error reading directory:', error);
+                resolve();
+              });
+            };
+            readEntries();
+          });
+        }
+      };
+
+      // 读取所有拖拽的项目
+      for (const entry of entries) {
+        await readEntry(entry);
+      }
+
+      if (allFiles.length === 0) {
+        setNotification({
+          message: t("fileManager.errors.noFilesSelected"),
+          severity: "warning",
+        });
+        return;
+      }
+
+      // 使用现有的上传逻辑 - 通过创建FormData来处理文件
+      if (window.terminalAPI && window.terminalAPI.uploadDroppedFiles) {
+        // 创建新的传输任务
+        const transferId = addTransferProgress({
+          type: "upload-multifile",
+          progress: 0,
+          fileName: t("fileManager.messages.preparingUpload"),
+          transferredBytes: 0,
+          totalBytes: 0,
+          transferSpeed: 0,
+          remainingTime: 0,
+          currentFileIndex: 0,
+          totalFiles: allFiles.length,
+        });
+
+        try {
+          // 准备文件数据供IPC传输
+          const filesDataForUpload = [];
+          
+          // 收集文件夹结构
+          const foldersToCreate = new Set();
+          
+          for (const item of allFiles) {
+            // 提取文件夹路径
+            if (item.relativePath) {
+              const pathParts = item.relativePath.split('/');
+              // 去掉文件名，只保留文件夹路径
+              pathParts.pop();
+              
+              // 收集所有需要创建的文件夹路径
+              let currentPath = '';
+              for (const part of pathParts) {
+                if (part) {
+                  currentPath = currentPath ? currentPath + '/' + part : part;
+                  foldersToCreate.add(currentPath);
+                }
+              }
+            }
+            
+            // 读取文件内容为ArrayBuffer
+            const arrayBuffer = await item.file.arrayBuffer();
+            
+            // 对于大文件，分块处理以避免 "Invalid array length" 错误
+            const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
+            const chunks = [];
+            
+            if (arrayBuffer.byteLength > CHUNK_SIZE) {
+              // 大文件分块
+              for (let offset = 0; offset < arrayBuffer.byteLength; offset += CHUNK_SIZE) {
+                const end = Math.min(offset + CHUNK_SIZE, arrayBuffer.byteLength);
+                const chunk = new Uint8Array(arrayBuffer.slice(offset, end));
+                chunks.push(Array.from(chunk));
+              }
+            } else {
+              // 小文件直接转换
+              chunks.push(Array.from(new Uint8Array(arrayBuffer)));
+            }
+            
+            filesDataForUpload.push({
+              name: item.file.name,
+              relativePath: item.relativePath,
+              size: item.file.size,
+              type: item.file.type,
+              lastModified: item.file.lastModified,
+              chunks: chunks,
+              isChunked: chunks.length > 1
+            });
+          }
+
+          // 调用主进程的上传方法，包含文件夹结构信息
+          const result = await window.terminalAPI.uploadDroppedFiles(
+            tabId,
+            targetPath,
+            {
+              files: filesDataForUpload,
+              folders: Array.from(foldersToCreate).sort() // 排序确保父文件夹先创建
+            },
+            (
+              progress,
+              fileName,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime,
+              currentFileIndex,
+              totalFiles,
+              transferKey,
+            ) => {
+              // 验证并标准化进度数据
+              const validProgress = Math.max(0, Math.min(100, progress || 0));
+              const validTransferredBytes = Math.max(0, transferredBytes || 0);
+              const validTotalBytes = Math.max(0, totalBytes || 0);
+              const validTransferSpeed = Math.max(0, transferSpeed || 0);
+
+              // 检查是否已取消
+              if (transferCancelled) {
+                return;
+              }
+
+              // 更新传输进度
+              updateTransferProgress(transferId, {
+                progress: validProgress,
+                fileName: fileName || t("fileManager.messages.unknownFile"),
+                transferredBytes: validTransferredBytes,
+                totalBytes: validTotalBytes,
+                transferSpeed: validTransferSpeed,
+                remainingTime: remainingTime || 0,
+                currentFileIndex: currentFileIndex || 0,
+                totalFiles: totalFiles || 1,
+                transferKey: transferKey,
+              });
+            },
+          );
+
+          if (result.success) {
+            // 更新传输进度为完成
+            updateTransferProgress(transferId, {
+              progress: 100,
+              isCompleted: true,
+            });
+
+            // 延迟移除已完成的传输
+            addTimeout(() => {
+              removeTransferProgress(transferId);
+            }, 1000);
+
+            // 显示成功通知
+            setNotification({
+              message: t("fileManager.messages.uploadSuccess"),
+              severity: "success",
+            });
+
+            // 刷新文件列表
+            refreshAfterUserActivity();
+          } else {
+            throw new Error(result.error || t("fileManager.errors.uploadFailed"));
+          }
+        } catch (error) {
+          console.error("Upload error:", error);
+          
+          // 检查是否为用户取消操作
+          const isCancellation = isUserCancellationError(error);
+          
+          // 更新传输进度为错误或取消
+          updateTransferProgress(transferId, {
+            error: !isCancellation,
+            isCancelled: isCancellation,
+            errorMessage: error.message || error.toString(),
+          });
+
+          if (!isCancellation) {
+            setNotification({
+              message: error.message || t("fileManager.errors.uploadFailed"),
+              severity: "error",
+            });
+          }
+
+          // 延迟移除错误的传输
+          addTimeout(() => {
+            removeTransferProgress(transferId);
+          }, 3000);
+        }
+      } else {
+        // 如果没有专门的拖拽上传API，显示错误
+        setNotification({
+          message: t("fileManager.errors.dragDropNotSupported") || "拖拽上传功能暂不可用",
+          severity: "error",
+        });
+      }
+    }, [currentPath, selectedFile, tabId, t, transferCancelled, addTransferProgress, updateTransferProgress, removeTransferProgress, addTimeout, isUserCancellationError, refreshAfterUserActivity, setNotification]);
+
+    const handleDrop = useCallback(async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // 重置拖拽状态
+      setIsDragging(false);
+      setDragCounter(0);
+      
+      if (!sshConnection) {
+        setNotification({
+          message: t("fileManager.errors.noConnection"),
+          severity: "error",
+        });
+        return;
+      }
+
+      // 获取拖拽的文件和文件夹
+      const items = e.dataTransfer.items;
+      if (!items || items.length === 0) return;
+
+      // 将 DataTransferItemList 转换为数组
+      const itemsArray = Array.from(items);
+      
+      // 收集所有的文件和文件夹
+      const filesAndFolders = [];
+      
+      for (const item of itemsArray) {
+        if (item.kind === 'file') {
+          const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : item.getAsEntry?.();
+          if (entry) {
+            filesAndFolders.push(entry);
+          } else {
+            // 如果不支持 getAsEntry，回退到 getAsFile
+            const file = item.getAsFile();
+            if (file) {
+              filesAndFolders.push({
+                isFile: true,
+                isDirectory: false,
+                file: () => Promise.resolve(file),
+                name: file.name
+              });
+            }
+          }
+        }
+      }
+
+      if (filesAndFolders.length === 0) return;
+
+      // 处理文件和文件夹上传
+      await handleDroppedItems(filesAndFolders);
+    }, [sshConnection, t, handleDroppedItems, setNotification]);
+
     // 在特定的回调函数中调用refreshAfterUserActivity
 
     // 处理文件激活（双击）
@@ -2936,6 +3271,10 @@ const FileManager = memo(
 
     return (
       <Paper
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         sx={{
           width: open ? 300 : 0,
           height: "100%",
@@ -2950,6 +3289,12 @@ const FileManager = memo(
           position: "relative",
           borderTopRightRadius: 0,
           borderBottomRightRadius: 0,
+          // 拖拽时的视觉反馈
+          ...(isDragging && {
+            backgroundColor: theme.palette.action.hover,
+            border: `2px dashed ${theme.palette.primary.main}`,
+            boxShadow: `0 0 20px ${theme.palette.primary.main}30`,
+          }),
         }}
         tabIndex={0} // 使得Paper元素可以接收键盘事件
       >
@@ -3694,6 +4039,66 @@ const FileManager = memo(
             <ListItemText>按时间排序</ListItemText>
           </MenuItem>
         </Menu>
+        
+        {/* 拖拽覆盖层 */}
+        {isDragging && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(25, 118, 210, 0.08)",
+              backdropFilter: "blur(2px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1500,
+              pointerEvents: "none",
+            }}
+          >
+            <Paper
+              elevation={4}
+              sx={{
+                p: 3,
+                backgroundColor: theme.palette.background.paper,
+                border: `2px solid ${theme.palette.primary.main}`,
+                borderRadius: 2,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 2,
+              }}
+            >
+              <UploadFileIcon
+                sx={{
+                  fontSize: 48,
+                  color: theme.palette.primary.main,
+                }}
+              />
+              <Typography
+                variant="h6"
+                sx={{
+                  color: theme.palette.primary.main,
+                  fontWeight: "medium",
+                }}
+              >
+                {t("fileManager.dragDropMessage")}
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: theme.palette.text.secondary,
+                }}
+              >
+                {selectedFile && selectedFile.isDirectory
+                  ? t("fileManager.uploadToFolder", { folder: selectedFile.name })
+                  : t("fileManager.uploadToCurrentFolder") + `: ${currentPath}`}
+              </Typography>
+            </Paper>
+          </Box>
+        )}
       </Paper>
     );
   },
