@@ -2787,23 +2787,28 @@ function setupIPC(mainWindow) {
         const path = require("path");
         const os = require("os");
         const tempDir = os.tmpdir();
-        
+
         // 首先创建远程文件夹结构
         if (uploadData.folders && uploadData.folders.length > 0) {
           const sftp = await sftpCore.getSftpSession(tabId);
-          
+
           for (const folderPath of uploadData.folders) {
-            const remoteFolderPath = path.posix.join(targetFolder, folderPath).replace(/\\/g, '/');
-            
+            const remoteFolderPath = path.posix
+              .join(targetFolder, folderPath)
+              .replace(/\\/g, "/");
+
             try {
               await new Promise((resolve, reject) => {
                 sftp.mkdir(remoteFolderPath, (err) => {
                   if (err) {
                     // 忽略文件夹已存在的错误
-                    if (err.code === 4 || err.message.includes('File exists')) {
+                    if (err.code === 4 || err.message.includes("File exists")) {
                       resolve();
                     } else {
-                      logToFile(`Error creating folder ${remoteFolderPath}: ${err.message}`, "WARN");
+                      logToFile(
+                        `Error creating folder ${remoteFolderPath}: ${err.message}`,
+                        "WARN",
+                      );
                       resolve(); // 继续处理，不中断整个上传
                     }
                   } else {
@@ -2813,33 +2818,43 @@ function setupIPC(mainWindow) {
                 });
               });
             } catch (folderError) {
-              logToFile(`Error creating folder ${remoteFolderPath}: ${folderError.message}`, "WARN");
+              logToFile(
+                `Error creating folder ${remoteFolderPath}: ${folderError.message}`,
+                "WARN",
+              );
             }
           }
         }
-        
+
         // 将拖拽的文件数据转换为文件路径数组
         const filePaths = [];
         const filesData = uploadData.files || uploadData; // 兼容旧格式
-        
+
         // 为每个文件创建临时文件
         for (const fileData of filesData) {
           if (fileData) {
             // 创建临时文件路径，保持相对路径结构
             const relativePath = fileData.relativePath || fileData.name;
-            const tempFilePath = path.join(tempDir, "simpleshell-upload", relativePath);
+            const tempFilePath = path.join(
+              tempDir,
+              "simpleshell-upload",
+              relativePath,
+            );
             const tempFileDir = path.dirname(tempFilePath);
-            
+
             // 确保目录存在
             if (!fs.existsSync(tempFileDir)) {
               fs.mkdirSync(tempFileDir, { recursive: true });
             }
-            
+
             // 处理分块数据
             let buffer;
             if (fileData.chunks && fileData.isChunked) {
               // 合并分块
-              const totalLength = fileData.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+              const totalLength = fileData.chunks.reduce(
+                (sum, chunk) => sum + chunk.length,
+                0,
+              );
               buffer = Buffer.alloc(totalLength);
               let offset = 0;
               for (const chunk of fileData.chunks) {
@@ -2856,17 +2871,19 @@ function setupIPC(mainWindow) {
             } else {
               continue;
             }
-            
+
             // 将文件内容写入临时文件
             fs.writeFileSync(tempFilePath, buffer);
-            
+
             // 如果有相对路径，需要保持文件夹结构
-            if (fileData.relativePath && fileData.relativePath.includes('/')) {
+            if (fileData.relativePath && fileData.relativePath.includes("/")) {
               // 文件在子文件夹中，需要调整目标路径
-              const remoteFilePath = path.posix.join(targetFolder, fileData.relativePath).replace(/\\/g, '/');
+              const remoteFilePath = path.posix
+                .join(targetFolder, fileData.relativePath)
+                .replace(/\\/g, "/");
               filePaths.push({
                 localPath: tempFilePath,
-                remotePath: remoteFilePath
+                remotePath: remoteFilePath,
               });
             } else {
               filePaths.push(tempFilePath);
@@ -2880,36 +2897,40 @@ function setupIPC(mainWindow) {
 
         // 调用现有的上传处理函数
         // 如果有自定义路径映射，需要特殊处理
-        const hasCustomPaths = filePaths.some(f => typeof f === 'object');
-        
+        const hasCustomPaths = filePaths.some((f) => typeof f === "object");
+
         if (hasCustomPaths) {
           // 需要逐个上传文件到指定路径
           let uploadedCount = 0;
           const totalFiles = filePaths.length;
-          
+
           for (const fileInfo of filePaths) {
-            const localPath = typeof fileInfo === 'string' ? fileInfo : fileInfo.localPath;
-            const remotePath = typeof fileInfo === 'string' ? 
-              path.posix.join(targetFolder, path.basename(fileInfo)).replace(/\\/g, '/') : 
-              fileInfo.remotePath;
-            
+            const localPath =
+              typeof fileInfo === "string" ? fileInfo : fileInfo.localPath;
+            const remotePath =
+              typeof fileInfo === "string"
+                ? path.posix
+                    .join(targetFolder, path.basename(fileInfo))
+                    .replace(/\\/g, "/")
+                : fileInfo.remotePath;
+
             // 获取远程目录路径
             const remoteDir = path.posix.dirname(remotePath);
-            
+
             // 上传单个文件
             const singleResult = await sftpTransfer.handleUploadFile(
               event,
               tabId,
               remoteDir,
               [localPath],
-              progressChannel
+              progressChannel,
             );
-            
+
             if (singleResult.success) {
               uploadedCount++;
             }
           }
-          
+
           // 清理临时文件
           try {
             const tempUploadDir = path.join(tempDir, "simpleshell-upload");
@@ -2917,17 +2938,22 @@ function setupIPC(mainWindow) {
               fs.rmSync(tempUploadDir, { recursive: true, force: true });
             }
           } catch (cleanupError) {
-            logToFile(`Error cleaning up temp files: ${cleanupError.message}`, "WARN");
+            logToFile(
+              `Error cleaning up temp files: ${cleanupError.message}`,
+              "WARN",
+            );
           }
-          
+
           return {
             success: uploadedCount === totalFiles,
             uploadedCount,
-            totalFiles
+            totalFiles,
           };
         } else {
           // 所有文件上传到同一目录
-          const uploadPaths = filePaths.map(f => typeof f === 'string' ? f : f.localPath);
+          const uploadPaths = filePaths.map((f) =>
+            typeof f === "string" ? f : f.localPath,
+          );
           const result = await sftpTransfer.handleUploadFile(
             event,
             tabId,
@@ -2943,27 +2969,33 @@ function setupIPC(mainWindow) {
               fs.rmSync(tempUploadDir, { recursive: true, force: true });
             }
           } catch (cleanupError) {
-            logToFile(`Error cleaning up temp files: ${cleanupError.message}`, "WARN");
+            logToFile(
+              `Error cleaning up temp files: ${cleanupError.message}`,
+              "WARN",
+            );
           }
 
           return result;
         }
       } catch (error) {
-        logToFile(`Error in uploadDroppedFiles IPC handler: ${error.message}`, "ERROR");
+        logToFile(
+          `Error in uploadDroppedFiles IPC handler: ${error.message}`,
+          "ERROR",
+        );
         // 检查是否是由用户取消操作引起的错误
         const isCancelError =
           error.message?.includes("cancel") ||
           error.message?.includes("abort") ||
           error.message?.includes("用户取消") ||
           error.message?.includes("user cancelled");
-        
+
         // 如果是取消操作，返回成功状态而非错误
         if (isCancelError) {
           logToFile(
             `Upload cancelled by user for tab ${tabId}, suppressing error display`,
             "INFO",
           );
-          
+
           // 触发目录刷新
           if (sftpCore && typeof sftpCore.enqueueSftpOperation === "function") {
             try {

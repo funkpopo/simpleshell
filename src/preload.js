@@ -347,7 +347,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
     // Invoke the main process to start the upload, passing the unique channel
     return ipcRenderer
-      .invoke("uploadDroppedFiles", tabId, targetFolder, uploadData, progressChannel)
+      .invoke(
+        "uploadDroppedFiles",
+        tabId,
+        targetFolder,
+        uploadData,
+        progressChannel,
+      )
       .finally(() => {
         // Ensure listener is removed if invoke fails or completes without progressData signal
         ipcRenderer.removeListener(progressChannel, handler);

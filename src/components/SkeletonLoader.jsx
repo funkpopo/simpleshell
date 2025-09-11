@@ -678,7 +678,7 @@ export const LocalTerminalSidebarSkeleton = memo(() => {
               >
                 <Skeleton variant="circular" width={20} height={20} />
               </Box>
-              
+
               {/* 文本骨架 */}
               <Box sx={{ flex: 1 }}>
                 <Skeleton variant="text" width="70%" height={18} />

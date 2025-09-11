@@ -31,9 +31,12 @@ const TRANSFER_TUNING = {
 };
 
 function chooseChunkSize(totalBytes) {
-  if (!Number.isFinite(totalBytes) || totalBytes <= 0) return TRANSFER_TUNING.chunkMedium;
-  if (totalBytes <= TRANSFER_TUNING.smallThreshold) return TRANSFER_TUNING.chunkSmall;
-  if (totalBytes <= TRANSFER_TUNING.mediumThreshold) return TRANSFER_TUNING.chunkMedium;
+  if (!Number.isFinite(totalBytes) || totalBytes <= 0)
+    return TRANSFER_TUNING.chunkMedium;
+  if (totalBytes <= TRANSFER_TUNING.smallThreshold)
+    return TRANSFER_TUNING.chunkSmall;
+  if (totalBytes <= TRANSFER_TUNING.mediumThreshold)
+    return TRANSFER_TUNING.chunkMedium;
   return TRANSFER_TUNING.chunkLarge;
 }
 
@@ -325,7 +328,10 @@ async function handleDownloadFile(event, tabId, remotePath) {
             const progress = Math.floor((transferredBytes / totalBytes) * 100);
             const now = Date.now();
 
-            if (now - lastProgressUpdate >= TRANSFER_TUNING.progressIntervalMs) {
+            if (
+              now - lastProgressUpdate >=
+              TRANSFER_TUNING.progressIntervalMs
+            ) {
               // Report every 100ms
               // 计算传输速度（字节/秒）
               const timeElapsedSinceLastUpdate =
@@ -587,7 +593,8 @@ async function handleUploadFile(
         // 汇总型进度上报函数（并发场景下统一节流）
         const maybeReportOverall = (fileName, currentIndex) => {
           const now = Date.now();
-          if (now - lastProgressUpdateTime < TRANSFER_TUNING.progressIntervalMs) return;
+          if (now - lastProgressUpdateTime < TRANSFER_TUNING.progressIntervalMs)
+            return;
           const progress =
             totalBytesToUpload > 0
               ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100)
@@ -632,7 +639,9 @@ async function handleUploadFile(
                 transferKey,
                 progress:
                   totalBytesToUpload > 0
-                    ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100)
+                    ? Math.floor(
+                        (overallUploadedBytes / totalBytesToUpload) * 100,
+                      )
                     : 0,
                 fileName,
                 currentFileIndex: i + 1,
@@ -693,14 +702,19 @@ async function handleUploadFile(
               const now = Date.now();
               const timeElapsed = (now - lastTransferTime) / 1000;
               if (timeElapsed > 0) {
-                const bytesDelta = overallUploadedBytes - lastOverallBytesTransferred;
+                const bytesDelta =
+                  overallUploadedBytes - lastOverallBytesTransferred;
                 const instantSpeed = bytesDelta / timeElapsed;
                 currentTransferSpeed =
                   currentTransferSpeed === 0
                     ? instantSpeed
                     : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
-                const remainingBytes = totalBytesToUpload - overallUploadedBytes;
-                currentRemainingTime = currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
+                const remainingBytes =
+                  totalBytesToUpload - overallUploadedBytes;
+                currentRemainingTime =
+                  currentTransferSpeed > 0
+                    ? remainingBytes / currentTransferSpeed
+                    : 0;
                 lastOverallBytesTransferred = overallUploadedBytes;
                 lastTransferTime = now;
               }
@@ -731,8 +745,12 @@ async function handleUploadFile(
         });
 
         // 执行并发任务
-        await runWithConcurrency(tasks, TRANSFER_TUNING.parallelFilesUpload, (fn) => fn());
-        
+        await runWithConcurrency(
+          tasks,
+          TRANSFER_TUNING.parallelFilesUpload,
+          (fn) => fn(),
+        );
+
         // 确保最终进度为100%
         lastProgressUpdateTime = 0;
         maybeReportOverall("", totalFilesToUpload - 1);
@@ -1100,7 +1118,8 @@ async function handleUploadFolder(
         // 4. 并发上传文件
         const maybeReportOverall = () => {
           const now = Date.now();
-          if (now - lastProgressUpdateTime < TRANSFER_TUNING.progressIntervalMs) return;
+          if (now - lastProgressUpdateTime < TRANSFER_TUNING.progressIntervalMs)
+            return;
           const progress =
             totalBytesToUpload > 0
               ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100)
@@ -1165,14 +1184,19 @@ async function handleUploadFolder(
               const now = Date.now();
               const timeElapsed = (now - lastTransferTime) / 1000;
               if (timeElapsed > 0) {
-                const bytesDelta = overallUploadedBytes - lastOverallBytesTransferred;
+                const bytesDelta =
+                  overallUploadedBytes - lastOverallBytesTransferred;
                 const instantSpeed = bytesDelta / timeElapsed;
                 currentTransferSpeed =
                   currentTransferSpeed === 0
                     ? instantSpeed
                     : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
-                const remainingBytes = totalBytesToUpload - overallUploadedBytes;
-                currentRemainingTime = currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
+                const remainingBytes =
+                  totalBytesToUpload - overallUploadedBytes;
+                currentRemainingTime =
+                  currentTransferSpeed > 0
+                    ? remainingBytes / currentTransferSpeed
+                    : 0;
                 lastOverallBytesTransferred = overallUploadedBytes;
                 lastTransferTime = now;
               }
@@ -1533,10 +1557,13 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         // 3. 并发下载文件
         const maybeReportOverall = () => {
           const now = Date.now();
-          if (now - lastProgressUpdateTime < TRANSFER_TUNING.progressIntervalMs) return;
+          if (now - lastProgressUpdateTime < TRANSFER_TUNING.progressIntervalMs)
+            return;
           const progress =
             totalBytesToDownload > 0
-              ? Math.floor((overallDownloadedBytes / totalBytesToDownload) * 100)
+              ? Math.floor(
+                  (overallDownloadedBytes / totalBytesToDownload) * 100,
+                )
               : 0;
           sendToRenderer("download-folder-progress", {
             tabId,
@@ -1555,9 +1582,13 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         const tasks = allFiles.map((file) => async () => {
           // 取消检查
           const ct = activeTransfers.get(transferKey);
-          if (!ct || ct.cancelled) throw new Error("Transfer cancelled by user");
+          if (!ct || ct.cancelled)
+            throw new Error("Transfer cancelled by user");
 
-          const localFilePath = path.join(localBaseDownloadPath, file.relativePath);
+          const localFilePath = path.join(
+            localBaseDownloadPath,
+            file.relativePath,
+          );
           const tempLocalFilePath = localFilePath + ".part";
 
           // 确保本地目录存在
@@ -1603,14 +1634,16 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
               // 速度估算
               const timeElapsed = (tnow - lastTransferTime) / 1000;
               if (timeElapsed > 0) {
-                const delta = overallDownloadedBytes - lastOverallBytesTransferred;
+                const delta =
+                  overallDownloadedBytes - lastOverallBytesTransferred;
                 const instant = delta / timeElapsed;
                 currentTransferSpeed =
                   currentTransferSpeed === 0
                     ? instant
                     : 0.3 * instant + 0.7 * currentTransferSpeed;
                 const remain = totalBytesToDownload - overallDownloadedBytes;
-                currentRemainingTime = currentTransferSpeed > 0 ? remain / currentTransferSpeed : 0;
+                currentRemainingTime =
+                  currentTransferSpeed > 0 ? remain / currentTransferSpeed : 0;
                 lastOverallBytesTransferred = overallDownloadedBytes;
                 lastTransferTime = tnow;
               }
