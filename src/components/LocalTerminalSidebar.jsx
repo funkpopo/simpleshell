@@ -123,7 +123,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
 
         setDetectedTerminals(terminals || []);
         setHasInitialDetection(true); // 标记已完成初始检测
-        
+
         // 只在手动刷新时显示成功消息，初始检测不显示
         if (hasInitialDetection) {
           setSnackbar({

@@ -125,10 +125,10 @@ const FileManager = memo(
     const handleDragEnter = useCallback((e) => {
       e.preventDefault();
       e.stopPropagation();
-      
+
       // 增加计数器
-      setDragCounter(prev => prev + 1);
-      
+      setDragCounter((prev) => prev + 1);
+
       // 检查是否包含文件
       if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
         setIsDragging(true);
@@ -138,9 +138,9 @@ const FileManager = memo(
     const handleDragLeave = useCallback((e) => {
       e.preventDefault();
       e.stopPropagation();
-      
+
       // 减少计数器
-      setDragCounter(prev => {
+      setDragCounter((prev) => {
         const newCounter = prev - 1;
         // 只有当计数器为0时才真正离开拖拽区域
         if (newCounter === 0) {
@@ -153,9 +153,9 @@ const FileManager = memo(
     const handleDragOver = useCallback((e) => {
       e.preventDefault();
       e.stopPropagation();
-      
+
       // 设置允许的拖拽效果
-      e.dataTransfer.dropEffect = 'copy';
+      e.dataTransfer.dropEffect = "copy";
     }, []);
 
     // 键盘快捷键处理
@@ -304,8 +304,7 @@ const FileManager = memo(
           error.includes("cancel") ||
           error.includes("abort") ||
           error.includes(t("fileManager.errors.userCancelled")) ||
-          error.includes("用户取消") ||
-          error.includes("已中断")
+          error.includes(t("fileManager.errors.transferCancelled"))
         );
       }
 
@@ -315,8 +314,7 @@ const FileManager = memo(
           error.message.includes("cancel") ||
           error.message.includes("abort") ||
           error.message.includes(t("fileManager.errors.userCancelled")) ||
-          error.message.includes("用户取消") ||
-          error.message.includes("已中断")
+          error.message.includes(t("fileManager.errors.transferCancelled"))
         );
       }
 
@@ -326,8 +324,7 @@ const FileManager = memo(
           error.error.includes("cancel") ||
           error.error.includes("abort") ||
           error.error.includes(t("fileManager.errors.userCancelled")) ||
-          error.error.includes("用户取消") ||
-          error.error.includes("已中断") ||
+          error.error.includes(t("fileManager.errors.transferCancelled")) ||
           error.userCancelled ||
           error.cancelled
         );
@@ -363,7 +360,7 @@ const FileManager = memo(
       if (open && sshConnection && tabId) {
         // 先检查API是否可用
         if (!window.terminalAPI || !window.terminalAPI.listFiles) {
-          setError("文件管理API不可用");
+          setError(t("fileManager.errors.fileApiNotAvailable"));
           return;
         }
 
@@ -1187,7 +1184,10 @@ const FileManager = memo(
 
             // 检查是否是用户取消操作
             if (isUserCancellationError(result)) {
-              logToFile("FileManager: 上传被用户取消，跳过错误显示", "INFO");
+              logToFile(
+                t("fileManager.messages.uploadCancelledSkipError"),
+                "INFO",
+              );
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
@@ -1203,10 +1203,7 @@ const FileManager = memo(
                 error: result.error || t("fileManager.errors.uploadFailed"),
               });
             } else {
-              logToFile(
-                "FileManager: 检测到用户取消操作，跳过错误显示",
-                "INFO",
-              );
+              logToFile(t("fileManager.messages.cancelDetected"), "INFO");
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
@@ -1375,7 +1372,7 @@ const FileManager = memo(
             // 检查是否是用户取消操作
             if (isUserCancellationError(result)) {
               logToFile(
-                "FileManager: 上传文件夹被用户取消，跳过错误显示",
+                t("fileManager.messages.folderUploadCancelledSkipError"),
                 "INFO",
               );
               setTransferCancelled(true);
@@ -1393,10 +1390,7 @@ const FileManager = memo(
                 error: result.error || t("fileManager.errors.uploadFailed"),
               });
             } else {
-              logToFile(
-                "FileManager: 检测到用户取消操作，跳过错误显示",
-                "INFO",
-              );
+              logToFile(t("fileManager.messages.cancelDetected"), "INFO");
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
@@ -1420,7 +1414,7 @@ const FileManager = memo(
           setError(
             t("fileManager.errors.uploadFailed") +
               ": " +
-              (error.message || "未知错误"),
+              (error.message || t("fileManager.errors.unknownError")),
           );
         } else {
           logToFile(
@@ -1644,12 +1638,12 @@ const FileManager = memo(
                 updateTransferProgress(transfer.transferId, {
                   progress: 0,
                   isCancelled: true,
-                  cancelMessage: "传输已中断",
+                  cancelMessage: t("fileManager.errors.transferCancelled"),
                 });
 
                 // 记录取消失败但显示为成功
                 logToFile(
-                  `FileManager: 传输取消API返回失败，但界面仍显示已取消: ${result.error || "未知错误"}`,
+                  `${t("fileManager.messages.transferCancelApiFailedButMarked")}: ${result.error || t("fileManager.errors.unknownError")}`,
                   "WARN",
                 );
               }
@@ -1658,11 +1652,11 @@ const FileManager = memo(
               updateTransferProgress(transfer.transferId, {
                 progress: 0,
                 isCancelled: true,
-                cancelMessage: "传输已中断",
+                cancelMessage: t("fileManager.errors.transferCancelled"),
               });
 
               logToFile(
-                `FileManager: 取消传输API调用失败: ${apiError.message}`,
+                `${t("fileManager.errors.cancelApiCallFailed")}: ${apiError.message}`,
                 "ERROR",
               );
             }
@@ -1671,7 +1665,7 @@ const FileManager = memo(
             updateTransferProgress(transfer.transferId, {
               progress: 0,
               isCancelled: true,
-              cancelMessage: "传输已中断",
+              cancelMessage: t("fileManager.errors.transferCancelled"),
             });
 
             logToFile(
@@ -1692,7 +1686,7 @@ const FileManager = memo(
       } catch (error) {
         // 取消传输失败
         logToFile(
-          `FileManager: 取消传输过程中发生错误: ${error.message}`,
+          `${t("fileManager.errors.cancelProcessError")}: ${error.message}`,
           "ERROR",
         );
 
@@ -1701,7 +1695,7 @@ const FileManager = memo(
           updateTransferProgress(transfer.transferId, {
             progress: 0,
             isCancelled: true,
-            cancelMessage: "传输已中断",
+            cancelMessage: t("fileManager.errors.transferCancelled"),
           });
         });
 
@@ -1784,7 +1778,10 @@ const FileManager = memo(
               // SFTP错误，尝试重试
               retryCount++;
               setError(
-                `t("fileManager.errors.createFolderFailed")，正在重试 (${retryCount}/${maxRetries})...`,
+                t("fileManager.messages.createFolderFailedRetrying", {
+                  current: retryCount,
+                  max: maxRetries,
+                }),
               );
 
               // 添加延迟后重试
@@ -1808,7 +1805,10 @@ const FileManager = memo(
             // 发生异常，尝试重试
             retryCount++;
             setError(
-              `t("fileManager.errors.createFolderFailed")，正在重试 (${retryCount}/${maxRetries})...`,
+              t("fileManager.messages.createFolderFailedRetrying", {
+                current: retryCount,
+                max: maxRetries,
+              }),
             );
 
             // 添加延迟后重试
@@ -1819,7 +1819,7 @@ const FileManager = memo(
           setError(
             t("fileManager.errors.createFolderFailed") +
               ": " +
-              (error.message || "未知错误"),
+              (error.message || t("fileManager.errors.unknownError")),
           );
           setShowCreateFolderDialog(false);
         } finally {
@@ -1890,300 +1890,341 @@ const FileManager = memo(
     }, USER_ACTIVITY_REFRESH_DELAY);
 
     // 处理拖拽的文件和文件夹
-    const handleDroppedItems = useCallback(async (entries) => {
-      setTransferCancelled(false);
-      
-      // 确定目标路径
-      let targetPath = currentPath;
-      if (selectedFile && selectedFile.isDirectory) {
-        if (currentPath === "/") {
-          targetPath = "/" + selectedFile.name;
-        } else if (currentPath === "~") {
-          targetPath = "~/" + selectedFile.name;
-        } else {
-          targetPath = currentPath + "/" + selectedFile.name;
-        }
-      }
+    const handleDroppedItems = useCallback(
+      async (entries) => {
+        setTransferCancelled(false);
 
-      // 收集所有文件信息
-      const allFiles = [];
-      
-      // 递归读取文件夹内容
-      const readEntry = async (entry, path = '') => {
-        if (entry.isFile) {
-          return new Promise((resolve) => {
-            entry.file((file) => {
-              allFiles.push({
-                file: file,
-                relativePath: path + file.name
-              });
-              resolve();
-            }, (error) => {
-              console.error('Error reading file:', error);
-              resolve();
-            });
-          });
-        } else if (entry.isDirectory) {
-          const reader = entry.createReader();
-          return new Promise((resolve) => {
-            const readEntries = () => {
-              reader.readEntries(async (entries) => {
-                if (entries.length === 0) {
+        // 确定目标路径
+        let targetPath = currentPath;
+        if (selectedFile && selectedFile.isDirectory) {
+          if (currentPath === "/") {
+            targetPath = "/" + selectedFile.name;
+          } else if (currentPath === "~") {
+            targetPath = "~/" + selectedFile.name;
+          } else {
+            targetPath = currentPath + "/" + selectedFile.name;
+          }
+        }
+
+        // 收集所有文件信息
+        const allFiles = [];
+
+        // 递归读取文件夹内容
+        const readEntry = async (entry, path = "") => {
+          if (entry.isFile) {
+            return new Promise((resolve) => {
+              entry.file(
+                (file) => {
+                  allFiles.push({
+                    file: file,
+                    relativePath: path + file.name,
+                  });
                   resolve();
+                },
+                (error) => {
+                  console.error("Error reading file:", error);
+                  resolve();
+                },
+              );
+            });
+          } else if (entry.isDirectory) {
+            const reader = entry.createReader();
+            return new Promise((resolve) => {
+              const readEntries = () => {
+                reader.readEntries(
+                  async (entries) => {
+                    if (entries.length === 0) {
+                      resolve();
+                      return;
+                    }
+
+                    for (const childEntry of entries) {
+                      await readEntry(childEntry, path + entry.name + "/");
+                    }
+
+                    // 继续读取（一次可能读不完所有文件）
+                    readEntries();
+                  },
+                  (error) => {
+                    console.error("Error reading directory:", error);
+                    resolve();
+                  },
+                );
+              };
+              readEntries();
+            });
+          }
+        };
+
+        // 读取所有拖拽的项目
+        for (const entry of entries) {
+          await readEntry(entry);
+        }
+
+        if (allFiles.length === 0) {
+          setNotification({
+            message: t("fileManager.errors.noFilesSelected"),
+            severity: "warning",
+          });
+          return;
+        }
+
+        // 使用现有的上传逻辑 - 通过创建FormData来处理文件
+        if (window.terminalAPI && window.terminalAPI.uploadDroppedFiles) {
+          // 创建新的传输任务
+          const transferId = addTransferProgress({
+            type: "upload-multifile",
+            progress: 0,
+            fileName: t("fileManager.messages.preparingUpload"),
+            transferredBytes: 0,
+            totalBytes: 0,
+            transferSpeed: 0,
+            remainingTime: 0,
+            currentFileIndex: 0,
+            totalFiles: allFiles.length,
+          });
+
+          try {
+            // 准备文件数据供IPC传输
+            const filesDataForUpload = [];
+
+            // 收集文件夹结构
+            const foldersToCreate = new Set();
+
+            for (const item of allFiles) {
+              // 提取文件夹路径
+              if (item.relativePath) {
+                const pathParts = item.relativePath.split("/");
+                // 去掉文件名，只保留文件夹路径
+                pathParts.pop();
+
+                // 收集所有需要创建的文件夹路径
+                let currentPath = "";
+                for (const part of pathParts) {
+                  if (part) {
+                    currentPath = currentPath ? currentPath + "/" + part : part;
+                    foldersToCreate.add(currentPath);
+                  }
+                }
+              }
+
+              // 读取文件内容为ArrayBuffer
+              const arrayBuffer = await item.file.arrayBuffer();
+
+              // 对于大文件，分块处理以避免 "Invalid array length" 错误
+              const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
+              const chunks = [];
+
+              if (arrayBuffer.byteLength > CHUNK_SIZE) {
+                // 大文件分块
+                for (
+                  let offset = 0;
+                  offset < arrayBuffer.byteLength;
+                  offset += CHUNK_SIZE
+                ) {
+                  const end = Math.min(
+                    offset + CHUNK_SIZE,
+                    arrayBuffer.byteLength,
+                  );
+                  const chunk = new Uint8Array(arrayBuffer.slice(offset, end));
+                  chunks.push(Array.from(chunk));
+                }
+              } else {
+                // 小文件直接转换
+                chunks.push(Array.from(new Uint8Array(arrayBuffer)));
+              }
+
+              filesDataForUpload.push({
+                name: item.file.name,
+                relativePath: item.relativePath,
+                size: item.file.size,
+                type: item.file.type,
+                lastModified: item.file.lastModified,
+                chunks: chunks,
+                isChunked: chunks.length > 1,
+              });
+            }
+
+            // 调用主进程的上传方法，包含文件夹结构信息
+            const result = await window.terminalAPI.uploadDroppedFiles(
+              tabId,
+              targetPath,
+              {
+                files: filesDataForUpload,
+                folders: Array.from(foldersToCreate).sort(), // 排序确保父文件夹先创建
+              },
+              (
+                progress,
+                fileName,
+                transferredBytes,
+                totalBytes,
+                transferSpeed,
+                remainingTime,
+                currentFileIndex,
+                totalFiles,
+                transferKey,
+              ) => {
+                // 验证并标准化进度数据
+                const validProgress = Math.max(0, Math.min(100, progress || 0));
+                const validTransferredBytes = Math.max(
+                  0,
+                  transferredBytes || 0,
+                );
+                const validTotalBytes = Math.max(0, totalBytes || 0);
+                const validTransferSpeed = Math.max(0, transferSpeed || 0);
+
+                // 检查是否已取消
+                if (transferCancelled) {
                   return;
                 }
-                
-                for (const childEntry of entries) {
-                  await readEntry(childEntry, path + entry.name + '/');
-                }
-                
-                // 继续读取（一次可能读不完所有文件）
-                readEntries();
-              }, (error) => {
-                console.error('Error reading directory:', error);
-                resolve();
-              });
-            };
-            readEntries();
-          });
-        }
-      };
 
-      // 读取所有拖拽的项目
-      for (const entry of entries) {
-        await readEntry(entry);
-      }
+                // 更新传输进度
+                updateTransferProgress(transferId, {
+                  progress: validProgress,
+                  fileName: fileName || t("fileManager.messages.unknownFile"),
+                  transferredBytes: validTransferredBytes,
+                  totalBytes: validTotalBytes,
+                  transferSpeed: validTransferSpeed,
+                  remainingTime: remainingTime || 0,
+                  currentFileIndex: currentFileIndex || 0,
+                  totalFiles: totalFiles || 1,
+                  transferKey: transferKey,
+                });
+              },
+            );
 
-      if (allFiles.length === 0) {
-        setNotification({
-          message: t("fileManager.errors.noFilesSelected"),
-          severity: "warning",
-        });
-        return;
-      }
-
-      // 使用现有的上传逻辑 - 通过创建FormData来处理文件
-      if (window.terminalAPI && window.terminalAPI.uploadDroppedFiles) {
-        // 创建新的传输任务
-        const transferId = addTransferProgress({
-          type: "upload-multifile",
-          progress: 0,
-          fileName: t("fileManager.messages.preparingUpload"),
-          transferredBytes: 0,
-          totalBytes: 0,
-          transferSpeed: 0,
-          remainingTime: 0,
-          currentFileIndex: 0,
-          totalFiles: allFiles.length,
-        });
-
-        try {
-          // 准备文件数据供IPC传输
-          const filesDataForUpload = [];
-          
-          // 收集文件夹结构
-          const foldersToCreate = new Set();
-          
-          for (const item of allFiles) {
-            // 提取文件夹路径
-            if (item.relativePath) {
-              const pathParts = item.relativePath.split('/');
-              // 去掉文件名，只保留文件夹路径
-              pathParts.pop();
-              
-              // 收集所有需要创建的文件夹路径
-              let currentPath = '';
-              for (const part of pathParts) {
-                if (part) {
-                  currentPath = currentPath ? currentPath + '/' + part : part;
-                  foldersToCreate.add(currentPath);
-                }
-              }
-            }
-            
-            // 读取文件内容为ArrayBuffer
-            const arrayBuffer = await item.file.arrayBuffer();
-            
-            // 对于大文件，分块处理以避免 "Invalid array length" 错误
-            const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
-            const chunks = [];
-            
-            if (arrayBuffer.byteLength > CHUNK_SIZE) {
-              // 大文件分块
-              for (let offset = 0; offset < arrayBuffer.byteLength; offset += CHUNK_SIZE) {
-                const end = Math.min(offset + CHUNK_SIZE, arrayBuffer.byteLength);
-                const chunk = new Uint8Array(arrayBuffer.slice(offset, end));
-                chunks.push(Array.from(chunk));
-              }
-            } else {
-              // 小文件直接转换
-              chunks.push(Array.from(new Uint8Array(arrayBuffer)));
-            }
-            
-            filesDataForUpload.push({
-              name: item.file.name,
-              relativePath: item.relativePath,
-              size: item.file.size,
-              type: item.file.type,
-              lastModified: item.file.lastModified,
-              chunks: chunks,
-              isChunked: chunks.length > 1
-            });
-          }
-
-          // 调用主进程的上传方法，包含文件夹结构信息
-          const result = await window.terminalAPI.uploadDroppedFiles(
-            tabId,
-            targetPath,
-            {
-              files: filesDataForUpload,
-              folders: Array.from(foldersToCreate).sort() // 排序确保父文件夹先创建
-            },
-            (
-              progress,
-              fileName,
-              transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime,
-              currentFileIndex,
-              totalFiles,
-              transferKey,
-            ) => {
-              // 验证并标准化进度数据
-              const validProgress = Math.max(0, Math.min(100, progress || 0));
-              const validTransferredBytes = Math.max(0, transferredBytes || 0);
-              const validTotalBytes = Math.max(0, totalBytes || 0);
-              const validTransferSpeed = Math.max(0, transferSpeed || 0);
-
-              // 检查是否已取消
-              if (transferCancelled) {
-                return;
-              }
-
-              // 更新传输进度
+            if (result.success) {
+              // 更新传输进度为完成
               updateTransferProgress(transferId, {
-                progress: validProgress,
-                fileName: fileName || t("fileManager.messages.unknownFile"),
-                transferredBytes: validTransferredBytes,
-                totalBytes: validTotalBytes,
-                transferSpeed: validTransferSpeed,
-                remainingTime: remainingTime || 0,
-                currentFileIndex: currentFileIndex || 0,
-                totalFiles: totalFiles || 1,
-                transferKey: transferKey,
+                progress: 100,
+                isCompleted: true,
               });
-            },
-          );
 
-          if (result.success) {
-            // 更新传输进度为完成
+              // 延迟移除已完成的传输
+              addTimeout(() => {
+                removeTransferProgress(transferId);
+              }, 1000);
+
+              // 显示成功通知
+              setNotification({
+                message: t("fileManager.messages.uploadSuccess"),
+                severity: "success",
+              });
+
+              // 刷新文件列表
+              refreshAfterUserActivity();
+            } else {
+              throw new Error(
+                result.error || t("fileManager.errors.uploadFailed"),
+              );
+            }
+          } catch (error) {
+            console.error("Upload error:", error);
+
+            // 检查是否为用户取消操作
+            const isCancellation = isUserCancellationError(error);
+
+            // 更新传输进度为错误或取消
             updateTransferProgress(transferId, {
-              progress: 100,
-              isCompleted: true,
+              error: !isCancellation,
+              isCancelled: isCancellation,
+              errorMessage: error.message || error.toString(),
             });
 
-            // 延迟移除已完成的传输
+            if (!isCancellation) {
+              setNotification({
+                message: error.message || t("fileManager.errors.uploadFailed"),
+                severity: "error",
+              });
+            }
+
+            // 延迟移除错误的传输
             addTimeout(() => {
               removeTransferProgress(transferId);
-            }, 1000);
-
-            // 显示成功通知
-            setNotification({
-              message: t("fileManager.messages.uploadSuccess"),
-              severity: "success",
-            });
-
-            // 刷新文件列表
-            refreshAfterUserActivity();
-          } else {
-            throw new Error(result.error || t("fileManager.errors.uploadFailed"));
+            }, 3000);
           }
-        } catch (error) {
-          console.error("Upload error:", error);
-          
-          // 检查是否为用户取消操作
-          const isCancellation = isUserCancellationError(error);
-          
-          // 更新传输进度为错误或取消
-          updateTransferProgress(transferId, {
-            error: !isCancellation,
-            isCancelled: isCancellation,
-            errorMessage: error.message || error.toString(),
+        } else {
+          // 如果没有专门的拖拽上传API，显示错误
+          setNotification({
+            message:
+              t("fileManager.errors.dragDropNotSupported") ||
+              "拖拽上传功能暂不可用",
+            severity: "error",
           });
-
-          if (!isCancellation) {
-            setNotification({
-              message: error.message || t("fileManager.errors.uploadFailed"),
-              severity: "error",
-            });
-          }
-
-          // 延迟移除错误的传输
-          addTimeout(() => {
-            removeTransferProgress(transferId);
-          }, 3000);
         }
-      } else {
-        // 如果没有专门的拖拽上传API，显示错误
-        setNotification({
-          message: t("fileManager.errors.dragDropNotSupported") || "拖拽上传功能暂不可用",
-          severity: "error",
-        });
-      }
-    }, [currentPath, selectedFile, tabId, t, transferCancelled, addTransferProgress, updateTransferProgress, removeTransferProgress, addTimeout, isUserCancellationError, refreshAfterUserActivity, setNotification]);
+      },
+      [
+        currentPath,
+        selectedFile,
+        tabId,
+        t,
+        transferCancelled,
+        addTransferProgress,
+        updateTransferProgress,
+        removeTransferProgress,
+        addTimeout,
+        isUserCancellationError,
+        refreshAfterUserActivity,
+        setNotification,
+      ],
+    );
 
-    const handleDrop = useCallback(async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      // 重置拖拽状态
-      setIsDragging(false);
-      setDragCounter(0);
-      
-      if (!sshConnection) {
-        setNotification({
-          message: t("fileManager.errors.noConnection"),
-          severity: "error",
-        });
-        return;
-      }
+    const handleDrop = useCallback(
+      async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
 
-      // 获取拖拽的文件和文件夹
-      const items = e.dataTransfer.items;
-      if (!items || items.length === 0) return;
+        // 重置拖拽状态
+        setIsDragging(false);
+        setDragCounter(0);
 
-      // 将 DataTransferItemList 转换为数组
-      const itemsArray = Array.from(items);
-      
-      // 收集所有的文件和文件夹
-      const filesAndFolders = [];
-      
-      for (const item of itemsArray) {
-        if (item.kind === 'file') {
-          const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : item.getAsEntry?.();
-          if (entry) {
-            filesAndFolders.push(entry);
-          } else {
-            // 如果不支持 getAsEntry，回退到 getAsFile
-            const file = item.getAsFile();
-            if (file) {
-              filesAndFolders.push({
-                isFile: true,
-                isDirectory: false,
-                file: () => Promise.resolve(file),
-                name: file.name
-              });
+        if (!sshConnection) {
+          setNotification({
+            message: t("fileManager.errors.noConnection"),
+            severity: "error",
+          });
+          return;
+        }
+
+        // 获取拖拽的文件和文件夹
+        const items = e.dataTransfer.items;
+        if (!items || items.length === 0) return;
+
+        // 将 DataTransferItemList 转换为数组
+        const itemsArray = Array.from(items);
+
+        // 收集所有的文件和文件夹
+        const filesAndFolders = [];
+
+        for (const item of itemsArray) {
+          if (item.kind === "file") {
+            const entry = item.webkitGetAsEntry
+              ? item.webkitGetAsEntry()
+              : item.getAsEntry?.();
+            if (entry) {
+              filesAndFolders.push(entry);
+            } else {
+              // 如果不支持 getAsEntry，回退到 getAsFile
+              const file = item.getAsFile();
+              if (file) {
+                filesAndFolders.push({
+                  isFile: true,
+                  isDirectory: false,
+                  file: () => Promise.resolve(file),
+                  name: file.name,
+                });
+              }
             }
           }
         }
-      }
 
-      if (filesAndFolders.length === 0) return;
+        if (filesAndFolders.length === 0) return;
 
-      // 处理文件和文件夹上传
-      await handleDroppedItems(filesAndFolders);
-    }, [sshConnection, t, handleDroppedItems, setNotification]);
+        // 处理文件和文件夹上传
+        await handleDroppedItems(filesAndFolders);
+      },
+      [sshConnection, t, handleDroppedItems, setNotification],
+    );
 
     // 在特定的回调函数中调用refreshAfterUserActivity
 
@@ -2200,7 +2241,10 @@ const FileManager = memo(
         const maxFileSize = 10 * 1024 * 1024;
         if (file.size && file.size > maxFileSize) {
           setError(
-            `文件 "${file.name}" 大小为 ${formatFileSize(file.size, t)}，超过了 10MB 的预览限制。请下载文件后在本地查看。`,
+            t("fileManager.messages.fileSizeExceedsLimit", {
+              name: file.name,
+              size: formatFileSize(file.size, t),
+            }),
           );
           return;
         }
@@ -2660,10 +2704,19 @@ const FileManager = memo(
 
           // 处理各种错误情况
           if (transferCancelled) {
-            showNotification("下载已被用户取消", "info");
+            showNotification(
+              t("fileManager.errors.downloadCancelledByUser"),
+              "info",
+            );
           } else if (error.message?.includes("reply was never sent")) {
-            showNotification("下载进程异常中断，请重试", "warning", 8000);
-          } else if (error.message?.includes("用户取消下载")) {
+            showNotification(
+              t("fileManager.errors.downloadProcessInterrupted"),
+              "warning",
+              8000,
+            );
+          } else if (
+            error.message?.includes(t("fileManager.errors.userCancelled"))
+          ) {
             // 特别处理这个可能误报的情况，提供更详细的解释
             showNotification(
               "下载路径选择有问题，请重试并确保正确选择下载文件夹",
@@ -2712,7 +2765,7 @@ const FileManager = memo(
           } else {
             // 通用错误处理
             showNotification(
-              "下载文件夹失败: " + (error.message || "未知错误"),
+              `${t("fileManager.messages.downloadFolderFailed")}: ${error.message || t("fileManager.errors.unknownError")}`,
               "error",
               10000,
             );
@@ -2722,7 +2775,7 @@ const FileManager = memo(
           if (
             error &&
             !transferCancelled &&
-            !error.message?.includes("用户取消下载")
+            !error.message?.includes(t("fileManager.errors.userCancelled"))
           ) {
             addTimeout(() => {
               showNotification(
@@ -2739,7 +2792,11 @@ const FileManager = memo(
           setTransferProgressList((prev) =>
             prev.map((transfer) =>
               transfer.progress < 100 && !transfer.isCancelled
-                ? { ...transfer, error: error.message || "未知错误" }
+                ? {
+                    ...transfer,
+                    error:
+                      error.message || t("fileManager.errors.unknownError"),
+                  }
                 : transfer,
             ),
           );
@@ -2853,7 +2910,7 @@ const FileManager = memo(
             !error.message?.includes("reply was never sent")
           ) {
             showNotification(
-              "批量下载文件夹失败: " + (error.message || "未知错误"),
+              `${t("fileManager.messages.batchDownloadFolderFailed")}: ${error.message || t("fileManager.errors.unknownError")}`,
               "error",
               10000,
             );
@@ -2952,7 +3009,12 @@ const FileManager = memo(
             ) {
               // SFTP错误，尝试重试
               retryCount++;
-              setError(`更新失败，正在重试 (${retryCount}/${maxRetries})...`);
+              setError(
+                t("fileManager.messages.updateFailedRetrying", {
+                  current: retryCount,
+                  max: maxRetries,
+                }),
+              );
               setTimeout(attemptUpdate, 500 * retryCount);
               return;
             } else {
@@ -2982,7 +3044,10 @@ const FileManager = memo(
                 // SFTP错误，尝试重试
                 retryCount++;
                 setError(
-                  `设置权限失败，正在重试 (${retryCount}/${maxRetries})...`,
+                  t("fileManager.messages.permissionSetFailedRetrying", {
+                    current: retryCount,
+                    max: maxRetries,
+                  }),
                 );
                 setTimeout(attemptUpdate, 500 * retryCount);
                 return;
@@ -2990,10 +3055,13 @@ const FileManager = memo(
                 // 设置权限失败，但如果重命名成功了，我们仍然显示警告而不是错误
                 if (nameChanged) {
                   setError(
-                    `文件已重命名，但权限设置失败: ${permResponse?.error || "未知错误"}`,
+                    `${t("fileManager.errors.fileRenamedButPermissionFailed")}: ${permResponse?.error || t("fileManager.errors.unknownError")}`,
                   );
                 } else {
-                  setError(permResponse?.error || "设置权限失败");
+                  setError(
+                    permResponse?.error ||
+                      t("fileManager.errors.permissionSetFailed"),
+                  );
                   return;
                 }
               }
@@ -3008,12 +3076,19 @@ const FileManager = memo(
           if (retryCount < maxRetries) {
             // 发生异常，尝试重试
             retryCount++;
-            setError(`更新失败，正在重试 (${retryCount}/${maxRetries})...`);
+            setError(
+              t("fileManager.messages.updateFailedRetrying", {
+                current: retryCount,
+                max: maxRetries,
+              }),
+            );
             setTimeout(attemptUpdate, 500 * retryCount);
             return;
           }
 
-          setError("更新失败: " + (error.message || "未知错误"));
+          setError(
+            `${t("fileManager.errors.updateFailed")}: ${error.message || t("fileManager.errors.unknownError")}`,
+          );
         } finally {
           if (retryCount === 0 || retryCount >= maxRetries) {
             setLoading(false);
@@ -4039,7 +4114,7 @@ const FileManager = memo(
             <ListItemText>按时间排序</ListItemText>
           </MenuItem>
         </Menu>
-        
+
         {/* 拖拽覆盖层 */}
         {isDragging && (
           <Box
@@ -4093,7 +4168,9 @@ const FileManager = memo(
                 }}
               >
                 {selectedFile && selectedFile.isDirectory
-                  ? t("fileManager.uploadToFolder", { folder: selectedFile.name })
+                  ? t("fileManager.uploadToFolder", {
+                      folder: selectedFile.name,
+                    })
                   : t("fileManager.uploadToCurrentFolder") + `: ${currentPath}`}
               </Typography>
             </Paper>
