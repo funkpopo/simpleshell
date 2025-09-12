@@ -198,6 +198,16 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 文件管理相关API
   listFiles: (tabId, path, options) =>
     ipcRenderer.invoke("listFiles", tabId, path, options),
+  onListFilesChunk: (callback) => {
+    const wrapped = (_, data) => callback(data);
+    ipcRenderer.on("listFiles:chunk", wrapped);
+    if (!callback._wrappedCallback) callback._wrappedCallback = wrapped;
+    return () => ipcRenderer.removeListener("listFiles:chunk", wrapped);
+  },
+  offListFilesChunk: (callback) => {
+    const wrapped = callback._wrappedCallback || callback;
+    ipcRenderer.removeListener("listFiles:chunk", wrapped);
+  },
   copyFile: (tabId, sourcePath, targetPath) =>
     ipcRenderer.invoke("copyFile", tabId, sourcePath, targetPath),
   moveFile: (tabId, sourcePath, targetPath) =>

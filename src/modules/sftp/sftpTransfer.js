@@ -23,9 +23,9 @@ const TRANSFER_TUNING = {
   smallThreshold: 10 * 1024 * 1024, // 10MB
   mediumThreshold: 100 * 1024 * 1024, // 100MB
   // 块大小（highWaterMark）
-  chunkSmall: 128 * 1024, // 128KB
-  chunkMedium: 512 * 1024, // 512KB
-  chunkLarge: 1024 * 1024, // 1MB
+  chunkSmall: 256 * 1024, // 256KB
+  chunkMedium: 1024 * 1024, // 1MB
+  chunkLarge: 2 * 1024 * 1024, // 2MB
   // 进度上报节流间隔
   progressIntervalMs: 100,
 };
@@ -223,7 +223,15 @@ async function handleDownloadFile(event, tabId, remotePath) {
         return { success: false, cancelled: true, error: "用户取消下载" };
       }
 
-      const sftp = await sftpCore.getRawSftpSession(tabId);
+      // 使用会话池借用一个SFTP会话
+      let borrowed = null;
+      let sftp = null;
+      if (sftpCore && typeof sftpCore.borrowSftpSession === "function") {
+        borrowed = await sftpCore.borrowSftpSession(tabId);
+        sftp = borrowed.sftp;
+      } else {
+        sftp = await sftpCore.getRawSftpSession(tabId);
+      }
       const transferKey = `${tabId}-download-${Date.now()}`;
       activeTransfers.set(transferKey, {
         sftp,
@@ -445,6 +453,19 @@ async function handleDownloadFile(event, tabId, remotePath) {
 
         activeTransfers.delete(transferKey);
         return { success: false, error: error.message };
+      } finally {
+        // 归还会话
+        try {
+          if (
+            borrowed &&
+            sftpCore &&
+            typeof sftpCore.releaseSftpSession === "function"
+          ) {
+            sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
+          }
+        } catch (e) {
+          // ignore
+        }
       }
     },
     {
@@ -627,129 +648,161 @@ async function handleUploadFile(
             .join(normalizedTargetFolder || ".", fileName)
             .replace(/\\\\/g, "/");
 
-          let currentFileStats;
+          // 借用一个SFTP会话用于本文件上传
+          let borrowed = null;
+          let sftpForFile = null;
+          if (sftpCore && typeof sftpCore.borrowSftpSession === "function") {
+            borrowed = await sftpCore.borrowSftpSession(tabId);
+            sftpForFile = borrowed.sftp;
+          } else {
+            sftpForFile = sftp; // 回退使用主会话
+          }
+
           try {
-            currentFileStats = fs.statSync(localFilePath);
-          } catch (statError) {
-            failedUploads++;
-            failedFileNames.push(fileName);
-            if (progressChannel) {
-              sendToRenderer(progressChannel, {
-                tabId,
-                transferKey,
-                progress:
-                  totalBytesToUpload > 0
-                    ? Math.floor(
-                        (overallUploadedBytes / totalBytesToUpload) * 100,
-                      )
-                    : 0,
-                fileName,
-                currentFileIndex: i + 1,
-                totalFiles: totalFilesToUpload,
-                transferredBytes: overallUploadedBytes,
-                totalBytes: totalBytesToUpload,
-                transferSpeed: 0,
-                remainingTime: 0,
-                error: `无法读取文件属性: ${statError.message.substring(0, 50)}...`,
-              });
+            let currentFileStats;
+            try {
+              currentFileStats = fs.statSync(localFilePath);
+            } catch (statError) {
+              failedUploads++;
+              failedFileNames.push(fileName);
+              if (progressChannel) {
+                sendToRenderer(progressChannel, {
+                  tabId,
+                  transferKey,
+                  progress:
+                    totalBytesToUpload > 0
+                      ? Math.floor(
+                          (overallUploadedBytes / totalBytesToUpload) * 100,
+                        )
+                      : 0,
+                  fileName,
+                  currentFileIndex: i + 1,
+                  totalFiles: totalFilesToUpload,
+                  transferredBytes: overallUploadedBytes,
+                  totalBytes: totalBytesToUpload,
+                  transferSpeed: 0,
+                  remainingTime: 0,
+                  error: `无法读取文件属性: ${statError.message.substring(0, 50)}...`,
+                });
+              }
+              return;
             }
-            return;
-          }
 
-          const currentFileSize = currentFileStats.size;
-          let fileTransferredBytes = 0;
-          const chunkSize = chooseChunkSize(currentFileSize);
+            const currentFileSize = currentFileStats.size;
+            let fileTransferredBytes = 0;
+            const chunkSize = chooseChunkSize(currentFileSize);
 
-          // 创建流
-          const readStream = fs.createReadStream(localFilePath, {
-            highWaterMark: chunkSize,
-          });
-          const writeStream = sftp.createWriteStream(remoteFilePath);
-
-          // 跟踪流
-          const transfer = activeTransfers.get(transferKey);
-          if (transfer && transfer.activeStreams) {
-            transfer.activeStreams.add(readStream);
-            transfer.activeStreams.add(writeStream);
-          }
-
-          await new Promise((resolve, reject) => {
-            readStream.on("error", (error) => {
-              reject(error);
+            // 创建流
+            const readStream = fs.createReadStream(localFilePath, {
+              highWaterMark: chunkSize,
+            });
+            const writeStream = sftpForFile.createWriteStream(remoteFilePath, {
+              // 提高SFTP写入缓冲，减少backpressure频率
+              highWaterMark: chunkSize,
             });
 
-            writeStream.on("error", (error) => {
-              readStream.destroy();
-              reject(error);
-            });
+            // 跟踪流
+            const transfer = activeTransfers.get(transferKey);
+            if (transfer && transfer.activeStreams) {
+              transfer.activeStreams.add(readStream);
+              transfer.activeStreams.add(writeStream);
+            }
 
-            writeStream.on("close", () => resolve());
+            await new Promise((resolve, reject) => {
+              readStream.on("error", (error) => {
+                reject(error);
+              });
 
-            readStream.on("data", (chunk) => {
-              // 取消检查
-              const currentTransfer = activeTransfers.get(transferKey);
-              if (currentTransfer && currentTransfer.cancelled) {
+              writeStream.on("error", (error) => {
                 readStream.destroy();
-                writeStream.destroy();
-                reject(new Error("Transfer cancelled by user"));
-                return;
-              }
+                reject(error);
+              });
 
-              fileTransferredBytes += chunk.length;
-              overallUploadedBytes += chunk.length;
+              writeStream.on("close", () => resolve());
 
-              // 速度与剩余时间估算（共享节流）
-              const now = Date.now();
-              const timeElapsed = (now - lastTransferTime) / 1000;
-              if (timeElapsed > 0) {
-                const bytesDelta =
-                  overallUploadedBytes - lastOverallBytesTransferred;
-                const instantSpeed = bytesDelta / timeElapsed;
-                currentTransferSpeed =
-                  currentTransferSpeed === 0
-                    ? instantSpeed
-                    : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
-                const remainingBytes =
-                  totalBytesToUpload - overallUploadedBytes;
-                currentRemainingTime =
-                  currentTransferSpeed > 0
-                    ? remainingBytes / currentTransferSpeed
-                    : 0;
-                lastOverallBytesTransferred = overallUploadedBytes;
-                lastTransferTime = now;
-              }
+              readStream.on("data", (chunk) => {
+                // 取消检查
+                const currentTransfer = activeTransfers.get(transferKey);
+                if (currentTransfer && currentTransfer.cancelled) {
+                  readStream.destroy();
+                  writeStream.destroy();
+                  reject(new Error("Transfer cancelled by user"));
+                  return;
+                }
 
-              maybeReportOverall(fileName, i);
+                fileTransferredBytes += chunk.length;
+                overallUploadedBytes += chunk.length;
+
+                // 速度与剩余时间估算（共享节流）
+                const now = Date.now();
+                const timeElapsed = (now - lastTransferTime) / 1000;
+                if (timeElapsed > 0) {
+                  const bytesDelta =
+                    overallUploadedBytes - lastOverallBytesTransferred;
+                  const instantSpeed = bytesDelta / timeElapsed;
+                  currentTransferSpeed =
+                    currentTransferSpeed === 0
+                      ? instantSpeed
+                      : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
+                  const remainingBytes =
+                    totalBytesToUpload - overallUploadedBytes;
+                  currentRemainingTime =
+                    currentTransferSpeed > 0
+                      ? remainingBytes / currentTransferSpeed
+                      : 0;
+                  lastOverallBytesTransferred = overallUploadedBytes;
+                  lastTransferTime = now;
+                }
+
+                maybeReportOverall(fileName, i);
+              });
+
+              // pipe以启用背压
+              readStream.pipe(writeStream);
+
+              readStream.on("end", () => {
+                const t2 = activeTransfers.get(transferKey);
+                if (t2 && t2.activeStreams) {
+                  t2.activeStreams.delete(readStream);
+                }
+              });
+              writeStream.on("finish", () => {
+                const t3 = activeTransfers.get(transferKey);
+                if (t3 && t3.activeStreams) {
+                  t3.activeStreams.delete(writeStream);
+                }
+              });
             });
 
-            // pipe以启用背压
-            readStream.pipe(writeStream);
-
-            readStream.on("end", () => {
-              const t2 = activeTransfers.get(transferKey);
-              if (t2 && t2.activeStreams) {
-                t2.activeStreams.delete(readStream);
-              }
-            });
-            writeStream.on("finish", () => {
-              const t3 = activeTransfers.get(transferKey);
-              if (t3 && t3.activeStreams) {
-                t3.activeStreams.delete(writeStream);
-              }
-            });
-          });
-
-          filesUploadedCount++;
-          // 该文件完成后强制更新一次进度
-          maybeReportOverall(fileName, i);
+            filesUploadedCount++;
+            // 该文件完成后强制更新一次进度
+            maybeReportOverall(fileName, i);
+          } finally {
+            // 归还会话
+            if (borrowed && sftpCore && typeof sftpCore.releaseSftpSession === "function") {
+              sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
+            }
+          }
         });
 
+        // 根据文件规模动态调整并发度
+        const avgFileSize =
+          totalFilesToUpload > 0
+            ? Math.floor(totalBytesToUpload / totalFilesToUpload)
+            : 0;
+        let dynamicParallelUpload = TRANSFER_TUNING.parallelFilesUpload;
+        if (totalFilesToUpload >= 8 && avgFileSize <= TRANSFER_TUNING.smallThreshold) {
+          // 小文件多：提高并发
+          dynamicParallelUpload = Math.min(12, totalFilesToUpload);
+        } else if (avgFileSize > TRANSFER_TUNING.mediumThreshold) {
+          // 巨大文件：降低并发，减少资源争用
+          dynamicParallelUpload = Math.min(2, totalFilesToUpload);
+        } else if (avgFileSize > TRANSFER_TUNING.smallThreshold) {
+          dynamicParallelUpload = Math.min(4, totalFilesToUpload);
+        }
+
         // 执行并发任务
-        await runWithConcurrency(
-          tasks,
-          TRANSFER_TUNING.parallelFilesUpload,
-          (fn) => fn(),
-        );
+        await runWithConcurrency(tasks, dynamicParallelUpload, (fn) => fn());
 
         // 确保最终进度为100%
         lastProgressUpdateTime = 0;
@@ -1155,10 +1208,20 @@ async function handleUploadFolder(
           let fileTransferredBytes = 0;
           const chunkSize = chooseChunkSize(file.size);
 
+          // 借用一个SFTP会话
+          let borrowed = null;
+          let sftpForFile = null;
+          if (sftpCore && typeof sftpCore.borrowSftpSession === "function") {
+            borrowed = await sftpCore.borrowSftpSession(tabId);
+            sftpForFile = borrowed.sftp;
+          } else {
+            sftpForFile = sftp; // 回退
+          }
+
           const readStream = fs.createReadStream(file.localPath, {
             highWaterMark: chunkSize,
           });
-          const writeStream = sftp.createWriteStream(remoteFilePath);
+          const writeStream = sftpForFile.createWriteStream(remoteFilePath);
 
           await new Promise((resolve, reject) => {
             readStream.on("error", (error) => reject(error));
@@ -1209,6 +1272,11 @@ async function handleUploadFolder(
 
           filesUploadedCount++;
           maybeReportOverall();
+
+          // 归还会话
+          if (borrowed && sftpCore && typeof sftpCore.releaseSftpSession === "function") {
+            sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
+          }
         });
 
         await runWithConcurrency(
@@ -1603,7 +1671,17 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           const writeStream = fs.createWriteStream(tempLocalFilePath, {
             highWaterMark: chunkSize,
           });
-          const readStream = sftp.createReadStream(file.remotePath, {
+          // 借用一个SFTP会话
+          let borrowed = null;
+          let sftpForFile = null;
+          if (sftpCore && typeof sftpCore.borrowSftpSession === "function") {
+            borrowed = await sftpCore.borrowSftpSession(tabId);
+            sftpForFile = borrowed.sftp;
+          } else {
+            sftpForFile = sftp; // 回退
+          }
+
+          const readStream = sftpForFile.createReadStream(file.remotePath, {
             highWaterMark: chunkSize,
           });
 
@@ -1673,13 +1751,30 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
             tr2.activeStreams.delete(readStream);
             tr2.activeStreams.delete(writeStream);
           }
+          // 归还会话
+          if (borrowed && sftpCore && typeof sftpCore.releaseSftpSession === "function") {
+            sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
+          }
         });
 
-        await runWithConcurrency(
-          tasks,
-          TRANSFER_TUNING.parallelFilesDownload,
-          (fn) => fn(),
-        );
+        // 根据文件规模动态调整并发度（下载）
+        const avgDownloadSize =
+          totalFilesToDownload > 0
+            ? Math.floor(totalBytesToDownload / totalFilesToDownload)
+            : 0;
+        let dynamicParallelDownload = TRANSFER_TUNING.parallelFilesDownload;
+        if (
+          totalFilesToDownload >= 8 &&
+          avgDownloadSize <= TRANSFER_TUNING.smallThreshold
+        ) {
+          dynamicParallelDownload = Math.min(12, totalFilesToDownload);
+        } else if (avgDownloadSize > TRANSFER_TUNING.mediumThreshold) {
+          dynamicParallelDownload = Math.min(2, totalFilesToDownload);
+        } else if (avgDownloadSize > TRANSFER_TUNING.smallThreshold) {
+          dynamicParallelDownload = Math.min(4, totalFilesToDownload);
+        }
+
+        await runWithConcurrency(tasks, dynamicParallelDownload, (fn) => fn());
 
         sendToRenderer("download-folder-progress", {
           tabId,

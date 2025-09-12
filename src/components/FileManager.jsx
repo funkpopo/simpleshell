@@ -376,6 +376,9 @@ const FileManager = memo(
     }, [open, sshConnection, tabId, initialPath]);
 
     // 从缓存中获取目录内容
+    // 增量目录加载 token（listFiles 首批响应返回）
+    const [listToken, setListToken] = useState(null);
+
     const getDirectoryFromCache = (path) => {
       if (!directoryCache[path]) return null;
 
@@ -399,6 +402,39 @@ const FileManager = memo(
         },
       }));
     };
+
+    // 订阅非阻塞目录分片事件
+    useEffect(() => {
+      if (!window.terminalAPI || !window.terminalAPI.onListFilesChunk) return;
+      const unsubscribe = window.terminalAPI.onListFilesChunk((payload) => {
+        try {
+          const apiPath = currentPath === "~" ? "" : currentPath;
+          if (
+            !payload ||
+            payload.tabId !== tabId ||
+            payload.path !== apiPath ||
+            !payload.token ||
+            payload.token !== listToken
+          ) {
+            return;
+          }
+
+          if (Array.isArray(payload.items) && payload.items.length > 0) {
+            setFiles((prev) => prev.concat(payload.items));
+          }
+
+          if (payload.done) {
+            // 完成后，刷新缓存
+            updateDirectoryCache(currentPath, (files || []).concat(payload.items || []));
+          }
+        } catch (_) {
+          // ignore
+        }
+      });
+      return () => {
+        if (typeof unsubscribe === "function") unsubscribe();
+      };
+    }, [tabId, currentPath, listToken]);
 
     // 静默刷新当前目录（不显示加载指示器）
     const silentRefreshCurrentDirectory = async () => {
@@ -434,6 +470,11 @@ const FileManager = memo(
 
             if (response?.success) {
               const fileData = response.data || [];
+              if (response.chunked && response.token) {
+                setListToken(response.token);
+              } else {
+                setListToken(null);
+              }
 
               // 检查数据是否有变化
               const currentFiles = JSON.stringify(files);
@@ -558,6 +599,8 @@ const FileManager = memo(
             path: apiPath,
             canMerge: true,
             priority: forceRefresh ? "high" : "normal",
+            nonBlocking: true,
+            chunkSize: 300,
           };
 
           const response = await window.terminalAPI.listFiles(
@@ -568,6 +611,11 @@ const FileManager = memo(
 
           if (response?.success) {
             const fileData = response.data || [];
+            if (response.chunked && response.token) {
+              setListToken(response.token);
+            } else {
+              setListToken(null);
+            }
 
             // 更新缓存
             updateDirectoryCache(path, fileData);

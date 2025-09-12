@@ -1255,6 +1255,24 @@ function setupIPC(mainWindow) {
           sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
       }
 
+      // 清理SFTP会话池（SSH断开时关闭对应标签页的所有SFTP会话）
+      try {
+        if (
+          sftpCore &&
+          typeof sftpCore.closeAllSftpSessionsForTab === "function"
+        ) {
+          sftpCore.closeAllSftpSessionsForTab(processId);
+          if (sshConfig.tabId) {
+            sftpCore.closeAllSftpSessionsForTab(sshConfig.tabId);
+          }
+        }
+      } catch (err) {
+        logToFile(
+          `Error closing SFTP sessions on SSH close: ${err.message}`,
+          "ERROR",
+        );
+      }
+
       // 释放连接引用
       connectionManager.releaseSSHConnection(
         connectionInfo.key,
@@ -2147,7 +2165,67 @@ function setupIPC(mainWindow) {
                   permissions: item.attrs.mode,
                 }));
 
-                resolve({ success: true, data: files });
+                // 非阻塞模式：分批发送，避免一次性大目录阻塞渲染
+                const nonBlocking = Boolean(options.nonBlocking);
+                const chunkSize = Math.max(
+                  50,
+                  Math.min(Number(options.chunkSize) || 200, 1000),
+                );
+
+                if (nonBlocking && files.length > chunkSize) {
+                  const token = `${tabId}:${Date.now()}:${Math.random()
+                    .toString(36)
+                    .slice(2, 8)}`;
+                  const firstChunk = files.slice(0, chunkSize);
+                  // 立即返回首批，提升首屏响应
+                  resolve({
+                    success: true,
+                    data: firstChunk,
+                    token,
+                    total: files.length,
+                    chunked: true,
+                    path,
+                  });
+
+                  // 异步分批推送剩余数据
+                  const sender = event?.sender;
+                  if (sender) {
+                    let index = chunkSize;
+                    let chunkIndex = 1;
+                    const pushNext = () => {
+                      if (index >= files.length) {
+                        sender.send("listFiles:chunk", {
+                          tabId,
+                          path,
+                          token,
+                          chunkIndex,
+                          items: [],
+                          done: true,
+                          total: files.length,
+                        });
+                        return;
+                      }
+                      const end = Math.min(index + chunkSize, files.length);
+                      const items = files.slice(index, end);
+                      sender.send("listFiles:chunk", {
+                        tabId,
+                        path,
+                        token,
+                        chunkIndex,
+                        items,
+                        done: end >= files.length,
+                        total: files.length,
+                      });
+                      index = end;
+                      chunkIndex += 1;
+                      // 让出事件循环，避免长任务阻塞
+                      setTimeout(pushNext, 0);
+                    };
+                    setTimeout(pushNext, 0);
+                  }
+                } else {
+                  resolve({ success: true, data: files, path, chunked: false });
+                }
               });
             });
           } catch (error) {
