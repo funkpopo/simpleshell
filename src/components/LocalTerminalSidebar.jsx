@@ -28,6 +28,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
 import LaunchIcon from "@mui/icons-material/Launch";
+import SkeletonLoader from "./SkeletonLoader";
 import { RiTerminalBoxLine } from "react-icons/ri";
 import {
   VscTerminalLinux,
@@ -413,7 +414,11 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         </Box>
 
         <Box sx={{ px: 2, flex: 1, overflow: "auto" }}>
-          {filteredTerminals.length > 0 ? (
+          {isDetecting ? (
+            <Box sx={{ pt: 1 }}>
+              <SkeletonLoader type="list" lines={6} showAvatar />
+            </Box>
+          ) : filteredTerminals.length > 0 ? (
             <List disablePadding>
               {filteredTerminals.map((terminal, index) => (
                 <TerminalItem
