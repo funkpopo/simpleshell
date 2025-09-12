@@ -213,9 +213,3 @@ simpleshell/
 ## **作者**
 
 **funkpopo** - [s767609509@gmail.com](mailto:s767609509@gmail.com)
-
-## **致谢**
-
-- 感谢所有帮助改进 SimpleShell 的贡献者
-- 基于优秀的开源库和工具构建
-- 受到对现代、高效 SSH 终端应用需求的启发

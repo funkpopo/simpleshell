@@ -504,6 +504,9 @@ const WebTerminal = ({
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
   const [currentInput, setCurrentInput] = useState("");
   const [suggestionsHiddenByEsc, setSuggestionsHiddenByEsc] = useState(false);
+  // 用户手动关闭命令快捷窗口后抑制显示，直到下一次按下回车才恢复
+  const [suggestionsSuppressedUntilEnter, setSuggestionsSuppressedUntilEnter] =
+    useState(false);
 
   // 密码提示检测模式（支持多语言和格式）
   const passwordPromptPatterns = [
@@ -556,6 +559,10 @@ const WebTerminal = ({
     /\(y\/n\)/i,
     /\[Y\/n\]/,
     /\[y\/N\]/,
+    // 支持 [y]/n 与 y/[n] 形式
+    /\[\s*[yY]\s*\]\s*\/\s*[nN]/,
+    /[yY]\s*\/\s*\[\s*[nN]\s*\]/,
+    /\[\s*[yY]\s*\]\s*\/\s*\[\s*[nN]\s*\]/,
     /\[yes\/no\]/i,
     /\[YES\/NO\]/i,
     // 带问号的确认提示
@@ -582,6 +589,8 @@ const WebTerminal = ({
     // 确认提示在句子末尾
     /\s+\(y\/n\)\s*$/i,
     /\s+\[y\/n\]\s*$/i,
+    /\s+\[\s*[yY]\s*\]\s*\/\s*[nN]\s*$/i,
+    /\s+[yY]\s*\/\s*\[\s*[nN]\s*\]\s*$/i,
     // 带有yes/no的提示
     /yes\s+or\s+no/i,
     /y\s+or\s+n/i,
@@ -1104,7 +1113,11 @@ const WebTerminal = ({
             setCurrentInput(currentInputBuffer);
 
             // 只有在非命令执行状态下才触发建议搜索
-            if (!suggestionsHiddenByEsc && !isCommandExecuting) {
+            if (
+              !suggestionsHiddenByEsc &&
+              !suggestionsSuppressedUntilEnter &&
+              !isCommandExecuting
+            ) {
               getSuggestions(currentInputBuffer);
             }
             if (currentInputBuffer.length === 0) {
@@ -1140,6 +1153,8 @@ const WebTerminal = ({
           setSuggestions([]);
           setCurrentInput("");
           setSuggestionsHiddenByEsc(false);
+          // 解除因手动关闭而设置的抑制，仅在回车时恢复
+          setSuggestionsSuppressedUntilEnter(false);
         }
 
         // 发送数据到进程
@@ -1343,7 +1358,11 @@ const WebTerminal = ({
           setCurrentInput(currentInputBuffer);
 
           // 只有在非命令执行状态下才触发建议搜索
-          if (!suggestionsHiddenByEsc && !isCommandExecuting) {
+          if (
+            !suggestionsHiddenByEsc &&
+            !suggestionsSuppressedUntilEnter &&
+            !isCommandExecuting
+          ) {
             getSuggestions(currentInputBuffer);
           }
         }
@@ -1930,6 +1949,8 @@ const WebTerminal = ({
             setShowSuggestions(false);
             setSuggestions([]);
             setSuggestionsHiddenByEsc(true);
+            // 视为手动关闭：直到下一次回车前不再显示
+            setSuggestionsSuppressedUntilEnter(true);
           }
         }
         // Ctrl+. 查找下一个
@@ -3878,7 +3899,12 @@ const WebTerminal = ({
   useEffect(() => {
     const handleRefreshSuggestions = (event) => {
       const { input } = event.detail || {};
-      if (input && !suggestionsHiddenByEsc && !isCommandExecuting) {
+      if (
+        input &&
+        !suggestionsHiddenByEsc &&
+        !suggestionsSuppressedUntilEnter &&
+        !isCommandExecuting
+      ) {
         getSuggestions(input);
       }
     };
@@ -3949,7 +3975,10 @@ const WebTerminal = ({
   );
 
   const closeSuggestions = useCallback(() => {
+    // 手动关闭建议窗口后，抑制再次显示，直到用户按下回车
     setShowSuggestions(false);
+    setSuggestions([]);
+    setSuggestionsSuppressedUntilEnter(true);
   }, []);
 
   // 示例：假设有如下输入处理函数
