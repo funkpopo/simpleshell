@@ -3,6 +3,39 @@ const http = require("http");
 const { SocksProxyAgent } = require("socks-proxy-agent");
 const { HttpsProxyAgent } = require("https-proxy-agent");
 const { HttpProxyAgent } = require("http-proxy-agent");
+const ipUtils = require("../../utils/ip");
+
+// In-memory LRU + TTL cache (skeleton)
+const CACHE_TTL_MS = parseInt(process.env.IPQUERY_CACHE_TTL_MS || "60000", 10); // 1 min
+const CACHE_MAX = parseInt(process.env.IPQUERY_CACHE_MAX || "200", 10);
+const SWR_ENABLED = true; // stale-while-revalidate
+const cache = new Map(); // key -> { ts, result }
+
+function cacheKey(ip) {
+  return ip && ip.trim() ? ip.trim() : "__MY_IP__";
+}
+
+function getFromCache(ip) {
+  const key = cacheKey(ip);
+  const entry = cache.get(key);
+  if (!entry) return null;
+  // move to recent
+  cache.delete(key);
+  cache.set(key, entry);
+  return entry;
+}
+
+function setToCache(ip, result) {
+  const key = cacheKey(ip);
+  const entry = { ts: Date.now(), result };
+  if (cache.has(key)) cache.delete(key);
+  cache.set(key, entry);
+  // evict LRU
+  while (cache.size > CACHE_MAX) {
+    const oldestKey = cache.keys().next().value;
+    cache.delete(oldestKey);
+  }
+}
 
 const transformGeolocationDB = (data, ip) => {
   if (!data.IPv4) {
@@ -320,6 +353,29 @@ function fetchIpInfo(provider, ip, logger, proxyConfig = null) {
 
 async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
   try {
+    // Input validation and private/special detection when an IP is provided
+    if (ip && ip.trim()) {
+      const ver = ipUtils.isIP(ip.trim());
+      if (ver === 0) {
+        return { ret: "failed", msg: "无效的IP地址" };
+      }
+      if (ipUtils.isPrivateOrSpecial(ip.trim())) {
+        return { ret: "failed", msg: "该IP为私有/保留地址，已跳过查询" };
+      }
+    }
+
+    // Cache lookup
+    const entry = getFromCache(ip);
+    const now = Date.now();
+    if (entry && now - entry.ts < CACHE_TTL_MS) {
+      if (typeof logger === "function") {
+        logger(`IP查询命中缓存: ${cacheKey(ip)}`, "INFO");
+      }
+      return entry.result;
+    }
+
+    const shouldServeStale = !!entry && now - entry.ts >= CACHE_TTL_MS && SWR_ENABLED;
+
     const allProviders = [...DEFAULT_API_PROVIDERS];
     // Dynamically add key-based providers if their keys are present
     for (const key in KEY_API_PROVIDERS) {
@@ -342,11 +398,23 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
 
     if (ip) {
       logger(`查询IP地址: ${ip}`, "INFO");
-      const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
-      const promises = lookupProviders.map((provider) =>
-        fetchIpInfo(provider, ip, logger, proxyConfig),
-      );
-      return await Promise.any(promises);
+      const doNetwork = async () => {
+        const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
+        const promises = lookupProviders.map((provider) =>
+          fetchIpInfo(provider, ip, logger, proxyConfig),
+        );
+        const res = await Promise.any(promises);
+        // Cache success
+        if (res && res.ret === "ok") setToCache(ip, res);
+        return res;
+      };
+
+      if (shouldServeStale) {
+        // background refresh
+        doNetwork().catch(() => {});
+        return entry.result;
+      }
+      return await doNetwork();
     } else {
       logger("查询本机IP...", "INFO");
 
@@ -396,7 +464,9 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
           }
         }
 
-        return { ret: "ok", data: finalData };
+        const result = { ret: "ok", data: finalData };
+        setToCache("", result);
+        return result;
       }
 
       // Fallback if primary providers fail or don't exist
@@ -407,8 +477,15 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
         const standardPromises = lookupProviders.map((provider) =>
           fetchIpInfo(provider, publicIp, logger, proxyConfig),
         );
-        return Promise.any(standardPromises);
+        const res = await Promise.any(standardPromises);
+        if (res && res.ret === "ok") setToCache("", res);
+        return res;
       })();
+      if (shouldServeStale) {
+        // background refresh
+        standardLookupPromise.catch(() => {});
+        return entry.result;
+      }
       return await standardLookupPromise;
     }
   } catch (error) {
