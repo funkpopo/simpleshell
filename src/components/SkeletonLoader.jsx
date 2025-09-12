@@ -6,7 +6,17 @@ import {
   Typography,
   useTheme,
   alpha,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Tooltip,
+  IconButton,
+  CircularProgress,
 } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import { keyframes } from "@emotion/react";
 import { useTranslation } from "react-i18next";
 
@@ -43,7 +53,7 @@ const SkeletonLoader = memo(
     width = "100%",
     height = 20,
     variant = "rectangular",
-    animation = "wave",
+    animation = undefined, // 使用主题默认动画
     lines = 1,
     spacing = 1,
     showAvatar = false,
@@ -54,10 +64,7 @@ const SkeletonLoader = memo(
     const theme = useTheme();
 
     const baseSkeletonSx = {
-      backgroundColor: alpha(theme.palette.text.primary, 0.1),
-      ...(animation === "pulse" && {
-        animation: `${pulseAnimation} 1.5s ease-in-out infinite`,
-      }),
+      // 颜色与动画由主题统一控制，这里不再覆盖
       ...sx,
     };
 
@@ -605,8 +612,10 @@ export const AIChatSkeleton = memo(() => {
   );
 });
 
-export const LocalTerminalSidebarSkeleton = memo(() => {
+export const LocalTerminalSidebarSkeleton = memo((props) => {
   const theme = useTheme();
+  const { t } = useTranslation();
+  const { onClose } = props || {};
   return (
     <Box
       sx={{
@@ -617,7 +626,7 @@ export const LocalTerminalSidebarSkeleton = memo(() => {
         backgroundColor: theme.palette.background.paper,
       }}
     >
-      {/* 头部骨架 */}
+      {/* 头部（不使用骨架） */}
       <Box
         sx={{
           p: 2,
@@ -627,10 +636,23 @@ export const LocalTerminalSidebarSkeleton = memo(() => {
           gap: 1,
         }}
       >
-        <Skeleton variant="text" width={120} height={24} />
-        <Box sx={{ flexGrow: 1 }} />
-        <Skeleton variant="circular" width={28} height={28} />
-        <Skeleton variant="circular" width={28} height={28} />
+        <Typography variant="subtitle1" fontWeight="medium" sx={{ flexGrow: 1 }}>
+          {t("localTerminal.title")}
+        </Typography>
+        <Tooltip title={t("localTerminal.refresh")}>
+          <span>
+            <IconButton size="small" disabled>
+              <CircularProgress size={18} />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title={t("common.close")}>
+          <span>
+            <IconButton size="small" onClick={onClose} disabled={!onClose}>
+              <CloseIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
       </Box>
 
       {/* 搜索框骨架 */}
@@ -648,45 +670,51 @@ export const LocalTerminalSidebarSkeleton = memo(() => {
         <Skeleton variant="text" width={150} height={20} />
       </Box>
 
-      {/* 终端列表骨架 */}
+      {/* 终端列表骨架（与真实列表一致） */}
       <Box sx={{ px: 2, flex: 1, overflow: "hidden" }}>
-        <Stack spacing={1}>
-          {Array.from({ length: 5 }, (_, index) => (
-            <Box
-              key={index}
-              sx={{
-                p: 1.5,
-                borderRadius: 1,
-                backgroundColor: alpha(theme.palette.action.hover, 0.3),
-                display: "flex",
-                alignItems: "center",
-                gap: 1.5,
-              }}
-            >
-              {/* 图标骨架 */}
-              <Box
+        <List disablePadding>
+          {Array.from({ length: 6 }, (_, index) => (
+            <ListItem key={index} disablePadding sx={{ mb: 0.5 }}>
+              <ListItemButton
                 sx={{
-                  width: 32,
-                  height: 32,
                   borderRadius: 1,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: theme.palette.background.paper,
-                  border: `1px solid ${theme.palette.divider}`,
+                  minHeight: 48,
+                  py: 1,
+                  pr: 2,
+                  "&:hover": {
+                    backgroundColor: theme.palette.action.hover,
+                  },
                 }}
               >
-                <Skeleton variant="circular" width={20} height={20} />
-              </Box>
+                <ListItemIcon sx={{ minWidth: 40 }}>
+                  <Box
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 1,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: theme.palette.background.paper,
+                      border: `1px solid ${theme.palette.divider}`,
+                    }}
+                  >
+                    <Skeleton variant="circular" width={20} height={20} />
+                  </Box>
+                </ListItemIcon>
 
-              {/* 文本骨架 */}
-              <Box sx={{ flex: 1 }}>
-                <Skeleton variant="text" width="70%" height={18} />
-                <Skeleton variant="text" width="50%" height={14} />
-              </Box>
-            </Box>
+                <ListItemText
+                  primary={
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <Skeleton variant="text" width="60%" height={16} />
+                    </Box>
+                  }
+                  secondary={<Skeleton variant="text" width="40%" height={12} />}
+                />
+              </ListItemButton>
+            </ListItem>
           ))}
-        </Stack>
+        </List>
       </Box>
     </Box>
   );

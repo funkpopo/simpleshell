@@ -21,6 +21,7 @@ import {
   Alert,
   Snackbar,
   InputAdornment,
+  Skeleton,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
@@ -313,6 +314,51 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     [theme, handleLaunchTerminal, t],
   );
 
+  // 骨架屏：与终端项布局一致
+  const TerminalItemSkeleton = useCallback(() => {
+    return (
+      <ListItem disablePadding sx={{ mb: 0.5 }}>
+        <ListItemButton
+          sx={{
+            borderRadius: 1,
+            minHeight: 48,
+            py: 1,
+            pr: 2,
+            "&:hover": {
+              backgroundColor: theme.palette.action.hover,
+            },
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 40 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: theme.palette.background.paper,
+                border: `1px solid ${theme.palette.divider}`,
+              }}
+            >
+              <Skeleton variant="circular" width={20} height={20} />
+            </Box>
+          </ListItemIcon>
+
+          <ListItemText
+            primary={
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <Skeleton variant="text" width="60%" height={16} />
+              </Box>
+            }
+            secondary={<Skeleton variant="text" width="40%" height={12} />}
+          />
+        </ListItemButton>
+      </ListItem>
+    );
+  }, [theme]);
+
   if (!open) return null;
 
   return (
@@ -365,33 +411,37 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
 
       {/* 搜索框 */}
       <Box sx={{ p: 2, pb: 1 }}>
-        <TextField
-          ref={searchInputRef}
-          fullWidth
-          size="small"
-          placeholder={t("localTerminal.searchPlaceholder")}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
-              </InputAdornment>
-            ),
-            endAdornment: searchQuery && (
-              <InputAdornment position="end">
-                <IconButton size="small" onClick={clearSearch}>
-                  <ClearIcon fontSize="small" />
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-          sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-            },
-          }}
-        />
+        {isDetecting ? (
+          <Skeleton variant="rectangular" width="100%" height={36} sx={{ borderRadius: 2 }} />
+        ) : (
+          <TextField
+            ref={searchInputRef}
+            fullWidth
+            size="small"
+            placeholder={t("localTerminal.searchPlaceholder")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+              endAdornment: searchQuery && (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={clearSearch}>
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2,
+              },
+            }}
+          />
+        )}
       </Box>
 
       {/* 可用终端列表 */}
@@ -404,20 +454,26 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         }}
       >
         <Box sx={{ px: 2, pb: 1 }}>
-          <Typography
-            variant="subtitle2"
-            color="text.secondary"
-            sx={{ fontWeight: 500 }}
-          >
-            {t("localTerminal.availableTerminals")} ({filteredTerminals.length})
-          </Typography>
+          {isDetecting ? (
+            <Skeleton variant="text" width={150} height={20} />
+          ) : (
+            <Typography
+              variant="subtitle2"
+              color="text.secondary"
+              sx={{ fontWeight: 500 }}
+            >
+              {t("localTerminal.availableTerminals")} ({filteredTerminals.length})
+            </Typography>
+          )}
         </Box>
 
         <Box sx={{ px: 2, flex: 1, overflow: "auto" }}>
           {isDetecting ? (
-            <Box sx={{ pt: 1 }}>
-              <SkeletonLoader type="list" lines={6} showAvatar />
-            </Box>
+            <List disablePadding>
+              {Array.from({ length: 6 }).map((_, index) => (
+                <TerminalItemSkeleton key={`skeleton-${index}`} />
+              ))}
+            </List>
           ) : filteredTerminals.length > 0 ? (
             <List disablePadding>
               {filteredTerminals.map((terminal, index) => (
