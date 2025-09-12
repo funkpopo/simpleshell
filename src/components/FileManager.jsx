@@ -122,6 +122,31 @@ const FileManager = memo(
     const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
 
     // 拖拽事件处理函数
+    // 增量加载优化：状态与缓冲
+    const [isChunking, setIsChunking] = useState(false);
+    const chunkBufferRef = useRef([]);
+    const flushTimerRef = useRef(null);
+    const filesRef = useRef(files);
+    useEffect(() => {
+      filesRef.current = files;
+    }, [files]);
+
+    // Fallback: 自动结束增量状态的定时器
+    const chunkingResetTimerRef = useRef(null);
+    const scheduleChunkingReset = useCallback(() => {
+      try {
+        if (chunkingResetTimerRef.current) clearTimeout(chunkingResetTimerRef.current);
+      } catch (_) {}
+      chunkingResetTimerRef.current = setTimeout(() => {
+        setIsChunking(false);
+      }, 800);
+    }, []);
+    useEffect(() => () => {
+      try {
+        if (chunkingResetTimerRef.current) clearTimeout(chunkingResetTimerRef.current);
+      } catch (_) {}
+    }, []);
+
     const handleDragEnter = useCallback((e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -276,6 +301,7 @@ const FileManager = memo(
         }
         return newTimers;
       });
+
     };
 
     // 清理已完成的传输任务
@@ -380,6 +406,11 @@ const FileManager = memo(
     const [listToken, setListToken] = useState(null);
 
     const getDirectoryFromCache = (path) => {
+      // 优先使用全局缓存（跨次打开可复用）
+      try {
+        const globalCached = dirCache.get(tabId, path, CACHE_EXPIRY_TIME);
+        if (globalCached) return globalCached;
+      } catch (_) {}
       if (!directoryCache[path]) return null;
 
       const cacheEntry = directoryCache[path];
@@ -394,6 +425,10 @@ const FileManager = memo(
 
     // 更新目录缓存
     const updateDirectoryCache = (path, data) => {
+      // 写入全局缓存
+      try {
+        dirCache.set(tabId, path, data);
+      } catch (_) {}
       setDirectoryCache((prevCache) => ({
         ...prevCache,
         [path]: {
@@ -420,7 +455,47 @@ const FileManager = memo(
           }
 
           if (Array.isArray(payload.items) && payload.items.length > 0) {
-            setFiles((prev) => prev.concat(payload.items));
+            setIsChunking(true);
+            if (typeof scheduleChunkingReset === "function") scheduleChunkingReset();
+            // buffer chunks and batch update to reduce re-renders
+            try {
+              chunkBufferRef.current.push(payload.items);
+              if (!flushTimerRef.current) {
+                flushTimerRef.current = setTimeout(() => {
+                  try {
+                    const buffered = chunkBufferRef.current.flat();
+                    chunkBufferRef.current = [];
+                    if (buffered.length > 0) {
+                      const nextFiles = (filesRef.current || []).concat(buffered);
+                      filesRef.current = nextFiles;
+                      setFiles(nextFiles);
+                    }
+                  } finally {
+                    flushTimerRef.current = null;
+                  }
+                }, 80);
+              }
+            } catch (_) {
+              setFiles((prev) => prev.concat(payload.items));
+            }
+          }
+
+          // finalize chunked loading with buffer flush
+          if (payload.done) {
+            if (flushTimerRef.current) {
+              clearTimeout(flushTimerRef.current);
+              flushTimerRef.current = null;
+            }
+            const remaining = chunkBufferRef.current.flat();
+            chunkBufferRef.current = [];
+            if (remaining.length > 0) {
+              const nextFiles = (filesRef.current || []).concat(remaining);
+              filesRef.current = nextFiles;
+              setFiles(nextFiles);
+            }
+            updateDirectoryCache(currentPath, filesRef.current || []);
+            setListToken(null);
+            setIsChunking(false);
           }
 
           if (payload.done) {
@@ -430,7 +505,9 @@ const FileManager = memo(
         } catch (_) {
           // ignore
         }
+
       });
+
       return () => {
         if (typeof unsubscribe === "function") unsubscribe();
       };
@@ -472,8 +549,11 @@ const FileManager = memo(
               const fileData = response.data || [];
               if (response.chunked && response.token) {
                 setListToken(response.token);
+                setIsChunking(true);
+                scheduleChunkingReset();
               } else {
                 setListToken(null);
+                setIsChunking(false);
               }
 
               // 检查数据是否有变化
@@ -540,6 +620,7 @@ const FileManager = memo(
         }
         return prev;
       });
+
     };
 
     // 返回先前路径
@@ -613,8 +694,11 @@ const FileManager = memo(
             const fileData = response.data || [];
             if (response.chunked && response.token) {
               setListToken(response.token);
+              setIsChunking(true);
+              scheduleChunkingReset();
             } else {
               setListToken(null);
+              setIsChunking(false);
             }
 
             // 更新缓存
@@ -815,35 +899,62 @@ const FileManager = memo(
         seen.add(key);
         return true;
       });
+      // removed legacy block
     }, []);
 
-    // 过滤和排序文件列表（根据搜索词） - 优化版本，使用useMemo缓存
-    const filteredFiles = useMemo(() => {
-      let processedFiles = files;
-
-      // 搜索过滤
+    // 显示用文件列表：过滤 + 排序（增量加载时跳过排序以提升首屏）
+    const displayFiles = useMemo(() => {
+      let processed = files;
       if (searchTerm) {
-        processedFiles = files.filter((file) =>
-          file.name.toLowerCase().includes(searchTerm.toLowerCase()),
+        const term = searchTerm.toLowerCase();
+        processed = files.filter(
+          (f) => f.name && f.name.toLowerCase().includes(term),
         );
       }
+      if (isChunking) return processed;
+      return [...processed].sort((a, b) => {
+        if (sortMode === "time") {
+          const aTime = Number.isFinite(a?.mtimeMs)
+            ? a.mtimeMs
+            : new Date(a?.modifyTime || 0).getTime();
+          const bTime = Number.isFinite(b?.mtimeMs)
+            ? b.mtimeMs
+            : new Date(b?.modifyTime || 0).getTime();
+          return bTime - aTime;
+        }
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return (a.name || "").localeCompare(b.name || "", undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
+    }, [files, searchTerm, sortMode, isChunking]);
+
+    // 过滤和排序文件列表（根据搜索词） - 优化版本，使用useMemo缓存
+    
+      
+      
+
+      // 搜索过滤
+      
+        
+      
 
       // 排序：按名称时目录在前，按时间时不区分文件类型
-      return [...processedFiles].sort((a, b) => {
-        if (sortMode === "time") {
+      
+        
           // 按时间排序（最新的在前），不区分文件夹和文件
-          const aTime = new Date(a.modifyTime || 0).getTime();
-          const bTime = new Date(b.modifyTime || 0).getTime();
-          return bTime - aTime;
-        } else {
+          
+          
+          
+        
           // 按名称排序时，目录在前
-          if (a.isDirectory && !b.isDirectory) return -1;
-          if (!a.isDirectory && b.isDirectory) return 1;
-          return a.name.localeCompare(b.name);
-        }
-      });
-    }, [files, searchTerm, sortMode]);
-
+          
+          
+          
+        
+      
+    
     const handleFileSelect = useCallback(
       (file, index, event) => {
         const isMultiSelect = event.ctrlKey || event.metaKey;
@@ -853,7 +964,7 @@ const FileManager = memo(
           // Shift范围选择 - 使用排序后的文件列表
           const start = Math.min(anchorIndex, index);
           const end = Math.max(anchorIndex, index);
-          const rangeFiles = filteredFiles.slice(start, end + 1);
+          const rangeFiles = displayFiles.slice(start, end + 1);
 
           // 直接设置范围内的文件为选中状态（完全替换之前的选择）
           setSelectedFiles(deduplicateSelectedFiles(rangeFiles));
@@ -904,7 +1015,7 @@ const FileManager = memo(
       },
       [
         anchorIndex,
-        filteredFiles,
+        displayFiles,
         isFileSelected,
         selectedFile,
         selectedFiles,
@@ -1578,7 +1689,7 @@ const FileManager = memo(
       // 使用虚拟化文件列表组件
       return (
         <VirtualizedFileList
-          files={filteredFiles}
+          files={displayFiles}
           onFileActivate={handleFileActivate}
           onContextMenu={handleContextMenu}
           onFileSelect={handleFileSelect}
@@ -3213,8 +3324,8 @@ const FileManager = memo(
       // Ctrl+A: 全选
       if (event.ctrlKey && event.key === "a") {
         event.preventDefault();
-        setSelectedFiles([...filteredFiles]);
-        setSelectedFile(filteredFiles[0] || null);
+        setSelectedFiles([...displayFiles]);
+        setSelectedFile(displayFiles[0] || null);
         setLastSelectedIndex(0);
         setAnchorIndex(0); // 设置锚点为第一个文件
       }
