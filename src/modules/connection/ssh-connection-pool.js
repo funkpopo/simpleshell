@@ -249,6 +249,10 @@ class SSHConnectionPool {
         username: sshConfig.username,
         algorithms: getBasicSSHAlgorithms(),
       };
+      if (sshConfig && sshConfig.enableCompression === true) {
+        connectionOptions.compress = true;
+        logToFile("SSH连接启用压缩(compress=true)", "INFO");
+      }
 
       // 处理私钥文件路径
       const { processSSHPrivateKey } = require("../../core/utils/ssh-utils");

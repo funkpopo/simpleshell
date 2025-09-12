@@ -3,21 +3,44 @@
 let logToFile = null;
 let getChildProcessInfo = null; // Function to get info from main.js's childProcesses map
 
-// SFTP 会话管理
-const sftpSessions = new Map();
-const sftpSessionLocks = new Map();
+// SFTP 会话管理（支持每个标签页维护会话池）
+// 结构: sftpPools: Map<tabId, { sessions: Map<sessionId, Session>, primaryId: string|null }>
+const sftpPools = new Map();
+const sftpSessionLocks = new Map(); // 按tabId加锁，避免并发创建
 let pendingOperations = new Map(); // key: tabId, value: Array of pending operations
 
 // SFTP 会话池配置 (Consider making these configurable via init or a config module later)
 const SFTP_SESSION_IDLE_TIMEOUT = 600000; // 空闲超时时间（10分钟）
-const MAX_SFTP_SESSIONS_PER_TAB = 1; // 每个标签页的最大会话数量
-const MAX_TOTAL_SFTP_SESSIONS = 50; // 总的最大会话数量
+const MAX_SFTP_SESSIONS_PER_TAB = 3; // 每个标签页的最大会话数量（默认允许3个会话）
+const MAX_TOTAL_SFTP_SESSIONS = 50; // 总的最大会话数量（所有标签页累计）
 const SFTP_HEALTH_CHECK_INTERVAL = 90000; // 健康检查间隔（毫秒）
 const SFTP_OPERATION_TIMEOUT = 86400000; // 操作超时时间（毫秒），增加到24小时
 const SFTP_LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 大文件阈值（100MB）
 const SFTP_LARGE_FILE_TIMEOUT = 86400000; // 大文件传输超时时间（24小时）
 
 let sftpHealthCheckTimer = null;
+
+// 内部工具: 获取或创建某个tab的会话池
+function getOrCreatePool(tabId) {
+  if (!sftpPools.has(tabId)) {
+    sftpPools.set(tabId, { sessions: new Map(), primaryId: null });
+  }
+  return sftpPools.get(tabId);
+}
+
+// 内部工具: 统计所有会话总数
+function getTotalSessionCount() {
+  let total = 0;
+  for (const pool of sftpPools.values()) {
+    total += pool.sessions.size;
+  }
+  return total;
+}
+
+// 内部工具: 生成唯一会话ID
+function genSessionId(tabId) {
+  return `${tabId}-sftp-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+}
 
 // 动态计算超时时间的函数
 function calculateDynamicTimeout(
@@ -94,42 +117,46 @@ async function checkSftpSessionsHealth() {
       // Ensure logToFile is available
       return;
     }
+    const totalCount = getTotalSessionCount();
     logToFile(
-      `sftpCore: Running SFTP health check, active sessions: ${sftpSessions.size}`,
+      `sftpCore: Running SFTP health check, total sessions: ${totalCount}`,
       "INFO",
     );
 
-    if (sftpSessions.size > MAX_TOTAL_SFTP_SESSIONS) {
-      logToFile(
-        `sftpCore: Too many SFTP sessions (${sftpSessions.size}), cleaning up oldest sessions`,
-        "WARN",
-      );
-      let sessionsToClose = sftpSessions.size - MAX_TOTAL_SFTP_SESSIONS;
-      const sessionEntries = Array.from(sftpSessions.entries());
-      sessionEntries.sort((a, b) => a[1].createdAt - b[1].createdAt);
-      for (let i = 0; i < sessionsToClose; i++) {
-        if (i < sessionEntries.length) {
-          const [tabId] = sessionEntries[i];
-          logToFile(
-            `sftpCore: Closing old SFTP session for tab ${tabId}`,
-            "INFO",
-          );
-          await closeSftpSession(tabId); // Ensure close is awaited if it becomes async
+    // 超过全局限制时，按最早创建时间全局回收
+    if (totalCount > MAX_TOTAL_SFTP_SESSIONS) {
+      const toClose = totalCount - MAX_TOTAL_SFTP_SESSIONS;
+      const allSessions = [];
+      for (const [tabId, pool] of sftpPools.entries()) {
+        for (const session of pool.sessions.values()) {
+          allSessions.push({ tabId, session });
         }
+      }
+      allSessions.sort((a, b) => a.session.createdAt - b.session.createdAt);
+      for (let i = 0; i < toClose && i < allSessions.length; i++) {
+        const { tabId, session } = allSessions[i];
+        logToFile(
+          `sftpCore: Closing old SFTP session ${session.id} for tab ${tabId}`,
+          "INFO",
+        );
+        await closeSftpSession(tabId, session.id);
       }
     }
 
-    for (const [tabId, session] of sftpSessions.entries()) {
-      const idleTime = Date.now() - session.lastUsed;
-      if (idleTime > SFTP_SESSION_IDLE_TIMEOUT) {
-        logToFile(
-          `sftpCore: SFTP session ${tabId} idle for ${idleTime}ms, closing`,
-          "INFO",
-        );
-        await closeSftpSession(tabId);
-        continue;
+    // 遍历所有会话进行空闲和健康检查
+    for (const [tabId, pool] of sftpPools.entries()) {
+      for (const session of pool.sessions.values()) {
+        const idleTime = Date.now() - session.lastUsed;
+        if (idleTime > SFTP_SESSION_IDLE_TIMEOUT && session.busyCount === 0) {
+          logToFile(
+            `sftpCore: SFTP session ${session.id} (tab ${tabId}) idle for ${idleTime}ms, closing`,
+            "INFO",
+          );
+          await closeSftpSession(tabId, session.id);
+          continue;
+        }
+        await checkSessionAlive(tabId, session);
       }
-      await checkSessionAlive(tabId, session);
     }
   } catch (error) {
     if (logToFile) {
@@ -158,130 +185,62 @@ async function checkSessionAlive(tabId, session) {
     session.lastChecked = Date.now();
   } catch (error) {
     logToFile(
-      `sftpCore: SFTP session ${tabId} health check failed: ${error.message}, closing session`,
+      `sftpCore: SFTP session ${session.id} (tab ${tabId}) health check failed: ${error.message}, closing session`,
       "ERROR",
     );
-    await closeSftpSession(tabId);
+    await closeSftpSession(tabId, session.id);
   }
 }
 
-// 添加新方法: 确保SFTP会话有效性，如有必要则重新初始化
+// 添加新方法: 确保至少有一个SFTP会话，如果没有则创建，并返回"主"会话的sftp对象
 async function ensureSftpSession(tabId) {
   try {
-    // 检查是否已有会话
-    if (sftpSessions.has(tabId)) {
-      const session = sftpSessions.get(tabId);
+    const pool = getOrCreatePool(tabId);
 
-      // 重置会话超时
+    // 若已有主会话，快速健康检查并返回
+    if (pool.primaryId && pool.sessions.has(pool.primaryId)) {
+      const session = pool.sessions.get(pool.primaryId);
+      // 重置空闲计时器
       if (session.timeoutId) clearTimeout(session.timeoutId);
       session.timeoutId = setTimeout(() => {
-        closeSftpSession(tabId);
+        closeSftpSession(tabId, session.id);
       }, SFTP_SESSION_IDLE_TIMEOUT);
 
-      // 如果会话存在但不活跃，尝试重新创建
       if (!session.active) {
-        logToFile(
-          `sftpCore: Session for tab ${tabId} exists but inactive, recreating`,
-          "INFO",
-        );
-        await closeSftpSession(tabId);
-        return acquireSftpSession(tabId);
+        await closeSftpSession(tabId, session.id);
+        const newSession = await acquireSftpSession(tabId);
+        return newSession.sftp;
       }
 
-      // 如果会话存在并活跃，进行简单验证
       try {
-        // 简单操作测试会话可用性
         await new Promise((resolve, reject) => {
           const timeoutId = setTimeout(() => {
             reject(new Error("SFTP health check timeout"));
           }, 2000);
-
-          session.sftp.stat(".", (err, stats) => {
+          session.sftp.stat(".", (err) => {
             clearTimeout(timeoutId);
-            if (err) {
-              reject(err);
-            } else {
-              resolve();
-            }
+            if (err) reject(err);
+            else resolve();
           });
         });
-
-        // 会话验证成功
         session.lastChecked = Date.now();
         session.lastUsed = Date.now();
         return session.sftp;
-      } catch (healthError) {
-        // 会话验证失败，关闭并重新创建
+      } catch (e) {
         logToFile(
-          `sftpCore: Session check failed for tab ${tabId}, recreating: ${healthError.message}`,
+          `sftpCore: Primary session check failed for tab ${tabId}, recreating: ${e.message}`,
           "WARN",
         );
-        await closeSftpSession(tabId);
-
-        // 添加重试逻辑
-        try {
-          return await acquireSftpSession(tabId);
-        } catch (retryError) {
-          logToFile(
-            `sftpCore: First retry failed for tab ${tabId}, attempting one more time: ${retryError.message}`,
-            "WARN",
-          );
-
-          // 短暂延迟后再次尝试
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          return await acquireSftpSession(tabId);
-        }
-      }
-    } else {
-      // 如果会话数量已达上限，清除最旧的会话
-      if (sftpSessions.size >= MAX_TOTAL_SFTP_SESSIONS) {
-        logToFile(
-          `sftpCore: Maximum SFTP sessions limit reached (${MAX_TOTAL_SFTP_SESSIONS}), closing oldest session`,
-          "WARN",
-        );
-        let oldestTabId = null;
-        let oldestTime = Date.now();
-        for (const [id, session] of sftpSessions.entries()) {
-          if (session.createdAt < oldestTime) {
-            oldestTime = session.createdAt;
-            oldestTabId = id;
-          }
-        }
-        if (oldestTabId) await closeSftpSession(oldestTabId);
-      }
-
-      // 无会话，直接创建新的
-      logToFile(`sftpCore: No session for tab ${tabId}, creating new`, "INFO");
-
-      // 添加重试逻辑
-      try {
-        return await acquireSftpSession(tabId);
-      } catch (initialError) {
-        // 如果是因为SSH连接不存在，则直接抛出错误
-        if (initialError.message.includes("No SSH connection info found")) {
-          throw initialError;
-        }
-
-        logToFile(
-          `sftpCore: Initial SFTP session creation failed for tab ${tabId}, retrying: ${initialError.message}`,
-          "WARN",
-        );
-
-        // 短暂延迟后重试
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // 最多尝试两次
-        try {
-          return await acquireSftpSession(tabId);
-        } catch (retryError) {
-          logToFile(
-            `sftpCore: All SFTP session creation attempts failed for tab ${tabId}: ${retryError.message}`,
-            "ERROR",
-          );
-          throw retryError;
-        }
+        await closeSftpSession(tabId, session.id);
+        const newSession = await acquireSftpSession(tabId);
+        return newSession.sftp;
       }
     }
+
+    // 没有主会话，则创建
+    logToFile(`sftpCore: No primary session for tab ${tabId}, creating`, "INFO");
+    const created = await acquireSftpSession(tabId);
+    return created.sftp;
   } catch (error) {
     logToFile(
       `sftpCore: Error ensuring SFTP session for tab ${tabId}: ${error.message}`,
@@ -297,12 +256,15 @@ async function getSftpSession(tabId) {
     return new Promise((resolve, reject) => {
       const checkLock = () => {
         if (!sftpSessionLocks.has(tabId)) {
-          if (sftpSessions.has(tabId)) {
-            const session = sftpSessions.get(tabId);
+          const pool = sftpPools.get(tabId);
+          if (pool && pool.primaryId && pool.sessions.has(pool.primaryId)) {
+            const session = pool.sessions.get(pool.primaryId);
             session.lastUsed = Date.now();
             resolve(session.sftp);
           } else {
-            acquireSftpSession(tabId).then(resolve).catch(reject);
+            acquireSftpSession(tabId)
+              .then((session) => resolve(session.sftp))
+              .catch(reject);
           }
         } else {
           setTimeout(checkLock, 100);
@@ -328,11 +290,9 @@ async function getSftpSession(tabId) {
 async function acquireSftpSession(tabId) {
   sftpSessionLocks.set(tabId, true);
   try {
-    let sessionCount = 0;
-    for (const [id] of sftpSessions.entries()) {
-      if (id === tabId) sessionCount++;
-    }
-    if (sessionCount >= MAX_SFTP_SESSIONS_PER_TAB) {
+    const pool = getOrCreatePool(tabId);
+    const perTabCount = pool.sessions.size;
+    if (perTabCount >= MAX_SFTP_SESSIONS_PER_TAB) {
       logToFile(
         `sftpCore: Maximum SFTP sessions per tab reached (${MAX_SFTP_SESSIONS_PER_TAB}) for tab ${tabId}`,
         "WARN",
@@ -457,44 +417,44 @@ async function acquireSftpSession(tabId) {
           // 创建一个全新的会话对象
           const now = Date.now();
           const session = {
+            id: genSessionId(tabId),
             sftp, // This is the ssh2.sftp instance
             timeoutId: setTimeout(() => {
-              closeSftpSession(tabId);
+              closeSftpSession(tabId, undefined);
             }, SFTP_SESSION_IDLE_TIMEOUT),
             active: true,
             createdAt: now,
             lastUsed: now,
             lastChecked: now,
+            busyCount: 0,
             sshClient: sshClient, // 存储SSH客户端引用，便于追踪
           };
 
-          // 先关闭可能存在的旧会话
-          if (sftpSessions.has(tabId)) {
-            closeSftpSession(tabId);
-          }
-
-          sftpSessions.set(tabId, session);
+          // 将会话加入池
+          const poolRef = getOrCreatePool(tabId);
+          poolRef.sessions.set(session.id, session);
+          if (!poolRef.primaryId) poolRef.primaryId = session.id;
           sftpSessionLocks.delete(tabId);
 
           // 监听SFTP会话事件
           sftp.on("error", (sftpErr) => {
             logToFile(
-              `sftpCore: SFTP session error for ${tabId}: ${sftpErr.message}`,
+              `sftpCore: SFTP session error for ${tabId} (${session.id}): ${sftpErr.message}`,
               "ERROR",
             );
-            closeSftpSession(tabId);
+            closeSftpSession(tabId, session.id);
           });
           sftp.on("close", () => {
             logToFile(
-              `sftpCore: SFTP session closed by remote for ${tabId}`,
+              `sftpCore: SFTP session closed by remote for ${tabId} (${session.id})`,
               "INFO",
             );
-            closeSftpSession(tabId);
+            closeSftpSession(tabId, session.id);
           });
           if (!sftpHealthCheckTimer) {
             startSftpHealthCheck();
           }
-          resolve(sftp); // Resolve with the ssh2.sftp instance
+          resolve(session); // Resolve with the session object
         });
       } catch (sftpError) {
         clearTimeout(timeoutId);
@@ -517,26 +477,95 @@ async function acquireSftpSession(tabId) {
 }
 
 // 关闭SFTP会话
-async function closeSftpSession(tabId) {
-  // Made async to align with potential async operations within
-  if (sftpSessions.has(tabId)) {
-    const session = sftpSessions.get(tabId);
-    if (session.timeoutId) clearTimeout(session.timeoutId);
-    session.active = false;
+// 如果提供sessionId，则仅关闭该会话；否则关闭该tab的所有会话
+async function closeSftpSession(tabId, sessionId = undefined) {
+  const pool = sftpPools.get(tabId);
+  if (!pool) return;
+
+  const closeOne = (sess) => {
+    if (!sess) return;
+    if (sess.timeoutId) clearTimeout(sess.timeoutId);
+    sess.active = false;
     try {
-      session.sftp.end(); // End the ssh2.sftp instance
+      if (sess.sftp && typeof sess.sftp.end === "function") {
+        sess.sftp.end();
+      }
     } catch (error) {
       logToFile(
-        `sftpCore: Error closing SFTP session (sftp.end()) for ${tabId}: ${error.message}`,
+        `sftpCore: Error closing SFTP session (sftp.end()) for ${tabId} (${sess.id}): ${error.message}`,
         "ERROR",
       );
     }
-    sftpSessions.delete(tabId);
-    logToFile(`sftpCore: Closed SFTP session for ${tabId}`, "INFO");
-    if (sftpSessions.size === 0 && sftpHealthCheckTimer) {
-      stopSftpHealthCheck();
+    pool.sessions.delete(sess.id);
+    if (pool.primaryId === sess.id) {
+      pool.primaryId = pool.sessions.size > 0 ? [...pool.sessions.keys()][0] : null;
+    }
+    logToFile(`sftpCore: Closed SFTP session for ${tabId} (${sess.id})`, "INFO");
+  };
+
+  if (sessionId) {
+    const sess = pool.sessions.get(sessionId);
+    closeOne(sess);
+  } else {
+    for (const sess of [...pool.sessions.values()]) {
+      closeOne(sess);
     }
   }
+
+  // 若全局已无会话，停止健康检查
+  if (getTotalSessionCount() === 0 && sftpHealthCheckTimer) {
+    stopSftpHealthCheck();
+  }
+}
+
+// 关闭指定tab的所有会话（语义化API）
+async function closeAllSftpSessionsForTab(tabId) {
+  return closeSftpSession(tabId, undefined);
+}
+
+// 借出一个SFTP会话（尽量创建新的，或选择最空闲的）
+async function borrowSftpSession(tabId) {
+  const pool = getOrCreatePool(tabId);
+
+  // 优先创建新会话（未达到上限）
+  if (pool.sessions.size < MAX_SFTP_SESSIONS_PER_TAB) {
+    try {
+      const session = await acquireSftpSession(tabId);
+      session.busyCount = 1;
+      return { sftp: session.sftp, sessionId: session.id };
+    } catch (e) {
+      // 回退到已有会话
+      logToFile(
+        `sftpCore: Failed to create new session on borrow, fallback to existing: ${e.message}`,
+        "WARN",
+      );
+    }
+  }
+
+  // 从现有会话中选择busyCount最小的
+  let target = null;
+  for (const sess of pool.sessions.values()) {
+    if (!target || sess.busyCount < target.busyCount) target = sess;
+  }
+  if (!target) {
+    // 无可用会话，则强制创建一个
+    const session = await acquireSftpSession(tabId);
+    session.busyCount = 1;
+    return { sftp: session.sftp, sessionId: session.id };
+  }
+  target.busyCount++;
+  target.lastUsed = Date.now();
+  return { sftp: target.sftp, sessionId: target.id };
+}
+
+// 归还一个SFTP会话
+function releaseSftpSession(tabId, sessionId) {
+  const pool = sftpPools.get(tabId);
+  if (!pool) return;
+  const session = pool.sessions.get(sessionId);
+  if (!session) return;
+  session.busyCount = Math.max(0, (session.busyCount || 0) - 1);
+  session.lastUsed = Date.now();
 }
 
 async function enqueueSftpOperation(tabId, operation, options = {}) {
@@ -825,7 +854,7 @@ function clearPendingOperationsForTab(tabId, options = {}) {
 // 添加获取原生SFTP会话的方法，用于传输模块直接使用
 async function getRawSftpSession(tabId) {
   try {
-    // 直接返回原生ssh2 SFTP对象，供传输模块使用
+    // 直接返回主会话的原生ssh2 SFTP对象，供传输模块使用
     return await getSftpSession(tabId);
   } catch (error) {
     logToFile(
@@ -838,44 +867,44 @@ async function getRawSftpSession(tabId) {
 
 // 获取SFTP会话的连接配置信息
 function getSftpSessionInfo(tabId) {
-  if (!sftpSessions.has(tabId)) {
-    return null;
-  }
-
-  const session = sftpSessions.get(tabId);
+  const pool = sftpPools.get(tabId);
+  if (!pool || !pool.primaryId || !pool.sessions.has(pool.primaryId)) return null;
+  const session = pool.sessions.get(pool.primaryId);
   return {
     active: session.active,
     createdAt: session.createdAt,
     lastUsed: session.lastUsed,
     lastChecked: session.lastChecked,
+    sessionId: session.id,
+    sessionCount: pool.sessions.size,
   };
 }
 
 // 批量清理会话，用于性能优化
 async function optimizeSftpSessions() {
   try {
+    const total = getTotalSessionCount();
     logToFile(
-      `sftpCore: Starting SFTP session optimization, current sessions: ${sftpSessions.size}`,
+      `sftpCore: Starting SFTP session optimization, current sessions: ${total}`,
       "INFO",
     );
 
     const now = Date.now();
     let optimizedCount = 0;
 
-    for (const [tabId, session] of sftpSessions.entries()) {
-      const idleTime = now - session.lastUsed;
-
-      // 如果会话空闲时间超过一半的超时时间，进行健康检查
-      if (idleTime > SFTP_SESSION_IDLE_TIMEOUT / 2) {
-        try {
-          await checkSessionAlive(tabId, session);
-          optimizedCount++;
-        } catch (error) {
-          logToFile(
-            `sftpCore: Session optimization failed for ${tabId}, will be closed: ${error.message}`,
-            "WARN",
-          );
-          // checkSessionAlive内部会处理关闭
+    for (const [tabId, pool] of sftpPools.entries()) {
+      for (const session of pool.sessions.values()) {
+        const idleTime = now - session.lastUsed;
+        if (idleTime > SFTP_SESSION_IDLE_TIMEOUT / 2) {
+          try {
+            await checkSessionAlive(tabId, session);
+            optimizedCount++;
+          } catch (error) {
+            logToFile(
+              `sftpCore: Session optimization failed for ${tabId} (${session.id}), will be closed: ${error.message}`,
+              "WARN",
+            );
+          }
         }
       }
     }
@@ -887,7 +916,7 @@ async function optimizeSftpSessions() {
     return {
       success: true,
       optimizedCount,
-      remainingSessions: sftpSessions.size,
+      remainingSessions: getTotalSessionCount(),
     };
   } catch (error) {
     logToFile(
@@ -907,10 +936,13 @@ module.exports = {
   getSftpSessionInfo, // 新增：获取会话信息
   optimizeSftpSessions, // 新增：会话优化
   closeSftpSession,
+  closeAllSftpSessionsForTab,
   enqueueSftpOperation,
   clearPendingOperationsForTab, // 导出新函数
   ensureSftpSession, // 导出新方法
   calculateDynamicTimeout, // 导出动态超时计算函数
+  borrowSftpSession,
+  releaseSftpSession,
   // processSftpQueue is internal, not exported
   // checkSftpSessionsHealth and checkSessionAlive are also internal after startSftpHealthCheck is called
 };
