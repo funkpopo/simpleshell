@@ -43,6 +43,40 @@ export const createUnifiedTheme = (darkMode) =>
       },
     },
     components: {
+      // 统一骨架屏样式
+      MuiSkeleton: {
+        defaultProps: {
+          // 统一动画：亮色使用 wave，暗色使用 pulse（柔和）
+          animation: darkMode ? "pulse" : "wave",
+        },
+        styleOverrides: {
+          root: {
+            // 统一底色：基于主题动态透明度
+            backgroundColor: darkMode
+              ? "rgba(255,255,255,0.08)"
+              : "rgba(0,0,0,0.08)",
+            borderRadius: 6,
+          },
+          text: {
+            borderRadius: 6,
+          },
+          rectangular: {
+            borderRadius: 8,
+          },
+          circular: {
+            // 保持圆形
+          },
+          wave: {
+            // 调整高亮带颜色以匹配主题
+            "&::after": {
+              background:
+                darkMode
+                  ? "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)"
+                  : "linear-gradient(90deg, transparent, rgba(0,0,0,0.06), transparent)",
+            },
+          },
+        },
+      },
       // 统一按钮样式
       MuiButton: {
         styleOverrides: {

@@ -31,19 +31,21 @@ const createLazyComponent = (
     }),
   );
 
-  const fallback = SkeletonComponent ? (
-    <SkeletonComponent />
-  ) : (
-    <LoadingFallback message={fallbackMessage} />
-  );
+  return (props) => {
+    const fallback = SkeletonComponent ? (
+      <SkeletonComponent {...props} />
+    ) : (
+      <LoadingFallback message={fallbackMessage} />
+    );
 
-  return (props) => (
-    <ErrorBoundary componentName={componentName}>
-      <Suspense fallback={fallback}>
-        <LazyComponent {...props} />
-      </Suspense>
-    </ErrorBoundary>
-  );
+    return (
+      <ErrorBoundary componentName={componentName}>
+        <Suspense fallback={fallback}>
+          <LazyComponent {...props} />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  };
 };
 
 // 使用工厂函数创建懒加载组件
