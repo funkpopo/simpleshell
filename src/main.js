@@ -2162,6 +2162,7 @@ function setupIPC(mainWindow) {
                   size: item.attrs.size,
                   isDirectory: item.attrs.isDirectory(),
                   modifyTime: new Date(item.attrs.mtime * 1000).toISOString(),
+                  mtimeMs: item.attrs.mtime * 1000,
                   permissions: item.attrs.mode,
                 }));
 
