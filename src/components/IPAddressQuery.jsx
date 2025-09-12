@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from "react";
+import React, { useState, useEffect, memo, useCallback, useRef } from "react";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
@@ -23,6 +23,13 @@ import HistoryIcon from "@mui/icons-material/History";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import Collapse from "@mui/material/Collapse";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+// Common IP utilities (supports IPv4/IPv6 + private detection)
+// Use require for reliable CJS interop in both renderer and main bundles
+const ipUtils = require("../utils/ip");
+
+// My IP TTL cache (session-scoped)
+const MY_IP_CACHE_KEY = "ipQuery:myIpCache";
+const MY_IP_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
 
 // IP地址查询组件
 const IPAddressQuery = memo(({ open, onClose }) => {
@@ -41,6 +48,8 @@ const IPAddressQuery = memo(({ open, onClose }) => {
     }
   });
   const [historyOpen, setHistoryOpen] = useState(false);
+  const requestIdRef = useRef(0);
+  const debounceTimerRef = useRef(null);
 
   // 同步会话级缓存
   useEffect(() => {
@@ -52,12 +61,18 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   // 查询IP信息
   const fetchIPInfo = async (ip = "") => {
     try {
+      const currentId = ++requestIdRef.current; // mark request
       setLoading(true);
       setError(null);
 
       // 通过preload API进行查询
       if (window.terminalAPI?.queryIpAddress) {
         const result = await window.terminalAPI.queryIpAddress(ip);
+
+        // Ignore outdated responses
+        if (currentId !== requestIdRef.current) {
+          return;
+        }
 
         if (result.ret === "ok") {
           setIpInfo(result);
@@ -87,6 +102,16 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             const next = [entry, ...deduped];
             return next.slice(0, 20);
           });
+
+          // Cache "my IP" result with TTL when querying own IP
+          if (!ip || !ip.trim()) {
+            try {
+              sessionStorage.setItem(
+                MY_IP_CACHE_KEY,
+                JSON.stringify({ ts: Date.now(), result }),
+              );
+            } catch {}
+          }
         } else {
           throw new Error(result.msg || t("ipAddressQuery.networkError"));
         }
@@ -102,11 +127,21 @@ const IPAddressQuery = memo(({ open, onClose }) => {
 
   // 处理查询按钮点击
   const handleQuery = useCallback(() => {
-    if (!ipAddress.trim()) {
+    const ip = ipAddress.trim();
+    if (!ip) {
       setError(t("ipAddressQuery.invalidIp"));
       return;
     }
-    fetchIPInfo(ipAddress);
+    const ipVer = ipUtils.isIP(ip);
+    if (ipVer === 0) {
+      setError(t("ipAddressQuery.invalidIp"));
+      return;
+    }
+    if (ipUtils.isPrivateOrSpecial(ip)) {
+      setError(t("ipAddressQuery.invalidIp"));
+      return;
+    }
+    fetchIPInfo(ip);
   }, [ipAddress, t]);
 
   // 查询本机IP
@@ -118,16 +153,47 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   // 当侧边栏打开时自动查询本机IP
   useEffect(() => {
     if (open && !ipInfo && !loading && !error) {
+      // Use TTL cache for auto my-IP query
+      try {
+        const cachedStr = sessionStorage.getItem(MY_IP_CACHE_KEY);
+        if (cachedStr) {
+          const cache = JSON.parse(cachedStr);
+          if (cache && cache.ts && cache.result) {
+            if (Date.now() - cache.ts < MY_IP_CACHE_TTL_MS) {
+              setIpInfo(cache.result);
+              return; // serve from cache, skip network
+            }
+          }
+        }
+      } catch {}
+
       handleQueryMyIP();
     }
   }, [open, ipInfo, loading, error, handleQueryMyIP]);
 
   // 处理回车键按下事件
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && ipAddress.trim()) {
-      handleQuery();
+    if (e.key === "Enter") {
+      // Debounce Enter-triggered query to avoid duplicates
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      debounceTimerRef.current = setTimeout(() => {
+        handleQuery();
+      }, 250);
     }
   };
+
+  // Clear pending debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      // Invalidate any in-flight response
+      requestIdRef.current++;
+    };
+  }, []);
 
   // 渲染查询结果
   const renderResult = () => {
