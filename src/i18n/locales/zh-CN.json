@@ -178,7 +178,7 @@
         "fileManager": "正在加载文件列表...",
         "settings": "正在加载设置...",
         "connections": "正在加载连接列表...",
-        "resourceMonitor": "正在加载系统信息...",
+        
         "aiChat": "正在初始化AI助手..."
       }
     },
@@ -369,6 +369,8 @@
       "nextPath": "前进",
       "home": "主目录",
       "upload": "上传",
+      "uploadFile": "上传文件",
+      "uploadFolder": "上传文件夹",
       "search": "搜索文件...",
       "enterPath": "输入路径...",
       "sort": "排序",

@@ -178,7 +178,7 @@
         "fileManager": "Loading file list...",
         "settings": "Loading settings...",
         "connections": "Loading connection list...",
-        "resourceMonitor": "Loading system information...",
+        
         "aiChat": "Initializing AI assistant..."
       }
     },
@@ -369,6 +369,8 @@
       "nextPath": "Forward",
       "home": "Home",
       "upload": "Upload",
+      "uploadFile": "Upload File",
+      "uploadFolder": "Upload Folder",
       "search": "Search files...",
       "enterPath": "Enter path...",
       "sort": "Sort",

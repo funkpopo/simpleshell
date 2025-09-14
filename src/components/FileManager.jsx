@@ -4231,13 +4231,13 @@ const FileManager = memo(
             <ListItemIcon>
               <UploadFileIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>上传文件</ListItemText>
+            <ListItemText>{t("fileManager.uploadFile")}</ListItemText>
           </MenuItem>
           <MenuItem onClick={handleUploadFolderFromMenu}>
             <ListItemIcon>
               <CreateNewFolderIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>上传文件夹</ListItemText>
+            <ListItemText>{t("fileManager.uploadFolder")}</ListItemText>
           </MenuItem>
         </Menu>
 
@@ -4261,7 +4261,7 @@ const FileManager = memo(
             <ListItemIcon>
               <SortByAlphaIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>按名称排序</ListItemText>
+            <ListItemText>{t("fileManager.sortByName")}</ListItemText>
           </MenuItem>
           <MenuItem
             onClick={() => handleSortModeChange("time")}
@@ -4270,7 +4270,7 @@ const FileManager = memo(
             <ListItemIcon>
               <AccessTimeIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>按时间排序</ListItemText>
+            <ListItemText>{t("fileManager.sortByTime")}</ListItemText>
           </MenuItem>
         </Menu>
 
@@ -4318,7 +4318,7 @@ const FileManager = memo(
                   fontWeight: "medium",
                 }}
               >
-                {t("fileManager.dragDropMessage")}
+                {t("fileManager.messages.dragDropMessage")}
               </Typography>
               <Typography
                 variant="body2"
@@ -4327,10 +4327,10 @@ const FileManager = memo(
                 }}
               >
                 {selectedFile && selectedFile.isDirectory
-                  ? t("fileManager.uploadToFolder", {
+                  ? t("fileManager.messages.uploadToFolder", {
                       folder: selectedFile.name,
                     })
-                  : t("fileManager.uploadToCurrentFolder") + `: ${currentPath}`}
+                  : t("fileManager.messages.uploadToCurrentFolder") + `: ${currentPath}`}
               </Typography>
             </Paper>
           </Box>

@@ -526,10 +526,24 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // SSH连接相关
   startSSH: (sshConfig) => ipcRenderer.invoke("terminal:startSSH", sshConfig),
+  // 兼容旧版: createSSHTerminal 别名，支持两种参数形式
+  // 用法1: createSSHTerminal(sshConfig)
+  // 用法2: createSSHTerminal(processId, sshConfig) -> processId 参数会被忽略
+  createSSHTerminal: (...args) => {
+    const [arg1, arg2] = args || [];
+    const sshConfig = arg2 && typeof arg2 === "object" ? arg2 : arg1;
+    return ipcRenderer.invoke("terminal:startSSH", sshConfig);
+  },
 
   // Telnet连接相关
   startTelnet: (telnetConfig) =>
     ipcRenderer.invoke("terminal:startTelnet", telnetConfig),
+  // 兼容旧版: createTelnetTerminal 别名，支持两种参数形式
+  createTelnetTerminal: (...args) => {
+    const [arg1, arg2] = args || [];
+    const telnetConfig = arg2 && typeof arg2 === "object" ? arg2 : arg1;
+    return ipcRenderer.invoke("terminal:startTelnet", telnetConfig);
+  },
 });
 
 // SSH密钥生成器API
