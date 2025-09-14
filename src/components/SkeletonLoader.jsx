@@ -383,18 +383,9 @@ export const TerminalSkeleton = memo(() => {
 });
 
 export const ResourceMonitorSkeleton = memo(() => {
-  const { t } = useTranslation();
   const theme = useTheme();
   return (
     <Box sx={{ p: 2 }}>
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{ mb: 2, display: "block" }}
-      >
-        {t("common.skeleton.resourceMonitor")}
-      </Typography>
-
       {/* 系统信息卡片轮廓 */}
       <Box
         sx={{
