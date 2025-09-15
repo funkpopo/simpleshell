@@ -322,7 +322,13 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             )}
           </Grid>
         </Paper>
-        {ipInfo.data?.latitude && ipInfo.data?.longitude && (
+        {(() => {
+          const latNum = Number(ipInfo.data?.latitude);
+          const lonNum = Number(ipInfo.data?.longitude);
+          const hasValidCoords =
+            Number.isFinite(latNum) && Number.isFinite(lonNum);
+          return hasValidCoords;
+        })() && (
           <Box
             sx={{
               mt: 2,
