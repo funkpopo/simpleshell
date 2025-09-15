@@ -213,6 +213,7 @@ const getLanguageMode = (filename) => {
     tsx: javascript,
     mjs: javascript,
     cjs: javascript,
+    vue: javascript, // Vue 文件使用 JavaScript 高亮
 
     // Web 前端
     html: html,
@@ -222,28 +223,40 @@ const getLanguageMode = (filename) => {
     scss: css,
     sass: css,
     less: css,
+    styl: css,
+    stylus: css,
 
     // 数据格式
     json: json,
     jsonc: json,
     json5: json,
+    geojson: json,
 
     // Python
     py: python,
     pyw: python,
     pyi: python,
+    pyx: python,
+    ipynb: json, // Jupyter notebooks are JSON
 
-    // Java
+    // Java/Kotlin/Scala
     java: java,
+    kt: java,  // Kotlin 使用 Java 高亮
+    kts: java,
+    scala: java,
+    sc: java,
 
-    // C/C++
+    // C/C++/C#
     c: cpp,
     cpp: cpp,
     cc: cpp,
     cxx: cpp,
+    c__: cpp,
     h: cpp,
     hpp: cpp,
     hxx: cpp,
+    hh: cpp,
+    cs: java, // C# 使用 Java 高亮
 
     // PHP
     php: php,
@@ -251,24 +264,32 @@ const getLanguageMode = (filename) => {
     php3: php,
     php4: php,
     php5: php,
+    php7: php,
+    phps: php,
 
     // Go
     go: go,
+    mod: go, // go.mod 文件
 
     // Rust
     rs: rust,
+    rlib: rust,
 
     // SQL
     sql: sql,
     mysql: sql,
     pgsql: sql,
     sqlite: sql,
+    plsql: sql,
 
     // Markup
     xml: xml,
     svg: xml,
     xsl: xml,
     xslt: xml,
+    xsd: xml,
+    dtd: xml,
+    plist: xml,
 
     // YAML
     yml: yaml,
@@ -280,6 +301,8 @@ const getLanguageMode = (filename) => {
     mdown: markdown,
     mkd: markdown,
     mdx: markdown,
+    rst: markdown, // reStructuredText
+    adoc: markdown, // AsciiDoc
   };
 
   // 首先检查扩展名
@@ -303,9 +326,18 @@ const getLanguageMode = (filename) => {
   if (
     baseName === "gemfile" ||
     baseName === "rakefile" ||
-    baseName === "guardfile"
+    baseName === "guardfile" ||
+    baseName === "capfile" ||
+    baseName === "vagrantfile" ||
+    baseName === "berksfile" ||
+    baseName === "puppetfile"
   ) {
     return null; // Ruby 文件，目前使用默认高亮
+  }
+
+  // CMake 文件
+  if (baseName === "cmakelists.txt" || baseName.endsWith(".cmake")) {
+    return null;
   }
 
   if (
@@ -323,13 +355,62 @@ const getLanguageMode = (filename) => {
     return null; // Python requirements 文件
   }
 
-  if (baseName === "cargo.toml" || baseName === "pyproject.toml") {
+  // 检查常见的文本文件扩展名
+  const textExtensions = ["txt", "log", "out", "err", "tmp", "temp", "bak", "old", "orig"];
+  if (textExtensions.includes(ext)) {
+    return null; // 纯文本文件
+  }
+
+  // Swift
+  if (ext === "swift") {
+    return null; // Swift 使用默认高亮
+  }
+
+  // Ruby
+  if (ext === "rb" || ext === "erb" || ext === "rake") {
+    return null; // Ruby 使用默认高亮
+  }
+
+  // Perl
+  if (ext === "pl" || ext === "pm" || ext === "perl") {
+    return null; // Perl 使用默认高亮
+  }
+
+  // Lua
+  if (ext === "lua") {
+    return null; // Lua 使用默认高亮
+  }
+
+  // R
+  if (ext === "r" || ext === "R" || ext === "rmd" || ext === "Rmd") {
+    return null; // R 使用默认高亮
+  }
+
+  if (baseName === "cargo.toml" || baseName === "pyproject.toml" || baseName === "gopkg.toml") {
     return null; // TOML 文件，使用默认高亮
   }
 
   // 配置文件
   if (baseName.endsWith(".toml")) {
     return null; // TOML
+  }
+
+  // Git 文件
+  if (baseName === ".gitignore" || baseName === ".gitattributes" || baseName === ".gitmodules") {
+    return null;
+  }
+
+  // 更多配置文件类型
+  if (
+    baseName === ".editorconfig" ||
+    baseName === ".eslintrc" ||
+    baseName === ".prettierrc" ||
+    baseName === ".babelrc" ||
+    baseName.endsWith(".eslintrc.js") ||
+    baseName.endsWith(".prettierrc.js") ||
+    baseName.endsWith(".babelrc.js")
+  ) {
+    return baseName.endsWith(".js") ? javascript : json;
   }
 
   if (
@@ -349,9 +430,26 @@ const getLanguageMode = (filename) => {
     baseName.endsWith(".sh") ||
     baseName.endsWith(".bash") ||
     baseName.endsWith(".zsh") ||
-    baseName.endsWith(".fish")
+    baseName.endsWith(".fish") ||
+    baseName.endsWith(".ksh") ||
+    baseName.endsWith(".csh") ||
+    baseName.endsWith(".tcsh") ||
+    baseName === ".bashrc" ||
+    baseName === ".zshrc" ||
+    baseName === ".bash_profile" ||
+    baseName === ".profile"
   ) {
     return null; // Shell 脚本，使用默认高亮
+  }
+
+  // PowerShell
+  if (baseName.endsWith(".ps1") || baseName.endsWith(".psm1") || baseName.endsWith(".psd1")) {
+    return null;
+  }
+
+  // Batch files
+  if (baseName.endsWith(".bat") || baseName.endsWith(".cmd")) {
+    return null;
   }
 
   return null;
@@ -748,38 +846,58 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         extensions.push(oneDark);
       }
 
-      // 添加字体样式扩展和自适应宽度设置
+      // 添加字体样式扩展和滚动条设置
       const fontExtension = EditorView.theme({
         ".cm-editor": {
           fontFamily: getFontFamily(editorFont) + " !important",
           width: "100%",
+          height: "100%",
         },
         ".cm-scroller": {
-          overflow: "auto",
+          overflow: "auto", // 启用滚动条
+          scrollbarWidth: "thin", // 细滚动条（Firefox）
+          "&::-webkit-scrollbar": {
+            width: "8px",
+            height: "8px",
+          },
+          "&::-webkit-scrollbar-track": {
+            backgroundColor: theme.palette.mode === "dark" ? "#2d2d2d" : "#f1f1f1",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            backgroundColor: theme.palette.mode === "dark" ? "#555" : "#888",
+            borderRadius: "4px",
+          },
+          "&::-webkit-scrollbar-thumb:hover": {
+            backgroundColor: theme.palette.mode === "dark" ? "#666" : "#555",
+          },
         },
         ".cm-content": {
           fontFamily: getFontFamily(editorFont) + " !important",
-          whiteSpace: "pre-wrap", // 允许换行
-          wordBreak: "break-word", // 长单词换行
-          overflowWrap: "break-word", // 强制换行
+          whiteSpace: "pre", // 保持代码格式，允许水平滚动
+          minHeight: "100%",
         },
       });
       extensions.push(fontExtension);
 
-      // 添加扩展禁用水平滚动
-      extensions.push(EditorView.lineWrapping);
+      // 根据文件类型决定是否启用自动换行
+      const fileExt = getFileExtension(file.name);
+      const shouldWrap = ["md", "txt", "log", "markdown"].includes(fileExt);
+      if (shouldWrap) {
+        extensions.push(EditorView.lineWrapping);
+      }
 
       const boxSx = {
         flex: "1 1 auto",
         display: "flex",
         flexDirection: "column",
-        overflow: "hidden",
+        overflow: "auto", // 启用滚动条
+        position: "relative",
       };
 
       const cmStyle = {
         height: "100%",
         flex: "1 1 auto",
-        overflow: "hidden", // 禁止容器级别的滚动条
+        overflow: "auto", // 启用滚动条
         width: "100%",
         maxWidth: "100%",
       };
@@ -1069,9 +1187,23 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           p: 0, // 内边距由renderContent内部处理
           display: "flex",
           flexDirection: "column",
-          overflow: "hidden", // 防止内容溢出
+          overflow: "auto", // 启用滚动条
           width: "100%",
           maxWidth: "100%",
+          "&::-webkit-scrollbar": {
+            width: "8px",
+            height: "8px",
+          },
+          "&::-webkit-scrollbar-track": {
+            backgroundColor: theme.palette.mode === "dark" ? "#2d2d2d" : "#f1f1f1",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            backgroundColor: theme.palette.mode === "dark" ? "#555" : "#888",
+            borderRadius: "4px",
+          },
+          "&::-webkit-scrollbar-thumb:hover": {
+            backgroundColor: theme.palette.mode === "dark" ? "#666" : "#555",
+          },
         }}
       >
         {savingFile ? (
