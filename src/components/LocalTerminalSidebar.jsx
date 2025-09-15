@@ -118,10 +118,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     setIsDetecting(true);
     try {
       if (window.terminalAPI?.detectLocalTerminals) {
-        console.log("开始检测本地终端...");
         const terminals = await window.terminalAPI.detectLocalTerminals();
-        console.log("检测到的终端:", terminals);
-        console.log("终端数量:", terminals?.length);
 
         setDetectedTerminals(terminals || []);
         setHasInitialDetection(true); // 标记已完成初始检测
@@ -137,7 +134,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           });
         }
       } else {
-        console.error("terminalAPI.detectLocalTerminals 不可用");
         setHasInitialDetection(true);
         setSnackbar({
           open: true,
@@ -146,7 +142,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         });
       }
     } catch (error) {
-      console.error("Failed to detect terminals:", error);
       setHasInitialDetection(true);
       setSnackbar({
         open: true,
@@ -181,7 +176,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     async (terminal) => {
       // 添加终端配置检查
       if (!terminal) {
-        console.error("Terminal configuration is undefined");
         setSnackbar({
           open: true,
           message: t("localTerminal.noTerminalSelected", "请选择一个终端"),
@@ -189,8 +183,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         });
         return;
       }
-
-      console.log("尝试启动终端:", terminal);
 
       try {
         if (onLaunchTerminal) {
@@ -202,8 +194,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           });
         }
       } catch (error) {
-        console.error("Failed to launch terminal:", error);
-
         // 提供更详细的错误信息
         let errorMessage =
           error.message ||

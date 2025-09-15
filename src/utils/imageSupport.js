@@ -5,7 +5,7 @@ const logToFile = (message, level = "INFO") => {
     typeof window !== "undefined" &&
     window.location?.hostname === "localhost"
   ) {
-    console.log(`[${level}] ${message}`);
+    // Console logging disabled
   }
 };
 
