@@ -2067,6 +2067,7 @@ const FileManager = memo(
 
         // 收集所有文件信息
         const allFiles = [];
+        const folderStructure = new Set();
 
         // 递归读取文件夹内容
         const readEntry = async (entry, path = "") => {
@@ -2074,10 +2075,22 @@ const FileManager = memo(
             return new Promise((resolve) => {
               entry.file(
                 (file) => {
+                  const relativePath = path + file.name;
                   allFiles.push({
                     file: file,
-                    relativePath: path + file.name,
+                    relativePath: relativePath,
                   });
+
+                  // 记录文件夹结构
+                  if (path) {
+                    const parts = path.split('/');
+                    for (let i = 1; i <= parts.length; i++) {
+                      const folderPath = parts.slice(0, i).join('/');
+                      if (folderPath) {
+                        folderStructure.add(folderPath.replace(/\/$/, ''));
+                      }
+                    }
+                  }
                   resolve();
                 },
                 (error) => {
@@ -2087,21 +2100,24 @@ const FileManager = memo(
               );
             });
           } else if (entry.isDirectory) {
+            const dirPath = path + entry.name;
+            folderStructure.add(dirPath);
+
             const reader = entry.createReader();
             return new Promise((resolve) => {
+              const allEntries = [];
               const readEntries = () => {
                 reader.readEntries(
                   async (entries) => {
                     if (entries.length === 0) {
+                      // 处理所有收集的条目
+                      for (const childEntry of allEntries) {
+                        await readEntry(childEntry, dirPath + "/");
+                      }
                       resolve();
                       return;
                     }
-
-                    for (const childEntry of entries) {
-                      await readEntry(childEntry, path + entry.name + "/");
-                    }
-
-                    // 继续读取（一次可能读不完所有文件）
+                    allEntries.push(...entries);
                     readEntries();
                   },
                   (error) => {
@@ -2128,9 +2144,9 @@ const FileManager = memo(
           return;
         }
 
-        // 使用现有的上传逻辑 - 通过创建FormData来处理文件
+        // 使用与右键菜单上传相同的逻辑
         if (window.terminalAPI && window.terminalAPI.uploadDroppedFiles) {
-          // 创建新的传输任务
+          // 创建新的传输任务 - 与 handleUploadFile 保持一致
           const transferId = addTransferProgress({
             type: "upload-multifile",
             progress: 0,
@@ -2146,27 +2162,9 @@ const FileManager = memo(
           try {
             // 准备文件数据供IPC传输
             const filesDataForUpload = [];
-
-            // 收集文件夹结构
-            const foldersToCreate = new Set();
+            const foldersToCreate = Array.from(folderStructure).sort();
 
             for (const item of allFiles) {
-              // 提取文件夹路径
-              if (item.relativePath) {
-                const pathParts = item.relativePath.split("/");
-                // 去掉文件名，只保留文件夹路径
-                pathParts.pop();
-
-                // 收集所有需要创建的文件夹路径
-                let currentPath = "";
-                for (const part of pathParts) {
-                  if (part) {
-                    currentPath = currentPath ? currentPath + "/" + part : part;
-                    foldersToCreate.add(currentPath);
-                  }
-                }
-              }
-
               // 读取文件内容为ArrayBuffer
               const arrayBuffer = await item.file.arrayBuffer();
 
@@ -2204,13 +2202,13 @@ const FileManager = memo(
               });
             }
 
-            // 调用主进程的上传方法，包含文件夹结构信息
+            // 调用主进程的上传方法，与 handleUploadFile 保持一致的进度处理
             const result = await window.terminalAPI.uploadDroppedFiles(
               tabId,
               targetPath,
               {
                 files: filesDataForUpload,
-                folders: Array.from(foldersToCreate).sort(), // 排序确保父文件夹先创建
+                folders: foldersToCreate,
               },
               (
                 progress,
@@ -2222,15 +2220,16 @@ const FileManager = memo(
                 currentFileIndex,
                 totalFiles,
                 transferKey,
+                operationComplete,
               ) => {
-                // 验证并标准化进度数据
+                // 与 handleUploadFile 保持一致的进度处理
                 const validProgress = Math.max(0, Math.min(100, progress || 0));
-                const validTransferredBytes = Math.max(
-                  0,
-                  transferredBytes || 0,
-                );
+                const validTransferredBytes = Math.max(0, transferredBytes || 0);
                 const validTotalBytes = Math.max(0, totalBytes || 0);
                 const validTransferSpeed = Math.max(0, transferSpeed || 0);
+                const validRemainingTime = Math.max(0, remainingTime || 0);
+                const validCurrentFileIndex = Math.max(0, currentFileIndex || 0);
+                const validTotalFiles = Math.max(0, totalFiles || 0);
 
                 // 检查是否已取消
                 if (transferCancelled) {
@@ -2244,31 +2243,42 @@ const FileManager = memo(
                   transferredBytes: validTransferredBytes,
                   totalBytes: validTotalBytes,
                   transferSpeed: validTransferSpeed,
-                  remainingTime: remainingTime || 0,
-                  currentFileIndex: currentFileIndex || 0,
-                  totalFiles: totalFiles || 1,
-                  transferKey: transferKey,
+                  remainingTime: validRemainingTime,
+                  currentFileIndex: validCurrentFileIndex,
+                  totalFiles: validTotalFiles,
+                  transferKey: transferKey || "",
+                  isCompleted: operationComplete === true,
                 });
               },
             );
 
-            if (result.success) {
-              // 更新传输进度为完成
+            // 与 handleUploadFile 保持一致的结果处理
+            if (result?.success) {
+              // 标记传输完成
               updateTransferProgress(transferId, {
                 progress: 100,
+                fileName: result.message || t("fileManager.messages.uploadComplete"),
                 isCompleted: true,
               });
 
-              // 延迟移除已完成的传输
-              addTimeout(() => {
-                removeTransferProgress(transferId);
-              }, 1000);
+              // 传输完成后延迟移除
+              addTimeout(() => removeTransferProgress(transferId), 3000);
 
-              // 显示成功通知
-              setNotification({
-                message: t("fileManager.messages.uploadSuccess"),
-                severity: "success",
-              });
+              // 切换到上传的目标路径
+              updateCurrentPath(targetPath);
+              setPathInput(targetPath);
+              loadDirectory(targetPath, 0, true); // 强制刷新目标目录
+
+              // 如果有警告信息（部分文件上传失败），显示给用户
+              if (result.partialSuccess && result.warning) {
+                setError(result.warning);
+              } else {
+                // 显示成功通知
+                setNotification({
+                  message: t("fileManager.messages.uploadSuccess"),
+                  severity: "success",
+                });
+              }
 
               // 刷新文件列表
               refreshAfterUserActivity();
@@ -2325,6 +2335,10 @@ const FileManager = memo(
         isUserCancellationError,
         refreshAfterUserActivity,
         setNotification,
+        updateCurrentPath,
+        setPathInput,
+        loadDirectory,
+        setError,
       ],
     );
 

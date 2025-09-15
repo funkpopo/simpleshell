@@ -2688,6 +2688,62 @@ function setupIPC(mainWindow) {
     return sftpTransfer.handleDownloadFile(event, tabId, remotePath);
   });
 
+  // Handle creating remote folder structure
+  ipcMain.handle("createRemoteFolders", async (event, tabId, folderPath) => {
+    try {
+      const processInfo = childProcesses.get(tabId);
+      if (!processInfo || !processInfo.config || processInfo.type !== "ssh2") {
+        return { success: false, error: "Invalid SSH connection" };
+      }
+
+      // 使用sftpCore获取SFTP会话
+      const sftp = await sftpCore.getSftpSession(tabId);
+
+      // 递归创建目录
+      const createDirRecursive = async (dirPath) => {
+        const parts = dirPath.split('/').filter(Boolean);
+        let currentPath = dirPath.startsWith('/') ? '/' : '';
+
+        for (const part of parts) {
+          currentPath = path.posix.join(currentPath, part);
+
+          try {
+            await new Promise((resolve, reject) => {
+              sftp.stat(currentPath, (err, stats) => {
+                if (err) {
+                  if (err.code === 2) { // No such file
+                    sftp.mkdir(currentPath, (mkdirErr) => {
+                      if (mkdirErr && mkdirErr.code !== 4) { // 4 = already exists
+                        reject(mkdirErr);
+                      } else {
+                        resolve();
+                      }
+                    });
+                  } else {
+                    reject(err);
+                  }
+                } else if (stats.isDirectory()) {
+                  resolve();
+                } else {
+                  reject(new Error(`Path exists but is not a directory: ${currentPath}`));
+                }
+              });
+            });
+          } catch (error) {
+            // 继续处理，目录可能已存在
+            logToFile(`Warning creating folder ${currentPath}: ${error.message}`, "WARN");
+          }
+        }
+      };
+
+      await createDirRecursive(folderPath);
+      return { success: true };
+    } catch (error) {
+      logToFile(`Error creating remote folders: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
   // Handle SFTP Upload File
   ipcMain.handle(
     "uploadFile",
@@ -2981,9 +3037,44 @@ function setupIPC(mainWindow) {
         if (hasCustomPaths) {
           // 需要逐个上传文件到指定路径
           let uploadedCount = 0;
+          let failedCount = 0;
           const totalFiles = filePaths.length;
+          let totalBytesUploaded = 0;
+          let totalBytesToUpload = 0;
 
+          // 计算总文件大小
           for (const fileInfo of filePaths) {
+            const localPath =
+              typeof fileInfo === "string" ? fileInfo : fileInfo.localPath;
+            try {
+              const stats = fs.statSync(localPath);
+              totalBytesToUpload += stats.size;
+            } catch (e) {
+              // 忽略无法读取的文件
+            }
+          }
+
+          // 发送初始进度
+          if (progressChannel) {
+            event.sender.send(progressChannel, {
+              tabId,
+              progress: 0,
+              fileName: "准备上传文件...",
+              currentFileIndex: 0,
+              totalFiles: totalFiles,
+              transferredBytes: 0,
+              totalBytes: totalBytesToUpload,
+              transferSpeed: 0,
+              remainingTime: 0,
+            });
+          }
+
+          const startTime = Date.now();
+          let lastProgressTime = Date.now();
+          let lastBytesTransferred = 0;
+
+          for (let i = 0; i < filePaths.length; i++) {
+            const fileInfo = filePaths[i];
             const localPath =
               typeof fileInfo === "string" ? fileInfo : fileInfo.localPath;
             const remotePath =
@@ -2995,6 +3086,84 @@ function setupIPC(mainWindow) {
 
             // 获取远程目录路径
             const remoteDir = path.posix.dirname(remotePath);
+            const fileName = path.basename(localPath);
+
+            // 获取当前文件大小
+            let currentFileSize = 0;
+            try {
+              const stats = fs.statSync(localPath);
+              currentFileSize = stats.size;
+            } catch (e) {
+              // 忽略
+            }
+
+            // 发送当前文件进度
+            if (progressChannel) {
+              const now = Date.now();
+              const timeDiff = (now - lastProgressTime) / 1000;
+              const bytesDiff = totalBytesUploaded - lastBytesTransferred;
+              const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0;
+              const remainingBytes = totalBytesToUpload - totalBytesUploaded;
+              const remainingTime = speed > 0 ? remainingBytes / speed : 0;
+
+              event.sender.send(progressChannel, {
+                tabId,
+                fileName: fileName,
+                currentFileIndex: i,
+                totalFiles: totalFiles,
+                progress: Math.floor((totalBytesUploaded / totalBytesToUpload) * 100),
+                transferredBytes: totalBytesUploaded,
+                totalBytes: totalBytesToUpload,
+                transferSpeed: speed,
+                remainingTime: remainingTime,
+              });
+
+              lastProgressTime = now;
+              lastBytesTransferred = totalBytesUploaded;
+            }
+
+            // 创建单个文件的进度通道
+            const singleFileProgressChannel = `${progressChannel}-file-${i}`;
+            let currentFileBytesTransferred = 0;
+
+            // 转发单个文件的进度
+            const progressHandler = (evt, data) => {
+              if (progressChannel) {
+                // 更新当前文件的传输字节数
+                if (data.transferredBytes !== undefined) {
+                  const newBytes = data.transferredBytes - currentFileBytesTransferred;
+                  currentFileBytesTransferred = data.transferredBytes;
+                  totalBytesUploaded += newBytes;
+                }
+
+                const now = Date.now();
+                const timeDiff = (now - lastProgressTime) / 1000;
+                const bytesDiff = totalBytesUploaded - lastBytesTransferred;
+                const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0;
+                const remainingBytes = totalBytesToUpload - totalBytesUploaded;
+                const remainingTime = speed > 0 ? remainingBytes / speed : 0;
+                const overallProgress = Math.floor((totalBytesUploaded / totalBytesToUpload) * 100);
+
+                event.sender.send(progressChannel, {
+                  tabId,
+                  currentFileIndex: i,
+                  totalFiles: totalFiles,
+                  fileName: fileName,
+                  progress: overallProgress,
+                  transferredBytes: totalBytesUploaded,
+                  totalBytes: totalBytesToUpload,
+                  transferSpeed: speed,
+                  remainingTime: remainingTime,
+                });
+
+                if (timeDiff > 0.5) { // 每0.5秒更新速度
+                  lastProgressTime = now;
+                  lastBytesTransferred = totalBytesUploaded;
+                }
+              }
+            };
+
+            event.sender.on(singleFileProgressChannel, progressHandler);
 
             // 上传单个文件
             const singleResult = await sftpTransfer.handleUploadFile(
@@ -3002,12 +3171,39 @@ function setupIPC(mainWindow) {
               tabId,
               remoteDir,
               [localPath],
-              progressChannel,
+              singleFileProgressChannel,
             );
+
+            // 清理监听器
+            event.sender.removeListener(singleFileProgressChannel, progressHandler);
 
             if (singleResult.success) {
               uploadedCount++;
+              // 确保在成功后总字节数是正确的
+              if (currentFileBytesTransferred < currentFileSize) {
+                totalBytesUploaded += (currentFileSize - currentFileBytesTransferred);
+              }
+            } else {
+              failedCount++;
             }
+          }
+
+          // 发送完成状态
+          if (progressChannel) {
+            event.sender.send(progressChannel, {
+              tabId,
+              progress: 100,
+              operationComplete: true,
+              fileName: "所有文件上传完成",
+              currentFileIndex: totalFiles,
+              totalFiles: totalFiles,
+              transferredBytes: totalBytesUploaded,
+              totalBytes: totalBytesToUpload,
+              transferSpeed: 0,
+              remainingTime: 0,
+              successfulFiles: uploadedCount,
+              failedFiles: failedCount,
+            });
           }
 
           // 清理临时文件
@@ -3024,9 +3220,10 @@ function setupIPC(mainWindow) {
           }
 
           return {
-            success: uploadedCount === totalFiles,
+            success: failedCount === 0,
             uploadedCount,
             totalFiles,
+            failedCount,
           };
         } else {
           // 所有文件上传到同一目录

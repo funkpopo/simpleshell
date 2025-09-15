@@ -290,6 +290,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         ipcRenderer.removeListener(progressChannel, handler);
       });
   },
+  // 创建远程文件夹结构
+  createRemoteFolders: (tabId, folderPath) =>
+    ipcRenderer.invoke("createRemoteFolders", tabId, folderPath),
   // 新增: 上传文件夹API
   uploadFolder: (tabId, targetFolder, progressCallback) => {
     // Unique channel for this specific upload
@@ -346,6 +349,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.currentFileIndex || 0,
           progressData.totalFiles || 0,
           progressData.transferKey || "",
+          progressData.operationComplete || false,
         );
       }
       // If operation is complete or cancelled, remove listener

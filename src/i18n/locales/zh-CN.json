@@ -425,6 +425,8 @@
       },
       "messages": {
         "preparingUpload": "准备上传...",
+        "preparingFolderUpload": "正在扫描文件夹...",
+        "creatingFolders": "正在创建文件夹结构...",
         "uploadComplete": "上传完成",
         "uploadSuccess": "文件上传成功",
         "uploadFailed": "上传失败",

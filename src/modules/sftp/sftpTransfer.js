@@ -1085,73 +1085,84 @@ async function handleUploadFolder(
           );
         }
 
-        // 3. Create sub-directory structure
+        // 3. Create sub-directory structure - Optimized for high latency
         const createdRemoteDirs = new Set([remoteBaseUploadPath]);
+        const dirsToCreate = new Set();
+
+        // 先收集所有需要创建的目录
         for (const file of allFiles) {
-          // 检查取消状态
-          const currentTransfer = activeTransfers.get(transferKey);
-          if (!currentTransfer || currentTransfer.cancelled) {
-            logToFile(
-              `sftpTransfer: Folder upload cancelled by user during directory creation`,
-              "INFO",
-            );
-            // 发送取消状态到前端
-            if (progressChannel) {
-              sendToRenderer(progressChannel, {
-                tabId,
-                transferKey,
-                cancelled: true,
-                userCancelled: true,
-                progress: 0,
-                operationComplete: true,
-              });
-            }
-            return {
-              success: true,
-              cancelled: true,
-              userCancelled: true,
-              message: "文件夹上传已被用户取消",
-              totalFiles: totalFilesToUpload,
-              successfulFiles: 0,
-              failedFiles: totalFilesToUpload,
-            };
-          }
           const remoteFileDir = path.posix.dirname(
             path.posix.join(remoteBaseUploadPath, file.relativePath),
           );
-          if (!createdRemoteDirs.has(remoteFileDir)) {
-            try {
-              // 使用递归创建目录函数
-              await createRemoteDirectoryRecursive(sftp, remoteFileDir);
-              logToFile(
-                `sftpTransfer: Ensured remote directory "${remoteFileDir}".`,
-                "DEBUG",
-              );
-            } catch (mkdirError) {
-              // If error is not 'Failure code is 4' (already exists), then rethrow
-              if (
-                !mkdirError.message ||
-                (!mkdirError.message.includes("Failure code is 4") &&
-                  !mkdirError.message.includes("already exists"))
-              ) {
-                logToFile(
-                  `sftpTransfer: Error creating remote directory "${remoteFileDir}": ${mkdirError.message}`,
-                  "ERROR",
-                );
-                throw mkdirError;
+
+          // 收集所有父目录路径
+          let currentPath = remoteFileDir;
+          while (
+            currentPath &&
+            currentPath !== path.posix.dirname(currentPath) &&
+            currentPath !== "." &&
+            !createdRemoteDirs.has(currentPath)
+          ) {
+            dirsToCreate.add(currentPath);
+            currentPath = path.posix.dirname(currentPath);
+          }
+        }
+
+        // 批量创建目录，优化性能
+        if (dirsToCreate.size > 0) {
+          logToFile(
+            `sftpTransfer: Creating ${dirsToCreate.size} directories for folder upload`,
+            "INFO",
+          );
+
+          // 将目录按深度排序，确保父目录先创建
+          const sortedDirs = Array.from(dirsToCreate).sort((a, b) => {
+            const depthA = a.split('/').filter(Boolean).length;
+            const depthB = b.split('/').filter(Boolean).length;
+            return depthA - depthB;
+          });
+
+          // 并行创建同一层级的目录
+          const dirsByDepth = {};
+          for (const dir of sortedDirs) {
+            const depth = dir.split('/').filter(Boolean).length;
+            if (!dirsByDepth[depth]) {
+              dirsByDepth[depth] = [];
+            }
+            dirsByDepth[depth].push(dir);
+          }
+
+          // 逐层创建目录
+          for (const depth of Object.keys(dirsByDepth).sort((a, b) => a - b)) {
+            const dirsAtDepth = dirsByDepth[depth];
+
+            // 并行创建同一层级的目录
+            await Promise.all(dirsAtDepth.map(async (dir) => {
+              // 检查取消状态
+              const currentTransfer = activeTransfers.get(transferKey);
+              if (!currentTransfer || currentTransfer.cancelled) {
+                throw new Error("Transfer cancelled by user");
               }
-              // If it already exists, that's fine.
-            }
-            // Add all parent directories to the set to avoid redundant checks/creations
-            let currentPath = remoteFileDir;
-            while (
-              currentPath &&
-              currentPath !== path.posix.dirname(currentPath) &&
-              currentPath !== "."
-            ) {
-              createdRemoteDirs.add(currentPath);
-              currentPath = path.posix.dirname(currentPath);
-            }
+
+              try {
+                await createRemoteDirectoryRecursive(sftp, dir);
+                createdRemoteDirs.add(dir);
+              } catch (mkdirError) {
+                // 忽略已存在的目录错误
+                if (
+                  !mkdirError.message ||
+                  (!mkdirError.message.includes("Failure code is 4") &&
+                    !mkdirError.message.includes("already exists"))
+                ) {
+                  logToFile(
+                    `sftpTransfer: Error creating remote directory "${dir}": ${mkdirError.message}`,
+                    "ERROR",
+                  );
+                  throw mkdirError;
+                }
+                createdRemoteDirs.add(dir);
+              }
+            }));
           }
         }
         logToFile(
