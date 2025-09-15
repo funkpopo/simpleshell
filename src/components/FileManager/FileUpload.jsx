@@ -23,17 +23,29 @@ const FileUpload = memo(
 
         const uploadPath = targetPath || currentPath;
         const uploadTasks = [];
+        const folderPaths = new Set();
 
+        // 收集所有需要创建的文件夹路径
         for (const fileItem of files) {
           const file = fileItem.file || fileItem;
+          const relativePath = fileItem.relativePath || file.name;
+
+          // 提取文件夹路径
+          if (relativePath.includes('/')) {
+            const parts = relativePath.split('/');
+            for (let i = 1; i < parts.length; i++) {
+              folderPaths.add(parts.slice(0, i).join('/'));
+            }
+          }
+
           const remotePath = uploadPath === "/" || uploadPath === "~"
-            ? `${uploadPath}/${fileItem.relativePath || file.name}`
-            : `${uploadPath}/${fileItem.relativePath || file.name}`;
+            ? `${uploadPath}/${relativePath}`
+            : `${uploadPath}/${relativePath}`;
 
           uploadTasks.push({
             file,
             remotePath,
-            relativePath: fileItem.relativePath || file.name,
+            relativePath: relativePath,
           });
         }
 
@@ -45,6 +57,28 @@ const FileUpload = memo(
         onTransferStart(uploadTasks.length);
 
         try {
+          // 如果有文件夹需要创建，先创建文件夹结构
+          if (folderPaths.size > 0 && window.terminalAPI && window.terminalAPI.createRemoteFolders) {
+            onTransferUpdate({
+              fileName: t("fileManager.messages.creatingFolders"),
+              progress: 0,
+            });
+
+            const sortedFolders = Array.from(folderPaths).sort();
+            for (const folder of sortedFolders) {
+              const folderPath = uploadPath === "/" || uploadPath === "~"
+                ? `${uploadPath}/${folder}`
+                : `${uploadPath}/${folder}`;
+
+              try {
+                await window.terminalAPI.createRemoteFolders(tabId, folderPath);
+              } catch (error) {
+                // 继续处理，文件夹可能已经存在
+                console.warn(`Failed to create folder ${folderPath}:`, error);
+              }
+            }
+          }
+
           let completedCount = 0;
           let failedCount = 0;
 
@@ -108,8 +142,9 @@ const FileUpload = memo(
 
     // 处理文件夹上传
     const uploadFolder = useCallback(
-      async (folderEntries) => {
+      async (folderEntries, targetPath = null) => {
         const allFiles = [];
+        const folderStructure = new Set();
 
         // 递归读取文件夹内容
         const readEntry = async (entry, path = "") => {
@@ -117,10 +152,20 @@ const FileUpload = memo(
             return new Promise((resolve) => {
               entry.file(
                 (file) => {
+                  const relativePath = path + file.name;
                   allFiles.push({
                     file: file,
-                    relativePath: path + file.name,
+                    relativePath: relativePath,
                   });
+                  // 记录文件夹结构
+                  const dirPath = path.slice(0, -1); // 移除末尾的斜杠
+                  if (dirPath) {
+                    // 添加所有父文件夹路径
+                    const parts = dirPath.split('/');
+                    for (let i = 1; i <= parts.length; i++) {
+                      folderStructure.add(parts.slice(0, i).join('/'));
+                    }
+                  }
                   resolve();
                 },
                 (error) => {
@@ -130,6 +175,9 @@ const FileUpload = memo(
               );
             });
           } else if (entry.isDirectory) {
+            const dirPath = path + entry.name;
+            folderStructure.add(dirPath);
+
             const reader = entry.createReader();
             const entries = await new Promise((resolve) => {
               const allEntries = [];
@@ -158,15 +206,23 @@ const FileUpload = memo(
           }
         };
 
+        // 显示准备上传的消息
+        onTransferStart(1);
+        onTransferUpdate({
+          fileName: t("fileManager.messages.preparingFolderUpload"),
+          progress: 0,
+        });
+
         // 读取所有文件
         for (const entry of folderEntries) {
           await readEntry(entry);
         }
 
-        // 上传所有文件
-        return uploadFiles(allFiles);
+        // 上传所有文件 - 使用正确的目标路径
+        const uploadPath = targetPath || currentPath;
+        return uploadFiles(allFiles, uploadPath);
       },
-      [uploadFiles]
+      [uploadFiles, currentPath, t, onTransferStart, onTransferUpdate]
     );
 
     // 处理拖放上传
@@ -229,9 +285,9 @@ const FileUpload = memo(
           }
         }
 
-        // 处理文件夹
+        // 处理文件夹 - 传递正确的目标路径
         if (folderEntries.length > 0) {
-          const result = await uploadFolder(folderEntries);
+          const result = await uploadFolder(folderEntries, targetPath);
           results.push(result);
         }
 

@@ -425,6 +425,8 @@
       },
       "messages": {
         "preparingUpload": "Preparing upload...",
+        "preparingFolderUpload": "Scanning folder...",
+        "creatingFolders": "Creating folder structure...",
         "uploadComplete": "Upload complete",
         "uploadSuccess": "Files uploaded successfully",
         "uploadFailed": "Upload failed",
