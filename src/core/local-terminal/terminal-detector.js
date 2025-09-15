@@ -20,7 +20,6 @@ class TerminalDetector {
     this.detectedTerminals = [];
 
     try {
-      console.log("开始检测本地终端，操作系统:", process.platform);
 
       if (this.isWindows) {
         await this.detectWindowsTerminals();
@@ -30,12 +29,7 @@ class TerminalDetector {
         await this.detectLinuxTerminals();
       }
 
-      console.log(
-        `检测到 ${this.detectedTerminals.length} 个终端:`,
-        this.detectedTerminals.map((t) => `${t.name} (${t.type})`),
-      );
     } catch (error) {
-      console.error("检测终端时发生错误:", error);
       // 即使发生错误也返回已检测到的终端
     }
 
@@ -72,14 +66,8 @@ class TerminalDetector {
       try {
         if (await this.checkTerminalAvailability(terminal)) {
           this.detectedTerminals.push(terminal);
-          console.log(
-            `✓ 检测到终端: ${terminal.name} at ${terminal.executablePath}`,
-          );
-        } else {
-          console.log(`✗ 未找到终端: ${terminal.name}`);
         }
       } catch (error) {
-        console.error(`检测终端 ${terminal.name} 时出错:`, error.message);
         // 继续检测其他终端
       }
     }
@@ -119,14 +107,8 @@ class TerminalDetector {
       try {
         if (await this.checkTerminalAvailability(terminal)) {
           this.detectedTerminals.push(terminal);
-          console.log(
-            `✓ 检测到终端: ${terminal.name} at ${terminal.executablePath}`,
-          );
-        } else {
-          console.log(`✗ 未找到终端: ${terminal.name}`);
         }
       } catch (error) {
-        console.error(`检测终端 ${terminal.name} 时出错:`, error.message);
         // 继续检测其他终端
       }
     }
@@ -171,14 +153,8 @@ class TerminalDetector {
       try {
         if (await this.checkTerminalAvailability(terminal)) {
           this.detectedTerminals.push(terminal);
-          console.log(
-            `✓ 检测到终端: ${terminal.name} at ${terminal.executablePath}`,
-          );
-        } else {
-          console.log(`✗ 未找到终端: ${terminal.name}`);
         }
       } catch (error) {
-        console.error(`检测终端 ${terminal.name} 时出错:`, error.message);
         // 继续检测其他终端
       }
     }
@@ -193,15 +169,12 @@ class TerminalDetector {
    */
   async checkTerminalAvailability(terminal) {
     try {
-      console.log(`正在检测终端: ${terminal.name} (${terminal.type})`);
 
       // 1. 首先检查指定路径
       if (terminal.checkPaths) {
-        console.log(`检查预定义路径: ${terminal.checkPaths.length} 个`);
         for (const checkPath of terminal.checkPaths) {
           if (checkPath && (await this.fileExists(checkPath))) {
             terminal.executablePath = checkPath;
-            console.log(`✓ 在路径找到: ${checkPath}`);
             return true;
           }
         }
@@ -209,9 +182,6 @@ class TerminalDetector {
 
       // 2. 检查环境变量指定的路径
       if (terminal.environmentPaths) {
-        console.log(
-          `检查环境变量路径: ${terminal.environmentPaths.join(", ")}`,
-        );
         for (const envVar of terminal.environmentPaths) {
           const envPath = process.env[envVar];
           if (envPath) {
@@ -225,7 +195,6 @@ class TerminalDetector {
             for (const possiblePath of possiblePaths) {
               if (await this.fileExists(possiblePath)) {
                 terminal.executablePath = possiblePath;
-                console.log(`✓ 在环境变量路径找到: ${possiblePath}`);
                 return true;
               }
             }
@@ -235,13 +204,11 @@ class TerminalDetector {
 
       // 3. WSL特殊检查
       if (terminal.type === "wsl") {
-        console.log("执行WSL特殊检测");
         return await this.checkWSLAvailability(terminal);
       }
 
       // 4. 检查系统命令
       if (terminal.systemCommand) {
-        console.log(`检查系统命令: ${terminal.systemCommand}`);
         try {
           const whereCommand = this.isWindows ? "where" : "which";
           const { stdout } = await execAsync(
@@ -257,19 +224,16 @@ class TerminalDetector {
             const firstPath = foundPaths[0].trim();
             if (firstPath && (await this.fileExists(firstPath))) {
               terminal.executablePath = firstPath;
-              console.log(`✓ 在系统PATH找到: ${firstPath}`);
               return true;
             }
           }
         } catch (error) {
-          console.log(`系统命令检查失败: ${error.message}`);
           // 命令不存在，继续尝试其他方法
         }
       }
 
       // 5. 检查Windows应用包
       if (this.isWindows && terminal.packageName) {
-        console.log(`检查Windows应用包: ${terminal.packageName}`);
         try {
           const { stdout } = await execAsync(
             `powershell -c "Get-AppxPackage -Name *${terminal.packageName.split("_")[0]}* | Select-Object -First 1 -ExpandProperty InstallLocation"`,
@@ -277,21 +241,17 @@ class TerminalDetector {
           );
           if (stdout.trim()) {
             terminal.executablePath = terminal.executable;
-            console.log(`✓ Windows应用包找到: ${terminal.packageName}`);
             return true;
           }
         } catch (error) {
-          console.log(`Windows应用包检查失败: ${error.message}`);
           // 包不存在
         }
       }
 
       // 6. 通用可执行文件检查 (macOS/Linux)
       if (!this.isWindows && terminal.executable) {
-        console.log(`检查通用可执行文件: ${terminal.executable}`);
         if (await this.fileExists(terminal.executable)) {
           terminal.executablePath = terminal.executable;
-          console.log(`✓ 通用可执行文件找到: ${terminal.executable}`);
           return true;
         }
 
@@ -302,19 +262,15 @@ class TerminalDetector {
           });
           if (stdout.trim()) {
             terminal.executablePath = stdout.trim();
-            console.log(`✓ PATH中找到: ${stdout.trim()}`);
             return true;
           }
         } catch (error) {
-          console.log(`PATH检查失败: ${error.message}`);
           // 不在PATH中
         }
       }
 
-      console.log(`✗ 未找到终端: ${terminal.name}`);
       return false;
     } catch (error) {
-      console.error(`检查终端 ${terminal.name} 可用性时出错:`, error.message);
       return false;
     }
   }
@@ -324,17 +280,14 @@ class TerminalDetector {
    */
   async checkWSLAvailability(terminal) {
     try {
-      console.log("检查WSL是否安装...");
       // 检查WSL是否安装，使用特定的编码处理
       const { stdout: wslList } = await execAsync("wsl -l -v", {
         timeout: 8000,
         encoding: "utf16le", // 指定UTF-16LE编码
       });
-      console.log("WSL列表输出:", wslList);
 
       // 清理输出中可能的null字节
       const cleanOutput = wslList.replace(/\0/g, "");
-      console.log("清理后的输出:", cleanOutput);
 
       if (
         cleanOutput.includes("Ubuntu") ||
@@ -352,7 +305,6 @@ class TerminalDetector {
 
         // 检测所有可用的WSL发行版
         const distributions = this.parseWSLDistributions(cleanOutput);
-        console.log("解析的所有WSL发行版:", distributions);
 
         // 过滤掉docker-desktop等非Linux发行版
         const validDistributions = distributions.filter(
@@ -361,14 +313,8 @@ class TerminalDetector {
             !dist.name.toLowerCase().includes("podman-machine"),
         );
 
-        console.log("有效的WSL发行版:", validDistributions);
-
         if (validDistributions.length > 0) {
           terminal.availableDistributions = validDistributions;
-          console.log(
-            `发现 ${validDistributions.length} 个有效WSL发行版:`,
-            validDistributions.map((d) => d.name),
-          );
 
           // 如果有多个发行版，创建多个终端选项
           if (validDistributions.length > 1) {
@@ -377,15 +323,12 @@ class TerminalDetector {
 
           return true;
         } else {
-          console.log("没有找到有效的WSL发行版");
           return false;
         }
       }
 
-      console.log("WSL未安装或无可用发行版");
       return false;
     } catch (error) {
-      console.error("WSL检查失败:", error.message);
       // WSL不可用
       return false;
     }
@@ -395,7 +338,6 @@ class TerminalDetector {
    * 解析WSL发行版列表
    */
   parseWSLDistributions(wslOutput) {
-    console.log("开始解析WSL输出，长度:", wslOutput.length);
     const lines = wslOutput.split("\n");
     const distributions = [];
 
@@ -432,13 +374,11 @@ class TerminalDetector {
               isDefault: trimmed.startsWith("*"),
             };
             distributions.push(distribution);
-            console.log("发现WSL发行版:", distribution);
           }
         }
       }
     }
 
-    console.log("最终解析的WSL发行版:", distributions);
     return distributions;
   }
 

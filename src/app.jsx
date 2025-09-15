@@ -1636,7 +1636,6 @@ function App() {
   // 启动本地终端的处理函数（仅启动外部终端，不在应用中创建标签页）
   const handleLaunchLocalTerminal = useCallback(async (terminalConfig) => {
     try {
-      console.log("App中启动终端:", terminalConfig);
 
       if (window.terminalAPI?.launchLocalTerminal) {
         const terminalId = `local-${Date.now()}`;
@@ -1651,12 +1650,10 @@ function App() {
           launchArgs: terminalConfig.launchArgs || [],
         };
 
-        console.log("完整终端配置:", completeConfig);
         const result = await window.terminalAPI.launchLocalTerminal(
           completeConfig,
           terminalId,
         );
-        console.log("启动结果:", result);
 
         // 检查API调用是否成功
         if (!result.success) {
@@ -1665,15 +1662,11 @@ function App() {
 
         // 不创建标签页，只启动外部终端
         // 终端将在系统中独立运行，不显示在应用界面中
-        console.log(
-          `Local terminal launched: ${terminalConfig.name} (PID: ${result.data?.pid})`,
-        );
 
         return result;
       }
       throw new Error("Local terminal API not available");
     } catch (error) {
-      console.error("Failed to launch local terminal:", error);
       throw error;
     }
   }, []);

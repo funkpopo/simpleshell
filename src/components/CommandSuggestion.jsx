@@ -64,37 +64,13 @@ const CommandSuggestion = ({
       document.body.appendChild(tempElement);
       actualTextWidth = tempElement.offsetWidth;
       document.body.removeChild(tempElement);
-
-      console.log(
-        "[CommandSuggestion] Actual text width measured:",
-        actualTextWidth,
-        "for command:",
-        longestCommand,
-      );
     } catch (error) {
       const avgCharWidth = 8;
       actualTextWidth = maxCommandLength * avgCharWidth;
-      console.log(
-        "[CommandSuggestion] Fallback to character estimation:",
-        actualTextWidth,
-      );
     }
 
     let suggestedWidth = actualTextWidth + padding + extraPadding;
     const finalWidth = Math.max(minWidth, Math.min(maxWidth, suggestedWidth));
-
-    console.log("[CommandSuggestion] Width calculation:", {
-      maxCommandLength,
-      longestCommand,
-      actualTextWidth,
-      suggestedWidth,
-      finalWidth,
-      components: {
-        text: actualTextWidth,
-        padding,
-        extra: extraPadding,
-      },
-    });
 
     // 计算更精确的高度，考虑单个项目的高度和底部提示栏
     const itemHeight = 28; // 每个建议项的高度
@@ -127,13 +103,7 @@ const CommandSuggestion = ({
   // 监听建议变化以重新计算窗口尺寸
   useEffect(() => {
     if (visible && suggestions.length > 0) {
-      console.log(
-        "[CommandSuggestion] Suggestions changed, recalculating dimensions:",
-        {
-          count: suggestions.length,
-          commands: suggestions.map((s) => s.command),
-        },
-      );
+      // Recalculating dimensions when suggestions change
     }
   }, [suggestions, visible]);
 
@@ -142,7 +112,6 @@ const CommandSuggestion = ({
     if (!visible) return;
 
     const handleResize = () => {
-      console.log("[CommandSuggestion] Window resized, recalculating position");
       // 触发重新渲染以重新计算位置
       const event = new Event("positionUpdate");
       window.dispatchEvent(event);
@@ -166,7 +135,6 @@ const CommandSuggestion = ({
   // 处理建议选择
   const handleSuggestionSelect = useCallback(
     (suggestion) => {
-      console.log("[CommandSuggestion] Selecting suggestion:", suggestion);
       onSelectSuggestion?.(suggestion);
     },
     [onSelectSuggestion],
@@ -176,17 +144,10 @@ const CommandSuggestion = ({
   const handleDeleteSuggestion = useCallback(
     async (suggestion, index) => {
       try {
-        console.log(
-          "[CommandSuggestion] Deleting suggestion:",
-          suggestion.command,
-        );
 
         // 调用删除API
         if (window.terminalAPI && window.terminalAPI.deleteCommandHistory) {
           await window.terminalAPI.deleteCommandHistory(suggestion.command);
-          console.log(
-            "[CommandSuggestion] Successfully deleted command from history",
-          );
 
           // 触发重新获取建议以更新列表
           if (currentInput && currentInput.trim()) {
@@ -201,15 +162,10 @@ const CommandSuggestion = ({
             }, 100);
           }
         } else {
-          console.error(
-            "[CommandSuggestion] deleteCommandHistory API not available",
-          );
+          // deleteCommandHistory API not available
         }
       } catch (error) {
-        console.error(
-          "[CommandSuggestion] Error deleting command from history:",
-          error,
-        );
+        // Error deleting command from history
       }
     },
     [currentInput],
@@ -343,7 +299,6 @@ const CommandSuggestion = ({
 
     // 如果位置信息无效，尝试获取终端元素位置作为备选
     if (!isValidPosition) {
-      console.log("[CommandSuggestion] Invalid position, using fallback");
       if (terminalElement) {
         const terminalRect = terminalElement.getBoundingClientRect();
         left = terminalRect.left + 50;
@@ -352,11 +307,6 @@ const CommandSuggestion = ({
         left = 100;
         top = 100;
       }
-    } else {
-      console.log("[CommandSuggestion] Using provided position:", {
-        x: left,
-        y: top,
-      });
     }
 
     // 根据 showAbove 标志决定显示位置
@@ -403,24 +353,6 @@ const CommandSuggestion = ({
         top = padding;
       }
     }
-
-    console.log("[CommandSuggestion] Final position calculated:", {
-      original: position,
-      calculated: { left, top },
-      window: { width: windowWidth, height: windowHeight },
-      suggestion: { width: suggestionWidth, height: suggestionHeight },
-      isValidPosition,
-      boundaries: {
-        rightEdge: left + suggestionWidth,
-        bottomEdge: top + suggestionHeight,
-        withinBounds: {
-          horizontal:
-            left >= padding && left + suggestionWidth <= windowWidth - padding,
-          vertical:
-            top >= padding && top + suggestionHeight <= windowHeight - padding,
-        },
-      },
-    });
 
     return { left, top, width: suggestionWidth, height: suggestionHeight };
   };

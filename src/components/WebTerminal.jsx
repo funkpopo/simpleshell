@@ -3652,12 +3652,6 @@ const WebTerminal = ({
       if (cursorElement) {
         const cursorRect = cursorElement.getBoundingClientRect();
         if (cursorRect.width > 0 && cursorRect.height > 0) {
-          console.log("[CommandSuggestion] Using cursor element position:", {
-            x: cursorRect.left,
-            y: cursorRect.top,
-            width: cursorRect.width,
-            height: cursorRect.height,
-          });
 
           const suggestionHeight = Math.min(
             (suggestions?.length || 0) * 48 + 64,
@@ -3703,22 +3697,6 @@ const WebTerminal = ({
         const absoluteX = screenRect.left + pixelX;
         const absoluteY = screenRect.top + pixelY;
 
-        console.log("[CommandSuggestion] Using calculated position:", {
-          cursorX,
-          cursorY,
-          actualCursorY,
-          viewportY,
-          pixelX,
-          pixelY,
-          absoluteX,
-          absoluteY,
-          metrics: {
-            charWidth: metrics.charWidth,
-            charHeight: metrics.charHeight,
-          },
-          screenRect: { left: screenRect.left, top: screenRect.top },
-        });
-
         const suggestionHeight = Math.min(
           (suggestions?.length || 0) * 48 + 64,
           300,
@@ -3737,20 +3715,12 @@ const WebTerminal = ({
 
       // 方法3：降级到容器相对位置
       const containerRect = container.getBoundingClientRect();
-      console.log("[CommandSuggestion] Using fallback container position:", {
-        left: containerRect.left + 20,
-        top: containerRect.top + 20,
-      });
 
       setCursorPosition({
         x: containerRect.left + 20,
         y: containerRect.top + 20,
       });
     } catch (error) {
-      console.error(
-        "[CommandSuggestion] Error calculating cursor position:",
-        error,
-      );
       // 最后的降级方案
       try {
         const containerRect = terminalRef.current.getBoundingClientRect();
@@ -3767,21 +3737,8 @@ const WebTerminal = ({
   // 命令建议相关函数
   const getSuggestions = useCallback(
     async (input) => {
-      console.log(
-        "[CommandSuggestion] getSuggestions called with input:",
-        input,
-      );
-      console.log(
-        "[CommandSuggestion] Current states - inEditorMode:",
-        inEditorMode,
-        "isCommandExecuting:",
-        isCommandExecuting,
-      );
 
       if (!input || input.trim() === "" || inEditorMode || isCommandExecuting) {
-        console.log(
-          "[CommandSuggestion] Skipping suggestions - empty input or invalid state",
-        );
         setSuggestions([]);
         setShowSuggestions(false);
         return;
@@ -3795,32 +3752,21 @@ const WebTerminal = ({
         trimmedInput === lastExecutedCommandRef.current &&
         Date.now() - lastExecutedCommandTimeRef.current < 2000
       ) {
-        console.log(
-          "[CommandSuggestion] Skipping suggestions - recent command:",
-          trimmedInput,
-        );
         setSuggestions([]);
         setShowSuggestions(false);
         return;
       }
 
       try {
-        console.log("[CommandSuggestion] Checking terminalAPI...");
         // 从命令历史获取建议
         if (window.terminalAPI && window.terminalAPI.getCommandSuggestions) {
-          console.log("[CommandSuggestion] Calling getCommandSuggestions...");
           const response =
             await window.terminalAPI.getCommandSuggestions(trimmedInput);
-          console.log("[CommandSuggestion] Raw API response:", response);
 
           // API返回的是 { success: true, suggestions: [...] } 格式
           const commandSuggestions = response?.success
             ? response.suggestions
             : [];
-          console.log(
-            "[CommandSuggestion] Extracted suggestions:",
-            commandSuggestions,
-          );
 
           if (commandSuggestions && commandSuggestions.length > 0) {
             // 过滤和排序建议
@@ -3850,11 +3796,6 @@ const WebTerminal = ({
               })
               .slice(0, 10); // 最多显示10个建议
 
-            console.log(
-              "[CommandSuggestion] Filtered suggestions:",
-              filteredSuggestions,
-            );
-
             if (filteredSuggestions.length > 0) {
               setSuggestions(filteredSuggestions);
               // 立即更新光标位置，然后显示建议
@@ -3862,31 +3803,20 @@ const WebTerminal = ({
               // 确保位置更新后再显示建议窗口
               requestAnimationFrame(() => {
                 setShowSuggestions(true);
-                console.log(
-                  "[CommandSuggestion] Suggestions displayed with updated position",
-                );
               });
             } else {
-              console.log(
-                "[CommandSuggestion] No valid suggestions after filtering",
-              );
               setSuggestions([]);
               setShowSuggestions(false);
             }
           } else {
-            console.log("[CommandSuggestion] No suggestions returned from API");
             setSuggestions([]);
             setShowSuggestions(false);
           }
         } else {
-          console.log(
-            "[CommandSuggestion] terminalAPI.getCommandSuggestions not available",
-          );
           setSuggestions([]);
           setShowSuggestions(false);
         }
       } catch (error) {
-        console.error("[CommandSuggestion] Error getting suggestions:", error);
         // 获取建议失败，隐藏建议窗口
         setSuggestions([]);
         setShowSuggestions(false);
@@ -3967,7 +3897,6 @@ const WebTerminal = ({
         setShowSuggestions(false);
         setSuggestions([]);
       } catch (error) {
-        console.error("选择建议失败:", error);
         setShowSuggestions(false);
       }
     },
