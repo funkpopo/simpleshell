@@ -504,8 +504,8 @@ const IPAddressQuery = memo(({ open, onClose }) => {
                 ) : (
                   <List dense disablePadding>
                     {history.map((h) => (
-                      <>
-                        <ListItem key={h.id} disableGutters disablePadding>
+                      <React.Fragment key={h.id}>
+                        <ListItem disableGutters disablePadding>
                           <ListItemButton
                             disabled={loading}
                             onClick={() => fetchIPInfo(h.ip)}
@@ -535,7 +535,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
                           </ListItemButton>
                         </ListItem>
                         <Divider component="li" />
-                      </>
+                      </React.Fragment>
                     ))}
                   </List>
                 )}
