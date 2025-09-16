@@ -2,6 +2,7 @@ const Client = require("ssh2").Client;
 const { logToFile } = require("../../core/utils/logger");
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 const proxyManager = require("../../core/proxy/proxy-manager");
+const ReconnectionManager = require("../../core/connection/reconnection-manager");
 
 // 连接池配置常量
 const MAX_CONNECTIONS = 50; // 最大连接数
@@ -26,6 +27,13 @@ class SSHConnectionPool {
     this.healthCheckTimer = null;
     this.isInitialized = false;
     this.connectionUsage = new Map();
+
+    // 初始化重连管理器
+    this.reconnectionManager = new ReconnectionManager({
+      maxRetries: 5,           // 固定5次重试
+      fixedDelay: 3000,        // 固定3秒间隔
+      useFixedInterval: true   // 使用固定间隔
+    });
   }
 
   initialize() {
@@ -36,13 +44,56 @@ class SSHConnectionPool {
     // 初始化代理管理器
     proxyManager.initialize();
 
+    // 初始化重连管理器
+    this.reconnectionManager.initialize();
+
+    // 监听重连事件
+    this.setupReconnectionListeners();
+
     this.startHealthCheck();
     this.isInitialized = true;
     logToFile("SSH连接池已初始化", "INFO");
   }
 
+  // 设置重连监听器
+  setupReconnectionListeners() {
+    this.reconnectionManager.on("reconnectSuccess", ({ sessionId, attempts }) => {
+      logToFile(`连接重连成功: ${sessionId}, 尝试次数: ${attempts}`, "INFO");
+
+      // 更新连接状态
+      if (this.connections.has(sessionId)) {
+        const connectionInfo = this.connections.get(sessionId);
+        connectionInfo.ready = true;
+        connectionInfo.lastUsed = Date.now();
+      }
+    });
+
+    this.reconnectionManager.on("reconnectFailed", ({ sessionId, error, attempts }) => {
+      logToFile(`连接重连失败: ${sessionId}, 错误: ${error}, 尝试次数: ${attempts}`, "ERROR");
+
+      // 清理失败的连接
+      if (attempts >= 5) {
+        this.closeConnection(sessionId);
+      }
+    });
+
+    this.reconnectionManager.on("connectionReplaced", ({ sessionId, newConnection }) => {
+      // 更新连接池中的连接
+      if (this.connections.has(sessionId)) {
+        const connectionInfo = this.connections.get(sessionId);
+        connectionInfo.client = newConnection;
+        connectionInfo.ready = true;
+      }
+    });
+  }
+
   cleanup() {
     this.stopHealthCheck();
+
+    // 关闭重连管理器
+    if (this.reconnectionManager) {
+      this.reconnectionManager.shutdown();
+    }
 
     // 关闭所有连接
     for (const [key, connectionInfo] of this.connections) {
@@ -103,7 +154,25 @@ class SSHConnectionPool {
         logToFile(`复用现有SSH连接: ${connectionKey}`, "INFO");
         return connectionInfo;
       } else {
-        // 连接不健康，移除并重新创建
+        // 连接不健康，尝试重连
+        logToFile(`检测到不健康连接，尝试重连: ${connectionKey}`, "WARN");
+
+        // 注册到重连管理器
+        this.reconnectionManager.registerSession(connectionKey, connectionInfo.client, sshConfig);
+
+        // 手动触发重连
+        try {
+          await this.reconnectionManager.manualReconnect(connectionKey);
+
+          // 重连成功，返回更新后的连接
+          if (this.isConnectionHealthy(connectionInfo)) {
+            return connectionInfo;
+          }
+        } catch (error) {
+          logToFile(`重连失败，创建新连接: ${connectionKey}`, "ERROR");
+        }
+
+        // 重连失败，移除并重新创建
         this.closeConnection(connectionKey);
       }
     }
@@ -167,6 +236,9 @@ class SSHConnectionPool {
         clearTimeout(timeout);
         connectionInfo.ready = true;
         this.connections.set(connectionKey, connectionInfo);
+
+        // 注册到重连管理器
+        this.reconnectionManager.registerSession(connectionKey, ssh, sshConfig);
 
         logToFile(
           `SSH连接建立成功: ${connectionKey}${usingProxy ? " (通过代理)" : ""}`,
@@ -239,6 +311,13 @@ class SSHConnectionPool {
       // 监听关闭事件
       ssh.on("close", () => {
         logToFile(`SSH连接关闭: ${connectionKey}`, "INFO");
+
+        // 如果连接意外关闭且还有引用，触发重连
+        if (connectionInfo.refCount > 0 && !connectionInfo.intentionalClose) {
+          logToFile(`检测到意外断开，触发自动重连: ${connectionKey}`, "WARN");
+          // 重连管理器会自动处理重连
+        }
+
         this.connections.delete(connectionKey);
       });
 
@@ -397,6 +476,14 @@ class SSHConnectionPool {
   closeConnection(connectionKey) {
     const connectionInfo = this.connections.get(connectionKey);
     if (connectionInfo) {
+      // 标记为有意关闭，避免触发重连
+      connectionInfo.intentionalClose = true;
+
+      // 从重连管理器中移除
+      if (this.reconnectionManager) {
+        this.reconnectionManager.pauseReconnection(connectionKey);
+      }
+
       try {
         if (
           connectionInfo.client &&
