@@ -16,6 +16,7 @@ const terminalManager = require("./modules/terminal");
 const commandHistoryService = require("./modules/terminal/command-history");
 const fileCache = require("./core/utils/fileCache");
 const connectionManager = require("./modules/connection");
+const { registerReconnectHandlers } = require("./core/ipc/handlers/reconnectHandlers");
 const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers");
 
@@ -369,6 +370,14 @@ app.whenReady().then(async () => {
 
   // Initialize connection manager
   connectionManager.initialize();
+
+  // Register reconnection handlers
+  try {
+    registerReconnectHandlers(connectionManager.sshConnectionPool);
+    logToFile("重连处理器已注册", "INFO");
+  } catch (error) {
+    logToFile(`重连处理器注册失败: ${error.message}`, "ERROR");
+  }
 
   // Initialize latency handlers
   try {

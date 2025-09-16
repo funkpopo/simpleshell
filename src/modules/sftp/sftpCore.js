@@ -250,7 +250,7 @@ async function ensureSftpSession(tabId) {
   }
 }
 
-// 修改getSftpSession方法，使用ensureSftpSession
+// 修改getSftpSession方法，使用ensureSftpSession并支持重连
 async function getSftpSession(tabId) {
   if (sftpSessionLocks.has(tabId)) {
     return new Promise((resolve, reject) => {
@@ -259,8 +259,16 @@ async function getSftpSession(tabId) {
           const pool = sftpPools.get(tabId);
           if (pool && pool.primaryId && pool.sessions.has(pool.primaryId)) {
             const session = pool.sessions.get(pool.primaryId);
-            session.lastUsed = Date.now();
-            resolve(session.sftp);
+            // 检查会话健康状态
+            checkSessionHealth(session).then(isHealthy => {
+              if (isHealthy) {
+                session.lastUsed = Date.now();
+                resolve(session.sftp);
+              } else {
+                // 会话不健康，触发重连
+                handleUnhealthySession(tabId, session).then(resolve).catch(reject);
+              }
+            }).catch(reject);
           } else {
             acquireSftpSession(tabId)
               .then((session) => resolve(session.sftp))
@@ -274,8 +282,23 @@ async function getSftpSession(tabId) {
     });
   }
 
-  // 使用确保会话有效性的方式获取会话
+  // 使用确保会话有效性的方式获取会话，先检查健康状态
   try {
+    const pool = sftpPools.get(tabId);
+    if (pool && pool.primaryId && pool.sessions.has(pool.primaryId)) {
+      const session = pool.sessions.get(pool.primaryId);
+      const isHealthy = await checkSessionHealth(session);
+      if (isHealthy) {
+        session.lastUsed = Date.now();
+        return session.sftp;
+      } else {
+        logToFile(
+          `sftpCore: SFTP会话不健康，尝试重建: tabId=${tabId}`,
+          "WARN",
+        );
+        return await handleUnhealthySession(tabId, session);
+      }
+    }
     return await ensureSftpSession(tabId);
   } catch (error) {
     logToFile(
@@ -283,6 +306,83 @@ async function getSftpSession(tabId) {
       "ERROR",
     );
     throw error;
+  }
+}
+
+// 处理不健康的SFTP会话
+async function handleUnhealthySession(tabId, session) {
+  try {
+    // 关闭旧会话
+    if (session && session.sftp) {
+      try {
+        session.sftp.end();
+      } catch (error) {
+        // 忽略关闭错误
+      }
+    }
+
+    // 从会话池中移除
+    const pool = sftpPools.get(tabId);
+    if (pool && session) {
+      pool.sessions.delete(session.id);
+      if (pool.primaryId === session.id) {
+        pool.primaryId = null;
+      }
+    }
+
+    // 检查SSH连接状态
+    const processInfo = getChildProcessInfo(tabId);
+    if (!processInfo || !processInfo.process) {
+      throw new Error(`找不到tabId ${tabId} 对应的SSH连接`);
+    }
+
+    // 检查SSH连接是否健康
+    if (processInfo.process.destroyed || !processInfo.process._channel) {
+      logToFile(
+        `sftpCore: SSH连接不健康，需要重新建立SSH连接: tabId=${tabId}`,
+        "ERROR",
+      );
+      throw new Error("SSH连接已断开，请重新连接");
+    }
+
+    // 重试创建新的SFTP会话
+    logToFile(`sftpCore: 重新创建SFTP会话: tabId=${tabId}`, "INFO");
+    return await ensureSftpSession(tabId);
+
+  } catch (error) {
+    logToFile(
+      `sftpCore: 处理不健康会话失败: ${error.message}`,
+      "ERROR",
+    );
+    throw error;
+  }
+}
+
+// 检查会话健康状态
+async function checkSessionHealth(session) {
+  if (!session || !session.sftp) {
+    return false;
+  }
+
+  // 检查是否已经销毁
+  if (session.sftp.destroyed) {
+    return false;
+  }
+
+  // 尝试执行简单的SFTP操作来检查连接
+  try {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve(false);
+      }, 3000);
+
+      session.sftp.readdir(".", (err) => {
+        clearTimeout(timeout);
+        resolve(!err);
+      });
+    });
+  } catch (error) {
+    return false;
   }
 }
 
