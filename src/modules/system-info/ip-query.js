@@ -162,25 +162,6 @@ const DEFAULT_API_PROVIDERS = [
 
 // 需要Key的API提供商
 const KEY_API_PROVIDERS = {
-  amap: {
-    name: "amap.com",
-    buildUrl: (ip, key) => `https://restapi.amap.com/v3/ip?key=${key}&ip=${ip}`,
-    transform: (data, ip) => {
-      if (data.status !== "1") {
-        throw new Error(`Amap API error: ${data.info}`);
-      }
-      return {
-        ret: "ok",
-        data: {
-          ip: ip,
-          location: [data.province, data.city].filter(Boolean),
-          latitude: undefined,
-          longitude: undefined,
-        },
-      };
-    },
-    key: process.env.AMAP_KEY,
-  },
   ip2location: {
     name: "ip2location.io",
     buildUrl: (ip, key) => `https://api.ip2location.io/?key=${key}&ip=${ip}`,
@@ -208,32 +189,6 @@ const KEY_API_PROVIDERS = {
     key: process.env.IP2LOCATION_KEY,
   },
 };
-
-async function geocodeWithAmap(address, key, logger) {
-  if (!key) return null;
-  const url = `https://restapi.amap.com/v3/geocode/geo?key=${key}&address=${encodeURIComponent(address)}`;
-  try {
-    const data = await new Promise((resolve, reject) => {
-      const req = https.get(url, (res) => {
-        let body = "";
-        res.on("data", (chunk) => (body += chunk));
-        res.on("end", () => resolve(JSON.parse(body)));
-      });
-      req.on("error", (e) => reject(e));
-    });
-
-    if (data.status === "1" && data.geocodes && data.geocodes.length > 0) {
-      const [longitude, latitude] = data.geocodes[0].location.split(",");
-      return {
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
-      };
-    }
-  } catch (error) {
-    logger(`Amap geocoding error: ${error.message}`, "ERROR");
-  }
-  return null;
-}
 
 async function getPublicIp(proxyConfig = null) {
   return new Promise((resolve, reject) => {
@@ -441,28 +396,6 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
           ...geoResult?.data,
           ...chineseResult?.data,
         };
-
-        if (
-          (!finalData.latitude || !finalData.longitude) &&
-          finalData.location &&
-          finalData.location.length > 0
-        ) {
-          const address = finalData.location.slice(0, 3).join("");
-          logger(`尝试通过地址进行地理编码: ${address}`, "INFO");
-          const geoCoords = await geocodeWithAmap(
-            address,
-            KEY_API_PROVIDERS.amap.key,
-            logger,
-          );
-          if (geoCoords) {
-            finalData.latitude = geoCoords.latitude;
-            finalData.longitude = geoCoords.longitude;
-            logger(
-              `地理编码成功: ${geoCoords.latitude}, ${geoCoords.longitude}`,
-              "INFO",
-            );
-          }
-        }
 
         const result = { ret: "ok", data: finalData };
         setToCache("", result);
