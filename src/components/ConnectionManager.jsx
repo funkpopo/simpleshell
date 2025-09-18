@@ -63,6 +63,131 @@ const areEqual = (prevProps, nextProps) => {
   );
 };
 
+const getConnectionTimestamp = (connection) => {
+  if (!connection) {
+    return null;
+  }
+  return (
+    connection.updatedAt ??
+    connection.modifiedAt ??
+    connection.lastUpdated ??
+    connection.lastModified ??
+    connection.timestamp ??
+    connection.meta?.updatedAt ??
+    null
+  );
+};
+
+const getConnectionVersion = (connection) => {
+  if (!connection) {
+    return "";
+  }
+
+  const timestamp = getConnectionTimestamp(connection);
+  if (timestamp) {
+    return String(timestamp);
+  }
+
+  if (connection.type === "group") {
+    return [
+      connection.name || "",
+      connection.expanded ? "1" : "0",
+      (connection.items || []).length,
+    ].join("|");
+  }
+
+  const proxySignature = connection.proxy
+    ? [
+        connection.proxy.type || "",
+        connection.proxy.host || "",
+        connection.proxy.port ?? "",
+        connection.proxy.username || "",
+        connection.proxy.password || "",
+        connection.proxy.useDefault ? "1" : "0",
+      ].join("|")
+    : "";
+
+  return [
+    connection.name || "",
+    connection.host || "",
+    connection.port ?? "",
+    connection.username || "",
+    connection.protocol || "",
+    connection.connectionType || "",
+    connection.authType || "",
+    connection.privateKeyPath || "",
+    connection.country || "",
+    connection.os || "",
+    connection.password || "",
+    proxySignature,
+  ].join("|");
+};
+
+const areConnectionListsEqual = (prevList = [], nextList = []) => {
+  if (prevList === nextList) {
+    return true;
+  }
+
+  if (!Array.isArray(prevList) || !Array.isArray(nextList)) {
+    return false;
+  }
+
+  if (prevList.length !== nextList.length) {
+    return false;
+  }
+
+  for (let index = 0; index < prevList.length; index += 1) {
+    const prev = prevList[index];
+    const next = nextList[index];
+
+    if (!prev || !next) {
+      return false;
+    }
+
+    if ((prev.id || "") !== (next.id || "") || (prev.type || "") !== (next.type || "")) {
+      return false;
+    }
+
+    if (getConnectionVersion(prev) !== getConnectionVersion(next)) {
+      return false;
+    }
+
+    const prevChildren = prev.items || [];
+    const nextChildren = next.items || [];
+
+    if (
+      (prevChildren.length > 0 || nextChildren.length > 0) &&
+      !areConnectionListsEqual(prevChildren, nextChildren)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const cloneConnectionNode = (node) => {
+  if (!node || typeof node !== "object") {
+    return node;
+  }
+
+  const cloned = {
+    ...node,
+  };
+
+  if (node.proxy && typeof node.proxy === "object") {
+    cloned.proxy = { ...node.proxy };
+  }
+
+  if (Array.isArray(node.items)) {
+    cloned.items = node.items.map(cloneConnectionNode);
+  }
+
+  return cloned;
+};
+
+const cloneConnectionList = (list = []) => list.map(cloneConnectionNode);
+
 const ConnectionManager = memo(
   ({
     open,
@@ -171,10 +296,11 @@ const ConnectionManager = memo(
           .then((data) => {
             if (isMounted && data && Array.isArray(data)) {
               // 检查数据是否真的发生了变化，避免不必要的重渲染
-              if (JSON.stringify(data) !== JSON.stringify(connections)) {
-                setConnections(data);
+              const sanitized = Array.isArray(data) ? data : [];
+              if (!areConnectionListsEqual(connections, sanitized)) {
+                setConnections(sanitized);
                 if (onConnectionsUpdate) {
-                  onConnectionsUpdate(data);
+                  onConnectionsUpdate(sanitized);
                 }
               }
             }
@@ -209,7 +335,7 @@ const ConnectionManager = memo(
       if (
         initialConnections.length > 0 &&
         initialConnections !== connections &&
-        JSON.stringify(connections) !== JSON.stringify(initialConnections)
+        !areConnectionListsEqual(connections, initialConnections)
       ) {
         setConnections(initialConnections);
         setIsLoading(false);
@@ -692,7 +818,7 @@ const ConnectionManager = memo(
         const { source, destination, type, draggableId } = result;
 
         // 创建连接数据的深拷贝，避免直接修改状态
-        let newConnections = JSON.parse(JSON.stringify(connections));
+        let newConnections = cloneConnectionList(connections);
 
         // 如果是在同一个容器内拖拽
         if (source.droppableId === destination.droppableId) {
@@ -729,75 +855,57 @@ const ConnectionManager = memo(
           // 获取被拖拽的项目
           let draggedItem = null;
 
-          // 从源容器获取被拖拽的项目
           if (source.droppableId === "connection-list") {
-            // 从顶级拖动
-            draggedItem = JSON.parse(
-              JSON.stringify(newConnections[source.index]),
-            );
-            // 从顶级列表中移除
-            newConnections.splice(source.index, 1);
+            const removedItems = newConnections.splice(source.index, 1);
+            draggedItem = removedItems[0] || null;
           } else {
-            // 从组内拖动
             const sourceGroupId = source.droppableId;
             const sourceGroupIndex = newConnections.findIndex(
               (item) => item.id === sourceGroupId,
             );
 
-            if (
-              sourceGroupIndex !== -1 &&
-              newConnections[sourceGroupIndex].items &&
-              newConnections[sourceGroupIndex].items[source.index]
-            ) {
-              draggedItem = JSON.parse(
-                JSON.stringify(
-                  newConnections[sourceGroupIndex].items[source.index],
-                ),
-              );
-              // 从源组中移除
-              newConnections[sourceGroupIndex].items.splice(source.index, 1);
+            if (sourceGroupIndex !== -1) {
+              const sourceGroup = newConnections[sourceGroupIndex];
+              const sourceItems = Array.isArray(sourceGroup.items)
+                ? [...sourceGroup.items]
+                : [];
+              const removed = sourceItems.splice(source.index, 1);
+              draggedItem = removed[0] || null;
+
+              newConnections[sourceGroupIndex] = {
+                ...sourceGroup,
+                items: sourceItems,
+              };
             }
           }
 
-          // 如果找不到被拖拽的项目，则退出
           if (!draggedItem) return;
 
-          // 将项目添加到目标容器
           if (destination.droppableId === "connection-list") {
-            // 拖到顶级列表
-            // 确保拖拽的是连接项而不是组
             if (draggedItem.type === "connection") {
-              // 插入到顶级列表的指定位置
               newConnections.splice(destination.index, 0, draggedItem);
             }
           } else {
-            // 拖到组内
             const targetGroupId = destination.droppableId;
             const targetGroupIndex = newConnections.findIndex(
               (item) => item.id === targetGroupId,
             );
 
             if (targetGroupIndex !== -1 && draggedItem.type === "connection") {
-              // 确保目标组有items数组
-              if (!newConnections[targetGroupIndex].items) {
-                newConnections[targetGroupIndex].items = [];
-              }
+              const targetGroup = newConnections[targetGroupIndex];
+              const targetItems = Array.isArray(targetGroup.items)
+                ? [...targetGroup.items]
+                : [];
+              targetItems.splice(destination.index, 0, draggedItem);
 
-              // 如果组是折叠的，则展开它
-              if (!newConnections[targetGroupIndex].expanded) {
-                newConnections[targetGroupIndex].expanded = true;
-              }
-
-              // 插入到组内的指定位置
-              newConnections[targetGroupIndex].items.splice(
-                destination.index,
-                0,
-                draggedItem,
-              );
+              newConnections[targetGroupIndex] = {
+                ...targetGroup,
+                items: targetItems,
+                expanded: true,
+              };
             }
           }
 
-          // 更新状态
           setConnections(newConnections);
           return;
         }

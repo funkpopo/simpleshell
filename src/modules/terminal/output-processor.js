@@ -1,5 +1,5 @@
 const { logToFile } = require("../../core/utils/logger");
-const highlightRules = require("../../constants/highlight-configs"); // New import
+const highlightRuleConfigs = require("../../constants/highlight-configs"); // New import
 
 // 添加ANSI颜色代码
 const ANSI_COLORS = {
@@ -57,6 +57,38 @@ const COLOR_TO_ANSI = {
   "#5F9EA0": ANSI_COLORS.cyan, // 军蓝色 (Docker ID)
 };
 
+const resolveAnsiColor = (color) => {
+  if (!color) {
+    return ANSI_COLORS.reset;
+  }
+  const normalized = String(color).trim();
+  return COLOR_TO_ANSI[normalized] || ANSI_COLORS[normalized] || ANSI_COLORS.reset;
+};
+
+const escapeRegex = (value = "") => value.replace(/[-/\^$*+?.()|[\]{}]/g, "\$&");
+
+const parseStyleToFormat = (style) => {
+  let ansiColor = ANSI_COLORS.reset;
+  let format = "";
+
+  if (typeof style === "string") {
+    const colorMatch = style.match(/color:\s*([^;]+)/i);
+    if (colorMatch && colorMatch[1]) {
+      ansiColor = resolveAnsiColor(colorMatch[1].trim());
+    }
+
+    if (/font-weight:\s*bold/i.test(style)) {
+      format += ANSI_COLORS.bold;
+    }
+
+    if (/text-decoration:\s*underline/i.test(style)) {
+      format += ANSI_COLORS.underline;
+    }
+  }
+
+  return { ansiColor, format };
+};
+
 class OutputProcessor {
   constructor() {
     // 跟踪编辑器会话状态的正则表达式
@@ -78,6 +110,67 @@ class OutputProcessor {
       `^(${this.editorExitCommands.join("|").replace(/\+/g, "\\+")}|:\\w+)$`,
       "i",
     );
+    this.highlightRules = [];
+    this.compiledHighlightRules = [];
+    this.updateHighlightRules(highlightRuleConfigs);
+  }
+
+  updateHighlightRules(rules = []) {
+    this.highlightRules = Array.isArray(rules) ? rules : [];
+    this.compiledHighlightRules = this.highlightRules
+      .filter((rule) => rule && rule.enabled)
+      .map((rule) => this.compileHighlightRule(rule))
+      .filter(Boolean);
+  }
+
+  compileHighlightRule(rule) {
+    if (!rule) {
+      return null;
+    }
+
+    if (rule.type === "keyword" && rule.items) {
+      const keywords = Object.keys(rule.items);
+      if (!keywords.length) {
+        return null;
+      }
+
+      const pattern = `\b(${keywords.map(escapeRegex).join("|")})\b`;
+      const regex = new RegExp(pattern, "gi");
+      const colorMap = new Map();
+
+      keywords.forEach((keyword) => {
+        const colorValue = rule.items[keyword];
+        colorMap.set(keyword.toLowerCase(), resolveAnsiColor(colorValue));
+      });
+
+      return {
+        id: rule.id || rule.name || "keyword-rule",
+        type: "keyword",
+        regex,
+        colorMap,
+      };
+    }
+
+    if (rule.type === "regex" && rule.pattern) {
+      let regex;
+      try {
+        regex = new RegExp(rule.pattern, rule.flags || "g");
+      } catch (error) {
+        return null;
+      }
+
+      const { ansiColor, format } = parseStyleToFormat(rule.style);
+
+      return {
+        id: rule.id || rule.name || "regex-rule",
+        type: "regex",
+        regex,
+        ansiColor,
+        format,
+      };
+    }
+
+    return null;
   }
 
   processTerminalOutput(processId, output) {
@@ -231,85 +324,41 @@ class OutputProcessor {
     if (!output || typeof output !== "string") {
       return output;
     }
-    if (!highlightRules || highlightRules.length === 0) {
+
+    if (!this.compiledHighlightRules.length) {
       return output;
     }
 
     let processedOutput = output;
 
-    for (const rule of highlightRules) {
-      if (!rule.enabled) {
-        continue;
-      }
-
+    for (const rule of this.compiledHighlightRules) {
       try {
-        if (rule.type === "keyword" && rule.items) {
-          const keywords = Object.keys(rule.items);
-          if (keywords.length === 0) {
-            continue;
-          }
-          const keywordRegex = new RegExp(
-            `\\b(${keywords.join("|")})\\b`,
-            "gi",
-          );
-          processedOutput = processedOutput.replace(keywordRegex, (match) => {
-            const lowerMatch = match.toLowerCase();
-            if (rule.items.hasOwnProperty(lowerMatch)) {
-              const color = rule.items[lowerMatch];
-              const ansiColor = COLOR_TO_ANSI[color] || ANSI_COLORS.reset;
-              return `${ansiColor}${match}${ANSI_COLORS.reset}`;
+        rule.regex.lastIndex = 0;
+
+        if (rule.type === "keyword") {
+          processedOutput = processedOutput.replace(rule.regex, (match) => {
+            const color = rule.colorMap.get(match.toLowerCase());
+            if (color) {
+              return `${color}${match}${ANSI_COLORS.reset}`;
             }
             return match;
           });
-        } else if (rule.type === "regex" && rule.pattern) {
-          const customRegex = new RegExp(rule.pattern, rule.flags || "g");
-          if (rule.style) {
-            // 从样式中提取颜色
-            let ansiColor = ANSI_COLORS.reset;
-            let boldFormat = "";
-
-            // 解析样式字符串，提取颜色值
-            if (
-              typeof rule.style === "string" &&
-              rule.style.includes("color:")
-            ) {
-              const colorMatch = rule.style.match(/color:\s*([^;]+)/);
-              if (colorMatch && colorMatch[1]) {
-                const cssColor = colorMatch[1].trim();
-                ansiColor = COLOR_TO_ANSI[cssColor] || ANSI_COLORS.reset;
-              }
-            }
-
-            // 检查是否包含font-weight: bold
-            if (
-              typeof rule.style === "string" &&
-              rule.style.includes("font-weight: bold")
-            ) {
-              boldFormat = ANSI_COLORS.bold;
-            }
-
-            // 检查是否包含text-decoration: underline
-            if (
-              typeof rule.style === "string" &&
-              rule.style.includes("text-decoration: underline")
-            ) {
-              boldFormat += ANSI_COLORS.underline;
-            }
-
-            processedOutput = processedOutput.replace(customRegex, (match) => {
-              return `${boldFormat}${ansiColor}${match}${ANSI_COLORS.reset}`;
-            });
-          }
+        } else if (rule.type === "regex") {
+          processedOutput = processedOutput.replace(rule.regex, (match) => {
+            return `${rule.format}${rule.ansiColor}${match}${ANSI_COLORS.reset}`;
+          });
         }
       } catch (e) {
         logToFile(
-          `Error applying highlight rule '${rule.id || rule.name || "unknown"}': ${e.message}`,
+          `Error applying compiled highlight rule '${rule.id}': ${e.message}`,
           "ERROR",
         );
       }
     }
+
     return processedOutput;
   }
+
 }
 
 // 创建单例实例

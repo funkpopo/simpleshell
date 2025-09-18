@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { debounce } from "../../core/utils/performance.js";
 
@@ -20,11 +20,13 @@ const FileOperations = memo(
     const { t } = useTranslation();
 
     // 用户活动后的刷新函数，使用防抖优化
-    const refreshAfterUserActivity = debounce(() => {
-      if (currentPath) {
-        onSilentRefresh();
-      }
-    }, USER_ACTIVITY_REFRESH_DELAY);
+    const refreshAfterUserActivity = useMemo(() => {
+      return debounce(() => {
+        if (currentPath) {
+          onSilentRefresh();
+        }
+      }, USER_ACTIVITY_REFRESH_DELAY);
+    }, [currentPath, onSilentRefresh]);
 
     // 创建文件夹
     const createFolder = async (folderName) => {

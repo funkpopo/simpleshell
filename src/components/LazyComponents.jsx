@@ -128,29 +128,46 @@ const preloadComponents = {
 const smartPreload = {
   // 预加载所有侧边栏组件（在应用空闲时）
   preloadSidebarComponents: () => {
-    if (typeof requestIdleCallback === "function") {
-      requestIdleCallback(() => {
-        Promise.all([
-          preloadComponents.settings(),
-          preloadComponents.commandHistory(),
-          preloadComponents.shortcutCommands(),
-          preloadComponents.fileManager(),
-          preloadComponents.resourceMonitor(),
-          preloadComponents.ipAddressQuery(),
-        ]).catch(() => {
-          // 静默处理预加载失败
+    const queue = [
+      preloadComponents.settings,
+      preloadComponents.commandHistory,
+      preloadComponents.shortcutCommands,
+      preloadComponents.fileManager,
+      preloadComponents.resourceMonitor,
+      preloadComponents.ipAddressQuery,
+    ];
+
+    const runNext = () => {
+      if (!queue.length) {
+        return;
+      }
+      const loader = queue.shift();
+      if (typeof loader === "function") {
+        Promise.resolve(loader()).catch(() => {}).finally(() => {
+          if (queue.length) {
+            scheduleNext();
+          }
         });
-      });
-    } else {
-      // 降级方案：使用setTimeout
-      setTimeout(() => {
-        Promise.all([
-          preloadComponents.settings(),
-          preloadComponents.commandHistory(),
-          preloadComponents.shortcutCommands(),
-        ]).catch(() => {});
-      }, 2000);
-    }
+      } else if (queue.length) {
+        scheduleNext();
+      }
+    };
+
+    const scheduleNext = () => {
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback((deadline) => {
+          if (deadline.timeRemaining() > 10 || deadline.didTimeout) {
+            runNext();
+          } else {
+            scheduleNext();
+          }
+        });
+      } else {
+        setTimeout(runNext, 400);
+      }
+    };
+
+    scheduleNext();
   },
 
   // 按需预加载特定组件
