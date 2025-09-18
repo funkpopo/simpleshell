@@ -125,7 +125,7 @@ const FileItem = memo(({ index, style, data }) => {
       maxHeight: 36,
       px: 2,
       py: 0, // 移除垂直内边距以节省空间
-      my: 0.25, // 添加小的垂直外边距以防止重叠
+      height: "100%", // Fill row height to avoid selection overlap
       backgroundColor: fileInfo.isSelected
         ? theme.palette.action.selected
         : "transparent",
