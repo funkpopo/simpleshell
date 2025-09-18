@@ -85,7 +85,7 @@ const FileManager = memo(
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [lastRefreshTime, setLastRefreshTime] = useState(null);
-    const [directoryCache, setDirectoryCache] = useState({});
+    const directoryCacheRef = useRef(new Map());
     const [contextMenu, setContextMenu] = useState(null);
     const [searchTerm, setSearchTerm] = useState("");
     const searchInputRef = useRef(null);
@@ -391,7 +391,7 @@ const FileManager = memo(
         }
 
         // 清空缓存
-        setDirectoryCache({});
+        directoryCacheRef.current.clear();
 
         // 使用记忆的路径或默认路径
         const pathToLoad = initialPath || "/";
@@ -411,9 +411,10 @@ const FileManager = memo(
         const globalCached = dirCache.get(tabId, path, CACHE_EXPIRY_TIME);
         if (globalCached) return globalCached;
       } catch (_) {}
-      if (!directoryCache[path]) return null;
-
-      const cacheEntry = directoryCache[path];
+      const cacheEntry = directoryCacheRef.current.get(path);
+      if (!cacheEntry) {
+        return null;
+      }
       const now = Date.now();
 
       // 检查缓存是否过期
@@ -429,13 +430,10 @@ const FileManager = memo(
       try {
         dirCache.set(tabId, path, data);
       } catch (_) {}
-      setDirectoryCache((prevCache) => ({
-        ...prevCache,
-        [path]: {
-          data,
-          timestamp: Date.now(),
-        },
-      }));
+      directoryCacheRef.current.set(path, {
+        data,
+        timestamp: Date.now(),
+      });
     };
 
     // 订阅非阻塞目录分片事件
@@ -2042,11 +2040,15 @@ const FileManager = memo(
     };
 
     // 用户活动后的刷新函数，使用防抖优化
-    const refreshAfterUserActivity = debounce(() => {
-      if (currentPath) {
-        silentRefreshCurrentDirectory();
-      }
-    }, USER_ACTIVITY_REFRESH_DELAY);
+    const refreshAfterUserActivity = useMemo(
+      () =>
+        debounce(() => {
+          if (currentPath) {
+            silentRefreshCurrentDirectory();
+          }
+        }, USER_ACTIVITY_REFRESH_DELAY),
+      [currentPath, silentRefreshCurrentDirectory],
+    );
 
     // 处理拖拽的文件和文件夹
     const handleDroppedItems = useCallback(
@@ -2184,11 +2186,11 @@ const FileManager = memo(
                     arrayBuffer.byteLength,
                   );
                   const chunk = new Uint8Array(arrayBuffer.slice(offset, end));
-                  chunks.push(Array.from(chunk));
+                  chunks.push(chunk);
                 }
               } else {
                 // 小文件直接转换
-                chunks.push(Array.from(new Uint8Array(arrayBuffer)));
+                chunks.push(new Uint8Array(arrayBuffer));
               }
 
               filesDataForUpload.push({

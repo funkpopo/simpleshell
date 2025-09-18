@@ -199,6 +199,84 @@ const terminalCache = {};
 const fitAddonCache = {};
 const processCache = {};
 
+const SHARED_STYLE_ELEMENT_ID = "web-terminal-shared-style";
+let sharedStyleElement = null;
+
+const ensureSharedTerminalStyles = () => {
+  if (sharedStyleElement && document.contains(sharedStyleElement)) {
+    return sharedStyleElement;
+  }
+
+  const existing = document.getElementById(SHARED_STYLE_ELEMENT_ID);
+  if (existing) {
+    sharedStyleElement = existing;
+    return sharedStyleElement;
+  }
+
+  const style = document.createElement("style");
+  style.id = SHARED_STYLE_ELEMENT_ID;
+  document.head.appendChild(style);
+  sharedStyleElement = style;
+  return sharedStyleElement;
+};
+
+const terminalGeometryCache = new Map();
+
+const getGeometryKey = (processId, tabId) => {
+  if (processId) return `process:${processId}`;
+  if (tabId) return `tab:${tabId}`;
+  return null;
+};
+
+const clearGeometryFor = (processId, tabId) => {
+  const key = getGeometryKey(processId, tabId);
+  if (key) {
+    terminalGeometryCache.delete(key);
+  }
+};
+
+const normalizeGeometry = (cols = 0, rows = 0) => ({
+  cols: Math.max(Math.floor(cols) || 1, 1),
+  rows: Math.max(Math.floor(rows) || 1, 1),
+});
+
+const shouldTransmitGeometry = (processId, tabId, cols, rows) => {
+  const key = getGeometryKey(processId, tabId);
+  if (!key) {
+    return { key: null, cols, rows, changed: false };
+  }
+
+  const { cols: normalizedCols, rows: normalizedRows } = normalizeGeometry(cols, rows);
+  const cached = terminalGeometryCache.get(key);
+  if (cached && cached.cols === normalizedCols && cached.rows === normalizedRows) {
+    return { key, cols: normalizedCols, rows: normalizedRows, changed: false };
+  }
+
+  terminalGeometryCache.set(key, { cols: normalizedCols, rows: normalizedRows });
+  return { key, cols: normalizedCols, rows: normalizedRows, changed: true };
+};
+
+const sendResizeIfNeeded = (processId, tabId, cols, rows) => {
+  const { key, cols: nextCols, rows: nextRows, changed } = shouldTransmitGeometry(
+    processId,
+    tabId,
+    cols,
+    rows,
+  );
+
+  if (!changed || !window.terminalAPI?.resizeTerminal) {
+    return Promise.resolve();
+  }
+
+  return window.terminalAPI
+    .resizeTerminal(processId || tabId, nextCols, nextRows)
+    .catch((error) => {
+      if (key) {
+        terminalGeometryCache.delete(key);
+      }
+    });
+};
+
 // 将processCache暴露到全局window对象，以便其他模块可以访问进程ID映射
 window.processCache = processCache;
 
@@ -351,33 +429,23 @@ const getCharacterGridPosition = (term, pixelX, pixelY) => {
 const forceResizeTerminal = debounce(
   (term, container, processId, tabId, fitAddon) => {
     try {
-      if (container && term && fitAddon) {
-        // 直接使用实际容器尺寸进行适配
-        const rect = container.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) {
-          // 容器不可见，跳过调整
-          return;
-        }
+      if (!container || !term || !fitAddon) {
+        return;
+      }
 
-        // 强制适配
-        fitAddon.fit();
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        return;
+      }
 
-        // 获取实际的终端尺寸
-        const cols = term.cols;
-        const rows = term.rows;
+      fitAddon.fit();
 
-        // 通知后端进程调整PTY大小
-        if (
-          processId &&
-          window.terminalAPI &&
-          window.terminalAPI.resizeTerminal
-        ) {
-          window.terminalAPI
-            .resizeTerminal(processId || tabId, cols, rows)
-            .catch((err) => {
-              // 终端大小调整失败，但不影响用户体验
-            });
-        }
+      const cols = term.cols;
+      const rows = term.rows;
+      const resolvedProcessId = processId || processCache[tabId];
+
+      if (resolvedProcessId) {
+        sendResizeIfNeeded(resolvedProcessId, tabId, cols, rows);
       }
     } catch (error) {
       // Error in forceResizeTerminal
@@ -1551,6 +1619,7 @@ const WebTerminal = ({
         } catch (error) {
           // Failed to kill process
         }
+        clearGeometryFor(processCache[tabId], tabId);
         delete processCache[tabId];
       }
 
@@ -1590,10 +1659,16 @@ const WebTerminal = ({
 
             // 同步到后端进程
             const processId = processCache[tabId];
-            if (processId && window.terminalAPI?.resizeTerminal) {
-              const dims =
-                terminalCache[tabId].cols + "," + terminalCache[tabId].rows;
-              window.terminalAPI.resizeTerminal(processId, dims);
+            if (processId) {
+              const cachedTerminal = terminalCache[tabId];
+              if (cachedTerminal) {
+                sendResizeIfNeeded(
+                  processId,
+                  tabId,
+                  cachedTerminal.cols,
+                  cachedTerminal.rows,
+                );
+              }
             }
           }
         }, 100);
@@ -1610,9 +1685,10 @@ const WebTerminal = ({
 
   useEffect(() => {
     // 添加全局样式
-    const styleElement = document.createElement("style");
-    styleElement.textContent = terminalStyles + searchBarStyles;
-    document.head.appendChild(styleElement);
+    const styleElement = ensureSharedTerminalStyles();
+    if (styleElement.textContent !== terminalStyles + searchBarStyles) {
+      styleElement.textContent = terminalStyles + searchBarStyles;
+    }
 
     // 存储终端事件监听器的 disposables 以便清理
     const terminalDisposables = [];
@@ -1750,7 +1826,12 @@ const WebTerminal = ({
                   currentProcessId.current = processId;
 
                   // 存储到进程缓存中
+                  const previousProcessId = processCache[tabId];
+                  if (previousProcessId) {
+                    clearGeometryFor(previousProcessId, tabId);
+                  }
                   processCache[tabId] = processId;
+                  clearGeometryFor(processId, tabId);
 
                   // 触发进程ID更新事件，用于通知其他组件
                   const event = new CustomEvent("terminalProcessIdUpdated", {
@@ -2075,32 +2156,13 @@ const WebTerminal = ({
             rows: term.rows,
           };
 
-          if (processCache[tabId] && window.terminalAPI.resizeTerminal) {
-            // 确保cols和rows是有效的正整数
-            const cols = Math.max(Math.floor(dimensions.cols || 120), 1);
-            const rows = Math.max(Math.floor(dimensions.rows || 30), 1);
+          const processId = processCache[tabId];
+          if (processId) {
+            sendResizeIfNeeded(processId, tabId, dimensions.cols, dimensions.rows);
 
-            // 通知后端调整终端大小
-            window.terminalAPI
-              .resizeTerminal(processCache[tabId], cols, rows)
-              .catch((err) => {
-                // 终端大小调整失败
-              });
-
-            // 使用EventManager管理延迟再次调整大小，确保在某些情况下终端尺寸能够正确同步
             eventManager.setTimeout(() => {
               if (terminalRef.current && term && processCache[tabId]) {
-                window.terminalAPI
-                  .resizeTerminal(
-                    processCache[tabId],
-                    Math.max(Math.floor(term.cols || 120), 1),
-                    Math.max(Math.floor(term.rows || 30), 1),
-                  )
-                  .catch((err) => {
-                    // 延迟终端大小调整失败
-                  });
-
-                // 重置内容更新标志，表示已处理完成
+                sendResizeIfNeeded(processCache[tabId], tabId, term.cols, term.rows);
                 setContentUpdated(false);
               }
             }, 300);
@@ -2187,157 +2249,64 @@ const WebTerminal = ({
         handleVisibilityChange,
       );
 
-      // 创建一个MutationObserver来检测元素的可见性变化
-      const observer = new MutationObserver((mutations) => {
-        let shouldResize = false;
-        let visibilityChanged = false;
-
-        // 检查变化是否可能影响大小
-        for (const mutation of mutations) {
-          // 属性变化可能影响大小
-          if (
-            mutation.attributeName === "style" ||
-            mutation.attributeName === "class"
-          ) {
-            const target = mutation.target;
-
-            // 检查是否是display属性变化
-            if (
-              target.style &&
-              (target.style.display === "block" ||
-                target.style.display === "flex" ||
-                target.style.display === "grid" ||
-                target.getAttribute("aria-hidden") === "false")
-            ) {
-              visibilityChanged = true;
-              break;
-            }
-
-            // 检查是否涉及visibility或opacity变化
-            const computedStyle = window.getComputedStyle(target);
-            if (
-              computedStyle &&
-              (computedStyle.visibility === "visible" ||
-                computedStyle.opacity !== "0")
-            ) {
-              visibilityChanged = true;
-              break;
-            }
-
-            shouldResize = true;
-          }
-
-          // 子元素变化也可能影响大小
-          if (mutation.type === "childList") {
-            shouldResize = true;
-          }
-        }
-
-        // 如果检测到可见性变化，则立即重新计算大小
-        if (visibilityChanged) {
-          if (terminalRef.current && termRef.current && fitAddonRef.current) {
-            // 使用EventManager管理延迟，确保DOM已完全更新
-            eventManager.setTimeout(() => {
-              forceResizeTerminal(
-                termRef.current,
-                terminalRef.current,
-                processCache[tabId],
-                tabId,
-                fitAddonRef.current,
-              );
-            }, 10);
-
-            eventManager.setTimeout(() => {
+      const attributeObserver =
+        typeof MutationObserver === "function"
+          ? new MutationObserver(() => {
               if (
                 terminalRef.current &&
                 termRef.current &&
-                fitAddonRef.current
+                fitAddonRef.current &&
+                isElementVisible(terminalRef.current)
               ) {
-                forceResizeTerminal(
-                  termRef.current,
-                  terminalRef.current,
-                  processCache[tabId],
-                  tabId,
-                  fitAddonRef.current,
-                );
+                eventManager.setTimeout(() => {
+                  forceResizeTerminal(
+                    termRef.current,
+                    terminalRef.current,
+                    processCache[tabId],
+                    tabId,
+                    fitAddonRef.current,
+                  );
+                }, 0);
               }
-            }, 100);
-          }
-        } else if (shouldResize) {
-          // 使用EventManager管理节流函数延迟调用resize，避免频繁调整
-          eventManager.setTimeout(() => {
-            // 检查终端容器和DOM尺寸
-            if (terminalRef.current && termRef.current) {
-              // 检查尺寸是否确实发生变化
-              const container = terminalRef.current;
-              const xtermElement = termRef.current.element;
+            })
+          : null;
 
-              if (
-                xtermElement &&
-                (Math.abs(xtermElement.clientWidth - container.clientWidth) >
-                  2 ||
-                  Math.abs(xtermElement.clientHeight - container.clientHeight) >
-                    2)
-              ) {
-                handleResize();
-              }
-            }
-          }, 50);
-        }
-      });
-
-      // 观察终端容器及其父元素
-      if (terminalRef.current) {
-        observer.observe(terminalRef.current, {
+      if (attributeObserver && terminalRef.current) {
+        attributeObserver.observe(terminalRef.current, {
           attributes: true,
-          childList: true,
-          subtree: true,
-          attributeFilter: ["style", "class", "hidden", "aria-hidden"], // 只观察这些属性的变化
+          attributeFilter: ["style", "class", "hidden", "aria-hidden"],
         });
-
-        // 使用EventManager管理observer
-        eventManager.addObserver(observer);
-
-        // 尝试观察父元素
-        let parent = terminalRef.current.parentElement;
-        if (parent) {
-          observer.observe(parent, {
-            attributes: true,
-            attributeFilter: ["style", "class", "hidden", "aria-hidden"],
-          });
-
-          // 对于TabPanel的特殊处理
-          if (parent.parentElement) {
-            observer.observe(parent.parentElement, {
-              attributes: true,
-              attributeFilter: ["style", "class", "hidden", "aria-hidden"],
-            });
-
-            if (parent.parentElement.parentElement) {
-              observer.observe(parent.parentElement.parentElement, {
-                attributes: true,
-                attributeFilter: ["style", "class", "hidden", "aria-hidden"],
-              });
-            }
-          }
-        }
+        eventManager.addObserver(attributeObserver);
       }
 
-      // 使用EventManager管理定时检查并调整大小
-      eventManager.setInterval(() => {
-        if (termRef.current && termRef.current.element) {
-          const xtermElement = termRef.current.element;
-          const container = terminalRef.current;
-          if (
-            container &&
-            (Math.abs(xtermElement.clientWidth - container.clientWidth) > 10 ||
-              Math.abs(xtermElement.clientHeight - container.clientHeight) > 10)
-          ) {
-            handleResize();
-          }
-        }
-      }, 200);
+      const intersectionObserver =
+        typeof IntersectionObserver === "function"
+          ? new IntersectionObserver((entries) => {
+              entries.forEach((entry) => {
+                if (
+                  entry.isIntersecting &&
+                  terminalRef.current &&
+                  termRef.current &&
+                  fitAddonRef.current
+                ) {
+                  eventManager.setTimeout(() => {
+                    forceResizeTerminal(
+                      termRef.current,
+                      terminalRef.current,
+                      processCache[tabId],
+                      tabId,
+                      fitAddonRef.current,
+                    );
+                  }, 16);
+                }
+              });
+            })
+          : null;
 
+      if (intersectionObserver && terminalRef.current) {
+        intersectionObserver.observe(terminalRef.current);
+        eventManager.addObserver(intersectionObserver);
+      }
       // 保存引用以在其他方法中使用
       termRef.current = term;
       fitAddonRef.current = fitAddon;
@@ -2350,16 +2319,12 @@ const WebTerminal = ({
             fitAddonRef.current.fit();
 
             // 获取实际尺寸
-            const cols = Math.max(Math.floor(term.cols || 120), 1);
-            const rows = Math.max(Math.floor(term.rows || 30), 1);
+            const cols = term.cols;
+            const rows = term.rows;
+            const processId = processCache[tabId];
 
-            // 同步到后端
-            if (window.terminalAPI.resizeTerminal) {
-              window.terminalAPI
-                .resizeTerminal(processCache[tabId], cols, rows)
-                .catch((err) => {
-                  // 初始终端大小同步失败
-                });
+            if (processId) {
+              sendResizeIfNeeded(processId, tabId, cols, rows);
             }
           } catch (error) {}
         }
@@ -2462,9 +2427,6 @@ const WebTerminal = ({
         }
 
         // 移除样式元素
-        if (styleElement && document.head.contains(styleElement)) {
-          document.head.removeChild(styleElement);
-        }
       });
 
       // 添加选择变化事件监听
@@ -2498,9 +2460,6 @@ const WebTerminal = ({
         );
 
         // 移除样式元素
-        if (styleElement && styleElement.parentNode) {
-          styleElement.parentNode.removeChild(styleElement);
-        }
 
         // 这个函数现在很简洁，因为EventManager处理了大部分清理工作
         // 组件卸载时的清理工作由EventManager处理
@@ -2929,7 +2888,12 @@ const WebTerminal = ({
     window.terminalAPI.removeOutputListener(processId);
 
     // 保存进程ID以便后续可以关闭
+    const previousProcessId = processCache[tabId];
+    if (previousProcessId && previousProcessId !== processId) {
+      clearGeometryFor(previousProcessId, tabId);
+    }
     processCache[tabId] = processId;
+    clearGeometryFor(processId, tabId);
 
     // 添加数据监听
     window.terminalAPI.onProcessOutput(processId, (data) => {
@@ -2992,20 +2956,10 @@ const WebTerminal = ({
     const syncTerminalSize = () => {
       if (fitAddonRef.current) {
         try {
-          // 先调用fit
           fitAddonRef.current.fit();
-
-          // 获取实际尺寸
-          const cols = Math.max(Math.floor(term.cols || 120), 1);
-          const rows = Math.max(Math.floor(term.rows || 30), 1);
-
-          // 同步到后端
-          if (window.terminalAPI.resizeTerminal) {
-            window.terminalAPI
-              .resizeTerminal(processCache[tabId], cols, rows)
-              .catch((err) => {
-                // 初始终端大小同步失败
-              });
+          const processId = processCache[tabId];
+          if (processId) {
+            sendResizeIfNeeded(processId, tabId, term.cols, term.rows);
           }
         } catch (error) {
           // 终端大小适配失败
@@ -3243,21 +3197,14 @@ const WebTerminal = ({
                   }
 
                   // 同步到后端
-                  if (
-                    processCache[tabId] &&
-                    window.terminalAPI?.resizeTerminal
-                  ) {
-                    const cols = Math.max(
-                      Math.floor(termRef.current.cols || 120),
-                      1,
+                  const processId = processCache[tabId];
+                  if (processId) {
+                    sendResizeIfNeeded(
+                      processId,
+                      tabId,
+                      termRef.current.cols,
+                      termRef.current.rows,
                     );
-                    const rows = Math.max(
-                      Math.floor(termRef.current.rows || 30),
-                      1,
-                    );
-                    window.terminalAPI
-                      .resizeTerminal(processCache[tabId], cols, rows)
-                      .catch(() => {});
                   }
                 }
               }
@@ -3338,15 +3285,9 @@ const WebTerminal = ({
             fitAddonRef.current.fit();
 
             // 同步到后端进程
-            if (processCache[tabId] && window.terminalAPI?.resizeTerminal) {
-              const cols = Math.max(Math.floor(termRef.current.cols || 120), 1);
-              const rows = Math.max(Math.floor(termRef.current.rows || 30), 1);
-
-              window.terminalAPI
-                .resizeTerminal(processCache[tabId], cols, rows)
-                .catch((err) => {
-                  // 终端resize失败，但不影响显示
-                });
+            const processId = processCache[tabId];
+            if (processId) {
+              sendResizeIfNeeded(processId, tabId, termRef.current.cols, termRef.current.rows);
             }
 
             // 如果是拆分操作，额外进行多次resize确保显示正确
@@ -3405,15 +3346,9 @@ const WebTerminal = ({
             fitAddonRef.current.fit();
 
             // 同步到后端进程
-            if (processCache[tabId] && window.terminalAPI?.resizeTerminal) {
-              const cols = Math.max(Math.floor(termRef.current.cols || 120), 1);
-              const rows = Math.max(Math.floor(termRef.current.rows || 30), 1);
-
-              window.terminalAPI
-                .resizeTerminal(processCache[tabId], cols, rows)
-                .catch((err) => {
-                  // 终端resize失败，但不影响显示
-                });
+            const processId = processCache[tabId];
+            if (processId) {
+              sendResizeIfNeeded(processId, tabId, termRef.current.cols, termRef.current.rows);
             }
 
             // 强制刷新终端内容显示

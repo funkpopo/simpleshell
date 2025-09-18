@@ -8,6 +8,51 @@ import React, {
 import { Paper, List, ListItem, ListItemText, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 
+const COMMAND_FONT = '13px "Fira Code", "Consolas", "Monaco", "Courier New", monospace';
+
+const measureCommandText = (() => {
+  let canvas = null;
+  let context = null;
+  const cache = new Map();
+  const fallbackCharWidth = 8;
+
+  const ensureContext = () => {
+    if (typeof document === "undefined") {
+      return null;
+    }
+
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+    }
+
+    if (!context && canvas) {
+      context = canvas.getContext("2d");
+    }
+
+    return context;
+  };
+
+  return (text = "", font = COMMAND_FONT) => {
+    const key = `${font}__${text}`;
+    if (cache.has(key)) {
+      return cache.get(key);
+    }
+
+    const ctx = ensureContext();
+    let width;
+
+    if (!ctx) {
+      width = text.length * fallbackCharWidth;
+    } else {
+      ctx.font = font;
+      width = ctx.measureText(text).width || text.length * fallbackCharWidth;
+    }
+
+    cache.set(key, width);
+    return width;
+  };
+})();
+
 const CommandSuggestion = ({
   suggestions = [],
   visible = false,
@@ -50,23 +95,13 @@ const CommandSuggestion = ({
 
     let actualTextWidth = 0;
     try {
-      const tempElement = document.createElement("div");
-      tempElement.style.position = "absolute";
-      tempElement.style.visibility = "hidden";
-      tempElement.style.height = "auto";
-      tempElement.style.width = "auto";
-      tempElement.style.fontSize = "13px";
-      tempElement.style.fontFamily =
-        '"Fira Code", "Consolas", "Monaco", "Courier New", monospace';
-      tempElement.style.whiteSpace = "nowrap";
-      tempElement.textContent = longestCommand;
-
-      document.body.appendChild(tempElement);
-      actualTextWidth = tempElement.offsetWidth;
-      document.body.removeChild(tempElement);
+      actualTextWidth = measureCommandText(longestCommand, COMMAND_FONT);
     } catch (error) {
-      const avgCharWidth = 8;
-      actualTextWidth = maxCommandLength * avgCharWidth;
+      actualTextWidth = 0;
+    }
+
+    if (!Number.isFinite(actualTextWidth) || actualTextWidth === 0) {
+      actualTextWidth = maxCommandLength * 8;
     }
 
     let suggestedWidth = actualTextWidth + padding + extraPadding;
