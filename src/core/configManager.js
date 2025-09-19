@@ -361,6 +361,7 @@ function loadUISettings() {
         imageSupported: true,
         cacheEnabled: true,
         prefetchEnabled: true,
+        webglEnabled: true,
       },
     };
   }
@@ -387,6 +388,8 @@ function loadUISettings() {
             cacheEnabled: config.uiSettings.performance?.cacheEnabled !== false,
             prefetchEnabled:
               config.uiSettings.performance?.prefetchEnabled !== false,
+            webglEnabled:
+              config.uiSettings.performance?.webglEnabled !== false,
           },
         };
         if (logToFile)
@@ -408,6 +411,12 @@ function loadUISettings() {
     darkMode: true,
     terminalFont: "Fira Code",
     terminalFontSize: 14,
+    performance: {
+      imageSupported: true,
+      cacheEnabled: true,
+      prefetchEnabled: true,
+      webglEnabled: true,
+    },
   };
 }
 
@@ -679,6 +688,12 @@ function initializeMainConfig() {
           darkMode: true,
           terminalFont: "Fira Code",
           terminalFontSize: 14,
+          performance: {
+            imageSupported: true,
+            cacheEnabled: true,
+            prefetchEnabled: true,
+            webglEnabled: true,
+          },
         },
         aiSettings: {
           configs: [],
@@ -748,6 +763,12 @@ function initializeMainConfig() {
           darkMode: true,
           terminalFont: "Fira Code",
           terminalFontSize: 14,
+          performance: {
+            imageSupported: true,
+            cacheEnabled: true,
+            prefetchEnabled: true,
+            webglEnabled: true,
+          },
         };
         changed = true;
       } else {
@@ -775,6 +796,32 @@ function initializeMainConfig() {
         if (config.uiSettings.terminalFontSize === undefined) {
           config.uiSettings.terminalFontSize = 14;
           changed = true;
+        }
+        if (!config.uiSettings.performance) {
+          config.uiSettings.performance = {
+            imageSupported: true,
+            cacheEnabled: true,
+            prefetchEnabled: true,
+            webglEnabled: true,
+          };
+          changed = true;
+        } else {
+          if (config.uiSettings.performance.imageSupported === undefined) {
+            config.uiSettings.performance.imageSupported = true;
+            changed = true;
+          }
+          if (config.uiSettings.performance.cacheEnabled === undefined) {
+            config.uiSettings.performance.cacheEnabled = true;
+            changed = true;
+          }
+          if (config.uiSettings.performance.prefetchEnabled === undefined) {
+            config.uiSettings.performance.prefetchEnabled = true;
+            changed = true;
+          }
+          if (config.uiSettings.performance.webglEnabled === undefined) {
+            config.uiSettings.performance.webglEnabled = true;
+            changed = true;
+          }
         }
       }
 

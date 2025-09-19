@@ -30,6 +30,7 @@ import TuneIcon from "@mui/icons-material/Tune";
 import ImageIcon from "@mui/icons-material/Image";
 import MemoryIcon from "@mui/icons-material/Memory";
 import CachedIcon from "@mui/icons-material/Cached";
+import BoltIcon from "@mui/icons-material/Bolt";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 import { SettingsSkeleton } from "./SkeletonLoader.jsx";
@@ -131,6 +132,7 @@ const Settings = memo(({ open, onClose }) => {
   const [imageSupported, setImageSupported] = React.useState(true);
   const [cacheEnabled, setCacheEnabled] = React.useState(true);
   const [prefetchEnabled, setPrefetchEnabled] = React.useState(true);
+  const [terminalWebglEnabled, setTerminalWebglEnabled] = React.useState(true);
 
   // 需要重启的设置变更标志
   const [needsRestart, setNeedsRestart] = React.useState(false);
@@ -160,11 +162,13 @@ const Settings = memo(({ open, onClose }) => {
               imageSupported: true,
               cacheEnabled: true,
               prefetchEnabled: true,
+              webglEnabled: true,
             };
 
             setImageSupported(performanceSettings.imageSupported !== false);
             setCacheEnabled(performanceSettings.cacheEnabled !== false);
             setPrefetchEnabled(performanceSettings.prefetchEnabled !== false);
+            setTerminalWebglEnabled(performanceSettings.webglEnabled !== false);
 
             // 保存原始设置用于比较
             setOriginalPerformanceSettings(performanceSettings);
@@ -240,6 +244,7 @@ const Settings = memo(({ open, onClose }) => {
       imageSupported,
       cacheEnabled,
       prefetchEnabled,
+      webglEnabled: terminalWebglEnabled,
       ...newSettings,
     };
 
@@ -272,6 +277,9 @@ const Settings = memo(({ open, onClose }) => {
           window.terminalAPI.updatePrefetchSettings({ enabled: value });
         }
         break;
+      case "webglEnabled":
+        setTerminalWebglEnabled(value);
+        break;
     }
 
     // 检查是否需要重启
@@ -293,6 +301,7 @@ const Settings = memo(({ open, onClose }) => {
             imageSupported,
             cacheEnabled,
             prefetchEnabled,
+            webglEnabled: terminalWebglEnabled,
           },
         };
         await window.terminalAPI.saveUISettings(settings);
@@ -325,6 +334,12 @@ const Settings = memo(({ open, onClose }) => {
             terminalFont,
             terminalFontSize,
             darkMode,
+            performance: {
+              imageSupported,
+              cacheEnabled,
+              prefetchEnabled,
+              webglEnabled: terminalWebglEnabled,
+            },
           },
         }),
       );
@@ -610,6 +625,54 @@ const Settings = memo(({ open, onClose }) => {
                           "settings.imageDescription",
                           "支持在终端中显示Sixel和iTerm图像协议",
                         )}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid
+                  size={{
+                    xs: 12,
+                    sm: 6,
+                  }}
+                >
+                  <Card variant="outlined" sx={{ height: "100%" }}>
+                    <CardContent>
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
+                      >
+                        <BoltIcon sx={{ mr: 1, color: "warning.main" }} />
+                        <Typography variant="h6" component="div">
+                          {t("settings.webglRenderer", "WebGL 渲染")}
+                        </Typography>
+                        <Chip
+                          label={t("settings.realTime", "实时生效")}
+                          size="small"
+                          color="success"
+                          sx={{ ml: 1 }}
+                        />
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={terminalWebglEnabled}
+                            onChange={(e) =>
+                              handlePerformanceChange(
+                                "webglEnabled",
+                                e.target.checked,
+                              )
+                            }
+                            color="primary"
+                          />
+                        }
+                        label={t("settings.enableWebglRenderer", "启用 WebGL 渲染器")}
+                      />
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mt: 1 }}
+                      >
+                        {t("settings.webglDescription", "使用 GPU 加速的渲染器提升长文本滚动性能")}
                       </Typography>
                     </CardContent>
                   </Card>
