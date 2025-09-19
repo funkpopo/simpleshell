@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
+import { WebglAddon } from "@xterm/addon-webgl";
 import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
 import "@xterm/xterm/css/xterm.css";
@@ -542,10 +543,40 @@ const WebTerminal = ({
   const eventManager = useEventManager(); // 使用统一的事件管理器
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
+  const [webglRendererEnabled, setWebglRendererEnabled] = useState(true);
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
   const highlightRefreshFrameRef = useRef(null);
+  const webglRendererEnabledRef = useRef(true);
+  const pendingWriteBufferRef = useRef([]);
+  const pendingWriteLengthRef = useRef(0);
+  const pendingWriteHandleRef = useRef(null);
+  const pendingWriteUsingRafRef = useRef(false);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadRendererPreference = async () => {
+      try {
+        if (window.terminalAPI?.loadUISettings) {
+          const settings = await window.terminalAPI.loadUISettings();
+          const enabled =
+            settings?.performance?.webglEnabled !== false;
+          if (isActive) {
+            webglRendererEnabledRef.current = enabled;
+            setWebglRendererEnabled(enabled);
+          }
+        }
+      } catch (_error) {}
+    };
+
+    loadRendererPreference();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const scheduleHighlightRefresh = useCallback(
     (termInstance) => {
@@ -572,6 +603,164 @@ const WebTerminal = ({
       });
     },
     [],
+  );
+
+  const disableWebglRenderer = useCallback((termInstance) => {
+    if (!termInstance) {
+      return;
+    }
+
+    try {
+      if (
+        termInstance.__webglAddon &&
+        typeof termInstance.__webglAddon.dispose === "function"
+      ) {
+        termInstance.__webglAddon.dispose();
+      }
+    } catch (_error) {}
+
+    termInstance.__webglAddon = null;
+    termInstance.__webglEnabled = false;
+
+    try {
+      if (typeof termInstance.setOption === "function") {
+        termInstance.setOption("rendererType", "canvas");
+      } else if (termInstance.options) {
+        termInstance.options.rendererType = "canvas";
+      }
+    } catch (_error) {}
+  }, []);
+
+  const tryEnableWebglRenderer = useCallback(
+    (termInstance) => {
+      if (!termInstance) {
+        return;
+      }
+
+      if (!webglRendererEnabledRef.current) {
+        if (termInstance.__webglEnabled) {
+          disableWebglRenderer(termInstance);
+        }
+        return;
+      }
+
+      if (termInstance.__webglEnabled === true) {
+        return;
+      }
+
+      try {
+        if (
+          termInstance.__webglAddon &&
+          typeof termInstance.__webglAddon.dispose === "function"
+        ) {
+          termInstance.__webglAddon.dispose();
+        }
+        const webglAddon = new WebglAddon();
+        termInstance.loadAddon(webglAddon);
+        termInstance.__webglAddon = webglAddon;
+        termInstance.__webglEnabled = true;
+      } catch (_error) {
+        termInstance.__webglEnabled = false;
+        termInstance.__webglAddon = null;
+        webglRendererEnabledRef.current = false;
+        setWebglRendererEnabled(false);
+        disableWebglRenderer(termInstance);
+      }
+    },
+    [disableWebglRenderer],
+  );
+
+  useEffect(() => {
+    if (!termRef.current) {
+      return;
+    }
+
+    if (webglRendererEnabled) {
+      tryEnableWebglRenderer(termRef.current);
+    } else {
+      disableWebglRenderer(termRef.current);
+    }
+  }, [webglRendererEnabled, tryEnableWebglRenderer, disableWebglRenderer]);
+
+  const flushPendingWrites = useCallback(
+    (termInstance) => {
+      if (!termInstance) {
+        return;
+      }
+      const pending = pendingWriteBufferRef.current;
+      if (!pending.length) {
+        return;
+      }
+      pendingWriteBufferRef.current = [];
+      pendingWriteLengthRef.current = 0;
+      const dataToWrite = pending.join("");
+      if (!dataToWrite) {
+        return;
+      }
+      try {
+        termInstance.write(dataToWrite, () =>
+          scheduleHighlightRefresh(termInstance),
+        );
+      } catch (_error) {
+        termInstance.write(dataToWrite);
+        scheduleHighlightRefresh(termInstance);
+      }
+      setContentUpdated(true);
+    },
+    [scheduleHighlightRefresh, setContentUpdated],
+  );
+
+  const enqueueTerminalWrite = useCallback(
+    (termInstance, chunk) => {
+      if (!termInstance || !chunk) {
+        return;
+      }
+      const chunkStr =
+        typeof chunk === "string" ? chunk : chunk.toString();
+      if (!chunkStr) {
+        return;
+      }
+      pendingWriteBufferRef.current.push(chunkStr);
+      pendingWriteLengthRef.current += chunkStr.length;
+
+      if (
+        pendingWriteLengthRef.current > 65536 &&
+        pendingWriteHandleRef.current !== null
+      ) {
+        if (
+          pendingWriteUsingRafRef.current &&
+          typeof cancelAnimationFrame === "function"
+        ) {
+          cancelAnimationFrame(pendingWriteHandleRef.current);
+        } else {
+          clearTimeout(pendingWriteHandleRef.current);
+        }
+        pendingWriteHandleRef.current = null;
+      }
+
+      if (pendingWriteLengthRef.current > 65536) {
+        flushPendingWrites(termInstance);
+        return;
+      }
+
+      if (pendingWriteHandleRef.current !== null) {
+        return;
+      }
+
+      const flush = () => {
+        pendingWriteHandleRef.current = null;
+        flushPendingWrites(termInstance);
+      };
+
+      if (typeof requestAnimationFrame === "function") {
+        pendingWriteUsingRafRef.current = true;
+        pendingWriteHandleRef.current = requestAnimationFrame(flush);
+      } else {
+        pendingWriteUsingRafRef.current = false;
+        pendingWriteHandleRef.current = setTimeout(flush, 16);
+      }
+    },
+    [flushPendingWrites],
   );
 
   // 右键菜单状态
@@ -1621,6 +1810,10 @@ const WebTerminal = ({
     try {
       if (window.terminalAPI?.loadUISettings) {
         const settings = await window.terminalAPI.loadUISettings();
+        const enabled =
+          settings?.performance?.webglEnabled !== false;
+        webglRendererEnabledRef.current = enabled;
+        setWebglRendererEnabled(enabled);
         return {
           fontSize: settings.terminalFontSize || 14,
           fontFamily: getFontFamilyString(settings.terminalFont || "Fira Code"),
@@ -1629,6 +1822,8 @@ const WebTerminal = ({
     } catch (error) {
       // Failed to load font settings from config
     }
+    webglRendererEnabledRef.current = true;
+    setWebglRendererEnabled(true);
     return {
       fontSize: 14,
       fontFamily: getFontFamilyString("Fira Code"),
@@ -1665,7 +1860,20 @@ const WebTerminal = ({
   // 监听设置变更事件
   useEffect(() => {
     const handleSettingsChanged = async (event) => {
-      const { terminalFontSize, terminalFont } = event.detail;
+      const { terminalFontSize, terminalFont, performance } = event.detail;
+
+      if (performance && Object.prototype.hasOwnProperty.call(performance, "webglEnabled")) {
+        const enabled = performance.webglEnabled !== false;
+        webglRendererEnabledRef.current = enabled;
+        setWebglRendererEnabled(enabled);
+        if (termRef.current) {
+          if (enabled) {
+            tryEnableWebglRenderer(termRef.current);
+          } else {
+            disableWebglRenderer(termRef.current);
+          }
+        }
+      }
 
       if (terminalRef.current && terminalCache[tabId] && fitAddonRef.current) {
         // 更新终端字体设置
@@ -1709,7 +1917,7 @@ const WebTerminal = ({
       "settingsChanged",
       handleSettingsChanged,
     );
-  }, [tabId, eventManager]);
+  }, [tabId, eventManager, disableWebglRenderer, tryEnableWebglRenderer]);
 
   useEffect(() => {
     // 添加全局样式
@@ -1742,6 +1950,11 @@ const WebTerminal = ({
 
         // 重新打开终端并附加到DOM
         term.open(terminalRef.current);
+        if (webglRendererEnabledRef.current) {
+          tryEnableWebglRenderer(term);
+        } else {
+          disableWebglRenderer(term);
+        }
 
         // 如果标签页不活跃，避免立即触发resize以减少性能影响
         if (isActive) {
@@ -1822,6 +2035,11 @@ const WebTerminal = ({
 
         // 打开终端
         term.open(terminalRef.current);
+        if (webglRendererEnabledRef.current) {
+          tryEnableWebglRenderer(term);
+        } else {
+          disableWebglRenderer(term);
+        }
 
         // 使用EventManager管理确保适配容器大小
         eventManager.setTimeout(() => {
@@ -2494,7 +2712,7 @@ const WebTerminal = ({
         // 组件卸载时的清理工作由EventManager处理
       };
     }
-  }, [tabId, refreshKey, sshConfig, isActive, eventManager]);
+  }, [tabId, refreshKey, sshConfig, isActive, eventManager, tryEnableWebglRenderer, disableWebglRenderer, enqueueTerminalWrite]);
 
   // 设置模拟终端（用于无法使用IPC API时的回退）
   const setupSimulatedTerminal = (term) => {
@@ -2920,6 +3138,21 @@ const WebTerminal = ({
         cancelAnimationFrame(highlightRefreshFrameRef.current);
       }
       highlightRefreshFrameRef.current = null;
+
+      if (pendingWriteHandleRef.current !== null) {
+        if (
+          pendingWriteUsingRafRef.current &&
+          typeof cancelAnimationFrame === "function"
+        ) {
+          cancelAnimationFrame(pendingWriteHandleRef.current);
+        } else {
+          clearTimeout(pendingWriteHandleRef.current);
+        }
+      }
+      pendingWriteHandleRef.current = null;
+      pendingWriteBufferRef.current = [];
+      pendingWriteLengthRef.current = 0;
+      pendingWriteUsingRafRef.current = false;
     };
   }, []);
 
@@ -2936,6 +3169,22 @@ const WebTerminal = ({
     // 防止重复添加监听器
     window.terminalAPI.removeOutputListener(processId);
 
+    // 清理待写入缓冲
+    if (pendingWriteHandleRef.current !== null) {
+      if (
+        pendingWriteUsingRafRef.current &&
+        typeof cancelAnimationFrame === "function"
+      ) {
+        cancelAnimationFrame(pendingWriteHandleRef.current);
+      } else {
+        clearTimeout(pendingWriteHandleRef.current);
+      }
+      pendingWriteHandleRef.current = null;
+    }
+    pendingWriteBufferRef.current = [];
+    pendingWriteLengthRef.current = 0;
+    pendingWriteUsingRafRef.current = false;
+
     // 保存进程ID以便后续可以关闭
     const previousProcessId = processCache[tabId];
     if (previousProcessId && previousProcessId !== processId) {
@@ -2945,66 +3194,65 @@ const WebTerminal = ({
     clearGeometryFor(processId, tabId);
 
     // 添加数据监听
-    window.terminalAPI.onProcessOutput(processId, (data) => {
-      if (data) {
-        try {
-          term.write(data, () => scheduleHighlightRefresh(term));
-        } catch (_error) {
-          term.write(data);
-          scheduleHighlightRefresh(term);
-        }
-        // 更新内容状态标志，表示终端内容已更新
-        setContentUpdated(true);
-
-        const dataStr = data.toString();
-
-        // 检测密码和确认提示
-        checkForPrompts(dataStr);
-
-        // 检测全屏应用启动并触发重新调整大小
-        // 通常像top, htop, vim, nano等全屏应用会发送特定的ANSI转义序列
-        // const dataStr = data.toString(); // Already defined above
-
-        // 检测常见的全屏应用启动特征
-        if (
-          // 检测清屏命令
-          dataStr.includes("\u001b[2J") ||
-          // 检测光标定位到左上角
-          dataStr.includes("\u001b[H") ||
-          // 检测光标位置保存或恢复（常见于全屏应用）
-          dataStr.includes("\u001b[s") ||
-          dataStr.includes("\u001b[u") ||
-          // 检测屏幕清除到结尾（常见于全屏刷新）
-          dataStr.includes("\u001b[J") ||
-          // 检测常见的全屏应用命令名称
-          /\b(top|htop|vi|vim|nano|less|more|tail -f|watch)\b/.test(dataStr) ||
-          // 检测终端屏幕缓冲区交替（用于全屏应用）
-          dataStr.includes("\u001b[?1049h") ||
-          dataStr.includes("\u001b[?1049l") ||
-          // 检测终端大小查询回复
-          /\u001b\[8;\d+;\d+t/.test(dataStr)
-        ) {
-          // 使用EventManager管理一系列延迟执行，以适应不同应用的启动速度
-          const delayTimes = [100, 300, 600, 1000];
-
-          delayTimes.forEach((delay) => {
-            eventManager.setTimeout(() => {
-              if (terminalRef.current && fitAddonRef.current) {
-                // 强制设置内容已更新，确保调整生效
-                setContentUpdated(true);
-                forceResizeTerminal(
-                  term,
-                  terminalRef.current,
-                  processId,
-                  tabId,
-                  fitAddonRef.current,
-                );
-              }
-            }, delay);
-          });
-        }
+    const handleProcessOutput = (data) => {
+      if (!data) {
+        return;
       }
-    });
+
+      enqueueTerminalWrite(term, data);
+      // 更新内容状态标志，表示终端内容已更新
+      setContentUpdated(true);
+
+      const dataStr = typeof data === "string" ? data : data.toString();
+
+      // 检测密码和确认提示
+      checkForPrompts(dataStr);
+
+      // 检测全屏应用启动并触发重新调整大小
+      // 通常像top, htop, vim, nano等全屏应用会发送特定的ANSI转义序列
+      // const dataStr = data.toString(); // Already defined above
+
+      // 检测常见的全屏应用启动特征
+      if (
+        // 检测清屏命令
+        dataStr.includes("\u001b[2J") ||
+        // 检测光标定位到左上角
+        dataStr.includes("\u001b[H") ||
+        // 检测光标位置保存或恢复（常见于全屏应用）
+        dataStr.includes("\u001b[s") ||
+        dataStr.includes("\u001b[u") ||
+        // 检测屏幕清除到结尾（常见于全屏刷新）
+        dataStr.includes("\u001b[J") ||
+        // 检测常见的全屏应用命令名称
+        /(top|htop|vi|vim|nano|less|more|tail -f|watch)/.test(dataStr) ||
+        // 检测终端屏幕缓冲区交替（用于全屏应用）
+        dataStr.includes("\u001b[?1049h") ||
+        dataStr.includes("\u001b[?1049l") ||
+        // 检测终端大小查询回复
+        /\u001b\[8;\d+;\d+t/.test(dataStr)
+      ) {
+        // 使用EventManager管理一系列延迟执行，以适应不同应用的启动速度
+        const delayTimes = [100, 300, 600, 1000];
+
+        delayTimes.forEach((delay) => {
+          eventManager.setTimeout(() => {
+            if (terminalRef.current && fitAddonRef.current) {
+              // 强制设置内容已更新，确保调整生效
+              setContentUpdated(true);
+              forceResizeTerminal(
+                term,
+                terminalRef.current,
+                processId,
+                tabId,
+                fitAddonRef.current,
+              );
+            }
+          }, delay);
+        });
+      }
+    };
+
+    window.terminalAPI.onProcessOutput(processId, handleProcessOutput);
 
     // 同步终端大小
     const syncTerminalSize = () => {
