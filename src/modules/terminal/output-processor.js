@@ -68,6 +68,10 @@ const resolveAnsiColor = (color) => {
 
 const escapeRegex = (value = "") => value.replace(/[-/\^$*+?.()|[\]{}]/g, "\$&");
 
+
+const OSC_SEQUENCE_REGEX = /\u001b\][\s\S]*?(?:\u0007|\u001b\\)/g;
+const HOST_HEX_SUFFIX_REGEX = /(@[A-Za-z0-9_.-]+)-([0-9a-f]{6,16})(?=[:#\s])/gi;
+
 const parseStyleToFormat = (style) => {
   let ansiColor = ANSI_COLORS.reset;
   let format = "";
@@ -336,6 +340,16 @@ class OutputProcessor {
 
     let processedOutput = output;
 
+    const oscPlaceholders = [];
+    processedOutput = processedOutput.replace(OSC_SEQUENCE_REGEX, (match) => {
+      const token = `__OSC_PLACEHOLDER_${oscPlaceholders.length}__`;
+      const sanitized = match.replace(HOST_HEX_SUFFIX_REGEX, '$1');
+      oscPlaceholders.push({ token, value: sanitized });
+      return token;
+    });
+
+    processedOutput = processedOutput.replace(HOST_HEX_SUFFIX_REGEX, '$1');
+
     for (const rule of this.compiledHighlightRules) {
       try {
         rule.regex.lastIndex = 0;
@@ -376,6 +390,12 @@ class OutputProcessor {
           `Error applying compiled highlight rule '${rule.id}': ${e.message}`,
           "ERROR",
         );
+      }
+    }
+
+    if (oscPlaceholders.length) {
+      for (const { token, value } of oscPlaceholders) {
+        processedOutput = processedOutput.replace(token, value);
       }
     }
 
