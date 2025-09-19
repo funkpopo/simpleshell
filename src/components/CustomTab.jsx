@@ -360,7 +360,11 @@ const CustomTab = memo((props) => {
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-                maxWidth: "300px", // 限制最大宽度，避免标签页过长
+                maxWidth: {
+                  xs: "150px",
+                  sm: "180px",
+                  md: "220px",
+                }, // 响应式限制宽度，避免挤压其他标签
                 display: "inline-block",
               }}
             >

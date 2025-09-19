@@ -17,6 +17,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   tabs,
   mergedTabs,
   activeSplitTabId,
+  placement = "overlay",
 }) {
   const { t } = useTranslation();
   const theme = useTheme();
@@ -260,17 +261,26 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
     </Box>
   );
 
-  return (
-    <Fade in={isVisible} timeout={300}>
-      <Box
-        sx={{
+  const containerStyles =
+    placement === "inline"
+      ? {
+          position: "static",
+          display: "flex",
+          alignItems: "center",
+        }
+      : {
           position: "absolute",
           top: 8,
           right: 8,
           zIndex: 1000,
-        }}
-      >
-        <Tooltip title={tooltipContent} placement="bottom-end" arrow>
+        };
+
+  const tooltipPlacement = placement === "inline" ? "bottom" : "bottom-end";
+
+  return (
+    <Fade in={isVisible} timeout={300}>
+      <Box sx={containerStyles}>
+        <Tooltip title={tooltipContent} placement={tooltipPlacement} arrow>
           <Chip
             icon={<SignalIcon />}
             label={latencyData.latency ? `${latencyData.latency}ms` : "--"}
@@ -288,6 +298,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
               fontSize: "0.75rem",
               minWidth: "80px",
               cursor: "pointer",
+              ml: placement === "inline" ? 1 : 0,
               transition: "all 0.3s ease",
               "&:hover": {
                 backgroundColor:

@@ -305,6 +305,8 @@ const createWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    frame: false,
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,
@@ -315,6 +317,21 @@ const createWindow = () => {
 
   // 隐藏菜单栏
   mainWindow.setMenuBarVisibility(false);
+
+  const emitWindowState = () => {
+    if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send("window:state", {
+        isMaximized: mainWindow.isMaximized(),
+        isFullScreen: mainWindow.isFullScreen(),
+      });
+    }
+  };
+
+  mainWindow.on("maximize", emitWindowState);
+  mainWindow.on("unmaximize", emitWindowState);
+  mainWindow.on("enter-full-screen", emitWindowState);
+  mainWindow.on("leave-full-screen", emitWindowState);
+  mainWindow.once("ready-to-show", emitWindowState);
 
   // 加载应用 URL
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
@@ -654,6 +671,53 @@ function setupIPC(mainWindow) {
   ipcMain.handle("dialog:showMessageBox", async (event, options) => {
     const result = await dialog.showMessageBox(mainWindow, options);
     return result;
+  });
+
+  // 窗口控制
+  ipcMain.handle("window:minimize", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return false;
+    }
+    mainWindow.minimize();
+    return true;
+  });
+
+  ipcMain.handle("window:toggleMaximize", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return false;
+    }
+
+    if (mainWindow.isFullScreen()) {
+      mainWindow.setFullScreen(false);
+    } else if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+
+    return {
+      isMaximized: mainWindow.isMaximized(),
+      isFullScreen: mainWindow.isFullScreen(),
+    };
+  });
+
+  ipcMain.handle("window:close", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return false;
+    }
+    mainWindow.close();
+    return true;
+  });
+
+  ipcMain.handle("window:getState", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { isMaximized: false, isFullScreen: false };
+    }
+
+    return {
+      isMaximized: mainWindow.isMaximized(),
+      isFullScreen: mainWindow.isFullScreen(),
+    };
   });
 
   // 启动SSH连接

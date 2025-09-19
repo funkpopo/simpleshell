@@ -1,5 +1,5 @@
 import * as React from "react";
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "@mui/material/styles";
 import { createUnifiedTheme } from "./theme";
@@ -60,6 +60,7 @@ import AIChatWindow from "./components/AIChatWindow.jsx";
 import CustomTab from "./components/CustomTab.jsx";
 import MergedTabContent from "./components/MergedTabContent.jsx";
 import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
+import WindowControls from "./components/WindowControls.jsx";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -267,6 +268,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 AboutDialog.displayName = "AboutDialog";
 
 function App() {
+  const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
   const eventManager = useEventManager(); // 使用统一的事件管理器
   const [activeSidebarMargin, setActiveSidebarMargin] = React.useState(0);
@@ -320,6 +322,35 @@ function App() {
     tabId: null,
   });
 
+  const tabsRef = useRef(null);
+
+  const handleTabsWheel = useCallback((event) => {
+    const scroller = event.currentTarget;
+    if (!scroller) {
+      return;
+    }
+
+    const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
+    if (maxScrollLeft <= 0) {
+      return;
+    }
+
+    const dominantDelta =
+      Math.abs(event.deltaY) > Math.abs(event.deltaX)
+        ? event.deltaY
+        : event.deltaX;
+
+    if (dominantDelta === 0) {
+      return;
+    }
+
+    scroller.scrollLeft = Math.min(
+      Math.max(scroller.scrollLeft + dominantDelta, 0),
+      maxScrollLeft,
+    );
+    event.preventDefault();
+  }, []);
+
   // 拖动标签状态
   const [draggedTabIndex, setDraggedTabIndex] = React.useState(null);
   const [dragOverTabIndex, setDragOverTabIndex] = React.useState(null); // 新增：记录拖拽悬停的标签
@@ -341,6 +372,54 @@ function App() {
     { id: "welcome", label: t("terminal.welcome") },
   ]);
   const [currentTab, setCurrentTab] = React.useState(0);
+
+  React.useEffect(() => {
+    const tabsRoot = tabsRef.current;
+    if (!tabsRoot) {
+      return undefined;
+    }
+
+    const scroller = tabsRoot.querySelector(".MuiTabs-scroller");
+    if (!scroller) {
+      return undefined;
+    }
+
+    scroller.addEventListener("wheel", handleTabsWheel, { passive: false });
+
+    return () => {
+      scroller.removeEventListener("wheel", handleTabsWheel);
+    };
+  }, [handleTabsWheel]);
+
+  const scrollActiveTabIntoView = useCallback(() => {
+    const tabsRoot = tabsRef.current;
+    if (!tabsRoot) {
+      return;
+    }
+
+    const scroller = tabsRoot.querySelector(".MuiTabs-scroller");
+    const selectedTab = tabsRoot.querySelector(
+      'button[role="tab"][aria-selected="true"]',
+    );
+
+    if (!scroller || !selectedTab) {
+      return;
+    }
+
+    const scrollerRect = scroller.getBoundingClientRect();
+    const tabRect = selectedTab.getBoundingClientRect();
+    const EXTRA_PADDING = 16;
+
+    if (tabRect.left < scrollerRect.left) {
+      scroller.scrollLeft -= scrollerRect.left - tabRect.left + EXTRA_PADDING;
+    } else if (tabRect.right > scrollerRect.right) {
+      scroller.scrollLeft += tabRect.right - scrollerRect.right + EXTRA_PADDING;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    scrollActiveTabIntoView();
+  }, [scrollActiveTabIntoView, currentTab, tabs.length]);
 
   // 分屏模式下的活跃标签页状态（用于控制右侧面板）
   const [activeSplitTabId, setActiveSplitTabId] = React.useState(null);
@@ -1938,235 +2017,295 @@ function App() {
               theme.palette.mode === "light"
                 ? "0 1px 3px rgba(0,0,0,0.1)"
                 : "inherit",
+            borderBottom: (theme) =>
+              theme.palette.mode === "light"
+                ? "1px solid rgba(0,0,0,0.08)"
+                : "1px solid rgba(255,255,255,0.08)",
           }}
         >
-          <Toolbar
-            variant="dense"
+          <Box
             sx={{
-              px: 1,
-              minHeight: "40px",
               display: "flex",
+              flexDirection: "column",
+              width: "100%",
+              WebkitAppRegion: "drag",
             }}
           >
-            <IconButton
-              edge="start"
-              color="inherit"
-              aria-label="menu"
-              sx={{ mr: 1 }}
-              onClick={handleMenu}
-            >
-              <AppsIcon />
-            </IconButton>
-            <Menu
-              id="menu-appbar"
-              anchorEl={anchorEl}
-              anchorOrigin={{
-                vertical: "bottom",
-                horizontal: "left",
-              }}
-              keepMounted
-              transformOrigin={{
-                vertical: "top",
-                horizontal: "left",
-              }}
-              open={open}
-              onClose={handleClose}
-            >
-              <MenuItem onClick={handleOpenSettings}>
-                <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
-                {t("menu.settings")}
-              </MenuItem>
-              <MenuItem onClick={handleOpenAbout}>
-                <InfoIcon fontSize="small" sx={{ mr: 1 }} />
-                {t("menu.about")}
-              </MenuItem>
-              <MenuItem onClick={handleExit}>
-                <ExitToAppIcon fontSize="small" sx={{ mr: 1 }} />
-                {t("menu.exit")}
-              </MenuItem>
-            </Menu>
-
-            {/* 标签页 */}
-            <Tabs
-              value={currentTab}
-              onChange={handleTabChange}
-              variant="scrollable"
-              scrollButtons="auto"
+            <Toolbar
+              variant="dense"
               sx={{
-                flexGrow: 1,
-                maxWidth: "calc(100% - 120px)",
-                minHeight: 40,
-                "& .MuiTabs-indicator": {
-                  height: 3,
-                  backgroundColor: "primary.main",
-                  borderRadius: "1.5px 1.5px 0 0",
-                },
+                px: 1,
+                minHeight: "34px",
+                display: "flex",
+                alignItems: "center",
+                gap: 0.5,
+                WebkitAppRegion: "drag",
               }}
             >
-              {tabs.map((tab, index) => {
-                // 为合并的标签页生成复合名称
-                const displayLabel =
-                  mergedTabs[tab.id] && mergedTabs[tab.id].length > 1
-                    ? mergedTabs[tab.id].map((t) => t.label).join(" | ")
-                    : tab.label;
+              <IconButton
+                edge="start"
+                color="inherit"
+                aria-label="menu"
+                sx={{ mr: 1, WebkitAppRegion: "no-drag" }}
+                onClick={handleMenu}
+              >
+                <AppsIcon />
+              </IconButton>
+              <Menu
+                id="menu-appbar"
+                anchorEl={anchorEl}
+                anchorOrigin={{
+                  vertical: "bottom",
+                  horizontal: "left",
+                }}
+                keepMounted
+                transformOrigin={{
+                  vertical: "top",
+                  horizontal: "left",
+                }}
+                open={open}
+                onClose={handleClose}
+              >
+                <MenuItem onClick={handleOpenSettings}>
+                  <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("menu.settings")}
+                </MenuItem>
+                <MenuItem onClick={handleOpenAbout}>
+                  <InfoIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("menu.about")}
+                </MenuItem>
+                <MenuItem onClick={handleExit}>
+                  <ExitToAppIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("menu.exit")}
+                </MenuItem>
+              </Menu>
+              <Box sx={{ flexGrow: 1 }} />
+              <WindowControls />
+            </Toolbar>
 
-                return (
-                  <CustomTab
-                    key={tab.id}
-                    label={displayLabel}
-                    onClose={
-                      tab.id !== "welcome" ? () => handleCloseTab(index) : null
-                    }
-                    onContextMenu={(e) =>
-                      handleTabContextMenu(e, index, tab.id)
-                    }
-                    onClick={(e) => handleTabClick(e, index)}
-                    onDragStart={(e) => handleDragStart(e, index)}
-                    onDragOver={(e) => handleDragOver(e, index)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, index)}
-                    onDragEnd={handleDragEnd}
-                    value={index}
-                    selected={currentTab === index}
-                    isSelected={selectedTabs.has(tab.id)}
-                    index={index}
-                    tabId={tab.id}
-                    isDraggedOver={
-                      draggedTabIndex !== null &&
-                      dragOverTabIndex === index &&
-                      draggedTabIndex !== index
-                    }
-                    dragOperation={
-                      draggedTabIndex !== null && dragOverTabIndex === index
-                        ? dragOperation
-                        : null
-                    }
-                    dragInsertPosition={
-                      draggedTabIndex !== null && dragOverTabIndex === index
-                        ? dragInsertPosition
-                        : null
-                    }
-                  />
-                );
-              })}
-            </Tabs>
-
-            {/* 标签页右键菜单 */}
-            <Menu
-              keepMounted
-              open={tabContextMenu.mouseY !== null}
-              onClose={handleTabContextMenuClose}
-              anchorReference="anchorPosition"
-              anchorPosition={
-                tabContextMenu.mouseY !== null && tabContextMenu.mouseX !== null
-                  ? { top: tabContextMenu.mouseY, left: tabContextMenu.mouseX }
-                  : undefined
-              }
-              PaperProps={{
-                style: {
-                  minWidth: "200px",
-                },
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                minHeight: "40px",
+                px: 1,
+                pb: 0.5,
+                gap: 0.5,
+                WebkitAppRegion: "drag",
+                borderTop: (theme) =>
+                  theme.palette.mode === "light"
+                    ? "1px solid rgba(0,0,0,0.06)"
+                    : "1px solid rgba(255,255,255,0.06)",
               }}
             >
-              <MenuItem onClick={handleRefreshTerminal}>
-                <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
-                {t("tabMenu.refresh")}
-              </MenuItem>
+              <Box
+                sx={{
+                  flexGrow: 1,
+                  minWidth: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  WebkitAppRegion: "no-drag",
+                  maxWidth: `calc(100% - ${LATENCY_INFO_MIN_WIDTH}px)`,
+                  pr: 0.5,
+                }}
+              >
+                {/* 标签页 */}
+                <Tabs
+                  ref={tabsRef}
+                  value={currentTab}
+                  onChange={handleTabChange}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  sx={{
+                    flexGrow: 1,
+                    minWidth: 0,
+                    minHeight: 40,
+                    "& .MuiTabs-indicator": {
+                      height: 3,
+                      backgroundColor: "primary.main",
+                      borderRadius: "1.5px 1.5px 0 0",
+                    },
+                  }}
+                >
+                  {tabs.map((tab, index) => {
+                    // 为合并的标签页生成复合名称
+                    const displayLabel =
+                      mergedTabs[tab.id] && mergedTabs[tab.id].length > 1
+                        ? mergedTabs[tab.id].map((t) => t.label).join(" | ")
+                        : tab.label;
 
-              <MenuItem onClick={handleCloseConnection}>
-                <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
-                {t("tabMenu.close")}
-              </MenuItem>
+                    return (
+                      <CustomTab
+                        key={tab.id}
+                        label={displayLabel}
+                        onClose={
+                          tab.id !== "welcome" ? () => handleCloseTab(index) : null
+                        }
+                        onContextMenu={(e) =>
+                          handleTabContextMenu(e, index, tab.id)
+                        }
+                        onClick={(e) => handleTabClick(e, index)}
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, index)}
+                        onDragEnd={handleDragEnd}
+                        value={index}
+                        selected={currentTab === index}
+                        isSelected={selectedTabs.has(tab.id)}
+                        index={index}
+                        tabId={tab.id}
+                        isDraggedOver={
+                          draggedTabIndex !== null &&
+                          dragOverTabIndex === index &&
+                          draggedTabIndex !== index
+                        }
+                        dragOperation={
+                          draggedTabIndex !== null && dragOverTabIndex === index
+                            ? dragOperation
+                            : null
+                        }
+                        dragInsertPosition={
+                          draggedTabIndex !== null && dragOverTabIndex === index
+                            ? dragInsertPosition
+                            : null
+                        }
+                      />
+                    );
+                  })}
+                </Tabs>
+              </Box>
 
-              {/* 合并选中标签选项 - 仅在有多个标签被选中时显示 */}
-              {selectedTabs.size > 1 && (
+              {/* 网络延迟指示器 */}
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  flexShrink: 0,
+                  minWidth: LATENCY_INFO_MIN_WIDTH,
+                  WebkitAppRegion: "no-drag",
+                  ml: 0.5,
+                }}
+              >
+                <NetworkLatencyIndicator
+                  currentTab={currentTab}
+                  tabs={tabs}
+                  mergedTabs={mergedTabs}
+                  activeSplitTabId={activeSplitTabId}
+                  placement="inline"
+                />
+              </Box>
+            </Box>
+          </Box>
+
+          {/* 标签页右键菜单 */}
+          <Menu
+            keepMounted
+            open={tabContextMenu.mouseY !== null}
+            onClose={handleTabContextMenuClose}
+            anchorReference="anchorPosition"
+            anchorPosition={
+              tabContextMenu.mouseY !== null && tabContextMenu.mouseX !== null
+                ? { top: tabContextMenu.mouseY, left: tabContextMenu.mouseX }
+                : undefined
+            }
+            PaperProps={{
+              style: {
+                minWidth: "200px",
+              },
+            }}
+          >
+            <MenuItem onClick={handleRefreshTerminal}>
+              <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
+              {t("tabMenu.refresh")}
+            </MenuItem>
+
+            <MenuItem onClick={handleCloseConnection}>
+              <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
+              {t("tabMenu.close")}
+            </MenuItem>
+
+            {/* 合并选中标签选项 - 仅在有多个标签被选中时显示 */}
+            {selectedTabs.size > 1 && (
+              <MenuItem
+                onClick={() => {
+                  mergeSelectedTabs();
+                  handleTabContextMenuClose();
+                }}
+              >
+                <GroupAddIcon fontSize="small" sx={{ mr: 1 }} />
+                合并标签页 ({selectedTabs.size})
+              </MenuItem>
+            )}
+
+            {/* 拆分会话选项 - 仅对合并的标签显示 */}
+            {tabContextMenu.tabId &&
+              mergedTabs[tabContextMenu.tabId] &&
+              mergedTabs[tabContextMenu.tabId].length > 1 && (
                 <MenuItem
                   onClick={() => {
-                    mergeSelectedTabs();
+                    splitMergedTab(tabContextMenu.tabId);
                     handleTabContextMenuClose();
                   }}
                 >
-                  <GroupAddIcon fontSize="small" sx={{ mr: 1 }} />
-                  合并标签页 ({selectedTabs.size})
+                  <TerminalIcon fontSize="small" sx={{ mr: 1 }} />
+                  拆分会话
                 </MenuItem>
               )}
-
-              {/* 拆分会话选项 - 仅对合并的标签显示 */}
-              {tabContextMenu.tabId &&
-                mergedTabs[tabContextMenu.tabId] &&
-                mergedTabs[tabContextMenu.tabId].length > 1 && (
+            {/* 分组相关菜单项 */}
+            {(() => {
+              const tabId = tabContextMenu.tabId;
+              if (!tabId) return null;
+              const group = findGroupByTab(tabId);
+              const groups = getGroups();
+              const groupMenuItems = [];
+              if (group) {
+                groupMenuItems.push(
                   <MenuItem
-                    onClick={() => {
-                      splitMergedTab(tabContextMenu.tabId);
-                      handleTabContextMenuClose();
-                    }}
+                    key="remove-from-group"
+                    onClick={() => handleRemoveFromGroup(tabId)}
                   >
-                    <TerminalIcon fontSize="small" sx={{ mr: 1 }} />
-                    拆分会话
-                  </MenuItem>
-                )}
-              {/* 分组相关菜单项 */}
-              {(() => {
-                const tabId = tabContextMenu.tabId;
-                if (!tabId) return null;
-                const group = findGroupByTab(tabId);
-                const groups = getGroups();
-                const groupMenuItems = [];
-                if (group) {
+                    <PowerOffIcon
+                      fontSize="small"
+                      sx={{ color: group.color, mr: 1 }}
+                    />
+                    <ListItemText>{`${t("tabMenu.removeFromGroup")} ${group.groupId.replace("G", "")}`}</ListItemText>
+                  </MenuItem>,
+                );
+              } else {
+                groups.forEach((g) => {
                   groupMenuItems.push(
                     <MenuItem
-                      key="remove-from-group"
-                      onClick={() => handleRemoveFromGroup(tabId)}
+                      key={g.groupId}
+                      onClick={() => handleJoinGroup(tabId, g.groupId)}
                     >
-                      <PowerOffIcon
-                        fontSize="small"
-                        sx={{ color: group.color, mr: 1 }}
-                      />
-                      <ListItemText>{`${t("tabMenu.removeFromGroup")} ${group.groupId.replace("G", "")}`}</ListItemText>
+                      <AddIcon fontSize="small" sx={{ mr: 1 }} />
+                      <ListItemText>
+                        {t("tabMenu.joinGroup")} {g.groupId.replace("G", "")}
+                      </ListItemText>
                     </MenuItem>,
                   );
-                } else {
-                  groups.forEach((g) => {
-                    groupMenuItems.push(
-                      <MenuItem
-                        key={g.groupId}
-                        onClick={() => handleJoinGroup(tabId, g.groupId)}
-                      >
-                        <AddIcon fontSize="small" sx={{ mr: 1 }} />
-                        <ListItemText>
-                          {t("tabMenu.joinGroup")} {g.groupId.replace("G", "")}
-                        </ListItemText>
-                      </MenuItem>,
-                    );
-                  });
-                  groupMenuItems.push(
-                    <MenuItem
-                      key="create-group"
-                      onClick={() => handleCreateGroup(tabId)}
-                    >
-                      <AddCircleOutlineIcon fontSize="small" sx={{ mr: 1 }} />
-                      <ListItemText>{t("tabMenu.createGroup")}</ListItemText>
-                    </MenuItem>,
-                  );
-                }
-                if (groupMenuItems.length > 0) {
-                  return [
-                    <Divider key="group-divider-top" />,
-                    ...groupMenuItems,
-                  ];
-                }
-                return null;
-              })()}
-            </Menu>
-
-            {/* 网络延迟指示器 */}
-            <NetworkLatencyIndicator
-              currentTab={currentTab}
-              tabs={tabs}
-              mergedTabs={mergedTabs}
-              activeSplitTabId={activeSplitTabId}
-            />
-          </Toolbar>
+                });
+                groupMenuItems.push(
+                  <MenuItem
+                    key="create-group"
+                    onClick={() => handleCreateGroup(tabId)}
+                  >
+                    <AddCircleOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+                    <ListItemText>{t("tabMenu.createGroup")}</ListItemText>
+                  </MenuItem>,
+                );
+              }
+              if (groupMenuItems.length > 0) {
+                return [
+                  <Divider key="group-divider-top" />,
+                  ...groupMenuItems,
+                ];
+              }
+              return null;
+            })()}
+          </Menu>
         </AppBar>
         <Box
           sx={{

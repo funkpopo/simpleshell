@@ -178,7 +178,6 @@
         "fileManager": "Loading file list...",
         "settings": "Loading settings...",
         "connections": "Loading connection list...",
-        
         "aiChat": "Initializing AI assistant..."
       }
     },
@@ -547,6 +546,12 @@
       "unknownError": "Unknown error occurred",
       "launchNormal": "Launch Normal",
       "wslDistributions": "WSL Distributions"
+    },
+    "windowControls": {
+      "minimize": "Minimize",
+      "maximize": "Maximize",
+      "restore": "Restore",
+      "close": "Close"
     }
   }
 }
