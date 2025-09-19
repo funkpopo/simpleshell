@@ -47,7 +47,6 @@ const COLOR_TO_ANSI = {
   "#f93e3e": ANSI_COLORS.red, // 红色
   "#50e3c2": ANSI_COLORS.cyan, // 青色
   "#0d5aa7": ANSI_COLORS.blue, // 深蓝色
-  "#A9A9A9": ANSI_COLORS.brightBlack, // 暗灰色
   "#4682B4": ANSI_COLORS.blue, // 钢蓝色 (超链接)
   "#DDA0DD": ANSI_COLORS.magenta, // 梅红色 (文件路径)
   "#98FB98": ANSI_COLORS.green, // 浅绿色 (MAC地址)

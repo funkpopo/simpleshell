@@ -8,7 +8,6 @@ const HIGHLIGHT_COLORS = {
   info: "blue",
   debug: "purple",
   ipAddress: "cyan",
-  shellPrompt: "#A9A9A9", // 灰色提示符
   alertKeyword: "magenta",
   criticalKeyword: "#FF6347", // Tomato 色
   commandKeyword: "#61affe",
@@ -112,26 +111,6 @@ module.exports = [
     pattern: "\\b[0-9a-f]{12}\\b|\\b[0-9a-f]{64}\\b",
     flags: "gi",
     style: `color: ${HIGHLIGHT_COLORS.dockerId};`,
-  },
-  // Shell 提示符（类 Unix）
-  {
-    id: "shellPromptUnix",
-    type: "regex",
-    name: "Unix Shell Prompt",
-    enabled: true,
-    pattern: "^(?:[\\w.-]+@)?[\\w.-]+(?::[^\\s]*)?[\\s]*[\\$#%](?=\\s|$)",
-    flags: "gm",
-    style: `color: ${HIGHLIGHT_COLORS.shellPrompt}; font-weight: bold;`,
-  },
-  // Windows / PowerShell 提示符
-  {
-    id: "shellPromptWindows",
-    type: "regex",
-    name: "Windows Shell Prompt",
-    enabled: true,
-    pattern: "^(?:PS\\s+)?(?:[A-Za-z]:\\\\|\\\\\\\\)[^>\\r\\n]*>",
-    flags: "gm",
-    style: `color: ${HIGHLIGHT_COLORS.shellPrompt}; font-weight: bold;`,
   },
   // Unix 路径高亮，使用捕获组避免吞掉前缀字符
   {
