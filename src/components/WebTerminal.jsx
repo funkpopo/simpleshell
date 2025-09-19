@@ -545,6 +545,34 @@ const WebTerminal = ({
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
+  const highlightRefreshFrameRef = useRef(null);
+
+  const scheduleHighlightRefresh = useCallback(
+    (termInstance) => {
+      if (!termInstance || typeof termInstance.refresh !== "function") {
+        return;
+      }
+
+      if (
+        highlightRefreshFrameRef.current &&
+        typeof cancelAnimationFrame === "function"
+      ) {
+        cancelAnimationFrame(highlightRefreshFrameRef.current);
+      }
+
+      if (typeof requestAnimationFrame !== "function") {
+        termInstance.refresh(0, termInstance.rows - 1);
+        highlightRefreshFrameRef.current = null;
+        return;
+      }
+
+      highlightRefreshFrameRef.current = requestAnimationFrame(() => {
+        highlightRefreshFrameRef.current = null;
+        termInstance.refresh(0, termInstance.rows - 1);
+      });
+    },
+    [],
+  );
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState(null);
@@ -1859,6 +1887,7 @@ const WebTerminal = ({
                   // 监听数据输出以检测密码提示（补充命令检测中的输出监听）
                   const onWriteParsedDisposable = term.onWriteParsed((data) => {
                     checkForPrompts(data);
+                    scheduleHighlightRefresh(term);
                   });
                   if (
                     onWriteParsedDisposable &&
@@ -2882,6 +2911,26 @@ const WebTerminal = ({
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (
+        highlightRefreshFrameRef.current &&
+        typeof cancelAnimationFrame === "function"
+      ) {
+        cancelAnimationFrame(highlightRefreshFrameRef.current);
+      }
+      highlightRefreshFrameRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!contentUpdated || !termRef.current) {
+      return;
+    }
+
+    scheduleHighlightRefresh(termRef.current);
+  }, [contentUpdated, scheduleHighlightRefresh]);
+
   // 设置数据监听器的函数，处理终端输出
   const setupDataListener = (processId, term) => {
     // 防止重复添加监听器
@@ -2898,7 +2947,12 @@ const WebTerminal = ({
     // 添加数据监听
     window.terminalAPI.onProcessOutput(processId, (data) => {
       if (data) {
-        term.write(data);
+        try {
+          term.write(data, () => scheduleHighlightRefresh(term));
+        } catch (_error) {
+          term.write(data);
+          scheduleHighlightRefresh(term);
+        }
         // 更新内容状态标志，表示终端内容已更新
         setContentUpdated(true);
 
