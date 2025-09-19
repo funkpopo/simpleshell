@@ -1,23 +1,27 @@
 // src/constants/highlight-configs.js
 const HIGHLIGHT_COLORS = {
-  // 统一定义颜色，方便复用和修改
-  defaultText: "inherit", // 或者终端的默认颜色
+  // 统一在这里维护颜色，便于复用和批量调整
+  defaultText: "inherit", // 终端默认颜色
   error: "red",
   warning: "orange",
   success: "green",
   info: "blue",
   debug: "purple",
   ipAddress: "cyan",
-  shellPrompt: "#A9A9A9", // 暗灰色，用于提示符
+  shellPrompt: "#A9A9A9", // 灰色提示符
   alertKeyword: "magenta",
-  criticalKeyword: "#FF6347", // Tomato色，比纯红柔和些
-  commandKeyword: "#61affe", // 类似 'get', 'post'
-  timestamp: "#61affe", // 时间戳颜色
-  hyperlink: "#4682B4", // 钢蓝色，适合超链接
-  macAddress: "#98FB98", // 浅绿色，用于MAC地址
-  envVariable: "#20B2AA", // 浅海绿色，用于环境变量
-  statusCode: "#FF7F50", // 珊瑚色，用于状态码
-  dockerId: "#5F9EA0", // 军蓝色，用于Docker ID
+  criticalKeyword: "#FF6347", // Tomato 色
+  commandKeyword: "#61affe",
+  timestamp: "#61affe",
+  hyperlink: "#4682B4",
+  macAddress: "#98FB98",
+  envVariable: "#20B2AA",
+  statusCode: "#FF7F50",
+  dockerId: "#5F9EA0",
+  filePath: "#DDA0DD",
+  processId: "#50e3c2",
+  portNumber: "#FFD700",
+  uuid: "#49cc90",
 };
 
 module.exports = [
@@ -26,7 +30,8 @@ module.exports = [
     type: "regex",
     name: "IPv4 Address",
     enabled: true,
-    pattern: "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b",
+    // 支持携带端口或 CIDR 的 IPv4 地址
+    pattern: "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?::\\d{1,5})?(?:/\\d{1,2})?\\b",
     flags: "g",
     style: `color: ${HIGHLIGHT_COLORS.ipAddress};`,
   },
@@ -35,27 +40,27 @@ module.exports = [
     type: "regex",
     name: "IPv6 Address",
     enabled: true,
-    // 优化IPv6正则表达式，支持所有格式的IPv6地址
+    // 优化 IPv6 正则表达式，支持多种格式的 IPv6 地址
     pattern:
-      "\\b(?:(?:[0-9A-Fa-f]{1,4}:){6}(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|::(?:[0-9A-Fa-f]{1,4}:){0,4}(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}):(?::[0-9A-Fa-f]{1,4}){0,3}:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}:){2}(?::[0-9A-Fa-f]{1,4}){0,2}:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}:){3}(?::[0-9A-Fa-f]{1,4}){0,1}:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}:){4}:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|:(?::(?:[0-9A-Fa-f]{1,4})){1,6}|::|[0-9A-Fa-f]{1,4}:(?::(?:[0-9A-Fa-f]{1,4})){1,5}|(?:[0-9A-Fa-f]{1,4}:){2}(?::(?:[0-9A-Fa-f]{1,4})){1,4}|(?:[0-9A-Fa-f]{1,4}:){3}(?::(?:[0-9A-Fa-f]{1,4})){1,3}|(?:[0-9A-Fa-f]{1,4}:){4}(?::(?:[0-9A-Fa-f]{1,4})){1,2}|(?:[0-9A-Fa-f]{1,4}:){5}:(?:[0-9A-Fa-f]{1,4})?|(?:[0-9A-Fa-f]{1,4}:){6}:)\\b",
+      "\\b(?:(?:[0-9A-Fa-f]{1,4}:){6}(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|::(?:[0-9A-Fa-f]{1,4}:){0,4}(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}):(?::[0-9A-Fa-f]{1,4}){0,3}:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}:){2}(?::[0-9A-Fa-f]{1,4}){0,2}:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}:){3}(?::[0-9A-Fa-f]{1,4}){1,2}:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}:){4}:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|:(?::(?:[0-9A-Fa-f]{1,4})){1,6}|::|[0-9A-Fa-f]{1,4}:(?::(?:[0-9A-Fa-f]{1,4})){1,5}|(?:[0-9A-Fa-f]{1,4}:){2}(?::(?:[0-9A-Fa-f]{1,4})){1,4}|(?:[0-9A-Fa-f]{1,4}:){3}(?::(?:[0-9A-Fa-f]{1,4})){1,3}|(?:[0-9A-Fa-f]{1,4}:){4}(?::(?:[0-9A-Fa-f]{1,4})){1,2}|(?:[0-9A-Fa-f]{1,4}:){5}:(?:[0-9A-Fa-f]{1,4})?|(?:[0-9A-Fa-f]{1,4}:){6}:)\\b",
     flags: "gi", // global, case-insensitive
     style: `color: ${HIGHLIGHT_COLORS.ipAddress};`,
   },
-  // 添加时间戳匹配
+  // 时间戳匹配
   {
     id: "timeStamp",
     type: "regex",
     name: "Timestamp Pattern",
     enabled: true,
-    // 1. 标准的24小时制时间格式 (20|21|22|23|[0-1]\d):[0-5]\d:[0-5]\d
-    // 2. 日期+时间格式 [1-9]\d{3}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])\s+(20|21|22|23|[0-1]\d):[0-5]\d:[0-5]\d
-    // 3. 保留简单日期格式 \d{4}-\d{2}-\d{2}
+    // 1. 标准 24 小时制时间格式
+    // 2. 带日期的时间格式
+    // 3. 简单日期格式
     pattern:
       "\\b(20|21|22|23|[0-1]\\d):[0-5]\\d:[0-5]\\d\\b|\\b[1-9]\\d{3}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])\\s+(20|21|22|23|[0-1]\\d):[0-5]\\d:[0-5]\\d\\b|\\b\\d{4}-\\d{2}-\\d{2}\\b",
     flags: "g",
     style: `color: ${HIGHLIGHT_COLORS.timestamp};`,
   },
-  // 添加告警信息匹配
+  // 告警类关键字高亮
   {
     id: "alertPatterns",
     type: "regex",
@@ -63,10 +68,10 @@ module.exports = [
     enabled: true,
     pattern:
       "(?:\\b(?:ALERT|ATTENTION|CAUTION|DANGER|EMERGENCY|ERROR|FAILURE|FAILED|FATAL|INVALID|WARNING|WARN)\\b)",
-    flags: "gi", // 不区分大小写
+    flags: "gi", // 忽略大小写
     style: `color: ${HIGHLIGHT_COLORS.error}; font-weight: bold;`,
   },
-  // 添加超链接高亮规则
+  // 超链接高亮
   {
     id: "hyperlink",
     type: "regex",
@@ -74,40 +79,147 @@ module.exports = [
     enabled: true,
     pattern:
       "(?:https?|ftp|file)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]|www\\.[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]",
-    flags: "gi", // 不区分大小写
+    flags: "gi", // 忽略大小写
     style: `color: ${HIGHLIGHT_COLORS.hyperlink}; text-decoration: underline;`,
   },
-  // 添加MAC地址高亮规则
+  // MAC 地址高亮
   {
     id: "macAddress",
     type: "regex",
     name: "MAC Address Pattern",
     enabled: true,
     pattern: "\\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\\b",
-    flags: "gi", // 不区分大小写
+    flags: "gi", // 忽略大小写
     style: `color: ${HIGHLIGHT_COLORS.macAddress};`,
   },
-  // 添加状态码高亮规则
+  // 状态码高亮
   {
     id: "statusCode",
     type: "regex",
     name: "Status Code Pattern",
     enabled: true,
-    // 匹配HTTP状态码和常见退出码
     pattern:
       "\\b(?:status(?:\\s+code)?[:=]?\\s*|HTTP[/\\\\]\\d\\.\\d\\s+)(\\d{3})\\b|\\bexit(?:ed)?\\s+code:?\\s*(\\d+)\\b",
     flags: "gi",
     style: `color: ${HIGHLIGHT_COLORS.statusCode};`,
   },
-  // 添加Docker ID高亮规则
+  // Docker ID 高亮
   {
     id: "dockerId",
     type: "regex",
     name: "Docker ID Pattern",
     enabled: true,
     pattern: "\\b[0-9a-f]{12}\\b|\\b[0-9a-f]{64}\\b",
-    flags: "gi", // 添加'i'标志以不区分大小写
+    flags: "gi",
     style: `color: ${HIGHLIGHT_COLORS.dockerId};`,
+  },
+  // Shell 提示符（类 Unix）
+  {
+    id: "shellPromptUnix",
+    type: "regex",
+    name: "Unix Shell Prompt",
+    enabled: true,
+    pattern: "^(?:[\\w.-]+@)?[\\w.-]+(?::[^\\s]*)?[\\s]*[\\$#%](?=\\s|$)",
+    flags: "gm",
+    style: `color: ${HIGHLIGHT_COLORS.shellPrompt}; font-weight: bold;`,
+  },
+  // Windows / PowerShell 提示符
+  {
+    id: "shellPromptWindows",
+    type: "regex",
+    name: "Windows Shell Prompt",
+    enabled: true,
+    pattern: "^(?:PS\\s+)?(?:[A-Za-z]:\\\\|\\\\\\\\)[^>\\r\\n]*>",
+    flags: "gm",
+    style: `color: ${HIGHLIGHT_COLORS.shellPrompt}; font-weight: bold;`,
+  },
+  // Unix 路径高亮，使用捕获组避免吞掉前缀字符
+  {
+    id: "unixFilePath",
+    type: "regex",
+    name: "Unix File Path",
+    enabled: true,
+    pattern: "([\\s'\"(=]|^)((?:~|\\.\\.?|/)[^\\s\\x1b\"')]+)",
+    flags: "gm",
+    style: `color: ${HIGHLIGHT_COLORS.filePath};`,
+    groupIndex: 2,
+  },
+  // Windows 路径高亮
+  {
+    id: "windowsFilePath",
+    type: "regex",
+    name: "Windows File Path",
+    enabled: true,
+    pattern: "([\\s'\"(=]|^)((?:[A-Za-z]:\\\\|\\\\\\\\)[^\\s\"')]+)",
+    flags: "gm",
+    style: `color: ${HIGHLIGHT_COLORS.filePath};`,
+    groupIndex: 2,
+  },
+  // 环境变量赋值（行首）
+  {
+    id: "envAssignmentLineStart",
+    type: "regex",
+    name: "Environment Assignment (line start)",
+    enabled: true,
+    pattern:
+      "^([A-Z_][A-Z0-9_]*)=(?:\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s;\"']+)",
+    flags: "gm",
+    style: `color: ${HIGHLIGHT_COLORS.envVariable};`,
+  },
+  // 环境变量赋值（行内）
+  {
+    id: "envAssignmentInline",
+    type: "regex",
+    name: "Environment Assignment (inline)",
+    enabled: true,
+    pattern:
+      "([\\s'\"(])([A-Z_][A-Z0-9_]*)=(?:\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s;\"']+)",
+    flags: "gm",
+    style: `color: ${HIGHLIGHT_COLORS.envVariable};`,
+    groupIndex: 2,
+  },
+  // 常见端口与监听描述
+  {
+    id: "portNumbers",
+    type: "regex",
+    name: "Port Numbers",
+    enabled: true,
+    pattern:
+      "\\b(?:port|listen(?:ing)?(?:\\s+on)?|bound\\s+to|listening\\s+at|exposed\\s+port)[:=]?\\s*(\\d{2,5})\\b",
+    flags: "gi",
+    style: `color: ${HIGHLIGHT_COLORS.portNumber}; font-weight: bold;`,
+    groupIndex: 1,
+  },
+  // 进程 ID / PID 捕获
+  {
+    id: "processId",
+    type: "regex",
+    name: "Process Identifier",
+    enabled: true,
+    pattern: "\\b(?:pid|process(?:\\s+id)?|ppid)[:=\\s#]*(\\d{2,})\\b",
+    flags: "gi",
+    style: `color: ${HIGHLIGHT_COLORS.processId}; font-weight: bold;`,
+    groupIndex: 1,
+  },
+  // UUID 高亮
+  {
+    id: "uuid",
+    type: "regex",
+    name: "UUID Pattern",
+    enabled: true,
+    pattern: "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\\b",
+    flags: "g",
+    style: `color: ${HIGHLIGHT_COLORS.uuid};`,
+  },
+  // Git 提交哈希
+  {
+    id: "gitCommit",
+    type: "regex",
+    name: "Git Commit Hash",
+    enabled: true,
+    pattern: "\\b[0-9a-f]{7,40}\\b",
+    flags: "gi",
+    style: `color: ${HIGHLIGHT_COLORS.uuid};`,
   },
   {
     id: "generalKeywords",
@@ -140,6 +252,40 @@ module.exports = [
       fatal: HIGHLIGHT_COLORS.error,
       alert: HIGHLIGHT_COLORS.alertKeyword,
       emergency: HIGHLIGHT_COLORS.criticalKeyword,
+      notice: HIGHLIGHT_COLORS.info,
+      trace: HIGHLIGHT_COLORS.debug,
+      panic: HIGHLIGHT_COLORS.error,
+      connected: HIGHLIGHT_COLORS.success,
+      connecting: HIGHLIGHT_COLORS.info,
+      disconnected: HIGHLIGHT_COLORS.warning,
+      reconnect: HIGHLIGHT_COLORS.warning,
+      offline: HIGHLIGHT_COLORS.warning,
+      online: HIGHLIGHT_COLORS.success,
+      listening: HIGHLIGHT_COLORS.info,
+      timeout: HIGHLIGHT_COLORS.warning,
+      timedout: HIGHLIGHT_COLORS.warning,
+      expired: HIGHLIGHT_COLORS.warning,
+      retry: HIGHLIGHT_COLORS.warning,
+      retries: HIGHLIGHT_COLORS.warning,
+      denied: HIGHLIGHT_COLORS.error,
+      forbidden: HIGHLIGHT_COLORS.error,
+      refused: HIGHLIGHT_COLORS.error,
+      unreachable: HIGHLIGHT_COLORS.error,
+      killed: HIGHLIGHT_COLORS.error,
+      terminated: HIGHLIGHT_COLORS.error,
+      crashed: HIGHLIGHT_COLORS.error,
+      restart: HIGHLIGHT_COLORS.warning,
+      restarting: HIGHLIGHT_COLORS.warning,
+      started: HIGHLIGHT_COLORS.success,
+      starting: HIGHLIGHT_COLORS.info,
+      stopped: HIGHLIGHT_COLORS.warning,
+      stopping: HIGHLIGHT_COLORS.warning,
+      ready: HIGHLIGHT_COLORS.success,
+      pending: HIGHLIGHT_COLORS.warning,
+      healthy: HIGHLIGHT_COLORS.success,
+      unhealthy: HIGHLIGHT_COLORS.warning,
+      degraded: HIGHLIGHT_COLORS.warning,
     },
   },
 ];
+

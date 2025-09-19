@@ -55,6 +55,7 @@ const COLOR_TO_ANSI = {
   "#FF7F50": ANSI_COLORS.red, // 珊瑚色 (状态码)
   "#F0E68C": ANSI_COLORS.yellow, // 卡其色 (JSON键)
   "#5F9EA0": ANSI_COLORS.cyan, // 军蓝色 (Docker ID)
+  "#FFD700": ANSI_COLORS.brightYellow, // 金色 (端口)
 };
 
 const resolveAnsiColor = (color) => {
@@ -167,6 +168,10 @@ class OutputProcessor {
         regex,
         ansiColor,
         format,
+        groupIndex:
+          Number.isInteger(rule.groupIndex) && rule.groupIndex > 0
+            ? rule.groupIndex
+            : null,
       };
     }
 
@@ -344,8 +349,26 @@ class OutputProcessor {
             return match;
           });
         } else if (rule.type === "regex") {
-          processedOutput = processedOutput.replace(rule.regex, (match) => {
-            return `${rule.format}${rule.ansiColor}${match}${ANSI_COLORS.reset}`;
+          processedOutput = processedOutput.replace(rule.regex, (...args) => {
+            const match = args[0];
+            const format = rule.format || "";
+            const color = rule.ansiColor || "";
+
+            if (rule.groupIndex && rule.groupIndex > 0) {
+              const capturedGroups = args.slice(1, -2);
+              const target = capturedGroups[rule.groupIndex - 1];
+
+              if (target) {
+                const targetIndex = match.indexOf(target);
+                if (targetIndex !== -1) {
+                  const before = match.slice(0, targetIndex);
+                  const after = match.slice(targetIndex + target.length);
+                  return `${before}${format}${color}${target}${ANSI_COLORS.reset}${after}`;
+                }
+              }
+            }
+
+            return `${format}${color}${match}${ANSI_COLORS.reset}`;
           });
         }
       } catch (e) {
