@@ -178,7 +178,6 @@
         "fileManager": "正在加载文件列表...",
         "settings": "正在加载设置...",
         "connections": "正在加载连接列表...",
-        
         "aiChat": "正在初始化AI助手..."
       }
     },
@@ -547,6 +546,12 @@
       "unknownError": "发生未知错误",
       "launchNormal": "普通启动",
       "wslDistributions": "WSL发行版"
+    },
+    "windowControls": {
+      "minimize": "最小化",
+      "maximize": "最大化",
+      "restore": "还原",
+      "close": "关闭"
     }
   }
 }

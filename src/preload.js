@@ -479,6 +479,21 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 窗口重新加载
   reloadWindow: () => ipcRenderer.invoke("app:reloadWindow"),
 
+  // 窗口控制API
+  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
+  toggleMaximizeWindow: () => ipcRenderer.invoke("window:toggleMaximize"),
+  closeWindow: () => ipcRenderer.invoke("window:close"),
+  getWindowState: () => ipcRenderer.invoke("window:getState"),
+  onWindowStateChange: (callback) => {
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+
+    const wrappedCallback = (_event, state) => callback(state);
+    ipcRenderer.on("window:state", wrappedCallback);
+    return () => ipcRenderer.removeListener("window:state", wrappedCallback);
+  },
+
   // 更新相关API
   downloadUpdate: (downloadUrl) =>
     ipcRenderer.invoke("app:downloadUpdate", downloadUrl),
