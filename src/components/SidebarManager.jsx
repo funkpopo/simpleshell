@@ -1,5 +1,4 @@
 import React, { memo, useCallback } from "react";
-import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
 import Paper from "@mui/material/Paper";
@@ -11,7 +10,6 @@ import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import HistoryIcon from "@mui/icons-material/History";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import { useTranslation } from "react-i18next";
-import { SIDEBAR_WIDTHS } from "../constants/layout.js";
 
 const SidebarButton = memo(function SidebarButton({
   icon,

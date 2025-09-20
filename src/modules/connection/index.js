@@ -82,22 +82,6 @@ class ConnectionManager {
     return this.sftpManager.enqueueSftpOperation(tabId, operation, options);
   }
 
-  async startSSH(sshConfig) {
-    return this.sshManager.startSSH(sshConfig);
-  }
-
-  sendInput(processId, input) {
-    this.sshManager.sendInput(processId, input);
-  }
-
-  killProcess(processId) {
-    this.sshManager.killProcess(processId);
-  }
-
-  resizeTerminal(processId, cols, rows) {
-    this.sshManager.resizeTerminal(processId, cols, rows);
-  }
-
   getTopConnections(count) {
     // 合并SSH和Telnet的热门连接
     const sshTopConnections = this.sshConnectionPool.getTopConnections(count);

@@ -177,60 +177,6 @@ class CommandHistoryService {
     }));
   }
 
-  clearHistory() {
-    this.history = [];
-  }
-
-  getAllHistory() {
-    return [...this.history];
-  }
-
-  setMaxHistorySize(size) {
-    if (typeof size === "number" && size > 0) {
-      this.maxHistorySize = size;
-      if (this.history.length > size) {
-        this.history = this.history.slice(0, size);
-      }
-    }
-  }
-
-  getStatistics() {
-    return {
-      totalCommands: this.history.length,
-      maxHistorySize: this.maxHistorySize,
-      mostUsedCommand: this.getMostUsedCommand(),
-      initialized: this.initialized,
-    };
-  }
-
-  getMostUsedCommand() {
-    if (this.history.length === 0) return null;
-
-    return this.history.reduce((max, current) =>
-      (current.count || 1) > (max.count || 1) ? current : max,
-    );
-  }
-
-  exportHistory() {
-    return this.history.map((item) => ({
-      command: item.command,
-      timestamp: item.timestamp,
-      count: item.count || 1,
-    }));
-  }
-
-  importHistory(exportedHistory) {
-    if (!Array.isArray(exportedHistory)) return;
-
-    this.history = exportedHistory
-      .filter((item) => item && typeof item.command === "string")
-      .map((item) => ({
-        command: item.command,
-        timestamp: item.timestamp || Date.now(),
-        count: item.count || 1,
-      }))
-      .slice(0, this.maxHistorySize);
-  }
 }
 
 // 创建单例实例

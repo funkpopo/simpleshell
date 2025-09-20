@@ -29,7 +29,6 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
 import LaunchIcon from "@mui/icons-material/Launch";
-import SkeletonLoader from "./SkeletonLoader";
 import { RiTerminalBoxLine } from "react-icons/ri";
 import {
   VscTerminalLinux,
