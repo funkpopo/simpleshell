@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
-import MinimizeIcon from "@mui/icons-material/Minimize";
+import HorizontalRuleIcon from "@mui/icons-material/HorizontalRule";
 import CropSquareIcon from "@mui/icons-material/CropSquare";
 import FilterNoneIcon from "@mui/icons-material/FilterNone";
 import CloseIcon from "@mui/icons-material/Close";
@@ -89,17 +89,23 @@ const WindowControls = () => {
       ? theme.palette.grey[700]
       : theme.palette.grey[200];
 
+  const controlSize = 32;
+
   const buttonSx = {
-    width: 36,
-    height: 28,
-    borderRadius: 6,
+    width: controlSize,
+    height: controlSize,
+    borderRadius: "50%",
+    padding: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     color: iconColor,
     transition: "background-color 0.15s ease",
     "&:hover": {
       backgroundColor: baseHover,
     },
     "& .MuiSvgIcon-root": {
-      fontSize: "1.05rem",
+      fontSize: "1.1rem",
     },
   };
 
@@ -121,7 +127,7 @@ const WindowControls = () => {
           onClick={handleMinimize}
           sx={buttonSx}
         >
-          <MinimizeIcon fontSize="inherit" />
+          <HorizontalRuleIcon fontSize="inherit" />
         </IconButton>
       </Tooltip>
       <Tooltip
