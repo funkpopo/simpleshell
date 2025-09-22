@@ -157,6 +157,7 @@ const FileItem = memo(({ index, style, data }) => {
         }}
       >
         <ListItemButton
+          data-file-item="true"
           onClick={handleFileClick}
           onDoubleClick={handleFileActivate}
           dense
@@ -253,6 +254,7 @@ const VirtualizedFileList = ({
   itemHeight = 36,
   searchTerm = "",
   onBlankContextMenu,
+  onBlankClick,
   enableVirtualization = true, // 允许禁用虚拟化作为降级选项
   currentPath = "", // 添加当前路径属性用于滚动位置记忆
   devicePerformance = "medium", // 设备性能等级: 'low', 'medium', 'high'
@@ -336,6 +338,26 @@ const VirtualizedFileList = ({
     [currentPath],
   );
 
+  const handleContainerClick = useCallback(
+    (event) => {
+      if (!onBlankClick) {
+        return;
+      }
+
+      const element = event?.target;
+      if (
+        element &&
+        typeof element.closest === "function" &&
+        element.closest('[data-file-item="true"]')
+      ) {
+        return;
+      }
+
+      onBlankClick(event);
+    },
+    [onBlankClick],
+  );
+
   // itemData useMemo移除isScrolling
   const itemData = useMemo(
     () => ({
@@ -381,13 +403,14 @@ const VirtualizedFileList = ({
           padding: 2,
         }}
         onContextMenu={onBlankContextMenu}
+        onClick={handleContainerClick}
       >
         <Typography variant="body2" color="text.secondary">
           {searchTerm ? "没有找到匹配的文件" : "此目录为空"}
         </Typography>
       </Box>
     ),
-    [height, searchTerm, onBlankContextMenu, containerRef],
+    [height, searchTerm, onBlankContextMenu, handleContainerClick, containerRef],
   );
 
   // 如果没有文件，显示空状态
@@ -420,6 +443,7 @@ const VirtualizedFileList = ({
           },
         }}
         onContextMenu={onBlankContextMenu}
+        onClick={handleContainerClick}
       >
         {processedFiles.map((file, index) => (
           <FileItem
@@ -454,6 +478,7 @@ const VirtualizedFileList = ({
       selectedFile,
       selectedFiles,
       isFileSelected,
+      handleContainerClick,
     ],
   );
 
@@ -497,6 +522,7 @@ const VirtualizedFileList = ({
         },
       }}
       onContextMenu={onBlankContextMenu}
+      onClick={handleContainerClick}
     >
       {actualHeight > 0 && (
         <List

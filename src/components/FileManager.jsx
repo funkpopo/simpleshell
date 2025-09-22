@@ -118,6 +118,13 @@ const FileManager = memo(
     const [isDragging, setIsDragging] = useState(false); // 拖拽状态
     const [dragCounter, setDragCounter] = useState(0); // 拖拽计数器，用于处理子元素的dragenter/dragleave
 
+    const clearSelection = useCallback(() => {
+      setSelectedFiles([]);
+      setSelectedFile(null);
+      setLastSelectedIndex(-1);
+      setAnchorIndex(-1);
+    }, []);
+
     // 用于存储延迟移除定时器的引用
     const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
 
@@ -1630,11 +1637,8 @@ const FileManager = memo(
     // 当搜索条件改变时重置选择状态
     useEffect(() => {
       // 重置所有选择状态
-      setSelectedFiles([]);
-      setSelectedFile(null);
-      setLastSelectedIndex(-1);
-      setAnchorIndex(-1);
-    }, [searchTerm]);
+      clearSelection();
+    }, [searchTerm, clearSelection]);
 
     // 确保selectedFiles没有重复项
     useEffect(() => {
@@ -1707,6 +1711,7 @@ const FileManager = memo(
           itemHeight={32}
           searchTerm={searchTerm}
           onBlankContextMenu={handleBlankContextMenu}
+          onBlankClick={handleBlankClick}
         />
       );
     };
@@ -1884,13 +1889,21 @@ const FileManager = memo(
       }
 
       // 重置选中文件，确保上传操作使用当前目录
-      setSelectedFile(null);
+      clearSelection();
 
       setBlankContextMenu({
         mouseX: event.clientX,
         mouseY: event.clientY,
       });
     };
+
+    const handleBlankClick = useCallback(() => {
+      if (!selectedFile && selectedFiles.length === 0) {
+        return;
+      }
+
+      clearSelection();
+    }, [clearSelection, selectedFile, selectedFiles.length]);
 
     // 关闭空白区域右键菜单
     const handleBlankContextMenuClose = () => {
