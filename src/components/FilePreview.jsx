@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from "react";
+import React, { useState, useEffect, useCallback, useRef, memo } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -30,6 +30,7 @@ import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import { useTheme } from "@mui/material/styles";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
+import { EditorState, EditorSelection } from "@codemirror/state";
 import { javascript } from "@codemirror/lang-javascript";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
@@ -488,6 +489,10 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [savingFile, setSavingFile] = useState(false);
   const [notification, setNotification] = useState(null);
   const [editorFont, setEditorFont] = useState("system");
+  const viewerEditorRef = useRef(null);
+  const handleViewerEditorCreate = useCallback((view) => {
+    viewerEditorRef.current = view;
+  }, []);
 
   // PDF相关状态
   const [numPages, setNumPages] = useState(null);
@@ -498,6 +503,18 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [cacheFilePath, setCacheFilePath] = useState(null);
 
   const fullPath = path === "/" ? "/" + file?.name : path + "/" + file?.name;
+
+  useEffect(() => {
+    if (isEditing) {
+      viewerEditorRef.current = null;
+    }
+  }, [isEditing]);
+
+  useEffect(() => {
+    if (!open) {
+      viewerEditorRef.current = null;
+    }
+  }, [open]);
 
   // 加载字体设置
   useEffect(() => {
@@ -683,7 +700,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   };
 
   // 处理保存文件
-  const handleSaveFile = async () => {
+  const handleSaveFile = useCallback(async () => {
     if (!file || !isTextFile(file.name) || !modified) return;
 
     try {
@@ -722,7 +739,66 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     } finally {
       setSavingFile(false);
     }
-  };
+  }, [file, content, modified, tabId, fullPath]);
+
+
+  useEffect(() => {
+    if (!open) return;
+
+    const selector = '[data-file-preview-dialog="true"]';
+    const handleKeyDown = (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+
+      const key = (event.key || "").toLowerCase();
+
+      const target = event.target;
+      const activeElement = document.activeElement;
+      const isInsideDialog =
+        (target && typeof target.closest === "function" && target.closest(selector)) ||
+        (activeElement &&
+          typeof activeElement.closest === "function" &&
+          activeElement.closest(selector));
+
+      if (!isInsideDialog) return;
+
+      if (key === "s") {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!isTextFile(file?.name) || !isEditing || savingFile || !modified) {
+          return;
+        }
+
+        handleSaveFile();
+        return;
+      }
+
+      if (key === "a") {
+        if (!isTextFile(file?.name) || isEditing) {
+          return;
+        }
+
+        const view = viewerEditorRef.current;
+        if (!view) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        view.focus();
+        const docLength = view.state.doc.length;
+        view.dispatch({
+          selection: EditorSelection.single(0, docLength),
+          scrollIntoView: true,
+        });
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, file, isEditing, modified, savingFile, handleSaveFile]);
 
   // 切换编辑/预览模式
   const toggleEditMode = () => {
@@ -886,6 +962,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         extensions.push(EditorView.lineWrapping);
       }
 
+      const viewerExtensions = [...extensions, EditorState.readOnly.of(true)];
+
       const boxSx = {
         flex: "1 1 auto",
         display: "flex",
@@ -925,11 +1003,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             key={`viewer-${editorFont}`}
             value={content || ""}
             height="100%"
-            extensions={extensions}
-            editable={false}
+            extensions={viewerExtensions}
             theme={theme.palette.mode}
             style={cmStyle}
             className="file-preview-viewer"
+            onCreateEditor={handleViewerEditorCreate}
           />
         </Box>
       );
@@ -1085,12 +1163,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     <Dialog
       open={open}
       onClose={handleClose}
-      maxWidth={isPdfFile(file?.name) ? "lg" : "md"}
+      maxWidth={isPdfFile(file?.name) ? "xl" : "lg"}
       fullWidth
       PaperProps={{
+        "data-file-preview-dialog": "true",
         sx: {
-          minHeight: isPdfFile(file?.name) ? "80vh" : "60vh",
-          maxHeight: isPdfFile(file?.name) ? "90vh" : "80vh",
+          minHeight: isPdfFile(file?.name) ? "85vh" : "70vh",
+          maxHeight: isPdfFile(file?.name) ? "95vh" : "85vh",
+          minWidth: isPdfFile(file?.name) ? "min(1024px, 95vw)" : "min(900px, 90vw)",
           display: "flex",
           flexDirection: "column",
         },

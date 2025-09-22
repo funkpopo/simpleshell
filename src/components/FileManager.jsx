@@ -187,7 +187,16 @@ const FileManager = memo(
     useEffect(() => {
       const handleKeyDown = (e) => {
         // 只在文件管理器打开时处理快捷键
-        if (!open) return;
+        if (!open || showPreview) return;
+
+        const targetElement = e.target || document.activeElement;
+        if (
+          targetElement &&
+          typeof targetElement.closest === "function" &&
+          targetElement.closest('[data-file-preview-dialog=\"true\"]')
+        ) {
+          return;
+        }
 
         // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
         const activeElement = document.activeElement;
@@ -219,7 +228,7 @@ const FileManager = memo(
       return () => {
         document.removeEventListener("keydown", handleKeyDown);
       };
-    }, [open, showSearch]);
+    }, [open, showSearch, showPreview]);
 
     // 使用自动清理Hook
     const { addEventListener, addTimeout } = useAutoCleanup();
@@ -3283,7 +3292,16 @@ const FileManager = memo(
     // 处理键盘快捷键
     const handleKeyDown = (event) => {
       // 只有当文件管理器打开时才处理键盘事件
-      if (!open) return;
+      if (!open || showPreview) return;
+
+      const targetElement = event.target || document.activeElement;
+      if (
+        targetElement &&
+        typeof targetElement.closest === "function" &&
+        targetElement.closest('[data-file-preview-dialog=\"true\"]')
+      ) {
+        return;
+      }
 
       // 防止在输入框中触发快捷键
       if (
