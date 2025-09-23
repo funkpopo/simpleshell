@@ -3891,16 +3891,20 @@ const WebTerminal = ({
         if (cursorRect.width > 0 && cursorRect.height > 0) {
 
           const suggestionHeight = Math.min(
-            (suggestions?.length || 0) * 48 + 64,
+            (suggestions?.length || 0) * 28 + 28,
             300,
           );
+          const containerRect = container.getBoundingClientRect();
+          const gap = 12;
           const showAbove =
-            cursorRect.bottom + suggestionHeight + 30 > window.innerHeight &&
-            cursorRect.top > suggestionHeight + 30;
+            cursorRect.bottom + suggestionHeight + gap > containerRect.bottom &&
+            cursorRect.top - suggestionHeight - gap >= containerRect.top;
 
           setCursorPosition({
             x: cursorRect.left,
             y: cursorRect.top,
+            cursorHeight: cursorRect.height || 18,
+            cursorBottom: cursorRect.bottom || cursorRect.top + (cursorRect.height || 18),
             showAbove,
           });
           return;
@@ -3914,37 +3918,42 @@ const WebTerminal = ({
         const cursorX = term.buffer.active.cursorX;
         const cursorY = term.buffer.active.cursorY;
 
-        // 考虑终端滚动位置
-        const viewportY = term.buffer.active.viewportY || 0;
-        const actualCursorY = cursorY - viewportY;
+        // 注意：cursorY 已是相对于可视区域(视口)的行号，
+        // 这里不要减 viewportY，否则会产生较大偏移（尤其在 WebGL 渲染时）。
 
         // 获取终端内容区域
+        // 优先使用 .xterm-viewport（Canvas/WebGL 渲染通用），
+        // 再回退到 .xterm-screen（DOM 渲染），最后回退到容器本身。
         const screen =
-          term.element?.querySelector(".xterm-screen") ||
           term.element?.querySelector(".xterm-viewport") ||
+          term.element?.querySelector(".xterm-screen") ||
           container;
 
         const screenRect = screen.getBoundingClientRect();
 
         // 计算光标的像素位置
         const pixelX = cursorX * metrics.charWidth;
-        const pixelY = actualCursorY * metrics.charHeight;
+        const pixelY = cursorY * metrics.charHeight;
 
         // 计算相对于视口的绝对位置
         const absoluteX = screenRect.left + pixelX;
         const absoluteY = screenRect.top + pixelY;
 
         const suggestionHeight = Math.min(
-          (suggestions?.length || 0) * 48 + 64,
+          (suggestions?.length || 0) * 28 + 28,
           300,
         );
+        const containerRect = container.getBoundingClientRect();
+        const gap = 12;
         const showAbove =
-          absoluteY + suggestionHeight + 30 > window.innerHeight &&
-          absoluteY > suggestionHeight + 30;
+          absoluteY + suggestionHeight + gap > containerRect.bottom &&
+          absoluteY - suggestionHeight - gap >= containerRect.top;
 
         setCursorPosition({
           x: absoluteX,
           y: absoluteY,
+          cursorHeight: metrics.charHeight || 18,
+          cursorBottom: absoluteY + (metrics.charHeight || 18),
           showAbove,
         });
         return;
@@ -3956,6 +3965,8 @@ const WebTerminal = ({
       setCursorPosition({
         x: containerRect.left + 20,
         y: containerRect.top + 20,
+        cursorHeight: 18,
+        cursorBottom: containerRect.top + 38,
       });
     } catch (error) {
       // 最后的降级方案
@@ -3964,9 +3975,11 @@ const WebTerminal = ({
         setCursorPosition({
           x: containerRect.left + 50,
           y: containerRect.top + 50,
+          cursorHeight: 18,
+          cursorBottom: containerRect.top + 68,
         });
       } catch (fallbackError) {
-        setCursorPosition({ x: 100, y: 100 });
+        setCursorPosition({ x: 100, y: 100, cursorHeight: 18, cursorBottom: 118 });
       }
     }
   }, [suggestions?.length || 0]);

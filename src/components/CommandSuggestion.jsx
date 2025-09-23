@@ -365,52 +365,97 @@ const CommandSuggestion = ({
       }
     }
 
-    // 根据 showAbove 标志决定显示位置
-    if (position.showAbove) {
-      top = top - suggestionHeight - 5;
+    // 终端容器边界（优先使用容器边界约束其位置，确保在容器内部）
+    const containerRect = terminalElement?.getBoundingClientRect();
+    const bounds = containerRect
+      ? {
+          left: containerRect.left,
+          top: containerRect.top,
+          right: containerRect.right,
+          bottom: containerRect.bottom,
+        }
+      : { left: 0, top: 0, right: windowWidth, bottom: windowHeight };
+
+    // 与容器边界保持内边距
+    const padding = 8;
+    const gap = 8; // 与光标的垂直间距
+
+    // 计算光标下边缘位置（更稳定的定位）
+    const cursorBottom =
+      position.cursorBottom ?? (position.y + (position.cursorHeight || 18));
+
+    // 计算上下可用空间
+    const spaceBelow = Math.max(0, bounds.bottom - cursorBottom - gap);
+    const spaceAbove = Math.max(0, position.y - bounds.top - gap);
+
+    // 选择展示方向：优先使用传入的showAbove；若空间不足则选择空间更大的一侧
+    let showAbove = !!position.showAbove;
+    const desiredHeight = suggestionHeight;
+    const belowFits = spaceBelow >= Math.min(desiredHeight, 120);
+    const aboveFits = spaceAbove >= Math.min(desiredHeight, 120);
+    if (!belowFits && !aboveFits) {
+      // 两侧都不够，选择空间更大的一侧
+      showAbove = spaceAbove > spaceBelow;
+    } else if (showAbove && !aboveFits && belowFits) {
+      showAbove = false;
+    } else if (!showAbove && !belowFits && aboveFits) {
+      showAbove = true;
+    }
+
+    // 根据容器可用空间动态收缩尺寸，确保完全位于容器内
+    const containerWidthAvailable = Math.max(
+      50,
+      bounds.right - bounds.left - padding * 2,
+    );
+    const finalWidth = Math.min(suggestionWidth, containerWidthAvailable);
+
+    const containerHeightAvailable = Math.max(
+      40,
+      bounds.bottom - bounds.top - padding * 2,
+    );
+    const sideSpace = showAbove ? spaceAbove : spaceBelow;
+    let finalHeight = Math.min(suggestionHeight, containerHeightAvailable, sideSpace);
+    if (!Number.isFinite(finalHeight) || finalHeight <= 0) {
+      // 最小显示高度回退
+      finalHeight = Math.min(suggestionHeight, containerHeightAvailable);
+    }
+
+    // 使用容器边界进行限制（横向）
+    const maxLeftWithin = bounds.right - finalWidth - padding;
+    const minLeftWithin = bounds.left + padding;
+    if (left > maxLeftWithin) left = Math.max(minLeftWithin, maxLeftWithin);
+    if (left < minLeftWithin) left = minLeftWithin;
+
+    // 计算目标top（尽量贴近光标）
+    if (showAbove) {
+      top = position.y - finalHeight - gap;
     } else {
-      top = top + 25; // 在光标下方一点显示
+      top = cursorBottom + gap;
     }
 
-    // 边界检查和调整
-    const padding = 10; // 距离窗口边缘的最小距离
-
-    // 防止超出右边界
-    if (left + suggestionWidth > windowWidth - padding) {
-      left = Math.max(padding, windowWidth - suggestionWidth - padding);
-    }
-
-    // 防止超出左边界
-    if (left < padding) {
-      left = padding;
-    }
-
-    // 防止超出下边界
-    if (top + suggestionHeight > windowHeight - padding) {
-      // 尝试在光标上方显示
-      const originalY = isValidPosition ? position.y : 100;
-      const newTop = originalY - suggestionHeight - 5;
-      if (newTop >= padding) {
-        top = newTop;
+    // 使用容器边界进行限制（纵向）
+    const maxTopWithin = bounds.bottom - finalHeight - padding;
+    const minTopWithin = bounds.top + padding;
+    if (top > maxTopWithin) {
+      // 优先尝试翻转到光标上方（如果原来在下方）
+      if (!showAbove && isValidPosition) {
+        const flippedTop = position.y - finalHeight - gap;
+        top = Math.max(minTopWithin, Math.min(flippedTop, maxTopWithin));
       } else {
-        // 如果上方也放不下，就放在能放下的地方
-        top = Math.max(padding, windowHeight - suggestionHeight - padding);
+        top = Math.max(minTopWithin, maxTopWithin);
+      }
+    }
+    if (top < minTopWithin) {
+      // 优先尝试翻转到光标下方（如果原来在上方）
+      if (showAbove && isValidPosition) {
+        const flippedTop = cursorBottom + gap;
+        top = Math.max(minTopWithin, Math.min(flippedTop, maxTopWithin));
+      } else {
+        top = minTopWithin;
       }
     }
 
-    // 防止超出上边界
-    if (top < padding) {
-      // 尝试在光标下方显示
-      const originalY = isValidPosition ? position.y : 100;
-      const newTop = originalY + 25;
-      if (newTop + suggestionHeight <= windowHeight - padding) {
-        top = newTop;
-      } else {
-        top = padding;
-      }
-    }
-
-    return { left, top, width: suggestionWidth, height: suggestionHeight };
+    return { left, top, width: finalWidth, height: finalHeight };
   };
 
   const windowPosition = getWindowPosition();
