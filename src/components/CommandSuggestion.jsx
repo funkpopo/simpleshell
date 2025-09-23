@@ -67,6 +67,17 @@ const CommandSuggestion = ({
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex);
   const listRef = useRef(null);
   const componentRef = useRef(null);
+  const [keyboardNavigated, setKeyboardNavigated] = useState(false);
+  const keyboardNavigatedRef = useRef(false);
+  const selectedIndexRef = useRef(selectedIndex);
+
+  useEffect(() => {
+    keyboardNavigatedRef.current = keyboardNavigated;
+  }, [keyboardNavigated]);
+
+  useEffect(() => {
+    selectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
 
   // 使用 useMemo 缓存窗口尺寸计算 - 必须在条件渲染之前调用
   const windowDimensions = useMemo(() => {
@@ -160,10 +171,9 @@ const CommandSuggestion = ({
 
   // 重置选中项
   useEffect(() => {
-    if (visible && suggestions.length > 0) {
-      setSelectedIndex(0);
-    } else {
+    if (visible) {
       setSelectedIndex(-1);
+      setKeyboardNavigated(false);
     }
   }, [visible, suggestions]);
 
@@ -212,6 +222,15 @@ const CommandSuggestion = ({
 
     // 主要的键盘事件处理器
     const keyHandler = (e) => {
+      // 仅当通过方向键激活并有有效选中项时，才拦截 Enter/Delete
+      if (e.key === "Enter" || e.key === "Delete") {
+        const hasValidSelection =
+          selectedIndexRef.current >= 0 && selectedIndexRef.current < suggestions.length;
+        if (!(keyboardNavigatedRef.current && hasValidSelection)) {
+          // 未激活选择：放行，作为正常输入处理
+          return;
+        }
+      }
       // 只处理建议窗口相关的键
       const restrictedKeys = [
         "ArrowDown",
@@ -230,11 +249,13 @@ const CommandSuggestion = ({
         // 执行相应的操作
         switch (e.key) {
           case "ArrowDown":
+            setKeyboardNavigated(true);
             setSelectedIndex((prev) =>
               prev < suggestions.length - 1 ? prev + 1 : 0,
             );
             break;
           case "ArrowUp":
+            setKeyboardNavigated(true);
             setSelectedIndex((prev) =>
               prev > 0 ? prev - 1 : suggestions.length - 1,
             );
