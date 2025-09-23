@@ -44,6 +44,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
+import SearchIcon from "@mui/icons-material/Search";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import { DragDropContext, Draggable } from "react-beautiful-dnd";
 import { Droppable } from "./CustomDragDrop.jsx";
@@ -1413,13 +1414,18 @@ const ConnectionManager = memo(
             <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
               <TextField
                 inputRef={searchInputRef}
-                label="搜索..."
+                placeholder="搜索..."
                 variant="outlined"
                 size="small"
                 fullWidth
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
                   endAdornment: searchQuery && (
                     <InputAdornment position="end">
                       <IconButton
@@ -1431,6 +1437,11 @@ const ConnectionManager = memo(
                       </IconButton>
                     </InputAdornment>
                   ),
+                }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                  },
                 }}
               />
             </Box>
