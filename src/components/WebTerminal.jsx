@@ -3983,6 +3983,13 @@ const WebTerminal = ({
 
       const trimmedInput = input.trim();
 
+      // Require at least 2 characters before showing suggestions
+      if (trimmedInput.length < 2) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+
       // 防止为最近执行的命令显示建议
       if (
         lastExecutedCommandRef.current &&

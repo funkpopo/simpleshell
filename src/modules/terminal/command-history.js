@@ -146,7 +146,7 @@ class CommandHistoryService {
     const trimmedInput = input.trim().toLowerCase();
 
     // 降低最小输入长度要求到1个字符，以支持2字符最短命令
-    if (trimmedInput.length < 1) {
+    if (trimmedInput.length < 2) {
       return [];
     }
 
