@@ -363,6 +363,11 @@ function loadUISettings() {
         prefetchEnabled: true,
         webglEnabled: true,
       },
+      dnd: {
+        enabled: true,
+        autoScroll: true,
+        compactDragPreview: false,
+      },
     };
   }
   if (logToFile)
@@ -388,8 +393,24 @@ function loadUISettings() {
             cacheEnabled: config.uiSettings.performance?.cacheEnabled !== false,
             prefetchEnabled:
               config.uiSettings.performance?.prefetchEnabled !== false,
-            webglEnabled:
-              config.uiSettings.performance?.webglEnabled !== false,
+            webglEnabled: config.uiSettings.performance?.webglEnabled !== false,
+          },
+          dnd: {
+            enabled:
+              config.uiSettings.dnd &&
+              typeof config.uiSettings.dnd.enabled === "boolean"
+                ? config.uiSettings.dnd.enabled
+                : true,
+            autoScroll:
+              config.uiSettings.dnd &&
+              typeof config.uiSettings.dnd.autoScroll === "boolean"
+                ? config.uiSettings.dnd.autoScroll
+                : true,
+            compactDragPreview:
+              config.uiSettings.dnd &&
+              typeof config.uiSettings.dnd.compactDragPreview === "boolean"
+                ? config.uiSettings.dnd.compactDragPreview
+                : false,
           },
         };
         if (logToFile)

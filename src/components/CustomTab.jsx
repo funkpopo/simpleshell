@@ -1,18 +1,6 @@
 import React, { memo, useCallback, useState } from "react";
-import {
-  Box,
-  Typography,
-  Tab,
-  Menu,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
-  GlobalStyles,
-} from "@mui/material";
+import { Box, Typography, Tab, GlobalStyles } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import GroupAddIcon from "@mui/icons-material/GroupAdd";
-import GroupRemoveIcon from "@mui/icons-material/GroupRemove";
-import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import {
   findGroupByTab,
   getGroups,
@@ -94,14 +82,6 @@ const dragIndicatorStyles = (
           boxShadow: "0 0 0 6px rgba(46, 125, 50, 0)",
         },
       },
-      "@keyframes mergeZonePulse": {
-        "0%, 100%": {
-          boxShadow: "0 0 0 0 rgba(25, 118, 210, 0.7)",
-        },
-        "50%": {
-          boxShadow: "0 0 0 6px rgba(25, 118, 210, 0)",
-        },
-      },
       "@keyframes slideIn": {
         "0%": {
           opacity: 0,
@@ -110,17 +90,6 @@ const dragIndicatorStyles = (
         "100%": {
           opacity: 1,
           transform: "translateY(0) scale(1)",
-        },
-      },
-      "@keyframes pulse": {
-        "0%": {
-          boxShadow: "0 0 0 2px rgba(25, 118, 210, 0.3)",
-        },
-        "50%": {
-          boxShadow: "0 0 0 6px rgba(25, 118, 210, 0.1)",
-        },
-        "100%": {
-          boxShadow: "0 0 0 2px rgba(25, 118, 210, 0.3)",
         },
       },
     }}
@@ -133,17 +102,15 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.label === nextProps.label &&
     prevProps.value === nextProps.value &&
     prevProps.selected === nextProps.selected &&
-    prevProps.isSelected === nextProps.isSelected &&
     prevProps.index === nextProps.index &&
+    prevProps.tabId === nextProps.tabId &&
     prevProps.onClose === nextProps.onClose &&
-    prevProps.onClick === nextProps.onClick &&
     prevProps.onContextMenu === nextProps.onContextMenu &&
     prevProps.onDragStart === nextProps.onDragStart &&
     prevProps.onDragOver === nextProps.onDragOver &&
     prevProps.onDragLeave === nextProps.onDragLeave &&
     prevProps.onDrop === nextProps.onDrop &&
     prevProps.isDraggedOver === nextProps.isDraggedOver &&
-    prevProps.dragOperation === nextProps.dragOperation &&
     prevProps.dragInsertPosition === nextProps.dragInsertPosition
   );
 };
@@ -161,9 +128,7 @@ const CustomTab = memo((props) => {
     onDragLeave,
     onDrop,
     tabId, // 每个Tab需传递tabId
-    isSelected = false, // 新增：是否被多选
     isDraggedOver = false, // 是否被拖拽悬停
-    dragOperation = null, // 拖拽操作类型 ('sort')
     dragInsertPosition = null, // 插入位置 ('before' | 'after')
     ...other
   } = props;
@@ -304,24 +269,6 @@ const CustomTab = memo((props) => {
           <Box
             sx={{ display: "flex", alignItems: "center", position: "relative" }}
           >
-            {/* 多选状态指示器 */}
-            {isSelected && (
-              <Box
-                sx={{
-                  width: 8,
-                  height: 8,
-                  minWidth: 8,
-                  minHeight: 8,
-                  borderRadius: "50%",
-                  background: "primary.main",
-                  mr: 1,
-                  ml: 0.2,
-                  boxShadow: "0 0 0 2px rgba(25, 118, 210, 0.3)",
-                  animation: "pulse 2s infinite",
-                }}
-                title="已选中的标签"
-              />
-            )}
             {/* 分组圆点与编号 */}
             {group && (
               <Box
@@ -390,23 +337,9 @@ const CustomTab = memo((props) => {
           minWidth: "auto",
           minHeight: 40,
           py: 0,
-          cursor:
-            isDraggedOver && dragOperation === "sort" ? "grab" : "pointer",
+          cursor: isDraggedOver ? "grab" : "pointer",
           userSelect: "none",
           color: "text.secondary",
-
-          // 多选状态的特殊样式
-          ...(isSelected && {
-            backgroundColor: (theme) =>
-              theme.palette.mode === "dark"
-                ? "rgba(25, 118, 210, 0.12)"
-                : "rgba(25, 118, 210, 0.08)",
-            borderRadius: "4px",
-            boxShadow: (theme) =>
-              theme.palette.mode === "dark"
-                ? "0 0 0 1px rgba(25, 118, 210, 0.3)"
-                : "0 0 0 1px rgba(25, 118, 210, 0.2)",
-          }),
 
           // 拖拽悬停时的特殊样式（仅排序）
           ...(isDraggedOver && {

@@ -69,10 +69,9 @@ export const createUnifiedTheme = (darkMode) =>
           wave: {
             // 调整高亮带颜色以匹配主题
             "&::after": {
-              background:
-                darkMode
-                  ? "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)"
-                  : "linear-gradient(90deg, transparent, rgba(0,0,0,0.06), transparent)",
+              background: darkMode
+                ? "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)"
+                : "linear-gradient(90deg, transparent, rgba(0,0,0,0.06), transparent)",
             },
           },
         },

@@ -3,11 +3,11 @@ const { logToFile } = require("../utils/logger");
 
 // 重连策略配置
 const RECONNECT_CONFIG = {
-  maxRetries: 5,              // 最大重试次数固定为5次
-  fixedDelay: 3000,           // 固定重连间隔3秒
+  maxRetries: 5, // 最大重试次数固定为5次
+  fixedDelay: 3000, // 固定重连间隔3秒
 
   // 禁用其他策略，使用固定配置
-  useFixedInterval: true,     // 使用固定间隔
+  useFixedInterval: true, // 使用固定间隔
 
   // 保留但不使用的配置（为了兼容性）
   initialDelay: 3000,
@@ -20,7 +20,7 @@ const RECONNECT_CONFIG = {
     enabled: false,
     maxAttempts: 0,
     delay: 3000,
-    conditions: []
+    conditions: [],
   },
 
   // 禁用智能重连
@@ -28,8 +28,8 @@ const RECONNECT_CONFIG = {
     enabled: false,
     analyzePattern: false,
     adaptiveDelay: false,
-    networkQualityThreshold: 0.3
-  }
+    networkQualityThreshold: 0.3,
+  },
 };
 
 // 重连状态
@@ -39,7 +39,7 @@ const RECONNECT_STATE = {
   RECONNECTING: "reconnecting",
   CONNECTED: "connected",
   FAILED: "failed",
-  ABANDONED: "abandoned"
+  ABANDONED: "abandoned",
 };
 
 // 连接失败原因分类
@@ -48,7 +48,7 @@ const FAILURE_REASON = {
   AUTHENTICATION: "authentication",
   TIMEOUT: "timeout",
   RESOURCE: "resource",
-  UNKNOWN: "unknown"
+  UNKNOWN: "unknown",
 };
 
 class ReconnectionManager extends EventEmitter {
@@ -66,7 +66,7 @@ class ReconnectionManager extends EventEmitter {
       totalAttempts: 0,
       successfulReconnects: 0,
       failedReconnects: 0,
-      averageReconnectTime: 0
+      averageReconnectTime: 0,
     };
 
     this.isInitialized = false;
@@ -96,8 +96,8 @@ class ReconnectionManager extends EventEmitter {
       qualityMetrics: {
         stability: 1.0,
         latency: 0,
-        packetLoss: 0
-      }
+        packetLoss: 0,
+      },
     };
 
     this.sessions.set(sessionId, session);
@@ -211,10 +211,7 @@ class ReconnectionManager extends EventEmitter {
     }
 
     // 超时相关错误
-    if (
-      errorMessage.includes("timeout") ||
-      errorCode === "ETIMEDOUT"
-    ) {
+    if (errorMessage.includes("timeout") || errorCode === "ETIMEDOUT") {
       return FAILURE_REASON.TIMEOUT;
     }
 
@@ -266,7 +263,7 @@ class ReconnectionManager extends EventEmitter {
       scheduledAt: Date.now(),
       executeAt: Date.now() + delay,
       failureReason,
-      retryCount: session.retryCount
+      retryCount: session.retryCount,
     };
 
     if (!this.reconnectQueues.has(session.id)) {
@@ -274,7 +271,10 @@ class ReconnectionManager extends EventEmitter {
     }
     this.reconnectQueues.get(session.id).push(reconnectTask);
 
-    logToFile(`计划重连: ${session.id}, 延迟 ${delay}ms (3秒), 第 ${session.retryCount}/${this.config.maxRetries} 次尝试`, "INFO");
+    logToFile(
+      `计划重连: ${session.id}, 延迟 ${delay}ms (3秒), 第 ${session.retryCount}/${this.config.maxRetries} 次尝试`,
+      "INFO",
+    );
 
     // 执行重连
     setTimeout(() => {
@@ -285,7 +285,7 @@ class ReconnectionManager extends EventEmitter {
       sessionId: session.id,
       delay,
       retryCount: session.retryCount,
-      maxRetries: this.config.maxRetries
+      maxRetries: this.config.maxRetries,
     });
   }
 
@@ -298,11 +298,14 @@ class ReconnectionManager extends EventEmitter {
     session.state = RECONNECT_STATE.RECONNECTING;
     session.lastAttempt = Date.now();
 
-    logToFile(`开始重连: ${session.id} (第 ${session.retryCount}/${this.config.maxRetries} 次)`, "INFO");
+    logToFile(
+      `开始重连: ${session.id} (第 ${session.retryCount}/${this.config.maxRetries} 次)`,
+      "INFO",
+    );
     this.emit("reconnectStarted", {
       sessionId: session.id,
       attempt: session.retryCount,
-      maxRetries: this.config.maxRetries
+      maxRetries: this.config.maxRetries,
     });
 
     this.statistics.totalAttempts++;
@@ -330,7 +333,7 @@ class ReconnectionManager extends EventEmitter {
         timestamp: Date.now(),
         success: true,
         attempts: session.retryCount,
-        duration: Date.now() - session.lastAttempt
+        duration: Date.now() - session.lastAttempt,
       });
 
       this.statistics.successfulReconnects++;
@@ -338,11 +341,13 @@ class ReconnectionManager extends EventEmitter {
       logToFile(`重连成功: ${session.id}`, "INFO");
       this.emit("reconnectSuccess", {
         sessionId: session.id,
-        attempts: session.retryCount
+        attempts: session.retryCount,
       });
-
     } catch (error) {
-      logToFile(`重连失败: ${session.id} - ${error.message} (第 ${session.retryCount}/${this.config.maxRetries} 次)`, "ERROR");
+      logToFile(
+        `重连失败: ${session.id} - ${error.message} (第 ${session.retryCount}/${this.config.maxRetries} 次)`,
+        "ERROR",
+      );
 
       session.lastError = error;
 
@@ -351,7 +356,7 @@ class ReconnectionManager extends EventEmitter {
         timestamp: Date.now(),
         success: false,
         attempts: session.retryCount,
-        error: error.message
+        error: error.message,
       });
 
       this.statistics.failedReconnects++;
@@ -361,14 +366,17 @@ class ReconnectionManager extends EventEmitter {
       if (this.shouldReconnect(session, failureReason)) {
         await this.scheduleReconnect(session, failureReason);
       } else {
-        this.abandonReconnection(session, `达到最大重试次数(${this.config.maxRetries}次)或不满足重连条件`);
+        this.abandonReconnection(
+          session,
+          `达到最大重试次数(${this.config.maxRetries}次)或不满足重连条件`,
+        );
       }
 
       this.emit("reconnectFailed", {
         sessionId: session.id,
         error: error.message,
         attempts: session.retryCount,
-        maxRetries: this.config.maxRetries
+        maxRetries: this.config.maxRetries,
       });
     }
   }
@@ -406,7 +414,7 @@ class ReconnectionManager extends EventEmitter {
         keepaliveInterval: 30000,
         keepaliveCountMax: 3,
         readyTimeout: 10000,
-        algorithms: getBasicSSHAlgorithms()
+        algorithms: getBasicSSHAlgorithms(),
       };
 
       ssh.connect(connectionOptions);
@@ -460,7 +468,7 @@ class ReconnectionManager extends EventEmitter {
 
     this.emit("connectionReplaced", {
       sessionId: session.id,
-      newConnection
+      newConnection,
     });
   }
 
@@ -474,7 +482,7 @@ class ReconnectionManager extends EventEmitter {
       sessionId: session.id,
       reason,
       attempts: session.retryCount,
-      maxRetries: this.config.maxRetries
+      maxRetries: this.config.maxRetries,
     });
 
     // 清理会话
@@ -517,13 +525,13 @@ class ReconnectionManager extends EventEmitter {
       maxRetries: this.config.maxRetries,
       lastAttempt: session.lastAttempt,
       lastError: session.lastError ? session.lastError.message : null,
-      qualityMetrics: session.qualityMetrics
+      qualityMetrics: session.qualityMetrics,
     };
   }
 
   getAllSessionsStatus() {
-    return Array.from(this.sessions.keys()).map(id =>
-      this.getSessionStatus(id)
+    return Array.from(this.sessions.keys()).map((id) =>
+      this.getSessionStatus(id),
     );
   }
 
@@ -531,10 +539,11 @@ class ReconnectionManager extends EventEmitter {
     return {
       ...this.statistics,
       activeSessions: this.sessions.size,
-      reconnectingSessions: Array.from(this.sessions.values())
-        .filter(s => s.state === RECONNECT_STATE.RECONNECTING).length,
+      reconnectingSessions: Array.from(this.sessions.values()).filter(
+        (s) => s.state === RECONNECT_STATE.RECONNECTING,
+      ).length,
       maxRetries: this.config.maxRetries,
-      reconnectInterval: this.config.fixedDelay
+      reconnectInterval: this.config.fixedDelay,
     };
   }
 

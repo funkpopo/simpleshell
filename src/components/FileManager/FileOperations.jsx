@@ -31,7 +31,10 @@ const FileOperations = memo(
     // 创建文件夹
     const createFolder = async (folderName) => {
       if (!folderName.trim() || !sshConnection) {
-        return { success: false, error: t("fileManager.errors.invalidFolderName") };
+        return {
+          success: false,
+          error: t("fileManager.errors.invalidFolderName"),
+        };
       }
 
       onLoading(true);
@@ -49,7 +52,7 @@ const FileOperations = memo(
           if (window.terminalAPI && window.terminalAPI.createFolder) {
             const response = await window.terminalAPI.createFolder(
               tabId,
-              fullPath
+              fullPath,
             );
 
             if (response?.success) {
@@ -65,19 +68,24 @@ const FileOperations = memo(
                 t("fileManager.messages.createFolderFailedRetrying", {
                   current: retryCount,
                   max: maxRetries,
-                })
+                }),
               );
-              await new Promise((resolve) => setTimeout(resolve, 500 * retryCount));
+              await new Promise((resolve) =>
+                setTimeout(resolve, 500 * retryCount),
+              );
               return attemptCreateFolder();
             } else {
               onError(
-                response?.error || t("fileManager.errors.createFolderFailed")
+                response?.error || t("fileManager.errors.createFolderFailed"),
               );
               return { success: false, error: response?.error };
             }
           } else {
             onError(t("fileManager.errors.fileApiNotAvailable"));
-            return { success: false, error: t("fileManager.errors.fileApiNotAvailable") };
+            return {
+              success: false,
+              error: t("fileManager.errors.fileApiNotAvailable"),
+            };
           }
         } catch (error) {
           if (retryCount < maxRetries) {
@@ -86,16 +94,18 @@ const FileOperations = memo(
               t("fileManager.messages.createFolderFailedRetrying", {
                 current: retryCount,
                 max: maxRetries,
-              })
+              }),
             );
-            await new Promise((resolve) => setTimeout(resolve, 500 * retryCount));
+            await new Promise((resolve) =>
+              setTimeout(resolve, 500 * retryCount),
+            );
             return attemptCreateFolder();
           }
 
           onError(
             t("fileManager.errors.createFolderFailed") +
               ": " +
-              (error.message || t("fileManager.errors.unknownError"))
+              (error.message || t("fileManager.errors.unknownError")),
           );
           return { success: false, error: error.message };
         } finally {
@@ -111,7 +121,10 @@ const FileOperations = memo(
     // 创建文件
     const createFile = async (fileName) => {
       if (!fileName.trim() || !sshConnection) {
-        return { success: false, error: t("fileManager.errors.invalidFileName") };
+        return {
+          success: false,
+          error: t("fileManager.errors.invalidFileName"),
+        };
       }
 
       onLoading(true);
@@ -130,19 +143,22 @@ const FileOperations = memo(
             return { success: true };
           } else {
             onError(
-              `${t("fileManager.errors.createFileFailed")}: ${result.error || t("fileManager.errors.unknownError")}`
+              `${t("fileManager.errors.createFileFailed")}: ${result.error || t("fileManager.errors.unknownError")}`,
             );
             return { success: false, error: result.error };
           }
         } else {
           onError(t("fileManager.errors.fileApiNotAvailable"));
-          return { success: false, error: t("fileManager.errors.fileApiNotAvailable") };
+          return {
+            success: false,
+            error: t("fileManager.errors.fileApiNotAvailable"),
+          };
         }
       } catch (error) {
         onError(
           t("fileManager.errors.createFileFailed") +
             ": " +
-            (error.message || t("fileManager.errors.unknownError"))
+            (error.message || t("fileManager.errors.unknownError")),
         );
         return { success: false, error: error.message };
       } finally {
@@ -162,13 +178,15 @@ const FileOperations = memo(
         const oldPath =
           currentPath === "/" ? "/" + oldName : currentPath + "/" + oldName;
         const newPath =
-          currentPath === "/" ? "/" + newName.trim() : currentPath + "/" + newName.trim();
+          currentPath === "/"
+            ? "/" + newName.trim()
+            : currentPath + "/" + newName.trim();
 
         if (window.terminalAPI && window.terminalAPI.renameFile) {
           const result = await window.terminalAPI.renameFile(
             tabId,
             oldPath,
-            newPath
+            newPath,
           );
           if (result.success) {
             await onLoadDirectory(currentPath);
@@ -176,19 +194,22 @@ const FileOperations = memo(
             return { success: true };
           } else {
             onError(
-              `${t("fileManager.errors.renameFailed")}: ${result.error || t("fileManager.errors.unknownError")}`
+              `${t("fileManager.errors.renameFailed")}: ${result.error || t("fileManager.errors.unknownError")}`,
             );
             return { success: false, error: result.error };
           }
         } else {
           onError(t("fileManager.errors.fileApiNotAvailable"));
-          return { success: false, error: t("fileManager.errors.fileApiNotAvailable") };
+          return {
+            success: false,
+            error: t("fileManager.errors.fileApiNotAvailable"),
+          };
         }
       } catch (error) {
         onError(
           t("fileManager.errors.renameFailed") +
             ": " +
-            (error.message || t("fileManager.errors.unknownError"))
+            (error.message || t("fileManager.errors.unknownError")),
         );
         return { success: false, error: error.message };
       } finally {
@@ -199,14 +220,17 @@ const FileOperations = memo(
     // 删除文件或文件夹
     const deleteItems = async (itemsToDelete) => {
       if (!itemsToDelete || itemsToDelete.length === 0 || !sshConnection) {
-        return { success: false, error: t("fileManager.errors.noItemsSelected") };
+        return {
+          success: false,
+          error: t("fileManager.errors.noItemsSelected"),
+        };
       }
 
       onLoading(true);
 
       try {
         const filePaths = itemsToDelete.map((file) =>
-          currentPath === "/" ? "/" + file.name : currentPath + "/" + file.name
+          currentPath === "/" ? "/" + file.name : currentPath + "/" + file.name,
         );
 
         if (window.terminalAPI && window.terminalAPI.deleteFiles) {
@@ -217,19 +241,22 @@ const FileOperations = memo(
             return { success: true };
           } else {
             onError(
-              `${t("fileManager.errors.deleteFailed")}: ${result.error || t("fileManager.errors.unknownError")}`
+              `${t("fileManager.errors.deleteFailed")}: ${result.error || t("fileManager.errors.unknownError")}`,
             );
             return { success: false, error: result.error };
           }
         } else {
           onError(t("fileManager.errors.fileApiNotAvailable"));
-          return { success: false, error: t("fileManager.errors.fileApiNotAvailable") };
+          return {
+            success: false,
+            error: t("fileManager.errors.fileApiNotAvailable"),
+          };
         }
       } catch (error) {
         onError(
           t("fileManager.errors.deleteFailed") +
             ": " +
-            (error.message || t("fileManager.errors.unknownError"))
+            (error.message || t("fileManager.errors.unknownError")),
         );
         return { success: false, error: error.message };
       } finally {
@@ -240,7 +267,10 @@ const FileOperations = memo(
     // 修改文件权限
     const changePermissions = async (filePath, permissions) => {
       if (!filePath || !permissions || !sshConnection) {
-        return { success: false, error: t("fileManager.errors.invalidPermissions") };
+        return {
+          success: false,
+          error: t("fileManager.errors.invalidPermissions"),
+        };
       }
 
       onLoading(true);
@@ -250,7 +280,7 @@ const FileOperations = memo(
           const result = await window.terminalAPI.changeFilePermissions(
             tabId,
             filePath,
-            permissions
+            permissions,
           );
           if (result.success) {
             await onLoadDirectory(currentPath);
@@ -258,19 +288,22 @@ const FileOperations = memo(
             return { success: true };
           } else {
             onError(
-              `${t("fileManager.errors.changePermissionsFailed")}: ${result.error || t("fileManager.errors.unknownError")}`
+              `${t("fileManager.errors.changePermissionsFailed")}: ${result.error || t("fileManager.errors.unknownError")}`,
             );
             return { success: false, error: result.error };
           }
         } else {
           onError(t("fileManager.errors.fileApiNotAvailable"));
-          return { success: false, error: t("fileManager.errors.fileApiNotAvailable") };
+          return {
+            success: false,
+            error: t("fileManager.errors.fileApiNotAvailable"),
+          };
         }
       } catch (error) {
         onError(
           t("fileManager.errors.changePermissionsFailed") +
             ": " +
-            (error.message || t("fileManager.errors.unknownError"))
+            (error.message || t("fileManager.errors.unknownError")),
         );
         return { success: false, error: error.message };
       } finally {
@@ -285,7 +318,7 @@ const FileOperations = memo(
       deleteItems,
       changePermissions,
     };
-  }
+  },
 );
 
 FileOperations.displayName = "FileOperations";

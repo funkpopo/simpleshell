@@ -1,9 +1,5 @@
 import React, { memo, useCallback } from "react";
-import {
-  Box,
-  Typography,
-  CircularProgress,
-} from "@mui/material";
+import { Box, Typography, CircularProgress } from "@mui/material";
 import VirtualizedFileList from "../VirtualizedFileList.jsx";
 import { useTranslation } from "react-i18next";
 import { sortFiles, filterFiles } from "./utils.js";
@@ -112,7 +108,7 @@ const FileList = memo(
         onBlankContextMenu={onBlankContextMenu}
       />
     );
-  }
+  },
 );
 
 FileList.displayName = "FileList";

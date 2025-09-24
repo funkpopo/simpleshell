@@ -410,7 +410,13 @@ const VirtualizedFileList = ({
         </Typography>
       </Box>
     ),
-    [height, searchTerm, onBlankContextMenu, handleContainerClick, containerRef],
+    [
+      height,
+      searchTerm,
+      onBlankContextMenu,
+      handleContainerClick,
+      containerRef,
+    ],
   );
 
   // 如果没有文件，显示空状态

@@ -62,11 +62,13 @@ const resolveAnsiColor = (color) => {
     return ANSI_COLORS.reset;
   }
   const normalized = String(color).trim();
-  return COLOR_TO_ANSI[normalized] || ANSI_COLORS[normalized] || ANSI_COLORS.reset;
+  return (
+    COLOR_TO_ANSI[normalized] || ANSI_COLORS[normalized] || ANSI_COLORS.reset
+  );
 };
 
-const escapeRegex = (value = "") => value.replace(/[-/\^$*+?.()|[\]{}]/g, "\$&");
-
+const escapeRegex = (value = "") =>
+  value.replace(/[-/\^$*+?.()|[\]{}]/g, "\$&");
 
 const OSC_SEQUENCE_REGEX = /\u001b\][\s\S]*?(?:\u0007|\u001b\\)/g;
 const HOST_HEX_SUFFIX_REGEX = /(@[A-Za-z0-9_.-]+)-([0-9a-f]{6,16})(?=[:#\s])/gi;
@@ -342,12 +344,12 @@ class OutputProcessor {
     const oscPlaceholders = [];
     processedOutput = processedOutput.replace(OSC_SEQUENCE_REGEX, (match) => {
       const token = `__OSC_PLACEHOLDER_${oscPlaceholders.length}__`;
-      const sanitized = match.replace(HOST_HEX_SUFFIX_REGEX, '$1');
+      const sanitized = match.replace(HOST_HEX_SUFFIX_REGEX, "$1");
       oscPlaceholders.push({ token, value: sanitized });
       return token;
     });
 
-    processedOutput = processedOutput.replace(HOST_HEX_SUFFIX_REGEX, '$1');
+    processedOutput = processedOutput.replace(HOST_HEX_SUFFIX_REGEX, "$1");
 
     for (const rule of this.compiledHighlightRules) {
       try {
@@ -400,7 +402,6 @@ class OutputProcessor {
 
     return processedOutput;
   }
-
 }
 
 // 创建单例实例

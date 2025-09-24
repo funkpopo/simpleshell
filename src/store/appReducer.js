@@ -6,15 +6,14 @@ export const ActionTypes = {
   REMOVE_TAB: "REMOVE_TAB",
   UPDATE_TAB: "UPDATE_TAB",
   SET_CURRENT_TAB: "SET_CURRENT_TAB",
-  SET_MERGED_TABS: "SET_MERGED_TABS",
-  SET_ACTIVE_SPLIT_TAB: "SET_ACTIVE_SPLIT_TAB",
 
   // Drag & Drop
   SET_DRAGGED_TAB: "SET_DRAGGED_TAB",
   SET_DRAG_OVER_TAB: "SET_DRAG_OVER_TAB",
-  SET_DRAG_OPERATION: "SET_DRAG_OPERATION",
   SET_DRAG_INSERT_POSITION: "SET_DRAG_INSERT_POSITION",
   RESET_DRAG_STATE: "RESET_DRAG_STATE",
+  PUSH_TAB_ORDER_SNAPSHOT: "PUSH_TAB_ORDER_SNAPSHOT",
+  UNDO_LAST_TAB_CHANGE: "UNDO_LAST_TAB_CHANGE",
 
   // Sidebar Management
   SET_CONNECTION_MANAGER_OPEN: "SET_CONNECTION_MANAGER_OPEN",
@@ -72,14 +71,12 @@ export const initialState = {
     },
   ],
   currentTab: 0,
-  mergedTabs: {},
-  activeSplitTabId: null,
 
   // Drag & Drop State
   draggedTabIndex: null,
   dragOverTabIndex: null,
-  dragOperation: null,
   dragInsertPosition: null,
+  tabHistoryStack: [],
 
   // Sidebar State
   connectionManagerOpen: false,
@@ -153,21 +150,12 @@ export function appReducer(state = initialState, action) {
     case ActionTypes.SET_CURRENT_TAB:
       return { ...state, currentTab: action.payload };
 
-    case ActionTypes.SET_MERGED_TABS:
-      return { ...state, mergedTabs: action.payload };
-
-    case ActionTypes.SET_ACTIVE_SPLIT_TAB:
-      return { ...state, activeSplitTabId: action.payload };
-
     // Drag & Drop Actions
     case ActionTypes.SET_DRAGGED_TAB:
       return { ...state, draggedTabIndex: action.payload };
 
     case ActionTypes.SET_DRAG_OVER_TAB:
       return { ...state, dragOverTabIndex: action.payload };
-
-    case ActionTypes.SET_DRAG_OPERATION:
-      return { ...state, dragOperation: action.payload };
 
     case ActionTypes.SET_DRAG_INSERT_POSITION:
       return { ...state, dragInsertPosition: action.payload };
@@ -177,9 +165,29 @@ export function appReducer(state = initialState, action) {
         ...state,
         draggedTabIndex: null,
         dragOverTabIndex: null,
-        dragOperation: null,
         dragInsertPosition: null,
       };
+
+    case ActionTypes.PUSH_TAB_ORDER_SNAPSHOT: {
+      const snapshot = action.payload || {
+        tabs: state.tabs,
+        currentTab: state.currentTab,
+      };
+      const stack = [snapshot, ...(state.tabHistoryStack || [])].slice(0, 20);
+      return { ...state, tabHistoryStack: stack };
+    }
+
+    case ActionTypes.UNDO_LAST_TAB_CHANGE: {
+      const stack = state.tabHistoryStack || [];
+      if (stack.length === 0) return state;
+      const [snap, ...rest] = stack;
+      return {
+        ...state,
+        tabs: snap.tabs,
+        currentTab: snap.currentTab,
+        tabHistoryStack: rest,
+      };
+    }
 
     // Sidebar Actions
     case ActionTypes.SET_CONNECTION_MANAGER_OPEN:
@@ -302,14 +310,6 @@ export const actions = {
     type: ActionTypes.SET_CURRENT_TAB,
     payload: index,
   }),
-  setMergedTabs: (mergedTabs) => ({
-    type: ActionTypes.SET_MERGED_TABS,
-    payload: mergedTabs,
-  }),
-  setActiveSplitTab: (tabId) => ({
-    type: ActionTypes.SET_ACTIVE_SPLIT_TAB,
-    payload: tabId,
-  }),
 
   // Drag Actions
   setDraggedTab: (index) => ({
@@ -320,15 +320,16 @@ export const actions = {
     type: ActionTypes.SET_DRAG_OVER_TAB,
     payload: index,
   }),
-  setDragOperation: (operation) => ({
-    type: ActionTypes.SET_DRAG_OPERATION,
-    payload: operation,
-  }),
   setDragInsertPosition: (position) => ({
     type: ActionTypes.SET_DRAG_INSERT_POSITION,
     payload: position,
   }),
   resetDragState: () => ({ type: ActionTypes.RESET_DRAG_STATE }),
+  pushTabOrderSnapshot: (snapshot) => ({
+    type: ActionTypes.PUSH_TAB_ORDER_SNAPSHOT,
+    payload: snapshot,
+  }),
+  undoLastTabChange: () => ({ type: ActionTypes.UNDO_LAST_TAB_CHANGE }),
 
   // Sidebar Actions
   setConnectionManagerOpen: (open) => ({

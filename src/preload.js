@@ -50,26 +50,19 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 重连管理API
   getReconnectStatus: (args) =>
     ipcRenderer.invoke("get-reconnect-status", args),
-  manualReconnect: (args) =>
-    ipcRenderer.invoke("manual-reconnect", args),
-  pauseReconnect: (args) =>
-    ipcRenderer.invoke("pause-reconnect", args),
-  resumeReconnect: (args) =>
-    ipcRenderer.invoke("resume-reconnect", args),
-  getReconnectStatistics: () =>
-    ipcRenderer.invoke("get-reconnect-statistics"),
+  manualReconnect: (args) => ipcRenderer.invoke("manual-reconnect", args),
+  pauseReconnect: (args) => ipcRenderer.invoke("pause-reconnect", args),
+  resumeReconnect: (args) => ipcRenderer.invoke("resume-reconnect", args),
+  getReconnectStatistics: () => ipcRenderer.invoke("get-reconnect-statistics"),
 
   // 重连事件监听器
-  onReconnectStart: (callback) =>
-    ipcRenderer.on("reconnect-started", callback),
+  onReconnectStart: (callback) => ipcRenderer.on("reconnect-started", callback),
   onReconnectProgress: (callback) =>
     ipcRenderer.on("reconnect-progress", callback),
   onReconnectSuccess: (callback) =>
     ipcRenderer.on("reconnect-success", callback),
-  onReconnectFailed: (callback) =>
-    ipcRenderer.on("reconnect-failed", callback),
-  onConnectionLost: (callback) =>
-    ipcRenderer.on("connection-lost", callback),
+  onReconnectFailed: (callback) => ipcRenderer.on("reconnect-failed", callback),
+  onConnectionLost: (callback) => ipcRenderer.on("connection-lost", callback),
   removeReconnectListeners: (tabId) => {
     ipcRenderer.removeAllListeners("reconnect-started");
     ipcRenderer.removeAllListeners("reconnect-progress");

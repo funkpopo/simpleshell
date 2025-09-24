@@ -2,7 +2,8 @@
 // This file is used both in renderer and main (CommonJS export).
 
 // IPv4 validation based on strict dotted-quad with 0-255 per octet
-const ipv4Regex = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+const ipv4Regex =
+  /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
 
 // Basic IPv6 validation (supports compressed forms and IPv4-mapped)
 function isValidIPv6(ip) {
@@ -146,4 +147,3 @@ module.exports = {
   isPrivateOrSpecialIPv4,
   isPrivateOrSpecialIPv6,
 };
-

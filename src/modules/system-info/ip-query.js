@@ -329,7 +329,8 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
       return entry.result;
     }
 
-    const shouldServeStale = !!entry && now - entry.ts >= CACHE_TTL_MS && SWR_ENABLED;
+    const shouldServeStale =
+      !!entry && now - entry.ts >= CACHE_TTL_MS && SWR_ENABLED;
 
     const allProviders = [...DEFAULT_API_PROVIDERS];
     // Dynamically add key-based providers if their keys are present

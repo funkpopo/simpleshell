@@ -1,4 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -247,23 +253,33 @@ const shouldTransmitGeometry = (processId, tabId, cols, rows) => {
     return { key: null, cols, rows, changed: false };
   }
 
-  const { cols: normalizedCols, rows: normalizedRows } = normalizeGeometry(cols, rows);
+  const { cols: normalizedCols, rows: normalizedRows } = normalizeGeometry(
+    cols,
+    rows,
+  );
   const cached = terminalGeometryCache.get(key);
-  if (cached && cached.cols === normalizedCols && cached.rows === normalizedRows) {
+  if (
+    cached &&
+    cached.cols === normalizedCols &&
+    cached.rows === normalizedRows
+  ) {
     return { key, cols: normalizedCols, rows: normalizedRows, changed: false };
   }
 
-  terminalGeometryCache.set(key, { cols: normalizedCols, rows: normalizedRows });
+  terminalGeometryCache.set(key, {
+    cols: normalizedCols,
+    rows: normalizedRows,
+  });
   return { key, cols: normalizedCols, rows: normalizedRows, changed: true };
 };
 
 const sendResizeIfNeeded = (processId, tabId, cols, rows) => {
-  const { key, cols: nextCols, rows: nextRows, changed } = shouldTransmitGeometry(
-    processId,
-    tabId,
-    cols,
-    rows,
-  );
+  const {
+    key,
+    cols: nextCols,
+    rows: nextRows,
+    changed,
+  } = shouldTransmitGeometry(processId, tabId, cols, rows);
 
   if (!changed || !window.terminalAPI?.resizeTerminal) {
     return Promise.resolve();
@@ -561,8 +577,7 @@ const WebTerminal = ({
       try {
         if (window.terminalAPI?.loadUISettings) {
           const settings = await window.terminalAPI.loadUISettings();
-          const enabled =
-            settings?.performance?.webglEnabled !== false;
+          const enabled = settings?.performance?.webglEnabled !== false;
           if (isActive) {
             webglRendererEnabledRef.current = enabled;
             setWebglRendererEnabled(enabled);
@@ -578,32 +593,29 @@ const WebTerminal = ({
     };
   }, []);
 
-  const scheduleHighlightRefresh = useCallback(
-    (termInstance) => {
-      if (!termInstance || typeof termInstance.refresh !== "function") {
-        return;
-      }
+  const scheduleHighlightRefresh = useCallback((termInstance) => {
+    if (!termInstance || typeof termInstance.refresh !== "function") {
+      return;
+    }
 
-      if (
-        highlightRefreshFrameRef.current &&
-        typeof cancelAnimationFrame === "function"
-      ) {
-        cancelAnimationFrame(highlightRefreshFrameRef.current);
-      }
+    if (
+      highlightRefreshFrameRef.current &&
+      typeof cancelAnimationFrame === "function"
+    ) {
+      cancelAnimationFrame(highlightRefreshFrameRef.current);
+    }
 
-      if (typeof requestAnimationFrame !== "function") {
-        termInstance.refresh(0, termInstance.rows - 1);
-        highlightRefreshFrameRef.current = null;
-        return;
-      }
+    if (typeof requestAnimationFrame !== "function") {
+      termInstance.refresh(0, termInstance.rows - 1);
+      highlightRefreshFrameRef.current = null;
+      return;
+    }
 
-      highlightRefreshFrameRef.current = requestAnimationFrame(() => {
-        highlightRefreshFrameRef.current = null;
-        termInstance.refresh(0, termInstance.rows - 1);
-      });
-    },
-    [],
-  );
+    highlightRefreshFrameRef.current = requestAnimationFrame(() => {
+      highlightRefreshFrameRef.current = null;
+      termInstance.refresh(0, termInstance.rows - 1);
+    });
+  }, []);
 
   const disableWebglRenderer = useCallback((termInstance) => {
     if (!termInstance) {
@@ -715,8 +727,7 @@ const WebTerminal = ({
       if (!termInstance || !chunk) {
         return;
       }
-      const chunkStr =
-        typeof chunk === "string" ? chunk : chunk.toString();
+      const chunkStr = typeof chunk === "string" ? chunk : chunk.toString();
       if (!chunkStr) {
         return;
       }
@@ -1810,8 +1821,7 @@ const WebTerminal = ({
     try {
       if (window.terminalAPI?.loadUISettings) {
         const settings = await window.terminalAPI.loadUISettings();
-        const enabled =
-          settings?.performance?.webglEnabled !== false;
+        const enabled = settings?.performance?.webglEnabled !== false;
         webglRendererEnabledRef.current = enabled;
         setWebglRendererEnabled(enabled);
         return {
@@ -1862,7 +1872,10 @@ const WebTerminal = ({
     const handleSettingsChanged = async (event) => {
       const { terminalFontSize, terminalFont, performance } = event.detail;
 
-      if (performance && Object.prototype.hasOwnProperty.call(performance, "webglEnabled")) {
+      if (
+        performance &&
+        Object.prototype.hasOwnProperty.call(performance, "webglEnabled")
+      ) {
         const enabled = performance.webglEnabled !== false;
         webglRendererEnabledRef.current = enabled;
         setWebglRendererEnabled(enabled);
@@ -2405,11 +2418,21 @@ const WebTerminal = ({
 
           const processId = processCache[tabId];
           if (processId) {
-            sendResizeIfNeeded(processId, tabId, dimensions.cols, dimensions.rows);
+            sendResizeIfNeeded(
+              processId,
+              tabId,
+              dimensions.cols,
+              dimensions.rows,
+            );
 
             eventManager.setTimeout(() => {
               if (terminalRef.current && term && processCache[tabId]) {
-                sendResizeIfNeeded(processCache[tabId], tabId, term.cols, term.rows);
+                sendResizeIfNeeded(
+                  processCache[tabId],
+                  tabId,
+                  term.cols,
+                  term.rows,
+                );
                 setContentUpdated(false);
               }
             }, 300);
@@ -2712,7 +2735,16 @@ const WebTerminal = ({
         // 组件卸载时的清理工作由EventManager处理
       };
     }
-  }, [tabId, refreshKey, sshConfig, isActive, eventManager, tryEnableWebglRenderer, disableWebglRenderer, enqueueTerminalWrite]);
+  }, [
+    tabId,
+    refreshKey,
+    sshConfig,
+    isActive,
+    eventManager,
+    tryEnableWebglRenderer,
+    disableWebglRenderer,
+    enqueueTerminalWrite,
+  ]);
 
   // 设置模拟终端（用于无法使用IPC API时的回退）
   const setupSimulatedTerminal = (term) => {
@@ -3589,7 +3621,12 @@ const WebTerminal = ({
             // 同步到后端进程
             const processId = processCache[tabId];
             if (processId) {
-              sendResizeIfNeeded(processId, tabId, termRef.current.cols, termRef.current.rows);
+              sendResizeIfNeeded(
+                processId,
+                tabId,
+                termRef.current.cols,
+                termRef.current.rows,
+              );
             }
 
             // 如果是拆分操作，额外进行多次resize确保显示正确
@@ -3650,7 +3687,12 @@ const WebTerminal = ({
             // 同步到后端进程
             const processId = processCache[tabId];
             if (processId) {
-              sendResizeIfNeeded(processId, tabId, termRef.current.cols, termRef.current.rows);
+              sendResizeIfNeeded(
+                processId,
+                tabId,
+                termRef.current.cols,
+                termRef.current.rows,
+              );
             }
 
             // 强制刷新终端内容显示
@@ -3889,7 +3931,6 @@ const WebTerminal = ({
       if (cursorElement) {
         const cursorRect = cursorElement.getBoundingClientRect();
         if (cursorRect.width > 0 && cursorRect.height > 0) {
-
           const suggestionHeight = Math.min(
             (suggestions?.length || 0) * 28 + 28,
             300,
@@ -3904,7 +3945,8 @@ const WebTerminal = ({
             x: cursorRect.left,
             y: cursorRect.top,
             cursorHeight: cursorRect.height || 18,
-            cursorBottom: cursorRect.bottom || cursorRect.top + (cursorRect.height || 18),
+            cursorBottom:
+              cursorRect.bottom || cursorRect.top + (cursorRect.height || 18),
             showAbove,
           });
           return;
@@ -3979,7 +4021,12 @@ const WebTerminal = ({
           cursorBottom: containerRect.top + 68,
         });
       } catch (fallbackError) {
-        setCursorPosition({ x: 100, y: 100, cursorHeight: 18, cursorBottom: 118 });
+        setCursorPosition({
+          x: 100,
+          y: 100,
+          cursorHeight: 18,
+          cursorBottom: 118,
+        });
       }
     }
   }, [suggestions?.length || 0]);
@@ -3987,7 +4034,6 @@ const WebTerminal = ({
   // 命令建议相关函数
   const getSuggestions = useCallback(
     async (input) => {
-
       if (!input || input.trim() === "" || inEditorMode || isCommandExecuting) {
         setSuggestions([]);
         setShowSuggestions(false);

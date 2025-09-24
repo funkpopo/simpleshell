@@ -15,8 +15,6 @@ import { useTranslation } from "react-i18next";
 const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   currentTab,
   tabs,
-  mergedTabs,
-  activeSplitTabId,
   placement = "overlay",
 }) {
   const { t } = useTranslation();
@@ -30,31 +28,11 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
    * 获取当前应该显示延迟的标签页
    */
   const getCurrentTabForLatency = useCallback(() => {
-    // 如果有活跃的分屏标签页，优先使用分屏标签页
-    if (activeSplitTabId) {
-      // 查找分屏标签页
-      if (currentTab > 0 && tabs[currentTab]) {
-        const currentMainTab = tabs[currentTab];
-        const mergedTabsForCurrentMain = mergedTabs[currentMainTab.id];
-
-        if (mergedTabsForCurrentMain && mergedTabsForCurrentMain.length > 1) {
-          const activeTab = mergedTabsForCurrentMain.find(
-            (tab) => tab.id === activeSplitTabId,
-          );
-          if (activeTab && activeTab.type === "ssh") {
-            return activeTab;
-          }
-        }
-      }
-    }
-
-    // 否则使用当前主标签页
     if (currentTab > 0 && tabs[currentTab] && tabs[currentTab].type === "ssh") {
       return tabs[currentTab];
     }
-
     return null;
-  }, [currentTab, tabs, mergedTabs, activeSplitTabId]);
+  }, [currentTab, tabs]);
 
   /**
    * 处理延迟数据更新

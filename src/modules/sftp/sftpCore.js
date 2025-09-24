@@ -238,7 +238,10 @@ async function ensureSftpSession(tabId) {
     }
 
     // 没有主会话，则创建
-    logToFile(`sftpCore: No primary session for tab ${tabId}, creating`, "INFO");
+    logToFile(
+      `sftpCore: No primary session for tab ${tabId}, creating`,
+      "INFO",
+    );
     const created = await acquireSftpSession(tabId);
     return created.sftp;
   } catch (error) {
@@ -260,15 +263,19 @@ async function getSftpSession(tabId) {
           if (pool && pool.primaryId && pool.sessions.has(pool.primaryId)) {
             const session = pool.sessions.get(pool.primaryId);
             // 检查会话健康状态
-            checkSessionHealth(session).then(isHealthy => {
-              if (isHealthy) {
-                session.lastUsed = Date.now();
-                resolve(session.sftp);
-              } else {
-                // 会话不健康，触发重连
-                handleUnhealthySession(tabId, session).then(resolve).catch(reject);
-              }
-            }).catch(reject);
+            checkSessionHealth(session)
+              .then((isHealthy) => {
+                if (isHealthy) {
+                  session.lastUsed = Date.now();
+                  resolve(session.sftp);
+                } else {
+                  // 会话不健康，触发重连
+                  handleUnhealthySession(tabId, session)
+                    .then(resolve)
+                    .catch(reject);
+                }
+              })
+              .catch(reject);
           } else {
             acquireSftpSession(tabId)
               .then((session) => resolve(session.sftp))
@@ -292,10 +299,7 @@ async function getSftpSession(tabId) {
         session.lastUsed = Date.now();
         return session.sftp;
       } else {
-        logToFile(
-          `sftpCore: SFTP会话不健康，尝试重建: tabId=${tabId}`,
-          "WARN",
-        );
+        logToFile(`sftpCore: SFTP会话不健康，尝试重建: tabId=${tabId}`, "WARN");
         return await handleUnhealthySession(tabId, session);
       }
     }
@@ -348,12 +352,8 @@ async function handleUnhealthySession(tabId, session) {
     // 重试创建新的SFTP会话
     logToFile(`sftpCore: 重新创建SFTP会话: tabId=${tabId}`, "INFO");
     return await ensureSftpSession(tabId);
-
   } catch (error) {
-    logToFile(
-      `sftpCore: 处理不健康会话失败: ${error.message}`,
-      "ERROR",
-    );
+    logToFile(`sftpCore: 处理不健康会话失败: ${error.message}`, "ERROR");
     throw error;
   }
 }
@@ -598,9 +598,13 @@ async function closeSftpSession(tabId, sessionId = undefined) {
     }
     pool.sessions.delete(sess.id);
     if (pool.primaryId === sess.id) {
-      pool.primaryId = pool.sessions.size > 0 ? [...pool.sessions.keys()][0] : null;
+      pool.primaryId =
+        pool.sessions.size > 0 ? [...pool.sessions.keys()][0] : null;
     }
-    logToFile(`sftpCore: Closed SFTP session for ${tabId} (${sess.id})`, "INFO");
+    logToFile(
+      `sftpCore: Closed SFTP session for ${tabId} (${sess.id})`,
+      "INFO",
+    );
   };
 
   if (sessionId) {
@@ -968,7 +972,8 @@ async function getRawSftpSession(tabId) {
 // 获取SFTP会话的连接配置信息
 function getSftpSessionInfo(tabId) {
   const pool = sftpPools.get(tabId);
-  if (!pool || !pool.primaryId || !pool.sessions.has(pool.primaryId)) return null;
+  if (!pool || !pool.primaryId || !pool.sessions.has(pool.primaryId))
+    return null;
   const session = pool.sessions.get(pool.primaryId);
   return {
     active: session.active,

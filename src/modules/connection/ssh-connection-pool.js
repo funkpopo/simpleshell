@@ -30,9 +30,9 @@ class SSHConnectionPool {
 
     // 初始化重连管理器
     this.reconnectionManager = new ReconnectionManager({
-      maxRetries: 5,           // 固定5次重试
-      fixedDelay: 3000,        // 固定3秒间隔
-      useFixedInterval: true   // 使用固定间隔
+      maxRetries: 5, // 固定5次重试
+      fixedDelay: 3000, // 固定3秒间隔
+      useFixedInterval: true, // 使用固定间隔
     });
   }
 
@@ -57,34 +57,46 @@ class SSHConnectionPool {
 
   // 设置重连监听器
   setupReconnectionListeners() {
-    this.reconnectionManager.on("reconnectSuccess", ({ sessionId, attempts }) => {
-      logToFile(`连接重连成功: ${sessionId}, 尝试次数: ${attempts}`, "INFO");
+    this.reconnectionManager.on(
+      "reconnectSuccess",
+      ({ sessionId, attempts }) => {
+        logToFile(`连接重连成功: ${sessionId}, 尝试次数: ${attempts}`, "INFO");
 
-      // 更新连接状态
-      if (this.connections.has(sessionId)) {
-        const connectionInfo = this.connections.get(sessionId);
-        connectionInfo.ready = true;
-        connectionInfo.lastUsed = Date.now();
-      }
-    });
+        // 更新连接状态
+        if (this.connections.has(sessionId)) {
+          const connectionInfo = this.connections.get(sessionId);
+          connectionInfo.ready = true;
+          connectionInfo.lastUsed = Date.now();
+        }
+      },
+    );
 
-    this.reconnectionManager.on("reconnectFailed", ({ sessionId, error, attempts }) => {
-      logToFile(`连接重连失败: ${sessionId}, 错误: ${error}, 尝试次数: ${attempts}`, "ERROR");
+    this.reconnectionManager.on(
+      "reconnectFailed",
+      ({ sessionId, error, attempts }) => {
+        logToFile(
+          `连接重连失败: ${sessionId}, 错误: ${error}, 尝试次数: ${attempts}`,
+          "ERROR",
+        );
 
-      // 清理失败的连接
-      if (attempts >= 5) {
-        this.closeConnection(sessionId);
-      }
-    });
+        // 清理失败的连接
+        if (attempts >= 5) {
+          this.closeConnection(sessionId);
+        }
+      },
+    );
 
-    this.reconnectionManager.on("connectionReplaced", ({ sessionId, newConnection }) => {
-      // 更新连接池中的连接
-      if (this.connections.has(sessionId)) {
-        const connectionInfo = this.connections.get(sessionId);
-        connectionInfo.client = newConnection;
-        connectionInfo.ready = true;
-      }
-    });
+    this.reconnectionManager.on(
+      "connectionReplaced",
+      ({ sessionId, newConnection }) => {
+        // 更新连接池中的连接
+        if (this.connections.has(sessionId)) {
+          const connectionInfo = this.connections.get(sessionId);
+          connectionInfo.client = newConnection;
+          connectionInfo.ready = true;
+        }
+      },
+    );
   }
 
   cleanup() {
@@ -158,7 +170,11 @@ class SSHConnectionPool {
         logToFile(`检测到不健康连接，尝试重连: ${connectionKey}`, "WARN");
 
         // 注册到重连管理器
-        this.reconnectionManager.registerSession(connectionKey, connectionInfo.client, sshConfig);
+        this.reconnectionManager.registerSession(
+          connectionKey,
+          connectionInfo.client,
+          sshConfig,
+        );
 
         // 手动触发重连
         try {

@@ -43,7 +43,13 @@
       "prefetchDescription": "基于访问模式智能预加载数据，减少等待时间",
       "restartRequired": "需要重启",
       "restartMessage": "某些性能设置需要重启应用程序才能生效。保存设置后请重启应用。",
-      "needsRestart": "需重启"
+      "needsRestart": "������",
+      "dnd": {
+        "title": "标签拖拽",
+        "enable": "启用标签拖拽",
+        "autoScroll": "靠边自动滚动标签栏",
+        "compactPreview": "简洁拖拽预览"
+      }
     },
     "languages": {
       "zh-CN": "简体中文",
@@ -552,6 +558,10 @@
       "maximize": "最大化",
       "restore": "还原",
       "close": "关闭"
+    },
+    "snackbar": {
+      "tabMoved": "已调整标签顺序",
+      "undo": "撤销"
     }
   }
 }

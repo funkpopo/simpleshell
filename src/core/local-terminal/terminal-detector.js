@@ -20,7 +20,6 @@ class TerminalDetector {
     this.detectedTerminals = [];
 
     try {
-
       if (this.isWindows) {
         await this.detectWindowsTerminals();
       } else if (this.isMacOS) {
@@ -28,7 +27,6 @@ class TerminalDetector {
       } else if (this.isLinux) {
         await this.detectLinuxTerminals();
       }
-
     } catch (error) {
       // 即使发生错误也返回已检测到的终端
     }
@@ -169,7 +167,6 @@ class TerminalDetector {
    */
   async checkTerminalAvailability(terminal) {
     try {
-
       // 1. 首先检查指定路径
       if (terminal.checkPaths) {
         for (const checkPath of terminal.checkPaths) {

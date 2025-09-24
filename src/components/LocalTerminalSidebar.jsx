@@ -401,7 +401,12 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       {/* 搜索框 */}
       <Box sx={{ p: 2, pb: 1 }}>
         {isDetecting ? (
-          <Skeleton variant="rectangular" width="100%" height={36} sx={{ borderRadius: 2 }} />
+          <Skeleton
+            variant="rectangular"
+            width="100%"
+            height={36}
+            sx={{ borderRadius: 2 }}
+          />
         ) : (
           <TextField
             ref={searchInputRef}
@@ -451,7 +456,8 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
               color="text.secondary"
               sx={{ fontWeight: 500 }}
             >
-              {t("localTerminal.availableTerminals")} ({filteredTerminals.length})
+              {t("localTerminal.availableTerminals")} (
+              {filteredTerminals.length})
             </Typography>
           )}
         </Box>

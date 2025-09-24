@@ -1,11 +1,5 @@
 import React, { memo } from "react";
-import {
-  Box,
-  Paper,
-  Typography,
-  TextField,
-  Button,
-} from "@mui/material";
+import { Box, Paper, Typography, TextField, Button } from "@mui/material";
 import FilePermissionEditor from "../FilePermissionEditor.jsx";
 import { useTranslation } from "react-i18next";
 
@@ -31,7 +25,15 @@ const DialogOverlay = ({ children }) => (
 
 // 重命名对话框
 export const RenameDialog = memo(
-  ({ open, newName, filePermissions, onNewNameChange, onPermissionChange, onSubmit, onClose }) => {
+  ({
+    open,
+    newName,
+    filePermissions,
+    onNewNameChange,
+    onPermissionChange,
+    onSubmit,
+    onClose,
+  }) => {
     const { t } = useTranslation();
 
     if (!open) return null;
@@ -76,11 +78,7 @@ export const RenameDialog = memo(
                   gap: 1,
                 }}
               >
-                <Button
-                  onClick={onClose}
-                  color="inherit"
-                  size="small"
-                >
+                <Button onClick={onClose} color="inherit" size="small">
                   {t("common.cancel")}
                 </Button>
                 <Button
@@ -97,7 +95,7 @@ export const RenameDialog = memo(
         </Paper>
       </DialogOverlay>
     );
-  }
+  },
 );
 
 RenameDialog.displayName = "RenameDialog";
@@ -142,11 +140,7 @@ export const CreateFolderDialog = memo(
                 gap: 1,
               }}
             >
-              <Button
-                onClick={onClose}
-                color="inherit"
-                size="small"
-              >
+              <Button onClick={onClose} color="inherit" size="small">
                 {t("common.cancel")}
               </Button>
               <Button
@@ -162,7 +156,7 @@ export const CreateFolderDialog = memo(
         </Paper>
       </DialogOverlay>
     );
-  }
+  },
 );
 
 CreateFolderDialog.displayName = "CreateFolderDialog";
@@ -207,11 +201,7 @@ export const CreateFileDialog = memo(
                 gap: 1,
               }}
             >
-              <Button
-                onClick={onClose}
-                color="inherit"
-                size="small"
-              >
+              <Button onClick={onClose} color="inherit" size="small">
                 {t("common.cancel")}
               </Button>
               <Button
@@ -227,7 +217,7 @@ export const CreateFileDialog = memo(
         </Paper>
       </DialogOverlay>
     );
-  }
+  },
 );
 
 CreateFileDialog.displayName = "CreateFileDialog";

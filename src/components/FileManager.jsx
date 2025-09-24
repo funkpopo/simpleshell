@@ -142,17 +142,22 @@ const FileManager = memo(
     const chunkingResetTimerRef = useRef(null);
     const scheduleChunkingReset = useCallback(() => {
       try {
-        if (chunkingResetTimerRef.current) clearTimeout(chunkingResetTimerRef.current);
+        if (chunkingResetTimerRef.current)
+          clearTimeout(chunkingResetTimerRef.current);
       } catch (_) {}
       chunkingResetTimerRef.current = setTimeout(() => {
         setIsChunking(false);
       }, 800);
     }, []);
-    useEffect(() => () => {
-      try {
-        if (chunkingResetTimerRef.current) clearTimeout(chunkingResetTimerRef.current);
-      } catch (_) {}
-    }, []);
+    useEffect(
+      () => () => {
+        try {
+          if (chunkingResetTimerRef.current)
+            clearTimeout(chunkingResetTimerRef.current);
+        } catch (_) {}
+      },
+      [],
+    );
 
     const handleDragEnter = useCallback((e) => {
       e.preventDefault();
@@ -317,7 +322,6 @@ const FileManager = memo(
         }
         return newTimers;
       });
-
     };
 
     // 清理已完成的传输任务
@@ -470,7 +474,8 @@ const FileManager = memo(
 
           if (Array.isArray(payload.items) && payload.items.length > 0) {
             setIsChunking(true);
-            if (typeof scheduleChunkingReset === "function") scheduleChunkingReset();
+            if (typeof scheduleChunkingReset === "function")
+              scheduleChunkingReset();
             // buffer chunks and batch update to reduce re-renders
             try {
               chunkBufferRef.current.push(payload.items);
@@ -480,7 +485,9 @@ const FileManager = memo(
                     const buffered = chunkBufferRef.current.flat();
                     chunkBufferRef.current = [];
                     if (buffered.length > 0) {
-                      const nextFiles = (filesRef.current || []).concat(buffered);
+                      const nextFiles = (filesRef.current || []).concat(
+                        buffered,
+                      );
                       filesRef.current = nextFiles;
                       setFiles(nextFiles);
                     }
@@ -514,12 +521,14 @@ const FileManager = memo(
 
           if (payload.done) {
             // 完成后，刷新缓存
-            updateDirectoryCache(currentPath, (files || []).concat(payload.items || []));
+            updateDirectoryCache(
+              currentPath,
+              (files || []).concat(payload.items || []),
+            );
           }
         } catch (_) {
           // ignore
         }
-
       });
 
       return () => {
@@ -634,7 +643,6 @@ const FileManager = memo(
         }
         return prev;
       });
-
     };
 
     // 返回先前路径
@@ -945,30 +953,15 @@ const FileManager = memo(
     }, [files, searchTerm, sortMode, isChunking]);
 
     // 过滤和排序文件列表（根据搜索词） - 优化版本，使用useMemo缓存
-    
-      
-      
 
-      // 搜索过滤
-      
-        
-      
+    // 搜索过滤
 
-      // 排序：按名称时目录在前，按时间时不区分文件类型
-      
-        
-          // 按时间排序（最新的在前），不区分文件夹和文件
-          
-          
-          
-        
-          // 按名称排序时，目录在前
-          
-          
-          
-        
-      
-    
+    // 排序：按名称时目录在前，按时间时不区分文件类型
+
+    // 按时间排序（最新的在前），不区分文件夹和文件
+
+    // 按名称排序时，目录在前
+
     const handleFileSelect = useCallback(
       (file, index, event) => {
         const isMultiSelect = event.ctrlKey || event.metaKey;
@@ -2107,11 +2100,11 @@ const FileManager = memo(
 
                   // 记录文件夹结构
                   if (path) {
-                    const parts = path.split('/');
+                    const parts = path.split("/");
                     for (let i = 1; i <= parts.length; i++) {
-                      const folderPath = parts.slice(0, i).join('/');
+                      const folderPath = parts.slice(0, i).join("/");
                       if (folderPath) {
-                        folderStructure.add(folderPath.replace(/\/$/, ''));
+                        folderStructure.add(folderPath.replace(/\/$/, ""));
                       }
                     }
                   }
@@ -2248,11 +2241,17 @@ const FileManager = memo(
               ) => {
                 // 与 handleUploadFile 保持一致的进度处理
                 const validProgress = Math.max(0, Math.min(100, progress || 0));
-                const validTransferredBytes = Math.max(0, transferredBytes || 0);
+                const validTransferredBytes = Math.max(
+                  0,
+                  transferredBytes || 0,
+                );
                 const validTotalBytes = Math.max(0, totalBytes || 0);
                 const validTransferSpeed = Math.max(0, transferSpeed || 0);
                 const validRemainingTime = Math.max(0, remainingTime || 0);
-                const validCurrentFileIndex = Math.max(0, currentFileIndex || 0);
+                const validCurrentFileIndex = Math.max(
+                  0,
+                  currentFileIndex || 0,
+                );
                 const validTotalFiles = Math.max(0, totalFiles || 0);
 
                 // 检查是否已取消
@@ -2281,7 +2280,8 @@ const FileManager = memo(
               // 标记传输完成
               updateTransferProgress(transferId, {
                 progress: 100,
-                fileName: result.message || t("fileManager.messages.uploadComplete"),
+                fileName:
+                  result.message || t("fileManager.messages.uploadComplete"),
                 isCompleted: true,
               });
 
@@ -4377,7 +4377,8 @@ const FileManager = memo(
                   ? t("fileManager.messages.uploadToFolder", {
                       folder: selectedFile.name,
                     })
-                  : t("fileManager.messages.uploadToCurrentFolder") + `: ${currentPath}`}
+                  : t("fileManager.messages.uploadToCurrentFolder") +
+                    `: ${currentPath}`}
               </Typography>
             </Paper>
           </Box>

@@ -237,7 +237,7 @@ const FileManagerToolbar = memo(
         </Box>
       </>
     );
-  }
+  },
 );
 
 FileManagerToolbar.displayName = "FileManagerToolbar";

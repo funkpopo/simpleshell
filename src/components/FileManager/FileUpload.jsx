@@ -18,7 +18,10 @@ const FileUpload = memo(
     const uploadFiles = useCallback(
       async (files, targetPath = null) => {
         if (!files || files.length === 0) {
-          return { success: false, error: t("fileManager.errors.noFilesSelected") };
+          return {
+            success: false,
+            error: t("fileManager.errors.noFilesSelected"),
+          };
         }
 
         const uploadPath = targetPath || currentPath;
@@ -31,16 +34,17 @@ const FileUpload = memo(
           const relativePath = fileItem.relativePath || file.name;
 
           // 提取文件夹路径
-          if (relativePath.includes('/')) {
-            const parts = relativePath.split('/');
+          if (relativePath.includes("/")) {
+            const parts = relativePath.split("/");
             for (let i = 1; i < parts.length; i++) {
-              folderPaths.add(parts.slice(0, i).join('/'));
+              folderPaths.add(parts.slice(0, i).join("/"));
             }
           }
 
-          const remotePath = uploadPath === "/" || uploadPath === "~"
-            ? `${uploadPath}/${relativePath}`
-            : `${uploadPath}/${relativePath}`;
+          const remotePath =
+            uploadPath === "/" || uploadPath === "~"
+              ? `${uploadPath}/${relativePath}`
+              : `${uploadPath}/${relativePath}`;
 
           uploadTasks.push({
             file,
@@ -50,7 +54,10 @@ const FileUpload = memo(
         }
 
         if (uploadTasks.length === 0) {
-          return { success: false, error: t("fileManager.errors.noValidFiles") };
+          return {
+            success: false,
+            error: t("fileManager.errors.noValidFiles"),
+          };
         }
 
         // 启动传输
@@ -58,7 +65,11 @@ const FileUpload = memo(
 
         try {
           // 如果有文件夹需要创建，先创建文件夹结构
-          if (folderPaths.size > 0 && window.terminalAPI && window.terminalAPI.createRemoteFolders) {
+          if (
+            folderPaths.size > 0 &&
+            window.terminalAPI &&
+            window.terminalAPI.createRemoteFolders
+          ) {
             onTransferUpdate({
               fileName: t("fileManager.messages.creatingFolders"),
               progress: 0,
@@ -66,9 +77,10 @@ const FileUpload = memo(
 
             const sortedFolders = Array.from(folderPaths).sort();
             for (const folder of sortedFolders) {
-              const folderPath = uploadPath === "/" || uploadPath === "~"
-                ? `${uploadPath}/${folder}`
-                : `${uploadPath}/${folder}`;
+              const folderPath =
+                uploadPath === "/" || uploadPath === "~"
+                  ? `${uploadPath}/${folder}`
+                  : `${uploadPath}/${folder}`;
 
               try {
                 await window.terminalAPI.createRemoteFolders(tabId, folderPath);
@@ -96,23 +108,28 @@ const FileUpload = memo(
                       speed: progress.speed,
                       eta: progress.eta,
                     });
-                  }
+                  },
                 );
 
                 if (result.success) {
                   completedCount++;
                 } else {
                   failedCount++;
-                  onError(`${t("fileManager.errors.uploadFailed")}: ${task.file.name} - ${result.error}`);
+                  onError(
+                    `${t("fileManager.errors.uploadFailed")}: ${task.file.name} - ${result.error}`,
+                  );
                 }
               }
             } catch (error) {
               failedCount++;
-              onError(`${t("fileManager.errors.uploadFailed")}: ${task.file.name} - ${error.message}`);
+              onError(
+                `${t("fileManager.errors.uploadFailed")}: ${task.file.name} - ${error.message}`,
+              );
             }
 
             onTransferUpdate({
-              totalProgress: ((completedCount + failedCount) / uploadTasks.length) * 100,
+              totalProgress:
+                ((completedCount + failedCount) / uploadTasks.length) * 100,
             });
           }
 
@@ -137,7 +154,16 @@ const FileUpload = memo(
           return { success: false, error: error.message };
         }
       },
-      [tabId, currentPath, t, onError, onTransferStart, onTransferUpdate, onTransferComplete, onSilentRefresh]
+      [
+        tabId,
+        currentPath,
+        t,
+        onError,
+        onTransferStart,
+        onTransferUpdate,
+        onTransferComplete,
+        onSilentRefresh,
+      ],
     );
 
     // 处理文件夹上传
@@ -161,9 +187,9 @@ const FileUpload = memo(
                   const dirPath = path.slice(0, -1); // 移除末尾的斜杠
                   if (dirPath) {
                     // 添加所有父文件夹路径
-                    const parts = dirPath.split('/');
+                    const parts = dirPath.split("/");
                     for (let i = 1; i <= parts.length; i++) {
-                      folderStructure.add(parts.slice(0, i).join('/'));
+                      folderStructure.add(parts.slice(0, i).join("/"));
                     }
                   }
                   resolve();
@@ -171,7 +197,7 @@ const FileUpload = memo(
                 (error) => {
                   console.error("Error reading file:", error);
                   resolve();
-                }
+                },
               );
             });
           } else if (entry.isDirectory) {
@@ -194,7 +220,7 @@ const FileUpload = memo(
                   (error) => {
                     console.error("Error reading directory:", error);
                     resolve(allEntries);
-                  }
+                  },
                 );
               };
               readEntries();
@@ -222,7 +248,7 @@ const FileUpload = memo(
         const uploadPath = targetPath || currentPath;
         return uploadFiles(allFiles, uploadPath);
       },
-      [uploadFiles, currentPath, t, onTransferStart, onTransferUpdate]
+      [uploadFiles, currentPath, t, onTransferStart, onTransferUpdate],
     );
 
     // 处理拖放上传
@@ -233,13 +259,18 @@ const FileUpload = memo(
 
         const items = e.dataTransfer.items;
         if (!items || items.length === 0) {
-          return { success: false, error: t("fileManager.errors.noItemsDropped") };
+          return {
+            success: false,
+            error: t("fileManager.errors.noItemsDropped"),
+          };
         }
 
         const entries = [];
         for (const item of items) {
           if (item.kind === "file") {
-            const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : item.getAsEntry();
+            const entry = item.webkitGetAsEntry
+              ? item.webkitGetAsEntry()
+              : item.getAsEntry();
             if (entry) {
               entries.push(entry);
             }
@@ -247,38 +278,45 @@ const FileUpload = memo(
         }
 
         if (entries.length === 0) {
-          return { success: false, error: t("fileManager.errors.noValidItems") };
+          return {
+            success: false,
+            error: t("fileManager.errors.noValidItems"),
+          };
         }
 
         // 确定目标路径
         let targetPath = currentPath;
         if (selectedFile && selectedFile.isDirectory) {
-          targetPath = currentPath === "/" || currentPath === "~"
-            ? `${currentPath}/${selectedFile.name}`
-            : `${currentPath}/${selectedFile.name}`;
+          targetPath =
+            currentPath === "/" || currentPath === "~"
+              ? `${currentPath}/${selectedFile.name}`
+              : `${currentPath}/${selectedFile.name}`;
         }
 
         // 分离文件和文件夹
-        const fileEntries = entries.filter(entry => entry.isFile);
-        const folderEntries = entries.filter(entry => entry.isDirectory);
+        const fileEntries = entries.filter((entry) => entry.isFile);
+        const folderEntries = entries.filter((entry) => entry.isDirectory);
 
         const results = [];
 
         // 处理文件
         if (fileEntries.length > 0) {
           const files = await Promise.all(
-            fileEntries.map(entry => new Promise((resolve) => {
-              entry.file(
-                (file) => resolve({ file, relativePath: file.name }),
-                (error) => {
-                  console.error("Error reading file:", error);
-                  resolve(null);
-                }
-              );
-            }))
+            fileEntries.map(
+              (entry) =>
+                new Promise((resolve) => {
+                  entry.file(
+                    (file) => resolve({ file, relativePath: file.name }),
+                    (error) => {
+                      console.error("Error reading file:", error);
+                      resolve(null);
+                    },
+                  );
+                }),
+            ),
           );
 
-          const validFiles = files.filter(f => f !== null);
+          const validFiles = files.filter((f) => f !== null);
           if (validFiles.length > 0) {
             const result = await uploadFiles(validFiles, targetPath);
             results.push(result);
@@ -292,8 +330,14 @@ const FileUpload = memo(
         }
 
         // 汇总结果
-        const totalCompleted = results.reduce((sum, r) => sum + (r.completed || 0), 0);
-        const totalFailed = results.reduce((sum, r) => sum + (r.failed || 0), 0);
+        const totalCompleted = results.reduce(
+          (sum, r) => sum + (r.completed || 0),
+          0,
+        );
+        const totalFailed = results.reduce(
+          (sum, r) => sum + (r.failed || 0),
+          0,
+        );
 
         return {
           success: totalFailed === 0,
@@ -301,7 +345,7 @@ const FileUpload = memo(
           failed: totalFailed,
         };
       },
-      [currentPath, selectedFile, t, uploadFiles, uploadFolder]
+      [currentPath, selectedFile, t, uploadFiles, uploadFolder],
     );
 
     return {
@@ -309,7 +353,7 @@ const FileUpload = memo(
       uploadFolder,
       handleDrop,
     };
-  }
+  },
 );
 
 FileUpload.displayName = "FileUpload";

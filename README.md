@@ -28,6 +28,7 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 ## **Features**
 
 ### 🔌 **Connection Management**
+
 - **Multi-Protocol Support**: SSH, Telnet, and local PowerShell terminals
 - **Connection Pooling**: Intelligent connection reuse to minimize resource usage
 - **Smart Tabs**: Drag-drop tab reordering, merging, and split-screen support
@@ -35,6 +36,7 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 - **Visual Server Map**: Geographic visualization of server locations worldwide
 
 ### 📁 **Advanced File Management**
+
 - **Full SFTP Browser**: Intuitive file browsing with drag-drop operations
 - **Bulk Transfers**: Upload/download entire folders with progress tracking
 - **Zero-Copy Engine**: High-performance file transfers with minimal memory usage
@@ -42,12 +44,14 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 - **File Preview**: Built-in viewer for text, images, code, and PDFs
 
 ### 🤖 **AI-Powered Assistant**
+
 - **Intelligent Command Helper**: AI assistant for command suggestions and explanations
 - **Multi-Model Support**: Configurable AI providers and models
 - **Streaming Responses**: Real-time AI responses with context awareness
 - **Worker Thread Processing**: Non-blocking AI operations for smooth performance
 
 ### 🎨 **User Experience**
+
 - **Modern UI**: Material-UI v7 with smooth animations and transitions
 - **Theme Support**: Dark and light modes with system preference detection
 - **Command History**: Intelligent command suggestions and auto-completion
@@ -55,12 +59,14 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 - **Shortcut Management**: Custom command shortcuts and macros
 
 ### 📊 **Monitoring & Tools**
+
 - **Resource Monitor**: Real-time CPU, memory, and network statistics
 - **Remote System Info**: Monitor remote server performance via SSH
 - **Network Diagnostics**: IP address lookup with geolocation
 - **Security Tools**: Built-in password generator with customizable rules
 
 ### ⚡ **Performance Optimizations**
+
 - **Lazy Loading**: Components loaded on-demand for faster startup
 - **Backpressure Control**: Stable file transfers with flow control
 - **Memory Management**: Active memory pool with leak detection
@@ -109,6 +115,7 @@ npm run start
 ```
 
 This will:
+
 - Start the Webpack dev server on port 3001
 - Launch Electron in development mode
 - Enable hot module replacement for React components
@@ -172,17 +179,20 @@ simpleshell/
 ## **Tech Stack**
 
 ### **Core Technologies**
+
 - **[Electron](https://www.electronjs.org/)** v37.4.0 - Cross-platform desktop framework
 - **[React](https://react.dev/)** v18.3.1 - UI library
 - **[Material-UI](https://mui.com/)** v7 - Component library
 - **[TypeScript](https://www.typescriptlang.org/)** - Type safety
 
 ### **Terminal & SSH**
+
 - **[xterm.js](https://xtermjs.org/)** - Terminal emulator
 - **[ssh2](https://github.com/mscdex/ssh2)** - SSH/SFTP client
 - **[node-pty](https://github.com/microsoft/node-pty)** - Pseudo terminal support
 
 ### **Additional Libraries**
+
 - **[CodeMirror](https://codemirror.net/)** - Code editor with syntax highlighting
 - **[i18next](https://www.i18next.com/)** - Internationalization
 - **[React Beautiful DnD](https://github.com/atlassian/react-beautiful-dnd)** - Drag and drop

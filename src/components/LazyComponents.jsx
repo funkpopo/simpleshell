@@ -143,11 +143,13 @@ const smartPreload = {
       }
       const loader = queue.shift();
       if (typeof loader === "function") {
-        Promise.resolve(loader()).catch(() => {}).finally(() => {
-          if (queue.length) {
-            scheduleNext();
-          }
-        });
+        Promise.resolve(loader())
+          .catch(() => {})
+          .finally(() => {
+            if (queue.length) {
+              scheduleNext();
+            }
+          });
       } else if (queue.length) {
         scheduleNext();
       }

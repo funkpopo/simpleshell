@@ -8,7 +8,8 @@ import React, {
 import { Paper, List, ListItem, ListItemText, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 
-const COMMAND_FONT = '13px "Fira Code", "Consolas", "Monaco", "Courier New", monospace';
+const COMMAND_FONT =
+  '13px "Fira Code", "Consolas", "Monaco", "Courier New", monospace';
 
 const measureCommandText = (() => {
   let canvas = null;
@@ -189,7 +190,6 @@ const CommandSuggestion = ({
   const handleDeleteSuggestion = useCallback(
     async (suggestion, index) => {
       try {
-
         // 调用删除API
         if (window.terminalAPI && window.terminalAPI.deleteCommandHistory) {
           await window.terminalAPI.deleteCommandHistory(suggestion.command);
@@ -225,7 +225,8 @@ const CommandSuggestion = ({
       // 仅当通过方向键激活并有有效选中项时，才拦截 Enter/Delete
       if (e.key === "Enter" || e.key === "Delete") {
         const hasValidSelection =
-          selectedIndexRef.current >= 0 && selectedIndexRef.current < suggestions.length;
+          selectedIndexRef.current >= 0 &&
+          selectedIndexRef.current < suggestions.length;
         if (!(keyboardNavigatedRef.current && hasValidSelection)) {
           // 未激活选择：放行，作为正常输入处理
           return;
@@ -382,7 +383,7 @@ const CommandSuggestion = ({
 
     // 计算光标下边缘位置（更稳定的定位）
     const cursorBottom =
-      position.cursorBottom ?? (position.y + (position.cursorHeight || 18));
+      position.cursorBottom ?? position.y + (position.cursorHeight || 18);
 
     // 计算上下可用空间
     const spaceBelow = Math.max(0, bounds.bottom - cursorBottom - gap);
@@ -414,7 +415,11 @@ const CommandSuggestion = ({
       bounds.bottom - bounds.top - padding * 2,
     );
     const sideSpace = showAbove ? spaceAbove : spaceBelow;
-    let finalHeight = Math.min(suggestionHeight, containerHeightAvailable, sideSpace);
+    let finalHeight = Math.min(
+      suggestionHeight,
+      containerHeightAvailable,
+      sideSpace,
+    );
     if (!Number.isFinite(finalHeight) || finalHeight <= 0) {
       // 最小显示高度回退
       finalHeight = Math.min(suggestionHeight, containerHeightAvailable);

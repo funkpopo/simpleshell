@@ -779,7 +779,11 @@ async function handleUploadFile(
             maybeReportOverall(fileName, i);
           } finally {
             // 归还会话
-            if (borrowed && sftpCore && typeof sftpCore.releaseSftpSession === "function") {
+            if (
+              borrowed &&
+              sftpCore &&
+              typeof sftpCore.releaseSftpSession === "function"
+            ) {
               sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
             }
           }
@@ -791,7 +795,10 @@ async function handleUploadFile(
             ? Math.floor(totalBytesToUpload / totalFilesToUpload)
             : 0;
         let dynamicParallelUpload = TRANSFER_TUNING.parallelFilesUpload;
-        if (totalFilesToUpload >= 8 && avgFileSize <= TRANSFER_TUNING.smallThreshold) {
+        if (
+          totalFilesToUpload >= 8 &&
+          avgFileSize <= TRANSFER_TUNING.smallThreshold
+        ) {
           // 小文件多：提高并发
           dynamicParallelUpload = Math.min(12, totalFilesToUpload);
         } else if (avgFileSize > TRANSFER_TUNING.mediumThreshold) {
@@ -1117,15 +1124,15 @@ async function handleUploadFolder(
 
           // 将目录按深度排序，确保父目录先创建
           const sortedDirs = Array.from(dirsToCreate).sort((a, b) => {
-            const depthA = a.split('/').filter(Boolean).length;
-            const depthB = b.split('/').filter(Boolean).length;
+            const depthA = a.split("/").filter(Boolean).length;
+            const depthB = b.split("/").filter(Boolean).length;
             return depthA - depthB;
           });
 
           // 并行创建同一层级的目录
           const dirsByDepth = {};
           for (const dir of sortedDirs) {
-            const depth = dir.split('/').filter(Boolean).length;
+            const depth = dir.split("/").filter(Boolean).length;
             if (!dirsByDepth[depth]) {
               dirsByDepth[depth] = [];
             }
@@ -1137,32 +1144,34 @@ async function handleUploadFolder(
             const dirsAtDepth = dirsByDepth[depth];
 
             // 并行创建同一层级的目录
-            await Promise.all(dirsAtDepth.map(async (dir) => {
-              // 检查取消状态
-              const currentTransfer = activeTransfers.get(transferKey);
-              if (!currentTransfer || currentTransfer.cancelled) {
-                throw new Error("Transfer cancelled by user");
-              }
-
-              try {
-                await createRemoteDirectoryRecursive(sftp, dir);
-                createdRemoteDirs.add(dir);
-              } catch (mkdirError) {
-                // 忽略已存在的目录错误
-                if (
-                  !mkdirError.message ||
-                  (!mkdirError.message.includes("Failure code is 4") &&
-                    !mkdirError.message.includes("already exists"))
-                ) {
-                  logToFile(
-                    `sftpTransfer: Error creating remote directory "${dir}": ${mkdirError.message}`,
-                    "ERROR",
-                  );
-                  throw mkdirError;
+            await Promise.all(
+              dirsAtDepth.map(async (dir) => {
+                // 检查取消状态
+                const currentTransfer = activeTransfers.get(transferKey);
+                if (!currentTransfer || currentTransfer.cancelled) {
+                  throw new Error("Transfer cancelled by user");
                 }
-                createdRemoteDirs.add(dir);
-              }
-            }));
+
+                try {
+                  await createRemoteDirectoryRecursive(sftp, dir);
+                  createdRemoteDirs.add(dir);
+                } catch (mkdirError) {
+                  // 忽略已存在的目录错误
+                  if (
+                    !mkdirError.message ||
+                    (!mkdirError.message.includes("Failure code is 4") &&
+                      !mkdirError.message.includes("already exists"))
+                  ) {
+                    logToFile(
+                      `sftpTransfer: Error creating remote directory "${dir}": ${mkdirError.message}`,
+                      "ERROR",
+                    );
+                    throw mkdirError;
+                  }
+                  createdRemoteDirs.add(dir);
+                }
+              }),
+            );
           }
         }
         logToFile(
@@ -1285,7 +1294,11 @@ async function handleUploadFolder(
           maybeReportOverall();
 
           // 归还会话
-          if (borrowed && sftpCore && typeof sftpCore.releaseSftpSession === "function") {
+          if (
+            borrowed &&
+            sftpCore &&
+            typeof sftpCore.releaseSftpSession === "function"
+          ) {
             sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
           }
         });
@@ -1763,7 +1776,11 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
             tr2.activeStreams.delete(writeStream);
           }
           // 归还会话
-          if (borrowed && sftpCore && typeof sftpCore.releaseSftpSession === "function") {
+          if (
+            borrowed &&
+            sftpCore &&
+            typeof sftpCore.releaseSftpSession === "function"
+          ) {
             sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
           }
         });
