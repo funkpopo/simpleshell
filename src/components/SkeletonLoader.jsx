@@ -627,7 +627,11 @@ export const LocalTerminalSidebarSkeleton = memo((props) => {
           gap: 1,
         }}
       >
-        <Typography variant="subtitle1" fontWeight="medium" sx={{ flexGrow: 1 }}>
+        <Typography
+          variant="subtitle1"
+          fontWeight="medium"
+          sx={{ flexGrow: 1 }}
+        >
           {t("localTerminal.title")}
         </Typography>
         <Tooltip title={t("localTerminal.refresh")}>
@@ -700,7 +704,9 @@ export const LocalTerminalSidebarSkeleton = memo((props) => {
                       <Skeleton variant="text" width="60%" height={16} />
                     </Box>
                   }
-                  secondary={<Skeleton variant="text" width="40%" height={12} />}
+                  secondary={
+                    <Skeleton variant="text" width="40%" height={12} />
+                  }
                 />
               </ListItemButton>
             </ListItem>

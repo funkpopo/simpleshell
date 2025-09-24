@@ -42,7 +42,11 @@ const findAvailablePort = async (preferredPorts, fallbackStart) => {
   const checked = new Set();
 
   for (const candidate of preferredPorts) {
-    if (!Number.isInteger(candidate) || candidate < MIN_PORT || candidate > MAX_PORT) {
+    if (
+      !Number.isInteger(candidate) ||
+      candidate < MIN_PORT ||
+      candidate > MAX_PORT
+    ) {
       continue;
     }
 
@@ -80,7 +84,10 @@ module.exports = async () => {
     DEFAULT_LOGGER_PORT,
   );
 
-  const devServerPort = await findAvailablePort([devPortPreference], devPortPreference);
+  const devServerPort = await findAvailablePort(
+    [devPortPreference],
+    devPortPreference,
+  );
 
   const loggerCandidates = [];
 

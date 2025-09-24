@@ -134,6 +134,11 @@ const Settings = memo(({ open, onClose }) => {
   const [prefetchEnabled, setPrefetchEnabled] = React.useState(true);
   const [terminalWebglEnabled, setTerminalWebglEnabled] = React.useState(true);
 
+  // DnD settings
+  const [dndEnabled, setDndEnabled] = React.useState(true);
+  const [dndAutoScroll, setDndAutoScroll] = React.useState(true);
+  const [dndCompactPreview, setDndCompactPreview] = React.useState(false);
+
   // 需要重启的设置变更标志
   const [needsRestart, setNeedsRestart] = React.useState(false);
   const [originalPerformanceSettings, setOriginalPerformanceSettings] =
@@ -164,6 +169,16 @@ const Settings = memo(({ open, onClose }) => {
               prefetchEnabled: true,
               webglEnabled: true,
             };
+            setImageSupported(performanceSettings.imageSupported !== false);
+            setCacheEnabled(performanceSettings.cacheEnabled !== false);
+            setPrefetchEnabled(performanceSettings.prefetchEnabled !== false);
+            setTerminalWebglEnabled(performanceSettings.webglEnabled !== false);
+
+            // DnD settings
+            const dnd = settings.dnd || {};
+            setDndEnabled(dnd.enabled !== false);
+            setDndAutoScroll(dnd.autoScroll !== false);
+            setDndCompactPreview(dnd.compactDragPreview === true);
 
             setImageSupported(performanceSettings.imageSupported !== false);
             setCacheEnabled(performanceSettings.cacheEnabled !== false);
@@ -303,6 +318,11 @@ const Settings = memo(({ open, onClose }) => {
             prefetchEnabled,
             webglEnabled: terminalWebglEnabled,
           },
+          dnd: {
+            enabled: dndEnabled,
+            autoScroll: dndAutoScroll,
+            compactDragPreview: dndCompactPreview,
+          },
         };
         await window.terminalAPI.saveUISettings(settings);
       }
@@ -339,6 +359,11 @@ const Settings = memo(({ open, onClose }) => {
               cacheEnabled,
               prefetchEnabled,
               webglEnabled: terminalWebglEnabled,
+            },
+            dnd: {
+              enabled: dndEnabled,
+              autoScroll: dndAutoScroll,
+              compactDragPreview: dndCompactPreview,
             },
           },
         }),
@@ -391,6 +416,41 @@ const Settings = memo(({ open, onClose }) => {
             </Box>
 
             <Divider sx={{ my: 2 }} />
+
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                {t("settings.dnd.title")}
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={dndEnabled}
+                    onChange={(e) => setDndEnabled(e.target.checked)}
+                  />
+                }
+                label={t("settings.dnd.enable")}
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={dndAutoScroll}
+                    onChange={(e) => setDndAutoScroll(e.target.checked)}
+                    disabled={!dndEnabled}
+                  />
+                }
+                label={t("settings.dnd.autoScroll")}
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={dndCompactPreview}
+                    onChange={(e) => setDndCompactPreview(e.target.checked)}
+                    disabled={!dndEnabled}
+                  />
+                }
+                label={t("settings.dnd.compactPreview")}
+              />
+            </Box>
 
             <Box sx={{ mb: 3 }}>
               <Typography variant="subtitle1" gutterBottom>
@@ -665,14 +725,20 @@ const Settings = memo(({ open, onClose }) => {
                             color="primary"
                           />
                         }
-                        label={t("settings.enableWebglRenderer", "启用 WebGL 渲染器")}
+                        label={t(
+                          "settings.enableWebglRenderer",
+                          "启用 WebGL 渲染器",
+                        )}
                       />
                       <Typography
                         variant="body2"
                         color="text.secondary"
                         sx={{ mt: 1 }}
                       >
-                        {t("settings.webglDescription", "使用 GPU 加速的渲染器提升长文本滚动性能")}
+                        {t(
+                          "settings.webglDescription",
+                          "使用 GPU 加速的渲染器提升长文本滚动性能",
+                        )}
                       </Typography>
                     </CardContent>
                   </Card>

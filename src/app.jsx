@@ -29,7 +29,6 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import PowerOffIcon from "@mui/icons-material/PowerOff";
 import FolderIcon from "@mui/icons-material/Folder";
 import SettingsIcon from "@mui/icons-material/Settings";
-import GroupAddIcon from "@mui/icons-material/GroupAdd";
 import AIIcon from "./components/AIIcon.jsx";
 import Tooltip from "@mui/material/Tooltip";
 import Paper from "@mui/material/Paper";
@@ -58,7 +57,6 @@ import SecurityTools from "./components/SecurityTools.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import AIChatWindow from "./components/AIChatWindow.jsx";
 import CustomTab from "./components/CustomTab.jsx";
-import MergedTabContent from "./components/MergedTabContent.jsx";
 import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
 import WindowControls from "./components/WindowControls.jsx";
 // Import i18n configuration
@@ -353,15 +351,8 @@ function App() {
 
   // 拖动标签状态
   const [draggedTabIndex, setDraggedTabIndex] = React.useState(null);
-  const [dragOverTabIndex, setDragOverTabIndex] = React.useState(null); // 新增：记录拖拽悬停的标签
-  const [dragOperation, setDragOperation] = React.useState(null); // 新增：记录拖拽操作类型 ('sort' | 'merge')
-  const [dragInsertPosition, setDragInsertPosition] = React.useState(null); // 新增：记录插入位置 ('before' | 'after')
-
-  // 合并标签状态 - 用于实现分屏显示
-  const [mergedTabs, setMergedTabs] = React.useState({}); // 格式: { tabId: [子标签列表] }
-
-  // 多选标签状态
-  const [selectedTabs, setSelectedTabs] = React.useState(new Set()); // 存储选中的标签ID
+  const [dragOverTabIndex, setDragOverTabIndex] = React.useState(null);
+  const [dragInsertPosition, setDragInsertPosition] = React.useState(null);
 
   // 主题模式状态
   const [darkMode, setDarkMode] = React.useState(true); // 默认值
@@ -420,9 +411,6 @@ function App() {
   React.useEffect(() => {
     scrollActiveTabIntoView();
   }, [scrollActiveTabIntoView, currentTab, tabs.length]);
-
-  // 分屏模式下的活跃标签页状态（用于控制右侧面板）
-  const [activeSplitTabId, setActiveSplitTabId] = React.useState(null);
 
   // 存储终端实例的缓存
   const [terminalInstances, setTerminalInstances] = React.useState({
@@ -642,71 +630,13 @@ function App() {
       handleSshProcessIdUpdate,
     );
 
-    // 监听分屏活跃标签页变化事件
-    const handleActiveSplitTabChanged = (event) => {
-      const { activeTabId } = event.detail || {};
-      if (activeTabId) {
-        setActiveSplitTabId(activeTabId);
-      }
-    };
-
-    const removeActiveSplitListener = eventManager.addEventListener(
-      window,
-      "activeSplitTabChanged",
-      handleActiveSplitTabChanged,
-    );
-
     return () => {
       // 清理预加载定时器
       clearTimeout(preloadTimer);
 
       removeSshListener();
-      removeActiveSplitListener();
     };
   }, []);
-
-  // 当活跃分屏标签页变化时，触发相关组件更新
-  React.useEffect(() => {
-    if (activeSplitTabId) {
-      // 延迟触发，确保状态已经更新
-      setTimeout(() => {
-        window.dispatchEvent(
-          new CustomEvent("activeSplitTabUpdated", {
-            detail: {
-              activeTabId: activeSplitTabId,
-              timestamp: Date.now(),
-            },
-          }),
-        );
-      }, 50);
-    }
-  }, [activeSplitTabId]);
-
-  // 当主标签页切换时，重置分屏活跃标签页状态
-  React.useEffect(() => {
-    // 如果当前标签页没有分屏，重置活跃分屏标签页
-    if (currentTab > 0 && tabs[currentTab]) {
-      const currentMainTab = tabs[currentTab];
-      const mergedTabsForCurrentMain = mergedTabs[currentMainTab.id];
-
-      if (!mergedTabsForCurrentMain || mergedTabsForCurrentMain.length <= 1) {
-        // 当前标签页没有分屏，重置活跃分屏标签页
-        if (activeSplitTabId) {
-          setActiveSplitTabId(null);
-        }
-      } else {
-        // 当前标签页有分屏，检查活跃标签是否还有效
-        if (
-          activeSplitTabId &&
-          !mergedTabsForCurrentMain.find((tab) => tab.id === activeSplitTabId)
-        ) {
-          setActiveSplitTabId(mergedTabsForCurrentMain[0]?.id || null);
-        } else if (!activeSplitTabId) {
-          setActiveSplitTabId(mergedTabsForCurrentMain[0]?.id || null);
-        }
-      }
-    }
-  }, [currentTab, tabs, mergedTabs, activeSplitTabId]);
 
   // 当连接列表更新时，同步更新置顶连接列表
   React.useEffect(() => {
@@ -1015,27 +945,6 @@ function App() {
     }
   };
 
-  // 处理标签页点击，支持多选
-  const handleTabClick = (e, index) => {
-    if (e.ctrlKey || e.metaKey) {
-      // Ctrl+点击进行多选
-      const tabId = tabs[index].id;
-      if (tabId !== "welcome") {
-        const newSelectedTabs = new Set(selectedTabs);
-        if (selectedTabs.has(tabId)) {
-          newSelectedTabs.delete(tabId);
-        } else {
-          newSelectedTabs.add(tabId);
-        }
-        setSelectedTabs(newSelectedTabs);
-      }
-    } else {
-      // 普通点击切换标签
-      setCurrentTab(index);
-      setSelectedTabs(new Set()); // 清除多选状态
-    }
-  };
-
   // 关闭标签页
   const handleCloseTab = (index) => {
     // 不能关闭欢迎页
@@ -1057,61 +966,29 @@ function App() {
       setResourceMonitorOpen(false);
     }
 
-    // 检查是否是合并的标签，如果是则需要清理合并状态
-    if (mergedTabs[tabToRemove.id]) {
-      const merged = mergedTabs[tabToRemove.id];
-      // 清理所有相关的终端实例
-      merged.forEach((tab) => {
-        // 如果合并标签中的任何一个标签正在使用文件管理器或资源监控，也关闭它
-        if (fileManagerOpen && fileManagerProps.tabId === tab.id) {
-          setFileManagerOpen(false);
-        }
-        if (
-          resourceMonitorOpen &&
-          currentPanelTab &&
-          currentPanelTab.id === tab.id
-        ) {
-          setResourceMonitorOpen(false);
-        }
+    // 从缓存中移除对应的终端实例
+    setTerminalInstances((prev) => {
+      const newInstances = { ...prev };
+      delete newInstances[tabToRemove.id];
+      delete newInstances[`${tabToRemove.id}-config`];
+      delete newInstances[`${tabToRemove.id}-processId`];
+      delete newInstances[`${tabToRemove.id}-refresh`];
+      return newInstances;
+    });
 
-        const newInstances = { ...terminalInstances };
-        delete newInstances[tab.id];
-        setTerminalInstances(newInstances);
+    // 清理进程缓存
+    setProcessCache((prev) => {
+      const newCache = { ...prev };
+      delete newCache[tabToRemove.id];
+      return newCache;
+    });
 
-        // 清理文件管理路径记忆
-        setFileManagerPaths((prev) => {
-          const newPaths = { ...prev };
-          delete newPaths[tab.id];
-          return newPaths;
-        });
-      });
-
-      // 清理合并状态
-      const newMergedTabs = { ...mergedTabs };
-      delete newMergedTabs[tabToRemove.id];
-      setMergedTabs(newMergedTabs);
-    } else {
-      // 从缓存中移除对应的终端实例
-      setTerminalInstances((prev) => {
-        const newInstances = { ...prev };
-        delete newInstances[tabToRemove.id];
-        return newInstances;
-      });
-
-      // 清理进程缓存
-      setProcessCache((prev) => {
-        const newCache = { ...prev };
-        delete newCache[tabToRemove.id];
-        return newCache;
-      });
-
-      // 清理文件管理路径记忆
-      setFileManagerPaths((prev) => {
-        const newPaths = { ...prev };
-        delete newPaths[tabToRemove.id];
-        return newPaths;
-      });
-    }
+    // 清理文件管理路径记忆
+    setFileManagerPaths((prev) => {
+      const newPaths = { ...prev };
+      delete newPaths[tabToRemove.id];
+      return newPaths;
+    });
 
     const newTabs = tabs.filter((_, i) => i !== index);
     setTabs(newTabs);
@@ -1149,94 +1026,95 @@ function App() {
     [tabs],
   );
 
-  // 处理拖动中 - 简化为仅支持排序
+  // 处理拖动中 - 仅用于排序提示
   const handleDragOver = (e, index) => {
     e.preventDefault();
-    // 不允许放置到欢迎标签
     if (index === 0) return;
+    if (draggedTabIndex === null || draggedTabIndex === index) return;
 
-    // 不是在自身上拖动
-    if (draggedTabIndex !== null && draggedTabIndex !== index) {
-      // 获取鼠标在目标标签内的相对位置来决定插入位置
-      const rect = e.currentTarget.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const tabWidth = rect.width;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const tabWidth = rect.width;
+    const position = mouseX <= tabWidth / 2 ? "before" : "after";
 
-      // 左半部分插入到前面，右半部分插入到后面
-      if (mouseX <= tabWidth / 2) {
-        // 左边缘：在目标标签之前插入
-        e.dataTransfer.dropEffect = "move";
-        setDragOperation("sort");
-        setDragOverTabIndex(index);
-        setDragInsertPosition("before");
-      } else {
-        // 右边缘：在目标标签之后插入
-        e.dataTransfer.dropEffect = "move";
-        setDragOperation("sort");
-        setDragOverTabIndex(index);
-        setDragInsertPosition("after");
-      }
-    }
+    e.dataTransfer.dropEffect = "move";
+    setDragOverTabIndex(index);
+    setDragInsertPosition(position);
   };
 
   // 处理拖动离开
   const handleDragLeave = (e) => {
-    // 只有当鼠标真正离开目标元素时才清理状态
     if (!e.currentTarget.contains(e.relatedTarget)) {
       setDragOverTabIndex(null);
-      setDragOperation(null);
       setDragInsertPosition(null);
     }
   };
 
-  // 处理放置 - 简化为仅支持排序
+  // 处理放置 - 仅支持排序
   const handleDrop = (e, targetIndex) => {
     e.preventDefault();
 
-    // 不允许放置到欢迎标签
     if (targetIndex === 0) return;
 
-    // 确保有拖动的标签
-    if (draggedTabIndex !== null) {
-      const sourceIndex = draggedTabIndex;
-
-      // 不需要拖放到自己身上
-      if (sourceIndex === targetIndex) {
-        // 重置拖动状态
-        setDraggedTabIndex(null);
-        setDragOverTabIndex(null);
-        setDragOperation(null);
-        setDragInsertPosition(null);
-        return;
+    const cleanupDragState = () => {
+      setDraggedTabIndex(null);
+      setDragOverTabIndex(null);
+      setDragInsertPosition(null);
+      if (e.currentTarget) {
+        e.currentTarget.style.opacity = "1";
       }
+    };
 
-      // 仅执行排序操作
-      if (dragOperation === "sort") {
-        let insertIndex = targetIndex;
-        if (dragInsertPosition === "after") {
-          insertIndex = targetIndex + 1;
+    let sourceIndex = draggedTabIndex;
+
+    if (sourceIndex === null) {
+      try {
+        const raw = e.dataTransfer?.getData("application/json");
+        if (raw) {
+          const payload = JSON.parse(raw);
+          if (payload?.type === "tab" && typeof payload.tabIndex === "number") {
+            sourceIndex = payload.tabIndex;
+          }
         }
-        reorderTab(sourceIndex, insertIndex);
+      } catch (error) {
+        console.warn("Failed to parse drag payload", error);
       }
     }
 
-    // 重置拖动状态
-    setDraggedTabIndex(null);
-    setDragOverTabIndex(null);
-    setDragOperation(null);
-    setDragInsertPosition(null);
-    e.target.style.opacity = "1";
+    if (sourceIndex === null) {
+      cleanupDragState();
+      return;
+    }
+
+    if (sourceIndex === targetIndex) {
+      cleanupDragState();
+      return;
+    }
+
+    const rect = e.currentTarget?.getBoundingClientRect();
+    const positionFromEvent = rect
+      ? e.clientX - rect.left <= rect.width / 2
+        ? "before"
+        : "after"
+      : "after";
+    const position = dragInsertPosition || positionFromEvent;
+
+    let insertIndex = targetIndex;
+    if (position === "after") {
+      insertIndex = targetIndex + 1;
+    }
+
+    reorderTab(sourceIndex, insertIndex);
+    cleanupDragState();
   };
 
   // 处理拖动结束（无论是否成功放置）
   const handleDragEnd = (e) => {
-    // 恢复透明度
     if (e.currentTarget) {
       e.currentTarget.style.opacity = "1";
     }
     setDraggedTabIndex(null);
     setDragOverTabIndex(null);
-    setDragOperation(null);
     setDragInsertPosition(null);
   };
 
@@ -1275,263 +1153,6 @@ function App() {
     },
     [tabs, currentTab],
   );
-
-  // 合并选中的标签页
-  const mergeSelectedTabs = useCallback(() => {
-    if (selectedTabs.size < 2) return;
-
-    const selectedTabsArray = Array.from(selectedTabs);
-    const tabIndices = selectedTabsArray
-      .map((tabId) => tabs.findIndex((tab) => tab.id === tabId))
-      .filter((index) => index !== -1)
-      .sort((a, b) => a - b);
-
-    if (tabIndices.length < 2) return;
-
-    // 使用第一个标签作为主标签
-    const mainTabIndex = tabIndices[0];
-    const mainTab = tabs[mainTabIndex];
-
-    // 获取主标签的当前合并状态
-    const mainMerged = mergedTabs[mainTab.id] || [mainTab];
-
-    // 收集所有要合并的标签
-    const allTabsToMerge = [...mainMerged];
-    const indicesToRemove = [];
-
-    for (let i = 1; i < tabIndices.length; i++) {
-      const tabIndex = tabIndices[i];
-      const tab = tabs[tabIndex];
-
-      // 如果是已经合并的标签，展开其内容
-      if (mergedTabs[tab.id]) {
-        allTabsToMerge.push(...mergedTabs[tab.id]);
-        // 清理旧的合并状态
-        delete mergedTabs[tab.id];
-      } else {
-        allTabsToMerge.push(tab);
-      }
-
-      indicesToRemove.push(tabIndex);
-    }
-
-    // 创建新的合并状态
-    const newMergedTabs = { ...mergedTabs };
-    newMergedTabs[mainTab.id] = allTabsToMerge;
-    setMergedTabs(newMergedTabs);
-
-    // 从标签列表中移除被合并的标签（倒序删除避免索引变化）
-    const newTabs = [...tabs];
-    indicesToRemove.reverse().forEach((index) => {
-      newTabs.splice(index, 1);
-    });
-    setTabs(newTabs);
-
-    // 调整当前标签索引
-    const removedBeforeMain = indicesToRemove.filter(
-      (index) => index < mainTabIndex,
-    ).length;
-    const newMainIndex = mainTabIndex - removedBeforeMain;
-    setCurrentTab(newMainIndex);
-
-    // 清除多选状态
-    setSelectedTabs(new Set());
-
-    // 触发布局更新
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-      window.dispatchEvent(
-        new CustomEvent("splitLayoutChanged", {
-          detail: {
-            type: "merge",
-            targetTabId: mainTab.id,
-            mergedTabs: newMergedTabs[mainTab.id],
-            timestamp: Date.now(),
-          },
-        }),
-      );
-    }, 50);
-  }, [selectedTabs, tabs, mergedTabs, currentTab]);
-
-  // 合并标签功能
-  const mergeTabIntoTarget = useCallback(
-    (sourceIndex, targetIndex) => {
-      if (
-        sourceIndex === targetIndex ||
-        !tabs[sourceIndex] ||
-        !tabs[targetIndex]
-      )
-        return;
-
-      const sourceTab = tabs[sourceIndex];
-      const targetTab = tabs[targetIndex];
-
-      // 不能合并欢迎页
-      if (sourceTab.id === "welcome" || targetTab.id === "welcome") return;
-
-      // 获取目标标签的当前合并状态
-      const targetMerged = mergedTabs[targetTab.id] || [targetTab];
-
-      // 创建新的合并状态
-      const newMergedTabs = { ...mergedTabs };
-      newMergedTabs[targetTab.id] = [...targetMerged, sourceTab];
-
-      setMergedTabs(newMergedTabs);
-
-      // 优化：仅触发布局调整，不重新建立连接
-      setTimeout(() => {
-        // 触发窗口resize事件，确保终端适配新的分屏布局
-        window.dispatchEvent(new Event("resize"));
-
-        // 触发自定义事件通知MergedTabContent组件进行布局更新
-        window.dispatchEvent(
-          new CustomEvent("splitLayoutChanged", {
-            detail: {
-              type: "merge",
-              targetTabId: targetTab.id,
-              mergedTabs: newMergedTabs[targetTab.id],
-              timestamp: Date.now(),
-            },
-          }),
-        );
-      }, 50);
-
-      // 从标签列表中移除源标签
-      const newTabs = tabs.filter((_, index) => index !== sourceIndex);
-      setTabs(newTabs);
-
-      // 调整当前标签索引
-      if (currentTab === sourceIndex) {
-        setCurrentTab(
-          targetIndex > sourceIndex ? targetIndex - 1 : targetIndex,
-        );
-      } else if (currentTab > sourceIndex) {
-        setCurrentTab(currentTab - 1);
-      }
-    },
-    [tabs, mergedTabs, currentTab],
-  );
-
-  // 拆分合并的标签
-  const splitMergedTab = useCallback(
-    (mainTabId) => {
-      const merged = mergedTabs[mainTabId];
-      if (!merged || merged.length <= 1) return;
-
-      // 拆分会话前自动关闭所有已展开的侧边栏
-      setConnectionManagerOpen(false);
-      setResourceMonitorOpen(false);
-      setFileManagerOpen(false);
-      setShortcutCommandsOpen(false);
-      setCommandHistoryOpen(false);
-      setIpAddressQueryOpen(false);
-      setSecurityToolsOpen(false);
-
-      // 找到主标签在tabs中的位置
-      const mainTabIndex = tabs.findIndex((tab) => tab.id === mainTabId);
-      if (mainTabIndex === -1) return;
-
-      // 创建新的标签列表，在主标签后插入子标签
-      const newTabs = [...tabs];
-      const subTabs = merged.slice(1); // 跳过第一个(主标签)
-
-      // 在主标签后插入子标签
-      newTabs.splice(mainTabIndex + 1, 0, ...subTabs);
-      setTabs(newTabs);
-
-      // 移除合并状态
-      const newMergedTabs = { ...mergedTabs };
-      delete newMergedTabs[mainTabId];
-      setMergedTabs(newMergedTabs);
-
-      // 立即触发标签切换到第一个拆分的标签，确保它被激活
-      setTimeout(() => {
-        setCurrentTab(mainTabIndex);
-      }, 10);
-
-      // 第一阶段：重新建立SSH连接（50ms后）
-      setTimeout(() => {
-        merged.forEach((tab, index) => {
-          if (tab && tab.id) {
-            // 先清除旧的终端实例和连接
-            setTerminalInstances((prev) => {
-              const newInstances = { ...prev };
-              delete newInstances[tab.id];
-              delete newInstances[`${tab.id}-config`];
-              delete newInstances[`${tab.id}-processId`];
-              delete newInstances[`${tab.id}-refresh`];
-              return newInstances;
-            });
-
-            // 为拆分的标签重新建立连接配置
-            setTimeout(() => {
-              // 获取原始的SSH配置
-              const originalConfig = terminalInstances[`${tab.id}-config`];
-              if (
-                originalConfig &&
-                (originalConfig.protocol === "ssh" ||
-                  originalConfig.protocol === "telnet" ||
-                  tab.type === "ssh")
-              ) {
-                // 创建新的连接配置，带有拆分标记
-                const splitConfig = {
-                  ...originalConfig,
-                  tabId: tab.id,
-                  splitReconnect: true, // 标记这是拆分重连
-                  splitTimestamp: Date.now(),
-                };
-
-                // 重新创建终端实例
-                setTerminalInstances((prev) => ({
-                  ...prev,
-                  [tab.id]: true,
-                  [`${tab.id}-config`]: splitConfig,
-                  [`${tab.id}-processId`]: null,
-                  [`${tab.id}-refresh`]: Date.now(), // 强制刷新
-                }));
-              } else {
-                // 对于本地终端或其他类型
-                setTerminalInstances((prev) => ({
-                  ...prev,
-                  [tab.id]: true,
-                  [`${tab.id}-refresh`]: Date.now(),
-                }));
-              }
-            }, index * 100); // 为每个标签错开重连时间，避免并发问题
-          }
-        });
-
-        // 触发基础布局调整
-        window.dispatchEvent(new Event("resize"));
-
-        // 触发自定义事件通知终端组件进行布局更新
-        window.dispatchEvent(
-          new CustomEvent("splitLayoutChanged", {
-            detail: {
-              type: "split",
-              mainTabId: mainTabId,
-              splitTabs: merged,
-              reconnectMode: true, // 标记这是重连模式
-              timestamp: Date.now(),
-            },
-          }),
-        );
-      }, 50);
-    },
-    [
-      tabs,
-      mergedTabs,
-      terminalInstances,
-      processCache,
-      setConnectionManagerOpen,
-      setResourceMonitorOpen,
-      setFileManagerOpen,
-      setShortcutCommandsOpen,
-      setCommandHistoryOpen,
-      setIpAddressQueryOpen,
-      setSecurityToolsOpen,
-    ],
-  ); // 添加所有相关依赖
 
   // 切换资源监控侧边栏
   const toggleResourceMonitor = useCallback(() => {
@@ -1715,7 +1336,6 @@ function App() {
   // 启动本地终端的处理函数（仅启动外部终端，不在应用中创建标签页）
   const handleLaunchLocalTerminal = useCallback(async (terminalConfig) => {
     try {
-
       if (window.terminalAPI?.launchLocalTerminal) {
         const terminalId = `local-${Date.now()}`;
 
@@ -1785,37 +1405,11 @@ function App() {
 
   // 获取右侧面板应该使用的当前标签页信息
   const getCurrentPanelTab = useCallback(() => {
-    // 如果在分屏模式下且有活跃的分屏标签页，优先使用分屏标签页
-    if (activeSplitTabId) {
-      // 首先查找是否有当前标签页的合并标签
-      if (currentTab > 0 && tabs[currentTab]) {
-        const currentMainTab = tabs[currentTab];
-        const mergedTabsForCurrentMain = mergedTabs[currentMainTab.id];
-
-        if (mergedTabsForCurrentMain && mergedTabsForCurrentMain.length > 1) {
-          // 在合并的标签中查找活跃的分屏标签
-          const activeTab = mergedTabsForCurrentMain.find(
-            (tab) => tab.id === activeSplitTabId,
-          );
-          if (activeTab) {
-            return activeTab;
-          }
-        }
-      }
-
-      // 如果在合并标签中没找到，则在全局标签中查找
-      const globalTab = tabs.find((t) => t.id === activeSplitTabId);
-      if (globalTab) {
-        return globalTab;
-      }
-    }
-
-    // 否则使用当前主标签页
     if (currentTab > 0 && tabs[currentTab]) {
       return tabs[currentTab];
     }
     return null;
-  }, [activeSplitTabId, tabs, currentTab, mergedTabs]);
+  }, [tabs, currentTab]);
 
   // 计算右侧面板的当前标签页信息
   const currentPanelTab = getCurrentPanelTab();
@@ -2127,52 +1721,39 @@ function App() {
                     },
                   }}
                 >
-                  {tabs.map((tab, index) => {
-                    // 为合并的标签页生成复合名称
-                    const displayLabel =
-                      mergedTabs[tab.id] && mergedTabs[tab.id].length > 1
-                        ? mergedTabs[tab.id].map((t) => t.label).join(" | ")
-                        : tab.label;
-
-                    return (
-                      <CustomTab
-                        key={tab.id}
-                        label={displayLabel}
-                        onClose={
-                          tab.id !== "welcome" ? () => handleCloseTab(index) : null
-                        }
-                        onContextMenu={(e) =>
-                          handleTabContextMenu(e, index, tab.id)
-                        }
-                        onClick={(e) => handleTabClick(e, index)}
-                        onDragStart={(e) => handleDragStart(e, index)}
-                        onDragOver={(e) => handleDragOver(e, index)}
-                        onDragLeave={handleDragLeave}
-                        onDrop={(e) => handleDrop(e, index)}
-                        onDragEnd={handleDragEnd}
-                        value={index}
-                        selected={currentTab === index}
-                        isSelected={selectedTabs.has(tab.id)}
-                        index={index}
-                        tabId={tab.id}
-                        isDraggedOver={
-                          draggedTabIndex !== null &&
-                          dragOverTabIndex === index &&
-                          draggedTabIndex !== index
-                        }
-                        dragOperation={
-                          draggedTabIndex !== null && dragOverTabIndex === index
-                            ? dragOperation
-                            : null
-                        }
-                        dragInsertPosition={
-                          draggedTabIndex !== null && dragOverTabIndex === index
-                            ? dragInsertPosition
-                            : null
-                        }
-                      />
-                    );
-                  })}
+                  {tabs.map((tab, index) => (
+                    <CustomTab
+                      key={tab.id}
+                      label={tab.label}
+                      onClose={
+                        tab.id !== "welcome"
+                          ? () => handleCloseTab(index)
+                          : null
+                      }
+                      onContextMenu={(e) =>
+                        handleTabContextMenu(e, index, tab.id)
+                      }
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, index)}
+                      onDragEnd={handleDragEnd}
+                      value={index}
+                      selected={currentTab === index}
+                      index={index}
+                      tabId={tab.id}
+                      isDraggedOver={
+                        draggedTabIndex !== null &&
+                        dragOverTabIndex === index &&
+                        draggedTabIndex !== index
+                      }
+                      dragInsertPosition={
+                        draggedTabIndex !== null && dragOverTabIndex === index
+                          ? dragInsertPosition
+                          : null
+                      }
+                    />
+                  ))}
                 </Tabs>
               </Box>
 
@@ -2191,8 +1772,6 @@ function App() {
                 <NetworkLatencyIndicator
                   currentTab={currentTab}
                   tabs={tabs}
-                  mergedTabs={mergedTabs}
-                  activeSplitTabId={activeSplitTabId}
                   placement="inline"
                 />
               </Box>
@@ -2225,34 +1804,6 @@ function App() {
               <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
               {t("tabMenu.close")}
             </MenuItem>
-
-            {/* 合并选中标签选项 - 仅在有多个标签被选中时显示 */}
-            {selectedTabs.size > 1 && (
-              <MenuItem
-                onClick={() => {
-                  mergeSelectedTabs();
-                  handleTabContextMenuClose();
-                }}
-              >
-                <GroupAddIcon fontSize="small" sx={{ mr: 1 }} />
-                合并标签页 ({selectedTabs.size})
-              </MenuItem>
-            )}
-
-            {/* 拆分会话选项 - 仅对合并的标签显示 */}
-            {tabContextMenu.tabId &&
-              mergedTabs[tabContextMenu.tabId] &&
-              mergedTabs[tabContextMenu.tabId].length > 1 && (
-                <MenuItem
-                  onClick={() => {
-                    splitMergedTab(tabContextMenu.tabId);
-                    handleTabContextMenuClose();
-                  }}
-                >
-                  <TerminalIcon fontSize="small" sx={{ mr: 1 }} />
-                  拆分会话
-                </MenuItem>
-              )}
             {/* 分组相关菜单项 */}
             {(() => {
               const tabId = tabContextMenu.tabId;
@@ -2298,10 +1849,7 @@ function App() {
                 );
               }
               if (groupMenuItems.length > 0) {
-                return [
-                  <Divider key="group-divider-top" />,
-                  ...groupMenuItems,
-                ];
+                return [<Divider key="group-divider-top" />, ...groupMenuItems];
               }
               return null;
             })()}
@@ -2389,10 +1937,15 @@ function App() {
                     }}
                   >
                     {terminalInstances[tab.id] && (
-                      <MergedTabContent
-                        mergedTabs={mergedTabs[tab.id] || [tab]}
-                        terminalInstances={terminalInstances}
-                        currentTabId={tab.id}
+                      <WebTerminal
+                        tabId={tab.id}
+                        refreshKey={terminalInstances[`${tab.id}-refresh`]}
+                        sshConfig={
+                          tab.type === "ssh"
+                            ? terminalInstances[`${tab.id}-config`]
+                            : null
+                        }
+                        isActive={isActive}
                       />
                     )}
                   </Box>

@@ -79,7 +79,7 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
         await window.terminalAPI.manualReconnect({
           tabId,
           processId,
-          sshConfig
+          sshConfig,
         });
       } catch (error) {
         console.error("手动重连失败:", error);
@@ -109,19 +109,20 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
               </Button>
             }
           >
-            <Typography variant="body2">
-              SSH连接已断开
-            </Typography>
+            <Typography variant="body2">SSH连接已断开</Typography>
           </Alert>
         );
 
       case "reconnecting":
         return (
-          <Alert severity="info" icon={<RefreshIcon className="reconnect-spin" />}>
+          <Alert
+            severity="info"
+            icon={<RefreshIcon className="reconnect-spin" />}
+          >
             <Typography variant="body2">
               正在重新连接... (尝试 {reconnectAttempts}/5)
             </Typography>
-            <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+            <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
               每3秒重试一次
             </Typography>
           </Alert>
@@ -130,9 +131,7 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
       case "success":
         return (
           <Alert severity="success" icon={<CheckCircleIcon />}>
-            <Typography variant="body2">
-              连接已恢复
-            </Typography>
+            <Typography variant="body2">连接已恢复</Typography>
           </Alert>
         );
 
@@ -152,9 +151,7 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
               </Button>
             }
           >
-            <Typography variant="body2">
-              重连失败，请检查网络连接
-            </Typography>
+            <Typography variant="body2">重连失败，请检查网络连接</Typography>
           </Alert>
         );
 
@@ -174,9 +171,9 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
       }}
       sx={{
         mt: 2,
-        '& .MuiAlert-root': {
-          minWidth: '350px'
-        }
+        "& .MuiAlert-root": {
+          minWidth: "350px",
+        },
       }}
     >
       <Box>{getStatusContent()}</Box>

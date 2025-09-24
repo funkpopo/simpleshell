@@ -242,7 +242,7 @@ const getLanguageMode = (filename) => {
 
     // Java/Kotlin/Scala
     java: java,
-    kt: java,  // Kotlin 使用 Java 高亮
+    kt: java, // Kotlin 使用 Java 高亮
     kts: java,
     scala: java,
     sc: java,
@@ -357,7 +357,17 @@ const getLanguageMode = (filename) => {
   }
 
   // 检查常见的文本文件扩展名
-  const textExtensions = ["txt", "log", "out", "err", "tmp", "temp", "bak", "old", "orig"];
+  const textExtensions = [
+    "txt",
+    "log",
+    "out",
+    "err",
+    "tmp",
+    "temp",
+    "bak",
+    "old",
+    "orig",
+  ];
   if (textExtensions.includes(ext)) {
     return null; // 纯文本文件
   }
@@ -387,7 +397,11 @@ const getLanguageMode = (filename) => {
     return null; // R 使用默认高亮
   }
 
-  if (baseName === "cargo.toml" || baseName === "pyproject.toml" || baseName === "gopkg.toml") {
+  if (
+    baseName === "cargo.toml" ||
+    baseName === "pyproject.toml" ||
+    baseName === "gopkg.toml"
+  ) {
     return null; // TOML 文件，使用默认高亮
   }
 
@@ -397,7 +411,11 @@ const getLanguageMode = (filename) => {
   }
 
   // Git 文件
-  if (baseName === ".gitignore" || baseName === ".gitattributes" || baseName === ".gitmodules") {
+  if (
+    baseName === ".gitignore" ||
+    baseName === ".gitattributes" ||
+    baseName === ".gitmodules"
+  ) {
     return null;
   }
 
@@ -444,7 +462,11 @@ const getLanguageMode = (filename) => {
   }
 
   // PowerShell
-  if (baseName.endsWith(".ps1") || baseName.endsWith(".psm1") || baseName.endsWith(".psd1")) {
+  if (
+    baseName.endsWith(".ps1") ||
+    baseName.endsWith(".psm1") ||
+    baseName.endsWith(".psd1")
+  ) {
     return null;
   }
 
@@ -741,7 +763,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     }
   }, [file, content, modified, tabId, fullPath]);
 
-
   useEffect(() => {
     if (!open) return;
 
@@ -754,7 +775,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       const target = event.target;
       const activeElement = document.activeElement;
       const isInsideDialog =
-        (target && typeof target.closest === "function" && target.closest(selector)) ||
+        (target &&
+          typeof target.closest === "function" &&
+          target.closest(selector)) ||
         (activeElement &&
           typeof activeElement.closest === "function" &&
           activeElement.closest(selector));
@@ -937,7 +960,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             height: "8px",
           },
           "&::-webkit-scrollbar-track": {
-            backgroundColor: theme.palette.mode === "dark" ? "#2d2d2d" : "#f1f1f1",
+            backgroundColor:
+              theme.palette.mode === "dark" ? "#2d2d2d" : "#f1f1f1",
           },
           "&::-webkit-scrollbar-thumb": {
             backgroundColor: theme.palette.mode === "dark" ? "#555" : "#888",
@@ -1170,7 +1194,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         sx: {
           minHeight: isPdfFile(file?.name) ? "85vh" : "70vh",
           maxHeight: isPdfFile(file?.name) ? "95vh" : "85vh",
-          minWidth: isPdfFile(file?.name) ? "min(1024px, 95vw)" : "min(900px, 90vw)",
+          minWidth: isPdfFile(file?.name)
+            ? "min(1024px, 95vw)"
+            : "min(900px, 90vw)",
           display: "flex",
           flexDirection: "column",
         },
@@ -1275,7 +1301,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             height: "8px",
           },
           "&::-webkit-scrollbar-track": {
-            backgroundColor: theme.palette.mode === "dark" ? "#2d2d2d" : "#f1f1f1",
+            backgroundColor:
+              theme.palette.mode === "dark" ? "#2d2d2d" : "#f1f1f1",
           },
           "&::-webkit-scrollbar-thumb": {
             backgroundColor: theme.palette.mode === "dark" ? "#555" : "#888",

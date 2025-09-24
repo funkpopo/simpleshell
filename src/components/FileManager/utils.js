@@ -103,23 +103,67 @@ export const getFileIcon = (file) => {
 export const isBinaryFile = (fileName) => {
   const binaryExtensions = [
     // 可执行文件
-    "exe", "dll", "so", "dylib", "app",
+    "exe",
+    "dll",
+    "so",
+    "dylib",
+    "app",
     // 压缩文件
-    "zip", "rar", "tar", "gz", "bz2", "xz", "7z",
+    "zip",
+    "rar",
+    "tar",
+    "gz",
+    "bz2",
+    "xz",
+    "7z",
     // 图片文件
-    "jpg", "jpeg", "png", "gif", "bmp", "ico", "webp", "svg",
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "bmp",
+    "ico",
+    "webp",
+    "svg",
     // 音频文件
-    "mp3", "wav", "flac", "aac", "ogg", "wma", "m4a",
+    "mp3",
+    "wav",
+    "flac",
+    "aac",
+    "ogg",
+    "wma",
+    "m4a",
     // 视频文件
-    "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm",
+    "mp4",
+    "avi",
+    "mkv",
+    "mov",
+    "wmv",
+    "flv",
+    "webm",
     // 文档文件
-    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "pdf",
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "ppt",
+    "pptx",
     // 字体文件
-    "ttf", "otf", "woff", "woff2", "eot",
+    "ttf",
+    "otf",
+    "woff",
+    "woff2",
+    "eot",
     // 数据库文件
-    "db", "sqlite", "mdb",
+    "db",
+    "sqlite",
+    "mdb",
     // 其他二进制文件
-    "bin", "dat", "iso", "img",
+    "bin",
+    "dat",
+    "iso",
+    "img",
   ];
 
   const extension = fileName.split(".").pop().toLowerCase();
@@ -130,15 +174,58 @@ export const isBinaryFile = (fileName) => {
 export const isTextFile = (fileName) => {
   const textExtensions = [
     // 代码文件
-    "js", "jsx", "ts", "tsx", "py", "java", "c", "cpp", "cs", "go", "rs", "php", "rb", "swift", "kt", "scala", "r",
+    "js",
+    "jsx",
+    "ts",
+    "tsx",
+    "py",
+    "java",
+    "c",
+    "cpp",
+    "cs",
+    "go",
+    "rs",
+    "php",
+    "rb",
+    "swift",
+    "kt",
+    "scala",
+    "r",
     // 标记和配置文件
-    "html", "css", "scss", "sass", "less", "xml", "json", "yaml", "yml", "toml", "ini", "conf", "cfg",
+    "html",
+    "css",
+    "scss",
+    "sass",
+    "less",
+    "xml",
+    "json",
+    "yaml",
+    "yml",
+    "toml",
+    "ini",
+    "conf",
+    "cfg",
     // 文档文件
-    "md", "markdown", "txt", "log", "csv", "tsv",
+    "md",
+    "markdown",
+    "txt",
+    "log",
+    "csv",
+    "tsv",
     // 脚本文件
-    "sh", "bash", "bat", "cmd", "ps1", "sql",
+    "sh",
+    "bash",
+    "bat",
+    "cmd",
+    "ps1",
+    "sql",
     // 其他文本文件
-    "env", "gitignore", "dockerignore", "editorconfig", "eslintrc", "prettierrc",
+    "env",
+    "gitignore",
+    "dockerignore",
+    "editorconfig",
+    "eslintrc",
+    "prettierrc",
   ];
 
   const extension = fileName.split(".").pop().toLowerCase();
@@ -147,7 +234,16 @@ export const isTextFile = (fileName) => {
 
 // 判断是否为图片文件
 export const isImageFile = (fileName) => {
-  const imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "ico", "webp", "svg"];
+  const imageExtensions = [
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "bmp",
+    "ico",
+    "webp",
+    "svg",
+  ];
   const extension = fileName.split(".").pop().toLowerCase();
   return imageExtensions.includes(extension);
 };
@@ -172,7 +268,9 @@ export const sortFiles = (files, sortBy = "name", sortOrder = "asc") => {
         comparison = (a.size || 0) - (b.size || 0);
         break;
       case "modifiedTime":
-        comparison = new Date(a.modifiedTime || 0).getTime() - new Date(b.modifiedTime || 0).getTime();
+        comparison =
+          new Date(a.modifiedTime || 0).getTime() -
+          new Date(b.modifiedTime || 0).getTime();
         break;
       default:
         comparison = 0;
@@ -187,9 +285,7 @@ export const filterFiles = (files, searchTerm) => {
   if (!searchTerm) return files;
 
   const term = searchTerm.toLowerCase();
-  return files.filter(file =>
-    file.name.toLowerCase().includes(term)
-  );
+  return files.filter((file) => file.name.toLowerCase().includes(term));
 };
 
 // 获取文件路径

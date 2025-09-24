@@ -17,12 +17,16 @@ const FileDownload = memo(
       async (file) => {
         if (!file || file.isDirectory) {
           onError(t("fileManager.errors.cannotDownloadDirectory"));
-          return { success: false, error: t("fileManager.errors.cannotDownloadDirectory") };
+          return {
+            success: false,
+            error: t("fileManager.errors.cannotDownloadDirectory"),
+          };
         }
 
-        const filePath = currentPath === "/" || currentPath === "~"
-          ? `${currentPath}/${file.name}`
-          : `${currentPath}/${file.name}`;
+        const filePath =
+          currentPath === "/" || currentPath === "~"
+            ? `${currentPath}/${file.name}`
+            : `${currentPath}/${file.name}`;
 
         onTransferStart(1);
 
@@ -39,7 +43,7 @@ const FileDownload = memo(
                   speed: progress.speed,
                   eta: progress.eta,
                 });
-              }
+              },
             );
 
             if (result.success) {
@@ -50,7 +54,9 @@ const FileDownload = memo(
               });
               return { success: true };
             } else {
-              onError(`${t("fileManager.errors.downloadFailed")}: ${result.error}`);
+              onError(
+                `${t("fileManager.errors.downloadFailed")}: ${result.error}`,
+              );
               onTransferComplete({
                 completed: 0,
                 failed: 1,
@@ -60,10 +66,15 @@ const FileDownload = memo(
             }
           } else {
             onError(t("fileManager.errors.fileApiNotAvailable"));
-            return { success: false, error: t("fileManager.errors.fileApiNotAvailable") };
+            return {
+              success: false,
+              error: t("fileManager.errors.fileApiNotAvailable"),
+            };
           }
         } catch (error) {
-          onError(`${t("fileManager.errors.downloadFailed")}: ${error.message}`);
+          onError(
+            `${t("fileManager.errors.downloadFailed")}: ${error.message}`,
+          );
           onTransferComplete({
             completed: 0,
             failed: 1,
@@ -72,7 +83,15 @@ const FileDownload = memo(
           return { success: false, error: error.message };
         }
       },
-      [tabId, currentPath, t, onError, onTransferStart, onTransferUpdate, onTransferComplete]
+      [
+        tabId,
+        currentPath,
+        t,
+        onError,
+        onTransferStart,
+        onTransferUpdate,
+        onTransferComplete,
+      ],
     );
 
     // 批量下载文件
@@ -80,15 +99,21 @@ const FileDownload = memo(
       async (files) => {
         if (!files || files.length === 0) {
           onError(t("fileManager.errors.noFilesSelected"));
-          return { success: false, error: t("fileManager.errors.noFilesSelected") };
+          return {
+            success: false,
+            error: t("fileManager.errors.noFilesSelected"),
+          };
         }
 
         // 过滤出文件（排除文件夹）
-        const filesToDownload = files.filter(f => !f.isDirectory);
+        const filesToDownload = files.filter((f) => !f.isDirectory);
 
         if (filesToDownload.length === 0) {
           onError(t("fileManager.errors.noValidFilesToDownload"));
-          return { success: false, error: t("fileManager.errors.noValidFilesToDownload") };
+          return {
+            success: false,
+            error: t("fileManager.errors.noValidFilesToDownload"),
+          };
         }
 
         onTransferStart(filesToDownload.length);
@@ -97,9 +122,10 @@ const FileDownload = memo(
         let failedCount = 0;
 
         for (const file of filesToDownload) {
-          const filePath = currentPath === "/" || currentPath === "~"
-            ? `${currentPath}/${file.name}`
-            : `${currentPath}/${file.name}`;
+          const filePath =
+            currentPath === "/" || currentPath === "~"
+              ? `${currentPath}/${file.name}`
+              : `${currentPath}/${file.name}`;
 
           try {
             if (window.terminalAPI && window.terminalAPI.downloadFile) {
@@ -113,25 +139,34 @@ const FileDownload = memo(
                     progress: progress.percent,
                     speed: progress.speed,
                     eta: progress.eta,
-                    totalProgress: ((completedCount + failedCount) / filesToDownload.length) * 100 + (progress.percent / filesToDownload.length),
+                    totalProgress:
+                      ((completedCount + failedCount) /
+                        filesToDownload.length) *
+                        100 +
+                      progress.percent / filesToDownload.length,
                   });
-                }
+                },
               );
 
               if (result.success) {
                 completedCount++;
               } else {
                 failedCount++;
-                onError(`${t("fileManager.errors.downloadFailed")}: ${file.name} - ${result.error}`);
+                onError(
+                  `${t("fileManager.errors.downloadFailed")}: ${file.name} - ${result.error}`,
+                );
               }
             }
           } catch (error) {
             failedCount++;
-            onError(`${t("fileManager.errors.downloadFailed")}: ${file.name} - ${error.message}`);
+            onError(
+              `${t("fileManager.errors.downloadFailed")}: ${file.name} - ${error.message}`,
+            );
           }
 
           onTransferUpdate({
-            totalProgress: ((completedCount + failedCount) / filesToDownload.length) * 100,
+            totalProgress:
+              ((completedCount + failedCount) / filesToDownload.length) * 100,
           });
         }
 
@@ -147,7 +182,15 @@ const FileDownload = memo(
           failed: failedCount,
         };
       },
-      [tabId, currentPath, t, onError, onTransferStart, onTransferUpdate, onTransferComplete]
+      [
+        tabId,
+        currentPath,
+        t,
+        onError,
+        onTransferStart,
+        onTransferUpdate,
+        onTransferComplete,
+      ],
     );
 
     // 下载文件夹（打包为zip）
@@ -155,12 +198,16 @@ const FileDownload = memo(
       async (folder) => {
         if (!folder || !folder.isDirectory) {
           onError(t("fileManager.errors.notADirectory"));
-          return { success: false, error: t("fileManager.errors.notADirectory") };
+          return {
+            success: false,
+            error: t("fileManager.errors.notADirectory"),
+          };
         }
 
-        const folderPath = currentPath === "/" || currentPath === "~"
-          ? `${currentPath}/${folder.name}`
-          : `${currentPath}/${folder.name}`;
+        const folderPath =
+          currentPath === "/" || currentPath === "~"
+            ? `${currentPath}/${folder.name}`
+            : `${currentPath}/${folder.name}`;
 
         onTransferStart(1);
 
@@ -177,7 +224,7 @@ const FileDownload = memo(
                   speed: progress.speed,
                   eta: progress.eta,
                 });
-              }
+              },
             );
 
             if (result.success) {
@@ -188,7 +235,9 @@ const FileDownload = memo(
               });
               return { success: true };
             } else {
-              onError(`${t("fileManager.errors.downloadFolderFailed")}: ${result.error}`);
+              onError(
+                `${t("fileManager.errors.downloadFolderFailed")}: ${result.error}`,
+              );
               onTransferComplete({
                 completed: 0,
                 failed: 1,
@@ -198,10 +247,15 @@ const FileDownload = memo(
             }
           } else {
             onError(t("fileManager.errors.fileApiNotAvailable"));
-            return { success: false, error: t("fileManager.errors.fileApiNotAvailable") };
+            return {
+              success: false,
+              error: t("fileManager.errors.fileApiNotAvailable"),
+            };
           }
         } catch (error) {
-          onError(`${t("fileManager.errors.downloadFolderFailed")}: ${error.message}`);
+          onError(
+            `${t("fileManager.errors.downloadFolderFailed")}: ${error.message}`,
+          );
           onTransferComplete({
             completed: 0,
             failed: 1,
@@ -210,7 +264,15 @@ const FileDownload = memo(
           return { success: false, error: error.message };
         }
       },
-      [tabId, currentPath, t, onError, onTransferStart, onTransferUpdate, onTransferComplete]
+      [
+        tabId,
+        currentPath,
+        t,
+        onError,
+        onTransferStart,
+        onTransferUpdate,
+        onTransferComplete,
+      ],
     );
 
     return {
@@ -218,7 +280,7 @@ const FileDownload = memo(
       downloadFiles,
       downloadFolder,
     };
-  }
+  },
 );
 
 FileDownload.displayName = "FileDownload";

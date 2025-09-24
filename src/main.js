@@ -16,7 +16,9 @@ const terminalManager = require("./modules/terminal");
 const commandHistoryService = require("./modules/terminal/command-history");
 const fileCache = require("./core/utils/fileCache");
 const connectionManager = require("./modules/connection");
-const { registerReconnectHandlers } = require("./core/ipc/handlers/reconnectHandlers");
+const {
+  registerReconnectHandlers,
+} = require("./core/ipc/handlers/reconnectHandlers");
 const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers");
 
@@ -2774,8 +2776,8 @@ function setupIPC(mainWindow) {
 
       // 递归创建目录
       const createDirRecursive = async (dirPath) => {
-        const parts = dirPath.split('/').filter(Boolean);
-        let currentPath = dirPath.startsWith('/') ? '/' : '';
+        const parts = dirPath.split("/").filter(Boolean);
+        let currentPath = dirPath.startsWith("/") ? "/" : "";
 
         for (const part of parts) {
           currentPath = path.posix.join(currentPath, part);
@@ -2784,9 +2786,11 @@ function setupIPC(mainWindow) {
             await new Promise((resolve, reject) => {
               sftp.stat(currentPath, (err, stats) => {
                 if (err) {
-                  if (err.code === 2) { // No such file
+                  if (err.code === 2) {
+                    // No such file
                     sftp.mkdir(currentPath, (mkdirErr) => {
-                      if (mkdirErr && mkdirErr.code !== 4) { // 4 = already exists
+                      if (mkdirErr && mkdirErr.code !== 4) {
+                        // 4 = already exists
                         reject(mkdirErr);
                       } else {
                         resolve();
@@ -2798,13 +2802,20 @@ function setupIPC(mainWindow) {
                 } else if (stats.isDirectory()) {
                   resolve();
                 } else {
-                  reject(new Error(`Path exists but is not a directory: ${currentPath}`));
+                  reject(
+                    new Error(
+                      `Path exists but is not a directory: ${currentPath}`,
+                    ),
+                  );
                 }
               });
             });
           } catch (error) {
             // 继续处理，目录可能已存在
-            logToFile(`Warning creating folder ${currentPath}: ${error.message}`, "WARN");
+            logToFile(
+              `Warning creating folder ${currentPath}: ${error.message}`,
+              "WARN",
+            );
           }
         }
       };
@@ -3184,7 +3195,9 @@ function setupIPC(mainWindow) {
                 fileName: fileName,
                 currentFileIndex: i,
                 totalFiles: totalFiles,
-                progress: Math.floor((totalBytesUploaded / totalBytesToUpload) * 100),
+                progress: Math.floor(
+                  (totalBytesUploaded / totalBytesToUpload) * 100,
+                ),
                 transferredBytes: totalBytesUploaded,
                 totalBytes: totalBytesToUpload,
                 transferSpeed: speed,
@@ -3204,7 +3217,8 @@ function setupIPC(mainWindow) {
               if (progressChannel) {
                 // 更新当前文件的传输字节数
                 if (data.transferredBytes !== undefined) {
-                  const newBytes = data.transferredBytes - currentFileBytesTransferred;
+                  const newBytes =
+                    data.transferredBytes - currentFileBytesTransferred;
                   currentFileBytesTransferred = data.transferredBytes;
                   totalBytesUploaded += newBytes;
                 }
@@ -3215,7 +3229,9 @@ function setupIPC(mainWindow) {
                 const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0;
                 const remainingBytes = totalBytesToUpload - totalBytesUploaded;
                 const remainingTime = speed > 0 ? remainingBytes / speed : 0;
-                const overallProgress = Math.floor((totalBytesUploaded / totalBytesToUpload) * 100);
+                const overallProgress = Math.floor(
+                  (totalBytesUploaded / totalBytesToUpload) * 100,
+                );
 
                 event.sender.send(progressChannel, {
                   tabId,
@@ -3229,7 +3245,8 @@ function setupIPC(mainWindow) {
                   remainingTime: remainingTime,
                 });
 
-                if (timeDiff > 0.5) { // 每0.5秒更新速度
+                if (timeDiff > 0.5) {
+                  // 每0.5秒更新速度
                   lastProgressTime = now;
                   lastBytesTransferred = totalBytesUploaded;
                 }
@@ -3248,13 +3265,17 @@ function setupIPC(mainWindow) {
             );
 
             // 清理监听器
-            event.sender.removeListener(singleFileProgressChannel, progressHandler);
+            event.sender.removeListener(
+              singleFileProgressChannel,
+              progressHandler,
+            );
 
             if (singleResult.success) {
               uploadedCount++;
               // 确保在成功后总字节数是正确的
               if (currentFileBytesTransferred < currentFileSize) {
-                totalBytesUploaded += (currentFileSize - currentFileBytesTransferred);
+                totalBytesUploaded +=
+                  currentFileSize - currentFileBytesTransferred;
               }
             } else {
               failedCount++;

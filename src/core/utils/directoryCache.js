@@ -8,7 +8,10 @@ const makeKey = (tabId, path) => `${tabId || ""}:${path || "/"}`;
 function set(tabId, path, data) {
   try {
     const key = makeKey(tabId, path);
-    cache.set(key, { data: Array.isArray(data) ? data : [], timestamp: Date.now() });
+    cache.set(key, {
+      data: Array.isArray(data) ? data : [],
+      timestamp: Date.now(),
+    });
   } catch (_) {
     // ignore
   }
@@ -35,4 +38,3 @@ function clear(tabId) {
 }
 
 module.exports = { set, get, clear };
-

@@ -186,7 +186,8 @@ module.exports = [
     type: "regex",
     name: "UUID Pattern",
     enabled: true,
-    pattern: "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\\b",
+    pattern:
+      "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\\b",
     flags: "g",
     style: `color: ${HIGHLIGHT_COLORS.uuid};`,
   },
@@ -267,4 +268,3 @@ module.exports = [
     },
   },
 ];
-

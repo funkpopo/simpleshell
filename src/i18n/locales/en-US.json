@@ -1,5 +1,9 @@
 {
   "translation": {
+    "snackbar": {
+      "undo": "Undo",
+      "tabMoved": "Tab order updated"
+    },
     "settings": {
       "title": "Settings",
       "language": "Language",
@@ -28,6 +32,12 @@
       "logLevelLabel": "Log Level",
       "logFileSizeLimitLabel": "Log File Size Limit",
       "performanceSettings": "Performance Settings",
+      "dnd": {
+        "title": "Tab Drag & Drop",
+        "enable": "Enable tab drag & drop",
+        "autoScroll": "Auto-scroll tab strip near edges",
+        "compactPreview": "Compact drag preview"
+      },
       "webglRenderer": "WebGL Renderer",
       "enableWebglRenderer": "Enable WebGL acceleration",
       "webglDescription": "Use the GPU accelerated renderer for smoother long output scrolling",

@@ -176,7 +176,6 @@ class CommandHistoryService {
       timestamp: item.timestamp,
     }));
   }
-
 }
 
 // 创建单例实例

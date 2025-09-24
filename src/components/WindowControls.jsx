@@ -133,8 +133,8 @@ const WindowControls = () => {
       <Tooltip
         title={
           isExpanded
-            ? t("windowControls.restore") ?? ""
-            : t("windowControls.maximize") ?? ""
+            ? (t("windowControls.restore") ?? "")
+            : (t("windowControls.maximize") ?? "")
         }
       >
         <IconButton

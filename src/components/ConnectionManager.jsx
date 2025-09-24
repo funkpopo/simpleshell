@@ -145,7 +145,10 @@ const areConnectionListsEqual = (prevList = [], nextList = []) => {
       return false;
     }
 
-    if ((prev.id || "") !== (next.id || "") || (prev.type || "") !== (next.type || "")) {
+    if (
+      (prev.id || "") !== (next.id || "") ||
+      (prev.type || "") !== (next.type || "")
+    ) {
       return false;
     }
 
