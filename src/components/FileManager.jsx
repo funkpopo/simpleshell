@@ -111,6 +111,7 @@ const FileManager = memo(
     const [isClosing, setIsClosing] = useState(false);
     const [notification, setNotification] = useState(null);
     const [uploadMenuAnchor, setUploadMenuAnchor] = useState(null);
+    const [externalEditorEnabled, setExternalEditorEnabled] = useState(false);
     const [sortMode, setSortMode] = useState("name"); // "name" or "time"
     const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
     const [pathHistory, setPathHistory] = useState([]); // 路径历史记录
@@ -136,6 +137,7 @@ const FileManager = memo(
     useEffect(() => {
       filesRef.current = files;
     }, [files]);
+    const externalEditorEventThrottles = useRef(new Map());
 
     // Fallback: 自动结束增量状态的定时器
     const chunkingResetTimerRef = useRef(null);
@@ -243,6 +245,72 @@ const FileManager = memo(
 
     // 使用自动清理Hook
     const { addEventListener, addTimeout } = useAutoCleanup();
+
+    useEffect(() => {
+      let ignore = false;
+
+      const loadExternalEditorSetting = async () => {
+        if (!window.terminalAPI?.loadUISettings) {
+          if (!ignore) {
+            setExternalEditorEnabled(false);
+          }
+          return;
+        }
+        try {
+          const settings = await window.terminalAPI.loadUISettings();
+          if (!ignore) {
+            setExternalEditorEnabled(
+              settings?.externalEditor?.enabled === true,
+            );
+          }
+        } catch (error) {
+          if (!ignore) {
+            setExternalEditorEnabled(false);
+          }
+        }
+      };
+
+      loadExternalEditorSetting();
+
+      return () => {
+        ignore = true;
+      };
+    }, []);
+
+    useEffect(() => {
+      return addEventListener(window, "settingsChanged", (event) => {
+        const externalEditorSettings = event.detail?.externalEditor;
+        if (
+          externalEditorSettings &&
+          typeof externalEditorSettings.enabled === "boolean"
+        ) {
+          setExternalEditorEnabled(externalEditorSettings.enabled);
+        }
+      });
+    }, [addEventListener]);
+
+    const showNotification = useCallback(
+      (
+        message,
+        severity = "info",
+        duration = 3000,
+        showAction = false,
+        actionCallback = null,
+      ) => {
+        setNotification({
+          message,
+          severity,
+          duration,
+          showAction,
+          actionCallback,
+        });
+
+        if (severity !== "error" && duration > 0) {
+          addTimeout(() => setNotification(null), duration);
+        }
+      },
+      [addTimeout],
+    );
 
     const {
       transferList,
@@ -2373,18 +2441,89 @@ const FileManager = memo(
       [sshConnection, t, handleDroppedItems, setNotification],
     );
 
+
+    useEffect(() => {
+      if (!window.terminalAPI?.onExternalEditorEvent || !tabId) {
+        externalEditorEventThrottles.current.clear();
+        return undefined;
+      }
+
+      externalEditorEventThrottles.current.clear();
+
+      const unsubscribe = window.terminalAPI.onExternalEditorEvent((event) => {
+        if (!event || event.tabId !== tabId) {
+          return;
+        }
+
+        const displayName =
+          event.fileName ||
+          event.remotePath ||
+          t("fileManager.externalEditor.unknownFile");
+
+        if (event.status === "opened") {
+          showNotification(
+            t("fileManager.externalEditor.opened", { name: displayName }),
+            "info",
+            2000,
+          );
+          return;
+        }
+
+        if (event.status === "success") {
+          const throttleKey = `${event.tabId}::${event.remotePath || event.fileName || displayName}`;
+          const now = Date.now();
+          const last = externalEditorEventThrottles.current.get(throttleKey) || 0;
+          if (now - last < 4000) {
+            return;
+          }
+          externalEditorEventThrottles.current.set(throttleKey, now);
+          showNotification(
+            t("fileManager.externalEditor.synced", { name: displayName }),
+            "success",
+            2500,
+          );
+          refreshAfterUserActivity();
+          return;
+        }
+
+        if (event.status === "error") {
+          showNotification(
+            t("fileManager.externalEditor.syncFailed", {
+              name: displayName,
+              error: event.error || t("fileManager.errors.unknownError"),
+            }),
+            "error",
+            6000,
+          );
+        }
+      });
+
+      return () => {
+        externalEditorEventThrottles.current.clear();
+        if (typeof unsubscribe === "function") {
+          unsubscribe();
+        }
+      };
+    }, [tabId, showNotification, t, refreshAfterUserActivity]);
+
     // 在特定的回调函数中调用refreshAfterUserActivity
 
     // 处理文件激活（双击）
-    const handleFileActivate = (file) => {
+    const handleFileActivate = async (file) => {
       if (file.isDirectory) {
-        // 如果是目录，进入该目录
+        const basePath = currentPath && currentPath.length > 0 ? currentPath : "/";
         const newPath =
-          currentPath === "/" ? "/" + file.name : currentPath + "/" + file.name;
+          basePath === "/"
+            ? `/${file.name}`
+            : basePath.endsWith("/")
+              ? `${basePath}${file.name}`
+              : `${basePath}/${file.name}`;
 
         handleEnterDirectory(newPath);
-      } else {
-        // 检查文件大小限制 (10MB)
+        return;
+      }
+
+      const openInPreview = () => {
         const maxFileSize = 10 * 1024 * 1024;
         if (file.size && file.size > maxFileSize) {
           setError(
@@ -2393,19 +2532,84 @@ const FileManager = memo(
               size: formatFileSize(file.size, t),
             }),
           );
+          return false;
+        }
+
+        setFilePreview(file);
+        setShowPreview(true);
+        refreshAfterUserActivity();
+        return true;
+      };
+
+      if (!externalEditorEnabled || !window.terminalAPI?.openFileInExternalEditor) {
+        openInPreview();
+        return;
+      }
+
+      if (!tabId) {
+        showNotification(
+          t("fileManager.externalEditor.missingSession"),
+          "error",
+          6000,
+        );
+        return;
+      }
+
+      const basePath = currentPath && currentPath.length > 0 ? currentPath : "/";
+      let remotePath;
+      if (basePath === "/") {
+        remotePath = `/${file.name}`;
+      } else if (basePath.endsWith("/")) {
+        remotePath = `${basePath}${file.name}`;
+      } else {
+        remotePath = `${basePath}/${file.name}`;
+      }
+
+      try {
+        const result = await window.terminalAPI.openFileInExternalEditor(
+          tabId,
+          remotePath,
+        );
+        if (!result?.success) {
+          const errorMessage =
+            result?.error || t("fileManager.errors.unknownError");
+          showNotification(
+            t("fileManager.externalEditor.launchFailed", {
+              name: file.name,
+              error: errorMessage,
+            }),
+            "error",
+            6000,
+          );
+          openInPreview();
+          return;
+        }
+      } catch (error) {
+        const errorMessage =
+          (error && (error.message || error.error)) ||
+          (typeof error === "string"
+            ? error
+            : t("fileManager.errors.unknownError"));
+
+        if (
+          typeof errorMessage === "string" &&
+          errorMessage.toLowerCase().includes("disabled")
+        ) {
+          openInPreview();
           return;
         }
 
-        // 如果是文件，打开预览
-        setFilePreview(file);
-        setShowPreview(true);
-
-        // 文件查看后延迟刷新，检测是否有变化
-        refreshAfterUserActivity();
+        showNotification(
+          t("fileManager.externalEditor.launchFailed", {
+            name: file.name,
+            error: errorMessage,
+          }),
+          "error",
+          6000,
+        );
+        openInPreview();
       }
-    };
-
-    // 关闭预览
+    };    // 关闭预览
     const handleClosePreview = () => {
       setShowPreview(false);
     };
@@ -2646,27 +2850,6 @@ const FileManager = memo(
     };
 
     // 显示通知的辅助函数，增强版
-    const showNotification = (
-      message,
-      severity = "info",
-      duration = 3000,
-      showAction = false,
-      actionCallback = null,
-    ) => {
-      setNotification({
-        message,
-        severity,
-        duration,
-        showAction,
-        actionCallback,
-      });
-
-      // 自动关闭通知（除非是错误或指定了更长的持续时间）
-      if (severity !== "error" && duration > 0) {
-        addTimeout(() => setNotification(null), duration);
-      }
-    };
-
     // 关闭通知
     const handleCloseNotification = () => {
       setNotification(null);
@@ -4296,3 +4479,4 @@ const FileManager = memo(
 FileManager.displayName = "FileManager";
 
 export default FileManager;
+

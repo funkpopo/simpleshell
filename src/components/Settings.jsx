@@ -124,6 +124,8 @@ const Settings = memo(({ open, onClose }) => {
   const [terminalFont, setTerminalFont] = React.useState("Fira Code");
   const [terminalFontSize, setTerminalFontSize] = React.useState(14);
   const [darkMode, setDarkMode] = React.useState(true);
+  const [externalEditorEnabled, setExternalEditorEnabled] = React.useState(false);
+  const [externalEditorCommand, setExternalEditorCommand] = React.useState("");
   const [logLevel, setLogLevel] = React.useState("WARN");
   const [maxFileSize, setMaxFileSize] = React.useState(5);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -163,17 +165,22 @@ const Settings = memo(({ open, onClose }) => {
             );
 
             // 加载性能设置
+            const externalEditorSettings = settings.externalEditor || {};
+            setExternalEditorEnabled(
+              externalEditorSettings.enabled === true ||
+                settings.externalEditorEnabled === true,
+            );
+            setExternalEditorCommand(
+              externalEditorSettings.command ||
+                settings.externalEditorCommand ||
+                "",
+            );
             const performanceSettings = settings.performance || {
               imageSupported: true,
               cacheEnabled: true,
               prefetchEnabled: true,
               webglEnabled: true,
             };
-            setImageSupported(performanceSettings.imageSupported !== false);
-            setCacheEnabled(performanceSettings.cacheEnabled !== false);
-            setPrefetchEnabled(performanceSettings.prefetchEnabled !== false);
-            setTerminalWebglEnabled(performanceSettings.webglEnabled !== false);
-
             // DnD settings
             const dnd = settings.dnd || {};
             setDndEnabled(dnd.enabled !== false);
@@ -323,6 +330,10 @@ const Settings = memo(({ open, onClose }) => {
             autoScroll: dndAutoScroll,
             compactDragPreview: dndCompactPreview,
           },
+          externalEditor: {
+            enabled: externalEditorEnabled,
+            command: externalEditorCommand.trim(),
+          },
         };
         await window.terminalAPI.saveUISettings(settings);
       }
@@ -364,6 +375,10 @@ const Settings = memo(({ open, onClose }) => {
               enabled: dndEnabled,
               autoScroll: dndAutoScroll,
               compactDragPreview: dndCompactPreview,
+            },
+            externalEditor: {
+              enabled: externalEditorEnabled,
+              command: externalEditorCommand.trim(),
             },
           },
         }),
@@ -451,6 +466,34 @@ const Settings = memo(({ open, onClose }) => {
                 label={t("settings.dnd.compactPreview")}
               />
             </Box>
+
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                {t("settings.externalEditor.title")}
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={externalEditorEnabled}
+                    onChange={(e) =>
+                      setExternalEditorEnabled(e.target.checked)
+                    }
+                  />
+                }
+                label={t("settings.externalEditor.enable")}
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label={t("settings.externalEditor.commandLabel")}
+                placeholder={t("settings.externalEditor.commandPlaceholder")}
+                value={externalEditorCommand}
+                onChange={(e) => setExternalEditorCommand(e.target.value)}
+                helperText={t("settings.externalEditor.commandHelper")}
+                disabled={!externalEditorEnabled}
+              />
+            </Box>
+
 
             <Box sx={{ mb: 3 }}>
               <Typography variant="subtitle1" gutterBottom>

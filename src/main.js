@@ -11,6 +11,7 @@ const {
 const configManager = require("./core/configManager");
 const sftpCore = require("./modules/sftp/sftpCore");
 const sftpTransfer = require("./modules/sftp/sftpTransfer");
+const externalEditorManager = require("./modules/sftp/externalEditorManager");
 const systemInfo = require("./modules/system-info");
 const terminalManager = require("./modules/terminal");
 const commandHistoryService = require("./modules/terminal/command-history");
@@ -67,6 +68,30 @@ let latencyHandlers = null;
 
 // 全局本地终端处理器实例
 let localTerminalHandlers = null;
+
+function getPrimaryWindow() {
+  const windows = BrowserWindow.getAllWindows();
+  if (!windows || windows.length === 0) {
+    return null;
+  }
+  const [mainWindow] = windows;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return null;
+  }
+  return mainWindow;
+}
+
+function safeSendToRenderer(channel, ...args) {
+  const targetWindow = getPrimaryWindow();
+  if (
+    targetWindow &&
+    targetWindow.webContents &&
+    !targetWindow.webContents.isDestroyed()
+  ) {
+    targetWindow.webContents.send(channel, ...args);
+  }
+}
+
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -370,18 +395,22 @@ app.whenReady().then(async () => {
     dialog,
     shell,
     (tabId) => childProcesses.get(tabId),
-    (channel, ...args) => {
-      // sendToRendererFunction
-      const mainWindow = BrowserWindow.getAllWindows()[0]; // Assuming single main window
-      if (
-        mainWindow &&
-        mainWindow.webContents &&
-        !mainWindow.webContents.isDestroyed()
-      ) {
-        mainWindow.webContents.send(channel, ...args);
-      }
-    },
+    (channel, ...args) => safeSendToRenderer(channel, ...args),
   );
+
+  try {
+    externalEditorManager.init({
+      app,
+      logger: { logToFile },
+      configManager,
+      sftpCore,
+      shell,
+      sendToRenderer: (channel, payload) => safeSendToRenderer(channel, payload),
+    });
+    logToFile("External editor manager initialised", "INFO");
+  } catch (error) {
+    logToFile(`Failed to initialise external editor manager: ${error.message}`, "ERROR");
+  }
 
   // Initialize file cache module
   fileCache.init(logToFile, app);
@@ -456,6 +485,21 @@ app.on("before-quit", async () => {
   }
 
   // 移除所有事件监听器和子进程
+  if (
+    externalEditorManager &&
+    typeof externalEditorManager.cleanup === "function"
+  ) {
+    try {
+      await externalEditorManager.cleanup();
+      logToFile("External editor manager cleaned up", "INFO");
+    } catch (error) {
+      logToFile(
+        `External editor manager cleanup failed: ${error.message}`,
+        "ERROR",
+      );
+    }
+  }
+
   for (const [id, proc] of childProcesses.entries()) {
     try {
       // 清理与此进程相关的待处理SFTP操作
@@ -2763,6 +2807,37 @@ function setupIPC(mainWindow) {
     return sftpTransfer.handleDownloadFile(event, tabId, remotePath);
   });
 
+  ipcMain.handle(
+    "external-editor:open",
+    async (event, tabId, remotePath) => {
+      if (
+        !externalEditorManager ||
+        typeof externalEditorManager.openFileInExternalEditor !== "function"
+      ) {
+        return {
+          success: false,
+          error: "External editor feature not available.",
+        };
+      }
+
+      if (!tabId || !remotePath) {
+        return { success: false, error: "Missing parameters." };
+      }
+
+      try {
+        return await externalEditorManager.openFileInExternalEditor(
+          tabId,
+          remotePath,
+        );
+      } catch (error) {
+        logToFile(
+          `External editor open failed for ${remotePath}: ${error.message}`,
+          "ERROR",
+        );
+        return { success: false, error: error.message };
+      }
+    },
+  );
   // Handle creating remote folder structure
   ipcMain.handle("createRemoteFolders", async (event, tabId, folderPath) => {
     try {
@@ -4470,3 +4545,6 @@ function setupIPC(mainWindow) {
     }
   });
 } // Closing brace for setupIPC function
+
+
+

@@ -368,6 +368,10 @@ function loadUISettings() {
         autoScroll: true,
         compactDragPreview: false,
       },
+      externalEditor: {
+        enabled: false,
+        command: "",
+      },
     };
   }
   if (logToFile)
@@ -412,6 +416,16 @@ function loadUISettings() {
                 ? config.uiSettings.dnd.compactDragPreview
                 : false,
           },
+          externalEditor: {
+            enabled:
+              typeof config.uiSettings.externalEditor?.enabled === "boolean"
+                ? config.uiSettings.externalEditor.enabled
+                : false,
+            command:
+              typeof config.uiSettings.externalEditor?.command === "string"
+                ? config.uiSettings.externalEditor.command
+                : config.uiSettings.externalEditorCommand || "",
+          },
         };
         if (logToFile)
           logToFile("ConfigManager: UI settings loaded successfully.", "INFO");
@@ -437,6 +451,10 @@ function loadUISettings() {
       cacheEnabled: true,
       prefetchEnabled: true,
       webglEnabled: true,
+    },
+    externalEditor: {
+      enabled: false,
+      command: "",
     },
   };
 }

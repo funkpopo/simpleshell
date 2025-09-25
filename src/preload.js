@@ -270,6 +270,28 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     });
   },
   // 新增API
+  openFileInExternalEditor: (tabId, remotePath) =>
+    ipcRenderer.invoke("external-editor:open", tabId, remotePath),
+
+  onExternalEditorEvent: (callback) => {
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+    const wrapped = (_, data) => callback(data);
+    ipcRenderer.on("external-editor:sync", wrapped);
+    if (!callback._wrappedCallback) callback._wrappedCallback = wrapped;
+    return () => {
+      ipcRenderer.removeListener("external-editor:sync", wrapped);
+    };
+  },
+  offExternalEditorEvent: (callback) => {
+    if (!callback) {
+      return;
+    }
+    const wrapped = callback._wrappedCallback || callback;
+    ipcRenderer.removeListener("external-editor:sync", wrapped);
+  },
+
   renameFile: (tabId, oldPath, newName) =>
     ipcRenderer.invoke("renameFile", tabId, oldPath, newName),
 
@@ -613,3 +635,4 @@ contextBridge.exposeInMainWorld("dialogAPI", {
   showMessageBox: (options) =>
     ipcRenderer.invoke("dialog:showMessageBox", options),
 });
+
