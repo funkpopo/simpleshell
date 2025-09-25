@@ -49,6 +49,13 @@
         "enable": "启用标签拖拽",
         "autoScroll": "靠边自动滚动标签栏",
         "compactPreview": "简洁拖拽预览"
+      },
+      "externalEditor": {
+        "title": "外部编辑器",
+        "commandLabel": "启动命令",
+        "commandPlaceholder": "例如：code --wait %FILE%",
+        "commandHelper": "使用 %FILE% 作为下载文件路径的占位符，留空则调用系统默认程序。",
+        "enable": "启用外部编辑器"
       }
     },
     "languages": {
@@ -471,6 +478,14 @@
         "totalItems": "共 {{count}} 项",
         "selectedItems": "已选择 {{count}} 项",
         "lastRefresh": "最后刷新: {{time}}"
+      },
+      "externalEditor": {
+        "opened": "正在使用外部编辑器打开 {{name}}...",
+        "synced": "已将 {{name}} 的更改同步到服务器。",
+        "syncFailed": "同步 {{name}} 失败：{{error}}",
+        "launchFailed": "无法在外部编辑器中打开 {{name}}：{{error}}",
+        "missingSession": "连接尚未就绪，暂无法打开该文件。",
+        "unknownFile": "文件"
       }
     },
     "update": {
