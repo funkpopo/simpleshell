@@ -52,6 +52,7 @@ import FilePermissionEditor from "./FilePermissionEditor.jsx";
 import { formatLastRefreshTime } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
+import { useSftpTransfers } from "../store/sftpTransferStore.js";
 
 // 格式化文件大小
 const formatFileSize = (bytes, t) => {
@@ -106,7 +107,6 @@ const FileManager = memo(
     const [filePreview, setFilePreview] = useState(null);
     const [showPreview, setShowPreview] = useState(false);
     const [pathInput, setPathInput] = useState("");
-    const [transferProgressList, setTransferProgressList] = useState([]);
     const [transferCancelled, setTransferCancelled] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
     const [notification, setNotification] = useState(null);
@@ -126,7 +126,6 @@ const FileManager = memo(
     }, []);
 
     // 用于存储延迟移除定时器的引用
-    const [autoRemoveTimers, setAutoRemoveTimers] = useState(new Map());
 
     // 拖拽事件处理函数
     // 增量加载优化：状态与缓冲
@@ -245,6 +244,18 @@ const FileManager = memo(
     // 使用自动清理Hook
     const { addEventListener, addTimeout } = useAutoCleanup();
 
+    const {
+      transferList,
+      addTransferProgress: storeAddTransferProgress,
+      updateTransferProgress: storeUpdateTransferProgress,
+      removeTransferProgress: storeRemoveTransferProgress,
+      clearCompletedTransfers: storeClearCompletedTransfers,
+      clearAllTransfers: storeClearAllTransfers,
+      scheduleTransferCleanup: storeScheduleTransferCleanup,
+    } = useSftpTransfers(tabId);
+
+    const transferProgressList = transferList;
+
     // 缓存过期时间（毫秒）
     const CACHE_EXPIRY_TIME = 10000; // 10秒
 
@@ -252,91 +263,29 @@ const FileManager = memo(
     const USER_ACTIVITY_REFRESH_DELAY = 300; // 将用户活动后刷新延迟从1000ms减少到300ms
 
     // 传输进度管理函数
-    const generateTransferId = () => {
-      return `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    };
-
     // 添加新的传输任务
     const addTransferProgress = (transferData) => {
-      const transferId = transferData.transferId || generateTransferId();
-      const newTransfer = {
-        transferId,
-        ...transferData,
-        startTime: Date.now(),
-      };
-
-      setTransferProgressList((prev) => [...prev, newTransfer]);
-      return transferId;
+      return storeAddTransferProgress(transferData);
     };
 
     // 更新传输进度
     const updateTransferProgress = (transferId, updateData) => {
-      setTransferProgressList((prev) =>
-        prev.map((transfer) =>
-          transfer.transferId === transferId
-            ? { ...transfer, ...updateData }
-            : transfer,
-        ),
-      );
-
-      // 如果传输被标记为取消，启动延迟移除定时器
-      if (updateData.isCancelled) {
-        // 清除已存在的定时器（如果有）
-        setAutoRemoveTimers((prev) => {
-          const newTimers = new Map(prev);
-          const existingTimer = newTimers.get(transferId);
-          if (existingTimer) {
-            existingTimer(); // 调用清理函数取消之前的定时器
-          }
-
-          // 设置新的延迟移除定时器
-          const cleanupTimer = addTimeout(() => {
-            removeTransferProgress(transferId);
-            // 清理定时器引用
-            setAutoRemoveTimers((current) => {
-              const updated = new Map(current);
-              updated.delete(transferId);
-              return updated;
-            });
-          }, 1000); // 1秒延迟
-
-          newTimers.set(transferId, cleanupTimer);
-          return newTimers;
-        });
-      }
+      storeUpdateTransferProgress(transferId, updateData);
     };
 
     // 移除传输任务
     const removeTransferProgress = (transferId) => {
-      setTransferProgressList((prev) =>
-        prev.filter((transfer) => transfer.transferId !== transferId),
-      );
-
-      // 清理对应的定时器
-      setAutoRemoveTimers((prev) => {
-        const newTimers = new Map(prev);
-        const timer = newTimers.get(transferId);
-        if (timer) {
-          clearTimeout(timer);
-          newTimers.delete(transferId);
-        }
-        return newTimers;
-      });
+      storeRemoveTransferProgress(transferId);
     };
 
     // 清理已完成的传输任务
     const clearCompletedTransfers = () => {
-      setTransferProgressList((prev) =>
-        prev.filter(
-          (transfer) =>
-            transfer.progress < 100 && !transfer.isCancelled && !transfer.error,
-        ),
-      );
+      storeClearCompletedTransfers();
     };
 
     // 清理所有传输任务
     const clearAllTransfers = () => {
-      setTransferProgressList([]);
+      storeClearAllTransfers();
     };
 
     // 检查错误消息是否与用户取消操作相关
@@ -1336,7 +1285,7 @@ const FileManager = memo(
             });
 
             // 传输完成后延迟移除
-            addTimeout(() => removeTransferProgress(transferId), 3000);
+            storeScheduleTransferCleanup(transferId, 3000);
 
             // 切换到上传的目标路径
             updateCurrentPath(targetPath);
@@ -1396,17 +1345,18 @@ const FileManager = memo(
               (error.message || t("fileManager.errors.unknownError")),
           );
           // 更新所有未完成的传输为错误状态
-          setTransferProgressList((prev) =>
-            prev.map((transfer) =>
-              transfer.progress < 100 && !transfer.isCancelled
-                ? {
-                    ...transfer,
-                    error:
-                      error.message || t("fileManager.errors.unknownError"),
-                  }
-                : transfer,
-            ),
-          );
+          const errorMessage =
+            error.message || t("fileManager.errors.unknownError");
+          transferProgressList
+            .filter(
+              (transfer) =>
+                transfer.progress < 100 && !transfer.isCancelled,
+            )
+            .forEach((transfer) => {
+              updateTransferProgress(transfer.transferId, {
+                error: errorMessage,
+              });
+            });
         } else {
           logToFile(
             `FileManager: 跳过取消操作错误显示: ${error.message}`,
@@ -1414,17 +1364,17 @@ const FileManager = memo(
           );
           setTransferCancelled(true);
           // 标记所有未完成的传输为取消状态
-          setTransferProgressList((prev) =>
-            prev.map((transfer) =>
-              transfer.progress < 100 && !transfer.isCancelled
-                ? {
-                    ...transfer,
-                    isCancelled: true,
-                    cancelMessage: t("fileManager.errors.userCancelled"),
-                  }
-                : transfer,
-            ),
-          );
+          transferProgressList
+            .filter(
+              (transfer) =>
+                transfer.progress < 100 && !transfer.isCancelled,
+            )
+            .forEach((transfer) => {
+              updateTransferProgress(transfer.transferId, {
+                isCancelled: true,
+                cancelMessage: t("fileManager.errors.userCancelled"),
+              });
+            });
         }
 
         // 无论上传结果如何，都刷新文件列表
@@ -1523,7 +1473,7 @@ const FileManager = memo(
             });
 
             // 传输完成后延迟移除
-            addTimeout(() => removeTransferProgress(transferId), 3000);
+            storeScheduleTransferCleanup(transferId, 3000);
 
             // 切换到上传的目标路径
             updateCurrentPath(targetPath);
@@ -2286,7 +2236,7 @@ const FileManager = memo(
               });
 
               // 传输完成后延迟移除
-              addTimeout(() => removeTransferProgress(transferId), 3000);
+              storeScheduleTransferCleanup(transferId, 3000);
 
               // 切换到上传的目标路径
               updateCurrentPath(targetPath);
@@ -2534,7 +2484,7 @@ const FileManager = memo(
                 progress: 100,
                 fileName: result.message || "下载完成",
               });
-              setTimeout(() => removeTransferProgress(transferId), 3000);
+              storeScheduleTransferCleanup(transferId, 3000);
             } else if (result?.error) {
               updateTransferProgress(transferId, {
                 error: result.error,
@@ -2555,17 +2505,18 @@ const FileManager = memo(
                 (error.message || t("fileManager.errors.unknownError")),
             );
             // 更新所有未完成的传输为错误状态
-            setTransferProgressList((prev) =>
-              prev.map((transfer) =>
-                transfer.progress < 100 && !transfer.isCancelled
-                  ? {
-                      ...transfer,
-                      error:
-                        error.message || t("fileManager.errors.unknownError"),
-                    }
-                  : transfer,
-              ),
-            );
+            const errorMessage =
+              error.message || t("fileManager.errors.unknownError");
+            transferProgressList
+              .filter(
+                (transfer) =>
+                  transfer.progress < 100 && !transfer.isCancelled,
+              )
+              .forEach((transfer) => {
+                updateTransferProgress(transfer.transferId, {
+                  error: errorMessage,
+                });
+              });
           }
         }
       } else {
@@ -2677,7 +2628,7 @@ const FileManager = memo(
             );
           }
 
-          setTimeout(() => removeTransferProgress(batchTransferId), 3000);
+          storeScheduleTransferCleanup(batchTransferId, 3000);
         } catch (error) {
           if (
             !transferCancelled &&
@@ -2986,17 +2937,18 @@ const FileManager = memo(
           }
 
           // 标记所有未完成的传输为错误状态
-          setTransferProgressList((prev) =>
-            prev.map((transfer) =>
-              transfer.progress < 100 && !transfer.isCancelled
-                ? {
-                    ...transfer,
-                    error:
-                      error.message || t("fileManager.errors.unknownError"),
-                  }
-                : transfer,
-            ),
-          );
+          const errorMessage =
+            error.message || t("fileManager.errors.unknownError");
+          transferProgressList
+            .filter(
+              (transfer) =>
+                transfer.progress < 100 && !transfer.isCancelled,
+            )
+            .forEach((transfer) => {
+              updateTransferProgress(transfer.transferId, {
+                error: errorMessage,
+              });
+            });
         }
       } else {
         // 多文件夹下载
@@ -3075,7 +3027,7 @@ const FileManager = memo(
 
                 completedFolders++;
 
-                setTimeout(() => removeTransferProgress(transferId), 2000);
+                storeScheduleTransferCleanup(transferId, 2000);
               } catch (folderError) {
                 updateTransferProgress(transferId, {
                   error: `${folder.name} 下载失败: ${folderError.message}`,
@@ -3084,7 +3036,7 @@ const FileManager = memo(
                   `文件夹 ${folder.name} 下载失败: ${folderError.message}`,
                   "error",
                 );
-                setTimeout(() => removeTransferProgress(transferId), 5000);
+                storeScheduleTransferCleanup(transferId, 5000);
               }
             }
           }
@@ -3437,7 +3389,6 @@ const FileManager = memo(
       );
 
       if (activeTransfers.length > 0) {
-        // 构建传输类型描述
         const hasUpload = activeTransfers.some(
           (t) => t.type === "upload" || t.type === "upload-folder",
         );
@@ -3454,52 +3405,16 @@ const FileManager = memo(
           transferTypeDescription = "下载";
         }
 
-        // 显示确认对话框，询问用户是否确定要取消传输
-        const isConfirmed = window.confirm(
-          `有正在进行的${transferTypeDescription}任务，关闭窗口将中断传输。是否继续？`,
+        const shouldClose = window.confirm(
+          `有正在进行的${transferTypeDescription}任务，收起窗口不会中断传输，确定继续吗？`,
         );
 
-        if (isConfirmed) {
-          // 先禁用关闭按钮防止用户多次点击
-          setIsClosing(true);
-
-          // 标记所有传输为取消中状态
-          activeTransfers.forEach((transfer) => {
-            updateTransferProgress(transfer.transferId, {
-              cancelMessage: "正在取消传输...",
-            });
-          });
-
-          // 执行取消传输操作
-          handleCancelTransfer()
-            .then(() => {
-              // 添加短暂延迟确保取消操作完成
-              addTimeout(() => {
-                logToFile &&
-                  logToFile(
-                    "FileManager: Closing window after cancelling transfer",
-                    "INFO",
-                  );
-                onClose();
-              }, 300);
-            })
-            .catch((error) => {
-              // 取消传输失败，即使取消失败也关闭窗口，但添加延迟确保取消请求被发送
-              addTimeout(() => {
-                logToFile &&
-                  logToFile(
-                    "FileManager: Closing window after transfer cancel error",
-                    "WARN",
-                  );
-                onClose();
-              }, 300);
-            });
+        if (!shouldClose) {
+          return;
         }
-        // 如果用户选择不关闭，则不执行任何操作
-      } else {
-        // 没有传输或传输已完成/已取消，直接关闭
-        onClose();
       }
+
+      onClose();
     };
 
     // 处理上传菜单打开
@@ -3539,16 +3454,6 @@ const FileManager = memo(
       setSortMode(mode);
       handleSortMenuClose();
     };
-
-    // 组件卸载时清理所有定时器
-    useEffect(() => {
-      return () => {
-        // 清理所有延迟移除定时器
-        autoRemoveTimers.forEach((timer) => {
-          clearTimeout(timer);
-        });
-      };
-    }, [autoRemoveTimers]);
 
     return (
       <Paper
