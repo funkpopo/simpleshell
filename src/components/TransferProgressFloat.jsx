@@ -161,10 +161,12 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
             justifyContent: "center",
             width: 32,
             height: 32,
+            minWidth: 32,
             borderRadius: "50%",
             backgroundColor: `${getTransferColor(type)}15`,
             color: getTransferColor(type),
             mr: 1.5,
+            flexShrink: 0,
           }}
         >
           {getTransferIcon(type)}
