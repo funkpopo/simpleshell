@@ -57,8 +57,8 @@
       "externalEditor": {
         "title": "External Editor",
         "commandLabel": "Launch Command",
-        "commandPlaceholder": "e.g. code --wait %FILE%",
-        "commandHelper": "Use %FILE% as the placeholder for the downloaded file path. Leave empty to open with the system default application.",
+        "commandPlaceholder": "e.g. C:\\Users\\xxx\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\notebook.exe",
+        "commandHelper": "Provide the executable path or command. %FILE% will be replaced with the downloaded file path. Leave empty to open with the system default application.",
         "enable": "Use external editor"
       }
     },

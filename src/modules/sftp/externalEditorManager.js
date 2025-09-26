@@ -181,6 +181,50 @@ function quoteFilePathForShell(filePath) {
   return `"${filePath.replace(/(["$`\\])/g, "\\$1")}"`;
 }
 
+function prepareExternalEditorCommand(command, quotedPath) {
+  const trimmed = typeof command === "string" ? command.trim() : "";
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  const placeholderRegex = new RegExp(FILE_PLACEHOLDER, "g");
+  const hasPlaceholder = trimmed.includes(FILE_PLACEHOLDER);
+
+  const windowsMatch = trimmed.match(
+    /^(?<path>(?:[a-zA-Z]:|\\)[^"\r\n]*?\.(?:exe|bat|cmd|com|lnk|ps1))(?:\s+(?<args>.*))?$/i,
+  );
+
+  if (windowsMatch && windowsMatch.groups?.path) {
+    const executablePath = windowsMatch.groups.path;
+    const argsPart =
+      typeof windowsMatch.groups.args === "string"
+        ? windowsMatch.groups.args.trim()
+        : "";
+
+    let commandString = `"${executablePath}"`;
+    if (argsPart.length > 0) {
+      commandString += ` ${argsPart}`;
+    }
+
+    if (hasPlaceholder) {
+      return commandString.replace(placeholderRegex, quotedPath);
+    }
+
+    return `${commandString} ${quotedPath}`.trim();
+  }
+
+  if (hasPlaceholder) {
+    return trimmed.replace(placeholderRegex, quotedPath);
+  }
+
+  if (path.isAbsolute(trimmed)) {
+    return `"${trimmed}" ${quotedPath}`;
+  }
+
+  return `${trimmed} ${quotedPath}`;
+}
+
+
 async function downloadFile(tabId, remotePath, localPath) {
   const { sftp, sessionId } = await sftpCore.borrowSftpSession(tabId);
   try {
@@ -331,37 +375,41 @@ async function triggerUpload(entry) {
 
 async function launchExternalEditor(entry, command) {
   const quotedPath = quoteFilePathForShell(entry.localPath);
-  if (command && command.trim().length > 0) {
-    const prepared = command.includes(FILE_PLACEHOLDER)
-      ? command.replace(new RegExp(FILE_PLACEHOLDER, "g"), quotedPath)
-      : `${command} ${quotedPath}`;
+  const trimmedCommand = typeof command === "string" ? command.trim() : "";
 
-    await new Promise((resolve, reject) => {
-      try {
-        const child = spawn(prepared, {
-          shell: true,
-          detached: true,
-          stdio: "ignore",
-        });
-        child.on("error", (error) => {
+  if (trimmedCommand.length > 0) {
+    const prepared = prepareExternalEditorCommand(trimmedCommand, quotedPath);
+    if (prepared.length === 0) {
+      logToFile("External editor command resolved to empty string", "WARN");
+    } else {
+      await new Promise((resolve, reject) => {
+        try {
+          const child = spawn(prepared, {
+            shell: true,
+            detached: true,
+            stdio: "ignore",
+          });
+          child.on("error", (error) => {
+            reject(error);
+          });
+          child.unref();
+          entry.child = child;
+          resolve();
+        } catch (error) {
           reject(error);
-        });
-        child.unref();
-        entry.child = child;
-        resolve();
-      } catch (error) {
-        reject(error);
-      }
-    });
-    return;
+        }
+      });
+      return;
+    }
   }
 
   if (!shellModule || typeof shellModule.openPath !== "function") {
     throw new Error("No external editor configured and shell.openPath unavailable");
   }
+
   const result = await shellModule.openPath(entry.localPath);
-  if (result) {
-    throw new Error(result);
+  if (result && result.error) {
+    throw new Error(result.error);
   }
 }
 
