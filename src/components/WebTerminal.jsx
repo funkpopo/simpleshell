@@ -455,7 +455,49 @@ const forceResizeTerminal = debounce(
         return;
       }
 
+      if (term.element) {
+        const targetWidth = `${rect.width}px`;
+        const targetHeight = `${rect.height}px`;
+
+        if (term.element.style.width !== targetWidth) {
+          term.element.style.width = targetWidth;
+        }
+        if (term.element.style.height !== targetHeight) {
+          term.element.style.height = targetHeight;
+        }
+
+        term.element.getBoundingClientRect();
+      }
+
       fitAddon.fit();
+
+      const ensureSized = () => {
+        if (!container || !term.element) {
+          return;
+        }
+
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+        const elementWidth = term.element.clientWidth;
+        const elementHeight = term.element.clientHeight;
+
+        if (
+          Math.abs(elementWidth - containerWidth) > 5 ||
+          Math.abs(elementHeight - containerHeight) > 5
+        ) {
+          fitAddon.fit();
+        }
+
+        if (term.__webglEnabled && typeof term.refresh === "function") {
+          term.refresh(0, term.rows - 1);
+        }
+      };
+
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(ensureSized);
+      } else {
+        ensureSized();
+      }
 
       const cols = term.cols;
       const rows = term.rows;
@@ -470,7 +512,6 @@ const forceResizeTerminal = debounce(
   },
   30, // 从默认防抖时间减少到30ms，提高响应速度
 );
-
 // 添加辅助函数，用于处理多行粘贴文本，防止注释符号和缩进异常
 const processMultilineInput = (text, options = {}) => {
   if (!text || typeof text !== "string") return text;
