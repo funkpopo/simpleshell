@@ -53,8 +53,8 @@
       "externalEditor": {
         "title": "外部编辑器",
         "commandLabel": "启动命令",
-        "commandPlaceholder": "例如：code --wait %FILE%",
-        "commandHelper": "使用 %FILE% 作为下载文件路径的占位符，留空则调用系统默认程序。",
+        "commandPlaceholder": "例如：C:\\Users\\xxx\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\notebook.exe",
+        "commandHelper": "可填写可执行文件路径或命令。使用 %FILE% 作为下载文件路径占位符。留空则调用系统默认程序。",
         "enable": "启用外部编辑器"
       }
     },
