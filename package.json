@@ -21,7 +21,7 @@
   "devDependencies": {
     "@babel/core": "^7.26.10",
     "@babel/eslint-parser": "^7.27.1",
-    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@babel/plugin-transform-private-property-in-object": "^7.27.1",
     "@babel/preset-react": "^7.26.3",
     "@electron-forge/cli": "^7.9.0",
     "@electron-forge/maker-deb": "^7.9.0",
@@ -81,7 +81,7 @@
     "highlight.js": "^11.11.1",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6",
-    "i18next": "^25.3.4",
+    "i18next": "^25.5.2",
     "i18next-browser-languagedetector": "^8.2.0",
     "node-abi": "^4.14.0",
     "node-fetch": "^3.3.2",
