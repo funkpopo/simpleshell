@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { v4: uuidv4 } = require("uuid");
 
 class FileCache {
@@ -12,7 +13,6 @@ class FileCache {
   init(logToFile, app = null) {
     this.logToFile = logToFile || (() => {});
     this.cacheDir = this.getCacheDirectory(app);
-    this.ensureCacheDirectory();
     this.logToFile(
       `File cache initialized with directory: ${this.cacheDir}`,
       "INFO",
@@ -20,34 +20,61 @@ class FileCache {
   }
 
   getCacheDirectory(app) {
-    if (process.env.NODE_ENV === "development") {
-      // 开发环境：项目根目录下的temp目录
-      return path.join(process.cwd(), "temp");
-    } else {
-      // 生产环境：exe同级的temp目录
-      if (app && app.getPath) {
-        const exePath = app.getPath("exe");
-        return path.join(path.dirname(exePath), "temp");
-      } else {
-        // 回退方案：使用__dirname相对路径
-        return path.join(__dirname, "..", "..", "..", "temp");
-      }
-    }
-  }
+    const candidates = [];
 
-  ensureCacheDirectory() {
-    try {
-      if (!fs.existsSync(this.cacheDir)) {
-        fs.mkdirSync(this.cacheDir, { recursive: true });
-        this.logToFile(`Created cache directory: ${this.cacheDir}`, "INFO");
+    if (process.env.NODE_ENV === "development") {
+      candidates.push(path.join(process.cwd(), "temp"));
+    } else {
+      if (app && typeof app.getPath === "function") {
+        try {
+          const exeTemp = path.join(path.dirname(app.getPath("exe")), "temp");
+          candidates.push(exeTemp);
+        } catch (error) {
+          this.logToFile(
+            `Failed to resolve exe temp directory: ${error.message}`,
+            "WARN",
+          );
+        }
+
+        try {
+          const appTemp = path.join(
+            app.getPath("temp"),
+            "simpleshell",
+            "cache",
+          );
+          if (!candidates.includes(appTemp)) {
+            candidates.push(appTemp);
+          }
+        } catch (error) {
+          this.logToFile(
+            `Failed to resolve app temp directory: ${error.message}`,
+            "WARN",
+          );
+        }
       }
-    } catch (error) {
-      this.logToFile(
-        `Failed to create cache directory: ${error.message}`,
-        "ERROR",
-      );
-      throw error;
+
+      const systemTemp = path.join(os.tmpdir(), "simpleshell", "cache");
+      if (!candidates.includes(systemTemp)) {
+        candidates.push(systemTemp);
+      }
     }
+
+    for (const candidate of candidates) {
+      try {
+        if (!fs.existsSync(candidate)) {
+          fs.mkdirSync(candidate, { recursive: true });
+          this.logToFile(`Created cache directory: ${candidate}`, "INFO");
+        }
+        return candidate;
+      } catch (error) {
+        this.logToFile(
+          `Failed to prepare cache directory ${candidate}: ${error.message}`,
+          "WARN",
+        );
+      }
+    }
+
+    throw new Error("Failed to initialize cache directory");
   }
 
   generateCacheFileName(originalFileName) {
@@ -138,6 +165,39 @@ class FileCache {
     return cleanedCount;
   }
 
+
+  async clearCacheDirectory({ recreate = false } = {}) {
+    if (!this.cacheDir) {
+      return false;
+    }
+
+    try {
+      let directoryExisted = false;
+
+      if (fs.existsSync(this.cacheDir)) {
+        directoryExisted = true;
+        await fs.promises.rm(this.cacheDir, { recursive: true, force: true });
+        this.logToFile(
+          `Cleared cache directory: ${this.cacheDir}`,
+          "INFO",
+        );
+      }
+
+      this.activeCaches.clear();
+
+      if (recreate) {
+        await fs.promises.mkdir(this.cacheDir, { recursive: true });
+      }
+
+      return directoryExisted;
+    } catch (error) {
+      this.logToFile(
+        `Failed to clear cache directory ${this.cacheDir}: ${error.message}`,
+        "ERROR",
+      );
+      return false;
+    }
+  }
   async cleanupAllCaches() {
     let cleanedCount = 0;
     const allFiles = [...this.activeCaches.keys()];

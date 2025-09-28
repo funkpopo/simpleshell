@@ -627,18 +627,35 @@ app.on("before-quit", async () => {
   connectionManager.cleanup();
 
   // 清理所有缓存文件
-  fileCache
-    .cleanupAllCaches()
-    .then((cleanedCount) => {
-      logToFile(`Cleaned up ${cleanedCount} cache files on app quit`, "INFO");
-    })
-    .catch((error) => {
+  (async () => {
+    try {
+      const cleanedCount = await fileCache.cleanupAllCaches();
+      logToFile(
+        `Cleaned up ${cleanedCount} cache files on app quit`,
+        "INFO",
+      );
+    } catch (error) {
       logToFile(
         `Failed to cleanup cache files on quit: ${error.message}`,
         "ERROR",
       );
-    });
+    }
 
+    try {
+      const cleared = await fileCache.clearCacheDirectory();
+      if (cleared) {
+        logToFile(
+          `Cleared temp directory on app quit: ${fileCache.cacheDir}`,
+          "INFO",
+        );
+      }
+    } catch (error) {
+      logToFile(
+        `Failed to clear temp directory on quit: ${error.message}`,
+        "ERROR",
+      );
+    }
+  })();
   // 保存命令历史
   try {
     const historyToSave = commandHistoryService.exportHistory();
@@ -4545,6 +4562,3 @@ function setupIPC(mainWindow) {
     }
   });
 } // Closing brace for setupIPC function
-
-
-
