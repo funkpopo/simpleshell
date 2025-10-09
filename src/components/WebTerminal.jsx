@@ -242,6 +242,42 @@ const clearGeometryFor = (processId, tabId) => {
   }
 };
 
+const getCharacterMetricsCss = (term) => {
+  const base = getCharacterMetrics(term);
+  if (!base || !term || !term.element) return base;
+
+  let { charWidth, charHeight } = base;
+  try {
+    const cme = term.element.querySelector(".xterm-char-measure-element");
+    const dpr =
+      typeof window !== "undefined" && window.devicePixelRatio
+        ? window.devicePixelRatio
+        : 1;
+
+    if (cme) {
+      const rect = cme.getBoundingClientRect();
+      if (rect && rect.width > 0) charWidth = rect.width;
+      if (rect && rect.height > 0) charHeight = rect.height;
+    } else if (dpr > 1) {
+      const viewport = term.element.querySelector(".xterm-viewport");
+      const screen = term.element.querySelector(".xterm-screen");
+      const refEl = viewport || screen || term.element;
+      const rect = refEl.getBoundingClientRect
+        ? refEl.getBoundingClientRect()
+        : { width: term.cols * charWidth, height: term.rows * charHeight };
+      if (charWidth * (term.cols || 1) > ((rect.width || 0) + 2)) {
+        charWidth = charWidth / dpr;
+      }
+      if (charHeight * (term.rows || 1) > ((rect.height || 0) + 2)) {
+        charHeight = charHeight / dpr;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return { ...base, charWidth, charHeight, scaleFactor: 1 };
+};
+
 const normalizeGeometry = (cols = 0, rows = 0) => ({
   cols: Math.max(Math.floor(cols) || 1, 1),
   rows: Math.max(Math.floor(rows) || 1, 1),
@@ -414,7 +450,7 @@ const getCharacterMetrics = (term) => {
 
 // 字符网格坐标转换函数
 const getCharacterGridPosition = (term, pixelX, pixelY) => {
-  const metrics = getCharacterMetrics(term);
+  const metrics = getCharacterMetricsCss(term);
   if (!metrics) return null;
 
   try {
@@ -1002,7 +1038,7 @@ const WebTerminal = ({
       if (!primaryElement) return;
 
       // 获取字符度量信息
-      const metrics = getCharacterMetrics(termRef.current);
+      const metrics = getCharacterMetricsCss(termRef.current);
       if (!metrics) return;
 
       // 获取选择元素的当前位置
@@ -3995,7 +4031,7 @@ const WebTerminal = ({
       }
 
       // 方法2：使用终端的字符度量计算
-      const metrics = getCharacterMetrics(term);
+      const metrics = getCharacterMetricsCss(term);
       if (metrics) {
         // 获取当前光标位置（相对于终端buffer）
         const cursorX = term.buffer.active.cursorX;
