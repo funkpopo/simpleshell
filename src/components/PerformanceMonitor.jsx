@@ -64,12 +64,34 @@ const PerformanceMonitor = ({ isVisible = false }) => {
   // 更新性能数据
   const updatePerformanceData = () => {
     try {
+      // 检测WebGL支持
+      const detectWebGLSupport = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+          return !!gl;
+        } catch (e) {
+          return false;
+        }
+      };
+
+      // 获取性能等级（基于硬件信息）
+      const getPerformanceLevel = () => {
+        const cores = navigator.hardwareConcurrency || 0;
+        const memory = navigator.deviceMemory || 0;
+        
+        if (cores >= 8 && memory >= 8) return 'high';
+        if (cores >= 4 && memory >= 4) return 'medium';
+        return 'low';
+      };
+
+      // 更新渲染性能数据（简化版本，移除未定义的metrics引用）
       setPerformanceData({
-        fps: Math.round(metrics.fps || 0),
-        averageFps: Math.round(metrics.averageFps || 0),
-        frameCount: metrics.frameCount || 0,
-        renderer: rendererInfo.current || "unknown",
-        rendererState: rendererInfo.state || "unknown",
+        fps: 0, // FPS监控需要额外实现，暂时设为0
+        averageFps: 0,
+        frameCount: 0,
+        renderer: detectWebGLSupport() ? "webgl" : "canvas",
+        rendererState: "active",
       });
 
       // 获取图像统计信息
@@ -88,17 +110,14 @@ const PerformanceMonitor = ({ isVisible = false }) => {
       });
 
       // 获取系统信息
-      const rendererDetection = rendererInfo.webglSupport || {};
-      const performanceDetection = rendererInfo.performanceLevel || {};
-
       setSystemInfo({
-        webglSupport: rendererDetection.supported || false,
-        deviceMemory: performanceDetection.metrics?.memory || 0,
-        cores: performanceDetection.metrics?.cores || 0,
-        performanceLevel: performanceDetection.performanceLevel || "unknown",
+        webglSupport: detectWebGLSupport(),
+        deviceMemory: navigator.deviceMemory || 0,
+        cores: navigator.hardwareConcurrency || 0,
+        performanceLevel: getPerformanceLevel(),
       });
 
-      // 估算内存使用（简化版本）
+      // 估算内存使用
       if (performance.memory) {
         const used = Math.round(
           performance.memory.usedJSHeapSize / 1024 / 1024,

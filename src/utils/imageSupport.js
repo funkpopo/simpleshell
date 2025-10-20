@@ -25,12 +25,21 @@ export const SUPPORTED_FORMATS = {
   BMP: "image/bmp",
 };
 
+// 缓存图像支持检测结果
+let cachedImageSupport = null;
+
 export const detectImageSupport = () => {
+  // 使用缓存避免重复检测
+  if (cachedImageSupport !== null) {
+    return cachedImageSupport;
+  }
+
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
 
   if (!ctx) {
-    return { supported: false, reason: "Canvas context not available" };
+    cachedImageSupport = { supported: false, reason: "Canvas context not available" };
+    return cachedImageSupport;
   }
 
   // 检测支持的图像格式
@@ -51,25 +60,51 @@ export const detectImageSupport = () => {
     }
   });
 
-  return {
+  cachedImageSupport = {
     supported: true,
     formats: supportedFormats,
     maxTextureSize: getMaxTextureSize(ctx),
     memoryLimit: getEstimatedMemoryLimit(),
   };
+
+  return cachedImageSupport;
 };
 
+// 缓存WebGL检测结果
+let cachedMaxTextureSize = null;
+
 const getMaxTextureSize = (ctx) => {
+  // 使用缓存避免重复检测
+  if (cachedMaxTextureSize !== null) {
+    return cachedMaxTextureSize;
+  }
+
   try {
-    const gl = document.createElement("canvas").getContext("webgl");
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    
     if (gl) {
-      return gl.getParameter(gl.MAX_TEXTURE_SIZE);
+      const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+      
+      // 清理WebGL上下文
+      const loseContext = gl.getExtension('WEBGL_lose_context');
+      if (loseContext) {
+        loseContext.loseContext();
+      }
+      
+      // 缓存结果
+      cachedMaxTextureSize = maxSize;
+      return maxSize;
     }
   } catch (error) {
-    // WebGL不可用
+    // WebGL不可用，记录错误但继续
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('WebGL检测失败:', error);
+    }
   }
 
   // 降级到Canvas限制
+  cachedMaxTextureSize = 4096;
   return 4096; // 大多数浏览器的Canvas限制
 };
 

@@ -507,6 +507,11 @@ const forceResizeTerminal = debounce(
 
       fitAddon.fit();
 
+      // Canvas 渲染器需要手动刷新
+      if (!term.__webglEnabled && typeof term.refresh === "function") {
+        term.refresh(0, term.rows - 1);
+      }
+
       const ensureSized = () => {
         if (!container || !term.element) {
           return;
@@ -522,10 +527,11 @@ const forceResizeTerminal = debounce(
           Math.abs(elementHeight - containerHeight) > 5
         ) {
           fitAddon.fit();
-        }
-
-        if (term.__webglEnabled && typeof term.refresh === "function") {
-          term.refresh(0, term.rows - 1);
+          
+          // Canvas 渲染器需要手动刷新
+          if (!term.__webglEnabled && typeof term.refresh === "function") {
+            term.refresh(0, term.rows - 1);
+          }
         }
       };
 
@@ -546,7 +552,7 @@ const forceResizeTerminal = debounce(
       // Error in forceResizeTerminal
     }
   },
-  30, // 从默认防抖时间减少到30ms，提高响应速度
+  50, // 优化防抖时间到50ms，平衡响应性和性能
 );
 // 添加辅助函数，用于处理多行粘贴文本，防止注释符号和缩进异常
 const processMultilineInput = (text, options = {}) => {
@@ -670,11 +676,16 @@ const WebTerminal = ({
     };
   }, []);
 
+  const lastHighlightRefreshRef = useRef(0);
   const scheduleHighlightRefresh = useCallback((termInstance) => {
     if (!termInstance || typeof termInstance.refresh !== "function") {
       return;
     }
 
+    // 节流：防止过于频繁的刷新（最少间隔16ms，约60fps）
+    const now = Date.now();
+    const timeSinceLastRefresh = now - lastHighlightRefreshRef.current;
+    
     if (
       highlightRefreshFrameRef.current &&
       typeof cancelAnimationFrame === "function"
@@ -683,14 +694,22 @@ const WebTerminal = ({
     }
 
     if (typeof requestAnimationFrame !== "function") {
-      termInstance.refresh(0, termInstance.rows - 1);
+      // 降级到同步刷新
+      if (timeSinceLastRefresh >= 16) {
+        termInstance.refresh(0, termInstance.rows - 1);
+        lastHighlightRefreshRef.current = now;
+      }
       highlightRefreshFrameRef.current = null;
       return;
     }
 
     highlightRefreshFrameRef.current = requestAnimationFrame(() => {
       highlightRefreshFrameRef.current = null;
-      termInstance.refresh(0, termInstance.rows - 1);
+      const currentTime = Date.now();
+      if (currentTime - lastHighlightRefreshRef.current >= 16) {
+        termInstance.refresh(0, termInstance.rows - 1);
+        lastHighlightRefreshRef.current = currentTime;
+      }
     });
   }, []);
 
@@ -733,22 +752,59 @@ const WebTerminal = ({
         return;
       }
 
-      if (termInstance.__webglEnabled === true) {
+      // 防止重复初始化
+      if (termInstance.__webglEnabled === true && termInstance.__webglAddon) {
         return;
       }
 
       try {
+        // 清理旧的 WebGL addon
         if (
           termInstance.__webglAddon &&
           typeof termInstance.__webglAddon.dispose === "function"
         ) {
-          termInstance.__webglAddon.dispose();
+          try {
+            termInstance.__webglAddon.dispose();
+          } catch (e) {
+            // 忽略 dispose 错误
+          }
         }
+        
+        // 创建新的 WebGL addon
         const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => {
+          // WebGL 上下文丢失，标记需要恢复
+          termInstance.__webglNeedsRestore = true;
+          termInstance.__webglEnabled = false;
+        });
+        
         termInstance.loadAddon(webglAddon);
         termInstance.__webglAddon = webglAddon;
         termInstance.__webglEnabled = true;
+        termInstance.__webglNeedsRestore = false;
+        
+        // 添加 WebGL 上下文丢失监听
+        if (termInstance.element) {
+          const canvas = termInstance.element.querySelector('canvas');
+          if (canvas) {
+            canvas.addEventListener('webglcontextlost', (e) => {
+              e.preventDefault();
+              termInstance.__webglEnabled = false;
+              termInstance.__webglNeedsRestore = true;
+            }, false);
+            
+            canvas.addEventListener('webglcontextrestored', () => {
+              // 延迟恢复，确保上下文完全可用
+              setTimeout(() => {
+                if (termInstance.__webglNeedsRestore && webglRendererEnabledRef.current) {
+                  tryEnableWebglRenderer(termInstance);
+                }
+              }, 100);
+            }, false);
+          }
+        }
       } catch (_error) {
+        // WebGL 初始化失败，降级到 Canvas
         termInstance.__webglEnabled = false;
         termInstance.__webglAddon = null;
         webglRendererEnabledRef.current = false;
@@ -811,8 +867,11 @@ const WebTerminal = ({
       pendingWriteBufferRef.current.push(chunkStr);
       pendingWriteLengthRef.current += chunkStr.length;
 
+      // 优化批处理阈值：降低到32KB，提高响应性
+      const batchThreshold = 32768;
+      
       if (
-        pendingWriteLengthRef.current > 65536 &&
+        pendingWriteLengthRef.current > batchThreshold &&
         pendingWriteHandleRef.current !== null
       ) {
         if (
@@ -826,7 +885,8 @@ const WebTerminal = ({
         pendingWriteHandleRef.current = null;
       }
 
-      if (pendingWriteLengthRef.current > 65536) {
+      // 超过阈值立即刷新
+      if (pendingWriteLengthRef.current > batchThreshold) {
         flushPendingWrites(termInstance);
         return;
       }
@@ -840,12 +900,20 @@ const WebTerminal = ({
         flushPendingWrites(termInstance);
       };
 
-      if (typeof requestAnimationFrame === "function") {
-        pendingWriteUsingRafRef.current = true;
-        pendingWriteHandleRef.current = requestAnimationFrame(flush);
+      // 优化调度策略：小数据量使用 RAF，大数据量立即处理
+      if (pendingWriteLengthRef.current < 4096) {
+        // 小数据量：使用 RAF 批处理
+        if (typeof requestAnimationFrame === "function") {
+          pendingWriteUsingRafRef.current = true;
+          pendingWriteHandleRef.current = requestAnimationFrame(flush);
+        } else {
+          pendingWriteUsingRafRef.current = false;
+          pendingWriteHandleRef.current = setTimeout(flush, 16);
+        }
       } else {
+        // 中等数据量：短延迟后刷新（平衡性能和响应性）
         pendingWriteUsingRafRef.current = false;
-        pendingWriteHandleRef.current = setTimeout(flush, 16);
+        pendingWriteHandleRef.current = setTimeout(flush, 8);
       }
     },
     [flushPendingWrites],
@@ -1115,11 +1183,19 @@ const WebTerminal = ({
   };
 
   // 简化的选择监控 - 只在选择完成后进行调整
+  const lastSelectionAdjustmentRef = useRef(0);
   const scheduleSelectionAdjustment = () => {
+    // 节流：防止过于频繁的调整
+    const now = Date.now();
+    if (now - lastSelectionAdjustmentRef.current < 100) {
+      return; // 100ms内不重复调整
+    }
+    lastSelectionAdjustmentRef.current = now;
+    
     // 使用EventManager管理定时器
     eventManager.setTimeout(() => {
       requestAnimationFrame(adjustSelectionElements);
-    }, 50); // 减少延迟以提高响应速度
+    }, 100); // 适当延迟以减少调整频率
   };
 
   // 添加选择事件监听，确保在用户通过键盘选择时也能调整选择区域
@@ -1983,10 +2059,15 @@ const WebTerminal = ({
           if (fitAddonRef.current) {
             fitAddonRef.current.fit();
 
+            // Canvas 渲染器需要手动刷新
+            const cachedTerminal = terminalCache[tabId];
+            if (cachedTerminal && !cachedTerminal.__webglEnabled && typeof cachedTerminal.refresh === "function") {
+              cachedTerminal.refresh(0, cachedTerminal.rows - 1);
+            }
+
             // 同步到后端进程
             const processId = processCache[tabId];
             if (processId) {
-              const cachedTerminal = terminalCache[tabId];
               if (cachedTerminal) {
                 sendResizeIfNeeded(
                   processId,
@@ -2051,6 +2132,11 @@ const WebTerminal = ({
           // 使用EventManager管理确保适配容器大小
           eventManager.setTimeout(() => {
             fitAddon.fit();
+            
+            // Canvas 渲染器需要手动刷新
+            if (!term.__webglEnabled && typeof term.refresh === "function") {
+              term.refresh(0, term.rows - 1);
+            }
           }, 0);
         }
       } else {
@@ -2093,6 +2179,11 @@ const WebTerminal = ({
             eventManager.setTimeout(() => {
               if (fitAddon) {
                 fitAddon.fit();
+                
+                // Canvas 渲染器需要手动刷新
+                if (!term.__webglEnabled && typeof term.refresh === "function") {
+                  term.refresh(0, term.rows - 1);
+                }
               }
             }, 0);
           } catch (error) {
@@ -2134,6 +2225,11 @@ const WebTerminal = ({
         // 使用EventManager管理确保适配容器大小
         eventManager.setTimeout(() => {
           fitAddon.fit();
+          
+          // Canvas 渲染器需要手动刷新
+          if (!term.__webglEnabled && typeof term.refresh === "function") {
+            term.refresh(0, term.rows - 1);
+          }
         }, 0);
 
         // 如果有SSH配置，则优先使用SSH连接
@@ -2463,6 +2559,11 @@ const WebTerminal = ({
           // 适配终端大小
           fitAddon.fit();
 
+          // Canvas 渲染器需要手动刷新
+          if (!term.__webglEnabled && typeof term.refresh === "function") {
+            term.refresh(0, term.rows - 1);
+          }
+
           // 使用requestAnimationFrame进行二次检查，确保在下一帧进行适配检查
           requestAnimationFrame(() => {
             if (terminalRef.current && term && term.element) {
@@ -2477,6 +2578,11 @@ const WebTerminal = ({
                 Math.abs(elemHeight - currentHeight) > 5
               ) {
                 fitAddon.fit();
+                
+                // Canvas 渲染器需要手动刷新
+                if (!term.__webglEnabled && typeof term.refresh === "function") {
+                  term.refresh(0, term.rows - 1);
+                }
               }
             }
           });
@@ -2531,15 +2637,16 @@ const WebTerminal = ({
             const currentWidth = termRef.current.element.clientWidth;
             const currentHeight = termRef.current.element.clientHeight;
 
+            // 提高阈值到10px，减少微小变化触发的resize
             if (
-              Math.abs(width - currentWidth) > 5 ||
-              Math.abs(height - currentHeight) > 5
+              Math.abs(width - currentWidth) > 10 ||
+              Math.abs(height - currentHeight) > 10
             ) {
               handleResize();
             }
           }
         },
-        { debounceTime: 50 }, // 从100ms优化到50ms防抖，提高响应速度
+        { debounceTime: 100 }, // 优化防抖时间到100ms，减少频繁调用
       );
 
       // 使用EventManager管理window resize事件作为备用
@@ -2665,6 +2772,11 @@ const WebTerminal = ({
             // 先调用fit
             fitAddonRef.current.fit();
 
+            // Canvas 渲染器需要手动刷新
+            if (!term.__webglEnabled && typeof term.refresh === "function") {
+              term.refresh(0, term.rows - 1);
+            }
+
             // 获取实际尺寸
             const cols = term.cols;
             const rows = term.rows;
@@ -2742,7 +2854,7 @@ const WebTerminal = ({
         if (contentUpdated) {
           ensureTerminalSizeOnVisibilityChange();
         }
-      }, 200); // 从100ms改为200ms，减轻性能负担
+      }, 500); // 优化检查间隔到500ms，降低CPU占用
 
       // 添加定时器清理
       // 添加ResizeObserver到EventManager管理
@@ -3368,6 +3480,12 @@ const WebTerminal = ({
       if (fitAddonRef.current) {
         try {
           fitAddonRef.current.fit();
+          
+          // Canvas 渲染器需要手动刷新
+          if (!term.__webglEnabled && typeof term.refresh === "function") {
+            term.refresh(0, term.rows - 1);
+          }
+          
           const processId = processCache[tabId];
           if (processId) {
             sendResizeIfNeeded(processId, tabId, term.cols, term.rows);
