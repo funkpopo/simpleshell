@@ -3458,6 +3458,42 @@ const WebTerminal = ({
     }
   }, [theme.palette.mode, tabId]);
 
+  // 监听isActive变化，管理终端焦点状态
+  useEffect(() => {
+    // 当标签变为活动状态时，确保终端获得焦点以接收键盘输入
+    if (isActive && termRef.current) {
+      // 使用短延迟确保DOM完全渲染和CSS过渡完成
+      const focusTimer = setTimeout(() => {
+        try {
+          // 验证终端实例和焦点方法存在
+          if (
+            termRef.current &&
+            typeof termRef.current.focus === "function" &&
+            terminalRef.current
+          ) {
+            // 检查终端元素是否真正可见
+            const isVisible =
+              terminalRef.current.offsetWidth > 0 &&
+              terminalRef.current.offsetHeight > 0;
+
+            if (isVisible) {
+              // 让终端获得焦点，使其能够接收键盘输入
+              termRef.current.focus();
+            }
+          }
+        } catch (error) {
+          // 忽略焦点设置失败的错误，不影响其他功能
+          console.debug("Terminal focus failed:", error);
+        }
+      }, 100); // 100ms延迟确保过渡动画完成
+
+      // 清理定时器
+      return () => {
+        clearTimeout(focusTimer);
+      };
+    }
+  }, [isActive, tabId]); // 监听isActive和tabId变化
+
   // 添加标签切换监听器
   useEffect(() => {
     // 创建一个用于监听标签切换事件的处理函数
