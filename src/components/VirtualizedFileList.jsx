@@ -56,11 +56,11 @@ const FileItem = memo(({ index, style, data }) => {
   } = data;
   const file = files[index];
 
-  // 确保文件存在
-  if (!file) return null;
+  // 注意：不再在此处提前返回，以保持 hooks 调用顺序一致
 
   // 检查文件是否被选中 - 优先使用传入的isFileSelected函数
   const isCurrentFileSelected = useMemo(() => {
+    if (!file) return false;
     if (isFileSelected) {
       return isFileSelected(file);
     }
@@ -80,22 +80,24 @@ const FileItem = memo(({ index, style, data }) => {
   // 使用useMemo缓存文件的格式化信息，避免每次渲染都计算
   const fileInfo = useMemo(
     () => ({
-      formattedDate: file.modifyTime
+      formattedDate: file?.modifyTime
         ? formatDate(new Date(file.modifyTime))
         : "",
       formattedSize:
-        file.size && !file.isDirectory ? formatFileSize(file.size) : "",
+        file?.size && !file?.isDirectory ? formatFileSize(file.size) : "",
       isSelected: isCurrentFileSelected,
     }),
-    [file.modifyTime, file.size, file.isDirectory, isCurrentFileSelected],
+    [file?.modifyTime, file?.size, file?.isDirectory, isCurrentFileSelected],
   );
 
   const handleFileActivate = useCallback(() => {
+    if (!file) return;
     onFileActivate(file);
   }, [file, onFileActivate]);
 
   const handleContextMenu = useCallback(
     (e) => {
+      if (!file) return;
       onContextMenu(e, file, index);
     },
     [file, onContextMenu, index],
@@ -103,6 +105,7 @@ const FileItem = memo(({ index, style, data }) => {
 
   const handleFileClick = useCallback(
     (e) => {
+      if (!file) return;
       if (onFileSelect) {
         onFileSelect(file, index, e);
       }
@@ -164,16 +167,14 @@ const FileItem = memo(({ index, style, data }) => {
           sx={buttonSx}
         >
           <ListItemIcon sx={{ minWidth: 28, mr: 1 }}>
-            {" "}
-            {/* 进一步减少图标宽度并添加右边距 */}
-            {file.isDirectory ? (
+            {file && file.isDirectory ? (
               <FolderIcon color="primary" fontSize="small" />
             ) : (
               <InsertDriveFileIcon fontSize="small" />
             )}
           </ListItemIcon>
           <ListItemText
-            primary={file.name}
+            primary={file ? file.name : ""}
             secondary={secondaryText}
             sx={{
               my: 0, // 移除ListItemText的垂直边距
@@ -419,11 +420,6 @@ const VirtualizedFileList = ({
     ],
   );
 
-  // 如果没有文件，显示空状态
-  if (processedFiles.length === 0) {
-    return EmptyStateComponent;
-  }
-
   // 降级到传统列表渲染 - 优化版本，使用useMemo缓存
   const FallbackListComponent = useMemo(
     () => (
@@ -493,6 +489,11 @@ const VirtualizedFileList = ({
     () => FallbackListComponent,
     [FallbackListComponent],
   );
+
+  // 如果没有文件，显示空状态（将返回位置移动到所有 hooks 之后，避免改变 hooks 调用数量）
+  if (processedFiles.length === 0) {
+    return EmptyStateComponent;
+  }
 
   // 如果虚拟化被禁用或出现错误，使用降级渲染
   if (
