@@ -2824,6 +2824,96 @@ function setupIPC(mainWindow) {
     return sftpTransfer.handleDownloadFile(event, tabId, remotePath);
   });
 
+  // 设置文件所有者/组
+  ipcMain.handle(
+    "setFileOwnership",
+    async (event, tabId, filePath, owner, group) => {
+      try {
+        // 使用 SFTP 会话池串行化该类操作
+        return sftpCore.enqueueSftpOperation(tabId, async () => {
+          try {
+            // 查找对应的SSH客户端
+            const processInfo = childProcesses.get(tabId);
+            if (
+              !processInfo ||
+              !processInfo.process ||
+              processInfo.type !== "ssh2"
+            ) {
+              return { success: false, error: "无效的SSH连接" };
+            }
+
+            // 构建 chown 参数
+            const ownerSpec =
+              owner && group
+                ? `${owner}:${group}`
+                : owner && !group
+                  ? `${owner}`
+                  : !owner && group
+                    ? `:${group}`
+                    : null;
+
+            if (!ownerSpec) {
+              // 没有需要变更的内容
+              return { success: true };
+            }
+
+            const sshClient = processInfo.process;
+            return new Promise((resolve) => {
+              const command = `chown ${ownerSpec} "${filePath}"`;
+              sshClient.exec(command, (err, stream) => {
+                if (err) {
+                  logToFile(
+                    `Failed to set file ownership for session ${tabId}: ${err.message}`,
+                    "ERROR",
+                  );
+                  return resolve({
+                    success: false,
+                    error: `设置所有者/组失败: ${err.message}`,
+                  });
+                }
+
+                let stderr = "";
+                stream
+                  .on("close", (code) => {
+                    if (code === 0) {
+                      logToFile(
+                        `Successfully set ownership ${ownerSpec} for ${filePath} in session ${tabId}`,
+                        "INFO",
+                      );
+                      resolve({ success: true });
+                    } else {
+                      const errorMsg =
+                        stderr || `chown命令执行失败，退出码: ${code}`;
+                      logToFile(
+                        `Failed to set ownership for session ${tabId}: ${errorMsg}`,
+                        "ERROR",
+                      );
+                      resolve({
+                        success: false,
+                        error: `设置所有者/组失败: ${errorMsg}`,
+                      });
+                    }
+                  })
+                  .on("data", () => {})
+                  .stderr.on("data", (data) => {
+                    stderr += data.toString();
+                  });
+              });
+            });
+          } catch (error) {
+            return { success: false, error: `SFTP会话错误: ${error.message}` };
+          }
+        });
+      } catch (error) {
+        logToFile(
+          `Set file ownership error for session ${tabId}: ${error.message}`,
+          "ERROR",
+        );
+        return { success: false, error: `设置所有者/组失败: ${error.message}` };
+      }
+    },
+  );
+
   ipcMain.handle(
     "external-editor:open",
     async (event, tabId, remotePath) => {

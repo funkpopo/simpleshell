@@ -42,6 +42,7 @@ import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutli
 import LinkIcon from "@mui/icons-material/Link";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
+import LockIcon from "@mui/icons-material/Lock";
 import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
@@ -97,8 +98,6 @@ const FileManager = memo(
     const [anchorIndex, setAnchorIndex] = useState(-1); // Shift选择的锚点索引
     const [showRenameDialog, setShowRenameDialog] = useState(false);
     const [newName, setNewName] = useState("");
-    const [filePermissions, setFilePermissions] = useState("644");
-    const [permissionsChanged, setPermissionsChanged] = useState(false);
     const [blankContextMenu, setBlankContextMenu] = useState(null);
     const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
@@ -118,6 +117,17 @@ const FileManager = memo(
     const [historyIndex, setHistoryIndex] = useState(-1); // 当前在历史记录中的位置
     const [isDragging, setIsDragging] = useState(false); // 拖拽状态
     const [dragCounter, setDragCounter] = useState(0); // 拖拽计数器，用于处理子元素的dragenter/dragleave
+
+    // 权限弹窗状态
+    const [showPermissionDialog, setShowPermissionDialog] = useState(false);
+    const [permDialogPermissions, setPermDialogPermissions] = useState("644");
+    const [permDialogOwner, setPermDialogOwner] = useState("");
+    const [permDialogGroup, setPermDialogGroup] = useState("");
+    const [permInitial, setPermInitial] = useState({
+      permissions: "",
+      owner: "",
+      group: "",
+    });
 
     const clearSelection = useCallback(() => {
       setSelectedFiles([]);
@@ -1085,6 +1095,158 @@ const FileManager = memo(
     const handleContextMenuClose = () => {
       setContextMenu(null);
     };
+
+    // 用户活动后的刷新函数，使用防抖优化
+    const refreshAfterUserActivity = useMemo(
+      () =>
+        debounce(() => {
+          if (currentPath) {
+            silentRefreshCurrentDirectory();
+          }
+        }, USER_ACTIVITY_REFRESH_DELAY),
+      [currentPath, silentRefreshCurrentDirectory],
+    );
+
+    // 获取选中文件的完整路径
+    const getFullPathForFile = useCallback(
+      (file) => {
+        if (!file) return "";
+        const base = currentPath && currentPath.length > 0 ? currentPath : "/";
+        if (base === "/") return `/${file.name}`;
+        return `${base}/${file.name}`;
+      },
+      [currentPath],
+    );
+
+    // 打开权限对话框
+    const handleOpenPermissions = useCallback(async () => {
+      if (!selectedFile) return;
+      try {
+        const fullPath = getFullPathForFile(selectedFile);
+        // 默认权限
+        const defaultPerm = selectedFile.isDirectory ? "755" : "644";
+        setPermDialogPermissions(defaultPerm);
+        setPermDialogOwner("");
+        setPermDialogGroup("");
+        setPermInitial({ permissions: defaultPerm, owner: "", group: "" });
+
+        if (window.terminalAPI?.getFilePermissions) {
+          const resp = await window.terminalAPI.getFilePermissions(
+            tabId,
+            fullPath,
+          );
+          if (resp?.success) {
+            if (resp.permissions) {
+              setPermDialogPermissions(resp.permissions);
+            }
+            // 预填 uid/gid（字符串），用户可改为名称
+            const uid = resp.stats?.uid;
+            const gid = resp.stats?.gid;
+            const ownerStr =
+              typeof uid === "number" || typeof uid === "string"
+                ? String(uid)
+                : "";
+            const groupStr =
+              typeof gid === "number" || typeof gid === "string"
+                ? String(gid)
+                : "";
+            setPermDialogOwner(ownerStr);
+            setPermDialogGroup(groupStr);
+            setPermInitial({
+              permissions: resp.permissions || defaultPerm,
+              owner: ownerStr,
+              group: groupStr,
+            });
+          }
+        }
+      } catch (e) {
+        // 忽略预取失败，使用默认
+      }
+      setShowPermissionDialog(true);
+      handleContextMenuClose();
+    }, [selectedFile, tabId, getFullPathForFile]);
+
+    const handlePermissionDialogClose = useCallback(() => {
+      setShowPermissionDialog(false);
+    }, []);
+
+    // 保存权限变更
+    const handlePermissionDialogSubmit = useCallback(
+      async (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!selectedFile) return;
+        const fullPath = getFullPathForFile(selectedFile);
+        const ops = [];
+        try {
+          // 权限变更
+          if (
+            permDialogPermissions &&
+            permDialogPermissions !== permInitial.permissions &&
+            window.terminalAPI?.setFilePermissions
+          ) {
+            ops.push(
+              window.terminalAPI.setFilePermissions(
+                tabId,
+                fullPath,
+                permDialogPermissions,
+              ),
+            );
+          }
+
+          // 所有者/组变更
+          const ownerChanged = permDialogOwner !== permInitial.owner;
+          const groupChanged = permDialogGroup !== permInitial.group;
+          if ((ownerChanged || groupChanged) && window.terminalAPI?.setFileOwnership) {
+            ops.push(
+              window.terminalAPI.setFileOwnership(
+                tabId,
+                fullPath,
+                permDialogOwner || undefined,
+                permDialogGroup || undefined,
+              ),
+            );
+          }
+
+          if (ops.length > 0) {
+            setLoading(true);
+            const results = await Promise.all(ops);
+            const failed = results.find((r) => !r?.success);
+            if (failed) {
+              setError(
+                failed.error || t("fileManager.errors.permissionSetFailed"),
+              );
+            } else {
+              await loadDirectory(currentPath);
+              refreshAfterUserActivity();
+            }
+          }
+        } catch (err) {
+          setError(
+            `${t("fileManager.errors.permissionSetFailed")}: ${
+              err?.message || t("fileManager.errors.unknownError")
+            }`,
+          );
+        } finally {
+          setLoading(false);
+          setShowPermissionDialog(false);
+        }
+      },
+      [
+        selectedFile,
+        tabId,
+        getFullPathForFile,
+        permDialogPermissions,
+        permDialogOwner,
+        permDialogGroup,
+        permInitial.permissions,
+        permInitial.owner,
+        permInitial.group,
+        loadDirectory,
+        currentPath,
+        refreshAfterUserActivity,
+        t,
+      ],
+    );
 
     // 处理批量删除
     const handleBatchDelete = async () => {
@@ -2072,16 +2234,7 @@ const FileManager = memo(
       }
     };
 
-    // 用户活动后的刷新函数，使用防抖优化
-    const refreshAfterUserActivity = useMemo(
-      () =>
-        debounce(() => {
-          if (currentPath) {
-            silentRefreshCurrentDirectory();
-          }
-        }, USER_ACTIVITY_REFRESH_DELAY),
-      [currentPath, silentRefreshCurrentDirectory],
-    );
+    
 
     // 处理拖拽的文件和文件夹
     const handleDroppedItems = useCallback(
@@ -3256,35 +3409,7 @@ const FileManager = memo(
     const handleRename = async () => {
       if (!selectedFile) return;
       setNewName(selectedFile.name);
-
-      // 先设置默认权限
-      const defaultPermissions = selectedFile.isDirectory ? "755" : "644";
-      setFilePermissions(defaultPermissions);
-
-      // 获取当前文件的权限
-      try {
-        const fullPath =
-          currentPath === "/"
-            ? "/" + selectedFile.name
-            : currentPath
-              ? currentPath + "/" + selectedFile.name
-              : selectedFile.name;
-
-        if (window.terminalAPI && window.terminalAPI.getFilePermissions) {
-          const response = await window.terminalAPI.getFilePermissions(
-            tabId,
-            fullPath,
-          );
-          if (response?.success && response.permissions) {
-            setFilePermissions(response.permissions);
-          }
-        }
-      } catch (error) {
-        console.warn("Failed to get file permissions:", error);
-        // 继续使用默认权限
-      }
-
-      setPermissionsChanged(false);
+      // 打开重命名对话框
       setShowRenameDialog(true);
       handleContextMenuClose();
     };
@@ -3298,9 +3423,7 @@ const FileManager = memo(
 
       // 检查是否有更改
       const nameChanged = newName && newName !== selectedFile.name;
-      const needsUpdate = nameChanged || permissionsChanged;
-
-      if (!needsUpdate) return;
+      if (!nameChanged) return;
 
       setLoading(true);
       setError(null);
@@ -3356,49 +3479,7 @@ const FileManager = memo(
             }
           }
 
-          // 如果需要设置权限
-          if (
-            permissionsChanged &&
-            window.terminalAPI &&
-            window.terminalAPI.setFilePermissions
-          ) {
-            const permResponse = await window.terminalAPI.setFilePermissions(
-              tabId,
-              finalPath,
-              filePermissions,
-            );
-
-            if (!permResponse?.success) {
-              if (
-                permResponse?.error?.includes("SFTP错误") &&
-                retryCount < maxRetries
-              ) {
-                // SFTP错误，尝试重试
-                retryCount++;
-                setError(
-                  t("fileManager.messages.permissionSetFailedRetrying", {
-                    current: retryCount,
-                    max: maxRetries,
-                  }),
-                );
-                setTimeout(attemptUpdate, 500 * retryCount);
-                return;
-              } else {
-                // 设置权限失败，但如果重命名成功了，我们仍然显示警告而不是错误
-                if (nameChanged) {
-                  setError(
-                    `${t("fileManager.errors.fileRenamedButPermissionFailed")}: ${permResponse?.error || t("fileManager.errors.unknownError")}`,
-                  );
-                } else {
-                  setError(
-                    permResponse?.error ||
-                      t("fileManager.errors.permissionSetFailed"),
-                  );
-                  return;
-                }
-              }
-            }
-          }
+          // 重命名窗口中不再处理权限变更
 
           // 操作成功，刷新目录
           await loadDirectory(currentPath);
@@ -3431,11 +3512,7 @@ const FileManager = memo(
       attemptUpdate();
     };
 
-    // 处理权限变化
-    const handlePermissionChange = (newPermissions) => {
-      setFilePermissions(newPermissions);
-      setPermissionsChanged(true);
-    };
+    // 重命名不再处理权限变化
 
     // 处理键盘快捷键
     const handleKeyDown = (event) => {
@@ -3494,6 +3571,24 @@ const FileManager = memo(
           showNotification("无法批量重命名，请选择单个文件", "warning");
         } else {
           showNotification("请先选择要重命名的文件", "warning");
+        }
+      }
+
+      // F3: 权限设置
+      if (event.key === "F3") {
+        event.preventDefault();
+        if (selectedFilesData.length === 1) {
+          handleOpenPermissions();
+        } else if (selectedFilesData.length > 1) {
+          showNotification(
+            "暂不支持批量权限设置，请选择单个文件/文件夹",
+            "warning",
+          );
+        } else {
+          showNotification(
+            "请先选择要设置权限的文件/文件夹",
+            "warning",
+          );
         }
       }
 
@@ -3923,6 +4018,23 @@ const FileManager = memo(
             </MenuItem>
           )}
 
+          {/* 仅在单选时显示权限设置 */}
+          {selectedFiles.length <= 1 && (
+            <MenuItem onClick={handleOpenPermissions}>
+              <ListItemIcon>
+                <LockIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>{t("fileManager.permissions")}</ListItemText>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ ml: 2 }}
+              >
+                F3
+              </Typography>
+            </MenuItem>
+          )}
+
           {/* 仅在单选时显示复制路径 */}
           {selectedFiles.length <= 1 && (
             <MenuItem onClick={handleCopyAbsolutePath}>
@@ -4125,10 +4237,7 @@ const FileManager = memo(
                     size="small"
                   />
 
-                  <FilePermissionEditor
-                    permissions={filePermissions}
-                    onChange={handlePermissionChange}
-                  />
+                  {/* 权限设置已从重命名窗口剥离 */}
 
                   <Box
                     sx={{
@@ -4140,6 +4249,92 @@ const FileManager = memo(
                   >
                     <Button
                       onClick={() => setShowRenameDialog(false)}
+                      color="inherit"
+                      size="small"
+                    >
+                      {t("common.cancel")}
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      color="primary"
+                      size="small"
+                    >
+                      {t("common.save")}
+                    </Button>
+                  </Box>
+                </Box>
+              </form>
+            </Paper>
+          </Box>
+        )}
+
+        {showPermissionDialog && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1300,
+            }}
+          >
+            <Paper
+              sx={{
+                width: "90%",
+                maxWidth: 600,
+                maxHeight: "80vh",
+                p: 3,
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+                overflow: "auto",
+              }}
+            >
+              <Typography variant="subtitle1">
+                {t("fileManager.permissions")}
+              </Typography>
+              <form onSubmit={handlePermissionDialogSubmit}>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <FilePermissionEditor
+                    permissions={permDialogPermissions}
+                    onChange={setPermDialogPermissions}
+                  />
+
+                  <Box sx={{ display: "flex", gap: 2 }}>
+                    <TextField
+                      fullWidth
+                      label="用户"
+                      value={permDialogOwner}
+                      onChange={(e) => setPermDialogOwner(e.target.value)}
+                      variant="outlined"
+                      size="small"
+                    />
+                    <TextField
+                      fullWidth
+                      label="用户组"
+                      value={permDialogGroup}
+                      onChange={(e) => setPermDialogGroup(e.target.value)}
+                      variant="outlined"
+                      size="small"
+                    />
+                  </Box>
+
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      mt: 2,
+                      gap: 1,
+                    }}
+                  >
+                    <Button
+                      onClick={handlePermissionDialogClose}
                       color="inherit"
                       size="small"
                     >
