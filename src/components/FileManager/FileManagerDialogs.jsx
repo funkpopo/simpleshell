@@ -1,6 +1,5 @@
 import React, { memo } from "react";
 import { Box, Paper, Typography, TextField, Button } from "@mui/material";
-import FilePermissionEditor from "../FilePermissionEditor.jsx";
 import { useTranslation } from "react-i18next";
 
 // 对话框基础样式
@@ -28,9 +27,7 @@ export const RenameDialog = memo(
   ({
     open,
     newName,
-    filePermissions,
     onNewNameChange,
-    onPermissionChange,
     onSubmit,
     onClose,
   }) => {
@@ -65,10 +62,7 @@ export const RenameDialog = memo(
                 size="small"
               />
 
-              <FilePermissionEditor
-                permissions={filePermissions}
-                onChange={onPermissionChange}
-              />
+              {/* 权限设置已从重命名窗口剥离 */}
 
               <Box
                 sx={{

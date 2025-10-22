@@ -298,6 +298,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 权限设置API
   setFilePermissions: (tabId, filePath, permissions) =>
     ipcRenderer.invoke("setFilePermissions", tabId, filePath, permissions),
+  // 所有者/组设置API
+  setFileOwnership: (tabId, filePath, owner, group) =>
+    ipcRenderer.invoke("setFileOwnership", tabId, filePath, owner, group),
   getFilePermissions: (tabId, filePath) =>
     ipcRenderer.invoke("getFilePermissions", tabId, filePath),
 
