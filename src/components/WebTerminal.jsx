@@ -948,6 +948,13 @@ const WebTerminal = ({
   // 用户手动关闭命令快捷窗口后抑制显示，直到下一次按下回车才恢复
   const [suggestionsSuppressedUntilEnter, setSuggestionsSuppressedUntilEnter] =
     useState(false);
+  // 记录抑制建议时的上下文（输入内容与时间），便于在输入变化时自动解除抑制
+  const suppressionContextRef = useRef({ input: "", timestamp: 0 });
+  // 在事件回调中读取“抑制”最新状态
+  const suggestionsSuppressedRef = useRef(false);
+  useEffect(() => {
+    suggestionsSuppressedRef.current = suggestionsSuppressedUntilEnter;
+  }, [suggestionsSuppressedUntilEnter]);
 
   // 密码提示检测模式（支持多语言和格式）
   const passwordPromptPatterns = [
@@ -1571,6 +1578,7 @@ const WebTerminal = ({
             }
             if (currentInputBuffer.length === 0) {
               setSuggestionsHiddenByEsc(false);
+              setSuggestionsSuppressedUntilEnter(false);
             }
           }
         }
@@ -1625,6 +1633,10 @@ const WebTerminal = ({
 
         // 设置命令执行状态，防止显示建议
         setIsCommandExecuting(true);
+
+        // 回车进入新一行：解除因 ESC 或手动关闭导致的抑制，允许下一次正常输入时显示建议
+        setSuggestionsHiddenByEsc(false);
+        setSuggestionsSuppressedUntilEnter(false);
 
         try {
           // 获取终端的最后一行内容（可能包含用户输入的命令）
@@ -1805,6 +1817,18 @@ const WebTerminal = ({
           data.charCodeAt(0) <= 126
         ) {
           setCurrentInput(currentInputBuffer);
+
+          // 若用户在手动关闭后继续输入了新内容，则自动解除抑制
+          if (suggestionsSuppressedRef.current) {
+            try {
+              const anchor = (suppressionContextRef.current?.input || "").trim();
+              const nowInput = currentInputBuffer.trim();
+              if (!anchor || nowInput.length === 0 || nowInput !== anchor) {
+                setSuggestionsSuppressedUntilEnter(false);
+                setSuggestionsHiddenByEsc(false);
+              }
+            } catch (_e) {}
+          }
 
           // 只有在非命令执行状态下才触发建议搜索
           if (
@@ -2465,6 +2489,10 @@ const WebTerminal = ({
             setSuggestionsHiddenByEsc(true);
             // 视为手动关闭：直到下一次回车前不再显示
             setSuggestionsSuppressedUntilEnter(true);
+            suppressionContextRef.current = {
+              input: currentInput,
+              timestamp: Date.now(),
+            };
           }
         }
         // Ctrl+. 查找下一个
@@ -4284,7 +4312,7 @@ const WebTerminal = ({
       if (
         lastExecutedCommandRef.current &&
         trimmedInput === lastExecutedCommandRef.current &&
-        Date.now() - lastExecutedCommandTimeRef.current < 2000
+        Date.now() - lastExecutedCommandTimeRef.current < 600
       ) {
         setSuggestions([]);
         setShowSuggestions(false);
@@ -4442,7 +4470,11 @@ const WebTerminal = ({
     setShowSuggestions(false);
     setSuggestions([]);
     setSuggestionsSuppressedUntilEnter(true);
-  }, []);
+    suppressionContextRef.current = {
+      input: currentInput,
+      timestamp: Date.now(),
+    };
+  }, [currentInput]);
 
   // 示例：假设有如下输入处理函数
   const handleUserInput = (input) => {

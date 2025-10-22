@@ -502,7 +502,8 @@ const CommandSuggestion = ({
         top: windowPosition.top,
         width: windowPosition.width,
         maxHeight: windowPosition.height,
-        zIndex: 9999,
+        // Raise above potential high-z overlays during tab drag previews
+        zIndex: 11000,
         overflow: "hidden",
         borderRadius: 1,
         border: `1px solid ${theme.palette.divider}`,
