@@ -31,6 +31,9 @@
       "logSettingsTitle": "Log Settings",
       "logLevelLabel": "Log Level",
       "logFileSizeLimitLabel": "Log File Size Limit",
+      "logCleanupIntervalLabel": "Log Cleanup Interval",
+      "logCleanupIntervalHelper": "Clean up log entries older than specified days, dual cleanup by size and time",
+      "days": "days",
       "performanceSettings": "Performance Settings",
       "dnd": {
         "title": "Tab Drag & Drop",
