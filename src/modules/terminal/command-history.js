@@ -176,6 +176,62 @@ class CommandHistoryService {
       timestamp: item.timestamp,
     }));
   }
+
+  getAllHistory() {
+    // 返回所有历史记录，按时间戳降序排序
+    return [...this.history].sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  exportHistory() {
+    // 导出历史记录供保存
+    return this.history.map((item) => ({
+      command: item.command,
+      timestamp: item.timestamp,
+      count: item.count || 1,
+    }));
+  }
+
+  getStatistics() {
+    // 返回统计信息
+    const totalCommands = this.history.length;
+    const uniqueCommands = new Set(this.history.map((item) => item.command))
+      .size;
+    const totalUsage = this.history.reduce(
+      (sum, item) => sum + (item.count || 1),
+      0,
+    );
+
+    // 找出最常用的命令（前10个）
+    const topCommands = [...this.history]
+      .sort((a, b) => (b.count || 1) - (a.count || 1))
+      .slice(0, 10)
+      .map((item) => ({
+        command: item.command,
+        count: item.count || 1,
+      }));
+
+    // 最近使用的命令（前10个）
+    const recentCommands = [...this.history]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 10)
+      .map((item) => ({
+        command: item.command,
+        timestamp: item.timestamp,
+      }));
+
+    return {
+      totalCommands,
+      uniqueCommands,
+      totalUsage,
+      topCommands,
+      recentCommands,
+    };
+  }
+
+  clearHistory() {
+    // 清空所有历史记录
+    this.history = [];
+  }
 }
 
 // 创建单例实例
