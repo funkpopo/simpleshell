@@ -128,6 +128,7 @@ const Settings = memo(({ open, onClose }) => {
   const [externalEditorCommand, setExternalEditorCommand] = React.useState("");
   const [logLevel, setLogLevel] = React.useState("WARN");
   const [maxFileSize, setMaxFileSize] = React.useState(5);
+  const [cleanupIntervalDays, setCleanupIntervalDays] = React.useState(7);
   const [isLoading, setIsLoading] = React.useState(true);
 
   // 性能设置状态
@@ -208,6 +209,7 @@ const Settings = memo(({ open, onClose }) => {
                 ? Math.round(logSettings.maxFileSize / (1024 * 1024))
                 : 5,
             );
+            setCleanupIntervalDays(logSettings.cleanupIntervalDays || 7);
           }
         }
       } catch (error) {
@@ -257,6 +259,15 @@ const Settings = memo(({ open, onClose }) => {
     // 确保输入的是数字，且大于0
     if (!isNaN(value) && Number(value) > 0) {
       setMaxFileSize(Number(value));
+    }
+  };
+
+  // Handle cleanup interval days change
+  const handleCleanupIntervalDaysChange = (event) => {
+    const value = event.target.value;
+    // 确保输入的是数字，且大于0
+    if (!isNaN(value) && Number(value) > 0) {
+      setCleanupIntervalDays(Number(value));
     }
   };
 
@@ -347,6 +358,7 @@ const Settings = memo(({ open, onClose }) => {
           // 保留其他设置默认值
           maxFiles: 5,
           compressOldLogs: true,
+          cleanupIntervalDays: cleanupIntervalDays,
         };
         await window.terminalAPI.saveLogSettings(logSettings);
       }
@@ -630,7 +642,7 @@ const Settings = memo(({ open, onClose }) => {
                 </FormControl>
               </Box>
 
-              <Box>
+              <Box sx={{ mb: 2 }}>
                 <TextField
                   fullWidth
                   label={t("settings.logFileSizeLimitLabel")}
@@ -648,6 +660,28 @@ const Settings = memo(({ open, onClose }) => {
                     min: 1,
                     step: 1,
                   }}
+                />
+              </Box>
+
+              <Box>
+                <TextField
+                  fullWidth
+                  label={t("settings.logCleanupIntervalLabel")}
+                  variant="outlined"
+                  size="small"
+                  type="number"
+                  value={cleanupIntervalDays}
+                  onChange={handleCleanupIntervalDaysChange}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">{t("settings.days")}</InputAdornment>
+                    ),
+                  }}
+                  inputProps={{
+                    min: 1,
+                    step: 1,
+                  }}
+                  helperText={t("settings.logCleanupIntervalHelper")}
                 />
               </Box>
             </Box>

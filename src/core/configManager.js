@@ -611,6 +611,7 @@ function loadLogSettings() {
       maxFileSize: 5 * 1024 * 1024,
       maxFiles: 5,
       compressOldLogs: true,
+      cleanupIntervalDays: 7,
     };
   }
 
@@ -636,6 +637,7 @@ function loadLogSettings() {
             config.logSettings.compressOldLogs !== undefined
               ? config.logSettings.compressOldLogs
               : true,
+          cleanupIntervalDays: config.logSettings.cleanupIntervalDays || 7,
         };
       }
     }
@@ -654,6 +656,7 @@ function loadLogSettings() {
     maxFileSize: 5 * 1024 * 1024,
     maxFiles: 5,
     compressOldLogs: true,
+    cleanupIntervalDays: 7,
   };
 }
 
@@ -684,6 +687,7 @@ function saveLogSettings(settings) {
         settings.compressOldLogs !== undefined
           ? settings.compressOldLogs
           : true,
+      cleanupIntervalDays: settings.cleanupIntervalDays || 7,
     };
 
     fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
