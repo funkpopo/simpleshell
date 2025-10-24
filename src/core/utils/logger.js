@@ -18,6 +18,7 @@ const DEFAULT_LOG_CONFIG = {
   maxFileSize: 5 * 1024 * 1024, // 默认日志文件大小上限：5MB
   maxFiles: 5, // 默认最大历史日志文件数量
   compressOldLogs: true, // 是否压缩旧日志文件
+  cleanupIntervalDays: 7, // 日志清理时间间隔：7天
 };
 
 // 当前配置
@@ -183,6 +184,53 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
   }
 }
 
+// 清理过期日志记录（按时间清理app.log中的内容）
+function cleanupOldLogEntries() {
+  try {
+    if (!logFile || !fs.existsSync(logFile)) return;
+
+    const now = new Date();
+    const cutoffTime = new Date(now.getTime() - (logConfig.cleanupIntervalDays * 24 * 60 * 60 * 1000));
+
+    // 读取整个日志文件
+    const logContent = fs.readFileSync(logFile, 'utf8');
+    const lines = logContent.split('\n').filter(line => line.trim());
+
+    // 过滤出未过期的日志行
+    const validLines = lines.filter(line => {
+      // 匹配时间戳格式 [2025-10-24T03:04:34.360Z]
+      const timestampMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\]/);
+      if (!timestampMatch) {
+        // 如果没有匹配到时间戳，保留这一行（可能是格式错误的日志）
+        return true;
+      }
+
+      const logTime = new Date(timestampMatch[1]);
+      return logTime >= cutoffTime;
+    });
+
+    // 如果有日志被清理，重新写入文件
+    if (validLines.length < lines.length) {
+      const newContent = validLines.join('\n') + '\n';
+      fs.writeFileSync(logFile, newContent, 'utf8');
+
+      const cleanedCount = lines.length - validLines.length;
+      logToFileInternal(
+        `Log cleanup completed. Removed ${cleanedCount} entries older than ${logConfig.cleanupIntervalDays} days.`,
+        "INFO",
+        true
+      );
+    }
+  } catch (error) {
+    // 清理失败时记录错误但不抛出异常
+    try {
+      logToFileInternal(`Log cleanup failed: ${error.message}`, "ERROR", true);
+    } catch (logError) {
+      // 如果连错误都无法记录，静默失败
+    }
+  }
+}
+
 // 初始化日志模块，必须在 app 'ready' 后调用
 function initLogger(electronApp) {
   appInstance = electronApp;
@@ -203,6 +251,9 @@ function initLogger(electronApp) {
 
     // 检查日志文件大小并在必要时执行轮转
     checkLogFileSize();
+
+    // 清理过期日志记录
+    cleanupOldLogEntries();
 
     // 写入初始化成功的日志，包含环境信息
     logToFileInternal(
@@ -332,4 +383,5 @@ module.exports = {
   logFile,
   getLogConfig,
   updateLogConfig,
+  cleanupOldLogEntries,
 };
