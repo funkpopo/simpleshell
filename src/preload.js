@@ -137,6 +137,18 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("terminal:saveConnections", connections),
   loadTopConnections: () => ipcRenderer.invoke("terminal:loadTopConnections"),
 
+  // 热门连接实时更新事件
+  onTopConnectionsChanged: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrapped = (_e, ids) => callback(ids);
+    ipcRenderer.on("top-connections-changed", wrapped);
+    return () => ipcRenderer.removeListener("top-connections-changed", wrapped);
+  },
+  offTopConnectionsChanged: (callback) => {
+    const wrapped = callback && callback._wrappedCallback ? callback._wrappedCallback : callback;
+    if (wrapped) ipcRenderer.removeListener("top-connections-changed", wrapped);
+  },
+
   // 连接配置变化事件监听
   onConnectionsChanged: (callback) => {
     const wrappedCallback = () => callback();

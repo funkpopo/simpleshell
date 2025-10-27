@@ -796,6 +796,18 @@ function setupIPC(mainWindow) {
       // 使用连接池获取SSH连接
       const connectionInfo =
         await connectionManager.getSSHConnection(sshConfig);
+      // 广播热门连接更新（实时）
+      try {
+        const topConnections = connectionManager.getTopConnections(5);
+        const windows = BrowserWindow.getAllWindows();
+        for (const win of windows) {
+          if (win && !win.isDestroyed() && win.webContents) {
+            win.webContents.send("top-connections-changed", topConnections);
+          }
+        }
+      } catch (err) {
+        // ignore broadcast errors
+      }
       const ssh = connectionInfo.client;
 
       // 添加标签页引用追踪
@@ -1101,6 +1113,18 @@ function setupIPC(mainWindow) {
       // 使用连接池获取Telnet连接
       const connectionInfo =
         await connectionManager.getTelnetConnection(telnetConfig);
+      // 广播热门连接更新（实时）
+      try {
+        const topConnections = connectionManager.getTopConnections(5);
+        const windows = BrowserWindow.getAllWindows();
+        for (const win of windows) {
+          if (win && !win.isDestroyed() && win.webContents) {
+            win.webContents.send("top-connections-changed", topConnections);
+          }
+        }
+      } catch (err) {
+        // ignore broadcast errors
+      }
       const telnet = connectionInfo.client;
 
       // 添加标签页引用追踪
@@ -1715,9 +1739,13 @@ function setupIPC(mainWindow) {
     return result;
   });
 
-  // Load top connections
+  // Load top connections (live from connection manager)
   ipcMain.handle("terminal:loadTopConnections", async () => {
-    return configManager.loadTopConnections();
+    try {
+      return connectionManager.getTopConnections(5);
+    } catch (e) {
+      return [];
+    }
   });
 
   // 选择密钥文件

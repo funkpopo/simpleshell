@@ -350,40 +350,27 @@ const CustomTab = memo((props) => {
             borderRadius: "6px",
             boxShadow: (theme) =>
               theme.palette.mode === "dark"
-                ? "0 0 0 2px rgba(76, 175, 80, 0.4), 0 4px 16px rgba(76, 175, 80, 0.2)"
-                : "0 0 0 3px rgba(46, 125, 50, 0.5), 0 4px 20px rgba(46, 125, 50, 0.3), 0 0 0 6px rgba(46, 125, 50, 0.1)",
+                ? "0 0 0 2px rgba(76, 175, 80, 0.35)"
+                : "0 0 0 2px rgba(46, 125, 50, 0.45)",
             position: "relative",
-            transform: "scale(1.03) translateY(-1px)",
-            transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
-            filter: "brightness(1.05) saturate(1.1)",
-            animation:
-              "dragEnter 0.3s ease-out forwards, dropZonePulse 1.2s ease-in-out infinite",
+            // 避免缩放和复杂动画引起布局抖动
+            transition: "background-color 0.12s ease, box-shadow 0.12s ease",
 
             // 排序操作的插入位置指示器
             ...(dragInsertPosition === "before" && {
               "&::before": {
                 content: '""',
                 position: "absolute",
-                left: -6,
-                top: -2,
-                bottom: -2,
-                width: 8,
+                left: -4,
+                top: 4,
+                bottom: 4,
+                width: 3,
                 background: (theme) =>
                   theme.palette.mode === "dark"
-                    ? "linear-gradient(180deg, #81c784 0%, #4caf50 30%, #388e3c 70%, #2e7d32 100%)"
-                    : "linear-gradient(180deg, #43a047 0%, #2e7d32 30%, #1b5e20 70%, #0d5016 100%)",
-                borderRadius: "4px",
+                    ? "#66bb6a"
+                    : "#2e7d32",
+                borderRadius: "2px",
                 zIndex: 1002,
-                boxShadow: (theme) =>
-                  theme.palette.mode === "dark"
-                    ? "0 0 20px rgba(76, 175, 80, 1), 0 0 8px rgba(76, 175, 80, 0.7), inset 0 2px 0 rgba(255,255,255,0.5)"
-                    : "0 0 24px rgba(46, 125, 50, 1), 0 0 12px rgba(27, 94, 32, 0.8), 0 2px 8px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.7)",
-                animation:
-                  "dragIndicator 0.5s ease-in-out infinite alternate, slideIn 0.2s ease-out forwards",
-                border: (theme) =>
-                  theme.palette.mode === "dark"
-                    ? "2px solid rgba(129, 199, 132, 0.4)"
-                    : "3px solid rgba(46, 125, 50, 0.8)",
               },
             }),
 
@@ -391,26 +378,16 @@ const CustomTab = memo((props) => {
               "&::after": {
                 content: '""',
                 position: "absolute",
-                right: -6,
-                top: -2,
-                bottom: -2,
-                width: 8,
+                right: -4,
+                top: 4,
+                bottom: 4,
+                width: 3,
                 background: (theme) =>
                   theme.palette.mode === "dark"
-                    ? "linear-gradient(180deg, #81c784 0%, #4caf50 30%, #388e3c 70%, #2e7d32 100%)"
-                    : "linear-gradient(180deg, #43a047 0%, #2e7d32 30%, #1b5e20 70%, #0d5016 100%)",
-                borderRadius: "4px",
+                    ? "#66bb6a"
+                    : "#2e7d32",
+                borderRadius: "2px",
                 zIndex: 1002,
-                boxShadow: (theme) =>
-                  theme.palette.mode === "dark"
-                    ? "0 0 20px rgba(76, 175, 80, 1), 0 0 8px rgba(76, 175, 80, 0.7), inset 0 2px 0 rgba(255,255,255,0.5)"
-                    : "0 0 24px rgba(46, 125, 50, 1), 0 0 12px rgba(27, 94, 32, 0.8), 0 2px 8px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.7)",
-                animation:
-                  "dragIndicator 0.5s ease-in-out infinite alternate, slideIn 0.2s ease-out forwards",
-                border: (theme) =>
-                  theme.palette.mode === "dark"
-                    ? "2px solid rgba(129, 199, 132, 0.4)"
-                    : "3px solid rgba(46, 125, 50, 0.8)",
               },
             }),
           }),

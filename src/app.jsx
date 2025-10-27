@@ -353,6 +353,8 @@ function App() {
   const [draggedTabIndex, setDraggedTabIndex] = React.useState(null);
   const [dragOverTabIndex, setDragOverTabIndex] = React.useState(null);
   const [dragInsertPosition, setDragInsertPosition] = React.useState(null);
+  const dragRafRef = React.useRef(null);
+  const pendingDragStateRef = React.useRef(null);
 
   // 主题模式状态
   const [darkMode, setDarkMode] = React.useState(true); // 默认值
@@ -676,6 +678,45 @@ function App() {
     }
   }, [connections]); // 依赖于 connections state
 
+  // 热门连接实时更新订阅（无需重启）
+  React.useEffect(() => {
+    if (!window.terminalAPI?.onTopConnectionsChanged) return undefined;
+
+    const findConnectionsByIds = (ids, allConnections) => {
+      const found = [];
+      const search = (items) => {
+        for (const item of items) {
+          if (item.type === "group") {
+            search(item.items || []);
+          } else if (ids.includes(item.id)) {
+            found.push(item);
+          }
+        }
+      };
+      search(allConnections);
+      return ids.map((id) => found.find((c) => c.id === id)).filter(Boolean);
+    };
+
+    const handleTopChanged = async (ids) => {
+      try {
+        const topIds = Array.isArray(ids)
+          ? ids
+          : await window.terminalAPI.loadTopConnections();
+        const mapped = findConnectionsByIds(topIds, connections);
+        setTopConnections(mapped);
+      } catch (e) {
+        // 忽略错误
+      }
+    };
+
+    const unsubscribe = window.terminalAPI.onTopConnectionsChanged(
+      handleTopChanged,
+    );
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, [connections]);
+
   // 保存更新后的连接配置
   const handleConnectionsUpdate = useCallback((updatedConnections) => {
     setConnections(updatedConnections);
@@ -993,12 +1034,26 @@ function App() {
     const newTabs = tabs.filter((_, i) => i !== index);
     setTabs(newTabs);
 
-    // 如果关闭的是当前标签页，则选中前一个标签
+    // 如果关闭的是当前标签页，则选择相邻的非欢迎页标签（若存在）
     if (currentTab === index) {
-      setCurrentTab(index === 0 ? 0 : index - 1);
+      // newTabs 始终包含欢迎页（索引0）。当 newTabs.length > 1 时，说明仍有其他标签。
+      if (newTabs.length > 1) {
+        // 选择同位置的标签（若存在），否则选择前一个，但最小为1，避免退回欢迎页
+        const target = Math.min(index, newTabs.length - 1);
+        setCurrentTab(Math.max(1, target));
+      } else {
+        // 仅剩欢迎页
+        setCurrentTab(0);
+      }
     } else if (currentTab > index) {
       // 如果关闭的标签在当前标签之前，当前标签索引需要减1
-      setCurrentTab(currentTab - 1);
+      const nextIndex = currentTab - 1;
+      // 若仍存在其他标签，则避免落到0（欢迎页）
+      if (newTabs.length > 1) {
+        setCurrentTab(Math.max(1, nextIndex));
+      } else {
+        setCurrentTab(0);
+      }
     }
   };
 
@@ -1026,21 +1081,42 @@ function App() {
     [tabs],
   );
 
-  // 处理拖动中 - 仅用于排序提示
-  const handleDragOver = (e, index) => {
-    e.preventDefault();
-    if (index === 0) return;
-    if (draggedTabIndex === null || draggedTabIndex === index) return;
+  // 处理拖动中 - 仅用于排序提示（节流至每帧一次，避免频繁重排导致闪烁）
+  const handleDragOver = useCallback(
+    (e, index) => {
+      e.preventDefault();
+      if (index === 0) return;
+      if (draggedTabIndex === null || draggedTabIndex === index) return;
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const tabWidth = rect.width;
-    const position = mouseX <= tabWidth / 2 ? "before" : "after";
+      const rect = e.currentTarget.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const tabWidth = rect.width;
+      // 使用45%阈值，减少位置在中线附近反复切换
+      const threshold = tabWidth * 0.45;
+      const position = mouseX <= threshold ? "before" : "after";
 
-    e.dataTransfer.dropEffect = "move";
-    setDragOverTabIndex(index);
-    setDragInsertPosition(position);
-  };
+      e.dataTransfer.dropEffect = "move";
+
+      // 记录待更新状态
+      pendingDragStateRef.current = { index, position };
+
+      if (!dragRafRef.current) {
+        dragRafRef.current = requestAnimationFrame(() => {
+          const pending = pendingDragStateRef.current;
+          dragRafRef.current = null;
+          if (!pending) return;
+          if (
+            pending.index !== dragOverTabIndex ||
+            pending.position !== dragInsertPosition
+          ) {
+            setDragOverTabIndex(pending.index);
+            setDragInsertPosition(pending.position);
+          }
+        });
+      }
+    },
+    [draggedTabIndex, dragOverTabIndex, dragInsertPosition],
+  );
 
   // 处理拖动离开
   const handleDragLeave = (e) => {
@@ -1113,6 +1189,11 @@ function App() {
     if (e.currentTarget) {
       e.currentTarget.style.opacity = "1";
     }
+    if (dragRafRef.current) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    pendingDragStateRef.current = null;
     setDraggedTabIndex(null);
     setDragOverTabIndex(null);
     setDragInsertPosition(null);
