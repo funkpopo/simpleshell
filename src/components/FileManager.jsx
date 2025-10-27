@@ -488,6 +488,8 @@ const FileManager = memo(
       if (!window.terminalAPI || !window.terminalAPI.onListFilesChunk) return;
       const unsubscribe = window.terminalAPI.onListFilesChunk((payload) => {
         try {
+          // 侧边栏关闭或组件未挂载时忽略异步分片更新，防止竞态/异常
+          if (!open) return;
           const apiPath = currentPath === "~" ? "" : currentPath;
           if (
             !payload ||
@@ -561,11 +563,20 @@ const FileManager = memo(
       return () => {
         if (typeof unsubscribe === "function") unsubscribe();
       };
-    }, [tabId, currentPath, listToken]);
+    }, [tabId, currentPath, listToken, open]);
 
     // 静默刷新当前目录（不显示加载指示器）
     const silentRefreshCurrentDirectory = async () => {
-      if (!sshConnection || !tabId || !currentPath) return;
+      // 若侧边栏未打开或缺少必要信息则跳过
+      if (!open || !sshConnection || !tabId || !currentPath) return;
+      // 若正在进行显式加载，避免并发触发静默刷新
+      if (loading) return;
+      // 避免在一次完整刷新刚完成后立即再次刷新，减少竞态
+      try {
+        if (lastRefreshTime && Date.now() - lastRefreshTime < 700) {
+          return;
+        }
+      } catch (_) {}
 
       try {
         if (window.terminalAPI && window.terminalAPI.listFiles) {
@@ -1353,8 +1364,15 @@ const FileManager = memo(
               // 成功删除，刷新目录
               await loadDirectory(currentPath);
 
-              // 删除操作完成后设置定时器再次检查
-              refreshAfterUserActivity();
+              // 删除操作完成后，必要时触发一次静默刷新以校验目录
+              try {
+                if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
+                  refreshAfterUserActivity();
+                }
+              } catch (_) {
+                // 兜底触发
+                refreshAfterUserActivity();
+              }
             } else if (
               response?.error?.includes("SFTP错误") &&
               retryCount < maxRetries
@@ -1557,8 +1575,14 @@ const FileManager = memo(
             }
           }
 
-          // 无论上传结果如何，都刷新文件列表
-          refreshAfterUserActivity();
+          // 无论上传结果如何，必要时刷新文件列表，避免与显式刷新竞态
+          try {
+            if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
+              refreshAfterUserActivity();
+            }
+          } catch (_) {
+            refreshAfterUserActivity();
+          }
         }
       } catch (error) {
         // 上传文件失败
@@ -1607,8 +1631,14 @@ const FileManager = memo(
             });
         }
 
-        // 无论上传结果如何，都刷新文件列表
-        refreshAfterUserActivity();
+        // 无论上传结果如何，必要时刷新文件列表，避免与显式刷新竞态
+        try {
+          if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
+            refreshAfterUserActivity();
+          }
+        } catch (_) {
+          refreshAfterUserActivity();
+        }
       }
     };
 
@@ -2121,8 +2151,14 @@ const FileManager = memo(
               // 成功创建文件夹，刷新目录
               await loadDirectory(currentPath);
               setShowCreateFolderDialog(false);
-              // 创建文件夹操作完成后设置定时器再次检查
-              refreshAfterUserActivity();
+              // 创建文件夹操作完成后选择性触发静默刷新，避免与显式刷新竞态
+              try {
+                if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
+                  refreshAfterUserActivity();
+                }
+              } catch (_) {
+                refreshAfterUserActivity();
+              }
             } else if (
               response?.error?.includes("SFTP错误") &&
               retryCount < maxRetries
@@ -2212,8 +2248,14 @@ const FileManager = memo(
           const result = await window.terminalAPI.createFile(tabId, fullPath);
           if (result.success) {
             await loadDirectory(currentPath);
-            // 创建文件操作完成后设置定时器再次检查
-            refreshAfterUserActivity();
+            // 创建文件操作完成后选择性触发静默刷新，避免与显式刷新竞态
+            try {
+              if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
+                refreshAfterUserActivity();
+              }
+            } catch (_) {
+              refreshAfterUserActivity();
+            }
           } else {
             setError(
               `${t("fileManager.errors.createFolderFailed")}: ${result.error || t("fileManager.errors.unknownError")}`,
