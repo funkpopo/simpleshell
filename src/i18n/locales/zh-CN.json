@@ -289,7 +289,8 @@
     },
     "aiSettings": {
       "title": "AI设置",
-      "apiUrl": "API地址",
+      "apiUrl": "API基础地址",
+      "apiUrlHelp": "请输入API的基础地址，例如：https://api.openai.com/v1（无需包含 /chat/completions）",
       "apiKey": "API密钥",
       "model": "模型名称",
       "maxTokens": "最大令牌数",
@@ -325,7 +326,14 @@
       "noApiConfigs": "暂无API配置，请先添加",
       "currentApi": "当前API",
       "selectApi": "选择API",
-      "apiSwitched": "已切换到: {{name}}"
+      "apiSwitched": "已切换到: {{name}}",
+      "cloneApi": "克隆配置",
+      "editingExistingConfig": "正在编辑现有配置",
+      "clonedConfigHint": "基于现有配置创建新配置，无需重新输入API地址和密钥",
+      "fetchModels": "获取模型列表",
+      "modelsFetched": "模型列表获取成功",
+      "fetchModelsFailed": "获取模型列表失败",
+      "apiUrlAndKeyRequired": "需要API地址和API密钥才能获取模型列表"
     },
     "ai": {
       "title": "AI助手",

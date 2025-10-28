@@ -50,10 +50,13 @@ parentPort.on("message", async (message) => {
  * @param {Object} requestData - 请求数据
  */
 function handleAPIRequest(requestId, requestData) {
-  const { url, apiKey, model, messages, isStream, sessionId } = requestData;
+  const { url, apiKey, model, messages, isStream, sessionId, type } = requestData;
 
   try {
-    if (isStream) {
+    if (type === "models") {
+      // 处理获取模型列表请求
+      handleModelsRequest(requestId, requestData);
+    } else if (isStream) {
       // 处理流式请求
       handleStreamRequest(requestId, requestData);
     } else {
@@ -79,8 +82,14 @@ function handleAPIRequest(requestId, requestData) {
 function handleStandardRequest(requestId, requestData) {
   const { url, apiKey, model, messages } = requestData;
 
-  // 解析URL
-  const parsedUrl = new URL(url);
+  // 解析URL，确保包含完整的API路径
+  let apiUrl = url;
+  if (!url.includes('/chat/completions')) {
+    // 如果URL不包含chat/completions路径，自动添加
+    apiUrl = url.replace(/\/$/, '') + '/chat/completions';
+  }
+
+  const parsedUrl = new URL(apiUrl);
   const requestModule = parsedUrl.protocol === "https:" ? https : http;
 
   const options = {
@@ -183,8 +192,14 @@ function handleStandardRequest(requestId, requestData) {
 function handleStreamRequest(requestId, requestData) {
   const { url, apiKey, model, messages, sessionId } = requestData;
 
-  // 解析URL
-  const parsedUrl = new URL(url);
+  // 解析URL，确保包含完整的API路径
+  let apiUrl = url;
+  if (!url.includes('/chat/completions')) {
+    // 如果URL不包含chat/completions路径，自动添加
+    apiUrl = url.replace(/\/$/, '') + '/chat/completions';
+  }
+
+  const parsedUrl = new URL(apiUrl);
   const requestModule = parsedUrl.protocol === "https:" ? https : http;
 
   const options = {
@@ -390,6 +405,129 @@ process.on("uncaughtException", (error) => {
     },
   });
 });
+
+/**
+ * 处理获取模型列表请求
+ * @param {string} requestId - 请求ID
+ * @param {Object} requestData - 请求数据
+ */
+function handleModelsRequest(requestId, requestData) {
+  const { url, apiKey } = requestData;
+
+  // 解析URL，构建模型列表API地址
+  let modelsUrl;
+  try {
+    const parsedUrl = new URL(url);
+    // 从chat completions URL构建models URL
+    // 例如: https://api.openai.com/v1/chat/completions -> https://api.openai.com/v1/models
+    const pathParts = parsedUrl.pathname.split('/');
+    if (pathParts.length >= 3 && pathParts[1] === 'v1') {
+      // 替换路径中的最后一个部分
+      pathParts[pathParts.length - 1] = 'models';
+      parsedUrl.pathname = pathParts.join('/');
+      modelsUrl = parsedUrl.toString();
+    } else {
+      // 如果不是标准OpenAI格式，尝试直接添加/models
+      modelsUrl = url.replace(/\/$/, '') + '/models';
+    }
+  } catch (error) {
+    parentPort.postMessage({
+      id: requestId,
+      error: {
+        message: `构建模型列表URL失败: ${error.message}`,
+      },
+    });
+    return;
+  }
+
+  // 解析模型列表URL
+  const parsedModelsUrl = new URL(modelsUrl);
+  const requestModule = parsedModelsUrl.protocol === "https:" ? https : http;
+
+  const options = {
+    method: "GET",
+    hostname: parsedModelsUrl.hostname,
+    path: parsedModelsUrl.pathname + parsedModelsUrl.search,
+    port: parsedModelsUrl.port || (parsedModelsUrl.protocol === "https:" ? 443 : 80),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+  };
+
+  // 创建请求
+  const req = requestModule.request(options, (res) => {
+    let responseData = "";
+
+    // 处理状态码非200的情况
+    if (res.statusCode !== 200) {
+      parentPort.postMessage({
+        id: requestId,
+        error: {
+          message: `获取模型列表失败: ${res.statusCode} ${res.statusMessage}`,
+          statusCode: res.statusCode,
+        },
+      });
+      return;
+    }
+
+    res.on("data", (chunk) => {
+      responseData += chunk.toString("utf-8");
+    });
+
+    res.on("end", () => {
+      try {
+        // 解析JSON响应
+        const data = JSON.parse(responseData);
+
+        // 提取模型列表
+        let models = [];
+        if (data.data && Array.isArray(data.data)) {
+          // OpenAI格式: {data: [{id: "gpt-3.5-turbo"}, ...]}
+          models = data.data.map(model => model.id).filter(id => id);
+        } else if (Array.isArray(data)) {
+          // 其他格式: [{id: "model1"}, ...]
+          models = data.map(model => model.id || model).filter(id => id);
+        } else if (data.models && Array.isArray(data.models)) {
+          // 某些API格式
+          models = data.models.map(model => model.id || model).filter(id => id);
+        }
+
+        parentPort.postMessage({
+          id: requestId,
+          result: {
+            success: true,
+            models: models,
+          },
+        });
+      } catch (error) {
+        parentPort.postMessage({
+          id: requestId,
+          error: {
+            message: `解析模型列表响应失败: ${error.message}`,
+            rawResponse: responseData.substring(0, 200) + "...",
+          },
+        });
+      }
+    });
+  });
+
+  // 处理请求错误
+  req.on("error", (error) => {
+    parentPort.postMessage({
+      id: requestId,
+      error: {
+        message: `获取模型列表请求出错: ${error.message}`,
+        stack: error.stack,
+      },
+    });
+  });
+
+  // 存储请求引用
+  activeRequests.set(requestId, { req, type: "models" });
+
+  req.end();
+}
 
 // 退出处理
 process.on("exit", (code) => {
