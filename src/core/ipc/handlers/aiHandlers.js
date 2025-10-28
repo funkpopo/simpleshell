@@ -59,6 +59,11 @@ class AIHandlers {
         category: "ai",
         handler: this.abortAPIRequest.bind(this),
       },
+      {
+        channel: "ai:fetchModels",
+        category: "ai",
+        handler: this.fetchModels.bind(this),
+      },
     ];
   }
 
@@ -289,6 +294,39 @@ class AIHandlers {
     } catch (error) {
       logToFile(`Error aborting API request: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
+    }
+  }
+
+  async fetchModels(event, requestData) {
+    if (!this.aiWorker) {
+      throw new Error("AI Worker not initialized");
+    }
+
+    try {
+      const requestId = this.nextRequestId++;
+
+      return new Promise((resolve, reject) => {
+        this.aiRequestMap.set(requestId, { resolve, reject });
+
+        this.aiWorker.postMessage({
+          id: requestId,
+          type: "api_request",
+          data: {
+            ...requestData,
+            type: "models",
+          },
+        });
+
+        setTimeout(() => {
+          if (this.aiRequestMap.has(requestId)) {
+            this.aiRequestMap.delete(requestId);
+            reject(new Error("Request timeout"));
+          }
+        }, 30000); // 30秒超时，获取模型列表可能需要更长时间
+      });
+    } catch (error) {
+      logToFile(`Error fetching models: ${error.message}`, "ERROR");
+      throw error;
     }
   }
 

@@ -156,7 +156,9 @@ function createAIWorker() {
       const callback = aiRequestMap.get(id);
       if (callback) {
         if (error) {
-          callback.reject(error);
+          // 将Worker错误对象转换为字符串，避免序列化问题
+          const errorMessage = error.message || 'Unknown error';
+          callback.reject(new Error(errorMessage));
         } else {
           callback.resolve(result);
         }
@@ -2278,6 +2280,49 @@ function setupIPC(mainWindow) {
     } catch (error) {
       logToFile(`中断API请求时出错: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
+    }
+  });
+
+  // 获取可用模型列表
+  ipcMain.handle("ai:fetchModels", async (event, requestData) => {
+    try {
+      // 确保Worker已创建
+      if (!aiWorker) {
+        logToFile("AI Worker未初始化，尝试创建", "WARN");
+        aiWorker = createAIWorker();
+        if (!aiWorker) {
+          throw new Error("无法创建AI Worker");
+        }
+      }
+
+      const requestId = nextRequestId++;
+      const timeout = 30000; // 30秒超时
+
+      return new Promise((resolve, reject) => {
+        // 存储回调
+        aiRequestMap.set(requestId, { resolve, reject });
+
+        // 发送消息到worker
+        aiWorker.postMessage({
+          id: requestId,
+          type: "api_request",
+          data: {
+            ...requestData,
+            type: "models",
+          },
+        });
+
+        // 设置超时
+        setTimeout(() => {
+          if (aiRequestMap.has(requestId)) {
+            aiRequestMap.delete(requestId);
+            reject(new Error("获取模型列表请求超时"));
+          }
+        }, timeout);
+      });
+    } catch (error) {
+      logToFile(`获取模型列表失败: ${error.message}`, "ERROR");
+      throw error;
     }
   });
 

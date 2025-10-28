@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from "react";
+import React, { useState, useEffect, useRef, memo } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -21,20 +21,27 @@ import {
   Card,
   CardContent,
   CardActions,
+  Autocomplete,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import { useTranslation } from "react-i18next";
 
 const AISettings = ({ open, onClose }) => {
   const { t } = useTranslation();
+  const firstInputRef = useRef(null);
+
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [fetchingModels, setFetchingModels] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [availableModels, setAvailableModels] = useState([]);
 
   // 标签页状态
   const [tabValue, setTabValue] = useState(0);
@@ -59,14 +66,34 @@ const AISettings = ({ open, onClose }) => {
     streamEnabled: true,
   });
 
-  // 加载AI设置
+  // 加载AI设置并管理焦点 - 只在对话框打开时执行
   useEffect(() => {
     if (open) {
       setEditMode(false);
       setEditingConfig(null);
       loadSettings();
+
+      // 在对话框完全渲染后设置焦点到添加按钮
+      setTimeout(() => {
+        const addButton = document.querySelector('[data-testid="add-api-button"]');
+        if (addButton) {
+          addButton.focus();
+        }
+      }, 100);
     }
-  }, [open]);
+  }, [open]); // 只依赖 open，移除 editMode 依赖
+
+  // 当切换到编辑模式时设置焦点
+  useEffect(() => {
+    if (editMode && open) {
+      // 延迟设置焦点，确保DOM更新完成
+      setTimeout(() => {
+        if (firstInputRef.current) {
+          firstInputRef.current.focus();
+        }
+      }, 100);
+    }
+  }, [editMode, open]);
 
   const loadSettings = async () => {
     setLoading(true);
@@ -147,6 +174,22 @@ const AISettings = ({ open, onClose }) => {
     });
     setEditMode(true);
     setEditingConfig(apiConfig);
+  };
+
+  // 克隆API配置（基于现有配置快速创建新配置）
+  const handleCloneApi = (apiConfig) => {
+    setConfig({
+      id: "", // 新配置ID为空
+      name: `${apiConfig.name} (副本)`, // 添加副本标识
+      apiUrl: apiConfig.apiUrl, // 保持相同的API URL
+      apiKey: apiConfig.apiKey, // 保持相同的API Key
+      model: apiConfig.model, // 可以使用相同的模型或修改
+      maxTokens: apiConfig.maxTokens || 2000,
+      temperature: apiConfig.temperature || 0.7,
+      streamEnabled: apiConfig.streamEnabled !== false,
+    });
+    setEditMode(true);
+    setEditingConfig(null); // 不是编辑现有配置，而是创建新配置
   };
 
   // 删除API配置
@@ -316,7 +359,22 @@ const AISettings = ({ open, onClose }) => {
         }
       }
     } catch (err) {
-      setError(t("aiSettings.testFailed") + ": " + err.message);
+      // 处理不同的错误格式
+      let errorMessage = "Unknown error";
+      if (err?.error?.message) {
+        // 从Worker返回的错误对象格式: {error: {message: "..."}}
+        errorMessage = err.error.message;
+      } else if (err?.message) {
+        // 标准的Error对象
+        errorMessage = err.message;
+      } else if (typeof err === "string") {
+        // 字符串错误
+        errorMessage = err;
+      } else {
+        // 其他对象，转为字符串
+        errorMessage = String(err);
+      }
+      setError(t("aiSettings.testFailed") + ": " + errorMessage);
     } finally {
       setTesting(false);
     }
@@ -330,12 +388,58 @@ const AISettings = ({ open, onClose }) => {
     onClose();
   };
 
+  // 获取可用模型列表
+  const handleFetchModels = async () => {
+    if (!config.apiUrl.trim() || !config.apiKey.trim()) {
+      setError(t("aiSettings.apiUrlAndKeyRequired"));
+      return;
+    }
+
+    setFetchingModels(true);
+    setError("");
+
+    try {
+      const result = await window.terminalAPI.fetchModels({
+        url: config.apiUrl,
+        apiKey: config.apiKey,
+      });
+
+      if (result && result.models && Array.isArray(result.models)) {
+        setAvailableModels(result.models);
+        setSuccess(t("aiSettings.modelsFetched"));
+      } else {
+        setError(t("aiSettings.fetchModelsFailed"));
+      }
+    } catch (err) {
+      // 处理不同的错误格式
+      let errorMessage = "Unknown error";
+      if (err?.error?.message) {
+        // 从Worker返回的错误对象格式: {error: {message: "..."}}
+        errorMessage = err.error.message;
+      } else if (err?.message) {
+        // 标准的Error对象
+        errorMessage = err.message;
+      } else if (typeof err === "string") {
+        // 字符串错误
+        errorMessage = err;
+      } else {
+        // 其他对象，转为字符串
+        errorMessage = String(err);
+      }
+      setError(t("aiSettings.fetchModelsFailed") + ": " + errorMessage);
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
   return (
     <Dialog
       open={open}
       onClose={handleClose}
       maxWidth="sm"
       fullWidth
+      disableEnforceFocus={false}
+      disableAutoFocus={false}
       PaperProps={{
         sx: {
           borderRadius: 2,
@@ -407,6 +511,7 @@ const AISettings = ({ open, onClose }) => {
                           startIcon={<AddIcon />}
                           onClick={handleAddApi}
                           size="small"
+                          data-testid="add-api-button"
                         >
                           {t("aiSettings.addApi")}
                         </Button>
@@ -477,37 +582,51 @@ const AISettings = ({ open, onClose }) => {
                                 </Box>
                               </CardContent>
                               <CardActions
-                                sx={{ pt: 0, justifyContent: "flex-end" }}
+                                sx={{ pt: 0, justifyContent: "space-between" }}
                               >
-                                {currentApiId !== apiConfig.id && (
-                                  <Button
-                                    size="small"
-                                    onClick={() =>
-                                      handleSetCurrent(apiConfig.id)
-                                    }
-                                  >
-                                    {t("aiSettings.setAsCurrent")}
-                                  </Button>
-                                )}
-                                <Tooltip title={t("aiSettings.editApi")}>
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => handleEditApi(apiConfig)}
-                                  >
-                                    <EditIcon />
-                                  </IconButton>
-                                </Tooltip>
-                                <Tooltip title={t("aiSettings.deleteApi")}>
-                                  <IconButton
-                                    size="small"
-                                    onClick={() =>
-                                      handleDeleteApi(apiConfig.id)
-                                    }
-                                    color="error"
-                                  >
-                                    <DeleteIcon />
-                                  </IconButton>
-                                </Tooltip>
+                                <Box>
+                                  <Tooltip title={t("aiSettings.cloneApi")}>
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleCloneApi(apiConfig)}
+                                      color="primary"
+                                    >
+                                      <ContentCopyIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+                                <Box>
+                                  {currentApiId !== apiConfig.id && (
+                                    <Button
+                                      size="small"
+                                      onClick={() =>
+                                        handleSetCurrent(apiConfig.id)
+                                      }
+                                      sx={{ mr: 1 }}
+                                    >
+                                      {t("aiSettings.setAsCurrent")}
+                                    </Button>
+                                  )}
+                                  <Tooltip title={t("aiSettings.editApi")}>
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleEditApi(apiConfig)}
+                                    >
+                                      <EditIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title={t("aiSettings.deleteApi")}>
+                                    <IconButton
+                                      size="small"
+                                      onClick={() =>
+                                        handleDeleteApi(apiConfig.id)
+                                      }
+                                      color="error"
+                                    >
+                                      <DeleteIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
                               </CardActions>
                             </Card>
                           ))}
@@ -519,20 +638,34 @@ const AISettings = ({ open, onClose }) => {
                     <Box
                       sx={{ display: "flex", flexDirection: "column", gap: 3 }}
                     >
-                      <Box
-                        sx={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
-                        <Typography variant="h6">
-                          {editingConfig
-                            ? t("aiSettings.editApi")
-                            : t("aiSettings.addApi")}
-                        </Typography>
+                      <Box>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            mb: editingConfig ? 0 : 2,
+                          }}
+                        >
+                          <Typography variant="h6">
+                            {editingConfig
+                              ? t("aiSettings.editApi")
+                              : t("aiSettings.addApi")}
+                          </Typography>
+                        </Box>
+                        {editingConfig && (
+                          <Alert severity="info" sx={{ mb: 2 }}>
+                            {t("aiSettings.editingExistingConfig")}
+                          </Alert>
+                        )}
+                        {!editingConfig && config.apiUrl && config.apiKey && (
+                          <Alert severity="success" sx={{ mb: 2 }}>
+                            {t("aiSettings.clonedConfigHint")}
+                          </Alert>
+                        )}
                       </Box>
                       <TextField
+                        inputRef={firstInputRef}
                         label={t("aiSettings.apiName")}
                         value={config.name}
                         onChange={(e) =>
@@ -550,9 +683,10 @@ const AISettings = ({ open, onClose }) => {
                           handleConfigChange("apiUrl", e.target.value)
                         }
                         fullWidth
-                        placeholder="https://api.openai.com/v1/chat/completions"
+                        placeholder="https://api.openai.com/v1"
                         variant="outlined"
                         required
+                        helperText={t("aiSettings.apiUrlHelp")}
                       />
                       <TextField
                         label={t("aiSettings.apiKey")}
@@ -566,17 +700,47 @@ const AISettings = ({ open, onClose }) => {
                         variant="outlined"
                         required
                       />
-                      <TextField
-                        label={t("aiSettings.model")}
-                        value={config.model}
-                        onChange={(e) =>
-                          handleConfigChange("model", e.target.value)
-                        }
-                        fullWidth
-                        placeholder="gpt-3.5-turbo"
-                        variant="outlined"
-                        required
-                      />
+                      <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+                        <Autocomplete
+                          value={config.model}
+                          onChange={(event, newValue) => {
+                            handleConfigChange("model", newValue || "");
+                          }}
+                          onInputChange={(event, newInputValue) => {
+                            handleConfigChange("model", newInputValue);
+                          }}
+                          options={availableModels}
+                          freeSolo
+                          fullWidth
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label={t("aiSettings.model")}
+                              placeholder="gpt-3.5-turbo"
+                              variant="outlined"
+                              required
+                            />
+                          )}
+                          renderOption={(props, option) => (
+                            <li {...props} key={option}>
+                              {option}
+                            </li>
+                          )}
+                        />
+                        <Tooltip title={t("aiSettings.fetchModels")}>
+                          <IconButton
+                            onClick={handleFetchModels}
+                            disabled={fetchingModels || !config.apiUrl.trim() || !config.apiKey.trim()}
+                            sx={{ mt: 1 }}
+                          >
+                            {fetchingModels ? (
+                              <CircularProgress size={20} />
+                            ) : (
+                              <RefreshIcon />
+                            )}
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
                       <Box>
                         <Typography gutterBottom>
                           {t("aiSettings.maxTokens")}: {config.maxTokens}

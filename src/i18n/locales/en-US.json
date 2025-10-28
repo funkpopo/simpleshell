@@ -293,7 +293,8 @@
     },
     "aiSettings": {
       "title": "AI Settings",
-      "apiUrl": "API URL",
+      "apiUrl": "API Base URL",
+      "apiUrlHelp": "Enter the base API URL, e.g., https://api.openai.com/v1 (do not include /chat/completions)",
       "apiKey": "API Key",
       "model": "Model Name",
       "maxTokens": "Max Tokens",
@@ -329,7 +330,14 @@
       "noApiConfigs": "No API configurations, please add one first",
       "currentApi": "Current API",
       "selectApi": "Select API",
-      "apiSwitched": "Switched to: {{name}}"
+      "apiSwitched": "Switched to: {{name}}",
+      "cloneApi": "Clone Configuration",
+      "editingExistingConfig": "Editing existing configuration",
+      "clonedConfigHint": "Creating new configuration based on existing one, no need to re-enter API URL and key",
+      "fetchModels": "Fetch Models",
+      "modelsFetched": "Models fetched successfully",
+      "fetchModelsFailed": "Failed to fetch models",
+      "apiUrlAndKeyRequired": "API URL and API Key are required to fetch models"
     },
     "ai": {
       "title": "AI Assistant",
