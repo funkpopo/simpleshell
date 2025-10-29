@@ -343,6 +343,8 @@ class SSHConnectionPool {
         port: sshConfig.port || 22,
         username: sshConfig.username,
         algorithms: getBasicSSHAlgorithms(),
+        keepaliveInterval: 15000,
+        keepaliveCountMax: 6,
       };
       if (sshConfig && sshConfig.enableCompression === true) {
         connectionOptions.compress = true;
