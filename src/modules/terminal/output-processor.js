@@ -28,7 +28,7 @@ const ANSI_COLORS = {
   underline: "\x1b[4m",
 };
 
-// 颜色名称到ANSI代码的映射
+// 颜色名称到ANSI代码的映射 - 支持新的现代化配色
 const COLOR_TO_ANSI = {
   red: ANSI_COLORS.red,
   green: ANSI_COLORS.green,
@@ -36,25 +36,40 @@ const COLOR_TO_ANSI = {
   yellow: ANSI_COLORS.yellow,
   orange: ANSI_COLORS.yellow,
   cyan: ANSI_COLORS.cyan,
+  magenta: ANSI_COLORS.magenta,
   grey: ANSI_COLORS.brightBlack,
   lightgreen: ANSI_COLORS.brightGreen,
   lightcoral: ANSI_COLORS.brightRed,
-  // 处理十六进制颜色，简化为基础ANSI颜色
-  "#FF6347": ANSI_COLORS.brightRed, // Tomato
-  "#61affe": ANSI_COLORS.brightBlue, // 浅蓝色
-  "#49cc90": ANSI_COLORS.brightGreen, // 浅绿色
-  "#fca130": ANSI_COLORS.yellow, // 橙色
-  "#f93e3e": ANSI_COLORS.red, // 红色
-  "#50e3c2": ANSI_COLORS.cyan, // 青色
-  "#0d5aa7": ANSI_COLORS.blue, // 深蓝色
-  "#4682B4": ANSI_COLORS.blue, // 钢蓝色 (超链接)
-  "#DDA0DD": ANSI_COLORS.magenta, // 梅红色 (文件路径)
-  "#98FB98": ANSI_COLORS.green, // 浅绿色 (MAC地址)
-  "#20B2AA": ANSI_COLORS.cyan, // 浅海绿色 (环境变量)
-  "#FF7F50": ANSI_COLORS.red, // 珊瑚色 (状态码)
-  "#F0E68C": ANSI_COLORS.yellow, // 卡其色 (JSON键)
-  "#5F9EA0": ANSI_COLORS.cyan, // 军蓝色 (Docker ID)
-  "#FFD700": ANSI_COLORS.brightYellow, // 金色 (端口)
+  // 旧版本十六进制颜色映射（保留兼容性）
+  "#FF6347": ANSI_COLORS.brightRed,
+  "#61affe": ANSI_COLORS.brightBlue,
+  "#49cc90": ANSI_COLORS.brightGreen,
+  "#fca130": ANSI_COLORS.yellow,
+  "#f93e3e": ANSI_COLORS.red,
+  "#50e3c2": ANSI_COLORS.cyan,
+  "#0d5aa7": ANSI_COLORS.blue,
+  "#4682B4": ANSI_COLORS.blue,
+  "#DDA0DD": ANSI_COLORS.magenta,
+  "#98FB98": ANSI_COLORS.green,
+  "#20B2AA": ANSI_COLORS.cyan,
+  "#FF7F50": ANSI_COLORS.red,
+  "#F0E68C": ANSI_COLORS.yellow,
+  "#5F9EA0": ANSI_COLORS.cyan,
+  "#FFD700": ANSI_COLORS.brightYellow,
+  // 新的现代化配色映射
+  "#ff7b72": ANSI_COLORS.brightRed, // error
+  "#d29922": ANSI_COLORS.brightYellow, // warning
+  "#3fb950": ANSI_COLORS.brightGreen, // success
+  "#58a6ff": ANSI_COLORS.brightBlue, // info
+  "#bc8cff": ANSI_COLORS.brightMagenta, // debug
+  "#39c5cf": ANSI_COLORS.brightCyan, // ipAddress/envVariable
+  "#ffa198": ANSI_COLORS.brightRed, // criticalKeyword
+  "#79c0ff": ANSI_COLORS.brightBlue, // commandKeyword/shellCommand
+  "#6e7681": ANSI_COLORS.brightBlack, // timestamp (灰色)
+  "#56d364": ANSI_COLORS.brightGreen, // macAddress/uuid
+  "#e3b341": ANSI_COLORS.brightYellow, // statusCode/portNumber
+  "#d2a8ff": ANSI_COLORS.brightMagenta, // filePath
+  "#a5d6ff": ANSI_COLORS.brightCyan, // string
 };
 
 const resolveAnsiColor = (color) => {

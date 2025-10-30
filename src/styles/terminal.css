@@ -1,5 +1,26 @@
-/* Terminal font size responsive to global settings */
+/* Terminal global styles - 现代化设计 */
 .xterm .xterm-viewport {
   font-size: calc(1rem * 0.9);
-  line-height: calc(1rem * 1.2);
+  line-height: calc(1rem * 1.4);
 }
+
+/* 改进文本渲染质量 */
+.xterm {
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+/* 优化选择文本的可读性 */
+.xterm ::selection {
+  background-color: rgba(88, 166, 255, 0.3);
+}
+
+.xterm::-moz-selection {
+  background-color: rgba(88, 166, 255, 0.3);
+}
+
+/* 链接悬停效果增强 */
+.xterm a:hover {
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+

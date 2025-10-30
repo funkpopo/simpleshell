@@ -379,7 +379,7 @@ const CommandSuggestion = ({
 
     // 与容器边界保持内边距
     const padding = 8;
-    const gap = 8; // 与光标的垂直间距
+    const gap = 20; // 与光标的垂直间距，确保不遮挡输入行
 
     // 计算光标下边缘位置（更稳定的定位）
     const cursorBottom =
@@ -431,7 +431,7 @@ const CommandSuggestion = ({
     if (left > maxLeftWithin) left = Math.max(minLeftWithin, maxLeftWithin);
     if (left < minLeftWithin) left = minLeftWithin;
 
-    // 计算目标top（尽量贴近光标）
+    // 计算目标top（尽量贴近光标但不遮挡）
     if (showAbove) {
       top = position.y - finalHeight - gap;
     } else {

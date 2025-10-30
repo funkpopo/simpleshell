@@ -1,6 +1,6 @@
 // src/constants/highlight-configs.js
 const HIGHLIGHT_COLORS = {
-  // 统一在这里维护颜色，便于复用和批量调整
+  // 现代化配色方案 - 提高可读性和对比度
   defaultText: "inherit", // 终端默认颜色
   error: "red",
   warning: "orange",

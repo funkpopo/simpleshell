@@ -8,12 +8,36 @@
 .xterm {
   height: 100% !important;
   width: 100% !important;
+  padding: 8px;
+  font-feature-settings: "liga" 1, "calt" 1;
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: optimizeLegibility;
 }
 
 .xterm-viewport {
   width: 100% !important;
   height: 100% !important;
   overflow-y: auto;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 5px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.4);
+  border-radius: 5px;
+  transition: background 0.2s ease;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.6);
 }
 
 .xterm-screen {
@@ -28,4 +52,100 @@
   height: 100% !important;
   min-height: 100% !important;
   display: block !important;
+}
+
+/* 光标优化 - 平滑动画和视觉增强 */
+.xterm-cursor {
+  transition: opacity 0.15s ease-in-out, transform 0.08s ease-out;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+}
+
+.xterm-cursor-blink {
+  animation: cursor-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0.15;
+  }
+}
+
+.xterm-cursor-block {
+  border-radius: 1px;
+}
+
+.xterm-cursor-bar {
+  width: 2px !important;
+  border-radius: 1px;
+}
+
+.xterm-cursor-underline {
+  height: 2px !important;
+  border-radius: 1px;
+}
+
+/* 选择高亮优化 */
+.xterm-selection {
+  opacity: 1 !important;
+  z-index: 10 !important;
+  transition: transform 0.05s ease, opacity 0.1s ease;
+}
+
+.xterm-selection div {
+  background: linear-gradient(
+    to bottom,
+    rgba(100, 150, 255, 0.25),
+    rgba(100, 150, 255, 0.35)
+  ) !important;
+  border-radius: 2px;
+  box-shadow: 0 0 3px rgba(100, 150, 255, 0.2);
+}
+
+/* 深色主题选择优化 */
+.dark-theme .xterm-selection div {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 170, 0.25),
+    rgba(255, 255, 170, 0.35)
+  ) !important;
+  box-shadow: 0 0 3px rgba(255, 255, 170, 0.2);
+}
+
+/* 浅色主题选择优化 */
+.light-theme .xterm-selection div {
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 120, 215, 0.25),
+    rgba(0, 120, 215, 0.35)
+  ) !important;
+  box-shadow: 0 0 3px rgba(0, 120, 215, 0.2);
+}
+
+/* 链接样式优化 */
+.xterm-link {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: rgba(100, 150, 255, 0.5);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.xterm-link:hover {
+  text-decoration-style: solid;
+  text-decoration-color: rgba(100, 150, 255, 1);
+  background: rgba(100, 150, 255, 0.1);
+  border-radius: 2px;
+}
+
+/* 焦点状态优化 */
+.xterm:focus-within {
+  outline: none;
+}
+
+.terminal-container:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(100, 150, 255, 0.3);
+  transition: box-shadow 0.2s ease;
 }

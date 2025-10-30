@@ -55,13 +55,14 @@ const terminalStyles = `
   background: transparent;
 }
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background-color: rgba(128, 128, 128, 0.5);
-  border-radius: 10px;
+  background-color: rgba(128, 128, 128, 0.4);
+  border-radius: 5px;
   border: 2px solid transparent;
   background-clip: content-box;
+  transition: background-color 0.2s ease;
 }
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(128, 128, 128, 0.8);
+  background-color: rgba(128, 128, 128, 0.7);
 }
 .xterm-screen {
   width: 100% !important;
@@ -105,8 +106,9 @@ const terminalStyles = `
   opacity: 1 !important;
   visibility: visible !important;
   will-change: transform, width, height !important;
-  transition: transform 0.05s ease !important; /* 平滑过渡效果 */
+  transition: transform 0.05s ease, opacity 0.1s ease !important;
   box-sizing: border-box !important;
+  border-radius: 2px !important;
 }
 
 /* 彻底隐藏任何额外的选择容器 */
@@ -124,14 +126,16 @@ const terminalStyles = `
   pointer-events: none !important;
 }
 
-/* 确保选择高亮颜色正确显示，并有合适的半透明效果 */
+/* 选择高亮颜色 - 使用渐变效果 */
 .xterm .xterm-selection div {
-  background-color: rgba(255, 255, 255, 0.3) !important; /* 浅色主题 */
+  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.2), rgba(88, 166, 255, 0.3)) !important;
+  box-shadow: 0 0 3px rgba(88, 166, 255, 0.2) !important;
 }
 
 /* 深色主题下的选择高亮 */
 .dark-theme .xterm .xterm-selection div {
-  background-color: rgba(255, 255, 170, 0.3) !important;
+  background: linear-gradient(to bottom, rgba(255, 255, 170, 0.2), rgba(255, 255, 170, 0.3)) !important;
+  box-shadow: 0 0 3px rgba(255, 255, 170, 0.2) !important;
 }
 `;
 
@@ -139,65 +143,96 @@ const terminalStyles = `
 const searchBarStyles = `
 .search-bar {
   position: absolute;
-  top: 5px;
-  right: 15px; /* 搜索栏位置靠近右侧边缘 */
+  top: 8px;
+  right: 15px;
   z-index: 10;
   display: flex;
-  background: rgba(30, 30, 30, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  padding: 4px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  background: linear-gradient(to bottom, rgba(30, 30, 30, 0.95), rgba(20, 20, 20, 0.95));
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 6px;
+  padding: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(88, 166, 255, 0.1);
   align-items: center;
-  transition: all 0.2s ease;
-  backdrop-filter: blur(5px);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+}
+.search-bar:focus-within {
+  border-color: rgba(88, 166, 255, 0.5);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(88, 166, 255, 0.3);
 }
 .search-input {
   border: none;
   outline: none;
   background: transparent;
-  color: white;
+  color: #e6edf3;
   font-size: 14px;
+  font-family: inherit;
   padding: 4px 8px;
   width: 200px;
   transition: all 0.2s ease;
 }
 .search-input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.4);
 }
 .search-input:focus {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  border-bottom: 1px solid rgba(88, 166, 255, 0.5);
 }
 .search-button {
   color: white !important;
   cursor: pointer;
   margin-left: 2px;
-  opacity: 0.8;
-  transition: opacity 0.2s ease;
+  opacity: 0.7;
+  transition: all 0.2s ease;
+  border-radius: 4px;
 }
 .search-button:hover {
-  background-color: rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(88, 166, 255, 0.2) !important;
   opacity: 1;
+  transform: scale(1.05);
 }
 .search-button:disabled {
   opacity: 0.3 !important;
-  cursor: default;
+  cursor: not-allowed;
 }
 .search-icon-btn {
   position: absolute;
-  top: 5px;
-  right: 15px; /* 搜索按钮位置靠近右侧边缘 */
+  top: 8px;
+  right: 15px;
   z-index: 9;
+  border-radius: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.8;
+  backdrop-filter: blur(5px);
+}
+/* 深色主题下的搜索图标按钮 */
+.dark-theme .search-icon-btn {
   color: rgba(255, 255, 255, 0.7);
-  background-color: rgba(0, 0, 0, 0.3);
-  border-radius: 4px;
-  transition: all 0.2s ease;
-  opacity: 0.6;
+  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.15), rgba(88, 166, 255, 0.1));
+  border: 1px solid rgba(88, 166, 255, 0.2);
+}
+/* 浅色主题下的搜索图标按钮 */
+.light-theme .search-icon-btn,
+body:not(.dark-theme) .search-icon-btn {
+  color: rgba(0, 0, 0, 0.7);
+  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.08), rgba(88, 166, 255, 0.05));
+  border: 1px solid rgba(88, 166, 255, 0.3);
 }
 .search-icon-btn:hover {
-  color: white;
-  background-color: rgba(0, 0, 0, 0.5);
   opacity: 1;
+  transform: scale(1.05);
+}
+/* 深色主题下的悬停效果 */
+.dark-theme .search-icon-btn:hover {
+  color: white;
+  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.25), rgba(88, 166, 255, 0.2));
+  border-color: rgba(88, 166, 255, 0.4);
+}
+/* 浅色主题下的悬停效果 */
+.light-theme .search-icon-btn:hover,
+body:not(.dark-theme) .search-icon-btn:hover {
+  color: rgba(0, 0, 0, 0.9);
+  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.15), rgba(88, 166, 255, 0.1));
+  border-color: rgba(88, 166, 255, 0.5);
 }
 `;
 
@@ -682,10 +717,15 @@ const WebTerminal = ({
       return;
     }
 
+    // WebGL渲染器不需要手动刷新，跳过
+    if (termInstance.__webglEnabled) {
+      return;
+    }
+
     // 节流：防止过于频繁的刷新（最少间隔16ms，约60fps）
     const now = Date.now();
     const timeSinceLastRefresh = now - lastHighlightRefreshRef.current;
-    
+
     if (
       highlightRefreshFrameRef.current &&
       typeof cancelAnimationFrame === "function"
@@ -1948,37 +1988,37 @@ const WebTerminal = ({
 
   // 定义响应主题模式的终端主题
   const terminalTheme = {
-    // 背景色根据应用主题模式设置
-    background: theme.palette.mode === "light" ? "#ffffff" : "#1e1e1e",
-    // 文本颜色根据背景色调整，浅色背景使用暗色文本
-    foreground: theme.palette.mode === "light" ? "#000000" : "#ffffff",
-    // 光标颜色根据背景自动调整
-    cursor: theme.palette.mode === "light" ? "#000000" : "#ffffff",
-    // 选择文本的背景色，使用更透明的颜色以避免遮挡字符
+    // 现代化背景色 - 深色更深，浅色更柔和
+    background: theme.palette.mode === "light" ? "#f6f8fa" : "#1e1e1e",
+    // 文本颜色 - 提高对比度
+    foreground: theme.palette.mode === "light" ? "#24292f" : "#e6edf3",
+    // 光标颜色 - 更醒目
+    cursor: theme.palette.mode === "light" ? "#0969da" : "#58a6ff",
+    cursorAccent: theme.palette.mode === "light" ? "#ffffff" : "#0d1117",
+    // 选择高亮 - 使用渐变效果
     selectionBackground:
       theme.palette.mode === "light"
-        ? "rgba(0, 120, 215, 0.3)" // 降低透明度，避免覆盖文字
-        : "rgba(255, 255, 170, 0.3)", // 降低透明度，避免覆盖文字
-    // 选择文本的前景色，保持原文字颜色可见
-    selectionForeground: undefined, // 不设置前景色，保持原文字颜色
-    // 基础颜色
-    black: "#000000",
-    red: "#cc0000",
-    green: "#4e9a06",
-    yellow: "#c4a000",
-    blue: "#3465a4",
-    magenta: "#75507b",
-    cyan: "#06989a",
-    white: "#d3d7cf",
-    // 亮色版本
-    brightBlack: theme.palette.mode === "light" ? "#555753" : "#555753",
-    brightRed: "#ef2929",
-    brightGreen: "#8ae234",
-    brightYellow: "#fce94f",
-    brightBlue: "#729fcf",
-    brightMagenta: "#ad7fa8",
-    brightCyan: "#34e2e2",
-    brightWhite: "#eeeeec",
+        ? "rgba(9, 105, 218, 0.15)"
+        : "rgba(88, 166, 255, 0.15)",
+    selectionForeground: undefined,
+    // ANSI颜色 - 现代化配色方案（参考GitHub/VSCode主题）
+    black: theme.palette.mode === "light" ? "#24292f" : "#484f58",
+    red: theme.palette.mode === "light" ? "#cf222e" : "#ff7b72",
+    green: theme.palette.mode === "light" ? "#116329" : "#3fb950",
+    yellow: theme.palette.mode === "light" ? "#9a6700" : "#d29922",
+    blue: theme.palette.mode === "light" ? "#0969da" : "#58a6ff",
+    magenta: theme.palette.mode === "light" ? "#8250df" : "#bc8cff",
+    cyan: theme.palette.mode === "light" ? "#1b7c83" : "#39c5cf",
+    white: theme.palette.mode === "light" ? "#6e7781" : "#b1bac4",
+    // 亮色版本 - 更高饱和度
+    brightBlack: theme.palette.mode === "light" ? "#57606a" : "#6e7681",
+    brightRed: theme.palette.mode === "light" ? "#d1242f" : "#ffa198",
+    brightGreen: theme.palette.mode === "light" ? "#1a7f37" : "#56d364",
+    brightYellow: theme.palette.mode === "light" ? "#bf8700" : "#e3b341",
+    brightBlue: theme.palette.mode === "light" ? "#218bff" : "#79c0ff",
+    brightMagenta: theme.palette.mode === "light" ? "#a371f7" : "#d2a8ff",
+    brightCyan: theme.palette.mode === "light" ? "#3192aa" : "#56d4dd",
+    brightWhite: theme.palette.mode === "light" ? "#8c959f" : "#f0f6fc",
   };
 
   // 根据字体名称生成完整的字体族字符串
@@ -2167,28 +2207,28 @@ const WebTerminal = ({
         // 创建新的终端实例
         term = new Terminal({
           cursorBlink: true,
-          theme: terminalTheme, // 使用固定的终端主题
+          cursorStyle: "block", // 明确指定光标样式
+          theme: terminalTheme,
           fontFamily:
             '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
-          fontSize: 14, // 默认大小，稍后会更新
+          fontSize: 14,
+          fontWeight: 500, // 字重优化，提高清晰度
+          fontWeightBold: 700,
           scrollback: 10000,
           allowTransparency: true,
-          cols: 120, // 设置更宽的初始列数
-          rows: 30, // 设置初始行数
-          convertEol: true, // 自动将行尾换行符转换为CRLF
+          cols: 120,
+          rows: 30,
+          convertEol: true,
           disableStdin: false,
-          rendererType: "canvas", // 使用canvas渲染器以保持稳定性
-          termName: "xterm-256color", // 使用更高级的终端类型
-          allowProposedApi: true, // 允许使用提议的API
-          rightClickSelectsWord: false, // 禁用右键点击选中单词，使用自定义右键菜单
-          copyOnSelect: false, // 选中后不自动复制
-          // 添加选择相关的配置
-          selectionScrollSpeed: 5, // 选择时的滚动速度
-          fastScrollModifier: "shift", // 快速滚动修饰键
-          // 优化字符渲染
-          letterSpacing: 0, // 字符间距
-          lineHeight: 1.0, // 行高
-          // 禁用一些可能影响选择精度的特性
+          rendererType: "canvas",
+          termName: "xterm-256color",
+          allowProposedApi: true,
+          rightClickSelectsWord: false,
+          copyOnSelect: false,
+          selectionScrollSpeed: 5,
+          fastScrollModifier: "shift",
+          letterSpacing: 0.3, // 轻微增加字符间距
+          lineHeight: 1.0, // 优化行高，提高可读性
           macOptionIsMeta: false,
           macOptionClickForcesSelection: false,
         });
@@ -4195,7 +4235,7 @@ const WebTerminal = ({
             300,
           );
           const containerRect = container.getBoundingClientRect();
-          const gap = 12;
+          const gap = 20; // 增加间距到20px，避免遮挡输入行
           const showAbove =
             cursorRect.bottom + suggestionHeight + gap > containerRect.bottom &&
             cursorRect.top - suggestionHeight - gap >= containerRect.top;
@@ -4219,12 +4259,7 @@ const WebTerminal = ({
         const cursorX = term.buffer.active.cursorX;
         const cursorY = term.buffer.active.cursorY;
 
-        // 注意：cursorY 已是相对于可视区域(视口)的行号，
-        // 这里不要减 viewportY，否则会产生较大偏移（尤其在 WebGL 渲染时）。
-
         // 获取终端内容区域
-        // 优先使用 .xterm-viewport（Canvas/WebGL 渲染通用），
-        // 再回退到 .xterm-screen（DOM 渲染），最后回退到容器本身。
         const screen =
           term.element?.querySelector(".xterm-viewport") ||
           term.element?.querySelector(".xterm-screen") ||
@@ -4232,9 +4267,12 @@ const WebTerminal = ({
 
         const screenRect = screen.getBoundingClientRect();
 
-        // 计算光标的像素位置
-        const pixelX = cursorX * metrics.charWidth;
-        const pixelY = cursorY * metrics.charHeight;
+        // 考虑终端的padding（8px）
+        const terminalPadding = 8;
+
+        // 计算光标的像素位置（考虑padding）
+        const pixelX = cursorX * metrics.charWidth + terminalPadding;
+        const pixelY = cursorY * metrics.charHeight + terminalPadding;
 
         // 计算相对于视口的绝对位置
         const absoluteX = screenRect.left + pixelX;
@@ -4245,7 +4283,7 @@ const WebTerminal = ({
           300,
         );
         const containerRect = container.getBoundingClientRect();
-        const gap = 12;
+        const gap = 20; // 增加间距到20px，避免遮挡输入行
         const showAbove =
           absoluteY + suggestionHeight + gap > containerRect.bottom &&
           absoluteY - suggestionHeight - gap >= containerRect.top;
@@ -4577,8 +4615,17 @@ const WebTerminal = ({
               onClick={() => setShowSearchBar(true)}
               sx={{
                 padding: "4px",
+                color: theme.palette.mode === "dark"
+                  ? "rgba(255, 255, 255, 0.7) !important"
+                  : "rgba(0, 0, 0, 0.7) !important",
+                "&:hover": {
+                  color: theme.palette.mode === "dark"
+                    ? "white !important"
+                    : "rgba(0, 0, 0, 0.9) !important",
+                },
                 "& svg": {
                   fontSize: "18px",
+                  color: "inherit !important",
                 },
               }}
             >
