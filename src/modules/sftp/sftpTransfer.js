@@ -102,6 +102,64 @@ async function uploadWithPipeline({
   }
 }
 
+async function downloadWithPipeline({
+  sftp,
+  remotePath,
+  localPath,
+  chunkSize,
+  transferKey,
+  getCancelled,
+  onBytes,
+  resumeOffset = 0,
+  noProgressTimeoutMs = 30000,
+}) {
+  const read = sftp.createReadStream(remotePath, {
+    highWaterMark: chunkSize,
+    start: resumeOffset > 0 ? resumeOffset : undefined,
+  });
+  const write = fs.createWriteStream(localPath, {
+    highWaterMark: chunkSize,
+    flags: resumeOffset > 0 ? "r+" : "w",
+    start: resumeOffset > 0 ? resumeOffset : undefined,
+  });
+
+  const transfer = activeTransfers.get(transferKey);
+  if (transfer && transfer.activeStreams) {
+    transfer.activeStreams.add(read);
+    transfer.activeStreams.add(write);
+  }
+
+  let lastProgressAt = Date.now();
+  const onData = (buf) => {
+    if (typeof onBytes === "function") onBytes(buf.length);
+    lastProgressAt = Date.now();
+    if (typeof getCancelled === "function" && getCancelled()) {
+      try { read.destroy(new Error("Transfer cancelled by user")); } catch (_) {}
+      try { write.destroy(new Error("Transfer cancelled by user")); } catch (_) {}
+    }
+  };
+  read.on("data", onData);
+
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastProgressAt > noProgressTimeoutMs) {
+      try { read.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch (_) {}
+      try { write.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch (_) {}
+    }
+  }, 1000);
+
+  try {
+    await pipeline(read, write);
+  } finally {
+    clearInterval(watchdog);
+    read.off("data", onData);
+    const t = activeTransfers.get(transferKey);
+    if (t && t.activeStreams) {
+      t.activeStreams.delete(read);
+      t.activeStreams.delete(write);
+    }
+  }
+}
+
 let logToFile = null;
 let sftpCore = null; // To access getSftpSession, enqueueSftpOperation, calculateDynamicTimeout
 let dialog = null; // Electron dialog
@@ -342,171 +400,137 @@ async function handleDownloadFile(event, tabId, remotePath) {
       });
 
       try {
-        // 使用原生 SFTP 会话
         logToFile(
           `sftpTransfer: 使用SFTP会话进行下载 ${remotePath} (tab: ${tabId})`,
           "INFO",
         );
 
+        // 获取文件信息
         const stats = await new Promise((resolve, reject) => {
           sftp.stat(remotePath, (err, stats) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(stats);
-            }
+            if (err) reject(err);
+            else resolve(stats);
           });
         });
 
         const totalBytes = stats.size;
-        let transferredBytes = 0;
-        let lastProgressUpdate = 0;
+        const fileName = path.basename(remotePath);
+        const tempFilePath = filePath + ".part";
+        const chunkSize = chooseChunkSize(totalBytes);
 
-        // 添加用于计算传输速度和剩余时间的变量
+        // 传输进度追踪
+        let transferredBytes = 0;
         const transferStartTime = Date.now();
+        let lastProgressUpdate = 0;
         let lastBytesTransferred = 0;
         let lastTransferTime = transferStartTime;
         let currentTransferSpeed = 0;
         let currentRemainingTime = 0;
-        const speedSmoothingFactor = 0.3; // 速度平滑因子，较低的值使速度变化更平缓
+        const speedSmoothingFactor = 0.3;
 
-        const tempFilePath = filePath + ".part";
+        // Robust download flow using pipeline + watchdog + retries
+        const getCancelled = () => {
+          const t = activeTransfers.get(transferKey);
+          return !t || t.cancelled;
+        };
 
-        // 根据文件大小动态调整传输参数（使用更大的highWaterMark以提高吞吐）
-        const chunkSize = chooseChunkSize(totalBytes);
+        const onBytes = (len) => {
+          transferredBytes += len;
+          const now = Date.now();
 
-        // 使用原生 SFTP 会话创建读取流和写入流
-        const writeStream = fs.createWriteStream(tempFilePath, {
-          highWaterMark: chunkSize,
-        });
-        const readStream = sftp.createReadStream(remotePath, {
-          highWaterMark: chunkSize,
-        });
+          if (now - lastProgressUpdate >= TRANSFER_TUNING.progressIntervalMs) {
+            const timeElapsed = (now - lastTransferTime) / 1000;
+            if (timeElapsed > 0) {
+              const bytesDelta = transferredBytes - lastBytesTransferred;
+              const instantSpeed = bytesDelta / timeElapsed;
+              currentTransferSpeed =
+                currentTransferSpeed === 0
+                  ? instantSpeed
+                  : speedSmoothingFactor * instantSpeed +
+                    (1 - speedSmoothingFactor) * currentTransferSpeed;
+              const remainingBytes = totalBytes - transferredBytes;
+              currentRemainingTime =
+                currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
+              lastBytesTransferred = transferredBytes;
+              lastTransferTime = now;
+            }
 
-        // 将流添加到 activeStreams 集合中
-        const transfer = activeTransfers.get(transferKey);
-        if (transfer && transfer.activeStreams) {
-          transfer.activeStreams.add(readStream);
-          transfer.activeStreams.add(writeStream);
-        }
+            const progress = Math.floor((transferredBytes / totalBytes) * 100);
+            sendToRenderer("download-progress", {
+              tabId,
+              transferKey,
+              progress,
+              fileName,
+              transferredBytes,
+              totalBytes,
+              transferSpeed: currentTransferSpeed,
+              remainingTime: currentRemainingTime,
+            });
+            lastProgressUpdate = now;
+          }
+        };
 
-        await new Promise((resolve, reject) => {
-          writeStream.on("error", (error) => {
-            logToFile(`sftpTransfer: 写入流错误: ${error.message}`, "ERROR");
-            reject(error);
-          });
+        let attempt = 0;
+        while (true) {
+          try {
+            let resumeOffset = 0;
+            if (attempt > 0) {
+              // 检查临时文件大小用于断点续传
+              try {
+                const tempStats = fs.statSync(tempFilePath);
+                resumeOffset = tempStats.size;
+                if (!Number.isFinite(resumeOffset) || resumeOffset > totalBytes) {
+                  resumeOffset = 0;
+                }
+                transferredBytes = resumeOffset;
+              } catch (e) {
+                resumeOffset = 0;
+              }
+            }
 
-          readStream.on("error", (error) => {
-            logToFile(`sftpTransfer: 读取流错误: ${error.message}`, "ERROR");
-            writeStream.destroy();
-            reject(error);
-          });
+            // 根据文件大小动态调整超时时间
+            const timeoutMs = totalBytes > 100 * 1024 * 1024
+              ? 60000  // 大文件60秒无进度超时
+              : 30000; // 小文件30秒无进度超时
 
-          readStream.on("data", (chunk) => {
-            // 检查传输是否已被用户取消
-            const currentTransfer = activeTransfers.get(transferKey);
-            if (currentTransfer && currentTransfer.cancelled) {
-              logToFile(
-                `sftpTransfer: Download cancelled by user during data transfer`,
-                "INFO",
-              );
-              readStream.destroy();
-              writeStream.destroy();
-              // 立即从 activeTransfers 中删除
-              activeTransfers.delete(transferKey);
-              // 删除临时文件
+            await downloadWithPipeline({
+              sftp,
+              remotePath,
+              localPath: tempFilePath,
+              chunkSize,
+              transferKey,
+              getCancelled,
+              onBytes,
+              resumeOffset,
+              noProgressTimeoutMs: timeoutMs,
+            });
+            break;
+          } catch (e) {
+            if (getCancelled()) {
+              // 清理临时文件
               try {
                 if (fs.existsSync(tempFilePath)) {
                   fs.unlinkSync(tempFilePath);
                 }
-              } catch (e) {
+              } catch (cleanupError) {
                 logToFile(
-                  `sftpTransfer: Failed to delete temp file: ${e.message}`,
+                  `sftpTransfer: Failed to delete temp file: ${cleanupError.message}`,
                   "WARN",
                 );
               }
-              reject(new Error("Transfer cancelled by user"));
-              return;
+              throw new Error("Transfer cancelled by user");
             }
-
-            transferredBytes += chunk.length;
-            const progress = Math.floor((transferredBytes / totalBytes) * 100);
-            const now = Date.now();
-
-            if (
-              now - lastProgressUpdate >=
-              TRANSFER_TUNING.progressIntervalMs
-            ) {
-              // Report every 100ms
-              // 计算传输速度（字节/秒）
-              const timeElapsedSinceLastUpdate =
-                (now - lastTransferTime) / 1000; // 转换为秒
-              if (timeElapsedSinceLastUpdate > 0) {
-                const bytesTransferredSinceLastUpdate =
-                  transferredBytes - lastBytesTransferred;
-                const instantSpeed =
-                  bytesTransferredSinceLastUpdate / timeElapsedSinceLastUpdate;
-
-                // 使用平滑因子计算平滑速度，避免数值剧烈波动
-                if (currentTransferSpeed === 0) {
-                  currentTransferSpeed = instantSpeed; // 初始值
-                } else {
-                  currentTransferSpeed =
-                    speedSmoothingFactor * instantSpeed +
-                    (1 - speedSmoothingFactor) * currentTransferSpeed;
-                }
-
-                // 计算剩余时间（秒）
-                const remainingBytes = totalBytes - transferredBytes;
-                if (currentTransferSpeed > 0) {
-                  currentRemainingTime = remainingBytes / currentTransferSpeed;
-                }
-
-                // 更新追踪变量
-                lastBytesTransferred = transferredBytes;
-                lastTransferTime = now;
-              }
-
-              sendToRenderer("download-progress", {
-                tabId,
-                transferKey,
-                progress,
-                fileName,
-                transferredBytes,
-                totalBytes,
-                transferSpeed: currentTransferSpeed,
-                remainingTime: currentRemainingTime,
-              });
-              lastProgressUpdate = now;
+            attempt += 1;
+            if (!(attempt <= 3 && isRetryable(e))) {
+              throw e;
             }
-          });
+            await delay(backoffMs(1000, attempt));
+          }
+        }
 
-          readStream.on("end", () => {
-            logToFile(
-              `sftpTransfer: 下载完成 ${remotePath}, 传输 ${transferredBytes} 字节`,
-              "DEBUG",
-            );
-            // 从 activeStreams 中移除
-            const transfer = activeTransfers.get(transferKey);
-            if (transfer && transfer.activeStreams) {
-              transfer.activeStreams.delete(readStream);
-            }
-            resolve();
-          });
-
-          // 通过管道连接流
-          readStream.pipe(writeStream);
-
-          writeStream.on("finish", () => {
-            // 从 activeStreams 中移除
-            const transfer = activeTransfers.get(transferKey);
-            if (transfer && transfer.activeStreams) {
-              transfer.activeStreams.delete(writeStream);
-            }
-          });
-        });
-
+        // 下载完成，重命名临时文件
         fs.renameSync(tempFilePath, filePath);
+
         sendToRenderer("download-progress", {
           tabId,
           transferKey,
@@ -514,8 +538,8 @@ async function handleDownloadFile(event, tabId, remotePath) {
           fileName,
           transferredBytes: totalBytes,
           totalBytes,
-          transferSpeed: 0, // 传输完成，速度为0
-          remainingTime: 0, // 传输完成，剩余时间为0
+          transferSpeed: 0,
+          remainingTime: 0,
         });
 
         activeTransfers.delete(transferKey);
@@ -638,12 +662,11 @@ async function handleUploadFile(
 
   if (totalBytesToUpload === 0 && totalFilesToUpload > 0) {
     // This case can happen if all files failed to stat or are empty.
-    // Depending on desired behavior, could return an error or specific message.
     logToFile(
       `No bytes to upload, though ${totalFilesToUpload} files were selected (possibly stat errors or all empty).`,
       "WARN",
     );
-    // For now, let it proceed, fastPut might handle empty files or error out if path is invalid.
+    // Pipeline might handle empty files or error out if path is invalid.
   }
 
   return sftpCore.enqueueSftpOperation(
@@ -791,155 +814,72 @@ async function handleUploadFile(
             let fileTransferredBytes = 0;
             const chunkSize = chooseChunkSize(currentFileSize);
 
-            // New robust upload flow using pipeline + watchdog + retries
-            {
-              const getCancelled = () => {
-                const t = activeTransfers.get(transferKey);
-                return !t || t.cancelled;
-              };
-              const onBytes = (len) => {
-                fileTransferredBytes += len;
-                overallUploadedBytes += len;
-                const now = Date.now();
-                const timeElapsed = (now - lastTransferTime) / 1000;
-                if (timeElapsed > 0) {
-                  const bytesDelta = overallUploadedBytes - lastOverallBytesTransferred;
-                  const instantSpeed = bytesDelta / timeElapsed;
-                  currentTransferSpeed =
-                    currentTransferSpeed === 0
-                      ? instantSpeed
-                      : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
-                  const remainingBytes = totalBytesToUpload - overallUploadedBytes;
-                  currentRemainingTime =
-                    currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
-                  lastOverallBytesTransferred = overallUploadedBytes;
-                  lastTransferTime = now;
-                }
-                maybeReportOverall(fileName, i);
-              };
-
-              let attempt = 0;
-              while (true) {
-                try {
-                  let resumeOffset = 0;
-                  if (attempt > 0) {
-                    resumeOffset = await statRemoteSize(sftpForFile, remoteFilePath);
-                    if (!Number.isFinite(resumeOffset) || resumeOffset > currentFileSize) {
-                      resumeOffset = 0;
-                    }
-                  }
-                  await uploadWithPipeline({
-                    sftp: sftpForFile,
-                    localPath: localFilePath,
-                    remotePath: remoteFilePath,
-                    chunkSize,
-                    transferKey,
-                    getCancelled,
-                    onBytes,
-                    resumeOffset,
-                    noProgressTimeoutMs: 30000,
-                  });
-                  break;
-                } catch (e) {
-                  if (getCancelled()) throw new Error("Transfer cancelled by user");
-                  attempt += 1;
-                  if (!(attempt <= 3 && isRetryable(e))) {
-                    throw e;
-                  }
-                  await delay(backoffMs(1000, attempt));
-                }
+            // Robust upload flow using pipeline + watchdog + retries
+            const getCancelled = () => {
+              const t = activeTransfers.get(transferKey);
+              return !t || t.cancelled;
+            };
+            const onBytes = (len) => {
+              fileTransferredBytes += len;
+              overallUploadedBytes += len;
+              const now = Date.now();
+              const timeElapsed = (now - lastTransferTime) / 1000;
+              if (timeElapsed > 0) {
+                const bytesDelta = overallUploadedBytes - lastOverallBytesTransferred;
+                const instantSpeed = bytesDelta / timeElapsed;
+                currentTransferSpeed =
+                  currentTransferSpeed === 0
+                    ? instantSpeed
+                    : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
+                const remainingBytes = totalBytesToUpload - overallUploadedBytes;
+                currentRemainingTime =
+                  currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
+                lastOverallBytesTransferred = overallUploadedBytes;
+                lastTransferTime = now;
               }
-
-              filesUploadedCount++;
-              // Ensure progress update
               maybeReportOverall(fileName, i);
-              return;
+            };
+
+            let attempt = 0;
+            while (true) {
+              try {
+                let resumeOffset = 0;
+                if (attempt > 0) {
+                  resumeOffset = await statRemoteSize(sftpForFile, remoteFilePath);
+                  if (!Number.isFinite(resumeOffset) || resumeOffset > currentFileSize) {
+                    resumeOffset = 0;
+                  }
+                }
+
+                // 根据文件大小动态调整超时时间
+                const timeoutMs = currentFileSize > 100 * 1024 * 1024
+                  ? 60000  // 大文件60秒无进度超时
+                  : 30000; // 小文件30秒无进度超时
+
+                await uploadWithPipeline({
+                  sftp: sftpForFile,
+                  localPath: localFilePath,
+                  remotePath: remoteFilePath,
+                  chunkSize,
+                  transferKey,
+                  getCancelled,
+                  onBytes,
+                  resumeOffset,
+                  noProgressTimeoutMs: timeoutMs,
+                });
+                break;
+              } catch (e) {
+                if (getCancelled()) throw new Error("Transfer cancelled by user");
+                attempt += 1;
+                if (!(attempt <= 3 && isRetryable(e))) {
+                  throw e;
+                }
+                await delay(backoffMs(1000, attempt));
+              }
             }
-
-            // 创建流
-            const readStream = fs.createReadStream(localFilePath, {
-              highWaterMark: chunkSize,
-            });
-            const writeStream = sftpForFile.createWriteStream(remoteFilePath, {
-              // 提高SFTP写入缓冲，减少backpressure频率
-              highWaterMark: chunkSize,
-            });
-
-            // 跟踪流
-            const transfer = activeTransfers.get(transferKey);
-            if (transfer && transfer.activeStreams) {
-              transfer.activeStreams.add(readStream);
-              transfer.activeStreams.add(writeStream);
-            }
-
-            await new Promise((resolve, reject) => {
-              readStream.on("error", (error) => {
-                reject(error);
-              });
-
-              writeStream.on("error", (error) => {
-                readStream.destroy();
-                reject(error);
-              });
-
-              writeStream.on("close", () => resolve());
-
-              readStream.on("data", (chunk) => {
-                // 取消检查
-                const currentTransfer = activeTransfers.get(transferKey);
-                if (currentTransfer && currentTransfer.cancelled) {
-                  readStream.destroy();
-                  writeStream.destroy();
-                  reject(new Error("Transfer cancelled by user"));
-                  return;
-                }
-
-                fileTransferredBytes += chunk.length;
-                overallUploadedBytes += chunk.length;
-
-                // 速度与剩余时间估算（共享节流）
-                const now = Date.now();
-                const timeElapsed = (now - lastTransferTime) / 1000;
-                if (timeElapsed > 0) {
-                  const bytesDelta =
-                    overallUploadedBytes - lastOverallBytesTransferred;
-                  const instantSpeed = bytesDelta / timeElapsed;
-                  currentTransferSpeed =
-                    currentTransferSpeed === 0
-                      ? instantSpeed
-                      : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
-                  const remainingBytes =
-                    totalBytesToUpload - overallUploadedBytes;
-                  currentRemainingTime =
-                    currentTransferSpeed > 0
-                      ? remainingBytes / currentTransferSpeed
-                      : 0;
-                  lastOverallBytesTransferred = overallUploadedBytes;
-                  lastTransferTime = now;
-                }
-
-                maybeReportOverall(fileName, i);
-              });
-
-              // pipe以启用背压
-              readStream.pipe(writeStream);
-
-              readStream.on("end", () => {
-                const t2 = activeTransfers.get(transferKey);
-                if (t2 && t2.activeStreams) {
-                  t2.activeStreams.delete(readStream);
-                }
-              });
-              writeStream.on("finish", () => {
-                const t3 = activeTransfers.get(transferKey);
-                if (t3 && t3.activeStreams) {
-                  t3.activeStreams.delete(writeStream);
-                }
-              });
-            });
 
             filesUploadedCount++;
-            // 该文件完成后强制更新一次进度
+            // Ensure progress update
             maybeReportOverall(fileName, i);
           } finally {
             // 归还会话
@@ -1394,12 +1334,11 @@ async function handleUploadFolder(
           let fileTransferredBytes = 0;
           const chunkSize = chooseChunkSize(file.size);
 
-          // New robust upload flow for folder files (pipeline + watchdog + retries)
-          // Will exit early after completion to skip legacy stream piping
-          {
-            // Ensure we have a session (borrowing if pool available)
-            let borrowed = null;
-            let sftpForFile = null;
+          // Robust upload flow for folder files (pipeline + watchdog + retries)
+          // Ensure we have a session (borrowing if pool available)
+          let borrowed = null;
+          let sftpForFile = null;
+          try {
             if (sftpCore && typeof sftpCore.borrowSftpSession === "function") {
               borrowed = await sftpCore.borrowSftpSession(tabId);
               sftpForFile = borrowed.sftp;
@@ -1442,6 +1381,12 @@ async function handleUploadFolder(
                     resumeOffset = 0;
                   }
                 }
+
+                // 根据文件大小动态调整超时时间
+                const timeoutMs = file.size > 100 * 1024 * 1024
+                  ? 60000  // 大文件60秒无进度超时
+                  : 30000; // 小文件30秒无进度超时
+
                 await uploadWithPipeline({
                   sftp: sftpForFile,
                   localPath: file.localPath,
@@ -1451,7 +1396,7 @@ async function handleUploadFolder(
                   getCancelled,
                   onBytes,
                   resumeOffset,
-                  noProgressTimeoutMs: 30000,
+                  noProgressTimeoutMs: timeoutMs,
                 });
                 break;
               } catch (e) {
@@ -1466,91 +1411,41 @@ async function handleUploadFolder(
 
             filesUploadedCount++;
             maybeReportOverall();
-
+          } finally {
+            // 归还会话
             if (borrowed && sftpCore && typeof sftpCore.releaseSftpSession === "function") {
               sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
             }
-            return;
-          }
-
-          // 借用一个SFTP会话
-          let borrowed = null;
-          let sftpForFile = null;
-          if (sftpCore && typeof sftpCore.borrowSftpSession === "function") {
-            borrowed = await sftpCore.borrowSftpSession(tabId);
-            sftpForFile = borrowed.sftp;
-          } else {
-            sftpForFile = sftp; // 回退
-          }
-
-          const readStream = fs.createReadStream(file.localPath, {
-            highWaterMark: chunkSize,
-          });
-          const writeStream = sftpForFile.createWriteStream(remoteFilePath);
-
-          await new Promise((resolve, reject) => {
-            readStream.on("error", (error) => reject(error));
-            writeStream.on("error", (error) => {
-              readStream.destroy();
-              reject(error);
-            });
-            writeStream.on("close", () => resolve());
-
-            readStream.on("data", (chunk) => {
-              // 取消检查
-              const ct = activeTransfers.get(transferKey);
-              if (ct && ct.cancelled) {
-                readStream.destroy();
-                writeStream.destroy();
-                reject(new Error("Transfer cancelled by user"));
-                return;
-              }
-              fileTransferredBytes += chunk.length;
-              overallUploadedBytes += chunk.length;
-
-              // 速度估算
-              const now = Date.now();
-              const timeElapsed = (now - lastTransferTime) / 1000;
-              if (timeElapsed > 0) {
-                const bytesDelta =
-                  overallUploadedBytes - lastOverallBytesTransferred;
-                const instantSpeed = bytesDelta / timeElapsed;
-                currentTransferSpeed =
-                  currentTransferSpeed === 0
-                    ? instantSpeed
-                    : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
-                const remainingBytes =
-                  totalBytesToUpload - overallUploadedBytes;
-                currentRemainingTime =
-                  currentTransferSpeed > 0
-                    ? remainingBytes / currentTransferSpeed
-                    : 0;
-                lastOverallBytesTransferred = overallUploadedBytes;
-                lastTransferTime = now;
-              }
-
-              maybeReportOverall();
-            });
-
-            readStream.pipe(writeStream);
-          });
-
-          filesUploadedCount++;
-          maybeReportOverall();
-
-          // 归还会话
-          if (
-            borrowed &&
-            sftpCore &&
-            typeof sftpCore.releaseSftpSession === "function"
-          ) {
-            sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
           }
         });
 
+        // 根据文件规模动态调整并发度
+        const avgFileSize =
+          totalFilesToUpload > 0
+            ? Math.floor(totalBytesToUpload / totalFilesToUpload)
+            : 0;
+        let dynamicParallelUpload = TRANSFER_TUNING.parallelFilesUpload;
+        if (
+          totalFilesToUpload >= 8 &&
+          avgFileSize <= TRANSFER_TUNING.smallThreshold
+        ) {
+          // 小文件多：提高并发
+          dynamicParallelUpload = Math.min(12, totalFilesToUpload);
+        } else if (avgFileSize > TRANSFER_TUNING.mediumThreshold) {
+          // 巨大文件：降低并发，减少资源争用
+          dynamicParallelUpload = Math.min(2, totalFilesToUpload);
+        } else if (avgFileSize > TRANSFER_TUNING.smallThreshold) {
+          dynamicParallelUpload = Math.min(4, totalFilesToUpload);
+        }
+
+        logToFile(
+          `sftpTransfer: Starting folder upload with ${dynamicParallelUpload} parallel workers`,
+          "INFO",
+        );
+
         await runWithConcurrency(
           tasks,
-          TRANSFER_TUNING.parallelFilesUpload,
+          dynamicParallelUpload,
           (fn) => fn(),
         );
 
