@@ -93,6 +93,30 @@ class ConnectionManager {
     return allConnections.slice(0, count);
   }
 
+  getLastConnections(count) {
+    // 合并SSH和Telnet的最近连接
+    const sshLastConnections = this.sshConnectionPool.getLastConnections(count);
+    const telnetLastConnections =
+      this.telnetConnectionPool.getLastConnections(count);
+
+    // 合并两个列表，保持时间顺序（简单合并，实际使用中可能需要更复杂的合并逻辑）
+    const allConnections = [...sshLastConnections, ...telnetLastConnections];
+    return allConnections.slice(0, count);
+  }
+
+  // 从配置文件加载并初始化最近连接列表
+  loadLastConnectionsFromConfig(connections) {
+    if (Array.isArray(connections) && connections.length > 0) {
+      // 简单处理：将所有连接ID都加载到SSH连接池
+      // 实际使用中可能需要区分SSH和Telnet
+      this.sshConnectionPool.setLastConnections(connections);
+      logToFile(
+        `Loaded ${connections.length} last connections into connection pools`,
+        "INFO",
+      );
+    }
+  }
+
   // SSH连接池相关方法
   async getSSHConnection(sshConfig) {
     return this.sshConnectionPool.getConnection(sshConfig);

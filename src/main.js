@@ -421,6 +421,23 @@ app.whenReady().then(async () => {
   // Initialize connection manager
   connectionManager.initialize();
 
+  // Load last connections from config and initialize connection pools
+  try {
+    const lastConnections = configManager.loadLastConnections();
+    if (lastConnections && lastConnections.length > 0) {
+      connectionManager.loadLastConnectionsFromConfig(lastConnections);
+      logToFile(
+        `Loaded ${lastConnections.length} last connections on startup`,
+        "INFO",
+      );
+    }
+  } catch (error) {
+    logToFile(
+      `Failed to load last connections on startup: ${error.message}`,
+      "ERROR",
+    );
+  }
+
   // Register reconnection handlers
   try {
     registerReconnectHandlers(connectionManager.sshConnectionPool);
@@ -465,7 +482,18 @@ app.whenReady().then(async () => {
 });
 
 // 在应用退出前清理资源
-app.on("before-quit", async () => {
+let isQuitting = false;
+app.on("before-quit", async (event) => {
+  // 如果已经在退出流程中，不要阻止
+  if (isQuitting) {
+    return;
+  }
+
+  // 阻止默认退出行为，等待清理完成
+  event.preventDefault();
+  isQuitting = true;
+
+  logToFile("应用开始退出流程，执行清理操作...", "INFO");
   // 清理本地终端处理器
   if (localTerminalHandlers) {
     try {
@@ -673,22 +701,39 @@ app.on("before-quit", async () => {
     );
   }
 
-  // Save top connections
+  // Save last connections
   try {
-    const topConnections = connectionManager.getTopConnections(5);
-    if (topConnections && topConnections.length > 0) {
-      configManager.saveTopConnections(topConnections);
+    const lastConnections = connectionManager.getLastConnections(5);
+    // 调试日志：检查获取的最近连接
+    logToFile(
+      `App quit: Got ${lastConnections.length} last connections: ${JSON.stringify(lastConnections)}`,
+      "DEBUG",
+    );
+
+    // 即使数组为空也保存，以保持配置文件的一致性
+    const saved = configManager.saveLastConnections(lastConnections);
+
+    if (lastConnections && lastConnections.length > 0) {
       logToFile(
-        `Saved ${topConnections.length} top connections on app quit`,
+        `Saved ${lastConnections.length} last connections on app quit${saved ? " successfully" : " - save returned false"}`,
+        "INFO",
+      );
+    } else {
+      logToFile(
+        `Saved empty last connections list on app quit${saved ? " successfully" : " - save returned false"}`,
         "INFO",
       );
     }
   } catch (error) {
     logToFile(
-      `Failed to save top connections on quit: ${error.message}`,
+      `Failed to save last connections on quit: ${error.message}`,
       "ERROR",
     );
   }
+
+  // 所有清理操作完成，现在真正退出应用
+  logToFile("所有清理操作完成，应用即将退出", "INFO");
+  app.quit();
 });
 
 // 关闭所有窗口时退出应用（macOS除外）
@@ -1744,7 +1789,7 @@ function setupIPC(mainWindow) {
   // Load top connections (from persistent storage)
   ipcMain.handle("terminal:loadTopConnections", async () => {
     try {
-      return configManager.loadTopConnections();
+      return configManager.loadLastConnections();
     } catch (e) {
       return [];
     }

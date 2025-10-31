@@ -16,6 +16,7 @@ class TelnetConnectionPool {
     this.healthCheckTimer = null;
     this.isInitialized = false;
     this.connectionUsage = new Map();
+    this.lastConnections = []; // 存储最近连接的ID列表（按时间顺序）
   }
 
   initialize() {
@@ -56,6 +57,53 @@ class TelnetConnectionPool {
     if (!connectionId) return;
     const currentCount = this.connectionUsage.get(connectionId) || 0;
     this.connectionUsage.set(connectionId, currentCount + 1);
+
+    // 同时记录到最近连接列表
+    this.recordLastConnection(connectionId);
+  }
+
+  recordLastConnection(connectionId) {
+    if (!connectionId) {
+      if (logToFile) {
+        logToFile(
+          "Telnet recordLastConnection: connectionId is null or undefined, skipping",
+          "WARN",
+        );
+      }
+      return;
+    }
+
+    // 移除旧的相同连接ID（如果存在）
+    const index = this.lastConnections.indexOf(connectionId);
+    if (index > -1) {
+      this.lastConnections.splice(index, 1);
+    }
+
+    // 添加到列表开头（最新的）
+    this.lastConnections.unshift(connectionId);
+
+    // 限制列表长度（保留最近10个）
+    if (this.lastConnections.length > 10) {
+      this.lastConnections = this.lastConnections.slice(0, 10);
+    }
+
+    if (logToFile) {
+      logToFile(
+        `Telnet recordLastConnection: Added ${connectionId}, total count: ${this.lastConnections.length}`,
+        "DEBUG",
+      );
+    }
+  }
+
+  getLastConnections(count = 5) {
+    return this.lastConnections.slice(0, count);
+  }
+
+  // 设置最近连接列表（用于从配置文件加载）
+  setLastConnections(connections) {
+    if (Array.isArray(connections)) {
+      this.lastConnections = connections.slice(0, 10); // 限制最多10个
+    }
   }
 
   getTopConnections(count = 5) {
@@ -69,6 +117,14 @@ class TelnetConnectionPool {
 
   async getConnection(telnetConfig) {
     const connectionKey = this.generateConnectionKey(telnetConfig);
+
+    // 调试日志：检查 telnetConfig.id 是否存在
+    if (logToFile) {
+      logToFile(
+        `Telnet getConnection: connectionKey=${connectionKey}, telnetConfig.id=${telnetConfig.id || "undefined"}`,
+        "DEBUG",
+      );
+    }
 
     this.recordConnectionUsage(telnetConfig.id);
 
