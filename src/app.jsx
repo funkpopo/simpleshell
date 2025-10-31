@@ -527,17 +527,22 @@ function App() {
     setActiveSidebarMargin(calculatedMargin);
 
     // 触发自定义事件，通知WebTerminal组件进行侧边栏变化适配
-    setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("sidebarChanged", {
-          detail: {
-            margin: calculatedMargin,
-            sidebarWidth: sidebarWidth,
-            timestamp: Date.now(),
-          },
-        }),
-      );
-    }, 10);
+    // 使用多次触发机制，确保在CSS过渡期间和完成后都能正确调整终端大小
+    const triggerDelays = [10, 100, 280]; // 在过渡期间、中期和完成后触发
+
+    triggerDelays.forEach((delay) => {
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("sidebarChanged", {
+            detail: {
+              margin: calculatedMargin,
+              sidebarWidth: sidebarWidth,
+              timestamp: Date.now(),
+            },
+          }),
+        );
+      }, delay);
+    });
   }, [
     resourceMonitorOpen,
     connectionManagerOpen,
@@ -1952,8 +1957,6 @@ function App() {
               p: 0,
               display: "flex",
               flexDirection: "column",
-              marginRight: `${activeSidebarMargin}px`,
-              transition: "margin-right 0.25s ease-out",
             }}
           >
             {/* 标签页内容 */}
@@ -2038,179 +2041,194 @@ function App() {
           {/* 右侧边栏容器 */}
           <Box
             sx={{
-              position: "absolute",
-              top: 0,
-              right: 0,
+              position: "relative",
               height: "100%",
               display: "flex",
+              flexShrink: 0,
+              flexDirection: "row",
               zIndex: 90,
             }}
           >
-            {/* 资源监控侧边栏 */}
+            {/* 侧边栏内容区域 - 根据是否有侧边栏打开来显示 */}
             <Box
               sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "resource" ? 101 : 98,
+                width: `${
+                  activeSidebarMargin > SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH
+                    ? activeSidebarMargin - SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH
+                    : 0
+                }px`,
                 height: "100%",
-                display: "flex",
+                position: "relative",
+                transition: "width 0.25s ease-out",
+                overflow: "hidden",
               }}
             >
-              {resourceMonitorOpen && (
-                <ResourceMonitor
-                  open={resourceMonitorOpen}
-                  onClose={handleCloseResourceMonitor}
-                  currentTabId={resourceMonitorTabId}
-                />
-              )}
+              {/* 资源监控侧边栏 */}
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  zIndex: lastOpenedSidebar === "resource" ? 101 : 98,
+                  height: "100%",
+                  display: "flex",
+                }}
+              >
+                {resourceMonitorOpen && (
+                  <ResourceMonitor
+                    open={resourceMonitorOpen}
+                    onClose={handleCloseResourceMonitor}
+                    currentTabId={resourceMonitorTabId}
+                  />
+                )}
+              </Box>
+
+              {/* 连接管理侧边栏 */}
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  zIndex: lastOpenedSidebar === "connection" ? 101 : 99,
+                  height: "100%",
+                  display: "flex",
+                }}
+              >
+                {connectionManagerOpen && (
+                  <ConnectionManager
+                    open={connectionManagerOpen}
+                    onClose={handleCloseConnectionManager}
+                    initialConnections={connections}
+                    onConnectionsUpdate={handleConnectionsUpdate}
+                    onOpenConnection={handleOpenConnection}
+                  />
+                )}
+              </Box>
+
+              {/* 文件管理侧边栏 */}
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  zIndex: lastOpenedSidebar === "file" ? 103 : 96,
+                  height: "100%",
+                  display: "flex",
+                }}
+              >
+                {fileManagerOpen && (
+                  <FileManager
+                    open={fileManagerOpen}
+                    onClose={handleCloseFileManager}
+                    tabId={fileManagerProps.tabId}
+                    tabName={fileManagerProps.tabName}
+                    sshConnection={fileManagerProps.sshConnection}
+                    initialPath={fileManagerProps.initialPath}
+                    onPathChange={updateFileManagerPath}
+                  />
+                )}
+              </Box>
+
+              {/* 添加快捷命令侧边栏 */}
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  zIndex: lastOpenedSidebar === "shortcut" ? 104 : 95,
+                  height: "100%",
+                  display: "flex",
+                }}
+              >
+                {shortcutCommandsOpen && (
+                  <ShortcutCommands
+                    open={shortcutCommandsOpen}
+                    onClose={handleCloseShortcutCommands}
+                    onSendCommand={handleSendCommand}
+                  />
+                )}
+              </Box>
+
+              {/* 添加历史命令侧边栏 */}
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  zIndex: lastOpenedSidebar === "history" ? 105 : 94,
+                  height: "100%",
+                  display: "flex",
+                }}
+              >
+                {commandHistoryOpen && (
+                  <CommandHistory
+                    open={commandHistoryOpen}
+                    onClose={handleCloseCommandHistory}
+                    onSendCommand={handleSendCommand}
+                  />
+                )}
+              </Box>
+
+              {/* IP地址查询侧边栏 */}
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  zIndex: lastOpenedSidebar === "ipquery" ? 106 : 93,
+                  height: "100%",
+                  display: "flex",
+                }}
+              >
+                {ipAddressQueryOpen && (
+                  <IPAddressQuery
+                    open={ipAddressQueryOpen}
+                    onClose={handleCloseIpAddressQuery}
+                  />
+                )}
+              </Box>
+
+              {/* 随机密码生成器侧边栏 */}
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  zIndex: lastOpenedSidebar === "password" ? 107 : 92,
+                  height: "100%",
+                  display: "flex",
+                }}
+              >
+                {securityToolsOpen && (
+                  <SecurityTools
+                    open={securityToolsOpen}
+                    onClose={() => setSecurityToolsOpen(false)}
+                  />
+                )}
+              </Box>
+
+              {/* 本地终端侧边栏 */}
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  zIndex: lastOpenedSidebar === "localTerminal" ? 108 : 91,
+                  height: "100%",
+                  display: "flex",
+                }}
+              >
+                {localTerminalSidebarOpen && (
+                  <LocalTerminalSidebar
+                    open={localTerminalSidebarOpen}
+                    onClose={handleCloseLocalTerminalSidebar}
+                    onLaunchTerminal={handleLaunchLocalTerminal}
+                  />
+                )}
+              </Box>
             </Box>
 
-            {/* 连接管理侧边栏 */}
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "connection" ? 101 : 99,
-                height: "100%",
-                display: "flex",
-              }}
-            >
-              {connectionManagerOpen && (
-                <ConnectionManager
-                  open={connectionManagerOpen}
-                  onClose={handleCloseConnectionManager}
-                  initialConnections={connections}
-                  onConnectionsUpdate={handleConnectionsUpdate}
-                  onOpenConnection={handleOpenConnection}
-                />
-              )}
-            </Box>
-
-            {/* 文件管理侧边栏 */}
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "file" ? 103 : 96,
-                height: "100%",
-                display: "flex",
-              }}
-            >
-              {fileManagerOpen && (
-                <FileManager
-                  open={fileManagerOpen}
-                  onClose={handleCloseFileManager}
-                  tabId={fileManagerProps.tabId}
-                  tabName={fileManagerProps.tabName}
-                  sshConnection={fileManagerProps.sshConnection}
-                  initialPath={fileManagerProps.initialPath}
-                  onPathChange={updateFileManagerPath}
-                />
-              )}
-            </Box>
-
-            {/* 添加快捷命令侧边栏 */}
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "shortcut" ? 104 : 95,
-                height: "100%",
-                display: "flex",
-              }}
-            >
-              {shortcutCommandsOpen && (
-                <ShortcutCommands
-                  open={shortcutCommandsOpen}
-                  onClose={handleCloseShortcutCommands}
-                  onSendCommand={handleSendCommand}
-                />
-              )}
-            </Box>
-
-            {/* 添加历史命令侧边栏 */}
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "history" ? 105 : 94,
-                height: "100%",
-                display: "flex",
-              }}
-            >
-              {commandHistoryOpen && (
-                <CommandHistory
-                  open={commandHistoryOpen}
-                  onClose={handleCloseCommandHistory}
-                  onSendCommand={handleSendCommand}
-                />
-              )}
-            </Box>
-
-            {/* IP地址查询侧边栏 */}
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "ipquery" ? 106 : 93,
-                height: "100%",
-                display: "flex",
-              }}
-            >
-              {ipAddressQueryOpen && (
-                <IPAddressQuery
-                  open={ipAddressQueryOpen}
-                  onClose={handleCloseIpAddressQuery}
-                />
-              )}
-            </Box>
-
-            {/* 随机密码生成器侧边栏 */}
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "password" ? 107 : 92,
-                height: "100%",
-                display: "flex",
-              }}
-            >
-              {securityToolsOpen && (
-                <SecurityTools
-                  open={securityToolsOpen}
-                  onClose={() => setSecurityToolsOpen(false)}
-                />
-              )}
-            </Box>
-
-            {/* 本地终端侧边栏 */}
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                right: 48,
-                zIndex: lastOpenedSidebar === "localTerminal" ? 108 : 91,
-                height: "100%",
-                display: "flex",
-              }}
-            >
-              {localTerminalSidebarOpen && (
-                <LocalTerminalSidebar
-                  open={localTerminalSidebarOpen}
-                  onClose={handleCloseLocalTerminalSidebar}
-                  onLaunchTerminal={handleLaunchLocalTerminal}
-                />
-              )}
-            </Box>
-
-            {/* 右侧边栏 */}
+            {/* 右侧边栏按钮栏 */}
             <Paper
               elevation={3}
               square={true}
@@ -2223,7 +2241,7 @@ function App() {
                 gap: 2,
                 borderRadius: 0,
                 zIndex: 110,
-                position: "relative",
+                flexShrink: 0,
               }}
             >
               {/* 主题切换按钮 */}
