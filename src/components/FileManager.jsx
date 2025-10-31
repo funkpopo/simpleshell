@@ -3790,11 +3790,11 @@ const FileManager = memo(
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.enteringScreen,
             }),
+          borderLeft: `1px solid ${theme.palette.divider}`,
           display: "flex",
           flexDirection: "column",
           position: "relative",
-          borderTopRightRadius: 0,
-          borderBottomRightRadius: 0,
+          borderRadius: 0,
           // 拖拽时的视觉反馈
           ...(isDragging && {
             backgroundColor: theme.palette.action.hover,
@@ -3802,6 +3802,7 @@ const FileManager = memo(
             boxShadow: `0 0 20px ${theme.palette.primary.main}30`,
           }),
         }}
+        elevation={4}
         tabIndex={0} // 使得Paper元素可以接收键盘事件
       >
         <Box
