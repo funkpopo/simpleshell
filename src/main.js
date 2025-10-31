@@ -1741,10 +1741,10 @@ function setupIPC(mainWindow) {
     return result;
   });
 
-  // Load top connections (live from connection manager)
+  // Load top connections (from persistent storage)
   ipcMain.handle("terminal:loadTopConnections", async () => {
     try {
-      return connectionManager.getTopConnections(5);
+      return configManager.loadTopConnections();
     } catch (e) {
       return [];
     }
