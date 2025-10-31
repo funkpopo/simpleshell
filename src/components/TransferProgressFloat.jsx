@@ -409,21 +409,25 @@ const TransferProgressFloat = ({
     const hasActiveTransfers = transferList.some(
       (t) => t.progress < 100 && !t.isCancelled && !t.error,
     );
-    const allCancelledOrFailed =
+    const allFinished =
       transferList.length > 0 &&
       transferList.every((t) => t.isCancelled || t.error || t.progress >= 100);
 
-    // 如果所有传输都被取消或失败，在短时间后关闭窗口
-    if (allCancelledOrFailed && !hasActiveTransfers) {
+    // 如果所有传输都已完成（成功/取消/失败），在短时间后关闭窗口
+    if (allFinished && !hasActiveTransfers) {
       const timer = setTimeout(() => {
         setShouldShow(false);
         setWasVisible(false);
         setIsMinimized(false);
-      }, 1500); // 1.5秒后自动关闭
+        // 通知父组件清理传输列表
+        if (onClose) {
+          onClose();
+        }
+      }, 2000); // 2秒后自动关闭，给用户足够时间看到结果
 
       return () => clearTimeout(timer);
     }
-  }, [transferList]);
+  }, [transferList, onClose]);
 
   // 如果没有传输任务且不需要显示，不渲染组件
   if (!shouldShow) {
