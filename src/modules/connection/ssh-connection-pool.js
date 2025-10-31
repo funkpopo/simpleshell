@@ -27,6 +27,7 @@ class SSHConnectionPool {
     this.healthCheckTimer = null;
     this.isInitialized = false;
     this.connectionUsage = new Map();
+    this.lastConnections = []; // 存储最近连接的ID列表（按时间顺序）
 
     // 初始化重连管理器
     this.reconnectionManager = new ReconnectionManager({
@@ -139,6 +140,53 @@ class SSHConnectionPool {
     if (!connectionId) return;
     const currentCount = this.connectionUsage.get(connectionId) || 0;
     this.connectionUsage.set(connectionId, currentCount + 1);
+
+    // 同时记录到最近连接列表
+    this.recordLastConnection(connectionId);
+  }
+
+  recordLastConnection(connectionId) {
+    if (!connectionId) {
+      if (logToFile) {
+        logToFile(
+          "SSH recordLastConnection: connectionId is null or undefined, skipping",
+          "WARN",
+        );
+      }
+      return;
+    }
+
+    // 移除旧的相同连接ID（如果存在）
+    const index = this.lastConnections.indexOf(connectionId);
+    if (index > -1) {
+      this.lastConnections.splice(index, 1);
+    }
+
+    // 添加到列表开头（最新的）
+    this.lastConnections.unshift(connectionId);
+
+    // 限制列表长度（保留最近10个）
+    if (this.lastConnections.length > 10) {
+      this.lastConnections = this.lastConnections.slice(0, 10);
+    }
+
+    if (logToFile) {
+      logToFile(
+        `SSH recordLastConnection: Added ${connectionId}, total count: ${this.lastConnections.length}`,
+        "DEBUG",
+      );
+    }
+  }
+
+  getLastConnections(count = 5) {
+    return this.lastConnections.slice(0, count);
+  }
+
+  // 设置最近连接列表（用于从配置文件加载）
+  setLastConnections(connections) {
+    if (Array.isArray(connections)) {
+      this.lastConnections = connections.slice(0, 10); // 限制最多10个
+    }
   }
 
   getTopConnections(count = 5) {
@@ -152,6 +200,14 @@ class SSHConnectionPool {
 
   async getConnection(sshConfig) {
     const connectionKey = this.generateConnectionKey(sshConfig);
+
+    // 调试日志：检查 sshConfig.id 是否存在
+    if (logToFile) {
+      logToFile(
+        `SSH getConnection: connectionKey=${connectionKey}, sshConfig.id=${sshConfig.id || "undefined"}`,
+        "DEBUG",
+      );
+    }
 
     this.recordConnectionUsage(sshConfig.id);
 

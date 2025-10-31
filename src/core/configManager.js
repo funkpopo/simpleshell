@@ -749,6 +749,7 @@ function initializeMainConfig() {
           compressOldLogs: true,
         },
         transferHistory: [],
+        lastConnections: [],
       };
 
       // Ensure the directory exists
@@ -910,6 +911,12 @@ function initializeMainConfig() {
           config.logSettings.compressOldLogs = true;
           changed = true;
         }
+      }
+
+      // Ensure lastConnections exists
+      if (!Array.isArray(config.lastConnections)) {
+        config.lastConnections = [];
+        changed = true;
       }
 
       // Write updated config if changes were made
@@ -1220,6 +1227,68 @@ function saveTopConnections(connections) {
   }
 }
 
+function loadLastConnections() {
+  if (!mainConfigPath) {
+    if (logToFile) {
+      logToFile(
+        "ConfigManager: Main config path not set. Cannot load last connections.",
+        "ERROR",
+      );
+    }
+    return [];
+  }
+  try {
+    if (fs.existsSync(mainConfigPath)) {
+      const data = fs.readFileSync(mainConfigPath, "utf8");
+      const config = JSON.parse(data);
+      if (config.lastConnections && Array.isArray(config.lastConnections)) {
+        return config.lastConnections;
+      }
+    }
+  } catch (error) {
+    if (logToFile) {
+      logToFile(
+        "ConfigManager: Failed to load last connections - " + error.message,
+        "ERROR",
+      );
+    }
+  }
+  return [];
+}
+
+function saveLastConnections(connections) {
+  if (!mainConfigPath) {
+    if (logToFile) {
+      logToFile(
+        "ConfigManager: Main config path not set. Cannot save last connections.",
+        "ERROR",
+      );
+    }
+    return false;
+  }
+  try {
+    let config = {};
+    if (fs.existsSync(mainConfigPath)) {
+      const data = fs.readFileSync(mainConfigPath, "utf8");
+      config = JSON.parse(data);
+    }
+    config.lastConnections = connections;
+    fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
+    if (logToFile) {
+      logToFile("ConfigManager: Last connections saved successfully.", "INFO");
+    }
+    return true;
+  } catch (error) {
+    if (logToFile) {
+      logToFile(
+        "ConfigManager: Failed to save last connections - " + error.message,
+        "ERROR",
+      );
+    }
+    return false;
+  }
+}
+
 module.exports = {
   init,
   initializeMainConfig,
@@ -1237,6 +1306,8 @@ module.exports = {
   saveCommandHistory,
   loadTopConnections,
   saveTopConnections,
+  loadLastConnections,
+  saveLastConnections,
   // Do not export _getMainConfigPathInternal, _processConnectionsForSave, _processConnectionsForLoad
   // as they are intended to be private helper functions.
 };
