@@ -42,7 +42,7 @@ import "./CodeHighlight.css";
 const FloatingDialog = styled(Dialog)(({ theme }) => ({
   "& .MuiDialog-paper": {
     position: "fixed",
-    right: 20,
+    right: 50,
     bottom: 20,
     margin: 0,
     width: 400,
