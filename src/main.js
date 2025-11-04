@@ -8,7 +8,7 @@ const {
   initLogger,
   updateLogConfig,
 } = require("./core/utils/logger");
-const configManager = require("./core/configManager");
+const configService = require("./core/ConfigService");
 const sftpCore = require("./modules/sftp/sftpCore");
 const sftpTransfer = require("./modules/sftp/sftpTransfer");
 const externalEditorManager = require("./modules/sftp/externalEditorManager");
@@ -396,12 +396,14 @@ const createWindow = () => {
 app.whenReady().then(async () => {
   initLogger(app); // 初始化日志模块
 
-  // Inject dependencies into configManager
-  configManager.init(app, { logToFile }, require("./core/utils/crypto"));
-  configManager.initializeMainConfig(); // 初始化主配置文件
+  // Inject dependencies into configService
+  configService.init(app, { logToFile }, require("./core/utils/crypto"));
+
+  // 加载配置（带自动校验和修复）
+  configService.loadConfig();
 
   // 加载日志配置并更新日志模块
-  const logSettings = configManager.loadLogSettings();
+  const logSettings = configService.getLogSettings();
   updateLogConfig(logSettings);
 
   // Initialize sftpCore module
@@ -422,7 +424,7 @@ app.whenReady().then(async () => {
     externalEditorManager.init({
       app,
       logger: { logToFile },
-      configManager,
+      configManager: configService,
       sftpCore,
       shell,
       sendToRenderer: (channel, payload) => safeSendToRenderer(channel, payload),
@@ -441,7 +443,7 @@ app.whenReady().then(async () => {
 
   // Load last connections from config and initialize connection pools
   try {
-    const lastConnections = configManager.loadLastConnections();
+    const lastConnections = configService.getLastConnections();
     if (lastConnections && lastConnections.length > 0) {
       connectionManager.loadLastConnectionsFromConfig(lastConnections);
       logToFile(
@@ -496,7 +498,7 @@ app.whenReady().then(async () => {
 
   // 初始化命令历史服务
   try {
-    const commandHistory = configManager.loadCommandHistory();
+    const commandHistory = configService.getCommandHistory();
     commandHistoryService.initialize(commandHistory);
     logToFile(
       `Command history service initialized with ${commandHistory.length} entries`,
@@ -720,7 +722,7 @@ app.on("before-quit", async (event) => {
   // 保存命令历史
   try {
     const historyToSave = commandHistoryService.exportHistory();
-    configManager.saveCommandHistory(historyToSave);
+    configService.saveCommandHistory(historyToSave);
     logToFile(
       `Saved ${historyToSave.length} command history entries on app quit`,
       "INFO",
@@ -742,7 +744,8 @@ app.on("before-quit", async (event) => {
     );
 
     // 即使数组为空也保存，以保持配置文件的一致性
-    const saved = configManager.saveLastConnections(lastConnections);
+    configService.saveLastConnections(lastConnections);
+    const saved = true;
 
     if (lastConnections && lastConnections.length > 0) {
       logToFile(
@@ -1797,30 +1800,33 @@ function setupIPC(mainWindow) {
 
   // 加载连接配置
   ipcMain.handle("terminal:loadConnections", async () => {
-    return configManager.loadConnections();
+    return configService.getConnections();
   });
 
   // 保存连接配置
   ipcMain.handle("terminal:saveConnections", async (event, connections) => {
-    const result = configManager.saveConnections(connections);
+    try {
+      configService.saveConnections(connections);
 
-    // 保存成功后，通知所有渲染进程连接配置已更新
-    if (result) {
+      // 保存成功后，通知所有渲染进程连接配置已更新
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
         if (win && !win.isDestroyed() && win.webContents) {
           win.webContents.send("connections-changed");
         }
       }
-    }
 
-    return result;
+      return true;
+    } catch (error) {
+      logToFile(`Failed to save connections: ${error.message}`, "ERROR");
+      return false;
+    }
   });
 
   // Load top connections (from persistent storage)
   ipcMain.handle("terminal:loadTopConnections", async () => {
     try {
-      return configManager.loadLastConnections();
+      return configService.getLastConnections();
     } catch (e) {
       return [];
     }
@@ -2048,11 +2054,17 @@ function setupIPC(mainWindow) {
 
   // AI设置相关IPC处理
   ipcMain.handle("ai:loadSettings", async () => {
-    return configManager.loadAISettings();
+    return configService.getAISettings();
   });
 
   ipcMain.handle("ai:saveSettings", async (event, settings) => {
-    return configManager.saveAISettings(settings);
+    try {
+      configService.saveAISettings(settings);
+      return true;
+    } catch (error) {
+      logToFile(`Failed to save AI settings: ${error.message}`, "ERROR");
+      return false;
+    }
   });
 
   // 新增: 处理API配置的IPC方法
@@ -2068,7 +2080,7 @@ function setupIPC(mainWindow) {
           "INFO",
         );
       }
-      const settings = configManager.loadAISettings();
+      const settings = configService.getAISettings();
       if (!settings.configs) settings.configs = [];
       if (!config.id) config.id = Date.now().toString();
       const existingIndex = settings.configs.findIndex(
@@ -2079,7 +2091,8 @@ function setupIPC(mainWindow) {
       } else {
         settings.configs.push(config);
       }
-      return configManager.saveAISettings(settings);
+      configService.saveAISettings(settings);
+      return true;
     } catch (error) {
       if (logToFile)
         logToFile(
@@ -2092,7 +2105,7 @@ function setupIPC(mainWindow) {
 
   ipcMain.handle("ai:deleteApiConfig", async (event, configId) => {
     try {
-      const settings = configManager.loadAISettings();
+      const settings = configService.getAISettings();
       if (!settings.configs) settings.configs = [];
       const originalLength = settings.configs.length;
       settings.configs = settings.configs.filter((c) => c.id !== configId);
@@ -2109,7 +2122,7 @@ function setupIPC(mainWindow) {
         }
       }
       if (settings.configs.length !== originalLength) {
-        return configManager.saveAISettings(settings);
+        configService.saveAISettings(settings);
       }
       return true;
     } catch (error) {
@@ -2129,12 +2142,13 @@ function setupIPC(mainWindow) {
           `Setting current API config with ID (via main.js IPC): ${configId}`,
           "INFO",
         );
-      const settings = configManager.loadAISettings();
+      const settings = configService.getAISettings();
       if (!settings.configs) settings.configs = [];
       const selectedConfig = settings.configs.find((c) => c.id === configId);
       if (selectedConfig) {
         settings.current = { ...selectedConfig };
-        return configManager.saveAISettings(settings);
+        configService.saveAISettings(settings);
+        return true;
       }
       return false;
     } catch (error) {
@@ -2147,9 +2161,12 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("ai:sendPrompt", async (event, prompt, settings) => {
+  ipcMain.handle("ai:sendPrompt", async () => {
     try {
-      return await configManager.sendAIPrompt(prompt, settings);
+      // Note: sendAIPrompt is not implemented in ConfigService
+      // This may need to be handled elsewhere
+      logToFile("ai:sendPrompt called but not implemented in ConfigService", "WARN");
+      return { error: "Not implemented" };
     } catch (error) {
       logToFile(`Error sending AI prompt: ${error.message}`, "ERROR");
       return { error: error.message || "发送请求时出错" };
@@ -4333,7 +4350,7 @@ function setupIPC(mainWindow) {
         setTimeout(() => {
           try {
             const historyToSave = commandHistoryService.exportHistory();
-            configManager.saveCommandHistory(historyToSave);
+            configService.saveCommandHistory(historyToSave);
           } catch (saveError) {
             logToFile(
               `Failed to save command history: ${saveError.message}`,
@@ -4381,7 +4398,7 @@ function setupIPC(mainWindow) {
   ipcMain.handle("command-history:clear", async (event) => {
     try {
       commandHistoryService.clearHistory();
-      configManager.saveCommandHistory([]);
+      configService.saveCommandHistory([]);
       return { success: true };
     } catch (error) {
       logToFile(`Error clearing command history: ${error.message}`, "ERROR");

@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SimpleShell Configuration",
+  "description": "Configuration schema for SimpleShell application",
+  "type": "object",
+  "required": ["connections", "uiSettings", "aiSettings", "logSettings"],
+  "properties": {
+    "connections": {
+      "type": "array",
+      "description": "List of connections and connection groups",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "type", "name", "host", "port", "username", "authType", "protocol"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^connection-[0-9]+$" },
+              "type": { "const": "connection" },
+              "name": { "type": "string", "minLength": 1 },
+              "host": { "type": "string", "minLength": 1 },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+              "username": { "type": "string", "minLength": 1 },
+              "password": { "type": "string" },
+              "authType": { "enum": ["password", "privateKey"] },
+              "privateKeyPath": { "type": "string" },
+              "protocol": { "enum": ["ssh", "telnet"] },
+              "proxy": {
+                "type": "object",
+                "properties": {
+                  "type": { "enum": ["http", "https", "socks4", "socks5"] },
+                  "host": { "type": "string" },
+                  "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                  "username": { "type": "string" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["id", "type", "name", "items"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^group-[0-9]+$" },
+              "type": { "const": "group" },
+              "name": { "type": "string", "minLength": 1 },
+              "items": {
+                "type": "array",
+                "items": { "$ref": "#/properties/connections/items" }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "aiSettings": {
+      "type": "object",
+      "required": ["current", "configs"],
+      "properties": {
+        "current": {
+          "type": "object",
+          "required": ["apiUrl", "apiKey", "model"],
+          "properties": {
+            "apiUrl": { "type": "string", "format": "uri" },
+            "apiKey": { "type": "string" },
+            "model": { "type": "string", "minLength": 1 }
+          }
+        },
+        "configs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "apiUrl", "apiKey", "model"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string", "minLength": 1 },
+              "apiUrl": { "type": "string", "format": "uri" },
+              "apiKey": { "type": "string" },
+              "model": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "uiSettings": {
+      "type": "object",
+      "required": ["language", "fontSize", "terminalFont", "darkMode"],
+      "properties": {
+        "language": { "type": "string", "enum": ["en-US", "zh-CN", "ja-JP"] },
+        "fontSize": { "type": "integer", "minimum": 8, "maximum": 32 },
+        "terminalFont": { "type": "string", "minLength": 1 },
+        "darkMode": { "type": "boolean" },
+        "performance": {
+          "type": "object",
+          "properties": {
+            "imageSupported": { "type": "boolean" },
+            "cacheEnabled": { "type": "boolean" },
+            "webglEnabled": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "logSettings": {
+      "type": "object",
+      "required": ["level", "maxFileSize", "maxFiles", "compressOldLogs", "cleanupIntervalDays"],
+      "properties": {
+        "level": { "enum": ["DEBUG", "INFO", "WARN", "ERROR"] },
+        "maxFileSize": { "type": "integer", "minimum": 1024 },
+        "maxFiles": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "compressOldLogs": { "type": "boolean" },
+        "cleanupIntervalDays": { "type": "integer", "minimum": 1, "maximum": 365 }
+      }
+    },
+    "shortcutCommands": {
+      "type": "string",
+      "description": "JSON string containing shortcut commands"
+    },
+    "commandHistory": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["command", "timestamp"],
+            "properties": {
+              "command": { "type": "string" },
+              "timestamp": { "type": "integer" },
+              "usage": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["compressed", "data", "originalSize", "compressedSize", "timestamp"],
+          "properties": {
+            "compressed": { "const": true },
+            "data": { "type": "string" },
+            "originalSize": { "type": "integer", "minimum": 0 },
+            "compressedSize": { "type": "integer", "minimum": 0 },
+            "timestamp": { "type": "integer" }
+          }
+        }
+      ]
+    },
+    "topConnections": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "lastConnections": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "encryption": {
+      "type": "object",
+      "required": ["key", "version", "algorithm", "created"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "version": { "type": "integer", "minimum": 1 },
+        "algorithm": { "const": "aes-256-cbc" },
+        "created": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
