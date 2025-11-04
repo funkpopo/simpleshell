@@ -1,10 +1,10 @@
 const path = require("path");
 const fs = require("fs");
 
-let logFile = null; // Will be set by initLogger
+let logFile = null; // 由 initLogger 设置
 let appInstance = null;
 
-// 日志级别常量，按严重性排序
+// 日志级别定义（从低到高）
 const LOG_LEVELS = {
   DEBUG: 0,
   INFO: 1,
@@ -12,25 +12,25 @@ const LOG_LEVELS = {
   ERROR: 3,
 };
 
-// 默认配置，可由config.json覆盖
+// 默认配置，可由 config.json 覆盖
 const DEFAULT_LOG_CONFIG = {
   level: "INFO", // 默认日志级别
-  maxFileSize: 5 * 1024 * 1024, // 默认日志文件大小上限：5MB
-  maxFiles: 5, // 默认最大历史日志文件数量
-  compressOldLogs: true, // 是否压缩旧日志文件
-  cleanupIntervalDays: 7, // 日志清理时间间隔：7天
+  maxFileSize: 5 * 1024 * 1024, // 日志文件大小上限 5MB
+  maxFiles: 5, // 保留历史日志文件数量
+  compressOldLogs: true, // 是否压缩历史日志（占位，未实现）
+  cleanupIntervalDays: 7, // 日志清理周期（天）
 };
 
-// 当前配置
+// 运行时配置
 let logConfig = { ...DEFAULT_LOG_CONFIG };
 
 function detectEnvironment(electronApp) {
-  // 主要检测方法：使用app.isPackaged
+  // 优先使用 Electron 的 app.isPackaged 判断
   if (electronApp && typeof electronApp.isPackaged === "boolean") {
     return electronApp.isPackaged ? "production" : "development";
   }
 
-  // 备用检测方法1：NODE_ENV环境变量
+  // 回退方式 1：NODE_ENV
   if (process.env.NODE_ENV === "development") {
     return "development";
   }
@@ -38,12 +38,12 @@ function detectEnvironment(electronApp) {
     return "production";
   }
 
-  // 备用检测方法2：路径分析
+  // 回退方式 2：路径特征
   if (__dirname.includes("node_modules") || __dirname.includes(".webpack")) {
     return "production";
   }
 
-  // 默认为开发环境
+  // 默认视为开发环境
   return "development";
 }
 
@@ -51,18 +51,18 @@ function getLogDirectory(electronApp) {
   const environment = detectEnvironment(electronApp);
 
   if (environment === "development") {
-    // 开发环境：使用项目根目录下的log文件夹
+    // 开发环境：使用项目目录下 log 目录
     return path.join(process.cwd(), "log");
   } else {
-    // 生产环境：使用exe同级的log文件夹
+    // 生产环境：使用可执行文件同级 log 目录
     return path.join(path.dirname(process.execPath), "log");
   }
 }
 
-// 获取日志配置
+// 读取日志配置
 function loadLogConfig() {
   try {
-    // 尝试加载配置文件
+    // 组合配置文件路径
     const configPath = appInstance
       ? appInstance.isPackaged
         ? path.join(path.dirname(process.execPath), "config.json")
@@ -80,12 +80,12 @@ function loadLogConfig() {
       }
     }
   } catch (error) {
-    // 保持默认配置
+    // 读取失败时保持默认配置
   }
   return logConfig;
 }
 
-// 检查日志文件大小，如果超过阈值则执行日志轮转
+// 当日志文件超过阈值时执行滚动
 function checkLogFileSize() {
   try {
     if (!logFile || !fs.existsSync(logFile)) return;
@@ -97,7 +97,7 @@ function checkLogFileSize() {
   } catch (error) {}
 }
 
-// 执行日志轮转
+// 执行日志滚动（简化实现）
 function rotateLogs() {
   try {
     if (!logFile) return;
@@ -107,51 +107,49 @@ function rotateLogs() {
     const ext = path.extname(baseName);
     const nameWithoutExt = baseName.substring(0, baseName.length - ext.length);
 
-    // 清理多余的旧日志文件
+    // 清理多余的历史日志
     cleanupOldLogs(logDir, nameWithoutExt, ext);
 
-    // 轮转现有日志文件
+    // 依次上移历史文件名
     for (let i = logConfig.maxFiles - 1; i > 0; i--) {
       const oldFile = path.join(logDir, `${nameWithoutExt}.${i}${ext}`);
       const newFile = path.join(logDir, `${nameWithoutExt}.${i + 1}${ext}`);
 
       if (fs.existsSync(oldFile)) {
         try {
-          // 如果目标文件已存在则先删除
+          // 目标文件存在则先删除
           if (fs.existsSync(newFile)) fs.unlinkSync(newFile);
           fs.renameSync(oldFile, newFile);
 
-          // 压缩日志文件（如果启用）
+          // 可选：压缩旧日志（未实现，仅保留占位注释）
           if (logConfig.compressOldLogs && i + 1 > 1) {
-            // 压缩功能可以在这里实现
-            // 由于Electron环境中使用Node.js内置模块的限制，
-            // 这里仅作为示例，实际项目可能需要添加额外依赖如zlib
+            // 在 Electron 主进程中可通过 Node.js 压缩模块实现
           }
         } catch (err) {}
       }
     }
 
-    // 轮转当前日志文件
+    // 将当前日志文件移动为 .1
     const newFile = path.join(logDir, `${nameWithoutExt}.1${ext}`);
     if (fs.existsSync(newFile)) fs.unlinkSync(newFile);
 
-    // 将当前日志文件重命名为备份
+    // 重命名当前日志文件
     fs.renameSync(logFile, newFile);
 
     // 创建新的空日志文件
     fs.writeFileSync(logFile, "", "utf8");
 
-    // 记录轮转事件
+    // 记录滚动事件
     logToFileInternal("Log rotation completed.", "INFO", true);
   } catch (error) {}
 }
 
-// 清理过期的日志文件
+// 清理超出数量限制的旧日志文件
 function cleanupOldLogs(logDir, nameWithoutExt, ext) {
   try {
     const files = fs.readdirSync(logDir);
 
-    // 找出所有相关的日志文件
+    // 找到相关的日志文件
     const logFiles = files.filter((file) => {
       if (!file.startsWith(nameWithoutExt) || !file.endsWith(ext)) return false;
       const numPart = file.substring(
@@ -161,7 +159,7 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
       return !isNaN(parseInt(numPart));
     });
 
-    // 按文件编号排序
+    // 按编号降序排序
     logFiles.sort((a, b) => {
       const numA = parseInt(
         a.substring(nameWithoutExt.length + 1, a.length - ext.length),
@@ -169,10 +167,10 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
       const numB = parseInt(
         b.substring(nameWithoutExt.length + 1, b.length - ext.length),
       );
-      return numB - numA; // 降序排列
+      return numB - numA;
     });
 
-    // 删除多余的日志文件
+    // 删除超出数量限制的日志文件
     if (logFiles.length >= logConfig.maxFiles) {
       for (let i = logConfig.maxFiles; i < logFiles.length; i++) {
         const fileToRemove = path.join(logDir, logFiles[i]);
@@ -180,28 +178,32 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
       }
     }
   } catch (error) {
-    // Failed to cleanup old logs - 避免在日志系统中使用console
+    // 清理失败时仅记录（避免影响主流程）
   }
 }
 
-// 清理过期日志记录（按时间清理app.log中的内容）
+// 定期清理日志内容，移除超出时间窗口的条目
 function cleanupOldLogEntries() {
   try {
     if (!logFile || !fs.existsSync(logFile)) return;
 
     const now = new Date();
-    const cutoffTime = new Date(now.getTime() - (logConfig.cleanupIntervalDays * 24 * 60 * 60 * 1000));
+    const cutoffTime = new Date(
+      now.getTime() - logConfig.cleanupIntervalDays * 24 * 60 * 60 * 1000,
+    );
 
-    // 读取整个日志文件
-    const logContent = fs.readFileSync(logFile, 'utf8');
-    const lines = logContent.split('\n').filter(line => line.trim());
+    // 读取当前日志
+    const logContent = fs.readFileSync(logFile, "utf8");
+    const lines = logContent.split("\n").filter((line) => line.trim());
 
-    // 过滤出未过期的日志行
-    const validLines = lines.filter(line => {
+    // 仅保留未过期的日志
+    const validLines = lines.filter((line) => {
       // 匹配时间戳格式 [2025-10-24T03:04:34.360Z]
-      const timestampMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\]/);
+      const timestampMatch = line.match(
+        /^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\]/,
+      );
       if (!timestampMatch) {
-        // 如果没有匹配到时间戳，保留这一行（可能是格式错误的日志）
+        // 无法解析时间戳则保留该行（兼容不同格式的日志）
         return true;
       }
 
@@ -209,34 +211,34 @@ function cleanupOldLogEntries() {
       return logTime >= cutoffTime;
     });
 
-    // 如果有日志被清理，重新写入文件
+    // 写回清理后的日志
     if (validLines.length < lines.length) {
-      const newContent = validLines.join('\n') + '\n';
-      fs.writeFileSync(logFile, newContent, 'utf8');
+      const newContent = validLines.join("\n") + "\n";
+      fs.writeFileSync(logFile, newContent, "utf8");
 
       const cleanedCount = lines.length - validLines.length;
       logToFileInternal(
         `Log cleanup completed. Removed ${cleanedCount} entries older than ${logConfig.cleanupIntervalDays} days.`,
         "INFO",
-        true
+        true,
       );
     }
   } catch (error) {
-    // 清理失败时记录错误但不抛出异常
+    // 清理失败时记录错误但不抛出
     try {
       logToFileInternal(`Log cleanup failed: ${error.message}`, "ERROR", true);
     } catch (logError) {
-      // 如果连错误都无法记录，静默失败
+      // 记录失败时静默忽略
     }
   }
 }
 
-// 初始化日志模块，必须在 app 'ready' 后调用
+// 初始化日志模块，建议在 app 'ready' 后调用
 function initLogger(electronApp) {
   appInstance = electronApp;
   const environment = detectEnvironment(electronApp);
 
-  // 加载日志配置
+  // 载入日志配置
   loadLogConfig();
 
   try {
@@ -249,20 +251,20 @@ function initLogger(electronApp) {
 
     logFile = path.join(logDir, "app.log");
 
-    // 检查日志文件大小并在必要时执行轮转
+    // 检查日志文件大小，必要时滚动
     checkLogFileSize();
 
-    // 清理过期日志记录
+    // 进行一次日志内容清理
     cleanupOldLogEntries();
 
-    // 写入初始化成功的日志，包含环境信息
+    // 写入初始化成功日志（包括路径与环境）
     logToFileInternal(
       `Logger initialized in ${environment} environment. Log path: ${logFile}`,
       "INFO",
       true,
     );
   } catch (error) {
-    // 第一级回退：使用Electron默认日志路径
+    // 回退 1：使用 Electron 默认 logs 路径
     try {
       const electronLogDir = electronApp.getPath("logs");
       if (!fs.existsSync(electronLogDir)) {
@@ -275,7 +277,7 @@ function initLogger(electronApp) {
         true,
       );
     } catch (electronError) {
-      // 第二级回退：使用基于__dirname的路径
+      // 回退 2：使用 __dirname 相对路径
       try {
         const fallbackLogDir = path.join(__dirname, "..", "..", "..", "logs");
         if (!fs.existsSync(fallbackLogDir)) {
@@ -288,7 +290,7 @@ function initLogger(electronApp) {
           true,
         );
       } catch (fallbackError) {
-        // 最终回退：直接在工作目录下
+        // 回退 3：工作目录的紧急日志文件
         logFile = "app_emergency.log";
         logToFileInternal(
           `Logger initialized with emergency path in current working directory (fallback level 3): ${logFile}`,
@@ -300,20 +302,20 @@ function initLogger(electronApp) {
   }
 }
 
-// 判断是否应该记录此级别的日志
+// 是否应记录该级别日志
 function shouldLog(level) {
   const configLevel = logConfig.level || "INFO";
   return LOG_LEVELS[level] >= LOG_LEVELS[configLevel];
 }
 
-// 内部日志函数，允许在 initLogger 自身中使用，避免循环依赖或在 logFile 未设置时出错
+// 内部日志写入函数；初始化阶段也可调用（跳过级别判断）
 function logToFileInternal(message, type = "INFO", isInitialization = false) {
   if (!logFile && !isInitialization) {
-    // 如果 logFile 未设置且不是初始化调用，说明 initLogger 未被调用或失败
+    // 未初始化或初始化失败时不记录
     return;
   }
 
-  // 检查日志级别，决定是否记录
+  // 非初始化阶段按级别判断是否写入
   if (!isInitialization && !shouldLog(type)) {
     return;
   }
@@ -321,21 +323,18 @@ function logToFileInternal(message, type = "INFO", isInitialization = false) {
   try {
     const timestamp = new Date().toISOString();
     const logEntry = `[${timestamp}] [${type}] ${message}\n`;
-    // 对于初始化阶段的日志，如果 logFile 仍然为 null (例如，在 initLogger 内部，路径设置失败前的
-    // 这种情况应该由 initLogger 内部的 try-catch 处理，这里主要是防止外部调用时 logFile 为 null。
-    // 如果是初始化调用，则路径可能正在被设置，所以使用当前 logFile 的值。
     const currentLogPath =
       isInitialization && logFile ? logFile : logFile || "app_init_error.log";
     fs.appendFileSync(currentLogPath, logEntry);
 
-    // 在每次写入日志后检查文件大小
+    // 写入后检查文件大小
     if (!isInitialization && logFile) {
       checkLogFileSize();
     }
   } catch (error) {}
 }
 
-// 公开的日志函数
+// 对外日志 API
 const logToFile = (message, type = "INFO") => {
   logToFileInternal(message, type, false);
 };
@@ -356,7 +355,7 @@ const logDebug = (message) => {
   logToFile(message, "DEBUG");
 };
 
-// 获取当前日志配置
+// 获取当前日志配置快照
 function getLogConfig() {
   return { ...logConfig };
 }
@@ -385,3 +384,4 @@ module.exports = {
   updateLogConfig,
   cleanupOldLogEntries,
 };
+

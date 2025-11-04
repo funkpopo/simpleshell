@@ -35,15 +35,15 @@ class LocalTerminalHandlers {
 
       if (hwnd && process.platform === "win32") {
         try {
-          // 计算容器边界 - 这里需要根据实际的WebTerminal容器位置调整
+          // 计算嵌入边界 - 可替换为 WebTerminal 实际容器位置
           const containerBounds = {
             x: 0,
-            y: 40, // AppBar高度
-            width: this.mainWindow.getBounds().width - 120, // 减去侧边栏宽度
+            y: 40, // AppBar 高度
+            width: this.mainWindow.getBounds().width - 120, // 预留侧边栏宽度
             height: this.mainWindow.getBounds().height - 40,
           };
 
-          // 嵌入窗口
+          // 执行窗口嵌入
           await this.windowEmbedder.embedWindow(tabId, hwnd, containerBounds);
 
           this.mainWindow.webContents.send("localTerminalStatus", {
@@ -89,7 +89,7 @@ class LocalTerminalHandlers {
       });
     });
 
-    // 监听窗口嵌入器事件
+    // 监听窗口嵌入事件
     this.windowEmbedder.on("windowEmbedded", (data) => {
       this.mainWindow.webContents.send("localTerminalStatus", {
         type: "embedded",
@@ -105,7 +105,7 @@ class LocalTerminalHandlers {
       });
     });
 
-    // 监听主窗口大小变化，调整嵌入的终端窗口大小
+    // 监听窗口尺寸变化，调整嵌入终端的尺寸
     this.mainWindow.on("resize", () => {
       this.resizeEmbeddedTerminals();
     });
@@ -162,7 +162,7 @@ class LocalTerminalHandlers {
             options,
           );
 
-          // 只返回可序列化的数据
+          // 仅返回可序列化字段
           return {
             success: true,
             data: {
@@ -180,7 +180,7 @@ class LocalTerminalHandlers {
                   terminalConfig.availableDistributions || [],
               },
             },
-            embedded: false, // 初始状态，后续通过事件更新
+            embedded: false, // 初始嵌入状态，后续通过事件更新
           };
         } catch (error) {
           console.error("Failed to launch local terminal:", error);
@@ -197,7 +197,7 @@ class LocalTerminalHandlers {
       try {
         // 先取消窗口嵌入
         await this.windowEmbedder.unembedWindow(tabId);
-        // 然后关闭终端进程
+        // 再结束终端进程
         await this.terminalManager.closeTerminal(tabId);
 
         return { success: true };
@@ -216,7 +216,7 @@ class LocalTerminalHandlers {
         const terminalInfo = this.terminalManager.getActiveTerminal(tabId);
         const embeddedInfo = this.windowEmbedder.getEmbeddedWindow(tabId);
 
-        // 返回可序列化的数据
+        // 仅返回可序列化字段
         return {
           success: true,
           data: {
@@ -271,7 +271,7 @@ class LocalTerminalHandlers {
       try {
         const terminals = this.terminalManager.getAllActiveTerminals();
 
-        // 返回可序列化的终端数据
+        // 返回可序列化的终端信息
         const serializableTerminals = terminals.map((terminal) => ({
           tabId: terminal.tabId,
           pid: terminal.pid,
@@ -312,3 +312,4 @@ class LocalTerminalHandlers {
 }
 
 module.exports = LocalTerminalHandlers;
+
