@@ -13,14 +13,29 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   startBash: (args) => ipcRenderer.invoke("terminal:startBash", args),
   startSSH: (args) => ipcRenderer.invoke("terminal:startSSH", args),
   startBatchSSH: (args) => ipcRenderer.invoke("terminal:startBatchSSH", args),
-  onProcessData: (callback) => ipcRenderer.on("terminal:processData", callback),
-  onResizeTerminal: (callback) =>
-    ipcRenderer.on("terminal:resizeTerminal", callback),
-  onProcessCompletion: (callback) =>
-    ipcRenderer.on("terminal:processCompletion", callback),
-  onProcessExit: (callback) => ipcRenderer.on("terminal:processExit", callback),
-  onSshConnectionUpdated: (callback) =>
-    ipcRenderer.on("terminal:sshConnectionUpdated", callback),
+  onProcessData: (callback) => {
+    ipcRenderer.on("terminal:processData", callback);
+    return () => ipcRenderer.removeListener("terminal:processData", callback);
+  },
+  onResizeTerminal: (callback) => {
+    ipcRenderer.on("terminal:resizeTerminal", callback);
+    return () =>
+      ipcRenderer.removeListener("terminal:resizeTerminal", callback);
+  },
+  onProcessCompletion: (callback) => {
+    ipcRenderer.on("terminal:processCompletion", callback);
+    return () =>
+      ipcRenderer.removeListener("terminal:processCompletion", callback);
+  },
+  onProcessExit: (callback) => {
+    ipcRenderer.on("terminal:processExit", callback);
+    return () => ipcRenderer.removeListener("terminal:processExit", callback);
+  },
+  onSshConnectionUpdated: (callback) => {
+    ipcRenderer.on("terminal:sshConnectionUpdated", callback);
+    return () =>
+      ipcRenderer.removeListener("terminal:sshConnectionUpdated", callback);
+  },
   removeProcessListeners: () => {
     ipcRenderer.removeAllListeners("terminal:processData");
     ipcRenderer.removeAllListeners("terminal:resizeTerminal");
@@ -56,13 +71,26 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   getReconnectStatistics: () => ipcRenderer.invoke("get-reconnect-statistics"),
 
   // 重连事件监听器
-  onReconnectStart: (callback) => ipcRenderer.on("reconnect-started", callback),
-  onReconnectProgress: (callback) =>
-    ipcRenderer.on("reconnect-progress", callback),
-  onReconnectSuccess: (callback) =>
-    ipcRenderer.on("reconnect-success", callback),
-  onReconnectFailed: (callback) => ipcRenderer.on("reconnect-failed", callback),
-  onConnectionLost: (callback) => ipcRenderer.on("connection-lost", callback),
+  onReconnectStart: (callback) => {
+    ipcRenderer.on("reconnect-started", callback);
+    return () => ipcRenderer.removeListener("reconnect-started", callback);
+  },
+  onReconnectProgress: (callback) => {
+    ipcRenderer.on("reconnect-progress", callback);
+    return () => ipcRenderer.removeListener("reconnect-progress", callback);
+  },
+  onReconnectSuccess: (callback) => {
+    ipcRenderer.on("reconnect-success", callback);
+    return () => ipcRenderer.removeListener("reconnect-success", callback);
+  },
+  onReconnectFailed: (callback) => {
+    ipcRenderer.on("reconnect-failed", callback);
+    return () => ipcRenderer.removeListener("reconnect-failed", callback);
+  },
+  onConnectionLost: (callback) => {
+    ipcRenderer.on("connection-lost", callback);
+    return () => ipcRenderer.removeListener("connection-lost", callback);
+  },
   removeReconnectListeners: (tabId) => {
     ipcRenderer.removeAllListeners("reconnect-started");
     ipcRenderer.removeAllListeners("reconnect-progress");
