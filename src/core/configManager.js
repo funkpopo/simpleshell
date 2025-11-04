@@ -1294,10 +1294,16 @@ module.exports = {
   initializeMainConfig,
   loadConnections,
   saveConnections,
+  // Aliases for compatibility with handlers expecting `get*` names
+  getAISettings: loadAISettings,
+  getUISettings: loadUISettings,
+  getLogSettings: loadLogSettings,
   loadAISettings,
   saveAISettings,
   loadUISettings,
   saveUISettings,
+  // Shortcut commands compatibility alias
+  getShortcutCommands: loadShortcutCommands,
   loadShortcutCommands,
   saveShortcutCommands,
   loadLogSettings,
@@ -1310,4 +1316,76 @@ module.exports = {
   saveLastConnections,
   // Do not export _getMainConfigPathInternal, _processConnectionsForSave, _processConnectionsForLoad
   // as they are intended to be private helper functions.
+  // Generic getters/setters for arbitrary config keys (used by proxy manager, etc.)
+  get: function (key) {
+    if (!mainConfigPath) {
+      if (logToFile)
+        logToFile(
+          "ConfigManager: Main config path not set. Cannot get key.",
+          "ERROR",
+        );
+      return undefined;
+    }
+    try {
+      if (!fs.existsSync(mainConfigPath)) return undefined;
+      const data = fs.readFileSync(mainConfigPath, "utf8");
+      const config = JSON.parse(data);
+      return config[key];
+    } catch (error) {
+      if (logToFile)
+        logToFile(
+          `ConfigManager: Failed to get key '${key}' - ${error.message}`,
+          "ERROR",
+        );
+      return undefined;
+    }
+  },
+  set: function (key, value) {
+    if (!mainConfigPath) {
+      if (logToFile)
+        logToFile(
+          "ConfigManager: Main config path not set. Cannot set key.",
+          "ERROR",
+        );
+      return false;
+    }
+    try {
+      let config = {};
+      if (fs.existsSync(mainConfigPath)) {
+        const data = fs.readFileSync(mainConfigPath, "utf8");
+        config = JSON.parse(data);
+      }
+      config[key] = value;
+      fs.writeFileSync(mainConfigPath, JSON.stringify(config, null, 2), "utf8");
+      if (logToFile)
+        logToFile(`ConfigManager: Set key '${key}' successfully.`, "INFO");
+      return true;
+    } catch (error) {
+      if (logToFile)
+        logToFile(
+          `ConfigManager: Failed to set key '${key}' - ${error.message}`,
+          "ERROR",
+        );
+      return false;
+    }
+  },
+  // Update only the prefetch settings within UI settings
+  savePrefetchSettings: function (settings) {
+    try {
+      const current = loadUISettings();
+      const next = { ...current };
+      next.performance = {
+        ...current.performance,
+        ...(typeof settings === "object" ? settings : { prefetchEnabled: !!settings }),
+      };
+      return saveUISettings(next);
+    } catch (error) {
+      if (logToFile)
+        logToFile(
+          `ConfigManager: Failed to save prefetch settings - ${error.message}`,
+          "ERROR",
+        );
+      return false;
+    }
+  },
 };
