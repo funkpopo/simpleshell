@@ -31,6 +31,20 @@ const SettingsHandlers = require("./core/ipc/handlers/settingsHandlers");
 const childProcesses = new Map();
 let nextProcessId = 1;
 
+/**
+ * 安全转义shell命令参数，防止命令注入
+ * @param {string} arg - 需要转义的参数
+ * @returns {string} - 转义后的安全参数
+ */
+function escapeShellArg(arg) {
+  if (typeof arg !== 'string') {
+    return String(arg);
+  }
+  // 使用单引号包裹，并转义内部的单引号
+  // 将单引号替换为 '\'' (结束引号、转义的单引号、开始引号)
+  return "'" + arg.replace(/'/g, "'\\''") + "'";
+}
+
 // 跟踪编辑器会话状态的正则表达式
 const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
 const editorExitCommands = [
@@ -2452,9 +2466,11 @@ function setupIPC(mainWindow) {
           const sshClient = processInfo.process;
 
           return new Promise((resolve, reject) => {
-            // 在远程服务器上执行复制命令
+            // 在远程服务器上执行复制命令（使用安全转义）
+            const safeSourcePath = escapeShellArg(sourcePath);
+            const safeTargetPath = escapeShellArg(targetPath);
             sshClient.exec(
-              `cp -r "${sourcePath}" "${targetPath}"`,
+              `cp -r ${safeSourcePath} ${safeTargetPath}`,
               (err, stream) => {
                 if (err) {
                   logToFile(
@@ -2525,9 +2541,11 @@ function setupIPC(mainWindow) {
           const sshClient = processInfo.process;
 
           return new Promise((resolve, reject) => {
-            // 在远程服务器上执行移动命令
+            // 在远程服务器上执行移动命令（使用安全转义）
+            const safeSourcePath = escapeShellArg(sourcePath);
+            const safeTargetPath = escapeShellArg(targetPath);
             sshClient.exec(
-              `mv "${sourcePath}" "${targetPath}"`,
+              `mv ${safeSourcePath} ${safeTargetPath}`,
               (err, stream) => {
                 if (err) {
                   logToFile(
@@ -2598,10 +2616,11 @@ function setupIPC(mainWindow) {
           const sshClient = processInfo.process;
 
           return new Promise((resolve, reject) => {
-            // 根据是否为目录选择不同的删除命令
+            // 根据是否为目录选择不同的删除命令（使用安全转义）
+            const safeFilePath = escapeShellArg(filePath);
             const command = isDirectory
-              ? `rm -rf "${filePath}"`
-              : `rm "${filePath}"`;
+              ? `rm -rf ${safeFilePath}`
+              : `rm ${safeFilePath}`;
 
             sshClient.exec(command, (err, stream) => {
               if (err) {
@@ -2750,8 +2769,16 @@ function setupIPC(mainWindow) {
             }
             const sshClient = processInfo.process;
             return new Promise((resolve, reject) => {
-              // 使用SSH执行chmod命令设置权限
-              const command = `chmod ${permissions} "${filePath}"`;
+              // 使用SSH执行chmod命令设置权限（使用安全转义）
+              // permissions 参数需要验证是否为有效的八进制权限值
+              if (!/^[0-7]{3,4}$/.test(permissions)) {
+                return resolve({
+                  success: false,
+                  error: `无效的权限值: ${permissions}`,
+                });
+              }
+              const safeFilePath = escapeShellArg(filePath);
+              const command = `chmod ${permissions} ${safeFilePath}`;
               sshClient.exec(command, (err, stream) => {
                 if (err) {
                   logToFile(
@@ -2891,7 +2918,17 @@ function setupIPC(mainWindow) {
               return { success: false, error: "无效的SSH连接" };
             }
 
-            // 构建 chown 参数
+            // 构建 chown 参数（需要验证用户名和组名格式）
+            // 验证用户名和组名只包含允许的字符（字母、数字、下划线、连字符）
+            const validNameRegex = /^[a-zA-Z0-9_-]+$/;
+
+            if (owner && !validNameRegex.test(owner)) {
+              return { success: false, error: `无效的用户名: ${owner}` };
+            }
+            if (group && !validNameRegex.test(group)) {
+              return { success: false, error: `无效的组名: ${group}` };
+            }
+
             const ownerSpec =
               owner && group
                 ? `${owner}:${group}`
@@ -2908,7 +2945,8 @@ function setupIPC(mainWindow) {
 
             const sshClient = processInfo.process;
             return new Promise((resolve) => {
-              const command = `chown ${ownerSpec} "${filePath}"`;
+              const safeFilePath = escapeShellArg(filePath);
+              const command = `chown ${ownerSpec} ${safeFilePath}`;
               sshClient.exec(command, (err, stream) => {
                 if (err) {
                   logToFile(
