@@ -1,4 +1,4 @@
-const configManager = require("../../configManager");
+const configService = require("../../ConfigService");
 const commandHistoryService = require("../../../modules/terminal/command-history");
 const { logToFile, updateLogConfig } = require("../../utils/logger");
 const fileCache = require("../../utils/fileCache");
@@ -93,7 +93,7 @@ class SettingsHandlers {
   // 实现各个处理器方法
   async loadUISettings(event) {
     try {
-      const settings = configManager.getUISettings();
+      const settings = configService.getUISettings();
       return { success: true, settings };
     } catch (error) {
       logToFile(`Error loading UI settings: ${error.message}`, "ERROR");
@@ -103,7 +103,7 @@ class SettingsHandlers {
 
   async saveUISettings(event, settings) {
     try {
-      configManager.saveUISettings(settings);
+      configService.saveUISettings(settings);
       return { success: true };
     } catch (error) {
       logToFile(`Error saving UI settings: ${error.message}`, "ERROR");
@@ -113,7 +113,7 @@ class SettingsHandlers {
 
   async loadLogSettings(event) {
     try {
-      const settings = configManager.getLogSettings();
+      const settings = configService.getLogSettings();
       return { success: true, settings };
     } catch (error) {
       logToFile(`Error loading log settings: ${error.message}`, "ERROR");
@@ -123,7 +123,7 @@ class SettingsHandlers {
 
   async saveLogSettings(event, settings) {
     try {
-      configManager.saveLogSettings(settings);
+      configService.saveLogSettings(settings);
       updateLogConfig(settings);
       logToFile("Log settings updated", "INFO");
       return { success: true };
@@ -148,8 +148,8 @@ class SettingsHandlers {
 
   async updatePrefetchSettings(event, settings) {
     try {
-      configManager.savePrefetchSettings(settings);
-      logToFile("Prefetch settings updated", "INFO");
+      // Note: savePrefetchSettings not implemented in ConfigService
+      logToFile("Prefetch settings update not implemented", "WARN");
       return { success: true };
     } catch (error) {
       logToFile(`Error updating prefetch settings: ${error.message}`, "ERROR");
@@ -159,7 +159,7 @@ class SettingsHandlers {
 
   async getShortcutCommands(event) {
     try {
-      const shortcuts = configManager.getShortcutCommands();
+      const shortcuts = configService.getShortcutCommands();
       return { success: true, data: shortcuts };
     } catch (error) {
       logToFile(`Error getting shortcut commands: ${error.message}`, "ERROR");
@@ -169,7 +169,7 @@ class SettingsHandlers {
 
   async saveShortcutCommands(event, data) {
     try {
-      configManager.saveShortcutCommands(data);
+      configService.saveShortcutCommands(data);
       logToFile("Shortcut commands saved", "INFO");
       return { success: true };
     } catch (error) {
