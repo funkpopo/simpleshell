@@ -1,5 +1,10 @@
 const path = require("path");
 const fs = require("fs");
+const zlib = require("zlib");
+const { pipeline } = require("stream");
+const { promisify } = require("util");
+
+const pipelineAsync = promisify(pipeline);
 
 let logFile = null; // 由 initLogger 设置
 let appInstance = null;
@@ -121,9 +126,9 @@ function rotateLogs() {
           if (fs.existsSync(newFile)) fs.unlinkSync(newFile);
           fs.renameSync(oldFile, newFile);
 
-          // 可选：压缩旧日志（未实现，仅保留占位注释）
+          // 压缩旧日志（编号大于1的文件）
           if (logConfig.compressOldLogs && i + 1 > 1) {
-            // 在 Electron 主进程中可通过 Node.js 压缩模块实现
+            compressLogFile(newFile);
           }
         } catch (err) {}
       }
@@ -144,30 +149,82 @@ function rotateLogs() {
   } catch (error) {}
 }
 
+/**
+ * 压缩日志文件
+ * @param {string} filePath - 要压缩的日志文件路径
+ */
+async function compressLogFile(filePath) {
+  try {
+    // 如果已经是压缩文件，跳过
+    if (filePath.endsWith('.gz')) {
+      return;
+    }
+
+    const gzipPath = `${filePath}.gz`;
+
+    // 如果压缩文件已存在，先删除
+    if (fs.existsSync(gzipPath)) {
+      fs.unlinkSync(gzipPath);
+    }
+
+    // 使用流式压缩，避免大文件内存占用过高
+    await pipelineAsync(
+      fs.createReadStream(filePath),
+      zlib.createGzip({ level: 9 }), // 最高压缩级别
+      fs.createWriteStream(gzipPath)
+    );
+
+    // 压缩成功后删除原文件
+    fs.unlinkSync(filePath);
+
+    logToFileInternal(
+      `Log file compressed: ${path.basename(filePath)} -> ${path.basename(gzipPath)}`,
+      "INFO",
+      true
+    );
+  } catch (error) {
+    // 压缩失败不影响主流程，仅记录错误
+    try {
+      logToFileInternal(
+        `Failed to compress log file ${filePath}: ${error.message}`,
+        "WARN",
+        true
+      );
+    } catch (logError) {
+      // 记录失败时静默忽略
+    }
+  }
+}
+
 // 清理超出数量限制的旧日志文件
 function cleanupOldLogs(logDir, nameWithoutExt, ext) {
   try {
     const files = fs.readdirSync(logDir);
 
-    // 找到相关的日志文件
+    // 找到相关的日志文件（包括 .gz 压缩文件）
     const logFiles = files.filter((file) => {
-      if (!file.startsWith(nameWithoutExt) || !file.endsWith(ext)) return false;
-      const numPart = file.substring(
+      if (!file.startsWith(nameWithoutExt)) return false;
+
+      // 匹配 app.1.log 或 app.1.log.gz 格式
+      const withoutGz = file.endsWith('.gz') ? file.slice(0, -3) : file;
+      if (!withoutGz.endsWith(ext)) return false;
+
+      const numPart = withoutGz.substring(
         nameWithoutExt.length + 1,
-        file.length - ext.length,
+        withoutGz.length - ext.length,
       );
       return !isNaN(parseInt(numPart));
     });
 
     // 按编号降序排序
     logFiles.sort((a, b) => {
-      const numA = parseInt(
-        a.substring(nameWithoutExt.length + 1, a.length - ext.length),
-      );
-      const numB = parseInt(
-        b.substring(nameWithoutExt.length + 1, b.length - ext.length),
-      );
-      return numB - numA;
+      const getNum = (filename) => {
+        const withoutGz = filename.endsWith('.gz') ? filename.slice(0, -3) : filename;
+        return parseInt(
+          withoutGz.substring(nameWithoutExt.length + 1, withoutGz.length - ext.length)
+        );
+      };
+      return getNum(b) - getNum(a);
     });
 
     // 删除超出数量限制的日志文件
@@ -223,12 +280,87 @@ function cleanupOldLogEntries() {
         true,
       );
     }
+
+    // 清理过期的轮转日志文件（包括压缩文件）
+    cleanupOldRotatedLogs(cutoffTime);
   } catch (error) {
     // 清理失败时记录错误但不抛出
     try {
       logToFileInternal(`Log cleanup failed: ${error.message}`, "ERROR", true);
     } catch (logError) {
       // 记录失败时静默忽略
+    }
+  }
+}
+
+/**
+ * 清理过期的轮转日志文件（包括 .gz 压缩文件）
+ * @param {Date} cutoffTime - 截止时间，早于此时间的文件将被删除
+ */
+function cleanupOldRotatedLogs(cutoffTime) {
+  try {
+    if (!logFile) return;
+
+    const logDir = path.dirname(logFile);
+    const baseName = path.basename(logFile);
+    const ext = path.extname(baseName);
+    const nameWithoutExt = baseName.substring(0, baseName.length - ext.length);
+
+    const files = fs.readdirSync(logDir);
+    let removedCount = 0;
+
+    // 查找所有相关的轮转日志文件
+    files.forEach((file) => {
+      if (!file.startsWith(nameWithoutExt)) return;
+
+      // 匹配 app.1.log 或 app.1.log.gz 格式
+      const withoutGz = file.endsWith('.gz') ? file.slice(0, -3) : file;
+      if (!withoutGz.endsWith(ext)) return;
+
+      const numPart = withoutGz.substring(
+        nameWithoutExt.length + 1,
+        withoutGz.length - ext.length,
+      );
+
+      // 只处理轮转的日志文件（带编号的）
+      if (isNaN(parseInt(numPart))) return;
+
+      const filePath = path.join(logDir, file);
+
+      try {
+        const stats = fs.statSync(filePath);
+        // 根据文件修改时间判断是否过期
+        if (stats.mtime < cutoffTime) {
+          fs.unlinkSync(filePath);
+          removedCount++;
+          logToFileInternal(
+            `Removed expired rotated log file: ${file}`,
+            "INFO",
+            true,
+          );
+        }
+      } catch (statError) {
+        // 文件状态获取失败，跳过
+      }
+    });
+
+    if (removedCount > 0) {
+      logToFileInternal(
+        `Rotated log cleanup: Removed ${removedCount} expired file(s) older than ${logConfig.cleanupIntervalDays} days.`,
+        "INFO",
+        true,
+      );
+    }
+  } catch (error) {
+    // 清理失败不影响主流程
+    try {
+      logToFileInternal(
+        `Failed to cleanup rotated logs: ${error.message}`,
+        "WARN",
+        true,
+      );
+    } catch (logError) {
+      // 静默忽略
     }
   }
 }
