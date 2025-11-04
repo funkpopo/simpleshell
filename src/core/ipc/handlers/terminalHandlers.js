@@ -1,6 +1,6 @@
-const terminalManager = require("../../modules/terminal");
-const commandHistoryService = require("../../modules/terminal/command-history");
-const { logToFile } = require("../utils/logger");
+const terminalManager = require("../../../modules/terminal");
+const commandHistoryService = require("../../../modules/terminal/command-history");
+const { logToFile } = require("../../utils/logger");
 const { dialog } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");

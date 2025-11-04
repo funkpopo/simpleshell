@@ -22,6 +22,10 @@ const {
 } = require("./core/ipc/handlers/reconnectHandlers");
 const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers");
+// IPC registry and modular handlers
+const ipcRegistry = require("./core/ipc/ipcRegistry");
+const AppHandlers = require("./core/ipc/handlers/appHandlers");
+const SettingsHandlers = require("./core/ipc/handlers/settingsHandlers");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -462,6 +466,19 @@ app.whenReady().then(async () => {
 
   createWindow();
   createAIWorker();
+
+  // Register modular IPC handlers (app, settings) via registry
+  try {
+    const appHandlers = new AppHandlers();
+    ipcRegistry.registerBatch(appHandlers.getHandlers());
+
+    const settingsHandlers = new SettingsHandlers();
+    ipcRegistry.registerBatch(settingsHandlers.getHandlers());
+
+    logToFile("Registered modular IPC handlers: app, settings", "INFO");
+  } catch (error) {
+    logToFile(`Failed to register modular IPC handlers: ${error.message}`, "ERROR");
+  }
 
   // 初始化命令历史服务
   try {
@@ -1821,93 +1838,7 @@ function setupIPC(mainWindow) {
     return proxyManager.getSystemProxyConfig();
   });
 
-  // 获取应用版本号
-  ipcMain.handle("app:getVersion", async () => {
-    return app.getVersion();
-  });
-
-  // 关闭应用
-  ipcMain.handle("app:close", async () => {
-    app.quit();
-    return true;
-  });
-
-  // 重新加载窗口
-  ipcMain.handle("app:reloadWindow", async () => {
-    mainWindow.reload();
-    return true;
-  });
-
-  // 在外部浏览器打开链接
-  ipcMain.handle("app:openExternal", async (event, url) => {
-    try {
-      await shell.openExternal(url);
-      return { success: true };
-    } catch (error) {
-      logToFile(`Failed to open external link: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
-
-  // 检查更新
-  ipcMain.handle("app:checkForUpdate", async () => {
-    try {
-      const https = require("https");
-
-      // 创建一个Promise来处理HTTPS请求
-      const fetchGitHubRelease = () => {
-        return new Promise((resolve, reject) => {
-          const options = {
-            hostname: "api.github.com",
-            path: "/repos/funkpopo/simpleshell/releases/latest",
-            method: "GET",
-            headers: {
-              "User-Agent": "SimpleShell-App",
-            },
-          };
-
-          const req = https.request(options, (res) => {
-            if (res.statusCode !== 200) {
-              reject(new Error(`GitHub API返回错误状态码: ${res.statusCode}`));
-              return;
-            }
-
-            let data = "";
-            res.on("data", (chunk) => {
-              data += chunk;
-            });
-
-            res.on("end", () => {
-              try {
-                const releaseData = JSON.parse(data);
-                resolve(releaseData);
-              } catch (error) {
-                reject(new Error(`解析GitHub API响应失败: ${error.message}`));
-              }
-            });
-          });
-
-          req.on("error", (error) => {
-            reject(new Error(`请求GitHub API失败: ${error.message}`));
-          });
-
-          req.end();
-        });
-      };
-
-      const releaseData = await fetchGitHubRelease();
-      return {
-        success: true,
-        data: releaseData,
-      };
-    } catch (error) {
-      logToFile(`检查更新失败: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  });
+  // app:* IPC moved to modular AppHandlers (registered above)
 
   // 处理简单的命令
   ipcMain.handle("terminal:command", async (event, command) => {
@@ -4276,51 +4207,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  // UI设置相关API
-  ipcMain.handle("settings:loadUISettings", async () => {
-    return await configManager.loadUISettings(); // loadUISettings in configManager is not async, but IPC handler can be
-  });
-
-  ipcMain.handle("settings:saveUISettings", async (event, settings) => {
-    return await configManager.saveUISettings(settings); // saveUISettings in configManager is not async
-  });
-
-  // 日志设置相关API
-  ipcMain.handle("settings:loadLogSettings", async () => {
-    return await configManager.loadLogSettings();
-  });
-
-  ipcMain.handle("settings:saveLogSettings", async (event, settings) => {
-    const saved = await configManager.saveLogSettings(settings);
-    if (saved) {
-      // 更新当前运行的日志系统配置
-      updateLogConfig(settings);
-    }
-    return saved;
-  });
-
-  // 性能设置实时更新API
-  ipcMain.handle("settings:updateCacheSettings", async (event, settings) => {
-    try {
-      // 这里可以实时更新缓存设置
-      logToFile(`缓存设置已更新: ${JSON.stringify(settings)}`, "INFO");
-      return { success: true };
-    } catch (error) {
-      logToFile(`更新缓存设置失败: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle("settings:updatePrefetchSettings", async (event, settings) => {
-    try {
-      // 这里可以实时更新预取设置
-      logToFile(`预取设置已更新: ${JSON.stringify(settings)}`, "INFO");
-      return { success: true };
-    } catch (error) {
-      logToFile(`更新预取设置失败: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
+  // settings:* IPC moved to modular SettingsHandlers (registered above)
 
   // 获取标签页连接状态
   ipcMain.handle("connection:getTabStatus", async (event, tabId) => {
@@ -4379,38 +4266,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  // 获取快捷命令
-  ipcMain.handle("get-shortcut-commands", async () => {
-    try {
-      const data = configManager.loadShortcutCommands();
-      return { success: true, data };
-    } catch (error) {
-      if (logToFile)
-        logToFile(
-          `Error in get-shortcut-commands (IPC): ${error.message}`,
-          "ERROR",
-        );
-      return { success: false, error: error.message };
-    }
-  });
-
-  // 保存快捷命令
-  ipcMain.handle("save-shortcut-commands", async (_, data) => {
-    try {
-      const result = configManager.saveShortcutCommands(data);
-      return {
-        success: result,
-        error: result ? null : "Failed to save shortcut commands (IPC)",
-      };
-    } catch (error) {
-      if (logToFile)
-        logToFile(
-          `Error in save-shortcut-commands (IPC): ${error.message}`,
-          "ERROR",
-        );
-      return { success: false, error: error.message };
-    }
-  });
+  // shortcut commands IPC moved to SettingsHandlers (registered above)
 
   ipcMain.handle("downloadFolder", async (event, tabId, remotePath) => {
     if (
@@ -4519,63 +4375,9 @@ function setupIPC(mainWindow) {
     }
   });
 
-  // 新增：删除单个历史命令
-  ipcMain.handle("command-history:delete", async (event, command) => {
-    try {
-      commandHistoryService.removeCommand(command);
-      // 保存到配置文件
-      const historyToSave = commandHistoryService.exportHistory();
-      configManager.saveCommandHistory(historyToSave);
-      return { success: true };
-    } catch (error) {
-      logToFile(
-        `Error deleting command from history: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
-  });
+  // command-history:* IPC moved to SettingsHandlers (registered above)
 
-  // 新增：批量删除历史命令
-  ipcMain.handle("command-history:deleteBatch", async (event, commands) => {
-    try {
-      if (!Array.isArray(commands)) {
-        throw new Error("Commands must be an array");
-      }
-
-      commands.forEach((command) => {
-        commandHistoryService.removeCommand(command);
-      });
-
-      // 保存到配置文件
-      const historyToSave = commandHistoryService.exportHistory();
-      configManager.saveCommandHistory(historyToSave);
-
-      return { success: true };
-    } catch (error) {
-      logToFile(
-        `Error batch deleting commands from history: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
-  });
-
-  // 添加IP地址查询API处理函数
-  ipcMain.handle("ip:query", async (event, ip = "") => {
-    try {
-      // 获取默认代理配置以用于IP查询
-      const proxyManager = require("./core/proxy/proxy-manager");
-      const proxyConfig = proxyManager.getDefaultProxyConfig();
-      return await ipQuery.queryIpAddress(ip, logToFile, proxyConfig);
-    } catch (error) {
-      logToFile(`IP地址查询失败: ${error.message}`, "ERROR");
-      return {
-        ret: "failed",
-        msg: error.message,
-      };
-    }
-  });
+  // ip:query moved to AppHandlers (registered above)
 
   // 新增：获取进程信息
   ipcMain.handle("terminal:getProcessInfo", async (event, processId) => {

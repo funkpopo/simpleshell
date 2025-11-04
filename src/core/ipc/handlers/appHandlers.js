@@ -209,11 +209,18 @@ class AppHandlers {
 
   async queryIP(event, ip = "") {
     try {
-      const result = await ipQuery.query(ip);
-      return { success: true, data: result };
+      // Try to use default proxy config if present
+      let proxyConfig = null;
+      try {
+        const proxyManager = require("../../proxy/proxy-manager");
+        proxyConfig = proxyManager.getDefaultProxyConfig();
+      } catch (_) {}
+
+      const result = await ipQuery.queryIpAddress(ip, logToFile, proxyConfig);
+      return result;
     } catch (error) {
       logToFile(`Error querying IP: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return { ret: "failed", msg: error.message };
     }
   }
 }
