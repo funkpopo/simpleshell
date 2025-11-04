@@ -14,7 +14,7 @@ class TerminalDetector {
   }
 
   /**
-   * 检测系统中所有可用的终端
+   * 检测当前系统中可用的本地终端
    */
   async detectAllTerminals() {
     this.detectedTerminals = [];
@@ -28,14 +28,14 @@ class TerminalDetector {
         await this.detectLinuxTerminals();
       }
     } catch (error) {
-      // 即使发生错误也返回已检测到的终端
+      // 忽略异常，尽力返回已检测到的终端
     }
 
     return this.detectedTerminals;
   }
 
   /**
-   * 检测Windows系统中的终端
+   * 检测 Windows 系统可用的终端
    */
   async detectWindowsTerminals() {
     const terminals = [
@@ -66,18 +66,18 @@ class TerminalDetector {
           this.detectedTerminals.push(terminal);
         }
       } catch (error) {
-        // 继续检测其他终端
+        // 忽略单个终端检测失败
       }
     }
 
-    // 按优先级排序
+    // 按优先级降序排序
     this.detectedTerminals.sort(
       (a, b) => (b.priority || 0) - (a.priority || 0),
     );
   }
 
   /**
-   * 检测macOS系统中的终端
+   * 检测 macOS 系统可用的终端
    */
   async detectMacOSTerminals() {
     const terminals = [
@@ -107,7 +107,7 @@ class TerminalDetector {
           this.detectedTerminals.push(terminal);
         }
       } catch (error) {
-        // 继续检测其他终端
+        // 忽略单个终端检测失败
       }
     }
 
@@ -117,7 +117,7 @@ class TerminalDetector {
   }
 
   /**
-   * 检测Linux系统中的终端
+   * 检测 Linux 系统可用的终端
    */
   async detectLinuxTerminals() {
     const terminals = [
@@ -153,7 +153,7 @@ class TerminalDetector {
           this.detectedTerminals.push(terminal);
         }
       } catch (error) {
-        // 继续检测其他终端
+        // 忽略单个终端检测失败
       }
     }
 
@@ -163,11 +163,11 @@ class TerminalDetector {
   }
 
   /**
-   * 检查终端是否可用
+   * 检查给定终端是否可用
    */
   async checkTerminalAvailability(terminal) {
     try {
-      // 1. 首先检查指定路径
+      // 1. 优先检查显式给定的检查路径
       if (terminal.checkPaths) {
         for (const checkPath of terminal.checkPaths) {
           if (checkPath && (await this.fileExists(checkPath))) {
@@ -177,12 +177,12 @@ class TerminalDetector {
         }
       }
 
-      // 2. 检查环境变量指定的路径
+      // 2. 检查环境变量指定的目录
       if (terminal.environmentPaths) {
         for (const envVar of terminal.environmentPaths) {
           const envPath = process.env[envVar];
           if (envPath) {
-            // 检查环境变量路径下的可执行文件
+            // 在环境变量目录下查找可执行文件
             const possiblePaths = [
               path.join(envPath, terminal.executable),
               path.join(envPath, "bin", terminal.executable),
@@ -199,12 +199,12 @@ class TerminalDetector {
         }
       }
 
-      // 3. WSL特殊检查
+      // 3. WSL 检查
       if (terminal.type === "wsl") {
         return await this.checkWSLAvailability(terminal);
       }
 
-      // 4. 检查系统命令
+      // 4. 系统命令查询
       if (terminal.systemCommand) {
         try {
           const whereCommand = this.isWindows ? "where" : "which";
@@ -225,11 +225,11 @@ class TerminalDetector {
             }
           }
         } catch (error) {
-          // 命令不存在，继续尝试其他方法
+          // 命令不存在或执行失败，忽略
         }
       }
 
-      // 5. 检查Windows应用包
+      // 5. 检查 Windows 应用商店安装（如 Windows Terminal）
       if (this.isWindows && terminal.packageName) {
         try {
           const { stdout } = await execAsync(
@@ -241,18 +241,18 @@ class TerminalDetector {
             return true;
           }
         } catch (error) {
-          // 包不存在
+          // 忽略查询失败
         }
       }
 
-      // 6. 通用可执行文件检查 (macOS/Linux)
+      // 6. 直接按可执行名查找（macOS/Linux）
       if (!this.isWindows && terminal.executable) {
         if (await this.fileExists(terminal.executable)) {
           terminal.executablePath = terminal.executable;
           return true;
         }
 
-        // 尝试在PATH中查找
+        // 在 PATH 中查找
         try {
           const { stdout } = await execAsync(`which ${terminal.executable}`, {
             timeout: 5000,
@@ -262,7 +262,7 @@ class TerminalDetector {
             return true;
           }
         } catch (error) {
-          // 不在PATH中
+          // 忽略 PATH 查询失败
         }
       }
 
@@ -273,17 +273,17 @@ class TerminalDetector {
   }
 
   /**
-   * 检查WSL是否可用
+   * 检查 WSL 是否可用
    */
   async checkWSLAvailability(terminal) {
     try {
-      // 检查WSL是否安装，使用特定的编码处理
+      // 通过 wsl -l -v 检查是否已安装（使用 UTF-16LE 编码处理）
       const { stdout: wslList } = await execAsync("wsl -l -v", {
         timeout: 8000,
-        encoding: "utf16le", // 指定UTF-16LE编码
+        encoding: "utf16le", // 指定 UTF-16LE 编码
       });
 
-      // 清理输出中可能的null字节
+      // 清理可能包含的空字符
       const cleanOutput = wslList.replace(/\0/g, "");
 
       if (
@@ -297,13 +297,13 @@ class TerminalDetector {
         cleanOutput.includes("Fedora") ||
         cleanOutput.includes("NAME")
       ) {
-        // NAME表示WSL已安装且有发行版列表
+        // 包含 NAME/发行版等关键字说明 WSL 已安装
         terminal.executablePath = "wsl.exe";
 
-        // 检测所有可用的WSL发行版
+        // 解析可用的 WSL 发行版
         const distributions = this.parseWSLDistributions(cleanOutput);
 
-        // 过滤掉docker-desktop等非Linux发行版
+        // 过滤 docker-desktop/podman 等非实际发行版
         const validDistributions = distributions.filter(
           (dist) =>
             !dist.name.toLowerCase().includes("docker-desktop") &&
@@ -313,7 +313,7 @@ class TerminalDetector {
         if (validDistributions.length > 0) {
           terminal.availableDistributions = validDistributions;
 
-          // 如果有多个发行版，创建多个终端选项
+          // 多个发行版时，后续可提供选择
           if (validDistributions.length > 1) {
             terminal.hasMultipleDistributions = true;
           }
@@ -326,13 +326,13 @@ class TerminalDetector {
 
       return false;
     } catch (error) {
-      // WSL不可用
+      // WSL 不可用或执行失败
       return false;
     }
   }
 
   /**
-   * 解析WSL发行版列表
+   * 解析 WSL 发行版列表输出
    */
   parseWSLDistributions(wslOutput) {
     const lines = wslOutput.split("\n");
@@ -347,7 +347,7 @@ class TerminalDetector {
         !trimmed.startsWith("NAME") &&
         !trimmed.startsWith("Windows Subsystem")
       ) {
-        // 移除可能的 * 标记并分割
+        // 去掉开头可能的 * 标记，然后按空白分割
         const cleanLine = trimmed.replace(/^\*\s*/, "");
         const parts = cleanLine.split(/\s+/);
 
@@ -356,7 +356,7 @@ class TerminalDetector {
           const state = parts[1];
           const version = parts[2] || "WSL1";
 
-          // 跳过标题行和无效条目
+          // 仅在必要字段有效时加入结果
           if (
             name &&
             state &&
@@ -380,7 +380,7 @@ class TerminalDetector {
   }
 
   /**
-   * 检查文件是否存在
+   * 文件是否存在
    */
   async fileExists(filePath) {
     try {
@@ -392,28 +392,29 @@ class TerminalDetector {
   }
 
   /**
-   * 获取已检测的终端列表
+   * 获取已检测到的终端列表
    */
   getDetectedTerminals() {
     return [...this.detectedTerminals];
   }
 
   /**
-   * 按类型获取终端
+   * 根据类型获取终端
    */
   getTerminalByType(type) {
     return this.detectedTerminals.find((terminal) => terminal.type === type);
   }
 
   /**
-   * 获取推荐的默认终端
+   * 获取推荐（默认）的终端
    */
   getRecommendedTerminal() {
     if (this.detectedTerminals.length === 0) {
       return null;
     }
-    return this.detectedTerminals[0]; // 已经按优先级排序
+    return this.detectedTerminals[0]; // 已按优先级排序
   }
 }
 
 module.exports = TerminalDetector;
+
