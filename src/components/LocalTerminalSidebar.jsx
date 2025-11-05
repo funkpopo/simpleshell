@@ -2,8 +2,6 @@ import React, {
   useState,
   useEffect,
   useRef,
-  useMemo,
-  useCallback,
 } from "react";
 import {
   Box,
@@ -113,7 +111,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   }, [open]);
 
   // 检测可用终端
-  const detectTerminals = useCallback(async () => {
+  const detectTerminals = async () => {
     setIsDetecting(true);
     try {
       if (window.terminalAPI?.detectLocalTerminals) {
@@ -150,7 +148,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     } finally {
       setIsDetecting(false);
     }
-  }, [t, hasInitialDetection]);
+  };
 
   // 初始检测终端
   useEffect(() => {
@@ -160,7 +158,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   }, [open, hasInitialDetection, detectTerminals]);
 
   // 过滤终端列表
-  const filteredTerminals = useMemo(() => {
+  const filteredTerminals = (() => {
     if (!searchQuery) return detectedTerminals;
     const query = searchQuery.toLowerCase();
     return detectedTerminals.filter(
@@ -168,11 +166,10 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         terminal.name.toLowerCase().includes(query) ||
         terminal.type.toLowerCase().includes(query),
     );
-  }, [detectedTerminals, searchQuery]);
+  })();
 
   // 启动终端
-  const handleLaunchTerminal = useCallback(
-    async (terminal) => {
+  const handleLaunchTerminal = async (terminal) => {
       // 添加终端配置检查
       if (!terminal) {
         setSnackbar({
@@ -212,12 +209,10 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           severity: "error",
         });
       }
-    },
-    [onLaunchTerminal, t],
-  );
+    };
 
   // 处理右键菜单
-  const handleContextMenu = useCallback((event, terminal) => {
+  const handleContextMenu = (event, terminal) => {
     event.preventDefault();
     event.stopPropagation();
     setSelectedTerminal(terminal);
@@ -225,27 +220,26 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       mouseX: event.clientX - 2,
       mouseY: event.clientY - 4,
     });
-  }, []);
+  };
 
-  const handleCloseContextMenu = useCallback(() => {
+  const handleCloseContextMenu = () => {
     setContextMenu(null);
     setSelectedTerminal(null);
-  }, []);
+  };
 
   // 移除自定义终端相关功能
   // 只保留系统终端检测和启动功能
 
   // 清空搜索
-  const clearSearch = useCallback(() => {
+  const clearSearch = () => {
     setSearchQuery("");
     if (searchInputRef.current) {
       searchInputRef.current.focus();
     }
-  }, []);
+  };
 
   // 终端项组件
-  const TerminalItem = useCallback(
-    ({ terminal }) => {
+  const TerminalItem = ({ terminal }) => {
       return (
         <ListItem disablePadding sx={{ mb: 0.5 }}>
           <ListItemButton
@@ -299,12 +293,10 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           </ListItemButton>
         </ListItem>
       );
-    },
-    [theme, handleLaunchTerminal, t],
-  );
+    };
 
   // 骨架屏：与终端项布局一致
-  const TerminalItemSkeleton = useCallback(() => {
+  const TerminalItemSkeleton = () => {
     return (
       <ListItem disablePadding sx={{ mb: 0.5 }}>
         <ListItemButton
@@ -346,7 +338,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         </ListItemButton>
       </ListItem>
     );
-  }, [theme]);
+  };
 
   if (!open) return null;
 

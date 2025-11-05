@@ -37,6 +37,15 @@ module.exports = [
         exclude: /node_modules/,
         presets: ["@babel/preset-react"],
         plugins: [
+          // React Compiler - 必须在其他插件之前运行
+          [
+            "babel-plugin-react-compiler",
+            {
+              // React Compiler 配置选项
+              // 自动优化组件和hooks，减少不必要的重新渲染
+              runtimeModule: "react/compiler-runtime",
+            },
+          ],
           // 配置 Material-UI 图标按需导入
           [
             "import",

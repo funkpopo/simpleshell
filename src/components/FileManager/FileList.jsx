@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from "react";
+import React, { memo } from "react";
 import { Box, Typography, CircularProgress } from "@mui/material";
 import VirtualizedFileList from "../VirtualizedFileList.jsx";
 import { useTranslation } from "react-i18next";
@@ -21,7 +21,7 @@ const FileList = memo(
     const { t } = useTranslation();
 
     // 处理文件排序和过滤
-    const processedFiles = useCallback(() => {
+    const processedFiles = () => {
       let result = [...files];
 
       // 应用搜索过滤
@@ -34,7 +34,7 @@ const FileList = memo(
       result = sortFiles(result, sortBy, "asc");
 
       return result;
-    }, [files, searchTerm, sortMode]);
+    };
 
     // 渲染加载状态
     if (loading) {

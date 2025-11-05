@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from "react";
+import React, { memo } from "react";
 import { useTranslation } from "react-i18next";
 
 const FileDownload = memo(
@@ -13,8 +13,7 @@ const FileDownload = memo(
     const { t } = useTranslation();
 
     // 下载单个文件
-    const downloadFile = useCallback(
-      async (file) => {
+    const downloadFile = async (file) => {
         if (!file || file.isDirectory) {
           onError(t("fileManager.errors.cannotDownloadDirectory"));
           return {
@@ -82,21 +81,10 @@ const FileDownload = memo(
           });
           return { success: false, error: error.message };
         }
-      },
-      [
-        tabId,
-        currentPath,
-        t,
-        onError,
-        onTransferStart,
-        onTransferUpdate,
-        onTransferComplete,
-      ],
-    );
+      };
 
     // 批量下载文件
-    const downloadFiles = useCallback(
-      async (files) => {
+    const downloadFiles = async (files) => {
         if (!files || files.length === 0) {
           onError(t("fileManager.errors.noFilesSelected"));
           return {
@@ -181,21 +169,10 @@ const FileDownload = memo(
           completed: completedCount,
           failed: failedCount,
         };
-      },
-      [
-        tabId,
-        currentPath,
-        t,
-        onError,
-        onTransferStart,
-        onTransferUpdate,
-        onTransferComplete,
-      ],
-    );
+      };
 
     // 下载文件夹（打包为zip）
-    const downloadFolder = useCallback(
-      async (folder) => {
+    const downloadFolder = async (folder) => {
         if (!folder || !folder.isDirectory) {
           onError(t("fileManager.errors.notADirectory"));
           return {
@@ -263,17 +240,7 @@ const FileDownload = memo(
           });
           return { success: false, error: error.message };
         }
-      },
-      [
-        tabId,
-        currentPath,
-        t,
-        onError,
-        onTransferStart,
-        onTransferUpdate,
-        onTransferComplete,
-      ],
-    );
+      };
 
     return {
       downloadFile,

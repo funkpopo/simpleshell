@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from "react";
+import React, { memo } from "react";
 import { useTranslation } from "react-i18next";
 
 const FileUpload = memo(
@@ -15,8 +15,7 @@ const FileUpload = memo(
     const { t } = useTranslation();
 
     // 处理文件上传
-    const uploadFiles = useCallback(
-      async (files, targetPath = null) => {
+    const uploadFiles = async (files, targetPath = null) => {
         if (!files || files.length === 0) {
           return {
             success: false,
@@ -153,22 +152,10 @@ const FileUpload = memo(
           onError(t("fileManager.errors.uploadFailed") + ": " + error.message);
           return { success: false, error: error.message };
         }
-      },
-      [
-        tabId,
-        currentPath,
-        t,
-        onError,
-        onTransferStart,
-        onTransferUpdate,
-        onTransferComplete,
-        onSilentRefresh,
-      ],
-    );
+      };
 
     // 处理文件夹上传
-    const uploadFolder = useCallback(
-      async (folderEntries, targetPath = null) => {
+    const uploadFolder = async (folderEntries, targetPath = null) => {
         const allFiles = [];
         const folderStructure = new Set();
 
@@ -247,13 +234,10 @@ const FileUpload = memo(
         // 上传所有文件 - 使用正确的目标路径
         const uploadPath = targetPath || currentPath;
         return uploadFiles(allFiles, uploadPath);
-      },
-      [uploadFiles, currentPath, t, onTransferStart, onTransferUpdate],
-    );
+      };
 
     // 处理拖放上传
-    const handleDrop = useCallback(
-      async (e) => {
+    const handleDrop = async (e) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -344,9 +328,7 @@ const FileUpload = memo(
           completed: totalCompleted,
           failed: totalFailed,
         };
-      },
-      [currentPath, selectedFile, t, uploadFiles, uploadFolder],
-    );
+      };
 
     return {
       uploadFiles,

@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useState } from "react";
+import React, { memo, useState } from "react";
 import { Box, Typography, Tab, GlobalStyles } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import {
@@ -143,8 +143,7 @@ const CustomTab = memo((props) => {
   };
 
   // 处理拖拽开始 - 支持分屏功能和幽灵元素预览
-  const handleDragStart = useCallback(
-    (e) => {
+  const handleDragStart = (e) => {
       // 先调用父组件的拖拽开始处理
       if (onDragStart) {
         onDragStart(e);
@@ -166,9 +165,9 @@ const CustomTab = memo((props) => {
         const preview = document.createElement("div");
         preview.style.cssText = `
         padding: 10px 18px;
-        background: linear-gradient(135deg, 
-          rgba(25, 118, 210, 0.95) 0%, 
-          rgba(21, 101, 192, 0.95) 30%, 
+        background: linear-gradient(135deg,
+          rgba(25, 118, 210, 0.95) 0%,
+          rgba(21, 101, 192, 0.95) 30%,
           rgba(13, 71, 161, 0.95) 70%,
           rgba(25, 118, 210, 0.95) 100%);
         color: white;
@@ -176,7 +175,7 @@ const CustomTab = memo((props) => {
         font-family: 'Roboto', 'Arial', sans-serif;
         font-size: 14px;
         font-weight: 600;
-        box-shadow: 0 12px 40px rgba(25, 118, 210, 0.5), 
+        box-shadow: 0 12px 40px rgba(25, 118, 210, 0.5),
                     0 4px 16px rgba(0, 0, 0, 0.3),
                     inset 0 1px 0 rgba(255, 255, 255, 0.2);
         border: 2px solid rgba(255, 255, 255, 0.3);
@@ -214,13 +213,13 @@ const CustomTab = memo((props) => {
         const style = document.createElement("style");
         style.textContent = `
           @keyframes dragPreviewPulse {
-            0% { 
-              box-shadow: 0 12px 40px rgba(25, 118, 210, 0.5), 
+            0% {
+              box-shadow: 0 12px 40px rgba(25, 118, 210, 0.5),
                          0 4px 16px rgba(0, 0, 0, 0.3),
                          inset 0 1px 0 rgba(255, 255, 255, 0.2);
             }
-            100% { 
-              box-shadow: 0 16px 48px rgba(25, 118, 210, 0.7), 
+            100% {
+              box-shadow: 0 16px 48px rgba(25, 118, 210, 0.7),
                          0 6px 20px rgba(0, 0, 0, 0.4),
                          inset 0 1px 0 rgba(255, 255, 255, 0.3);
             }
@@ -249,9 +248,7 @@ const CustomTab = memo((props) => {
 
       // 使用requestAnimationFrame确保在下一帧创建预览
       requestAnimationFrame(createDragPreview);
-    },
-    [tabId, index, label, onDragStart],
-  );
+    };
 
   return (
     <>

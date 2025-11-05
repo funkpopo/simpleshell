@@ -1,4 +1,4 @@
-import React, { useCallback, memo } from "react";
+import React, { memo } from "react";
 import {
   Box,
   Typography,
@@ -18,14 +18,11 @@ const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
   const theme = useTheme();
   const { t } = useTranslation();
 
-  const handleOpenConnection = useCallback(
-    (connection) => {
-      if (onOpenConnection) {
-        onOpenConnection(connection);
-      }
-    },
-    [onOpenConnection],
-  );
+  const handleOpenConnection = (connection) => {
+    if (onOpenConnection) {
+      onOpenConnection(connection);
+    }
+  };
 
   const renderTopConnectionItem = (connection) => (
     <ListItem key={connection.id} disablePadding sx={{ mb: 0.5 }}>

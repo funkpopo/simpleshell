@@ -2,8 +2,6 @@ import React, {
   useState,
   useEffect,
   memo,
-  useCallback,
-  useMemo,
   useRef,
 } from "react";
 import {
@@ -810,9 +808,9 @@ const ConnectionManager = memo(
     }, [connections, isLoading, onConnectionsUpdate]);
 
     // 关闭消息提示
-    const handleSnackbarClose = useCallback(() => {
+    const handleSnackbarClose = () => {
       setSnackbar((prev) => ({ ...prev, open: false }));
-    }, []);
+    };
 
     // 对话框状态
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -846,7 +844,7 @@ const ConnectionManager = memo(
       proxyUseDefault: true, // 使用默认代理配置
     });
 
-    const filteredItems = useMemo(() => {
+    const filteredItems = (() => {
       if (!searchQuery) {
         return connections;
       }
@@ -873,10 +871,10 @@ const ConnectionManager = memo(
         }
         return acc;
       }, []);
-    }, [connections, searchQuery]);
+    })();
 
     // 处理组的展开/折叠 - 添加防抖和状态检查
-    const handleToggleGroup = useCallback((groupId) => {
+    const handleToggleGroup = (groupId) => {
       setConnections((prevConnections) => {
         // 检查当前状态，避免重复更新
         const targetGroup = prevConnections.find(
@@ -895,10 +893,10 @@ const ConnectionManager = memo(
         // 确保状态更新
         return newConnections;
       });
-    }, []);
+    };
 
     // 打开添加连接对话框
-    const handleAddConnection = useCallback((parentGroupId = null) => {
+    const handleAddConnection = (parentGroupId = null) => {
       setDialogType("connection");
       setDialogMode("add");
       setFormData({
@@ -919,7 +917,7 @@ const ConnectionManager = memo(
     }, []);
 
     // 打开添加组对话框
-    const handleAddGroup = useCallback(() => {
+    const handleAddGroup = () => {
       setDialogType("group");
       setDialogMode("add");
       setFormData({
@@ -929,7 +927,7 @@ const ConnectionManager = memo(
     }, []);
 
     // 打开编辑对话框
-    const handleEdit = useCallback((item, parentGroup = null) => {
+    const handleEdit = (item, parentGroup = null) => {
       setSelectedItem({
         ...item,
         parentGroupId: parentGroup ? parentGroup.id : null,
@@ -974,8 +972,7 @@ const ConnectionManager = memo(
     }, []);
 
     // 删除项目 - 显示确认对话框
-    const handleDelete = useCallback(
-      (itemId, parentGroup = null) => {
+    const handleDelete = (itemId, parentGroup = null) => {
         const item = parentGroup
           ? parentGroup.items.find((item) => item.id === itemId)
           : connections.find((item) => item.id === itemId);
@@ -984,12 +981,10 @@ const ConnectionManager = memo(
           setDeleteItem({ item, parentGroup, itemId });
           setDeleteConfirmOpen(true);
         }
-      },
-      [connections],
-    );
+      };
 
     // 确认删除项目
-    const handleConfirmDelete = useCallback(() => {
+    const handleConfirmDelete = () => {
       if (!deleteItem) return;
 
       const { itemId, parentGroup } = deleteItem;
@@ -1033,19 +1028,19 @@ const ConnectionManager = memo(
         message: "删除成功",
         severity: "success",
       });
-    }, [deleteItem, connections]);
+    };
 
     // 取消删除
-    const handleCancelDelete = useCallback(() => {
+    const handleCancelDelete = () => {
       setDeleteConfirmOpen(false);
       setDeleteItem(null);
-    }, []);
+    };
 
-    const handleDialogClose = useCallback(() => {
+    const handleDialogClose = () => {
       setDialogOpen(false);
-    }, []);
+    };
 
-    const handleFormChange = useCallback((e) => {
+    const handleFormChange = (e) => {
       const { name, value } = e.target;
 
       setFormData((prev) => {
@@ -1059,9 +1054,9 @@ const ConnectionManager = memo(
         }
         return { ...prev, [name]: value };
       });
-    }, []);
+    };
 
-    const handleSave = useCallback(() => {
+    const handleSave = () => {
       // 验证必填字段
       if (!formData.name || !formData.name.trim()) {
         setSnackbar({
@@ -1246,21 +1241,17 @@ const ConnectionManager = memo(
         message: `${dialogMode === "add" ? "创建" : "更新"}成功`,
         severity: "success",
       });
-    }, [dialogType, dialogMode, formData, selectedItem, connections]);
+    };
 
-    const handleOpenConnection = useCallback(
-      (connection) => {
-        if (onOpenConnection) {
-          onOpenConnection(connection);
-        }
-      },
-      [onOpenConnection],
-    );
+    const handleOpenConnection = (connection) => {
+      if (onOpenConnection) {
+        onOpenConnection(connection);
+      }
+    };
 
     const dragDisabled = searchQuery.length > 0;
 
-    const handleDragEnd = useCallback(
-      ({ active, over }) => {
+    const handleDragEnd = ({ active, over }) => {
         if (!over || dragDisabled) {
           return;
         }
@@ -1481,9 +1472,7 @@ const ConnectionManager = memo(
         };
 
         setConnections(updatedConnections);
-      },
-      [connections, dragDisabled],
-    );
+      };
 
     const sensors = useSensors(
       useSensor(PointerSensor, {
@@ -1501,68 +1490,54 @@ const ConnectionManager = memo(
         disabled: dragDisabled,
       });
 
-    const connectionsList = useMemo(() => {
-      return (
-        <SortableContext
-          id={ROOT_CONTAINER_ID}
-          items={filteredItems.map((item) => item.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          {filteredItems.map((item) =>
-            item.type === "group" ? (
-              <GroupListItem
-                key={item.id}
-                theme={theme}
-                group={item}
-                dragDisabled={dragDisabled}
-                onToggle={handleToggleGroup}
-                onAddConnection={handleAddConnection}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onOpenConnection={handleOpenConnection}
-              />
-            ) : (
-              <ConnectionListItem
-                key={item.id}
-                theme={theme}
-                connection={item}
-                parentGroup={null}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onOpen={handleOpenConnection}
-                dragDisabled={dragDisabled}
-              />
-            ),
-          )}
-        </SortableContext>
-      );
-    }, [
-      filteredItems,
-      theme,
-      dragDisabled,
-      handleToggleGroup,
-      handleAddConnection,
-      handleEdit,
-      handleDelete,
-      handleOpenConnection,
-    ]);
-    const groupOptions = useMemo(() => {
-      return connections
-        .filter((c) => c.type === "group")
-        .map((group) => (
-          <MenuItem key={group.id} value={group.id}>
-            {group.name}
-          </MenuItem>
-        ));
-    }, [connections]);
+    const connectionsList = (
+      <SortableContext
+        id={ROOT_CONTAINER_ID}
+        items={filteredItems.map((item) => item.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        {filteredItems.map((item) =>
+          item.type === "group" ? (
+            <GroupListItem
+              key={item.id}
+              theme={theme}
+              group={item}
+              dragDisabled={dragDisabled}
+              onToggle={handleToggleGroup}
+              onAddConnection={handleAddConnection}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onOpenConnection={handleOpenConnection}
+            />
+          ) : (
+            <ConnectionListItem
+              key={item.id}
+              theme={theme}
+              connection={item}
+              parentGroup={null}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onOpen={handleOpenConnection}
+              dragDisabled={dragDisabled}
+            />
+          ),
+        )}
+      </SortableContext>
+    );
 
-    const countryOptions = useMemo(() => {
-      return Object.entries(countries).map(([code, country]) => (
-        <MenuItem key={code} value={code}>
-          {`(${country.native}) - ${country.name}`}
+    const groupOptions = connections
+      .filter((c) => c.type === "group")
+      .map((group) => (
+        <MenuItem key={group.id} value={group.id}>
+          {group.name}
         </MenuItem>
       ));
-    }, []);
+
+    const countryOptions = Object.entries(countries).map(([code, country]) => (
+      <MenuItem key={code} value={code}>
+        {`(${country.native}) - ${country.name}`}
+      </MenuItem>
+    ));
 
     return (
       <Paper

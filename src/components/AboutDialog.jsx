@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useState } from "react";
+import React, { memo, useEffect, useState } from "react";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
@@ -77,21 +77,18 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   }, [isDownloading]);
 
   // Open external link
-  const handleOpenExternalLink = useCallback(
-    (url) => {
-      if (window.terminalAPI?.openExternal) {
-        window.terminalAPI.openExternal(url).catch((error) => {
-          alert(t("app.cannotOpenLinkAlert", { url }));
-        });
-      } else {
-        window.open(url, "_blank");
-      }
-    },
-    [t],
-  );
+  const handleOpenExternalLink = (url) => {
+    if (window.terminalAPI?.openExternal) {
+      window.terminalAPI.openExternal(url).catch((error) => {
+        alert(t("app.cannotOpenLinkAlert", { url }));
+      });
+    } else {
+      window.open(url, "_blank");
+    }
+  };
 
   // Check for updates
-  const handleCheckForUpdate = useCallback(async () => {
+  const handleCheckForUpdate = async () => {
     setCheckingForUpdate(true);
     setError("");
     setUpdateStatus("checking");
@@ -112,10 +109,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     } finally {
       setCheckingForUpdate(false);
     }
-  }, []);
+  };
 
   // Download update
-  const downloadUpdate = useCallback(async () => {
+  const downloadUpdate = async () => {
     if (!updateInfo?.downloadUrl) {
       setError("Download URL not available");
       return;
@@ -144,10 +141,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     } finally {
       setIsDownloading(false);
     }
-  }, [updateInfo]);
+  };
 
   // Install update
-  const installUpdate = useCallback(async () => {
+  const installUpdate = async () => {
     if (!downloadedFilePath) {
       setError("No installer file available");
       return;
@@ -168,10 +165,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
       setError(err.message || "Installation failed");
       setUpdateStatus("error");
     }
-  }, [downloadedFilePath]);
+  };
 
   // Cancel download
-  const cancelDownload = useCallback(async () => {
+  const cancelDownload = async () => {
     try {
       await window.terminalAPI.cancelDownload();
       setIsDownloading(false);
@@ -180,7 +177,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     } catch (err) {
       console.error("Failed to cancel download:", err);
     }
-  }, []);
+  };
 
   // 渲染更新状态内容
   const renderUpdateContent = () => {

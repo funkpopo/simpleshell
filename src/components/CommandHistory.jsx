@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import { FixedSizeList as List } from "react-window";
 import {
@@ -42,7 +42,7 @@ import { useTranslation } from "react-i18next";
 import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 
 // 虚拟化历史记录项组件
-const HistoryItem = React.memo(({ index, style, data }) => {
+const HistoryItem = ({ index, style, data }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const {
@@ -146,7 +146,7 @@ const HistoryItem = React.memo(({ index, style, data }) => {
       </ListItem>
     </div>
   );
-});
+};
 
 function CommandHistory({ open, onClose, onSendCommand }) {
   const theme = useTheme();
@@ -277,7 +277,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   };
 
   // 获取过滤后的历史记录
-  const filteredHistory = useMemo(() => {
+  const filteredHistory = (() => {
     if (!searchTerm.trim()) {
       return history;
     }
@@ -285,7 +285,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     return history.filter((item) =>
       item.command.toLowerCase().includes(searchTermLower),
     );
-  }, [history, searchTerm]);
+  })();
 
   // 格式化时间
   const formatTime = (timestamp) => {
@@ -335,26 +335,15 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   };
 
   // 虚拟化列表的数据
-  const listItemData = useMemo(
-    () => ({
-      filteredHistory,
-      selectMode,
-      selectedCommands,
-      toggleCommandSelection,
-      handleSendCommand,
-      handleMenuOpen,
-      formatTime,
-    }),
-    [
-      filteredHistory,
-      selectMode,
-      selectedCommands,
-      toggleCommandSelection,
-      handleSendCommand,
-      handleMenuOpen,
-      formatTime,
-    ],
-  );
+  const listItemData = {
+    filteredHistory,
+    selectMode,
+    selectedCommands,
+    toggleCommandSelection,
+    handleSendCommand,
+    handleMenuOpen,
+    formatTime,
+  };
 
   // 获取过滤后的历史记录
   const getFilteredHistory = () => {

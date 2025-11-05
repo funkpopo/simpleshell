@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, memo } from "react";
+import React, { useState, useEffect, useRef, memo } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -512,9 +512,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [notification, setNotification] = useState(null);
   const [editorFont, setEditorFont] = useState("system");
   const viewerEditorRef = useRef(null);
-  const handleViewerEditorCreate = useCallback((view) => {
+  const handleViewerEditorCreate = (view) => {
     viewerEditorRef.current = view;
-  }, []);
+  };
 
   // PDF相关状态
   const [numPages, setNumPages] = useState(null);
@@ -722,7 +722,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   };
 
   // 处理保存文件
-  const handleSaveFile = useCallback(async () => {
+  const handleSaveFile = async () => {
     if (!file || !isTextFile(file.name) || !modified) return;
 
     try {
@@ -761,7 +761,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     } finally {
       setSavingFile(false);
     }
-  }, [file, content, modified, tabId, fullPath]);
+  };
 
   useEffect(() => {
     if (!open) return;
