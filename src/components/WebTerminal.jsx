@@ -4305,7 +4305,8 @@ const WebTerminal = ({
   };
 
   // 命令建议相关函数
-  const getSuggestions = async (input) => {
+  const getSuggestions = React.useCallback(
+    async (input) => {
       if (!input || input.trim() === "" || inEditorMode || isCommandExecuting) {
         setSuggestions([]);
         setShowSuggestions(false);
