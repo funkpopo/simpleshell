@@ -2,8 +2,6 @@ import React, {
   useEffect,
   useRef,
   useState,
-  useCallback,
-  useMemo,
 } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -712,7 +710,7 @@ const WebTerminal = ({
   }, []);
 
   const lastHighlightRefreshRef = useRef(0);
-  const scheduleHighlightRefresh = useCallback((termInstance) => {
+  const scheduleHighlightRefresh = (termInstance) => {
     if (!termInstance || typeof termInstance.refresh !== "function") {
       return;
     }
@@ -751,9 +749,9 @@ const WebTerminal = ({
         lastHighlightRefreshRef.current = currentTime;
       }
     });
-  }, []);
+  };
 
-  const disableWebglRenderer = useCallback((termInstance) => {
+  const disableWebglRenderer = (termInstance) => {
     if (!termInstance) {
       return;
     }
@@ -777,10 +775,9 @@ const WebTerminal = ({
         termInstance.options.rendererType = "canvas";
       }
     } catch (_error) {}
-  }, []);
+  };
 
-  const tryEnableWebglRenderer = useCallback(
-    (termInstance) => {
+  const tryEnableWebglRenderer = (termInstance) => {
       if (!termInstance) {
         return;
       }
@@ -851,9 +848,7 @@ const WebTerminal = ({
         setWebglRendererEnabled(false);
         disableWebglRenderer(termInstance);
       }
-    },
-    [disableWebglRenderer],
-  );
+    };
 
   useEffect(() => {
     if (!termRef.current) {
@@ -867,8 +862,7 @@ const WebTerminal = ({
     }
   }, [webglRendererEnabled, tryEnableWebglRenderer, disableWebglRenderer]);
 
-  const flushPendingWrites = useCallback(
-    (termInstance) => {
+  const flushPendingWrites = (termInstance) => {
       if (!termInstance) {
         return;
       }
@@ -891,12 +885,9 @@ const WebTerminal = ({
         scheduleHighlightRefresh(termInstance);
       }
       setContentUpdated(true);
-    },
-    [scheduleHighlightRefresh, setContentUpdated],
-  );
+    };
 
-  const enqueueTerminalWrite = useCallback(
-    (termInstance, chunk) => {
+  const enqueueTerminalWrite = (termInstance, chunk) => {
       if (!termInstance || !chunk) {
         return;
       }
@@ -955,9 +946,7 @@ const WebTerminal = ({
         pendingWriteUsingRafRef.current = false;
         pendingWriteHandleRef.current = setTimeout(flush, 8);
       }
-    },
-    [flushPendingWrites],
-  );
+    };
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState(null);
@@ -1368,8 +1357,7 @@ const WebTerminal = ({
   };
 
   // 分析确认对话上下文的函数
-  const analyzeConfirmationContext = useCallback(
-    (cleanData) => {
+  const analyzeConfirmationContext = (cleanData) => {
       // 将当前输出添加到最近输出行
       if (cleanData && cleanData.trim()) {
         const lines = cleanData.split(/\r?\n/).filter((line) => line.trim());
@@ -1410,13 +1398,10 @@ const WebTerminal = ({
       }
 
       return false;
-    },
-    [confirmationPromptPatterns],
-  );
+    };
 
   // 检测提示的函数（包括密码提示和确认提示）
-  const checkForPrompts = useCallback(
-    (data) => {
+  const checkForPrompts = (data) => {
       // 确保数据存在
       if (!data) return;
 
@@ -1448,13 +1433,7 @@ const WebTerminal = ({
         isPasswordPromptActiveRef.current = true;
         setIsConfirmationPromptActive(true);
       }
-    },
-    [
-      passwordPromptPatterns,
-      confirmationPromptPatterns,
-      analyzeConfirmationContext,
-    ],
-  );
+    };
 
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
   const setupCommandDetection = (
@@ -4184,8 +4163,7 @@ const WebTerminal = ({
   }, []);
 
   // 输入同步广播封装
-  const broadcastInputToGroup = useCallback(
-    (input, sourceTabId) => {
+  const broadcastInputToGroup = (input, sourceTabId) => {
       const group = findGroupByTab(tabId);
       if (group && group.members && group.members.length > 1) {
         group.members.forEach((targetTabId) => {
@@ -4207,15 +4185,13 @@ const WebTerminal = ({
           }
         });
       }
-    },
-    [tabId],
-  );
+    };
 
   // 命令建议相关状态
   const suggestionSelectedRef = useRef(false);
 
   // 更新光标位置函数 - 简化版本，更可靠
-  const updateCursorPosition = useCallback(() => {
+  const updateCursorPosition = () => {
     if (!termRef.current || !terminalRef.current) {
       setCursorPosition({ x: 0, y: 0 });
       return;
@@ -4326,11 +4302,10 @@ const WebTerminal = ({
         });
       }
     }
-  }, [suggestions?.length || 0]);
+  };
 
   // 命令建议相关函数
-  const getSuggestions = useCallback(
-    async (input) => {
+  const getSuggestions = async (input) => {
       if (!input || input.trim() === "" || inEditorMode || isCommandExecuting) {
         setSuggestions([]);
         setShowSuggestions(false);
@@ -4451,8 +4426,7 @@ const WebTerminal = ({
     };
   }, [getSuggestions, suggestionsHiddenByEsc, isCommandExecuting]);
 
-  const handleSuggestionSelect = useCallback(
-    (suggestion) => {
+  const handleSuggestionSelect = (suggestion) => {
       if (!suggestion || !termRef.current || !processCache[tabId]) {
         setShowSuggestions(false);
         return;
@@ -4499,11 +4473,9 @@ const WebTerminal = ({
       } catch (error) {
         setShowSuggestions(false);
       }
-    },
-    [tabId, currentInput],
-  );
+    };
 
-  const closeSuggestions = useCallback(() => {
+  const closeSuggestions = () => {
     // 手动关闭建议窗口后，抑制再次显示，直到用户按下回车
     setShowSuggestions(false);
     setSuggestions([]);
@@ -4512,7 +4484,7 @@ const WebTerminal = ({
       input: currentInput,
       timestamp: Date.now(),
     };
-  }, [currentInput]);
+  };
 
   // 示例：假设有如下输入处理函数
   const handleUserInput = (input) => {

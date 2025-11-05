@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import { FixedSizeList as List } from "react-window";
 import {
@@ -48,7 +48,7 @@ import { useTranslation } from "react-i18next";
 import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 
 // 虚拟化命令项组件
-const CommandItem = React.memo(({ index, style, data }) => {
+const CommandItem = ({ index, style, data }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { commands, handleSendCommand, handleCopyCommand, handleMenuOpen } =
@@ -219,7 +219,7 @@ const CommandItem = React.memo(({ index, style, data }) => {
       </ListItem>
     </div>
   );
-});
+};
 
 function ShortcutCommands({ open, onClose, onSendCommand }) {
   const theme = useTheme();
@@ -573,33 +573,28 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   };
 
   // 过滤命令
-  const filteredCommands = useMemo(() => {
-    return commands.filter((cmd) => {
-      // 根据搜索词过滤
-      const matchesSearch =
-        searchTerm === "" ||
-        cmd.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        cmd.command.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        cmd.description.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredCommands = commands.filter((cmd) => {
+    // 根据搜索词过滤
+    const matchesSearch =
+      searchTerm === "" ||
+      cmd.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      cmd.command.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      cmd.description.toLowerCase().includes(searchTerm.toLowerCase());
 
-      // 根据选定分类过滤
-      const matchesCategory =
-        selectedCategory === "all" || cmd.category === selectedCategory;
+    // 根据选定分类过滤
+    const matchesCategory =
+      selectedCategory === "all" || cmd.category === selectedCategory;
 
-      return matchesSearch && matchesCategory;
-    });
-  }, [commands, searchTerm, selectedCategory]);
+    return matchesSearch && matchesCategory;
+  });
 
   // 虚拟化列表的数据
-  const listItemData = useMemo(
-    () => ({
-      commands: filteredCommands,
-      handleSendCommand,
-      handleCopyCommand,
-      handleMenuOpen,
-    }),
-    [filteredCommands, handleSendCommand, handleCopyCommand, handleMenuOpen],
-  );
+  const listItemData = {
+    commands: filteredCommands,
+    handleSendCommand,
+    handleCopyCommand,
+    handleMenuOpen,
+  };
 
   // 过滤命令 (保留原函数以兼容其他地方的调用)
   const getFilteredCommands = () => {
@@ -607,7 +602,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   };
 
   // 获取按分类分组的命令
-  const commandsByCategory = useMemo(() => {
+  const commandsByCategory = (() => {
     const result = {};
 
     // 添加未分类组
@@ -635,7 +630,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
     // 过滤掉没有命令的分类
     return Object.values(result).filter((cat) => cat.commands.length > 0);
-  }, [categories, filteredCommands, t]);
+  })();
 
   // 获取按分类分组的命令 (保留原函数以兼容其他地方的调用)
   const getCommandsByCategory = () => {

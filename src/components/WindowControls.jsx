@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
@@ -16,7 +16,7 @@ const WindowControls = () => {
   const { t } = useTranslation();
   const [windowState, setWindowState] = useState(defaultWindowState);
 
-  const updateState = useCallback((state) => {
+  const updateState = (state) => {
     if (!state) {
       return;
     }
@@ -25,7 +25,7 @@ const WindowControls = () => {
       isMaximized: Boolean(state.isMaximized),
       isFullScreen: Boolean(state.isFullScreen),
     });
-  }, []);
+  };
 
   useEffect(() => {
     let unsubscribe;
@@ -54,13 +54,13 @@ const WindowControls = () => {
         unsubscribe();
       }
     };
-  }, [updateState]);
-
-  const handleMinimize = useCallback(() => {
-    window?.terminalAPI?.minimizeWindow?.();
   }, []);
 
-  const handleToggleMaximize = useCallback(async () => {
+  const handleMinimize = () => {
+    window?.terminalAPI?.minimizeWindow?.();
+  };
+
+  const handleToggleMaximize = async () => {
     if (!window?.terminalAPI?.toggleMaximizeWindow) {
       return;
     }
@@ -71,11 +71,11 @@ const WindowControls = () => {
     } catch (error) {
       // 忽略切换失败，状态会通过事件同步
     }
-  }, [updateState]);
+  };
 
-  const handleClose = useCallback(() => {
+  const handleClose = () => {
     window?.terminalAPI?.closeWindow?.();
-  }, []);
+  };
 
   const isExpanded = windowState.isFullScreen || windowState.isMaximized;
 

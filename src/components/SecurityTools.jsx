@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from "react";
+import React, { useState, memo } from "react";
 import {
   Box,
   Paper,
@@ -93,7 +93,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
     }
   };
 
-  const generateKeyPair = useCallback(async () => {
+  const generateKeyPair = async () => {
     setGenerating(true);
     setError("");
 
@@ -119,9 +119,9 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
     } finally {
       setGenerating(false);
     }
-  }, [keyType, keySize, comment, passphrase, t]);
+  };
 
-  const generatePassword = useCallback(() => {
+  const generatePassword = () => {
     const charSets = {
       uppercase: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
       lowercase: "abcdefghijklmnopqrstuvwxyz",
@@ -146,7 +146,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
       generatedPassword += availableChars[randomIndex];
     }
     setPassword(generatedPassword);
-  }, [length, options]);
+  };
 
   const copyToClipboard = (text, type) => {
     if (text) {
@@ -178,7 +178,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
         generateKeyPair();
       }
     }
-  }, [open, tabValue, generatePassword, generateKeyPair]);
+  }, [open, tabValue]);
 
   return (
     <Paper

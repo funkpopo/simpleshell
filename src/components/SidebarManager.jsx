@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from "react";
+import React, { memo } from "react";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
 import Paper from "@mui/material/Paper";
@@ -47,47 +47,47 @@ const SidebarManager = memo(function SidebarManager({
   const { t } = useTranslation();
 
   // Sidebar toggle handlers
-  const handleConnectionManagerToggle = useCallback(() => {
+  const handleConnectionManagerToggle = () => {
     const newState = !state.connectionManagerOpen;
     dispatch(actions.setConnectionManagerOpen(newState));
     onSidebarToggle("connectionManager", newState);
-  }, [state.connectionManagerOpen, dispatch, actions, onSidebarToggle]);
+  };
 
-  const handleResourceMonitorToggle = useCallback(() => {
+  const handleResourceMonitorToggle = () => {
     const newState = !state.resourceMonitorOpen;
     dispatch(actions.setResourceMonitorOpen(newState));
     onSidebarToggle("resourceMonitor", newState);
-  }, [state.resourceMonitorOpen, dispatch, actions, onSidebarToggle]);
+  };
 
-  const handleFileManagerToggle = useCallback(() => {
+  const handleFileManagerToggle = () => {
     const newState = !state.fileManagerOpen;
     dispatch(actions.setFileManagerOpen(newState));
     onSidebarToggle("fileManager", newState);
-  }, [state.fileManagerOpen, dispatch, actions, onSidebarToggle]);
+  };
 
-  const handleIpAddressQueryToggle = useCallback(() => {
+  const handleIpAddressQueryToggle = () => {
     const newState = !state.ipAddressQueryOpen;
     dispatch(actions.setIpAddressQueryOpen(newState));
     onSidebarToggle("ipAddressQuery", newState);
-  }, [state.ipAddressQueryOpen, dispatch, actions, onSidebarToggle]);
+  };
 
-  const handleSecurityToolsToggle = useCallback(() => {
+  const handleSecurityToolsToggle = () => {
     const newState = !state.securityToolsOpen;
     dispatch(actions.setSecurityToolsOpen(newState));
     onSidebarToggle("securityTools", newState);
-  }, [state.securityToolsOpen, dispatch, actions, onSidebarToggle]);
+  };
 
-  const handleShortcutCommandsToggle = useCallback(() => {
+  const handleShortcutCommandsToggle = () => {
     const newState = !state.shortcutCommandsOpen;
     dispatch(actions.setShortcutCommandsOpen(newState));
     onSidebarToggle("shortcutCommands", newState);
-  }, [state.shortcutCommandsOpen, dispatch, actions, onSidebarToggle]);
+  };
 
-  const handleCommandHistoryToggle = useCallback(() => {
+  const handleCommandHistoryToggle = () => {
     const newState = !state.commandHistoryOpen;
     dispatch(actions.setCommandHistoryOpen(newState));
     onSidebarToggle("commandHistory", newState);
-  }, [state.commandHistoryOpen, dispatch, actions, onSidebarToggle]);
+  };
 
   return (
     <Paper

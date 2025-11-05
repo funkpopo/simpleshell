@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * 自动清理管理器Hook
@@ -24,68 +24,68 @@ export function useAutoCleanup() {
   }, []);
 
   // 添加定时器
-  const addTimeout = useCallback((callback, delay) => {
+  const addTimeout = (callback, delay) => {
     return cleanupManagerRef.current?.addTimeout(callback, delay);
-  }, []);
+  };
 
-  const addInterval = useCallback((callback, interval) => {
+  const addInterval = (callback, interval) => {
     return cleanupManagerRef.current?.addInterval(callback, interval);
-  }, []);
+  };
 
   // 添加事件监听器
-  const addEventListener = useCallback((target, event, handler, options) => {
+  const addEventListener = (target, event, handler, options) => {
     return cleanupManagerRef.current?.addEventListener(
       target,
       event,
       handler,
       options,
     );
-  }, []);
+  };
 
   // 添加观察器
-  const addResizeObserver = useCallback((callback, element, options) => {
+  const addResizeObserver = (callback, element, options) => {
     return cleanupManagerRef.current?.addResizeObserver(
       callback,
       element,
       options,
     );
-  }, []);
+  };
 
-  const addIntersectionObserver = useCallback((callback, element, options) => {
+  const addIntersectionObserver = (callback, element, options) => {
     return cleanupManagerRef.current?.addIntersectionObserver(
       callback,
       element,
       options,
     );
-  }, []);
+  };
 
-  const addMutationObserver = useCallback((callback, element, options) => {
+  const addMutationObserver = (callback, element, options) => {
     return cleanupManagerRef.current?.addMutationObserver(
       callback,
       element,
       options,
     );
-  }, []);
+  };
 
   // 添加自定义清理函数
-  const addCleanup = useCallback((cleanupFn) => {
+  const addCleanup = (cleanupFn) => {
     return cleanupManagerRef.current?.addCleanup(cleanupFn);
-  }, []);
+  };
 
   // 添加 AbortController
-  const createAbortController = useCallback(() => {
+  const createAbortController = () => {
     return cleanupManagerRef.current?.createAbortController();
-  }, []);
+  };
 
   // 获取统计信息
-  const getStats = useCallback(() => {
+  const getStats = () => {
     return cleanupManagerRef.current?.getStats() || {};
-  }, []);
+  };
 
   // 手动清理特定资源
-  const removeResource = useCallback((resourceId) => {
+  const removeResource = (resourceId) => {
     return cleanupManagerRef.current?.removeResource(resourceId);
-  }, []);
+  };
 
   return {
     addTimeout,

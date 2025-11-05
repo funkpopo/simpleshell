@@ -1,7 +1,5 @@
 import React, {
   memo,
-  useMemo,
-  useCallback,
   useRef,
   useState,
   useEffect,
@@ -48,21 +46,21 @@ const ConnectionItem = memo(({ index, style, data }) => {
   const depth = item.depth || 0;
   const paddingLeft = 16 + depth * 20; // Indentation based on nesting level
 
-  const handleClick = useCallback(() => {
+  const handleClick = () => {
     if (isGroup) {
       onToggleGroup(item.id);
     } else {
       onSelectConnection(item);
     }
-  }, [item, isGroup, onToggleGroup, onSelectConnection]);
+  };
 
-  const handleDoubleClick = useCallback(() => {
+  const handleDoubleClick = () => {
     if (onDoubleClick) {
       onDoubleClick(item);
     }
-  }, [item, onDoubleClick]);
+  };
 
-  const itemIcon = useMemo(() => {
+  const itemIcon = (() => {
     if (isGroup) {
       return item.expanded ? (
         <FolderOpenIcon color="primary" />
@@ -71,7 +69,7 @@ const ConnectionItem = memo(({ index, style, data }) => {
       );
     }
     return <ComputerIcon color={item.connected ? "success" : "disabled"} />;
-  }, [isGroup, item.expanded, item.connected]);
+  })();
 
   return (
     <div style={style}>
@@ -290,8 +288,7 @@ const VirtualizedConnectionList = ({
   }, [addResizeObserver]);
 
   // Track expanded groups
-  const handleToggleGroup = useCallback(
-    (groupId) => {
+  const handleToggleGroup = (groupId) => {
       setExpandedGroups((prev) => {
         const newExpanded = new Set(prev);
         if (newExpanded.has(groupId)) {
@@ -302,12 +299,10 @@ const VirtualizedConnectionList = ({
         return newExpanded;
       });
       onToggleGroup?.(groupId);
-    },
-    [onToggleGroup],
-  );
+    };
 
   // Filter connections based on search term
-  const filteredConnections = useMemo(() => {
+  const filteredConnections = (() => {
     if (!searchTerm.trim()) {
       return connections;
     }
@@ -339,47 +334,31 @@ const VirtualizedConnectionList = ({
     };
 
     return filterRecursive(connections);
-  }, [connections, searchTerm]);
+  })();
 
   // Flatten the hierarchical structure for virtualization
-  const flattenedItems = useMemo(() => {
-    return flattenConnections(filteredConnections, expandedGroups);
-  }, [filteredConnections, expandedGroups]);
+  const flattenedItems = flattenConnections(filteredConnections, expandedGroups);
 
   // Check if we have groups (affects overscan calculation)
-  const hasGroups = useMemo(() => {
-    return flattenedItems.some((item) => item.type === "group");
-  }, [flattenedItems]);
+  const hasGroups = flattenedItems.some((item) => item.type === "group");
 
   // Calculate dynamic overscan
-  const dynamicOverscan = useMemo(() => {
-    return calculateOverscan(
-      flattenedItems.length,
-      hasGroups,
-      devicePerformance,
-    );
-  }, [flattenedItems.length, hasGroups, devicePerformance]);
+  const dynamicOverscan = calculateOverscan(
+    flattenedItems.length,
+    hasGroups,
+    devicePerformance,
+  );
 
   // Prepare data for virtualized items
-  const itemData = useMemo(
-    () => ({
-      flattenedItems,
-      selectedItem,
-      onToggleGroup: handleToggleGroup,
-      onSelectConnection,
-      onDoubleClick,
-      dragHandleProps: enableDragDrop ? { "data-drag-handle": true } : null,
-      isDragging: false,
-    }),
-    [
-      flattenedItems,
-      selectedItem,
-      handleToggleGroup,
-      onSelectConnection,
-      onDoubleClick,
-      enableDragDrop,
-    ],
-  );
+  const itemData = {
+    flattenedItems,
+    selectedItem,
+    onToggleGroup: handleToggleGroup,
+    onSelectConnection,
+    onDoubleClick,
+    dragHandleProps: enableDragDrop ? { "data-drag-handle": true } : null,
+    isDragging: false,
+  };
 
   // Empty state
   if (flattenedItems.length === 0) {

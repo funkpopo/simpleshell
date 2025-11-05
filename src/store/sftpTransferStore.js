@@ -1,4 +1,4 @@
-import { useSyncExternalStore, useMemo, useCallback } from "react";
+import { useSyncExternalStore } from "react";
 
 // Global transfer state keyed by tabId so we can persist progress while the
 // File Manager sidebar is hidden.
@@ -152,12 +152,9 @@ const subscribe = (tabId, listener) => {
 const getSnapshot = (tabId) => getTransfersInternal(tabId);
 
 export const useSftpTransfers = (tabId) => {
-  const subscribeToStore = useCallback(
-    (listener) => subscribe(tabId, listener),
-    [tabId],
-  );
+  const subscribeToStore = (listener) => subscribe(tabId, listener);
 
-  const getCurrentSnapshot = useCallback(() => getSnapshot(tabId), [tabId]);
+  const getCurrentSnapshot = () => getSnapshot(tabId);
 
   const transferList = useSyncExternalStore(
     subscribeToStore,
@@ -165,19 +162,17 @@ export const useSftpTransfers = (tabId) => {
     getCurrentSnapshot,
   );
 
-  const helpers = useMemo(() => {
-    return {
-      addTransferProgress: (transferData) => addTransfer(tabId, transferData),
-      updateTransferProgress: (transferId, updateData) =>
-        updateTransfer(tabId, transferId, updateData),
-      removeTransferProgress: (transferId) =>
-        removeTransfer(tabId, transferId),
-      clearCompletedTransfers: () => clearCompletedTransfers(tabId),
-      clearAllTransfers: () => clearAllTransfers(tabId),
-      scheduleTransferCleanup: (transferId, delayMs) =>
-        scheduleTransferCleanup(tabId, transferId, delayMs),
-    };
-  }, [tabId]);
+  const helpers = {
+    addTransferProgress: (transferData) => addTransfer(tabId, transferData),
+    updateTransferProgress: (transferId, updateData) =>
+      updateTransfer(tabId, transferId, updateData),
+    removeTransferProgress: (transferId) =>
+      removeTransfer(tabId, transferId),
+    clearCompletedTransfers: () => clearCompletedTransfers(tabId),
+    clearAllTransfers: () => clearAllTransfers(tabId),
+    scheduleTransferCleanup: (transferId, delayMs) =>
+      scheduleTransferCleanup(tabId, transferId, delayMs),
+  };
 
   return {
     transferList,

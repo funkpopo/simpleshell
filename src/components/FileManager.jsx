@@ -2,8 +2,6 @@ import React, {
   useState,
   useEffect,
   memo,
-  useCallback,
-  useMemo,
   useRef,
 } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
@@ -129,12 +127,12 @@ const FileManager = memo(
       group: "",
     });
 
-    const clearSelection = useCallback(() => {
+    const clearSelection = () => {
       setSelectedFiles([]);
       setSelectedFile(null);
       setLastSelectedIndex(-1);
       setAnchorIndex(-1);
-    }, []);
+    };
 
     // 用于存储延迟移除定时器的引用
 
@@ -151,7 +149,7 @@ const FileManager = memo(
 
     // Fallback: 自动结束增量状态的定时器
     const chunkingResetTimerRef = useRef(null);
-    const scheduleChunkingReset = useCallback(() => {
+    const scheduleChunkingReset = () => {
       try {
         if (chunkingResetTimerRef.current)
           clearTimeout(chunkingResetTimerRef.current);
@@ -159,7 +157,7 @@ const FileManager = memo(
       chunkingResetTimerRef.current = setTimeout(() => {
         setIsChunking(false);
       }, 800);
-    }, []);
+    };
     useEffect(
       () => () => {
         try {
@@ -170,7 +168,7 @@ const FileManager = memo(
       [],
     );
 
-    const handleDragEnter = useCallback((e) => {
+    const handleDragEnter = (e) => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -181,9 +179,9 @@ const FileManager = memo(
       if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
         setIsDragging(true);
       }
-    }, []);
+    };
 
-    const handleDragLeave = useCallback((e) => {
+    const handleDragLeave = (e) => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -196,15 +194,15 @@ const FileManager = memo(
         }
         return newCounter;
       });
-    }, []);
+    };
 
-    const handleDragOver = useCallback((e) => {
+    const handleDragOver = (e) => {
       e.preventDefault();
       e.stopPropagation();
 
       // 设置允许的拖拽效果
       e.dataTransfer.dropEffect = "copy";
-    }, []);
+    };
 
     // 键盘快捷键处理
     useEffect(() => {
@@ -299,28 +297,25 @@ const FileManager = memo(
       });
     }, [addEventListener]);
 
-    const showNotification = useCallback(
-      (
+    const showNotification = (
+      message,
+      severity = "info",
+      duration = 3000,
+      showAction = false,
+      actionCallback = null,
+    ) => {
+      setNotification({
         message,
-        severity = "info",
-        duration = 3000,
-        showAction = false,
-        actionCallback = null,
-      ) => {
-        setNotification({
-          message,
-          severity,
-          duration,
-          showAction,
-          actionCallback,
-        });
+        severity,
+        duration,
+        showAction,
+        actionCallback,
+      });
 
-        if (severity !== "error" && duration > 0) {
-          addTimeout(() => setNotification(null), duration);
-        }
-      },
-      [addTimeout],
-    );
+      if (severity !== "error" && duration > 0) {
+        addTimeout(() => setNotification(null), duration);
+      }
+    };
 
     const {
       transferList,
@@ -923,10 +918,10 @@ const FileManager = memo(
       throttleLoadDirectory("~");
     };
 
-    // 优化的搜索处理函数，使用useCallback清理依赖
-    const handleSearchChange = useCallback((e) => {
+    // 优化的搜索处理函数
+    const handleSearchChange = (e) => {
       setSearchTerm(e.target.value);
-    }, []);
+    };
 
     // 切换搜索框显示
     const toggleSearch = () => {
@@ -937,19 +932,16 @@ const FileManager = memo(
     };
 
     // 多选文件管理函数
-    const isFileSelected = useCallback(
-      (file) => {
-        return selectedFiles.some(
-          (selectedFile) =>
-            selectedFile.name === file.name &&
-            selectedFile.modifyTime === file.modifyTime,
-        );
-      },
-      [selectedFiles],
-    );
+    const isFileSelected = (file) => {
+      return selectedFiles.some(
+        (selectedFile) =>
+          selectedFile.name === file.name &&
+          selectedFile.modifyTime === file.modifyTime,
+      );
+    };
 
     // 清理重复选择项的辅助函数
-    const deduplicateSelectedFiles = useCallback((files) => {
+    const deduplicateSelectedFiles = (files) => {
       const seen = new Set();
       return files.filter((file) => {
         const key = `${file.name}-${file.modifyTime}`;
@@ -960,19 +952,18 @@ const FileManager = memo(
         return true;
       });
       // removed legacy block
-    }, []);
+    };
 
     // 显示用文件列表：过滤 + 排序（增量加载时跳过排序以提升首屏）
-    const displayFiles = useMemo(() => {
-      let processed = files;
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        processed = files.filter(
-          (f) => f.name && f.name.toLowerCase().includes(term),
-        );
-      }
-      if (isChunking) return processed;
-      return [...processed].sort((a, b) => {
+    let displayFiles = files;
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      displayFiles = files.filter(
+        (f) => f.name && f.name.toLowerCase().includes(term),
+      );
+    }
+    if (!isChunking) {
+      displayFiles = [...displayFiles].sort((a, b) => {
         if (sortMode === "time") {
           const aTime = Number.isFinite(a?.mtimeMs)
             ? a.mtimeMs
@@ -988,9 +979,7 @@ const FileManager = memo(
           sensitivity: "base",
         });
       });
-    }, [files, searchTerm, sortMode, isChunking]);
-
-    // 过滤和排序文件列表（根据搜索词） - 优化版本，使用useMemo缓存
+    }
 
     // 搜索过滤
 
@@ -1000,90 +989,80 @@ const FileManager = memo(
 
     // 按名称排序时，目录在前
 
-    const handleFileSelect = useCallback(
-      (file, index, event) => {
-        const isMultiSelect = event.ctrlKey || event.metaKey;
-        const isRangeSelect = event.shiftKey;
+    const handleFileSelect = (file, index, event) => {
+      const isMultiSelect = event.ctrlKey || event.metaKey;
+      const isRangeSelect = event.shiftKey;
 
-        if (isRangeSelect && anchorIndex !== -1) {
-          // Shift范围选择 - 使用排序后的文件列表
-          const start = Math.min(anchorIndex, index);
-          const end = Math.max(anchorIndex, index);
-          const rangeFiles = displayFiles.slice(start, end + 1);
+      if (isRangeSelect && anchorIndex !== -1) {
+        // Shift范围选择 - 使用排序后的文件列表
+        const start = Math.min(anchorIndex, index);
+        const end = Math.max(anchorIndex, index);
+        const rangeFiles = displayFiles.slice(start, end + 1);
 
-          // 直接设置范围内的文件为选中状态（完全替换之前的选择）
-          setSelectedFiles(deduplicateSelectedFiles(rangeFiles));
-          setSelectedFile(file);
-          setLastSelectedIndex(index);
-          // 保持锚点不变，这样连续的Shift选择都从同一个起点开始
-        } else if (isMultiSelect) {
-          // Ctrl多选
-          if (isFileSelected(file)) {
-            // 取消选择 - 从当前选择中移除该文件
-            const newSelectedFiles = selectedFiles.filter(
-              (f) =>
-                !(f.name === file.name && f.modifyTime === file.modifyTime),
+        // 直接设置范围内的文件为选中状态（完全替换之前的选择）
+        setSelectedFiles(deduplicateSelectedFiles(rangeFiles));
+        setSelectedFile(file);
+        setLastSelectedIndex(index);
+        // 保持锚点不变，这样连续的Shift选择都从同一个起点开始
+      } else if (isMultiSelect) {
+        // Ctrl多选
+        if (isFileSelected(file)) {
+          // 取消选择 - 从当前选择中移除该文件
+          const newSelectedFiles = selectedFiles.filter(
+            (f) =>
+              !(f.name === file.name && f.modifyTime === file.modifyTime),
+          );
+          setSelectedFiles(newSelectedFiles);
+
+          // 如果取消选择的是当前的selectedFile，更新selectedFile
+          if (
+            selectedFile &&
+            selectedFile.name === file.name &&
+            selectedFile.modifyTime === file.modifyTime
+          ) {
+            setSelectedFile(
+              newSelectedFiles.length > 0 ? newSelectedFiles[0] : null,
             );
-            setSelectedFiles(newSelectedFiles);
-
-            // 如果取消选择的是当前的selectedFile，更新selectedFile
-            if (
-              selectedFile &&
-              selectedFile.name === file.name &&
-              selectedFile.modifyTime === file.modifyTime
-            ) {
-              setSelectedFile(
-                newSelectedFiles.length > 0 ? newSelectedFiles[0] : null,
-              );
-            }
-          } else {
-            // 添加到选择 - 防止重复添加
-            setSelectedFiles((prev) => {
-              // 检查是否已经在选择列表中
-              const alreadySelected = prev.some(
-                (f) => f.name === file.name && f.modifyTime === file.modifyTime,
-              );
-              // 如果还没选中，则添加到列表
-              return alreadySelected ? prev : [...prev, file];
-            });
-            setSelectedFile(file);
           }
-          setLastSelectedIndex(index);
-          setAnchorIndex(index); // Ctrl点击设置新的锚点
         } else {
-          // 单选 - 清除所有选择，选中当前文件
-          setSelectedFiles([file]);
+          // 添加到选择 - 防止重复添加
+          setSelectedFiles((prev) => {
+            // 检查是否已经在选择列表中
+            const alreadySelected = prev.some(
+              (f) => f.name === file.name && f.modifyTime === file.modifyTime,
+            );
+            // 如果还没选中，则添加到列表
+            return alreadySelected ? prev : [...prev, file];
+          });
           setSelectedFile(file);
-          setLastSelectedIndex(index);
-          setAnchorIndex(index); // 单击设置锚点，为后续的Shift选择做准备
         }
-      },
-      [
-        anchorIndex,
-        displayFiles,
-        isFileSelected,
-        selectedFile,
-        selectedFiles,
-        deduplicateSelectedFiles,
-      ],
-    );
+        setLastSelectedIndex(index);
+        setAnchorIndex(index); // Ctrl点击设置新的锚点
+      } else {
+        // 单选 - 清除所有选择，选中当前文件
+        setSelectedFiles([file]);
+        setSelectedFile(file);
+        setLastSelectedIndex(index);
+        setAnchorIndex(index); // 单击设置锚点，为后续的Shift选择做准备
+      }
+    };
 
     // 获取当前选中的文件列表（用于批量操作）
-    const getSelectedFiles = useCallback(() => {
+    const getSelectedFiles = () => {
       return selectedFiles.length > 0
         ? selectedFiles
         : selectedFile
           ? [selectedFile]
           : [];
-    }, [selectedFiles, selectedFile]);
+    };
 
     // 处理批量操作确认
-    const handleBatchOperationConfirm = useCallback((operation, files) => {
+    const handleBatchOperationConfirm = (operation, files) => {
       const fileCount = files.length;
       const fileList = files.map((f) => f.name).join(", ");
       const message = `确认${operation} ${fileCount} 个文件？\n${fileList}`;
       return window.confirm(message);
-    }, []);
+    };
 
     // 处理右键菜单
     const handleContextMenu = (event, file, index) => {
@@ -1108,29 +1087,22 @@ const FileManager = memo(
     };
 
     // 用户活动后的刷新函数，使用防抖优化
-    const refreshAfterUserActivity = useMemo(
-      () =>
-        debounce(() => {
-          if (currentPath) {
-            silentRefreshCurrentDirectory();
-          }
-        }, USER_ACTIVITY_REFRESH_DELAY),
-      [currentPath, silentRefreshCurrentDirectory],
-    );
+    const refreshAfterUserActivity = debounce(() => {
+      if (currentPath) {
+        silentRefreshCurrentDirectory();
+      }
+    }, USER_ACTIVITY_REFRESH_DELAY);
 
     // 获取选中文件的完整路径
-    const getFullPathForFile = useCallback(
-      (file) => {
-        if (!file) return "";
-        const base = currentPath && currentPath.length > 0 ? currentPath : "/";
-        if (base === "/") return `/${file.name}`;
-        return `${base}/${file.name}`;
-      },
-      [currentPath],
-    );
+    const getFullPathForFile = (file) => {
+      if (!file) return "";
+      const base = currentPath && currentPath.length > 0 ? currentPath : "/";
+      if (base === "/") return `/${file.name}`;
+      return `${base}/${file.name}`;
+    };
 
     // 打开权限对话框
-    const handleOpenPermissions = useCallback(async () => {
+    const handleOpenPermissions = async () => {
       if (!selectedFile) return;
       try {
         const fullPath = getFullPathForFile(selectedFile);
@@ -1175,89 +1147,72 @@ const FileManager = memo(
       }
       setShowPermissionDialog(true);
       handleContextMenuClose();
-    }, [selectedFile, tabId, getFullPathForFile]);
+    };
 
-    const handlePermissionDialogClose = useCallback(() => {
+    const handlePermissionDialogClose = () => {
       setShowPermissionDialog(false);
-    }, []);
+    };
 
     // 保存权限变更
-    const handlePermissionDialogSubmit = useCallback(
-      async (e) => {
-        if (e && e.preventDefault) e.preventDefault();
-        if (!selectedFile) return;
-        const fullPath = getFullPathForFile(selectedFile);
-        const ops = [];
-        try {
-          // 权限变更
-          if (
-            permDialogPermissions &&
-            permDialogPermissions !== permInitial.permissions &&
-            window.terminalAPI?.setFilePermissions
-          ) {
-            ops.push(
-              window.terminalAPI.setFilePermissions(
-                tabId,
-                fullPath,
-                permDialogPermissions,
-              ),
-            );
-          }
-
-          // 所有者/组变更
-          const ownerChanged = permDialogOwner !== permInitial.owner;
-          const groupChanged = permDialogGroup !== permInitial.group;
-          if ((ownerChanged || groupChanged) && window.terminalAPI?.setFileOwnership) {
-            ops.push(
-              window.terminalAPI.setFileOwnership(
-                tabId,
-                fullPath,
-                permDialogOwner || undefined,
-                permDialogGroup || undefined,
-              ),
-            );
-          }
-
-          if (ops.length > 0) {
-            setLoading(true);
-            const results = await Promise.all(ops);
-            const failed = results.find((r) => !r?.success);
-            if (failed) {
-              setError(
-                failed.error || t("fileManager.errors.permissionSetFailed"),
-              );
-            } else {
-              await loadDirectory(currentPath);
-              refreshAfterUserActivity();
-            }
-          }
-        } catch (err) {
-          setError(
-            `${t("fileManager.errors.permissionSetFailed")}: ${
-              err?.message || t("fileManager.errors.unknownError")
-            }`,
+    const handlePermissionDialogSubmit = async (e) => {
+      if (e && e.preventDefault) e.preventDefault();
+      if (!selectedFile) return;
+      const fullPath = getFullPathForFile(selectedFile);
+      const ops = [];
+      try {
+        // 权限变更
+        if (
+          permDialogPermissions &&
+          permDialogPermissions !== permInitial.permissions &&
+          window.terminalAPI?.setFilePermissions
+        ) {
+          ops.push(
+            window.terminalAPI.setFilePermissions(
+              tabId,
+              fullPath,
+              permDialogPermissions,
+            ),
           );
-        } finally {
-          setLoading(false);
-          setShowPermissionDialog(false);
         }
-      },
-      [
-        selectedFile,
-        tabId,
-        getFullPathForFile,
-        permDialogPermissions,
-        permDialogOwner,
-        permDialogGroup,
-        permInitial.permissions,
-        permInitial.owner,
-        permInitial.group,
-        loadDirectory,
-        currentPath,
-        refreshAfterUserActivity,
-        t,
-      ],
-    );
+
+        // 所有者/组变更
+        const ownerChanged = permDialogOwner !== permInitial.owner;
+        const groupChanged = permDialogGroup !== permInitial.group;
+        if ((ownerChanged || groupChanged) && window.terminalAPI?.setFileOwnership) {
+          ops.push(
+            window.terminalAPI.setFileOwnership(
+              tabId,
+              fullPath,
+              permDialogOwner || undefined,
+              permDialogGroup || undefined,
+            ),
+          );
+        }
+
+        if (ops.length > 0) {
+          setLoading(true);
+          const results = await Promise.all(ops);
+          const failed = results.find((r) => !r?.success);
+          if (failed) {
+            setError(
+              failed.error || t("fileManager.errors.permissionSetFailed"),
+            );
+          } else {
+            await loadDirectory(currentPath);
+            refreshAfterUserActivity();
+          }
+        }
+      } catch (err) {
+        setError(
+          `${t("fileManager.errors.permissionSetFailed")}: ${
+            err?.message || t("fileManager.errors.unknownError")
+          }`,
+        );
+      } finally {
+        setLoading(false);
+        setShowPermissionDialog(false);
+      }
+    };
 
     // 处理批量删除
     const handleBatchDelete = async () => {
@@ -2100,13 +2055,13 @@ const FileManager = memo(
       });
     };
 
-    const handleBlankClick = useCallback(() => {
+    const handleBlankClick = () => {
       if (!selectedFile && selectedFiles.length === 0) {
         return;
       }
 
       clearSelection();
-    }, [clearSelection, selectedFile, selectedFiles.length]);
+    };
 
     // 关闭空白区域右键菜单
     const handleBlankContextMenuClose = () => {
@@ -2276,11 +2231,10 @@ const FileManager = memo(
       }
     };
 
-    
+
 
     // 处理拖拽的文件和文件夹
-    const handleDroppedItems = useCallback(
-      async (entries) => {
+    const handleDroppedItems = async (entries) => {
         setTransferCancelled(false);
 
         // 确定目标路径
@@ -2558,29 +2512,9 @@ const FileManager = memo(
             severity: "error",
           });
         }
-      },
-      [
-        currentPath,
-        selectedFile,
-        tabId,
-        t,
-        transferCancelled,
-        addTransferProgress,
-        updateTransferProgress,
-        removeTransferProgress,
-        addTimeout,
-        isUserCancellationError,
-        refreshAfterUserActivity,
-        setNotification,
-        updateCurrentPath,
-        setPathInput,
-        loadDirectory,
-        setError,
-      ],
-    );
+    };
 
-    const handleDrop = useCallback(
-      async (e) => {
+    const handleDrop = async (e) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -2632,9 +2566,7 @@ const FileManager = memo(
 
         // 处理文件和文件夹上传
         await handleDroppedItems(filesAndFolders);
-      },
-      [sshConnection, t, handleDroppedItems, setNotification],
-    );
+    };
 
 
     useEffect(() => {

@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState, useCallback } from "react";
+import React, { memo, useEffect, useState } from "react";
 import { Box, Chip, Tooltip, Typography, useTheme, Fade } from "@mui/material";
 import SignalWifi4BarIcon from "@mui/icons-material/SignalWifi4Bar";
 import SignalWifi3BarIcon from "@mui/icons-material/SignalWifi3Bar";
@@ -27,32 +27,28 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   /**
    * 获取当前应该显示延迟的标签页
    */
-  const getCurrentTabForLatency = useCallback(() => {
+  const getCurrentTabForLatency = () => {
     if (currentTab > 0 && tabs[currentTab] && tabs[currentTab].type === "ssh") {
       return tabs[currentTab];
     }
     return null;
-  }, [currentTab, tabs]);
+  };
 
   /**
    * 处理延迟数据更新
    */
-  const handleLatencyUpdate = useCallback(
-    (event, data) => {
+  const handleLatencyUpdate = (event, data) => {
       const currentTabForLatency = getCurrentTabForLatency();
       if (currentTabForLatency && data.tabId === currentTabForLatency.id) {
         setLatencyData(data);
         setIsVisible(true);
       }
-    },
-    [getCurrentTabForLatency],
-  );
+    };
 
   /**
    * 处理延迟错误
    */
-  const handleLatencyError = useCallback(
-    (event, data) => {
+  const handleLatencyError = (event, data) => {
       const currentTabForLatency = getCurrentTabForLatency();
       if (currentTabForLatency && data.tabId === currentTabForLatency.id) {
         setLatencyData({
@@ -62,28 +58,23 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
         });
         setIsVisible(true);
       }
-    },
-    [getCurrentTabForLatency],
-  );
+    };
 
   /**
    * 处理连接断开
    */
-  const handleLatencyDisconnected = useCallback(
-    (event, data) => {
+  const handleLatencyDisconnected = (event, data) => {
       const currentTabForLatency = getCurrentTabForLatency();
       if (currentTabForLatency && data.tabId === currentTabForLatency.id) {
         setLatencyData(null);
         setIsVisible(false);
       }
-    },
-    [getCurrentTabForLatency],
-  );
+    };
 
   /**
    * 获取延迟信息并更新显示状态
    */
-  const updateLatencyDisplay = useCallback(async () => {
+  const updateLatencyDisplay = async () => {
     const currentTabForLatency = getCurrentTabForLatency();
 
     if (!currentTabForLatency || currentTabForLatency.type !== "ssh") {
@@ -110,13 +101,12 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
       setLatencyData(null);
       setIsVisible(false);
     }
-  }, [getCurrentTabForLatency]);
+  };
 
   /**
    * 根据延迟值获取信号强度图标和颜色
    */
-  const getSignalInfo = useCallback(
-    (latency, status) => {
+  const getSignalInfo = (latency, status) => {
       if (status === "error") {
         return {
           icon: ErrorIcon,
@@ -171,14 +161,12 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
           level: "bad",
         };
       }
-    },
-    [theme, t],
-  );
+    };
 
   // 监听标签页变化，更新延迟显示
   useEffect(() => {
     updateLatencyDisplay();
-  }, [updateLatencyDisplay]);
+  }, [currentTab, tabs]);
 
   // 监听IPC事件
   useEffect(() => {
@@ -196,7 +184,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
       removeLatencyErrorListener?.();
       removeLatencyDisconnectedListener?.();
     };
-  }, [handleLatencyUpdate, handleLatencyError, handleLatencyDisconnected]);
+  }, []);
 
   // 如果不显示延迟信息，返回null
   if (!isVisible || !latencyData) {

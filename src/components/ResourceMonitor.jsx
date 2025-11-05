@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, useRef } from "react";
+import React, { useState, useEffect, memo, useRef } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
@@ -138,7 +138,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   };
 
   // 获取系统信息
-  const fetchSystemInfo = useCallback(async () => {
+  const fetchSystemInfo = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -157,9 +157,9 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
     } finally {
       setLoading(false);
     }
-  }, [currentTabId]);
+  };
 
-  const fetchProcessList = useCallback(async () => {
+  const fetchProcessList = async () => {
     try {
       setProcessError(null);
       if (window.terminalAPI && window.terminalAPI.getProcessList) {
@@ -176,7 +176,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
     } catch (err) {
       setProcessError(err.message || "获取进程列表时发生错误");
     }
-  }, [currentTabId]);
+  };
 
   // 使用自动清理Hook
   const { addInterval } = useAutoCleanup();
@@ -193,13 +193,13 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
         fetchProcessList();
       }, 5000); // 统一5秒刷新
     }
-  }, [open, currentTabId, fetchSystemInfo, fetchProcessList, addInterval]);
+  }, [open, currentTabId, addInterval]);
 
   // 手动刷新
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = () => {
     fetchSystemInfo();
     fetchProcessList();
-  }, [fetchSystemInfo, fetchProcessList]);
+  };
 
   return (
     <Paper

@@ -1,7 +1,5 @@
 import React, {
   memo,
-  useMemo,
-  useCallback,
   useRef,
   useState,
   useEffect,
@@ -59,7 +57,7 @@ const FileItem = memo(({ index, style, data }) => {
   // 注意：不再在此处提前返回，以保持 hooks 调用顺序一致
 
   // 检查文件是否被选中 - 优先使用传入的isFileSelected函数
-  const isCurrentFileSelected = useMemo(() => {
+  const isCurrentFileSelected = (() => {
     if (!file) return false;
     if (isFileSelected) {
       return isFileSelected(file);
@@ -75,78 +73,62 @@ const FileItem = memo(({ index, style, data }) => {
       selectedFile.name === file.name &&
       selectedFile.modifyTime === file.modifyTime
     );
-  }, [file, isFileSelected, selectedFiles, selectedFile]);
+  })();
 
-  // 使用useMemo缓存文件的格式化信息，避免每次渲染都计算
-  const fileInfo = useMemo(
-    () => ({
-      formattedDate: file?.modifyTime
-        ? formatDate(new Date(file.modifyTime))
-        : "",
-      formattedSize:
-        file?.size && !file?.isDirectory ? formatFileSize(file.size) : "",
-      isSelected: isCurrentFileSelected,
-    }),
-    [file?.modifyTime, file?.size, file?.isDirectory, isCurrentFileSelected],
-  );
+  // 缓存文件的格式化信息，避免每次渲染都计算
+  const fileInfo = {
+    formattedDate: file?.modifyTime
+      ? formatDate(new Date(file.modifyTime))
+      : "",
+    formattedSize:
+      file?.size && !file?.isDirectory ? formatFileSize(file.size) : "",
+    isSelected: isCurrentFileSelected,
+  };
 
-  const handleFileActivate = useCallback(() => {
+  const handleFileActivate = () => {
     if (!file) return;
     onFileActivate(file);
-  }, [file, onFileActivate]);
+  };
 
-  const handleContextMenu = useCallback(
-    (e) => {
-      if (!file) return;
-      onContextMenu(e, file, index);
-    },
-    [file, onContextMenu, index],
-  );
+  const handleContextMenu = (e) => {
+    if (!file) return;
+    onContextMenu(e, file, index);
+  };
 
-  const handleFileClick = useCallback(
-    (e) => {
-      if (!file) return;
-      if (onFileSelect) {
-        onFileSelect(file, index, e);
-      }
-    },
-    [file, index, onFileSelect],
-  );
+  const handleFileClick = (e) => {
+    if (!file) return;
+    if (onFileSelect) {
+      onFileSelect(file, index, e);
+    }
+  };
 
-  // 缓存的二级文本内容，避免每次渲染都重新组合
-  const secondaryText = useMemo(() => {
+  // 二级文本内容，避免每次渲染都重新组合
+  const secondaryText = (() => {
     const parts = [];
     if (fileInfo.formattedDate) parts.push(fileInfo.formattedDate);
     if (fileInfo.formattedSize) parts.push(fileInfo.formattedSize);
     return parts.join(" • ");
-  }, [fileInfo.formattedDate, fileInfo.formattedSize]);
+  })();
 
-  // 缓存按钮样式对象
-  const buttonSx = useMemo(
-    () => ({
-      minHeight: 36,
-      maxHeight: 36,
-      px: 2,
-      py: 0, // 移除垂直内边距以节省空间
-      height: "100%", // Fill row height to avoid selection overlap
+  // 按钮样式对象
+  const buttonSx = {
+    minHeight: 36,
+    maxHeight: 36,
+    px: 2,
+    py: 0, // 移除垂直内边距以节省空间
+    height: "100%", // Fill row height to avoid selection overlap
+    backgroundColor: fileInfo.isSelected
+      ? theme.palette.action.selected
+      : "transparent",
+    "&:hover": {
       backgroundColor: fileInfo.isSelected
         ? theme.palette.action.selected
-        : "transparent",
-      "&:hover": {
-        backgroundColor: fileInfo.isSelected
-          ? theme.palette.action.selected
-          : theme.palette.action.hover,
-      },
-      // 确保选中状态的边界清晰
-      borderRadius: 1, // 添加轻微圆角
-      transition: "all 0.1s ease-in-out", // 平滑过渡效果
-    }),
-    [
-      fileInfo.isSelected,
-      theme.palette.action.selected,
-      theme.palette.action.hover,
-    ],
-  );
+        : theme.palette.action.hover,
+    },
+    // 确保选中状态的边界清晰
+    borderRadius: 1, // 添加轻微圆角
+    transition: "all 0.1s ease-in-out", // 平滑过渡效果
+  };
 
   // 直接始终渲染完整内容（含时间戳）
   return (
@@ -294,7 +276,7 @@ const VirtualizedFileList = ({
   }, [addResizeObserver]);
 
   // 过滤文件（如果还有额外的搜索过滤需求）
-  const processedFiles = useMemo(() => {
+  const processedFiles = (() => {
     // 如果有searchTerm，进行额外过滤（虽然通常在父组件已经处理）
     if (searchTerm) {
       return files.filter((file) =>
@@ -303,7 +285,7 @@ const VirtualizedFileList = ({
     }
     // 直接返回已经排序和过滤的文件列表
     return files;
-  }, [files, searchTerm]);
+  })();
 
   // 恢复滚动位置 - 现在processedFiles已定义
   useEffect(() => {
@@ -318,81 +300,60 @@ const VirtualizedFileList = ({
   }, [currentPath, processedFiles]);
 
   // 保存滚动位置的函数
-  const handleScroll = useCallback(
-    ({ scrollOffset, scrollDirection, scrollUpdateWasRequested }) => {
-      if (!scrollUpdateWasRequested && currentPath) {
-        scrollPositionCache.set(currentPath, scrollOffset);
-      }
+  const handleScroll = ({ scrollOffset, scrollDirection, scrollUpdateWasRequested }) => {
+    if (!scrollUpdateWasRequested && currentPath) {
+      scrollPositionCache.set(currentPath, scrollOffset);
+    }
 
-      // 更新滚动状态以优化渲染
-      setIsScrolling(true);
+    // 更新滚动状态以优化渲染
+    setIsScrolling(true);
 
-      // 使用防抖清除滚动状态
-      if (window.scrollingTimeout) {
-        clearTimeout(window.scrollingTimeout);
-      }
+    // 使用防抖清除滚动状态
+    if (window.scrollingTimeout) {
+      clearTimeout(window.scrollingTimeout);
+    }
 
-      window.scrollingTimeout = addTimeout(() => {
-        setIsScrolling(false);
-      }, 150);
-    },
-    [currentPath],
-  );
+    window.scrollingTimeout = addTimeout(() => {
+      setIsScrolling(false);
+    }, 150);
+  };
 
-  const handleContainerClick = useCallback(
-    (event) => {
-      if (!onBlankClick) {
-        return;
-      }
+  const handleContainerClick = (event) => {
+    if (!onBlankClick) {
+      return;
+    }
 
-      const element = event?.target;
-      if (
-        element &&
-        typeof element.closest === "function" &&
-        element.closest('[data-file-item="true"]')
-      ) {
-        return;
-      }
+    const element = event?.target;
+    if (
+      element &&
+      typeof element.closest === "function" &&
+      element.closest('[data-file-item="true"]')
+    ) {
+      return;
+    }
 
-      onBlankClick(event);
-    },
-    [onBlankClick],
-  );
+    onBlankClick(event);
+  };
 
-  // itemData useMemo移除isScrolling
-  const itemData = useMemo(
-    () => ({
-      files: processedFiles,
-      onFileActivate,
-      onContextMenu,
-      onFileSelect,
-      selectedFile,
-      selectedFiles,
-      isFileSelected,
-    }),
-    [
-      processedFiles,
-      onFileActivate,
-      onContextMenu,
-      onFileSelect,
-      selectedFile,
-      selectedFiles,
-      isFileSelected,
-    ],
-  );
+  // itemData 对象
+  const itemData = {
+    files: processedFiles,
+    onFileActivate,
+    onContextMenu,
+    onFileSelect,
+    selectedFile,
+    selectedFiles,
+    isFileSelected,
+  };
 
   // 计算实际使用的高度
   const actualHeight = height === "100%" ? containerHeight : height;
 
   // 计算动态的overscan值
-  const dynamicOverscan = useMemo(
-    () => calculateOverscan(processedFiles.length, devicePerformance),
-    [processedFiles.length, devicePerformance],
-  );
+  const dynamicOverscan = calculateOverscan(processedFiles.length, devicePerformance);
 
-  // 优化的空状态组件 - 缓存以避免不必要的重新渲染
-  const EmptyStateComponent = useMemo(
-    () => (
+  // 优化的空状态组件
+  const EmptyStateComponent = (
       <Box
         ref={containerRef}
         sx={{
@@ -410,19 +371,10 @@ const VirtualizedFileList = ({
           {searchTerm ? "没有找到匹配的文件" : "此目录为空"}
         </Typography>
       </Box>
-    ),
-    [
-      height,
-      searchTerm,
-      onBlankContextMenu,
-      handleContainerClick,
-      containerRef,
-    ],
-  );
+    );
 
-  // 降级到传统列表渲染 - 优化版本，使用useMemo缓存
-  const FallbackListComponent = useMemo(
-    () => (
+  // 降级到传统列表渲染
+  const FallbackListComponent = (
       <Box
         ref={containerRef}
         sx={{
@@ -464,31 +416,7 @@ const VirtualizedFileList = ({
           />
         ))}
       </Box>
-    ),
-    [
-      containerRef,
-      height,
-      theme.palette.action.hover,
-      theme.palette.action.disabled,
-      theme.palette.action.focus,
-      onBlankContextMenu,
-      processedFiles,
-      itemHeight,
-      onFileActivate,
-      onContextMenu,
-      onFileSelect,
-      selectedFile,
-      selectedFiles,
-      isFileSelected,
-      handleContainerClick,
-    ],
-  );
-
-  // 降级到传统列表渲染的函数
-  const renderFallbackList = useCallback(
-    () => FallbackListComponent,
-    [FallbackListComponent],
-  );
+    );
 
   // 如果没有文件，显示空状态（将返回位置移动到所有 hooks 之后，避免改变 hooks 调用数量）
   if (processedFiles.length === 0) {

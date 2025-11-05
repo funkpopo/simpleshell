@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, useRef } from "react";
+import React, { useState, useEffect, memo, useRef } from "react";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
@@ -126,7 +126,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   };
 
   // 处理查询按钮点击
-  const handleQuery = useCallback(() => {
+  const handleQuery = () => {
     const ip = ipAddress.trim();
     if (!ip) {
       setError(t("ipAddressQuery.invalidIp"));
@@ -142,13 +142,13 @@ const IPAddressQuery = memo(({ open, onClose }) => {
       return;
     }
     fetchIPInfo(ip);
-  }, [ipAddress, t]);
+  };
 
   // 查询本机IP
-  const handleQueryMyIP = useCallback(() => {
+  const handleQueryMyIP = () => {
     setIpAddress("");
     fetchIPInfo();
-  }, []);
+  };
 
   // 当侧边栏打开时自动查询本机IP
   useEffect(() => {
@@ -169,7 +169,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
 
       handleQueryMyIP();
     }
-  }, [open, ipInfo, loading, error, handleQueryMyIP]);
+  }, [open, ipInfo, loading, error]);
 
   // 处理回车键按下事件
   const handleKeyDown = (e) => {

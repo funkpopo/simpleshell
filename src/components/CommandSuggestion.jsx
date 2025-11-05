@@ -1,9 +1,7 @@
 import React, {
   useState,
   useEffect,
-  useCallback,
   useRef,
-  useMemo,
 } from "react";
 import { Paper, List, ListItem, ListItemText, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -80,8 +78,8 @@ const CommandSuggestion = ({
     selectedIndexRef.current = selectedIndex;
   }, [selectedIndex]);
 
-  // 使用 useMemo 缓存窗口尺寸计算 - 必须在条件渲染之前调用
-  const windowDimensions = useMemo(() => {
+  // 计算窗口尺寸
+  const windowDimensions = (() => {
     if (!visible || suggestions.length === 0) {
       return { width: 200, height: 100 }; // 返回默认值
     }
@@ -145,7 +143,7 @@ const CommandSuggestion = ({
       contentHeight: actualContentHeight, // 调整后的内容高度
       needsScrollbar: totalHeight > maxAllowedHeight,
     };
-  }, [suggestions, visible]); // 依赖项包括visible
+  })();
 
   // 监听建议变化以重新计算窗口尺寸
   useEffect(() => {
@@ -179,42 +177,36 @@ const CommandSuggestion = ({
   }, [visible, suggestions]);
 
   // 处理建议选择
-  const handleSuggestionSelect = useCallback(
-    (suggestion) => {
-      onSelectSuggestion?.(suggestion);
-    },
-    [onSelectSuggestion],
-  );
+  const handleSuggestionSelect = (suggestion) => {
+    onSelectSuggestion?.(suggestion);
+  };
 
   // 处理删除建议
-  const handleDeleteSuggestion = useCallback(
-    async (suggestion, index) => {
-      try {
-        // 调用删除API
-        if (window.terminalAPI && window.terminalAPI.deleteCommandHistory) {
-          await window.terminalAPI.deleteCommandHistory(suggestion.command);
+  const handleDeleteSuggestion = async (suggestion, index) => {
+    try {
+      // 调用删除API
+      if (window.terminalAPI && window.terminalAPI.deleteCommandHistory) {
+        await window.terminalAPI.deleteCommandHistory(suggestion.command);
 
-          // 触发重新获取建议以更新列表
-          if (currentInput && currentInput.trim()) {
-            // 延迟一点让删除操作完成
-            setTimeout(() => {
-              // 发送自定义事件通知WebTerminal重新获取建议
-              window.dispatchEvent(
-                new CustomEvent("refreshCommandSuggestions", {
-                  detail: { input: currentInput },
-                }),
-              );
-            }, 100);
-          }
-        } else {
-          // deleteCommandHistory API not available
+        // 触发重新获取建议以更新列表
+        if (currentInput && currentInput.trim()) {
+          // 延迟一点让删除操作完成
+          setTimeout(() => {
+            // 发送自定义事件通知WebTerminal重新获取建议
+            window.dispatchEvent(
+              new CustomEvent("refreshCommandSuggestions", {
+                detail: { input: currentInput },
+              }),
+            );
+          }, 100);
         }
-      } catch (error) {
-        // Error deleting command from history
+      } else {
+        // deleteCommandHistory API not available
       }
-    },
-    [currentInput],
-  );
+    } catch (error) {
+      // Error deleting command from history
+    }
+  };
 
   // 添加全局键盘事件监听，限制方向键只在建议窗口中工作
   useEffect(() => {

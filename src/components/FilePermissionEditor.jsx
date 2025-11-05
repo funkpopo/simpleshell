@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, memo } from "react";
+import React, { useState, useEffect, memo } from "react";
 import {
   Box,
   Typography,
@@ -26,7 +26,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
   });
 
   // 将八进制权限转换为权限位
-  const octalToPermissionBits = useCallback((octal) => {
+  const octalToPermissionBits = (octal) => {
     const octalStr = String(octal).padStart(3, "0");
     const owner = parseInt(octalStr[0] || "0", 10);
     const group = parseInt(octalStr[1] || "0", 10);
@@ -43,10 +43,10 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
       otherWrite: (other & 2) !== 0,
       otherExecute: (other & 1) !== 0,
     };
-  }, []);
+  };
 
   // 将权限位转换为八进制权限
-  const permissionBitsToOctal = useCallback((bits) => {
+  const permissionBitsToOctal = (bits) => {
     const owner =
       (bits.ownerRead ? 4 : 0) +
       (bits.ownerWrite ? 2 : 0) +
@@ -61,7 +61,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
       (bits.otherExecute ? 1 : 0);
 
     return `${owner}${group}${other}`;
-  }, []);
+  };
 
   // 当外部权限值改变时更新内部状态
   useEffect(() => {
@@ -107,8 +107,8 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
     onChange && onChange(newOctal);
   };
 
-  // 获取权限说明 - 使用useMemo优化性能
-  const description = useMemo(() => {
+  // 获取权限说明
+  const description = (() => {
     const descriptions = {
       0: "无权限",
       1: "执行",
@@ -126,7 +126,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
       group: descriptions[octalStr[1]] || "无效",
       other: descriptions[octalStr[2]] || "无效",
     };
-  }, [octalValue]);
+  })();
 
   return (
     <Box sx={{ width: "100%" }}>
