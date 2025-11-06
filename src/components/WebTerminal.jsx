@@ -686,6 +686,18 @@ const WebTerminal = ({
   const pendingWriteHandleRef = useRef(null);
   const pendingWriteUsingRafRef = useRef(false);
 
+  // 性能监控相关
+  const performanceMetricsRef = useRef({
+    writeCount: 0,
+    lastResetTime: Date.now(),
+    totalBytesWritten: 0,
+    isHighLoad: false
+  });
+
+  // 虚拟滚动缓冲区 - 在高负载时暂存数据
+  const virtualScrollBufferRef = useRef([]);
+  const isVirtualScrollActiveRef = useRef(false);
+
   useEffect(() => {
     let isActive = true;
 
@@ -876,10 +888,55 @@ const WebTerminal = ({
       if (!dataToWrite) {
         return;
       }
+
+      // 更新性能指标
+      const metrics = performanceMetricsRef.current;
+      metrics.writeCount++;
+      metrics.totalBytesWritten += dataToWrite.length;
+
+      // 检测是否进入高负载状态（每秒超过50次写入或每秒超过1MB数据）
+      const now = Date.now();
+      const timeSinceReset = now - metrics.lastResetTime;
+      if (timeSinceReset > 1000) {
+        const writesPerSecond = metrics.writeCount / (timeSinceReset / 1000);
+        const bytesPerSecond = metrics.totalBytesWritten / (timeSinceReset / 1000);
+
+        // 进入高负载模式：每秒>30次写入 或 每秒>500KB数据
+        const wasHighLoad = metrics.isHighLoad;
+        metrics.isHighLoad = writesPerSecond > 30 || bytesPerSecond > 512000;
+
+        // 如果从正常切换到高负载，启用虚拟滚动
+        if (!wasHighLoad && metrics.isHighLoad) {
+          isVirtualScrollActiveRef.current = true;
+        }
+        // 如果从高负载恢复到正常，禁用虚拟滚动
+        else if (wasHighLoad && !metrics.isHighLoad) {
+          isVirtualScrollActiveRef.current = false;
+          // 刷新虚拟缓冲区
+          if (virtualScrollBufferRef.current.length > 0) {
+            virtualScrollBufferRef.current = [];
+          }
+        }
+
+        // 重置计数器
+        metrics.writeCount = 0;
+        metrics.totalBytesWritten = 0;
+        metrics.lastResetTime = now;
+      }
+
       try {
-        termInstance.write(dataToWrite, () =>
-          scheduleHighlightRefresh(termInstance),
-        );
+        // 在高负载模式下，减少刷新频率
+        if (metrics.isHighLoad) {
+          termInstance.write(dataToWrite);
+          // 高负载时减少refresh调用频率
+          if (metrics.writeCount % 3 === 0) {
+            scheduleHighlightRefresh(termInstance);
+          }
+        } else {
+          termInstance.write(dataToWrite, () =>
+            scheduleHighlightRefresh(termInstance),
+          );
+        }
       } catch (_error) {
         termInstance.write(dataToWrite);
         scheduleHighlightRefresh(termInstance);
@@ -898,9 +955,13 @@ const WebTerminal = ({
       pendingWriteBufferRef.current.push(chunkStr);
       pendingWriteLengthRef.current += chunkStr.length;
 
-      // 优化批处理阈值：降低到32KB，提高响应性
-      const batchThreshold = 32768;
-      
+      const metrics = performanceMetricsRef.current;
+
+      // 自适应批处理阈值：根据负载动态调整
+      // 高负载：256KB（提高批处理，减少刷新次数）
+      // 正常负载：32KB（保持响应性）
+      const batchThreshold = metrics.isHighLoad ? 262144 : 32768;
+
       if (
         pendingWriteLengthRef.current > batchThreshold &&
         pendingWriteHandleRef.current !== null
@@ -931,8 +992,13 @@ const WebTerminal = ({
         flushPendingWrites(termInstance);
       };
 
-      // 优化调度策略：小数据量使用 RAF，大数据量立即处理
-      if (pendingWriteLengthRef.current < 4096) {
+      // 自适应调度策略：根据负载和数据量智能调度
+      if (metrics.isHighLoad) {
+        // 高负载模式：使用更长的延迟来批量处理更多数据
+        pendingWriteUsingRafRef.current = false;
+        // 使用32ms延迟（约30fps）来减少刷新频率
+        pendingWriteHandleRef.current = setTimeout(flush, 32);
+      } else if (pendingWriteLengthRef.current < 4096) {
         // 小数据量：使用 RAF 批处理
         if (typeof requestAnimationFrame === "function") {
           pendingWriteUsingRafRef.current = true;
@@ -1094,6 +1160,12 @@ const WebTerminal = ({
       const terminalElement = termRef.current.element;
       if (!terminalElement) return;
 
+      // 在高负载模式下跳过选择调整，提升性能
+      const metrics = performanceMetricsRef.current;
+      if (metrics.isHighLoad) {
+        return;
+      }
+
       // 获取所有选择相关元素
       const selectionElements = terminalElement.querySelectorAll(
         ".xterm-selection div",
@@ -1142,21 +1214,20 @@ const WebTerminal = ({
       if (!primaryElement) return;
 
       // 获取字符度量信息
-      const metrics = getCharacterMetricsCss(termRef.current);
-      if (!metrics) return;
+      const metricsData = getCharacterMetricsCss(termRef.current);
+      if (!metricsData) return;
 
-      // 获取选择元素的当前位置
-      const computedStyle = window.getComputedStyle(primaryElement);
-      const currentLeft = parseFloat(computedStyle.left) || 0;
-      const currentTop = parseFloat(computedStyle.top) || 0;
-      const currentWidth = parseFloat(computedStyle.width) || 0;
-      const currentHeight = parseFloat(computedStyle.height) || 0;
+      // 使用 getBoundingClientRect 替代 getComputedStyle，性能更好
+      const rect = primaryElement.getBoundingClientRect();
+      const currentLeft = rect.left;
+      const currentTop = rect.top;
+      const currentWidth = rect.width;
 
       // 计算需要的偏移量
       const leftOffset =
-        (currentLeft - metrics.screenOffset.x) % metrics.charWidth;
+        (currentLeft - metricsData.screenOffset.x) % metricsData.charWidth;
       const topOffset =
-        (currentTop - metrics.screenOffset.y) % metrics.charHeight;
+        (currentTop - metricsData.screenOffset.y) % metricsData.charHeight;
 
       // 计算更精确的调整值
       let adjustX = 0;
@@ -1165,8 +1236,8 @@ const WebTerminal = ({
       // 判断是否需要调整X轴
       if (Math.abs(leftOffset) > 0.5) {
         // 如果偏移接近字符宽度，则对齐到下一个字符位置
-        if (Math.abs(metrics.charWidth - leftOffset) < 1.5) {
-          adjustX = metrics.charWidth - leftOffset;
+        if (Math.abs(metricsData.charWidth - leftOffset) < 1.5) {
+          adjustX = metricsData.charWidth - leftOffset;
         } else {
           // 否则对齐到当前字符位置
           adjustX = -leftOffset;
@@ -1176,18 +1247,17 @@ const WebTerminal = ({
       // 判断是否需要调整Y轴
       if (Math.abs(topOffset) > 0.5) {
         // 如果偏移接近字符高度，则对齐到下一行
-        if (Math.abs(metrics.charHeight - topOffset) < 1.5) {
-          adjustY = metrics.charHeight - topOffset;
+        if (Math.abs(metricsData.charHeight - topOffset) < 1.5) {
+          adjustY = metricsData.charHeight - topOffset;
         } else {
           // 否则对齐到当前行
           adjustY = -topOffset;
         }
       }
 
-      // 仅在需要调整时应用变换
+      // 批量更新样式，减少重排
       if (Math.abs(adjustX) > 0.5 || Math.abs(adjustY) > 0.5) {
-        primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
-        primaryElement.style.willChange = "transform";
+        primaryElement.style.cssText += `transform: translate(${adjustX}px, ${adjustY}px); will-change: transform;`;
       } else {
         // 如果不需要调整，清除变换
         primaryElement.style.transform = "";
@@ -1196,8 +1266,8 @@ const WebTerminal = ({
 
       // 确保选择元素的宽度是字符宽度的整数倍
       if (currentWidth > 0) {
-        const widthInChars = Math.round(currentWidth / metrics.charWidth);
-        const idealWidth = widthInChars * metrics.charWidth;
+        const widthInChars = Math.round(currentWidth / metricsData.charWidth);
+        const idealWidth = widthInChars * metricsData.charWidth;
         const widthDifference = idealWidth - currentWidth;
 
         // 如果宽度差异较大，应用宽度调整
@@ -3603,11 +3673,12 @@ const WebTerminal = ({
 
     // 使用EventManager管理定期检查终端可见性的定时器
     eventManager.setInterval(() => {
-      // 只有当内容有更新时才检查并调整大小
-      if (contentUpdated) {
+      // 只有当内容有更新且不在高负载模式时才检查并调整大小
+      const metrics = performanceMetricsRef.current;
+      if (contentUpdated && !metrics.isHighLoad) {
         ensureTerminalSizeOnVisibilityChange();
       }
-    }, 200); // 从100ms改为200ms，减轻性能负担
+    }, 1000); // 优化检查间隔到1000ms（从200ms），大幅降低CPU占用
 
     // EventManager会自动清理定时器，无需返回清理函数
     return () => {
@@ -3668,7 +3739,7 @@ const WebTerminal = ({
         // 标签激活时设置内容已更新，确保调整生效
         setContentUpdated(true);
 
-        // 如果是强制刷新（如拆分后），立即触发多次resize
+        // 如果是强制刷新（如拆分后），立即触发resize
         if (event.detail.forceRefresh) {
           const executeResize = () => {
             if (terminalRef.current && fitAddonRef.current && termRef.current) {
@@ -3685,146 +3756,50 @@ const WebTerminal = ({
           // 立即执行一次
           executeResize();
 
-          // 针对拆分操作的特殊处理
-          if (event.detail.splitOperation) {
-            // 拆分操作需要更积极的刷新策略
-            const delayTimes = event.detail.finalRefresh
-              ? [100, 250, 500] // 最终刷新使用更长的间隔
-              : event.detail.retryAttempt
-                ? [100, 200, 400] // 重试时使用渐进式延迟
-                : [25, 75, 150, 300, 500, 750]; // 初始拆分使用密集刷新
+          // 优化的延迟策略：减少调用次数，从6次降到3次
+          const delayTimes = event.detail.splitOperation
+            ? [150, 400, 800]  // 拆分操作：3次渐进式调用
+            : [200, 600];      // 常规刷新：2次调用
 
-            delayTimes.forEach((delay) => {
-              eventManager.setTimeout(() => {
-                // 在每次重试前检查终端状态
-                if (
-                  terminalRef.current &&
-                  fitAddonRef.current &&
-                  termRef.current
-                ) {
-                  const container = terminalRef.current;
-                  const termElement = termRef.current.element;
-
-                  // 检查容器是否可见且有正确的尺寸
-                  if (
-                    container &&
-                    container.offsetWidth > 0 &&
-                    container.offsetHeight > 0
-                  ) {
-                    executeResize();
-
-                    // 特殊处理：强制刷新终端内容显示
-                    if (termRef.current.refresh) {
-                      setTimeout(() => {
-                        if (termRef.current && termRef.current.refresh) {
-                          termRef.current.refresh(0, termRef.current.rows - 1);
-
-                          // 强制触发重绘
-                          if (termRef.current.focus) {
-                            termRef.current.focus();
-                            setTimeout(() => termRef.current.blur(), 10);
-                          }
-                        }
-                      }, 25);
-                    }
-
-                    // 额外的DOM刷新
-                    if (termElement) {
-                      termElement.style.opacity = "0.99";
-                      setTimeout(() => {
-                        if (termElement) termElement.style.opacity = "1";
-                      }, 10);
-                    }
-                  } else {
-                    // 如果容器不可见，尝试重新显示
-                    if (container) {
-                      container.style.display = "block";
-                      container.style.visibility = "visible";
-                      container.style.opacity = "1";
-                    }
-                  }
-                }
-              }, delay);
-            });
-          } else {
-            // 常规强制刷新的重试机制
-            const delayTimes = event.detail.retryAttempt
-              ? [100, 200, 400]
-              : [50, 150, 300, 500, 800];
-            delayTimes.forEach((delay) => {
-              eventManager.setTimeout(() => {
-                // 在每次重试前检查终端状态
-                if (
-                  terminalRef.current &&
-                  fitAddonRef.current &&
-                  termRef.current
-                ) {
-                  const container = terminalRef.current;
-                  const termElement = termRef.current.element;
-
-                  // 检查容器是否可见且有正确的尺寸
-                  if (
-                    container &&
-                    container.offsetWidth > 0 &&
-                    container.offsetHeight > 0
-                  ) {
-                    executeResize();
-
-                    // 额外的终端内容刷新
-                    if (termRef.current.refresh) {
-                      setTimeout(() => {
-                        if (termRef.current && termRef.current.refresh) {
-                          termRef.current.refresh(0, termRef.current.rows - 1);
-                        }
-                      }, 50);
-                    }
-                  }
-                }
-              }, delay);
-            });
-          }
-
-          // 最后一次验证和修复
-          setTimeout(
-            () => {
+          delayTimes.forEach((delay, index) => {
+            eventManager.setTimeout(() => {
+              // 在每次重试前检查终端状态
               if (
                 terminalRef.current &&
                 fitAddonRef.current &&
                 termRef.current
               ) {
                 const container = terminalRef.current;
-                const termElement = termRef.current.element;
 
-                // 如果终端仍然没有正确显示，进行最后的修复尝试
+                // 检查容器是否可见且有正确的尺寸
                 if (
                   container &&
-                  (!termElement || termElement.offsetWidth === 0)
+                  container.offsetWidth > 0 &&
+                  container.offsetHeight > 0
                 ) {
-                  // 强制重新适配
-                  fitAddonRef.current.fit();
+                  executeResize();
 
-                  // 触发内容刷新
-                  if (termRef.current.refresh) {
-                    termRef.current.refresh(0, termRef.current.rows - 1);
+                  // 只在最后一次调用时刷新终端内容显示
+                  if (index === delayTimes.length - 1 && termRef.current.refresh) {
+                    requestAnimationFrame(() => {
+                      if (termRef.current && termRef.current.refresh) {
+                        termRef.current.refresh(0, termRef.current.rows - 1);
+                      }
+                    });
                   }
-
-                  // 同步到后端
-                  const processId = processCache[tabId];
-                  if (processId) {
-                    sendResizeIfNeeded(
-                      processId,
-                      tabId,
-                      termRef.current.cols,
-                      termRef.current.rows,
-                    );
+                } else {
+                  // 如果容器不可见，尝试重新显示
+                  if (container) {
+                    container.style.display = "block";
+                    container.style.visibility = "visible";
+                    container.style.opacity = "1";
                   }
                 }
               }
-            },
-            event.detail.splitOperation ? 1200 : 1000,
-          );
+            }, delay);
+          });
         } else {
-          // 正常的标签切换处理
+          // 正常的标签切换处理 - 简化版
           eventManager.setTimeout(() => {
             if (terminalRef.current && fitAddonRef.current && termRef.current) {
               forceResizeTerminal(
@@ -3835,27 +3810,7 @@ const WebTerminal = ({
                 fitAddonRef.current,
               );
             }
-          }, 10);
-
-          // 使用EventManager管理多次尝试调整，以处理某些特殊情况
-          const delayTimes = [50, 150, 300];
-          delayTimes.forEach((delay) => {
-            eventManager.setTimeout(() => {
-              if (
-                terminalRef.current &&
-                fitAddonRef.current &&
-                termRef.current
-              ) {
-                forceResizeTerminal(
-                  termRef.current,
-                  terminalRef.current,
-                  processCache[tabId],
-                  tabId,
-                  fitAddonRef.current,
-                );
-              }
-            }, delay);
-          });
+          }, 100);
         }
       }
     };

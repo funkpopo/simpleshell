@@ -914,7 +914,7 @@ const ConnectionManager = memo(
         protocol: "ssh", // 默认为SSH
       });
       setDialogOpen(true);
-    }, []);
+    };
 
     // 打开添加组对话框
     const handleAddGroup = () => {
@@ -924,7 +924,7 @@ const ConnectionManager = memo(
         name: "",
       });
       setDialogOpen(true);
-    }, []);
+    };
 
     // 打开编辑对话框
     const handleEdit = (item, parentGroup = null) => {
@@ -969,7 +969,7 @@ const ConnectionManager = memo(
       }
 
       setDialogOpen(true);
-    }, []);
+    };
 
     // 删除项目 - 显示确认对话框
     const handleDelete = (itemId, parentGroup = null) => {
