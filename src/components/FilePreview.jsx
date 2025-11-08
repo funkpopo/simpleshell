@@ -46,15 +46,43 @@ import { yaml } from "@codemirror/lang-yaml";
 import { markdown } from "@codemirror/lang-markdown";
 import { sql } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { Document, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
+// 延迟导入 react-pdf 以避免 webpack 模块初始化问题
+let Document, Page, pdfjs;
+let reactPdfLoaded = false;
 
-// 配置PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
+// 动态加载 react-pdf
+const loadReactPdf = async () => {
+  if (reactPdfLoaded) return;
+  
+  try {
+    const reactPdfModule = await import("react-pdf");
+    Document = reactPdfModule.Document;
+    Page = reactPdfModule.Page;
+    pdfjs = reactPdfModule.pdfjs;
+    
+    // 配置PDF.js worker - 使用本地文件
+    if (typeof window !== "undefined" && pdfjs) {
+      try {
+        // 使用 webpack 的 require 来导入 worker 文件
+        const workerPath = require("pdfjs-dist/build/pdf.worker.min.mjs");
+        pdfjs.GlobalWorkerOptions.workerSrc = workerPath;
+      } catch (e) {
+        // 如果 require 失败，使用相对路径
+        pdfjs.GlobalWorkerOptions.workerSrc = "./pdf.worker.min.mjs";
+        console.warn("使用备用路径加载 PDF worker:", e);
+      }
+    }
+    
+    // 动态导入 CSS
+    await import("react-pdf/dist/Page/AnnotationLayer.css");
+    await import("react-pdf/dist/Page/TextLayer.css");
+    
+    reactPdfLoaded = true;
+  } catch (error) {
+    console.error("Failed to load react-pdf:", error);
+    throw error;
+  }
+};
 
 // 获取文件扩展名
 const getFileExtension = (filename) => {
@@ -520,6 +548,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1.0);
+  const [pdfLibLoaded, setPdfLibLoaded] = useState(false);
 
   // 缓存文件路径状态
   const [cacheFilePath, setCacheFilePath] = useState(null);
@@ -643,6 +672,16 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           }
         } else if (isPdfFile(file.name)) {
           // 读取PDF文件
+          // 首先加载 react-pdf 库
+          try {
+            await loadReactPdf();
+            setPdfLibLoaded(true);
+          } catch (err) {
+            setError("无法加载 PDF 预览库: " + err.message);
+            setLoading(false);
+            return;
+          }
+          
           if (window.terminalAPI && window.terminalAPI.readFileAsBase64) {
             const response = await window.terminalAPI.readFileAsBase64(
               tabId,
@@ -1064,6 +1103,22 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     }
 
     if (isPdfFile(file?.name)) {
+      // 如果 PDF 库还未加载，显示加载状态
+      if (!pdfLibLoaded || !Document || !Page) {
+        return (
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              height: "100%",
+            }}
+          >
+            <CircularProgress />
+          </Box>
+        );
+      }
+      
       return (
         <Box
           sx={{

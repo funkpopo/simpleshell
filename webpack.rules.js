@@ -8,12 +8,30 @@ module.exports = [
   },
   {
     test: /[/\\]node_modules[/\\].+\.(m?js|node)$/,
+    exclude: /[/\\]node_modules[/\\]pdfjs-dist[/\\]/,
     parser: { amd: false },
     use: {
       loader: "@vercel/webpack-asset-relocator-loader",
       options: {
         outputAssetBase: "native_modules",
       },
+    },
+  },
+  // 特殊处理 pdfjs-dist 的 ES 模块，避免 asset-relocator-loader 错误
+  {
+    test: /[/\\]node_modules[/\\]pdfjs-dist[/\\].+\.mjs$/,
+    exclude: /pdf\.worker\./,
+    type: "javascript/auto",
+    resolve: {
+      fullySpecified: false,
+    },
+  },
+  // 将 PDF worker 文件作为资源文件处理
+  {
+    test: /[/\\]node_modules[/\\]pdfjs-dist[/\\]build[/\\]pdf\.worker\.min\.mjs$/,
+    type: "asset/resource",
+    generator: {
+      filename: "pdf.worker.min.mjs",
     },
   },
   // 添加图标和其他资源文件的支持

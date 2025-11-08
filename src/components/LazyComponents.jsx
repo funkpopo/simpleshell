@@ -2,7 +2,6 @@ import React, { Suspense, lazy } from "react";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import LoadingFallback from "./LoadingFallback.jsx";
 import {
-  FileManagerSkeleton,
   ResourceMonitorSkeleton,
   LocalTerminalSidebarSkeleton,
   SettingsSkeleton,
@@ -49,13 +48,6 @@ const createLazyComponent = (
 };
 
 // 使用工厂函数创建懒加载组件
-export const FileManagerWithSuspense = createLazyComponent(
-  () => import("./FileManager.jsx"),
-  "正在加载文件管理器...",
-  "文件管理器",
-  FileManagerSkeleton,
-);
-
 export const ResourceMonitorWithSuspense = createLazyComponent(
   () => import("./ResourceMonitor.jsx"),
   "正在加载资源监控...",
@@ -105,7 +97,6 @@ export const AIAssistantWithSuspense = createLazyComponent(
 );
 
 // 为了向后兼容，创建直接的懒加载组件引用
-const FileManager = lazy(() => import("./FileManager.jsx"));
 const ResourceMonitor = lazy(() => import("./ResourceMonitor.jsx"));
 const IPAddressQuery = lazy(() => import("./IPAddressQuery.jsx"));
 const Settings = lazy(() => import("./Settings.jsx"));
@@ -115,7 +106,6 @@ const LocalTerminalSidebar = lazy(() => import("./LocalTerminalSidebar.jsx"));
 
 // 预加载函数对象，为提高应用启动速度，延迟加载非关键组件
 const preloadComponents = {
-  fileManager: () => import("./FileManager.jsx"),
   resourceMonitor: () => import("./ResourceMonitor.jsx"),
   ipAddressQuery: () => import("./IPAddressQuery.jsx"),
   settings: () => import("./Settings.jsx"),
@@ -132,7 +122,6 @@ const smartPreload = {
       preloadComponents.settings,
       preloadComponents.commandHistory,
       preloadComponents.shortcutCommands,
-      preloadComponents.fileManager,
       preloadComponents.resourceMonitor,
       preloadComponents.ipAddressQuery,
     ];
@@ -182,7 +171,6 @@ const smartPreload = {
 
 // 导出懒加载组件以供直接使用（如果需要）
 export {
-  FileManager,
   ResourceMonitor,
   IPAddressQuery,
   Settings,
