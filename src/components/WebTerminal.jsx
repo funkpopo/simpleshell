@@ -16,6 +16,9 @@ import "@xterm/xterm/css/xterm.css";
 import "./WebTerminal.css";
 import { debounce, createResizeObserver } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
+import { TerminalPerformanceMonitor } from "../utils/TerminalPerformanceMonitor.js";
+import { VirtualScrollBuffer } from "../utils/VirtualScrollBuffer.js";
+import { WriteStrategyManager } from "../utils/WriteStrategyManager.js";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -673,11 +676,19 @@ const WebTerminal = ({
   const termRef = useRef(null);
   const fitAddonRef = useRef(null);
   const currentProcessId = useRef(null);
+
+  // 性能优化相关 refs
+  const performanceMonitorRef = useRef(null);
+  const virtualScrollBufferRef = useRef(null);
+  const writeStrategyManagerRef = useRef(null);
+
   const theme = useTheme();
   const eventManager = useEventManager(); // 使用统一的事件管理器
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
   const [webglRendererEnabled, setWebglRendererEnabled] = useState(true);
+  const [performanceStats, setPerformanceStats] = useState(null);
+  const [writeStrategy, setWriteStrategy] = useState('low');
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
@@ -736,7 +747,15 @@ const WebTerminal = ({
     if (typeof requestAnimationFrame !== "function") {
       // 降级到同步刷新
       if (timeSinceLastRefresh >= 16) {
+        const startTime = performance.now();
         termInstance.refresh(0, termInstance.rows - 1);
+        const duration = performance.now() - startTime;
+
+        // 记录渲染性能
+        if (performanceMonitorRef.current) {
+          performanceMonitorRef.current.recordRender(duration);
+        }
+
         lastHighlightRefreshRef.current = now;
       }
       highlightRefreshFrameRef.current = null;
@@ -747,7 +766,15 @@ const WebTerminal = ({
       highlightRefreshFrameRef.current = null;
       const currentTime = Date.now();
       if (currentTime - lastHighlightRefreshRef.current >= 16) {
+        const startTime = performance.now();
         termInstance.refresh(0, termInstance.rows - 1);
+        const duration = performance.now() - startTime;
+
+        // 记录渲染性能
+        if (performanceMonitorRef.current) {
+          performanceMonitorRef.current.recordRender(duration);
+        }
+
         lastHighlightRefreshRef.current = currentTime;
       }
     });
@@ -904,12 +931,27 @@ const WebTerminal = ({
       if (!chunkStr) {
         return;
       }
+
+      // 如果启用了新的写入策略管理器，使用它
+      if (writeStrategyManagerRef.current) {
+        // 添加到虚拟滚动缓冲区
+        if (virtualScrollBufferRef.current) {
+          virtualScrollBufferRef.current.addData(chunkStr);
+        }
+
+        // 使用写入策略管理器入队
+        writeStrategyManagerRef.current.enqueue(chunkStr);
+        setContentUpdated(true);
+        return;
+      }
+
+      // 后备方案：使用原有的批处理逻辑
       pendingWriteBufferRef.current.push(chunkStr);
       pendingWriteLengthRef.current += chunkStr.length;
 
       // 优化批处理阈值：降低到32KB，提高响应性
       const batchThreshold = 32768;
-      
+
       if (
         pendingWriteLengthRef.current > batchThreshold &&
         pendingWriteHandleRef.current !== null
@@ -2280,6 +2322,78 @@ const WebTerminal = ({
 
         // 打开终端
         term.open(terminalRef.current);
+
+        // 初始化性能监控器
+        if (!performanceMonitorRef.current) {
+          performanceMonitorRef.current = new TerminalPerformanceMonitor({
+            enabled: true,
+            sampleRate: 100,
+            maxHistorySize: 1000,
+            onWarning: (warning) => {
+              if (process.env.NODE_ENV === 'development') {
+                console.warn('[WebTerminal Performance]', warning);
+              }
+            },
+            onStats: (stats) => {
+              setPerformanceStats(stats);
+            }
+          });
+        }
+
+        // 初始化虚拟滚动缓冲区
+        if (!virtualScrollBufferRef.current) {
+          virtualScrollBufferRef.current = new VirtualScrollBuffer({
+            maxBufferLines: 10000,
+            visibleLines: 30,
+            overscanLines: 10,
+            pruneThreshold: 0.8,
+            pruneTargetRatio: 0.6,
+            onBufferChange: (info) => {
+              if (performanceMonitorRef.current) {
+                performanceMonitorRef.current.recordBufferSize(info.bufferSize);
+                performanceMonitorRef.current.recordScrollbackUsage(
+                  (info.totalLines / 10000) * 100
+                );
+              }
+            }
+          });
+        }
+
+        // 初始化写入策略管理器
+        if (!writeStrategyManagerRef.current) {
+          writeStrategyManagerRef.current = new WriteStrategyManager({
+            adaptiveEnabled: true,
+            onFlush: (data, context) => {
+              // 实际写入到终端
+              if (term && data) {
+                const startTime = performance.now();
+                try {
+                  term.write(data, () => {
+                    const duration = performance.now() - startTime;
+                    if (performanceMonitorRef.current) {
+                      performanceMonitorRef.current.recordWrite(data.length, duration);
+                    }
+                    scheduleHighlightRefresh(term);
+                  });
+                } catch (error) {
+                  term.write(data);
+                  const duration = performance.now() - startTime;
+                  if (performanceMonitorRef.current) {
+                    performanceMonitorRef.current.recordWrite(data.length, duration);
+                  }
+                  scheduleHighlightRefresh(term);
+                }
+              }
+            },
+            onStrategyChange: (change) => {
+              setWriteStrategy(change.newStrategy);
+              if (process.env.NODE_ENV === 'development') {
+                console.log('[WebTerminal Strategy]', change);
+              }
+            }
+          });
+        }
+
         if (webglRendererEnabledRef.current) {
           tryEnableWebglRenderer(term);
         } else {
@@ -2967,6 +3081,24 @@ const WebTerminal = ({
 
       // EventManager会自动清理所有事件监听器、定时器和观察者
       return () => {
+        // 清理性能监控器
+        if (performanceMonitorRef.current) {
+          performanceMonitorRef.current.destroy();
+          performanceMonitorRef.current = null;
+        }
+
+        // 清理虚拟滚动缓冲区
+        if (virtualScrollBufferRef.current) {
+          virtualScrollBufferRef.current.destroy();
+          virtualScrollBufferRef.current = null;
+        }
+
+        // 清理写入策略管理器
+        if (writeStrategyManagerRef.current) {
+          writeStrategyManagerRef.current.destroy();
+          writeStrategyManagerRef.current = null;
+        }
+
         // 清理终端事件监听器
         terminalDisposables.forEach((disposable) => {
           try {
