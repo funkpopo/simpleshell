@@ -1,4 +1,4 @@
-const configManager = require("../../configManager");
+const configService = require("../../../services/configService");
 const { logToFile } = require("../../utils/logger");
 
 /**
@@ -70,7 +70,7 @@ class AIHandlers {
   // 实现各个处理器方法
   async loadSettings(event) {
     try {
-      const settings = configManager.getAISettings();
+      const settings = configService.loadAISettings();
       return settings || {};
     } catch (error) {
       logToFile(`Error loading AI settings: ${error.message}`, "ERROR");
@@ -80,7 +80,7 @@ class AIHandlers {
 
   async saveSettings(event, settings) {
     try {
-      configManager.saveAISettings(settings);
+      configService.saveAISettings(settings);
       logToFile("AI settings saved", "INFO");
       return { success: true };
     } catch (error) {
@@ -91,7 +91,7 @@ class AIHandlers {
 
   async saveApiConfig(event, config) {
     try {
-      const currentSettings = configManager.getAISettings() || {};
+      const currentSettings = configService.loadAISettings() || {};
 
       if (!currentSettings.apiConfigs) {
         currentSettings.apiConfigs = [];
@@ -112,7 +112,7 @@ class AIHandlers {
         currentSettings.apiConfigs.push(config);
       }
 
-      configManager.saveAISettings(currentSettings);
+      configService.saveAISettings(currentSettings);
       logToFile(`API config saved: ${config.name || config.id}`, "INFO");
 
       return { success: true, config };
@@ -124,7 +124,7 @@ class AIHandlers {
 
   async deleteApiConfig(event, configId) {
     try {
-      const currentSettings = configManager.getAISettings() || {};
+      const currentSettings = configService.loadAISettings() || {};
 
       if (!currentSettings.apiConfigs) {
         return { success: false, error: "No API configs found" };
@@ -141,7 +141,7 @@ class AIHandlers {
           delete currentSettings.currentApiConfigId;
         }
 
-        configManager.saveAISettings(currentSettings);
+        configService.saveAISettings(currentSettings);
         logToFile(`API config deleted: ${configId}`, "INFO");
         return { success: true };
       }
@@ -155,7 +155,7 @@ class AIHandlers {
 
   async setCurrentApiConfig(event, configId) {
     try {
-      const currentSettings = configManager.getAISettings() || {};
+      const currentSettings = configService.loadAISettings() || {};
 
       if (!currentSettings.apiConfigs) {
         return { success: false, error: "No API configs found" };
@@ -167,7 +167,7 @@ class AIHandlers {
       }
 
       currentSettings.currentApiConfigId = configId;
-      configManager.saveAISettings(currentSettings);
+      configService.saveAISettings(currentSettings);
       logToFile(
         `Current API config set to: ${config.name || configId}`,
         "INFO",
