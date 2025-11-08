@@ -1,6 +1,8 @@
 const sftpManager = require("./sftp-manager");
-const sshConnectionPool = require("./ssh-connection-pool");
-const telnetConnectionPool = require("./telnet-connection-pool");
+const {
+  sshConnectionPool,
+  telnetConnectionPool,
+} = require("../../core/connection");
 const { logToFile } = require("../../core/utils/logger");
 
 class ConnectionManager {
