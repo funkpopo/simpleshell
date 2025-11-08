@@ -13,7 +13,7 @@ let logToFile = (message, level = "INFO") => {
     console.log(`[ExternalEditor][${level}] ${message}`);
   }
 };
-let configManager = null;
+let configService = null;
 let sftpCore = null;
 let shellModule = null;
 let sendToRenderer = null;
@@ -152,7 +152,7 @@ function getWatcherKey(tabId, remotePath) {
 }
 
 function ensureInitialized() {
-  if (!electronApp || !configManager || !sftpCore) {
+  if (!electronApp || !configService || !sftpCore) {
     throw new Error("External editor manager not initialized");
   }
 }
@@ -422,8 +422,8 @@ async function openFileInExternalEditor(tabId, remotePath) {
     throw new Error("Missing remotePath");
   }
 
-  const settings = configManager.loadUISettings
-    ? configManager.loadUISettings()
+  const settings = configService.loadUISettings
+    ? configService.loadUISettings()
     : {};
   const externalEditorSettings = settings?.externalEditor || {};
   const isEnabled =
@@ -556,12 +556,12 @@ async function cleanup() {
   }
 }
 
-function init({ app, logger, configManager: cfg, sftpCore: core, shell, sendToRenderer: send }) {
+function init({ app, logger, configService: cfg, sftpCore: core, shell, sendToRenderer: send }) {
   electronApp = app;
   if (logger && typeof logger.logToFile === "function") {
     logToFile = logger.logToFile;
   }
-  configManager = cfg;
+  configService = cfg;
   sftpCore = core;
   shellModule = shell;
   sendToRenderer = send;
