@@ -41,9 +41,9 @@ import ComputerIcon from "@mui/icons-material/Computer";
 import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
 import ConnectionManager from "./components/ConnectionManager.jsx";
+import FileManager from "./components/FileManager.jsx";
 import {
   ResourceMonitorWithSuspense as ResourceMonitor,
-  FileManagerWithSuspense as FileManager,
   IPAddressQueryWithSuspense as IPAddressQuery,
   SettingsWithSuspense as Settings,
   CommandHistoryWithSuspense as CommandHistory,
@@ -608,7 +608,6 @@ function App() {
       // 再延迟一点预加载其他组件
       setTimeout(() => {
         preloadComponents.resourceMonitor().catch(() => {});
-        preloadComponents.fileManager().catch(() => {});
         preloadComponents.ipAddressQuery().catch(() => {});
       }, 2000);
     }, 3000);
