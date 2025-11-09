@@ -843,13 +843,13 @@ function setupIPC(mainWindow) {
       // 使用连接池获取SSH连接
       const connectionInfo =
         await connectionManager.getSSHConnection(sshConfig);
-      // 广播热门连接更新（实时）
+      // 广播最近连接更新（实时）
       try {
-        const topConnections = connectionManager.getTopConnections(5);
+        const lastConnections = connectionManager.getLastConnections(5);
         const windows = BrowserWindow.getAllWindows();
         for (const win of windows) {
           if (win && !win.isDestroyed() && win.webContents) {
-            win.webContents.send("top-connections-changed", topConnections);
+            win.webContents.send("top-connections-changed", lastConnections);
           }
         }
       } catch (err) {
@@ -1160,13 +1160,13 @@ function setupIPC(mainWindow) {
       // 使用连接池获取Telnet连接
       const connectionInfo =
         await connectionManager.getTelnetConnection(telnetConfig);
-      // 广播热门连接更新（实时）
+      // 广播最近连接更新（实时）
       try {
-        const topConnections = connectionManager.getTopConnections(5);
+        const lastConnections = connectionManager.getLastConnections(5);
         const windows = BrowserWindow.getAllWindows();
         for (const win of windows) {
           if (win && !win.isDestroyed() && win.webContents) {
-            win.webContents.send("top-connections-changed", topConnections);
+            win.webContents.send("top-connections-changed", lastConnections);
           }
         }
       } catch (err) {

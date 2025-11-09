@@ -582,17 +582,14 @@ function App() {
           if (Array.isArray(loadedConnections)) {
             setConnections(loadedConnections);
 
-            const topConnectionIds =
+            // loadTopConnections 现在返回完整的连接对象数组，不再是ID数组
+            const lastConnectionObjs =
               (await window.terminalAPI.loadTopConnections()) || [];
             if (
-              Array.isArray(topConnectionIds) &&
-              topConnectionIds.length > 0
+              Array.isArray(lastConnectionObjs) &&
+              lastConnectionObjs.length > 0
             ) {
-              const topConns = findConnectionsByIds(
-                topConnectionIds,
-                loadedConnections,
-              );
-              setTopConnections(topConns);
+              setTopConnections(lastConnectionObjs);
             }
           }
         }
@@ -664,20 +661,17 @@ function App() {
     if (window.terminalAPI?.loadTopConnections) {
       window.terminalAPI
         .loadTopConnections()
-        .then((topConnectionIds) => {
-          if (Array.isArray(topConnectionIds) && topConnectionIds.length > 0) {
-            const topConns = findConnectionsByIds(
-              topConnectionIds,
-              connections,
-            );
+        .then((lastConnectionObjs) => {
+          if (Array.isArray(lastConnectionObjs) && lastConnectionObjs.length > 0) {
+            // lastConnectionObjs 现在是完整的连接对象数组
             // 只有当计算出的列表与当前状态不同时才更新，避免不必要的渲染
-            if (JSON.stringify(topConns) !== JSON.stringify(topConnections)) {
-              setTopConnections(topConns);
+            if (JSON.stringify(lastConnectionObjs) !== JSON.stringify(topConnections)) {
+              setTopConnections(lastConnectionObjs);
             }
           }
         })
         .catch((error) => {
-          // 处理加载置顶连接失败的情况
+          // 处理加载最近连接失败的情况
         });
     }
   }, [connections]); // 依赖于 connections state
@@ -701,13 +695,13 @@ function App() {
       return ids.map((id) => found.find((c) => c.id === id)).filter(Boolean);
     };
 
-    const handleTopChanged = async (ids) => {
+    const handleTopChanged = async (lastConnectionObjs) => {
       try {
-        const topIds = Array.isArray(ids)
-          ? ids
+        // lastConnectionObjs 现在是完整的连接对象数组，不再是ID数组
+        const connections = Array.isArray(lastConnectionObjs)
+          ? lastConnectionObjs
           : await window.terminalAPI.loadTopConnections();
-        const mapped = findConnectionsByIds(topIds, connections);
-        setTopConnections(mapped);
+        setTopConnections(connections);
       } catch (e) {
         // 忽略错误
       }
