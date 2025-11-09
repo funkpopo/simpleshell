@@ -33,7 +33,8 @@ class BaseConnectionPool extends EventEmitter {
     this.connectionQueue = new Map(); // 连接请求队列
     this.tabReferences = new Map(); // 标签页引用关系
     this.connectionUsage = new Map(); // 连接使用统计
-    this.lastConnections = []; // 最近连接列表
+    this.lastConnections = []; // 最近连接列表（存储连接ID）
+    this.lastConnectionConfigs = new Map(); // 最近连接的配置缓存
 
     // 定时器
     this.healthCheckTimer = null;
@@ -98,8 +99,20 @@ class BaseConnectionPool extends EventEmitter {
 
     this._logInfo(`获取连接: ${key}`);
 
-    // 记录连接使用
-    this.recordConnectionUsage(config.id);
+    // 记录连接使用 - 使用 serverKey 而不是 config.id
+    const serverKey = this.generateServerKey(config);
+    this.recordConnectionUsage(serverKey);
+
+    // 缓存连接配置，用于后续获取详细信息
+    this.lastConnectionConfigs.set(serverKey, {
+      host: config.host,
+      port: config.port,
+      username: config.username,
+      password: config.password || '',
+      privateKeyPath: config.privateKeyPath || '',
+      name: config.name || `${config.host}:${config.port}`,
+      protocol: this.config.protocolType.toLowerCase()
+    });
 
     // 检查是否存在现有连接
     if (this.connections.has(key)) {
@@ -425,6 +438,94 @@ class BaseConnectionPool extends EventEmitter {
   }
 
   /**
+   * 获取最近连接列表（带详细信息）
+   * @param {number} count - 返回数量
+   * @returns {Array<Object>} 连接配置对象列表
+   */
+  getLastConnectionsWithDetails(count = 5) {
+    const result = [];
+
+    for (const serverKey of this.lastConnections.slice(0, count)) {
+      // 优先从缓存中获取配置
+      const cachedConfig = this.lastConnectionConfigs.get(serverKey);
+
+      if (cachedConfig) {
+        result.push({
+          id: serverKey,
+          name: cachedConfig.name,
+          type: 'connection',
+          protocol: cachedConfig.protocol,
+          host: cachedConfig.host,
+          port: cachedConfig.port,
+          username: cachedConfig.username,
+          password: cachedConfig.password,
+          privateKeyPath: cachedConfig.privateKeyPath,
+          lastUsed: Date.now()
+        });
+      } else {
+        // 如果缓存中没有，尝试从活跃连接中获取
+        const conn = this.connections.get(serverKey);
+        if (conn && conn.config) {
+          result.push({
+            id: serverKey,
+            name: conn.config.name || `${conn.config.host}:${conn.config.port}`,
+            type: 'connection',
+            protocol: this.config.protocolType.toLowerCase(),
+            host: conn.config.host,
+            port: conn.config.port,
+            username: conn.config.username,
+            password: conn.config.password || '',
+            privateKeyPath: conn.config.privateKeyPath || '',
+            lastUsed: conn.lastUsedAt || conn.createdAt
+          });
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 从配置加载最近连接列表
+   * @param {Array<Object>} connections - 连接配置对象列表
+   */
+  loadLastConnectionsFromConfig(connections) {
+    if (!Array.isArray(connections)) return;
+
+    // 只保存连接ID，不创建实际连接
+    // 实际连接会在用户点击时创建
+    this.lastConnections = [];
+
+    // 同时缓存连接配置，以便后续使用
+    if (!this.lastConnectionConfigs) {
+      this.lastConnectionConfigs = new Map();
+    }
+
+    for (const conn of connections) {
+      if (conn.host && conn.username) {
+        const key = this.generateServerKey(conn);
+        this.lastConnections.push(key);
+
+        // 缓存连接配置
+        this.lastConnectionConfigs.set(key, {
+          host: conn.host,
+          port: conn.port,
+          username: conn.username,
+          password: conn.password || '',
+          privateKeyPath: conn.privateKeyPath || '',
+          name: conn.name || `${conn.host}:${conn.port}`,
+          protocol: conn.protocol || this.config.protocolType.toLowerCase()
+        });
+      }
+    }
+
+    // 限制为最多10个
+    this.lastConnections = this.lastConnections.slice(0, 10);
+
+    this._logInfo(`从配置加载了 ${this.lastConnections.length} 个最近连接`);
+  }
+
+  /**
    * 获取最近连接列表
    * @param {number} count - 返回数量
    * @returns {Array<string>} 连接ID列表
@@ -549,6 +650,16 @@ class BaseConnectionPool extends EventEmitter {
       host: conn.config.host,
       port: conn.config.port
     }));
+  }
+
+  /**
+   * 生成服务器标识键
+   * @param {Object} config - 连接配置
+   * @returns {string} 服务器标识键
+   * @protected
+   */
+  generateServerKey(config) {
+    return `${config.host}:${config.port || 22}:${config.username}`;
   }
 
   /**

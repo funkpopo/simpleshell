@@ -96,10 +96,10 @@ class ConnectionManager {
   }
 
   getLastConnections(count) {
-    // 合并SSH和Telnet的最近连接
-    const sshLastConnections = this.sshConnectionPool.getLastConnections(count);
+    // 合并SSH和Telnet的最近连接（获取连接对象，而不是连接ID）
+    const sshLastConnections = this.sshConnectionPool.getLastConnectionsWithDetails(count);
     const telnetLastConnections =
-      this.telnetConnectionPool.getLastConnections(count);
+      this.telnetConnectionPool.getLastConnectionsWithDetails(count);
 
     // 合并两个列表，保持时间顺序（简单合并，实际使用中可能需要更复杂的合并逻辑）
     const allConnections = [...sshLastConnections, ...telnetLastConnections];
@@ -109,11 +109,28 @@ class ConnectionManager {
   // 从配置文件加载并初始化最近连接列表
   loadLastConnectionsFromConfig(connections) {
     if (Array.isArray(connections) && connections.length > 0) {
-      // 简单处理：将所有连接ID都加载到SSH连接池
-      // 实际使用中可能需要区分SSH和Telnet
-      this.sshConnectionPool.setLastConnections(connections);
+      // 根据协议类型分别加载到对应的连接池
+      const sshConnections = [];
+      const telnetConnections = [];
+
+      for (const conn of connections) {
+        if (conn.protocol === 'telnet') {
+          telnetConnections.push(conn);
+        } else {
+          // 默认视为SSH连接
+          sshConnections.push(conn);
+        }
+      }
+
+      if (sshConnections.length > 0) {
+        this.sshConnectionPool.loadLastConnectionsFromConfig(sshConnections);
+      }
+      if (telnetConnections.length > 0) {
+        this.telnetConnectionPool.loadLastConnectionsFromConfig(telnetConnections);
+      }
+
       logToFile(
-        `Loaded ${connections.length} last connections into connection pools`,
+        `Loaded ${sshConnections.length} SSH and ${telnetConnections.length} Telnet last connections`,
         "INFO",
       );
     }
