@@ -653,3 +653,15 @@ contextBridge.exposeInMainWorld("dialogAPI", {
     ipcRenderer.invoke("dialog:showMessageBox", options),
 });
 
+// 应用错误处理API
+contextBridge.exposeInMainWorld("appErrorAPI", {
+  // 监听应用错误
+  onError: (callback) => ipcRenderer.on("app:error", callback),
+
+  // 移除错误监听
+  removeErrorListener: () => {
+    ipcRenderer.removeAllListeners("app:error");
+  }
+});
+
+

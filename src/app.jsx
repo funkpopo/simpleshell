@@ -80,6 +80,7 @@ import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import AddIcon from "@mui/icons-material/Add";
 import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
 import { useEventManager } from "./core/utils/eventManager.js";
+import ErrorNotification from "./components/ErrorNotification.jsx";
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
@@ -270,6 +271,33 @@ function App() {
   const { t, i18n } = useTranslation();
   const eventManager = useEventManager(); // 使用统一的事件管理器
   const [activeSidebarMargin, setActiveSidebarMargin] = React.useState(0);
+
+  // 错误处理状态
+  const [appError, setAppError] = React.useState(null);
+  const [errorNotificationOpen, setErrorNotificationOpen] = React.useState(false);
+
+  // 监听主进程的错误事件
+  React.useEffect(() => {
+    const handleAppError = (event, error) => {
+      console.error('Application error:', error);
+      setAppError(error);
+      setErrorNotificationOpen(true);
+    };
+
+    if (window.appErrorAPI) {
+      window.appErrorAPI.onError(handleAppError);
+    }
+
+    return () => {
+      if (window.appErrorAPI) {
+        window.appErrorAPI.removeErrorListener();
+      }
+    };
+  }, []);
+
+  const handleCloseErrorNotification = () => {
+    setErrorNotificationOpen(false);
+  };
 
   // Update the tabs when language changes
   React.useEffect(() => {
@@ -2457,6 +2485,13 @@ function App() {
 
       {/* 设置对话框 */}
       <Settings open={settingsDialogOpen} onClose={handleCloseSettings} />
+
+      {/* 错误通知 */}
+      <ErrorNotification
+        error={appError}
+        open={errorNotificationOpen}
+        onClose={handleCloseErrorNotification}
+      />
     </ThemeProvider>
   );
 }

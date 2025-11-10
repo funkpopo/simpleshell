@@ -374,6 +374,42 @@ const createWindow = () => {
   setupIPC(mainWindow);
 };
 
+// 全局错误处理器
+process.on('uncaughtException', (error) => {
+  logToFile(`未捕获的异常: ${error.message}`, 'ERROR');
+  logToFile(`堆栈: ${error.stack}`, 'ERROR');
+
+  // 发送错误到渲染进程显示
+  const mainWindow = getPrimaryWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    safeSendToRenderer('app:error', {
+      type: 'uncaughtException',
+      message: error.message,
+      details: error.stack
+    });
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  const errorMessage = reason instanceof Error ? reason.message : String(reason);
+  const errorStack = reason instanceof Error ? reason.stack : '';
+
+  logToFile(`未处理的Promise拒绝: ${errorMessage}`, 'ERROR');
+  if (errorStack) {
+    logToFile(`堆栈: ${errorStack}`, 'ERROR');
+  }
+
+  // 发送错误到渲染进程显示
+  const mainWindow = getPrimaryWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    safeSendToRenderer('app:error', {
+      type: 'unhandledRejection',
+      message: errorMessage,
+      details: errorStack
+    });
+  }
+});
+
 // 在应用准备好时创建窗口并初始化配置
 app.whenReady().then(async () => {
   initLogger(app); // 初始化日志模块
