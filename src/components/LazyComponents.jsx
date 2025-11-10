@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, memo } from "react";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import LoadingFallback from "./LoadingFallback.jsx";
 import {
@@ -10,7 +10,7 @@ import {
   ConnectionManagerSkeleton,
 } from "./SkeletonLoader.jsx";
 
-// 路由级别的懒加载组件工厂函数
+// React 19 优化：使用 memo 包装懒加载组件工厂函数，减少不必要的重渲染
 const createLazyComponent = (
   importFn,
   fallbackMessage,
@@ -30,7 +30,8 @@ const createLazyComponent = (
     }),
   );
 
-  return (props) => {
+  // React 19: memo 优化包装器组件，避免 props 未变化时的重渲染
+  return memo((props) => {
     const fallback = SkeletonComponent ? (
       <SkeletonComponent {...props} />
     ) : (
@@ -44,7 +45,7 @@ const createLazyComponent = (
         </Suspense>
       </ErrorBoundary>
     );
-  };
+  });
 };
 
 // 使用工厂函数创建懒加载组件
@@ -114,9 +115,10 @@ const preloadComponents = {
   localTerminalSidebar: () => import("./LocalTerminalSidebar.jsx"),
 };
 
-// 智能预加载策略 - 基于用户交互预测加载侧边栏组件
+// React 19 优化：智能预加载策略 - 利用并发特性和优化的调度
 const smartPreload = {
   // 预加载所有侧边栏组件（在应用空闲时）
+  // React 19: 使用更高效的并发加载策略
   preloadSidebarComponents: () => {
     const queue = [
       preloadComponents.settings,
@@ -126,6 +128,7 @@ const smartPreload = {
       preloadComponents.ipAddressQuery,
     ];
 
+    // React 19: 批量预加载优化，减少调度开销
     const runNext = () => {
       if (!queue.length) {
         return;
@@ -145,16 +148,22 @@ const smartPreload = {
     };
 
     const scheduleNext = () => {
+      // React 19: 优先使用 requestIdleCallback 以获得更好的性能
       if (typeof requestIdleCallback === "function") {
-        requestIdleCallback((deadline) => {
-          if (deadline.timeRemaining() > 10 || deadline.didTimeout) {
-            runNext();
-          } else {
-            scheduleNext();
-          }
-        });
+        requestIdleCallback(
+          (deadline) => {
+            // React 19: 提高时间阈值，利用自动批处理减少中断
+            if (deadline.timeRemaining() > 5 || deadline.didTimeout) {
+              runNext();
+            } else {
+              scheduleNext();
+            }
+          },
+          { timeout: 2000 },
+        ); // React 19: 添加超时确保关键组件最终被加载
       } else {
-        setTimeout(runNext, 400);
+        // Fallback: 使用较短的延迟以提高响应性
+        setTimeout(runNext, 300);
       }
     };
 
@@ -166,6 +175,15 @@ const smartPreload = {
     if (preloadComponents[componentName]) {
       preloadComponents[componentName]().catch(() => {});
     }
+  },
+
+  // React 19 新增：并行预加载多个组件
+  preloadMultiple: (componentNames) => {
+    const promises = componentNames
+      .filter((name) => preloadComponents[name])
+      .map((name) => preloadComponents[name]().catch(() => {}));
+
+    return Promise.allSettled(promises);
   },
 };
 

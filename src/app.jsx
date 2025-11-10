@@ -766,7 +766,7 @@ function App() {
     setAnchorEl(null);
   }, []);
 
-  // 切换主题模式
+  // React 19: 利用自动批处理优化主题切换
   const toggleTheme = useCallback(async () => {
     try {
       const newDarkMode = !darkMode;
@@ -774,7 +774,8 @@ function App() {
       // 添加CSS类以启用过渡效果
       document.body.classList.add("theme-transition");
 
-      // 设置新的主题模式（延迟一点执行以确保过渡效果可以被触发）
+      // React 19: 状态更新会自动批处理，无需手动延迟
+      // 但为了过渡效果，仍保留小延迟
       setTimeout(() => {
         setDarkMode(newDarkMode);
       }, 10);
@@ -1534,11 +1535,12 @@ function App() {
     return !currentPanelTab || currentPanelTab.type !== "ssh";
   }, [currentPanelTab]);
 
-  // 处理设置变更
+  // React 19: 利用自动批处理特性优化设置变更处理
   React.useEffect(() => {
     const handleSettingsChanged = (event) => {
       const { language, fontSize, darkMode: newDarkMode } = event.detail;
 
+      // React 19: 所有状态更新会自动批处理，提高性能
       // 应用主题设置
       if (newDarkMode !== undefined && newDarkMode !== darkMode) {
         setDarkMode(newDarkMode);

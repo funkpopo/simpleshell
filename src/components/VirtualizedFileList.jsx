@@ -7,7 +7,7 @@ import React, {
   useEffect,
 } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
-import { FixedSizeList as List } from "react-window";
+import { List } from "react-window";
 import {
   ListItem,
   ListItemButton,
