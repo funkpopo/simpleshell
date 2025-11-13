@@ -1,5 +1,6 @@
 const { ipcMain } = require("electron");
 const { logToFile } = require("../../utils/logger");
+const { safeHandle } = require("../ipcResponse");
 
 // 存储重连事件监听器
 const reconnectListeners = new Map();
@@ -7,88 +8,65 @@ const reconnectListeners = new Map();
 // 注册重连相关的IPC处理器
 function registerReconnectHandlers(connectionPool) {
   // 监听重连状态请求
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     "get-reconnect-status",
     async (event, { tabId, processId }) => {
-      try {
-        const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-        if (!connectionKey) {
-          return null;
-        }
-
-        const status = connectionPool.getConnectionStatus(connectionKey);
-        return status?.reconnectStatus || null;
-      } catch (error) {
-        logToFile(`获取重连状态失败: ${error.message}`, "ERROR");
+      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
+      if (!connectionKey) {
         return null;
       }
+
+      const status = connectionPool.getConnectionStatus(connectionKey);
+      return status?.reconnectStatus || null;
     },
   );
 
   // 手动触发重连
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     "manual-reconnect",
     async (event, { tabId, processId, sshConfig }) => {
-      try {
-        const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
+      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
 
-        if (!connectionKey) {
-          // 如果没有连接，创建新连接
-          const newConnection = await connectionPool.getConnection(sshConfig);
-          return { success: true, connectionKey: newConnection.key };
-        }
-
-        // 触发手动重连
-        await connectionPool.reconnectionManager.manualReconnect(connectionKey);
-        return { success: true, connectionKey };
-      } catch (error) {
-        logToFile(`手动重连失败: ${error.message}`, "ERROR");
-        throw error;
+      if (!connectionKey) {
+        // 如果没有连接，创建新连接
+        const newConnection = await connectionPool.getConnection(sshConfig);
+        return { success: true, connectionKey: newConnection.key };
       }
+
+      // 触发手动重连
+      await connectionPool.reconnectionManager.manualReconnect(connectionKey);
+      return { success: true, connectionKey };
     },
   );
 
   // 暂停重连
-  ipcMain.handle("pause-reconnect", async (event, { tabId }) => {
-    try {
-      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-      if (connectionKey && connectionPool.reconnectionManager) {
-        connectionPool.reconnectionManager.pauseReconnection(connectionKey);
-        return { success: true };
-      }
-      return { success: false, error: "连接未找到" };
-    } catch (error) {
-      logToFile(`暂停重连失败: ${error.message}`, "ERROR");
-      throw error;
+  safeHandle(ipcMain, "pause-reconnect", async (event, { tabId }) => {
+    const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
+    if (connectionKey && connectionPool.reconnectionManager) {
+      connectionPool.reconnectionManager.pauseReconnection(connectionKey);
+      return { success: true };
     }
+    return { success: false, error: "连接未找到" };
   });
 
   // 恢复重连
-  ipcMain.handle("resume-reconnect", async (event, { tabId }) => {
-    try {
-      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-      if (connectionKey && connectionPool.reconnectionManager) {
-        connectionPool.reconnectionManager.resumeReconnection(connectionKey);
-        return { success: true };
-      }
-      return { success: false, error: "连接未找到" };
-    } catch (error) {
-      logToFile(`恢复重连失败: ${error.message}`, "ERROR");
-      throw error;
+  safeHandle(ipcMain, "resume-reconnect", async (event, { tabId }) => {
+    const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
+    if (connectionKey && connectionPool.reconnectionManager) {
+      connectionPool.reconnectionManager.resumeReconnection(connectionKey);
+      return { success: true };
     }
+    return { success: false, error: "连接未找到" };
   });
 
   // 获取重连统计信息
-  ipcMain.handle("get-reconnect-statistics", async (event) => {
-    try {
-      if (connectionPool.reconnectionManager) {
-        return connectionPool.reconnectionManager.getStatistics();
-      }
-      return null;
-    } catch (error) {
-      logToFile(`获取重连统计失败: ${error.message}`, "ERROR");
-      return null;
+  safeHandle(ipcMain, "get-reconnect-statistics", async (event) => {
+    if (connectionPool.reconnectionManager) {
+      return connectionPool.reconnectionManager.getStatistics();
     }
+    return null;
   });
 
   // 设置重连事件转发

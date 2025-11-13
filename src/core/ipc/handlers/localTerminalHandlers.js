@@ -1,4 +1,5 @@
 const { ipcMain } = require("electron");
+const { safeHandle, failure, success, wrapIpcHandler } = require("../ipcResponse");
 const TerminalDetector = require("../../local-terminal/terminal-detector");
 const LocalTerminalManager = require("../../local-terminal/local-terminal-manager");
 const WindowEmbedder = require("../../local-terminal/window-embedder");
@@ -138,166 +139,116 @@ class LocalTerminalHandlers {
 
   registerHandlers() {
     // 检测本地终端
-    ipcMain.handle("detectLocalTerminals", async () => {
-      try {
-        // 获取系统检测到的终端
-        const systemTerminals =
-          await this.terminalDetector.detectAllTerminals();
-
-        return systemTerminals;
-      } catch (error) {
-        console.error("Failed to detect local terminals:", error);
-        throw error;
-      }
+    safeHandle(ipcMain, "detectLocalTerminals", async () => {
+      // 获取系统检测到的终端
+      const systemTerminals = await this.terminalDetector.detectAllTerminals();
+      return systemTerminals;
     });
 
     // 启动本地终端
-    ipcMain.handle(
+    safeHandle(
+      ipcMain,
       "launchLocalTerminal",
       async (event, terminalConfig, tabId, options = {}) => {
-        try {
-          const result = await this.terminalManager.launchTerminal(
-            terminalConfig,
-            tabId,
-            options,
-          );
-
-          // 仅返回可序列化字段
-          return {
-            success: true,
-            data: {
-              tabId: result.tabId || tabId,
-              pid: result.pid,
-              status: result.status,
-              startTime: result.startTime,
-              hwnd: result.hwnd,
-              distribution: result.distribution || null,
-              config: {
-                name: terminalConfig.name,
-                type: terminalConfig.type,
-                executable: terminalConfig.executable,
-                availableDistributions:
-                  terminalConfig.availableDistributions || [],
-              },
-            },
-            embedded: false, // 初始嵌入状态，后续通过事件更新
-          };
-        } catch (error) {
-          console.error("Failed to launch local terminal:", error);
-          return {
-            success: false,
-            error: error.message || "Unknown error occurred",
-          };
-        }
-      },
-    );
-
-    // 关闭本地终端
-    ipcMain.handle("closeLocalTerminal", async (event, tabId) => {
-      try {
-        // 先取消窗口嵌入
-        await this.windowEmbedder.unembedWindow(tabId);
-        // 再结束终端进程
-        await this.terminalManager.closeTerminal(tabId);
-
-        return { success: true };
-      } catch (error) {
-        console.error("Failed to close local terminal:", error);
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-    });
-
-    // 获取终端详细信息
-    ipcMain.handle("getLocalTerminalInfo", async (event, tabId) => {
-      try {
-        const terminalInfo = this.terminalManager.getActiveTerminal(tabId);
-        const embeddedInfo = this.windowEmbedder.getEmbeddedWindow(tabId);
+        const result = await this.terminalManager.launchTerminal(
+          terminalConfig,
+          tabId,
+          options,
+        );
 
         // 仅返回可序列化字段
         return {
           success: true,
           data: {
-            terminal: terminalInfo
-              ? {
-                  tabId: terminalInfo.tabId,
-                  pid: terminalInfo.pid,
-                  status: terminalInfo.status,
-                  startTime: terminalInfo.startTime,
-                  hwnd: terminalInfo.hwnd,
-                }
-              : null,
-            embedded: embeddedInfo
-              ? {
-                  tabId: embeddedInfo.tabId,
-                  hwnd: embeddedInfo.hwnd,
-                  isEmbedded: embeddedInfo.isEmbedded,
-                  originalParent: embeddedInfo.originalParent,
-                  originalStyle: embeddedInfo.originalStyle,
-                }
-              : null,
+            tabId: result.tabId || tabId,
+            pid: result.pid,
+            status: result.status,
+            startTime: result.startTime,
+            hwnd: result.hwnd,
+            distribution: result.distribution || null,
+            config: {
+              name: terminalConfig.name,
+              type: terminalConfig.type,
+              executable: terminalConfig.executable,
+              availableDistributions: terminalConfig.availableDistributions || [],
+            },
           },
+          embedded: false, // 初始嵌入状态，后续通过事件更新
         };
-      } catch (error) {
-        console.error("Failed to get terminal info:", error);
-        return {
-          success: false,
-          error: error.message || "Unknown error occurred",
-        };
-      }
+      },
+    );
+
+    // 关闭本地终端
+    safeHandle(ipcMain, "closeLocalTerminal", async (event, tabId) => {
+      // 先取消窗口嵌入
+      await this.windowEmbedder.unembedWindow(tabId);
+      // 再结束终端进程
+      await this.terminalManager.closeTerminal(tabId);
+
+      return { success: true };
+    });
+
+    // 获取终端详细信息
+    safeHandle(ipcMain, "getLocalTerminalInfo", async (event, tabId) => {
+      const terminalInfo = this.terminalManager.getActiveTerminal(tabId);
+      const embeddedInfo = this.windowEmbedder.getEmbeddedWindow(tabId);
+
+      // 仅返回可序列化字段
+      return {
+        success: true,
+        data: {
+          terminal: terminalInfo
+            ? {
+                tabId: terminalInfo.tabId,
+                pid: terminalInfo.pid,
+                status: terminalInfo.status,
+                startTime: terminalInfo.startTime,
+                hwnd: terminalInfo.hwnd,
+              }
+            : null,
+          embedded: embeddedInfo
+            ? {
+                tabId: embeddedInfo.tabId,
+                hwnd: embeddedInfo.hwnd,
+                isEmbedded: embeddedInfo.isEmbedded,
+                originalParent: embeddedInfo.originalParent,
+                originalStyle: embeddedInfo.originalStyle,
+              }
+            : null,
+        },
+      };
     });
 
     // 调整嵌入窗口大小
-    ipcMain.handle("resizeEmbeddedTerminal", async (event, tabId, bounds) => {
-      try {
-        const success = await this.windowEmbedder.resizeEmbeddedWindow(
-          tabId,
-          bounds,
-        );
-        return { success: Boolean(success) };
-      } catch (error) {
-        console.error("Failed to resize embedded terminal:", error);
-        return {
-          success: false,
-          error: error.message || "Unknown error occurred",
-        };
-      }
+    safeHandle(ipcMain, "resizeEmbeddedTerminal", async (event, tabId, bounds) => {
+      const resized = await this.windowEmbedder.resizeEmbeddedWindow(tabId, bounds);
+      return { success: Boolean(resized) };
     });
 
     // 获取所有活动终端
-    ipcMain.handle("getAllActiveLocalTerminals", async () => {
-      try {
-        const terminals = this.terminalManager.getAllActiveTerminals();
+    safeHandle(ipcMain, "getAllActiveLocalTerminals", async () => {
+      const terminals = this.terminalManager.getAllActiveTerminals();
 
-        // 返回可序列化的终端信息
-        const serializableTerminals = terminals.map((terminal) => ({
-          tabId: terminal.tabId,
-          pid: terminal.pid,
-          status: terminal.status,
-          startTime: terminal.startTime,
-          hwnd: terminal.hwnd,
-          config: terminal.config
-            ? {
-                name: terminal.config.name,
-                type: terminal.config.type,
-                executable: terminal.config.executable,
-              }
-            : null,
-        }));
+      // 返回可序列化的终端信息
+      const serializableTerminals = terminals.map((terminal) => ({
+        tabId: terminal.tabId,
+        pid: terminal.pid,
+        status: terminal.status,
+        startTime: terminal.startTime,
+        hwnd: terminal.hwnd,
+        config: terminal.config
+          ? {
+              name: terminal.config.name,
+              type: terminal.config.type,
+              executable: terminal.config.executable,
+            }
+          : null,
+      }));
 
-        return {
-          success: true,
-          data: serializableTerminals,
-        };
-      } catch (error) {
-        console.error("Failed to get active terminals:", error);
-        return {
-          success: false,
-          error: error.message || "Unknown error occurred",
-        };
-      }
+      return {
+        success: true,
+        data: serializableTerminals,
+      };
     });
   }
 
@@ -312,4 +263,3 @@ class LocalTerminalHandlers {
 }
 
 module.exports = LocalTerminalHandlers;
-

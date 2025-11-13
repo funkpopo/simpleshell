@@ -1,5 +1,6 @@
 const { ipcMain } = require("electron");
 const { logToFile } = require("../utils/logger");
+const { wrapIpcHandler } = require("./ipcResponse");
 
 class IPCRegistry {
   constructor() {
@@ -19,24 +20,10 @@ class IPCRegistry {
       logToFile(`Warning: Overwriting existing handler for ${channel}`, "WARN");
     }
 
-    const wrappedHandler = async (event, ...args) => {
-      try {
-        const startTime = Date.now();
-        const result = await handler(event, ...args);
-
-        if (options.logPerformance) {
-          const duration = Date.now() - startTime;
-          if (duration > 100) {
-            logToFile(`IPC ${channel} took ${duration}ms`, "WARN");
-          }
-        }
-
-        return result;
-      } catch (error) {
-        logToFile(`Error in IPC handler ${channel}: ${error.message}`, "ERROR");
-        throw error;
-      }
-    };
+    const wrappedHandler = wrapIpcHandler(handler, {
+      logPerformance: options.logPerformance,
+      channelName: channel,
+    });
 
     // 注册处理器
     ipcMain.handle(channel, wrappedHandler);

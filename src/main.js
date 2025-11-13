@@ -22,6 +22,7 @@ const {
 } = require("./core/ipc/handlers/reconnectHandlers");
 const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers");
+const { safeHandle, wrapIpcHandler } = require("./core/ipc/ipcResponse");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -488,7 +489,7 @@ app.whenReady().then(async () => {
     const handlers = latencyHandlers.getHandlers();
 
     handlers.forEach(({ channel, handler }) => {
-      ipcMain.handle(channel, handler);
+      safeHandle(ipcMain, channel, handler);
     });
 
     logToFile(`已注册 ${handlers.length} 个延迟检测IPC处理器`, "INFO");
@@ -804,23 +805,23 @@ function setupIPC(mainWindow) {
   }
 
   // 文件对话框处理器
-  ipcMain.handle("dialog:showOpenDialog", async (event, options) => {
+  safeHandle(ipcMain, "dialog:showOpenDialog", async (event, options) => {
     const result = await dialog.showOpenDialog(mainWindow, options);
     return result;
   });
 
-  ipcMain.handle("dialog:showSaveDialog", async (event, options) => {
+  safeHandle(ipcMain, "dialog:showSaveDialog", async (event, options) => {
     const result = await dialog.showSaveDialog(mainWindow, options);
     return result;
   });
 
-  ipcMain.handle("dialog:showMessageBox", async (event, options) => {
+  safeHandle(ipcMain, "dialog:showMessageBox", async (event, options) => {
     const result = await dialog.showMessageBox(mainWindow, options);
     return result;
   });
 
   // 窗口控制
-  ipcMain.handle("window:minimize", () => {
+  safeHandle(ipcMain, "window:minimize", () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return false;
     }
@@ -828,7 +829,7 @@ function setupIPC(mainWindow) {
     return true;
   });
 
-  ipcMain.handle("window:toggleMaximize", () => {
+  safeHandle(ipcMain, "window:toggleMaximize", () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return false;
     }
@@ -847,7 +848,7 @@ function setupIPC(mainWindow) {
     };
   });
 
-  ipcMain.handle("window:close", () => {
+  safeHandle(ipcMain, "window:close", () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return false;
     }
@@ -855,7 +856,7 @@ function setupIPC(mainWindow) {
     return true;
   });
 
-  ipcMain.handle("window:getState", () => {
+  safeHandle(ipcMain, "window:getState", () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return { isMaximized: false, isFullScreen: false };
     }
@@ -867,7 +868,7 @@ function setupIPC(mainWindow) {
   });
 
   // 启动SSH连接
-  ipcMain.handle("terminal:startSSH", async (event, sshConfig) => {
+  safeHandle(ipcMain, "terminal:startSSH", async (event, sshConfig) => {
     const processId = nextProcessId++;
 
     if (!sshConfig || !sshConfig.host) {
@@ -1184,7 +1185,7 @@ function setupIPC(mainWindow) {
   });
 
   // 启动Telnet连接
-  ipcMain.handle("terminal:startTelnet", async (event, telnetConfig) => {
+  safeHandle(ipcMain, "terminal:startTelnet", async (event, telnetConfig) => {
     const processId = nextProcessId++;
 
     if (!telnetConfig || !telnetConfig.host) {
@@ -1529,7 +1530,7 @@ function setupIPC(mainWindow) {
   }
 
   // 发送数据到进程
-  ipcMain.handle("terminal:sendToProcess", async (event, processId, data) => {
+  safeHandle(ipcMain, "terminal:sendToProcess", async (event, processId, data) => {
     const procInfo = childProcesses.get(processId);
     if (!procInfo || !procInfo.process) {
       return false;
@@ -1674,7 +1675,7 @@ function setupIPC(mainWindow) {
   });
 
   // 终止进程
-  ipcMain.handle("terminal:killProcess", async (event, processId) => {
+  safeHandle(ipcMain, "terminal:killProcess", async (event, processId) => {
     const proc = childProcesses.get(processId);
     if (proc && proc.process) {
       try {
@@ -1761,7 +1762,7 @@ function setupIPC(mainWindow) {
   });
 
   // 接收编辑器模式状态变更通知
-  ipcMain.handle(
+  safeHandle(
     "terminal:notifyEditorModeChange",
     async (event, processId, isEditorMode) => {
       const procInfo = childProcesses.get(processId);
@@ -1801,12 +1802,12 @@ function setupIPC(mainWindow) {
   );
 
   // 加载连接配置
-  ipcMain.handle("terminal:loadConnections", async () => {
+  safeHandle(ipcMain, "terminal:loadConnections", async () => {
     return configService.loadConnections();
   });
 
   // 保存连接配置
-  ipcMain.handle("terminal:saveConnections", async (event, connections) => {
+  safeHandle(ipcMain, "terminal:saveConnections", async (event, connections) => {
     const result = configService.saveConnections(connections);
 
     // 保存成功后，通知所有渲染进程连接配置已更新
@@ -1823,7 +1824,7 @@ function setupIPC(mainWindow) {
   });
 
   // Load top connections (from persistent storage)
-  ipcMain.handle("terminal:loadTopConnections", async () => {
+  safeHandle(ipcMain, "terminal:loadTopConnections", async () => {
     try {
       return configService.loadLastConnections();
     } catch (e) {
@@ -1832,50 +1833,50 @@ function setupIPC(mainWindow) {
   });
 
   // 选择密钥文件
-  ipcMain.handle("terminal:selectKeyFile", async () => {
+  safeHandle(ipcMain, "terminal:selectKeyFile", async () => {
     return selectKeyFile();
   });
 
   // 代理配置相关IPC处理程序
-  ipcMain.handle("proxy:getStatus", async () => {
+  safeHandle(ipcMain, "proxy:getStatus", async () => {
     const proxyManager = require("./core/proxy/proxy-manager");
     return proxyManager.getProxyStatus();
   });
 
-  ipcMain.handle("proxy:getDefaultConfig", async () => {
+  safeHandle(ipcMain, "proxy:getDefaultConfig", async () => {
     const proxyManager = require("./core/proxy/proxy-manager");
     return proxyManager.getDefaultProxyConfig();
   });
 
-  ipcMain.handle("proxy:saveDefaultConfig", async (event, proxyConfig) => {
+  safeHandle(ipcMain, "proxy:saveDefaultConfig", async (event, proxyConfig) => {
     const proxyManager = require("./core/proxy/proxy-manager");
     return proxyManager.saveDefaultProxyConfig(proxyConfig);
   });
 
-  ipcMain.handle("proxy:getSystemConfig", async () => {
+  safeHandle(ipcMain, "proxy:getSystemConfig", async () => {
     const proxyManager = require("./core/proxy/proxy-manager");
     return proxyManager.getSystemProxyConfig();
   });
 
   // 获取应用版本号
-  ipcMain.handle("app:getVersion", async () => {
+  safeHandle(ipcMain, "app:getVersion", async () => {
     return app.getVersion();
   });
 
   // 关闭应用
-  ipcMain.handle("app:close", async () => {
+  safeHandle(ipcMain, "app:close", async () => {
     app.quit();
     return true;
   });
 
   // 重新加载窗口
-  ipcMain.handle("app:reloadWindow", async () => {
+  safeHandle(ipcMain, "app:reloadWindow", async () => {
     mainWindow.reload();
     return true;
   });
 
   // 在外部浏览器打开链接
-  ipcMain.handle("app:openExternal", async (event, url) => {
+  safeHandle(ipcMain, "app:openExternal", async (event, url) => {
     try {
       await shell.openExternal(url);
       return { success: true };
@@ -1886,7 +1887,7 @@ function setupIPC(mainWindow) {
   });
 
   // 检查更新
-  ipcMain.handle("app:checkForUpdate", async () => {
+  safeHandle(ipcMain, "app:checkForUpdate", async () => {
     try {
       const https = require("https");
 
@@ -1946,7 +1947,7 @@ function setupIPC(mainWindow) {
   });
 
   // 处理简单的命令
-  ipcMain.handle("terminal:command", async (event, command) => {
+  safeHandle(ipcMain, "terminal:command", async (event, command) => {
     try {
       // 简单内部命令处理
       if (command === "date") {
@@ -1963,7 +1964,7 @@ function setupIPC(mainWindow) {
   });
 
   // 添加调整终端大小的处理
-  ipcMain.handle("terminal:resize", async (event, processId, cols, rows) => {
+  safeHandle(ipcMain, "terminal:resize", async (event, processId, cols, rows) => {
     const procInfo = childProcesses.get(processId);
     if (!procInfo) {
       return false;
@@ -1990,7 +1991,7 @@ function setupIPC(mainWindow) {
   });
 
   // 获取系统资源信息
-  ipcMain.handle("terminal:getSystemInfo", async (event, processId) => {
+  safeHandle(ipcMain, "terminal:getSystemInfo", async (event, processId) => {
     try {
       // 只有当提供了有效的进程ID且该进程存在于childProcesses映射中时才获取远程系统信息
       if (!processId || !childProcesses.has(processId)) {
@@ -2041,7 +2042,7 @@ function setupIPC(mainWindow) {
   });
 
   // 获取进程列表
-  ipcMain.handle("terminal:getProcessList", async (event, processId) => {
+  safeHandle(ipcMain, "terminal:getProcessList", async (event, processId) => {
     try {
       if (!processId || !childProcesses.has(processId)) {
         return systemInfo.getProcessList();
@@ -2088,7 +2089,7 @@ function setupIPC(mainWindow) {
   });
 
   // 清理终端连接（用于连接刷新）
-  ipcMain.handle("terminal:cleanupConnection", async (event, processId) => {
+  safeHandle(ipcMain, "terminal:cleanupConnection", async (event, processId) => {
     try {
       if (!processId) {
         logToFile("No processId provided for cleanup", "WARN");
@@ -2138,16 +2139,16 @@ function setupIPC(mainWindow) {
   });
 
   // AI设置相关IPC处理
-  ipcMain.handle("ai:loadSettings", async () => {
+  safeHandle(ipcMain, "ai:loadSettings", async () => {
     return configService.loadAISettings();
   });
 
-  ipcMain.handle("ai:saveSettings", async (event, settings) => {
+  safeHandle(ipcMain, "ai:saveSettings", async (event, settings) => {
     return configService.saveAISettings(settings);
   });
 
   // 新增: 处理API配置的IPC方法
-  ipcMain.handle("ai:saveApiConfig", async (event, config) => {
+  safeHandle(ipcMain, "ai:saveApiConfig", async (event, config) => {
     try {
       if (logToFile) {
         logToFile(
@@ -2181,7 +2182,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("ai:deleteApiConfig", async (event, configId) => {
+  safeHandle(ipcMain, "ai:deleteApiConfig", async (event, configId) => {
     try {
       const settings = configService.loadAISettings();
       if (!settings.configs) settings.configs = [];
@@ -2213,7 +2214,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("ai:setCurrentApiConfig", async (event, configId) => {
+  safeHandle(ipcMain, "ai:setCurrentApiConfig", async (event, configId) => {
     try {
       if (logToFile)
         logToFile(
@@ -2238,7 +2239,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("ai:sendPrompt", async (event, prompt, settings) => {
+  safeHandle(ipcMain, "ai:sendPrompt", async (event, prompt, settings) => {
     try {
       return await configService.sendAIPrompt(prompt, settings);
     } catch (error) {
@@ -2248,7 +2249,7 @@ function setupIPC(mainWindow) {
   });
 
   // 通过Worker线程处理API请求，绕过CORS限制
-  ipcMain.handle("ai:sendAPIRequest", async (event, requestData, isStream) => {
+  safeHandle(ipcMain, "ai:sendAPIRequest", async (event, requestData, isStream) => {
     try {
       // 验证请求数据
       if (
@@ -2323,7 +2324,7 @@ function setupIPC(mainWindow) {
   });
 
   // 处理中断API请求
-  ipcMain.handle("ai:abortAPIRequest", async (event) => {
+  safeHandle(ipcMain, "ai:abortAPIRequest", async (event) => {
     try {
       // 检查是否有当前会话ID
       if (currentSessionId && aiWorker) {
@@ -2365,7 +2366,7 @@ function setupIPC(mainWindow) {
   });
 
   // 获取可用模型列表
-  ipcMain.handle("ai:fetchModels", async (event, requestData) => {
+  safeHandle(ipcMain, "ai:fetchModels", async (event, requestData) => {
     try {
       // 确保Worker已创建
       if (!aiWorker) {
@@ -2408,7 +2409,7 @@ function setupIPC(mainWindow) {
   });
 
   // 文件管理相关API
-  ipcMain.handle("listFiles", async (event, tabId, path, options = {}) => {
+  safeHandle(ipcMain, "listFiles", async (event, tabId, path, options = {}) => {
     try {
       // 先确保SFTP会话有效
       if (sftpCore && typeof sftpCore.ensureSftpSession === "function") {
@@ -2539,7 +2540,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("copyFile", async (event, tabId, sourcePath, targetPath) => {
+  safeHandle(ipcMain, "copyFile", async (event, tabId, sourcePath, targetPath) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -2612,7 +2613,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("moveFile", async (event, tabId, sourcePath, targetPath) => {
+  safeHandle(ipcMain, "moveFile", async (event, tabId, sourcePath, targetPath) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -2685,7 +2686,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("deleteFile", async (event, tabId, filePath, isDirectory) => {
+  safeHandle(ipcMain, "deleteFile", async (event, tabId, filePath, isDirectory) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -2760,7 +2761,7 @@ function setupIPC(mainWindow) {
   });
 
   // 创建文件夹
-  ipcMain.handle("createFolder", async (event, tabId, folderPath) => {
+  safeHandle(ipcMain, "createFolder", async (event, tabId, folderPath) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -2798,7 +2799,7 @@ function setupIPC(mainWindow) {
   });
 
   // 创建文件
-  ipcMain.handle("createFile", async (event, tabId, filePath) => {
+  safeHandle(ipcMain, "createFile", async (event, tabId, filePath) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -2837,7 +2838,7 @@ function setupIPC(mainWindow) {
   });
 
   // 设置文件权限
-  ipcMain.handle(
+  safeHandle(
     "setFilePermissions",
     async (event, tabId, filePath, permissions) => {
       try {
@@ -2914,7 +2915,7 @@ function setupIPC(mainWindow) {
   );
 
   // 获取文件权限
-  ipcMain.handle("getFilePermissions", async (event, tabId, filePath) => {
+  safeHandle(ipcMain, "getFilePermissions", async (event, tabId, filePath) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -2960,7 +2961,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("downloadFile", async (event, tabId, remotePath) => {
+  safeHandle(ipcMain, "downloadFile", async (event, tabId, remotePath) => {
     if (
       !sftpTransfer ||
       typeof sftpTransfer.handleDownloadFile !== "function"
@@ -2979,7 +2980,7 @@ function setupIPC(mainWindow) {
   });
 
   // 设置文件所有者/组
-  ipcMain.handle(
+  safeHandle(
     "setFileOwnership",
     async (event, tabId, filePath, owner, group) => {
       try {
@@ -3068,7 +3069,7 @@ function setupIPC(mainWindow) {
     },
   );
 
-  ipcMain.handle(
+  safeHandle(
     "external-editor:open",
     async (event, tabId, remotePath) => {
       if (
@@ -3100,7 +3101,7 @@ function setupIPC(mainWindow) {
     },
   );
   // Handle creating remote folder structure
-  ipcMain.handle("createRemoteFolders", async (event, tabId, folderPath) => {
+  safeHandle(ipcMain, "createRemoteFolders", async (event, tabId, folderPath) => {
     try {
       const processInfo = childProcesses.get(tabId);
       if (!processInfo || !processInfo.config || processInfo.type !== "ssh2") {
@@ -3165,7 +3166,7 @@ function setupIPC(mainWindow) {
   });
 
   // Handle SFTP Upload File
-  ipcMain.handle(
+  safeHandle(
     "uploadFile",
     async (event, tabId, targetFolder, progressChannel) => {
       // Ensure sftpTransfer module is available
@@ -3305,7 +3306,7 @@ function setupIPC(mainWindow) {
   );
 
   // Handle SFTP Upload Dropped Files (from drag-and-drop)
-  ipcMain.handle(
+  safeHandle(
     "uploadDroppedFiles",
     async (event, tabId, targetFolder, uploadData, progressChannel) => {
       // Ensure sftpTransfer module is available
@@ -3764,7 +3765,7 @@ function setupIPC(mainWindow) {
     },
   );
 
-  ipcMain.handle("renameFile", async (event, tabId, oldPath, newName) => {
+  safeHandle(ipcMain, "renameFile", async (event, tabId, oldPath, newName) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -3810,7 +3811,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("getAbsolutePath", async (event, tabId, relativePath) => {
+  safeHandle(ipcMain, "getAbsolutePath", async (event, tabId, relativePath) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -3878,7 +3879,7 @@ function setupIPC(mainWindow) {
   });
 
   // 取消所有类型的文件传输（单文件传输、文件夹上传、文件夹下载等）
-  ipcMain.handle("cancelTransfer", async (event, tabId, transferKey) => {
+  safeHandle(ipcMain, "cancelTransfer", async (event, tabId, transferKey) => {
     if (
       !sftpTransfer ||
       typeof sftpTransfer.handleCancelTransfer !== "function"
@@ -3930,7 +3931,7 @@ function setupIPC(mainWindow) {
   });
 
   // 获取或创建 SFTP 会话
-  ipcMain.handle("getSftpSession", async (event, tabId) => {
+  safeHandle(ipcMain, "getSftpSession", async (event, tabId) => {
     try {
       return sftpCore.getSftpSession(tabId);
     } catch (error) {
@@ -3940,7 +3941,7 @@ function setupIPC(mainWindow) {
   });
 
   // 处理 SFTP 操作队列
-  ipcMain.handle("enqueueSftpOperation", async (event, tabId, operation) => {
+  safeHandle(ipcMain, "enqueueSftpOperation", async (event, tabId, operation) => {
     try {
       return sftpCore.enqueueSftpOperation(tabId, operation);
     } catch (error) {
@@ -3950,7 +3951,7 @@ function setupIPC(mainWindow) {
   });
 
   // 处理队列中的 SFTP 操作
-  ipcMain.handle("processSftpQueue", async (event, tabId) => {
+  safeHandle(ipcMain, "processSftpQueue", async (event, tabId) => {
     try {
       return sftpCore.processSftpQueue(tabId);
     } catch (error) {
@@ -3960,7 +3961,7 @@ function setupIPC(mainWindow) {
   });
 
   // 读取文件内容，返回文本
-  ipcMain.handle("readFileContent", async (event, tabId, filePath) => {
+  safeHandle(ipcMain, "readFileContent", async (event, tabId, filePath) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -4001,7 +4002,7 @@ function setupIPC(mainWindow) {
   });
 
   // 读取文件内容，返回base64编码的数据（适用于图片等二进制文件）
-  ipcMain.handle("readFileAsBase64", async (event, tabId, filePath) => {
+  safeHandle(ipcMain, "readFileAsBase64", async (event, tabId, filePath) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -4069,7 +4070,7 @@ function setupIPC(mainWindow) {
   });
 
   // 清理文件缓存
-  ipcMain.handle("cleanupFileCache", async (event, cacheFilePath) => {
+  safeHandle(ipcMain, "cleanupFileCache", async (event, cacheFilePath) => {
     try {
       if (cacheFilePath) {
         const success = await fileCache.cleanupCacheFile(cacheFilePath);
@@ -4087,7 +4088,7 @@ function setupIPC(mainWindow) {
   });
 
   // 清理标签页缓存
-  ipcMain.handle("cleanupTabCache", async (event, tabId) => {
+  safeHandle(ipcMain, "cleanupTabCache", async (event, tabId) => {
     try {
       const cleanedCount = await fileCache.cleanupTabCaches(tabId);
       return { success: true, cleanedCount };
@@ -4101,7 +4102,7 @@ function setupIPC(mainWindow) {
   });
 
   // 新增：保存文件内容
-  ipcMain.handle("saveFileContent", async (event, tabId, filePath, content) => {
+  safeHandle(ipcMain, "saveFileContent", async (event, tabId, filePath, content) => {
     try {
       // 使用 SFTP 会话池获取会话
       return sftpCore.enqueueSftpOperation(tabId, async () => {
@@ -4144,7 +4145,7 @@ function setupIPC(mainWindow) {
   });
 
   // 新增：上传文件夹处理函数
-  ipcMain.handle(
+  safeHandle(
     "upload-folder",
     async (event, tabId, targetFolder, progressChannel) => {
       // Ensure sftpTransfer module is available
@@ -4288,7 +4289,7 @@ function setupIPC(mainWindow) {
   );
 
   // 添加检查路径是否存在的API
-  ipcMain.handle("checkPathExists", async (event, checkPath) => {
+  safeHandle(ipcMain, "checkPathExists", async (event, checkPath) => {
     try {
       logToFile(`检查路径是否存在: ${checkPath}`, "INFO");
       const exists = fs.existsSync(checkPath);
@@ -4301,7 +4302,7 @@ function setupIPC(mainWindow) {
   });
 
   // 添加在文件管理器中显示文件/文件夹的API
-  ipcMain.handle("showItemInFolder", async (event, itemPath) => {
+  safeHandle(ipcMain, "showItemInFolder", async (event, itemPath) => {
     try {
       logToFile(`尝试在文件管理器中显示: ${itemPath}`, "INFO");
       shell.showItemInFolder(itemPath);
@@ -4313,20 +4314,20 @@ function setupIPC(mainWindow) {
   });
 
   // UI设置相关API
-  ipcMain.handle("settings:loadUISettings", async () => {
+  safeHandle(ipcMain, "settings:loadUISettings", async () => {
     return await configService.loadUISettings(); // loadUISettings in configManager is not async, but IPC handler can be
   });
 
-  ipcMain.handle("settings:saveUISettings", async (event, settings) => {
+  safeHandle(ipcMain, "settings:saveUISettings", async (event, settings) => {
     return await configService.saveUISettings(settings); // saveUISettings in configManager is not async
   });
 
   // 日志设置相关API
-  ipcMain.handle("settings:loadLogSettings", async () => {
+  safeHandle(ipcMain, "settings:loadLogSettings", async () => {
     return await configService.loadLogSettings();
   });
 
-  ipcMain.handle("settings:saveLogSettings", async (event, settings) => {
+  safeHandle(ipcMain, "settings:saveLogSettings", async (event, settings) => {
     const saved = await configService.saveLogSettings(settings);
     if (saved) {
       // 更新当前运行的日志系统配置
@@ -4336,7 +4337,7 @@ function setupIPC(mainWindow) {
   });
 
   // 性能设置实时更新API
-  ipcMain.handle("settings:updateCacheSettings", async (event, settings) => {
+  safeHandle(ipcMain, "settings:updateCacheSettings", async (event, settings) => {
     try {
       // 这里可以实时更新缓存设置
       logToFile(`缓存设置已更新: ${JSON.stringify(settings)}`, "INFO");
@@ -4347,7 +4348,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("settings:updatePrefetchSettings", async (event, settings) => {
+  safeHandle(ipcMain, "settings:updatePrefetchSettings", async (event, settings) => {
     try {
       // 这里可以实时更新预取设置
       logToFile(`预取设置已更新: ${JSON.stringify(settings)}`, "INFO");
@@ -4359,7 +4360,7 @@ function setupIPC(mainWindow) {
   });
 
   // 获取标签页连接状态
-  ipcMain.handle("connection:getTabStatus", async (event, tabId) => {
+  safeHandle(ipcMain, "connection:getTabStatus", async (event, tabId) => {
     try {
       if (!tabId || tabId === "welcome") {
         return { success: true, data: null };
@@ -4416,7 +4417,7 @@ function setupIPC(mainWindow) {
   });
 
   // 获取快捷命令
-  ipcMain.handle("get-shortcut-commands", async () => {
+  safeHandle(ipcMain, "get-shortcut-commands", async () => {
     try {
       const data = configService.loadShortcutCommands();
       return { success: true, data };
@@ -4431,7 +4432,7 @@ function setupIPC(mainWindow) {
   });
 
   // 保存快捷命令
-  ipcMain.handle("save-shortcut-commands", async (_, data) => {
+  safeHandle(ipcMain, "save-shortcut-commands", async (_, data) => {
     try {
       const result = configService.saveShortcutCommands(data);
       return {
@@ -4448,7 +4449,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("downloadFolder", async (event, tabId, remotePath) => {
+  safeHandle(ipcMain, "downloadFolder", async (event, tabId, remotePath) => {
     if (
       !sftpTransfer ||
       typeof sftpTransfer.handleDownloadFolder !== "function"
@@ -4467,7 +4468,7 @@ function setupIPC(mainWindow) {
   });
 
   // 命令历史相关API
-  ipcMain.handle("command-history:add", async (event, command) => {
+  safeHandle(ipcMain, "command-history:add", async (event, command) => {
     try {
       const added = commandHistoryService.addCommand(command);
       if (added) {
@@ -4491,7 +4492,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle(
+  safeHandle(
     "command-history:getSuggestions",
     async (event, input, maxResults = 10) => {
       try {
@@ -4510,7 +4511,7 @@ function setupIPC(mainWindow) {
     },
   );
 
-  ipcMain.handle("command-history:incrementUsage", async (event, command) => {
+  safeHandle(ipcMain, "command-history:incrementUsage", async (event, command) => {
     try {
       commandHistoryService.incrementCommandUsage(command);
       return { success: true };
@@ -4520,7 +4521,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("command-history:clear", async (event) => {
+  safeHandle(ipcMain, "command-history:clear", async (event) => {
     try {
       commandHistoryService.clearHistory();
       configService.saveCommandHistory([]);
@@ -4531,7 +4532,7 @@ function setupIPC(mainWindow) {
     }
   });
 
-  ipcMain.handle("command-history:getStatistics", async (event) => {
+  safeHandle(ipcMain, "command-history:getStatistics", async (event) => {
     try {
       const stats = commandHistoryService.getStatistics();
       return { success: true, statistics: stats };
@@ -4545,7 +4546,7 @@ function setupIPC(mainWindow) {
   });
 
   // 新增：获取所有历史命令
-  ipcMain.handle("command-history:getAll", async (event) => {
+  safeHandle(ipcMain, "command-history:getAll", async (event) => {
     try {
       const history = commandHistoryService.getAllHistory();
       return { success: true, data: history };
@@ -4556,7 +4557,7 @@ function setupIPC(mainWindow) {
   });
 
   // 新增：删除单个历史命令
-  ipcMain.handle("command-history:delete", async (event, command) => {
+  safeHandle(ipcMain, "command-history:delete", async (event, command) => {
     try {
       commandHistoryService.removeCommand(command);
       // 保存到配置文件
@@ -4573,7 +4574,7 @@ function setupIPC(mainWindow) {
   });
 
   // 新增：批量删除历史命令
-  ipcMain.handle("command-history:deleteBatch", async (event, commands) => {
+  safeHandle(ipcMain, "command-history:deleteBatch", async (event, commands) => {
     try {
       if (!Array.isArray(commands)) {
         throw new Error("Commands must be an array");
@@ -4598,7 +4599,7 @@ function setupIPC(mainWindow) {
   });
 
   // 添加IP地址查询API处理函数
-  ipcMain.handle("ip:query", async (event, ip = "") => {
+  safeHandle(ipcMain, "ip:query", async (event, ip = "") => {
     try {
       // 获取默认代理配置以用于IP查询
       const proxyManager = require("./core/proxy/proxy-manager");
@@ -4614,7 +4615,7 @@ function setupIPC(mainWindow) {
   });
 
   // 新增：获取进程信息
-  ipcMain.handle("terminal:getProcessInfo", async (event, processId) => {
+  safeHandle(ipcMain, "terminal:getProcessInfo", async (event, processId) => {
     const procInfo = childProcesses.get(processId);
     if (!procInfo) {
       return null;
@@ -4630,7 +4631,7 @@ function setupIPC(mainWindow) {
   });
 
   // SSH密钥生成器处理
-  ipcMain.handle("generateSSHKeyPair", async (event, options) => {
+  safeHandle(ipcMain, "generateSSHKeyPair", async (event, options) => {
     try {
       const crypto = require("crypto");
       const { generateKeyPair } = crypto;
@@ -4746,7 +4747,7 @@ function setupIPC(mainWindow) {
   });
 
   // 保存SSH密钥到文件
-  ipcMain.handle("saveSSHKey", async (event, options) => {
+  safeHandle(ipcMain, "saveSSHKey", async (event, options) => {
     try {
       const { content, filename } = options;
 
