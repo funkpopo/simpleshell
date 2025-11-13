@@ -11,7 +11,7 @@ const zeroCopyEngine = require("./transfer/zero-copy-engine");
 const {
   backpressureController,
 } = require("./transfer/backpressure-controller");
-const { SftpEngine } = require("./transfer/sftp-engine");
+const { sftpEngine, SftpEngine } = require("./transfer/sftp-engine");
 const {
   optimizationMiddleware,
 } = require("./transfer/optimization-middleware");
@@ -29,7 +29,7 @@ class SimpleShellCore {
     this.memoryPool = memoryPoolManager;
     this.zeroCopy = zeroCopyEngine;
     this.backpressure = backpressureController;
-    this.sftpEngine = SftpEngine;
+    this.sftpEngine = sftpEngine;
     this.optimization = optimizationMiddleware;
 
     this.stats = {
@@ -248,6 +248,7 @@ module.exports = {
   zeroCopyEngine,
   backpressureController,
   SftpEngine,
+  sftpEngine,
   optimizationMiddleware,
 
   // 工厂函数

@@ -974,12 +974,12 @@ class SftpEngine extends EventEmitter {
 }
 
 // 导出
-const SftpEngine = new SftpEngine();
+const sftpEngine = new SftpEngine();
 
 module.exports = {
   SftpEngine,
+  sftpEngine,
   SftpTransfer,
   TRANSFER_TYPE,
   TRANSFER_STATUS,
-  SftpEngine,
 };
