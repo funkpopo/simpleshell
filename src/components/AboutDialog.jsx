@@ -103,11 +103,11 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
         setUpdateInfo(result.updateInfo);
         setUpdateStatus(result.updateInfo.hasUpdate ? "available" : "upToDate");
       } else {
-        setError(result.error || "Failed to check for updates");
+        setError(result.error || t("update.errors.checkFailed"));
         setUpdateStatus("error");
       }
     } catch (err) {
-      setError(err.message || "Network error occurred");
+      setError(err.message || t("update.errors.networkError"));
       setUpdateStatus("error");
     } finally {
       setCheckingForUpdate(false);
@@ -117,7 +117,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   // Download update
   const downloadUpdate = useCallback(async () => {
     if (!updateInfo?.downloadUrl) {
-      setError("Download URL not available");
+      setError(t("update.errors.noDownloadUrl"));
       return;
     }
 
@@ -135,11 +135,11 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
         setDownloadedFilePath(result.filePath);
         setUpdateStatus("downloaded");
       } else {
-        setError(result.error || "Download failed");
+        setError(result.error || t("update.errors.downloadFailed"));
         setUpdateStatus("error");
       }
     } catch (err) {
-      setError(err.message || "Download failed");
+      setError(err.message || t("update.errors.downloadFailed"));
       setUpdateStatus("error");
     } finally {
       setIsDownloading(false);
@@ -149,7 +149,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   // Install update
   const installUpdate = useCallback(async () => {
     if (!downloadedFilePath) {
-      setError("No installer file available");
+      setError(t("update.errors.noInstallerFile"));
       return;
     }
 
@@ -160,12 +160,12 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
       const result = await window.terminalAPI.installUpdate(downloadedFilePath);
 
       if (!result.success) {
-        setError(result.error || "Installation failed");
+        setError(result.error || t("update.errors.installationFailed"));
         setUpdateStatus("error");
       }
       // 成功安装后应用会自动退出并重启
     } catch (err) {
-      setError(err.message || "Installation failed");
+      setError(err.message || t("update.errors.installationFailed"));
       setUpdateStatus("error");
     }
   }, [downloadedFilePath]);
