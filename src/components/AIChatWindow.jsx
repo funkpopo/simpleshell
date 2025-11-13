@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, memo } from "react";
+import React, { useState, useEffect, useRef, useCallback, memo, useTransition } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -127,7 +127,7 @@ const AIChatWindow = ({
   const { t } = useTranslation();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentApi, setCurrentApi] = useState(null);
@@ -231,7 +231,7 @@ const AIChatWindow = ({
 
   // 发送消息
   const handleSendMessage = async () => {
-    if (!input.trim() || loading) return;
+    if (!input.trim() || isPending) return;
     if (!currentApi) {
       setError(t("ai.noApiConfigured"));
       return;
@@ -244,9 +244,10 @@ const AIChatWindow = ({
       timestamp: new Date(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    startTransition(() => {
+      setMessages((prev) => [...prev, userMessage]);
+    });
     setInput("");
-    setLoading(true);
     setError("");
 
     const controller = new AbortController();
@@ -302,15 +303,16 @@ const AIChatWindow = ({
 
         const handleStreamEnd = (event, data) => {
           if (data.sessionId === sessionId) {
-            setMessages((prev) => {
-              const newMessages = [...prev];
-              const lastMessage = newMessages[newMessages.length - 1];
-              if (lastMessage && lastMessage.id === assistantMessage.id) {
-                lastMessage.isStreaming = false;
-              }
-              return newMessages;
+            startTransition(() => {
+              setMessages((prev) => {
+                const newMessages = [...prev];
+                const lastMessage = newMessages[newMessages.length - 1];
+                if (lastMessage && lastMessage.id === assistantMessage.id) {
+                  lastMessage.isStreaming = false;
+                }
+                return newMessages;
+              });
             });
-            setLoading(false);
             setAbortController(null);
             setCurrentSessionId(null);
             // 清理监听器
@@ -384,22 +386,23 @@ const AIChatWindow = ({
         }
         setCurrentSessionId(null);
 
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          const lastMessage = newMessages[newMessages.length - 1];
-          if (
-            lastMessage &&
-            lastMessage.role === "assistant" &&
-            lastMessage.isStreaming
-          ) {
-            lastMessage.isStreaming = false;
-          }
-          return newMessages;
+        startTransition(() => {
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            const lastMessage = newMessages[newMessages.length - 1];
+            if (
+              lastMessage &&
+              lastMessage.role === "assistant" &&
+              lastMessage.isStreaming
+            ) {
+              lastMessage.isStreaming = false;
+            }
+            return newMessages;
+          });
         });
       }
     } finally {
       if (!currentApi.streamEnabled || currentApi.streamEnabled === false) {
-        setLoading(false);
         setAbortController(null);
       }
     }
@@ -409,7 +412,6 @@ const AIChatWindow = ({
   const handleAbortRequest = () => {
     if (abortController) {
       abortController.abort();
-      setLoading(false);
       setAbortController(null);
 
       // 如果有当前会话，立即清理监听器
@@ -424,17 +426,19 @@ const AIChatWindow = ({
       }
 
       // 标记最后一条消息为非流式状态
-      setMessages((prev) => {
-        const newMessages = [...prev];
-        const lastMessage = newMessages[newMessages.length - 1];
-        if (
-          lastMessage &&
-          lastMessage.role === "assistant" &&
-          lastMessage.isStreaming
-        ) {
-          lastMessage.isStreaming = false;
-        }
-        return newMessages;
+      startTransition(() => {
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          const lastMessage = newMessages[newMessages.length - 1];
+          if (
+            lastMessage &&
+            lastMessage.role === "assistant" &&
+            lastMessage.isStreaming
+          ) {
+            lastMessage.isStreaming = false;
+          }
+          return newMessages;
+        });
       });
     }
   };
@@ -465,7 +469,7 @@ const AIChatWindow = ({
       open={windowState === "visible"}
       onClose={onClose}
       hideBackdrop
-      disableEscapeKeyDown={loading}
+      disableEscapeKeyDown={isPending || abortController}
     >
       <DialogTitle
         sx={{
@@ -695,12 +699,12 @@ const AIChatWindow = ({
               }
             }}
             placeholder={t("ai.inputPlaceholder")}
-            disabled={loading}
+            disabled={isPending || abortController}
             inputRef={inputRef}
             variant="outlined"
             size="small"
           />
-          {loading ? (
+          {(isPending || abortController) ? (
             <Fab
               size="small"
               color="error"

@@ -33,6 +33,10 @@ temp/*
 .webpack
 .webpack/*
 
+# webpack缓存
+.webpack_cache
+.webpack_cache/*
+
 # 忽略.codelf
 .codelf
 
