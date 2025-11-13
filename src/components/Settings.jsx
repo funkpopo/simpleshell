@@ -60,7 +60,7 @@ const BootstrapDialogTitle = memo((props) => {
       {children}
       {onClose ? (
         <IconButton
-          aria-label="close"
+          aria-label={t("about.close")}
           onClick={onClose}
           sx={{
             position: "absolute",

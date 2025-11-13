@@ -439,7 +439,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                   size="small"
                   fullWidth
                   sx={{ mb: 1.5 }}
-                  placeholder="user@hostname"
+                  placeholder={t("sshKeyGenerator.commentPlaceholder")}
                 />
 
                 {/* 密码短语 */}

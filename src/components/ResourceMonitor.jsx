@@ -14,6 +14,7 @@ import StorageIcon from "@mui/icons-material/Storage";
 import { useTheme } from "@mui/material/styles";
 import { ResourceMonitorSkeleton } from "./SkeletonLoader.jsx";
 import Tooltip from "@mui/material/Tooltip";
+import { useTranslation } from "react-i18next";
 import { formatFileSize } from "../core/utils/formatters";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import Collapse from "@mui/material/Collapse";
@@ -81,6 +82,7 @@ PercentageBar.displayName = "PercentageBar";
 
 const AccordionHeader = ({ title, icon, expanded, onClick }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   return (
     <Box
       onClick={onClick}
@@ -120,6 +122,7 @@ const AccordionHeader = ({ title, icon, expanded, onClick }) => {
 // 资源监控组件
 const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [systemInfo, setSystemInfo] = useState(null);
   const [processes, setProcesses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -145,15 +148,15 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
       if (window.terminalAPI && window.terminalAPI.getSystemInfo) {
         const info = await window.terminalAPI.getSystemInfo(currentTabId);
         if (info.error) {
-          setError(info.message || "获取系统信息失败");
+          setError(info.message || t("resourceMonitor.errors.systemInfoFailed"));
         } else {
           setSystemInfo(info);
         }
       } else {
-        setError("API不可用");
+        setError(t("resourceMonitor.errors.apiUnavailable"));
       }
     } catch (err) {
-      setError(err.message || "获取系统信息时发生错误");
+      setError(err.message || t("resourceMonitor.errors.fetchSystemInfo"));
     } finally {
       setLoading(false);
     }
@@ -166,15 +169,15 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
         const processList =
           await window.terminalAPI.getProcessList(currentTabId);
         if (processList.error) {
-          setProcessError(processList.message || "获取进程列表失败");
+          setProcessError(processList.message || t("resourceMonitor.errors.processListFailed"));
         } else {
           setProcesses(processList);
         }
       } else {
-        setProcessError("API不可用");
+        setProcessError(t("resourceMonitor.errors.apiUnavailable"));
       }
     } catch (err) {
-      setProcessError(err.message || "获取进程列表时发生错误");
+      setProcessError(err.message || t("resourceMonitor.errors.fetchProcessList"));
     }
   }, [currentTabId]);
 
@@ -233,7 +236,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
               系统资源监控
             </Typography>
             <Box>
-              <Tooltip title="刷新" placement="top">
+              <Tooltip title={t("common.refresh")} placement="top">
                 <IconButton
                   size="small"
                   onClick={handleRefresh}
@@ -276,7 +279,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                       />
                     }
                     expanded={expanded.system}
-                    onClick={handleExpansion("system")}
+                    onClick={handleExpansion("system" )}
                   />
                   <Collapse in={expanded.system} timeout="auto" unmountOnExit>
                     <Box sx={{ p: 2, pt: 0 }}>
@@ -303,26 +306,26 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 {/* CPU信息卡片 */}
                 <Paper elevation={2} sx={{ borderRadius: 1 }}>
                   <AccordionHeader
-                    title="CPU"
+                    title={t("resourceMonitor.cpu" )}
                     icon={
                       <MemoryIcon
                         sx={{ mr: 1, color: theme.palette.warning.main }}
                       />
                     }
                     expanded={expanded.cpu}
-                    onClick={handleExpansion("cpu")}
+                    onClick={handleExpansion("cpu" )}
                   />
                   <Collapse in={expanded.cpu} timeout="auto" unmountOnExit>
                     <Box sx={{ p: 2, pt: 0 }}>
                       <Typography variant="body2" gutterBottom>
-                        <strong>型号:</strong> {systemInfo.cpu.model}
+                        <strong>{t("resourceMonitor.cpuModel")}:</strong> {systemInfo.cpu.model}
                       </Typography>
                       <Typography variant="body2" gutterBottom>
-                        <strong>核心数:</strong> {systemInfo.cpu.cores}
+                        <strong>{t("resourceMonitor.cpuCores")}:</strong> {systemInfo.cpu.cores}
                       </Typography>
                       <Box sx={{ mt: 1, mb: 0.5 }}>
                         <Typography variant="body2">
-                          <strong>使用率:</strong> {systemInfo.cpu.usage}%
+                          <strong>{t("resourceMonitor.usage")}:</strong> {systemInfo.cpu.usage}%
                         </Typography>
                         <LinearProgress
                           variant="determinate"
@@ -349,29 +352,29 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 {/* 内存信息卡片 */}
                 <Paper elevation={2} sx={{ borderRadius: 1 }}>
                   <AccordionHeader
-                    title="内存"
+                    title={t("resourceMonitor.memory")}
                     icon={
                       <StorageIcon
                         sx={{ mr: 1, color: theme.palette.info.main }}
                       />
                     }
                     expanded={expanded.memory}
-                    onClick={handleExpansion("memory")}
+                    onClick={handleExpansion("memory" )}
                   />
                   <Collapse in={expanded.memory} timeout="auto" unmountOnExit>
                     <Box sx={{ p: 2, pt: 0 }}>
                       <Typography variant="body2" gutterBottom>
-                        <strong>总内存:</strong>{" "}
-                        {formatFileSize(systemInfo.memory.total)}
+                        <strong>{t("resourceMonitor.totalMemory")}:</strong> 
+                        {formatFileSize(systemInfo.memory.total )}
                       </Typography>
                       <Typography variant="body2" gutterBottom>
-                        <strong>已用内存:</strong>{" "}
+                        <strong>{t("resourceMonitor.usedMemory")}:</strong> 
                         {formatFileSize(systemInfo.memory.used)} (
                         {systemInfo.memory.usagePercent}%)
                       </Typography>
                       <Typography variant="body2" gutterBottom>
-                        <strong>空闲内存:</strong>{" "}
-                        {formatFileSize(systemInfo.memory.free)}
+                        <strong>{t("resourceMonitor.freeMemory")}:</strong> 
+                        {formatFileSize(systemInfo.memory.free )}
                       </Typography>
                       <Box sx={{ mt: 1, mb: 0.5 }}>
                         <LinearProgress
@@ -406,7 +409,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                       />
                     }
                     expanded={expanded.processes}
-                    onClick={handleExpansion("processes")}
+                    onClick={handleExpansion("processes" )}
                   />
                   <Collapse
                     in={expanded.processes}
@@ -440,7 +443,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                             >
                               <Box flex="0 0 50%" pr={1} overflow="hidden">
                                 <Typography variant="caption" fontWeight="bold">
-                                  名称
+                                  {t("resourceMonitor.processName")}
                                 </Typography>
                               </Box>
                               <Box
@@ -464,7 +467,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                                 }}
                               >
                                 <Typography variant="caption" fontWeight="bold">
-                                  内存
+                                  {t("resourceMonitor.memoryShort")}
                                 </Typography>
                               </Box>
                             </Box>
@@ -516,9 +519,9 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                                 </Box>
                               </ListItem>
                             ),
-                          )}
+                           )}
                         </List>
-                      )}
+                       )}
                     </Box>
                   </Collapse>
                 </Paper>
@@ -541,7 +544,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
             ) : null}
           </Box>
         </>
-      )}
+       )}
     </Paper>
   );
 });
@@ -549,3 +552,5 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
 ResourceMonitor.displayName = "ResourceMonitor";
 
 export default ResourceMonitor;
+
+

@@ -188,6 +188,7 @@
       "yes": "是",
       "no": "否",
       "loading": "加载中...",
+      "refresh": "刷新",
       "skeleton": {
         "loading": "正在加载内容...",
         "terminal": "正在初始化终端...",
@@ -195,7 +196,9 @@
         "settings": "正在加载设置...",
         "connections": "正在加载连接列表...",
         "aiChat": "正在初始化AI助手..."
-      }
+      },
+      "operationFailed": "操作失败",
+      "submitFailed": "提交失败"
     },
     "shortcutCommands": {
       "title": "快捷命令",
@@ -382,7 +385,8 @@
       "savePublic": "保存公钥",
       "savePrivate": "保存私钥",
       "saveFailed": "保存文件失败",
-      "securityWarning": "请妥善保管您的私钥，不要泄露给他人"
+      "securityWarning": "请妥善保管您的私钥，不要泄露给他人",
+      "commentPlaceholder": "user@hostname"
     },
     "fileManager": {
       "title": "文件管理器",
@@ -515,7 +519,15 @@
       "download": "下载更新",
       "installNow": "立即安装",
       "retryCheck": "重试检查",
-      "downloadProgress": "下载进度: {{percent}}%"
+      "downloadProgress": "下载进度: {{percent}}%",
+      "errors": {
+        "checkFailed": "检查更新失败",
+        "networkError": "网络错误",
+        "noDownloadUrl": "下载地址不可用",
+        "downloadFailed": "下载失败",
+        "noInstallerFile": "安装程序文件不可用",
+        "installationFailed": "安装失败"
+      }
     },
     "localTerminal": {
       "title": "本地终端",
@@ -588,6 +600,36 @@
     "snackbar": {
       "tabMoved": "已调整标签顺序",
       "undo": "撤销"
+    },
+    "worldMap": {
+      "loading": "正在加载地图...",
+      "dataUnavailable": "地图数据不可用",
+      "ariaLabel": "世界地图",
+      "loadError": "无法加载地图数据"
+    },
+    "resourceMonitor": {
+      "cpu": "CPU",
+      "memory": "内存",
+      "cpuModel": "型号",
+      "cpuCores": "核心数",
+      "usage": "使用率",
+      "totalMemory": "总内存",
+      "usedMemory": "已用内存",
+      "freeMemory": "可用内存",
+      "processes": "进程",
+      "processName": "进程",
+      "cpuShort": "CPU",
+      "memoryShort": "内存",
+      "localInfo": "显示本地系统信息",
+      "remoteInfo": "显示远程系统信息",
+      "autoRefresh": "每5秒自动刷新",
+      "errors": {
+        "systemInfoFailed": "获取系统信息失败",
+        "apiUnavailable": "API不可用",
+        "fetchSystemInfo": "获取系统信息时发生错误",
+        "processListFailed": "获取进程列表失败",
+        "fetchProcessList": "获取进程列表时发生错误"
+      }
     }
   }
 }

@@ -1,11 +1,13 @@
 import * as React from "react";
 import brainSvg from "../assets/brain.svg";
+import { useTranslation } from "react-i18next";
 
 function AIIcon(props) {
+  const { t } = useTranslation();
   return (
     <img
       src={brainSvg}
-      alt="AI Assistant"
+      alt={t("sidebar.ai")}
       style={{
         width:
           props.fontSize === "large"

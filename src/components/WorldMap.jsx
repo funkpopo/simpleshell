@@ -7,9 +7,11 @@ import {
 } from "react-simple-maps";
 import { useTheme } from "@mui/material/styles";
 import { Box, CircularProgress, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 
 const WorldMap = ({ latitude, longitude }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [geoData, setGeoData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -30,7 +32,7 @@ const WorldMap = ({ latitude, longitude }) => {
         setError(null);
       } catch (err) {
         console.error("Failed to load geography data:", err);
-        setError("无法加载地图数据");
+        setError(t("worldMap.loadError"));
       } finally {
         setLoading(false);
       }
@@ -51,7 +53,7 @@ const WorldMap = ({ latitude, longitude }) => {
       >
         <CircularProgress size={24} />
         <Typography sx={{ ml: 1 }} variant="body2">
-          加载地图...
+        {t("worldMap.loading")}
         </Typography>
       </Box>
     );
@@ -68,7 +70,7 @@ const WorldMap = ({ latitude, longitude }) => {
         }}
       >
         <Typography variant="body2" color="error">
-          {error || "地图数据不可用"}
+          {error || t("worldMap.dataUnavailable")}
         </Typography>
       </Box>
     );
@@ -86,7 +88,7 @@ const WorldMap = ({ latitude, longitude }) => {
         width: "100%",
         height: "100%",
       }}
-      aria-label="World map"
+      aria-label={t("worldMap.ariaLabel")}
     >
       <Geographies geography={geoData}>
         {({ geographies }) =>
@@ -125,3 +127,5 @@ const WorldMap = ({ latitude, longitude }) => {
 };
 
 export default memo(WorldMap);
+
+

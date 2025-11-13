@@ -672,7 +672,7 @@ const AISettings = ({ open, onClose }) => {
                           handleConfigChange("name", e.target.value)
                         }
                         fullWidth
-                        placeholder="My API"
+                        placeholder={t("aiSettings.placeholders.name")}
                         variant="outlined"
                         required
                       />
@@ -683,7 +683,7 @@ const AISettings = ({ open, onClose }) => {
                           handleConfigChange("apiUrl", e.target.value)
                         }
                         fullWidth
-                        placeholder="https://api.openai.com/v1"
+                        placeholder={t("aiSettings.placeholders.baseUrl")}
                         variant="outlined"
                         required
                         helperText={t("aiSettings.apiUrlHelp")}
@@ -696,7 +696,7 @@ const AISettings = ({ open, onClose }) => {
                         }
                         fullWidth
                         type="password"
-                        placeholder="sk-..."
+                        placeholder={t("aiSettings.placeholders.apiKey")}
                         variant="outlined"
                         required
                       />
@@ -716,7 +716,7 @@ const AISettings = ({ open, onClose }) => {
                             <TextField
                               {...params}
                               label={t("aiSettings.model")}
-                              placeholder="gpt-3.5-turbo"
+                              placeholder={t("aiSettings.placeholders.model")}
                               variant="outlined"
                               required
                             />

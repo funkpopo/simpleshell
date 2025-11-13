@@ -192,6 +192,9 @@
       "yes": "Yes",
       "no": "No",
       "loading": "Loading...",
+      "refresh": "Refresh",
+      "operationFailed": "Operation failed",
+      "submitFailed": "Submit failed",
       "skeleton": {
         "loading": "Loading content...",
         "terminal": "Initializing terminal...",
@@ -297,6 +300,12 @@
       "apiUrlHelp": "Enter the base API URL, e.g., https://api.openai.com/v1 (do not include /chat/completions)",
       "apiKey": "API Key",
       "model": "Model Name",
+      "placeholders": {
+        "name": "My API",
+        "baseUrl": "https://api.openai.com/v1",
+        "apiKey": "sk-...",
+        "model": "gpt-3.5-turbo"
+      },
       "maxTokens": "Max Tokens",
       "temperature": "Temperature",
       "streamEnabled": "Stream Output",
@@ -386,7 +395,8 @@
       "savePublic": "Save Public Key",
       "savePrivate": "Save Private Key",
       "saveFailed": "Failed to save file",
-      "securityWarning": "Please keep your private key safe and do not share it with others"
+      "securityWarning": "Please keep your private key safe and do not share it with others",
+      "commentPlaceholder": "user@hostname"
     },
     "fileManager": {
       "title": "File Manager",
@@ -519,7 +529,15 @@
       "download": "Download Update",
       "installNow": "Install Now",
       "retryCheck": "Retry Check",
-      "downloadProgress": "Download progress: {{percent}}%"
+      "downloadProgress": "Download progress: {{percent}}%",
+      "errors": {
+        "checkFailed": "Failed to check for updates",
+        "networkError": "Network error occurred",
+        "noDownloadUrl": "Download URL not available",
+        "downloadFailed": "Download failed",
+        "noInstallerFile": "No installer file available",
+        "installationFailed": "Installation failed"
+      }
     },
     "localTerminal": {
       "title": "Local Terminal",
@@ -588,6 +606,36 @@
       "maximize": "Maximize",
       "restore": "Restore",
       "close": "Close"
+    },
+    "worldMap": {
+      "loading": "Loading map...",
+      "dataUnavailable": "Map data unavailable",
+      "ariaLabel": "World map",
+      "loadError": "Failed to load map data"
+    },
+    "resourceMonitor": {
+      "cpu": "CPU",
+      "memory": "Memory",
+      "cpuModel": "Model",
+      "cpuCores": "Cores",
+      "usage": "Usage",
+      "totalMemory": "Total Memory",
+      "usedMemory": "Used Memory",
+      "freeMemory": "Free Memory",
+      "processes": "Processes",
+      "processName": "Process",
+      "cpuShort": "CPU",
+      "memoryShort": "Memory",
+      "localInfo": "Showing local system info",
+      "remoteInfo": "Showing remote system info",
+      "autoRefresh": "Auto refresh every 5s",
+      "errors": {
+        "systemInfoFailed": "Failed to get system info",
+        "apiUnavailable": "API unavailable",
+        "fetchSystemInfo": "Error while getting system info",
+        "processListFailed": "Failed to get process list",
+        "fetchProcessList": "Error while getting process list"
+      }
     }
   }
 }
