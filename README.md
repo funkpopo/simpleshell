@@ -198,6 +198,22 @@ simpleshell/
 - **[React Beautiful DnD](https://github.com/atlassian/react-beautiful-dnd)** - Drag and drop
 - **[React Simple Maps](https://www.react-simple-maps.io/)** - World map visualization
 
+## **Connection Architecture**
+
+- Core vs Modules
+  - `src/core/connection`: Canonical, low-level connection primitives and pools. Files follow `*-connection-pool.js` naming (e.g., `ssh-connection-pool.js`, `telnet-connection-pool.js`) and a shared `base-connection-pool.js`.
+  - `src/modules/connection`: App-level orchestration that composes the core pools and SFTP manager into a single service used by the app (exposed via `require("./modules/connection")`).
+
+- Naming consistency
+  - Use `*-connection-pool` for protocol-specific pools.
+  - Legacy advanced pool/manager were previously under `src/core/connection/legacy/`.
+    - `ssh-advanced-pool.js` has been renamed to `connection/ssh-pool.js` (replaces the old `ssh-pool.js`).
+    - `connection-manager.js` is the canonical advanced manager (legacy path removed).
+
+- Import guidance
+  - For pools: `const { sshConnectionPool, telnetConnectionPool } = require("../../core/connection");`
+  - For app-level connection features (incl. SFTP): `const connectionManager = require("./modules/connection");`
+
 ## **Contributing**
 
 Contributions are welcome! Please feel free to submit a Pull Request.

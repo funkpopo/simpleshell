@@ -1,6 +1,6 @@
 // 连接管理模块
 const connectionManager = require("./connection/connection-manager");
-const SSHPool = require("./connection/ssh-pool");
+const SSHConnectionPool = require("./connection/ssh-connection-pool");
 const ConnectionMonitor = require("./connection/connection-monitor");
 
 // 内存管理模块
@@ -218,8 +218,18 @@ class SimpleShellCore {
 const simpleShellCore = new SimpleShellCore();
 
 // 创建单例实例
+// Canonical factory for SSH connection pool
+function createSSHConnectionPool(config = {}) {
+  return new SSHConnectionPool(config);
+}
+
+/**
+ * @deprecated Use createSSHConnectionPool() instead.
+ * Kept for backward compatibility; logs a deprecation warning.
+ */
 function createSSHPool(config = {}) {
-  return new SSHPool(config);
+  logToFile("createSSHPool() is deprecated. Use createSSHConnectionPool() instead.", "WARN");
+  return createSSHConnectionPool(config);
 }
 
 function createConnectionMonitor(config = {}) {
@@ -241,6 +251,7 @@ module.exports = {
   optimizationMiddleware,
 
   // 工厂函数
+  createSSHConnectionPool,
   createSSHPool,
   createConnectionMonitor,
 
