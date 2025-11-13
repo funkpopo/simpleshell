@@ -53,7 +53,15 @@ module.exports = [
       loader: "babel-loader",
       options: {
         exclude: /node_modules/,
-        presets: ["@babel/preset-react"],
+        presets: [
+          [
+            "@babel/preset-react",
+            {
+              runtime: "automatic",
+              development: process.env.NODE_ENV === "development",
+            },
+          ],
+        ],
         plugins: [
           // 配置 Material-UI 图标按需导入
           [
@@ -70,6 +78,7 @@ module.exports = [
         compact: false,
         // 启用缓存提升构建性能
         cacheDirectory: true,
+        cacheCompression: false,
         // 配置环境变量
         envName: process.env.NODE_ENV || "development",
       },
