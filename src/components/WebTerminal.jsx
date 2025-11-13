@@ -243,6 +243,8 @@ body:not(.dark-theme) .search-icon-btn:hover {
 const terminalCache = {};
 const fitAddonCache = {};
 const processCache = {};
+// 添加disposables缓存以管理事件监听器的清理
+const disposablesCache = {};
 
 const SHARED_STYLE_ELEMENT_ID = "web-terminal-shared-style";
 let sharedStyleElement = null;
@@ -1505,6 +1507,10 @@ const WebTerminal = ({
     isRemoteInput = false,
     disposables = [],
   ) => {
+    console.debug(
+      `[setupCommandDetection] Starting for processId=${processId}, isRemoteInput=${isRemoteInput}, disposables.length=${disposables.length}`
+    );
+
     // 用于存储用户正在输入的命令
     let currentInputBuffer = "";
     // 标记上一个按键是否是特殊键序列的开始
@@ -1578,6 +1584,21 @@ const WebTerminal = ({
 
     // 监听终端数据输出，用于检测编辑器特征
     const onDataDisposable = term.onData((data) => {
+      // 添加调试日志
+      if (data && data.length > 0) {
+        // 只记录可见字符输入,避免日志过多
+        const charCode = data.charCodeAt(0);
+        if (charCode >= 32 && charCode <= 126) {
+          console.debug(
+            `[onData] Received input: "${data}" for processId=${processId}`
+          );
+        } else if (charCode === 13) {
+          console.debug(`[onData] Received ENTER for processId=${processId}`);
+        } else if (charCode === 127 || charCode === 8) {
+          console.debug(`[onData] Received BACKSPACE for processId=${processId}`);
+        }
+      }
+
       // 检查是否正在处理外部命令
       let shouldSkipSendToProcess = false;
       if (term._externalCommand) {
@@ -2204,7 +2225,11 @@ const WebTerminal = ({
     }
 
     // 存储终端事件监听器的 disposables 以便清理
-    const terminalDisposables = [];
+    // 使用缓存的disposables数组,如果不存在则创建新的
+    if (!disposablesCache[tabId]) {
+      disposablesCache[tabId] = [];
+    }
+    const terminalDisposables = disposablesCache[tabId];
 
     // 初始化 xterm.js
     if (terminalRef.current) {
@@ -2214,9 +2239,34 @@ const WebTerminal = ({
 
       // 检查缓存中是否已有此终端实例
       if (terminalCache[tabId]) {
+        // 清理旧的事件监听器
+        if (disposablesCache[tabId] && Array.isArray(disposablesCache[tabId])) {
+          console.debug(
+            `[WebTerminal] Cleaning up ${disposablesCache[tabId].length} old event listeners for tabId=${tabId}`
+          );
+          disposablesCache[tabId].forEach((disposable) => {
+            try {
+              if (disposable && typeof disposable.dispose === "function") {
+                disposable.dispose();
+              }
+            } catch (error) {
+              console.error(
+                `[WebTerminal] Failed to dispose event listener for tabId=${tabId}:`,
+                error
+              );
+            }
+          });
+          // 清空disposables数组但保留引用
+          disposablesCache[tabId].length = 0;
+        }
+
         // 使用缓存的终端实例
         term = terminalCache[tabId];
         fitAddon = fitAddonCache[tabId];
+
+        console.debug(
+          `[WebTerminal] Reusing cached terminal for tabId=${tabId}, processId=${processCache[tabId]}`
+        );
 
         // 当主题变化时，更新终端主题
         term.options.theme = terminalTheme;
@@ -2455,10 +2505,32 @@ const WebTerminal = ({
 
                   window.dispatchEvent(event);
 
+                  // 在重新绑定事件监听器之前，清理旧的监听器
+                  console.debug(
+                    `[WebTerminal] Clearing old event listeners before rebinding for tabId=${tabId}, old count=${terminalDisposables.length}`
+                  );
+                  terminalDisposables.forEach((disposable) => {
+                    try {
+                      if (disposable && typeof disposable.dispose === "function") {
+                        disposable.dispose();
+                      }
+                    } catch (error) {
+                      console.error(
+                        `[WebTerminal] Failed to dispose event listener:`,
+                        error
+                      );
+                    }
+                  });
+                  // 清空数组
+                  terminalDisposables.length = 0;
+
                   // 设置数据接收监听
                   setupDataListener(processId, term);
 
                   // 设置命令检测（包含密码提示检测）
+                  console.debug(
+                    `[WebTerminal] Setting up command detection for tabId=${tabId}, processId=${processId}`
+                  );
                   setupCommandDetection(
                     term,
                     processId,
@@ -3780,8 +3852,12 @@ const WebTerminal = ({
   useEffect(() => {
     // 当标签变为活动状态时，确保终端获得焦点以接收键盘输入
     if (isActive && termRef.current) {
-      // 使用短延迟确保DOM完全渲染和CSS过渡完成
-      const focusTimer = setTimeout(() => {
+      let focusAttempt = 0;
+      const maxAttempts = 5;
+      const timers = [];
+
+      // 使用递增的延迟来多次尝试设置焦点
+      const attemptFocus = () => {
         try {
           // 验证终端实例和焦点方法存在
           if (
@@ -3795,19 +3871,57 @@ const WebTerminal = ({
               terminalRef.current.offsetHeight > 0;
 
             if (isVisible) {
-              // 让终端获得焦点，使其能够接收键盘输入
-              termRef.current.focus();
+              // 检查xterm-helper-textarea是否已经获得焦点
+              const helperTextarea = termRef.current.element?.querySelector(
+                ".xterm-helper-textarea"
+              );
+
+              if (helperTextarea && document.activeElement !== helperTextarea) {
+                // 让终端获得焦点，使其能够接收键盘输入
+                termRef.current.focus();
+                console.debug(
+                  `[WebTerminal] Successfully focused terminal for tabId=${tabId} on attempt ${focusAttempt + 1}`
+                );
+              } else if (helperTextarea && document.activeElement === helperTextarea) {
+                console.debug(
+                  `[WebTerminal] Terminal already focused for tabId=${tabId}`
+                );
+                return; // 已经获得焦点，不需要继续尝试
+              }
             }
           }
-        } catch (error) {
-          // 忽略焦点设置失败的错误，不影响其他功能
-          console.debug("Terminal focus failed:", error);
-        }
-      }, 100); // 100ms延迟确保过渡动画完成
 
-      // 清理定时器
+          // 继续重试（如果还未达到最大尝试次数）
+          focusAttempt++;
+          if (focusAttempt < maxAttempts) {
+            const nextDelay = 50 + focusAttempt * 50; // 递增延迟: 100ms, 150ms, 200ms, 250ms, 300ms
+            const timer = setTimeout(attemptFocus, nextDelay);
+            timers.push(timer);
+          }
+        } catch (error) {
+          // 记录焦点设置失败的错误
+          console.error(
+            `[WebTerminal] Terminal focus failed for tabId=${tabId} on attempt ${focusAttempt + 1}:`,
+            error
+          );
+
+          // 继续重试（如果还未达到最大尝试次数）
+          focusAttempt++;
+          if (focusAttempt < maxAttempts) {
+            const nextDelay = 50 + focusAttempt * 50;
+            const timer = setTimeout(attemptFocus, nextDelay);
+            timers.push(timer);
+          }
+        }
+      };
+
+      // 初始延迟后开始首次尝试
+      const initialTimer = setTimeout(attemptFocus, 100);
+      timers.push(initialTimer);
+
+      // 清理所有定时器
       return () => {
-        clearTimeout(focusTimer);
+        timers.forEach((timer) => clearTimeout(timer));
       };
     }
   }, [isActive, tabId]); // 监听isActive和tabId变化
