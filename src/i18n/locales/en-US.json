@@ -28,12 +28,26 @@
         "space-mono": "Space Mono",
         "sample": "Hello World! 123"
       },
+      "terminalFontSectionTitle": "Terminal Font Settings",
+      "terminalFontLabel": "Terminal Font",
+      "terminalFontSizeLabel": "Terminal Font Size",
+      "terminalFonts": {
+        "firaCodeDescription": "Monospace font with programming ligatures",
+        "spaceMonoDescription": "Clean, modern monospace font",
+        "consolasDescription": "System default monospace font"
+      },
       "logSettingsTitle": "Log Settings",
       "logLevelLabel": "Log Level",
       "logFileSizeLimitLabel": "Log File Size Limit",
       "logCleanupIntervalLabel": "Log Cleanup Interval",
       "logCleanupIntervalHelper": "Clean up log entries older than specified days, dual cleanup by size and time",
       "days": "days",
+      "logLevels": {
+        "debug": "Debug",
+        "info": "Info",
+        "warn": "Warn",
+        "error": "Error"
+      },
       "performanceSettings": "Performance Settings",
       "dnd": {
         "title": "Tab Drag & Drop",
