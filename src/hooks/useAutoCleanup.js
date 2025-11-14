@@ -1,19 +1,20 @@
 import { useEffect, useRef, useCallback } from "react";
 
 /**
- * 自动清理管理器Hook
- * 自动管理和清理定时器、事件监听器、观察器等资源
- * 防止内存泄漏
+ * 自动清理资源的 Hook。
+ *
+ * 在组件卸载时统一清理定时器、事件监听、各种 Observer 等资源，
+ * 避免内存泄漏，同时提供少量统计信息方便调试。
  */
 export function useAutoCleanup() {
   const cleanupManagerRef = useRef(null);
 
-  // 初始化清理管理器
+  // 初始化清理管理器（单例）
   if (!cleanupManagerRef.current) {
     cleanupManagerRef.current = new CleanupManager();
   }
 
-  // 组件卸载时自动清理所有资源
+  // 组件卸载时自动执行一次全量清理
   useEffect(() => {
     return () => {
       if (cleanupManagerRef.current) {
@@ -23,16 +24,17 @@ export function useAutoCleanup() {
     };
   }, []);
 
-  // 添加定时器
+  // 注册一次性定时器（setTimeout），并在清理时自动取消
   const addTimeout = useCallback((callback, delay) => {
     return cleanupManagerRef.current?.addTimeout(callback, delay);
   }, []);
 
+  // 注册轮询定时器（setInterval），并在清理时自动取消
   const addInterval = useCallback((callback, interval) => {
     return cleanupManagerRef.current?.addInterval(callback, interval);
   }, []);
 
-  // 添加事件监听器
+  // 注册事件监听器，并在清理时自动移除
   const addEventListener = useCallback((target, event, handler, options) => {
     return cleanupManagerRef.current?.addEventListener(
       target,
@@ -42,7 +44,7 @@ export function useAutoCleanup() {
     );
   }, []);
 
-  // 添加观察器
+  // 注册 ResizeObserver，并在清理时断开观察
   const addResizeObserver = useCallback((callback, element, options) => {
     return cleanupManagerRef.current?.addResizeObserver(
       callback,
@@ -51,14 +53,19 @@ export function useAutoCleanup() {
     );
   }, []);
 
-  const addIntersectionObserver = useCallback((callback, element, options) => {
-    return cleanupManagerRef.current?.addIntersectionObserver(
-      callback,
-      element,
-      options,
-    );
-  }, []);
+  // 注册 IntersectionObserver，并在清理时断开观察
+  const addIntersectionObserver = useCallback(
+    (callback, element, options) => {
+      return cleanupManagerRef.current?.addIntersectionObserver(
+        callback,
+        element,
+        options,
+      );
+    },
+    [],
+  );
 
+  // 注册 MutationObserver，并在清理时断开观察
   const addMutationObserver = useCallback((callback, element, options) => {
     return cleanupManagerRef.current?.addMutationObserver(
       callback,
@@ -67,22 +74,22 @@ export function useAutoCleanup() {
     );
   }, []);
 
-  // 添加自定义清理函数
+  // 注册自定义清理函数
   const addCleanup = useCallback((cleanupFn) => {
     return cleanupManagerRef.current?.addCleanup(cleanupFn);
   }, []);
 
-  // 添加 AbortController
+  // 创建 AbortController，并在全局清理时自动 abort
   const createAbortController = useCallback(() => {
     return cleanupManagerRef.current?.createAbortController();
   }, []);
 
-  // 获取统计信息
+  // 获取当前资源统计信息（调试用）
   const getStats = useCallback(() => {
     return cleanupManagerRef.current?.getStats() || {};
   }, []);
 
-  // 手动清理特定资源
+  // 手动移除指定资源
   const removeResource = useCallback((resourceId) => {
     return cleanupManagerRef.current?.removeResource(resourceId);
   }, []);
@@ -102,7 +109,7 @@ export function useAutoCleanup() {
 }
 
 /**
- * 清理管理器类
+ * 负责管理和清理各种异步资源的管理器。
  */
 class CleanupManager {
   constructor() {
@@ -125,44 +132,50 @@ class CleanupManager {
       cleanupFn,
       createdAt: Date.now(),
     });
-
-    // 返回移除函数
-    return () => this.removeResource(id);
+    return id;
   }
 
   removeResource(id) {
-    const resource = this.resources.get(id);
-    if (resource) {
-      try {
-        resource.cleanupFn();
-      } catch (error) {
-        console.error(`清理资源失败 (${id}):`, error);
+    const entry = this.resources.get(id);
+    if (!entry) return;
+
+    try {
+      if (typeof entry.cleanupFn === "function") {
+        entry.cleanupFn();
       }
-      this.resources.delete(id);
+    } catch (error) {
+      console.error(`清理资源失败 (${id}):`, error);
     }
+
+    this.resources.delete(id);
   }
 
-  // 定时器管理
+  // 注册一次性定时器
   addTimeout(callback, delay) {
     if (this.isDestroyed) return () => {};
 
+    let id = null;
     const timerId = setTimeout(() => {
       try {
         callback();
       } catch (error) {
         console.error("定时器回调执行失败:", error);
+      } finally {
+        if (id) {
+          this.removeResource(id);
+        }
       }
-      // 执行后自动从资源列表中移除
-      this.removeResourceByValue("timeout", timerId);
     }, delay);
 
-    return this.addResource("timeout", timerId, () => clearTimeout(timerId));
+    id = this.addResource("timeout", timerId, () => clearTimeout(timerId));
+    return id;
   }
 
+  // 注册轮询定时器
   addInterval(callback, interval) {
     if (this.isDestroyed) return () => {};
 
-    const wrappedCallback = () => {
+    const wrapped = () => {
       try {
         callback();
       } catch (error) {
@@ -170,19 +183,21 @@ class CleanupManager {
       }
     };
 
-    const timerId = setInterval(wrappedCallback, interval);
-    return this.addResource("interval", timerId, () => clearInterval(timerId));
+    const timerId = setInterval(wrapped, interval);
+    return this.addResource("interval", timerId, () =>
+      clearInterval(timerId),
+    );
   }
 
-  // 事件监听器管理
+  // 事件监听封装，自动捕获错误并在清理时移除监听
   addEventListener(target, event, handler, options = {}) {
-    if (this.isDestroyed || !target) return () => {};
+    if (this.isDestroyed || !target || !event || !handler) return () => {};
 
     const wrappedHandler = (...args) => {
       try {
         return handler(...args);
       } catch (error) {
-        console.error("事件处理器执行失败:", error);
+        console.error("事件监听回调执行失败:", error);
       }
     };
 
@@ -195,9 +210,11 @@ class CleanupManager {
     );
   }
 
-  // ResizeObserver 管理
+  // ResizeObserver 封装
   addResizeObserver(callback, element, options = {}) {
-    if (this.isDestroyed || !element) return () => {};
+    if (this.isDestroyed || !element || typeof ResizeObserver === "undefined") {
+      return () => {};
+    }
 
     const observer = new ResizeObserver((entries) => {
       try {
@@ -214,9 +231,15 @@ class CleanupManager {
     );
   }
 
-  // IntersectionObserver 管理
+  // IntersectionObserver 封装
   addIntersectionObserver(callback, element, options = {}) {
-    if (this.isDestroyed || !element) return () => {};
+    if (
+      this.isDestroyed ||
+      !element ||
+      typeof IntersectionObserver === "undefined"
+    ) {
+      return () => {};
+    }
 
     const observer = new IntersectionObserver((entries) => {
       try {
@@ -233,9 +256,15 @@ class CleanupManager {
     );
   }
 
-  // MutationObserver 管理
+  // MutationObserver 封装
   addMutationObserver(callback, element, options = {}) {
-    if (this.isDestroyed || !element) return () => {};
+    if (
+      this.isDestroyed ||
+      !element ||
+      typeof MutationObserver === "undefined"
+    ) {
+      return () => {};
+    }
 
     const observer = new MutationObserver((mutations) => {
       try {
@@ -252,9 +281,11 @@ class CleanupManager {
     );
   }
 
-  // AbortController 管理
+  // AbortController 封装
   createAbortController() {
-    if (this.isDestroyed) return null;
+    if (this.isDestroyed || typeof AbortController === "undefined") {
+      return null;
+    }
 
     const controller = new AbortController();
 
@@ -267,24 +298,13 @@ class CleanupManager {
     return controller;
   }
 
-  // 自定义清理函数
+  // 注册自定义清理函数
   addCleanup(cleanupFn) {
     if (this.isDestroyed || typeof cleanupFn !== "function") return () => {};
-
     return this.addResource("custom", cleanupFn, cleanupFn);
   }
 
-  // 通过值查找并移除资源
-  removeResourceByValue(type, value) {
-    for (const [id, resource] of this.resources) {
-      if (resource.type === type && resource.resource === value) {
-        this.removeResource(id);
-        break;
-      }
-    }
-  }
-
-  // 获取统计信息
+  // 获取资源统计信息（数量 / 类型分布 / 最老资源等）
   getStats() {
     const stats = {
       total: this.resources.size,
@@ -296,10 +316,8 @@ class CleanupManager {
     let oldestTime = Infinity;
 
     for (const [id, resource] of this.resources) {
-      // 按类型统计
       stats.byType[resource.type] = (stats.byType[resource.type] || 0) + 1;
 
-      // 找出最老的资源
       if (resource.createdAt < oldestTime) {
         oldestTime = resource.createdAt;
         stats.oldestResource = {
@@ -309,16 +327,15 @@ class CleanupManager {
         };
       }
 
-      // 估算内存使用
       stats.memoryEstimate += this.estimateResourceMemory(resource);
     }
 
     return stats;
   }
 
-  // 估算资源内存使用
+  // 粗略估算资源占用的内存大小（仅用于调试）
   estimateResourceMemory(resource) {
-    // 基础对象大小
+    // 基础大小
     let size = 100;
 
     switch (resource.type) {
@@ -344,14 +361,13 @@ class CleanupManager {
     return size;
   }
 
-  // 清理所有资源
+  // 释放当前管理器中的所有资源
   cleanup() {
     if (this.isDestroyed) return;
 
-    // 按照添加的逆序清理资源
-    const resourceIds = Array.from(this.resources.keys()).reverse();
-
-    for (const id of resourceIds) {
+    // 逆序清理，尽量先清理后创建的资源
+    const ids = Array.from(this.resources.keys()).reverse();
+    for (const id of ids) {
       this.removeResource(id);
     }
 
@@ -359,9 +375,9 @@ class CleanupManager {
     this.isDestroyed = true;
   }
 
-  // 清理超时的资源（可选功能）
+  // 清理已存在太久的资源（可选，用于长时间运行场景）
   cleanupOldResources(maxAge = 3600000) {
-    // 默认1小时
+    // 默认 1 小时
     const now = Date.now();
     const toRemove = [];
 
@@ -373,7 +389,7 @@ class CleanupManager {
 
     for (const id of toRemove) {
       console.warn(
-        `清理超时资源 (${id}), 年龄: ${(now - this.resources.get(id).createdAt) / 1000}秒`,
+        `自动清理过期资源 (${id}), 存活时间: ${(now - this.resources.get(id).createdAt) / 1000} 秒`,
       );
       this.removeResource(id);
     }
@@ -382,12 +398,15 @@ class CleanupManager {
   }
 }
 
-// 导出 useEffect 增强版本，自动处理清理
+/**
+ * 带自动清理能力的 useEffect 封装版。
+ * 在 effect 中可以直接通过 context 注册需要托管的资源。
+ */
 export function useEffectWithCleanup(effect, deps) {
   useEffect(() => {
     const manager = new CleanupManager();
 
-    // 创建增强的上下文对象
+    // 提供增强版上下文，方便在 effect 中注册资源
     const context = {
       addTimeout: manager.addTimeout.bind(manager),
       addInterval: manager.addInterval.bind(manager),
@@ -399,19 +418,18 @@ export function useEffectWithCleanup(effect, deps) {
       createAbortController: manager.createAbortController.bind(manager),
     };
 
-    // 执行 effect，传入增强的上下文
+    // 执行 effect，并传入增强上下文
     const cleanup = effect(context);
 
-    // 返回清理函数
+    // 清理阶段：先执行用户自定义清理，再释放所有托管资源
     return () => {
-      // 执行用户自定义的清理（如果有）
       if (typeof cleanup === "function") {
         cleanup();
       }
-      // 自动清理所有资源
       manager.cleanup();
     };
   }, deps);
 }
 
 export default useAutoCleanup;
+
