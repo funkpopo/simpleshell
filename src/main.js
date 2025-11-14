@@ -497,6 +497,130 @@ app.whenReady().then(async () => {
     logToFile(`延迟检测服务初始化失败: ${error.message}`, "ERROR");
   }
 
+  // Register critical IPC handlers BEFORE creating window to prevent race conditions
+  try {
+    // Register settings handlers
+    const SettingsHandlers = require("./core/ipc/handlers/settingsHandlers");
+    const settingsHandlers = new SettingsHandlers();
+    settingsHandlers.getHandlers().forEach(({ channel, handler }) => {
+      safeHandle(ipcMain, channel, handler);
+    });
+    logToFile("Settings handlers registered", "INFO");
+
+    // Register app handlers
+    const AppHandlers = require("./core/ipc/handlers/appHandlers");
+    const appHandlers = new AppHandlers();
+    appHandlers.getHandlers().forEach(({ channel, handler }) => {
+      safeHandle(ipcMain, channel, handler);
+    });
+    logToFile("App handlers registered", "INFO");
+
+    // Register basic terminal handlers (connection loading)
+    safeHandle(ipcMain, "terminal:loadConnections", async () => {
+      return configService.loadConnections();
+    });
+
+    safeHandle(ipcMain, "terminal:loadTopConnections", async () => {
+      try {
+        return configService.loadLastConnections();
+      } catch (e) {
+        return [];
+      }
+    });
+
+    safeHandle(ipcMain, "terminal:getSystemInfo", async (event, processId) => {
+      try {
+        const systemInfo = require("./modules/system-info");
+        if (!processId || !childProcesses.has(processId)) {
+          return await systemInfo.getLocalSystemInfo();
+        } else {
+          const processObj = childProcesses.get(processId);
+          if (
+            (processObj.type === "ssh2" || processObj.type === "ssh") &&
+            (processObj.process || processObj.client || processObj.channel)
+          ) {
+            const sshClient =
+              processObj.client || processObj.process || processObj.channel;
+            if (
+              !sshClient ||
+              (sshClient._readableState && sshClient._readableState.ended) ||
+              (sshClient._sock &&
+                (!sshClient._sock.readable || !sshClient._sock.writable))
+            ) {
+              logToFile(
+                `SSH connection not available for process ${processId}, falling back to local system info`,
+                "WARN",
+              );
+              return await systemInfo.getLocalSystemInfo();
+            }
+            return systemInfo.getRemoteSystemInfo(sshClient);
+          } else {
+            return await systemInfo.getLocalSystemInfo();
+          }
+        }
+      } catch (error) {
+        logToFile(`Failed to get system info: ${error.message}`, "ERROR");
+        try {
+          const systemInfo = require("./modules/system-info");
+          return await systemInfo.getLocalSystemInfo();
+        } catch (fallbackError) {
+          return {
+            error: "获取系统信息失败",
+            message: error.message,
+          };
+        }
+      }
+    });
+
+    safeHandle(ipcMain, "terminal:getProcessList", async (event, processId) => {
+      try {
+        const systemInfo = require("./modules/system-info");
+        if (!processId || !childProcesses.has(processId)) {
+          return systemInfo.getProcessList();
+        } else {
+          const processObj = childProcesses.get(processId);
+          if (
+            (processObj.type === "ssh2" || processObj.type === "ssh") &&
+            (processObj.process || processObj.client || processObj.channel)
+          ) {
+            const sshClient =
+              processObj.client || processObj.process || processObj.channel;
+            if (
+              !sshClient ||
+              (sshClient._readableState && sshClient._readableState.ended) ||
+              (sshClient._sock &&
+                (!sshClient._sock.readable || !sshClient._sock.writable))
+            ) {
+              logToFile(
+                `SSH connection not available for process ${processId}, falling back to local process list`,
+                "WARN",
+              );
+              return systemInfo.getProcessList();
+            }
+            return systemInfo.getRemoteProcessList(sshClient);
+          } else {
+            return systemInfo.getProcessList();
+          }
+        }
+      } catch (error) {
+        logToFile(`Failed to get process list: ${error.message}`, "ERROR");
+        try {
+          const systemInfo = require("./modules/system-info");
+          return systemInfo.getProcessList();
+        } catch (fallbackError) {
+          return {
+            error: "获取进程列表失败",
+            message: error.message,
+          };
+        }
+      }
+    });
+
+    logToFile("Critical IPC handlers registered before window creation", "INFO");
+  } catch (error) {
+    logToFile(`Failed to register critical IPC handlers: ${error.message}`, "ERROR");
+  }
+
   createWindow();
   createAIWorker();
 
@@ -796,79 +920,96 @@ app.on("activate", () => {
 
 // 设置IPC通信
 function setupIPC(mainWindow) {
+  logToFile("setupIPC started", "INFO");
+
   // 初始化本地终端处理器
   try {
-    localTerminalHandlers = new LocalTerminalHandlers(mainWindow);
+    localTerminalHandlers = new LocalTerminalHandlers(mainWindow, ipcMain);
     logToFile("本地终端处理器初始化成功", "INFO");
   } catch (error) {
     logToFile(`本地终端处理器初始化失败: ${error.message}`, "ERROR");
+    logToFile(`Stack: ${error.stack}`, "ERROR");
   }
 
   // 文件对话框处理器
-  safeHandle(ipcMain, "dialog:showOpenDialog", async (event, options) => {
-    const result = await dialog.showOpenDialog(mainWindow, options);
-    return result;
-  });
+  try {
+    safeHandle(ipcMain, "dialog:showOpenDialog", async (event, options) => {
+      const result = await dialog.showOpenDialog(mainWindow, options);
+      return result;
+    });
 
-  safeHandle(ipcMain, "dialog:showSaveDialog", async (event, options) => {
-    const result = await dialog.showSaveDialog(mainWindow, options);
-    return result;
-  });
+    safeHandle(ipcMain, "dialog:showSaveDialog", async (event, options) => {
+      const result = await dialog.showSaveDialog(mainWindow, options);
+      return result;
+    });
 
-  safeHandle(ipcMain, "dialog:showMessageBox", async (event, options) => {
-    const result = await dialog.showMessageBox(mainWindow, options);
-    return result;
-  });
+    safeHandle(ipcMain, "dialog:showMessageBox", async (event, options) => {
+      const result = await dialog.showMessageBox(mainWindow, options);
+      return result;
+    });
+
+    logToFile("Dialog handlers registered", "INFO");
+  } catch (error) {
+    logToFile(`Failed to register dialog handlers: ${error.message}`, "ERROR");
+  }
 
   // 窗口控制
-  safeHandle(ipcMain, "window:minimize", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return false;
-    }
-    mainWindow.minimize();
-    return true;
-  });
+  try {
+    safeHandle(ipcMain, "window:minimize", () => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return false;
+      }
+      mainWindow.minimize();
+      return true;
+    });
 
-  safeHandle(ipcMain, "window:toggleMaximize", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return false;
-    }
+    safeHandle(ipcMain, "window:toggleMaximize", () => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return false;
+      }
 
-    if (mainWindow.isFullScreen()) {
-      mainWindow.setFullScreen(false);
-    } else if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize();
-    } else {
-      mainWindow.maximize();
-    }
+      if (mainWindow.isFullScreen()) {
+        mainWindow.setFullScreen(false);
+      } else if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
 
-    return {
-      isMaximized: mainWindow.isMaximized(),
-      isFullScreen: mainWindow.isFullScreen(),
-    };
-  });
+      return {
+        isMaximized: mainWindow.isMaximized(),
+        isFullScreen: mainWindow.isFullScreen(),
+      };
+    });
 
-  safeHandle(ipcMain, "window:close", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return false;
-    }
-    mainWindow.close();
-    return true;
-  });
+    safeHandle(ipcMain, "window:close", () => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return false;
+      }
+      mainWindow.close();
+      return true;
+    });
 
-  safeHandle(ipcMain, "window:getState", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return { isMaximized: false, isFullScreen: false };
-    }
+    safeHandle(ipcMain, "window:getState", () => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { isMaximized: false, isFullScreen: false };
+      }
 
-    return {
-      isMaximized: mainWindow.isMaximized(),
-      isFullScreen: mainWindow.isFullScreen(),
-    };
-  });
+      return {
+        isMaximized: mainWindow.isMaximized(),
+        isFullScreen: mainWindow.isFullScreen(),
+      };
+    });
+
+    logToFile("Window control handlers registered", "INFO");
+  } catch (error) {
+    logToFile(`Failed to register window control handlers: ${error.message}`, "ERROR");
+    logToFile(`Stack: ${error.stack}`, "ERROR");
+  }
 
   // 启动SSH连接
-  safeHandle(ipcMain, "terminal:startSSH", async (event, sshConfig) => {
+  try {
+    safeHandle(ipcMain, "terminal:startSSH", async (event, sshConfig) => {
     const processId = nextProcessId++;
 
     if (!sshConfig || !sshConfig.host) {
@@ -1184,8 +1325,15 @@ function setupIPC(mainWindow) {
     }
   });
 
+    logToFile("SSH connection handler registered", "INFO");
+  } catch (error) {
+    logToFile(`Failed to register SSH connection handler: ${error.message}`, "ERROR");
+    logToFile(`Stack: ${error.stack}`, "ERROR");
+  }
+
   // 启动Telnet连接
-  safeHandle(ipcMain, "terminal:startTelnet", async (event, telnetConfig) => {
+  try {
+    safeHandle(ipcMain, "terminal:startTelnet", async (event, telnetConfig) => {
     const processId = nextProcessId++;
 
     if (!telnetConfig || !telnetConfig.host) {
@@ -1280,6 +1428,12 @@ function setupIPC(mainWindow) {
       throw error;
     }
   });
+
+    logToFile("Telnet connection handler registered", "INFO");
+  } catch (error) {
+    logToFile(`Failed to register Telnet connection handler: ${error.message}`, "ERROR");
+    logToFile(`Stack: ${error.stack}`, "ERROR");
+  }
 
   // Telnet事件监听器设置函数
   function setupTelnetEventListeners(
@@ -1801,16 +1955,11 @@ function setupIPC(mainWindow) {
     },
   );
 
-  // 加载连接配置
-  safeHandle(ipcMain, "terminal:loadConnections", async () => {
-    return configService.loadConnections();
-  });
-
-  // 保存连接配置
+  // Save connection configuration
   safeHandle(ipcMain, "terminal:saveConnections", async (event, connections) => {
     const result = configService.saveConnections(connections);
 
-    // 保存成功后，通知所有渲染进程连接配置已更新
+    // 保存成功后,通知所有渲染进程连接配置已更新
     if (result) {
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
@@ -1823,14 +1972,7 @@ function setupIPC(mainWindow) {
     return result;
   });
 
-  // Load top connections (from persistent storage)
-  safeHandle(ipcMain, "terminal:loadTopConnections", async () => {
-    try {
-      return configService.loadLastConnections();
-    } catch (e) {
-      return [];
-    }
-  });
+  // Note: terminal:loadConnections and terminal:loadTopConnections are registered before window creation
 
   // 选择密钥文件
   safeHandle(ipcMain, "terminal:selectKeyFile", async () => {
@@ -1858,93 +2000,8 @@ function setupIPC(mainWindow) {
     return proxyManager.getSystemProxyConfig();
   });
 
-  // 获取应用版本号
-  safeHandle(ipcMain, "app:getVersion", async () => {
-    return app.getVersion();
-  });
-
-  // 关闭应用
-  safeHandle(ipcMain, "app:close", async () => {
-    app.quit();
-    return true;
-  });
-
-  // 重新加载窗口
-  safeHandle(ipcMain, "app:reloadWindow", async () => {
-    mainWindow.reload();
-    return true;
-  });
-
-  // 在外部浏览器打开链接
-  safeHandle(ipcMain, "app:openExternal", async (event, url) => {
-    try {
-      await shell.openExternal(url);
-      return { success: true };
-    } catch (error) {
-      logToFile(`Failed to open external link: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
-
-  // 检查更新
-  safeHandle(ipcMain, "app:checkForUpdate", async () => {
-    try {
-      const https = require("https");
-
-      // 创建一个Promise来处理HTTPS请求
-      const fetchGitHubRelease = () => {
-        return new Promise((resolve, reject) => {
-          const options = {
-            hostname: "api.github.com",
-            path: "/repos/funkpopo/simpleshell/releases/latest",
-            method: "GET",
-            headers: {
-              "User-Agent": "SimpleShell-App",
-            },
-          };
-
-          const req = https.request(options, (res) => {
-            if (res.statusCode !== 200) {
-              reject(new Error(`GitHub API返回错误状态码: ${res.statusCode}`));
-              return;
-            }
-
-            let data = "";
-            res.on("data", (chunk) => {
-              data += chunk;
-            });
-
-            res.on("end", () => {
-              try {
-                const releaseData = JSON.parse(data);
-                resolve(releaseData);
-              } catch (error) {
-                reject(new Error(`解析GitHub API响应失败: ${error.message}`));
-              }
-            });
-          });
-
-          req.on("error", (error) => {
-            reject(new Error(`请求GitHub API失败: ${error.message}`));
-          });
-
-          req.end();
-        });
-      };
-
-      const releaseData = await fetchGitHubRelease();
-      return {
-        success: true,
-        data: releaseData,
-      };
-    } catch (error) {
-      logToFile(`检查更新失败: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  });
+  // Note: app:getVersion, app:close, app:reloadWindow, app:openExternal,
+  // and app:checkForUpdate are registered before window creation via AppHandlers
 
   // 处理简单的命令
   safeHandle(ipcMain, "terminal:command", async (event, command) => {
@@ -1990,103 +2047,8 @@ function setupIPC(mainWindow) {
     }
   });
 
-  // 获取系统资源信息
-  safeHandle(ipcMain, "terminal:getSystemInfo", async (event, processId) => {
-    try {
-      // 只有当提供了有效的进程ID且该进程存在于childProcesses映射中时才获取远程系统信息
-      if (!processId || !childProcesses.has(processId)) {
-        return await systemInfo.getLocalSystemInfo();
-      } else {
-        // SSH远程系统信息
-        const processObj = childProcesses.get(processId);
-
-        // 支持多种SSH客户端类型
-        if (
-          (processObj.type === "ssh2" || processObj.type === "ssh") &&
-          (processObj.process || processObj.client || processObj.channel)
-        ) {
-          const sshClient =
-            processObj.client || processObj.process || processObj.channel;
-
-          // 检查SSH连接是否仍然有效
-          if (
-            !sshClient ||
-            (sshClient._readableState && sshClient._readableState.ended) ||
-            (sshClient._sock &&
-              (!sshClient._sock.readable || !sshClient._sock.writable))
-          ) {
-            logToFile(
-              `SSH connection not available for process ${processId}, falling back to local system info`,
-              "WARN",
-            );
-            return await systemInfo.getLocalSystemInfo();
-          }
-
-          return systemInfo.getRemoteSystemInfo(sshClient);
-        } else {
-          return await systemInfo.getLocalSystemInfo();
-        }
-      }
-    } catch (error) {
-      logToFile(`Failed to get system info: ${error.message}`, "ERROR");
-      // 如果远程系统信息获取失败，回退到本地系统信息
-      try {
-        return await systemInfo.getLocalSystemInfo();
-      } catch (fallbackError) {
-        return {
-          error: "获取系统信息失败",
-          message: error.message,
-        };
-      }
-    }
-  });
-
-  // 获取进程列表
-  safeHandle(ipcMain, "terminal:getProcessList", async (event, processId) => {
-    try {
-      if (!processId || !childProcesses.has(processId)) {
-        return systemInfo.getProcessList();
-      } else {
-        const processObj = childProcesses.get(processId);
-        if (
-          (processObj.type === "ssh2" || processObj.type === "ssh") &&
-          (processObj.process || processObj.client || processObj.channel)
-        ) {
-          const sshClient =
-            processObj.client || processObj.process || processObj.channel;
-
-          // 检查SSH连接是否仍然有效
-          if (
-            !sshClient ||
-            (sshClient._readableState && sshClient._readableState.ended) ||
-            (sshClient._sock &&
-              (!sshClient._sock.readable || !sshClient._sock.writable))
-          ) {
-            logToFile(
-              `SSH connection not available for process ${processId}, falling back to local process list`,
-              "WARN",
-            );
-            return systemInfo.getProcessList();
-          }
-
-          return systemInfo.getRemoteProcessList(sshClient);
-        } else {
-          return systemInfo.getProcessList();
-        }
-      }
-    } catch (error) {
-      logToFile(`Failed to get process list: ${error.message}`, "ERROR");
-      // 如果远程进程列表获取失败，回退到本地进程列表
-      try {
-        return systemInfo.getProcessList();
-      } catch (fallbackError) {
-        return {
-          error: "获取进程列表失败",
-          message: error.message,
-        };
-      }
-    }
-  });
+  // Note: terminal:getSystemInfo and terminal:getProcessList are registered
+  // before window creation to prevent race conditions
 
   // 清理终端连接（用于连接刷新）
   safeHandle(ipcMain, "terminal:cleanupConnection", async (event, processId) => {
@@ -4313,51 +4275,8 @@ function setupIPC(mainWindow) {
     }
   });
 
-  // UI设置相关API
-  safeHandle(ipcMain, "settings:loadUISettings", async () => {
-    return await configService.loadUISettings(); // loadUISettings in configManager is not async, but IPC handler can be
-  });
-
-  safeHandle(ipcMain, "settings:saveUISettings", async (event, settings) => {
-    return await configService.saveUISettings(settings); // saveUISettings in configManager is not async
-  });
-
-  // 日志设置相关API
-  safeHandle(ipcMain, "settings:loadLogSettings", async () => {
-    return await configService.loadLogSettings();
-  });
-
-  safeHandle(ipcMain, "settings:saveLogSettings", async (event, settings) => {
-    const saved = await configService.saveLogSettings(settings);
-    if (saved) {
-      // 更新当前运行的日志系统配置
-      updateLogConfig(settings);
-    }
-    return saved;
-  });
-
-  // 性能设置实时更新API
-  safeHandle(ipcMain, "settings:updateCacheSettings", async (event, settings) => {
-    try {
-      // 这里可以实时更新缓存设置
-      logToFile(`缓存设置已更新: ${JSON.stringify(settings)}`, "INFO");
-      return { success: true };
-    } catch (error) {
-      logToFile(`更新缓存设置失败: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
-
-  safeHandle(ipcMain, "settings:updatePrefetchSettings", async (event, settings) => {
-    try {
-      // 这里可以实时更新预取设置
-      logToFile(`预取设置已更新: ${JSON.stringify(settings)}`, "INFO");
-      return { success: true };
-    } catch (error) {
-      logToFile(`更新预取设置失败: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
+  // Note: Settings handlers (settings:loadUISettings, settings:saveUISettings, etc.)
+  // are registered before window creation via SettingsHandlers
 
   // 获取标签页连接状态
   safeHandle(ipcMain, "connection:getTabStatus", async (event, tabId) => {
@@ -4416,38 +4335,8 @@ function setupIPC(mainWindow) {
     }
   });
 
-  // 获取快捷命令
-  safeHandle(ipcMain, "get-shortcut-commands", async () => {
-    try {
-      const data = configService.loadShortcutCommands();
-      return { success: true, data };
-    } catch (error) {
-      if (logToFile)
-        logToFile(
-          `Error in get-shortcut-commands (IPC): ${error.message}`,
-          "ERROR",
-        );
-      return { success: false, error: error.message };
-    }
-  });
-
-  // 保存快捷命令
-  safeHandle(ipcMain, "save-shortcut-commands", async (_, data) => {
-    try {
-      const result = configService.saveShortcutCommands(data);
-      return {
-        success: result,
-        error: result ? null : "Failed to save shortcut commands (IPC)",
-      };
-    } catch (error) {
-      if (logToFile)
-        logToFile(
-          `Error in save-shortcut-commands (IPC): ${error.message}`,
-          "ERROR",
-        );
-      return { success: false, error: error.message };
-    }
-  });
+  // Note: Shortcut command handlers (get-shortcut-commands, save-shortcut-commands)
+  // are registered before window creation via SettingsHandlers
 
   safeHandle(ipcMain, "downloadFolder", async (event, tabId, remotePath) => {
     if (
@@ -4467,136 +4356,8 @@ function setupIPC(mainWindow) {
     return sftpTransfer.handleDownloadFolder(tabId, remotePath);
   });
 
-  // 命令历史相关API
-  safeHandle(ipcMain, "command-history:add", async (event, command) => {
-    try {
-      const added = commandHistoryService.addCommand(command);
-      if (added) {
-        // 异步保存到配置文件
-        setTimeout(() => {
-          try {
-            const historyToSave = commandHistoryService.exportHistory();
-            configService.saveCommandHistory(historyToSave);
-          } catch (saveError) {
-            logToFile(
-              `Failed to save command history: ${saveError.message}`,
-              "ERROR",
-            );
-          }
-        }, 1000); // 延迟1秒保存，避免频繁写入
-      }
-      return { success: added };
-    } catch (error) {
-      logToFile(`Error adding command to history: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
-
-  safeHandle(
-    "command-history:getSuggestions",
-    async (event, input, maxResults = 10) => {
-      try {
-        const suggestions = commandHistoryService.getSuggestions(
-          input,
-          maxResults,
-        );
-        return { success: true, suggestions };
-      } catch (error) {
-        logToFile(
-          `Error getting command suggestions: ${error.message}`,
-          "ERROR",
-        );
-        return { success: false, error: error.message, suggestions: [] };
-      }
-    },
-  );
-
-  safeHandle(ipcMain, "command-history:incrementUsage", async (event, command) => {
-    try {
-      commandHistoryService.incrementCommandUsage(command);
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error incrementing command usage: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
-
-  safeHandle(ipcMain, "command-history:clear", async (event) => {
-    try {
-      commandHistoryService.clearHistory();
-      configService.saveCommandHistory([]);
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error clearing command history: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
-
-  safeHandle(ipcMain, "command-history:getStatistics", async (event) => {
-    try {
-      const stats = commandHistoryService.getStatistics();
-      return { success: true, statistics: stats };
-    } catch (error) {
-      logToFile(
-        `Error getting command history statistics: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message, statistics: null };
-    }
-  });
-
-  // 新增：获取所有历史命令
-  safeHandle(ipcMain, "command-history:getAll", async (event) => {
-    try {
-      const history = commandHistoryService.getAllHistory();
-      return { success: true, data: history };
-    } catch (error) {
-      logToFile(`Error getting all command history: ${error.message}`, "ERROR");
-      return { success: false, error: error.message, data: [] };
-    }
-  });
-
-  // 新增：删除单个历史命令
-  safeHandle(ipcMain, "command-history:delete", async (event, command) => {
-    try {
-      commandHistoryService.removeCommand(command);
-      // 保存到配置文件
-      const historyToSave = commandHistoryService.exportHistory();
-      configService.saveCommandHistory(historyToSave);
-      return { success: true };
-    } catch (error) {
-      logToFile(
-        `Error deleting command from history: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
-  });
-
-  // 新增：批量删除历史命令
-  safeHandle(ipcMain, "command-history:deleteBatch", async (event, commands) => {
-    try {
-      if (!Array.isArray(commands)) {
-        throw new Error("Commands must be an array");
-      }
-
-      commands.forEach((command) => {
-        commandHistoryService.removeCommand(command);
-      });
-
-      // 保存到配置文件
-      const historyToSave = commandHistoryService.exportHistory();
-      configService.saveCommandHistory(historyToSave);
-
-      return { success: true };
-    } catch (error) {
-      logToFile(
-        `Error batch deleting commands from history: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
-  });
+  // Note: Command history handlers (command-history:*) are registered
+  // before window creation via SettingsHandlers
 
   // 添加IP地址查询API处理函数
   safeHandle(ipcMain, "ip:query", async (event, ip = "") => {
@@ -4806,4 +4567,6 @@ function setupIPC(mainWindow) {
       );
     }
   });
+
+  logToFile("setupIPC completed successfully", "INFO");
 } // Closing brace for setupIPC function

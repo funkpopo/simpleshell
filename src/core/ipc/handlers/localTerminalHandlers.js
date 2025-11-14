@@ -1,12 +1,14 @@
-const { ipcMain } = require("electron");
 const { safeHandle, failure, success, wrapIpcHandler } = require("../ipcResponse");
+const { ipcMain: electronIpcMain } = require("electron");
 const TerminalDetector = require("../../local-terminal/terminal-detector");
 const LocalTerminalManager = require("../../local-terminal/local-terminal-manager");
 const WindowEmbedder = require("../../local-terminal/window-embedder");
 
 class LocalTerminalHandlers {
-  constructor(mainWindow) {
+  constructor(mainWindow, ipcMain) {
     this.mainWindow = mainWindow;
+    // Use the imported ipcMain directly instead of relying on the parameter
+    this.ipcMain = ipcMain || electronIpcMain;
     this.terminalDetector = new TerminalDetector();
     this.terminalManager = new LocalTerminalManager();
     this.windowEmbedder = new WindowEmbedder(mainWindow);
@@ -139,7 +141,7 @@ class LocalTerminalHandlers {
 
   registerHandlers() {
     // 检测本地终端
-    safeHandle(ipcMain, "detectLocalTerminals", async () => {
+    safeHandle(this.ipcMain, "detectLocalTerminals", async () => {
       // 获取系统检测到的终端
       const systemTerminals = await this.terminalDetector.detectAllTerminals();
       return systemTerminals;
@@ -147,7 +149,7 @@ class LocalTerminalHandlers {
 
     // 启动本地终端
     safeHandle(
-      ipcMain,
+      this.ipcMain,
       "launchLocalTerminal",
       async (event, terminalConfig, tabId, options = {}) => {
         const result = await this.terminalManager.launchTerminal(
@@ -179,7 +181,7 @@ class LocalTerminalHandlers {
     );
 
     // 关闭本地终端
-    safeHandle(ipcMain, "closeLocalTerminal", async (event, tabId) => {
+    safeHandle(this.ipcMain, "closeLocalTerminal", async (event, tabId) => {
       // 先取消窗口嵌入
       await this.windowEmbedder.unembedWindow(tabId);
       // 再结束终端进程
@@ -189,7 +191,7 @@ class LocalTerminalHandlers {
     });
 
     // 获取终端详细信息
-    safeHandle(ipcMain, "getLocalTerminalInfo", async (event, tabId) => {
+    safeHandle(this.ipcMain, "getLocalTerminalInfo", async (event, tabId) => {
       const terminalInfo = this.terminalManager.getActiveTerminal(tabId);
       const embeddedInfo = this.windowEmbedder.getEmbeddedWindow(tabId);
 
@@ -220,13 +222,13 @@ class LocalTerminalHandlers {
     });
 
     // 调整嵌入窗口大小
-    safeHandle(ipcMain, "resizeEmbeddedTerminal", async (event, tabId, bounds) => {
+    safeHandle(this.ipcMain, "resizeEmbeddedTerminal", async (event, tabId, bounds) => {
       const resized = await this.windowEmbedder.resizeEmbeddedWindow(tabId, bounds);
       return { success: Boolean(resized) };
     });
 
     // 获取所有活动终端
-    safeHandle(ipcMain, "getAllActiveLocalTerminals", async () => {
+    safeHandle(this.ipcMain, "getAllActiveLocalTerminals", async () => {
       const terminals = this.terminalManager.getAllActiveTerminals();
 
       // 返回可序列化的终端信息
