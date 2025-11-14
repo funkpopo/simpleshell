@@ -1,6 +1,5 @@
 const { app, BrowserWindow, shell } = require("electron");
 const { logToFile } = require("../../utils/logger");
-const ipQuery = require("../../../modules/system-info/ip-query");
 const updateService = require("../../update/updateService");
 
 /**
@@ -56,11 +55,6 @@ class AppHandlers {
         channel: "app:cancelDownload",
         category: "app",
         handler: this.cancelDownload.bind(this),
-      },
-      {
-        channel: "ip:query",
-        category: "app",
-        handler: this.queryIP.bind(this),
       },
     ];
   }
@@ -203,16 +197,6 @@ class AppHandlers {
       return { success: true, message: "Download cancelled" };
     } catch (error) {
       logToFile(`Error cancelling download: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
-  async queryIP(event, ip = "") {
-    try {
-      const result = await ipQuery.query(ip);
-      return { success: true, data: result };
-    } catch (error) {
-      logToFile(`Error querying IP: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }

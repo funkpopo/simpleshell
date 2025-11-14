@@ -22,7 +22,7 @@ import {
   InsertDriveFile as InsertDriveFileIcon,
 } from "@mui/icons-material";
 
-// 文件大小格式化函数
+// 文件大小格式化工具函数
 const formatFileSize = (bytes) => {
   if (!bytes || bytes === 0) return "";
   const sizes = ["B", "KB", "MB", "GB"];
@@ -30,7 +30,7 @@ const formatFileSize = (bytes) => {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
 };
 
-// 日期格式化函数
+// 日期时间格式化工具函数
 const formatDate = (date) => {
   if (!date) return "";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -42,190 +42,25 @@ const formatDate = (date) => {
   }).format(date);
 };
 
-// 单个文件项组件 - 优化版本
-const FileItem = memo(({ index, style, data }) => {
-  const theme = useTheme();
-  const {
-    files,
-    onFileActivate,
-    onContextMenu,
-    onFileSelect,
-    selectedFile,
-    selectedFiles,
-    isFileSelected,
-  } = data;
-  const file = files[index];
-
-  // 注意：不再在此处提前返回，以保持 hooks 调用顺序一致
-
-  // 检查文件是否被选中 - 优先使用传入的isFileSelected函数
-  const isCurrentFileSelected = useMemo(() => {
-    if (!file) return false;
-    if (isFileSelected) {
-      return isFileSelected(file);
-    }
-    // 备用逻辑：检查是否在selectedFiles中或者是当前selectedFile
-    if (selectedFiles && selectedFiles.length > 0) {
-      return selectedFiles.some(
-        (f) => f.name === file.name && f.modifyTime === file.modifyTime,
-      );
-    }
-    return (
-      selectedFile &&
-      selectedFile.name === file.name &&
-      selectedFile.modifyTime === file.modifyTime
-    );
-  }, [file, isFileSelected, selectedFiles, selectedFile]);
-
-  // 使用useMemo缓存文件的格式化信息，避免每次渲染都计算
-  const fileInfo = useMemo(
-    () => ({
-      formattedDate: file?.modifyTime
-        ? formatDate(new Date(file.modifyTime))
-        : "",
-      formattedSize:
-        file?.size && !file?.isDirectory ? formatFileSize(file.size) : "",
-      isSelected: isCurrentFileSelected,
-    }),
-    [file?.modifyTime, file?.size, file?.isDirectory, isCurrentFileSelected],
-  );
-
-  const handleFileActivate = useCallback(() => {
-    if (!file) return;
-    onFileActivate(file);
-  }, [file, onFileActivate]);
-
-  const handleContextMenu = useCallback(
-    (e) => {
-      if (!file) return;
-      onContextMenu(e, file, index);
-    },
-    [file, onContextMenu, index],
-  );
-
-  const handleFileClick = useCallback(
-    (e) => {
-      if (!file) return;
-      if (onFileSelect) {
-        onFileSelect(file, index, e);
-      }
-    },
-    [file, index, onFileSelect],
-  );
-
-  // 缓存的二级文本内容，避免每次渲染都重新组合
-  const secondaryText = useMemo(() => {
-    const parts = [];
-    if (fileInfo.formattedDate) parts.push(fileInfo.formattedDate);
-    if (fileInfo.formattedSize) parts.push(fileInfo.formattedSize);
-    return parts.join(" • ");
-  }, [fileInfo.formattedDate, fileInfo.formattedSize]);
-
-  // 缓存按钮样式对象
-  const buttonSx = useMemo(
-    () => ({
-      minHeight: 36,
-      maxHeight: 36,
-      px: 2,
-      py: 0, // 移除垂直内边距以节省空间
-      height: "100%", // Fill row height to avoid selection overlap
-      backgroundColor: fileInfo.isSelected
-        ? theme.palette.action.selected
-        : "transparent",
-      "&:hover": {
-        backgroundColor: fileInfo.isSelected
-          ? theme.palette.action.selected
-          : theme.palette.action.hover,
-      },
-      // 确保选中状态的边界清晰
-      borderRadius: 1, // 添加轻微圆角
-      transition: "all 0.1s ease-in-out", // 平滑过渡效果
-    }),
-    [
-      fileInfo.isSelected,
-      theme.palette.action.selected,
-      theme.palette.action.hover,
-    ],
-  );
-
-  // 直接始终渲染完整内容（含时间戳）
-  return (
-    <div style={style}>
-      <ListItem
-        disablePadding
-        onContextMenu={handleContextMenu}
-        sx={{
-          py: 0, // 移除ListItem的垂直内边距
-          my: 0, // 移除ListItem的垂直外边距
-        }}
-      >
-        <ListItemButton
-          data-file-item="true"
-          onClick={handleFileClick}
-          onDoubleClick={handleFileActivate}
-          dense
-          sx={buttonSx}
-        >
-          <ListItemIcon sx={{ minWidth: 28, mr: 1 }}>
-            {file && file.isDirectory ? (
-              <FolderIcon color="primary" fontSize="small" />
-            ) : (
-              <InsertDriveFileIcon fontSize="small" />
-            )}
-          </ListItemIcon>
-          <ListItemText
-            primary={file ? file.name : ""}
-            secondary={secondaryText}
-            sx={{
-              my: 0, // 移除ListItemText的垂直边距
-              "& .MuiListItemText-primary": {
-                fontSize: "0.875rem", // 稍微减小主文本字体
-                lineHeight: 1.2,
-              },
-              "& .MuiListItemText-secondary": {
-                fontSize: "0.75rem", // 减小副文本字体
-                lineHeight: 1.1,
-              },
-            }}
-            primaryTypographyProps={{
-              variant: "body2",
-              noWrap: true,
-              sx: { lineHeight: 1.2, mb: 0 }, // 更紧密的行高和无底边距
-            }}
-            secondaryTypographyProps={{
-              variant: "caption",
-              color: "text.secondary",
-              noWrap: true,
-              sx: { lineHeight: 1.1, mt: 0 }, // 更紧密的行高和无顶边距
-            }}
-          />
-        </ListItemButton>
-      </ListItem>
-    </div>
-  );
-});
-
-FileItem.displayName = "FileItem";
-
-// 滚动位置存储 - 使用目录路径作为键
+// 每个路径对应一个滚动位置缓存
 const scrollPositionCache = new Map();
 
-// 计算动态overscan值的函数
+// 根据列表大小和设备性能动态计算 overscan
 const calculateOverscan = (listSize, devicePerformance = "medium") => {
-  // 基础overscan值
+  // 基础 overscan 行数
   const baseOverscan = 15;
 
-  // 根据列表大小动态调整
+  // 根据列表长度调整 overscan 倍数
   let sizeMultiplier = 1;
   if (listSize > 1000) {
-    sizeMultiplier = 0.8; // 对于非常大的列表，稍微减小以避免内存压力
+    sizeMultiplier = 0.8; // 非常大的列表降低 overscan 减少渲染压力
   } else if (listSize > 500) {
     sizeMultiplier = 0.9;
   } else if (listSize < 100) {
-    sizeMultiplier = 1.2; // 对于小列表，可以增加预渲染数量
+    sizeMultiplier = 1.2; // 小列表可以稍微多渲染几行
   }
 
-  // 根据设备性能调整
+  // 根据设备性能调整 overscan 倍数
   let performanceMultiplier = 1;
   switch (devicePerformance) {
     case "low":
@@ -242,6 +77,171 @@ const calculateOverscan = (listSize, devicePerformance = "medium") => {
   return Math.floor(baseOverscan * sizeMultiplier * performanceMultiplier);
 };
 
+// 单条文件行组件 - 负责渲染一行文件
+const FileItem = memo(({ index, style, data }) => {
+  const theme = useTheme();
+  const {
+    files,
+    onFileActivate,
+    onContextMenu,
+    onFileSelect,
+    selectedFile,
+    selectedFiles,
+    isFileSelected,
+  } = data;
+
+  const file = files[index];
+  if (!file) return null;
+
+  // 计算当前文件是否被选中（优先使用自定义 isFileSelected）
+  const isCurrentFileSelected = useMemo(() => {
+    if (!file) return false;
+    if (isFileSelected) {
+      return !!isFileSelected(file);
+    }
+
+    // 如果没有传 isFileSelected，则回退到 selectedFiles / selectedFile
+    if (Array.isArray(selectedFiles) && selectedFiles.length > 0) {
+      return selectedFiles.some(
+        (f) => f.name === file.name && f.modifyTime === file.modifyTime,
+      );
+    }
+
+    return (
+      !!selectedFile &&
+      selectedFile.name === file.name &&
+      selectedFile.modifyTime === file.modifyTime
+    );
+  }, [file, isFileSelected, selectedFiles, selectedFile]);
+
+  // 使用 useMemo 缓存文件显示信息，避免重复计算
+  const fileInfo = useMemo(
+    () => ({
+      formattedDate: file?.modifyTime
+        ? formatDate(new Date(file.modifyTime))
+        : "",
+      formattedSize:
+        file?.size && !file?.isDirectory ? formatFileSize(file.size) : "",
+      isSelected: isCurrentFileSelected,
+    }),
+    [file?.modifyTime, file?.size, file?.isDirectory, isCurrentFileSelected],
+  );
+
+  const handleFileActivate = useCallback(() => {
+    if (!file || !onFileActivate) return;
+    onFileActivate(file);
+  }, [file, onFileActivate]);
+
+  const handleContextMenu = useCallback(
+    (e) => {
+      if (!file || !onContextMenu) return;
+      onContextMenu(e, file, index);
+    },
+    [file, onContextMenu, index],
+  );
+
+  const handleFileClick = useCallback(
+    (e) => {
+      if (!file || !onFileSelect) return;
+      onFileSelect(file, index, e);
+    },
+    [file, index, onFileSelect],
+  );
+
+  // 拼接副标题（修改时间 + 文件大小）
+  const secondaryText = useMemo(() => {
+    const parts = [];
+    if (fileInfo.formattedDate) parts.push(fileInfo.formattedDate);
+    if (fileInfo.formattedSize) parts.push(fileInfo.formattedSize);
+    return parts.join(" · ");
+  }, [fileInfo.formattedDate, fileInfo.formattedSize]);
+
+  // 行内按钮样式
+  const buttonSx = useMemo(
+    () => ({
+      minHeight: 36,
+      maxHeight: 36,
+      px: 2,
+      py: 0, // 让点击区域垂直居中
+      height: "100%", // 填满整行高度，避免选中区域错位
+      backgroundColor: fileInfo.isSelected
+        ? theme.palette.action.selected
+        : "transparent",
+      "&:hover": {
+        backgroundColor: fileInfo.isSelected
+          ? theme.palette.action.selected
+          : theme.palette.action.hover,
+      },
+      // 统一按钮圆角和过渡效果
+      borderRadius: 1, // 统一的圆角大小
+      transition: "all 0.1s ease-in-out", // 提升 hover/选中时的过渡体验
+    }),
+    [
+      fileInfo.isSelected,
+      theme.palette.action.selected,
+      theme.palette.action.hover,
+    ],
+  );
+
+  // 渲染单行文件条目
+  return (
+    <div style={style}>
+      <ListItem
+        disablePadding
+        onContextMenu={handleContextMenu}
+        sx={{
+          py: 0, // 去掉 ListItem 默认上下内边距
+          my: 0, // 去掉 ListItem 默认上下外边距
+        }}
+      >
+        <ListItemButton
+          data-file-item="true"
+          onClick={handleFileClick}
+          onDoubleClick={handleFileActivate}
+          dense
+          sx={buttonSx}
+        >
+          <ListItemIcon sx={{ minWidth: 28, mr: 1 }}>
+            {file.isDirectory ? (
+              <FolderIcon color="primary" fontSize="small" />
+            ) : (
+              <InsertDriveFileIcon fontSize="small" />
+            )}
+          </ListItemIcon>
+          <ListItemText
+            primary={file.name || ""}
+            secondary={secondaryText}
+            sx={{
+              my: 0, // 去掉 ListItemText 默认垂直间距
+              "& .MuiListItemText-primary": {
+                fontSize: "0.875rem", // 主标题字体稍大一点
+                lineHeight: 1.2,
+              },
+              "& .MuiListItemText-secondary": {
+                fontSize: "0.75rem", // 副标题字体稍小一点
+                lineHeight: 1.1,
+              },
+            }}
+            primaryTypographyProps={{
+              variant: "body2",
+              noWrap: true,
+              sx: { lineHeight: 1.2, mb: 0 }, // 主标题行高/间距微调
+            }}
+            secondaryTypographyProps={{
+              variant: "caption",
+              color: "text.secondary",
+              noWrap: true,
+              sx: { lineHeight: 1.1, mt: 0 }, // 副标题行高/间距微调
+            }}
+          />
+        </ListItemButton>
+      </ListItem>
+    </div>
+  );
+});
+
+FileItem.displayName = "FileItem";
+
 // 虚拟化文件列表组件
 const VirtualizedFileList = ({
   files = [],
@@ -256,19 +256,22 @@ const VirtualizedFileList = ({
   searchTerm = "",
   onBlankContextMenu,
   onBlankClick,
-  enableVirtualization = true, // 允许禁用虚拟化作为降级选项
-  currentPath = "", // 添加当前路径属性用于滚动位置记忆
-  devicePerformance = "medium", // 设备性能等级: 'low', 'medium', 'high'
+  enableVirtualization = true, // 是否启用虚拟滚动（性能优化）
+  currentPath = "", // 当前展示的目录路径，用于记忆滚动位置
+  devicePerformance = "medium", // 设备性能预估: 'low' | 'medium' | 'high'
 }) => {
   const theme = useTheme();
   const { addResizeObserver, addTimeout } = useAutoCleanup();
   const containerRef = useRef(null);
   const listRef = useRef(null);
-  const [containerHeight, setContainerHeight] = useState(400);
+  const [containerHeight, setContainerHeight] = useState(
+    typeof height === "number" ? height : 400,
+  );
   const [virtualizationError, setVirtualizationError] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [initialScrollOffset, setInitialScrollOffset] = useState(0);
 
-  // 动态计算容器高度
+  // 自适应容器高度，兼容高度为 100% 的场景
   useEffect(() => {
     const updateHeight = () => {
       try {
@@ -279,64 +282,113 @@ const VirtualizedFileList = ({
           }
         }
       } catch (error) {
-        // 虚拟化列表高度计算失败
+        // 出现异常时关闭虚拟列表，使用回退渲染
         setVirtualizationError(true);
       }
     };
 
-    // 初始计算
-    updateHeight();
+    updateHeight(); // 首次计算一次高度
 
-    // 使用 addResizeObserver 自动管理观察器，组件卸载时自动清理
     if (containerRef.current) {
+      // 使用 addResizeObserver 监听容器尺寸变化
       addResizeObserver(updateHeight, containerRef.current);
     }
-  }, [addResizeObserver]);
+  }, [addResizeObserver, height]);
 
-  // 过滤文件（如果还有额外的搜索过滤需求）
+  // 根据搜索关键字过滤文件列表
   const processedFiles = useMemo(() => {
-    // 如果有searchTerm，进行额外过滤（虽然通常在父组件已经处理）
+    if (!Array.isArray(files)) return [];
+
+    // 有 searchTerm 时仅返回匹配的文件名
     if (searchTerm) {
+      const lower = searchTerm.toLowerCase();
       return files.filter((file) =>
-        file.name.toLowerCase().includes(searchTerm.toLowerCase()),
+        (file.name || "").toLowerCase().includes(lower),
       );
     }
-    // 直接返回已经排序和过滤的文件列表
+
+    // 否则返回完整文件列表
     return files;
   }, [files, searchTerm]);
 
-  // 恢复滚动位置 - 现在processedFiles已定义
+  // 根据当前路径恢复上次的滚动位置
   useEffect(() => {
-    if (currentPath && listRef.current && processedFiles.length > 0) {
-      const savedPosition = scrollPositionCache.get(currentPath);
-      if (savedPosition !== undefined) {
-        listRef.current.scrollTo(savedPosition);
-      } else {
-        listRef.current.scrollTo(0);
+    if (!currentPath) return;
+
+    const savedPosition = scrollPositionCache.get(currentPath);
+    const top =
+      typeof savedPosition === "number" && Number.isFinite(savedPosition)
+        ? savedPosition
+        : 0;
+
+    setInitialScrollOffset(top);
+
+    // 非虚拟化模式下手动恢复容器滚动位置
+    if (
+      !enableVirtualization ||
+      virtualizationError ||
+      processedFiles.length < 50
+    ) {
+      const element = containerRef.current;
+      if (!element) return;
+      try {
+        if (typeof element.scrollTo === "function") {
+          element.scrollTo({ top });
+        } else {
+          element.scrollTop = top;
+        }
+      } catch {
+        // ignore
       }
     }
-  }, [currentPath, processedFiles]);
+  }, [
+    currentPath,
+    enableVirtualization,
+    virtualizationError,
+    processedFiles.length,
+  ]);
 
-  // 保存滚动位置的函数
+  // 处理列表滚动事件并缓存滚动位置
   const handleScroll = useCallback(
-    ({ scrollOffset, scrollDirection, scrollUpdateWasRequested }) => {
-      if (!scrollUpdateWasRequested && currentPath) {
-        scrollPositionCache.set(currentPath, scrollOffset);
+    (eventOrData) => {
+      try {
+        let scrollOffset = 0;
+
+        // react-window onScroll 回调: { scrollOffset, scrollDirection, ... }
+        if (
+          eventOrData &&
+          typeof eventOrData === "object" &&
+          typeof eventOrData.scrollOffset === "number"
+        ) {
+          scrollOffset = eventOrData.scrollOffset;
+        } else {
+          const target = eventOrData?.currentTarget;
+          scrollOffset =
+            target && typeof target.scrollTop === "number"
+              ? target.scrollTop
+              : 0;
+        }
+
+        if (currentPath) {
+          scrollPositionCache.set(currentPath, scrollOffset);
+        }
+
+        // 短时间内标记为正在滚动，防止频繁重渲染
+        setIsScrolling(true);
+
+        // 使用防抖计时器在停止滚动后恢复状态
+        if (window.scrollingTimeout) {
+          clearTimeout(window.scrollingTimeout);
+        }
+
+        window.scrollingTimeout = addTimeout(() => {
+          setIsScrolling(false);
+        }, 150);
+      } catch {
+        // ignore scroll errors
       }
-
-      // 更新滚动状态以优化渲染
-      setIsScrolling(true);
-
-      // 使用防抖清除滚动状态
-      if (window.scrollingTimeout) {
-        clearTimeout(window.scrollingTimeout);
-      }
-
-      window.scrollingTimeout = addTimeout(() => {
-        setIsScrolling(false);
-      }, 150);
     },
-    [currentPath],
+    [currentPath, addTimeout],
   );
 
   const handleContainerClick = useCallback(
@@ -359,7 +411,7 @@ const VirtualizedFileList = ({
     [onBlankClick],
   );
 
-  // itemData useMemo移除isScrolling
+  // 将列表相关数据通过 useMemo 传给虚拟行
   const itemData = useMemo(
     () => ({
       files: processedFiles,
@@ -381,16 +433,16 @@ const VirtualizedFileList = ({
     ],
   );
 
-  // 计算实际使用的高度
+  // 真实可视高度（百分比高度时使用容器高度）
   const actualHeight = height === "100%" ? containerHeight : height;
 
-  // 计算动态的overscan值
+  // 动态计算 overscan 行数
   const dynamicOverscan = useMemo(
     () => calculateOverscan(processedFiles.length, devicePerformance),
     [processedFiles.length, devicePerformance],
   );
 
-  // 优化的空状态组件 - 缓存以避免不必要的重新渲染
+  // 空列表展示状态（支持搜索结果为空）
   const EmptyStateComponent = useMemo(
     () => (
       <Box
@@ -407,20 +459,14 @@ const VirtualizedFileList = ({
         onClick={handleContainerClick}
       >
         <Typography variant="body2" color="text.secondary">
-          {searchTerm ? "没有找到匹配的文件" : "此目录为空"}
+          {searchTerm ? "未找到匹配的文件" : "当前目录为空"}
         </Typography>
       </Box>
     ),
-    [
-      height,
-      searchTerm,
-      onBlankContextMenu,
-      handleContainerClick,
-      containerRef,
-    ],
+    [height, searchTerm, onBlankContextMenu, handleContainerClick],
   );
 
-  // 降级到传统列表渲染 - 优化版本，使用useMemo缓存
+  // 回退渲染：当虚拟化不可用时使用普通列表
   const FallbackListComponent = useMemo(
     () => (
       <Box
@@ -446,21 +492,14 @@ const VirtualizedFileList = ({
         }}
         onContextMenu={onBlankContextMenu}
         onClick={handleContainerClick}
+        onScroll={handleScroll}
       >
         {processedFiles.map((file, index) => (
           <FileItem
             key={file.name}
             index={index}
             style={{ height: itemHeight }}
-            data={{
-              files: processedFiles,
-              onFileActivate,
-              onContextMenu,
-              onFileSelect,
-              selectedFile,
-              selectedFiles,
-              isFileSelected,
-            }}
+            data={itemData}
           />
         ))}
       </Box>
@@ -474,28 +513,18 @@ const VirtualizedFileList = ({
       onBlankContextMenu,
       processedFiles,
       itemHeight,
-      onFileActivate,
-      onContextMenu,
-      onFileSelect,
-      selectedFile,
-      selectedFiles,
-      isFileSelected,
       handleContainerClick,
+      handleScroll,
+      itemData,
     ],
   );
 
-  // 降级到传统列表渲染的函数
-  const renderFallbackList = useCallback(
-    () => FallbackListComponent,
-    [FallbackListComponent],
-  );
-
-  // 如果没有文件，显示空状态（将返回位置移动到所有 hooks 之后，避免改变 hooks 调用数量）
+  // 空列表时直接渲染 EmptyStateComponent，避免后续 hooks
   if (processedFiles.length === 0) {
     return EmptyStateComponent;
   }
 
-  // 如果虚拟化被禁用或出现错误，使用降级渲染
+  // 当禁用虚拟化或出现错误 / 列表太小时使用回退列表
   if (
     !enableVirtualization ||
     virtualizationError ||
@@ -504,6 +533,7 @@ const VirtualizedFileList = ({
     return FallbackListComponent;
   }
 
+  // 虚拟化渲染大文件列表
   return (
     <Box
       ref={containerRef}
@@ -511,7 +541,7 @@ const VirtualizedFileList = ({
         height: height === "100%" ? "100%" : height,
         width: "100%",
         "& .react-window-list": {
-          // 自定义滚动条样式
+          // 自定义虚拟列表滚动条样式
           "&::-webkit-scrollbar": {
             width: 8,
           },
@@ -539,18 +569,18 @@ const VirtualizedFileList = ({
           itemCount={processedFiles.length}
           itemSize={itemHeight}
           itemData={itemData}
-          overscanCount={dynamicOverscan} // 使用动态计算的overscan值
+          overscanCount={dynamicOverscan} // 动态 overscan 行数
           width="100%"
+          initialScrollOffset={initialScrollOffset}
           onScroll={handleScroll}
-          useIsScrolling={true}
           onItemsRendered={({ visibleStartIndex, visibleStopIndex }) => {
-            // 性能监控：记录可见项目范围
+            // 调试：在本地输出可见行区间
             if (
               typeof window !== "undefined" &&
               window.location?.hostname === "localhost"
             ) {
               console.debug(
-                `虚拟化列表渲染: ${visibleStartIndex}-${visibleStopIndex} / ${processedFiles.length}`,
+                `可见行区间: ${visibleStartIndex}-${visibleStopIndex} / ${processedFiles.length}`,
               );
             }
           }}
@@ -563,3 +593,4 @@ const VirtualizedFileList = ({
 };
 
 export default memo(VirtualizedFileList);
+
