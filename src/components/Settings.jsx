@@ -53,6 +53,7 @@ const GlassDialog = styled(Dialog)(({ theme }) => ({
 
 // Custom styled dialog title
 const BootstrapDialogTitle = memo((props) => {
+  const { t } = useTranslation();
   const { children, onClose, ...other } = props;
 
   return (
@@ -110,12 +111,24 @@ const Settings = memo(({ open, onClose }) => {
     { value: "Consolas", label: "Consolas", description: "系统默认字体" },
   ];
 
+  const terminalFontLabelMap = {
+    "Fira Code": t("settings.fonts.fira-code"),
+    "Space Mono": t("settings.fonts.space-mono"),
+    Consolas: t("settings.fonts.consolas"),
+  };
+
+  const terminalFontDescriptionMap = {
+    "Fira Code": t("settings.terminalFonts.firaCodeDescription"),
+    "Space Mono": t("settings.terminalFonts.spaceMonoDescription"),
+    Consolas: t("settings.terminalFonts.consolasDescription"),
+  };
+
   // Define log level options
   const logLevels = [
-    { value: "DEBUG", label: "DEBUG" },
-    { value: "INFO", label: "INFO" },
-    { value: "WARN", label: "WARN" },
-    { value: "ERROR", label: "ERROR" },
+    { value: "DEBUG", label: t("settings.logLevels.debug") },
+    { value: "INFO", label: t("settings.logLevels.info") },
+    { value: "WARN", label: t("settings.logLevels.warn") },
+    { value: "ERROR", label: t("settings.logLevels.error") },
   ];
 
   // Initial states
