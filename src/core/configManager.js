@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
+const configService = require("../services/configService");
 
 // Module-level variables to store injected dependencies
 let app = null;
@@ -1289,6 +1290,86 @@ function saveLastConnections(connections) {
   }
 }
 
+function get(key) {
+  if (!key) return undefined;
+
+  try {
+    if (
+      !configService ||
+      typeof configService._readConfig !== "function" ||
+      (typeof configService.isInitialized === "function" &&
+        !configService.isInitialized())
+    ) {
+      if (logToFile) {
+        logToFile(
+          "ConfigManager: configService is not available or not initialized for get().",
+          "ERROR",
+        );
+      }
+      return undefined;
+    }
+
+    const config = configService._readConfig();
+    if (config && typeof config === "object") {
+      return config[key];
+    }
+    return undefined;
+  } catch (error) {
+    if (logToFile) {
+      logToFile(
+        `ConfigManager: Failed to get config key '${key}' - ${error.message}`,
+        "ERROR",
+      );
+    }
+    return undefined;
+  }
+}
+
+function set(key, value) {
+  if (!key) return false;
+
+  try {
+    if (
+      !configService ||
+      typeof configService._readConfig !== "function" ||
+      typeof configService._writeConfig !== "function" ||
+      (typeof configService.isInitialized === "function" &&
+        !configService.isInitialized())
+    ) {
+      if (logToFile) {
+        logToFile(
+          "ConfigManager: configService is not available or not initialized for set().",
+          "ERROR",
+        );
+      }
+      return false;
+    }
+
+    const currentConfig = configService._readConfig();
+    const config =
+      currentConfig && typeof currentConfig === "object" ? currentConfig : {};
+
+    config[key] = value;
+
+    const success = configService._writeConfig(config);
+    if (success && logToFile) {
+      logToFile(
+        `ConfigManager: Saved config key '${key}' via set().`,
+        "INFO",
+      );
+    }
+    return success;
+  } catch (error) {
+    if (logToFile) {
+      logToFile(
+        `ConfigManager: Failed to set config key '${key}' - ${error.message}`,
+        "ERROR",
+      );
+    }
+    return false;
+  }
+}
+
 module.exports = {
   init,
   initializeMainConfig,
@@ -1308,6 +1389,8 @@ module.exports = {
   saveTopConnections,
   loadLastConnections,
   saveLastConnections,
+  get,
+  set,
   // Do not export _getMainConfigPathInternal, _processConnectionsForSave, _processConnectionsForLoad
   // as they are intended to be private helper functions.
 };
