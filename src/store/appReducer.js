@@ -202,7 +202,7 @@ export function appReducer(state = initialState, action) {
     case ActionTypes.SET_IP_ADDRESS_QUERY_OPEN:
       return { ...state, ipAddressQueryOpen: action.payload };
 
-    case ActionTypes.SET_RANDOM_PASSWORD_GENERATOR_OPEN:
+    case ActionTypes.SET_SECURITY_TOOLS_OPEN:
       return { ...state, securityToolsOpen: action.payload };
 
     case ActionTypes.SET_SHORTCUT_COMMANDS_OPEN:
@@ -349,7 +349,7 @@ export const actions = {
     payload: open,
   }),
   setSecurityToolsOpen: (open) => ({
-    type: ActionTypes.SET_RANDOM_PASSWORD_GENERATOR_OPEN,
+    type: ActionTypes.SET_SECURITY_TOOLS_OPEN,
     payload: open,
   }),
   setShortcutCommandsOpen: (open) => ({
