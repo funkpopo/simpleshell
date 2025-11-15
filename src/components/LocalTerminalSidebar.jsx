@@ -78,8 +78,8 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   const searchInputRef = useRef(null);
   const sidebarRef = useRef(null);
 
-  // 清理资源的自定义hook
-  useAutoCleanup(open);
+  // 清理资源的自定义hook - useAutoCleanup不接受参数
+  useAutoCleanup();
 
   // 键盘快捷键处理
   useEffect(() => {

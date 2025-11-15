@@ -233,9 +233,12 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     updateHeight();
 
     // 使用 addResizeObserver 自动管理观察器，组件卸载时自动清理
+    // addResizeObserver 返回资源ID，我们不需要在 useEffect 中返回它
     if (containerRef.current) {
       addResizeObserver(updateHeight, containerRef.current);
     }
+    // useEffect 不应该返回 addResizeObserver 的返回值
+    // eslint-disable-next-line consistent-return
   }, [open, addResizeObserver]);
 
   // 加载历史记录

@@ -191,11 +191,14 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
       fetchProcessList();
 
       // 使用 addInterval 自动管理定时器，组件卸载时自动清理
+      // addInterval 返回资源ID，我们不需要在 useEffect 中返回它
       addInterval(() => {
         fetchSystemInfo();
         fetchProcessList();
       }, 5000); // 统一5秒刷新
     }
+    // useEffect 不应该返回 addInterval 的返回值
+    // eslint-disable-next-line consistent-return
   }, [open, currentTabId, fetchSystemInfo, fetchProcessList, addInterval]);
 
   // 手动刷新

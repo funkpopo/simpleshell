@@ -288,7 +288,9 @@ const FileManager = memo(
     }, []);
 
     useEffect(() => {
-      return addEventListener(window, "settingsChanged", (event) => {
+      // addEventListener 返回资源ID用于管理，而不是清理函数
+      // useAutoCleanup会在组件卸载时自动清理
+      addEventListener(window, "settingsChanged", (event) => {
         const externalEditorSettings = event.detail?.externalEditor;
         if (
           externalEditorSettings &&
@@ -297,6 +299,8 @@ const FileManager = memo(
           setExternalEditorEnabled(externalEditorSettings.enabled);
         }
       });
+      // useEffect 不应该返回 addEventListener 的返回值
+      // eslint-disable-next-line consistent-return
     }, [addEventListener]);
 
     const showNotification = useCallback(
@@ -3697,8 +3701,11 @@ const FileManager = memo(
     useEffect(() => {
       if (open) {
         // 使用 addEventListener 自动管理事件监听器，组件卸载时自动清理
+        // addEventListener 返回资源ID，我们不需要在 useEffect 中返回它
         addEventListener(window, "keydown", handleKeyDown);
       }
+      // useEffect 不应该返回 addEventListener 的返回值
+      // eslint-disable-next-line consistent-return
     }, [open, handleKeyDown, addEventListener]); // 简化依赖项
 
     // 处理关闭文件管理器

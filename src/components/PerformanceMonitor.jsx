@@ -149,8 +149,11 @@ const PerformanceMonitor = ({ isVisible = false }) => {
     if (isVisible) {
       updatePerformanceData();
       // 使用 addInterval 自动管理定时器，组件卸载时自动清理
+      // addInterval 返回资源ID，我们不需要在 useEffect 中返回它
       addInterval(updatePerformanceData, 2000); // 每2秒更新
     }
+    // useEffect 不应该返回 addInterval 的返回值
+    // eslint-disable-next-line consistent-return
   }, [isVisible, addInterval]);
 
   if (!isVisible) {

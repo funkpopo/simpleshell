@@ -1,5 +1,16 @@
 // For now, assuming ssh2.Client's sftp method is primarily used for core operations.
 
+// Import centralized configuration
+const {
+  SESSION_CONFIG,
+  TIMEOUT_CONFIG,
+  RETRY_CONFIG,
+  QUEUE_CONFIG,
+  calculateDynamicTimeout: configCalculateDynamicTimeout,
+  isRetryableError: configIsRetryableError,
+  parsePriority,
+} = require("./sftpConfig");
+
 let logToFile = null;
 let getChildProcessInfo = null; // Function to get info from main.js's childProcesses map
 
@@ -8,15 +19,6 @@ let getChildProcessInfo = null; // Function to get info from main.js's childProc
 const sftpPools = new Map();
 const sftpSessionLocks = new Map(); // 按tabId加锁，避免并发创建
 let pendingOperations = new Map(); // key: tabId, value: Array of pending operations
-
-// SFTP 会话池配置 (Consider making these configurable via init or a config module later)
-const SFTP_SESSION_IDLE_TIMEOUT = 600000; // 空闲超时时间（10分钟）
-const MAX_SFTP_SESSIONS_PER_TAB = 3; // 每个标签页的最大会话数量（默认允许3个会话）
-const MAX_TOTAL_SFTP_SESSIONS = 50; // 总的最大会话数量（所有标签页累计）
-const SFTP_HEALTH_CHECK_INTERVAL = 90000; // 健康检查间隔（毫秒）
-const SFTP_OPERATION_TIMEOUT = 86400000; // 操作超时时间（毫秒），增加到24小时
-const SFTP_LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 大文件阈值（100MB）
-const SFTP_LARGE_FILE_TIMEOUT = 86400000; // 大文件传输超时时间（24小时）
 
 let sftpHealthCheckTimer = null;
 
@@ -42,28 +44,8 @@ function genSessionId(tabId) {
   return `${tabId}-sftp-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 }
 
-// 动态计算超时时间的函数
-function calculateDynamicTimeout(
-  fileSize,
-  baseTimeout = SFTP_OPERATION_TIMEOUT,
-) {
-  if (!fileSize || fileSize <= 0) {
-    return baseTimeout;
-  }
-
-  // 如果是大文件，使用更长的超时时间
-  if (fileSize >= SFTP_LARGE_FILE_THRESHOLD) {
-    return SFTP_LARGE_FILE_TIMEOUT;
-  }
-
-  // 对于中等大小文件，按文件大小动态调整超时时间
-  // 假设传输速度为 1MB/s，至少给 3 倍的缓冲时间
-  const estimatedTransferTime = (fileSize / (1024 * 1024)) * 1000; // 毫秒
-  const dynamicTimeout = Math.max(baseTimeout, estimatedTransferTime * 3);
-
-  // 限制最大超时时间不超过大文件超时时间
-  return Math.min(dynamicTimeout, SFTP_LARGE_FILE_TIMEOUT);
-}
+// 使用配置模块的动态超时计算函数
+const calculateDynamicTimeout = configCalculateDynamicTimeout;
 
 function init(logger, getChildProcessInfoFunc) {
   if (!logger || !logger.logToFile) {
@@ -97,7 +79,7 @@ function startSftpHealthCheck() {
   }
   sftpHealthCheckTimer = setInterval(() => {
     checkSftpSessionsHealth();
-  }, SFTP_HEALTH_CHECK_INTERVAL);
+  }, SESSION_CONFIG.HEALTH_CHECK_INTERVAL);
   logToFile("sftpCore: Started SFTP session health check", "INFO");
 }
 
@@ -124,8 +106,8 @@ async function checkSftpSessionsHealth() {
     );
 
     // 超过全局限制时，按最早创建时间全局回收
-    if (totalCount > MAX_TOTAL_SFTP_SESSIONS) {
-      const toClose = totalCount - MAX_TOTAL_SFTP_SESSIONS;
+    if (totalCount > SESSION_CONFIG.MAX_TOTAL_SESSIONS) {
+      const toClose = totalCount - SESSION_CONFIG.MAX_TOTAL_SESSIONS;
       const allSessions = [];
       for (const [tabId, pool] of sftpPools.entries()) {
         for (const session of pool.sessions.values()) {
@@ -147,7 +129,7 @@ async function checkSftpSessionsHealth() {
     for (const [tabId, pool] of sftpPools.entries()) {
       for (const session of pool.sessions.values()) {
         const idleTime = Date.now() - session.lastUsed;
-        if (idleTime > SFTP_SESSION_IDLE_TIMEOUT && session.busyCount === 0) {
+        if (idleTime > SESSION_CONFIG.SESSION_IDLE_TIMEOUT && session.busyCount === 0) {
           logToFile(
             `sftpCore: SFTP session ${session.id} (tab ${tabId}) idle for ${idleTime}ms, closing`,
             "INFO",
@@ -172,7 +154,7 @@ async function checkSftpSessionsHealth() {
 async function checkSessionAlive(tabId, session) {
   try {
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("SFTP health check timeout")), 5000);
+      setTimeout(() => reject(new Error("SFTP health check timeout")), SESSION_CONFIG.HEALTH_CHECK_TIMEOUT);
     });
     const checkPromise = new Promise((resolve, reject) => {
       session.sftp.readdir("/", (err, _) => {
@@ -204,7 +186,7 @@ async function ensureSftpSession(tabId) {
       if (session.timeoutId) clearTimeout(session.timeoutId);
       session.timeoutId = setTimeout(() => {
         closeSftpSession(tabId, session.id);
-      }, SFTP_SESSION_IDLE_TIMEOUT);
+      }, SESSION_CONFIG.SESSION_IDLE_TIMEOUT);
 
       if (!session.active) {
         await closeSftpSession(tabId, session.id);
@@ -216,7 +198,7 @@ async function ensureSftpSession(tabId) {
         await new Promise((resolve, reject) => {
           const timeoutId = setTimeout(() => {
             reject(new Error("SFTP health check timeout"));
-          }, 2000);
+          }, SESSION_CONFIG.QUICK_HEALTH_CHECK_TIMEOUT);
           session.sftp.stat(".", (err) => {
             clearTimeout(timeoutId);
             if (err) reject(err);
@@ -282,7 +264,7 @@ async function getSftpSession(tabId) {
               .catch(reject);
           }
         } else {
-          setTimeout(checkLock, 100);
+          setTimeout(checkLock, SESSION_CONFIG.SSH_READY_CHECK_INTERVAL);
         }
       };
       checkLock();
@@ -374,7 +356,7 @@ async function checkSessionHealth(session) {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         resolve(false);
-      }, 3000);
+      }, SESSION_CONFIG.QUICK_HEALTH_CHECK_TIMEOUT);
 
       session.sftp.readdir(".", (err) => {
         clearTimeout(timeout);
@@ -392,13 +374,13 @@ async function acquireSftpSession(tabId) {
   try {
     const pool = getOrCreatePool(tabId);
     const perTabCount = pool.sessions.size;
-    if (perTabCount >= MAX_SFTP_SESSIONS_PER_TAB) {
+    if (perTabCount >= SESSION_CONFIG.MAX_SESSIONS_PER_TAB) {
       logToFile(
-        `sftpCore: Maximum SFTP sessions per tab reached (${MAX_SFTP_SESSIONS_PER_TAB}) for tab ${tabId}`,
+        `sftpCore: Maximum SFTP sessions per tab reached (${SESSION_CONFIG.MAX_SESSIONS_PER_TAB}) for tab ${tabId}`,
         "WARN",
       );
       throw new Error(
-        `已达到每个标签页的最大SFTP会话数限制(${MAX_SFTP_SESSIONS_PER_TAB})`,
+        `已达到每个标签页的最大SFTP会话数限制(${SESSION_CONFIG.MAX_SESSIONS_PER_TAB})`,
       );
     }
 
@@ -459,9 +441,9 @@ async function acquireSftpSession(tabId) {
         `sftpCore: Waiting for SSH connection to be ready for session ${tabId}`,
         "INFO",
       );
-      const maxWaitTime = 10000;
+      const maxWaitTime = SESSION_CONFIG.SSH_READY_WAIT_TIMEOUT;
       const startTime = Date.now();
-      const checkInterval = 100;
+      const checkInterval = SESSION_CONFIG.SSH_READY_CHECK_INTERVAL;
 
       await new Promise((resolve, reject) => {
         const checkReady = () => {
@@ -498,7 +480,7 @@ async function acquireSftpSession(tabId) {
       const timeoutId = setTimeout(() => {
         sftpSessionLocks.delete(tabId);
         reject(new Error("sftpCore: SFTP session creation timed out"));
-      }, SFTP_OPERATION_TIMEOUT * 2);
+      }, TIMEOUT_CONFIG.BASE_OPERATION_TIMEOUT * 2);
 
       try {
         // 确保每次调用返回一个新的SFTP会话
@@ -521,7 +503,7 @@ async function acquireSftpSession(tabId) {
             sftp, // This is the ssh2.sftp instance
             timeoutId: setTimeout(() => {
               closeSftpSession(tabId, undefined);
-            }, SFTP_SESSION_IDLE_TIMEOUT),
+            }, SESSION_CONFIG.SESSION_IDLE_TIMEOUT),
             active: true,
             createdAt: now,
             lastUsed: now,
@@ -632,7 +614,7 @@ async function borrowSftpSession(tabId) {
   const pool = getOrCreatePool(tabId);
 
   // 优先创建新会话（未达到上限）
-  if (pool.sessions.size < MAX_SFTP_SESSIONS_PER_TAB) {
+  if (pool.sessions.size < SESSION_CONFIG.MAX_SESSIONS_PER_TAB) {
     try {
       const session = await acquireSftpSession(tabId);
       session.busyCount = 1;
@@ -678,19 +660,8 @@ async function enqueueSftpOperation(tabId, operation, options = {}) {
   const canMerge = Boolean(options.canMerge);
   const priority = options.priority || "normal";
 
-  // Parse priority to numeric value
-  let priorityValue;
-  switch (priority) {
-    case "high":
-      priorityValue = 10;
-      break;
-    case "low":
-      priorityValue = 1;
-      break;
-    default:
-      priorityValue = 5; // normal
-      break;
-  }
+  // Parse priority to numeric value using parsePriority function
+  const priorityValue = parsePriority(priority);
 
   // Create or get queue for this tabId
   if (!pendingOperations.has(tabId)) {
@@ -808,7 +779,7 @@ async function processSftpQueue(tabId) {
 
   try {
     // 计算动态超时时间
-    let timeoutMs = SFTP_OPERATION_TIMEOUT;
+    let timeoutMs = TIMEOUT_CONFIG.BASE_OPERATION_TIMEOUT;
 
     // 检查操作类型和路径，尝试估算文件大小以动态调整超时
     if (
@@ -825,10 +796,10 @@ async function processSftpQueue(tabId) {
         nextOp.type === "download-folder"
       ) {
         // 文件夹或多文件操作，使用最长超时
-        timeoutMs = SFTP_LARGE_FILE_TIMEOUT;
+        timeoutMs = TIMEOUT_CONFIG.LARGE_FILE_TIMEOUT;
       } else {
         // 单文件操作，使用大文件超时
-        timeoutMs = SFTP_LARGE_FILE_TIMEOUT;
+        timeoutMs = TIMEOUT_CONFIG.LARGE_FILE_TIMEOUT;
       }
     }
 
@@ -848,7 +819,7 @@ async function processSftpQueue(tabId) {
     queue.splice(nextOpIndex, 1);
   } catch (error) {
     // 操作失败，考虑是否重试
-    if (nextOp.retries < nextOp.maxRetries && isRetryableError(error)) {
+    if (nextOp.retries < nextOp.maxRetries && configIsRetryableError(error)) {
       nextOp.retries++;
       nextOp.inProgress = false;
 
@@ -880,28 +851,6 @@ async function processSftpQueue(tabId) {
 
   // Process next operation in queue
   processSftpQueue(tabId);
-}
-
-// 判断是否为可重试的错误类型
-function isRetryableError(error) {
-  // 网络超时、连接重置、连接中断等类型错误可以重试
-  const retryableMessages = [
-    "timeout",
-    "timed out",
-    "disconnected",
-    "reset",
-    "ECONNRESET",
-    "EOF",
-    "socket hang up",
-    "无法连接到远程主机",
-    "SSH连接已关闭",
-    "operation has been aborted",
-  ];
-
-  if (!error || !error.message) return false;
-
-  const message = error.message.toLowerCase();
-  return retryableMessages.some((msg) => message.includes(msg.toLowerCase()));
 }
 
 // 新增：清理指定tabId的待处理操作队列
@@ -1000,7 +949,7 @@ async function optimizeSftpSessions() {
     for (const [tabId, pool] of sftpPools.entries()) {
       for (const session of pool.sessions.values()) {
         const idleTime = now - session.lastUsed;
-        if (idleTime > SFTP_SESSION_IDLE_TIMEOUT / 2) {
+        if (idleTime > SESSION_CONFIG.SESSION_IDLE_TIMEOUT / 2) {
           try {
             await checkSessionAlive(tabId, session);
             optimizedCount++;

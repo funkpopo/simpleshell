@@ -291,8 +291,11 @@ const VirtualizedFileList = ({
 
     if (containerRef.current) {
       // 使用 addResizeObserver 监听容器尺寸变化
+      // addResizeObserver 返回资源ID，我们不需要在 useEffect 中返回它
       addResizeObserver(updateHeight, containerRef.current);
     }
+    // useEffect 不应该返回 addResizeObserver 的返回值
+    // eslint-disable-next-line consistent-return
   }, [addResizeObserver, height]);
 
   // 根据搜索关键字过滤文件列表

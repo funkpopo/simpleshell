@@ -284,9 +284,12 @@ const VirtualizedConnectionList = ({
     };
 
     updateHeight();
+    // addResizeObserver 返回资源ID，我们不需要在 useEffect 中返回它
     if (containerRef.current) {
       addResizeObserver(updateHeight, containerRef.current);
     }
+    // useEffect 不应该返回 addResizeObserver 的返回值
+    // eslint-disable-next-line consistent-return
   }, [addResizeObserver]);
 
   // Track expanded groups

@@ -6,28 +6,22 @@ const path = require("path");
 const { pipeline } = require("stream/promises");
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 
-// SFTP streaming helpers and backoff utils
+// Import centralized configuration
+const {
+  TRANSFER_CONFIG,
+  RETRY_CONFIG,
+  TIMEOUT_CONFIG,
+  calculateRetryDelay,
+  isRetryableError,
+  isSessionError,
+  chooseChunkSize,
+  chooseConcurrency,
+  getNoProgressTimeout,
+} = require("./sftpConfig");
+
+// SFTP streaming helpers
 function delay(ms) {
   return new Promise((res) => setTimeout(res, ms));
-}
-
-function backoffMs(base, attempt) {
-  return base * Math.pow(2, Math.max(0, attempt - 1));
-}
-
-function isRetryable(err) {
-  if (!err) return false;
-  const msg = String(err.message || err).toLowerCase();
-  return (
-    msg.includes("econnreset") ||
-    msg.includes("socket hang up") ||
-    msg.includes("timeout") ||
-    msg.includes("epipe") ||
-    msg.includes("no_progress_timeout") ||
-    msg.includes("channel closed") ||
-    msg.includes("sftp stream closed") ||
-    msg.includes("connection lost")
-  );
 }
 
 async function statRemoteSize(sftp, remotePath) {
@@ -169,32 +163,6 @@ let sendToRenderer = null; // Function to send progress/status to renderer
 
 const activeTransfers = new Map(); // Manages active transfer operations for cancellation
 
-// 传输性能调优参数（可根据需要进一步接入全局配置）
-const TRANSFER_TUNING = {
-  // 并发文件数（文件夹上传/下载、多文件上传时生效）
-  parallelFilesUpload: 4,
-  parallelFilesDownload: 4,
-  // 动态块大小阈值
-  smallThreshold: 10 * 1024 * 1024, // 10MB
-  mediumThreshold: 100 * 1024 * 1024, // 100MB
-  // 块大小（highWaterMark）
-  chunkSmall: 256 * 1024, // 256KB
-  chunkMedium: 1024 * 1024, // 1MB
-  chunkLarge: 2 * 1024 * 1024, // 2MB
-  // 进度上报节流间隔
-  progressIntervalMs: 100,
-};
-
-function chooseChunkSize(totalBytes) {
-  if (!Number.isFinite(totalBytes) || totalBytes <= 0)
-    return TRANSFER_TUNING.chunkMedium;
-  if (totalBytes <= TRANSFER_TUNING.smallThreshold)
-    return TRANSFER_TUNING.chunkSmall;
-  if (totalBytes <= TRANSFER_TUNING.mediumThreshold)
-    return TRANSFER_TUNING.chunkMedium;
-  return TRANSFER_TUNING.chunkLarge;
-}
-
 // 简单的并发调度器
 async function runWithConcurrency(items, limit, worker) {
   const results = new Array(items.length);
@@ -231,30 +199,6 @@ async function runWithConcurrency(items, limit, worker) {
     };
     tick();
   });
-}
-
-// 判断是否是需要会话恢复的错误类型
-function isSessionError(error) {
-  if (!error || !error.message) return false;
-
-  const sessionErrorMessages = [
-    "ECONNRESET",
-    "EOF",
-    "Connection lost",
-    "socket hang up",
-    "SSH connection closed",
-    "SFTP stream closed",
-    "No response from server",
-    "Connection timed out",
-    "disconnected",
-    "Channel closed",
-    "not connected",
-  ];
-
-  const message = error.message.toLowerCase();
-  return sessionErrorMessages.some((errorType) =>
-    message.includes(errorType.toLowerCase()),
-  );
 }
 
 // 递归创建远程目录
@@ -426,7 +370,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
         let lastTransferTime = transferStartTime;
         let currentTransferSpeed = 0;
         let currentRemainingTime = 0;
-        const speedSmoothingFactor = 0.3;
+        const speedSmoothingFactor = TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR;
 
         // Robust download flow using pipeline + watchdog + retries
         const getCancelled = () => {
@@ -438,7 +382,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
           transferredBytes += len;
           const now = Date.now();
 
-          if (now - lastProgressUpdate >= TRANSFER_TUNING.progressIntervalMs) {
+          if (now - lastProgressUpdate >= TRANSFER_CONFIG.PROGRESS_INTERVAL_MS) {
             const timeElapsed = (now - lastTransferTime) / 1000;
             if (timeElapsed > 0) {
               const bytesDelta = transferredBytes - lastBytesTransferred;
@@ -446,8 +390,8 @@ async function handleDownloadFile(event, tabId, remotePath) {
               currentTransferSpeed =
                 currentTransferSpeed === 0
                   ? instantSpeed
-                  : speedSmoothingFactor * instantSpeed +
-                    (1 - speedSmoothingFactor) * currentTransferSpeed;
+                  : TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR * instantSpeed +
+                    (1 - TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR) * currentTransferSpeed;
               const remainingBytes = totalBytes - transferredBytes;
               currentRemainingTime =
                 currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
@@ -489,9 +433,7 @@ async function handleDownloadFile(event, tabId, remotePath) {
             }
 
             // 根据文件大小动态调整超时时间
-            const timeoutMs = totalBytes > 100 * 1024 * 1024
-              ? 60000  // 大文件60秒无进度超时
-              : 30000; // 小文件30秒无进度超时
+            const timeoutMs = getNoProgressTimeout(totalBytes);
 
             await downloadWithPipeline({
               sftp,
@@ -521,10 +463,10 @@ async function handleDownloadFile(event, tabId, remotePath) {
               throw new Error("Transfer cancelled by user");
             }
             attempt += 1;
-            if (!(attempt <= 3 && isRetryable(e))) {
+            if (!(attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS && isRetryableError(e))) {
               throw e;
             }
-            await delay(backoffMs(1000, attempt));
+            await delay(calculateRetryDelay(attempt));
           }
         }
 
@@ -658,7 +600,7 @@ async function handleUploadFile(
   let lastTransferTime = transferStartTime;
   let currentTransferSpeed = 0;
   let currentRemainingTime = 0;
-  const speedSmoothingFactor = 0.3; // 速度平滑因子
+  const speedSmoothingFactor = TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR; // 速度平滑因子
 
   if (totalBytesToUpload === 0 && totalFilesToUpload > 0) {
     // This case can happen if all files failed to stat or are empty.
@@ -735,7 +677,7 @@ async function handleUploadFile(
         const maybeReportOverall = (fileName, currentIndex) => {
           const now = Date.now();
           if (
-            now - lastProgressUpdateTime < (TRANSFER_TUNING.progressIntervalMs || 250)
+            now - lastProgressUpdateTime < (TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250)
           )
             return;
           const progress =
@@ -830,7 +772,7 @@ async function handleUploadFile(
                 currentTransferSpeed =
                   currentTransferSpeed === 0
                     ? instantSpeed
-                    : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
+                    : TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR * instantSpeed + (1 - TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR) * currentTransferSpeed;
                 const remainingBytes = totalBytesToUpload - overallUploadedBytes;
                 currentRemainingTime =
                   currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
@@ -852,9 +794,7 @@ async function handleUploadFile(
                 }
 
                 // 根据文件大小动态调整超时时间
-                const timeoutMs = currentFileSize > 100 * 1024 * 1024
-                  ? 60000  // 大文件60秒无进度超时
-                  : 30000; // 小文件30秒无进度超时
+                const timeoutMs = getNoProgressTimeout(currentFileSize);
 
                 await uploadWithPipeline({
                   sftp: sftpForFile,
@@ -871,10 +811,10 @@ async function handleUploadFile(
               } catch (e) {
                 if (getCancelled()) throw new Error("Transfer cancelled by user");
                 attempt += 1;
-                if (!(attempt <= 3 && isRetryable(e))) {
+                if (!(attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS && isRetryableError(e))) {
                   throw e;
                 }
-                await delay(backoffMs(1000, attempt));
+                await delay(calculateRetryDelay(attempt));
               }
             }
 
@@ -894,23 +834,7 @@ async function handleUploadFile(
         });
 
         // 根据文件规模动态调整并发度
-        const avgFileSize =
-          totalFilesToUpload > 0
-            ? Math.floor(totalBytesToUpload / totalFilesToUpload)
-            : 0;
-        let dynamicParallelUpload = TRANSFER_TUNING.parallelFilesUpload;
-        if (
-          totalFilesToUpload >= 8 &&
-          avgFileSize <= TRANSFER_TUNING.smallThreshold
-        ) {
-          // 小文件多：提高并发
-          dynamicParallelUpload = Math.min(12, totalFilesToUpload);
-        } else if (avgFileSize > TRANSFER_TUNING.mediumThreshold) {
-          // 巨大文件：降低并发，减少资源争用
-          dynamicParallelUpload = Math.min(2, totalFilesToUpload);
-        } else if (avgFileSize > TRANSFER_TUNING.smallThreshold) {
-          dynamicParallelUpload = Math.min(4, totalFilesToUpload);
-        }
+        const dynamicParallelUpload = chooseConcurrency(totalFilesToUpload, totalBytesToUpload, true);
 
         // 执行并发任务
         await runWithConcurrency(tasks, dynamicParallelUpload, (fn) => fn());
@@ -1290,13 +1214,13 @@ async function handleUploadFolder(
         let lastTransferTime = transferStartTime;
         let currentTransferSpeed = 0;
         let currentRemainingTime = 0;
-        const speedSmoothingFactor = 0.3; // 速度平滑因子，较低的值使速度变化更平缓
+        const speedSmoothingFactor = TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR; // 速度平滑因子，较低的值使速度变化更平缓
 
         // 4. 并发上传文件
         const maybeReportOverall = () => {
           const now = Date.now();
           if (
-            now - lastProgressUpdateTime < (TRANSFER_TUNING.progressIntervalMs || 250)
+            now - lastProgressUpdateTime < (TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250)
           )
             return;
           const progress =
@@ -1361,7 +1285,7 @@ async function handleUploadFolder(
                 currentTransferSpeed =
                   currentTransferSpeed === 0
                     ? instantSpeed
-                    : 0.3 * instantSpeed + 0.7 * currentTransferSpeed;
+                    : TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR * instantSpeed + (1 - TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR) * currentTransferSpeed;
                 const remainingBytes = totalBytesToUpload - overallUploadedBytes;
                 currentRemainingTime =
                   currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
@@ -1383,9 +1307,7 @@ async function handleUploadFolder(
                 }
 
                 // 根据文件大小动态调整超时时间
-                const timeoutMs = file.size > 100 * 1024 * 1024
-                  ? 60000  // 大文件60秒无进度超时
-                  : 30000; // 小文件30秒无进度超时
+                const timeoutMs = getNoProgressTimeout(file.size);
 
                 await uploadWithPipeline({
                   sftp: sftpForFile,
@@ -1402,10 +1324,10 @@ async function handleUploadFolder(
               } catch (e) {
                 if (getCancelled()) throw new Error("Transfer cancelled by user");
                 attempt += 1;
-                if (!(attempt <= 3 && isRetryable(e))) {
+                if (!(attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS && isRetryableError(e))) {
                   throw e;
                 }
-                await delay(backoffMs(1000, attempt));
+                await delay(calculateRetryDelay(attempt));
               }
             }
 
@@ -1420,23 +1342,7 @@ async function handleUploadFolder(
         });
 
         // 根据文件规模动态调整并发度
-        const avgFileSize =
-          totalFilesToUpload > 0
-            ? Math.floor(totalBytesToUpload / totalFilesToUpload)
-            : 0;
-        let dynamicParallelUpload = TRANSFER_TUNING.parallelFilesUpload;
-        if (
-          totalFilesToUpload >= 8 &&
-          avgFileSize <= TRANSFER_TUNING.smallThreshold
-        ) {
-          // 小文件多：提高并发
-          dynamicParallelUpload = Math.min(12, totalFilesToUpload);
-        } else if (avgFileSize > TRANSFER_TUNING.mediumThreshold) {
-          // 巨大文件：降低并发，减少资源争用
-          dynamicParallelUpload = Math.min(2, totalFilesToUpload);
-        } else if (avgFileSize > TRANSFER_TUNING.smallThreshold) {
-          dynamicParallelUpload = Math.min(4, totalFilesToUpload);
-        }
+        const dynamicParallelUpload = chooseConcurrency(totalFilesToUpload, totalBytesToUpload, true);
 
         logToFile(
           `sftpTransfer: Starting folder upload with ${dynamicParallelUpload} parallel workers`,
@@ -1784,13 +1690,13 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         let lastTransferTime = transferStartTime;
         let currentTransferSpeed = 0;
         let currentRemainingTime = 0;
-        const speedSmoothingFactor = 0.3; // 速度平滑因子，较低的值使速度变化更平缓
+        const speedSmoothingFactor = TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR; // 速度平滑因子，较低的值使速度变化更平缓
 
         // 3. 并发下载文件
         const maybeReportOverall = () => {
           const now = Date.now();
           if (
-            now - lastProgressUpdateTime < (TRANSFER_TUNING.progressIntervalMs || 250)
+            now - lastProgressUpdateTime < (TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250)
           )
             return;
           const progress =
@@ -1928,21 +1834,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         });
 
         // 根据文件规模动态调整并发度（下载）
-        const avgDownloadSize =
-          totalFilesToDownload > 0
-            ? Math.floor(totalBytesToDownload / totalFilesToDownload)
-            : 0;
-        let dynamicParallelDownload = TRANSFER_TUNING.parallelFilesDownload;
-        if (
-          totalFilesToDownload >= 8 &&
-          avgDownloadSize <= TRANSFER_TUNING.smallThreshold
-        ) {
-          dynamicParallelDownload = Math.min(12, totalFilesToDownload);
-        } else if (avgDownloadSize > TRANSFER_TUNING.mediumThreshold) {
-          dynamicParallelDownload = Math.min(2, totalFilesToDownload);
-        } else if (avgDownloadSize > TRANSFER_TUNING.smallThreshold) {
-          dynamicParallelDownload = Math.min(4, totalFilesToDownload);
-        }
+        const dynamicParallelDownload = chooseConcurrency(totalFilesToDownload, totalBytesToDownload, false);
 
         await runWithConcurrency(tasks, dynamicParallelDownload, (fn) => fn());
 
