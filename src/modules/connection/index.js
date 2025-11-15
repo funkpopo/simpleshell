@@ -1,4 +1,4 @@
-const sftpManager = require("./sftp-manager");
+const sftpCore = require("../sftp/sftpCore");
 const {
   sshConnectionPool,
   telnetConnectionPool,
@@ -7,7 +7,7 @@ const { logToFile } = require("../../core/utils/logger");
 
 class ConnectionManager {
   constructor() {
-    this.sftpManager = sftpManager;
+    this.sftpCore = sftpCore;
     this.sshConnectionPool = sshConnectionPool;
     this.telnetConnectionPool = telnetConnectionPool;
   }
@@ -16,14 +16,14 @@ class ConnectionManager {
     logToFile("Connection manager initialized", "INFO");
     this.sshConnectionPool.initialize();
     this.telnetConnectionPool.initialize();
-    this.sftpManager.initialize();
+    // sftpCore is initialized separately in main.js with proper dependencies
   }
 
   cleanup() {
     logToFile("Connection manager cleanup", "INFO");
     this.sshConnectionPool.cleanup();
     this.telnetConnectionPool.cleanup();
-    this.sftpManager.cleanup();
+    this.sftpCore.stopSftpHealthCheck();
   }
 
   async getSftpSession(tabId) {
@@ -40,11 +40,11 @@ class ConnectionManager {
         );
       }
 
-      // 对SFTP会话管理器的调用添加额外的错误处理
+      // 使用sftpCore统一管理SFTP会话
       try {
-        return await this.sftpManager.getSftpSession(tabId);
+        return await this.sftpCore.getSftpSession(tabId);
       } catch (error) {
-        // 如果获取SFTP会话失败，但我们知道有有效的SSH连接，尝试清理并重试
+        // 如果获取SFTP会话失败,但我们知道有有效的SSH连接,尝试清理并重试
         if (
           processInfo &&
           error.message.includes("Invalid SSH connection info")
@@ -55,13 +55,13 @@ class ConnectionManager {
           );
 
           // 先关闭可能存在的问题会话
-          this.sftpManager.closeSftpSession(tabId);
+          await this.sftpCore.closeSftpSession(tabId);
 
           // 短暂延迟
           await new Promise((resolve) => setTimeout(resolve, 300));
 
           // 重试获取SFTP会话
-          return await this.sftpManager.getSftpSession(tabId);
+          return await this.sftpCore.getSftpSession(tabId);
         }
 
         // 其他错误直接抛出
@@ -76,12 +76,12 @@ class ConnectionManager {
     }
   }
 
-  closeSftpSession(tabId) {
-    this.sftpManager.closeSftpSession(tabId);
+  async closeSftpSession(tabId) {
+    await this.sftpCore.closeSftpSession(tabId);
   }
 
   enqueueSftpOperation(tabId, operation, options = {}) {
-    return this.sftpManager.enqueueSftpOperation(tabId, operation, options);
+    return this.sftpCore.enqueueSftpOperation(tabId, operation, options);
   }
 
   getTopConnections(count) {
@@ -96,12 +96,12 @@ class ConnectionManager {
   }
 
   getLastConnections(count) {
-    // 合并SSH和Telnet的最近连接（获取连接对象，而不是连接ID）
+    // 合并SSH和Telnet的最近连接（获取连接对象,而不是连接ID）
     const sshLastConnections = this.sshConnectionPool.getLastConnectionsWithDetails(count);
     const telnetLastConnections =
       this.telnetConnectionPool.getLastConnectionsWithDetails(count);
 
-    // 合并两个列表，保持时间顺序（简单合并，实际使用中可能需要更复杂的合并逻辑）
+    // 合并两个列表,保持时间顺序（简单合并,实际使用中可能需要更复杂的合并逻辑）
     const allConnections = [...sshLastConnections, ...telnetLastConnections];
     return allConnections.slice(0, count);
   }
