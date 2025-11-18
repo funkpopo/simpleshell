@@ -1,6 +1,5 @@
 import React, { memo, useCallback } from "react";
 import { Box, Typography, CircularProgress } from "@mui/material";
-import VirtualizedFileList from "../VirtualizedFileList.jsx";
 import { useTranslation } from "react-i18next";
 import { sortFiles, filterFiles } from "./utils.js";
 
@@ -96,18 +95,8 @@ const FileList = memo(
       );
     }
 
-    // 渲染文件列表
-    return (
-      <VirtualizedFileList
-        files={filteredFiles}
-        selectedFiles={selectedFiles}
-        currentPath={currentPath}
-        onFileSelect={onFileSelect}
-        onFileActivate={onFileActivate}
-        onContextMenu={onContextMenu}
-        onBlankContextMenu={onBlankContextMenu}
-      />
-    );
+    // 文件列表渲染已移至其他位置
+    return null;
   },
 );
 

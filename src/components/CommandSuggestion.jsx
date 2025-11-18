@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { Paper, List, ListItem, ListItemText, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import { useConditionalWindowEvent } from "../hooks/useWindowEvent.js";
 
 const COMMAND_FONT =
   '13px "Fira Code", "Consolas", "Monaco", "Courier New", monospace';
@@ -154,21 +155,14 @@ const CommandSuggestion = ({
     }
   }, [suggestions, visible]);
 
-  // 监听窗口大小变化
-  useEffect(() => {
-    if (!visible) return;
+  // 监听窗口大小变化（使用 useConditionalWindowEvent Hook）
+  const handleResize = useCallback(() => {
+    // 触发重新渲染以重新计算位置
+    const event = new Event("positionUpdate");
+    window.dispatchEvent(event);
+  }, []);
 
-    const handleResize = () => {
-      // 触发重新渲染以重新计算位置
-      const event = new Event("positionUpdate");
-      window.dispatchEvent(event);
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [visible]);
+  useConditionalWindowEvent("resize", handleResize, visible);
 
   // 重置选中项
   useEffect(() => {
