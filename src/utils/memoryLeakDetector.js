@@ -2,6 +2,8 @@
  * 内存泄漏检测和预防工具
  */
 
+import { useConditionalWindowEvent } from "../hooks/useWindowEvent.js";
+
 class MemoryLeakDetector {
   constructor() {
     this.snapshots = [];
@@ -409,18 +411,21 @@ export function useMemoryLeakDetector(options = {}) {
     onLeakDetected = null,
   } = options;
 
-  React.useEffect(() => {
-    if (!enabled) return;
-
-    // 监听内存泄漏事件
-    const handleLeakDetected = (event) => {
+  // 监听内存泄漏事件（使用 useConditionalWindowEvent Hook）
+  const handleLeakDetected = React.useCallback(
+    (event) => {
       console.warn("内存泄漏检测:", event.detail);
       if (onLeakDetected) {
         onLeakDetected(event.detail);
       }
-    };
+    },
+    [onLeakDetected]
+  );
 
-    window.addEventListener("memoryLeakDetected", handleLeakDetected);
+  useConditionalWindowEvent("memoryLeakDetected", handleLeakDetected, enabled);
+
+  React.useEffect(() => {
+    if (!enabled) return;
 
     // 组件级别的资源跟踪
     const componentId = `component_${Date.now()}`;
@@ -429,10 +434,9 @@ export function useMemoryLeakDetector(options = {}) {
     });
 
     return () => {
-      window.removeEventListener("memoryLeakDetected", handleLeakDetected);
       memoryLeakDetector.untrackResource(componentId);
     };
-  }, [enabled, onLeakDetected]);
+  }, [enabled, options.componentName]);
 
   return {
     takeSnapshot: () => memoryLeakDetector.takeSnapshot(),

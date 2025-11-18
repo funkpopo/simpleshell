@@ -5,6 +5,8 @@ import { ThemeProvider } from "@mui/material/styles";
 import { createUnifiedTheme } from "./theme";
 import CssBaseline from "@mui/material/CssBaseline";
 import { GlobalErrorBoundary } from "./components/ErrorBoundary.jsx";
+import { AppProvider, useAppState, useAppDispatch } from "./store/AppContext.jsx";
+import { actions } from "./store/appReducer.js";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
@@ -80,6 +82,10 @@ import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import AddIcon from "@mui/icons-material/Add";
 import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
 import { useEventManager } from "./core/utils/eventManager.js";
+import {
+  useWindowEvents,
+  useElementEvent,
+} from "./hooks/useWindowEvent.js";
 import ErrorNotification from "./components/ErrorNotification.jsx";
 
 // 自定义磨砂玻璃效果的Dialog组件
@@ -266,13 +272,16 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
 AboutDialog.displayName = "AboutDialog";
 
-function App() {
+function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
   const eventManager = useEventManager(); // 使用统一的事件管理器
-  const [activeSidebarMargin, setActiveSidebarMargin] = React.useState(0);
 
-  // 错误处理状态
+  // 使用全局状态和 dispatch
+  const state = useAppState();
+  const dispatch = useAppDispatch();
+
+  // 错误处理状态（保持本地，因为不需要全局共享）
   const [appError, setAppError] = React.useState(null);
   const [errorNotificationOpen, setErrorNotificationOpen] = React.useState(false);
 
@@ -302,53 +311,82 @@ function App() {
   // Update the tabs when language changes
   React.useEffect(() => {
     // Update welcome tab label when language changes
-    setTabs((prevTabs) => [
-      { ...prevTabs[0], label: t("terminal.welcome") },
-      ...prevTabs.slice(1),
-    ]);
-  }, [i18n.language, t]);
+    // 只在语言改变时更新，不依赖 tabs
+    if (tabs.length > 0 && tabs[0].id === "welcome") {
+      const newLabel = t("terminal.welcome");
+      if (tabs[0].label !== newLabel) {
+        dispatch(
+          actions.setTabs([
+            { ...tabs[0], label: newLabel },
+            ...tabs.slice(1),
+          ])
+        );
+      }
+    }
+  }, [i18n.language, t, dispatch]); // 移除 state.tabs 依赖
 
   // 加载主题设置
   React.useEffect(() => {
     const loadThemeSettings = async () => {
       try {
-        setThemeLoading(true);
+        dispatch(actions.setThemeLoading(true));
         if (window.terminalAPI?.loadUISettings) {
           const settings = await window.terminalAPI.loadUISettings();
           if (settings && settings.darkMode !== undefined) {
-            setDarkMode(settings.darkMode);
+            dispatch(actions.setDarkMode(settings.darkMode));
           }
         }
       } catch (error) {
         // 如果加载失败，尝试从 localStorage 恢复作为备选
         const fallbackTheme = localStorage.getItem("terminalDarkMode");
         if (fallbackTheme !== null) {
-          setDarkMode(fallbackTheme === "true");
+          dispatch(actions.setDarkMode(fallbackTheme === "true"));
         }
       } finally {
-        setThemeLoading(false);
+        dispatch(actions.setThemeLoading(false));
       }
     };
 
     loadThemeSettings();
-  }, []);
+  }, [dispatch]);
 
-  // 状态管理菜单打开关闭
-  const [anchorEl, setAnchorEl] = React.useState(null);
+  // ============ 从全局状态读取 ============
+  const tabs = state.tabs;
+  const currentTab = state.currentTab;
+  const connectionManagerOpen = state.connectionManagerOpen;
+  const resourceMonitorOpen = state.resourceMonitorOpen;
+  const fileManagerOpen = state.fileManagerOpen;
+  const ipAddressQueryOpen = state.ipAddressQueryOpen;
+  const securityToolsOpen = state.securityToolsOpen;
+  const shortcutCommandsOpen = state.shortcutCommandsOpen;
+  const commandHistoryOpen = state.commandHistoryOpen;
+  const activeSidebarMargin = state.activeSidebarMargin;
+  const lastOpenedSidebar = state.lastOpenedSidebar;
+  const aboutDialogOpen = state.aboutDialogOpen;
+  const settingsDialogOpen = state.settingsDialogOpen;
+  const tabContextMenu = state.tabContextMenu;
+  const darkMode = state.darkMode;
+  const themeLoading = state.themeLoading;
+  const terminalInstances = state.terminalInstances;
+  const connections = state.connections;
+  const topConnections = state.topConnections;
+  const fileManagerPaths = state.fileManagerPaths;
+  const processCache = state.processCache;
+  const aiChatStatus = state.aiChatStatus;
+  const aiInputPreset = state.aiInputPreset;
+  const draggedTabIndex = state.draggedTabIndex;
+  const dragOverTabIndex = state.dragOverTabIndex;
+  const dragInsertPosition = state.dragInsertPosition;
+  const anchorEl = state.anchorEl;
   const open = Boolean(anchorEl);
 
-  // 关于对话框状态
-  const [aboutDialogOpen, setAboutDialogOpen] = React.useState(false);
-
-  // 标签页右键菜单
-  const [tabContextMenu, setTabContextMenu] = React.useState({
-    mouseX: null,
-    mouseY: null,
-    tabIndex: null,
-    tabId: null,
-  });
+  // ============ 保持本地状态（不在 reducer 中）============
+  const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] = React.useState(false);
+  const [prevTabsLength, setPrevTabsLength] = React.useState(tabs.length);
 
   const tabsRef = useRef(null);
+  const dragRafRef = React.useRef(null);
+  const pendingDragStateRef = React.useRef(null);
 
   const handleTabsWheel = useCallback((event) => {
     const scroller = event.currentTarget;
@@ -377,23 +415,7 @@ function App() {
     event.preventDefault();
   }, []);
 
-  // 拖动标签状态
-  const [draggedTabIndex, setDraggedTabIndex] = React.useState(null);
-  const [dragOverTabIndex, setDragOverTabIndex] = React.useState(null);
-  const [dragInsertPosition, setDragInsertPosition] = React.useState(null);
-  const dragRafRef = React.useRef(null);
-  const pendingDragStateRef = React.useRef(null);
-
-  // 主题模式状态
-  const [darkMode, setDarkMode] = React.useState(true); // 默认值
-  const [themeLoading, setThemeLoading] = React.useState(true); // 主题加载状态
-
-  // 标签页状态
-  const [tabs, setTabs] = React.useState([
-    { id: "welcome", label: t("terminal.welcome") },
-  ]);
-  const [currentTab, setCurrentTab] = React.useState(0);
-
+  // 监听 tabs 滚轮事件（需要在 scroller 元素上监听）
   React.useEffect(() => {
     const tabsRoot = tabsRef.current;
     if (!tabsRoot) {
@@ -405,12 +427,16 @@ function App() {
       return undefined;
     }
 
-    scroller.addEventListener("wheel", handleTabsWheel, { passive: false });
+    // 使用 eventManager 统一管理事件监听
+    const removeListener = eventManager.addEventListener(
+      scroller,
+      "wheel",
+      handleTabsWheel,
+      { passive: false }
+    );
 
-    return () => {
-      scroller.removeEventListener("wheel", handleTabsWheel);
-    };
-  }, [handleTabsWheel]);
+    return removeListener;
+  }, [handleTabsWheel, eventManager]);
 
   const scrollActiveTabIntoView = useCallback(() => {
     const tabsRoot = tabsRef.current;
@@ -442,68 +468,12 @@ function App() {
     scrollActiveTabIntoView();
   }, [scrollActiveTabIntoView, currentTab, tabs.length]);
 
-  // 存储终端实例的缓存
-  const [terminalInstances, setTerminalInstances] = React.useState({
-    usePowershell: false,
-  });
-
-  // 连接管理侧边栏状态
-  const [connectionManagerOpen, setConnectionManagerOpen] =
-    React.useState(false);
-
-  // 资源监控侧边栏状态
-  const [resourceMonitorOpen, setResourceMonitorOpen] = React.useState(false);
-
-  // 文件管理侧边栏状态
-  const [fileManagerOpen, setFileManagerOpen] = React.useState(false);
-
-  // IP地址查询侧边栏状态
-  const [ipAddressQueryOpen, setIpAddressQueryOpen] = React.useState(false);
-
-  // 随机密码生成器侧边栏状态
-  const [securityToolsOpen, setSecurityToolsOpen] = React.useState(false);
-
-  // 本地终端侧边栏状态
-  const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] =
-    React.useState(false);
-
-  // 文件管理路径记忆状态 - 为每个SSH连接记住最后访问的路径
-  const [fileManagerPaths, setFileManagerPaths] = React.useState({});
-
-  // 最后打开的侧边栏（用于确定z-index层级）
-  const [lastOpenedSidebar, setLastOpenedSidebar] = React.useState(null);
-
-  // 连接配置状态
-  const [connections, setConnections] = React.useState([]);
-  const [topConnections, setTopConnections] = React.useState([]);
-
-  // 设置对话框状态
-  const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false);
-
-  // 添加快捷命令侧边栏状态
-  const [shortcutCommandsOpen, setShortcutCommandsOpen] = React.useState(false);
-
-  // 历史命令侧边栏状态
-  const [commandHistoryOpen, setCommandHistoryOpen] = React.useState(false);
-
-  // 进程缓存状态，用于管理SSH连接进程ID
-  const [processCache, setProcessCache] = React.useState({});
-
-  // 全局AI聊天窗口状态
-  const [globalAiChatWindowState, setGlobalAiChatWindowState] =
-    React.useState("closed"); // 'visible', 'closed'
-
-  // AI助手预设输入值
-  const [aiInputPreset, setAiInputPreset] = React.useState("");
-
-  const [prevTabsLength, setPrevTabsLength] = React.useState(tabs.length);
-
   React.useEffect(() => {
     if (tabs.length > prevTabsLength) {
-      setCurrentTab(tabs.length - 1);
+      dispatch(actions.setCurrentTab(tabs.length - 1));
     }
     setPrevTabsLength(tabs.length);
-  }, [tabs]);
+  }, [tabs, dispatch, prevTabsLength]);
 
   React.useEffect(() => {
     const getSidebarWidth = () => {
@@ -552,7 +522,7 @@ function App() {
         SIDEBAR_WIDTHS.SAFETY_MARGIN;
     }
 
-    setActiveSidebarMargin(calculatedMargin);
+    dispatch(actions.setActiveSidebarMargin(calculatedMargin));
 
     // 触发自定义事件，通知WebTerminal组件进行侧边栏变化适配
     // 使用多次触发机制，确保在CSS过渡期间和完成后都能正确调整终端大小
@@ -608,7 +578,7 @@ function App() {
           const loadedConnections =
             (await window.terminalAPI.loadConnections()) || [];
           if (Array.isArray(loadedConnections)) {
-            setConnections(loadedConnections);
+            dispatch(actions.setConnections(loadedConnections));
 
             // loadTopConnections 现在返回完整的连接对象数组，不再是ID数组
             const lastConnectionObjs =
@@ -617,7 +587,7 @@ function App() {
               Array.isArray(lastConnectionObjs) &&
               lastConnectionObjs.length > 0
             ) {
-              setTopConnections(lastConnectionObjs);
+              dispatch(actions.setTopConnections(lastConnectionObjs));
             }
           }
         }
@@ -642,14 +612,14 @@ function App() {
       const { terminalId, processId } = event.detail;
       if (terminalId && processId) {
         // 更新终端实例中的进程ID
-        setTerminalInstances((prev) => ({
-          ...prev,
+        dispatch(actions.setTerminalInstances({
+          ...terminalInstances,
           [`${terminalId}-processId`]: processId,
         }));
 
         // 更新进程缓存
-        setProcessCache((prev) => ({
-          ...prev,
+        dispatch(actions.setProcessCache({
+          ...processCache,
           [terminalId]: processId,
         }));
       }
@@ -694,7 +664,7 @@ function App() {
             // lastConnectionObjs 现在是完整的连接对象数组
             // 只有当计算出的列表与当前状态不同时才更新，避免不必要的渲染
             if (JSON.stringify(lastConnectionObjs) !== JSON.stringify(topConnections)) {
-              setTopConnections(lastConnectionObjs);
+              dispatch(actions.setTopConnections(lastConnectionObjs));
             }
           }
         })
@@ -729,7 +699,7 @@ function App() {
         const connections = Array.isArray(lastConnectionObjs)
           ? lastConnectionObjs
           : await window.terminalAPI.loadTopConnections();
-        setTopConnections(connections);
+        dispatch(actions.setTopConnections(connections));
       } catch (e) {
         // 忽略错误
       }
@@ -745,54 +715,54 @@ function App() {
 
   // 保存更新后的连接配置
   const handleConnectionsUpdate = useCallback((updatedConnections) => {
-    setConnections(updatedConnections);
+    dispatch(actions.setConnections(updatedConnections));
     if (window.terminalAPI && window.terminalAPI.saveConnections) {
       window.terminalAPI.saveConnections(updatedConnections);
     }
-  }, []);
+  }, [dispatch]);
 
   // 创建动态主题
   const theme = React.useMemo(() => createUnifiedTheme(darkMode), [darkMode]);
 
   // 处理菜单打开
   const handleMenu = useCallback((event) => {
-    setAnchorEl(event.currentTarget);
-  }, []);
+    dispatch(actions.setAnchorEl(event.currentTarget));
+  }, [dispatch]);
 
   // 处理菜单关闭
   const handleClose = useCallback(() => {
-    setAnchorEl(null);
-  }, []);
+    dispatch(actions.setAnchorEl(null));
+  }, [dispatch]);
 
   // 打开关于对话框
   const handleOpenAbout = useCallback(() => {
-    setAnchorEl(null);
-    setAboutDialogOpen(true);
-  }, []);
+    dispatch(actions.setAnchorEl(null));
+    dispatch(actions.setAboutDialogOpen(true));
+  }, [dispatch]);
 
   // 关闭关于对话框
   const handleCloseAbout = useCallback(() => {
-    setAboutDialogOpen(false);
-  }, []);
+    dispatch(actions.setAboutDialogOpen(false));
+  }, [dispatch]);
 
   // 打开设置对话框
   const handleOpenSettings = useCallback(() => {
-    setAnchorEl(null);
-    setSettingsDialogOpen(true);
-  }, []);
+    dispatch(actions.setAnchorEl(null));
+    dispatch(actions.setSettingsDialogOpen(true));
+  }, [dispatch]);
 
   // 关闭设置对话框
   const handleCloseSettings = useCallback(() => {
-    setSettingsDialogOpen(false);
-  }, []);
+    dispatch(actions.setSettingsDialogOpen(false));
+  }, [dispatch]);
 
   // 处理应用退出
   const handleExit = useCallback(() => {
     if (window.terminalAPI && window.terminalAPI.closeApp) {
       window.terminalAPI.closeApp();
     }
-    setAnchorEl(null);
-  }, []);
+    dispatch(actions.setAnchorEl(null));
+  }, [dispatch]);
 
   // React 19: 利用自动批处理优化主题切换
   const toggleTheme = useCallback(async () => {
@@ -805,7 +775,7 @@ function App() {
       // React 19: 状态更新会自动批处理，无需手动延迟
       // 但为了过渡效果，仍保留小延迟
       setTimeout(() => {
-        setDarkMode(newDarkMode);
+        dispatch(actions.setDarkMode(newDarkMode));
       }, 10);
 
       // 保存主题设置到配置文件
@@ -843,7 +813,7 @@ function App() {
   // 标签页相关函数
   const handleTabChange = useCallback(
     (event, newValue) => {
-      setCurrentTab(newValue);
+      dispatch(actions.setCurrentTab(newValue));
 
       // 触发自定义事件，通知WebTerminal组件进行大小调整
       if (newValue < tabs.length) {
@@ -863,7 +833,7 @@ function App() {
         }
       }
     },
-    [tabs],
+    [tabs, dispatch],
   );
 
   // 标签页右键菜单打开
@@ -873,25 +843,25 @@ function App() {
       // 欢迎页不显示右键菜单
       if (tabs[index].id === "welcome") return;
 
-      setTabContextMenu({
+      dispatch(actions.setTabContextMenu({
         mouseX: event.clientX - 2,
         mouseY: event.clientY - 4,
         tabIndex: index,
         tabId: tabId,
-      });
+      }));
     },
-    [tabs],
+    [tabs, dispatch],
   );
 
   // 标签页右键菜单关闭
   const handleTabContextMenuClose = useCallback(() => {
-    setTabContextMenu({
+    dispatch(actions.setTabContextMenu({
       mouseX: null,
       mouseY: null,
       tabIndex: null,
       tabId: null,
-    });
-  }, []);
+    }));
+  }, [dispatch]);
 
   // 刷新终端连接
   const handleRefreshTerminal = async () => {
@@ -900,9 +870,9 @@ function App() {
       const tabId = tabs[tabIndex].id;
 
       // 先关闭所有侧边栏以避免连接错误
-      setResourceMonitorOpen(false);
-      setFileManagerOpen(false);
-      setIpAddressQueryOpen(false);
+      dispatch(actions.setResourceMonitorOpen(false));
+      dispatch(actions.setFileManagerOpen(false));
+      dispatch(actions.setIpAddressQueryOpen(false));
 
       // 获取当前连接的processId并清理连接
       try {
@@ -920,16 +890,15 @@ function App() {
       }
 
       // 从缓存中先移除旧实例
-      setTerminalInstances((prev) => {
-        const newInstances = { ...prev };
-        delete newInstances[tabId];
-        return newInstances;
-      });
+      dispatch(actions.setTerminalInstances({
+        ...terminalInstances,
+        [tabId]: undefined,
+      }));
 
       // 添加新实例标记，触发WebTerminal重新创建
       setTimeout(() => {
-        setTerminalInstances((prev) => ({
-          ...prev,
+        dispatch(actions.setTerminalInstances({
+          ...terminalInstances,
           [tabId]: true,
           [`${tabId}-refresh`]: Date.now(), // 添加时间戳确保组件被重新渲染
         }));
@@ -941,26 +910,23 @@ function App() {
 
   // 切换连接管理侧边栏
   const toggleConnectionManager = useCallback(() => {
-    setConnectionManagerOpen(!connectionManagerOpen);
+    dispatch(actions.setConnectionManagerOpen(!connectionManagerOpen));
     // 如果要打开连接管理侧边栏，确保它显示在上层
     if (!connectionManagerOpen) {
-      setLastOpenedSidebar("connection");
-      setResourceMonitorOpen((prev) => {
-        // 如果资源监控已打开，不关闭它，只确保z-index关系
-        return prev;
-      });
+      dispatch(actions.setLastOpenedSidebar("connection"));
+      // 资源监控保持不变
     }
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
       window.dispatchEvent(new Event("resize"));
     }, 15);
-  }, [connectionManagerOpen]);
+  }, [connectionManagerOpen, dispatch]);
 
   // 关闭连接管理侧边栏
   const handleCloseConnectionManager = useCallback(() => {
-    setConnectionManagerOpen(false);
-  }, []);
+    dispatch(actions.setConnectionManagerOpen(false));
+  }, [dispatch]);
 
   // 关闭终端连接
   const handleCloseConnection = () => {
@@ -995,15 +961,15 @@ function App() {
     };
 
     // 为新标签页创建终端实例缓存，并包含连接配置
-    setTerminalInstances((prev) => ({
-      ...prev,
+    dispatch(actions.setTerminalInstances({
+      ...terminalInstances,
       [terminalId]: true,
       [`${terminalId}-config`]: connectionConfigWithTabId, // 将完整的连接配置存储在缓存中
       [`${terminalId}-processId`]: null, // 预留存储进程ID的位置
     }));
 
     // 添加标签并切换到新标签
-    setTabs((prevTabs) => [...prevTabs, newTab]);
+    dispatch(actions.setTabs([...tabs, newTab]));
   };
 
   // 处理从连接管理器打开连接
@@ -1022,7 +988,7 @@ function App() {
 
     // 检查文件管理器是否为该标签页打开，如果是则关闭它
     if (fileManagerOpen && fileManagerProps.tabId === tabToRemove.id) {
-      setFileManagerOpen(false);
+      dispatch(actions.setFileManagerOpen(false));
     }
 
     // 检查资源监控是否为该标签页打开，如果是则关闭它
@@ -1031,35 +997,29 @@ function App() {
       currentPanelTab &&
       currentPanelTab.id === tabToRemove.id
     ) {
-      setResourceMonitorOpen(false);
+      dispatch(actions.setResourceMonitorOpen(false));
     }
 
     // 从缓存中移除对应的终端实例
-    setTerminalInstances((prev) => {
-      const newInstances = { ...prev };
-      delete newInstances[tabToRemove.id];
-      delete newInstances[`${tabToRemove.id}-config`];
-      delete newInstances[`${tabToRemove.id}-processId`];
-      delete newInstances[`${tabToRemove.id}-refresh`];
-      return newInstances;
-    });
+    const newInstances = { ...terminalInstances };
+    delete newInstances[tabToRemove.id];
+    delete newInstances[`${tabToRemove.id}-config`];
+    delete newInstances[`${tabToRemove.id}-processId`];
+    delete newInstances[`${tabToRemove.id}-refresh`];
+    dispatch(actions.setTerminalInstances(newInstances));
 
     // 清理进程缓存
-    setProcessCache((prev) => {
-      const newCache = { ...prev };
-      delete newCache[tabToRemove.id];
-      return newCache;
-    });
+    const newCache = { ...processCache };
+    delete newCache[tabToRemove.id];
+    dispatch(actions.setProcessCache(newCache));
 
     // 清理文件管理路径记忆
-    setFileManagerPaths((prev) => {
-      const newPaths = { ...prev };
-      delete newPaths[tabToRemove.id];
-      return newPaths;
-    });
+    const newPaths = { ...fileManagerPaths };
+    delete newPaths[tabToRemove.id];
+    dispatch(actions.setFileManagerPaths(newPaths));
 
     const newTabs = tabs.filter((_, i) => i !== index);
-    setTabs(newTabs);
+    dispatch(actions.setTabs(newTabs));
 
     // 如果关闭的是当前标签页，则选择相邻的非欢迎页标签（若存在）
     if (currentTab === index) {
@@ -1067,19 +1027,19 @@ function App() {
       if (newTabs.length > 1) {
         // 选择同位置的标签（若存在），否则选择前一个，但最小为1，避免退回欢迎页
         const target = Math.min(index, newTabs.length - 1);
-        setCurrentTab(Math.max(1, target));
+        dispatch(actions.setCurrentTab(Math.max(1, target)));
       } else {
         // 仅剩欢迎页
-        setCurrentTab(0);
+        dispatch(actions.setCurrentTab(0));
       }
     } else if (currentTab > index) {
       // 如果关闭的标签在当前标签之前，当前标签索引需要减1
       const nextIndex = currentTab - 1;
       // 若仍存在其他标签，则避免落到0（欢迎页）
       if (newTabs.length > 1) {
-        setCurrentTab(Math.max(1, nextIndex));
+        dispatch(actions.setCurrentTab(Math.max(1, nextIndex)));
       } else {
-        setCurrentTab(0);
+        dispatch(actions.setCurrentTab(0));
       }
     }
   };
@@ -1093,7 +1053,7 @@ function App() {
         return;
       }
 
-      setDraggedTabIndex(index);
+      dispatch(actions.setDraggedTabIndex(index));
       // 设置一些拖动时的数据
       e.dataTransfer.effectAllowed = "move";
 
@@ -1105,7 +1065,7 @@ function App() {
         e.currentTarget.style.opacity = "0.5";
       }
     },
-    [tabs],
+    [tabs, dispatch],
   );
 
   // 处理拖动中 - 仅用于排序提示（节流至每帧一次，避免频繁重排导致闪烁）
@@ -1136,20 +1096,20 @@ function App() {
             pending.index !== dragOverTabIndex ||
             pending.position !== dragInsertPosition
           ) {
-            setDragOverTabIndex(pending.index);
-            setDragInsertPosition(pending.position);
+            dispatch(actions.setDragOverTabIndex(pending.index));
+            dispatch(actions.setDragInsertPosition(pending.position));
           }
         });
       }
     },
-    [draggedTabIndex, dragOverTabIndex, dragInsertPosition],
+    [draggedTabIndex, dragOverTabIndex, dragInsertPosition, dispatch],
   );
 
   // 处理拖动离开
   const handleDragLeave = (e) => {
     if (!e.currentTarget.contains(e.relatedTarget)) {
-      setDragOverTabIndex(null);
-      setDragInsertPosition(null);
+      dispatch(actions.setDragOverTabIndex(null));
+      dispatch(actions.setDragInsertPosition(null));
     }
   };
 
@@ -1160,9 +1120,9 @@ function App() {
     if (targetIndex === 0) return;
 
     const cleanupDragState = () => {
-      setDraggedTabIndex(null);
-      setDragOverTabIndex(null);
-      setDragInsertPosition(null);
+      dispatch(actions.setDraggedTabIndex(null));
+      dispatch(actions.setDragOverTabIndex(null));
+      dispatch(actions.setDragInsertPosition(null));
       if (e.currentTarget) {
         e.currentTarget.style.opacity = "1";
       }
@@ -1221,9 +1181,9 @@ function App() {
       dragRafRef.current = null;
     }
     pendingDragStateRef.current = null;
-    setDraggedTabIndex(null);
-    setDragOverTabIndex(null);
-    setDragInsertPosition(null);
+    dispatch(actions.setDraggedTabIndex(null));
+    dispatch(actions.setDragOverTabIndex(null));
+    dispatch(actions.setDragInsertPosition(null));
   };
 
   // 标签排序功能
@@ -1242,55 +1202,52 @@ function App() {
         sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
       newTabs.splice(adjustedTargetIndex, 0, draggedTab);
 
-      setTabs(newTabs);
+      dispatch(actions.setTabs(newTabs));
 
       // 更新当前标签页索引
       if (currentTab === sourceIndex) {
-        setCurrentTab(adjustedTargetIndex);
+        dispatch(actions.setCurrentTab(adjustedTargetIndex));
       } else if (
         currentTab > sourceIndex &&
         currentTab <= adjustedTargetIndex
       ) {
-        setCurrentTab(currentTab - 1);
+        dispatch(actions.setCurrentTab(currentTab - 1));
       } else if (
         currentTab < sourceIndex &&
         currentTab >= adjustedTargetIndex
       ) {
-        setCurrentTab(currentTab + 1);
+        dispatch(actions.setCurrentTab(currentTab + 1));
       }
     },
-    [tabs, currentTab],
+    [tabs, currentTab, dispatch],
   );
 
   // 切换资源监控侧边栏
   const toggleResourceMonitor = useCallback(() => {
-    setResourceMonitorOpen(!resourceMonitorOpen);
+    dispatch(actions.setResourceMonitorOpen(!resourceMonitorOpen));
     // 如果要打开资源监控侧边栏，确保它显示在上层
     if (!resourceMonitorOpen) {
-      setLastOpenedSidebar("resource");
-      setConnectionManagerOpen((prev) => {
-        // 如果连接管理已打开，不关闭它，只确保z-index关系
-        return prev;
-      });
+      dispatch(actions.setLastOpenedSidebar("resource"));
+      // 连接管理保持不变
     }
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
       window.dispatchEvent(new Event("resize"));
     }, 15);
-  }, [resourceMonitorOpen]);
+  }, [resourceMonitorOpen, dispatch]);
 
   // 关闭资源监控侧边栏
   const handleCloseResourceMonitor = useCallback(() => {
-    setResourceMonitorOpen(false);
-  }, []);
+    dispatch(actions.setResourceMonitorOpen(false));
+  }, [dispatch]);
 
   // 切换文件管理侧边栏
   const toggleFileManager = () => {
-    setFileManagerOpen(!fileManagerOpen);
+    dispatch(actions.setFileManagerOpen(!fileManagerOpen));
     // 如果要打开文件管理侧边栏，确保它显示在上层
     if (!fileManagerOpen) {
-      setLastOpenedSidebar("file");
+      dispatch(actions.setLastOpenedSidebar("file"));
     }
 
     // 立即触发resize事件，确保终端快速适配新的布局
@@ -1301,7 +1258,7 @@ function App() {
 
   // 关闭文件管理侧边栏
   const handleCloseFileManager = () => {
-    setFileManagerOpen(false);
+    dispatch(actions.setFileManagerOpen(false));
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
@@ -1312,8 +1269,8 @@ function App() {
   // 更新文件管理路径记忆
   const updateFileManagerPath = (tabId, path) => {
     if (tabId && path) {
-      setFileManagerPaths((prev) => ({
-        ...prev,
+      dispatch(actions.setFileManagerPaths({
+        ...fileManagerPaths,
         [tabId]: path,
       }));
     }
@@ -1326,9 +1283,9 @@ function App() {
 
   // 添加切换快捷命令侧边栏的函数
   const toggleShortcutCommands = () => {
-    setShortcutCommandsOpen(!shortcutCommandsOpen);
+    dispatch(actions.setShortcutCommandsOpen(!shortcutCommandsOpen));
     if (!shortcutCommandsOpen) {
-      setLastOpenedSidebar("shortcut");
+      dispatch(actions.setLastOpenedSidebar("shortcut"));
     }
 
     // 立即触发resize事件，确保终端快速适配新的布局
@@ -1338,7 +1295,7 @@ function App() {
   };
 
   const handleCloseShortcutCommands = () => {
-    setShortcutCommandsOpen(false);
+    dispatch(actions.setShortcutCommandsOpen(false));
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
@@ -1348,9 +1305,9 @@ function App() {
 
   // 添加切换历史命令侧边栏的函数
   const toggleCommandHistory = () => {
-    setCommandHistoryOpen(!commandHistoryOpen);
+    dispatch(actions.setCommandHistoryOpen(!commandHistoryOpen));
     if (!commandHistoryOpen) {
-      setLastOpenedSidebar("history");
+      dispatch(actions.setLastOpenedSidebar("history"));
     }
 
     // 立即触发resize事件，确保终端快速适配新的布局
@@ -1360,7 +1317,7 @@ function App() {
   };
 
   const handleCloseCommandHistory = () => {
-    setCommandHistoryOpen(false);
+    dispatch(actions.setCommandHistoryOpen(false));
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
@@ -1370,28 +1327,28 @@ function App() {
 
   // 全局AI聊天窗口处理函数
   const handleToggleGlobalAiChatWindow = () => {
-    setGlobalAiChatWindowState((prev) =>
-      prev === "visible" ? "closed" : "visible",
-    );
+    dispatch(actions.setGlobalAiChatWindowState(
+      aiChatStatus.globalAiChatWindowState === "visible" ? "closed" : "visible"
+    ));
   };
 
   const handleCloseGlobalAiChatWindow = () => {
-    setGlobalAiChatWindowState("closed");
+    dispatch(actions.setGlobalAiChatWindowState("closed"));
     // 清除预设输入值
-    setAiInputPreset("");
+    dispatch(actions.setAiInputPreset(""));
   };
 
   // 发送文本到AI助手
   const handleSendToAI = (text) => {
-    setAiInputPreset(text);
-    setGlobalAiChatWindowState("visible");
+    dispatch(actions.setAiInputPreset(text));
+    dispatch(actions.setGlobalAiChatWindowState("visible"));
   };
 
   // 切换IP地址查询侧边栏
   const toggleIpAddressQuery = () => {
-    setIpAddressQueryOpen(!ipAddressQueryOpen);
+    dispatch(actions.setIpAddressQueryOpen(!ipAddressQueryOpen));
     if (!ipAddressQueryOpen) {
-      setLastOpenedSidebar("ipquery");
+      dispatch(actions.setLastOpenedSidebar("ipquery"));
     }
 
     // 立即触发resize事件，确保终端快速适配新的布局
@@ -1402,7 +1359,7 @@ function App() {
 
   // 关闭IP地址查询侧边栏
   const handleCloseIpAddressQuery = () => {
-    setIpAddressQueryOpen(false);
+    dispatch(actions.setIpAddressQueryOpen(false));
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
@@ -1412,9 +1369,9 @@ function App() {
 
   // 切换随机密码生成器侧边栏
   const toggleSecurityTools = () => {
-    setSecurityToolsOpen(!securityToolsOpen);
+    dispatch(actions.setSecurityToolsOpen(!securityToolsOpen));
     if (!securityToolsOpen) {
-      setLastOpenedSidebar("password");
+      dispatch(actions.setLastOpenedSidebar("password"));
     }
   };
 
@@ -1480,13 +1437,13 @@ function App() {
 
   // 更新关闭所有侧边栏的函数
   const closeAllSidebars = () => {
-    setConnectionManagerOpen(false);
-    setResourceMonitorOpen(false);
-    setFileManagerOpen(false);
-    setShortcutCommandsOpen(false);
-    setCommandHistoryOpen(false);
-    setIpAddressQueryOpen(false);
-    setSecurityToolsOpen(false);
+    dispatch(actions.setConnectionManagerOpen(false));
+    dispatch(actions.setResourceMonitorOpen(false));
+    dispatch(actions.setFileManagerOpen(false));
+    dispatch(actions.setShortcutCommandsOpen(false));
+    dispatch(actions.setCommandHistoryOpen(false));
+    dispatch(actions.setIpAddressQueryOpen(false));
+    dispatch(actions.setSecurityToolsOpen(false));
     setLocalTerminalSidebarOpen(false);
 
     // 立即触发resize事件，确保终端快速适配新的布局
@@ -1571,7 +1528,7 @@ function App() {
       // React 19: 所有状态更新会自动批处理，提高性能
       // 应用主题设置
       if (newDarkMode !== undefined && newDarkMode !== darkMode) {
-        setDarkMode(newDarkMode);
+        dispatch(actions.setDarkMode(newDarkMode));
       }
 
       // 应用字号设置
@@ -1599,6 +1556,8 @@ function App() {
       handleSendToAI(event.detail.text);
     };
 
+    // 使用 useWindowEvents Hook 统一管理多个 window 事件监听
+    // 注意：为了避免在 useEffect 中再使用 Hook，我们继续使用 eventManager
     const removeSettingsListener = eventManager.addEventListener(
       window,
       "settingsChanged",
@@ -1623,7 +1582,7 @@ function App() {
           if (settings) {
             // 应用主题设置
             if (settings.darkMode !== undefined) {
-              setDarkMode(settings.darkMode);
+              dispatch(actions.setDarkMode(settings.darkMode));
             }
 
             // 应用字号设置
@@ -1652,23 +1611,23 @@ function App() {
       removeToggleListener();
       removeSendToAIListener();
     };
-  }, [darkMode]); // 添加 darkMode 依赖
+  }, [darkMode, dispatch]); // 添加 darkMode 和 dispatch 依赖
 
   // 分组操作回调
   const handleJoinGroup = (tabId, groupId) => {
     addTabToGroup(tabId, groupId);
-    setTabs([...tabs]); // 触发刷新
+    dispatch(actions.setTabs([...tabs])); // 触发刷新
     handleTabContextMenuClose();
   };
   const handleRemoveFromGroup = (tabId) => {
     removeTabFromGroup(tabId);
-    setTabs([...tabs]);
+    dispatch(actions.setTabs([...tabs]));
     handleTabContextMenuClose();
   };
   const handleCreateGroup = (tabId) => {
     const newGroup = addGroup();
     addTabToGroup(tabId, newGroup.groupId);
-    setTabs([...tabs]);
+    dispatch(actions.setTabs([...tabs]));
     handleTabContextMenuClose();
   };
 
@@ -2225,7 +2184,7 @@ function App() {
                 {securityToolsOpen && (
                   <SecurityTools
                     open={securityToolsOpen}
-                    onClose={() => setSecurityToolsOpen(false)}
+                    onClose={() => dispatch(actions.setSecurityToolsOpen(false))}
                   />
                 )}
               </Box>
@@ -2453,12 +2412,12 @@ function App() {
                   onClick={handleToggleGlobalAiChatWindow}
                   sx={{
                     bgcolor:
-                      globalAiChatWindowState === "visible"
+                      aiChatStatus.globalAiChatWindowState === "visible"
                         ? "action.selected"
                         : "transparent",
                     "&:hover": {
                       bgcolor:
-                        globalAiChatWindowState === "visible"
+                        aiChatStatus.globalAiChatWindowState === "visible"
                           ? "action.selected"
                           : "action.hover",
                     },
@@ -2474,10 +2433,10 @@ function App() {
 
       {/* 全局AI聊天窗口 */}
       <AIChatWindow
-        windowState={globalAiChatWindowState}
+        windowState={aiChatStatus.globalAiChatWindowState}
         onClose={handleCloseGlobalAiChatWindow}
         presetInput={aiInputPreset}
-        onInputPresetUsed={() => setAiInputPreset("")}
+        onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}
       />
 
       {/* 关于对话框 */}
@@ -2496,13 +2455,22 @@ function App() {
   );
 }
 
+// 包装 App 组件，使用 AppProvider 提供全局状态
+function App() {
+  return (
+    <AppProvider>
+      <AppContent />
+    </AppProvider>
+  );
+}
+
 // 为 App 组件添加 memo 优化
-const NotebyApp = memo(App);
-NotebyApp.displayName = "App";
+const MemoizedApp = memo(App);
+MemoizedApp.displayName = "App";
 
 const root = createRoot(document.getElementById("root"));
 root.render(
   <GlobalErrorBoundary>
-    <NotebyApp />
+    <MemoizedApp />
   </GlobalErrorBoundary>,
 );

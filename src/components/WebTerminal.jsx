@@ -16,6 +16,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./WebTerminal.css";
 import { debounce, createResizeObserver } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
+import { useWindowEvent } from "../hooks/useWindowEvent.js";
 import { TerminalPerformanceMonitor } from "../utils/TerminalPerformanceMonitor.js";
 import { VirtualScrollBuffer } from "../utils/VirtualScrollBuffer.js";
 import { WriteStrategyManager } from "../utils/WriteStrategyManager.js";
@@ -4671,9 +4672,9 @@ const WebTerminal = ({
     [inEditorMode, isCommandExecuting, updateCursorPosition],
   );
 
-  // 监听刷新建议事件
-  useEffect(() => {
-    const handleRefreshSuggestions = (event) => {
+  // 监听刷新建议事件（使用 useWindowEvent Hook）
+  const handleRefreshSuggestions = useCallback(
+    (event) => {
       const { input } = event.detail || {};
       if (
         input &&
@@ -4683,19 +4684,11 @@ const WebTerminal = ({
       ) {
         getSuggestions(input);
       }
-    };
+    },
+    [getSuggestions, suggestionsHiddenByEsc, suggestionsSuppressedUntilEnter, isCommandExecuting]
+  );
 
-    window.addEventListener(
-      "refreshCommandSuggestions",
-      handleRefreshSuggestions,
-    );
-    return () => {
-      window.removeEventListener(
-        "refreshCommandSuggestions",
-        handleRefreshSuggestions,
-      );
-    };
-  }, [getSuggestions, suggestionsHiddenByEsc, isCommandExecuting]);
+  useWindowEvent("refreshCommandSuggestions", handleRefreshSuggestions);
 
   const handleSuggestionSelect = useCallback(
     (suggestion) => {

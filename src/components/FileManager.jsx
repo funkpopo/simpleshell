@@ -47,9 +47,14 @@ import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import FilePreview from "./FilePreview.jsx";
-import VirtualizedFileList from "./VirtualizedFileList.jsx";
 import TransferProgressFloat from "./TransferProgressFloat.jsx";
 import FilePermissionEditor from "./FilePermissionEditor.jsx";
+import {
+  List,
+  ListItem,
+  ListItemButton,
+} from "@mui/material";
+import { InsertDriveFile as InsertDriveFileIcon } from "@mui/icons-material";
 import { formatLastRefreshTime } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
@@ -409,14 +414,6 @@ const FileManager = memo(
 
       // 检查特殊标志
       return error.userCancelled || error.cancelled;
-    };
-
-    // 确保组件有logToFile函数
-    const logToFile = (message, type) => {
-      if (window.terminalAPI && window.terminalAPI.log) {
-        window.terminalAPI.log(message, type);
-      } else {
-      }
     };
 
     // 更新当前路径并通知父组件
@@ -1006,6 +1003,12 @@ const FileManager = memo(
 
     const handleFileSelect = useCallback(
       (file, index, event) => {
+        // 只在需要时阻止默认行为
+        if (event.shiftKey || event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+
         const isMultiSelect = event.ctrlKey || event.metaKey;
         const isRangeSelect = event.shiftKey;
 
@@ -1015,14 +1018,34 @@ const FileManager = memo(
           const end = Math.max(anchorIndex, index);
           const rangeFiles = displayFiles.slice(start, end + 1);
 
-          // 直接设置范围内的文件为选中状态（完全替换之前的选择）
-          setSelectedFiles(deduplicateSelectedFiles(rangeFiles));
+          // 如果同时按住Ctrl+Shift，则添加到现有选择
+          if (isMultiSelect) {
+            // 合并现有选择和范围选择
+            const newSelection = [...selectedFiles];
+            rangeFiles.forEach(rangeFile => {
+              // 只添加未选中的文件
+              if (!newSelection.some(f =>
+                f.name === rangeFile.name && f.modifyTime === rangeFile.modifyTime
+              )) {
+                newSelection.push(rangeFile);
+              }
+            });
+            const deduplicated = deduplicateSelectedFiles(newSelection);
+            setSelectedFiles(deduplicated);
+          } else {
+            // 直接设置范围内的文件为选中状态（完全替换之前的选择）
+            const deduplicated = deduplicateSelectedFiles(rangeFiles);
+            setSelectedFiles(deduplicated);
+          }
+
           setSelectedFile(file);
           setLastSelectedIndex(index);
           // 保持锚点不变，这样连续的Shift选择都从同一个起点开始
         } else if (isMultiSelect) {
           // Ctrl多选
-          if (isFileSelected(file)) {
+          const isCurrentlySelected = isFileSelected(file);
+
+          if (isCurrentlySelected) {
             // 取消选择 - 从当前选择中移除该文件
             const newSelectedFiles = selectedFiles.filter(
               (f) =>
@@ -1042,14 +1065,9 @@ const FileManager = memo(
             }
           } else {
             // 添加到选择 - 防止重复添加
-            setSelectedFiles((prev) => {
-              // 检查是否已经在选择列表中
-              const alreadySelected = prev.some(
-                (f) => f.name === file.name && f.modifyTime === file.modifyTime,
-              );
-              // 如果还没选中，则添加到列表
-              return alreadySelected ? prev : [...prev, file];
-            });
+            const newSelection = [...selectedFiles, file];
+            const deduplicated = deduplicateSelectedFiles(newSelection);
+            setSelectedFiles(deduplicated);
             setSelectedFile(file);
           }
           setLastSelectedIndex(index);
@@ -1551,10 +1569,6 @@ const FileManager = memo(
 
             // 检查是否是用户取消操作
             if (isUserCancellationError(result)) {
-              logToFile(
-                t("fileManager.messages.uploadCancelledSkipError"),
-                "INFO",
-              );
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
@@ -1570,7 +1584,6 @@ const FileManager = memo(
                 error: result.error || t("fileManager.errors.uploadFailed"),
               });
             } else {
-              logToFile(t("fileManager.messages.cancelDetected"), "INFO");
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
@@ -1616,10 +1629,6 @@ const FileManager = memo(
               });
             });
         } else {
-          logToFile(
-            `FileManager: 跳过取消操作错误显示: ${error.message}`,
-            "INFO",
-          );
           setTransferCancelled(true);
           // 标记所有未完成的传输为取消状态
           transferProgressList
@@ -1751,10 +1760,6 @@ const FileManager = memo(
 
             // 检查是否是用户取消操作
             if (isUserCancellationError(result)) {
-              logToFile(
-                t("fileManager.messages.folderUploadCancelledSkipError"),
-                "INFO",
-              );
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
@@ -1770,7 +1775,6 @@ const FileManager = memo(
                 error: result.error || t("fileManager.errors.uploadFailed"),
               });
             } else {
-              logToFile(t("fileManager.messages.cancelDetected"), "INFO");
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
                 isCancelled: true,
@@ -1797,10 +1801,6 @@ const FileManager = memo(
               (error.message || t("fileManager.errors.unknownError")),
           );
         } else {
-          logToFile(
-            `FileManager: 跳过文件夹上传取消操作错误显示: ${error.message}`,
-            "INFO",
-          );
           setTransferCancelled(true);
         }
 
@@ -1852,17 +1852,6 @@ const FileManager = memo(
       if (selectedFiles.length > 0) {
         const deduplicatedFiles = deduplicateSelectedFiles(selectedFiles);
         if (deduplicatedFiles.length !== selectedFiles.length) {
-          console.warn("发现重复的选中文件，已自动去重", {
-            原数量: selectedFiles.length,
-            去重后数量: deduplicatedFiles.length,
-            重复文件: selectedFiles.filter(
-              (file, index, arr) =>
-                arr.findIndex(
-                  (f) =>
-                    f.name === file.name && f.modifyTime === file.modifyTime,
-                ) !== index,
-            ),
-          });
           setSelectedFiles(deduplicatedFiles);
         }
       }
@@ -1904,22 +1893,153 @@ const FileManager = memo(
         );
       }
 
-      // 使用虚拟化文件列表组件
+      // 渲染简单文件列表（替代虚拟化列表）
+      if (!displayFiles || displayFiles.length === 0) {
+        return (
+          <Box
+            sx={{
+              height: "100%",
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 2,
+            }}
+            onContextMenu={handleBlankContextMenu}
+            onClick={handleBlankClick}
+          >
+            <Typography variant="body2" color="text.secondary">
+              {searchTerm ? "未找到匹配的文件" : "当前目录为空"}
+            </Typography>
+          </Box>
+        );
+      }
+
       return (
-        <VirtualizedFileList
-          files={displayFiles}
-          onFileActivate={handleFileActivate}
-          onContextMenu={handleContextMenu}
-          onFileSelect={handleFileSelect}
-          selectedFile={selectedFile}
-          selectedFiles={selectedFiles}
-          isFileSelected={isFileSelected}
-          height="100%"
-          itemHeight={32}
-          searchTerm={searchTerm}
-          onBlankContextMenu={handleBlankContextMenu}
-          onBlankClick={handleBlankClick}
-        />
+        <Box
+          sx={{
+            height: "100%",
+            width: "100%",
+            overflow: "auto",
+            "&::-webkit-scrollbar": {
+              width: 8,
+            },
+            "&::-webkit-scrollbar-track": {
+              backgroundColor: theme.palette.action.hover,
+              borderRadius: 4,
+            },
+            "&::-webkit-scrollbar-thumb": {
+              backgroundColor: theme.palette.action.disabled,
+              borderRadius: 4,
+              "&:hover": {
+                backgroundColor: theme.palette.action.focus,
+              },
+            },
+          }}
+          onContextMenu={handleBlankContextMenu}
+          onClick={handleBlankClick}
+        >
+          <List dense disablePadding sx={{ py: 0 }}>
+            {displayFiles.map((file, index) => {
+              const isSelected = isFileSelected
+                ? isFileSelected(file)
+                : selectedFiles.some(
+                    (f) =>
+                      f.name === file.name && f.modifyTime === file.modifyTime
+                  );
+
+              const formattedDate = file?.modifyTime
+                ? formatDate(new Date(file.modifyTime))
+                : "";
+              const formattedSize =
+                file?.size && !file?.isDirectory
+                  ? formatFileSize(file.size, t)
+                  : "";
+              const secondaryText = [formattedDate, formattedSize]
+                .filter(Boolean)
+                .join(" · ");
+
+              return (
+                <ListItem
+                  key={`${file.name}-${index}`}
+                  disablePadding
+                  disableGutters
+                  onContextMenu={(e) => handleContextMenu(e, file, index)}
+                  sx={{
+                    py: 0,
+                    my: 0,
+                    minHeight: 28,
+                    height: 28,
+                    '&:not(:last-child)': {
+                      mb: 0.25,
+                    },
+                  }}
+                >
+                  <ListItemButton
+                    data-file-item="true"
+                    onClick={(e) => handleFileSelect(file, index, e)}
+                    onDoubleClick={() => handleFileActivate(file)}
+                    dense
+                    selected={isSelected}
+                    sx={{
+                      minHeight: 28,
+                      height: 28,
+                      px: 1.25,
+                      py: 0.25,
+                      borderRadius: 0.5,
+                      transition: "all 0.1s ease-in-out",
+                      userSelect: 'none', // 禁用文本选择
+                      cursor: 'pointer',
+                      '&.Mui-selected': {
+                        backgroundColor: theme.palette.action.selected,
+                        '&:hover': {
+                          backgroundColor: theme.palette.action.hover,
+                        },
+                      },
+                      '&:hover': {
+                        backgroundColor: theme.palette.action.hover,
+                      },
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 20, mr: 0.5 }}>
+                      {file.isDirectory ? (
+                        <FolderIcon color="primary" sx={{ fontSize: 18 }} />
+                      ) : (
+                        <InsertDriveFileIcon sx={{ fontSize: 18 }} />
+                      )}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={file.name || ""}
+                      secondary={secondaryText}
+                      sx={{
+                        my: 0,
+                        "& .MuiListItemText-primary": {
+                          fontSize: "0.8125rem",
+                          lineHeight: 1.05,
+                          marginBottom: "1px",
+                        },
+                        "& .MuiListItemText-secondary": {
+                          fontSize: "0.6875rem",
+                          lineHeight: 0.95,
+                          marginTop: 0,
+                        },
+                      }}
+                      primaryTypographyProps={{
+                        variant: "body2",
+                        noWrap: true,
+                      }}
+                      secondaryTypographyProps={{
+                        variant: "caption",
+                        color: "text.secondary",
+                        noWrap: true,
+                      }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              );
+            })}
+          </List>
+        </Box>
       );
     };
 
@@ -2005,12 +2125,6 @@ const FileManager = memo(
                   isCancelled: true,
                   cancelMessage: "传输已取消",
                 });
-
-                // 记录取消成功
-                logToFile(
-                  `FileManager: 传输 ${transferKey} 已成功取消`,
-                  "INFO",
-                );
               } else {
                 // 仍然更新UI以避免用户困惑
                 updateTransferProgress(transfer.transferId, {
@@ -2018,12 +2132,6 @@ const FileManager = memo(
                   isCancelled: true,
                   cancelMessage: t("fileManager.errors.transferCancelled"),
                 });
-
-                // 记录取消失败但显示为成功
-                logToFile(
-                  `${t("fileManager.messages.transferCancelApiFailedButMarked")}: ${result.error || t("fileManager.errors.unknownError")}`,
-                  "WARN",
-                );
               }
             } catch (apiError) {
               // API调用失败，但仍标记为取消
@@ -2032,11 +2140,6 @@ const FileManager = memo(
                 isCancelled: true,
                 cancelMessage: t("fileManager.errors.transferCancelled"),
               });
-
-              logToFile(
-                `${t("fileManager.errors.cancelApiCallFailed")}: ${apiError.message}`,
-                "ERROR",
-              );
             }
           } else {
             // API不可用，直接标记为取消
@@ -2045,11 +2148,6 @@ const FileManager = memo(
               isCancelled: true,
               cancelMessage: t("fileManager.errors.transferCancelled"),
             });
-
-            logToFile(
-              "FileManager: 取消API不可用，直接标记传输为已取消",
-              "INFO",
-            );
           }
         }
 
@@ -2062,12 +2160,6 @@ const FileManager = memo(
           loadDirectory(currentPath, 0, true);
         }, 800); // 延迟800ms等待后端处理完成
       } catch (error) {
-        // 取消传输失败
-        logToFile(
-          `${t("fileManager.errors.cancelProcessError")}: ${error.message}`,
-          "ERROR",
-        );
-
         // 即使出现错误，也标记相关传输为已中断
         transfersToCancel.forEach((transfer) => {
           updateTransferProgress(transfer.transferId, {
@@ -2327,8 +2419,8 @@ const FileManager = memo(
                   }
                   resolve();
                 },
-                (error) => {
-                  console.error("Error reading file:", error);
+                () => {
+                  // Error reading file - silently skip
                   resolve();
                 },
               );
@@ -2354,8 +2446,8 @@ const FileManager = memo(
                     allEntries.push(...entries);
                     readEntries();
                   },
-                  (error) => {
-                    console.error("Error reading directory:", error);
+                  () => {
+                    // Error reading directory - silently skip
                     resolve();
                   },
                 );
@@ -2529,7 +2621,7 @@ const FileManager = memo(
               );
             }
           } catch (error) {
-            console.error("Upload error:", error);
+            // Upload error - display in notification if not user cancellation
 
             // 检查是否为用户取消操作
             const isCancellation = isUserCancellationError(error);
@@ -3561,7 +3653,7 @@ const FileManager = memo(
     // 重命名不再处理权限变化
 
     // 处理键盘快捷键
-    const handleKeyDown = (event) => {
+    const handleKeyDown = useCallback((event) => {
       // 只有当文件管理器打开时才处理键盘事件
       if (!open || showPreview) return;
 
@@ -3695,18 +3787,47 @@ const FileManager = memo(
         event.preventDefault();
         handleUploadFolder();
       }
-    };
+    }, [
+      open,
+      showPreview,
+      getSelectedFiles,
+      handleDownloadFolder,
+      handleDownload,
+      handleDelete,
+      handleRename,
+      handleOpenPermissions,
+      handleRefresh,
+      displayFiles,
+      handleCopyAbsolutePath,
+      handleCreateFile,
+      handleCreateFolder,
+      handleUploadFile,
+      handleUploadFolder,
+      showNotification,
+      setSelectedFiles,
+      setSelectedFile,
+      setLastSelectedIndex,
+      setAnchorIndex,
+    ]);
 
     // 添加键盘事件监听器
     useEffect(() => {
-      if (open) {
-        // 使用 addEventListener 自动管理事件监听器，组件卸载时自动清理
-        // addEventListener 返回资源ID，我们不需要在 useEffect 中返回它
-        addEventListener(window, "keydown", handleKeyDown);
-      }
-      // useEffect 不应该返回 addEventListener 的返回值
-      // eslint-disable-next-line consistent-return
-    }, [open, handleKeyDown, addEventListener]); // 简化依赖项
+      if (!open) return;
+
+      const keydownHandler = (event) => {
+        try {
+          handleKeyDown(event);
+        } catch (error) {
+          // Silently handle keyboard event errors
+        }
+      };
+
+      window.addEventListener('keydown', keydownHandler);
+
+      return () => {
+        window.removeEventListener('keydown', keydownHandler);
+      };
+    }, [open, handleKeyDown]);
 
     // 处理关闭文件管理器
     const handleClose = () => {
@@ -4025,6 +4146,7 @@ const FileManager = memo(
             </IconButton>
           </Tooltip>
         </Box>
+
 
         <Box
           sx={{
