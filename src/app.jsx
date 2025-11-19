@@ -1327,13 +1327,13 @@ function AppContent() {
 
   // 全局AI聊天窗口处理函数
   const handleToggleGlobalAiChatWindow = () => {
-    dispatch(actions.setGlobalAiChatWindowState(
-      aiChatStatus.globalAiChatWindowState === "visible" ? "closed" : "visible"
+    dispatch(actions.setAiChatStatus(
+      aiChatStatus === "visible" ? "closed" : "visible"
     ));
   };
 
   const handleCloseGlobalAiChatWindow = () => {
-    dispatch(actions.setGlobalAiChatWindowState("closed"));
+    dispatch(actions.setAiChatStatus("closed"));
     // 清除预设输入值
     dispatch(actions.setAiInputPreset(""));
   };
@@ -1341,7 +1341,7 @@ function AppContent() {
   // 发送文本到AI助手
   const handleSendToAI = (text) => {
     dispatch(actions.setAiInputPreset(text));
-    dispatch(actions.setGlobalAiChatWindowState("visible"));
+    dispatch(actions.setAiChatStatus("visible"));
   };
 
   // 切换IP地址查询侧边栏
@@ -2420,12 +2420,12 @@ function AppContent() {
                   onClick={handleToggleGlobalAiChatWindow}
                   sx={{
                     bgcolor:
-                      aiChatStatus.globalAiChatWindowState === "visible"
+                      aiChatStatus === "visible"
                         ? "action.selected"
                         : "transparent",
                     "&:hover": {
                       bgcolor:
-                        aiChatStatus.globalAiChatWindowState === "visible"
+                        aiChatStatus === "visible"
                           ? "action.selected"
                           : "action.hover",
                     },
@@ -2441,7 +2441,7 @@ function AppContent() {
 
       {/* 全局AI聊天窗口 */}
       <AIChatWindow
-        windowState={aiChatStatus.globalAiChatWindowState}
+        windowState={aiChatStatus}
         onClose={handleCloseGlobalAiChatWindow}
         presetInput={aiInputPreset}
         onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}
