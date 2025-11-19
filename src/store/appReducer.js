@@ -64,10 +64,9 @@ export const initialState = {
   // Tab Management
   tabs: [
     {
-      id: "default-tab-1",
-      title: "Local Terminal",
-      type: "local",
-      sessionId: `terminal-${Date.now()}`,
+      id: "welcome",
+      label: "Welcome",
+      type: "welcome",
     },
   ],
   currentTab: 0,
@@ -103,12 +102,7 @@ export const initialState = {
   themeLoading: true,
 
   // Terminal State
-  terminalInstances: {
-    "default-tab-1": {
-      sessionId: `terminal-${Date.now()}`,
-      isConnected: false,
-    },
-  },
+  terminalInstances: {},
 
   // Connection State
   connections: [],
