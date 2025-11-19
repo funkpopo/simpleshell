@@ -1327,13 +1327,13 @@ function AppContent() {
 
   // 全局AI聊天窗口处理函数
   const handleToggleGlobalAiChatWindow = () => {
-    dispatch(actions.setGlobalAiChatWindowState(
-      aiChatStatus.globalAiChatWindowState === "visible" ? "closed" : "visible"
+    dispatch(actions.setAiChatStatus(
+      aiChatStatus === "visible" ? "closed" : "visible"
     ));
   };
 
   const handleCloseGlobalAiChatWindow = () => {
-    dispatch(actions.setGlobalAiChatWindowState("closed"));
+    dispatch(actions.setAiChatStatus("closed"));
     // 清除预设输入值
     dispatch(actions.setAiInputPreset(""));
   };
@@ -1341,7 +1341,7 @@ function AppContent() {
   // 发送文本到AI助手
   const handleSendToAI = (text) => {
     dispatch(actions.setAiInputPreset(text));
-    dispatch(actions.setGlobalAiChatWindowState("visible"));
+    dispatch(actions.setAiChatStatus("visible"));
   };
 
   // 切换IP地址查询侧边栏
@@ -1379,7 +1379,7 @@ function AppContent() {
   const toggleLocalTerminalSidebar = () => {
     setLocalTerminalSidebarOpen(!localTerminalSidebarOpen);
     if (!localTerminalSidebarOpen) {
-      setLastOpenedSidebar("localTerminal");
+      dispatch(actions.setLastOpenedSidebar("localTerminal"));
     }
 
     // 立即触发resize事件，确保终端快速适配新的布局
@@ -1789,39 +1789,47 @@ function AppContent() {
                     },
                   }}
                 >
-                  {tabs.map((tab, index) => (
-                    <CustomTab
-                      key={tab.id}
-                      label={tab.label}
-                      onClose={
-                        tab.id !== "welcome"
-                          ? () => handleCloseTab(index)
-                          : null
-                      }
-                      onContextMenu={(e) =>
-                        handleTabContextMenu(e, index, tab.id)
-                      }
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDragLeave={handleDragLeave}
-                      onDrop={(e) => handleDrop(e, index)}
-                      onDragEnd={handleDragEnd}
-                      value={index}
-                      selected={currentTab === index}
-                      index={index}
-                      tabId={tab.id}
-                      isDraggedOver={
-                        draggedTabIndex !== null &&
-                        dragOverTabIndex === index &&
-                        draggedTabIndex !== index
-                      }
-                      dragInsertPosition={
-                        draggedTabIndex !== null && dragOverTabIndex === index
-                          ? dragInsertPosition
-                          : null
-                      }
-                    />
-                  ))}
+                  {tabs.map((tab, index) => {
+                    const label =
+                      index === 0
+                        ? t("terminal.welcome")
+                        : tab.label || tab.title || "";
+
+                    return (
+                      <CustomTab
+                        key={tab.id}
+                        label={label}
+                        onClose={
+                          tab.id !== "welcome"
+                            ? () => handleCloseTab(index)
+                            : null
+                        }
+                        onContextMenu={(e) =>
+                          handleTabContextMenu(e, index, tab.id)
+                        }
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, index)}
+                        onDragEnd={handleDragEnd}
+                        value={index}
+                        selected={currentTab === index}
+                        index={index}
+                        tabId={tab.id}
+                        isDraggedOver={
+                          draggedTabIndex !== null &&
+                          dragOverTabIndex === index &&
+                          draggedTabIndex !== index
+                        }
+                        dragInsertPosition={
+                          draggedTabIndex !== null &&
+                          dragOverTabIndex === index
+                            ? dragInsertPosition
+                            : null
+                        }
+                      />
+                    );
+                  })}
                 </Tabs>
               </Box>
 
@@ -2412,12 +2420,12 @@ function AppContent() {
                   onClick={handleToggleGlobalAiChatWindow}
                   sx={{
                     bgcolor:
-                      aiChatStatus.globalAiChatWindowState === "visible"
+                      aiChatStatus === "visible"
                         ? "action.selected"
                         : "transparent",
                     "&:hover": {
                       bgcolor:
-                        aiChatStatus.globalAiChatWindowState === "visible"
+                        aiChatStatus === "visible"
                           ? "action.selected"
                           : "action.hover",
                     },
@@ -2433,7 +2441,7 @@ function AppContent() {
 
       {/* 全局AI聊天窗口 */}
       <AIChatWindow
-        windowState={aiChatStatus.globalAiChatWindowState}
+        windowState={aiChatStatus}
         onClose={handleCloseGlobalAiChatWindow}
         presetInput={aiInputPreset}
         onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}

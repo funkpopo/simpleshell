@@ -5,7 +5,7 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import { Paper, List, ListItem, ListItemText, Typography } from "@mui/material";
+import { Paper, List, ListItem, ListItemButton, ListItemText, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useConditionalWindowEvent } from "../hooks/useWindowEvent.js";
 
@@ -180,6 +180,14 @@ const CommandSuggestion = ({
     [onSelectSuggestion],
   );
 
+  // 处理鼠标悬停选择 - 使用 useCallback 包装以避免在渲染期间更新状态
+  const handleMouseEnter = useCallback((index) => {
+    // 使用 setTimeout 延迟状态更新，确保不会在渲染期间发生
+    setTimeout(() => {
+      setSelectedIndex(index);
+    }, 0);
+  }, []);
+
   // 处理删除建议
   const handleDeleteSuggestion = useCallback(
     async (suggestion, index) => {
@@ -256,20 +264,20 @@ const CommandSuggestion = ({
             );
             break;
           case "Enter":
-            setSelectedIndex((currentIndex) => {
+            {
+              const currentIndex = selectedIndexRef.current;
               if (currentIndex >= 0 && currentIndex < suggestions.length) {
                 handleSuggestionSelect(suggestions[currentIndex]);
               }
-              return currentIndex;
-            });
+            }
             break;
           case "Delete":
-            setSelectedIndex((currentIndex) => {
+            {
+              const currentIndex = selectedIndexRef.current;
               if (currentIndex >= 0 && currentIndex < suggestions.length) {
                 handleDeleteSuggestion(suggestions[currentIndex], currentIndex);
               }
-              return currentIndex;
-            });
+            }
             break;
           case "Escape":
             onClose?.();
@@ -546,13 +554,12 @@ const CommandSuggestion = ({
         }}
       >
         {suggestions.map((suggestion, index) => (
-          <ListItem
+          <ListItemButton
             key={`${suggestion.command}-${index}`}
             data-suggestion-index={index}
-            button
             selected={selectedIndex === index}
             onClick={() => handleSuggestionSelect(suggestion)}
-            onMouseEnter={() => setSelectedIndex(index)}
+            onMouseEnter={() => handleMouseEnter(index)}
             sx={{
               padding: "4px 8px",
               cursor: "pointer",
@@ -622,7 +629,7 @@ const CommandSuggestion = ({
                 alignItems: "flex-start",
               }}
             />
-          </ListItem>
+          </ListItemButton>
         ))}
       </List>
 
