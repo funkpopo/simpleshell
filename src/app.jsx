@@ -1379,7 +1379,7 @@ function AppContent() {
   const toggleLocalTerminalSidebar = () => {
     setLocalTerminalSidebarOpen(!localTerminalSidebarOpen);
     if (!localTerminalSidebarOpen) {
-      setLastOpenedSidebar("localTerminal");
+      dispatch(actions.setLastOpenedSidebar("localTerminal"));
     }
 
     // 立即触发resize事件，确保终端快速适配新的布局
@@ -1789,39 +1789,47 @@ function AppContent() {
                     },
                   }}
                 >
-                  {tabs.map((tab, index) => (
-                    <CustomTab
-                      key={tab.id}
-                      label={tab.label}
-                      onClose={
-                        tab.id !== "welcome"
-                          ? () => handleCloseTab(index)
-                          : null
-                      }
-                      onContextMenu={(e) =>
-                        handleTabContextMenu(e, index, tab.id)
-                      }
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDragLeave={handleDragLeave}
-                      onDrop={(e) => handleDrop(e, index)}
-                      onDragEnd={handleDragEnd}
-                      value={index}
-                      selected={currentTab === index}
-                      index={index}
-                      tabId={tab.id}
-                      isDraggedOver={
-                        draggedTabIndex !== null &&
-                        dragOverTabIndex === index &&
-                        draggedTabIndex !== index
-                      }
-                      dragInsertPosition={
-                        draggedTabIndex !== null && dragOverTabIndex === index
-                          ? dragInsertPosition
-                          : null
-                      }
-                    />
-                  ))}
+                  {tabs.map((tab, index) => {
+                    const label =
+                      index === 0
+                        ? t("terminal.welcome")
+                        : tab.label || tab.title || "";
+
+                    return (
+                      <CustomTab
+                        key={tab.id}
+                        label={label}
+                        onClose={
+                          tab.id !== "welcome"
+                            ? () => handleCloseTab(index)
+                            : null
+                        }
+                        onContextMenu={(e) =>
+                          handleTabContextMenu(e, index, tab.id)
+                        }
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, index)}
+                        onDragEnd={handleDragEnd}
+                        value={index}
+                        selected={currentTab === index}
+                        index={index}
+                        tabId={tab.id}
+                        isDraggedOver={
+                          draggedTabIndex !== null &&
+                          dragOverTabIndex === index &&
+                          draggedTabIndex !== index
+                        }
+                        dragInsertPosition={
+                          draggedTabIndex !== null &&
+                          dragOverTabIndex === index
+                            ? dragInsertPosition
+                            : null
+                        }
+                      />
+                    );
+                  })}
                 </Tabs>
               </Box>
 
