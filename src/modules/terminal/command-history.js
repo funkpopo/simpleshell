@@ -129,6 +129,13 @@ class CommandHistoryService {
     this.history = this.history.filter((item) => item.command !== command);
   }
 
+  deleteCommand(command) {
+    // Alias for removeCommand to match handler expectations
+    const initialLength = this.history.length;
+    this.removeCommand(command);
+    return this.history.length < initialLength; // Return true if something was deleted
+  }
+
   incrementCommandUsage(command) {
     const item = this.history.find((h) => h.command === command);
     if (item) {

@@ -168,7 +168,9 @@ const Settings = memo(({ open, onClose }) => {
 
         // 加载UI设置
         if (window.terminalAPI?.loadUISettings) {
-          const settings = await window.terminalAPI.loadUISettings();
+          const response = await window.terminalAPI.loadUISettings();
+          // 检查响应结构 - IPC handler 返回 { success: true, settings: {...} }
+          const settings = response?.success ? response.settings : response;
           if (settings) {
             setLanguage(settings.language || "zh-CN");
             setFontSize(settings.fontSize || 14);
@@ -213,7 +215,9 @@ const Settings = memo(({ open, onClose }) => {
 
         // 加载日志设置
         if (window.terminalAPI?.loadLogSettings) {
-          const logSettings = await window.terminalAPI.loadLogSettings();
+          const response = await window.terminalAPI.loadLogSettings();
+          // 检查响应结构 - IPC handler 返回 { success: true, settings: {...} }
+          const logSettings = response?.success ? response.settings : response;
           if (logSettings) {
             setLogLevel(logSettings.level || "WARN");
             // 将字节转换为MB
