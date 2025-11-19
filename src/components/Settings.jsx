@@ -34,6 +34,7 @@ import BoltIcon from "@mui/icons-material/Bolt";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 import { SettingsSkeleton } from "./SkeletonLoader.jsx";
+import { useNotification } from "../contexts/NotificationContext";
 
 // 自定义磨砂玻璃效果的Dialog组件
 const GlassDialog = styled(Dialog)(({ theme }) => ({
@@ -81,6 +82,7 @@ BootstrapDialogTitle.displayName = "BootstrapDialogTitle";
 
 const Settings = memo(({ open, onClose }) => {
   const { t, i18n } = useTranslation();
+  const { showError, showSuccess } = useNotification();
 
   // Define available languages
   const languages = [
@@ -413,9 +415,15 @@ const Settings = memo(({ open, onClose }) => {
         }),
       );
 
-      onClose();
+      // 显示成功提示
+      showSuccess(t("settings.saveSuccess"));
+
+      // 延迟关闭对话框，让用户能看到成功提示
+      setTimeout(() => {
+        onClose();
+      }, 500);
     } catch (error) {
-      alert(t("settings.saveError"));
+      showError(t("settings.saveError"));
     }
   };
 

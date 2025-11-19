@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useState } from "react";
+import { styled } from "@mui/material/styles";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
@@ -13,6 +14,7 @@ import Alert from "@mui/material/Alert";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import { useTranslation } from "react-i18next";
+import { useNotification } from "../contexts/NotificationContext";
 import {
   Download as DownloadIcon,
   Update as UpdateIcon,
@@ -20,8 +22,25 @@ import {
   Cancel as CancelIcon,
 } from "@mui/icons-material";
 
+// 自定义磨砂玻璃效果的Dialog组件
+const GlassDialog = styled(Dialog)(({ theme }) => ({
+  "& .MuiDialog-paper": {
+    backgroundColor:
+      theme.palette.mode === "dark"
+        ? "rgba(40, 44, 52, 0.75)"
+        : "rgba(255, 255, 255, 0.75)",
+    backdropFilter: "blur(10px)",
+    boxShadow:
+      theme.palette.mode === "dark"
+        ? "0 8px 32px 0 rgba(0, 0, 0, 0.37)"
+        : "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
+    border: "1px solid rgba(255, 255, 255, 0.18)",
+  },
+}));
+
 const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   const { t } = useTranslation();
+  const { showError } = useNotification();
   const [checkingForUpdate, setCheckingForUpdate] = useState(false);
   const [appVersion, setAppVersion] = useState("1.0.0");
   const [updateInfo, setUpdateInfo] = useState(null);
@@ -81,13 +100,13 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     (url) => {
       if (window.terminalAPI?.openExternal) {
         window.terminalAPI.openExternal(url).catch((error) => {
-          alert(t("app.cannotOpenLinkAlert", { url }));
+          showError(t("app.cannotOpenLinkAlert", { url }));
         });
       } else {
         window.open(url, "_blank");
       }
     },
-    [t],
+    [t, showError],
   );
 
   // Check for updates
@@ -360,7 +379,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <GlassDialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{t("about.title")}</DialogTitle>
       <DialogContent dividers>
         <Box sx={{ mb: 2 }}>
@@ -447,7 +466,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
           {t("about.visitGithub")}
         </Button>
       </DialogActions>
-    </Dialog>
+    </GlassDialog>
   );
 });
 
