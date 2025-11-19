@@ -6,6 +6,7 @@ import { createUnifiedTheme } from "./theme";
 import CssBaseline from "@mui/material/CssBaseline";
 import { GlobalErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { AppProvider, useAppState, useAppDispatch } from "./store/AppContext.jsx";
+import { NotificationProvider, useNotification } from "./contexts/NotificationContext.jsx";
 import { actions } from "./store/appReducer.js";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
@@ -15,13 +16,6 @@ import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Tabs from "@mui/material/Tabs";
-import Dialog from "@mui/material/Dialog";
-import DialogTitle from "@mui/material/DialogTitle";
-import DialogContent from "@mui/material/DialogContent";
-import DialogActions from "@mui/material/DialogActions";
-import Button from "@mui/material/Button";
-import Link from "@mui/material/Link";
-import CircularProgress from "@mui/material/CircularProgress";
 import AppsIcon from "@mui/icons-material/Apps";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
@@ -61,6 +55,7 @@ import AIChatWindow from "./components/AIChatWindow.jsx";
 import CustomTab from "./components/CustomTab.jsx";
 import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
 import WindowControls from "./components/WindowControls.jsx";
+import AboutDialog from "./components/AboutDialog.jsx";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -87,190 +82,6 @@ import {
   useElementEvent,
 } from "./hooks/useWindowEvent.js";
 import ErrorNotification from "./components/ErrorNotification.jsx";
-
-// 自定义磨砂玻璃效果的Dialog组件
-const GlassDialog = styled(Dialog)(({ theme }) => ({
-  "& .MuiDialog-paper": {
-    backgroundColor:
-      theme.palette.mode === "dark"
-        ? "rgba(40, 44, 52, 0.75)"
-        : "rgba(255, 255, 255, 0.75)",
-    backdropFilter: "blur(10px)",
-    boxShadow:
-      theme.palette.mode === "dark"
-        ? "0 8px 32px 0 rgba(0, 0, 0, 0.37)"
-        : "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
-    border: "1px solid rgba(255, 255, 255, 0.18)",
-  },
-}));
-
-// 关于对话框组件
-const AboutDialog = memo(function AboutDialog({ open, onClose }) {
-  const { t } = useTranslation();
-  const [checkingForUpdate, setCheckingForUpdate] = React.useState(false);
-  const [updateStatus, setUpdateStatus] = React.useState(null);
-  const [appVersion, setAppVersion] = React.useState("1.0.0");
-  const [latestRelease, setLatestRelease] = React.useState(null);
-
-  // 获取应用版本
-  React.useEffect(() => {
-    if (window.terminalAPI?.getAppVersion) {
-      const versionPromise = window.terminalAPI.getAppVersion();
-      if (versionPromise instanceof Promise) {
-        versionPromise.then((version) => setAppVersion(version));
-      } else {
-        // 如果不是Promise，可能是直接返回的版本字符串
-        setAppVersion(versionPromise || "1.0.0");
-      }
-    }
-  }, []);
-
-  // 在外部浏览器打开链接
-  const handleOpenExternalLink = useCallback(
-    (url) => {
-      if (window.terminalAPI?.openExternal) {
-        window.terminalAPI.openExternal(url).catch((error) => {
-          alert(t("app.cannotOpenLinkAlert", { url }));
-        });
-      } else {
-        // 降级方案：尝试使用window.open
-        window.open(url, "_blank");
-      }
-    },
-    [t],
-  );
-
-  const handleCheckForUpdate = useCallback(() => {
-    setCheckingForUpdate(true);
-    setUpdateStatus(t("about.checkingUpdate"));
-
-    if (!window.terminalAPI?.checkForUpdate) {
-      setUpdateStatus(t("about.updateNotAvailable"));
-      setCheckingForUpdate(false);
-      return;
-    }
-
-    window.terminalAPI
-      .checkForUpdate()
-      .then((result) => {
-        if (!result.success) {
-          throw new Error(result.error || t("app.unknownUpdateError"));
-        }
-
-        const releaseData = result.data;
-        setLatestRelease(releaseData);
-
-        const latestVersion = releaseData.tag_name;
-        const currentVersion = appVersion;
-
-        // 去掉版本号前面的'v'字符进行比较
-        const latestVersionNumber = latestVersion.replace(/^v/, "");
-        const currentVersionNumber = currentVersion.replace(/^v/, "");
-
-        if (latestVersionNumber > currentVersionNumber) {
-          setUpdateStatus(t("about.newVersion", { version: latestVersion }));
-        } else {
-          setUpdateStatus(t("about.latestVersion"));
-        }
-      })
-      .catch((error) => {
-        setUpdateStatus(t("about.updateError", { error: error.message }));
-      })
-      .finally(() => {
-        setCheckingForUpdate(false);
-      });
-  }, [t, appVersion]);
-
-  return (
-    <GlassDialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{t("about.title")}</DialogTitle>
-      <DialogContent dividers>
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            SimpleShell
-          </Typography>
-          <Typography variant="body1" gutterBottom>
-            {t("about.version")}: {appVersion}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {t("about.description")}
-          </Typography>
-
-          <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
-            {t("about.author")}
-          </Typography>
-          <Typography variant="body2">{t("about.author")}: funkpopo</Typography>
-          <Typography variant="body2">
-            {t("about.email")}:{" "}
-            <Link
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                handleOpenExternalLink("mailto:s767609509@gmail.com");
-              }}
-            >
-              s767609509@gmail.com
-            </Link>
-          </Typography>
-
-          <Box sx={{ mt: 3 }}>
-            <Typography variant="subtitle1" gutterBottom>
-              {t("about.updateCheck")}
-            </Typography>
-            {updateStatus && (
-              <Typography
-                variant="body2"
-                color={
-                  updateStatus === t("about.latestVersion")
-                    ? "success.main"
-                    : "text.secondary"
-                }
-              >
-                {updateStatus}
-              </Typography>
-            )}
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-              <Button
-                variant="outlined"
-                onClick={handleCheckForUpdate}
-                disabled={checkingForUpdate}
-                startIcon={
-                  checkingForUpdate ? <CircularProgress size={16} /> : null
-                }
-              >
-                {t("about.checkUpdateButton")}
-              </Button>
-
-              {latestRelease && latestRelease.html_url && (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={() => handleOpenExternalLink(latestRelease.html_url)}
-                >
-                  {t("about.viewLatestButton")}
-                </Button>
-              )}
-            </Box>
-          </Box>
-        </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>{t("about.close")}</Button>
-        <Button
-          onClick={() =>
-            handleOpenExternalLink(
-              "https://github.com/funkpopo/simpleshell/releases",
-            )
-          }
-        >
-          {t("about.visitGithub")}
-        </Button>
-      </DialogActions>
-    </GlassDialog>
-  );
-});
-
-AboutDialog.displayName = "AboutDialog";
 
 function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
@@ -2467,7 +2278,9 @@ function AppContent() {
 function App() {
   return (
     <AppProvider>
-      <AppContent />
+      <NotificationProvider>
+        <AppContent />
+      </NotificationProvider>
     </AppProvider>
   );
 }

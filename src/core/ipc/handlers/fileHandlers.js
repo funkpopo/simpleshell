@@ -154,9 +154,45 @@ class FileHandlers {
   }
 
   async moveFile(event, tabId, sourcePath, targetPath) {
+    // 校验: 路径非空
+    if (!sourcePath || !targetPath) {
+      logToFile(
+        `[Move Check Failed] Invalid paths. Source: ${sourcePath}, Target: ${targetPath} (Tab: ${tabId})`,
+        "WARN"
+      );
+      return { success: false, error: "Invalid source or target path" };
+    }
+
+    // 校验: 根目录保护
+    if (sourcePath.trim() === "/" || sourcePath.trim() === "\\") {
+      logToFile(
+        `[Move Check Failed] Attempt to move root directory (Tab: ${tabId})`,
+        "WARN"
+      );
+      return { success: false, error: "Cannot move root directory" };
+    }
+
+    logToFile(
+      `[Sensitive Operation] moveFile triggered. TabId: ${tabId}, Source: ${sourcePath}, Target: ${targetPath}, Source: IPC`,
+      "INFO"
+    );
+
     try {
-      const result = await sftpCore.moveFile(tabId, sourcePath, targetPath);
-      return result;
+      if (typeof sftpCore.moveFile === "function") {
+        const result = await sftpCore.moveFile(tabId, sourcePath, targetPath);
+        return result;
+      }
+
+      // Fallback implementation
+      return await sftpCore.enqueueSftpOperation(tabId, async () => {
+        const sftp = await sftpCore.getSftpSession(tabId);
+        return new Promise((resolve, reject) => {
+          sftp.rename(sourcePath, targetPath, (err) => {
+            if (err) reject(err);
+            else resolve({ success: true });
+          });
+        });
+      });
     } catch (error) {
       logToFile(`Error moving file: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -164,9 +200,50 @@ class FileHandlers {
   }
 
   async deleteFile(event, tabId, filePath, isDirectory) {
+    // 校验: 路径非空
+    if (!filePath || typeof filePath !== "string") {
+      logToFile(
+        `[Delete Check Failed] Invalid path: ${filePath} (Tab: ${tabId})`,
+        "WARN"
+      );
+      return { success: false, error: "Invalid file path" };
+    }
+
+    // 校验: 根目录保护
+    if (filePath.trim() === "/" || filePath.trim() === "\\") {
+      logToFile(
+        `[Delete Check Failed] Attempt to delete root: ${filePath} (Tab: ${tabId})`,
+        "WARN"
+      );
+      return { success: false, error: "Cannot delete root directory" };
+    }
+
+    logToFile(
+      `[Sensitive Operation] deleteFile triggered. TabId: ${tabId}, Path: ${filePath}, IsDir: ${isDirectory}, Source: IPC`,
+      "INFO"
+    );
+
     try {
-      const result = await sftpCore.deleteFile(tabId, filePath, isDirectory);
-      return result;
+      if (typeof sftpCore.deleteFile === "function") {
+        const result = await sftpCore.deleteFile(tabId, filePath, isDirectory);
+        return result;
+      }
+
+      // Fallback implementation
+      return await sftpCore.enqueueSftpOperation(tabId, async () => {
+        const sftp = await sftpCore.getSftpSession(tabId);
+        return new Promise((resolve, reject) => {
+          const cb = (err) => {
+            if (err) reject(err);
+            else resolve({ success: true });
+          };
+          if (isDirectory) {
+            sftp.rmdir(filePath, cb);
+          } else {
+            sftp.unlink(filePath, cb);
+          }
+        });
+      });
     } catch (error) {
       logToFile(`Error deleting file: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -194,10 +271,44 @@ class FileHandlers {
   }
 
   async renameFile(event, tabId, oldPath, newName) {
+    // 校验
+    if (!oldPath || !newName) {
+      logToFile(
+        `[Rename Check Failed] Invalid params. Old: ${oldPath}, New: ${newName} (Tab: ${tabId})`,
+        "WARN"
+      );
+      return { success: false, error: "Invalid old path or new name" };
+    }
+    if (oldPath.trim() === "/" || oldPath.trim() === "\\") {
+      logToFile(
+        `[Rename Check Failed] Attempt to rename root (Tab: ${tabId})`,
+        "WARN"
+      );
+      return { success: false, error: "Cannot rename root directory" };
+    }
+
+    const newPath = path.join(path.dirname(oldPath), newName);
+    logToFile(
+      `[Sensitive Operation] renameFile triggered. TabId: ${tabId}, Old: ${oldPath}, New: ${newPath}, Source: IPC`,
+      "INFO"
+    );
+
     try {
-      const newPath = path.join(path.dirname(oldPath), newName);
-      const result = await sftpCore.renameFile(tabId, oldPath, newPath);
-      return result;
+      if (typeof sftpCore.renameFile === "function") {
+        const result = await sftpCore.renameFile(tabId, oldPath, newPath);
+        return result;
+      }
+
+      // Fallback implementation
+      return await sftpCore.enqueueSftpOperation(tabId, async () => {
+        const sftp = await sftpCore.getSftpSession(tabId);
+        return new Promise((resolve, reject) => {
+          sftp.rename(oldPath, newPath, (err) => {
+            if (err) reject(err);
+            else resolve({ success: true });
+          });
+        });
+      });
     } catch (error) {
       logToFile(`Error renaming file: ${error.message}`, "ERROR");
       return { success: false, error: error.message };

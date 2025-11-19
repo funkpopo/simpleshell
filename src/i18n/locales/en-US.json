@@ -4,6 +4,12 @@
       "undo": "Undo",
       "tabMoved": "Tab order updated"
     },
+    "notification": {
+      "success": "Success",
+      "error": "Error",
+      "info": "Information",
+      "warning": "Warning"
+    },
     "settings": {
       "title": "Settings",
       "language": "Language",
@@ -19,6 +25,7 @@
       },
       "cancel": "Cancel",
       "save": "Save",
+      "saveSuccess": "Settings saved successfully",
       "saveError": "Failed to save settings. Please try again.",
       "editorFont": "File Preview/Edit Font",
       "fonts": {
@@ -188,6 +195,38 @@
       "connected": "Connected to {{host}}",
       "connectionFailed": "Connection failed: {{error}}",
       "welcome": "Welcome"
+    },
+    "connectionManager": {
+      "title": "Connection Manager",
+      "newConnection": "New Connection",
+      "newGroup": "New Group",
+      "search": "Search...",
+      "noConnections": "No Connections",
+      "noGroups": "No Groups",
+      "loadFailed": "Failed to load connection configuration",
+      "reloadFailed": "Failed to reload connection configuration",
+      "saveFailed": "Failed to save connection configuration",
+      "deleteSuccess": "Successfully deleted",
+      "nameRequired": "Name is required",
+      "hostRequired": "Host address is required",
+      "createSuccess": "Successfully created",
+      "updateSuccess": "Successfully updated",
+      "confirmDelete": "Confirm Delete",
+      "deleteGroupConfirm": "Are you sure you want to delete group \"{{name}}\"? Deleting a group will also delete all connections within it.",
+      "deleteConnectionConfirm": "Are you sure you want to delete connection \"{{name}}\"?",
+      "cannotUndo": "This action cannot be undone.",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "proxyConfig": "Proxy Configuration (Optional)",
+      "enableProxy": "Enable Proxy",
+      "useSystemProxy": "Use System Default Proxy",
+      "proxyType": "Proxy Type",
+      "proxyHost": "Proxy Host",
+      "proxyPort": "Port",
+      "proxyUsername": "Proxy Username (Optional)",
+      "proxyPassword": "Proxy Password (Optional)",
+      "hostPlaceholder": "e.g., 127.0.0.1",
+      "portPlaceholder": "8080"
     },
     "common": {
       "cancel": "Cancel",
@@ -498,7 +537,15 @@
         "createFolderFailedRetrying": "Create folder failed, retrying",
         "permissionSetFailedRetrying": "Set permissions failed, retrying",
         "fileSizeExceedsLimit": "File \"{{name}}\" size is {{size}}, exceeds the 10MB preview limit. Please download the file and view it locally.",
-        "transferCancelApiFailedButMarked": "Transfer cancel API returned failure, but UI still shows cancelled"
+        "transferCancelApiFailedButMarked": "Transfer cancel API returned failure, but UI still shows cancelled",
+        "selectFolderToDownload": "Please select a folder to download first",
+        "startDownload": "Starting download of {{count}} files",
+        "downloadSuccessCount": "Successfully downloaded {{count}} files",
+        "selectFileOrFolder": "Please select a file or folder to download first",
+        "selectFileOrFolderToDelete": "Please select a file or folder to delete first",
+        "batchRenameError": "Batch rename is not supported, please select a single file",
+        "selectFileToRename": "Please select a file to rename first",
+        "copyPathError": "Can only copy path of a single file"
       },
       "fileTypes": {
         "folder": "Folder",
