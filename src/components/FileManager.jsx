@@ -2014,13 +2014,13 @@ const FileManager = memo(
                       sx={{
                         my: 0,
                         "& .MuiListItemText-primary": {
-                          fontSize: "0.8125rem",
-                          lineHeight: 1.05,
+                          fontSize: "0.875rem",
+                          lineHeight: 1.1,
                           marginBottom: "1px",
                         },
                         "& .MuiListItemText-secondary": {
-                          fontSize: "0.6875rem",
-                          lineHeight: 0.95,
+                          fontSize: "0.75rem",
+                          lineHeight: 1,
                           marginTop: 0,
                         },
                       }}
