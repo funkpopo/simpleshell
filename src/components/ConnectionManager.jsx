@@ -26,8 +26,6 @@ import {
   InputLabel,
   MenuItem,
   Select,
-  Snackbar,
-  Alert,
   Tooltip,
   InputAdornment,
   Switch,
@@ -64,7 +62,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { alpha } from "@mui/material/styles";
 import { countries } from "countries-list";
-import { ConnectionManagerSkeleton } from "./SkeletonLoader.jsx";
+import { useTranslation } from "react-i18next";
+import { useNotification } from "../contexts/NotificationContext";
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -646,15 +645,12 @@ const ConnectionManager = memo(
     onOpenConnection,
   }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
+    const { showError, showSuccess } = useNotification();
     const [connections, setConnections] = useState(initialConnections);
     const [isLoading, setIsLoading] = useState(!initialConnections.length);
     const [searchQuery, setSearchQuery] = useState("");
     const searchInputRef = useRef(null);
-    const [snackbar, setSnackbar] = useState({
-      open: false,
-      message: "",
-      severity: "info",
-    });
 
     // 键盘快捷键处理
     useEffect(() => {
@@ -705,11 +701,7 @@ const ConnectionManager = memo(
                 setIsLoading(false);
               })
               .catch((error) => {
-                setSnackbar({
-                  open: true,
-                  message: "加载连接配置失败",
-                  severity: "error",
-                });
+                showError(t("connectionManager.loadFailed"));
                 setIsLoading(false);
               });
           } else {
@@ -753,11 +745,7 @@ const ConnectionManager = memo(
           })
           .catch((error) => {
             if (isMounted) {
-              setSnackbar({
-                open: true,
-                message: "重新加载连接配置失败",
-                severity: "error",
-              });
+              showError(t("connectionManager.reloadFailed"));
             }
           });
       };
@@ -809,10 +797,10 @@ const ConnectionManager = memo(
       }
     }, [connections, isLoading, onConnectionsUpdate]);
 
-    // 关闭消息提示
-    const handleSnackbarClose = useCallback(() => {
-      setSnackbar((prev) => ({ ...prev, open: false }));
-    }, []);
+    // 关闭消息提示 - 不再需要
+    // const handleSnackbarClose = useCallback(() => {
+    //   setSnackbar((prev) => ({ ...prev, open: false }));
+    // }, []);
 
     // 对话框状态
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -1016,11 +1004,7 @@ const ConnectionManager = memo(
       // 保存到配置文件
       if (window.terminalAPI && window.terminalAPI.saveConnections) {
         window.terminalAPI.saveConnections(newConnections).catch((error) => {
-          setSnackbar({
-            open: true,
-            message: "保存连接配置失败",
-            severity: "error",
-          });
+          showError(t("connectionManager.saveFailed"));
         });
       }
 
@@ -1028,12 +1012,8 @@ const ConnectionManager = memo(
       setDeleteConfirmOpen(false);
       setDeleteItem(null);
 
-      setSnackbar({
-        open: true,
-        message: "删除成功",
-        severity: "success",
-      });
-    }, [deleteItem, connections]);
+      showSuccess(t("connectionManager.deleteSuccess"));
+    }, [deleteItem, connections, t, showError, showSuccess]);
 
     // 取消删除
     const handleCancelDelete = useCallback(() => {
@@ -1064,11 +1044,7 @@ const ConnectionManager = memo(
     const handleSave = useCallback(() => {
       // 验证必填字段
       if (!formData.name || !formData.name.trim()) {
-        setSnackbar({
-          open: true,
-          message: "名称不能为空",
-          severity: "error",
-        });
+        showError(t("connectionManager.nameRequired"));
         return;
       }
 
@@ -1077,11 +1053,7 @@ const ConnectionManager = memo(
         dialogType === "connection" &&
         (!formData.host || !formData.host.trim())
       ) {
-        setSnackbar({
-          open: true,
-          message: "主机地址不能为空",
-          severity: "error",
-        });
+        showError(t("connectionManager.hostRequired"));
         return;
       }
 
@@ -1105,11 +1077,11 @@ const ConnectionManager = memo(
           );
         }
         setDialogOpen(false);
-        setSnackbar({
-          open: true,
-          message: `${dialogMode === "add" ? "创建" : "更新"}成功`,
-          severity: "success",
-        });
+        showSuccess(
+          dialogMode === "add"
+            ? t("connectionManager.createSuccess")
+            : t("connectionManager.updateSuccess")
+        );
         return;
       }
 
@@ -1232,21 +1204,17 @@ const ConnectionManager = memo(
       // 保存到配置文件
       if (window.terminalAPI && window.terminalAPI.saveConnections) {
         window.terminalAPI.saveConnections(newConnections).catch((error) => {
-          setSnackbar({
-            open: true,
-            message: "保存连接配置失败",
-            severity: "error",
-          });
+          showError(t("connectionManager.saveFailed"));
         });
       }
 
       setDialogOpen(false);
-      setSnackbar({
-        open: true,
-        message: `${dialogMode === "add" ? "创建" : "更新"}成功`,
-        severity: "success",
-      });
-    }, [dialogType, dialogMode, formData, selectedItem, connections]);
+      showSuccess(
+        dialogMode === "add"
+          ? t("connectionManager.createSuccess")
+          : t("connectionManager.updateSuccess")
+      );
+    }, [dialogType, dialogMode, formData, selectedItem, connections, t, showError, showSuccess]);
 
     const handleOpenConnection = useCallback(
       (connection) => {
@@ -2088,22 +2056,6 @@ const ConnectionManager = memo(
                 </Button>
               </DialogActions>
             </Dialog>
-
-            {/* 消息提示组件 */}
-            <Snackbar
-              open={snackbar.open}
-              autoHideDuration={4000}
-              onClose={handleSnackbarClose}
-              anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-            >
-              <Alert
-                onClose={handleSnackbarClose}
-                severity={snackbar.severity}
-                sx={{ width: "100%" }}
-              >
-                {snackbar.message}
-              </Alert>
-            </Snackbar>
           </>
         )}
       </Paper>

@@ -4,6 +4,12 @@
       "undo": "撤销",
       "tabMoved": "标签顺序已更新"
     },
+    "notification": {
+      "success": "操作成功",
+      "error": "操作失败",
+      "info": "提示信息",
+      "warning": "警告"
+    },
     "settings": {
       "title": "设置",
       "language": "界面语言",
@@ -19,6 +25,7 @@
       },
       "cancel": "取消",
       "save": "保存",
+      "saveSuccess": "设置已保存",
       "saveError": "保存设置失败，请重试。",
       "editorFont": "文件预览/编辑字体",
       "fonts": {
@@ -74,7 +81,7 @@
       "externalEditor": {
         "title": "外部编辑器",
         "commandLabel": "启动命令",
-        "commandPlaceholder": "例如：C:\\\\Users\\\\xxx\\\\AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Start Menu\\\\Programs\\\\notebook.exe",
+        "commandPlaceholder": "例如：C:\\Users\\xxx\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\notebook.exe",
         "commandHelper": "填写可执行文件路径或命令。%FILE% 将被替换为下载后的文件路径。留空则使用系统默认程序打开。",
         "enable": "使用外部编辑器"
       }
@@ -188,6 +195,38 @@
       "connected": "已连接到 {{host}}",
       "connectionFailed": "连接失败：{{error}}",
       "welcome": "欢迎"
+    },
+    "connectionManager": {
+      "title": "连接管理",
+      "newConnection": "新建连接",
+      "newGroup": "新建分组",
+      "search": "搜索...",
+      "noConnections": "没有连接项",
+      "noGroups": "没有分组",
+      "loadFailed": "加载连接配置失败",
+      "reloadFailed": "重新加载连接配置失败",
+      "saveFailed": "保存连接配置失败",
+      "deleteSuccess": "删除成功",
+      "nameRequired": "名称不能为空",
+      "hostRequired": "主机地址不能为空",
+      "createSuccess": "创建成功",
+      "updateSuccess": "更新成功",
+      "confirmDelete": "确认删除",
+      "deleteGroupConfirm": "确定要删除分组 \"{{name}}\" 吗？删除分组将同时删除组内的所有连接项。",
+      "deleteConnectionConfirm": "确定要删除连接 \"{{name}}\" 吗？",
+      "cannotUndo": "此操作无法撤销。",
+      "delete": "删除",
+      "cancel": "取消",
+      "proxyConfig": "代理配置 (可选)",
+      "enableProxy": "启用代理",
+      "useSystemProxy": "使用系统默认代理配置",
+      "proxyType": "代理类型",
+      "proxyHost": "代理主机",
+      "proxyPort": "端口",
+      "proxyUsername": "代理用户名 (可选)",
+      "proxyPassword": "代理密码 (可选)",
+      "hostPlaceholder": "例如: 127.0.0.1",
+      "portPlaceholder": "8080"
     },
     "common": {
       "cancel": "取消",
@@ -498,7 +537,15 @@
         "createFolderFailedRetrying": "创建文件夹失败，正在重试",
         "permissionSetFailedRetrying": "设置权限失败，正在重试",
         "fileSizeExceedsLimit": "文件 \"{{name}}\" 大小为 {{size}}，超过 10MB 预览限制。请下载后在本地查看。",
-        "transferCancelApiFailedButMarked": "取消传输 API 返回失败，但界面仍标记为已取消"
+        "transferCancelApiFailedButMarked": "取消传输 API 返回失败，但界面仍标记为已取消",
+        "selectFolderToDownload": "请先选择要下载的文件夹",
+        "startDownload": "开始下载 {{count}} 个文件",
+        "downloadSuccessCount": "成功下载 {{count}} 个文件",
+        "selectFileOrFolder": "请先选择要下载的文件或文件夹",
+        "selectFileOrFolderToDelete": "请先选择要删除的文件或文件夹",
+        "batchRenameError": "无法批量重命名，请选择单个文件",
+        "selectFileToRename": "请先选择要重命名的文件",
+        "copyPathError": "只能复制单个文件的路径"
       },
       "fileTypes": {
         "folder": "文件夹",
