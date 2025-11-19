@@ -130,16 +130,53 @@ const terminalStyles = `
   pointer-events: none !important;
 }
 
-/* 选择高亮颜色 - 使用渐变效果 */
+/* 选择高亮颜色 - 增强可见度 */
 .xterm .xterm-selection div {
-  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.2), rgba(88, 166, 255, 0.3)) !important;
-  box-shadow: 0 0 3px rgba(88, 166, 255, 0.2) !important;
+  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.28), rgba(88, 166, 255, 0.38)) !important;
+  box-shadow: 0 0 4px rgba(88, 166, 255, 0.3) !important;
 }
 
-/* 深色主题下的选择高亮 */
+/* 深色主题下的选择高亮 - 使用更亮的颜色 */
 .dark-theme .xterm .xterm-selection div {
-  background: linear-gradient(to bottom, rgba(255, 255, 170, 0.2), rgba(255, 255, 170, 0.3)) !important;
-  box-shadow: 0 0 3px rgba(255, 255, 170, 0.2) !important;
+  background: linear-gradient(to bottom, rgba(255, 223, 0, 0.25), rgba(255, 223, 0, 0.35)) !important;
+  box-shadow: 0 0 4px rgba(255, 223, 0, 0.25) !important;
+}
+
+/* 浅色主题下的选择高亮 - 使用更深的蓝色 */
+.light-theme .xterm .xterm-selection div,
+body:not(.dark-theme) .xterm .xterm-selection div {
+  background: linear-gradient(to bottom, rgba(9, 105, 218, 0.25), rgba(9, 105, 218, 0.35)) !important;
+  box-shadow: 0 0 4px rgba(9, 105, 218, 0.3) !important;
+}
+
+/* 搜索结果高亮 - xterm SearchAddon 使用的类名 */
+.xterm-decoration-overview-ruler {
+  background: rgba(255, 165, 0, 0.5) !important;
+}
+
+/* 当前搜索结果高亮 */
+.xterm-decoration {
+  background: rgba(255, 165, 0, 0.4) !important;
+}
+
+/* 深色主题下的搜索高亮 */
+.dark-theme .xterm-decoration-overview-ruler {
+  background: rgba(255, 200, 0, 0.6) !important;
+}
+
+.dark-theme .xterm-decoration {
+  background: rgba(255, 200, 0, 0.45) !important;
+}
+
+/* 浅色主题下的搜索高亮 */
+.light-theme .xterm-decoration-overview-ruler,
+body:not(.dark-theme) .xterm-decoration-overview-ruler {
+  background: rgba(255, 140, 0, 0.5) !important;
+}
+
+.light-theme .xterm-decoration,
+body:not(.dark-theme) .xterm-decoration {
+  background: rgba(255, 140, 0, 0.4) !important;
 }
 `;
 
@@ -2088,11 +2125,11 @@ useEffect(() => {
     // 光标颜色 - 更醒目
     cursor: theme.palette.mode === "light" ? "#0969da" : "#58a6ff",
     cursorAccent: theme.palette.mode === "light" ? "#ffffff" : "#0d1117",
-    // 选择高亮 - 使用渐变效果
+    // 选择高亮 - 优化可见度，日间和夜间模式下都有足够的对比度
     selectionBackground:
       theme.palette.mode === "light"
-        ? "rgba(9, 105, 218, 0.15)"
-        : "rgba(88, 166, 255, 0.15)",
+        ? "rgba(79, 126, 255, 0.43)"
+        : "rgba(212, 253, 62, 0.49)",
     selectionForeground: undefined,
     // ANSI颜色 - 现代化配色方案（参考GitHub/VSCode主题）
     black: theme.palette.mode === "light" ? "#24292f" : "#484f58",
