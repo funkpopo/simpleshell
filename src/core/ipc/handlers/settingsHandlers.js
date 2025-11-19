@@ -58,6 +58,11 @@ class SettingsHandlers {
         handler: this.addCommandHistory.bind(this),
       },
       {
+        channel: "command-history:getSuggestions",
+        category: "settings",
+        handler: this.getCommandSuggestions.bind(this),
+      },
+      {
         channel: "command-history:incrementUsage",
         category: "settings",
         handler: this.incrementCommandUsage.bind(this),
@@ -190,9 +195,19 @@ class SettingsHandlers {
     }
   }
 
+  async getCommandSuggestions(event, input, maxResults = 10) {
+    try {
+      const suggestions = commandHistoryService.getSuggestions(input, maxResults);
+      return { success: true, suggestions };
+    } catch (error) {
+      logToFile(`Error getting command suggestions: ${error.message}`, "ERROR");
+      return { success: false, error: error.message, suggestions: [] };
+    }
+  }
+
   async incrementCommandUsage(event, command) {
     try {
-      commandHistoryService.incrementUsageCount(command);
+      commandHistoryService.incrementCommandUsage(command);
       return { success: true };
     } catch (error) {
       logToFile(`Error incrementing command usage: ${error.message}`, "ERROR");

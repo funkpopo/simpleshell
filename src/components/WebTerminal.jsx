@@ -702,6 +702,45 @@ const WebTerminal = ({
   const pendingWriteHandleRef = useRef(null);
   const pendingWriteUsingRafRef = useRef(false);
 
+  // 当前 tab 变为激活状态时，强制让终端获得键盘焦点
+  useEffect(() => {
+  if (!isActive || !termRef.current) return;
+
+  const timer = setTimeout(() => {
+    try {
+      if (termRef.current && typeof termRef.current.focus === "function") {
+        termRef.current.focus();
+      }
+    } catch (_error) {
+      // ignore focus errors
+    }
+  }, 50);
+
+  return () => clearTimeout(timer);
+}, [isActive, tabId]);
+
+// 标签切换事件触发时，对应 tab 的终端再做一轮聚焦兜底
+useEffect(() => {
+  const handleTabFocus = (event) => {
+    const detail = event.detail || {};
+    if (detail.tabId !== tabId) return;
+    if (!termRef.current) return;
+
+    setTimeout(() => {
+      try {
+        if (termRef.current && typeof termRef.current.focus === "function") {
+          termRef.current.focus();
+        }
+      } catch (_error) {
+        // ignore focus errors
+      }
+    }, 50);
+  };
+
+  window.addEventListener("tabChanged", handleTabFocus);
+  return () => window.removeEventListener("tabChanged", handleTabFocus);
+}, [tabId]);
+
   useEffect(() => {
     let isActive = true;
 
@@ -1587,17 +1626,7 @@ const WebTerminal = ({
     const onDataDisposable = term.onData((data) => {
       // 添加调试日志
       if (data && data.length > 0) {
-        // 只记录可见字符输入,避免日志过多
-        const charCode = data.charCodeAt(0);
-        if (charCode >= 32 && charCode <= 126) {
-          console.debug(
-            `[onData] Received input: "${data}" for processId=${processId}`
-          );
-        } else if (charCode === 13) {
-          console.debug(`[onData] Received ENTER for processId=${processId}`);
-        } else if (charCode === 127 || charCode === 8) {
-          console.debug(`[onData] Received BACKSPACE for processId=${processId}`);
-        }
+        // console.log("[onData]", JSON.stringify(data), "processId=", processId);
       }
 
       // 检查是否正在处理外部命令
@@ -1953,7 +1982,7 @@ const WebTerminal = ({
 
     // 添加输出监听，以检测编辑器退出（仅作为备用方法）
     const onLineFeedDisposable = term.onLineFeed(() => {
-      // 当获得新的一行时，检查是否有shell提示符出现，这可能表示编辑器已退出
+        // 当获得新的一行时，检查是否有shell提示符出现，这可能表示编辑器已退出
       // 注意：如果buffer类型检测可用，此方法是不必要的
       try {
         // 只在不支持buffer类型检测时使用此备用方法
@@ -2296,6 +2325,25 @@ const WebTerminal = ({
             }
           }, 0);
         }
+        const existingProcessId = processCache[tabId];
+        if (existingProcessId) {
+          try {
+            console.debug(
+              `[WebTerminal] Rebinding listeners for tabId=${tabId}, processId=${existingProcessId}` ,
+            );
+          } catch (e) {
+            // ignore log errors
+          }
+
+          setupDataListener(existingProcessId, term);
+          setupCommandDetection(
+            term,
+            existingProcessId,
+            false,
+            terminalDisposables,
+          );
+        }
+
       } else {
         // 创建新的终端实例
         term = new Terminal({
@@ -3857,35 +3905,31 @@ const WebTerminal = ({
       const maxAttempts = 5;
       const timers = [];
 
-      // 使用递增的延迟来多次尝试设置焦点
+      // ʹ�õ������ӳ�����γ������ý���
       const attemptFocus = () => {
         try {
-          // 验证终端实例和焦点方法存在
-          if (
-            termRef.current &&
-            typeof termRef.current.focus === "function" &&
-            terminalRef.current
-          ) {
-            // 检查终端元素是否真正可见
+          // ��֤�ն�ʵ���ͽ��㷽������
+          if (termRef.current && terminalRef.current) {
+            // ����ն�Ԫ���Ƿ������ɼ�
             const isVisible =
               terminalRef.current.offsetWidth > 0 &&
               terminalRef.current.offsetHeight > 0;
 
-            if (isVisible) {
+            if (isVisible && termRef.current.element) {
               // 检查xterm-helper-textarea是否已经获得焦点
-              const helperTextarea = termRef.current.element?.querySelector(
-                ".xterm-helper-textarea"
+              const helperTextarea = termRef.current.element.querySelector(
+                ".xterm-helper-textarea",
               );
 
               if (helperTextarea && document.activeElement !== helperTextarea) {
                 // 让终端获得焦点，使其能够接收键盘输入
-                termRef.current.focus();
+                helperTextarea.focus();
                 console.debug(
-                  `[WebTerminal] Successfully focused terminal for tabId=${tabId} on attempt ${focusAttempt + 1}`
+                  `[WebTerminal] Successfully focused terminal for tabId=${tabId} on attempt ${focusAttempt + 1}` ,
                 );
               } else if (helperTextarea && document.activeElement === helperTextarea) {
                 console.debug(
-                  `[WebTerminal] Terminal already focused for tabId=${tabId}`
+                  `[WebTerminal] Terminal already focused for tabId=${tabId}` ,
                 );
                 return; // 已经获得焦点，不需要继续尝试
               }
@@ -3926,6 +3970,40 @@ const WebTerminal = ({
       };
     }
   }, [isActive, tabId]); // 监听isActive和tabId变化
+
+  useEffect(() => {
+    const handleTabFocus = (event) => {
+      if (!event.detail || event.detail.tabId !== tabId) return;
+      if (!terminalRef.current || !termRef.current) return;
+
+      eventManager.setTimeout(() => {
+        try {
+          if (
+            !terminalRef.current ||
+            !termRef.current ||
+            terminalRef.current.offsetWidth <= 0 ||
+            terminalRef.current.offsetHeight <= 0
+          ) {
+            return;
+          }
+
+          const helperTextarea =
+            termRef.current.element?.querySelector(".xterm-helper-textarea");
+
+          if (
+            helperTextarea &&
+            document.activeElement !== helperTextarea
+          ) {
+            helperTextarea.focus();
+          }
+        } catch (_error) {
+        }
+      }, 120);
+    };
+
+    eventManager.addEventListener(window, "tabChanged", handleTabFocus);
+  }, [tabId, eventManager]);
+
 
   // 添加标签切换监听器
   useEffect(() => {
