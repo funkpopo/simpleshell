@@ -43,7 +43,7 @@ temp/*
 # 忽略serena
 .serena
 
-.claude
+.claude/
 
 CLAUDE.md
 
