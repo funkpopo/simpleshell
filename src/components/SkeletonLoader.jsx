@@ -16,35 +16,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import RefreshIcon from "@mui/icons-material/Refresh";
-import { keyframes } from "@emotion/react";
 import { useTranslation } from "react-i18next";
-
-// 自定义脉冲动画
-const pulseAnimation = keyframes`
-  0% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 0.3;
-  }
-  100% {
-    opacity: 0.6;
-  }
-`;
-
-// 自定义波浪动画
-const waveAnimation = keyframes`
-  0% {
-    transform: translateX(-100%);
-  }
-  50% {
-    transform: translateX(100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-`;
 
 // 基础骨架屏组件
 const SkeletonLoader = memo(
@@ -383,165 +355,22 @@ export const TerminalSkeleton = memo(() => {
 });
 
 export const ResourceMonitorSkeleton = memo(() => {
-  const theme = useTheme();
+  const { t } = useTranslation();
   return (
-    <Box sx={{ p: 2 }}>
-      {/* 系统信息卡片轮廓 */}
-      <Box
-        sx={{
-          mb: 1,
-          borderRadius: 1,
-          border: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            py: 1.25,
-            px: 2,
-            borderLeft: `4px solid ${theme.palette.primary.main}`,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
-          <Skeleton variant="circular" width={20} height={20} sx={{ mr: 1 }} />
-          <Skeleton variant="text" width={80} height={20} />
-          <Box sx={{ ml: "auto" }}>
-            <Skeleton variant="rectangular" width={18} height={18} />
-          </Box>
-        </Box>
-        <Box sx={{ p: 2 }}>
-          <Skeleton variant="text" width="60%" height={16} sx={{ mb: 1 }} />
-          <Skeleton variant="text" width="40%" height={14} sx={{ mb: 1 }} />
-          <Skeleton variant="text" width="50%" height={14} />
-        </Box>
-      </Box>
-
-      {/* CPU 卡片轮廓 */}
-      <Box
-        sx={{
-          mb: 1,
-          borderRadius: 1,
-          border: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            py: 1.25,
-            px: 2,
-            borderLeft: `4px solid ${theme.palette.warning.main}`,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
-          <Skeleton variant="circular" width={20} height={20} sx={{ mr: 1 }} />
-          <Skeleton variant="text" width={60} height={20} />
-          <Box sx={{ ml: "auto" }}>
-            <Skeleton variant="rectangular" width={18} height={18} />
-          </Box>
-        </Box>
-        <Box sx={{ p: 2 }}>
-          <Skeleton variant="text" width="30%" height={16} sx={{ mb: 1 }} />
-          <Skeleton
-            variant="rectangular"
-            width="100%"
-            height={8}
-            sx={{ borderRadius: 1 }}
-          />
-        </Box>
-      </Box>
-
-      {/* 内存 卡片轮廓 */}
-      <Box
-        sx={{
-          mb: 1,
-          borderRadius: 1,
-          border: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            py: 1.25,
-            px: 2,
-            borderLeft: `4px solid ${theme.palette.info.main}`,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
-          <Skeleton variant="circular" width={20} height={20} sx={{ mr: 1 }} />
-          <Skeleton variant="text" width={60} height={20} />
-          <Box sx={{ ml: "auto" }}>
-            <Skeleton variant="rectangular" width={18} height={18} />
-          </Box>
-        </Box>
-        <Box sx={{ p: 2 }}>
-          <Skeleton variant="text" width="50%" height={16} sx={{ mb: 1 }} />
-          <Skeleton variant="text" width="40%" height={14} sx={{ mb: 1 }} />
-          <Skeleton
-            variant="rectangular"
-            width="100%"
-            height={8}
-            sx={{ borderRadius: 1 }}
-          />
-        </Box>
-      </Box>
-
-      {/* 进程列表 卡片轮廓 */}
-      <Box
-        sx={{
-          mb: 1,
-          borderRadius: 1,
-          border: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            py: 1.25,
-            px: 2,
-            borderLeft: `4px solid ${theme.palette.secondary.main}`,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
-          <Skeleton variant="circular" width={20} height={20} sx={{ mr: 1 }} />
-          <Skeleton variant="text" width={60} height={20} />
-          <Box sx={{ ml: "auto" }}>
-            <Skeleton variant="rectangular" width={18} height={18} />
-          </Box>
-        </Box>
-        <Box sx={{ p: 2 }}>
-          {/* 表头轮廓 */}
-          <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
-            <Skeleton variant="text" width="50%" height={14} />
-            <Skeleton variant="text" width="20%" height={14} sx={{ ml: 2 }} />
-            <Skeleton variant="text" width="20%" height={14} sx={{ ml: 2 }} />
-          </Box>
-          {/* 行轮廓 */}
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Box
-              key={i}
-              sx={{ display: "flex", alignItems: "center", py: 0.75 }}
-            >
-              <Skeleton variant="text" width="45%" height={14} />
-              <Skeleton
-                variant="rectangular"
-                width="20%"
-                height={10}
-                sx={{ ml: 2, borderRadius: 1 }}
-              />
-              <Skeleton
-                variant="rectangular"
-                width="20%"
-                height={10}
-                sx={{ ml: 2, borderRadius: 1 }}
-              />
-            </Box>
-          ))}
-        </Box>
-      </Box>
+    <Box
+      sx={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 2,
+      }}
+    >
+      <CircularProgress size={40} thickness={4} />
+      <Typography variant="body2" color="text.secondary">
+        {t("resourceMonitor.loading")}
+      </Typography>
     </Box>
   );
 });
