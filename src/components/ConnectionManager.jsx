@@ -207,6 +207,60 @@ const cloneConnectionList = (list = []) => list.map(cloneConnectionNode);
 const ROOT_CONTAINER_ID = "connection-list";
 const getGroupContainerId = (groupId) => `group-container-${groupId}`;
 
+// IP地址排序辅助函数
+const parseIpAddress = (ipString) => {
+  if (!ipString) return null;
+
+  // 移除端口号（如果有的话）
+  const ipWithoutPort = ipString.split(':')[0];
+
+  // 支持IPv4格式
+  const ipv4Parts = ipWithoutPort.split('.');
+  if (ipv4Parts.length === 4) {
+    const numericParts = ipv4Parts.map(part => parseInt(part, 10));
+    if (numericParts.every(num => !isNaN(num) && num >= 0 && num <= 255)) {
+      // 将IPv4转换为数字以便比较
+      return numericParts[0] * 16777216 + numericParts[1] * 65536 + numericParts[2] * 256 + numericParts[3];
+    }
+  }
+
+  // 如果不是有效的IP地址，返回null
+  return null;
+};
+
+const sortConnectionsByIp = (connections) => {
+  if (!Array.isArray(connections) || connections.length === 0) {
+    return connections;
+  }
+
+  return [...connections].sort((a, b) => {
+    // 分组类型始终按名称排序
+    if (a.type === 'group' && b.type === 'group') {
+      return (a.name || '').localeCompare(b.name || '');
+    }
+
+    // 分组始终在连接之前
+    if (a.type === 'group') return -1;
+    if (b.type === 'group') return 1;
+
+    // 对于连接，按IP地址排序
+    const ipA = parseIpAddress(a.host);
+    const ipB = parseIpAddress(b.host);
+
+    // 如果两个都有有效的IP地址，按数值排序
+    if (ipA !== null && ipB !== null) {
+      return ipA - ipB;
+    }
+
+    // 有效IP地址排在前面
+    if (ipA !== null) return -1;
+    if (ipB !== null) return 1;
+
+    // 如果都不是有效IP，按主机名字符串排序
+    return (a.host || '').localeCompare(b.host || '');
+  });
+};
+
 const ConnectionListItem = memo(function ConnectionListItem({
   theme,
   connection,
@@ -835,32 +889,47 @@ const ConnectionManager = memo(
     });
 
     const filteredItems = useMemo(() => {
+      let items;
       if (!searchQuery) {
-        return connections;
-      }
-      const lowercasedQuery = searchQuery.toLowerCase();
-      return connections.reduce((acc, item) => {
-        if (item.type === "group") {
-          const isGroupNameMatch = item.name
-            .toLowerCase()
-            .includes(lowercasedQuery);
-          const matchingConnections = item.items.filter((c) =>
-            c.name.toLowerCase().includes(lowercasedQuery),
-          );
+        items = connections;
+      } else {
+        const lowercasedQuery = searchQuery.toLowerCase();
+        items = connections.reduce((acc, item) => {
+          if (item.type === "group") {
+            const isGroupNameMatch = item.name
+              .toLowerCase()
+              .includes(lowercasedQuery);
+            const matchingConnections = item.items.filter((c) =>
+              c.name.toLowerCase().includes(lowercasedQuery),
+            );
 
-          if (isGroupNameMatch || matchingConnections.length > 0) {
-            acc.push({
-              ...item,
-              items: isGroupNameMatch ? item.items : matchingConnections,
-            });
+            if (isGroupNameMatch || matchingConnections.length > 0) {
+              acc.push({
+                ...item,
+                items: isGroupNameMatch ? item.items : matchingConnections,
+              });
+            }
+          } else {
+            if (item.name.toLowerCase().includes(lowercasedQuery)) {
+              acc.push(item);
+            }
           }
-        } else {
-          if (item.name.toLowerCase().includes(lowercasedQuery)) {
-            acc.push(item);
-          }
+          return acc;
+        }, []);
+      }
+
+      // 对根级别的项目进行排序，并对每个分组内的连接项进行排序
+      const sortedItems = sortConnectionsByIp(items).map(item => {
+        if (item.type === 'group' && item.items) {
+          return {
+            ...item,
+            items: sortConnectionsByIp(item.items)
+          };
         }
-        return acc;
-      }, []);
+        return item;
+      });
+
+      return sortedItems;
     }, [connections, searchQuery]);
 
     // 处理组的展开/折叠 - 添加防抖和状态检查
