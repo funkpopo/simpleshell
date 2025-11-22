@@ -55,6 +55,11 @@ class LatencyHandlers {
         category: "latency",
         handler: this.getServiceStatus.bind(this),
       },
+      {
+        channel: "latency:testNow",
+        category: "latency",
+        handler: this.testLatencyNow.bind(this),
+      },
     ];
   }
 
@@ -166,6 +171,27 @@ class LatencyHandlers {
       };
     } catch (error) {
       logToFile(`获取服务状态失败: ${error.message}`, "ERROR");
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * 立即测试指定连接的延迟
+   */
+  async testLatencyNow(event, { tabId }) {
+    try {
+      await this.latencyService.testLatencyNow(tabId);
+
+      return {
+        success: true,
+        message: "延迟测试已触发",
+        tabId,
+      };
+    } catch (error) {
+      logToFile(`立即测试延迟失败: ${error.message}`, "ERROR");
       return {
         success: false,
         error: error.message,

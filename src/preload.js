@@ -588,6 +588,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   getLatencyInfo: (tabId) => ipcRenderer.invoke("latency:getInfo", { tabId }),
   getAllLatencyInfo: () => ipcRenderer.invoke("latency:getAllInfo"),
   getLatencyServiceStatus: () => ipcRenderer.invoke("latency:getServiceStatus"),
+  testLatencyNow: (tabId) => ipcRenderer.invoke("latency:testNow", { tabId }),
   // 延迟事件监听
   onLatencyUpdate: (callback) => {
     const wrappedCallback = (event, data) => callback(event, data);

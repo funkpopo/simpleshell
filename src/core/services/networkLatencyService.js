@@ -77,10 +77,11 @@ class NetworkLatencyService extends EventEmitter {
       this.unregisterConnection(tabId);
     }
 
-    // 初始化延迟数据
+    // 初始化延迟数据，存储SSH连接实例
     this.latencyData.set(tabId, {
       host,
       port,
+      sshConnection, // 保存SSH连接实例以便后续使用
       latency: null,
       lastCheck: null,
       checkCount: 0,
@@ -178,6 +179,30 @@ class NetworkLatencyService extends EventEmitter {
         timestamp: Date.now(),
       });
     }
+  }
+
+  /**
+   * 立即测试指定连接的延迟（不等待定时器）
+   * @param {string} tabId 标签页ID
+   * @returns {Promise<void>}
+   */
+  async testLatencyNow(tabId) {
+    if (!this.isRunning) {
+      throw new Error("服务未启动");
+    }
+
+    const data = this.latencyData.get(tabId);
+    if (!data) {
+      throw new Error(`连接${tabId}未注册`);
+    }
+
+    if (!data.sshConnection) {
+      throw new Error(`连接${tabId}的SSH实例不存在`);
+    }
+
+    // 立即执行延迟检测，使用存储的SSH连接实例
+    await this.checkLatency(tabId, data.sshConnection);
+    logToFile(`已触发连接${tabId}的立即延迟测试`, "INFO");
   }
 
   /**

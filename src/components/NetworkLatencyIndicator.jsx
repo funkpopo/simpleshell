@@ -113,6 +113,47 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   }, [getCurrentTabForLatency]);
 
   /**
+   * 点击延迟指示器时立即执行一次延迟测试
+   */
+  const handleLatencyClick = useCallback(async () => {
+    const currentTabForLatency = getCurrentTabForLatency();
+
+    if (!currentTabForLatency || currentTabForLatency.type !== "ssh") {
+      return;
+    }
+
+    try {
+      // 临时显示检测状态，保留所有现有数据
+      setLatencyData((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          status: "checking",
+          latency: null,
+        };
+      });
+
+      // 调用立即测试的API
+      if (window.terminalAPI && window.terminalAPI.testLatencyNow) {
+        const result = await window.terminalAPI.testLatencyNow(currentTabForLatency.id);
+        if (!result.success) {
+          console.error("延迟测试失败:", result.error);
+          // 如果测试失败，恢复原状态
+          updateLatencyDisplay();
+        }
+        // 测试成功后会通过latency:updated事件自动更新数据
+      } else {
+        // API不可用，恢复原状态
+        updateLatencyDisplay();
+      }
+    } catch (error) {
+      console.error("立即测试延迟失败:", error);
+      // 恢复原状态
+      updateLatencyDisplay();
+    }
+  }, [getCurrentTabForLatency, updateLatencyDisplay]);
+
+  /**
    * 根据延迟值获取信号强度图标和颜色
    */
   const getSignalInfo = useCallback(
@@ -236,6 +277,17 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
       >
         {t("latency.updateInterval")}
       </Typography>
+      <Typography
+        variant="caption"
+        sx={{
+          display: "block",
+          mt: 1,
+          fontWeight: "bold",
+          color: "primary.main"
+        }}
+      >
+        💡 点击立即测试延迟
+      </Typography>
     </Box>
   );
 
@@ -264,6 +316,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
             label={latencyData.latency ? `${latencyData.latency}ms` : "--"}
             size="small"
             variant="outlined"
+            onClick={handleLatencyClick}
             sx={{
               backgroundColor:
                 theme.palette.mode === "dark"
