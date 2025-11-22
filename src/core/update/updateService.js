@@ -3,7 +3,6 @@ const fs = require("fs").promises;
 const path = require("path");
 const { spawn, exec } = require("child_process");
 const { logToFile } = require("../utils/logger");
-const fetch = require("node-fetch");
 const os = require("os");
 
 class UpdateService {
