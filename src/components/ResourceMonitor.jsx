@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, useRef } from "react";
+import React, { useState, useEffect, memo, useCallback } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
@@ -12,7 +12,6 @@ import ComputerIcon from "@mui/icons-material/Computer";
 import MemoryIcon from "@mui/icons-material/Memory";
 import StorageIcon from "@mui/icons-material/Storage";
 import { useTheme } from "@mui/material/styles";
-import { ResourceMonitorSkeleton } from "./SkeletonLoader.jsx";
 import Tooltip from "@mui/material/Tooltip";
 import { useTranslation } from "react-i18next";
 import { formatFileSize } from "../core/utils/formatters";
@@ -82,7 +81,6 @@ PercentageBar.displayName = "PercentageBar";
 
 const AccordionHeader = ({ title, icon, expanded, onClick }) => {
   const theme = useTheme();
-  const { t } = useTranslation();
   return (
     <Box
       onClick={onClick}
@@ -126,7 +124,6 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   const [systemInfo, setSystemInfo] = useState(null);
   const [processes, setProcesses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [processesLoading, setProcessesLoading] = useState(false);
   const [error, setError] = useState(null);
   const [processError, setProcessError] = useState(null);
   const [expanded, setExpanded] = useState({
@@ -263,7 +260,21 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
             }}
           >
             {loading && !systemInfo ? (
-              <ResourceMonitorSkeleton />
+              <Box
+                sx={{
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 2,
+                }}
+              >
+                <CircularProgress size={40} thickness={4} />
+                <Typography variant="body2" color="text.secondary">
+                  {t("resourceMonitor.loading")}
+                </Typography>
+              </Box>
             ) : error ? (
               <Box sx={{ py: 2 }}>
                 <Typography color="error" align="center">
@@ -422,7 +433,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                     <Box
                       sx={{ p: 2, pt: 0, maxHeight: 300, overflowY: "auto" }}
                     >
-                      {processesLoading ? (
+                      {processError ? (
+                        <Typography color="error" align="center">
+                          {processError}
+                        </Typography>
+                      ) : processes.length === 0 ? (
                         <Box
                           sx={{
                             display: "flex",
@@ -432,10 +447,6 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                         >
                           <CircularProgress size={24} />
                         </Box>
-                      ) : processError ? (
-                        <Typography color="error" align="center">
-                          {processError}
-                        </Typography>
                       ) : (
                         <List dense>
                           <ListItem divider>

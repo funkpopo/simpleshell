@@ -675,6 +675,7 @@
       "loadError": "加载地图数据失败"
     },
     "resourceMonitor": {
+      "loading": "正在加载系统资源信息...",
       "cpu": "CPU",
       "memory": "内存",
       "cpuModel": "型号",

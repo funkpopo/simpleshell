@@ -675,6 +675,7 @@
       "loadError": "Failed to load map data"
     },
     "resourceMonitor": {
+      "loading": "Loading system resource information...",
       "cpu": "CPU",
       "memory": "Memory",
       "cpuModel": "Model",
