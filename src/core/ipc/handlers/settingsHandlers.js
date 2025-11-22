@@ -99,7 +99,8 @@ class SettingsHandlers {
   async loadUISettings(event) {
     try {
       const settings = configService.loadUISettings();
-      return { success: true, settings };
+      // 直接返回设置对象,避免嵌套
+      return settings;
     } catch (error) {
       logToFile(`Error loading UI settings: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
