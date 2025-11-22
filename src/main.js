@@ -2214,13 +2214,12 @@ function setupIPC(mainWindow) {
   safeHandle(ipcMain, "ai:sendAPIRequest", async (event, requestData, isStream) => {
     try {
       // 验证请求数据
-      if (
-        !requestData.url ||
-        !requestData.apiKey ||
-        !requestData.model ||
-        !requestData.messages
-      ) {
-        throw new Error("请求数据无效，缺少必要参数");
+      if (!requestData || !requestData.url || !requestData.apiKey || !requestData.model) {
+        throw new Error("请先配置 AI API，包括 API 地址、密钥和模型");
+      }
+
+      if (!requestData.messages) {
+        throw new Error("请求数据无效，缺少消息内容");
       }
 
       // 确保Worker已创建
