@@ -350,39 +350,47 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                   />
                 </FormGroup>
 
-                <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
+                <Box sx={{ mb: 1.5 }}>
                   <TextField
                     value={password}
                     label={t("randomPassword.generatedPassword")}
                     variant="outlined"
                     fullWidth
                     size="small"
+                    multiline
+                    maxRows={6}
                     InputProps={{
                       readOnly: true,
+                      sx: {
+                        wordBreak: "break-all",
+                      },
                     }}
+                    sx={{ mb: 1 }}
                   />
-                  <Tooltip
-                    title={
-                      copySuccess.password
-                        ? t("randomPassword.copied")
-                        : t("randomPassword.copy")
-                    }
-                    onClose={() =>
-                      setCopySuccess({ ...copySuccess, password: false })
-                    }
-                  >
-                    <IconButton
-                      onClick={() => copyToClipboard(password, "password")}
-                      sx={{ ml: 1 }}
-                      size="small"
+                  <Box sx={{ display: "flex", gap: 1 }}>
+                    <Tooltip
+                      title={
+                        copySuccess.password
+                          ? t("randomPassword.copied")
+                          : t("randomPassword.copy")
+                      }
+                      onClose={() =>
+                        setCopySuccess({ ...copySuccess, password: false })
+                      }
                     >
-                      {copySuccess.password ? (
-                        <CheckIcon color="success" />
-                      ) : (
-                        <ContentCopyIcon />
-                      )}
-                    </IconButton>
-                  </Tooltip>
+                      <IconButton
+                        onClick={() => copyToClipboard(password, "password")}
+                        size="small"
+                        color="primary"
+                      >
+                        {copySuccess.password ? (
+                          <CheckIcon color="success" />
+                        ) : (
+                          <ContentCopyIcon />
+                        )}
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </Box>
 
                 <Button
@@ -401,7 +409,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
             {tabValue === 1 && (
               <>
                 {/* 密钥类型选择 */}
-                <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+                <FormControl fullWidth size="small" sx={{ mb: 1 }}>
                   <InputLabel>{t("sshKeyGenerator.keyType")}</InputLabel>
                   <Select
                     value={keyType}
@@ -415,7 +423,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                 </FormControl>
 
                 {/* 密钥长度选择 */}
-                <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+                <FormControl fullWidth size="small" sx={{ mb: 1 }}>
                   <InputLabel>{t("sshKeyGenerator.keySize")}</InputLabel>
                   <Select
                     value={keySize}
@@ -438,7 +446,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                   onChange={(e) => setComment(e.target.value)}
                   size="small"
                   fullWidth
-                  sx={{ mb: 1.5 }}
+                  sx={{ mb: 1 }}
                   placeholder={t("sshKeyGenerator.commentPlaceholder")}
                 />
 
@@ -450,7 +458,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                   onChange={(e) => setPassphrase(e.target.value)}
                   size="small"
                   fullWidth
-                  sx={{ mb: 1.5 }}
+                  sx={{ mb: 1 }}
                   placeholder={t("sshKeyGenerator.passphraseOptional")}
                 />
 
@@ -462,7 +470,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                   size="small"
                   fullWidth
                   disabled={generating}
-                  sx={{ mb: 2 }}
+                  sx={{ mb: 1.5 }}
                 >
                   {generating
                     ? t("sshKeyGenerator.generating")
@@ -471,7 +479,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
 
                 {/* 错误信息 */}
                 {error && (
-                  <Alert severity="error" sx={{ mb: 2 }}>
+                  <Alert severity="error" sx={{ mb: 1.5, py: 0.5 }}>
                     {error}
                   </Alert>
                 )}
@@ -479,113 +487,113 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                 {/* 公钥 */}
                 {keyPair.publicKey && (
                   <>
-                    <Divider sx={{ mb: 2 }} />
-                    <Typography
-                      variant="subtitle2"
-                      sx={{ mb: 1, fontWeight: "medium" }}
-                    >
-                      {t("sshKeyGenerator.publicKey")}
-                    </Typography>
+                    <Divider sx={{ my: 1.5 }} />
+                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 0.5 }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ fontWeight: "medium", fontSize: "0.85rem" }}
+                      >
+                        {t("sshKeyGenerator.publicKey")}
+                      </Typography>
+                      <Box sx={{ display: "flex", gap: 0.5 }}>
+                        <Tooltip
+                          title={
+                            copySuccess.publicKey
+                              ? t("sshKeyGenerator.copied")
+                              : t("sshKeyGenerator.copy")
+                          }
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              copyToClipboard(keyPair.publicKey, "publicKey")
+                            }
+                          >
+                            {copySuccess.publicKey ? (
+                              <CheckIcon color="success" fontSize="small" />
+                            ) : (
+                              <ContentCopyIcon fontSize="small" />
+                            )}
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title={t("sshKeyGenerator.savePublic")}>
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              saveToFile(keyPair.publicKey, `id_${keyType}.pub`)
+                            }
+                          >
+                            <SaveIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
                     <TextField
                       value={keyPair.publicKey}
                       multiline
-                      rows={3}
+                      maxRows={3}
                       fullWidth
                       size="small"
-                      InputProps={{ readOnly: true }}
-                      sx={{
-                        mb: 1,
-                        fontFamily: "monospace",
-                        fontSize: "0.8rem",
+                      InputProps={{
+                        readOnly: true,
                       }}
+                      sx={{ mb: 1.5 }}
                     />
-                    <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-                      <Tooltip
-                        title={
-                          copySuccess.publicKey
-                            ? t("sshKeyGenerator.copied")
-                            : t("sshKeyGenerator.copy")
-                        }
-                      >
-                        <IconButton
-                          size="small"
-                          onClick={() =>
-                            copyToClipboard(keyPair.publicKey, "publicKey")
-                          }
-                        >
-                          {copySuccess.publicKey ? (
-                            <CheckIcon color="success" fontSize="small" />
-                          ) : (
-                            <ContentCopyIcon fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title={t("sshKeyGenerator.savePublic")}>
-                        <IconButton
-                          size="small"
-                          onClick={() =>
-                            saveToFile(keyPair.publicKey, `id_${keyType}.pub`)
-                          }
-                        >
-                          <SaveIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
 
                     {/* 私钥 */}
-                    <Typography
-                      variant="subtitle2"
-                      sx={{ mb: 1, fontWeight: "medium" }}
-                    >
-                      {t("sshKeyGenerator.privateKey")}
-                    </Typography>
+                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 0.5 }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ fontWeight: "medium", fontSize: "0.85rem" }}
+                      >
+                        {t("sshKeyGenerator.privateKey")}
+                      </Typography>
+                      <Box sx={{ display: "flex", gap: 0.5 }}>
+                        <Tooltip
+                          title={
+                            copySuccess.privateKey
+                              ? t("sshKeyGenerator.copied")
+                              : t("sshKeyGenerator.copy")
+                          }
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              copyToClipboard(keyPair.privateKey, "privateKey")
+                            }
+                          >
+                            {copySuccess.privateKey ? (
+                              <CheckIcon color="success" fontSize="small" />
+                            ) : (
+                              <ContentCopyIcon fontSize="small" />
+                            )}
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title={t("sshKeyGenerator.savePrivate")}>
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              saveToFile(keyPair.privateKey, `id_${keyType}`)
+                            }
+                          >
+                            <SaveIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
                     <TextField
                       value={keyPair.privateKey}
                       multiline
-                      rows={8}
+                      maxRows={6}
                       fullWidth
                       size="small"
-                      InputProps={{ readOnly: true }}
-                      sx={{
-                        mb: 1,
-                        fontFamily: "monospace",
-                        fontSize: "0.8rem",
+                      InputProps={{
+                        readOnly: true,
                       }}
+                      sx={{ mb: 1 }}
                     />
-                    <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
-                      <Tooltip
-                        title={
-                          copySuccess.privateKey
-                            ? t("sshKeyGenerator.copied")
-                            : t("sshKeyGenerator.copy")
-                        }
-                      >
-                        <IconButton
-                          size="small"
-                          onClick={() =>
-                            copyToClipboard(keyPair.privateKey, "privateKey")
-                          }
-                        >
-                          {copySuccess.privateKey ? (
-                            <CheckIcon color="success" fontSize="small" />
-                          ) : (
-                            <ContentCopyIcon fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title={t("sshKeyGenerator.savePrivate")}>
-                        <IconButton
-                          size="small"
-                          onClick={() =>
-                            saveToFile(keyPair.privateKey, `id_${keyType}`)
-                          }
-                        >
-                          <SaveIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
 
-                    <Alert severity="warning" sx={{ fontSize: "0.8rem" }}>
+                    <Alert severity="warning" sx={{ fontSize: "0.75rem", py: 0.5 }}>
                       {t("sshKeyGenerator.securityWarning")}
                     </Alert>
                   </>
