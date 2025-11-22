@@ -341,7 +341,7 @@ const ConnectionListItem = memo(function ConnectionListItem({
           backgroundColor:
             theme.palette.mode === "dark"
               ? alpha(theme.palette.primary.main, 0.15)
-              : alpha(theme.palette.primary.main, 0.08),
+              : alpha(theme.palette.primary.main, 0.12),
         },
         ...(isDragging
           ? {
@@ -520,7 +520,7 @@ const GroupListItem = memo(function GroupListItem({
             backgroundColor:
               theme.palette.mode === "dark"
                 ? alpha(theme.palette.primary.main, 0.15)
-                : alpha(theme.palette.primary.main, 0.08),
+                : alpha(theme.palette.primary.main, 0.12),
           },
           ...(isDragging
             ? {
@@ -633,7 +633,7 @@ const GroupListItem = memo(function GroupListItem({
           backgroundColor: isOver
             ? theme.palette.mode === "dark"
               ? alpha(theme.palette.primary.main, 0.2)
-              : alpha(theme.palette.primary.main, 0.1)
+              : alpha(theme.palette.primary.main, 0.15)
             : "transparent",
           transition: "all 0.2s ease",
           maxHeight: shouldShowChildren ? "none" : "0px",
@@ -1725,7 +1725,7 @@ const ConnectionManager = memo(
                     backgroundColor: isRootDraggingOver
                       ? theme.palette.mode === "dark"
                         ? alpha(theme.palette.primary.main, 0.2)
-                        : alpha(theme.palette.primary.main, 0.1)
+                        : alpha(theme.palette.primary.main, 0.15)
                       : "transparent",
                     transition: "background-color 0.2s ease",
                   }}

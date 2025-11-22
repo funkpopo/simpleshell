@@ -20,8 +20,8 @@ export const createUnifiedTheme = (darkMode) =>
         dark: darkMode ? "#c2185b" : "#ad0e4e",
       },
       background: {
-        default: darkMode ? "#121212" : "#f5f5f5",
-        paper: darkMode ? "#1e1e1e" : "#ffffff",
+        default: darkMode ? "#121212" : "#f0f2f5",
+        paper: darkMode ? "#1e1e1e" : "#fafbfc",
       },
       success: {
         main: darkMode ? "#4caf50" : "#2e7d32",
@@ -101,14 +101,14 @@ export const createUnifiedTheme = (darkMode) =>
               borderWidth: "1.5px",
               backgroundColor: darkMode
                 ? "rgba(144, 202, 249, 0.04)"
-                : "rgba(25, 118, 210, 0.04)",
+                : "rgba(25, 118, 210, 0.08)",
             },
           },
           text: {
             "&:hover": {
               backgroundColor: darkMode
                 ? "rgba(144, 202, 249, 0.04)"
-                : "rgba(25, 118, 210, 0.04)",
+                : "rgba(25, 118, 210, 0.08)",
             },
           },
         },
@@ -125,7 +125,7 @@ export const createUnifiedTheme = (darkMode) =>
               borderRadius: 8,
               backgroundColor: darkMode
                 ? "rgba(255,255,255,0.02)"
-                : "rgba(255,255,255,0.8)",
+                : "rgba(0,0,0,0.02)",
               transition: "all 0.2s ease",
               "&:hover .MuiOutlinedInput-notchedOutline": {
                 borderColor: darkMode ? "#90caf9" : "#1976d2",
@@ -151,8 +151,8 @@ export const createUnifiedTheme = (darkMode) =>
             borderRadius: 12,
             boxShadow: darkMode
               ? "0 2px 8px rgba(0,0,0,0.3)"
-              : "0 2px 8px rgba(0,0,0,0.1)",
-            border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
+              : "0 2px 8px rgba(0,0,0,0.12)",
+            border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"}`,
             transition: "all 0.3s ease",
             "&:hover": {
               boxShadow: darkMode
@@ -193,7 +193,7 @@ export const createUnifiedTheme = (darkMode) =>
             "&:hover": {
               backgroundColor: darkMode
                 ? "rgba(255,255,255,0.08)"
-                : "rgba(0,0,0,0.04)",
+                : "rgba(0,0,0,0.06)",
               transform: "scale(1.05)",
             },
           },
@@ -206,7 +206,7 @@ export const createUnifiedTheme = (darkMode) =>
           paper: {
             borderRadius: 12,
             backgroundImage: "none",
-            border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
+            border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"}`,
           },
         },
       },
@@ -218,7 +218,7 @@ export const createUnifiedTheme = (darkMode) =>
             borderRadius: 8,
             backgroundColor: darkMode
               ? "rgba(255,255,255,0.02)"
-              : "rgba(255,255,255,0.8)",
+              : "rgba(0,0,0,0.02)",
             "&:hover .MuiOutlinedInput-notchedOutline": {
               borderColor: darkMode ? "#90caf9" : "#1976d2",
             },
@@ -265,25 +265,25 @@ export const createUnifiedTheme = (darkMode) =>
             "&:hover": {
               backgroundColor: darkMode
                 ? "rgba(255,255,255,0.08)"
-                : "rgba(0,0,0,0.04)",
+                : "rgba(0,0,0,0.06)",
             },
             // 选中状态
             "&.Mui-selected": {
               backgroundColor: darkMode
                 ? "rgba(144, 202, 249, 0.12)"
-                : "rgba(25, 118, 210, 0.08)",
+                : "rgba(25, 118, 210, 0.12)",
               // 选中时的悬停效果，避免过度高亮
               "&:hover": {
                 backgroundColor: darkMode
                   ? "rgba(144, 202, 249, 0.16)"
-                  : "rgba(25, 118, 210, 0.12)",
+                  : "rgba(25, 118, 210, 0.16)",
               },
             },
             // 聚焦状态
             "&.Mui-focusVisible": {
               backgroundColor: darkMode
                 ? "rgba(144, 202, 249, 0.12)"
-                : "rgba(25, 118, 210, 0.08)",
+                : "rgba(25, 118, 210, 0.12)",
             },
           },
         },
@@ -328,8 +328,8 @@ export const createUnifiedTheme = (darkMode) =>
             marginTop: 4,
             boxShadow: darkMode
               ? "0 4px 16px rgba(0,0,0,0.4)"
-              : "0 4px 16px rgba(0,0,0,0.15)",
-            border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
+              : "0 4px 16px rgba(0,0,0,0.18)",
+            border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"}`,
           },
         },
       },
@@ -346,25 +346,25 @@ export const createUnifiedTheme = (darkMode) =>
             "&:hover": {
               backgroundColor: darkMode
                 ? "rgba(255,255,255,0.08)"
-                : "rgba(0,0,0,0.04)",
+                : "rgba(0,0,0,0.06)",
             },
             // 选中状态
             "&.Mui-selected": {
               backgroundColor: darkMode
                 ? "rgba(144, 202, 249, 0.12)"
-                : "rgba(25, 118, 210, 0.08)",
+                : "rgba(25, 118, 210, 0.12)",
               // 选中时的悬停效果，使用稍微深一点的颜色但避免过度高亮
               "&:hover": {
                 backgroundColor: darkMode
                   ? "rgba(144, 202, 249, 0.16)"
-                  : "rgba(25, 118, 210, 0.12)",
+                  : "rgba(25, 118, 210, 0.16)",
               },
             },
             // 聚焦状态
             "&.Mui-focusVisible": {
               backgroundColor: darkMode
                 ? "rgba(144, 202, 249, 0.12)"
-                : "rgba(25, 118, 210, 0.08)",
+                : "rgba(25, 118, 210, 0.12)",
             },
           },
         },
@@ -381,7 +381,7 @@ export const createUnifiedTheme = (darkMode) =>
             "&:hover": {
               backgroundColor: darkMode
                 ? "rgba(255,255,255,0.08)"
-                : "rgba(0,0,0,0.04)",
+                : "rgba(0,0,0,0.06)",
             },
             "&.Mui-selected": {
               fontWeight: 600,
