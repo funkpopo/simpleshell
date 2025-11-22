@@ -20,6 +20,7 @@ import {
   Collapse,
   FormControlLabel,
   Switch,
+  Button,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SendIcon from "@mui/icons-material/Send";
@@ -232,7 +233,9 @@ const AIChatWindow = ({
   // 发送消息
   const handleSendMessage = async () => {
     if (!input.trim() || isPending) return;
-    if (!currentApi) {
+
+    // 在执行任何操作之前验证 API 配置
+    if (!currentApi || !currentApi.apiUrl || !currentApi.apiKey || !currentApi.model) {
       setError(t("ai.noApiConfigured"));
       return;
     }
@@ -552,13 +555,32 @@ const AIChatWindow = ({
               sx={{
                 flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
+                gap: 2,
+                p: 3,
               }}
             >
-              <Typography color="text.secondary" variant="body2">
-                {t("ai.startConversation")}
-              </Typography>
+              {!currentApi || !currentApi.apiUrl || !currentApi.apiKey || !currentApi.model ? (
+                <>
+                  <Typography color="warning.main" variant="body2" textAlign="center">
+                    {t("ai.noApiConfigured")}
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<SettingsIcon />}
+                    onClick={() => setSettingsOpen(true)}
+                  >
+                    {t("ai.settings")}
+                  </Button>
+                </>
+              ) : (
+                <Typography color="text.secondary" variant="body2">
+                  {t("ai.startConversation")}
+                </Typography>
+              )}
             </Box>
           )}
           {messages.map((message) => (
@@ -718,7 +740,7 @@ const AIChatWindow = ({
               size="small"
               color="primary"
               onClick={handleSendMessage}
-              disabled={!input.trim() || !currentApi}
+              disabled={!input.trim() || !currentApi || !currentApi.apiUrl || !currentApi.apiKey || !currentApi.model}
               sx={{ flexShrink: 0 }}
             >
               <SendIcon />
