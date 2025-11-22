@@ -26,6 +26,7 @@ import {
   Snackbar,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import { alpha } from "@mui/material/styles";
 import { FileManagerSkeleton } from "./SkeletonLoader.jsx";
 import FolderIcon from "@mui/icons-material/Folder";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -1922,15 +1923,21 @@ const FileManager = memo(
             width: "100%",
             overflow: "auto",
             "&::-webkit-scrollbar": {
-              width: 8,
+              width: 10,
             },
             "&::-webkit-scrollbar-track": {
-              backgroundColor: theme.palette.action.hover,
-              borderRadius: 4,
+              backgroundColor: theme.palette.mode === "dark"
+                ? alpha(theme.palette.action.hover, 0.3)
+                : alpha(theme.palette.action.hover, 0.5),
+              borderRadius: 5,
+              margin: "4px",
             },
             "&::-webkit-scrollbar-thumb": {
-              backgroundColor: theme.palette.action.disabled,
-              borderRadius: 4,
+              backgroundColor: theme.palette.mode === "dark"
+                ? alpha(theme.palette.action.disabled, 0.8)
+                : theme.palette.action.disabled,
+              borderRadius: 5,
+              transition: "background-color 0.2s ease",
               "&:hover": {
                 backgroundColor: theme.palette.action.focus,
               },
@@ -1939,7 +1946,7 @@ const FileManager = memo(
           onContextMenu={handleBlankContextMenu}
           onClick={handleBlankClick}
         >
-          <List dense disablePadding sx={{ py: 0 }}>
+          <List dense disablePadding sx={{ py: 0.5, px: 0.5 }}>
             {displayFiles.map((file, index) => {
               const isSelected = isFileSelected
                 ? isFileSelected(file)
@@ -1968,10 +1975,10 @@ const FileManager = memo(
                   sx={{
                     py: 0,
                     my: 0,
-                    minHeight: 28,
-                    height: 28,
+                    minHeight: 32,
+                    height: 32,
                     '&:not(:last-child)': {
-                      mb: 0.25,
+                      mb: 0.5,
                     },
                   }}
                 >
@@ -1982,18 +1989,18 @@ const FileManager = memo(
                     dense
                     selected={isSelected}
                     sx={{
-                      minHeight: 28,
-                      height: 28,
-                      px: 1.25,
-                      py: 0.25,
-                      borderRadius: 0.5,
-                      transition: "all 0.1s ease-in-out",
-                      userSelect: 'none', // 禁用文本选择
+                      minHeight: 32,
+                      height: 32,
+                      px: 1.5,
+                      py: 0.5,
+                      borderRadius: 1,
+                      transition: "all 0.15s ease-in-out",
+                      userSelect: 'none',
                       cursor: 'pointer',
                       '&.Mui-selected': {
-                        backgroundColor: theme.palette.action.selected,
+                        backgroundColor: alpha(theme.palette.primary.main, 0.12),
                         '&:hover': {
-                          backgroundColor: theme.palette.action.hover,
+                          backgroundColor: alpha(theme.palette.primary.main, 0.18),
                         },
                       },
                       '&:hover': {
@@ -2001,11 +2008,11 @@ const FileManager = memo(
                       },
                     }}
                   >
-                    <ListItemIcon sx={{ minWidth: 20, mr: 0.5 }}>
+                    <ListItemIcon sx={{ minWidth: 24, mr: 0.75 }}>
                       {file.isDirectory ? (
-                        <FolderIcon color="primary" sx={{ fontSize: 18 }} />
+                        <FolderIcon color="primary" sx={{ fontSize: 20 }} />
                       ) : (
-                        <InsertDriveFileIcon sx={{ fontSize: 18 }} />
+                        <InsertDriveFileIcon sx={{ fontSize: 20 }} />
                       )}
                     </ListItemIcon>
                     <ListItemText
@@ -2015,12 +2022,13 @@ const FileManager = memo(
                         my: 0,
                         "& .MuiListItemText-primary": {
                           fontSize: "0.875rem",
-                          lineHeight: 1.1,
-                          marginBottom: "1px",
+                          lineHeight: 1.2,
+                          marginBottom: "2px",
+                          fontWeight: 500,
                         },
                         "& .MuiListItemText-secondary": {
                           fontSize: "0.75rem",
-                          lineHeight: 1,
+                          lineHeight: 1.1,
                           marginTop: 0,
                         },
                       }}
@@ -3937,9 +3945,13 @@ const FileManager = memo(
           sx={{
             display: "flex",
             alignItems: "center",
-            p: 1,
+            px: 1.5,
+            py: 1.25,
             borderBottom: `1px solid ${theme.palette.divider}`,
-            flexShrink: 0, // 不收缩
+            flexShrink: 0,
+            backgroundColor: theme.palette.mode === "dark"
+              ? alpha(theme.palette.background.paper, 0.8)
+              : theme.palette.background.default,
           }}
         >
           <Typography
@@ -3963,12 +3975,14 @@ const FileManager = memo(
 
         <Box
           sx={{
-            p: 1,
+            px: 1.5,
+            py: 1,
             display: "flex",
             alignItems: "center",
             borderBottom: `1px solid ${theme.palette.divider}`,
-            gap: 0.5,
-            flexShrink: 0, // 不收缩
+            gap: 0.75,
+            flexShrink: 0,
+            backgroundColor: theme.palette.background.paper,
           }}
         >
           <Tooltip title={t("fileManager.back")}>
@@ -4045,9 +4059,11 @@ const FileManager = memo(
         {showSearch && (
           <Box
             sx={{
-              p: 1,
+              px: 1.5,
+              py: 1,
               borderBottom: `1px solid ${theme.palette.divider}`,
-              flexShrink: 0, // 不收缩
+              flexShrink: 0,
+              backgroundColor: theme.palette.background.paper,
             }}
           >
             <TextField
@@ -4078,7 +4094,17 @@ const FileManager = memo(
               }}
               sx={{
                 "& .MuiOutlinedInput-root": {
-                  borderRadius: 2,
+                  borderRadius: 1.5,
+                  backgroundColor: theme.palette.mode === "dark"
+                    ? alpha(theme.palette.background.default, 0.5)
+                    : theme.palette.background.default,
+                  transition: "all 0.2s ease",
+                  "&:hover": {
+                    backgroundColor: theme.palette.background.paper,
+                  },
+                  "&.Mui-focused": {
+                    backgroundColor: theme.palette.background.paper,
+                  },
                 },
               }}
             />
@@ -4087,15 +4113,16 @@ const FileManager = memo(
 
         <Box
           sx={{
-            px: 1,
-            py: 0.5,
+            px: 1.5,
+            py: 0.75,
             overflow: "hidden",
             borderBottom: `1px solid ${theme.palette.divider}`,
-            zIndex: 1, // 确保路径输入框显示在上层
-            flexShrink: 0, // 不收缩
+            zIndex: 1,
+            flexShrink: 0,
             display: "flex",
             alignItems: "center",
-            gap: 0.5,
+            gap: 0.75,
+            backgroundColor: theme.palette.background.paper,
           }}
         >
           <TextField
@@ -4116,10 +4143,14 @@ const FileManager = memo(
             }}
             sx={{
               "& .MuiOutlinedInput-root": {
+                borderRadius: 1.5,
                 "& fieldset": {
                   borderColor: theme.palette.divider,
                 },
                 "&:hover fieldset": {
+                  borderColor: theme.palette.primary.main,
+                },
+                "&.Mui-focused fieldset": {
                   borderColor: theme.palette.primary.main,
                 },
               },
@@ -4131,9 +4162,14 @@ const FileManager = memo(
               onClick={handleSortMenuOpen}
               sx={{
                 ml: 0.5,
+                borderRadius: 1.5,
+                border: `1px solid ${theme.palette.divider}`,
                 color: theme.palette.text.secondary,
+                transition: "all 0.2s ease",
                 "&:hover": {
                   color: theme.palette.primary.main,
+                  borderColor: theme.palette.primary.main,
+                  backgroundColor: alpha(theme.palette.primary.main, 0.08),
                 },
               }}
             >
@@ -4232,16 +4268,16 @@ const FileManager = memo(
               <ListItemIcon>
                 <UploadFileIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>{t("fileManager.upload")}</ListItemText>
+              <ListItemText>{t("fileManager.uploadFile")}</ListItemText>
             </MenuItem>
           )}
 
           {selectedFiles.length === 1 && selectedFile?.isDirectory && (
             <MenuItem onClick={handleUploadFolder}>
               <ListItemIcon>
-                <UploadFileIcon fontSize="small" />
+                <CreateNewFolderIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>{t("fileManager.upload")}</ListItemText>
+              <ListItemText>{t("fileManager.uploadFolder")}</ListItemText>
             </MenuItem>
           )}
 
