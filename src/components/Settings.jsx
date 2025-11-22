@@ -346,6 +346,7 @@ const Settings = memo(({ open, onClose }) => {
         const settings = {
           language,
           fontSize,
+          editorFont: "system", // 保持editorFont字段
           terminalFont,
           terminalFontSize,
           darkMode,
