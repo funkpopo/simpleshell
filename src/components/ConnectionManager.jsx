@@ -1693,19 +1693,32 @@ const ConnectionManager = memo(
               onClose={handleDialogClose}
               maxWidth="sm"
               fullWidth
+              slotProps={{
+                paper: {
+                  sx: {
+                    maxHeight: "90vh",
+                  },
+                },
+              }}
             >
               <DialogTitle>
                 {dialogMode === "add" ? "新建" : "编辑"}{" "}
                 {dialogType === "connection" ? "连接" : "分组"}
               </DialogTitle>
-              <DialogContent dividers>
+              <DialogContent
+                dividers
+                sx={{
+                  overflow: "auto",
+                  maxHeight: "calc(90vh - 120px)",
+                }}
+              >
                 <Box
                   component="form"
                   sx={{
                     display: "flex",
                     flexDirection: "column",
-                    gap: 2,
-                    pt: 1,
+                    gap: 1.5,
+                    py: 1,
                   }}
                 >
                   <TextField
@@ -1907,8 +1920,8 @@ const ConnectionManager = memo(
                       </FormControl>
 
                       {/* 代理配置分割线 */}
-                      <Divider sx={{ my: 2 }}>
-                        <Typography variant="body2" color="text.secondary">
+                      <Divider sx={{ my: 1 }}>
+                        <Typography variant="caption" color="text.secondary">
                           代理配置 (可选)
                         </Typography>
                       </Divider>
@@ -1924,10 +1937,10 @@ const ConnectionManager = memo(
                                 enableProxy: e.target.checked,
                               }))
                             }
+                            size="small"
                           />
                         }
                         label="启用代理"
-                        sx={{ mb: 1 }}
                       />
 
                       {/* 代理配置表单 */}
@@ -1943,24 +1956,33 @@ const ConnectionManager = memo(
                                     proxyUseDefault: e.target.checked,
                                   }))
                                 }
+                                size="small"
                               />
                             }
                             label="使用系统默认代理配置"
-                            sx={{ mb: 1 }}
                           />
 
                           {!formData.proxyUseDefault && (
-                            <>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 1.5,
+                                pl: 2,
+                                borderLeft: 2,
+                                borderColor: "divider",
+                              }}
+                            >
                               <Box sx={{ display: "flex", gap: 1 }}>
                                 <FormControl
                                   size="small"
-                                  sx={{ minWidth: 120 }}
+                                  sx={{ minWidth: 100 }}
                                 >
-                                  <InputLabel>代理类型</InputLabel>
+                                  <InputLabel>类型</InputLabel>
                                   <Select
                                     name="proxyType"
                                     value={formData.proxyType}
-                                    label="代理类型"
+                                    label="类型"
                                     onChange={handleFormChange}
                                   >
                                     <MenuItem value="http">HTTP</MenuItem>
@@ -1975,7 +1997,7 @@ const ConnectionManager = memo(
                                   onChange={handleFormChange}
                                   size="small"
                                   sx={{ flexGrow: 1 }}
-                                  placeholder="例如: 127.0.0.1"
+                                  placeholder="127.0.0.1"
                                 />
                                 <TextField
                                   label="端口"
@@ -1984,14 +2006,14 @@ const ConnectionManager = memo(
                                   value={formData.proxyPort}
                                   onChange={handleFormChange}
                                   size="small"
-                                  sx={{ width: 100 }}
+                                  sx={{ width: 90 }}
                                   placeholder="8080"
                                 />
                               </Box>
 
                               <Box sx={{ display: "flex", gap: 1 }}>
                                 <TextField
-                                  label="代理用户名 (可选)"
+                                  label="用户名 (可选)"
                                   name="proxyUsername"
                                   value={formData.proxyUsername}
                                   onChange={handleFormChange}
@@ -1999,7 +2021,7 @@ const ConnectionManager = memo(
                                   sx={{ flexGrow: 1 }}
                                 />
                                 <TextField
-                                  label="代理密码 (可选)"
+                                  label="密码 (可选)"
                                   name="proxyPassword"
                                   type="password"
                                   value={formData.proxyPassword}
@@ -2008,7 +2030,7 @@ const ConnectionManager = memo(
                                   sx={{ flexGrow: 1 }}
                                 />
                               </Box>
-                            </>
+                            </Box>
                           )}
                         </>
                       )}
