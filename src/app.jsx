@@ -61,6 +61,7 @@ import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
 import { changeLanguage } from "./i18n/i18n";
 import "./styles/index.css";
+import "./styles/theme-switch-animation.css";
 import { styled } from "@mui/material/styles";
 import { SIDEBAR_WIDTHS } from "./constants/layout.js";
 import "flag-icons/css/flag-icons.min.css";
@@ -576,18 +577,46 @@ function AppContent() {
   }, [dispatch]);
 
   // React 19: 利用自动批处理优化主题切换
-  const toggleTheme = useCallback(async () => {
+  const toggleTheme = useCallback(async (event) => {
     try {
       const newDarkMode = !darkMode;
 
-      // 添加CSS类以启用过渡效果
-      document.body.classList.add("theme-transition");
+      // 保存按钮引用，避免在 setTimeout 中访问已失效的 event
+      const button = event?.currentTarget;
 
-      // React 19: 状态更新会自动批处理，无需手动延迟
-      // 但为了过渡效果，仍保留小延迟
+      // 添加按钮点击动画
+      if (button) {
+        button.classList.add("theme-button-pulse");
+        setTimeout(() => {
+          if (button) {
+            button.classList.remove("theme-button-pulse");
+          }
+        }, 300);
+      }
+
+      // 创建动画遮罩层
+      const overlay = document.createElement("div");
+      overlay.className = `theme-switch-overlay ${newDarkMode ? "dark" : "light"}`;
+      document.body.appendChild(overlay);
+
+      // 添加主题切换标记，启用过渡效果
+      document.body.classList.add("theme-switching");
+
+      // 启动动画
+      requestAnimationFrame(() => {
+        overlay.classList.add("animating");
+      });
+
+      // 在动画早期切换主题状态，让内容也能跟随过渡
       setTimeout(() => {
         dispatch(actions.setDarkMode(newDarkMode));
-      }, 10);
+      }, 100);
+
+      // 动画结束后清理（0.8s 动画时长）
+      setTimeout(() => {
+        document.body.classList.remove("theme-switching");
+        overlay.remove();
+      }, 800);
 
       // 保存主题设置到配置文件
       if (window.terminalAPI?.saveUISettings) {
@@ -619,7 +648,7 @@ function AppContent() {
       // 如果保存失败，至少更新 localStorage
       localStorage.setItem("terminalDarkMode", (!darkMode).toString());
     }
-  }, [darkMode]);
+  }, [darkMode, dispatch]);
 
   // 标签页相关函数
   const handleTabChange = useCallback(
