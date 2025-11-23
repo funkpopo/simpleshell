@@ -938,16 +938,20 @@ const FileManager = memo(
       }
     };
 
-    // 多选文件管理函数
+    // 多选文件管理函数 - 使用 Set 优化性能
+    const selectedFilesSet = useMemo(() => {
+      const set = new Set();
+      selectedFiles.forEach(file => {
+        set.add(`${file.name}-${file.modifyTime}`);
+      });
+      return set;
+    }, [selectedFiles]);
+
     const isFileSelected = useCallback(
       (file) => {
-        return selectedFiles.some(
-          (selectedFile) =>
-            selectedFile.name === file.name &&
-            selectedFile.modifyTime === file.modifyTime,
-        );
+        return selectedFilesSet.has(`${file.name}-${file.modifyTime}`);
       },
-      [selectedFiles],
+      [selectedFilesSet],
     );
 
     // 清理重复选择项的辅助函数
@@ -1108,27 +1112,53 @@ const FileManager = memo(
       return window.confirm(message);
     }, []);
 
-    // 处理右键菜单
-    const handleContextMenu = (event, file, index) => {
+    // 处理右键菜单 - 优化版本，立即显示菜单
+    const handleContextMenu = useCallback((event, file, index) => {
       event.preventDefault();
+      event.stopPropagation();
 
-      // 如果右键点击的文件没有被选中，则单选该文件
-      if (!isFileSelected(file)) {
-        setSelectedFiles([file]);
-        setSelectedFile(file);
-        setLastSelectedIndex(index);
-      }
-
+      // 立即设置菜单位置，不等待任何状态更新
       setContextMenu({
         mouseX: event.clientX,
         mouseY: event.clientY,
       });
-    };
+
+      // 然后更新选中状态（如果需要）
+      if (!isFileSelected(file)) {
+        setSelectedFiles([file]);
+        setSelectedFile(file);
+        setLastSelectedIndex(index);
+        setAnchorIndex(index);
+      }
+    }, [isFileSelected]);
 
     // 关闭右键菜单
-    const handleContextMenuClose = () => {
+    const handleContextMenuClose = useCallback(() => {
       setContextMenu(null);
-    };
+    }, []);
+
+    // 缓存菜单显示逻辑，避免每次渲染时重新计算
+    const menuItems = useMemo(() => {
+      const selected = selectedFiles.length > 0
+        ? selectedFiles
+        : selectedFile
+          ? [selectedFile]
+          : [];
+
+      const hasFiles = selected.some(f => !f.isDirectory);
+      const hasFolders = selected.some(f => f.isDirectory);
+      const fileCount = selected.filter(f => !f.isDirectory).length;
+      const folderCount = selected.filter(f => f.isDirectory).length;
+
+      return {
+        isSingleSelection: selectedFiles.length === 1,
+        hasFiles,
+        hasFolders,
+        fileCount,
+        folderCount,
+        isDirectorySelected: selectedFile?.isDirectory,
+      };
+    }, [selectedFiles, selectedFile]);
 
     // 用户活动后的刷新函数，使用防抖优化
     const refreshAfterUserActivity = useMemo(
@@ -1948,12 +1978,7 @@ const FileManager = memo(
         >
           <List dense disablePadding sx={{ py: 0.5, px: 0.5 }}>
             {displayFiles.map((file, index) => {
-              const isSelected = isFileSelected
-                ? isFileSelected(file)
-                : selectedFiles.some(
-                    (f) =>
-                      f.name === file.name && f.modifyTime === file.modifyTime
-                  );
+              const isSelected = isFileSelected(file);
 
               const formattedDate = file?.modifyTime
                 ? formatDate(new Date(file.modifyTime))
@@ -4208,136 +4233,142 @@ const FileManager = memo(
               ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
               : undefined
           }
+          transitionDuration={0}
+          disableAutoFocusItem
         >
-          {/* 仅在单选时显示重命名 */}
-          {selectedFiles.length <= 1 && (
-            <MenuItem onClick={handleRename}>
-              <ListItemIcon>
-                <DriveFileRenameOutlineIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>{t("fileManager.rename")}</ListItemText>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ ml: 2 }}
-              >
-                F2
-              </Typography>
-            </MenuItem>
+          {contextMenu !== null && (
+            <>
+              {/* 仅在单选时显示重命名 */}
+              {menuItems.isSingleSelection && (
+                <MenuItem onClick={handleRename}>
+                  <ListItemIcon>
+                    <DriveFileRenameOutlineIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{t("fileManager.rename")}</ListItemText>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ ml: 2 }}
+                  >
+                    F2
+                  </Typography>
+                </MenuItem>
+              )}
+
+              {/* 仅在单选时显示权限设置 */}
+              {menuItems.isSingleSelection && (
+                <MenuItem onClick={handleOpenPermissions}>
+                  <ListItemIcon>
+                    <LockIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{t("fileManager.permissions")}</ListItemText>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ ml: 2 }}
+                  >
+                    F3
+                  </Typography>
+                </MenuItem>
+              )}
+
+              {/* 仅在单选时显示复制路径 */}
+              {menuItems.isSingleSelection && (
+                <MenuItem onClick={handleCopyAbsolutePath}>
+                  <ListItemIcon>
+                    <LinkIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{t("fileManager.copy")}</ListItemText>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ ml: 2 }}
+                  >
+                    Ctrl+Shift+C
+                  </Typography>
+                </MenuItem>
+              )}
+
+              {menuItems.isSingleSelection && <Divider />}
+
+              {/* 上传操作：仅在选中单个目录时显示 */}
+              {menuItems.isSingleSelection && menuItems.isDirectorySelected && (
+                <MenuItem onClick={handleUploadFile}>
+                  <ListItemIcon>
+                    <UploadFileIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{t("fileManager.uploadFile")}</ListItemText>
+                </MenuItem>
+              )}
+
+              {menuItems.isSingleSelection && menuItems.isDirectorySelected && (
+                <MenuItem onClick={handleUploadFolder}>
+                  <ListItemIcon>
+                    <CreateNewFolderIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{t("fileManager.uploadFolder")}</ListItemText>
+                </MenuItem>
+              )}
+
+              {/* 下载操作：支持单选和多选 */}
+              {menuItems.hasFiles && (
+                <MenuItem onClick={handleDownload}>
+                  <ListItemIcon>
+                    <DownloadIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>
+                    {menuItems.fileCount > 1
+                      ? `下载 ${menuItems.fileCount} 个文件`
+                      : "下载文件"}
+                  </ListItemText>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ ml: 2 }}
+                  >
+                    Ctrl+D
+                  </Typography>
+                </MenuItem>
+              )}
+
+              {menuItems.hasFolders && (
+                <MenuItem onClick={handleDownloadFolder}>
+                  <ListItemIcon>
+                    <DownloadIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>
+                    {menuItems.folderCount > 1
+                      ? `下载 ${menuItems.folderCount} 个文件夹`
+                      : "下载文件夹"}
+                  </ListItemText>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ ml: 2 }}
+                  >
+                    Ctrl+D
+                  </Typography>
+                </MenuItem>
+              )}
+
+              <Divider />
+
+              {/* 删除操作：支持单选和多选 */}
+              <MenuItem onClick={handleDelete}>
+                <ListItemIcon>
+                  <DeleteIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>
+                  {selectedFiles.length > 1
+                    ? `删除 ${selectedFiles.length} 个项目`
+                    : "删除"}
+                </ListItemText>
+                <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                  Delete
+                </Typography>
+              </MenuItem>
+            </>
           )}
-
-          {/* 仅在单选时显示权限设置 */}
-          {selectedFiles.length <= 1 && (
-            <MenuItem onClick={handleOpenPermissions}>
-              <ListItemIcon>
-                <LockIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>{t("fileManager.permissions")}</ListItemText>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ ml: 2 }}
-              >
-                F3
-              </Typography>
-            </MenuItem>
-          )}
-
-          {/* 仅在单选时显示复制路径 */}
-          {selectedFiles.length <= 1 && (
-            <MenuItem onClick={handleCopyAbsolutePath}>
-              <ListItemIcon>
-                <LinkIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>{t("fileManager.copy")}</ListItemText>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ ml: 2 }}
-              >
-                Ctrl+Shift+C
-              </Typography>
-            </MenuItem>
-          )}
-
-          {selectedFiles.length <= 1 && <Divider />}
-
-          {/* 上传操作：仅在选中单个目录时显示 */}
-          {selectedFiles.length === 1 && selectedFile?.isDirectory && (
-            <MenuItem onClick={handleUploadFile}>
-              <ListItemIcon>
-                <UploadFileIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>{t("fileManager.uploadFile")}</ListItemText>
-            </MenuItem>
-          )}
-
-          {selectedFiles.length === 1 && selectedFile?.isDirectory && (
-            <MenuItem onClick={handleUploadFolder}>
-              <ListItemIcon>
-                <CreateNewFolderIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>{t("fileManager.uploadFolder")}</ListItemText>
-            </MenuItem>
-          )}
-
-          {/* 下载操作：支持单选和多选 */}
-          {getSelectedFiles().some((f) => !f.isDirectory) && (
-            <MenuItem onClick={handleDownload}>
-              <ListItemIcon>
-                <DownloadIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>
-                {selectedFiles.length > 1
-                  ? `下载 ${selectedFiles.filter((f) => !f.isDirectory).length} 个文件`
-                  : "下载文件"}
-              </ListItemText>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ ml: 2 }}
-              >
-                Ctrl+D
-              </Typography>
-            </MenuItem>
-          )}
-
-          {getSelectedFiles().some((f) => f.isDirectory) && (
-            <MenuItem onClick={handleDownloadFolder}>
-              <ListItemIcon>
-                <DownloadIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>
-                {selectedFiles.length > 1
-                  ? `下载 ${selectedFiles.filter((f) => f.isDirectory).length} 个文件夹`
-                  : "下载文件夹"}
-              </ListItemText>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ ml: 2 }}
-              >
-                Ctrl+D
-              </Typography>
-            </MenuItem>
-          )}
-
-          <Divider />
-
-          {/* 删除操作：支持单选和多选 */}
-          <MenuItem onClick={handleDelete}>
-            <ListItemIcon>
-              <DeleteIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>
-              {selectedFiles.length > 1
-                ? `删除 ${selectedFiles.length} 个项目`
-                : "删除"}
-            </ListItemText>
-            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-              Delete
-            </Typography>
-          </MenuItem>
         </Menu>
 
         <Menu
