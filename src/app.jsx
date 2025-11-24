@@ -192,6 +192,17 @@ function AppContent() {
   const anchorEl = state.anchorEl;
   const open = Boolean(anchorEl);
 
+  // 根据主题模式更新 body 类名
+  React.useEffect(() => {
+    if (darkMode) {
+      document.body.classList.add('dark-theme');
+      document.body.classList.remove('light-theme');
+    } else {
+      document.body.classList.add('light-theme');
+      document.body.classList.remove('dark-theme');
+    }
+  }, [darkMode]);
+
   // ============ 保持本地状态（不在 reducer 中）============
   const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] = React.useState(false);
   const [prevTabsLength, setPrevTabsLength] = React.useState(tabs.length);

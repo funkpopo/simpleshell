@@ -182,7 +182,9 @@ body:not(.dark-theme) .xterm-decoration {
 
 // 添加搜索相关样式
 const searchBarStyles = `
-.search-bar {
+/* 深色主题搜索框样式 */
+.dark-theme .search-bar,
+body:not(.light-theme) .search-bar {
   position: absolute;
   top: 8px;
   right: 15px;
@@ -197,11 +199,36 @@ const searchBarStyles = `
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(10px);
 }
-.search-bar:focus-within {
+.dark-theme .search-bar:focus-within,
+body:not(.light-theme) .search-bar:focus-within {
   border-color: rgba(88, 166, 255, 0.5);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(88, 166, 255, 0.3);
 }
-.search-input {
+
+/* 浅色主题搜索框样式 */
+.light-theme .search-bar {
+  position: absolute;
+  top: 8px;
+  right: 15px;
+  z-index: 10;
+  display: flex;
+  background: linear-gradient(to bottom, rgba(248, 249, 250, 0.95), rgba(240, 242, 245, 0.95));
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  border-radius: 6px;
+  padding: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(88, 166, 255, 0.15);
+  align-items: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+}
+.light-theme .search-bar:focus-within {
+  border-color: rgba(88, 166, 255, 0.6);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(88, 166, 255, 0.4);
+}
+
+/* 深色主题输入框样式 */
+.dark-theme .search-input,
+body:not(.light-theme) .search-input {
   border: none;
   outline: none;
   background: transparent;
@@ -212,13 +239,37 @@ const searchBarStyles = `
   width: 200px;
   transition: all 0.2s ease;
 }
-.search-input::placeholder {
+.dark-theme .search-input::placeholder,
+body:not(.light-theme) .search-input::placeholder {
   color: rgba(255, 255, 255, 0.4);
 }
-.search-input:focus {
+.dark-theme .search-input:focus,
+body:not(.light-theme) .search-input:focus {
   border-bottom: 1px solid rgba(88, 166, 255, 0.5);
 }
-.search-button {
+
+/* 浅色主题输入框样式 */
+.light-theme .search-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #24292f;
+  font-size: 14px;
+  font-family: inherit;
+  padding: 4px 8px;
+  width: 200px;
+  transition: all 0.2s ease;
+}
+.light-theme .search-input::placeholder {
+  color: rgba(0, 0, 0, 0.4);
+}
+.light-theme .search-input:focus {
+  border-bottom: 1px solid rgba(88, 166, 255, 0.6);
+}
+
+/* 深色主题按钮样式 */
+.dark-theme .search-button,
+body:not(.light-theme) .search-button {
   color: white !important;
   cursor: pointer;
   margin-left: 2px;
@@ -226,16 +277,40 @@ const searchBarStyles = `
   transition: all 0.2s ease;
   border-radius: 4px;
 }
-.search-button:hover {
+.dark-theme .search-button:hover,
+body:not(.light-theme) .search-button:hover {
   background-color: rgba(88, 166, 255, 0.2) !important;
   opacity: 1;
   transform: scale(1.05);
 }
-.search-button:disabled {
+.dark-theme .search-button:disabled,
+body:not(.light-theme) .search-button:disabled {
   opacity: 0.3 !important;
   cursor: not-allowed;
 }
-.search-icon-btn {
+
+/* 浅色主题按钮样式 */
+.light-theme .search-button {
+  color: rgba(0, 0, 0, 0.7) !important;
+  cursor: pointer;
+  margin-left: 2px;
+  opacity: 0.8;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+}
+.light-theme .search-button:hover {
+  background-color: rgba(88, 166, 255, 0.15) !important;
+  color: rgba(0, 0, 0, 0.9) !important;
+  opacity: 1;
+  transform: scale(1.05);
+}
+.light-theme .search-button:disabled {
+  opacity: 0.3 !important;
+  cursor: not-allowed;
+}
+/* 深色主题搜索图标按钮 */
+.dark-theme .search-icon-btn,
+body:not(.light-theme) .search-icon-btn {
   position: absolute;
   top: 8px;
   right: 15px;
@@ -244,35 +319,38 @@ const searchBarStyles = `
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   opacity: 0.8;
   backdrop-filter: blur(5px);
-}
-/* 深色主题下的搜索图标按钮 */
-.dark-theme .search-icon-btn {
   color: rgba(255, 255, 255, 0.7);
   background: linear-gradient(to bottom, rgba(88, 166, 255, 0.15), rgba(88, 166, 255, 0.1));
   border: 1px solid rgba(88, 166, 255, 0.2);
 }
-/* 浅色主题下的搜索图标按钮 */
-.light-theme .search-icon-btn,
-body:not(.dark-theme) .search-icon-btn {
-  color: rgba(0, 0, 0, 0.7);
-  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.08), rgba(88, 166, 255, 0.05));
-  border: 1px solid rgba(88, 166, 255, 0.3);
-}
-.search-icon-btn:hover {
+.dark-theme .search-icon-btn:hover,
+body:not(.light-theme) .search-icon-btn:hover {
   opacity: 1;
   transform: scale(1.05);
-}
-/* 深色主题下的悬停效果 */
-.dark-theme .search-icon-btn:hover {
   color: white;
   background: linear-gradient(to bottom, rgba(88, 166, 255, 0.25), rgba(88, 166, 255, 0.2));
   border-color: rgba(88, 166, 255, 0.4);
 }
-/* 浅色主题下的悬停效果 */
-.light-theme .search-icon-btn:hover,
-body:not(.dark-theme) .search-icon-btn:hover {
+
+/* 浅色主题搜索图标按钮 */
+.light-theme .search-icon-btn {
+  position: absolute;
+  top: 8px;
+  right: 15px;
+  z-index: 9;
+  border-radius: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.8;
+  backdrop-filter: blur(5px);
+  color: rgba(0, 0, 0, 0.7);
+  background: linear-gradient(to bottom, rgba(248, 249, 250, 0.9), rgba(240, 242, 245, 0.9));
+  border: 1px solid rgba(88, 166, 255, 0.3);
+}
+.light-theme .search-icon-btn:hover {
+  opacity: 1;
+  transform: scale(1.05);
   color: rgba(0, 0, 0, 0.9);
-  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.15), rgba(88, 166, 255, 0.1));
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(248, 249, 250, 0.95));
   border-color: rgba(88, 166, 255, 0.5);
 }
 `;
