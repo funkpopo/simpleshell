@@ -355,24 +355,7 @@ export const TerminalSkeleton = memo(() => {
 });
 
 export const ResourceMonitorSkeleton = memo(() => {
-  const { t } = useTranslation();
-  return (
-    <Box
-      sx={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 2,
-      }}
-    >
-      <CircularProgress size={40} thickness={4} />
-      <Typography variant="body2" color="text.secondary">
-        {t("resourceMonitor.loading")}
-      </Typography>
-    </Box>
-  );
+  return null;
 });
 
 export const SettingsSkeleton = memo(() => {

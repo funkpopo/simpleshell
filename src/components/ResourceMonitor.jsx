@@ -259,23 +259,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
               height: "calc(100% - 56px)",
             }}
           >
-            {loading && !systemInfo ? (
-              <Box
-                sx={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 2,
-                }}
-              >
-                <CircularProgress size={40} thickness={4} />
-                <Typography variant="body2" color="text.secondary">
-                  {t("resourceMonitor.loading")}
-                </Typography>
-              </Box>
-            ) : error ? (
+            {error ? (
               <Box sx={{ py: 2 }}>
                 <Typography color="error" align="center">
                   {error}
