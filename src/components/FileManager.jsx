@@ -93,6 +93,7 @@ const FileManager = memo(
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [lastRefreshTime, setLastRefreshTime] = useState(null);
+    const [, forceUpdate] = useState(0); // 用于强制更新组件以刷新时间显示
     const directoryCacheRef = useRef(new Map());
     const [contextMenu, setContextMenu] = useState(null);
     const [searchTerm, setSearchTerm] = useState("");
@@ -3849,6 +3850,20 @@ const FileManager = memo(
         window.removeEventListener('keydown', keydownHandler);
       };
     }, [open, handleKeyDown]);
+
+    // 每分钟更新一次"上次刷新时间"显示
+    useEffect(() => {
+      if (!open) return;
+
+      // 设置定时器,每60秒触发一次更新
+      const intervalId = setInterval(() => {
+        forceUpdate(prev => prev + 1);
+      }, 60000);
+
+      return () => {
+        clearInterval(intervalId);
+      };
+    }, [open]);
 
     // 处理关闭文件管理器
     const handleClose = () => {
