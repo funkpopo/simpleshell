@@ -1767,7 +1767,7 @@ function AppContent() {
               if (groupMenuItems.length > 0) {
                 return [<Divider key="group-divider-top" />, ...groupMenuItems];
               }
-              return null;
+              return [];
             })()}
           </Menu>
         </AppBar>
