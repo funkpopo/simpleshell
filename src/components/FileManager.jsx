@@ -1498,6 +1498,21 @@ const FileManager = memo(
     };
 
     // 处理上传文件到当前目录
+    // 辅助函数：正确拼接路径，避免重复斜杠
+    const joinPath = (basePath, childName) => {
+      if (!childName) return basePath;
+
+      if (basePath === "/") {
+        return "/" + childName;
+      } else if (basePath === "~") {
+        return "~/" + childName;
+      } else {
+        // 移除 basePath 末尾的斜杠（如果有）
+        const normalizedBase = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+        return normalizedBase + "/" + childName;
+      }
+    };
+
     const handleUploadFile = async () => {
       handleContextMenuClose();
       handleBlankContextMenuClose();
@@ -1514,13 +1529,7 @@ const FileManager = memo(
         let targetPath;
         // 使用保存的状态而非实时状态
         if (savedSelectedFile && savedSelectedFile.isDirectory) {
-          if (savedCurrentPath === "/") {
-            targetPath = "/" + savedSelectedFile.name;
-          } else if (savedCurrentPath === "~") {
-            targetPath = "~/" + savedSelectedFile.name;
-          } else {
-            targetPath = savedCurrentPath + "/" + savedSelectedFile.name;
-          }
+          targetPath = joinPath(savedCurrentPath, savedSelectedFile.name);
         } else {
           targetPath = savedCurrentPath;
         }
@@ -1588,10 +1597,9 @@ const FileManager = memo(
             // 传输完成后延迟移除
             storeScheduleTransferCleanup(transferId, 3000);
 
-            // 切换到上传的目标路径
-            updateCurrentPath(targetPath);
-            setPathInput(targetPath);
-            loadDirectory(targetPath, 0, true); // 强制刷新目标目录
+            // 如果是上传到选中的文件夹，刷新当前目录即可
+            // 不需要切换到目标文件夹
+            loadDirectory(savedCurrentPath, 0, true); // 强制刷新当前目录
 
             // 如果有警告信息（部分文件上传失败），显示给用户
             if (result.partialSuccess && result.warning) {
@@ -1703,13 +1711,7 @@ const FileManager = memo(
         let targetPath;
         // 使用保存的状态而非实时状态
         if (savedSelectedFile && savedSelectedFile.isDirectory) {
-          if (savedCurrentPath === "/") {
-            targetPath = "/" + savedSelectedFile.name;
-          } else if (savedCurrentPath === "~") {
-            targetPath = "~/" + savedSelectedFile.name;
-          } else {
-            targetPath = savedCurrentPath + "/" + savedSelectedFile.name;
-          }
+          targetPath = joinPath(savedCurrentPath, savedSelectedFile.name);
         } else {
           targetPath = savedCurrentPath;
         }
@@ -1779,10 +1781,9 @@ const FileManager = memo(
             // 传输完成后延迟移除
             storeScheduleTransferCleanup(transferId, 3000);
 
-            // 切换到上传的目标路径
-            updateCurrentPath(targetPath);
-            setPathInput(targetPath);
-            loadDirectory(targetPath, 0, true); // 强制刷新目标目录
+            // 如果是上传到选中的文件夹，刷新当前目录即可
+            // 不需要切换到目标文件夹
+            loadDirectory(savedCurrentPath, 0, true); // 强制刷新当前目录
 
             // 如果有警告信息（部分文件上传失败），显示给用户
             if (result.partialSuccess && result.warning) {
@@ -2956,12 +2957,7 @@ const FileManager = memo(
         const savedSelectedFile = filesToDownload[0];
 
         try {
-          const fullPath =
-            savedCurrentPath === "/"
-              ? "/" + savedSelectedFile.name
-              : savedCurrentPath
-                ? savedCurrentPath + "/" + savedSelectedFile.name
-                : savedSelectedFile.name;
+          const fullPath = joinPath(savedCurrentPath, savedSelectedFile.name);
 
           if (window.terminalAPI && window.terminalAPI.downloadFile) {
             // 创建新的下载传输任务
@@ -3215,15 +3211,7 @@ const FileManager = memo(
 
         try {
           // 构建完整路径，确保处理各种路径情况
-          const fullPath = (() => {
-            if (savedCurrentPath === "/") {
-              return "/" + savedSelectedFile.name;
-            } else if (savedCurrentPath === "~") {
-              return "~/" + savedSelectedFile.name;
-            } else {
-              return savedCurrentPath + "/" + savedSelectedFile.name;
-            }
-          })();
+          const fullPath = joinPath(savedCurrentPath, savedSelectedFile.name);
 
           if (window.terminalAPI && window.terminalAPI.downloadFolder) {
             // 创建新的文件夹下载传输任务
@@ -4236,139 +4224,137 @@ const FileManager = memo(
           transitionDuration={0}
           disableAutoFocusItem
         >
-          {contextMenu !== null && (
-            <>
-              {/* 仅在单选时显示重命名 */}
-              {menuItems.isSingleSelection && (
-                <MenuItem onClick={handleRename}>
-                  <ListItemIcon>
-                    <DriveFileRenameOutlineIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{t("fileManager.rename")}</ListItemText>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ ml: 2 }}
-                  >
-                    F2
-                  </Typography>
-                </MenuItem>
-              )}
-
-              {/* 仅在单选时显示权限设置 */}
-              {menuItems.isSingleSelection && (
-                <MenuItem onClick={handleOpenPermissions}>
-                  <ListItemIcon>
-                    <LockIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{t("fileManager.permissions")}</ListItemText>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ ml: 2 }}
-                  >
-                    F3
-                  </Typography>
-                </MenuItem>
-              )}
-
-              {/* 仅在单选时显示复制路径 */}
-              {menuItems.isSingleSelection && (
-                <MenuItem onClick={handleCopyAbsolutePath}>
-                  <ListItemIcon>
-                    <LinkIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{t("fileManager.copy")}</ListItemText>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ ml: 2 }}
-                  >
-                    Ctrl+Shift+C
-                  </Typography>
-                </MenuItem>
-              )}
-
-              {menuItems.isSingleSelection && <Divider />}
-
-              {/* 上传操作：仅在选中单个目录时显示 */}
-              {menuItems.isSingleSelection && menuItems.isDirectorySelected && (
-                <MenuItem onClick={handleUploadFile}>
-                  <ListItemIcon>
-                    <UploadFileIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{t("fileManager.uploadFile")}</ListItemText>
-                </MenuItem>
-              )}
-
-              {menuItems.isSingleSelection && menuItems.isDirectorySelected && (
-                <MenuItem onClick={handleUploadFolder}>
-                  <ListItemIcon>
-                    <CreateNewFolderIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{t("fileManager.uploadFolder")}</ListItemText>
-                </MenuItem>
-              )}
-
-              {/* 下载操作：支持单选和多选 */}
-              {menuItems.hasFiles && (
-                <MenuItem onClick={handleDownload}>
-                  <ListItemIcon>
-                    <DownloadIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>
-                    {menuItems.fileCount > 1
-                      ? `下载 ${menuItems.fileCount} 个文件`
-                      : "下载文件"}
-                  </ListItemText>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ ml: 2 }}
-                  >
-                    Ctrl+D
-                  </Typography>
-                </MenuItem>
-              )}
-
-              {menuItems.hasFolders && (
-                <MenuItem onClick={handleDownloadFolder}>
-                  <ListItemIcon>
-                    <DownloadIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>
-                    {menuItems.folderCount > 1
-                      ? `下载 ${menuItems.folderCount} 个文件夹`
-                      : "下载文件夹"}
-                  </ListItemText>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ ml: 2 }}
-                  >
-                    Ctrl+D
-                  </Typography>
-                </MenuItem>
-              )}
-
-              <Divider />
-
-              {/* 删除操作：支持单选和多选 */}
-              <MenuItem onClick={handleDelete}>
+          {contextMenu !== null && [
+            // 仅在单选时显示重命名
+            menuItems.isSingleSelection && (
+              <MenuItem key="rename" onClick={handleRename}>
                 <ListItemIcon>
-                  <DeleteIcon fontSize="small" />
+                  <DriveFileRenameOutlineIcon fontSize="small" />
                 </ListItemIcon>
-                <ListItemText>
-                  {selectedFiles.length > 1
-                    ? `删除 ${selectedFiles.length} 个项目`
-                    : "删除"}
-                </ListItemText>
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-                  Delete
+                <ListItemText>{t("fileManager.rename")}</ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  F2
                 </Typography>
               </MenuItem>
-            </>
-          )}
+            ),
+
+            // 仅在单选时显示权限设置
+            menuItems.isSingleSelection && (
+              <MenuItem key="permissions" onClick={handleOpenPermissions}>
+                <ListItemIcon>
+                  <LockIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.permissions")}</ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  F3
+                </Typography>
+              </MenuItem>
+            ),
+
+            // 仅在单选时显示复制路径
+            menuItems.isSingleSelection && (
+              <MenuItem key="copy-path" onClick={handleCopyAbsolutePath}>
+                <ListItemIcon>
+                  <LinkIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.copy")}</ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  Ctrl+Shift+C
+                </Typography>
+              </MenuItem>
+            ),
+
+            menuItems.isSingleSelection && <Divider key="divider-1" />,
+
+            // 上传操作：仅在选中单个目录时显示
+            menuItems.isSingleSelection && menuItems.isDirectorySelected && (
+              <MenuItem key="upload-file" onClick={handleUploadFile}>
+                <ListItemIcon>
+                  <UploadFileIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.uploadFile")}</ListItemText>
+              </MenuItem>
+            ),
+
+            menuItems.isSingleSelection && menuItems.isDirectorySelected && (
+              <MenuItem key="upload-folder" onClick={handleUploadFolder}>
+                <ListItemIcon>
+                  <CreateNewFolderIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.uploadFolder")}</ListItemText>
+              </MenuItem>
+            ),
+
+            // 下载操作：支持单选和多选
+            menuItems.hasFiles && (
+              <MenuItem key="download-files" onClick={handleDownload}>
+                <ListItemIcon>
+                  <DownloadIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>
+                  {menuItems.fileCount > 1
+                    ? `下载 ${menuItems.fileCount} 个文件`
+                    : "下载文件"}
+                </ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  Ctrl+D
+                </Typography>
+              </MenuItem>
+            ),
+
+            menuItems.hasFolders && (
+              <MenuItem key="download-folders" onClick={handleDownloadFolder}>
+                <ListItemIcon>
+                  <DownloadIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>
+                  {menuItems.folderCount > 1
+                    ? `下载 ${menuItems.folderCount} 个文件夹`
+                    : "下载文件夹"}
+                </ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  Ctrl+D
+                </Typography>
+              </MenuItem>
+            ),
+
+            <Divider key="divider-2" />,
+
+            // 删除操作：支持单选和多选
+            <MenuItem key="delete" onClick={handleDelete}>
+              <ListItemIcon>
+                <DeleteIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>
+                {selectedFiles.length > 1
+                  ? `删除 ${selectedFiles.length} 个项目`
+                  : "删除"}
+              </ListItemText>
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                Delete
+              </Typography>
+            </MenuItem>,
+          ]}
         </Menu>
 
         <Menu
