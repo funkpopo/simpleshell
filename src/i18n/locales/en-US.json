@@ -698,6 +698,150 @@
         "processListFailed": "Failed to get process list",
         "fetchProcessList": "Error while getting process list"
       }
+    },
+    "errors": {
+      "ECONNREFUSED": {
+        "title": "Cannot Connect to Server",
+        "message": "Connection refused by the server. Possible reasons:\n• Server is not running or SSH service is not started\n• Incorrect port number\n• Firewall blocking the connection",
+        "solutions": [
+          "Check if the server is running",
+          "Verify SSH service is started (usually port 22)",
+          "Check if the port number is correct",
+          "Review firewall rules"
+        ],
+        "action": "Recheck Configuration",
+        "severity": "error"
+      },
+      "ETIMEDOUT": {
+        "title": "Connection Timeout",
+        "message": "Unable to connect to server within the specified time. Possible reasons:\n• Unstable or slow network connection\n• Server taking too long to respond\n• Firewall or network device blocking the connection",
+        "solutions": [
+          "Check your network connection",
+          "Verify server response time",
+          "Try increasing timeout duration",
+          "Check for network firewall restrictions"
+        ],
+        "action": "Retry Connection",
+        "severity": "warning"
+      },
+      "EHOSTUNREACH": {
+        "title": "Host Unreachable",
+        "message": "Cannot reach the destination host. Possible reasons:\n• Incorrect server address\n• Network routing issues\n• Server is offline",
+        "solutions": [
+          "Verify the server address is correct",
+          "Check network connectivity",
+          "Test host connectivity using ping command",
+          "Contact network administrator for routing issues"
+        ],
+        "action": "Check Server Address",
+        "severity": "error"
+      },
+      "ENOTFOUND": {
+        "title": "Cannot Resolve Hostname",
+        "message": "Unable to resolve the server's hostname. Possible reasons:\n• Typo in hostname\n• DNS server cannot resolve the domain\n• Network DNS configuration issues",
+        "solutions": [
+          "Check hostname spelling",
+          "Try using IP address instead of hostname",
+          "Check DNS server configuration",
+          "Verify the domain name is valid"
+        ],
+        "action": "Check Hostname",
+        "severity": "error"
+      },
+      "ECONNRESET": {
+        "title": "Connection Reset",
+        "message": "Connection was unexpectedly closed by server or network device. Possible reasons:\n• Server unexpectedly disconnected\n• Network interruption\n• Connection timeout closed by server",
+        "solutions": [
+          "Check server status",
+          "Verify network stability",
+          "Review server logs for disconnect reason",
+          "Try reconnecting"
+        ],
+        "action": "Reconnect",
+        "severity": "warning"
+      },
+      "ENETUNREACH": {
+        "title": "Network Unreachable",
+        "message": "Cannot access the target network. Possible reasons:\n• Local network not connected\n• Routing configuration errors\n• VPN or proxy not connected",
+        "solutions": [
+          "Check local network connection",
+          "Verify router or gateway configuration",
+          "If using VPN, ensure it's connected",
+          "Check proxy settings"
+        ],
+        "action": "Check Network",
+        "severity": "error"
+      },
+      "AUTH_FAILED": {
+        "title": "SSH Authentication Failed",
+        "message": "Unable to authenticate. Possible reasons:\n• Incorrect username or password\n• Invalid or unauthorized SSH key\n• Server rejects this authentication method",
+        "solutions": [
+          "Verify username and password are correct",
+          "Check if SSH key is valid",
+          "Confirm key is added to server's authorized_keys",
+          "Verify server allows this authentication method"
+        ],
+        "action": "Check Credentials",
+        "severity": "error"
+      },
+      "KEY_ERROR": {
+        "title": "SSH Key Error",
+        "message": "Cannot load or use SSH key. Possible reasons:\n• Incorrect key file path\n• Incorrect key file permissions\n• Unsupported key format\n• Key passphrase required",
+        "solutions": [
+          "Verify key file path is correct",
+          "Check key file permissions (should be 600 or 400)",
+          "Verify key format is correct",
+          "If key is password protected, confirm correct passphrase"
+        ],
+        "action": "Check Key Configuration",
+        "severity": "error"
+      },
+      "EACCES": {
+        "title": "Permission Denied",
+        "message": "Insufficient permissions to perform this operation. Possible reasons:\n• File or directory permission denied\n• User has limited permissions\n• File is locked or in use",
+        "solutions": [
+          "Check file or directory permissions",
+          "Verify user has sufficient permissions",
+          "Contact administrator for proper permissions",
+          "Check if file is being used by another program"
+        ],
+        "action": "Check Permissions",
+        "severity": "warning"
+      },
+      "ENOENT": {
+        "title": "File Not Found",
+        "message": "Cannot find the specified file or directory. Possible reasons:\n• Incorrect file path\n• File has been deleted\n• Typo in filename",
+        "solutions": [
+          "Verify file path is correct",
+          "Check if file exists",
+          "Check filename spelling",
+          "Verify you have access to this path"
+        ],
+        "action": "Check File Path",
+        "severity": "warning"
+      },
+      "OPERATION_TIMEOUT": {
+        "title": "Operation Timeout",
+        "message": "Operation did not complete within expected time. Possible reasons:\n• Network speed is too slow\n• Server response delay\n• Large amount of data being processed",
+        "solutions": [
+          "Check network connection speed",
+          "Retry the operation later",
+          "Consider processing data in batches",
+          "Increase timeout duration"
+        ],
+        "action": "Retry Operation",
+        "severity": "warning"
+      },
+      "UNKNOWN": {
+        "title": "Error Occurred",
+        "message": "An unknown error occurred",
+        "solutions": [
+          "Please try again later",
+          "If the issue persists, contact administrator"
+        ],
+        "action": "Retry",
+        "severity": "error"
+      }
     }
   }
 }
