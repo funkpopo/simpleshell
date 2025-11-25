@@ -1,37 +1,32 @@
-const { EventEmitter } = require("events");
-const { logToFile } = require("../utils/logger");
-const memoryPoolManager = require("../memory/memory-pool");
-const zeroCopyEngine = require("./zero-copy-engine");
-const { backpressureController } = require("./backpressure-controller");
+/**
+ * SFTP Engine - 统一的SFTP会话和传输管理
+ * 合并了原 sftpCore.js 的会话管理功能和 Engine 层的传输抽象
+ * 提供完整的SFTP操作支持，包括会话池管理、操作队列和传输控制
+ */
 
-// SFTP引擎配置
-const SFTP_ENGINE_CONFIG = {
-  transfer: {
-    maxConcurrentTransfers: 5, // 最大并发传输
-    chunkSize: 128 * 1024, // 传输块大小（128KB）
-    retryAttempts: 3, // 重试次数
-    retryDelay: 1000, // 重试延迟
-    timeout: 60 * 1000, // 传输超时（60秒）
-    compressionThreshold: 1024 * 1024, // 压缩阈值（1MB）
-  },
+// Import centralized configuration
+const {
+  SESSION_CONFIG,
+  TIMEOUT_CONFIG,
+  RETRY_CONFIG,
+  QUEUE_CONFIG,
+  calculateDynamicTimeout: configCalculateDynamicTimeout,
+  isRetryableError: configIsRetryableError,
+  parsePriority,
+} = require("../../modules/sftp/sftpConfig");
 
-  optimization: {
-    enableMemoryPool: true, // 启用内存池
-    enableZeroCopy: true, // 启用零拷贝
-    enableBackpressure: true, // 启用背压控制
-    enableCompression: true, // 启用压缩
-    adaptiveChunkSize: true, // 自适应块大小
-    pipelineTransfers: true, // 管道传输
-  },
+let logToFile = null;
+let getChildProcessInfo = null; // Function to get info from main.js's childProcesses map
 
-  monitoring: {
-    enableMetrics: true, // 启用指标收集
-    metricsInterval: 5000, // 指标收集间隔
-    enablePerformanceLog: true, // 启用性能日志
-  },
-};
+// SFTP 会话管理（支持每个标签页维护会话池）
+// 结构: sftpPools: Map<tabId, { sessions: Map<sessionId, Session>, primaryId: string|null }>
+const sftpPools = new Map();
+const sftpSessionLocks = new Map(); // 按tabId加锁，避免并发创建
+let pendingOperations = new Map(); // key: tabId, value: Array of pending operations
 
-// 传输类型
+let sftpHealthCheckTimer = null;
+
+// 传输类型常量（保留用于兼容性）
 const TRANSFER_TYPE = {
   UPLOAD: "upload",
   DOWNLOAD: "download",
@@ -39,7 +34,7 @@ const TRANSFER_TYPE = {
   SYNC: "sync",
 };
 
-// 传输状态
+// 传输状态常量（保留用于兼容性）
 const TRANSFER_STATUS = {
   QUEUED: "queued",
   PREPARING: "preparing",
@@ -50,933 +45,1015 @@ const TRANSFER_STATUS = {
   CANCELLED: "cancelled",
 };
 
-class SftpTransfer extends EventEmitter {
-  constructor(sftpConnection, source, destination, options = {}) {
-    super();
+// 内部工具: 获取或创建某个tab的会话池
+function getOrCreatePool(tabId) {
+  if (!sftpPools.has(tabId)) {
+    sftpPools.set(tabId, { sessions: new Map(), primaryId: null });
+  }
+  return sftpPools.get(tabId);
+}
 
-    this.sftpConnection = sftpConnection;
-    this.source = source;
-    this.destination = destination;
-    this.options = { ...SFTP_ENGINE_CONFIG, ...options };
+// 内部工具: 统计所有会话总数
+function getTotalSessionCount() {
+  let total = 0;
+  for (const pool of sftpPools.values()) {
+    total += pool.sessions.size;
+  }
+  return total;
+}
 
-    this.id = this.generateTransferId();
-    this.type = this.determineTransferType();
-    this.status = TRANSFER_STATUS.QUEUED;
+// 内部工具: 生成唯一会话ID
+function genSessionId(tabId) {
+  return `${tabId}-sftp-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+}
 
-    // 传输统计
-    this.stats = {
-      startTime: null,
-      endTime: null,
-      bytesTransferred: 0,
-      totalBytes: 0,
-      currentChunk: 0,
-      totalChunks: 0,
-      throughput: 0,
-      retries: 0,
-      errors: [],
+// 使用配置模块的动态超时计算函数
+const calculateDynamicTimeout = configCalculateDynamicTimeout;
+
+function init(logger, getChildProcessInfoFunc) {
+  if (!logger || !logger.logToFile) {
+    // Logger not provided during init, using fallback
+    logToFile = (message, type = "INFO") => {
+      // Fallback logging - could be enhanced to write to file or use alternative logging
     };
-
-    // 控制器
-    this.streamController = null;
-    this.memoryBlocks = [];
-    this.isInitialized = false;
-    this.isPaused = false;
-    this.isCancelled = false;
+  } else {
+    logToFile = logger.logToFile;
   }
 
-  generateTransferId() {
-    return `sftp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  determineTransferType() {
-    // 简化的类型判断
-    if (this.options.type) {
-      return this.options.type;
-    }
-
-    // 根据源和目标路径判断
-    if (
-      typeof this.source === "string" &&
-      typeof this.destination === "string"
-    ) {
-      return this.source.includes("local:")
-        ? TRANSFER_TYPE.UPLOAD
-        : TRANSFER_TYPE.DOWNLOAD;
-    }
-
-    return TRANSFER_TYPE.COPY;
-  }
-
-  async initialize() {
-    if (this.isInitialized) return;
-
-    try {
-      this.status = TRANSFER_STATUS.PREPARING;
-
-      // 分析传输源
-      await this.analyzeSource();
-
-      // 计算传输参数
-      this.calculateTransferParams();
-
-      // 获取流控制器（如果启用背压控制）
-      if (this.options.optimization.enableBackpressure) {
-        this.streamController = await backpressureController.requestStream(
-          this.id,
-          {
-            priority: this.options.priority || "normal",
-            type: this.type,
-          },
-        );
-      }
-
-      // 预分配内存块
-      if (this.options.optimization.enableMemoryPool) {
-        await this.preallocateMemory();
-      }
-
-      this.isInitialized = true;
-      this.emit("initialized", {
-        id: this.id,
-        type: this.type,
-        totalBytes: this.stats.totalBytes,
-        totalChunks: this.stats.totalChunks,
-      });
-    } catch (error) {
-      this.handleError(error);
-      throw error;
-    }
-  }
-
-  async analyzeSource() {
-    if (typeof this.source === "string") {
-      // 文件路径
-      if (this.type === TRANSFER_TYPE.UPLOAD) {
-        const fs = require("fs").promises;
-        const fileStats = await fs.stat(this.source);
-        this.stats.totalBytes = fileStats.size;
-        this.sourceType = "file";
-      } else {
-        // SFTP文件
-        const fileStats = await this.sftpConnection.stat(this.source);
-        this.stats.totalBytes = fileStats.size;
-        this.sourceType = "sftp";
-      }
-    } else if (Buffer.isBuffer(this.source)) {
-      this.stats.totalBytes = this.source.length;
-      this.sourceType = "buffer";
-    } else {
-      throw new Error("不支持的传输源类型");
-    }
-  }
-
-  calculateTransferParams() {
-    // 计算块数量
-    this.stats.totalChunks = Math.ceil(
-      this.stats.totalBytes / this.options.transfer.chunkSize,
-    );
-
-    // 自适应块大小
-    if (this.options.optimization.adaptiveChunkSize) {
-      this.optimizeChunkSize();
-    }
-
-    logToFile(
-      `传输参数: 总大小=${this.stats.totalBytes}, 块大小=${this.options.transfer.chunkSize}, 块数=${this.stats.totalChunks}`,
-      "DEBUG",
-    );
-  }
-
-  optimizeChunkSize() {
-    // 根据文件大小和网络条件调整块大小
-    if (this.stats.totalBytes < 1024 * 1024) {
-      // 小文件：32KB
-      this.options.transfer.chunkSize = 32 * 1024;
-    } else if (this.stats.totalBytes < 100 * 1024 * 1024) {
-      // 中等文件：128KB
-      this.options.transfer.chunkSize = 128 * 1024;
-    } else {
-      // 大文件：512KB
-      this.options.transfer.chunkSize = 512 * 1024;
-    }
-
-    // 重新计算块数量
-    this.stats.totalChunks = Math.ceil(
-      this.stats.totalBytes / this.options.transfer.chunkSize,
-    );
-  }
-
-  async preallocateMemory() {
-    try {
-      // 预分配几个内存块以减少运行时分配开销
-      const blocksToPreallocate = Math.min(3, this.stats.totalChunks);
-
-      for (let i = 0; i < blocksToPreallocate; i++) {
-        const memoryBlock = memoryPoolManager.allocate(
-          this.options.transfer.chunkSize,
-        );
-        this.memoryBlocks.push(memoryBlock);
-      }
-
-      logToFile(`预分配${blocksToPreallocate}个内存块`, "DEBUG");
-    } catch (error) {
-      logToFile(`内存预分配失败: ${error.message}`, "WARN");
-      // 继续执行，不使用内存池
-    }
-  }
-
-  async start() {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
-
-    this.status = TRANSFER_STATUS.TRANSFERRING;
-    this.stats.startTime = Date.now();
-
-    try {
-      logToFile(`开始SFTP传输: ${this.id} (${this.type})`, "INFO");
-
-      switch (this.type) {
-        case TRANSFER_TYPE.UPLOAD:
-          await this.performUpload();
-          break;
-        case TRANSFER_TYPE.DOWNLOAD:
-          await this.performDownload();
-          break;
-        case TRANSFER_TYPE.COPY:
-          await this.performCopy();
-          break;
-        default:
-          throw new Error(`不支持的传输类型: ${this.type}`);
-      }
-
-      await this.complete();
-    } catch (error) {
-      await this.fail(error);
-    } finally {
-      await this.cleanup();
-    }
-  }
-
-  async performUpload() {
-    const fs = require("fs").promises;
-    const fileHandle = await fs.open(this.source, "r");
-
-    try {
-      // 创建SFTP写入流
-      const writeStream = this.sftpConnection.createWriteStream(
-        this.destination,
+  if (typeof getChildProcessInfoFunc !== "function") {
+    // Fallback to a dummy function to prevent crashes, though functionality will be impaired.
+    getChildProcessInfo = (tabId) => {
+      logToFile(
+        `sftpEngine: getChildProcessInfo called for ${tabId} but not properly initialized. Returning null.`,
+        "ERROR",
       );
+      return null;
+    };
+  } else {
+    getChildProcessInfo = getChildProcessInfoFunc;
+  }
+  logToFile("sftpEngine initialized.", "INFO");
+}
 
-      let bytesTransferred = 0;
-      let chunkIndex = 0;
+// 启动SFTP会话池健康检查
+function startSftpHealthCheck() {
+  if (sftpHealthCheckTimer) {
+    clearInterval(sftpHealthCheckTimer);
+  }
+  sftpHealthCheckTimer = setInterval(() => {
+    checkSftpSessionsHealth();
+  }, SESSION_CONFIG.HEALTH_CHECK_INTERVAL);
+  logToFile("sftpEngine: Started SFTP session health check", "INFO");
+}
 
-      while (bytesTransferred < this.stats.totalBytes && !this.isCancelled) {
-        if (this.isPaused) {
-          await this.waitForResume();
-        }
+// 停止SFTP会话池健康检查
+function stopSftpHealthCheck() {
+  if (sftpHealthCheckTimer) {
+    clearInterval(sftpHealthCheckTimer);
+    sftpHealthCheckTimer = null;
+    logToFile("sftpEngine: Stopped SFTP session health check", "INFO");
+  }
+}
 
-        const remainingBytes = this.stats.totalBytes - bytesTransferred;
-        const chunkSize = Math.min(
-          this.options.transfer.chunkSize,
-          remainingBytes,
-        );
-
-        // 获取内存块
-        const buffer = await this.getMemoryBlock(chunkSize);
-
-        try {
-          // 读取数据
-          const result = await fileHandle.read(
-            buffer.buffer,
-            0,
-            chunkSize,
-            bytesTransferred,
-          );
-          const bytesRead = result.bytesRead;
-
-          if (bytesRead === 0) break;
-
-          // 使用零拷贝传输（如果可能）
-          if (this.options.optimization.enableZeroCopy) {
-            await this.zeroCopyWrite(writeStream, buffer.buffer, 0, bytesRead);
-          } else {
-            await this.standardWrite(
-              writeStream,
-              buffer.buffer.subarray(0, bytesRead),
-            );
-          }
-
-          bytesTransferred += bytesRead;
-          this.stats.bytesTransferred = bytesTransferred;
-          this.stats.currentChunk = ++chunkIndex;
-
-          this.reportProgress();
-        } finally {
-          // 释放内存块
-          this.releaseMemoryBlock(buffer);
-        }
-      }
-
-      writeStream.end();
-    } finally {
-      await fileHandle.close();
+// 检查SFTP会话健康状况
+async function checkSftpSessionsHealth() {
+  try {
+    if (!logToFile) {
+      // Ensure logToFile is available
+      return;
     }
-  }
-
-  async performDownload() {
-    const fs = require("fs").promises;
-    const fileHandle = await fs.open(this.destination, "w");
-
-    try {
-      // 创建SFTP读取流
-      const readStream = this.sftpConnection.createReadStream(this.source);
-
-      let bytesTransferred = 0;
-      let chunkIndex = 0;
-
-      while (bytesTransferred < this.stats.totalBytes && !this.isCancelled) {
-        if (this.isPaused) {
-          await this.waitForResume();
-        }
-
-        const remainingBytes = this.stats.totalBytes - bytesTransferred;
-        const chunkSize = Math.min(
-          this.options.transfer.chunkSize,
-          remainingBytes,
-        );
-
-        // 获取内存块
-        const buffer = await this.getMemoryBlock(chunkSize);
-
-        try {
-          // 读取数据
-          const bytesRead = await this.sftpRead(
-            readStream,
-            buffer.buffer,
-            chunkSize,
-          );
-
-          if (bytesRead === 0) break;
-
-          // 写入本地文件
-          const writeResult = await fileHandle.write(
-            buffer.buffer,
-            0,
-            bytesRead,
-            bytesTransferred,
-          );
-
-          bytesTransferred += writeResult.bytesWritten;
-          this.stats.bytesTransferred = bytesTransferred;
-          this.stats.currentChunk = ++chunkIndex;
-
-          this.reportProgress();
-        } finally {
-          this.releaseMemoryBlock(buffer);
-        }
-      }
-    } finally {
-      await fileHandle.close();
-    }
-  }
-
-  async performCopy() {
-    // 实现SFTP内部复制（如果支持）
-    if (this.sftpConnection.copy) {
-      await this.sftpConnection.copy(this.source, this.destination);
-      this.stats.bytesTransferred = this.stats.totalBytes;
-    } else {
-      // 回退到下载后上传
-      throw new Error("SFTP复制暂未实现");
-    }
-  }
-
-  async getMemoryBlock(size) {
-    if (
-      this.options.optimization.enableMemoryPool &&
-      this.memoryBlocks.length > 0
-    ) {
-      // 从预分配的块中获取
-      const block = this.memoryBlocks.pop();
-      if (block && block.buffer.length >= size) {
-        return block;
-      }
-
-      // 如果预分配的块不够大，释放并重新分配
-      if (block) {
-        memoryPoolManager.free(block.blockId);
-      }
-    }
-
-    // 从内存池分配新块
-    if (this.options.optimization.enableMemoryPool) {
-      return memoryPoolManager.allocate(size);
-    } else {
-      // 直接分配
-      return {
-        buffer: Buffer.alloc(size),
-        blockId: null,
-      };
-    }
-  }
-
-  releaseMemoryBlock(block) {
-    if (this.options.optimization.enableMemoryPool && block.blockId) {
-      // 如果内存块足够小，可以重用
-      if (block.buffer.length <= this.options.transfer.chunkSize * 2) {
-        this.memoryBlocks.push(block);
-      } else {
-        memoryPoolManager.free(block.blockId);
-      }
-    }
-    // 对于非池化内存，让GC处理
-  }
-
-  async zeroCopyWrite(stream, buffer, offset, length) {
-    if (this.streamController) {
-      return await this.streamController.write(
-        buffer.subarray(offset, offset + length),
-      );
-    } else {
-      return new Promise((resolve, reject) => {
-        stream.write(buffer.subarray(offset, offset + length), (error) => {
-          if (error) reject(error);
-          else resolve(length);
-        });
-      });
-    }
-  }
-
-  async standardWrite(stream, data) {
-    if (this.streamController) {
-      return await this.streamController.write(data);
-    } else {
-      return new Promise((resolve, reject) => {
-        stream.write(data, (error) => {
-          if (error) reject(error);
-          else resolve(data.length);
-        });
-      });
-    }
-  }
-
-  async sftpRead(stream, buffer, length) {
-    return new Promise((resolve, reject) => {
-      let bytesRead = 0;
-
-      const onData = (chunk) => {
-        const copyLength = Math.min(chunk.length, length - bytesRead);
-        chunk.copy(buffer, bytesRead, 0, copyLength);
-        bytesRead += copyLength;
-
-        if (bytesRead >= length) {
-          stream.removeListener("data", onData);
-          stream.removeListener("end", onEnd);
-          stream.removeListener("error", onError);
-          resolve(bytesRead);
-        }
-      };
-
-      const onEnd = () => {
-        stream.removeListener("data", onData);
-        stream.removeListener("error", onError);
-        resolve(bytesRead);
-      };
-
-      const onError = (error) => {
-        stream.removeListener("data", onData);
-        stream.removeListener("end", onEnd);
-        reject(error);
-      };
-
-      stream.on("data", onData);
-      stream.on("end", onEnd);
-      stream.on("error", onError);
-    });
-  }
-
-  pause() {
-    if (this.status === TRANSFER_STATUS.TRANSFERRING) {
-      this.isPaused = true;
-      this.status = TRANSFER_STATUS.PAUSED;
-      this.emit("paused", { id: this.id });
-      logToFile(`传输已暂停: ${this.id}`, "INFO");
-    }
-  }
-
-  resume() {
-    if (this.status === TRANSFER_STATUS.PAUSED) {
-      this.isPaused = false;
-      this.status = TRANSFER_STATUS.TRANSFERRING;
-      this.emit("resumed", { id: this.id });
-      logToFile(`传输已恢复: ${this.id}`, "INFO");
-    }
-  }
-
-  cancel() {
-    this.isCancelled = true;
-    this.status = TRANSFER_STATUS.CANCELLED;
-    this.emit("cancelled", { id: this.id });
-    logToFile(`传输已取消: ${this.id}`, "INFO");
-  }
-
-  async waitForResume() {
-    return new Promise((resolve) => {
-      const checkResume = () => {
-        if (!this.isPaused || this.isCancelled) {
-          resolve();
-        } else {
-          setTimeout(checkResume, 100);
-        }
-      };
-      checkResume();
-    });
-  }
-
-  reportProgress() {
-    const progress =
-      this.stats.totalBytes > 0
-        ? (this.stats.bytesTransferred / this.stats.totalBytes) * 100
-        : 0;
-
-    // 计算传输速度
-    const elapsed = Date.now() - this.stats.startTime;
-    this.stats.throughput =
-      elapsed > 0 ? (this.stats.bytesTransferred / elapsed) * 1000 : 0; // 字节/秒
-
-    this.emit("progress", {
-      id: this.id,
-      progress: Math.round(progress * 100) / 100,
-      bytesTransferred: this.stats.bytesTransferred,
-      totalBytes: this.stats.totalBytes,
-      currentChunk: this.stats.currentChunk,
-      totalChunks: this.stats.totalChunks,
-      throughput: this.stats.throughput,
-    });
-  }
-
-  async complete() {
-    this.status = TRANSFER_STATUS.COMPLETED;
-    this.stats.endTime = Date.now();
-
-    const duration = this.stats.endTime - this.stats.startTime;
-    const avgThroughput =
-      duration > 0 ? (this.stats.bytesTransferred / duration) * 1000 : 0;
-
+    const totalCount = getTotalSessionCount();
     logToFile(
-      `SFTP传输完成: ${this.id}, ` +
-        `大小: ${this.stats.bytesTransferred}字节, ` +
-        `耗时: ${duration}ms, ` +
-        `平均速度: ${(avgThroughput / 1024 / 1024).toFixed(2)}MB/s`,
+      `sftpEngine: Running SFTP health check, total sessions: ${totalCount}`,
       "INFO",
     );
 
-    this.emit("completed", {
-      id: this.id,
-      stats: this.getStats(),
-    });
-  }
-
-  async fail(error) {
-    this.status = TRANSFER_STATUS.FAILED;
-    this.stats.endTime = Date.now();
-    this.stats.errors.push({
-      message: error.message,
-      timestamp: Date.now(),
-      stack: error.stack,
-    });
-
-    logToFile(`SFTP传输失败: ${this.id} - ${error.message}`, "ERROR");
-
-    this.emit("failed", {
-      id: this.id,
-      error: error.message,
-      stats: this.getStats(),
-    });
-  }
-
-  async cleanup() {
-    // 释放预分配的内存块
-    for (const block of this.memoryBlocks) {
-      if (block.blockId) {
-        memoryPoolManager.free(block.blockId);
+    // 超过全局限制时，按最早创建时间全局回收
+    if (totalCount > SESSION_CONFIG.MAX_TOTAL_SESSIONS) {
+      const toClose = totalCount - SESSION_CONFIG.MAX_TOTAL_SESSIONS;
+      const allSessions = [];
+      for (const [tabId, pool] of sftpPools.entries()) {
+        for (const session of pool.sessions.values()) {
+          allSessions.push({ tabId, session });
+        }
       }
-    }
-    this.memoryBlocks = [];
-
-    // 通知流控制器传输结束
-    if (this.streamController) {
-      if (this.status === TRANSFER_STATUS.COMPLETED) {
-        this.streamController.end();
-      } else {
-        this.streamController.destroy(new Error(`传输${this.status}`));
+      allSessions.sort((a, b) => a.session.createdAt - b.session.createdAt);
+      for (let i = 0; i < toClose && i < allSessions.length; i++) {
+        const { tabId, session } = allSessions[i];
+        logToFile(
+          `sftpEngine: Closing old SFTP session ${session.id} for tab ${tabId}`,
+          "INFO",
+        );
+        await closeSftpSession(tabId, session.id);
       }
     }
 
-    logToFile(`传输清理完成: ${this.id}`, "DEBUG");
-  }
-
-  handleError(error) {
-    this.stats.errors.push({
-      message: error.message,
-      timestamp: Date.now(),
-    });
-
-    if (this.stats.retries < this.options.transfer.retryAttempts) {
-      this.stats.retries++;
+    // 遍历所有会话进行空闲和健康检查
+    for (const [tabId, pool] of sftpPools.entries()) {
+      for (const session of pool.sessions.values()) {
+        const idleTime = Date.now() - session.lastUsed;
+        if (idleTime > SESSION_CONFIG.SESSION_IDLE_TIMEOUT && session.busyCount === 0) {
+          logToFile(
+            `sftpEngine: SFTP session ${session.id} (tab ${tabId}) idle for ${idleTime}ms, closing`,
+            "INFO",
+          );
+          await closeSftpSession(tabId, session.id);
+          continue;
+        }
+        await checkSessionAlive(tabId, session);
+      }
+    }
+  } catch (error) {
+    if (logToFile) {
       logToFile(
-        `传输重试 ${this.stats.retries}/${this.options.transfer.retryAttempts}: ${this.id}`,
+        `sftpEngine: Error in SFTP health check: ${error.message}`,
+        "ERROR",
+      );
+    }
+  }
+}
+
+// 检查会话是否存活
+async function checkSessionAlive(tabId, session) {
+  try {
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("SFTP health check timeout")), SESSION_CONFIG.HEALTH_CHECK_TIMEOUT);
+    });
+    const checkPromise = new Promise((resolve, reject) => {
+      session.sftp.readdir("/", (err, _) => {
+        // Assuming session.sftp is the ssh2.sftp instance
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    await Promise.race([checkPromise, timeoutPromise]);
+    session.lastChecked = Date.now();
+  } catch (error) {
+    logToFile(
+      `sftpEngine: SFTP session ${session.id} (tab ${tabId}) health check failed: ${error.message}, closing session`,
+      "ERROR",
+    );
+    await closeSftpSession(tabId, session.id);
+  }
+}
+
+// 添加新方法: 确保至少有一个SFTP会话，如果没有则创建，并返回"主"会话的sftp对象
+async function ensureSftpSession(tabId) {
+  try {
+    const pool = getOrCreatePool(tabId);
+
+    // 若已有主会话，快速健康检查并返回
+    if (pool.primaryId && pool.sessions.has(pool.primaryId)) {
+      const session = pool.sessions.get(pool.primaryId);
+      // 重置空闲计时器
+      if (session.timeoutId) clearTimeout(session.timeoutId);
+      session.timeoutId = setTimeout(() => {
+        closeSftpSession(tabId, session.id);
+      }, SESSION_CONFIG.SESSION_IDLE_TIMEOUT);
+
+      if (!session.active) {
+        await closeSftpSession(tabId, session.id);
+        const newSession = await acquireSftpSession(tabId);
+        return newSession.sftp;
+      }
+
+      try {
+        await new Promise((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            reject(new Error("SFTP health check timeout"));
+          }, SESSION_CONFIG.QUICK_HEALTH_CHECK_TIMEOUT);
+          session.sftp.stat(".", (err) => {
+            clearTimeout(timeoutId);
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+        session.lastChecked = Date.now();
+        session.lastUsed = Date.now();
+        return session.sftp;
+      } catch (e) {
+        logToFile(
+          `sftpEngine: Primary session check failed for tab ${tabId}, recreating: ${e.message}`,
+          "WARN",
+        );
+        await closeSftpSession(tabId, session.id);
+        const newSession = await acquireSftpSession(tabId);
+        return newSession.sftp;
+      }
+    }
+
+    // 没有主会话，则创建
+    logToFile(
+      `sftpEngine: No primary session for tab ${tabId}, creating`,
+      "INFO",
+    );
+    const created = await acquireSftpSession(tabId);
+    return created.sftp;
+  } catch (error) {
+    logToFile(
+      `sftpEngine: Error ensuring SFTP session for tab ${tabId}: ${error.message}`,
+      "ERROR",
+    );
+    throw error;
+  }
+}
+
+// 修改getSftpSession方法，使用ensureSftpSession并支持重连
+async function getSftpSession(tabId) {
+  if (sftpSessionLocks.has(tabId)) {
+    return new Promise((resolve, reject) => {
+      const checkLock = () => {
+        if (!sftpSessionLocks.has(tabId)) {
+          const pool = sftpPools.get(tabId);
+          if (pool && pool.primaryId && pool.sessions.has(pool.primaryId)) {
+            const session = pool.sessions.get(pool.primaryId);
+            // 检查会话健康状态
+            checkSessionHealth(session)
+              .then((isHealthy) => {
+                if (isHealthy) {
+                  session.lastUsed = Date.now();
+                  resolve(session.sftp);
+                } else {
+                  // 会话不健康，触发重连
+                  handleUnhealthySession(tabId, session)
+                    .then(resolve)
+                    .catch(reject);
+                }
+              })
+              .catch(reject);
+          } else {
+            acquireSftpSession(tabId)
+              .then((session) => resolve(session.sftp))
+              .catch(reject);
+          }
+        } else {
+          setTimeout(checkLock, SESSION_CONFIG.SSH_READY_CHECK_INTERVAL);
+        }
+      };
+      checkLock();
+    });
+  }
+
+  // 使用确保会话有效性的方式获取会话，先检查健康状态
+  try {
+    const pool = sftpPools.get(tabId);
+    if (pool && pool.primaryId && pool.sessions.has(pool.primaryId)) {
+      const session = pool.sessions.get(pool.primaryId);
+      const isHealthy = await checkSessionHealth(session);
+      if (isHealthy) {
+        session.lastUsed = Date.now();
+        return session.sftp;
+      } else {
+        logToFile(`sftpEngine: SFTP会话不健康，尝试重建: tabId=${tabId}`, "WARN");
+        return await handleUnhealthySession(tabId, session);
+      }
+    }
+    return await ensureSftpSession(tabId);
+  } catch (error) {
+    logToFile(
+      `sftpEngine: Failed to get SFTP session for tab ${tabId}: ${error.message}`,
+      "ERROR",
+    );
+    throw error;
+  }
+}
+
+// 处理不健康的SFTP会话
+async function handleUnhealthySession(tabId, session) {
+  try {
+    // 关闭旧会话
+    if (session && session.sftp) {
+      try {
+        session.sftp.end();
+      } catch (error) {
+        // 忽略关闭错误
+      }
+    }
+
+    // 从会话池中移除
+    const pool = sftpPools.get(tabId);
+    if (pool && session) {
+      pool.sessions.delete(session.id);
+      if (pool.primaryId === session.id) {
+        pool.primaryId = null;
+      }
+    }
+
+    // 检查SSH连接状态
+    const processInfo = getChildProcessInfo(tabId);
+    if (!processInfo || !processInfo.process) {
+      throw new Error(`找不到tabId ${tabId} 对应的SSH连接`);
+    }
+
+    // 检查SSH连接是否健康
+    if (processInfo.process.destroyed || !processInfo.process._channel) {
+      logToFile(
+        `sftpEngine: SSH连接不健康，需要重新建立SSH连接: tabId=${tabId}`,
+        "ERROR",
+      );
+      throw new Error("SSH连接已断开，请重新连接");
+    }
+
+    // 重试创建新的SFTP会话
+    logToFile(`sftpEngine: 重新创建SFTP会话: tabId=${tabId}`, "INFO");
+    return await ensureSftpSession(tabId);
+  } catch (error) {
+    logToFile(`sftpEngine: 处理不健康会话失败: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
+// 检查会话健康状态
+async function checkSessionHealth(session) {
+  if (!session || !session.sftp) {
+    return false;
+  }
+
+  // 检查是否已经销毁
+  if (session.sftp.destroyed) {
+    return false;
+  }
+
+  // 尝试执行简单的SFTP操作来检查连接
+  try {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve(false);
+      }, SESSION_CONFIG.QUICK_HEALTH_CHECK_TIMEOUT);
+
+      session.sftp.readdir(".", (err) => {
+        clearTimeout(timeout);
+        resolve(!err);
+      });
+    });
+  } catch (error) {
+    return false;
+  }
+}
+
+// 创建新的 SFTP 会话 (heavily dependent on getChildProcessInfo)
+async function acquireSftpSession(tabId) {
+  sftpSessionLocks.set(tabId, true);
+  try {
+    const pool = getOrCreatePool(tabId);
+    const perTabCount = pool.sessions.size;
+    if (perTabCount >= SESSION_CONFIG.MAX_SESSIONS_PER_TAB) {
+      logToFile(
+        `sftpEngine: Maximum SFTP sessions per tab reached (${SESSION_CONFIG.MAX_SESSIONS_PER_TAB}) for tab ${tabId}`,
+        "WARN",
+      );
+      throw new Error(
+        `已达到每个标签页的最大SFTP会话数限制(${SESSION_CONFIG.MAX_SESSIONS_PER_TAB})`,
+      );
+    }
+
+    // 增强获取SSH连接的逻辑
+    const processInfo = getChildProcessInfo(tabId); // Critical dependency
+
+    // 更详细的SSH连接验证
+    if (!processInfo) {
+      sftpSessionLocks.delete(tabId);
+      logToFile(
+        `sftpEngine: No SSH process info found for tab ${tabId}`,
+        "ERROR",
+      );
+      throw new Error(
+        `sftpEngine: No SSH connection info found for tab ${tabId}`,
+      );
+    }
+
+    if (!processInfo.process) {
+      sftpSessionLocks.delete(tabId);
+      logToFile(
+        `sftpEngine: SSH process exists but no client instance for tab ${tabId}`,
+        "ERROR",
+      );
+      throw new Error(
+        `sftpEngine: SSH client instance not found for tab ${tabId}`,
+      );
+    }
+
+    if (processInfo.type !== "ssh2") {
+      sftpSessionLocks.delete(tabId);
+      logToFile(
+        `sftpEngine: Connection type is not SSH for tab ${tabId}, got ${processInfo.type}`,
+        "ERROR",
+      );
+      throw new Error(
+        `sftpEngine: Invalid connection type (${processInfo.type}) for SFTP session, must be SSH.`,
+      );
+    }
+
+    const sshClient = processInfo.process; // This is ssh2.Client instance
+
+    // 验证SSH客户端实例的有效性
+    if (!sshClient || typeof sshClient.sftp !== "function") {
+      sftpSessionLocks.delete(tabId);
+      logToFile(
+        `sftpEngine: Invalid SSH client instance for tab ${tabId}`,
+        "ERROR",
+      );
+      throw new Error(
+        "sftpEngine: Invalid SSH connection info in acquireSftpSession.",
+      );
+    }
+
+    // Re-implementing the wait for SSH ready logic from main.js
+    if (!processInfo.ready) {
+      logToFile(
+        `sftpEngine: Waiting for SSH connection to be ready for session ${tabId}`,
+        "INFO",
+      );
+      const maxWaitTime = SESSION_CONFIG.SSH_READY_WAIT_TIMEOUT;
+      const startTime = Date.now();
+      const checkInterval = SESSION_CONFIG.SSH_READY_CHECK_INTERVAL;
+
+      await new Promise((resolve, reject) => {
+        const checkReady = () => {
+          const currentInfo = getChildProcessInfo(tabId); // Re-fetch, might be updated
+          if (!currentInfo) {
+            reject(new Error("sftpEngine: SSH connection no longer exists"));
+            return;
+          }
+
+          if (currentInfo && currentInfo.ready) {
+            resolve();
+            return;
+          }
+          if (Date.now() - startTime > maxWaitTime) {
+            reject(
+              new Error(
+                "sftpEngine: Waiting for SSH connection to be ready timed out",
+              ),
+            );
+            return;
+          }
+          setTimeout(checkReady, checkInterval);
+        };
+        checkReady();
+      });
+      logToFile(
+        `sftpEngine: SSH connection is now ready for session ${tabId}`,
+        "INFO",
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      // 增加更长的超时时间，以防止网络延迟导致的问题
+      const timeoutId = setTimeout(() => {
+        sftpSessionLocks.delete(tabId);
+        reject(new Error("sftpEngine: SFTP session creation timed out"));
+      }, TIMEOUT_CONFIG.BASE_OPERATION_TIMEOUT * 2);
+
+      try {
+        // 确保每次调用返回一个新的SFTP会话
+        sshClient.sftp((err, sftp) => {
+          clearTimeout(timeoutId);
+          if (err) {
+            sftpSessionLocks.delete(tabId);
+            logToFile(
+              `sftpEngine: SFTP session creation error for session ${tabId}: ${err.message}`,
+              "ERROR",
+            );
+            reject(new Error(`sftpEngine: SFTP error: ${err.message}`));
+            return;
+          }
+
+          // 创建一个全新的会话对象
+          const now = Date.now();
+          const session = {
+            id: genSessionId(tabId),
+            sftp, // This is the ssh2.sftp instance
+            timeoutId: setTimeout(() => {
+              closeSftpSession(tabId, undefined);
+            }, SESSION_CONFIG.SESSION_IDLE_TIMEOUT),
+            active: true,
+            createdAt: now,
+            lastUsed: now,
+            lastChecked: now,
+            busyCount: 0,
+            sshClient: sshClient, // 存储SSH客户端引用，便于追踪
+          };
+
+          // 将会话加入池
+          const poolRef = getOrCreatePool(tabId);
+          poolRef.sessions.set(session.id, session);
+          if (!poolRef.primaryId) poolRef.primaryId = session.id;
+          sftpSessionLocks.delete(tabId);
+
+          // 监听SFTP会话事件
+          sftp.on("error", (sftpErr) => {
+            logToFile(
+              `sftpEngine: SFTP session error for ${tabId} (${session.id}): ${sftpErr.message}`,
+              "ERROR",
+            );
+            closeSftpSession(tabId, session.id);
+          });
+          sftp.on("close", () => {
+            logToFile(
+              `sftpEngine: SFTP session closed by remote for ${tabId} (${session.id})`,
+              "INFO",
+            );
+            closeSftpSession(tabId, session.id);
+          });
+          if (!sftpHealthCheckTimer) {
+            startSftpHealthCheck();
+          }
+          resolve(session); // Resolve with the session object
+        });
+      } catch (sftpError) {
+        clearTimeout(timeoutId);
+        sftpSessionLocks.delete(tabId);
+        logToFile(
+          `sftpEngine: Error creating SFTP session for ${tabId}: ${sftpError.message}`,
+          "ERROR",
+        );
+        reject(sftpError);
+      }
+    });
+  } catch (error) {
+    sftpSessionLocks.delete(tabId);
+    logToFile(
+      `sftpEngine: Error in acquireSftpSession for ${tabId}: ${error.message}`,
+      "ERROR",
+    );
+    throw error;
+  }
+}
+
+// 关闭SFTP会话
+// 如果提供sessionId，则仅关闭该会话；否则关闭该tab的所有会话
+async function closeSftpSession(tabId, sessionId = undefined) {
+  const pool = sftpPools.get(tabId);
+  if (!pool) return;
+
+  const closeOne = (sess) => {
+    if (!sess) return;
+    if (sess.timeoutId) clearTimeout(sess.timeoutId);
+    sess.active = false;
+    try {
+      if (sess.sftp && typeof sess.sftp.end === "function") {
+        sess.sftp.end();
+      }
+    } catch (error) {
+      logToFile(
+        `sftpEngine: Error closing SFTP session (sftp.end()) for ${tabId} (${sess.id}): ${error.message}`,
+        "ERROR",
+      );
+    }
+    pool.sessions.delete(sess.id);
+    if (pool.primaryId === sess.id) {
+      pool.primaryId =
+        pool.sessions.size > 0 ? [...pool.sessions.keys()][0] : null;
+    }
+    logToFile(
+      `sftpEngine: Closed SFTP session for ${tabId} (${sess.id})`,
+      "INFO",
+    );
+  };
+
+  if (sessionId) {
+    const sess = pool.sessions.get(sessionId);
+    closeOne(sess);
+  } else {
+    for (const sess of [...pool.sessions.values()]) {
+      closeOne(sess);
+    }
+  }
+
+  // 若全局已无会话，停止健康检查
+  if (getTotalSessionCount() === 0 && sftpHealthCheckTimer) {
+    stopSftpHealthCheck();
+  }
+}
+
+// 关闭指定tab的所有会话（语义化API）
+async function closeAllSftpSessionsForTab(tabId) {
+  return closeSftpSession(tabId, undefined);
+}
+
+// 借出一个SFTP会话（尽量创建新的，或选择最空闲的）
+async function borrowSftpSession(tabId) {
+  const pool = getOrCreatePool(tabId);
+
+  // 优先创建新会话（未达到上限）
+  if (pool.sessions.size < SESSION_CONFIG.MAX_SESSIONS_PER_TAB) {
+    try {
+      const session = await acquireSftpSession(tabId);
+      session.busyCount = 1;
+      return { sftp: session.sftp, sessionId: session.id };
+    } catch (e) {
+      // 回退到已有会话
+      logToFile(
+        `sftpEngine: Failed to create new session on borrow, fallback to existing: ${e.message}`,
+        "WARN",
+      );
+    }
+  }
+
+  // 从现有会话中选择busyCount最小的
+  let target = null;
+  for (const sess of pool.sessions.values()) {
+    if (!target || sess.busyCount < target.busyCount) target = sess;
+  }
+  if (!target) {
+    // 无可用会话，则强制创建一个
+    const session = await acquireSftpSession(tabId);
+    session.busyCount = 1;
+    return { sftp: session.sftp, sessionId: session.id };
+  }
+  target.busyCount++;
+  target.lastUsed = Date.now();
+  return { sftp: target.sftp, sessionId: target.id };
+}
+
+// 归还一个SFTP会话
+function releaseSftpSession(tabId, sessionId) {
+  const pool = sftpPools.get(tabId);
+  if (!pool) return;
+  const session = pool.sessions.get(sessionId);
+  if (!session) return;
+  session.busyCount = Math.max(0, (session.busyCount || 0) - 1);
+  session.lastUsed = Date.now();
+}
+
+async function enqueueSftpOperation(tabId, operation, options = {}) {
+  const type = options.type || "generic";
+  const path = options.path || ".";
+  const canMerge = Boolean(options.canMerge);
+  const priority = options.priority || "normal";
+
+  // Parse priority to numeric value using parsePriority function
+  const priorityValue = parsePriority(priority);
+
+  // Create or get queue for this tabId
+  if (!pendingOperations.has(tabId)) {
+    pendingOperations.set(tabId, []);
+  }
+
+  // 日志记录操作请求
+  logToFile(
+    `sftpEngine: Enqueued SFTP ${type} operation for path ${path} on tab ${tabId} with priority ${priority}`,
+    "INFO",
+  );
+
+  // Check for similar operations in queue if canMerge is true
+  // This is useful for operations like directory listings that can be collapsed to the most recent one
+  if (canMerge) {
+    const queue = pendingOperations.get(tabId);
+    let matchingOpIndex = -1;
+    let matchingOp = null;
+
+    // Only merge waiting operations, not those in progress
+    for (let i = 0; i < queue.length; i++) {
+      const op = queue[i];
+      if (!op.inProgress && op.type === type && op.path === path) {
+        matchingOpIndex = i;
+        matchingOp = op;
+        break;
+      }
+    }
+
+    if (matchingOp) {
+      logToFile(
+        `sftpEngine: Merging new ${type} operation for ${path} with existing queued operation.`,
+        "INFO",
+      );
+
+      // Update existing operation with new priority if higher
+      if (priorityValue > matchingOp.priorityValue) {
+        queue[matchingOpIndex].priorityValue = priorityValue;
+      }
+
+      // Return the existing operation's promise
+      return matchingOp.promise;
+    }
+  }
+
+  // Create new operation
+  return new Promise((resolve, reject) => {
+    const operationObj = {
+      tabId,
+      type,
+      path,
+      canMerge,
+      priorityValue,
+      operation,
+      promise: null,
+      resolve,
+      reject,
+      inProgress: false,
+      timestamp: Date.now(),
+      retries: 0, // 添加重试计数
+      maxRetries: 2, // 最大重试次数
+    };
+
+    // Set promise reference in operationObj for potential future merging
+    operationObj.promise = new Promise((res, rej) => {
+      operationObj.innerResolve = res;
+      operationObj.innerReject = rej;
+    });
+
+    // Add to queue
+    const queue = pendingOperations.get(tabId);
+    queue.push(operationObj);
+
+    // Start processing queue
+    processSftpQueue(tabId);
+  });
+}
+
+// 内部函数：处理 SFTP 操作队列
+async function processSftpQueue(tabId) {
+  // Check if queue exists
+  if (!pendingOperations.has(tabId)) {
+    return;
+  }
+
+  const queue = pendingOperations.get(tabId);
+
+  // Check if queue is empty or already being processed
+  if (queue.length === 0) {
+    return;
+  }
+
+  // Find the highest priority waiting operation
+  let highestPriority = -1;
+  let nextOpIndex = -1;
+
+  for (let i = 0; i < queue.length; i++) {
+    const op = queue[i];
+    if (!op.inProgress && op.priorityValue > highestPriority) {
+      highestPriority = op.priorityValue;
+      nextOpIndex = i;
+    }
+  }
+
+  // If no waiting operation (all in progress), return
+  if (nextOpIndex === -1) {
+    return;
+  }
+
+  const nextOp = queue[nextOpIndex];
+  nextOp.inProgress = true;
+
+  // Track operation initiation time, helps with debugging hangs
+  nextOp.startTime = Date.now();
+
+  try {
+    // 计算动态超时时间
+    let timeoutMs = TIMEOUT_CONFIG.BASE_OPERATION_TIMEOUT;
+
+    // 检查操作类型和路径，尝试估算文件大小以动态调整超时
+    if (
+      nextOp.type === "upload" ||
+      nextOp.type === "download" ||
+      nextOp.type === "upload-multifile" ||
+      nextOp.type === "upload-folder" ||
+      nextOp.type === "download-folder"
+    ) {
+      // 对于传输操作，使用较长的超时时间
+      if (
+        nextOp.type === "upload-multifile" ||
+        nextOp.type === "upload-folder" ||
+        nextOp.type === "download-folder"
+      ) {
+        // 文件夹或多文件操作，使用最长超时
+        timeoutMs = TIMEOUT_CONFIG.LARGE_FILE_TIMEOUT;
+      } else {
+        // 单文件操作，使用大文件超时
+        timeoutMs = TIMEOUT_CONFIG.LARGE_FILE_TIMEOUT;
+      }
+    }
+
+    // Execute the operation
+    const result = await Promise.race([
+      nextOp.operation(),
+      new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("Operation timed out")), timeoutMs),
+      ),
+    ]);
+
+    // Operation completed successfully
+    nextOp.resolve(result);
+    nextOp.innerResolve(result);
+
+    // Remove operation from queue
+    queue.splice(nextOpIndex, 1);
+  } catch (error) {
+    // 操作失败，考虑是否重试
+    if (nextOp.retries < nextOp.maxRetries && configIsRetryableError(error)) {
+      nextOp.retries++;
+      nextOp.inProgress = false;
+
+      logToFile(
+        `sftpEngine: Operation ${nextOp.type} failed on tab ${tabId}, retrying (${nextOp.retries}/${nextOp.maxRetries}): ${error.message}`,
         "WARN",
       );
 
+      // 添加重试延迟，防止立即失败的循环
       setTimeout(() => {
-        this.start().catch((err) => this.fail(err));
-      }, this.options.transfer.retryDelay * this.stats.retries);
-    } else {
-      this.fail(error);
+        processSftpQueue(tabId); // 再次尝试处理队列
+      }, 1000 * nextOp.retries); // 随重试次数增加延迟
+
+      return; // 不删除操作，不解析promise
     }
+
+    // 超过重试次数或不可重试的错误
+    nextOp.reject(error);
+    nextOp.innerReject(error);
+
+    // Remove failed operation from queue
+    queue.splice(nextOpIndex, 1);
+
+    logToFile(
+      `sftpEngine: Operation ${nextOp.type} failed on tab ${tabId} after ${nextOp.retries} retries: ${error.message}`,
+      "ERROR",
+    );
   }
 
-  getStats() {
-    const duration =
-      (this.stats.endTime || Date.now()) - (this.stats.startTime || Date.now());
-    const avgThroughput =
-      duration > 0 && this.stats.startTime
-        ? (this.stats.bytesTransferred / duration) * 1000
-        : 0;
+  // Process next operation in queue
+  processSftpQueue(tabId);
+}
 
-    return {
-      id: this.id,
-      type: this.type,
-      status: this.status,
-      progress:
-        this.stats.totalBytes > 0
-          ? (this.stats.bytesTransferred / this.stats.totalBytes) * 100
-          : 0,
-      bytesTransferred: this.stats.bytesTransferred,
-      totalBytes: this.stats.totalBytes,
-      currentChunk: this.stats.currentChunk,
-      totalChunks: this.stats.totalChunks,
-      retries: this.stats.retries,
-      errors: this.stats.errors.length,
-      duration,
-      avgThroughput,
-      currentThroughput: this.stats.throughput,
-    };
+// 新增：清理指定tabId的待处理操作队列
+function clearPendingOperationsForTab(tabId, options = {}) {
+  const { userCancelled = false } = options;
+
+  if (pendingOperations.has(tabId)) {
+    const queue = pendingOperations.get(tabId);
+    if (queue && queue.length > 0) {
+      logToFile(
+        `sftpEngine: Clearing ${queue.length} pending SFTP operations for tab ${tabId} due to ${userCancelled ? "user cancellation" : "connection closure"}.`,
+        userCancelled ? "INFO" : "WARN",
+      );
+      for (const op of queue) {
+        if (op.reject && typeof op.reject === "function") {
+          // 创建一个带有特殊标记的错误对象
+          const error = new Error(
+            userCancelled ? "用户已取消操作" : "操作已取消：SSH连接已关闭。",
+          );
+          error.userCancelled = userCancelled;
+          op.reject(error);
+        }
+        // 如果有合并的订阅者，也需要拒绝它们
+        if (op.subscribers && op.subscribers.length > 0) {
+          for (const subscriber of op.subscribers) {
+            if (subscriber.reject && typeof subscriber.reject === "function") {
+              // 同样添加特殊标记
+              const error = new Error(
+                userCancelled
+                  ? "用户已取消操作"
+                  : "操作已取消：SSH连接已关闭。",
+              );
+              error.userCancelled = userCancelled;
+              subscriber.reject(error);
+            }
+          }
+        }
+      }
+      pendingOperations.set(tabId, []); // Clear the queue for this tabId
+    } else {
+      logToFile(
+        `sftpEngine: No pending operations to clear for tab ${tabId}.`,
+        "INFO",
+      );
+    }
+  } else {
+    logToFile(
+      `sftpEngine: No pending operations queue found for tab ${tabId} to clear.`,
+      "INFO",
+    );
   }
 }
 
-class SftpEngine extends EventEmitter {
-  constructor(config = {}) {
-    super();
-    this.config = { ...SFTP_ENGINE_CONFIG, ...config };
+// 添加获取原生SFTP会话的方法，用于传输模块直接使用
+async function getRawSftpSession(tabId) {
+  try {
+    // 直接返回主会话的原生ssh2 SFTP对象，供传输模块使用
+    return await getSftpSession(tabId);
+  } catch (error) {
+    logToFile(
+      `sftpEngine: Error getting raw SFTP session for tab ${tabId}: ${error.message}`,
+      "ERROR",
+    );
+    throw error;
+  }
+}
 
-    this.activeTransfers = new Map();
-    this.transferQueue = [];
-    this.transferHistory = [];
+// 获取SFTP会话的连接配置信息
+function getSftpSessionInfo(tabId) {
+  const pool = sftpPools.get(tabId);
+  if (!pool || !pool.primaryId || !pool.sessions.has(pool.primaryId))
+    return null;
+  const session = pool.sessions.get(pool.primaryId);
+  return {
+    active: session.active,
+    createdAt: session.createdAt,
+    lastUsed: session.lastUsed,
+    lastChecked: session.lastChecked,
+    sessionId: session.id,
+    sessionCount: pool.sessions.size,
+  };
+}
 
-    this.stats = {
-      totalTransfers: 0,
-      completedTransfers: 0,
-      failedTransfers: 0,
-      totalBytesTransferred: 0,
-      averageThroughput: 0,
+// 批量清理会话，用于性能优化
+async function optimizeSftpSessions() {
+  try {
+    const total = getTotalSessionCount();
+    logToFile(
+      `sftpEngine: Starting SFTP session optimization, current sessions: ${total}`,
+      "INFO",
+    );
+
+    const now = Date.now();
+    let optimizedCount = 0;
+
+    for (const [tabId, pool] of sftpPools.entries()) {
+      for (const session of pool.sessions.values()) {
+        const idleTime = now - session.lastUsed;
+        if (idleTime > SESSION_CONFIG.SESSION_IDLE_TIMEOUT / 2) {
+          try {
+            await checkSessionAlive(tabId, session);
+            optimizedCount++;
+          } catch (error) {
+            logToFile(
+              `sftpEngine: Session optimization failed for ${tabId} (${session.id}), will be closed: ${error.message}`,
+              "WARN",
+            );
+          }
+        }
+      }
+    }
+
+    logToFile(
+      `sftpEngine: SFTP session optimization completed, checked ${optimizedCount} sessions`,
+      "INFO",
+    );
+    return {
+      success: true,
+      optimizedCount,
+      remainingSessions: getTotalSessionCount(),
     };
+  } catch (error) {
+    logToFile(
+      `sftpEngine: Error during SFTP session optimization: ${error.message}`,
+      "ERROR",
+    );
+    return { success: false, error: error.message };
+  }
+}
 
-    this.isInitialized = false;
-    this.monitorTimer = null;
+// 向后兼容的Engine类（占位符）
+class SftpEngine {
+  constructor(config = {}) {
+    // Don't call logToFile here as it may not be initialized yet
+    this.config = config;
   }
 
   async initialize() {
-    if (this.isInitialized) return;
-
-    try {
-      // 初始化子系统
-      if (this.config.optimization.enableMemoryPool) {
-        await memoryPoolManager.start();
-      }
-
-      if (this.config.optimization.enableBackpressure) {
-        await backpressureController.start();
-      }
-
-      // 启动监控
-      if (this.config.monitoring.enableMetrics) {
-        this.startMonitoring();
-      }
-
-      this.isInitialized = true;
-      this.emit("initialized");
-      logToFile("高级SFTP引擎已初始化", "INFO");
-    } catch (error) {
-      logToFile(`SFTP引擎初始化失败: ${error.message}`, "ERROR");
-      throw error;
+    if (logToFile) {
+      logToFile("SftpEngine.initialize() - 使用新的init()方法", "INFO");
     }
-  }
-
-  async createTransfer(sftpConnection, source, destination, options = {}) {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
-
-    // 检查并发限制
-    if (
-      this.activeTransfers.size >= this.config.transfer.maxConcurrentTransfers
-    ) {
-      throw new Error(
-        `达到最大并发传输限制: ${this.config.transfer.maxConcurrentTransfers}`,
-      );
-    }
-
-    const transfer = new SftpTransfer(sftpConnection, source, destination, {
-      ...this.config,
-      ...options,
-    });
-
-    // 设置事件监听
-    this.setupTransferEventListeners(transfer);
-
-    this.activeTransfers.set(transfer.id, transfer);
-    this.stats.totalTransfers++;
-
-    this.emit("transferCreated", { transfer });
-    return transfer;
-  }
-
-  setupTransferEventListeners(transfer) {
-    transfer.on("progress", (progress) => {
-      this.emit("transferProgress", progress);
-    });
-
-    transfer.on("completed", (result) => {
-      this.handleTransferCompleted(transfer, result);
-    });
-
-    transfer.on("failed", (result) => {
-      this.handleTransferFailed(transfer, result);
-    });
-
-    transfer.on("cancelled", () => {
-      this.handleTransferCancelled(transfer);
-    });
-  }
-
-  handleTransferCompleted(transfer, result) {
-    this.activeTransfers.delete(transfer.id);
-    this.transferHistory.push(result.stats);
-
-    this.stats.completedTransfers++;
-    this.stats.totalBytesTransferred += result.stats.bytesTransferred;
-    this.updateAverageThroughput();
-
-    // 处理队列中的等待传输
-    this.processQueuedTransfers();
-
-    this.emit("transferCompleted", result);
-  }
-
-  handleTransferFailed(transfer, result) {
-    this.activeTransfers.delete(transfer.id);
-    this.transferHistory.push(result.stats);
-
-    this.stats.failedTransfers++;
-
-    this.processQueuedTransfers();
-    this.emit("transferFailed", result);
-  }
-
-  handleTransferCancelled(transfer) {
-    this.activeTransfers.delete(transfer.id);
-    this.processQueuedTransfers();
-    this.emit("transferCancelled", { id: transfer.id });
-  }
-
-  updateAverageThroughput() {
-    if (this.transferHistory.length === 0) return;
-
-    const recentTransfers = this.transferHistory.slice(-10);
-    const totalThroughput = recentTransfers.reduce(
-      (sum, stats) => sum + (stats.avgThroughput || 0),
-      0,
-    );
-
-    this.stats.averageThroughput = totalThroughput / recentTransfers.length;
-  }
-
-  async processQueuedTransfers() {
-    if (this.transferQueue.length === 0) return;
-    if (
-      this.activeTransfers.size >= this.config.transfer.maxConcurrentTransfers
-    )
-      return;
-
-    const queuedTransfer = this.transferQueue.shift();
-    if (queuedTransfer) {
-      try {
-        await queuedTransfer.start();
-      } catch (error) {
-        logToFile(`队列传输启动失败: ${error.message}`, "ERROR");
-      }
-    }
-  }
-
-  startMonitoring() {
-    this.monitorTimer = setInterval(() => {
-      this.collectMetrics();
-    }, this.config.monitoring.metricsInterval);
-  }
-
-  collectMetrics() {
-    const engineStats = {
-      timestamp: Date.now(),
-      activeTransfers: this.activeTransfers.size,
-      queuedTransfers: this.transferQueue.length,
-      ...this.stats,
-    };
-
-    // 收集子系统指标
-    if (this.config.optimization.enableMemoryPool) {
-      engineStats.memoryPool = memoryPoolManager.getGlobalStats();
-    }
-
-    if (this.config.optimization.enableBackpressure) {
-      engineStats.backpressure = backpressureController.getControllerStatus();
-    }
-
-    this.emit("metricsCollected", engineStats);
-
-    if (this.config.monitoring.enablePerformanceLog) {
-      logToFile(
-        `SFTP引擎指标: 活跃=${engineStats.activeTransfers}, 完成=${engineStats.completedTransfers}, 失败=${engineStats.failedTransfers}`,
-        "DEBUG",
-      );
-    }
-  }
-
-  // 便捷方法
-  async upload(sftpConnection, localPath, remotePath, options = {}) {
-    const transfer = await this.createTransfer(
-      sftpConnection,
-      localPath,
-      remotePath,
-      {
-        ...options,
-        type: TRANSFER_TYPE.UPLOAD,
-      },
-    );
-    await transfer.start();
-    return transfer.getStats();
-  }
-
-  async download(sftpConnection, remotePath, localPath, options = {}) {
-    const transfer = await this.createTransfer(
-      sftpConnection,
-      remotePath,
-      localPath,
-      {
-        ...options,
-        type: TRANSFER_TYPE.DOWNLOAD,
-      },
-    );
-    await transfer.start();
-    return transfer.getStats();
-  }
-
-  // 传输控制
-  pauseTransfer(transferId) {
-    const transfer = this.activeTransfers.get(transferId);
-    if (transfer) {
-      transfer.pause();
-      return true;
-    }
-    return false;
-  }
-
-  resumeTransfer(transferId) {
-    const transfer = this.activeTransfers.get(transferId);
-    if (transfer) {
-      transfer.resume();
-      return true;
-    }
-    return false;
-  }
-
-  cancelTransfer(transferId) {
-    const transfer = this.activeTransfers.get(transferId);
-    if (transfer) {
-      transfer.cancel();
-      return true;
-    }
-    return false;
-  }
-
-  // 状态查询
-  getTransferStatus(transferId) {
-    const transfer = this.activeTransfers.get(transferId);
-    return transfer ? transfer.getStats() : null;
-  }
-
-  getActiveTransfers() {
-    return Array.from(this.activeTransfers.values()).map((transfer) =>
-      transfer.getStats(),
-    );
-  }
-
-  getEngineStats() {
-    return {
-      ...this.stats,
-      activeTransfers: this.activeTransfers.size,
-      queuedTransfers: this.transferQueue.length,
-      recentTransfers: this.transferHistory.slice(-5),
-    };
   }
 
   async shutdown() {
-    logToFile("开始关闭SFTP引擎...", "INFO");
-
-    // 停止监控
-    if (this.monitorTimer) {
-      clearInterval(this.monitorTimer);
-      this.monitorTimer = null;
+    if (logToFile) {
+      logToFile("SftpEngine.shutdown() - 使用stopSftpHealthCheck()", "INFO");
     }
-
-    // 取消所有活跃传输
-    for (const transfer of this.activeTransfers.values()) {
-      transfer.cancel();
-    }
-
-    // 等待传输完成
-    await new Promise((resolve) => {
-      const checkTransfers = () => {
-        if (this.activeTransfers.size === 0) {
-          resolve();
-        } else {
-          setTimeout(checkTransfers, 100);
-        }
-      };
-      checkTransfers();
-    });
-
-    // 关闭子系统
-    if (this.config.optimization.enableMemoryPool) {
-      await memoryPoolManager.stop();
-    }
-
-    if (this.config.optimization.enableBackpressure) {
-      await backpressureController.stop();
-    }
-
-    this.isInitialized = false;
-    this.emit("shutdown");
-    logToFile("SFTP引擎已关闭", "INFO");
+    stopSftpHealthCheck();
   }
 }
 
-// 导出
+// 向后兼容的Transfer类（占位符）
+class SftpTransfer {
+  constructor() {
+    // Don't call logToFile here as it may not be initialized yet
+  }
+}
+
+// 创建单例实例（向后兼容）
 const sftpEngine = new SftpEngine();
 
 module.exports = {
+  // 主要API
+  init,
+  startSftpHealthCheck,
+  stopSftpHealthCheck,
+  getSftpSession,
+  getRawSftpSession,
+  getSftpSessionInfo,
+  optimizeSftpSessions,
+  closeSftpSession,
+  closeAllSftpSessionsForTab,
+  enqueueSftpOperation,
+  clearPendingOperationsForTab,
+  ensureSftpSession,
+  calculateDynamicTimeout,
+  borrowSftpSession,
+  releaseSftpSession,
+
+  // 向后兼容导出
   SftpEngine,
   sftpEngine,
   SftpTransfer,

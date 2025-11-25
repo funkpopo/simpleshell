@@ -1,4 +1,4 @@
-const sftpCore = require("../../../modules/sftp/sftpCore");
+const sftpCore = require("../../transfer/sftp-engine"); // 已合并到sftp-engine
 const sftpTransfer = require("../../../modules/sftp/sftpTransfer");
 const fileCache = require("../../utils/fileCache");
 const { logToFile } = require("../../utils/logger");

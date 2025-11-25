@@ -2,15 +2,13 @@ const { EventEmitter } = require("events");
 const { logToFile } = require("../utils/logger");
 const MemoryLeakDetector = require("./memory-leak-detector");
 
-// 内存池配置
+// 内存池配置 - 简化为4级分级，减少管理开销
 const MEMORY_POOL_CONFIG = {
   pools: {
-    tiny: { size: 1024, count: 200 }, // 1KB 微小块
-    small: { size: 4 * 1024, count: 150 }, // 4KB 小块
-    medium: { size: 64 * 1024, count: 100 }, // 64KB 中块
-    large: { size: 1024 * 1024, count: 50 }, // 1MB 大块
-    huge: { size: 8 * 1024 * 1024, count: 20 }, // 8MB 超大块
-    massive: { size: 32 * 1024 * 1024, count: 5 }, // 32MB 巨大块
+    small: { size: 4 * 1024, count: 150 }, // 4KB 小块 (合并tiny)
+    medium: { size: 128 * 1024, count: 100 }, // 128KB 中块 (优化medium)
+    large: { size: 2 * 1024 * 1024, count: 50 }, // 2MB 大块 (合并huge)
+    xlarge: { size: 16 * 1024 * 1024, count: 20 }, // 16MB 超大块 (合并massive)
   },
 
   management: {
