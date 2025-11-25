@@ -1,5 +1,5 @@
 // This module will handle SFTP file transfers (upload, download, folder operations).
-// It will depend on sftpCore.js for session management and queueing.
+// It will depend on sftp-engine.js for session management and queueing.
 
 const fs = require("fs");
 const path = require("path");

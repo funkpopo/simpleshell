@@ -20,7 +20,7 @@
  */
 
 const BaseConnectionPool = require('./base-connection-pool');
-const SSHConnectionPool = require('./ssh-connection-pool');
+const SSHConnectionPool = require('./ssh-pool'); // 已更新为简化的ssh-pool
 const TelnetConnectionPool = require('./telnet-connection-pool');
 
 // 创建单例实例

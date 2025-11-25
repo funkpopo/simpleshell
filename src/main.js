@@ -9,7 +9,7 @@ const {
   updateLogConfig,
 } = require("./core/utils/logger");
 const configService = require("./services/configService");
-const sftpCore = require("./modules/sftp/sftpCore");
+const sftpCore = require("./core/transfer/sftp-engine"); // 已合并sftpCore到sftp-engine
 const sftpTransfer = require("./modules/sftp/sftpTransfer");
 const externalEditorManager = require("./modules/sftp/externalEditorManager");
 const systemInfo = require("./modules/system-info");

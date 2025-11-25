@@ -1,6 +1,6 @@
 // 连接管理模块
 const connectionManager = require("./connection/connection-manager");
-const SSHConnectionPool = require("./connection/ssh-connection-pool");
+const SSHConnectionPool = require("./connection/ssh-pool"); // 已更新为简化的ssh-pool
 const ConnectionMonitor = require("./connection/connection-monitor");
 
 // 内存管理模块

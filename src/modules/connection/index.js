@@ -1,4 +1,4 @@
-const sftpCore = require("../sftp/sftpCore");
+const sftpCore = require("../../core/transfer/sftp-engine"); // 已合并到sftp-engine
 const {
   sshConnectionPool,
   telnetConnectionPool,
