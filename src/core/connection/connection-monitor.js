@@ -4,10 +4,13 @@ const { logToFile } = require("../utils/logger");
 // 监控配置
 const MONITOR_CONFIG = {
   healthCheck: {
-    interval: 30000, // 健康检查间隔（30秒）
+    interval: 15000, // 健康检查间隔（15秒，更频繁）
     timeout: 5000, // 检查超时（5秒）
     retryAttempts: 3, // 重试次数
     retryDelay: 1000, // 重试延迟（1秒）
+    // 新增：预警机制
+    warningThreshold: 2, // 连续失败2次发出警告
+    criticalThreshold: 3, // 连续失败3次标记为危急
   },
 
   performance: {
@@ -28,6 +31,14 @@ const MONITOR_CONFIG = {
       stability: { weight: 0.2, threshold: 0.95 },
       errorRate: { weight: 0.2, threshold: 0.02 },
     },
+  },
+
+  // 新增：主动预警配置
+  proactive: {
+    enabled: true,
+    degradationThreshold: 0.7, // 性能下降70%时预警
+    latencyIncreaseThreshold: 2.0, // 延迟增加2倍时预警
+    predictiveWindow: 5, // 预测窗口（最近5次数据）
   },
 };
 
@@ -529,12 +540,25 @@ class ConnectionMonitor extends EventEmitter {
   checkHealthAlerts(connectionId, monitorData) {
     const consecutiveFailures = monitorData.status.consecutiveFailures;
 
-    // 连续失败告警
-    if (consecutiveFailures >= 3) {
+    // 预警：连续失败2次
+    if (
+      consecutiveFailures >= this.config.healthCheck.warningThreshold &&
+      consecutiveFailures < this.config.healthCheck.criticalThreshold
+    ) {
       this.createAlert(
         connectionId,
         ALERT_TYPE.HEALTH_CHECK_FAILED,
-        `连续${consecutiveFailures}次健康检查失败`,
+        `连续${consecutiveFailures}次健康检查失败 (预警)`,
+        "WARNING",
+      );
+    }
+
+    // 危急：连续失败3次及以上
+    if (consecutiveFailures >= this.config.healthCheck.criticalThreshold) {
+      this.createAlert(
+        connectionId,
+        ALERT_TYPE.HEALTH_CHECK_FAILED,
+        `连续${consecutiveFailures}次健康检查失败 (危急)`,
         "CRITICAL",
       );
     }
@@ -548,6 +572,74 @@ class ConnectionMonitor extends EventEmitter {
           connectionId,
           ALERT_TYPE.CONNECTION_UNSTABLE,
           `连接不稳定，失败率: ${(failureRate * 100).toFixed(1)}%`,
+          "WARNING",
+        );
+      }
+    }
+
+    // 新增：主动预警 - 性能下降趋势检测
+    if (this.config.proactive.enabled) {
+      this.checkProactiveDegradation(connectionId, monitorData);
+    }
+  }
+
+  // 新增：主动检测性能下降趋势
+  checkProactiveDegradation(connectionId, monitorData) {
+    const latencyHistory = monitorData.performance.latency;
+    if (latencyHistory.length < this.config.proactive.predictiveWindow * 2) {
+      return; // 数据不足
+    }
+
+    const windowSize = this.config.proactive.predictiveWindow;
+    const recentLatency = latencyHistory.slice(-windowSize);
+    const historicalLatency = latencyHistory.slice(
+      -windowSize * 2,
+      -windowSize,
+    );
+
+    const recentAvg = this.calculateAverage(recentLatency);
+    const historicalAvg = this.calculateAverage(historicalLatency);
+
+    // 检测延迟增加趋势
+    if (
+      historicalAvg > 0 &&
+      recentAvg / historicalAvg >=
+        this.config.proactive.latencyIncreaseThreshold
+    ) {
+      this.createAlert(
+        connectionId,
+        ALERT_TYPE.HIGH_LATENCY,
+        `延迟显著增加 (${historicalAvg.toFixed(0)}ms → ${recentAvg.toFixed(0)}ms)，可能即将断开`,
+        "WARNING",
+      );
+      logToFile(
+        `主动预警: 连接 ${connectionId} 延迟增加趋势明显，建议提前重连`,
+        "WARN",
+      );
+    }
+
+    // 检测吞吐量下降趋势
+    const throughputHistory = monitorData.performance.throughput;
+    if (throughputHistory.length >= windowSize * 2) {
+      const recentThroughput = throughputHistory.slice(-windowSize);
+      const historicalThroughput = throughputHistory.slice(
+        -windowSize * 2,
+        -windowSize,
+      );
+
+      const recentThroughputAvg = this.calculateAverage(recentThroughput);
+      const historicalThroughputAvg =
+        this.calculateAverage(historicalThroughput);
+
+      if (
+        historicalThroughputAvg > 0 &&
+        recentThroughputAvg / historicalThroughputAvg <=
+          this.config.proactive.degradationThreshold
+      ) {
+        this.createAlert(
+          connectionId,
+          ALERT_TYPE.LOW_THROUGHPUT,
+          `吞吐量显著下降 (${(historicalThroughputAvg / 1024).toFixed(1)}KB/s → ${(recentThroughputAvg / 1024).toFixed(1)}KB/s)`,
           "WARNING",
         );
       }

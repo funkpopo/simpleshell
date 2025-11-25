@@ -380,13 +380,16 @@ process.on('uncaughtException', (error) => {
   logToFile(`未捕获的异常: ${error.message}`, 'ERROR');
   logToFile(`堆栈: ${error.stack}`, 'ERROR');
 
+  // 清理错误消息，移除堆栈信息发送到前端
+  const cleanMessage = error.message || String(error);
+
   // 发送错误到渲染进程显示
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     safeSendToRenderer('app:error', {
       type: 'uncaughtException',
-      message: error.message,
-      details: error.stack
+      message: cleanMessage, // 只发送消息，不发送堆栈
+      timestamp: Date.now()
     });
   }
 });
@@ -400,13 +403,16 @@ process.on('unhandledRejection', (reason, promise) => {
     logToFile(`堆栈: ${errorStack}`, 'ERROR');
   }
 
+  // 清理错误消息
+  const cleanMessage = errorMessage || '未知Promise错误';
+
   // 发送错误到渲染进程显示
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     safeSendToRenderer('app:error', {
       type: 'unhandledRejection',
-      message: errorMessage,
-      details: errorStack
+      message: cleanMessage, // 只发送消息，不发送堆栈
+      timestamp: Date.now()
     });
   }
 });

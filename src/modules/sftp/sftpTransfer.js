@@ -160,6 +160,7 @@ let dialog = null; // Electron dialog
 let shell = null; // Electron shell
 let getChildProcessInfo = null; // To get SSH config from childProcesses map in main.js
 let sendToRenderer = null; // Function to send progress/status to renderer
+let transferResumeManager = null; // 断点续传管理器
 
 const activeTransfers = new Map(); // Manages active transfer operations for cancellation
 
@@ -277,7 +278,16 @@ function init(
     sendToRenderer = sendToRendererFunc;
   }
 
-  logToFile("sftpTransfer initialized.", "INFO");
+  // 初始化断点续传管理器
+  const { TransferResumeManager } = require("../../core/transfer/transfer-resume-manager");
+  transferResumeManager = new TransferResumeManager(logger);
+
+  // 监听断点续传事件
+  transferResumeManager.on("resumed", ({ transferId, resumeOffset }) => {
+    logToFile(`传输恢复事件: ${transferId}, offset=${resumeOffset}`, "INFO");
+  });
+
+  logToFile("sftpTransfer initialized with resume support.", "INFO");
 }
 
 async function handleDownloadFile(event, tabId, remotePath) {
@@ -2252,4 +2262,23 @@ module.exports = {
   handleDownloadFolder,
   handleCancelTransfer,
   cleanupActiveTransfersForTab,
+  // 新增：断点续传相关功能
+  getResumableTransfers: () => {
+    if (!transferResumeManager) return [];
+    return transferResumeManager.getResumableTransfers();
+  },
+  resumeTransfer: async (transferId) => {
+    if (!transferResumeManager) {
+      return { success: false, error: "断点续传管理器未初始化" };
+    }
+    const result = transferResumeManager.resumeTransfer(transferId);
+    if (!result) {
+      return { success: false, error: "传输不存在或无法恢复" };
+    }
+    return { success: true, transfer: result.transfer };
+  },
+  getTransferStatistics: () => {
+    if (!transferResumeManager) return null;
+    return transferResumeManager.getStatistics();
+  },
 };

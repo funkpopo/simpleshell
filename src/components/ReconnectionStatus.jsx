@@ -9,7 +9,9 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
   const [reconnectStatus, setReconnectStatus] = useState(null);
   const [showStatus, setShowStatus] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const maxAttempts = 5; // 固定最大重试次数为5次
+  const [reconnectDelay, setReconnectDelay] = useState(0);
+  const [estimatedTime, setEstimatedTime] = useState(null);
+  const maxAttempts = 5; // 最大重试次数为5次
 
   useEffect(() => {
     if (!window.terminalAPI) return;
@@ -26,6 +28,13 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
     const handleReconnectProgress = (data) => {
       if (data.tabId === tabId || data.processId === processId) {
         setReconnectAttempts(data.attempts);
+        setReconnectDelay(data.delay || 0);
+
+        // 计算预估时间（指数退避）
+        if (data.delay) {
+          const seconds = Math.ceil(data.delay / 1000);
+          setEstimatedTime(seconds);
+        }
       }
     };
 
@@ -49,8 +58,11 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
 
     const handleConnectionLost = (data) => {
       if (data.tabId === tabId || data.processId === processId) {
-        setReconnectStatus("disconnected");
-        setShowStatus(true);
+        // 延迟显示，避免与错误通知冲突
+        setTimeout(() => {
+          setReconnectStatus("disconnected");
+          setShowStatus(true);
+        }, 1000);
       }
     };
 
@@ -120,10 +132,18 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
             icon={<RefreshIcon className="reconnect-spin" />}
           >
             <Typography variant="body2">
-              正在重新连接... (尝试 {reconnectAttempts}/5)
+              正在重新连接... (尝试 {reconnectAttempts}/{maxAttempts})
             </Typography>
             <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
-              每3秒重试一次
+              {estimatedTime ? (
+                <>
+                  使用指数退避策略，下次重试约 {estimatedTime} 秒后
+                  <br />
+                  (延迟序列: 1s → 2s → 4s → 8s → 16s)
+                </>
+              ) : (
+                "正在计算重试时间..."
+              )}
             </Typography>
           </Alert>
         );
@@ -171,6 +191,7 @@ const ReconnectionStatus = ({ tabId, sshConfig, processId }) => {
       }}
       sx={{
         mt: 2,
+        zIndex: 9998, // 比错误通知低一级
         "& .MuiAlert-root": {
           minWidth: "350px",
         },

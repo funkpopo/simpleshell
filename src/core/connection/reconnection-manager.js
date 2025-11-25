@@ -1,34 +1,31 @@
 const { EventEmitter } = require("events");
 const { logToFile } = require("../utils/logger");
 
-// 重连策略配置
+// 重连策略配置 - 使用指数退避算法
 const RECONNECT_CONFIG = {
-  maxRetries: 5, // 最大重试次数固定为5次
-  fixedDelay: 3000, // 固定重连间隔3秒
+  maxRetries: 5, // 最大重试次数
+  initialDelay: 1000, // 初始延迟 1 秒
+  maxDelay: 16000, // 最大延迟 16 秒
+  exponentialFactor: 2.0, // 指数因子 (每次翻倍)
+  jitter: 1000, // 随机抖动 0-1000ms，避免雷鸣效应
 
-  // 禁用其他策略，使用固定配置
-  useFixedInterval: true, // 使用固定间隔
+  // 启用指数退避策略
+  useExponentialBackoff: true,
 
-  // 保留但不使用的配置（为了兼容性）
-  initialDelay: 3000,
-  maxDelay: 3000,
-  exponentialFactor: 1.0,
-  jitter: 0,
-
-  // 禁用快速重连
+  // 快速重连：对于明显的网络抖动，快速尝试
   fastReconnect: {
-    enabled: false,
-    maxAttempts: 0,
-    delay: 3000,
-    conditions: [],
+    enabled: true,
+    maxAttempts: 2, // 前2次快速重连
+    delay: 500, // 500ms 快速重连
+    conditions: ["ECONNRESET", "EPIPE"], // 适用条件
   },
 
-  // 禁用智能重连
+  // 智能重连：根据历史成功率调整策略
   smartReconnect: {
-    enabled: false,
-    analyzePattern: false,
-    adaptiveDelay: false,
-    networkQualityThreshold: 0.3,
+    enabled: true,
+    analyzePattern: true, // 分析失败模式
+    adaptiveDelay: true, // 自适应延迟
+    networkQualityThreshold: 0.7, // 网络质量阈值
   },
 };
 
@@ -78,7 +75,10 @@ class ReconnectionManager extends EventEmitter {
     }
 
     this.isInitialized = true;
-    logToFile("重连管理器已初始化 (固定3秒间隔，最多5次重试)", "INFO");
+    logToFile(
+      "重连管理器已初始化 (指数退避: 1s → 2s → 4s → 8s → 16s, 最多5次重试)",
+      "INFO",
+    );
   }
 
   // 注册连接会话
@@ -250,12 +250,59 @@ class ReconnectionManager extends EventEmitter {
     return true;
   }
 
-  // 计划重连
+  // 计划重连 - 使用指数退避算法
   async scheduleReconnect(session, failureReason) {
     session.retryCount++;
 
-    // 使用固定的3秒延迟
-    const delay = this.config.fixedDelay; // 固定3000ms
+    // 计算延迟时间
+    let delay;
+
+    // 1. 检查是否满足快速重连条件
+    if (
+      this.config.fastReconnect.enabled &&
+      session.retryCount <= this.config.fastReconnect.maxAttempts
+    ) {
+      const errorCode = session.lastError?.code || "";
+      if (this.config.fastReconnect.conditions.includes(errorCode)) {
+        delay = this.config.fastReconnect.delay;
+        logToFile(
+          `使用快速重连策略: ${session.id}, 延迟 ${delay}ms`,
+          "DEBUG",
+        );
+      }
+    }
+
+    // 2. 使用指数退避算法
+    if (delay === undefined) {
+      if (this.config.useExponentialBackoff) {
+        // 指数退避: base * (factor ^ retries) + jitter
+        const exponentialDelay =
+          this.config.initialDelay *
+          Math.pow(this.config.exponentialFactor, session.retryCount - 1);
+        const cappedDelay = Math.min(exponentialDelay, this.config.maxDelay);
+        const jitter = Math.random() * this.config.jitter;
+        delay = Math.round(cappedDelay + jitter);
+      } else {
+        // 降级到固定延迟
+        delay = this.config.initialDelay;
+      }
+    }
+
+    // 3. 智能调整：根据历史成功率
+    if (
+      this.config.smartReconnect.enabled &&
+      this.config.smartReconnect.adaptiveDelay
+    ) {
+      const successRate = this.calculateSuccessRate(session);
+      if (successRate < this.config.smartReconnect.networkQualityThreshold) {
+        // 网络质量差，增加延迟
+        delay = Math.round(delay * 1.5);
+        logToFile(
+          `网络质量差 (成功率 ${(successRate * 100).toFixed(1)}%), 延长重连时间至 ${delay}ms`,
+          "DEBUG",
+        );
+      }
+    }
 
     // 加入重连队列
     const reconnectTask = {
@@ -264,6 +311,7 @@ class ReconnectionManager extends EventEmitter {
       executeAt: Date.now() + delay,
       failureReason,
       retryCount: session.retryCount,
+      delay,
     };
 
     if (!this.reconnectQueues.has(session.id)) {
@@ -272,7 +320,7 @@ class ReconnectionManager extends EventEmitter {
     this.reconnectQueues.get(session.id).push(reconnectTask);
 
     logToFile(
-      `计划重连: ${session.id}, 延迟 ${delay}ms (3秒), 第 ${session.retryCount}/${this.config.maxRetries} 次尝试`,
+      `计划重连: ${session.id}, 延迟 ${delay}ms (指数退避), 第 ${session.retryCount}/${this.config.maxRetries} 次尝试`,
       "INFO",
     );
 
@@ -287,6 +335,16 @@ class ReconnectionManager extends EventEmitter {
       retryCount: session.retryCount,
       maxRetries: this.config.maxRetries,
     });
+  }
+
+  // 计算会话的历史成功率
+  calculateSuccessRate(session) {
+    const history = session.reconnectHistory || [];
+    if (history.length === 0) return 1.0;
+
+    const recentHistory = history.slice(-10); // 最近10次
+    const successCount = recentHistory.filter((h) => h.success).length;
+    return successCount / recentHistory.length;
   }
 
   // 执行重连
@@ -543,7 +601,12 @@ class ReconnectionManager extends EventEmitter {
         (s) => s.state === RECONNECT_STATE.RECONNECTING,
       ).length,
       maxRetries: this.config.maxRetries,
-      reconnectInterval: this.config.fixedDelay,
+      reconnectStrategy: this.config.useExponentialBackoff
+        ? "exponential_backoff"
+        : "fixed",
+      reconnectDelayRange: this.config.useExponentialBackoff
+        ? `${this.config.initialDelay}ms - ${this.config.maxDelay}ms`
+        : `${this.config.initialDelay}ms`,
     };
   }
 
