@@ -23,6 +23,7 @@ const {
 const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers");
 const { safeHandle, wrapIpcHandler } = require("./core/ipc/ipcResponse");
+const { mainProcessResourceManager } = require("./core/utils/mainProcessResourceManager");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -143,8 +144,11 @@ function createAIWorker() {
     // 创建worker实例
     aiWorker = new Worker(workerPath);
 
+    // 使用资源管理器注册Worker
+    mainProcessResourceManager.addWorker(aiWorker, 'AI Worker');
+
     // 监听worker线程的消息
-    aiWorker.on("message", (message) => {
+    const messageHandler = (message) => {
       const { id, type, result, error, data } = message;
 
       // 处理不同类型的消息
@@ -168,10 +172,13 @@ function createAIWorker() {
       } else {
         logToFile(`收到未知请求ID的响应: ${id}`, "WARN");
       }
-    });
+    };
+
+    aiWorker.on("message", messageHandler);
+    mainProcessResourceManager.addEventListener(aiWorker, 'message', messageHandler, 'AI Worker message handler');
 
     // 处理worker错误
-    aiWorker.on("error", (error) => {
+    const errorHandler = (error) => {
       logToFile(`AI Worker错误: ${error.message}`, "ERROR");
 
       // 向所有待处理的请求返回错误
@@ -184,18 +191,22 @@ function createAIWorker() {
 
       // 清理所有流式会话
       streamSessions.clear();
-    });
+    };
+
+    aiWorker.on("error", errorHandler);
+    mainProcessResourceManager.addEventListener(aiWorker, 'error', errorHandler, 'AI Worker error handler');
 
     // 处理worker退出
-    aiWorker.on("exit", (code) => {
+    const exitHandler = (code) => {
       logToFile(`AI Worker退出，代码: ${code}`, "WARN");
 
       // 如果退出码不是正常退出(0)，尝试重启worker
       if (code !== 0) {
-        setTimeout(() => {
+        const timerId = setTimeout(() => {
           logToFile("尝试重启AI Worker", "INFO");
           createAIWorker();
         }, 1000);
+        mainProcessResourceManager.addTimer(timerId, 'timeout', 'AI Worker restart timer');
       }
 
       // 向所有待处理的请求返回错误
@@ -208,7 +219,10 @@ function createAIWorker() {
 
       // 清理所有流式会话
       streamSessions.clear();
-    });
+    };
+
+    aiWorker.on("exit", exitHandler);
+    mainProcessResourceManager.addEventListener(aiWorker, 'exit', exitHandler, 'AI Worker exit handler');
 
     return aiWorker;
   } catch (error) {
@@ -661,6 +675,15 @@ app.on("before-quit", async (event) => {
   isQuitting = true;
 
   logToFile("应用开始退出流程，执行清理操作...", "INFO");
+
+  // 使用资源管理器清理所有托管资源
+  try {
+    await mainProcessResourceManager.cleanup();
+    logToFile("资源管理器清理完成", "INFO");
+  } catch (error) {
+    logToFile(`资源管理器清理失败: ${error.message}`, "ERROR");
+  }
+
   // 清理本地终端处理器
   if (localTerminalHandlers) {
     try {
