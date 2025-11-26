@@ -768,6 +768,15 @@ const ConnectionManager = memo(
     }, [open, isLoading, onConnectionsUpdate]);
 
     // 添加监听配置变化的effect，确保连接列表实时更新
+    // 使用 ref 来跟踪当前连接状态，避免在依赖项中使用 connections 导致无限循环
+    const connectionsStateRef = useRef(connections);
+    const isSavingRef = useRef(false); // 标记是否正在保存，用于忽略自己触发的变更事件
+
+    // 更新 ref 以保持最新状态
+    useEffect(() => {
+      connectionsStateRef.current = connections;
+    }, [connections]);
+
     useEffect(() => {
       if (!open) return;
 
@@ -775,6 +784,11 @@ const ConnectionManager = memo(
 
       // 定义重新加载连接的函数
       const reloadConnections = () => {
+        // 如果是自己触发的保存，忽略此次变更事件，避免重复加载
+        if (isSavingRef.current) {
+          return;
+        }
+
         if (
           !isMounted ||
           !window.terminalAPI ||
@@ -789,7 +803,8 @@ const ConnectionManager = memo(
             if (isMounted && data && Array.isArray(data)) {
               // 检查数据是否真的发生了变化，避免不必要的重渲染
               const sanitized = Array.isArray(data) ? data : [];
-              if (!areConnectionListsEqual(connections, sanitized)) {
+              // 使用 ref 获取当前状态进行比较
+              if (!areConnectionListsEqual(connectionsStateRef.current, sanitized)) {
                 setConnections(sanitized);
                 if (onConnectionsUpdate) {
                   onConnectionsUpdate(sanitized);
@@ -816,7 +831,7 @@ const ConnectionManager = memo(
           window.terminalAPI.offConnectionsChanged(reloadConnections);
         }
       };
-    }, [open, onConnectionsUpdate, connections]);
+    }, [open, onConnectionsUpdate]); // 移除 connections 依赖，使用 ref 代替
 
     // 当接收到新的initialConnections时更新 - 优化比较逻辑避免循环
     useEffect(() => {
@@ -1072,9 +1087,18 @@ const ConnectionManager = memo(
 
       // 保存到配置文件
       if (window.terminalAPI && window.terminalAPI.saveConnections) {
-        window.terminalAPI.saveConnections(newConnections).catch((error) => {
-          showError(t("connectionManager.saveFailed"));
-        });
+        // 设置标志，避免自己触发的变更事件导致重复加载
+        isSavingRef.current = true;
+        window.terminalAPI.saveConnections(newConnections)
+          .catch((error) => {
+            showError(t("connectionManager.saveFailed"));
+          })
+          .finally(() => {
+            // 延迟重置标志，确保变更事件已被处理
+            setTimeout(() => {
+              isSavingRef.current = false;
+            }, 100);
+          });
       }
 
       // 关闭确认对话框并清理状态
@@ -1272,9 +1296,18 @@ const ConnectionManager = memo(
 
       // 保存到配置文件
       if (window.terminalAPI && window.terminalAPI.saveConnections) {
-        window.terminalAPI.saveConnections(newConnections).catch((error) => {
-          showError(t("connectionManager.saveFailed"));
-        });
+        // 设置标志，避免自己触发的变更事件导致重复加载
+        isSavingRef.current = true;
+        window.terminalAPI.saveConnections(newConnections)
+          .catch((error) => {
+            showError(t("connectionManager.saveFailed"));
+          })
+          .finally(() => {
+            // 延迟重置标志，确保变更事件已被处理
+            setTimeout(() => {
+              isSavingRef.current = false;
+            }, 100);
+          });
       }
 
       setDialogOpen(false);
