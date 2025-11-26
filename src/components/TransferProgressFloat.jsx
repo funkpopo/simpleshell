@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from "react";
+import React, { useState, useEffect, memo, useRef, useMemo } from "react";
 import {
   Box,
   Paper,
@@ -43,6 +43,122 @@ const formatTime = (seconds) => {
   if (seconds < 60) return `${Math.round(seconds)}秒`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}分`;
   return `${Math.round(seconds / 3600)}时`;
+};
+
+/**
+ * 平滑进度 Hook
+ * 用于提供流畅的文件传输进度显示，避免进度跳跃和速度波动
+ */
+const useSmoothProgress = (transfer) => {
+  const {
+    progress: rawProgress = 0,
+    transferredBytes = 0,
+    totalBytes = 0,
+    transferSpeed: rawSpeed = 0,
+    remainingTime = 0,
+  } = transfer;
+
+  // 平滑进度状态
+  const [smoothProgress, setSmoothProgress] = useState(rawProgress);
+  const [smoothSpeed, setSmoothSpeed] = useState(rawSpeed);
+
+  // 使用 ref 存储历史数据
+  const speedHistoryRef = useRef([]);
+  const lastUpdateTimeRef = useRef(Date.now());
+  const animationFrameRef = useRef(null);
+
+  // 配置参数
+  const config = useMemo(() => ({
+    progressSmoothingFactor: 0.3, // 进度平滑因子 (0-1)
+    speedSmoothingFactor: 0.2, // 速度平滑因子
+    speedHistorySize: 10, // 速度历史记录大小
+    minUpdateInterval: 100, // 最小更新间隔(ms)
+  }), []);
+
+  // 平滑进度动画
+  useEffect(() => {
+    const animate = () => {
+      setSmoothProgress((current) => {
+        const delta = rawProgress - current;
+
+        // 如果差值很小，直接跳到目标值
+        if (Math.abs(delta) < 0.1) {
+          return rawProgress;
+        }
+
+        // 使用指数移动平均平滑进度
+        return current + delta * config.progressSmoothingFactor;
+      });
+
+      // 如果还没到达目标，继续动画
+      if (Math.abs(rawProgress - smoothProgress) > 0.01 && rawProgress < 100) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+      }
+    };
+
+    // 启动动画
+    if (rawProgress > 0 && rawProgress < 100) {
+      animationFrameRef.current = requestAnimationFrame(animate);
+    } else {
+      // 完成或未开始时直接设置
+      setSmoothProgress(rawProgress);
+    }
+
+    // 清理函数
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [rawProgress, config.progressSmoothingFactor]);
+
+  // 平滑速度计算
+  useEffect(() => {
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
+
+    // 节流更新
+    if (timeSinceLastUpdate >= config.minUpdateInterval) {
+      // 添加到速度历史
+      speedHistoryRef.current.push(rawSpeed);
+      if (speedHistoryRef.current.length > config.speedHistorySize) {
+        speedHistoryRef.current.shift();
+      }
+
+      // 计算平均速度
+      const avgSpeed =
+        speedHistoryRef.current.reduce((sum, speed) => sum + speed, 0) /
+        speedHistoryRef.current.length;
+
+      // 使用指数移动平均平滑速度
+      setSmoothSpeed((current) => {
+        if (current === 0) return rawSpeed;
+        return (
+          config.speedSmoothingFactor * rawSpeed +
+          (1 - config.speedSmoothingFactor) * current
+        );
+      });
+
+      lastUpdateTimeRef.current = now;
+    }
+  }, [rawSpeed, config.minUpdateInterval, config.speedSmoothingFactor, config.speedHistorySize]);
+
+  // 重置状态（当传输完成或取消时）
+  useEffect(() => {
+    if (transfer.isCancelled || transfer.error || rawProgress >= 100) {
+      setSmoothProgress(rawProgress);
+      setSmoothSpeed(0);
+      speedHistoryRef.current = [];
+    }
+  }, [transfer.isCancelled, transfer.error, rawProgress]);
+
+  return {
+    progress: Math.min(smoothProgress, 100),
+    speed: smoothSpeed,
+    transferredBytes,
+    totalBytes,
+    remainingTime,
+  };
 };
 
 // 获取传输类型图标
@@ -100,11 +216,6 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
     transferId,
     type,
     fileName,
-    progress = 0,
-    transferredBytes = 0,
-    totalBytes = 0,
-    transferSpeed = 0,
-    remainingTime = 0,
     isCancelled,
     error,
     currentFileIndex = 0,
@@ -112,6 +223,15 @@ const TransferItem = ({ transfer, onCancel, isMinimized }) => {
     currentFile,
     processedFiles = 0,
   } = transfer;
+
+  // 使用平滑进度 Hook
+  const {
+    progress,
+    speed: transferSpeed,
+    transferredBytes,
+    totalBytes,
+    remainingTime,
+  } = useSmoothProgress(transfer);
 
   const isCompleted = progress >= 100;
   const hasError = !!error;
