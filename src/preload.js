@@ -152,14 +152,19 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 连接配置变化事件监听
   onConnectionsChanged: (callback) => {
     const wrappedCallback = () => callback();
+    // 保存包装后的回调引用，以便正确移除
+    callback._wrappedConnectionsCallback = wrappedCallback;
     ipcRenderer.on("connections-changed", wrappedCallback);
     return () => {
       ipcRenderer.removeListener("connections-changed", wrappedCallback);
     };
   },
   offConnectionsChanged: (callback) => {
-    const wrappedCallback = () => callback();
-    ipcRenderer.removeListener("connections-changed", wrappedCallback);
+    // 使用保存的包装回调引用来正确移除监听器
+    const wrappedCallback = callback && callback._wrappedConnectionsCallback ? callback._wrappedConnectionsCallback : callback;
+    if (wrappedCallback) {
+      ipcRenderer.removeListener("connections-changed", wrappedCallback);
+    }
   },
 
   // 选择密钥文件
