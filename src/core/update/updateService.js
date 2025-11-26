@@ -1,4 +1,4 @@
-const { app, dialog, shell } = require("electron");
+const { app, dialog, shell, net, session } = require("electron");
 const fs = require("fs").promises;
 const path = require("path");
 const { spawn, exec } = require("child_process");
@@ -7,12 +7,68 @@ const os = require("os");
 
 class UpdateService {
   constructor() {
-    this.tempDir = path.join(os.tmpdir(), "simpleshell-updates");
+    // 使用程序运行目录下的 temp 文件夹
+    const appPath = app.isPackaged
+      ? path.dirname(app.getPath("exe"))
+      : app.getAppPath();
+    this.tempDir = path.join(appPath, "temp");
     this.currentVersion = app.getVersion();
     this.updateCheckUrl =
       "https://api.github.com/repos/funkpopo/simpleshell/releases/latest";
     this.isDownloading = false;
     this.downloadProgress = 0;
+    this.abortController = null;
+  }
+
+  /**
+   * 使用 Electron net 模块发起请求（自动使用系统代理）
+   * @param {string} url - 请求URL
+   * @param {object} options - 请求选项
+   * @returns {Promise<{response: Electron.IncomingMessage, body: Buffer}>}
+   */
+  async electronFetch(url, options = {}) {
+    return new Promise((resolve, reject) => {
+      const request = net.request({
+        url,
+        method: options.method || "GET",
+        useSessionCookies: false,
+        // net.request 自动使用系统代理
+      });
+
+      // 设置请求头
+      if (options.headers) {
+        for (const [key, value] of Object.entries(options.headers)) {
+          request.setHeader(key, value);
+        }
+      }
+
+      let responseData = [];
+      let response = null;
+
+      request.on("response", (res) => {
+        response = res;
+
+        res.on("data", (chunk) => {
+          responseData.push(chunk);
+        });
+
+        res.on("end", () => {
+          const body = Buffer.concat(responseData);
+          resolve({ response: res, body });
+        });
+
+        res.on("error", (error) => {
+          reject(error);
+        });
+      });
+
+      request.on("error", (error) => {
+        logToFile(`Network request error: ${error.message}`, "ERROR");
+        reject(error);
+      });
+
+      request.end();
+    });
   }
 
   /**
@@ -52,19 +108,19 @@ class UpdateService {
    */
   async checkForUpdate() {
     try {
-      logToFile("Checking for updates...", "INFO");
+      logToFile("Checking for updates (using system proxy)...", "INFO");
 
-      const response = await fetch(this.updateCheckUrl, {
+      const { response, body } = await this.electronFetch(this.updateCheckUrl, {
         headers: {
           "User-Agent": "SimpleShell-UpdateChecker",
         },
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (response.statusCode !== 200) {
+        throw new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`);
       }
 
-      const releaseData = await response.json();
+      const releaseData = JSON.parse(body.toString());
       const latestVersion = releaseData.tag_name.replace(/^v/, "");
 
       const hasUpdate =
@@ -128,7 +184,7 @@ class UpdateService {
   }
 
   /**
-   * 下载更新文件
+   * 下载更新文件（使用系统代理）
    */
   async downloadUpdate(downloadUrl, onProgress) {
     if (this.isDownloading) {
@@ -145,58 +201,99 @@ class UpdateService {
       const fileName = path.basename(new URL(downloadUrl).pathname);
       const filePath = path.join(this.tempDir, fileName);
 
-      logToFile(`Starting download: ${downloadUrl}`, "INFO");
-
-      const response = await fetch(downloadUrl, {
-        headers: {
-          "User-Agent": "SimpleShell-UpdateDownloader",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const totalSize = parseInt(response.headers.get("content-length"), 10);
-      let downloadedSize = 0;
-
-      const fileStream = await fs.open(filePath, "w");
-      const writeStream = fileStream.createWriteStream();
+      logToFile(`Starting download (using system proxy): ${downloadUrl}`, "INFO");
 
       return new Promise((resolve, reject) => {
-        response.body.on("data", (chunk) => {
-          downloadedSize += chunk.length;
-          this.downloadProgress =
-            totalSize > 0 ? (downloadedSize / totalSize) * 100 : 0;
-
-          if (onProgress) {
-            onProgress({
-              downloaded: downloadedSize,
-              total: totalSize,
-              progress: this.downloadProgress,
-            });
-          }
+        const request = net.request({
+          url: downloadUrl,
+          method: "GET",
         });
 
-        response.body.on("error", (error) => {
-          fileStream.close();
+        request.setHeader("User-Agent", "SimpleShell-UpdateDownloader");
+
+        // 保存请求引用以便取消
+        this.currentRequest = request;
+
+        request.on("response", async (response) => {
+          // 处理重定向
+          if (response.statusCode >= 300 && response.statusCode < 400) {
+            const redirectUrl = response.headers.location;
+            if (redirectUrl) {
+              logToFile(`Following redirect to: ${redirectUrl}`, "INFO");
+              this.isDownloading = false;
+              try {
+                const result = await this.downloadUpdate(redirectUrl, onProgress);
+                resolve(result);
+              } catch (error) {
+                reject(error);
+              }
+              return;
+            }
+          }
+
+          if (response.statusCode !== 200) {
+            this.isDownloading = false;
+            reject(new Error(`HTTP ${response.statusCode}: Download failed`));
+            return;
+          }
+
+          const totalSize = parseInt(response.headers["content-length"], 10) || 0;
+          let downloadedSize = 0;
+          const chunks = [];
+
+          response.on("data", (chunk) => {
+            chunks.push(chunk);
+            downloadedSize += chunk.length;
+            this.downloadProgress =
+              totalSize > 0 ? (downloadedSize / totalSize) * 100 : 0;
+
+            if (onProgress) {
+              onProgress({
+                downloaded: downloadedSize,
+                total: totalSize,
+                progress: this.downloadProgress,
+              });
+            }
+          });
+
+          response.on("end", async () => {
+            try {
+              const buffer = Buffer.concat(chunks);
+              await fs.writeFile(filePath, buffer);
+
+              this.isDownloading = false;
+              this.downloadProgress = 100;
+              this.currentRequest = null;
+
+              logToFile(`Download completed: ${filePath}`, "INFO");
+              resolve(filePath);
+            } catch (error) {
+              this.isDownloading = false;
+              this.currentRequest = null;
+              reject(error);
+            }
+          });
+
+          response.on("error", (error) => {
+            this.isDownloading = false;
+            this.currentRequest = null;
+            logToFile(`Download response error: ${error.message}`, "ERROR");
+            reject(error);
+          });
+        });
+
+        request.on("error", (error) => {
           this.isDownloading = false;
+          this.currentRequest = null;
+          logToFile(`Download request error: ${error.message}`, "ERROR");
           reject(error);
         });
 
-        response.body.on("end", async () => {
-          await fileStream.close();
-          this.isDownloading = false;
-          this.downloadProgress = 100;
-
-          logToFile(`Download completed: ${filePath}`, "INFO");
-          resolve(filePath);
-        });
-
-        response.body.pipe(writeStream);
+        request.end();
       });
     } catch (error) {
       this.isDownloading = false;
+      this.currentRequest = null;
       logToFile(`Download error: ${error.message}`, "ERROR");
       throw error;
     }
@@ -382,7 +479,14 @@ class UpdateService {
    * 取消下载
    */
   cancelDownload() {
-    // 这里可以实现下载取消逻辑
+    if (this.currentRequest) {
+      try {
+        this.currentRequest.abort();
+      } catch (error) {
+        logToFile(`Error aborting request: ${error.message}`, "WARN");
+      }
+      this.currentRequest = null;
+    }
     this.isDownloading = false;
     this.downloadProgress = 0;
     logToFile("Download cancelled", "INFO");

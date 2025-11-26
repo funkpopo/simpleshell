@@ -428,7 +428,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
                   sx={{
                     maxHeight: 120,
                     overflow: "auto",
-                    bgcolor: "grey.50",
+                    bgcolor: (theme) =>
+                      theme.palette.mode === "dark"
+                        ? "rgba(0, 0, 0, 0.2)"
+                        : "grey.100",
                     p: 1,
                     borderRadius: 1,
                     fontSize: "0.75rem",
