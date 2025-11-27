@@ -668,35 +668,7 @@ const forceResizeTerminal = debounce(
         term.refresh(0, term.rows - 1);
       }
 
-      const ensureSized = () => {
-        if (!container || !term.element) {
-          return;
-        }
-
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
-        const elementWidth = term.element.clientWidth;
-        const elementHeight = term.element.clientHeight;
-
-        if (
-          Math.abs(elementWidth - containerWidth) > 5 ||
-          Math.abs(elementHeight - containerHeight) > 5
-        ) {
-          fitAddon.fit();
-          
-          // Canvas 渲染器需要手动刷新
-          if (!term.__webglEnabled && typeof term.refresh === "function") {
-            term.refresh(0, term.rows - 1);
-          }
-        }
-      };
-
-      if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(ensureSized);
-      } else {
-        ensureSized();
-      }
-
+      // 优化：移除ensureSized的RAF调用，减少二次resize
       const cols = term.cols;
       const rows = term.rows;
       const resolvedProcessId = processId || processCache[tabId];
@@ -708,7 +680,7 @@ const forceResizeTerminal = debounce(
       // Error in forceResizeTerminal
     }
   },
-  50, // 优化防抖时间到50ms，平衡响应性和性能
+  100, // 优化防抖时间到100ms，减少频繁调用
 );
 // 添加辅助函数，用于处理多行粘贴文本，防止注释符号和缩进异常
 const processMultilineInput = (text, options = {}) => {
@@ -1079,6 +1051,9 @@ useEffect(() => {
     [scheduleHighlightRefresh, setContentUpdated],
   );
 
+  // 优化：使用ref追踪内容更新状态，避免频繁的React状态更新
+  const contentUpdatedRef = useRef(false);
+
   const enqueueTerminalWrite = useCallback(
     (termInstance, chunk) => {
       if (!termInstance || !chunk) {
@@ -1098,7 +1073,8 @@ useEffect(() => {
 
         // 使用写入策略管理器入队
         writeStrategyManagerRef.current.enqueue(chunkStr);
-        setContentUpdated(true);
+        // 优化：使用ref追踪，减少React状态更新频率
+        contentUpdatedRef.current = true;
         return;
       }
 
@@ -1106,8 +1082,8 @@ useEffect(() => {
       pendingWriteBufferRef.current.push(chunkStr);
       pendingWriteLengthRef.current += chunkStr.length;
 
-      // 优化批处理阈值：降低到32KB，提高响应性
-      const batchThreshold = 32768;
+      // 优化：提高批处理阈值到64KB，减少刷新次数
+      const batchThreshold = 65536;
 
       if (
         pendingWriteLengthRef.current > batchThreshold &&
@@ -1139,20 +1115,13 @@ useEffect(() => {
         flushPendingWrites(termInstance);
       };
 
-      // 优化调度策略：小数据量使用 RAF，大数据量立即处理
-      if (pendingWriteLengthRef.current < 4096) {
-        // 小数据量：使用 RAF 批处理
-        if (typeof requestAnimationFrame === "function") {
-          pendingWriteUsingRafRef.current = true;
-          pendingWriteHandleRef.current = requestAnimationFrame(flush);
-        } else {
-          pendingWriteUsingRafRef.current = false;
-          pendingWriteHandleRef.current = setTimeout(flush, 16);
-        }
+      // 优化调度策略：统一使用 RAF 批处理，减少定时器开销
+      if (typeof requestAnimationFrame === "function") {
+        pendingWriteUsingRafRef.current = true;
+        pendingWriteHandleRef.current = requestAnimationFrame(flush);
       } else {
-        // 中等数据量：短延迟后刷新（平衡性能和响应性）
         pendingWriteUsingRafRef.current = false;
-        pendingWriteHandleRef.current = setTimeout(flush, 8);
+        pendingWriteHandleRef.current = setTimeout(flush, 16);
       }
     },
     [flushPendingWrites],
@@ -2539,6 +2508,10 @@ useEffect(() => {
 
         // 初始化性能监控器
         if (!performanceMonitorRef.current) {
+          // 优化：使用节流的stats更新，避免频繁React状态更新
+          let lastStatsUpdate = 0;
+          const statsUpdateInterval = 2000; // 每2秒更新一次stats状态
+
           performanceMonitorRef.current = new TerminalPerformanceMonitor({
             enabled: true,
             sampleRate: 100,
@@ -2549,7 +2522,12 @@ useEffect(() => {
               }
             },
             onStats: (stats) => {
-              setPerformanceStats(stats);
+              // 优化：节流stats更新，减少React重渲染
+              const now = Date.now();
+              if (now - lastStatsUpdate >= statsUpdateInterval) {
+                lastStatsUpdate = now;
+                setPerformanceStats(stats);
+              }
             }
           });
         }
@@ -3267,12 +3245,14 @@ useEffect(() => {
       };
 
       // 使用EventManager管理定期检查终端可见性的定时器
+      // 优化：增加间隔到1000ms，使用ref而不是state来检查更新
       eventManager.setInterval(() => {
-        // 只有当内容有更新时才检查并调整大小
-        if (contentUpdated) {
+        // 使用ref检查更新，避免状态依赖导致的闭包问题
+        if (contentUpdatedRef.current) {
+          contentUpdatedRef.current = false;
           ensureTerminalSizeOnVisibilityChange();
         }
-      }, 500); // 优化检查间隔到500ms，降低CPU占用
+      }, 1000); // 优化检查间隔到1000ms，降低CPU占用
 
       // 添加定时器清理
       // 添加ResizeObserver到EventManager管理
@@ -3938,65 +3918,9 @@ useEffect(() => {
     // 使用EventManager管理延迟同步，确保布局稳定后大小正确
     eventManager.setTimeout(syncTerminalSize, 100);
 
-    // 添加一个新的辅助函数，确保终端在被激活时调整大小
-    const ensureTerminalSizeOnVisibilityChange = () => {
-      // 检查当前标签是否可见（通过DOM属性或样式）
-      if (terminalRef.current) {
-        const isVisible = isElementVisible(terminalRef.current);
-
-        if (
-          isVisible &&
-          termRef.current &&
-          fitAddonRef.current &&
-          contentUpdated
-        ) {
-          // 使用EventManager管理延迟执行强制调整大小
-          eventManager.setTimeout(() => {
-            forceResizeTerminal(
-              termRef.current,
-              terminalRef.current,
-              processCache[tabId],
-              tabId,
-              fitAddonRef.current,
-            );
-            // 重置内容更新标志
-            setContentUpdated(false);
-          }, 10);
-        }
-      }
-    };
-
-    // 添加一个检查元素可见性的函数
-    const isElementVisible = (element) => {
-      if (!element) return false;
-
-      // 检查元素及其所有父元素的可见性
-      let current = element;
-      while (current) {
-        const style = window.getComputedStyle(current);
-        if (
-          style.display === "none" ||
-          style.visibility === "hidden" ||
-          style.opacity === "0" ||
-          current.getAttribute("aria-hidden") === "true"
-        ) {
-          return false;
-        }
-        current = current.parentElement;
-      }
-
-      // 检查元素是否在视口内
-      const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    };
-
     // 使用EventManager管理定期检查终端可见性的定时器
-    eventManager.setInterval(() => {
-      // 只有当内容有更新时才检查并调整大小
-      if (contentUpdated) {
-        ensureTerminalSizeOnVisibilityChange();
-      }
-    }, 200); // 从100ms改为200ms，减轻性能负担
+    // 优化：移除此重复的定时器，主useEffect中已有相同功能
+    // 依靠主useEffect中的定时器进行统一管理
 
     // EventManager会自动清理定时器，无需返回清理函数
     return () => {

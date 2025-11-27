@@ -116,6 +116,7 @@ function stopSftpHealthCheck() {
 }
 
 // 检查SFTP会话健康状况
+// 优化：添加并发限制，避免同时检查过多会话阻塞事件循环
 async function checkSftpSessionsHealth() {
   try {
     if (!logToFile) {
@@ -148,7 +149,8 @@ async function checkSftpSessionsHealth() {
       }
     }
 
-    // 遍历所有会话进行空闲和健康检查
+    // 优化：收集需要检查的会话，然后限制并发
+    const sessionsToCheck = [];
     for (const [tabId, pool] of sftpPools.entries()) {
       for (const session of pool.sessions.values()) {
         const idleTime = Date.now() - session.lastUsed;
@@ -160,8 +162,19 @@ async function checkSftpSessionsHealth() {
           await closeSftpSession(tabId, session.id);
           continue;
         }
-        await checkSessionAlive(tabId, session);
+        sessionsToCheck.push({ tabId, session });
       }
+    }
+
+    // 优化：限制并发健康检查数量为3
+    const concurrencyLimit = 3;
+    for (let i = 0; i < sessionsToCheck.length; i += concurrencyLimit) {
+      const batch = sessionsToCheck.slice(i, i + concurrencyLimit);
+      await Promise.all(
+        batch.map(({ tabId, session }) =>
+          checkSessionAlive(tabId, session).catch(() => {})
+        )
+      );
     }
   } catch (error) {
     if (logToFile) {
@@ -764,6 +777,7 @@ async function enqueueSftpOperation(tabId, operation, options = {}) {
 }
 
 // 内部函数：处理 SFTP 操作队列
+// 优化：使用 setImmediate/setTimeout 代替直接递归，避免堆栈溢出
 async function processSftpQueue(tabId) {
   // Check if queue exists
   if (!pendingOperations.has(tabId)) {
@@ -851,10 +865,11 @@ async function processSftpQueue(tabId) {
         "WARN",
       );
 
-      // 添加重试延迟，防止立即失败的循环
+      // 优化：使用指数退避策略，避免立即失败的循环
+      const backoffDelay = Math.min(1000 * Math.pow(2, nextOp.retries - 1), 10000);
       setTimeout(() => {
         processSftpQueue(tabId); // 再次尝试处理队列
-      }, 1000 * nextOp.retries); // 随重试次数增加延迟
+      }, backoffDelay);
 
       return; // 不删除操作，不解析promise
     }
@@ -872,8 +887,13 @@ async function processSftpQueue(tabId) {
     );
   }
 
-  // Process next operation in queue
-  processSftpQueue(tabId);
+  // 优化：使用 setImmediate 或 setTimeout(0) 代替直接递归调用
+  // 这样可以释放调用栈，避免长队列导致的栈溢出
+  if (typeof setImmediate === "function") {
+    setImmediate(() => processSftpQueue(tabId));
+  } else {
+    setTimeout(() => processSftpQueue(tabId), 0);
+  }
 }
 
 // 新增：清理指定tabId的待处理操作队列
