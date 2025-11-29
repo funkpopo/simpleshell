@@ -2951,6 +2951,207 @@ function setupIPC(mainWindow) {
     }
   });
 
+  // 批量获取文件权限 - 优化版本，减少 IPC 调用开销
+  safeHandle(
+    ipcMain,
+    "getFilePermissionsBatch",
+    async (event, tabId, filePaths) => {
+      try {
+        if (!Array.isArray(filePaths) || filePaths.length === 0) {
+          return { success: true, results: [] };
+        }
+
+        // 使用 SFTP 会话池获取会话，所有文件共用一个 SFTP 会话
+        return sftpCore.enqueueSftpOperation(tabId, async () => {
+          try {
+            const sftp = await sftpCore.getSftpSession(tabId);
+            const results = [];
+
+            // 使用并发控制，避免同时发起过多请求
+            const BATCH_CONCURRENCY = 10;
+            const chunks = [];
+            for (let i = 0; i < filePaths.length; i += BATCH_CONCURRENCY) {
+              chunks.push(filePaths.slice(i, i + BATCH_CONCURRENCY));
+            }
+
+            for (const chunk of chunks) {
+              const chunkPromises = chunk.map(
+                (filePath) =>
+                  new Promise((resolve) => {
+                    sftp.stat(filePath, (err, stats) => {
+                      if (err) {
+                        resolve({
+                          path: filePath,
+                          success: false,
+                          error: err.message,
+                        });
+                      } else {
+                        const mode = stats.mode;
+                        const permissions = (mode & parseInt("777", 8)).toString(
+                          8,
+                        );
+                        resolve({
+                          path: filePath,
+                          success: true,
+                          permissions: permissions.padStart(3, "0"),
+                          mode: mode,
+                          stats: stats,
+                        });
+                      }
+                    });
+                  }),
+              );
+
+              const chunkResults = await Promise.all(chunkPromises);
+              results.push(...chunkResults);
+            }
+
+            return { success: true, results };
+          } catch (error) {
+            return { success: false, error: `SFTP会话错误: ${error.message}` };
+          }
+        });
+      } catch (error) {
+        logToFile(
+          `Batch get file permissions error for session ${tabId}: ${error.message}`,
+          "ERROR",
+        );
+        return { success: false, error: `批量获取权限失败: ${error.message}` };
+      }
+    },
+  );
+
+  // 通用批量 IPC 调用处理器
+  // 允许渲染进程在一次 IPC 调用中执行多个操作
+  safeHandle(ipcMain, "ipc:batchInvoke", async (event, calls) => {
+    try {
+      if (!Array.isArray(calls) || calls.length === 0) {
+        return { success: true, results: [] };
+      }
+
+      // 限制单次批量调用的数量，防止滥用
+      const MAX_BATCH_SIZE = 100;
+      if (calls.length > MAX_BATCH_SIZE) {
+        return {
+          success: false,
+          error: `批量调用数量超过限制 (${MAX_BATCH_SIZE})`,
+        };
+      }
+
+      // 白名单：只允许批量调用特定的安全操作
+      const ALLOWED_BATCH_CHANNELS = new Set([
+        "getFilePermissions",
+        "getFilePermissionsBatch",
+        "listFiles",
+        "readFileContent",
+        "getAbsolutePath",
+        "checkPathExists",
+      ]);
+
+      const results = [];
+
+      // 并发执行所有调用
+      const promises = calls.map(async (call, index) => {
+        try {
+          if (!Array.isArray(call) || call.length === 0) {
+            return {
+              index,
+              success: false,
+              error: "无效的调用格式",
+            };
+          }
+
+          const [channel, ...args] = call;
+
+          // 检查白名单
+          if (!ALLOWED_BATCH_CHANNELS.has(channel)) {
+            return {
+              index,
+              success: false,
+              error: `通道 "${channel}" 不允许批量调用`,
+            };
+          }
+
+          // 查找处理器并执行
+          // 注意: 这里我们需要直接调用对应的处理器逻辑
+          // 由于 ipcMain.handle 注册的处理器无法直接调用，我们需要手动路由
+          let result;
+          switch (channel) {
+            case "getFilePermissions": {
+              const [tabId, filePath] = args;
+              result = await getFilePermissionsInternal(tabId, filePath);
+              break;
+            }
+            case "checkPathExists": {
+              const [checkPath] = args;
+              const exists = fs.existsSync(checkPath);
+              result = { success: true, exists };
+              break;
+            }
+            default:
+              result = { success: false, error: `未实现的批量处理器: ${channel}` };
+          }
+
+          return { index, ...result };
+        } catch (err) {
+          return {
+            index,
+            success: false,
+            error: err.message || "执行失败",
+          };
+        }
+      });
+
+      const rawResults = await Promise.all(promises);
+
+      // 按原始顺序排序结果
+      rawResults.sort((a, b) => a.index - b.index);
+      for (const r of rawResults) {
+        const { index, ...rest } = r;
+        results.push(rest);
+      }
+
+      return { success: true, results };
+    } catch (error) {
+      logToFile(`Batch invoke error: ${error.message}`, "ERROR");
+      return { success: false, error: `批量调用失败: ${error.message}` };
+    }
+  });
+
+  // 内部函数: 获取单个文件权限（供批量调用使用）
+  async function getFilePermissionsInternal(tabId, filePath) {
+    try {
+      return sftpCore.enqueueSftpOperation(tabId, async () => {
+        try {
+          const sftp = await sftpCore.getSftpSession(tabId);
+          return new Promise((resolve) => {
+            sftp.stat(filePath, (err, stats) => {
+              if (err) {
+                resolve({
+                  success: false,
+                  error: `获取权限失败: ${err.message}`,
+                });
+              } else {
+                const mode = stats.mode;
+                const permissions = (mode & parseInt("777", 8)).toString(8);
+                resolve({
+                  success: true,
+                  permissions: permissions.padStart(3, "0"),
+                  mode: mode,
+                  stats: stats,
+                });
+              }
+            });
+          });
+        } catch (error) {
+          return { success: false, error: `SFTP会话错误: ${error.message}` };
+        }
+      });
+    } catch (error) {
+      return { success: false, error: `获取权限失败: ${error.message}` };
+    }
+  }
+
   safeHandle(ipcMain, "downloadFile", async (event, tabId, remotePath) => {
     if (
       !sftpTransfer ||

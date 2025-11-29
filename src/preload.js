@@ -323,6 +323,15 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   getFilePermissions: (tabId, filePath) =>
     ipcRenderer.invoke("getFilePermissions", tabId, filePath),
 
+  // 批量获取文件权限 - 减少 IPC 调用开销
+  getFilePermissionsBatch: (tabId, filePaths) =>
+    ipcRenderer.invoke("getFilePermissionsBatch", tabId, filePaths),
+
+  // 通用批量 IPC 调用 API
+  // 用法: batchInvoke([['channel1', arg1, arg2], ['channel2', arg1]])
+  // 返回: [{ success: true, data: result1 }, { success: false, error: 'message' }, ...]
+  batchInvoke: (calls) => ipcRenderer.invoke("ipc:batchInvoke", calls),
+
   uploadFile: (tabId, targetFolder, progressCallback) => {
     // Unique channel for this specific upload
     const progressChannel = `upload-progress-${tabId}-${Date.now()}`;
