@@ -334,6 +334,22 @@ const selectKeyFile = async () => {
   return result.filePaths[0];
 };
 
+/**
+ * 获取启动时的主题背景色
+ * 在 configService 初始化后调用，同步读取用户主题设置
+ * @returns {string} 背景色 hex 值
+ */
+const getStartupBackgroundColor = () => {
+  try {
+    const uiSettings = configService.loadUISettings();
+    // 深色模式: #121212, 浅色模式: #f0f2f5
+    return uiSettings.darkMode ? "#121212" : "#f0f2f5";
+  } catch (error) {
+    // 默认返回深色背景（与默认 darkMode: true 一致）
+    return "#121212";
+  }
+};
+
 const createWindow = () => {
   // 根据环境确定图标路径
   let iconPath;
@@ -345,11 +361,16 @@ const createWindow = () => {
     iconPath = path.join(__dirname, "assets", "logo.ico");
   }
 
+  // 获取用户主题对应的背景色，避免启动时白色闪烁
+  const backgroundColor = getStartupBackgroundColor();
+
   // 创建浏览器窗口
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     frame: false,
+    show: false, // 先隐藏窗口，等待内容加载完成
+    backgroundColor, // 设置窗口背景色，与主题一致
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
@@ -375,7 +396,12 @@ const createWindow = () => {
   mainWindow.on("unmaximize", emitWindowState);
   mainWindow.on("enter-full-screen", emitWindowState);
   mainWindow.on("leave-full-screen", emitWindowState);
-  mainWindow.once("ready-to-show", emitWindowState);
+
+  // 窗口内容准备就绪后再显示，避免白色闪烁
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
+    emitWindowState();
+  });
 
   // 加载应用 URL
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
