@@ -57,6 +57,7 @@ class ReconnectionManager extends EventEmitter {
     this.sessions = new Map();
     this.reconnectQueues = new Map();
     this.failurePatterns = new Map();
+    this.reconnectTimers = new Map(); // 保存定时器引用，用于取消待执行的重连
 
     // 统计信息
     this.statistics = {
@@ -131,6 +132,19 @@ class ReconnectionManager extends EventEmitter {
 
   // 处理连接错误
   async handleConnectionError(session, error) {
+    // 如果已经处于重连中或已连接状态，忽略旧连接的错误
+    if (
+      session.state === RECONNECT_STATE.RECONNECTING ||
+      session.state === RECONNECT_STATE.CONNECTED ||
+      session.state === RECONNECT_STATE.ABANDONED
+    ) {
+      logToFile(
+        `忽略连接错误(状态: ${session.state}): ${session.id} - ${error.message}`,
+        "DEBUG",
+      );
+      return;
+    }
+
     logToFile(`连接错误 ${session.id}: ${error.message}`, "ERROR");
 
     session.lastError = error;
@@ -152,7 +166,13 @@ class ReconnectionManager extends EventEmitter {
 
   // 处理连接关闭
   async handleConnectionClose(session) {
-    if (session.state === RECONNECT_STATE.ABANDONED) {
+    // 如果已经处于重连中或已连接状态，忽略旧连接的关闭事件
+    if (
+      session.state === RECONNECT_STATE.RECONNECTING ||
+      session.state === RECONNECT_STATE.CONNECTED ||
+      session.state === RECONNECT_STATE.ABANDONED
+    ) {
+      logToFile(`忽略连接关闭(状态: ${session.state}): ${session.id}`, "DEBUG");
       return;
     }
 
@@ -171,6 +191,16 @@ class ReconnectionManager extends EventEmitter {
 
   // 处理连接超时
   async handleConnectionTimeout(session) {
+    // 如果已经处于重连中或已连接状态，忽略旧连接的超时事件
+    if (
+      session.state === RECONNECT_STATE.RECONNECTING ||
+      session.state === RECONNECT_STATE.CONNECTED ||
+      session.state === RECONNECT_STATE.ABANDONED
+    ) {
+      logToFile(`忽略连接超时(状态: ${session.state}): ${session.id}`, "DEBUG");
+      return;
+    }
+
     logToFile(`连接超时: ${session.id}`, "WARN");
 
     session.state = RECONNECT_STATE.PENDING;
@@ -324,10 +354,15 @@ class ReconnectionManager extends EventEmitter {
       "INFO",
     );
 
-    // 执行重连
-    setTimeout(() => {
+    // 取消之前的定时器（如果存在）
+    this.cancelPendingReconnect(session.id);
+
+    // 执行重连，保存定时器引用以便后续取消
+    const timerId = setTimeout(() => {
+      this.reconnectTimers.delete(session.id);
       this.executeReconnect(session);
     }, delay);
+    this.reconnectTimers.set(session.id, timerId);
 
     this.emit("reconnectScheduled", {
       sessionId: session.id,
@@ -347,9 +382,32 @@ class ReconnectionManager extends EventEmitter {
     return successCount / recentHistory.length;
   }
 
+  // 取消待执行的重连任务
+  cancelPendingReconnect(sessionId) {
+    const timerId = this.reconnectTimers.get(sessionId);
+    if (timerId) {
+      clearTimeout(timerId);
+      this.reconnectTimers.delete(sessionId);
+      logToFile(`取消待执行的重连任务: ${sessionId}`, "DEBUG");
+    }
+  }
+
   // 执行重连
   async executeReconnect(session) {
+    // 检查是否应该跳过本次重连（已放弃或已连接）
     if (session.state === RECONNECT_STATE.ABANDONED) {
+      logToFile(`跳过重连(已放弃): ${session.id}`, "DEBUG");
+      return;
+    }
+
+    if (session.state === RECONNECT_STATE.CONNECTED) {
+      logToFile(`跳过重连(已连接): ${session.id}`, "DEBUG");
+      return;
+    }
+
+    // 检查是否正在重连中（防止并发重连）
+    if (session.state === RECONNECT_STATE.RECONNECTING) {
+      logToFile(`跳过重连(正在重连中): ${session.id}`, "DEBUG");
       return;
     }
 
@@ -381,10 +439,16 @@ class ReconnectionManager extends EventEmitter {
       // 替换旧连接
       await this.replaceConnection(session, newConnection);
 
+      // 重连成功 - 取消所有待执行的重连任务
+      this.cancelPendingReconnect(session.id);
+
       // 重连成功
       session.state = RECONNECT_STATE.CONNECTED;
       session.retryCount = 0;
       session.lastError = null;
+
+      // 清空重连队列
+      this.reconnectQueues.delete(session.id);
 
       // 记录成功
       session.reconnectHistory.push({
@@ -402,6 +466,12 @@ class ReconnectionManager extends EventEmitter {
         attempts: session.retryCount,
       });
     } catch (error) {
+      // 重连过程中再次检查状态，避免在连接已成功时报告错误
+      if (session.state === RECONNECT_STATE.CONNECTED) {
+        logToFile(`重连异常被忽略(连接已成功): ${session.id}`, "DEBUG");
+        return;
+      }
+
       logToFile(
         `重连失败: ${session.id} - ${error.message} (第 ${session.retryCount}/${this.config.maxRetries} 次)`,
         "ERROR",
@@ -532,6 +602,9 @@ class ReconnectionManager extends EventEmitter {
 
   // 放弃重连
   abandonReconnection(session, reason) {
+    // 先取消待执行的重连任务
+    this.cancelPendingReconnect(session.id);
+
     session.state = RECONNECT_STATE.ABANDONED;
 
     logToFile(`放弃重连 ${session.id}: ${reason}`, "WARN");
@@ -553,6 +626,9 @@ class ReconnectionManager extends EventEmitter {
     if (!session) {
       return;
     }
+
+    // 取消待执行的重连任务
+    this.cancelPendingReconnect(sessionId);
 
     // 关闭连接
     try {
