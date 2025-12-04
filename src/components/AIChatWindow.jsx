@@ -41,6 +41,7 @@ import {
   generateSystemPrompt,
   parseCommandsFromResponse,
   RISK_LEVELS,
+  setCustomRiskRules,
 } from "../utils/aiSystemPrompt";
 import "./AIChatWindow.css";
 import "./CodeHighlight.css";
@@ -171,6 +172,10 @@ const AIChatWindow = ({
           setCurrentApi(settings.current);
         } else if (settings.configs && settings.configs.length > 0) {
           setCurrentApi(settings.configs[0]);
+        }
+        // 加载自定义风险规则
+        if (settings.customRiskRules) {
+          setCustomRiskRules(settings.customRiskRules);
         }
       }
     } catch (err) {
@@ -672,7 +677,15 @@ const AIChatWindow = ({
         }}
       >
         <Box display="flex" alignItems="center" gap={1}>
-          <AIIcon fontSize="small" />
+          <Tooltip title={t("aiAssistant.minimize")}>
+            <IconButton
+              size="small"
+              onClick={onClose}
+              sx={{ p: 0.5 }}
+            >
+              <AIIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
           <Typography variant="h6">{t("ai.title")}</Typography>
         </Box>
         <Box display="flex" alignItems="center" gap={0.5}>
@@ -688,6 +701,13 @@ const AIChatWindow = ({
             anchorEl={apiMenuAnchor}
             open={Boolean(apiMenuAnchor)}
             onClose={() => setApiMenuAnchor(null)}
+            PaperProps={{
+              sx: {
+                border: 1,
+                borderColor: "divider",
+                boxShadow: 3,
+              },
+            }}
           >
             {availableApis.map((api) => (
               <MenuItem

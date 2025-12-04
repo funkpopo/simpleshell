@@ -64,6 +64,11 @@ class AIHandlers {
         category: "ai",
         handler: this.fetchModels.bind(this),
       },
+      {
+        channel: "ai:saveCustomRiskRules",
+        category: "ai",
+        handler: this.saveCustomRiskRules.bind(this),
+      },
     ];
   }
 
@@ -326,6 +331,19 @@ class AIHandlers {
       });
     } catch (error) {
       logToFile(`Error fetching models: ${error.message}`, "ERROR");
+      throw error;
+    }
+  }
+
+  async saveCustomRiskRules(event, rules) {
+    try {
+      const currentSettings = configService.loadAISettings() || {};
+      currentSettings.customRiskRules = rules;
+      configService.saveAISettings(currentSettings);
+      logToFile("Custom risk rules saved", "INFO");
+      return { success: true };
+    } catch (error) {
+      logToFile(`Error saving custom risk rules: ${error.message}`, "ERROR");
       throw error;
     }
   }

@@ -134,6 +134,78 @@ const DANGEROUS_PATTERNS = {
   ],
 };
 
+// 自定义规则存储（从设置中加载）
+let customRules = {
+  critical: [],
+  high: [],
+  medium: [],
+  low: [],
+};
+
+/**
+ * 设置自定义风险评估规则
+ * @param {Object} rules - 自定义规则对象
+ */
+export function setCustomRiskRules(rules) {
+  if (rules && typeof rules === 'object') {
+    customRules = {
+      critical: (rules.critical || []).map(pattern => {
+        try {
+          return new RegExp(pattern, 'i');
+        } catch (e) {
+          console.error('Invalid regex pattern:', pattern, e);
+          return null;
+        }
+      }).filter(Boolean),
+      high: (rules.high || []).map(pattern => {
+        try {
+          return new RegExp(pattern, 'i');
+        } catch (e) {
+          console.error('Invalid regex pattern:', pattern, e);
+          return null;
+        }
+      }).filter(Boolean),
+      medium: (rules.medium || []).map(pattern => {
+        try {
+          return new RegExp(pattern, 'i');
+        } catch (e) {
+          console.error('Invalid regex pattern:', pattern, e);
+          return null;
+        }
+      }).filter(Boolean),
+      low: (rules.low || []).map(pattern => {
+        try {
+          return new RegExp(pattern, 'i');
+        } catch (e) {
+          console.error('Invalid regex pattern:', pattern, e);
+          return null;
+        }
+      }).filter(Boolean),
+    };
+  }
+}
+
+/**
+ * 获取当前自定义规则
+ * @returns {Object} 当前的自定义规则
+ */
+export function getCustomRiskRules() {
+  return customRules;
+}
+
+/**
+ * 获取内置风险规则模式（用于UI展示）
+ * @returns {Object} 内置规则模式字符串
+ */
+export function getBuiltinRiskPatterns() {
+  return {
+    critical: DANGEROUS_PATTERNS.critical.map(r => r.source),
+    high: DANGEROUS_PATTERNS.high.map(r => r.source),
+    medium: DANGEROUS_PATTERNS.medium.map(r => r.source),
+    low: DANGEROUS_PATTERNS.low.map(r => r.source),
+  };
+}
+
 /**
  * 评估单个命令的风险等级
  * @param {string} command - 要评估的命令
@@ -146,28 +218,57 @@ export function assessCommandRisk(command) {
 
   const normalizedCommand = command.trim();
 
-  // 检查极高风险
+  // 先检查自定义规则（优先级高于内置规则）
+  // 检查自定义极高风险
+  for (const pattern of customRules.critical) {
+    if (pattern.test(normalizedCommand)) {
+      return RISK_LEVELS.CRITICAL;
+    }
+  }
+
+  // 检查自定义高风险
+  for (const pattern of customRules.high) {
+    if (pattern.test(normalizedCommand)) {
+      return RISK_LEVELS.HIGH;
+    }
+  }
+
+  // 检查自定义中风险
+  for (const pattern of customRules.medium) {
+    if (pattern.test(normalizedCommand)) {
+      return RISK_LEVELS.MEDIUM;
+    }
+  }
+
+  // 检查自定义低风险
+  for (const pattern of customRules.low) {
+    if (pattern.test(normalizedCommand)) {
+      return RISK_LEVELS.LOW;
+    }
+  }
+
+  // 检查内置极高风险
   for (const pattern of DANGEROUS_PATTERNS.critical) {
     if (pattern.test(normalizedCommand)) {
       return RISK_LEVELS.CRITICAL;
     }
   }
 
-  // 检查高风险
+  // 检查内置高风险
   for (const pattern of DANGEROUS_PATTERNS.high) {
     if (pattern.test(normalizedCommand)) {
       return RISK_LEVELS.HIGH;
     }
   }
 
-  // 检查中风险
+  // 检查内置中风险
   for (const pattern of DANGEROUS_PATTERNS.medium) {
     if (pattern.test(normalizedCommand)) {
       return RISK_LEVELS.MEDIUM;
     }
   }
 
-  // 检查低风险
+  // 检查内置低风险
   for (const pattern of DANGEROUS_PATTERNS.low) {
     if (pattern.test(normalizedCommand)) {
       return RISK_LEVELS.LOW;
@@ -357,4 +458,7 @@ export default {
   generateSystemPrompt,
   parseCommandsFromResponse,
   requiresConfirmation,
+  setCustomRiskRules,
+  getCustomRiskRules,
+  getBuiltinRiskPatterns,
 };
