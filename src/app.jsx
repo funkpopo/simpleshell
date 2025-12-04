@@ -1178,15 +1178,21 @@ function AppContent() {
 
   // 全局AI聊天窗口处理函数
   const handleToggleGlobalAiChatWindow = () => {
-    dispatch(actions.setAiChatStatus(
-      aiChatStatus === "visible" ? "closed" : "visible"
-    ));
+    if (aiChatStatus === "visible") {
+      dispatch(actions.setAiChatStatus("minimized"));
+    } else {
+      dispatch(actions.setAiChatStatus("visible"));
+    }
   };
 
+  // 最小化AI聊天窗口（保持对话内容）
+  const handleMinimizeGlobalAiChatWindow = () => {
+    dispatch(actions.setAiChatStatus("minimized"));
+  };
+
+  // 关闭AI聊天窗口（清空对话内容）
   const handleCloseGlobalAiChatWindow = () => {
     dispatch(actions.setAiChatStatus("closed"));
-    // 清除预设输入值
-    dispatch(actions.setAiInputPreset(""));
   };
 
   // 发送文本到AI助手
@@ -2292,6 +2298,7 @@ function AppContent() {
                   color="primary"
                   onClick={handleToggleGlobalAiChatWindow}
                   sx={{
+                    position: "relative",
                     bgcolor:
                       aiChatStatus === "visible"
                         ? "action.selected"
@@ -2305,6 +2312,21 @@ function AppContent() {
                   }}
                 >
                   <AIIcon />
+                  {/* 最小化状态指示灯 */}
+                  {aiChatStatus === "minimized" && (
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        top: 4,
+                        right: 4,
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        bgcolor: "#4caf50",
+                        boxShadow: "0 0 4px #4caf50",
+                      }}
+                    />
+                  )}
                 </IconButton>
               </Tooltip>
             </Paper>
@@ -2316,6 +2338,7 @@ function AppContent() {
       <AIChatWindow
         windowState={aiChatStatus}
         onClose={handleCloseGlobalAiChatWindow}
+        onMinimize={handleMinimizeGlobalAiChatWindow}
         presetInput={aiInputPreset}
         onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}
         connectionInfo={aiChatConnectionInfo}
