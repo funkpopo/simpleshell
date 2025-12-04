@@ -413,7 +413,30 @@
       "noApiConfigured": "请先配置一个 API",
       "requestFailed": "请求失败",
       "unknownError": "未知错误",
-      "showThinking": "显示思考内容"
+      "showThinking": "显示思考内容",
+      "executeCommand": "执行命令",
+      "copyCommand": "复制命令",
+      "copied": "已复制",
+      "confirmExecution": "确认执行命令",
+      "riskWarning": "此命令风险等级为 {{level}}，请确认是否执行",
+      "executeAnyway": "确认执行",
+      "commandsCount": "{{count}} 条命令",
+      "highRiskCount": "{{count}} 条高风险",
+      "noConnection": "请先建立 SSH 连接",
+      "riskLevels": {
+        "safe": "安全",
+        "low": "低风险",
+        "medium": "中风险",
+        "high": "高风险",
+        "critical": "极高风险"
+      },
+      "riskDescriptions": {
+        "safe": "只读操作，不会修改系统状态",
+        "low": "轻微修改，影响范围有限",
+        "medium": "可能影响服务或数据",
+        "high": "可能导致服务中断或数据丢失",
+        "critical": "可能导致系统不可用或不可恢复"
+      }
     },
     "randomPassword": {
       "title": "随机密码生成器",
