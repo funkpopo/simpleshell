@@ -413,7 +413,30 @@
       "noApiConfigured": "Please configure an API first",
       "requestFailed": "Request failed",
       "unknownError": "Unknown error",
-      "showThinking": "Show thinking content"
+      "showThinking": "Show thinking content",
+      "executeCommand": "Execute command",
+      "copyCommand": "Copy command",
+      "copied": "Copied",
+      "confirmExecution": "Confirm Command Execution",
+      "riskWarning": "This command has risk level {{level}}, confirm to execute?",
+      "executeAnyway": "Execute Anyway",
+      "commandsCount": "{{count}} commands",
+      "highRiskCount": "{{count}} high risk",
+      "noConnection": "Please establish SSH connection first",
+      "riskLevels": {
+        "safe": "Safe",
+        "low": "Low Risk",
+        "medium": "Medium Risk",
+        "high": "High Risk",
+        "critical": "Critical Risk"
+      },
+      "riskDescriptions": {
+        "safe": "Read-only operation, does not modify system state",
+        "low": "Minor modification, limited impact scope",
+        "medium": "May affect services or data",
+        "high": "May cause service interruption or data loss",
+        "critical": "May cause system unavailability or irrecoverable state"
+      }
     },
     "randomPassword": {
       "title": "Random Password Generator",

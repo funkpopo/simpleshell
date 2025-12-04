@@ -1366,6 +1366,28 @@ function AppContent() {
     };
   }, [currentPanelTab, terminalInstances]);
 
+  // 计算AI聊天窗口的连接信息
+  const aiChatConnectionInfo = useMemo(() => {
+    if (!currentPanelTab || (currentPanelTab.type !== "ssh" && currentPanelTab.type !== "telnet")) {
+      return null;
+    }
+
+    const config = terminalInstances[`${currentPanelTab.id}-config`];
+    if (!config) {
+      return {
+        host: currentPanelTab.label,
+        type: currentPanelTab.type?.toUpperCase() || 'SSH',
+      };
+    }
+
+    return {
+      host: config.host || currentPanelTab.label,
+      port: config.port,
+      username: config.username,
+      type: currentPanelTab.type?.toUpperCase() || 'SSH',
+    };
+  }, [currentPanelTab, terminalInstances]);
+
   // 计算按钮禁用状态
   const isSSHButtonDisabled = useMemo(() => {
     return !currentPanelTab || currentPanelTab.type !== "ssh";
@@ -2296,6 +2318,8 @@ function AppContent() {
         onClose={handleCloseGlobalAiChatWindow}
         presetInput={aiInputPreset}
         onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}
+        connectionInfo={aiChatConnectionInfo}
+        onExecuteCommand={handleSendCommand}
       />
 
       {/* 关于对话框 */}

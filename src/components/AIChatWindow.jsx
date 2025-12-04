@@ -33,9 +33,15 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AIIcon from "./AIIcon";
 import AISettings from "./AISettings";
+import ExecutableCommand from "./ExecutableCommand";
 import { useTranslation } from "react-i18next";
 import { styled } from "@mui/material/styles";
 import ReactMarkdown from "react-markdown";
+import {
+  generateSystemPrompt,
+  parseCommandsFromResponse,
+  RISK_LEVELS,
+} from "../utils/aiSystemPrompt";
 import "./AIChatWindow.css";
 import "./CodeHighlight.css";
 
@@ -124,8 +130,10 @@ const AIChatWindow = ({
   onClose,
   presetInput,
   onInputPresetUsed,
+  connectionInfo,
+  onExecuteCommand,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -138,6 +146,7 @@ const AIChatWindow = ({
   const [apiMenuAnchor, setApiMenuAnchor] = useState(null);
   const [availableApis, setAvailableApis] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [commandExecutionStatus, setCommandExecutionStatus] = useState({});
   const streamHandlersRef = useRef({});
 
   const messagesEndRef = useRef(null);
@@ -257,14 +266,24 @@ const AIChatWindow = ({
     setAbortController(controller);
 
     try {
+      // 生成系统提示词
+      const systemPrompt = generateSystemPrompt({
+        language: i18n.language,
+        connectionInfo: connectionInfo,
+      });
+
+      // 构建消息列表，包含系统提示词
+      const apiMessages = [
+        { role: "system", content: systemPrompt },
+        ...messages.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user", content: userMessage.content },
+      ];
+
       const requestData = {
         url: currentApi.apiUrl,
         apiKey: currentApi.apiKey,
         model: currentApi.model,
-        messages: [
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-          { role: "user", content: userMessage.content },
-        ],
+        messages: apiMessages,
         temperature: currentApi.temperature || 0.7,
         max_tokens: currentApi.maxTokens || 2000,
         stream: currentApi.streamEnabled !== false,
@@ -460,6 +479,176 @@ const AIChatWindow = ({
     }));
   };
 
+  // 处理命令执行
+  const handleExecuteCommand = useCallback((command) => {
+    if (onExecuteCommand && typeof onExecuteCommand === 'function') {
+      onExecuteCommand(command);
+    } else {
+      // 如果没有提供执行回调，尝试使用全局方式
+      console.warn('No command execution handler provided');
+    }
+  }, [onExecuteCommand]);
+
+  // 处理命令复制
+  const handleCopyCommand = useCallback((command) => {
+    // 可以添加额外的复制成功提示逻辑
+  }, []);
+
+  // 渲染消息内容，包含命令块的解析
+  const renderMessageContent = useCallback((content, messageId, isStreaming) => {
+    // 解析命令块
+    const commands = parseCommandsFromResponse(content);
+
+    // 如果没有命令块，直接渲染原始内容
+    if (commands.length === 0) {
+      // 移除 <cmd> 标签（以防有未正确解析的）
+      const cleanContent = content.replace(/<cmd[^>]*>[\s\S]*?<\/cmd>/gi, '');
+      return (
+        <ReactMarkdown
+          components={{
+            p: ({ children }) => (
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                {children}
+              </Typography>
+            ),
+            code: ({ className, children }) => (
+              <Box
+                component="code"
+                sx={{
+                  backgroundColor: "rgba(0, 0, 0, 0.1)",
+                  borderRadius: 1,
+                  px: 0.5,
+                  py: 0.2,
+                  fontFamily: "monospace",
+                  fontSize: "0.875em",
+                }}
+              >
+                {children}
+              </Box>
+            ),
+            pre: ({ children }) => (
+              <Box
+                sx={{
+                  backgroundColor: "rgba(0, 0, 0, 0.1)",
+                  borderRadius: 1,
+                  p: 1.5,
+                  my: 1,
+                  overflowX: "auto",
+                }}
+              >
+                {children}
+              </Box>
+            ),
+          }}
+        >
+          {cleanContent}
+        </ReactMarkdown>
+      );
+    }
+
+    // 有命令块时，分割内容并渲染
+    const parts = [];
+    let lastIndex = 0;
+
+    commands.forEach((cmd, idx) => {
+      // 添加命令之前的文本
+      if (cmd.index > lastIndex) {
+        const textBefore = content.slice(lastIndex, cmd.index);
+        if (textBefore.trim()) {
+          parts.push({
+            type: 'text',
+            content: textBefore,
+            key: `text-${idx}`,
+          });
+        }
+      }
+
+      // 添加命令块
+      parts.push({
+        type: 'command',
+        command: cmd.command,
+        risk: cmd.risk,
+        key: `cmd-${idx}`,
+      });
+
+      lastIndex = cmd.index + cmd.length;
+    });
+
+    // 添加最后的文本
+    if (lastIndex < content.length) {
+      const textAfter = content.slice(lastIndex);
+      if (textAfter.trim()) {
+        parts.push({
+          type: 'text',
+          content: textAfter,
+          key: 'text-last',
+        });
+      }
+    }
+
+    return (
+      <>
+        {parts.map((part) => {
+          if (part.type === 'text') {
+            return (
+              <ReactMarkdown
+                key={part.key}
+                components={{
+                  p: ({ children }) => (
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      {children}
+                    </Typography>
+                  ),
+                  code: ({ className, children }) => (
+                    <Box
+                      component="code"
+                      sx={{
+                        backgroundColor: "rgba(0, 0, 0, 0.1)",
+                        borderRadius: 1,
+                        px: 0.5,
+                        py: 0.2,
+                        fontFamily: "monospace",
+                        fontSize: "0.875em",
+                      }}
+                    >
+                      {children}
+                    </Box>
+                  ),
+                  pre: ({ children }) => (
+                    <Box
+                      sx={{
+                        backgroundColor: "rgba(0, 0, 0, 0.1)",
+                        borderRadius: 1,
+                        p: 1.5,
+                        my: 1,
+                        overflowX: "auto",
+                      }}
+                    >
+                      {children}
+                    </Box>
+                  ),
+                }}
+              >
+                {part.content}
+              </ReactMarkdown>
+            );
+          } else {
+            return (
+              <ExecutableCommand
+                key={part.key}
+                command={part.command}
+                risk={part.risk}
+                onExecute={handleExecuteCommand}
+                onCopy={handleCopyCommand}
+                disabled={isStreaming || !connectionInfo}
+              />
+            );
+          }
+        })}
+      </>
+    );
+  }, [handleExecuteCommand, handleCopyCommand, connectionInfo]);
+
   // 切换API
   const handleApiChange = (api) => {
     setCurrentApi(api);
@@ -587,58 +776,28 @@ const AIChatWindow = ({
             <MessageBubble key={message.id} isUser={message.role === "user"}>
               <Box display="flex" alignItems="flex-start" gap={1}>
                 <Box flex={1}>
-                  {message.role === "assistant" && showThinking ? (
-                    processThinkContent(message.content).map((part, index) => (
-                      <Box key={index}>
-                        {part.type === "text" ? (
-                          <ReactMarkdown
-                            components={{
-                              p: ({ children }) => (
-                                <Typography variant="body2" sx={{ mb: 1 }}>
-                                  {children}
-                                </Typography>
-                              ),
-                              code: ({ className, children }) => (
-                                <Box
-                                  component="code"
-                                  sx={{
-                                    backgroundColor: "rgba(0, 0, 0, 0.1)",
-                                    borderRadius: 1,
-                                    px: 0.5,
-                                    py: 0.2,
-                                    fontFamily: "monospace",
-                                    fontSize: "0.875em",
-                                  }}
-                                >
-                                  {children}
-                                </Box>
-                              ),
-                              pre: ({ children }) => (
-                                <Box
-                                  sx={{
-                                    backgroundColor: "rgba(0, 0, 0, 0.1)",
-                                    borderRadius: 1,
-                                    p: 1.5,
-                                    my: 1,
-                                    overflowX: "auto",
-                                  }}
-                                >
-                                  {children}
-                                </Box>
-                              ),
-                            }}
-                          >
-                            {part.content}
-                          </ReactMarkdown>
-                        ) : (
-                          <ThinkContent
-                            content={part.content}
-                            isExpanded={expandedThinking[message.id]}
-                            onToggle={() => toggleThinking(message.id)}
-                          />
-                        )}
-                      </Box>
-                    ))
+                  {message.role === "assistant" ? (
+                    showThinking ? (
+                      processThinkContent(message.content).map((part, index) => (
+                        <Box key={index}>
+                          {part.type === "text" ? (
+                            renderMessageContent(part.content, message.id, message.isStreaming)
+                          ) : (
+                            <ThinkContent
+                              content={part.content}
+                              isExpanded={expandedThinking[message.id]}
+                              onToggle={() => toggleThinking(message.id)}
+                            />
+                          )}
+                        </Box>
+                      ))
+                    ) : (
+                      renderMessageContent(
+                        message.content.replace(/<think>[\s\S]*?<\/think>/g, ""),
+                        message.id,
+                        message.isStreaming
+                      )
+                    )
                   ) : (
                     <ReactMarkdown
                       components={{
@@ -677,7 +836,7 @@ const AIChatWindow = ({
                         ),
                       }}
                     >
-                      {message.content.replace(/<think>[\s\S]*?<\/think>/g, "")}
+                      {message.content}
                     </ReactMarkdown>
                   )}
                   {message.isStreaming && (
