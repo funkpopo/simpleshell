@@ -129,6 +129,7 @@ const ThinkContent = ({ content, isExpanded, onToggle }) => {
 const AIChatWindow = ({
   windowState,
   onClose,
+  onMinimize,
   presetInput,
   onInputPresetUsed,
   connectionInfo,
@@ -476,6 +477,17 @@ const AIChatWindow = ({
     setError("");
   };
 
+  // 处理关闭窗口（清空对话内容）
+  const handleClose = () => {
+    setMessages([]);
+    setInput("");
+    setError("");
+    setExpandedThinking({});
+    if (onClose) {
+      onClose();
+    }
+  };
+
   // 切换思考内容展开状态
   const toggleThinking = (messageId) => {
     setExpandedThinking((prev) => ({
@@ -664,7 +676,7 @@ const AIChatWindow = ({
   return (
     <FloatingDialog
       open={windowState === "visible"}
-      onClose={onClose}
+      onClose={onMinimize}
       hideBackdrop
       disableEscapeKeyDown={isPending || abortController}
     >
@@ -680,7 +692,7 @@ const AIChatWindow = ({
           <Tooltip title={t("aiAssistant.minimize")}>
             <IconButton
               size="small"
-              onClick={onClose}
+              onClick={onMinimize}
               sx={{ p: 0.5 }}
             >
               <AIIcon fontSize="small" />
@@ -734,7 +746,7 @@ const AIChatWindow = ({
               <SettingsIcon />
             </IconButton>
           </Tooltip>
-          <IconButton size="small" onClick={onClose}>
+          <IconButton size="small" onClick={handleClose}>
             <CloseIcon />
           </IconButton>
         </Box>
