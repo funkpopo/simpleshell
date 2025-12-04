@@ -195,6 +195,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("ai:setCurrentApiConfig", configId),
   // 新增: 获取模型列表方法
   fetchModels: (requestData) => ipcRenderer.invoke("ai:fetchModels", requestData),
+  // 新增: 保存自定义风险规则
+  saveCustomRiskRules: (rules) => ipcRenderer.invoke("ai:saveCustomRiskRules", rules),
   // 添加事件监听器注册方法
   on: (channel, callback) => {
     const validChannels = ["stream-chunk", "stream-end", "stream-error"];

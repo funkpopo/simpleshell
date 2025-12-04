@@ -399,7 +399,22 @@
       "fetchModels": "Fetch Models",
       "modelsFetched": "Models fetched successfully",
       "fetchModelsFailed": "Failed to fetch models",
-      "apiUrlAndKeyRequired": "API URL and API Key are required to fetch models"
+      "apiUrlAndKeyRequired": "API URL and API Key are required to fetch models",
+      "customRules": "Custom Rules",
+      "customRulesDescription": "Add custom command risk assessment rules. Rules use regular expressions to match commands, and matched commands will be marked with the corresponding risk level. Custom rules take priority over built-in rules.",
+      "addNewRule": "Add New Rule",
+      "rulePatternPlaceholder": "Enter regex pattern, e.g.: my_dangerous_cmd",
+      "riskLevel": "Risk Level",
+      "rulePatternRequired": "Please enter a rule pattern",
+      "invalidRegex": "Invalid regular expression",
+      "noCustomRules": "No custom rules yet",
+      "saveRules": "Save Rules",
+      "rulesSaved": "Rules saved successfully",
+      "rulesSaveFailed": "Failed to save rules",
+      "customRulesList": "Custom Rules List",
+      "builtinRules": "Built-in Rules",
+      "readOnly": "Read Only",
+      "builtinRulesDescription": "The following are system built-in risk assessment rules that cannot be modified or deleted."
     },
     "ai": {
       "title": "AI Assistant",

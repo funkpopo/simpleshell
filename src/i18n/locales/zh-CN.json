@@ -399,7 +399,22 @@
       "fetchModels": "获取模型列表",
       "modelsFetched": "获取模型列表成功",
       "fetchModelsFailed": "获取模型列表失败",
-      "apiUrlAndKeyRequired": "获取模型列表需要 API 地址和密钥"
+      "apiUrlAndKeyRequired": "获取模型列表需要 API 地址和密钥",
+      "customRules": "自定义规则",
+      "customRulesDescription": "添加自定义的命令风险评估规则。规则使用正则表达式匹配命令，匹配的命令将被标记为对应的风险等级。自定义规则优先级高于内置规则。",
+      "addNewRule": "添加新规则",
+      "rulePatternPlaceholder": "输入正则表达式，如: my_dangerous_cmd",
+      "riskLevel": "风险等级",
+      "rulePatternRequired": "请输入规则模式",
+      "invalidRegex": "无效的正则表达式",
+      "noCustomRules": "暂无自定义规则",
+      "saveRules": "保存规则",
+      "rulesSaved": "规则已保存",
+      "rulesSaveFailed": "保存规则失败",
+      "customRulesList": "自定义规则列表",
+      "builtinRules": "内置规则",
+      "readOnly": "只读",
+      "builtinRulesDescription": "以下为系统内置的风险评估规则，无法修改或删除。"
     },
     "ai": {
       "title": "AI 助手",

@@ -22,6 +22,14 @@ import {
   CardContent,
   CardActions,
   Autocomplete,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import AddIcon from "@mui/icons-material/Add";
@@ -31,6 +39,12 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { useTranslation } from "react-i18next";
+import {
+  RISK_LEVELS,
+  setCustomRiskRules as applyCustomRiskRules,
+  getBuiltinRiskPatterns,
+} from "../utils/aiSystemPrompt";
+import LockIcon from "@mui/icons-material/Lock";
 
 const AISettings = ({ open, onClose }) => {
   const { t } = useTranslation();
@@ -65,6 +79,17 @@ const AISettings = ({ open, onClose }) => {
     temperature: 0.7,
     streamEnabled: true,
   });
+
+  // 自定义风险规则状态
+  const [customRules, setCustomRules] = useState({
+    critical: [],
+    high: [],
+    medium: [],
+    low: [],
+  });
+  const [newRulePattern, setNewRulePattern] = useState("");
+  const [newRuleLevel, setNewRuleLevel] = useState("high");
+  const [ruleError, setRuleError] = useState("");
 
   // 加载AI设置并管理焦点 - 只在对话框打开时执行
   useEffect(() => {
@@ -121,6 +146,13 @@ const AISettings = ({ open, onClose }) => {
         } else {
           // 如果没有当前配置，重置表单
           resetConfig();
+        }
+
+        // 加载自定义风险规则
+        if (settings.customRiskRules) {
+          setCustomRules(settings.customRiskRules);
+          // 应用到风险评估模块
+          applyCustomRiskRules(settings.customRiskRules);
         }
       }
     } catch (err) {
@@ -432,6 +464,71 @@ const AISettings = ({ open, onClose }) => {
     }
   };
 
+  // 添加自定义规则
+  const handleAddRule = () => {
+    if (!newRulePattern.trim()) {
+      setRuleError(t("aiSettings.rulePatternRequired"));
+      return;
+    }
+
+    // 验证正则表达式
+    try {
+      new RegExp(newRulePattern, 'i');
+    } catch (e) {
+      setRuleError(t("aiSettings.invalidRegex"));
+      return;
+    }
+
+    setCustomRules(prev => ({
+      ...prev,
+      [newRuleLevel]: [...prev[newRuleLevel], newRulePattern],
+    }));
+    setNewRulePattern("");
+    setRuleError("");
+  };
+
+  // 删除自定义规则
+  const handleDeleteRule = (level, index) => {
+    setCustomRules(prev => ({
+      ...prev,
+      [level]: prev[level].filter((_, i) => i !== index),
+    }));
+  };
+
+  // 保存自定义规则
+  const handleSaveRules = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      if (window.terminalAPI?.saveCustomRiskRules) {
+        const result = await window.terminalAPI.saveCustomRiskRules(customRules);
+        if (result) {
+          // 应用到风险评估模块
+          applyCustomRiskRules(customRules);
+          setSuccess(t("aiSettings.rulesSaved"));
+        } else {
+          setError(t("aiSettings.rulesSaveFailed"));
+        }
+      }
+    } catch (err) {
+      setError(t("aiSettings.rulesSaveFailed"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 获取风险等级颜色
+  const getRiskLevelColor = (level) => {
+    const riskKey = level.toUpperCase();
+    return RISK_LEVELS[riskKey]?.color || '#666';
+  };
+
+  // 获取风险等级标签
+  const getRiskLevelLabel = (level) => {
+    const riskKey = level.toUpperCase();
+    return RISK_LEVELS[riskKey]?.label || level;
+  };
+
   return (
     <Dialog
       open={open}
@@ -475,6 +572,7 @@ const AISettings = ({ open, onClose }) => {
               sx={{ borderBottom: 1, borderColor: "divider" }}
             >
               <Tab label={t("aiSettings.apiManagement")} />
+              <Tab label={t("aiSettings.customRules")} />
             </Tabs>
 
             {/* 标签页内容 */}
@@ -712,6 +810,15 @@ const AISettings = ({ open, onClose }) => {
                           options={availableModels}
                           freeSolo
                           fullWidth
+                          slotProps={{
+                            paper: {
+                              sx: {
+                                border: 1,
+                                borderColor: "divider",
+                                boxShadow: 3,
+                              },
+                            },
+                          }}
                           renderInput={(params) => (
                             <TextField
                               {...params}
@@ -800,6 +907,211 @@ const AISettings = ({ open, onClose }) => {
                       />
                     </Box>
                   )}
+                </Box>
+              )}
+
+              {/* 自定义风险规则标签页 */}
+              {tabValue === 1 && (
+                <Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    {t("aiSettings.customRulesDescription")}
+                  </Typography>
+
+                  {/* 添加新规则 */}
+                  <Card variant="outlined" sx={{ mb: 3, p: 2 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                      {t("aiSettings.addNewRule")}
+                    </Typography>
+                    <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
+                      <TextField
+                        value={newRulePattern}
+                        onChange={(e) => setNewRulePattern(e.target.value)}
+                        placeholder={t("aiSettings.rulePatternPlaceholder")}
+                        size="small"
+                        sx={{ flex: 1 }}
+                        error={!!ruleError}
+                        helperText={ruleError || " "}
+                      />
+                      <FormControl size="small" sx={{ minWidth: 130 }}>
+                        <InputLabel>{t("aiSettings.riskLevel")}</InputLabel>
+                        <Select
+                          value={newRuleLevel}
+                          onChange={(e) => setNewRuleLevel(e.target.value)}
+                          label={t("aiSettings.riskLevel")}
+                        >
+                          <MenuItem value="critical">
+                            <Chip
+                              label={t("ai.riskLevels.critical")}
+                              size="small"
+                              sx={{ bgcolor: RISK_LEVELS.CRITICAL.color, color: "white" }}
+                            />
+                          </MenuItem>
+                          <MenuItem value="high">
+                            <Chip
+                              label={t("ai.riskLevels.high")}
+                              size="small"
+                              sx={{ bgcolor: RISK_LEVELS.HIGH.color, color: "white" }}
+                            />
+                          </MenuItem>
+                          <MenuItem value="medium">
+                            <Chip
+                              label={t("ai.riskLevels.medium")}
+                              size="small"
+                              sx={{ bgcolor: RISK_LEVELS.MEDIUM.color, color: "white" }}
+                            />
+                          </MenuItem>
+                          <MenuItem value="low">
+                            <Chip
+                              label={t("ai.riskLevels.low")}
+                              size="small"
+                              sx={{ bgcolor: RISK_LEVELS.LOW.color, color: "white" }}
+                            />
+                          </MenuItem>
+                        </Select>
+                      </FormControl>
+                      <Tooltip title={t("aiSettings.addNewRule")}>
+                        <IconButton
+                          onClick={handleAddRule}
+                          color="primary"
+                          sx={{ mt: 0.5 }}
+                        >
+                          <AddIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  </Card>
+
+                  {/* 自定义规则列表 */}
+                  <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 500 }}>
+                    {t("aiSettings.customRulesList")}
+                  </Typography>
+                  {Object.values(customRules).every(arr => arr.length === 0) ? (
+                    <Box sx={{ textAlign: "center", py: 3, bgcolor: "action.hover", borderRadius: 1 }}>
+                      <Typography color="text.secondary">
+                        {t("aiSettings.noCustomRules")}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    ["critical", "high", "medium", "low"].map((level) => (
+                      customRules[level]?.length > 0 && (
+                        <Box key={level} sx={{ mb: 2 }}>
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1,
+                              mb: 0.5,
+                            }}
+                          >
+                            <Chip
+                              label={getRiskLevelLabel(level)}
+                              size="small"
+                              sx={{ bgcolor: getRiskLevelColor(level), color: "white" }}
+                            />
+                            <Typography variant="body2" color="text.secondary">
+                              ({customRules[level].length})
+                            </Typography>
+                          </Box>
+                          <List dense sx={{ bgcolor: "action.hover", borderRadius: 1 }}>
+                            {customRules[level].map((pattern, index) => (
+                              <ListItem key={index} sx={{ py: 0.5 }}>
+                                <ListItemText
+                                  primary={pattern}
+                                  primaryTypographyProps={{
+                                    fontFamily: "monospace",
+                                    fontSize: "0.85rem",
+                                  }}
+                                />
+                                <ListItemSecondaryAction>
+                                  <IconButton
+                                    edge="end"
+                                    size="small"
+                                    onClick={() => handleDeleteRule(level, index)}
+                                  >
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </ListItemSecondaryAction>
+                              </ListItem>
+                            ))}
+                          </List>
+                        </Box>
+                      )
+                    ))
+                  )}
+
+                  {/* 保存按钮 */}
+                  <Box sx={{ mt: 2, display: "flex", justifyContent: "flex-end" }}>
+                    <Button
+                      variant="contained"
+                      onClick={handleSaveRules}
+                      disabled={loading}
+                    >
+                      {t("aiSettings.saveRules")}
+                    </Button>
+                  </Box>
+
+                  {/* 内置规则（只读） */}
+                  <Box sx={{ mt: 4 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
+                      <LockIcon fontSize="small" color="action" />
+                      <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
+                        {t("aiSettings.builtinRules")}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        ({t("aiSettings.readOnly")})
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      {t("aiSettings.builtinRulesDescription")}
+                    </Typography>
+                    {["critical", "high", "medium", "low"].map((level) => {
+                      const builtinPatterns = getBuiltinRiskPatterns()[level] || [];
+                      return builtinPatterns.length > 0 && (
+                        <Box key={`builtin-${level}`} sx={{ mb: 2 }}>
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1,
+                              mb: 0.5,
+                            }}
+                          >
+                            <Chip
+                              label={getRiskLevelLabel(level)}
+                              size="small"
+                              sx={{ bgcolor: getRiskLevelColor(level), color: "white" }}
+                            />
+                            <Typography variant="body2" color="text.secondary">
+                              ({builtinPatterns.length})
+                            </Typography>
+                          </Box>
+                          <List
+                            dense
+                            sx={{
+                              bgcolor: "action.hover",
+                              borderRadius: 1,
+                              maxHeight: 200,
+                              overflow: "auto",
+                              opacity: 0.8,
+                            }}
+                          >
+                            {builtinPatterns.map((pattern, index) => (
+                              <ListItem key={index} sx={{ py: 0.25 }}>
+                                <ListItemText
+                                  primary={pattern}
+                                  primaryTypographyProps={{
+                                    fontFamily: "monospace",
+                                    fontSize: "0.8rem",
+                                    color: "text.secondary",
+                                  }}
+                                />
+                              </ListItem>
+                            ))}
+                          </List>
+                        </Box>
+                      );
+                    })}
+                  </Box>
                 </Box>
               )}
             </Box>
