@@ -46,14 +46,14 @@ import {
 import "./AIChatWindow.css";
 import "./CodeHighlight.css";
 
-// 自定义浮动窗口对话框
-const FloatingDialog = styled(Dialog)(({ theme }) => ({
+// 自定义浮动窗口对话框（支持动态宽度）
+const FloatingDialog = styled(Dialog)(({ theme, customwidth }) => ({
   "& .MuiDialog-paper": {
     position: "fixed",
     right: 50,
     bottom: 20,
     margin: 0,
-    width: 400,
+    width: customwidth || 400,
     maxWidth: "90vw",
     height: 600,
     maxHeight: "80vh",
@@ -67,6 +67,7 @@ const FloatingDialog = styled(Dialog)(({ theme }) => ({
       theme.palette.mode === "dark"
         ? "0 10px 40px rgba(0, 0, 0, 0.6)"
         : "0 10px 40px rgba(0, 0, 0, 0.2)",
+    overflow: "visible",
   },
 }));
 
@@ -126,6 +127,11 @@ const ThinkContent = ({ content, isExpanded, onToggle }) => {
   );
 };
 
+// 默认和限制宽度
+const DEFAULT_WIDTH = 400;
+const MIN_WIDTH = 300;
+const MAX_WIDTH = 800;
+
 const AIChatWindow = ({
   windowState,
   onClose,
@@ -149,19 +155,72 @@ const AIChatWindow = ({
   const [availableApis, setAvailableApis] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [commandExecutionStatus, setCommandExecutionStatus] = useState({});
+  const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const [prevWindowState, setPrevWindowState] = useState(null);
   const streamHandlersRef = useRef({});
 
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const messageRefsMap = useRef({});
   const inputRef = useRef(null);
+  const dialogRef = useRef(null);
+
+  // 滚动到指定消息
+  const scrollToMessage = useCallback((messageId) => {
+    const messageEl = messageRefsMap.current[messageId];
+    if (messageEl && messagesContainerRef.current) {
+      messageEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
 
   // 滚动到底部
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const scrollToBottom = useCallback((instant = false) => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: instant ? "instant" : "smooth" });
+    }
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, scrollToBottom]);
+
+  // 监听窗口状态变化，从最小化恢复时滚动到底部
+  useEffect(() => {
+    if (prevWindowState === "minimized" && windowState === "visible") {
+      // 延迟一帧确保DOM已更新
+      requestAnimationFrame(() => {
+        scrollToBottom(true);
+      });
+    }
+    setPrevWindowState(windowState);
+  }, [windowState, prevWindowState, scrollToBottom]);
+
+  // 拖拽调整宽度的处理
+  const handleResizeStart = useCallback((e) => {
+    e.preventDefault();
+    setIsResizing(true);
+
+    const startX = e.clientX;
+    const startWidth = windowWidth;
+
+    const handleMouseMove = (moveEvent) => {
+      const deltaX = startX - moveEvent.clientX;
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + deltaX));
+      setWindowWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [windowWidth]);
 
   // 加载API配置
   const loadApiSettings = async () => {
@@ -679,7 +738,30 @@ const AIChatWindow = ({
       onClose={onMinimize}
       hideBackdrop
       disableEscapeKeyDown={isPending || abortController}
+      customwidth={windowWidth}
+      ref={dialogRef}
     >
+      {/* 左侧拖动调整宽度手柄 */}
+      <Box
+        onMouseDown={handleResizeStart}
+        sx={{
+          position: "absolute",
+          left: -4,
+          top: 0,
+          bottom: 0,
+          width: 8,
+          cursor: "ew-resize",
+          zIndex: 1,
+          "&:hover": {
+            backgroundColor: "primary.main",
+            opacity: 0.3,
+          },
+          ...(isResizing && {
+            backgroundColor: "primary.main",
+            opacity: 0.5,
+          }),
+        }}
+      />
       <DialogTitle
         sx={{
           display: "flex",
@@ -758,10 +840,12 @@ const AIChatWindow = ({
           flexDirection: "column",
           p: 2,
           overflow: "hidden",
+          position: "relative",
         }}
       >
         {/* 消息列表 */}
         <Box
+          ref={messagesContainerRef}
           sx={{
             flex: 1,
             overflowY: "auto",
@@ -805,7 +889,13 @@ const AIChatWindow = ({
             </Box>
           )}
           {messages.map((message) => (
-            <MessageBubble key={message.id} isUser={message.role === "user"}>
+            <MessageBubble
+              key={message.id}
+              isUser={message.role === "user"}
+              ref={(el) => {
+                if (el) messageRefsMap.current[message.id] = el;
+              }}
+            >
               <Box display="flex" alignItems="flex-start" gap={1}>
                 <Box flex={1}>
                   {message.role === "assistant" ? (
@@ -889,6 +979,54 @@ const AIChatWindow = ({
           ))}
           <div ref={messagesEndRef} />
         </Box>
+
+        {/* 点状导航 - 消息快速跳转 */}
+        {messages.length > 1 && (
+          <Box
+            sx={{
+              position: "absolute",
+              right: 6,
+              top: "50%",
+              transform: "translateY(-50%)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 0.5,
+              zIndex: 2,
+              py: 1,
+              px: 0.5,
+              borderRadius: 2,
+              backgroundColor: (theme) =>
+                theme.palette.mode === "dark"
+                  ? "rgba(0, 0, 0, 0.3)"
+                  : "rgba(255, 255, 255, 0.8)",
+            }}
+          >
+            {messages.map((message, index) => (
+              <Box
+                key={message.id}
+                onClick={() => scrollToMessage(message.id)}
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  cursor: "pointer",
+                  backgroundColor: message.role === "user"
+                    ? "primary.main"
+                    : (theme) =>
+                        theme.palette.mode === "dark"
+                          ? "grey.500"
+                          : "grey.400",
+                  opacity: 0.7,
+                  transition: "all 0.2s",
+                  "&:hover": {
+                    opacity: 1,
+                    transform: "scale(1.3)",
+                  },
+                }}
+              />
+            ))}
+          </Box>
+        )}
 
         {/* 错误提示 */}
         {error && (
