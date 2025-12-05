@@ -342,36 +342,37 @@ class UpdateService {
    */
   async installWindowsUpdate(filePath) {
     return new Promise((resolve, reject) => {
-      // 使用 /S 参数进行静默安装，/D 指定安装目录
+      logToFile(`Starting Windows installer: ${filePath}`, "INFO");
+
+      // 使用 /S 参数进行静默安装
+      // detached: true 确保安装程序独立于当前进程运行
       const installer = spawn(filePath, ["/S"], {
         detached: true,
         stdio: "ignore",
+        windowsHide: false, // 显示安装程序窗口（如果有）
       });
 
       installer.on("error", (error) => {
-        logToFile(`Windows installer error: ${error.message}`, "ERROR");
+        logToFile(`Windows installer spawn error: ${error.message}`, "ERROR");
         reject(error);
       });
 
-      installer.on("exit", (code) => {
-        if (code === 0) {
-          logToFile("Windows installer completed successfully", "INFO");
-          // 安装成功后清理临时文件
-          this.cleanupInstallerFile(filePath);
-          resolve();
-          // 延迟退出应用，让安装程序完成
-          setTimeout(() => {
-            app.quit();
-          }, 2000);
-        } else {
-          const error = new Error(`Installer exited with code ${code}`);
-          logToFile(`Windows installer failed: ${error.message}`, "ERROR");
-          reject(error);
-        }
-      });
-
-      // 分离子进程，避免阻塞主进程
+      // 分离子进程，确保安装程序独立运行
       installer.unref();
+
+      // 安装程序已启动，立即返回成功
+      logToFile(
+        "Windows installer started, preparing to quit application",
+        "INFO",
+      );
+      resolve();
+
+      // 短暂延迟后强制退出应用，避免安装冲突
+      // 使用 app.exit() 而非 app.quit() 确保立即退出，不会被 beforeunload 事件阻止
+      setTimeout(() => {
+        logToFile("Force exiting application for update installation", "INFO");
+        app.exit(0);
+      }, 500);
     });
   }
 
