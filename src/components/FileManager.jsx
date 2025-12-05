@@ -24,6 +24,10 @@ import {
   Button,
   Alert,
   Snackbar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { alpha } from "@mui/material/styles";
@@ -134,6 +138,16 @@ const FileManager = memo(
       permissions: "",
       owner: "",
       group: "",
+    });
+
+    // 确认对话框状态
+    const [confirmDialog, setConfirmDialog] = useState({
+      open: false,
+      title: "",
+      message: "",
+      onConfirm: null,
+      confirmText: "",
+      confirmColor: "primary",
     });
 
     const clearSelection = useCallback(() => {
@@ -1105,13 +1119,24 @@ const FileManager = memo(
           : [];
     }, [selectedFiles, selectedFile]);
 
-    // 处理批量操作确认
-    const handleBatchOperationConfirm = useCallback((operation, files) => {
+    // 处理批量操作确认 - 显示确认对话框
+    const showBatchOperationConfirm = useCallback((operation, files, onConfirm) => {
       const fileCount = files.length;
       const fileList = files.map((f) => f.name).join(", ");
-      const message = `确认${operation} ${fileCount} 个文件？\n${fileList}`;
-      return window.confirm(message);
-    }, []);
+      const message = t("fileManager.batchOperationConfirm", {
+        operation,
+        count: fileCount,
+        files: fileList,
+      });
+      setConfirmDialog({
+        open: true,
+        title: t("fileManager.confirmTitle"),
+        message,
+        onConfirm,
+        confirmText: operation,
+        confirmColor: "error",
+      });
+    }, [t]);
 
     // 处理右键菜单 - 优化版本，立即显示菜单
     const handleContextMenu = useCallback((event, file, index) => {
@@ -1314,64 +1339,73 @@ const FileManager = memo(
     );
 
     // 处理批量删除
-    const handleBatchDelete = async () => {
+    const handleBatchDelete = useCallback(() => {
       const filesToDelete = getSelectedFiles();
       if (filesToDelete.length === 0) return;
 
-      if (
-        !handleBatchOperationConfirm(t("fileManager.delete"), filesToDelete)
-      ) {
-        return;
-      }
+      // 实际执行删除的函数
+      const doDelete = async () => {
+        setLoading(true);
+        setError(null);
 
-      setLoading(true);
-      setError(null);
+        try {
+          for (const file of filesToDelete) {
+            const fullPath =
+              currentPath === "/"
+                ? "/" + file.name
+                : currentPath
+                  ? currentPath + "/" + file.name
+                  : file.name;
 
-      try {
-        for (const file of filesToDelete) {
-          const fullPath =
-            currentPath === "/"
-              ? "/" + file.name
-              : currentPath
-                ? currentPath + "/" + file.name
-                : file.name;
-
-          if (window.terminalAPI && window.terminalAPI.deleteFile) {
-            const response = await window.terminalAPI.deleteFile(
-              tabId,
-              fullPath,
-              file.isDirectory,
-            );
-
-            if (!response?.success) {
-              setError(
-                `${t("fileManager.errors.deleteFailed")} ${file.name}: ${response?.error || t("fileManager.errors.unknownError")}`,
+            if (window.terminalAPI && window.terminalAPI.deleteFile) {
+              const response = await window.terminalAPI.deleteFile(
+                tabId,
+                fullPath,
+                file.isDirectory,
               );
-              break;
+
+              if (!response?.success) {
+                setError(
+                  `${t("fileManager.errors.deleteFailed")} ${file.name}: ${response?.error || t("fileManager.errors.unknownError")}`,
+                );
+                break;
+              }
             }
           }
+
+          // 清除选择状态
+          setSelectedFile(null);
+          setSelectedFiles([]);
+          setLastSelectedIndex(-1);
+          setAnchorIndex(-1);
+
+          // 刷新目录
+          await loadDirectory(currentPath);
+          refreshAfterUserActivity();
+        } catch (error) {
+          setError(
+            t("fileManager.errors.deleteFailed") +
+              ": " +
+              (error.message || t("fileManager.errors.unknownError")),
+          );
+        } finally {
+          setLoading(false);
+          handleContextMenuClose();
         }
+      };
 
-        // 清除选择状态
-        setSelectedFile(null);
-        setSelectedFiles([]);
-        setLastSelectedIndex(-1);
-        setAnchorIndex(-1);
-
-        // 刷新目录
-        await loadDirectory(currentPath);
-        refreshAfterUserActivity();
-      } catch (error) {
-        setError(
-          t("fileManager.errors.deleteFailed") +
-            ": " +
-            (error.message || t("fileManager.errors.unknownError")),
-        );
-      } finally {
-        setLoading(false);
-        handleContextMenuClose();
-      }
-    };
+      // 显示确认对话框
+      showBatchOperationConfirm(t("fileManager.delete"), filesToDelete, doDelete);
+    }, [
+      getSelectedFiles,
+      currentPath,
+      tabId,
+      t,
+      loadDirectory,
+      refreshAfterUserActivity,
+      handleContextMenuClose,
+      showBatchOperationConfirm,
+    ]);
 
     // 处理删除
     const handleDelete = async () => {
@@ -3880,22 +3914,24 @@ const FileManager = memo(
           (t) => t.type === "download" || t.type === "download-folder",
         );
 
-        let transferTypeDescription = "";
+        let transferType = "";
         if (hasUpload && hasDownload) {
-          transferTypeDescription = "上传和下载";
+          transferType = t("fileManager.transferType.uploadAndDownload");
         } else if (hasUpload) {
-          transferTypeDescription = "上传";
+          transferType = t("fileManager.transferType.upload");
         } else {
-          transferTypeDescription = "下载";
+          transferType = t("fileManager.transferType.download");
         }
 
-        const shouldClose = window.confirm(
-          `有正在进行的${transferTypeDescription}任务，收起窗口不会中断传输，确定继续吗？`,
-        );
-
-        if (!shouldClose) {
-          return;
-        }
+        setConfirmDialog({
+          open: true,
+          title: t("fileManager.closeConfirmTitle"),
+          message: t("fileManager.closeConfirmMessage", { transferType }),
+          onConfirm: onClose,
+          confirmText: t("common.confirm"),
+          confirmColor: "primary",
+        });
+        return;
       }
 
       onClose();
@@ -4843,6 +4879,50 @@ const FileManager = memo(
             <ListItemText>{t("fileManager.sortByTime")}</ListItemText>
           </MenuItem>
         </Menu>
+
+        {/* 确认对话框 */}
+        <Dialog
+          open={confirmDialog.open}
+          onClose={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+          maxWidth="xs"
+          fullWidth
+          slotProps={{
+            paper: {
+              sx: {
+                borderRadius: 2,
+              },
+            },
+          }}
+        >
+          <DialogTitle>{confirmDialog.title}</DialogTitle>
+          <DialogContent>
+            <Typography sx={{ whiteSpace: "pre-wrap" }}>
+              {confirmDialog.message}
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ p: 2, gap: 1 }}>
+            <Button
+              onClick={() =>
+                setConfirmDialog((prev) => ({ ...prev, open: false }))
+              }
+              color="inherit"
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmDialog((prev) => ({ ...prev, open: false }));
+                if (confirmDialog.onConfirm) {
+                  confirmDialog.onConfirm();
+                }
+              }}
+              variant="contained"
+              color={confirmDialog.confirmColor}
+            >
+              {confirmDialog.confirmText}
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* 拖拽覆盖层 */}
         {isDragging && (

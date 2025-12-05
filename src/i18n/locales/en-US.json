@@ -235,6 +235,7 @@
       "edit": "Edit",
       "add": "Add",
       "update": "Update",
+      "confirm": "Confirm",
       "name": "Name",
       "description": "Description",
       "expand": "Expand",
@@ -384,6 +385,7 @@
       "setAsCurrent": "Set as Current",
       "apiName": "Configuration Name",
       "apiNameRequired": "Configuration name is required",
+      "deleteConfirmTitle": "Confirm Delete",
       "deleteConfirm": "Are you sure you want to delete this API configuration?",
       "deleteSuccess": "API configuration deleted",
       "deleteFailed": "Failed to delete API configuration",
@@ -515,6 +517,15 @@
       "properties": "Properties",
       "permissions": "Permissions",
       "createSymlink": "Create Symlink",
+      "confirmTitle": "Confirm Action",
+      "batchOperationConfirm": "Are you sure you want to {{operation}} {{count}} files?\n{{files}}",
+      "closeConfirmTitle": "Confirm Close",
+      "closeConfirmMessage": "There are ongoing {{transferType}} tasks. Closing the window won't interrupt the transfer. Continue?",
+      "transferType": {
+        "upload": "upload",
+        "download": "download",
+        "uploadAndDownload": "upload and download"
+      },
       "errors": {
         "loadDirectoryFailed": "Failed to load directory",
         "fileApiNotAvailable": "File management API not available",
