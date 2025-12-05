@@ -91,6 +91,10 @@ const AISettings = ({ open, onClose }) => {
   const [newRuleLevel, setNewRuleLevel] = useState("high");
   const [ruleError, setRuleError] = useState("");
 
+  // 删除确认对话框状态
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
+
   // 加载AI设置并管理焦点 - 只在对话框打开时执行
   useEffect(() => {
     if (open) {
@@ -224,14 +228,18 @@ const AISettings = ({ open, onClose }) => {
     setEditingConfig(null); // 不是编辑现有配置，而是创建新配置
   };
 
-  // 删除API配置
-  const handleDeleteApi = async (apiId) => {
-    if (!window.confirm(t("aiSettings.deleteConfirm"))) {
-      return;
-    }
+  // 删除API配置 - 打开确认对话框
+  const handleDeleteApi = (apiId) => {
+    setDeleteTargetId(apiId);
+    setDeleteConfirmOpen(true);
+  };
+
+  // 确认删除API配置
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId) return;
 
     try {
-      const result = await window.terminalAPI.deleteApiConfig(apiId);
+      const result = await window.terminalAPI.deleteApiConfig(deleteTargetId);
       if (result) {
         setSuccess(t("aiSettings.deleteSuccess"));
         await loadSettings(); // 重新加载设置
@@ -240,7 +248,16 @@ const AISettings = ({ open, onClose }) => {
       }
     } catch (err) {
       setError(t("aiSettings.deleteFailed"));
+    } finally {
+      setDeleteConfirmOpen(false);
+      setDeleteTargetId(null);
     }
+  };
+
+  // 取消删除
+  const handleCancelDelete = () => {
+    setDeleteConfirmOpen(false);
+    setDeleteTargetId(null);
   };
 
   // 设置为当前API
@@ -1143,6 +1160,38 @@ const AISettings = ({ open, onClose }) => {
           </Button>
         )}
       </DialogActions>
+
+      {/* 删除确认对话框 */}
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={handleCancelDelete}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 2,
+            },
+          },
+        }}
+      >
+        <DialogTitle>{t("aiSettings.deleteConfirmTitle")}</DialogTitle>
+        <DialogContent>
+          <Typography>{t("aiSettings.deleteConfirm")}</Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button onClick={handleCancelDelete} color="inherit">
+            {t("common.cancel")}
+          </Button>
+          <Button
+            onClick={handleConfirmDelete}
+            variant="contained"
+            color="error"
+          >
+            {t("common.delete")}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };

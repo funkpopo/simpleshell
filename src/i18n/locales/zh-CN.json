@@ -235,6 +235,7 @@
       "edit": "编辑",
       "add": "新增",
       "update": "更新",
+      "confirm": "确定",
       "name": "名称",
       "description": "描述",
       "expand": "展开",
@@ -384,6 +385,7 @@
       "setAsCurrent": "设为当前",
       "apiName": "配置名称",
       "apiNameRequired": "配置名称不能为空",
+      "deleteConfirmTitle": "删除确认",
       "deleteConfirm": "确定要删除该 API 配置吗？",
       "deleteSuccess": "API 配置已删除",
       "deleteFailed": "删除 API 配置失败",
@@ -515,6 +517,15 @@
       "properties": "属性",
       "permissions": "权限",
       "createSymlink": "创建软链接",
+      "confirmTitle": "确认操作",
+      "batchOperationConfirm": "确定要{{operation}} {{count}} 个文件吗？\n{{files}}",
+      "closeConfirmTitle": "确认关闭",
+      "closeConfirmMessage": "有正在进行的{{transferType}}任务，收起窗口不会中断传输，确定继续吗？",
+      "transferType": {
+        "upload": "上传",
+        "download": "下载",
+        "uploadAndDownload": "上传和下载"
+      },
       "errors": {
         "loadDirectoryFailed": "加载目录失败",
         "fileApiNotAvailable": "文件管理 API 不可用",
