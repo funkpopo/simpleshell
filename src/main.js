@@ -224,6 +224,22 @@ function createAIWorker() {
     aiWorker.on("exit", exitHandler);
     mainProcessResourceManager.addEventListener(aiWorker, 'exit', exitHandler, 'AI Worker exit handler');
 
+    // 初始化系统代理配置
+    try {
+      const proxyManager = require("./core/proxy/proxy-manager");
+      const proxyConfig = proxyManager.getDefaultProxyConfig() || proxyManager.getSystemProxyConfig();
+      if (proxyConfig) {
+        aiWorker.postMessage({
+          type: "update_proxy",
+          id: `proxy_init_${Date.now()}`,
+          data: proxyConfig,
+        });
+        logToFile(`AI Worker 代理已配置: ${proxyConfig.host}:${proxyConfig.port}`, "INFO");
+      }
+    } catch (proxyError) {
+      logToFile(`AI Worker 代理配置失败: ${proxyError.message}`, "WARN");
+    }
+
     return aiWorker;
   } catch (error) {
     logToFile(`创建AI Worker失败: ${error.message}`, "ERROR");

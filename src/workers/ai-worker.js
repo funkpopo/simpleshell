@@ -1,9 +1,57 @@
 const { parentPort } = require("worker_threads");
 const https = require("https");
 const http = require("http");
+const { SocksProxyAgent } = require("socks-proxy-agent");
+const { HttpsProxyAgent } = require("https-proxy-agent");
+const { HttpProxyAgent } = require("http-proxy-agent");
 
 // 存储活跃请求的Map
 const activeRequests = new Map();
+
+// 存储系统代理配置
+let systemProxyConfig = null;
+
+/**
+ * 创建代理Agent
+ * @param {string} protocol - 目标URL协议 (http: 或 https:)
+ * @returns {object|null} 代理Agent或null
+ */
+function createProxyAgent(protocol) {
+  if (!systemProxyConfig || !systemProxyConfig.host || !systemProxyConfig.port) {
+    return null;
+  }
+
+  const { type, host, port, username, password } = systemProxyConfig;
+  const proxyType = (type || "http").toLowerCase();
+
+  try {
+    if (proxyType === "socks4" || proxyType === "socks5") {
+      // SOCKS代理
+      let socksUrl = `${proxyType}://`;
+      if (username && password) {
+        socksUrl += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      socksUrl += `${host}:${port}`;
+      return new SocksProxyAgent(socksUrl);
+    } else {
+      // HTTP/HTTPS代理
+      let proxyUrl = `http://`;
+      if (username && password) {
+        proxyUrl += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      proxyUrl += `${host}:${port}`;
+
+      if (protocol === "https:") {
+        return new HttpsProxyAgent(proxyUrl);
+      } else {
+        return new HttpProxyAgent(proxyUrl);
+      }
+    }
+  } catch (error) {
+    // 创建代理Agent失败，返回null使用直连
+    return null;
+  }
+}
 
 // 监听来自主线程的消息
 parentPort.on("message", async (message) => {
@@ -19,6 +67,15 @@ parentPort.on("message", async (message) => {
       case "cancel_request":
         // 取消请求
         cancelRequest(id, data);
+        break;
+
+      case "update_proxy":
+        // 更新系统代理配置
+        systemProxyConfig = data;
+        parentPort.postMessage({
+          id,
+          result: { success: true, proxyConfigured: !!data },
+        });
         break;
 
       case "health_check":
@@ -102,6 +159,12 @@ function handleStandardRequest(requestId, requestData) {
       Authorization: `Bearer ${apiKey}`,
     },
   };
+
+  // 添加代理Agent
+  const proxyAgent = createProxyAgent(parsedUrl.protocol);
+  if (proxyAgent) {
+    options.agent = proxyAgent;
+  }
 
   // 创建请求
   const req = requestModule.request(options, (res) => {
@@ -212,6 +275,12 @@ function handleStreamRequest(requestId, requestData) {
       Authorization: `Bearer ${apiKey}`,
     },
   };
+
+  // 添加代理Agent
+  const proxyAgent = createProxyAgent(parsedUrl.protocol);
+  if (proxyAgent) {
+    options.agent = proxyAgent;
+  }
 
   // 创建请求
   const req = requestModule.request(options, (res) => {
@@ -454,6 +523,12 @@ function handleModelsRequest(requestId, requestData) {
       Authorization: `Bearer ${apiKey}`,
     },
   };
+
+  // 添加代理Agent
+  const proxyAgent = createProxyAgent(parsedModelsUrl.protocol);
+  if (proxyAgent) {
+    options.agent = proxyAgent;
+  }
 
   // 创建请求
   const req = requestModule.request(options, (res) => {
