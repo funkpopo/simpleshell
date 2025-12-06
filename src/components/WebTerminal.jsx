@@ -2439,7 +2439,7 @@ useEffect(() => {
           fontSize: 14,
           fontWeight: 500, // 字重优化，提高清晰度
           fontWeightBold: 700,
-          scrollback: 10000,
+          scrollback: 50000,
           allowTransparency: true,
           cols: 120,
           rows: 30,
@@ -2535,7 +2535,7 @@ useEffect(() => {
         // 初始化虚拟滚动缓冲区
         if (!virtualScrollBufferRef.current) {
           virtualScrollBufferRef.current = new VirtualScrollBuffer({
-            maxBufferLines: 10000,
+            maxBufferLines: 50000,
             visibleLines: 30,
             overscanLines: 10,
             pruneThreshold: 0.8,
@@ -2544,7 +2544,7 @@ useEffect(() => {
               if (performanceMonitorRef.current) {
                 performanceMonitorRef.current.recordBufferSize(info.bufferSize);
                 performanceMonitorRef.current.recordScrollbackUsage(
-                  (info.totalLines / 10000) * 100
+                  (info.totalLines / 50000) * 100
                 );
               }
             }
