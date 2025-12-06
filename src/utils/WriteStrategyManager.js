@@ -8,9 +8,9 @@ export class WriteStrategyManager {
     // 配置参数
     this.config = {
       // 批处理阈值
-      lowLoadBatchSize: options.lowLoadBatchSize || 4096,         // 低负载：4KB
-      mediumLoadBatchSize: options.mediumLoadBatchSize || 16384,  // 中负载：16KB
-      highLoadBatchSize: options.highLoadBatchSize || 65536,      // 高负载：64KB
+      lowLoadBatchSize: options.lowLoadBatchSize || 16384,        // 低负载：16KB
+      mediumLoadBatchSize: options.mediumLoadBatchSize || 65536,  // 中负载：64KB
+      highLoadBatchSize: options.highLoadBatchSize || 262144,     // 高负载：256KB
 
       // 刷新延迟
       lowLoadFlushDelay: options.lowLoadFlushDelay || 16,         // 低负载：16ms (60fps)
