@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from "react";
+import React, { useState, useCallback, memo, useEffect } from "react";
 import {
   Box,
   Paper,
@@ -18,6 +18,7 @@ import {
   Close,
   ExpandLess,
   ExpandMore,
+  Delete,
 } from "@mui/icons-material";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
 
@@ -78,7 +79,7 @@ const getStatusIcon = (transfer) => {
 /**
  * 单个传输任务标签
  */
-const TransferTag = memo(({ transfer, onClickTag }) => {
+const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
   const theme = useTheme();
   const { type, fileName, progress, isCancelled, error } = transfer;
 
@@ -87,48 +88,80 @@ const TransferTag = memo(({ transfer, onClickTag }) => {
   const statusIcon = getStatusIcon(transfer);
 
   return (
-    <Chip
-      icon={getTransferIcon(type)}
-      label={
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          {statusIcon}
-          <span style={{ maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {fileName || "传输中..."}
-          </span>
-        </Box>
-      }
-      onClick={() => onClickTag(transfer)}
-      size="small"
-      sx={{
-        height: 28,
-        fontSize: "0.75rem",
-        backgroundColor: hasError
-          ? "#ffebee"
-          : isCancelled
-          ? "#fff3e0"
-          : isCompleted
-          ? "#e8f5e8"
-          : `${getTransferColor(type)}15`,
-        color: hasError
-          ? "#f44336"
-          : isCancelled
-          ? "#ff9800"
-          : isCompleted
-          ? "#4caf50"
-          : getTransferColor(type),
-        cursor: "pointer",
-        transition: "all 0.2s ease",
-        "&:hover": {
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+      <Chip
+        icon={getTransferIcon(type)}
+        label={
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            {statusIcon}
+            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+              <span style={{ maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", fontSize: "0.75rem" }}>
+                {fileName || "传输中..."}
+              </span>
+              {sshHost && (
+                <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>
+                  {sshHost}
+                </span>
+              )}
+            </Box>
+          </Box>
+        }
+        onClick={() => onClickTag(transfer)}
+        size="small"
+        sx={{
+          height: isCompleted ? 36 : 28,
+          fontSize: "0.75rem",
           backgroundColor: hasError
-            ? "#ffcdd2"
+            ? "#ffebee"
             : isCancelled
-            ? "#ffe0b2"
+            ? "#fff3e0"
             : isCompleted
-            ? "#c8e6c9"
-            : `${getTransferColor(type)}30`,
-        },
-      }}
-    />
+            ? "#e8f5e8"
+            : `${getTransferColor(type)}15`,
+          color: hasError
+            ? "#f44336"
+            : isCancelled
+            ? "#ff9800"
+            : isCompleted
+            ? "#4caf50"
+            : getTransferColor(type),
+          cursor: "pointer",
+          transition: "all 0.2s ease",
+          "&:hover": {
+            backgroundColor: hasError
+              ? "#ffcdd2"
+              : isCancelled
+              ? "#ffe0b2"
+              : isCompleted
+              ? "#c8e6c9"
+              : `${getTransferColor(type)}30`,
+          },
+        }}
+      />
+      {isCompleted && (
+        <Tooltip title="删除">
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(transfer);
+            }}
+            sx={{
+              width: 20,
+              height: 20,
+              padding: 0,
+              color: theme.palette.text.secondary,
+              "&:hover": {
+                color: "#f44336",
+                backgroundColor: "#ffebee",
+              },
+            }}
+          >
+            <Delete sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Tooltip>
+      )}
+    </Box>
   );
 });
 
@@ -140,7 +173,35 @@ TransferTag.displayName = "TransferTag";
  */
 const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
   const theme = useTheme();
-  const { allTransfers, clearCompletedTransfers } = useAllGlobalTransfers();
+  const { allTransfers, clearCompletedTransfers, removeTransferProgress } = useAllGlobalTransfers();
+  const [sshHostMap, setSshHostMap] = useState({});
+
+  // 获取SSH主机信息
+  useEffect(() => {
+    const fetchSshHosts = async () => {
+      const hostMap = {};
+      const uniqueTabIds = [...new Set(allTransfers.map((t) => t.tabId))];
+
+      for (const tabId of uniqueTabIds) {
+        if (tabId && window.terminalAPI?.getSSHConfig) {
+          try {
+            const config = await window.terminalAPI.getSSHConfig(tabId);
+            if (config && config.host) {
+              hostMap[tabId] = config.host;
+            }
+          } catch (error) {
+            console.warn(`Failed to get SSH config for tab ${tabId}:`, error);
+          }
+        }
+      }
+
+      setSshHostMap(hostMap);
+    };
+
+    if (allTransfers.length > 0) {
+      fetchSshHosts();
+    }
+  }, [allTransfers]);
 
   const handleClickTag = useCallback(
     (transfer) => {
@@ -151,6 +212,16 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
       }
     },
     [onOpenFloat]
+  );
+
+  const handleDeleteTransfer = useCallback(
+    (transfer) => {
+      // 删除单个传输任务
+      if (transfer.tabId && transfer.transferId) {
+        removeTransferProgress(transfer.tabId, transfer.transferId);
+      }
+    },
+    [removeTransferProgress]
   );
 
   const handleClearCompleted = useCallback(() => {
@@ -228,6 +299,8 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
             key={`${transfer.tabId}-${transfer.transferId}`}
             transfer={transfer}
             onClickTag={handleClickTag}
+            onDelete={handleDeleteTransfer}
+            sshHost={sshHostMap[transfer.tabId]}
           />
         ))}
       </Box>
