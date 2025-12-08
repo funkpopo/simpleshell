@@ -844,9 +844,10 @@ async function handleUploadFile(
         });
 
         // 根据文件规模动态调整并发度
-        const dynamicParallelUpload = chooseConcurrency(totalFilesToUpload, totalBytesToUpload, true);
+        // 为避免统计数量跳跃，强制使用串行传输（并发度为1）
+        const dynamicParallelUpload = 1;
 
-        // 执行并发任务
+        // 执行串行任务
         await runWithConcurrency(tasks, dynamicParallelUpload, (fn) => fn());
 
         // 确保最终进度为100%
@@ -1352,10 +1353,11 @@ async function handleUploadFolder(
         });
 
         // 根据文件规模动态调整并发度
-        const dynamicParallelUpload = chooseConcurrency(totalFilesToUpload, totalBytesToUpload, true);
+        // 为避免统计数量跳跃，强制使用串行传输（并发度为1）
+        const dynamicParallelUpload = 1;
 
         logToFile(
-          `sftpTransfer: Starting folder upload with ${dynamicParallelUpload} parallel workers`,
+          `sftpTransfer: Starting folder upload with serial (1 worker) to avoid stat jumps`,
           "INFO",
         );
 
@@ -1844,7 +1846,8 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         });
 
         // 根据文件规模动态调整并发度（下载）
-        const dynamicParallelDownload = chooseConcurrency(totalFilesToDownload, totalBytesToDownload, false);
+        // 为避免统计数量跳跃，强制使用串行传输（并发度为1）
+        const dynamicParallelDownload = 1;
 
         await runWithConcurrency(tasks, dynamicParallelDownload, (fn) => fn());
 
