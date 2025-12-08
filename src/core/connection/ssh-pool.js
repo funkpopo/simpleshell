@@ -446,38 +446,62 @@ class SSHPool extends BaseConnectionPool {
     let errorMessage = err.message;
     let isProxyError = false;
 
+    // 提取简洁的错误信息（去除嵌套的错误前缀）
+    const extractCleanError = (msg) => {
+      // 移除嵌套的 "Unhandled error" 包装
+      if (msg.includes('Unhandled error. ({')) {
+        const match = msg.match(/message: '([^']+)'/);
+        if (match) return match[1];
+      }
+      // 移除重复的 "SSH连接错误:" 或 "SSH认证失败:" 前缀
+      const patterns = [
+        /^SSH连接错误:\s*/,
+        /^SSH认证失败:\s*/,
+        /^代理连接失败:\s*/
+      ];
+      let cleaned = msg;
+      for (const pattern of patterns) {
+        cleaned = cleaned.replace(pattern, '');
+      }
+      return cleaned;
+    };
+
+    errorMessage = extractCleanError(errorMessage);
+
     // 检测代理相关错误
     if (usingProxy) {
       if (
-        err.message.includes('proxy') ||
-        err.message.includes('socket') ||
-        err.message.includes('ECONNREFUSED') ||
-        err.message.includes('timeout')
+        errorMessage.includes('proxy') ||
+        errorMessage.includes('socket') ||
+        errorMessage.includes('ECONNREFUSED') ||
+        errorMessage.includes('timeout')
       ) {
-        errorMessage = `代理连接失败: ${err.message}. 请检查代理配置或代理状态`;
+        errorMessage = `代理连接失败: ${errorMessage}. 请检查代理配置或代理状态`;
         isProxyError = true;
       }
     }
 
     // 检测常见SSH错误
     if (!isProxyError) {
-      if (err.message.includes('All configured authentication methods failed')) {
-        errorMessage = `SSH认证失败: ${err.message}. 请检查用户名、密码或私钥文件是否正确`;
+      if (errorMessage.includes('All configured authentication methods failed')) {
+        errorMessage = `SSH认证失败: 所有认证方式均失败，请检查用户名、密码或私钥文件`;
 
         // 如果配置了私钥路径但没有私钥内容，提供具体提示
         if (sshConfig.privateKeyPath && !processedConfig.privateKey) {
-          errorMessage += `. 私钥文件路径: ${sshConfig.privateKeyPath} 可能无法读取`;
+          errorMessage += `. 私钥文件路径 ${sshConfig.privateKeyPath} 可能无法读取`;
         }
-      } else if (err.message.includes('connect ECONNREFUSED')) {
+      } else if (errorMessage.includes('connect ECONNREFUSED')) {
         errorMessage = `连接被拒绝: 无法连接到 ${sshConfig.host}:${sshConfig.port || 22}${usingProxy ? ' (通过代理)' : ''}`;
-      } else if (err.message.includes('getaddrinfo ENOTFOUND')) {
+      } else if (errorMessage.includes('getaddrinfo ENOTFOUND')) {
         errorMessage = `主机不存在: 无法解析主机名 ${sshConfig.host}`;
+      } else if (errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout')) {
+        errorMessage = `连接超时: ${sshConfig.host}:${sshConfig.port || 22}`;
       }
     }
 
     this._logError(`SSH连接错误: ${connectionKey}`, new Error(errorMessage));
 
-    // 创建增强的错误对象
+    // 创建增强的错误对象（使用简洁的错误消息）
     const enhancedError = new Error(errorMessage);
     enhancedError.originalError = err;
     enhancedError.connectionKey = connectionKey;

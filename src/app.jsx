@@ -1,5 +1,5 @@
 import * as React from "react";
-import { memo, useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "@mui/material/styles";
 import { createUnifiedTheme } from "./theme";
@@ -192,6 +192,9 @@ function AppContent() {
   const anchorEl = state.anchorEl;
   const open = Boolean(anchorEl);
 
+  // 锁定的文件管理器tabId（在打开时不随标签页切换而变化）
+  const [lockedFileManagerTabId, setLockedFileManagerTabId] = useState(null);
+
   // 根据主题模式更新 body 类名
   React.useEffect(() => {
     if (darkMode) {
@@ -294,6 +297,15 @@ function AppContent() {
   React.useEffect(() => {
     if (tabs.length > prevTabsLength) {
       dispatch(actions.setCurrentTab(tabs.length - 1));
+
+      // 如果SFTP面板已打开，新标签页是SSH类型，则更新锁定的tabId
+      const newTab = tabs[tabs.length - 1];
+      if (newTab && newTab.type === "ssh") {
+        setLockedFileManagerTabId((prevLockedId) => {
+          // 只有在之前有锁定的情况下才更新（即SFTP面板已打开）
+          return prevLockedId !== null ? newTab.id : prevLockedId;
+        });
+      }
     }
     setPrevTabsLength(tabs.length);
   }, [tabs, dispatch, prevTabsLength]);
@@ -666,6 +678,17 @@ function AppContent() {
     (event, newValue) => {
       dispatch(actions.setCurrentTab(newValue));
 
+      // 如果切换到SSH标签页，检查SFTP面板是否已打开，如果是则更新锁定的tabId
+      if (newValue < tabs.length) {
+        const newTab = tabs[newValue];
+        if (newTab && newTab.type === "ssh") {
+          setLockedFileManagerTabId((prevLockedId) => {
+            // 只有在之前有锁定的情况下才更新（即SFTP面板已打开）
+            return prevLockedId !== null ? newTab.id : prevLockedId;
+          });
+        }
+      }
+
       // 触发自定义事件，通知WebTerminal组件进行大小调整
       if (newValue < tabs.length) {
         const currentTabId = tabs[newValue]?.id;
@@ -838,8 +861,9 @@ function AppContent() {
     const tabToRemove = tabs[index];
 
     // 检查文件管理器是否为该标签页打开，如果是则关闭它
-    if (fileManagerOpen && fileManagerProps.tabId === tabToRemove.id) {
+    if (fileManagerOpen && (fileManagerProps.tabId === tabToRemove.id || lockedFileManagerTabId === tabToRemove.id)) {
       dispatch(actions.setFileManagerOpen(false));
+      setLockedFileManagerTabId(null);
     }
 
     // 检查资源监控是否为该标签页打开，如果是则关闭它
@@ -1095,10 +1119,19 @@ function AppContent() {
 
   // 切换文件管理侧边栏
   const toggleFileManager = () => {
-    dispatch(actions.setFileManagerOpen(!fileManagerOpen));
-    // 如果要打开文件管理侧边栏，确保它显示在上层
-    if (!fileManagerOpen) {
+    const willOpen = !fileManagerOpen;
+    dispatch(actions.setFileManagerOpen(willOpen));
+
+    // 如果要打开文件管理侧边栏，锁定当前标签页的tabId
+    if (willOpen) {
       dispatch(actions.setLastOpenedSidebar("file"));
+      const currentPanelTab = getCurrentPanelTab();
+      if (currentPanelTab) {
+        setLockedFileManagerTabId(currentPanelTab.id);
+      }
+    } else {
+      // 关闭时清除锁定
+      setLockedFileManagerTabId(null);
     }
 
     // 立即触发resize事件，确保终端快速适配新的布局
@@ -1110,6 +1143,8 @@ function AppContent() {
   // 关闭文件管理侧边栏
   const handleCloseFileManager = () => {
     dispatch(actions.setFileManagerOpen(false));
+    // 清除锁定的tabId
+    setLockedFileManagerTabId(null);
 
     // 立即触发resize事件，确保终端快速适配新的布局
     setTimeout(() => {
@@ -1350,9 +1385,23 @@ function AppContent() {
     );
   }, [resourceMonitorOpen, currentPanelTab, terminalInstances]);
 
-  // 计算文件管理器的props
+  // 计算文件管理器的props（使用锁定的tabId）
   const fileManagerProps = useMemo(() => {
-    if (!currentPanelTab) {
+    // 如果没有锁定的tabId，则使用当前激活的标签页
+    const targetTabId = lockedFileManagerTabId || (currentPanelTab ? currentPanelTab.id : null);
+
+    if (!targetTabId) {
+      return {
+        tabId: null,
+        tabName: null,
+        sshConnection: null,
+        initialPath: "/",
+      };
+    }
+
+    // 查找对应的tab
+    const targetTab = tabs.find(tab => tab.id === targetTabId);
+    if (!targetTab) {
       return {
         tabId: null,
         tabName: null,
@@ -1362,15 +1411,15 @@ function AppContent() {
     }
 
     return {
-      tabId: currentPanelTab.id,
-      tabName: currentPanelTab.label,
+      tabId: targetTab.id,
+      tabName: targetTab.label,
       sshConnection:
-        currentPanelTab.type === "ssh"
-          ? terminalInstances[`${currentPanelTab.id}-config`]
+        targetTab.type === "ssh"
+          ? terminalInstances[`${targetTab.id}-config`]
           : null,
-      initialPath: getFileManagerPath(currentPanelTab.id),
+      initialPath: getFileManagerPath(targetTab.id),
     };
-  }, [currentPanelTab, terminalInstances]);
+  }, [lockedFileManagerTabId, currentPanelTab, tabs, terminalInstances, fileManagerPaths]);
 
   // 计算AI聊天窗口的连接信息
   const aiChatConnectionInfo = useMemo(() => {
