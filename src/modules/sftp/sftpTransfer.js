@@ -19,6 +19,9 @@ const {
   getNoProgressTimeout,
 } = require("./sftpConfig");
 
+// Import progress coordinator
+const { TransferProgressCoordinator } = require("./TransferProgressCoordinator");
+
 // SFTP streaming helpers
 function delay(ms) {
   return new Promise((res) => setTimeout(res, ms));
@@ -603,15 +606,6 @@ async function handleUploadFile(
     }
   }
 
-  // 添加速度和时间计算的变量
-  const transferStartTime = Date.now();
-  let lastProgressUpdateTime = 0;
-  let lastOverallBytesTransferred = 0;
-  let lastTransferTime = transferStartTime;
-  let currentTransferSpeed = 0;
-  let currentRemainingTime = 0;
-  const speedSmoothingFactor = TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR; // 速度平滑因子
-
   if (totalBytesToUpload === 0 && totalFilesToUpload > 0) {
     // This case can happen if all files failed to stat or are empty.
     logToFile(
@@ -683,33 +677,22 @@ async function handleUploadFile(
           };
         }
 
-        // 汇总型进度上报函数（并发场景下统一节流）
-        const maybeReportOverall = (fileName, currentIndex) => {
-          const now = Date.now();
-          if (
-            now - lastProgressUpdateTime < (TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250)
-          )
-            return;
-          const progress =
-            totalBytesToUpload > 0
-              ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100)
-              : 0;
-          if (progressChannel) {
-            sendToRenderer(progressChannel, {
-              tabId,
-              transferKey,
-              progress: Math.min(100, progress),
-              fileName,
-              currentFileIndex: currentIndex + 1,
-              totalFiles: totalFilesToUpload,
-              transferredBytes: overallUploadedBytes,
-              totalBytes: totalBytesToUpload,
-              transferSpeed: currentTransferSpeed,
-              remainingTime: currentRemainingTime,
-            });
-          }
-          lastProgressUpdateTime = now;
-        };
+        // 创建进度协调器来管理并发传输的进度更新
+        const progressCoordinator = new TransferProgressCoordinator({
+          totalFiles: totalFilesToUpload,
+          totalBytes: totalBytesToUpload,
+          progressIntervalMs: TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250,
+          speedSmoothingFactor: TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR,
+          onProgress: (progressData) => {
+            if (progressChannel) {
+              sendToRenderer(progressChannel, {
+                tabId,
+                transferKey,
+                ...progressData,
+              });
+            }
+          },
+        });
 
         // 构建并发任务
         const tasks = filePaths.map((localFilePath, i) => async () => {
@@ -763,6 +746,10 @@ async function handleUploadFile(
             }
 
             const currentFileSize = currentFileStats.size;
+
+            // 注册文件到进度协调器
+            progressCoordinator.registerFile(i, fileName, currentFileSize);
+
             let fileTransferredBytes = 0;
             const chunkSize = chooseChunkSize(currentFileSize);
 
@@ -774,22 +761,8 @@ async function handleUploadFile(
             const onBytes = (len) => {
               fileTransferredBytes += len;
               overallUploadedBytes += len;
-              const now = Date.now();
-              const timeElapsed = (now - lastTransferTime) / 1000;
-              if (timeElapsed > 0) {
-                const bytesDelta = overallUploadedBytes - lastOverallBytesTransferred;
-                const instantSpeed = bytesDelta / timeElapsed;
-                currentTransferSpeed =
-                  currentTransferSpeed === 0
-                    ? instantSpeed
-                    : TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR * instantSpeed + (1 - TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR) * currentTransferSpeed;
-                const remainingBytes = totalBytesToUpload - overallUploadedBytes;
-                currentRemainingTime =
-                  currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
-                lastOverallBytesTransferred = overallUploadedBytes;
-                lastTransferTime = now;
-              }
-              maybeReportOverall(fileName, i);
+              // 更新进度协调器
+              progressCoordinator.updateFileProgress(i, fileTransferredBytes);
             };
 
             let attempt = 0;
@@ -829,8 +802,8 @@ async function handleUploadFile(
             }
 
             filesUploadedCount++;
-            // Ensure progress update
-            maybeReportOverall(fileName, i);
+            // 标记文件完成到协调器
+            progressCoordinator.markFileCompleted(i);
           } finally {
             // 归还会话
             if (
@@ -844,15 +817,14 @@ async function handleUploadFile(
         });
 
         // 根据文件规模动态调整并发度
-        // 为避免统计数量跳跃，强制使用串行传输（并发度为1）
-        const dynamicParallelUpload = 1;
+        // 使用并发传输来提升性能，进度协调器会确保显示稳定
+        const dynamicParallelUpload = chooseConcurrency(totalFilesToUpload, totalBytesToUpload);
 
-        // 执行串行任务
+        // 执行并发任务
         await runWithConcurrency(tasks, dynamicParallelUpload, (fn) => fn());
 
         // 确保最终进度为100%
-        lastProgressUpdateTime = 0;
-        maybeReportOverall("", totalFilesToUpload - 1);
+        progressCoordinator.finalize();
 
         // Final overall progress update after loop (covers all files)
         if (progressChannel) {
@@ -1218,43 +1190,25 @@ async function handleUploadFolder(
           "INFO",
         );
 
-        // 添加用于计算传输速度和剩余时间的变量
-        const transferStartTime = Date.now();
-        let lastProgressUpdateTime = 0;
-        let lastOverallBytesTransferred = 0;
-        let lastTransferTime = transferStartTime;
-        let currentTransferSpeed = 0;
-        let currentRemainingTime = 0;
-        const speedSmoothingFactor = TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR; // 速度平滑因子，较低的值使速度变化更平缓
+        // 创建进度协调器
+        const progressCoordinator = new TransferProgressCoordinator({
+          totalFiles: totalFilesToUpload,
+          totalBytes: totalBytesToUpload,
+          progressIntervalMs: TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250,
+          speedSmoothingFactor: TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR,
+          onProgress: (progressData) => {
+            if (progressChannel) {
+              sendToRenderer(progressChannel, {
+                tabId,
+                transferKey,
+                ...progressData,
+              });
+            }
+          },
+        });
 
         // 4. 并发上传文件
-        const maybeReportOverall = () => {
-          const now = Date.now();
-          if (
-            now - lastProgressUpdateTime < (TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250)
-          )
-            return;
-          const progress =
-            totalBytesToUpload > 0
-              ? Math.floor((overallUploadedBytes / totalBytesToUpload) * 100)
-              : 0;
-          if (progressChannel) {
-            sendToRenderer(progressChannel, {
-              tabId,
-              transferKey,
-              progress: Math.min(100, progress),
-              processedFiles: filesUploadedCount,
-              totalFiles: totalFilesToUpload,
-              transferredBytes: overallUploadedBytes,
-              totalBytes: totalBytesToUpload,
-              transferSpeed: currentTransferSpeed,
-              remainingTime: currentRemainingTime,
-            });
-          }
-          lastProgressUpdateTime = now;
-        };
-
-        const tasks = allFiles.map((file) => async () => {
+        const tasks = allFiles.map((file, fileIndex) => async () => {
           // 取消检查
           const currentTransfer = activeTransfers.get(transferKey);
           if (!currentTransfer || currentTransfer.cancelled) {
@@ -1265,6 +1219,9 @@ async function handleUploadFolder(
             remoteBaseUploadPath,
             file.relativePath,
           );
+
+          // 注册文件到进度协调器
+          progressCoordinator.registerFile(fileIndex, file.name, file.size);
 
           let fileTransferredBytes = 0;
           const chunkSize = chooseChunkSize(file.size);
@@ -1288,22 +1245,8 @@ async function handleUploadFolder(
             const onBytes = (len) => {
               fileTransferredBytes += len;
               overallUploadedBytes += len;
-              const now = Date.now();
-              const timeElapsed = (now - lastTransferTime) / 1000;
-              if (timeElapsed > 0) {
-                const bytesDelta = overallUploadedBytes - lastOverallBytesTransferred;
-                const instantSpeed = bytesDelta / timeElapsed;
-                currentTransferSpeed =
-                  currentTransferSpeed === 0
-                    ? instantSpeed
-                    : TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR * instantSpeed + (1 - TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR) * currentTransferSpeed;
-                const remainingBytes = totalBytesToUpload - overallUploadedBytes;
-                currentRemainingTime =
-                  currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
-                lastOverallBytesTransferred = overallUploadedBytes;
-                lastTransferTime = now;
-              }
-              maybeReportOverall();
+              // 更新进度协调器
+              progressCoordinator.updateFileProgress(fileIndex, fileTransferredBytes);
             };
 
             let attempt = 0;
@@ -1343,7 +1286,8 @@ async function handleUploadFolder(
             }
 
             filesUploadedCount++;
-            maybeReportOverall();
+            // 标记文件完成到协调器
+            progressCoordinator.markFileCompleted(fileIndex);
           } finally {
             // 归还会话
             if (borrowed && sftpCore && typeof sftpCore.releaseSftpSession === "function") {
@@ -1353,11 +1297,11 @@ async function handleUploadFolder(
         });
 
         // 根据文件规模动态调整并发度
-        // 为避免统计数量跳跃，强制使用串行传输（并发度为1）
-        const dynamicParallelUpload = 1;
+        // 使用并发传输来提升性能，进度协调器会确保显示稳定
+        const dynamicParallelUpload = chooseConcurrency(totalFilesToUpload, totalBytesToUpload);
 
         logToFile(
-          `sftpTransfer: Starting folder upload with serial (1 worker) to avoid stat jumps`,
+          `sftpTransfer: Starting folder upload with ${dynamicParallelUpload} workers (managed by progress coordinator)`,
           "INFO",
         );
 
@@ -1368,8 +1312,7 @@ async function handleUploadFolder(
         );
 
         // 完成后强制更新到100%
-        lastProgressUpdateTime = 0;
-        maybeReportOverall();
+        progressCoordinator.finalize();
 
         // Send final progress update
         if (progressChannel) {
@@ -1695,43 +1638,23 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           "INFO",
         );
 
-        // 添加用于计算传输速度和剩余时间的变量
-        const transferStartTime = Date.now();
-        let lastProgressUpdateTime = 0;
-        let lastOverallBytesTransferred = 0;
-        let lastTransferTime = transferStartTime;
-        let currentTransferSpeed = 0;
-        let currentRemainingTime = 0;
-        const speedSmoothingFactor = TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR; // 速度平滑因子，较低的值使速度变化更平缓
+        // 创建进度协调器
+        const progressCoordinator = new TransferProgressCoordinator({
+          totalFiles: totalFilesToDownload,
+          totalBytes: totalBytesToDownload,
+          progressIntervalMs: TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250,
+          speedSmoothingFactor: TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR,
+          onProgress: (progressData) => {
+            sendToRenderer("download-folder-progress", {
+              tabId,
+              transferKey,
+              ...progressData,
+            });
+          },
+        });
 
         // 3. 并发下载文件
-        const maybeReportOverall = () => {
-          const now = Date.now();
-          if (
-            now - lastProgressUpdateTime < (TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250)
-          )
-            return;
-          const progress =
-            totalBytesToDownload > 0
-              ? Math.floor(
-                  (overallDownloadedBytes / totalBytesToDownload) * 100,
-                )
-              : 0;
-          sendToRenderer("download-folder-progress", {
-            tabId,
-            transferKey,
-            progress: Math.min(100, progress),
-            filesProcessed: filesDownloadedCount,
-            totalFiles: totalFilesToDownload,
-            transferredBytes: overallDownloadedBytes,
-            totalBytes: totalBytesToDownload,
-            transferSpeed: currentTransferSpeed,
-            remainingTime: currentRemainingTime,
-          });
-          lastProgressUpdateTime = now;
-        };
-
-        const tasks = allFiles.map((file) => async () => {
+        const tasks = allFiles.map((file, fileIndex) => async () => {
           // 取消检查
           const ct = activeTransfers.get(transferKey);
           if (!ct || ct.cancelled)
@@ -1742,6 +1665,9 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
             file.relativePath,
           );
           const tempLocalFilePath = localFilePath + ".part";
+
+          // 注册文件到进度协调器
+          progressCoordinator.registerFile(fileIndex, file.name, file.size);
 
           // 确保本地目录存在
           const localDir = path.dirname(localFilePath);
@@ -1783,7 +1709,6 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
               reject(error);
             });
             readStream.on("data", (chunk) => {
-              const tnow = Date.now();
               const current = activeTransfers.get(transferKey);
               if (current && current.cancelled) {
                 readStream.destroy();
@@ -1793,23 +1718,8 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
               }
               fileDownloadedBytes += chunk.length;
               overallDownloadedBytes += chunk.length;
-              // 速度估算
-              const timeElapsed = (tnow - lastTransferTime) / 1000;
-              if (timeElapsed > 0) {
-                const delta =
-                  overallDownloadedBytes - lastOverallBytesTransferred;
-                const instant = delta / timeElapsed;
-                currentTransferSpeed =
-                  currentTransferSpeed === 0
-                    ? instant
-                    : 0.3 * instant + 0.7 * currentTransferSpeed;
-                const remain = totalBytesToDownload - overallDownloadedBytes;
-                currentRemainingTime =
-                  currentTransferSpeed > 0 ? remain / currentTransferSpeed : 0;
-                lastOverallBytesTransferred = overallDownloadedBytes;
-                lastTransferTime = tnow;
-              }
-              maybeReportOverall();
+              // 更新进度协调器
+              progressCoordinator.updateFileProgress(fileIndex, fileDownloadedBytes);
             });
             readStream.on("end", () => resolve());
             readStream.pipe(writeStream);
@@ -1827,7 +1737,8 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           }
 
           filesDownloadedCount++;
-          maybeReportOverall();
+          // 标记文件完成到协调器
+          progressCoordinator.markFileCompleted(fileIndex);
 
           // 从活跃流集合中移除
           const tr2 = activeTransfers.get(transferKey);
@@ -1846,10 +1757,13 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         });
 
         // 根据文件规模动态调整并发度（下载）
-        // 为避免统计数量跳跃，强制使用串行传输（并发度为1）
-        const dynamicParallelDownload = 1;
+        // 使用并发传输来提升性能，进度协调器会确保显示稳定
+        const dynamicParallelDownload = chooseConcurrency(totalFilesToDownload, totalBytesToDownload);
 
         await runWithConcurrency(tasks, dynamicParallelDownload, (fn) => fn());
+
+        // 完成后上报100%
+        progressCoordinator.finalize();
 
         sendToRenderer("download-folder-progress", {
           tabId,
