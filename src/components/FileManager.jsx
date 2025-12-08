@@ -745,6 +745,7 @@ const FileManager = memo(
 
       setLoading(true);
       setError(null);
+      let isRetrying = false; // 标记是否正在重试
 
       try {
         if (window.terminalAPI && window.terminalAPI.listFiles) {
@@ -798,6 +799,7 @@ const FileManager = memo(
               response?.error?.includes("SFTP错误") ||
               response?.error?.includes("Channel open failure") ||
               response?.error?.includes("SSH连接尚未就绪") ||
+              response?.error?.includes("No SSH connection info found") ||
               response?.error?.includes("ECONNRESET")
             ) {
               // 如果是SFTP通道错误或SSH连接未就绪，且重试次数未达到上限，则进行重试
@@ -814,6 +816,10 @@ const FileManager = memo(
                     max: 5,
                   }),
                 );
+
+                // 先关闭loading状态，避免持续显示
+                setLoading(false);
+                isRetrying = true; // 标记正在重试
 
                 // 添加延迟，避免立即重试
                 setTimeout(() => {
@@ -846,6 +852,10 @@ const FileManager = memo(
             }),
           );
 
+          // 先关闭loading状态，避免持续显示
+          setLoading(false);
+          isRetrying = true; // 标记正在重试
+
           // 添加延迟，避免立即重试
           setTimeout(() => {
             loadDirectory(path, retryCount + 1, forceRefresh);
@@ -859,9 +869,8 @@ const FileManager = memo(
             (error.message || t("fileManager.errors.unknownError")),
         );
       } finally {
-        if (retryCount === 0 || retryCount >= 5) {
-          // 更新重试次数
-          // 只有在初始尝试或重试结束后才设置loading为false
+        // 只有在不重试的情况下才关闭loading
+        if (!isRetrying) {
           setLoading(false);
         }
       }
