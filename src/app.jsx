@@ -83,6 +83,8 @@ import {
   useElementEvent,
 } from "./hooks/useWindowEvent.js";
 import ErrorNotification from "./components/ErrorNotification.jsx";
+import GlobalTransferBar from "./components/GlobalTransferBar.jsx";
+import GlobalTransferFloat from "./components/GlobalTransferFloat.jsx";
 
 function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
@@ -206,9 +208,11 @@ function AppContent() {
     }
   }, [darkMode]);
 
-  // ============ 保持本地状态（不在 reducer 中）============
+  // ============ 保持本地状态(不在 reducer 中)============
   const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] = React.useState(false);
   const [prevTabsLength, setPrevTabsLength] = React.useState(tabs.length);
+  const [transferFloatOpen, setTransferFloatOpen] = React.useState(false);
+  const [transferFloatInitialTransfer, setTransferFloatInitialTransfer] = React.useState(null);
 
   const tabsRef = useRef(null);
   const dragRafRef = React.useRef(null);
@@ -1228,6 +1232,29 @@ function AppContent() {
   // 关闭AI聊天窗口（清空对话内容）
   const handleCloseGlobalAiChatWindow = () => {
     dispatch(actions.setAiChatStatus("closed"));
+  };
+
+  // 打开全局传输浮动窗口
+  const handleOpenTransferFloat = (transfer) => {
+    setTransferFloatInitialTransfer(transfer);
+    setTransferFloatOpen(true);
+  };
+
+  // 关闭全局传输浮动窗口
+  const handleCloseTransferFloat = () => {
+    setTransferFloatOpen(false);
+    setTransferFloatInitialTransfer(null);
+  };
+
+  // 切换全局传输浮动窗口
+  const handleToggleTransferFloat = (transfer) => {
+    if (transferFloatOpen) {
+      // 如果已经打开，则关闭
+      handleCloseTransferFloat();
+    } else {
+      // 如果关闭，则打开
+      handleOpenTransferFloat(transfer);
+    }
   };
 
   // 发送文本到AI助手
@@ -2405,6 +2432,21 @@ function AppContent() {
         error={appError}
         open={errorNotificationOpen}
         onClose={handleCloseErrorNotification}
+      />
+
+      {/* 全局传输底部栏 */}
+      <GlobalTransferBar
+        onOpenFloat={handleOpenTransferFloat}
+        onToggleFloat={handleToggleTransferFloat}
+        isFloatOpen={transferFloatOpen}
+      />
+
+      {/* 全局传输进度浮动窗口 */}
+      <GlobalTransferFloat
+        open={transferFloatOpen}
+        onClose={handleCloseTransferFloat}
+        onToggle={handleToggleTransferFloat}
+        initialTransfer={transferFloatInitialTransfer}
       />
     </ThemeProvider>
   );
