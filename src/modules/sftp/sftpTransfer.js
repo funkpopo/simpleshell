@@ -22,6 +22,9 @@ const {
 // Import progress coordinator
 const { TransferProgressCoordinator } = require("./TransferProgressCoordinator");
 
+// Import async folder scanner
+const { scanFolderAsync, scanFolderSync } = require("../../workers/folder-scanner");
+
 // SFTP streaming helpers
 function delay(ms) {
   return new Promise((res) => setTimeout(res, ms));
@@ -1029,36 +1032,57 @@ async function handleUploadFolder(
       let filesUploadedCount = 0;
       let totalFilesToUpload = 0;
       let totalBytesToUpload = 0;
-      const allFiles = []; // Flat list of file objects { localPath, relativePath, name, size }
+      let allFiles = []; // Flat list of file objects { localPath, relativePath, name, size }
 
-      // 1. Scan local folder and calculate totals
-      function scanLocalAndCalculateTotals(currentLocalPath, relativeBasePath) {
-        const entries = fs.readdirSync(currentLocalPath, {
-          withFileTypes: true,
-        });
-        for (const entry of entries) {
-          const entryLocalPath = path.join(currentLocalPath, entry.name);
-          const entryRelativePath = path
-            .join(relativeBasePath, entry.name)
-            .replace(/\\/g, "/"); // Ensure POSIX paths for relative
-          if (entry.isDirectory()) {
-            scanLocalAndCalculateTotals(entryLocalPath, entryRelativePath);
-          } else {
-            const stats = fs.statSync(entryLocalPath);
-            allFiles.push({
-              localPath: entryLocalPath,
-              relativePath: entryRelativePath,
-              name: entry.name,
-              size: stats.size,
-            });
-            totalBytesToUpload += stats.size;
-            totalFilesToUpload++;
+      // 1. Scan local folder and calculate totals (using async worker)
+      try {
+        logToFile(
+          `sftpTransfer: Starting async folder scan for "${localFolderPath}"`,
+          "INFO",
+        );
+
+        let scanResult;
+        try {
+          // Try async scan with worker thread first
+          scanResult = await scanFolderAsync(localFolderPath, "", { timeout: 60000 });
+          logToFile(
+            `sftpTransfer: Async scan completed successfully`,
+            "INFO",
+          );
+        } catch (workerError) {
+          // Fallback to sync scan if worker fails
+          logToFile(
+            `sftpTransfer: Async scan failed (${workerError.message}), falling back to sync scan`,
+            "WARN",
+          );
+          scanResult = scanFolderSync(localFolderPath, "");
+        }
+
+        // Extract results from scan
+        allFiles = scanResult.files;
+        totalFilesToUpload = scanResult.fileCount;
+        totalBytesToUpload = scanResult.totalSize;
+
+        // Log any errors encountered during scan
+        if (scanResult.errors && scanResult.errors.length > 0) {
+          logToFile(
+            `sftpTransfer: Encountered ${scanResult.errors.length} errors during folder scan`,
+            "WARN",
+          );
+          for (const error of scanResult.errors.slice(0, 5)) {
+            logToFile(
+              `  - ${error.path}: ${error.error}`,
+              "WARN",
+            );
+          }
+          if (scanResult.errors.length > 5) {
+            logToFile(
+              `  - ... and ${scanResult.errors.length - 5} more errors`,
+              "WARN",
+            );
           }
         }
-      }
 
-      try {
-        scanLocalAndCalculateTotals(localFolderPath, "");
         logToFile(
           `sftpTransfer: Found ${totalFilesToUpload} files, total size ${totalBytesToUpload} bytes for upload from "${localFolderPath}".`,
           "INFO",
