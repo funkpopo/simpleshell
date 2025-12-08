@@ -20,6 +20,7 @@ const connectionManager = require("./modules/connection");
 const {
   registerReconnectHandlers,
 } = require("./core/ipc/handlers/reconnectHandlers");
+const { registerBatchHandlers } = require("./core/ipc/handlers/batchHandlers");
 const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers");
 const { safeHandle, wrapIpcHandler } = require("./core/ipc/ipcResponse");
@@ -543,6 +544,14 @@ app.whenReady().then(async () => {
     logToFile("重连处理器已注册", "INFO");
   } catch (error) {
     logToFile(`重连处理器注册失败: ${error.message}`, "ERROR");
+  }
+
+  // Register batch IPC handlers
+  try {
+    registerBatchHandlers(ipcMain);
+    logToFile("IPC批量消息处理器已注册", "INFO");
+  } catch (error) {
+    logToFile(`IPC批量消息处理器注册失败: ${error.message}`, "ERROR");
   }
 
   // Initialize latency handlers
