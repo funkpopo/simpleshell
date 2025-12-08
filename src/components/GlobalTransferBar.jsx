@@ -86,82 +86,87 @@ const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
   const isCompleted = progress >= 100;
   const hasError = !!error;
   const statusIcon = getStatusIcon(transfer);
+  const showDelete = isCompleted || hasError || isCancelled;
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-      <Chip
-        icon={getTransferIcon(type)}
-        label={
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            {statusIcon}
-            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-              <span style={{ maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", fontSize: "0.75rem" }}>
-                {fileName || "传输中..."}
+    <Chip
+      icon={getTransferIcon(type)}
+      label={
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: "100%" }}>
+          {statusIcon}
+          <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", flex: 1, minWidth: 0 }}>
+            <span style={{ maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", fontSize: "0.75rem" }}>
+              {fileName || "传输中..."}
+            </span>
+            {sshHost && (
+              <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>
+                {sshHost}
               </span>
-              {sshHost && (
-                <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>
-                  {sshHost}
-                </span>
-              )}
-            </Box>
+            )}
           </Box>
-        }
-        onClick={() => onClickTag(transfer)}
-        size="small"
-        sx={{
-          height: isCompleted ? 36 : 28,
-          fontSize: "0.75rem",
+          {showDelete && (
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(transfer);
+              }}
+              sx={{
+                width: 18,
+                height: 18,
+                padding: 0,
+                marginLeft: 0.5,
+                color: "inherit",
+                opacity: 0.7,
+                "&:hover": {
+                  opacity: 1,
+                  color: "#f44336",
+                  backgroundColor: "rgba(244, 67, 54, 0.1)",
+                },
+              }}
+            >
+              <Close sx={{ fontSize: 12 }} />
+            </IconButton>
+          )}
+        </Box>
+      }
+      onClick={() => onClickTag(transfer)}
+      size="small"
+      sx={{
+        height: isCompleted ? 36 : 28,
+        fontSize: "0.75rem",
+        paddingRight: showDelete ? 0.5 : undefined,
+        backgroundColor: hasError
+          ? "#ffebee"
+          : isCancelled
+          ? "#fff3e0"
+          : isCompleted
+          ? "#e8f5e8"
+          : `${getTransferColor(type)}15`,
+        color: hasError
+          ? "#f44336"
+          : isCancelled
+          ? "#ff9800"
+          : isCompleted
+          ? "#4caf50"
+          : getTransferColor(type),
+        cursor: "pointer",
+        transition: "all 0.2s ease",
+        "&:hover": {
           backgroundColor: hasError
-            ? "#ffebee"
+            ? "#ffcdd2"
             : isCancelled
-            ? "#fff3e0"
+            ? "#ffe0b2"
             : isCompleted
-            ? "#e8f5e8"
-            : `${getTransferColor(type)}15`,
-          color: hasError
-            ? "#f44336"
-            : isCancelled
-            ? "#ff9800"
-            : isCompleted
-            ? "#4caf50"
-            : getTransferColor(type),
-          cursor: "pointer",
-          transition: "all 0.2s ease",
-          "&:hover": {
-            backgroundColor: hasError
-              ? "#ffcdd2"
-              : isCancelled
-              ? "#ffe0b2"
-              : isCompleted
-              ? "#c8e6c9"
-              : `${getTransferColor(type)}30`,
-          },
-        }}
-      />
-      {isCompleted && (
-        <Tooltip title="删除">
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(transfer);
-            }}
-            sx={{
-              width: 20,
-              height: 20,
-              padding: 0,
-              color: theme.palette.text.secondary,
-              "&:hover": {
-                color: "#f44336",
-                backgroundColor: "#ffebee",
-              },
-            }}
-          >
-            <Delete sx={{ fontSize: 14 }} />
-          </IconButton>
-        </Tooltip>
-      )}
-    </Box>
+            ? "#c8e6c9"
+            : `${getTransferColor(type)}30`,
+        },
+        "& .MuiChip-label": {
+          paddingLeft: 1,
+          paddingRight: showDelete ? 0.5 : 1,
+        },
+      }}
+    />
   );
 });
 
@@ -258,11 +263,7 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
     <Paper
       elevation={4}
       sx={{
-        position: "fixed",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1100, // 设置合适的层级，低于对话框(1300)但高于内容(1000)
+        width: "100%",
         display: "flex",
         alignItems: "center",
         px: 2,
@@ -271,7 +272,9 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
         backgroundColor: theme.palette.background.paper,
         borderTop: `1px solid ${theme.palette.divider}`,
         maxHeight: "56px",
+        minHeight: "56px",
         overflow: "hidden",
+        flexShrink: 0,
       }}
     >
       {/* 左侧：传输任务标签列表 */}

@@ -100,7 +100,7 @@ const getStatusIcon = (transfer) => {
 /**
  * 单个传输项组件
  */
-const TransferItem = memo(({ transfer, onCancel }) => {
+const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
   const theme = useTheme();
   const {
     transferId,
@@ -226,7 +226,28 @@ const TransferItem = memo(({ transfer, onCancel }) => {
             }}
           />
 
-          {/* 取消按钮 */}
+          {/* 删除按钮（失败或取消的任务） */}
+          {(hasError || isCancelled) && (
+            <Tooltip title="删除">
+              <IconButton
+                size="small"
+                onClick={() => onDelete(transferId)}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  color: theme.palette.text.secondary,
+                  "&:hover": {
+                    color: "#f44336",
+                    backgroundColor: "#ffebee",
+                  },
+                }}
+              >
+                <Close sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {/* 取消按钮（进行中的任务） */}
           {!isCompleted && !isCancelled && !hasError && (
             <Tooltip title="中断传输">
               <IconButton
@@ -330,7 +351,7 @@ TransferItem.displayName = "TransferItem";
  */
 const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
   const theme = useTheme();
-  const { allTransfers, updateTransferProgress } = useAllGlobalTransfers();
+  const { allTransfers, updateTransferProgress, removeTransferProgress } = useAllGlobalTransfers();
   const [isMinimized, setIsMinimized] = useState(false);
   const [selectedTabId, setSelectedTabId] = useState(null);
 
@@ -407,6 +428,12 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
     }
   };
 
+  const handleDeleteTransfer = (transferId) => {
+    if (selectedTabId && transferId) {
+      removeTransferProgress(selectedTabId, transferId);
+    }
+  };
+
   if (!open) {
     return null;
   }
@@ -422,11 +449,11 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
         elevation={16}
         sx={{
           position: "fixed",
-          bottom: isMinimized ? 56 : 80, // 留出底部栏的空间
+          bottom: 64, // 在底部栏上方，留出足够空间
           right: 24,
-          width: isMinimized ? 280 : 360, // 缩小宽度
-          maxHeight: isMinimized ? 60 : 500, // 减小最大高度
-          zIndex: 1299, // 降低层级，避免遮挡重要元素
+          width: isMinimized ? 280 : 360,
+          maxHeight: isMinimized ? 60 : 500,
+          zIndex: 1200, // 高于底部栏，确保可见
           overflow: "hidden",
           borderRadius: 2,
           backgroundColor: theme.palette.background.paper,
@@ -570,6 +597,7 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
                   key={transfer.transferId}
                   transfer={transfer}
                   onCancel={handleCancelTransfer}
+                  onDelete={handleDeleteTransfer}
                 />
               ))
             )}

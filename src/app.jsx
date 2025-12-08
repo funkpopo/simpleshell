@@ -1892,8 +1892,18 @@ function AppContent() {
             flexGrow: 1,
             overflow: "hidden",
             position: "relative",
+            flexDirection: "column",
           }}
         >
+          {/* 主内容和侧边栏容器 */}
+          <Box
+            sx={{
+              display: "flex",
+              flexGrow: 1,
+              overflow: "hidden",
+              position: "relative",
+            }}
+          >
           {/* 主内容区域 */}
           <Box
             sx={{
@@ -2408,6 +2418,14 @@ function AppContent() {
             </Paper>
           </Box>
         </Box>
+
+          {/* 全局传输底部栏 - 作为独立行，不使用 fixed 定位 */}
+          <GlobalTransferBar
+            onOpenFloat={handleOpenTransferFloat}
+            onToggleFloat={handleToggleTransferFloat}
+            isFloatOpen={transferFloatOpen}
+          />
+        </Box>
       </Box>
 
       {/* 全局AI聊天窗口 */}
@@ -2432,13 +2450,6 @@ function AppContent() {
         error={appError}
         open={errorNotificationOpen}
         onClose={handleCloseErrorNotification}
-      />
-
-      {/* 全局传输底部栏 */}
-      <GlobalTransferBar
-        onOpenFloat={handleOpenTransferFloat}
-        onToggleFloat={handleToggleTransferFloat}
-        isFloatOpen={transferFloatOpen}
       />
 
       {/* 全局传输进度浮动窗口 */}

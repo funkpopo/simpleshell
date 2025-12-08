@@ -29,7 +29,7 @@ const ErrorNotification = ({ error, open, onClose }) => {
       sx={{
         bottom: '8px !important',
         left: '8px !important',
-        zIndex: 9999
+        zIndex: 9999 // 保持高层级确保不被遮挡
       }}
     >
       <Alert
