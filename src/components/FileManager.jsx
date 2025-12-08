@@ -52,7 +52,7 @@ import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import FilePreview from "./FilePreview.jsx";
-import TransferProgressFloat from "./TransferProgressFloat.jsx";
+// TransferProgressFloat 已移至全局显示,不再导入
 import FilePermissionEditor from "./FilePermissionEditor.jsx";
 import {
   List,
@@ -63,7 +63,7 @@ import { InsertDriveFile as InsertDriveFileIcon } from "@mui/icons-material";
 import { formatLastRefreshTime } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
-import { useSftpTransfers } from "../store/sftpTransferStore.js";
+import { useGlobalTransfers } from "../store/globalTransferStore.js";
 
 // 格式化文件大小
 const formatFileSize = (bytes, t) => {
@@ -355,7 +355,7 @@ const FileManager = memo(
       clearCompletedTransfers: storeClearCompletedTransfers,
       clearAllTransfers: storeClearAllTransfers,
       scheduleTransferCleanup: storeScheduleTransferCleanup,
-    } = useSftpTransfers(tabId);
+    } = useGlobalTransfers(tabId);
 
     const transferProgressList = transferList;
 
@@ -4821,13 +4821,7 @@ const FileManager = memo(
           )}
         </Snackbar>
 
-        <TransferProgressFloat
-          transferList={transferProgressList}
-          onCancelTransfer={handleCancelTransfer}
-          onClose={() => {
-            clearCompletedTransfers();
-          }}
-        />
+        {/* TransferProgressFloat已移至全局底部栏,不再在侧边栏内显示 */}
 
         <Menu
           open={Boolean(uploadMenuAnchor)}
