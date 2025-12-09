@@ -413,6 +413,7 @@ class ReconnectionManager extends EventEmitter {
 
     session.state = RECONNECT_STATE.RECONNECTING;
     session.lastAttempt = Date.now();
+    session.isReconnecting = true; // 标记正在重连
 
     logToFile(
       `开始重连: ${session.id} (第 ${session.retryCount}/${this.config.maxRetries} 次)`,
@@ -446,6 +447,7 @@ class ReconnectionManager extends EventEmitter {
       session.state = RECONNECT_STATE.CONNECTED;
       session.retryCount = 0;
       session.lastError = null;
+      session.isReconnecting = false; // 清除重连标记
 
       // 清空重连队列
       this.reconnectQueues.delete(session.id);
@@ -492,20 +494,24 @@ class ReconnectionManager extends EventEmitter {
       // 决定是否继续重试
       const failureReason = this.analyzeFailureReason(error);
       if (this.shouldReconnect(session, failureReason)) {
+        // 继续重试，不发送失败事件（避免触发错误通知）
         await this.scheduleReconnect(session, failureReason);
       } else {
+        // 达到最大重试次数，清除重连标记并发送失败事件
+        session.isReconnecting = false;
+
         this.abandonReconnection(
           session,
           `达到最大重试次数(${this.config.maxRetries}次)或不满足重连条件`,
         );
-      }
 
-      this.emit("reconnectFailed", {
-        sessionId: session.id,
-        error: error.message,
-        attempts: session.retryCount,
-        maxRetries: this.config.maxRetries,
-      });
+        this.emit("reconnectFailed", {
+          sessionId: session.id,
+          error: error.message,
+          attempts: session.retryCount,
+          maxRetries: this.config.maxRetries,
+        });
+      }
     }
   }
 
