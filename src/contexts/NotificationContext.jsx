@@ -32,7 +32,7 @@ export const NotificationProvider = ({ children }) => {
   }, []);
 
   const showError = useCallback((msg, options) => {
-    showNotification(msg, 'error', { autoHideDuration: 6000, ...options });
+    showNotification(msg, 'error', { autoHideDuration: null, ...options }); // 红色通知不自动关闭
   }, [showNotification]);
 
   const showSuccess = useCallback((msg, options) => {
