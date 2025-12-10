@@ -150,16 +150,17 @@ class CommandHistoryService {
       return [];
     }
 
-    const trimmedInput = input.trim().toLowerCase();
+    // 只对开头进行trim，保留末尾的空格以支持精确匹配
+    const normalizedInput = input.trimStart().toLowerCase();
 
     // 降低最小输入长度要求到1个字符，以支持2字符最短命令
-    if (trimmedInput.length < 2) {
+    if (normalizedInput.trim().length < 2) {
       return [];
     }
 
-    // 仅保留精确前缀匹配
+    // 仅保留精确前缀匹配（保留空格敏感性）
     const prefixMatches = this.history.filter((item) =>
-      item.command.toLowerCase().startsWith(trimmedInput),
+      item.command.toLowerCase().startsWith(normalizedInput),
     );
 
     // 按使用次数和时间排序
