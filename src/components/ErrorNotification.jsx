@@ -20,10 +20,14 @@ const ErrorNotification = ({ error, open, onClose }) => {
   // 使用新的错误翻译器
   const translatedError = translateError(error);
 
+  // 红色通知(error)不自动关闭，橙色通知(warning)自动关闭
+  const isErrorSeverity = translatedError.severity === 'error';
+  const autoHideDuration = isErrorSeverity ? null : (showDetails ? null : 6000);
+
   return (
     <Snackbar
       open={open}
-      autoHideDuration={showDetails ? null : 6000}
+      autoHideDuration={autoHideDuration}
       onClose={onClose}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       sx={{
