@@ -2,7 +2,10 @@ const path = require("path");
 const fs = require("fs");
 
 module.exports = {
-  entry: "./src/main.js",
+  entry: {
+    index: "./src/main.js",
+    "workers/ai-worker": "./src/workers/ai-worker.js",
+  },
   module: {
     rules: require("./webpack.rules"),
   },
@@ -14,29 +17,13 @@ module.exports = {
   // 明确指定输出
   output: {
     path: path.join(__dirname, ".webpack", "main"),
-    filename: "index.js",
+    filename: "[name].js",
   },
-  // 在构建后复制worker文件
+  // 在构建后复制资源文件
   plugins: [
     {
       apply: (compiler) => {
-        compiler.hooks.afterEmit.tap("CopyWorkers", () => {
-          // 确保workers目录存在
-          const srcDir = path.join(__dirname, "src", "workers");
-          const destDir = path.join(__dirname, ".webpack", "main", "workers");
-
-          if (!fs.existsSync(destDir)) {
-            fs.mkdirSync(destDir, { recursive: true });
-          }
-
-          // 复制ai-worker.js
-          const srcFile = path.join(srcDir, "ai-worker.js");
-          const destFile = path.join(destDir, "ai-worker.js");
-
-          if (fs.existsSync(srcFile)) {
-            fs.copyFileSync(srcFile, destFile);
-          }
-
+        compiler.hooks.afterEmit.tap("CopyAssets", () => {
           // 复制资源文件夹
           const assetsSrcDir = path.join(__dirname, "src", "assets");
           const assetsDestDir = path.join(
