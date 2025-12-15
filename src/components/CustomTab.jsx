@@ -110,6 +110,7 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.onDragOver === nextProps.onDragOver &&
     prevProps.onDragLeave === nextProps.onDragLeave &&
     prevProps.onDrop === nextProps.onDrop &&
+    prevProps.onDragEnd === nextProps.onDragEnd &&
     prevProps.isDraggedOver === nextProps.isDraggedOver &&
     prevProps.dragInsertPosition === nextProps.dragInsertPosition
   );
@@ -127,6 +128,7 @@ const CustomTab = memo((props) => {
     onDragOver,
     onDragLeave,
     onDrop,
+    onDragEnd, // 拖拽结束回调
     tabId, // 每个Tab需传递tabId
     isDraggedOver = false, // 是否被拖拽悬停
     dragInsertPosition = null, // 插入位置 ('before' | 'after')
@@ -265,6 +267,7 @@ const CustomTab = memo((props) => {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
+        onDragEnd={onDragEnd}
         label={
           <Box
             sx={{ display: "flex", alignItems: "center", position: "relative" }}
