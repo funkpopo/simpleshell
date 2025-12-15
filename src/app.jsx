@@ -298,21 +298,21 @@ function AppContent() {
     scrollActiveTabIntoView();
   }, [scrollActiveTabIntoView, currentTab, tabs.length]);
 
+  // 注意: 移除了自动切换到新标签页的useEffect
+  // 新标签页的切换现在在 handleCreateSSHConnection 中直接处理
+  // 以避免竞态条件导致的重复标签页问题
   React.useEffect(() => {
+    // 仅处理SFTP面板锁定更新，不再自动切换标签页
     if (tabs.length > prevTabsLength) {
-      dispatch(actions.setCurrentTab(tabs.length - 1));
-
-      // 如果SFTP面板已打开，新标签页是SSH类型，则更新锁定的tabId
       const newTab = tabs[tabs.length - 1];
       if (newTab && newTab.type === "ssh") {
         setLockedFileManagerTabId((prevLockedId) => {
-          // 只有在之前有锁定的情况下才更新（即SFTP面板已打开）
           return prevLockedId !== null ? newTab.id : prevLockedId;
         });
       }
     }
     setPrevTabsLength(tabs.length);
-  }, [tabs, dispatch, prevTabsLength]);
+  }, [tabs.length, prevTabsLength]);
 
   React.useEffect(() => {
     const getSidebarWidth = () => {
@@ -816,7 +816,7 @@ function AppContent() {
   };
 
   // 创建远程连接（SSH或Telnet）
-  const handleCreateSSHConnection = (connection) => {
+  const handleCreateSSHConnection = useCallback((connection) => {
     // 创建唯一的标签页ID
     const terminalId = `${connection.protocol || "ssh"}-${Date.now()}`;
 
@@ -846,9 +846,11 @@ function AppContent() {
       [`${terminalId}-processId`]: null, // 预留存储进程ID的位置
     }));
 
-    // 添加标签并切换到新标签
-    dispatch(actions.setTabs([...tabs, newTab]));
-  };
+    // 添加标签并立即切换到新标签（使用当前tabs长度作为新索引）
+    const newTabs = [...tabs, newTab];
+    dispatch(actions.setTabs(newTabs));
+    dispatch(actions.setCurrentTab(newTabs.length - 1));
+  }, [tabs, terminalInstances, dispatch]);
 
   // 处理从连接管理器打开连接
   const handleOpenConnection = (connection) => {
@@ -932,12 +934,9 @@ function AppContent() {
         return;
       }
 
-      dispatch(actions.setDraggedTabIndex(index));
+      dispatch(actions.setDraggedTab(index));
       // 设置一些拖动时的数据
       e.dataTransfer.effectAllowed = "move";
-
-      // 不再设置text/plain数据，因为CustomTab已经设置了application/json
-      // e.dataTransfer.setData("text/plain", index);
 
       // 使拖动的元素半透明
       if (e.currentTarget) {
@@ -951,8 +950,17 @@ function AppContent() {
   const handleDragOver = useCallback(
     (e, index) => {
       e.preventDefault();
+      // 不允许放置到欢迎页
       if (index === 0) return;
-      if (draggedTabIndex === null || draggedTabIndex === index) return;
+      // 忽略无效拖拽或拖拽到自身
+      if (draggedTabIndex === null || draggedTabIndex === index) {
+        // 清除悬停状态
+        if (dragOverTabIndex !== null) {
+          dispatch(actions.setDragOverTab(null));
+          dispatch(actions.setDragInsertPosition(null));
+        }
+        return;
+      }
 
       const rect = e.currentTarget.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
@@ -975,7 +983,7 @@ function AppContent() {
             pending.index !== dragOverTabIndex ||
             pending.position !== dragInsertPosition
           ) {
-            dispatch(actions.setDragOverTabIndex(pending.index));
+            dispatch(actions.setDragOverTab(pending.index));
             dispatch(actions.setDragInsertPosition(pending.position));
           }
         });
@@ -985,30 +993,95 @@ function AppContent() {
   );
 
   // 处理拖动离开
-  const handleDragLeave = (e) => {
+  const handleDragLeave = useCallback((e) => {
     if (!e.currentTarget.contains(e.relatedTarget)) {
-      dispatch(actions.setDragOverTabIndex(null));
+      dispatch(actions.setDragOverTab(null));
       dispatch(actions.setDragInsertPosition(null));
     }
-  };
+  }, [dispatch]);
+
+  // 清理拖拽状态的辅助函数
+  const cleanupDragState = useCallback(() => {
+    if (dragRafRef.current) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    pendingDragStateRef.current = null;
+    dispatch(actions.setDraggedTab(null));
+    dispatch(actions.setDragOverTab(null));
+    dispatch(actions.setDragInsertPosition(null));
+  }, [dispatch]);
+
+  // 标签排序功能 - 核心排序逻辑
+  // sourceIndex: 源标签当前索引
+  // targetIndex: 目标位置索引（放置后应该在的位置）
+  // position: 'before' 或 'after' - 相对于目标标签的位置
+  const reorderTab = useCallback(
+    (sourceIndex, targetIndex, position) => {
+      // 验证参数
+      if (sourceIndex === null || targetIndex === null) return;
+      if (!tabs[sourceIndex]) return;
+      if (tabs[sourceIndex].id === "welcome") return;
+      if (targetIndex === 0) return; // 不能放到欢迎页之前
+
+      // 计算最终插入位置
+      // 如果位置是 "after"，最终位置应该是 targetIndex + 1
+      // 如果位置是 "before"，最终位置就是 targetIndex
+      let finalInsertIndex = position === "after" ? targetIndex + 1 : targetIndex;
+
+      // 确保不会插入到欢迎页之前
+      if (finalInsertIndex < 1) finalInsertIndex = 1;
+
+      // 如果源标签在目标位置之前，移除源标签后，后面的索引都会减1
+      // 所以需要调整最终插入位置
+      const adjustedInsertIndex = sourceIndex < finalInsertIndex
+        ? finalInsertIndex - 1
+        : finalInsertIndex;
+
+      // 如果调整后的插入位置等于源位置，不需要移动
+      if (adjustedInsertIndex === sourceIndex) return;
+
+      // 执行排序
+      const newTabs = [...tabs];
+      const [draggedTab] = newTabs.splice(sourceIndex, 1);
+      newTabs.splice(adjustedInsertIndex, 0, draggedTab);
+
+      dispatch(actions.setTabs(newTabs));
+
+      // 更新当前选中标签页的索引
+      let newCurrentTab = currentTab;
+      if (currentTab === sourceIndex) {
+        // 被拖拽的标签是当前选中的标签
+        newCurrentTab = adjustedInsertIndex;
+      } else if (sourceIndex < currentTab && adjustedInsertIndex >= currentTab) {
+        // 源在当前之前，目标在当前或之后 -> 当前标签索引减1
+        newCurrentTab = currentTab - 1;
+      } else if (sourceIndex > currentTab && adjustedInsertIndex <= currentTab) {
+        // 源在当前之后，目标在当前或之前 -> 当前标签索引加1
+        newCurrentTab = currentTab + 1;
+      }
+
+      if (newCurrentTab !== currentTab) {
+        dispatch(actions.setCurrentTab(newCurrentTab));
+      }
+    },
+    [tabs, currentTab, dispatch],
+  );
 
   // 处理放置 - 仅支持排序
-  const handleDrop = (e, targetIndex) => {
+  const handleDrop = useCallback((e, targetIndex) => {
     e.preventDefault();
+    e.stopPropagation();
 
-    if (targetIndex === 0) return;
-
-    const cleanupDragState = () => {
-      dispatch(actions.setDraggedTabIndex(null));
-      dispatch(actions.setDragOverTabIndex(null));
-      dispatch(actions.setDragInsertPosition(null));
-      if (e.currentTarget) {
-        e.currentTarget.style.opacity = "1";
-      }
-    };
+    // 不允许放置到欢迎页
+    if (targetIndex === 0) {
+      cleanupDragState();
+      return;
+    }
 
     let sourceIndex = draggedTabIndex;
 
+    // 如果状态中没有源索引，尝试从 dataTransfer 获取
     if (sourceIndex === null) {
       try {
         const raw = e.dataTransfer?.getData("application/json");
@@ -1023,83 +1096,39 @@ function AppContent() {
       }
     }
 
-    if (sourceIndex === null) {
+    // 验证源索引
+    if (sourceIndex === null || sourceIndex === targetIndex) {
       cleanupDragState();
       return;
     }
 
-    if (sourceIndex === targetIndex) {
-      cleanupDragState();
-      return;
-    }
-
+    // 确定放置位置
     const rect = e.currentTarget?.getBoundingClientRect();
-    const positionFromEvent = rect
-      ? e.clientX - rect.left <= rect.width / 2
-        ? "before"
-        : "after"
-      : "after";
-    const position = dragInsertPosition || positionFromEvent;
-
-    let insertIndex = targetIndex;
-    if (position === "after") {
-      insertIndex = targetIndex + 1;
+    let position = dragInsertPosition;
+    if (!position && rect) {
+      position = e.clientX - rect.left <= rect.width / 2 ? "before" : "after";
+    }
+    if (!position) {
+      position = "after";
     }
 
-    reorderTab(sourceIndex, insertIndex);
+    // 执行排序
+    reorderTab(sourceIndex, targetIndex, position);
     cleanupDragState();
-  };
 
-  // 处理拖动结束（无论是否成功放置）
-  const handleDragEnd = (e) => {
+    // 恢复透明度
     if (e.currentTarget) {
       e.currentTarget.style.opacity = "1";
     }
-    if (dragRafRef.current) {
-      cancelAnimationFrame(dragRafRef.current);
-      dragRafRef.current = null;
+  }, [draggedTabIndex, dragInsertPosition, cleanupDragState, reorderTab]);
+
+  // 处理拖动结束（无论是否成功放置）
+  const handleDragEnd = useCallback((e) => {
+    if (e.currentTarget) {
+      e.currentTarget.style.opacity = "1";
     }
-    pendingDragStateRef.current = null;
-    dispatch(actions.setDraggedTabIndex(null));
-    dispatch(actions.setDragOverTabIndex(null));
-    dispatch(actions.setDragInsertPosition(null));
-  };
-
-  // 标签排序功能
-  const reorderTab = useCallback(
-    (sourceIndex, targetIndex) => {
-      if (sourceIndex === targetIndex || !tabs[sourceIndex]) return;
-
-      // 不能移动欢迎页
-      if (tabs[sourceIndex].id === "welcome") return;
-
-      const newTabs = [...tabs];
-      const [draggedTab] = newTabs.splice(sourceIndex, 1);
-
-      // 调整插入位置
-      const adjustedTargetIndex =
-        sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
-      newTabs.splice(adjustedTargetIndex, 0, draggedTab);
-
-      dispatch(actions.setTabs(newTabs));
-
-      // 更新当前标签页索引
-      if (currentTab === sourceIndex) {
-        dispatch(actions.setCurrentTab(adjustedTargetIndex));
-      } else if (
-        currentTab > sourceIndex &&
-        currentTab <= adjustedTargetIndex
-      ) {
-        dispatch(actions.setCurrentTab(currentTab - 1));
-      } else if (
-        currentTab < sourceIndex &&
-        currentTab >= adjustedTargetIndex
-      ) {
-        dispatch(actions.setCurrentTab(currentTab + 1));
-      }
-    },
-    [tabs, currentTab, dispatch],
-  );
+    cleanupDragState();
+  }, [cleanupDragState]);
 
   // 切换资源监控侧边栏
   const toggleResourceMonitor = useCallback(() => {
