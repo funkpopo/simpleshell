@@ -187,9 +187,10 @@ class TelnetConnectionPool extends BaseConnectionPool {
       errorMessage = `Telnet认证失败: 请检查用户名和密码是否正确`;
     }
 
-    this._logError(`Telnet连接错误: ${connectionKey}`, new Error(errorMessage));
+    // 日志中记录详细信息（包含connectionKey），但不影响用户看到的错误
+    this._logInfo(`Telnet连接错误详情: ${connectionKey} - ${errorMessage}`);
 
-    // 创建增强的错误对象
+    // 创建增强的错误对象（使用简洁的错误消息）
     const enhancedError = new Error(errorMessage);
     enhancedError.originalError = err;
     enhancedError.connectionKey = connectionKey;
