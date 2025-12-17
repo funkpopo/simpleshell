@@ -48,7 +48,12 @@ import "./CodeHighlight.css";
 
 // 自定义浮动窗口对话框（支持动态宽度）
 const FloatingDialog = styled(Dialog)(({ theme, customwidth }) => ({
+  pointerEvents: "none",
+  "& .MuiDialog-container": {
+    pointerEvents: "none",
+  },
   "& .MuiDialog-paper": {
+    pointerEvents: "auto",
     position: "fixed",
     right: 50,
     bottom: 20,
@@ -735,8 +740,9 @@ const AIChatWindow = ({
   return (
     <FloatingDialog
       open={windowState === "visible"}
-      onClose={onMinimize}
       hideBackdrop
+      disableEnforceFocus
+      disableAutoFocus
       disableEscapeKeyDown={isPending || abortController}
       customwidth={windowWidth}
       ref={dialogRef}
@@ -773,11 +779,11 @@ const AIChatWindow = ({
         <Box display="flex" alignItems="center" gap={1}>
           <Tooltip title={t("aiAssistant.minimize")}>
             <IconButton
-              size="small"
+              size="medium"
               onClick={onMinimize}
               sx={{ p: 0.5 }}
             >
-              <AIIcon fontSize="small" />
+              <AIIcon />
             </IconButton>
           </Tooltip>
           <Typography variant="h6">{t("ai.title")}</Typography>
