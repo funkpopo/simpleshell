@@ -152,8 +152,8 @@ class SSHPool extends BaseConnectionPool {
 
       // 设置连接超时
       const timeout = setTimeout(() => {
-        this._logError('SSH连接超时', new Error(`连接键: ${connectionKey}`));
-        reject(new Error('SSH连接超时'));
+        this._logInfo(`SSH连接超时: ${connectionKey}`);
+        reject(new Error(`连接超时: ${sshConfig.host}:${sshConfig.port || 22}`));
       }, this.config.connectionTimeout);
 
       // 监听就绪事件
@@ -499,9 +499,10 @@ class SSHPool extends BaseConnectionPool {
       }
     }
 
-    this._logError(`SSH连接错误: ${connectionKey}`, new Error(errorMessage));
+    // 日志中记录详细信息（包含connectionKey），但不影响用户看到的错误
+    this._logInfo(`SSH连接错误详情: ${connectionKey} - ${errorMessage}`);
 
-    // 创建增强的错误对象（使用简洁的错误消息）
+    // 创建增强的错误对象（使用简洁的错误消息，不包含技术细节）
     const enhancedError = new Error(errorMessage);
     enhancedError.originalError = err;
     enhancedError.connectionKey = connectionKey;
