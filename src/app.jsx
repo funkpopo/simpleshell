@@ -1400,8 +1400,16 @@ function AppContent() {
     }, 15);
   };
 
+  // 获取右侧面板应该使用的当前标签页信息
+  const getCurrentPanelTab = useCallback(() => {
+    if (currentTab > 0 && tabs[currentTab]) {
+      return tabs[currentTab];
+    }
+    return null;
+  }, [tabs, currentTab]);
+
   // 添加发送快捷命令到终端的函数
-  const handleSendCommand = (command) => {
+  const handleSendCommand = useCallback((command) => {
     const panelTab = getCurrentPanelTab();
 
     if (panelTab && panelTab.type === "ssh") {
@@ -1414,15 +1422,7 @@ function AppContent() {
       console.warn("No panel tab found");
       return { success: false, error: "请先建立SSH连接" };
     }
-  };
-
-  // 获取右侧面板应该使用的当前标签页信息
-  const getCurrentPanelTab = useCallback(() => {
-    if (currentTab > 0 && tabs[currentTab]) {
-      return tabs[currentTab];
-    }
-    return null;
-  }, [tabs, currentTab]);
+  }, [getCurrentPanelTab]);
 
   // 计算右侧面板的当前标签页信息
   const currentPanelTab = getCurrentPanelTab();
