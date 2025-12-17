@@ -11,12 +11,19 @@ class TerminalDetector {
     this.isWindows = process.platform === "win32";
     this.isMacOS = process.platform === "darwin";
     this.isLinux = process.platform === "linux";
+    this.cacheTime = null;
+    this.cacheTTL = 300000; // 5 minutes cache
   }
 
   /**
    * 检测当前系统中可用的本地终端
    */
   async detectAllTerminals() {
+    // 检查缓存
+    if (this.cacheTime && Date.now() - this.cacheTime < this.cacheTTL) {
+      return this.detectedTerminals;
+    }
+
     this.detectedTerminals = [];
 
     try {
@@ -31,6 +38,7 @@ class TerminalDetector {
       // 忽略异常，尽力返回已检测到的终端
     }
 
+    this.cacheTime = Date.now();
     return this.detectedTerminals;
   }
 
@@ -60,15 +68,16 @@ class TerminalDetector {
       },
     ];
 
-    for (const terminal of terminals) {
-      try {
-        if (await this.checkTerminalAvailability(terminal)) {
-          this.detectedTerminals.push(terminal);
-        }
-      } catch (error) {
-        // 忽略单个终端检测失败
+    // 并行检查所有终端
+    const results = await Promise.allSettled(
+      terminals.map((terminal) => this.checkTerminalAvailability(terminal)),
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled" && result.value) {
+        this.detectedTerminals.push(terminals[index]);
       }
-    }
+    });
 
     // 按优先级降序排序
     this.detectedTerminals.sort(
@@ -101,15 +110,16 @@ class TerminalDetector {
       },
     ];
 
-    for (const terminal of terminals) {
-      try {
-        if (await this.checkTerminalAvailability(terminal)) {
-          this.detectedTerminals.push(terminal);
-        }
-      } catch (error) {
-        // 忽略单个终端检测失败
+    // 并行检查所有终端
+    const results = await Promise.allSettled(
+      terminals.map((terminal) => this.checkTerminalAvailability(terminal)),
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled" && result.value) {
+        this.detectedTerminals.push(terminals[index]);
       }
-    }
+    });
 
     this.detectedTerminals.sort(
       (a, b) => (b.priority || 0) - (a.priority || 0),
@@ -147,15 +157,16 @@ class TerminalDetector {
       },
     ];
 
-    for (const terminal of terminals) {
-      try {
-        if (await this.checkTerminalAvailability(terminal)) {
-          this.detectedTerminals.push(terminal);
-        }
-      } catch (error) {
-        // 忽略单个终端检测失败
+    // 并行检查所有终端
+    const results = await Promise.allSettled(
+      terminals.map((terminal) => this.checkTerminalAvailability(terminal)),
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled" && result.value) {
+        this.detectedTerminals.push(terminals[index]);
       }
-    }
+    });
 
     this.detectedTerminals.sort(
       (a, b) => (b.priority || 0) - (a.priority || 0),
@@ -167,102 +178,137 @@ class TerminalDetector {
    */
   async checkTerminalAvailability(terminal) {
     try {
-      // 1. 优先检查显式给定的检查路径
+      // 并行执行多个检查，返回第一个成功的结果
+      const checks = [];
+
+      // 1. 检查显式给定的检查路径
       if (terminal.checkPaths) {
-        for (const checkPath of terminal.checkPaths) {
-          if (checkPath && (await this.fileExists(checkPath))) {
-            terminal.executablePath = checkPath;
-            return true;
-          }
-        }
+        checks.push(
+          (async () => {
+            for (const checkPath of terminal.checkPaths) {
+              if (checkPath && (await this.fileExists(checkPath))) {
+                terminal.executablePath = checkPath;
+                return true;
+              }
+            }
+            return false;
+          })(),
+        );
       }
 
       // 2. 检查环境变量指定的目录
       if (terminal.environmentPaths) {
-        for (const envVar of terminal.environmentPaths) {
-          const envPath = process.env[envVar];
-          if (envPath) {
-            // 在环境变量目录下查找可执行文件
-            const possiblePaths = [
-              path.join(envPath, terminal.executable),
-              path.join(envPath, "bin", terminal.executable),
-              path.join(envPath, "cmd", terminal.executable),
-            ];
+        checks.push(
+          (async () => {
+            for (const envVar of terminal.environmentPaths) {
+              const envPath = process.env[envVar];
+              if (envPath) {
+                const possiblePaths = [
+                  path.join(envPath, terminal.executable),
+                  path.join(envPath, "bin", terminal.executable),
+                  path.join(envPath, "cmd", terminal.executable),
+                ];
 
-            for (const possiblePath of possiblePaths) {
-              if (await this.fileExists(possiblePath)) {
-                terminal.executablePath = possiblePath;
-                return true;
+                for (const possiblePath of possiblePaths) {
+                  if (await this.fileExists(possiblePath)) {
+                    terminal.executablePath = possiblePath;
+                    return true;
+                  }
+                }
               }
             }
-          }
-        }
+            return false;
+          })(),
+        );
       }
 
       // 3. WSL 检查
       if (terminal.type === "wsl") {
-        return await this.checkWSLAvailability(terminal);
+        checks.push(this.checkWSLAvailability(terminal));
       }
 
       // 4. 系统命令查询
       if (terminal.systemCommand) {
-        try {
-          const whereCommand = this.isWindows ? "where" : "which";
-          const { stdout } = await execAsync(
-            `${whereCommand} ${terminal.systemCommand}`,
-            {
-              timeout: 5000,
-              windowsHide: true,
-            },
-          );
-          if (stdout.trim()) {
-            const foundPaths = stdout.trim().split("\n");
-            // 取第一个找到的路径
-            const firstPath = foundPaths[0].trim();
-            if (firstPath && (await this.fileExists(firstPath))) {
-              terminal.executablePath = firstPath;
+        checks.push(
+          (async () => {
+            try {
+              const whereCommand = this.isWindows ? "where" : "which";
+              const { stdout } = await execAsync(
+                `${whereCommand} ${terminal.systemCommand}`,
+                {
+                  timeout: 2000,
+                  windowsHide: true,
+                },
+              );
+              if (stdout.trim()) {
+                const firstPath = stdout.trim().split("\n")[0].trim();
+                if (firstPath && (await this.fileExists(firstPath))) {
+                  terminal.executablePath = firstPath;
+                  return true;
+                }
+              }
+            } catch (error) {
+              // 忽略
+            }
+            return false;
+          })(),
+        );
+      }
+
+      // 5. Windows 应用商店检查
+      if (this.isWindows && terminal.packageName) {
+        checks.push(
+          (async () => {
+            try {
+              const { stdout } = await execAsync(
+                `powershell -c "Get-AppxPackage -Name *${terminal.packageName.split("_")[0]}* | Select-Object -First 1 -ExpandProperty InstallLocation"`,
+                { timeout: 3000 },
+              );
+              if (stdout.trim()) {
+                terminal.executablePath = terminal.executable;
+                return true;
+              }
+            } catch (error) {
+              // 忽略
+            }
+            return false;
+          })(),
+        );
+      }
+
+      // 6. 直接查找和 PATH 查询（macOS/Linux）
+      if (!this.isWindows && terminal.executable) {
+        checks.push(
+          (async () => {
+            if (await this.fileExists(terminal.executable)) {
+              terminal.executablePath = terminal.executable;
               return true;
             }
-          }
-        } catch (error) {
-          // 命令不存在或执行失败，忽略
-        }
+
+            try {
+              const { stdout } = await execAsync(
+                `which ${terminal.executable}`,
+                { timeout: 2000 },
+              );
+              if (stdout.trim()) {
+                terminal.executablePath = stdout.trim();
+                return true;
+              }
+            } catch (error) {
+              // 忽略
+            }
+            return false;
+          })(),
+        );
       }
 
-      // 5. 检查 Windows 应用商店安装（如 Windows Terminal）
-      if (this.isWindows && terminal.packageName) {
-        try {
-          const { stdout } = await execAsync(
-            `powershell -c "Get-AppxPackage -Name *${terminal.packageName.split("_")[0]}* | Select-Object -First 1 -ExpandProperty InstallLocation"`,
-            { timeout: 8000 },
-          );
-          if (stdout.trim()) {
-            terminal.executablePath = terminal.executable;
-            return true;
-          }
-        } catch (error) {
-          // 忽略查询失败
-        }
-      }
+      // 并行执行所有检查，返回第一个成功的
+      if (checks.length === 0) return false;
 
-      // 6. 直接按可执行名查找（macOS/Linux）
-      if (!this.isWindows && terminal.executable) {
-        if (await this.fileExists(terminal.executable)) {
-          terminal.executablePath = terminal.executable;
+      const results = await Promise.allSettled(checks);
+      for (const result of results) {
+        if (result.status === "fulfilled" && result.value) {
           return true;
-        }
-
-        // 在 PATH 中查找
-        try {
-          const { stdout } = await execAsync(`which ${terminal.executable}`, {
-            timeout: 5000,
-          });
-          if (stdout.trim()) {
-            terminal.executablePath = stdout.trim();
-            return true;
-          }
-        } catch (error) {
-          // 忽略 PATH 查询失败
         }
       }
 
@@ -279,7 +325,7 @@ class TerminalDetector {
     try {
       // 通过 wsl -l -v 检查是否已安装（使用 UTF-16LE 编码处理）
       const { stdout: wslList } = await execAsync("wsl -l -v", {
-        timeout: 8000,
+        timeout: 3000,
         encoding: "utf16le", // 指定 UTF-16LE 编码
       });
 
