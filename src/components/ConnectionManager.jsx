@@ -274,6 +274,11 @@ const ConnectionListItem = memo(function ConnectionListItem({
     ? getGroupContainerId(parentGroup.id)
     : ROOT_CONTAINER_ID;
 
+  const primaryRef = useRef(null);
+  const secondaryRef = useRef(null);
+  const [isPrimaryTruncated, setIsPrimaryTruncated] = useState(false);
+  const [isSecondaryTruncated, setIsSecondaryTruncated] = useState(false);
+
   const {
     attributes,
     listeners,
@@ -313,21 +318,19 @@ const ConnectionListItem = memo(function ConnectionListItem({
     ? `${connection.username}@${connection.host}`
     : connection.host;
 
-  const estimateTextWidth = (text) => {
-    let width = 0;
-    for (let index = 0; index < text.length; index += 1) {
-      const char = text.charAt(index);
-      width += /[\u4e00-\u9fff]/.test(char) ? 2 : 1;
-    }
-    return width;
-  };
-
-  const maxDisplayWidth = 17;
   const primaryContent = connection.name || connection.host;
-  const isPrimaryTruncated =
-    estimateTextWidth(primaryContent) > maxDisplayWidth;
-  const isSecondaryTruncated =
-    estimateTextWidth(secondaryText) > maxDisplayWidth;
+
+  useEffect(() => {
+    const checkTruncation = () => {
+      if (primaryRef.current) {
+        setIsPrimaryTruncated(primaryRef.current.scrollWidth > primaryRef.current.clientWidth);
+      }
+      if (secondaryRef.current) {
+        setIsSecondaryTruncated(secondaryRef.current.scrollWidth > secondaryRef.current.clientWidth);
+      }
+    };
+    checkTruncation();
+  }, [primaryContent, secondaryText]);
 
   return (
     <ListItem
@@ -416,13 +419,9 @@ const ConnectionListItem = memo(function ConnectionListItem({
         </ListItemIcon>
         <ListItemText
           primary={
-            isPrimaryTruncated ? (
-              <Tooltip title={primaryContent}>
-                <span>{primaryContent}</span>
-              </Tooltip>
-            ) : (
-              primaryContent
-            )
+            <Tooltip title={primaryContent} placement="top" disableHoverListener={!isPrimaryTruncated}>
+              <span ref={primaryRef}>{primaryContent}</span>
+            </Tooltip>
           }
           primaryTypographyProps={{
             variant: "body2",
@@ -431,13 +430,9 @@ const ConnectionListItem = memo(function ConnectionListItem({
             fontSize: "0.85rem",
           }}
           secondary={
-            isSecondaryTruncated ? (
-              <Tooltip title={secondaryText}>
-                <span>{secondaryText}</span>
-              </Tooltip>
-            ) : (
-              secondaryText
-            )
+            <Tooltip title={secondaryText} placement="top" disableHoverListener={!isSecondaryTruncated}>
+              <span ref={secondaryRef}>{secondaryText}</span>
+            </Tooltip>
           }
           secondaryTypographyProps={{
             variant: "caption",
@@ -449,6 +444,12 @@ const ConnectionListItem = memo(function ConnectionListItem({
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              "& > span": {
+                display: "block",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              },
             },
           }}
         />
