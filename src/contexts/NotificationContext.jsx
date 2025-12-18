@@ -36,7 +36,7 @@ export const NotificationProvider = ({ children }) => {
   }, [showNotification]);
 
   const showSuccess = useCallback((msg, options) => {
-    showNotification(msg, 'success', { autoHideDuration: 4000, ...options });
+    showNotification(msg, 'success', { autoHideDuration: 5000, ...options });
   }, [showNotification]);
 
   const showInfo = useCallback((msg, options) => {
