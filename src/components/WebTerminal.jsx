@@ -2171,7 +2171,7 @@ useEffect(() => {
     foreground: theme.palette.mode === "light" ? "#24292f" : "#e6edf3",
     // 光标颜色 - 更醒目
     cursor: theme.palette.mode === "light" ? "#0969da" : "#58a6ff",
-    cursorAccent: theme.palette.mode === "light" ? "#ffffff" : "#0d1117",
+    cursorAccent: theme.palette.mode === "light" ? "#f3f4f6" : "#0d1117",
     // 选择高亮 - 优化可见度，日间和夜间模式下都有足够的对比度
     selectionBackground:
       theme.palette.mode === "light"

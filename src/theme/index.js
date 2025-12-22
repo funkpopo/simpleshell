@@ -20,8 +20,8 @@ export const createUnifiedTheme = (darkMode) =>
         dark: darkMode ? "#c2185b" : "#ad0e4e",
       },
       background: {
-        default: darkMode ? "#121212" : "#f0f2f5",
-        paper: darkMode ? "#1e1e1e" : "#fafbfc",
+        default: darkMode ? "#121212" : "#e8eaed",
+        paper: darkMode ? "#1e1e1e" : "#f3f4f6",
       },
       success: {
         main: darkMode ? "#4caf50" : "#2e7d32",
