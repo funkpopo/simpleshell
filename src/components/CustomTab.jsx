@@ -104,6 +104,7 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.selected === nextProps.selected &&
     prevProps.index === nextProps.index &&
     prevProps.tabId === nextProps.tabId &&
+    prevProps.draggable === nextProps.draggable &&
     prevProps.onClose === nextProps.onClose &&
     prevProps.onContextMenu === nextProps.onContextMenu &&
     prevProps.onDragStart === nextProps.onDragStart &&
@@ -124,6 +125,7 @@ const CustomTab = memo((props) => {
     onContextMenu,
     onClick,
     index,
+    draggable = true,
     onDragStart,
     onDragOver,
     onDragLeave,
@@ -262,8 +264,8 @@ const CustomTab = memo((props) => {
         {...other}
         onClick={onClick}
         onContextMenu={onContextMenu}
-        draggable="true"
-        onDragStart={handleDragStart}
+        draggable={draggable}
+        onDragStart={draggable ? handleDragStart : undefined}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
