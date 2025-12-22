@@ -2221,6 +2221,7 @@ useEffect(() => {
         return {
           fontSize: settings.terminalFontSize || 14,
           fontFamily: getFontFamilyString(settings.terminalFont || "Fira Code"),
+          fontWeight: settings.terminalFontWeight || 500,
         };
       }
     } catch (error) {
@@ -2231,6 +2232,7 @@ useEffect(() => {
     return {
       fontSize: 14,
       fontFamily: getFontFamilyString("Fira Code"),
+      fontWeight: 500,
     };
   };
 
@@ -2264,7 +2266,7 @@ useEffect(() => {
   // 监听设置变更事件
   useEffect(() => {
     const handleSettingsChanged = async (event) => {
-      const { terminalFontSize, terminalFont, performance } = event.detail;
+      const { terminalFontSize, terminalFont, terminalFontWeight, performance } = event.detail;
 
       if (
         performance &&
@@ -2293,6 +2295,12 @@ useEffect(() => {
         if (terminalFont !== undefined) {
           terminalCache[tabId].options.fontFamily =
             getFontFamilyString(terminalFont);
+        }
+        if (terminalFontWeight !== undefined) {
+          terminalCache[tabId].options.fontWeight = parseInt(
+            terminalFontWeight,
+            10,
+          );
         }
 
         // 使用EventManager管理定时器
@@ -2464,11 +2472,12 @@ useEffect(() => {
             const fontSettings = await getFontSettings();
             term.options.fontSize = fontSettings.fontSize;
             term.options.fontFamily = fontSettings.fontFamily;
+            term.options.fontWeight = fontSettings.fontWeight;
             // 使用EventManager管理应用字体设置后自动调整大小
             eventManager.setTimeout(() => {
               if (fitAddon) {
                 fitAddon.fit();
-                
+
                 // Canvas 渲染器需要手动刷新
                 if (!term.__webglEnabled && typeof term.refresh === "function") {
                   term.refresh(0, term.rows - 1);

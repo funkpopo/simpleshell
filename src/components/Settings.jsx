@@ -138,6 +138,7 @@ const Settings = memo(({ open, onClose }) => {
   const [fontSize, setFontSize] = React.useState(14);
   const [terminalFont, setTerminalFont] = React.useState("Fira Code");
   const [terminalFontSize, setTerminalFontSize] = React.useState(14);
+  const [terminalFontWeight, setTerminalFontWeight] = React.useState(500);
   const [darkMode, setDarkMode] = React.useState(true);
   const [externalEditorEnabled, setExternalEditorEnabled] = React.useState(false);
   const [externalEditorCommand, setExternalEditorCommand] = React.useState("");
@@ -178,6 +179,7 @@ const Settings = memo(({ open, onClose }) => {
             setFontSize(settings.fontSize || 14);
             setTerminalFont(settings.terminalFont || "Fira Code");
             setTerminalFontSize(settings.terminalFontSize || 14);
+            setTerminalFontWeight(settings.terminalFontWeight || 500);
             setDarkMode(
               settings.darkMode !== undefined ? settings.darkMode : true,
             );
@@ -260,6 +262,11 @@ const Settings = memo(({ open, onClose }) => {
   // Handle terminal font size change
   const handleTerminalFontSizeChange = (event, newValue) => {
     setTerminalFontSize(newValue);
+  };
+
+  // Handle terminal font weight change
+  const handleTerminalFontWeightChange = (event, newValue) => {
+    setTerminalFontWeight(newValue);
   };
 
   // Handle theme mode change
@@ -349,6 +356,7 @@ const Settings = memo(({ open, onClose }) => {
           editorFont: "system", // 保持editorFont字段
           terminalFont,
           terminalFontSize,
+          terminalFontWeight,
           darkMode,
           performance: {
             imageSupported,
@@ -396,6 +404,7 @@ const Settings = memo(({ open, onClose }) => {
             fontSize,
             terminalFont,
             terminalFontSize,
+            terminalFontWeight,
             darkMode,
             performance: {
               imageSupported,
@@ -635,6 +644,43 @@ const Settings = memo(({ open, onClose }) => {
                     }))}
                     min={12}
                     max={18}
+                  />
+                </Box>
+              </Box>
+
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2" gutterBottom>
+                  {"终端字体粗细"}
+                </Typography>
+                <Box sx={{ px: 2, pt: 1, display: "flex", alignItems: "center", gap: 2 }}>
+                  <Slider
+                    value={terminalFontWeight}
+                    onChange={handleTerminalFontWeightChange}
+                    aria-labelledby="terminal-font-weight-slider"
+                    min={300}
+                    max={1000}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    value={terminalFontWeight}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val)) {
+                        setTerminalFontWeight(val);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (isNaN(val) || val < 300) {
+                        setTerminalFontWeight(300);
+                      } else if (val > 1000) {
+                        setTerminalFontWeight(1000);
+                      }
+                    }}
+                    size="small"
+                    type="number"
+                    inputProps={{ min: 300, max: 1000 }}
+                    sx={{ width: 80 }}
                   />
                 </Box>
               </Box>
