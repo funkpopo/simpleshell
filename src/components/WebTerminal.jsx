@@ -45,7 +45,7 @@ const terminalStyles = `
 .xterm {
   height: 100%;
   width: 100%;
-  padding: 0 0 0 8px;
+  padding: 0 0 0 5px;
   background: inherit;
 }
 .xterm-viewport {
