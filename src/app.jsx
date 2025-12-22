@@ -1664,7 +1664,7 @@ function AppContent() {
             right: 0,
             top: 0,
             bgcolor: (theme) =>
-              theme.palette.mode === "light" ? "#ffffff" : "background.paper",
+              theme.palette.mode === "light" ? "#f3f4f6" : "background.paper",
             color: (theme) =>
               theme.palette.mode === "light" ? "text.primary" : "inherit",
             boxShadow: (theme) =>
