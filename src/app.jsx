@@ -1548,6 +1548,14 @@ function AppContent() {
       handleSendToAI(event.detail.text);
     };
 
+    // Alt+F1 全局快捷键唤醒AI助手
+    const handleGlobalKeyDown = (event) => {
+      if (event.altKey && event.key === "F1") {
+        event.preventDefault();
+        handleToggleGlobalAiChatWindow();
+      }
+    };
+
     // 使用 useWindowEvents Hook 统一管理多个 window 事件监听
     // 注意：为了避免在 useEffect 中再使用 Hook，我们继续使用 eventManager
     const removeSettingsListener = eventManager.addEventListener(
@@ -1564,6 +1572,11 @@ function AppContent() {
       window,
       "sendToAI",
       handleSendToAIEvent,
+    );
+    const removeKeyDownListener = eventManager.addEventListener(
+      window,
+      "keydown",
+      handleGlobalKeyDown,
     );
 
     // 初始化应用设置
@@ -1602,8 +1615,9 @@ function AppContent() {
       removeSettingsListener();
       removeToggleListener();
       removeSendToAIListener();
+      removeKeyDownListener();
     };
-  }, [darkMode, dispatch]); // 添加 darkMode 和 dispatch 依赖
+  }, [darkMode, dispatch, aiChatStatus]); // 添加 aiChatStatus 依赖以确保快捷键能正确切换状态
 
   // 分组操作回调
   const handleJoinGroup = (tabId, groupId) => {
