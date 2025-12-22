@@ -213,6 +213,7 @@ function AppContent() {
   const [prevTabsLength, setPrevTabsLength] = React.useState(tabs.length);
   const [transferFloatOpen, setTransferFloatOpen] = React.useState(false);
   const [transferFloatInitialTransfer, setTransferFloatInitialTransfer] = React.useState(null);
+  const [dndEnabled, setDndEnabled] = React.useState(true);
 
   const tabsRef = useRef(null);
   const dragRafRef = React.useRef(null);
@@ -1515,7 +1516,7 @@ function AppContent() {
   // React 19: 利用自动批处理特性优化设置变更处理
   React.useEffect(() => {
     const handleSettingsChanged = (event) => {
-      const { language, fontSize, darkMode: newDarkMode } = event.detail;
+      const { language, fontSize, darkMode: newDarkMode, dnd } = event.detail;
 
       // React 19: 所有状态更新会自动批处理，提高性能
       // 应用主题设置
@@ -1535,6 +1536,11 @@ function AppContent() {
 
         // 基本的HTML语言设置
         document.documentElement.lang = language;
+      }
+
+      // 应用 DnD 设置
+      if (dnd?.enabled !== undefined) {
+        setDndEnabled(dnd.enabled);
       }
     };
 
@@ -1597,6 +1603,11 @@ function AppContent() {
             if (settings.language) {
               changeLanguage(settings.language);
               document.documentElement.lang = settings.language;
+            }
+
+            // 应用 DnD 设置
+            if (settings.dnd?.enabled !== undefined) {
+              setDndEnabled(settings.dnd.enabled);
             }
           }
         }
@@ -1813,6 +1824,7 @@ function AppContent() {
                         onContextMenu={(e) =>
                           handleTabContextMenu(e, index, tab.id)
                         }
+                        draggable={dndEnabled && tab.id !== "welcome"}
                         onDragStart={(e) => handleDragStart(e, index)}
                         onDragOver={(e) => handleDragOver(e, index)}
                         onDragLeave={handleDragLeave}
