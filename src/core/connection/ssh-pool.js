@@ -8,6 +8,7 @@ const BaseConnectionPool = require('./base-connection-pool');
 const Client = require('ssh2').Client;
 const { getBasicSSHAlgorithms } = require('../../constants/sshAlgorithms');
 const proxyManager = require('../proxy/proxy-manager');
+const { createChannelPoolManager } = require('../utils/ssh-utils');
 
 // 代理类型常量
 const PROXY_TYPES = {
@@ -41,6 +42,9 @@ class SSHPool extends BaseConnectionPool {
     // 简化的请求队列（移除了复杂的路由和负载均衡）
     this.requestQueue = [];
     this.isProcessingQueue = false;
+
+    // 为每个连接初始化通道管理器
+    this.channelManagers = new Map();
   }
 
   /**
@@ -147,7 +151,8 @@ class SSHPool extends BaseConnectionPool {
         ready: false,
         stream: null,
         listeners: new Set(),
-        usingProxy: usingProxy
+        usingProxy: usingProxy,
+        channelManager: createChannelPoolManager(30) // 最多30个并发通道
       };
 
       // 设置连接超时
@@ -388,7 +393,9 @@ class SSHPool extends BaseConnectionPool {
       username: sshConfig.username,
       algorithms: getBasicSSHAlgorithms(),
       keepaliveInterval: 15000,
-      keepaliveCountMax: 6
+      keepaliveCountMax: 6,
+      // 增加通道管理配置以支持更多并发操作
+      readyTimeout: 20000, // 连接就绪超时
     };
 
     // 启用压缩（如果配置）

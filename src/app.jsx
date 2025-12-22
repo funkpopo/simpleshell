@@ -866,6 +866,14 @@ function AppContent() {
 
     const tabToRemove = tabs[index];
 
+    // 关闭SSH/Telnet连接 - 在清理缓存之前先断开连接
+    const processId = processCache[tabToRemove.id];
+    if (processId && (tabToRemove.type === 'ssh' || tabToRemove.type === 'telnet')) {
+      window.terminalAPI.killProcess(processId).catch((err) => {
+        console.warn(`关闭连接时出错: ${err.message}`);
+      });
+    }
+
     // 检查文件管理器是否为该标签页打开，如果是则关闭它
     if (fileManagerOpen && (fileManagerProps.tabId === tabToRemove.id || lockedFileManagerTabId === tabToRemove.id)) {
       dispatch(actions.setFileManagerOpen(false));

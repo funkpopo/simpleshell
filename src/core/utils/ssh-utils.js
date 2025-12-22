@@ -208,10 +208,63 @@ async function processSSHPrivateKeyAsync(sshConfig) {
   return sshConfig;
 }
 
+/**
+ * 创建SSH通道池管理器
+ * 用于跟踪和限制SSH连接上的活跃通道数
+ * @param {number} maxChannels - 最大通道数限制（默认30）
+ * @returns {object} 通道管理器对象
+ */
+function createChannelPoolManager(maxChannels = 30) {
+  let activeChannels = 0;
+  const waitingQueue = [];
+
+  return {
+    // 获取一个通道槽位
+    async acquire() {
+      return new Promise((resolve) => {
+        if (activeChannels < maxChannels) {
+          activeChannels++;
+          resolve();
+        } else {
+          // 加入等待队列
+          waitingQueue.push(resolve);
+        }
+      });
+    },
+
+    // 释放一个通道槽位
+    release() {
+      activeChannels--;
+      if (waitingQueue.length > 0) {
+        const resolve = waitingQueue.shift();
+        activeChannels++;
+        resolve();
+      }
+    },
+
+    // 获取当前活跃通道数
+    getActiveChannelCount() {
+      return activeChannels;
+    },
+
+    // 获取等待队列长度
+    getWaitingQueueLength() {
+      return waitingQueue.length;
+    },
+
+    // 重置管理器
+    reset() {
+      activeChannels = 0;
+      waitingQueue.length = 0;
+    }
+  };
+}
+
 module.exports = {
   readPrivateKeyFile,
   readPrivateKeyFileAsync,
   validatePrivateKeyFormat,
   processSSHPrivateKey,
   processSSHPrivateKeyAsync,
+  createChannelPoolManager,
 };

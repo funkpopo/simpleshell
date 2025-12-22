@@ -213,45 +213,106 @@ class NetworkLatencyService extends EventEmitter {
   measureLatency(sshConnection) {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
-      const timeout = setTimeout(() => {
-        reject(new Error("延迟检测超时 (5秒)"));
+      let timeoutId = null;
+      let resolved = false;
+
+      const cleanup = (error = null) => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        if (error && !resolved) {
+          resolved = true;
+          reject(error);
+        }
+      };
+
+      timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          reject(new Error("延迟检测超时 (5秒)"));
+        }
       }, 5000);
 
       try {
         // 执行简单的echo命令
         sshConnection.exec("echo latency_test", (err, stream) => {
           if (err) {
-            clearTimeout(timeout);
-            reject(err);
+            if (!resolved) {
+              resolved = true;
+              cleanup();
+              reject(err);
+            }
             return;
           }
 
           let dataReceived = false;
 
+          // 处理数据接收
           stream.on("data", () => {
-            if (!dataReceived) {
+            if (!dataReceived && !resolved) {
               dataReceived = true;
-              clearTimeout(timeout);
+              resolved = true;
               const latency = Date.now() - startTime;
+
+              // 显式关闭流以释放通道
+              try {
+                if (typeof stream.close === 'function') {
+                  stream.close();
+                } else if (typeof stream.destroy === 'function') {
+                  stream.destroy();
+                }
+              } catch (e) {
+                // 忽略关闭错误
+              }
+
+              cleanup();
               resolve(latency);
             }
           });
 
+          // 处理流错误
           stream.on("error", (streamErr) => {
-            clearTimeout(timeout);
-            reject(streamErr);
+            if (!resolved) {
+              resolved = true;
+              try {
+                if (typeof stream.close === 'function') {
+                  stream.close();
+                }
+              } catch (e) {
+                // 忽略关闭错误
+              }
+              cleanup(streamErr);
+            }
           });
 
+          // 处理流关闭
           stream.on("close", () => {
-            if (!dataReceived) {
-              clearTimeout(timeout);
-              reject(new Error("未收到响应数据"));
+            if (!dataReceived && !resolved) {
+              resolved = true;
+              cleanup(new Error("未收到响应数据"));
+            }
+          });
+
+          // 处理流退出
+          stream.on("exit", () => {
+            if (!resolved) {
+              // 尝试优雅关闭
+              try {
+                if (typeof stream.close === 'function') {
+                  stream.close();
+                }
+              } catch (e) {
+                // 忽略关闭错误
+              }
             }
           });
         });
       } catch (error) {
-        clearTimeout(timeout);
-        reject(error);
+        if (!resolved) {
+          resolved = true;
+          cleanup(error);
+        }
       }
     });
   }
