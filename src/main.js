@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
@@ -477,6 +477,14 @@ process.on('unhandledRejection', (reason, promise) => {
 // 在应用准备好时创建窗口并初始化配置
 app.whenReady().then(async () => {
   initLogger(app); // 初始化日志模块
+
+  // 配置session使用系统代理
+  try {
+    await session.defaultSession.setProxy({ mode: "system" });
+    logToFile("Session proxy configured to use system settings", "INFO");
+  } catch (proxyErr) {
+    logToFile(`Failed to configure session proxy: ${proxyErr.message}`, "WARN");
+  }
 
   // Inject dependencies into configService
   configService.init(app, { logToFile }, require("./core/utils/crypto"));

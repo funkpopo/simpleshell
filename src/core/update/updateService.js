@@ -21,19 +21,54 @@ class UpdateService {
   }
 
   /**
-   * 使用 Electron net 模块发起请求（自动使用系统代理）
+   * 解析系统代理设置
+   * @param {string} url - 目标URL
+   * @returns {Promise<string|null>} 代理URL或null
+   */
+  async resolveSystemProxy(url) {
+    try {
+      const proxyUrl = await session.defaultSession.resolveProxy(url);
+      logToFile(`Resolved proxy for ${url}: ${proxyUrl}`, "INFO");
+      // proxyUrl格式: "DIRECT" 或 "PROXY host:port" 或 "SOCKS5 host:port"
+      if (proxyUrl === "DIRECT") {
+        return null;
+      }
+      const match = proxyUrl.match(/^(PROXY|SOCKS5?)\s+(.+)$/i);
+      if (match) {
+        const [, type, hostPort] = match;
+        const protocol = type.toLowerCase().startsWith("socks") ? "socks5" : "http";
+        return `${protocol}://${hostPort}`;
+      }
+      return null;
+    } catch (error) {
+      logToFile(`Failed to resolve proxy: ${error.message}`, "WARN");
+      return null;
+    }
+  }
+
+  /**
+   * 使用 Electron net 模块发起请求（显式使用系统代理）
    * @param {string} url - 请求URL
    * @param {object} options - 请求选项
    * @returns {Promise<{response: Electron.IncomingMessage, body: Buffer}>}
    */
   async electronFetch(url, options = {}) {
+    // 先解析系统代理
+    const proxyUrl = await this.resolveSystemProxy(url);
+
     return new Promise((resolve, reject) => {
-      const request = net.request({
+      const requestOptions = {
         url,
         method: options.method || "GET",
         useSessionCookies: false,
-        // net.request 自动使用系统代理
-      });
+      };
+
+      // 如果有代理，使用partition来设置代理
+      if (proxyUrl) {
+        requestOptions.session = session.defaultSession;
+      }
+
+      const request = net.request(requestOptions);
 
       // 设置请求头
       if (options.headers) {
@@ -201,12 +236,49 @@ class UpdateService {
       const fileName = path.basename(new URL(downloadUrl).pathname);
       const filePath = path.join(this.tempDir, fileName);
 
-      logToFile(`Starting download (using system proxy): ${downloadUrl}`, "INFO");
+      // 解析系统代理
+      const proxyUrl = await this.resolveSystemProxy(downloadUrl);
+      logToFile(`Starting download: ${downloadUrl}, proxy: ${proxyUrl || "DIRECT"}`, "INFO");
+
+      // 连接超时时间（30秒）
+      const CONNECTION_TIMEOUT = 30000;
+      // 数据接收超时时间（60秒无数据则超时）
+      const DATA_TIMEOUT = 60000;
 
       return new Promise((resolve, reject) => {
+        let connectionTimer = null;
+        let dataTimer = null;
+        let isResolved = false;
+
+        const cleanup = () => {
+          if (connectionTimer) clearTimeout(connectionTimer);
+          if (dataTimer) clearTimeout(dataTimer);
+        };
+
+        const handleError = (error) => {
+          if (isResolved) return;
+          isResolved = true;
+          cleanup();
+          this.isDownloading = false;
+          this.currentRequest = null;
+          reject(error);
+        };
+
+        const resetDataTimer = () => {
+          if (dataTimer) clearTimeout(dataTimer);
+          dataTimer = setTimeout(() => {
+            handleError(new Error("Download timeout: no data received for 60 seconds"));
+            if (this.currentRequest) {
+              try { this.currentRequest.abort(); } catch (e) {}
+            }
+          }, DATA_TIMEOUT);
+        };
+
+        // 使用session确保代理设置生效
         const request = net.request({
           url: downloadUrl,
           method: "GET",
+          session: session.defaultSession,
         });
 
         request.setHeader("User-Agent", "SimpleShell-UpdateDownloader");
@@ -214,34 +286,55 @@ class UpdateService {
         // 保存请求引用以便取消
         this.currentRequest = request;
 
+        // 连接超时
+        connectionTimer = setTimeout(() => {
+          handleError(new Error("Connection timeout: unable to connect within 30 seconds"));
+          try { request.abort(); } catch (e) {}
+        }, CONNECTION_TIMEOUT);
+
         request.on("response", async (response) => {
+          // 收到响应，清除连接超时
+          if (connectionTimer) {
+            clearTimeout(connectionTimer);
+            connectionTimer = null;
+          }
+
           // 处理重定向
           if (response.statusCode >= 300 && response.statusCode < 400) {
             const redirectUrl = response.headers.location;
             if (redirectUrl) {
               logToFile(`Following redirect to: ${redirectUrl}`, "INFO");
+              cleanup();
               this.isDownloading = false;
               try {
                 const result = await this.downloadUpdate(redirectUrl, onProgress);
-                resolve(result);
+                if (!isResolved) {
+                  isResolved = true;
+                  resolve(result);
+                }
               } catch (error) {
-                reject(error);
+                handleError(error);
               }
               return;
             }
           }
 
           if (response.statusCode !== 200) {
-            this.isDownloading = false;
-            reject(new Error(`HTTP ${response.statusCode}: Download failed`));
+            handleError(new Error(`HTTP ${response.statusCode}: Download failed`));
             return;
           }
+
+          // 开始数据超时计时
+          resetDataTimer();
 
           const totalSize = parseInt(response.headers["content-length"], 10) || 0;
           let downloadedSize = 0;
           const chunks = [];
 
           response.on("data", (chunk) => {
+            // 收到数据，重置数据超时
+            resetDataTimer();
+
             chunks.push(chunk);
             downloadedSize += chunk.length;
             this.downloadProgress =
@@ -257,6 +350,10 @@ class UpdateService {
           });
 
           response.on("end", async () => {
+            if (isResolved) return;
+            isResolved = true;
+            cleanup();
+
             try {
               const buffer = Buffer.concat(chunks);
               await fs.writeFile(filePath, buffer);
@@ -275,18 +372,14 @@ class UpdateService {
           });
 
           response.on("error", (error) => {
-            this.isDownloading = false;
-            this.currentRequest = null;
             logToFile(`Download response error: ${error.message}`, "ERROR");
-            reject(error);
+            handleError(error);
           });
         });
 
         request.on("error", (error) => {
-          this.isDownloading = false;
-          this.currentRequest = null;
           logToFile(`Download request error: ${error.message}`, "ERROR");
-          reject(error);
+          handleError(error);
         });
 
         request.end();
