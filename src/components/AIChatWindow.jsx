@@ -252,9 +252,12 @@ const AIChatWindow = ({
   useEffect(() => {
     if (windowState === "visible") {
       loadApiSettings();
-      if (inputRef.current) {
-        inputRef.current.focus();
-      }
+      // 延迟聚焦以确保 DOM 已渲染
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 100);
     }
   }, [windowState]);
 

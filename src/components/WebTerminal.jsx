@@ -2401,6 +2401,14 @@ useEffect(() => {
 
         // 重新打开终端并附加到DOM
         term.open(terminalRef.current);
+
+        // 确保 Alt+F1 快捷键能冒泡到全局处理
+        term.attachCustomKeyEventHandler((event) => {
+          if (event.altKey && event.key === "F1") {
+            return false;
+          }
+          return true;
+        });
         if (webglRendererEnabledRef.current) {
           tryEnableWebglRenderer(term);
         } else {
@@ -2516,6 +2524,14 @@ useEffect(() => {
 
         // 打开终端
         term.open(terminalRef.current);
+
+        // 拦截 Alt+F1 快捷键，让其冒泡到全局处理
+        term.attachCustomKeyEventHandler((event) => {
+          if (event.altKey && event.key === "F1") {
+            return false; // 返回 false 表示不由 xterm 处理，让事件继续冒泡
+          }
+          return true; // 其他按键由 xterm 正常处理
+        });
 
         // 初始化性能监控器
         if (!performanceMonitorRef.current) {
@@ -2777,6 +2793,11 @@ useEffect(() => {
 
       // 添加键盘快捷键支持
       const handleKeyDown = (e) => {
+        // Alt+F1 全局快捷键，始终允许冒泡到 app.jsx 处理
+        if (e.altKey && e.key === "F1") {
+          return;
+        }
+
         // 如果是在终端内部，则只处理特定的快捷键
         const isTerminalInput =
           e.target &&
