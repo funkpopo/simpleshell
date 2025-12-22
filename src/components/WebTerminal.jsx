@@ -45,12 +45,14 @@ const terminalStyles = `
 .xterm {
   height: 100%;
   width: 100%;
-  padding: 0;
+  padding: 0 0 0 8px;
+  background: inherit;
 }
 .xterm-viewport {
   width: 100% !important;
   height: 100% !important;
   overflow-y: auto;
+  background: inherit !important;
 }
 .xterm-viewport::-webkit-scrollbar {
   width: 10px;
