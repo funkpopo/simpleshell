@@ -71,6 +71,20 @@ async function uploadWithPipeline({
     transfer.activeStreams.add(write);
   }
 
+  // 捕获SFTP写入流的详细错误信息
+  let sftpWriteError = null;
+  write.on("error", (err) => {
+    sftpWriteError = err;
+    if (logToFile) {
+      const errCode = err.code || "unknown";
+      const errDesc = err.description || err.message || "未知错误";
+      logToFile(
+        `sftpTransfer: SFTP写入流错误 [code=${errCode}] - ${remotePath}: ${errDesc}`,
+        "ERROR"
+      );
+    }
+  });
+
   let lastProgressAt = Date.now();
   const onData = (buf) => {
     if (typeof onBytes === "function") onBytes(buf.length);
@@ -91,6 +105,24 @@ async function uploadWithPipeline({
 
   try {
     await pipeline(read, write);
+  } catch (pipelineError) {
+    // 记录详细的上传传输错误信息
+    if (logToFile) {
+      const errorType = pipelineError.message.includes("NO_PROGRESS_TIMEOUT")
+        ? "无进度超时"
+        : pipelineError.message.includes("cancel")
+          ? "用户取消"
+          : "传输错误";
+      // 如果有SFTP错误，附加更多信息
+      const extraInfo = sftpWriteError
+        ? ` (SFTP错误码: ${sftpWriteError.code || "N/A"}, 描述: ${sftpWriteError.description || "N/A"})`
+        : "";
+      logToFile(
+        `sftpTransfer: 上传管道错误 [${errorType}] - ${remotePath}: ${pipelineError.message}${extraInfo}`,
+        "ERROR"
+      );
+    }
+    throw pipelineError;
   } finally {
     clearInterval(watchdog);
     read.off("data", onData);
@@ -149,6 +181,20 @@ async function downloadWithPipeline({
 
   try {
     await pipeline(read, write);
+  } catch (pipelineError) {
+    // 记录详细的下载传输错误信息
+    if (logToFile) {
+      const errorType = pipelineError.message.includes("NO_PROGRESS_TIMEOUT")
+        ? "无进度超时"
+        : pipelineError.message.includes("cancel")
+          ? "用户取消"
+          : "传输错误";
+      logToFile(
+        `sftpTransfer: 下载管道错误 [${errorType}] - ${remotePath}: ${pipelineError.message}`,
+        "ERROR"
+      );
+    }
+    throw pipelineError;
   } finally {
     clearInterval(watchdog);
     read.off("data", onData);
@@ -797,6 +843,15 @@ async function handleUploadFile(
               } catch (e) {
                 if (getCancelled()) throw new Error("Transfer cancelled by user");
                 attempt += 1;
+                // 记录详细的上传失败信息
+                if (logToFile) {
+                  const isServerError = e.message === "Failure" || e.code === 4;
+                  logToFile(
+                    `sftpTransfer: 文件上传失败 [attempt=${attempt}] - ${remoteFilePath}: ${e.message}` +
+                    (isServerError ? " (服务器端错误，可能是磁盘空间不足或权限问题)" : ""),
+                    "ERROR"
+                  );
+                }
                 if (!(attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS && isRetryableError(e))) {
                   throw e;
                 }
