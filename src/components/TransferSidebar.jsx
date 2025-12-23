@@ -4,14 +4,11 @@ import {
   Dialog,
   Typography,
   IconButton,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
   LinearProgress,
   Chip,
   Divider,
   Button,
+  Tooltip,
 } from "@mui/material";
 import { styled, useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
@@ -23,6 +20,7 @@ import FolderIcon from "@mui/icons-material/Folder";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorIcon from "@mui/icons-material/Error";
 import CancelIcon from "@mui/icons-material/Cancel";
+import StopIcon from "@mui/icons-material/Stop";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { useTranslation } from "react-i18next";
 import {
@@ -128,54 +126,54 @@ const formatTime = (timestamp) => {
 /**
  * 单个传输项组件
  */
-const TransferItem = memo(({ transfer, isActive }) => {
+const TransferItem = memo(({ transfer, isActive, onCancel }) => {
   const theme = useTheme();
   const statusIcon = getStatusIcon(transfer);
   const isCompleted = transfer.progress >= 100;
   const hasError = !!transfer.error;
   const isCancelled = transfer.isCancelled;
+  const canCancel = isActive && !isCompleted && !hasError && !isCancelled;
 
   return (
-    <ListItem
+    <Box
       sx={{
-        flexDirection: "column",
-        alignItems: "stretch",
-        py: 1,
-        px: 2,
-        borderBottom: `1px solid ${theme.palette.divider}`,
-        bgcolor: isActive ? "action.hover" : "transparent",
+        mx: 1,
+        my: 0.5,
+        p: 1,
+        borderRadius: 1.5,
+        backgroundColor: theme.palette.mode === 'dark'
+          ? 'rgba(255,255,255,0.05)'
+          : 'rgba(0,0,0,0.03)',
+        border: `1px solid ${theme.palette.divider}`,
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
-        <ListItemIcon sx={{ minWidth: 32 }}>
+      {/* 头部：图标 + 文件名 + 时间 + 状态 */}
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box sx={{ flexShrink: 0 }}>
           {getTransferIcon(transfer.type)}
-        </ListItemIcon>
-        <ListItemText
-          primary={
-            <Typography
-              variant="body2"
-              sx={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                maxWidth: 180,
-              }}
-            >
-              {transfer.fileName || "传输中..."}
-            </Typography>
-          }
-          secondary={
-            <Typography variant="caption" color="text.secondary">
-              {formatTime(transfer.startTime || transfer.completedTime)}
-            </Typography>
-          }
-        />
+        </Box>
+        <Typography
+          variant="body2"
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            fontWeight: 500,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {transfer.fileName || "传输中..."}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+          {formatTime(transfer.startTime || transfer.completedTime)}
+        </Typography>
         {statusIcon}
       </Box>
 
       {/* 进度条 - 仅活跃传输显示 */}
-      {isActive && !isCompleted && !hasError && !isCancelled && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      {canCancel && (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5 }}>
           <LinearProgress
             variant="determinate"
             value={transfer.progress || 0}
@@ -187,42 +185,63 @@ const TransferItem = memo(({ transfer, isActive }) => {
         </Box>
       )}
 
-      {/* 传输详情 */}
-      <Box sx={{ display: "flex", gap: 1, mt: 0.5, flexWrap: "wrap" }}>
-        {transfer.totalBytes > 0 && (
-          <Chip
-            label={formatSize(transfer.totalBytes)}
-            size="small"
-            variant="outlined"
-            sx={{ height: 20, fontSize: "0.7rem" }}
-          />
-        )}
-        {transfer.transferSpeed > 0 && isActive && (
-          <Chip
-            label={`${formatSize(transfer.transferSpeed)}/s`}
-            size="small"
-            variant="outlined"
-            sx={{ height: 20, fontSize: "0.7rem" }}
-          />
-        )}
-        {hasError && (
-          <Chip
-            label="失败"
-            size="small"
-            color="error"
-            sx={{ height: 20, fontSize: "0.7rem" }}
-          />
-        )}
-        {isCancelled && (
-          <Chip
-            label="已取消"
-            size="small"
-            color="warning"
-            sx={{ height: 20, fontSize: "0.7rem" }}
-          />
+      {/* 传输详情 + 终止按钮 */}
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 0.5 }}>
+        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+          {transfer.totalBytes > 0 && (
+            <Chip
+              label={formatSize(transfer.totalBytes)}
+              size="small"
+              variant="outlined"
+              sx={{ height: 18, fontSize: "0.65rem" }}
+            />
+          )}
+          {transfer.transferSpeed > 0 && isActive && (
+            <Chip
+              label={`${formatSize(transfer.transferSpeed)}/s`}
+              size="small"
+              variant="outlined"
+              sx={{ height: 18, fontSize: "0.65rem" }}
+            />
+          )}
+          {hasError && (
+            <Chip
+              label="失败"
+              size="small"
+              color="error"
+              sx={{ height: 18, fontSize: "0.65rem" }}
+            />
+          )}
+          {isCancelled && (
+            <Chip
+              label="已取消"
+              size="small"
+              color="warning"
+              sx={{ height: 18, fontSize: "0.65rem" }}
+            />
+          )}
+        </Box>
+        {canCancel && onCancel && (
+          <Tooltip title="终止传输">
+            <IconButton
+              size="small"
+              onClick={() => onCancel(transfer)}
+              sx={{
+                width: 20,
+                height: 20,
+                color: theme.palette.text.secondary,
+                "&:hover": {
+                  color: "#f44336",
+                  backgroundColor: "rgba(244,67,54,0.1)",
+                },
+              }}
+            >
+              <StopIcon sx={{ fontSize: 14 }} />
+            </IconButton>
+          </Tooltip>
         )}
       </Box>
-    </ListItem>
+    </Box>
   );
 });
 
@@ -234,7 +253,7 @@ TransferItem.displayName = "TransferItem";
 const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { allTransfers, clearCompletedTransfers } = useAllGlobalTransfers();
+  const { allTransfers, clearCompletedTransfers, updateTransferProgress } = useAllGlobalTransfers();
   const { history, clearHistory } = useTransferHistory();
   const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -256,6 +275,26 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
 
     return { activeTransfers: active, completedTransfers: completed };
   }, [allTransfers]);
+
+  // 取消传输
+  const handleCancelTransfer = useCallback((transfer) => {
+    if (transfer.tabId && transfer.transferKey && window.terminalAPI?.cancelTransfer) {
+      window.terminalAPI
+        .cancelTransfer(transfer.tabId, transfer.transferKey)
+        .then((result) => {
+          if (result.success) {
+            updateTransferProgress(transfer.tabId, transfer.transferId, {
+              isCancelled: true,
+            });
+          }
+        })
+        .catch(() => {
+          updateTransferProgress(transfer.tabId, transfer.transferId, {
+            isCancelled: true,
+          });
+        });
+    }
+  }, [updateTransferProgress]);
 
   // 清除所有已完成的传输
   const handleClearCompleted = useCallback(() => {
@@ -382,7 +421,26 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
       </Box>
 
       {/* 内容区域 */}
-      <Box sx={{ flex: 1, overflow: "auto" }}>
+      <Box
+        sx={{
+          flex: 1,
+          overflowY: "auto",
+          overflowX: "hidden",
+          "&::-webkit-scrollbar": {
+            width: 6,
+          },
+          "&::-webkit-scrollbar-track": {
+            backgroundColor: "transparent",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            backgroundColor: theme.palette.divider,
+            borderRadius: 3,
+          },
+          "&::-webkit-scrollbar-thumb:hover": {
+            backgroundColor: theme.palette.action.disabled,
+          },
+        }}
+      >
         {/* 活跃传输 */}
         {activeTransfers.length > 0 && (
           <>
@@ -391,15 +449,16 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
                 正在传输 ({activeTransfers.length})
               </Typography>
             </Box>
-            <List disablePadding>
+            <Box>
               {activeTransfers.map((transfer) => (
                 <TransferItem
                   key={`${transfer.tabId}-${transfer.transferId}`}
                   transfer={transfer}
                   isActive={true}
+                  onCancel={handleCancelTransfer}
                 />
               ))}
-            </List>
+            </Box>
           </>
         )}
 
@@ -411,7 +470,7 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
                 已完成 ({completedTransfers.length})
               </Typography>
             </Box>
-            <List disablePadding>
+            <Box>
               {completedTransfers.map((transfer) => (
                 <TransferItem
                   key={`${transfer.tabId}-${transfer.transferId}`}
@@ -419,7 +478,7 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
                   isActive={false}
                 />
               ))}
-            </List>
+            </Box>
           </>
         )}
 
@@ -432,7 +491,7 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
                 历史记录 ({history.length})
               </Typography>
             </Box>
-            <List disablePadding>
+            <Box>
               {history.map((transfer, index) => (
                 <TransferItem
                   key={`history-${transfer.transferId}-${index}`}
@@ -440,7 +499,7 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
                   isActive={false}
                 />
               ))}
-            </List>
+            </Box>
           </>
         )}
 
