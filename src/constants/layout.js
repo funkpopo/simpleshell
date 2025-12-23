@@ -16,3 +16,6 @@ export const SIDEBAR_WIDTHS = {
   // 废弃的默认边距（保留兼容性）
   DEFAULT_PADDING: 5, //px
 };
+
+// 底部传输栏高度
+export const TRANSFER_BAR_HEIGHT = 56; // px
