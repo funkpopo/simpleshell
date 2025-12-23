@@ -85,6 +85,8 @@ import {
 import ErrorNotification from "./components/ErrorNotification.jsx";
 import GlobalTransferBar from "./components/GlobalTransferBar.jsx";
 import GlobalTransferFloat from "./components/GlobalTransferFloat.jsx";
+import TransferSidebar from "./components/TransferSidebar.jsx";
+import TransferSidebarButton from "./components/TransferSidebarButton.jsx";
 
 function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
@@ -214,6 +216,12 @@ function AppContent() {
   const [transferFloatOpen, setTransferFloatOpen] = React.useState(false);
   const [transferFloatInitialTransfer, setTransferFloatInitialTransfer] = React.useState(null);
   const [dndEnabled, setDndEnabled] = React.useState(true);
+  // 传输栏显示模式: "bottom" | "sidebar"
+  const [transferBarMode, setTransferBarMode] = React.useState("bottom");
+  // 传输侧边栏状态
+  const [transferSidebarOpen, setTransferSidebarOpen] = React.useState(false);
+  // 最后激活的浮动窗口（用于控制z-index层叠顺序）: "ai" | "transfer"
+  const [lastActiveFloatWindow, setLastActiveFloatWindow] = React.useState("ai");
 
   const tabsRef = useRef(null);
   const dragRafRef = React.useRef(null);
@@ -1259,6 +1267,7 @@ function AppContent() {
       dispatch(actions.setAiChatStatus("minimized"));
     } else {
       dispatch(actions.setAiChatStatus("visible"));
+      setLastActiveFloatWindow("ai");
     }
   };
 
@@ -1516,7 +1525,7 @@ function AppContent() {
   // React 19: 利用自动批处理特性优化设置变更处理
   React.useEffect(() => {
     const handleSettingsChanged = (event) => {
-      const { language, fontSize, darkMode: newDarkMode, dnd } = event.detail;
+      const { language, fontSize, darkMode: newDarkMode, dnd, transferBarMode: newTransferBarMode } = event.detail;
 
       // React 19: 所有状态更新会自动批处理，提高性能
       // 应用主题设置
@@ -1541,6 +1550,11 @@ function AppContent() {
       // 应用 DnD 设置
       if (dnd?.enabled !== undefined) {
         setDndEnabled(dnd.enabled);
+      }
+
+      // 应用传输栏模式设置
+      if (newTransferBarMode) {
+        setTransferBarMode(newTransferBarMode);
       }
     };
 
@@ -1608,6 +1622,11 @@ function AppContent() {
             // 应用 DnD 设置
             if (settings.dnd?.enabled !== undefined) {
               setDndEnabled(settings.dnd.enabled);
+            }
+
+            // 应用传输栏模式设置
+            if (settings.transferBarMode) {
+              setTransferBarMode(settings.transferBarMode);
             }
           }
         }
@@ -2189,6 +2208,8 @@ function AppContent() {
                 )}
               </Box>
 
+              {/* 传输侧边栏已改为浮动窗口，移至底部与AI助手窗口同级 */}
+
               {/* IP地址查询侧边栏 */}
               <Box
                 sx={{
@@ -2443,6 +2464,21 @@ function AppContent() {
                 </IconButton>
               </Tooltip>
 
+              {/* 传输侧边栏按钮 - 仅在sidebar模式下显示 */}
+              {transferBarMode === "sidebar" && (
+                <TransferSidebarButton
+                  isOpen={transferSidebarOpen}
+                  onClick={() => {
+                    const newState = !transferSidebarOpen;
+                    setTransferSidebarOpen(newState);
+                    if (newState) {
+                      setLastActiveFloatWindow("transfer");
+                    }
+                  }}
+                  tooltip="文件传输"
+                />
+              )}
+
               {/* AI助手按钮 */}
               <Tooltip title={t("sidebar.ai")} placement="left">
                 <IconButton
@@ -2484,12 +2520,14 @@ function AppContent() {
           </Box>
         </Box>
 
-          {/* 全局传输底部栏 - 作为独立行，不使用 fixed 定位 */}
-          <GlobalTransferBar
-            onOpenFloat={handleOpenTransferFloat}
-            onToggleFloat={handleToggleTransferFloat}
-            isFloatOpen={transferFloatOpen}
-          />
+          {/* 全局传输底部栏 - 仅在bottom模式下显示 */}
+          {transferBarMode === "bottom" && (
+            <GlobalTransferBar
+              onOpenFloat={handleOpenTransferFloat}
+              onToggleFloat={handleToggleTransferFloat}
+              isFloatOpen={transferFloatOpen}
+            />
+          )}
         </Box>
       </Box>
 
@@ -2502,7 +2540,19 @@ function AppContent() {
         onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}
         connectionInfo={aiChatConnectionInfo}
         onExecuteCommand={handleSendCommand}
+        zIndex={lastActiveFloatWindow === "ai" ? 1310 : 1300}
+        onFocus={() => setLastActiveFloatWindow("ai")}
       />
+
+      {/* 文件传输浮动窗口 - 仅在sidebar模式下显示 */}
+      {transferBarMode === "sidebar" && (
+        <TransferSidebar
+          open={transferSidebarOpen}
+          onClose={() => setTransferSidebarOpen(false)}
+          zIndex={lastActiveFloatWindow === "transfer" ? 1310 : 1300}
+          onFocus={() => setLastActiveFloatWindow("transfer")}
+        />
+      )}
 
       {/* 关于对话框 */}
       <AboutDialog open={aboutDialogOpen} onClose={handleCloseAbout} />

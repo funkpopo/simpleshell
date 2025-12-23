@@ -7,14 +7,22 @@ import { useSyncExternalStore, useMemo, useCallback } from "react";
 
 // 全局传输状态，按tabId组织
 const transferState = new Map();
+// 传输历史记录（保留已完成的传输）
+const transferHistory = [];
+// 历史记录最大数量
+const MAX_HISTORY_SIZE = 100;
 // 监听器集合
 const listeners = new Set();
+// 历史记录监听器
+const historyListeners = new Set();
 // 自动移除定时器
 const autoRemovalTimers = new Map();
 // 空传输列表常量
 const EMPTY_TRANSFER_LIST = Object.freeze([]);
 // 快照缓存
 const snapshotCache = new Map();
+// 历史记录快照缓存
+let historySnapshotCache = null;
 
 const generateTransferId = () =>
   `transfer_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -30,6 +38,31 @@ const notify = () => {
       console.error("globalTransferStore: listener execution failed", error);
     }
   }
+};
+
+const notifyHistory = () => {
+  historySnapshotCache = null;
+  for (const listener of historyListeners) {
+    try {
+      listener();
+    } catch (error) {
+      console.error("globalTransferStore: history listener execution failed", error);
+    }
+  }
+};
+
+// 添加到历史记录
+const addToHistory = (transfer) => {
+  const historyEntry = {
+    ...transfer,
+    completedTime: Date.now(),
+  };
+  transferHistory.unshift(historyEntry);
+  // 限制历史记录数量
+  if (transferHistory.length > MAX_HISTORY_SIZE) {
+    transferHistory.pop();
+  }
+  notifyHistory();
 };
 
 const getTransfersInternal = (tabId) => {
@@ -117,13 +150,21 @@ const updateTransfer = (tabId, transferId, updateData = {}) => {
   }
 };
 
-const removeTransfer = (tabId, transferId) => {
+const removeTransfer = (tabId, transferId, skipHistory = false) => {
   if (!tabId) return;
 
   clearAutoRemovalTimer(transferId);
 
   const transfers = getTransfersInternal(tabId);
   if (transfers.length === 0) return;
+
+  // 找到要移除的传输并添加到历史记录
+  if (!skipHistory) {
+    const transferToRemove = transfers.find((t) => t.transferId === transferId);
+    if (transferToRemove) {
+      addToHistory({ ...transferToRemove, tabId });
+    }
+  }
 
   const next = transfers.filter((transfer) => transfer.transferId !== transferId);
   setTransfersInternal(tabId, next);
@@ -140,6 +181,8 @@ const clearCompletedTransfers = (tabId) => {
       transfer.progress >= 100 || transfer.isCancelled || transfer.error;
     if (isDone) {
       clearAutoRemovalTimer(transfer.transferId);
+      // 添加到历史记录
+      addToHistory({ ...transfer, tabId });
     }
     return !isDone;
   });
@@ -271,6 +314,41 @@ export const useAllGlobalTransfers = () => {
 };
 
 /**
+ * React Hook - 获取传输历史记录
+ */
+export const useTransferHistory = () => {
+  const subscribeToHistory = useCallback((listener) => {
+    historyListeners.add(listener);
+    return () => {
+      historyListeners.delete(listener);
+    };
+  }, []);
+
+  const getHistorySnapshot = useCallback(() => {
+    if (historySnapshotCache === null) {
+      historySnapshotCache = [...transferHistory];
+    }
+    return historySnapshotCache;
+  }, []);
+
+  const history = useSyncExternalStore(
+    subscribeToHistory,
+    getHistorySnapshot,
+    getHistorySnapshot
+  );
+
+  const clearHistory = useCallback(() => {
+    transferHistory.length = 0;
+    notifyHistory();
+  }, []);
+
+  return {
+    history,
+    clearHistory,
+  };
+};
+
+/**
  * 内部测试API（仅用于测试）
  */
 export const __globalTransferStoreInternals = {
@@ -282,6 +360,8 @@ export const __globalTransferStoreInternals = {
     }
     autoRemovalTimers.clear();
     transferState.clear();
+    transferHistory.length = 0;
     listeners.clear();
+    historyListeners.clear();
   },
 };
