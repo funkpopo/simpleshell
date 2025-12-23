@@ -1962,7 +1962,8 @@ function AppContent() {
           <Box
             sx={{
               display: "flex",
-              flexGrow: 1,
+              flex: 1,
+              minHeight: 0,
               overflow: "hidden",
               position: "relative",
             }}
@@ -1970,7 +1971,8 @@ function AppContent() {
           {/* 主内容区域 */}
           <Box
             sx={{
-              flexGrow: 1,
+              flex: 1,
+              minHeight: 0,
               overflow: "hidden",
               p: 0,
               display: "flex",
@@ -1980,8 +1982,8 @@ function AppContent() {
             {/* 标签页内容 */}
             <Box
               sx={{
-                flexGrow: 1,
-                height: "100%",
+                flex: 1,
+                minHeight: 0,
                 width: "100%",
                 bgcolor: "background.paper",
                 borderRadius: 0,
