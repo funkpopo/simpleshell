@@ -79,6 +79,7 @@ const TransferSidebarButton = memo(({ isOpen, onClick, tooltip = "文件传输" 
         {/* 按钮 */}
         <IconButton
           onClick={onClick}
+          color="primary"
           size="small"
           sx={{
             width: 32,
@@ -92,9 +93,6 @@ const TransferSidebarButton = memo(({ isOpen, onClick, tooltip = "文件传输" 
           <SwapVert
             sx={{
               fontSize: 20,
-              color: hasActiveTransfers
-                ? theme.palette.primary.main
-                : "inherit",
             }}
           />
         </IconButton>
