@@ -126,13 +126,17 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
   return (
     <Box
       sx={{
-        p: 1.5, // 减小内边距
-        borderBottom: `1px solid ${theme.palette.divider}`,
-        backgroundColor: theme.palette.background.paper,
+        m: 1,
+        p: 1.5,
+        borderRadius: 2,
+        backgroundColor: theme.palette.mode === 'dark'
+          ? 'rgba(255,255,255,0.05)'
+          : 'rgba(0,0,0,0.02)',
+        border: `1px solid ${theme.palette.divider}`,
       }}
     >
       {/* 头部信息 */}
-      <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}> {/* 减小底部间距 */}
+      <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
         <Box
           sx={{
             display: "flex",
@@ -271,7 +275,7 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
       </Box>
 
       {/* 进度条 */}
-      <Box sx={{ mb: 1 }}> {/* 减小底部间距 */}
+      <Box sx={{ mb: 0.5 }}>
         <LinearProgress
           variant="determinate"
           value={Math.min(progress, 100)}
@@ -570,8 +574,9 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
         {!isMinimized && (
           <Box
             sx={{
-              maxHeight: 400, // 减小内容区域高度
-              overflow: "auto",
+              maxHeight: 380,
+              overflowY: "auto",
+              overflowX: "hidden",
               "&::-webkit-scrollbar": {
                 width: 6,
               },
@@ -581,6 +586,9 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
               "&::-webkit-scrollbar-thumb": {
                 backgroundColor: theme.palette.divider,
                 borderRadius: 3,
+              },
+              "&::-webkit-scrollbar-thumb:hover": {
+                backgroundColor: theme.palette.action.disabled,
               },
             }}
           >
