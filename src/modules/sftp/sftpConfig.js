@@ -36,8 +36,8 @@ const TIMEOUT_CONFIG = {
   LARGE_FILE_THRESHOLD: 100 * 1024 * 1024, // 大文件阈值 (100 MB)
 
   // No-progress watchdog timeouts (用于检测传输卡死)
-  SMALL_FILE_NO_PROGRESS_TIMEOUT: 30000, // 小文件无进度超时 (30 秒)
-  LARGE_FILE_NO_PROGRESS_TIMEOUT: 60000, // 大文件无进度超时 (60 秒)
+  SMALL_FILE_NO_PROGRESS_TIMEOUT: 60000, // 小文件无进度超时 (60 秒)
+  LARGE_FILE_NO_PROGRESS_TIMEOUT: 300000, // 大文件无进度超时 (5 分钟，适应慢速网络)
   NO_PROGRESS_THRESHOLD: 100 * 1024 * 1024, // 判断大文件的阈值 (100 MB)
 };
 
