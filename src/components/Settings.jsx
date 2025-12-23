@@ -158,6 +158,9 @@ const Settings = memo(({ open, onClose }) => {
   const [dndAutoScroll, setDndAutoScroll] = React.useState(true);
   const [dndCompactPreview, setDndCompactPreview] = React.useState(false);
 
+  // 传输栏显示模式: "bottom" | "sidebar"
+  const [transferBarMode, setTransferBarMode] = React.useState("bottom");
+
   // 需要重启的设置变更标志
   const [needsRestart, setNeedsRestart] = React.useState(false);
   const [originalPerformanceSettings, setOriginalPerformanceSettings] =
@@ -206,6 +209,9 @@ const Settings = memo(({ open, onClose }) => {
             setDndEnabled(dnd.enabled !== false);
             setDndAutoScroll(dnd.autoScroll !== false);
             setDndCompactPreview(dnd.compactDragPreview === true);
+
+            // 传输栏显示模式
+            setTransferBarMode(settings.transferBarMode || "bottom");
 
             setImageSupported(performanceSettings.imageSupported !== false);
             setCacheEnabled(performanceSettings.cacheEnabled !== false);
@@ -369,6 +375,7 @@ const Settings = memo(({ open, onClose }) => {
             autoScroll: dndAutoScroll,
             compactDragPreview: dndCompactPreview,
           },
+          transferBarMode,
           externalEditor: {
             enabled: externalEditorEnabled,
             command: externalEditorCommand.trim(),
@@ -417,6 +424,7 @@ const Settings = memo(({ open, onClose }) => {
               autoScroll: dndAutoScroll,
               compactDragPreview: dndCompactPreview,
             },
+            transferBarMode,
             externalEditor: {
               enabled: externalEditorEnabled,
               command: externalEditorCommand.trim(),
@@ -512,6 +520,30 @@ const Settings = memo(({ open, onClose }) => {
                 }
                 label={t("settings.dnd.compactPreview")}
               />
+            </Box>
+
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                文件传输显示
+              </Typography>
+              <FormControl fullWidth variant="outlined" size="small">
+                <InputLabel id="transfer-bar-mode-label">显示模式</InputLabel>
+                <Select
+                  labelId="transfer-bar-mode-label"
+                  id="transfer-bar-mode-select"
+                  value={transferBarMode}
+                  onChange={(e) => setTransferBarMode(e.target.value)}
+                  label="显示模式"
+                >
+                  <MenuItem value="bottom">底部栏模式</MenuItem>
+                  <MenuItem value="sidebar">侧边栏模式</MenuItem>
+                </Select>
+              </FormControl>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                {transferBarMode === "bottom"
+                  ? "在应用底部显示传输进度条"
+                  : "通过侧边栏按钮查看传输状态，按钮带有进度环显示"}
+              </Typography>
             </Box>
 
             <Box sx={{ mb: 3 }}>

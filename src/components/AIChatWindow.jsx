@@ -46,9 +46,10 @@ import {
 import "./AIChatWindow.css";
 import "./CodeHighlight.css";
 
-// 自定义浮动窗口对话框（支持动态宽度）
-const FloatingDialog = styled(Dialog)(({ theme, customwidth }) => ({
+// 自定义浮动窗口对话框（支持动态宽度和z-index）
+const FloatingDialog = styled(Dialog)(({ theme, customwidth, customzindex }) => ({
   pointerEvents: "none",
+  zIndex: customzindex || 1300,
   "& .MuiDialog-container": {
     pointerEvents: "none",
   },
@@ -145,6 +146,8 @@ const AIChatWindow = ({
   onInputPresetUsed,
   connectionInfo,
   onExecuteCommand,
+  zIndex,
+  onFocus,
 }) => {
   const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState([]);
@@ -748,7 +751,9 @@ const AIChatWindow = ({
       disableAutoFocus
       disableEscapeKeyDown={isPending || abortController}
       customwidth={windowWidth}
+      customzindex={zIndex}
       ref={dialogRef}
+      onMouseDown={onFocus}
     >
       {/* 左侧拖动调整宽度手柄 */}
       <Box
