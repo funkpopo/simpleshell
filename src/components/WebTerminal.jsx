@@ -1441,7 +1441,8 @@ useEffect(() => {
     // 鼠标中键点击 (e.button === 1 表示鼠标中键)
     if (e.button === 1) {
       e.preventDefault();
-      e.stopPropagation(); // 阻止事件传播，进一步防止默认行为
+      e.stopPropagation();
+      e.stopImmediatePropagation(); // 阻止同一元素上的其他监听器执行
 
       // 检查是否是重复粘贴（100毫秒内的操作视为重复）
       const now = Date.now();
@@ -1461,8 +1462,47 @@ useEffect(() => {
 
       navigator.clipboard.readText().then((text) => {
         if (text && processCache[tabId]) {
+          // 检测文本是否包含中文字符
+          const containsChinese = /[\u4e00-\u9fa5]/.test(text);
+
           // 使用预处理函数处理多行文本，防止注释和缩进问题
-          const processedText = processMultilineInput(text);
+          let processedText = processMultilineInput(text);
+
+          // 如果包含中文字符，确保正确编码
+          if (containsChinese) {
+            const processInfo =
+              window.terminalAPI && window.terminalAPI.getProcessInfo
+                ? window.terminalAPI.getProcessInfo(processCache[tabId])
+                : null;
+
+            if (processInfo && processInfo.type === "ssh2") {
+              if (typeof processedText === "string") {
+                try {
+                  const encoder = new TextEncoder();
+                  const decoder = new TextDecoder("utf-8");
+                  const encoded = encoder.encode(processedText);
+                  processedText = decoder.decode(encoded);
+                } catch (e) {
+                  // 备用方法
+                }
+              } else if (
+                processedText &&
+                typeof processedText === "object" &&
+                processedText.type === "multiline-with-comments"
+              ) {
+                try {
+                  const encoder = new TextEncoder();
+                  const decoder = new TextDecoder("utf-8");
+                  processedText.lines = processedText.lines.map((line) => {
+                    const encoded = encoder.encode(line);
+                    return decoder.decode(encoded);
+                  });
+                } catch (e) {
+                  // 备用方法
+                }
+              }
+            }
+          }
 
           // 检查是否需要逐行发送（含有注释的多行文本）
           if (
@@ -1477,7 +1517,7 @@ useEffect(() => {
                   processCache[tabId],
                   line + (index < processedText.lines.length - 1 ? "\n" : ""),
                 );
-              }, index * 50); // 50毫秒的延迟，可以根据实际情况调整
+              }, index * 50);
             });
           } else {
             // 正常发送处理后的文本
@@ -2950,11 +2990,25 @@ useEffect(() => {
       eventManager.addEventListener(document, "keydown", handleKeyDown);
 
       // 使用EventManager添加鼠标事件监听
+      // 中键事件使用捕获阶段，确保在xterm.js处理之前拦截
       if (terminalRef.current) {
         eventManager.addEventListener(
           terminalRef.current,
           "mousedown",
           handleMouseDown,
+          { capture: true },
+        );
+        // 添加auxclick事件处理，某些浏览器中键点击会触发此事件
+        eventManager.addEventListener(
+          terminalRef.current,
+          "auxclick",
+          (e) => {
+            if (e.button === 1) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          },
+          { capture: true },
         );
 
         eventManager.addEventListener(
