@@ -40,16 +40,17 @@ class ProcessManager {
     // 终止所有活动进程
     for (const [processId, processInfo] of this.childProcesses) {
       try {
+        // 对于SSH连接，优先使用 end() 发送正确的断开信号
         if (
-          processInfo.process &&
-          typeof processInfo.process.kill === "function"
-        ) {
-          processInfo.process.kill();
-        } else if (
           processInfo.process &&
           typeof processInfo.process.end === "function"
         ) {
           processInfo.process.end();
+        } else if (
+          processInfo.process &&
+          typeof processInfo.process.kill === "function"
+        ) {
+          processInfo.process.kill();
         }
       } catch (error) {
         logToFile(

@@ -220,27 +220,44 @@ class BaseConnectionPool extends EventEmitter {
 
     this._logInfo(`关闭连接: ${key}`);
 
-    try {
-      // 标记为有意关闭，避免触发重连
-      conn.intentionalClose = true;
+    // 标记为有意关闭，避免触发重连
+    conn.intentionalClose = true;
 
-      // 调用客户端的关闭方法
+    // 先从连接池中删除，避免重复关闭
+    this.connections.delete(key);
+
+    // 清理监听器
+    if (conn.listeners && conn.listeners.size > 0) {
+      conn.listeners.clear();
+    }
+
+    try {
+      // 优先使用 end() 方法发送正确的断开信号
+      // end() 会发送 SSH_MSG_DISCONNECT 消息给服务器
       if (conn.client && typeof conn.client.end === 'function') {
         conn.client.end();
+        // 设置超时，如果 end() 没有在合理时间内完成，强制销毁
+        setTimeout(() => {
+          if (conn.client && !conn.client.destroyed && typeof conn.client.destroy === 'function') {
+            this._logInfo(`连接 ${key} 的 end() 超时，强制销毁`);
+            conn.client.destroy();
+          }
+        }, 3000);
       } else if (conn.client && typeof conn.client.destroy === 'function') {
+        // 如果没有 end() 方法，直接销毁
         conn.client.destroy();
-      }
-
-      // 清理监听器
-      if (conn.listeners && conn.listeners.size > 0) {
-        conn.listeners.clear();
       }
     } catch (error) {
       this._logError(`关闭连接时出错: ${key}`, error);
+      // 出错时尝试强制销毁
+      try {
+        if (conn.client && typeof conn.client.destroy === 'function') {
+          conn.client.destroy();
+        }
+      } catch (_) {
+        // 忽略销毁时的错误
+      }
     }
-
-    // 从连接池中删除
-    this.connections.delete(key);
 
     this.emit('connectionClosed', { key, connection: conn });
   }
