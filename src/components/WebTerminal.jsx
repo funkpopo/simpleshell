@@ -3006,6 +3006,22 @@ useEffect(() => {
             if (e.button === 1) {
               e.preventDefault();
               e.stopPropagation();
+              e.stopImmediatePropagation();
+            }
+          },
+          { capture: true },
+        );
+        // 拦截paste事件，防止xterm.js内部处理中键粘贴
+        eventManager.addEventListener(
+          terminalRef.current,
+          "paste",
+          (e) => {
+            // 只在中键粘贴时阻止（通过检查最近是否有中键点击）
+            const now = Date.now();
+            if (now - lastPasteTimeRef.current < 200) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
             }
           },
           { capture: true },
