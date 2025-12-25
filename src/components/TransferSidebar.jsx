@@ -9,6 +9,11 @@ import {
   Divider,
   Button,
   Tooltip,
+  Collapse,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
 } from "@mui/material";
 import { styled, useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
@@ -22,6 +27,9 @@ import ErrorIcon from "@mui/icons-material/Error";
 import CancelIcon from "@mui/icons-material/Cancel";
 import StopIcon from "@mui/icons-material/Stop";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import { useTranslation } from "react-i18next";
 import {
   useAllGlobalTransfers,
@@ -128,11 +136,23 @@ const formatTime = (timestamp) => {
  */
 const TransferItem = memo(({ transfer, isActive, onCancel }) => {
   const theme = useTheme();
+  const [expanded, setExpanded] = useState(false);
   const statusIcon = getStatusIcon(transfer);
   const isCompleted = transfer.progress >= 100;
   const hasError = !!transfer.error;
   const isCancelled = transfer.isCancelled;
   const canCancel = isActive && !isCompleted && !hasError && !isCancelled;
+
+  // 判断是否有文件列表可展开（单文件也允许展开）
+  const hasFileList = transfer.fileList && transfer.fileList.length > 0;
+  const isMultiFile = transfer.totalFiles > 1 || transfer.type === "upload-multifile" || transfer.type === "upload-folder";
+  const canExpand = hasFileList || transfer.totalFiles > 0;
+
+  // 计算已完成文件数（优先使用 processedFiles，其次根据 currentFileIndex 推算）
+  const completedFiles = transfer.processedFiles ?? Math.max(0, (transfer.currentFileIndex || 1) - 1);
+  const totalFiles = transfer.totalFiles || 0;
+  // 确保已完成数不超过总数
+  const displayCompleted = Math.min(completedFiles, totalFiles);
 
   return (
     <Box
@@ -169,6 +189,20 @@ const TransferItem = memo(({ transfer, isActive, onCancel }) => {
           {formatTime(transfer.startTime || transfer.completedTime)}
         </Typography>
         {statusIcon}
+        {/* 展开/折叠按钮 */}
+        {canExpand && (
+          <IconButton
+            size="small"
+            onClick={() => setExpanded(!expanded)}
+            sx={{ width: 20, height: 20, p: 0 }}
+          >
+            {expanded ? (
+              <ExpandLessIcon sx={{ fontSize: 16 }} />
+            ) : (
+              <ExpandMoreIcon sx={{ fontSize: 16 }} />
+            )}
+          </IconButton>
+        )}
       </Box>
 
       {/* 进度条 - 仅活跃传输显示 */}
@@ -199,6 +233,14 @@ const TransferItem = memo(({ transfer, isActive, onCancel }) => {
           {transfer.transferSpeed > 0 && isActive && (
             <Chip
               label={`${formatSize(transfer.transferSpeed)}/s`}
+              size="small"
+              variant="outlined"
+              sx={{ height: 18, fontSize: "0.65rem" }}
+            />
+          )}
+          {isMultiFile && totalFiles > 0 && (
+            <Chip
+              label={`${displayCompleted}/${totalFiles} 文件`}
               size="small"
               variant="outlined"
               sx={{ height: 18, fontSize: "0.65rem" }}
@@ -241,6 +283,61 @@ const TransferItem = memo(({ transfer, isActive, onCancel }) => {
           </Tooltip>
         )}
       </Box>
+
+      {/* 文件列表展开区域 */}
+      <Collapse in={expanded} timeout="auto" unmountOnExit>
+        <Box
+          sx={{
+            mt: 1,
+            pt: 1,
+            borderTop: `1px dashed ${theme.palette.divider}`,
+            maxHeight: 200,
+            overflowY: "auto",
+            "&::-webkit-scrollbar": { width: 4 },
+            "&::-webkit-scrollbar-thumb": {
+              backgroundColor: theme.palette.divider,
+              borderRadius: 2,
+            },
+          }}
+        >
+          {hasFileList ? (
+            <List dense disablePadding>
+              {transfer.fileList.map((file, index) => (
+                <ListItem
+                  key={file.index ?? index}
+                  disablePadding
+                  sx={{ py: 0.25, px: 0.5 }}
+                >
+                  <ListItemIcon sx={{ minWidth: 24 }}>
+                    {file.completed ? (
+                      <CheckCircleIcon sx={{ fontSize: 14, color: "#4caf50" }} />
+                    ) : (
+                      <InsertDriveFileIcon sx={{ fontSize: 14, color: "text.secondary" }} />
+                    )}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={file.name}
+                    secondary={formatSize(file.size)}
+                    primaryTypographyProps={{
+                      variant: "caption",
+                      noWrap: true,
+                      sx: { fontSize: "0.7rem" },
+                    }}
+                    secondaryTypographyProps={{
+                      variant: "caption",
+                      sx: { fontSize: "0.6rem" },
+                    }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          ) : totalFiles > 0 ? (
+            <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
+              共 {totalFiles} 个文件
+            </Typography>
+          ) : null}
+        </Box>
+      </Collapse>
     </Box>
   );
 });

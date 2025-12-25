@@ -251,6 +251,7 @@ class TransferProgressCoordinator {
       totalBytes: this.totalBytes,
       transferSpeed: this.currentSpeed,
       remainingTime: this.currentRemainingTime,
+      fileList: this.totalFiles > 1 ? this.getFileList() : null, // 多文件时包含文件列表
     };
 
     // 回调上报（使用IPC批处理）
@@ -271,6 +272,23 @@ class TransferProgressCoordinator {
 
     // 更新上报时间
     this.lastProgressReportTime = now;
+  }
+
+  /**
+   * 获取文件列表信息（用于UI展示）
+   */
+  getFileList() {
+    const files = [];
+    for (const [fileIndex, fileState] of this.fileStates.entries()) {
+      files.push({
+        index: fileIndex,
+        name: fileState.fileName,
+        size: fileState.totalBytes,
+        transferred: fileState.transferredBytes,
+        completed: fileState.isCompleted,
+      });
+    }
+    return files;
   }
 
   /**

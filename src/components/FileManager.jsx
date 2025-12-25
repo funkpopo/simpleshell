@@ -1606,6 +1606,7 @@ const FileManager = memo(
               currentFileIndex,
               totalFiles,
               transferKey,
+              fileList,
             ) => {
               // 验证并标准化进度数据
               const validProgress = Math.max(0, Math.min(100, progress || 0));
@@ -1626,6 +1627,7 @@ const FileManager = memo(
                 currentFileIndex: validCurrentFileIndex,
                 totalFiles: validTotalFiles,
                 transferKey: transferKey || "",
+                fileList: fileList || null,
               });
             },
           );
@@ -1790,6 +1792,7 @@ const FileManager = memo(
               processedFiles,
               totalFiles,
               transferKey,
+              fileList,
             ) => {
               // 验证并标准化进度数据
               const validProgress = Math.max(0, Math.min(100, progress || 0));
@@ -1811,6 +1814,7 @@ const FileManager = memo(
                 processedFiles: validProcessedFiles,
                 totalFiles: validTotalFiles,
                 transferKey: transferKey || "", // 添加transferKey到状态
+                fileList: fileList || null,
               });
             },
           );
@@ -2625,6 +2629,7 @@ const FileManager = memo(
                 totalFiles,
                 transferKey,
                 operationComplete,
+                fileList,
               ) => {
                 // 与 handleUploadFile 保持一致的进度处理
                 const validProgress = Math.max(0, Math.min(100, progress || 0));
@@ -2658,6 +2663,7 @@ const FileManager = memo(
                   totalFiles: validTotalFiles,
                   transferKey: transferKey || "",
                   isCompleted: operationComplete === true,
+                  fileList: fileList || null,
                 });
               },
             );

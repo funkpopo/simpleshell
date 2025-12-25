@@ -352,6 +352,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.currentFileIndex || 0,
           progressData.totalFiles || 0,
           progressData.transferKey || "", // 添加transferKey参数
+          progressData.fileList || null, // 添加fileList参数
         );
       }
       // If operation is complete or cancelled, remove listener
@@ -392,6 +393,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.processedFiles || 0,
           progressData.totalFiles || 0,
           progressData.transferKey || "", // 添加transferKey参数
+          progressData.fileList || null, // 添加fileList参数
         );
       }
       // If operation is complete or cancelled, remove listener
@@ -429,6 +431,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.totalFiles || 0,
           progressData.transferKey || "",
           progressData.operationComplete || false,
+          progressData.fileList || null, // 添加fileList参数
         );
       }
       // If operation is complete or cancelled, remove listener
