@@ -46,6 +46,58 @@ import {
 import "./AIChatWindow.css";
 import "./CodeHighlight.css";
 
+// Token估算函数
+const estimateTokens = (text) => {
+  if (!text) return 0;
+  // 中文字符计数
+  const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+  // 非中文字符计数
+  const otherChars = text.length - chineseChars;
+  // 中文约1.5 token/字符，英文约0.25 token/字符
+  return Math.ceil(chineseChars * 1.5 + otherChars * 0.25);
+};
+
+// Token使用扇形图组件
+const TokenUsageChart = ({ used, max }) => {
+  const percentage = Math.min((used / max) * 100, 100);
+  const angle = (percentage / 100) * 360;
+  const radius = 12;
+  const cx = 14;
+  const cy = 14;
+
+  // 计算扇形路径
+  const getArcPath = (startAngle, endAngle) => {
+    const start = {
+      x: cx + radius * Math.cos((startAngle - 90) * Math.PI / 180),
+      y: cy + radius * Math.sin((startAngle - 90) * Math.PI / 180),
+    };
+    const end = {
+      x: cx + radius * Math.cos((endAngle - 90) * Math.PI / 180),
+      y: cy + radius * Math.sin((endAngle - 90) * Math.PI / 180),
+    };
+    const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+    return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
+  };
+
+  const color = percentage > 90 ? '#f44336' : percentage > 70 ? '#ff9800' : '#4caf50';
+
+  return (
+    <Tooltip title={`${used.toLocaleString()} / ${max.toLocaleString()} tokens`} placement="left" arrow>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'default' }}>
+        <svg width="28" height="28" viewBox="0 0 28 28">
+          <circle cx={cx} cy={cy} r={radius} fill="rgba(128,128,128,0.2)" />
+          {angle > 0 && (
+            <path d={getArcPath(0, Math.min(angle, 359.9))} fill={color} />
+          )}
+        </svg>
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+          {percentage.toFixed(0)}%
+        </Typography>
+      </Box>
+    </Tooltip>
+  );
+};
+
 // 自定义浮动窗口对话框（支持动态宽度和z-index）
 const FloatingDialog = styled(Dialog)(({ theme, customwidth, customzindex }) => ({
   pointerEvents: "none",
@@ -237,7 +289,9 @@ const AIChatWindow = ({
         const settings = await window.terminalAPI.loadAISettings();
         setAvailableApis(settings.configs || []);
         if (settings.current) {
-          setCurrentApi(settings.current);
+          // 从configs中获取最新的配置（确保maxTokens等设置是最新的）
+          const latestConfig = settings.configs?.find(c => c.id === settings.current.id) || settings.current;
+          setCurrentApi(latestConfig);
         } else if (settings.configs && settings.configs.length > 0) {
           setCurrentApi(settings.configs[0]);
         }
@@ -1091,8 +1145,8 @@ const AIChatWindow = ({
           )}
         </Box>
 
-        {/* 显示思考内容开关 */}
-        <Box sx={{ mt: 1 }}>
+        {/* 显示思考内容开关和Token使用情况 */}
+        <Box sx={{ mt: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <FormControlLabel
             control={
               <Switch
@@ -1103,6 +1157,12 @@ const AIChatWindow = ({
             }
             label={t("ai.showThinking")}
           />
+          {currentApi?.maxTokens && (
+            <TokenUsageChart
+              used={messages.reduce((sum, m) => sum + estimateTokens(m.content), 0) + estimateTokens(input)}
+              max={currentApi.maxTokens}
+            />
+          )}
         </Box>
       </DialogContent>
 
