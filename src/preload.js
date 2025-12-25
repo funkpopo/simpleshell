@@ -197,6 +197,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   fetchModels: (requestData) => ipcRenderer.invoke("ai:fetchModels", requestData),
   // 新增: 保存自定义风险规则
   saveCustomRiskRules: (rules) => ipcRenderer.invoke("ai:saveCustomRiskRules", rules),
+
+  // 记忆文件管理API
+  saveMemory: (memory) => ipcRenderer.invoke("memory:save", memory),
+  loadMemory: () => ipcRenderer.invoke("memory:load"),
+  deleteMemory: () => ipcRenderer.invoke("memory:delete"),
+
   // 添加事件监听器注册方法
   on: (channel, callback) => {
     const validChannels = ["stream-chunk", "stream-end", "stream-error"];

@@ -763,6 +763,21 @@ app.on("before-quit", async (event) => {
     }
   }
 
+  // 清理记忆文件
+  try {
+    const tempDir = app.isPackaged
+      ? path.join(path.dirname(app.getPath('exe')), 'temp')
+      : path.join(app.getAppPath(), 'temp');
+    const memFilePath = path.join(tempDir, 'mem.json');
+    await fs.promises.unlink(memFilePath);
+    logToFile("记忆文件已清理", "INFO");
+  } catch (error) {
+    // 文件不存在时忽略错误
+    if (error.code !== 'ENOENT') {
+      logToFile(`记忆文件清理失败: ${error.message}`, "ERROR");
+    }
+  }
+
   // 移除所有事件监听器和子进程
   if (
     externalEditorManager &&
@@ -4817,6 +4832,53 @@ function setupIPC(mainWindow) {
     } catch (error) {
       logToFile(`Save SSH key failed: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
+    }
+  });
+
+  // 获取temp目录路径
+  const getTempDir = () => {
+    if (app.isPackaged) {
+      return path.join(path.dirname(app.getPath('exe')), 'temp');
+    } else {
+      return path.join(app.getAppPath(), 'temp');
+    }
+  };
+
+  // 保存记忆文件
+  safeHandle(ipcMain, "memory:save", async (event, memory) => {
+    try {
+      const tempDir = getTempDir();
+      await fs.promises.mkdir(tempDir, { recursive: true });
+      const filepath = path.join(tempDir, 'mem.json');
+      await fs.promises.writeFile(filepath, JSON.stringify(memory, null, 2), 'utf-8');
+      return { success: true, filepath };
+    } catch (error) {
+      logToFile(`Save memory failed: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 加载记忆文件
+  safeHandle(ipcMain, "memory:load", async () => {
+    try {
+      const tempDir = getTempDir();
+      const filepath = path.join(tempDir, 'mem.json');
+      const content = await fs.promises.readFile(filepath, 'utf-8');
+      return JSON.parse(content);
+    } catch (err) {
+      return null;
+    }
+  });
+
+  // 删除记忆文件
+  safeHandle(ipcMain, "memory:delete", async () => {
+    try {
+      const tempDir = getTempDir();
+      const filepath = path.join(tempDir, 'mem.json');
+      await fs.promises.unlink(filepath);
+      return true;
+    } catch (err) {
+      return false;
     }
   });
 

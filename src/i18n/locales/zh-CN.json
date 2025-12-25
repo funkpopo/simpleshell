@@ -453,7 +453,11 @@
         "medium": "可能影响服务或数据",
         "high": "可能导致服务中断或数据丢失",
         "critical": "可能导致系统不可用或不可恢复"
-      }
+      },
+      "contextWarning": "上下文容量警告：点击生成记忆摘要",
+      "compressing": "正在生成记忆摘要...",
+      "compressSuccess": "记忆已保存",
+      "compressFailed": "记忆生成失败"
     },
     "randomPassword": {
       "title": "随机密码生成器",
