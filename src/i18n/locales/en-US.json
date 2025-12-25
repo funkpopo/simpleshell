@@ -453,7 +453,11 @@
         "medium": "May affect services or data",
         "high": "May cause service interruption or data loss",
         "critical": "May cause system unavailability or irrecoverable state"
-      }
+      },
+      "contextWarning": "Context capacity warning: Click to generate memory summary",
+      "compressing": "Generating memory summary...",
+      "compressSuccess": "Memory saved",
+      "compressFailed": "Memory generation failed"
     },
     "randomPassword": {
       "title": "Random Password Generator",

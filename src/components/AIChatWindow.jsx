@@ -58,12 +58,13 @@ const estimateTokens = (text) => {
 };
 
 // Token使用扇形图组件
-const TokenUsageChart = ({ used, max }) => {
+const TokenUsageChart = ({ used, max, onCompressClick, isCompressing }) => {
   const percentage = Math.min((used / max) * 100, 100);
   const angle = (percentage / 100) * 360;
   const radius = 12;
   const cx = 14;
   const cy = 14;
+  const isWarning = percentage >= 80;
 
   // 计算扇形路径
   const getArcPath = (startAngle, endAngle) => {
@@ -81,9 +82,39 @@ const TokenUsageChart = ({ used, max }) => {
 
   const color = percentage > 90 ? '#f44336' : percentage > 70 ? '#ff9800' : '#4caf50';
 
+  const tooltipContent = isWarning
+    ? `${used.toLocaleString()} / ${max.toLocaleString()} tokens\n上下文容量警告：点击生成记忆摘要`
+    : `${used.toLocaleString()} / ${max.toLocaleString()} tokens`;
+
+  const handleClick = () => {
+    if (isWarning && onCompressClick && !isCompressing) {
+      onCompressClick();
+    }
+  };
+
+  if (isCompressing) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+          记忆生成中...
+        </Typography>
+        <CircularProgress size={16} thickness={4} />
+      </Box>
+    );
+  }
+
   return (
-    <Tooltip title={`${used.toLocaleString()} / ${max.toLocaleString()} tokens`} placement="left" arrow>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'default' }}>
+    <Tooltip title={<span style={{ whiteSpace: 'pre-line' }}>{tooltipContent}</span>} placement="left" arrow>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+          cursor: isWarning ? 'pointer' : 'default',
+          '&:hover': isWarning ? { opacity: 0.8 } : {},
+        }}
+        onClick={handleClick}
+      >
         <svg width="28" height="28" viewBox="0 0 28 28">
           <circle cx={cx} cy={cy} r={radius} fill="rgba(128,128,128,0.2)" />
           {angle > 0 && (
@@ -218,6 +249,8 @@ const AIChatWindow = ({
   const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [prevWindowState, setPrevWindowState] = useState(null);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [compressedMessageCount, setCompressedMessageCount] = useState(0);
   const streamHandlersRef = useRef({});
 
   const messagesEndRef = useRef(null);
@@ -396,11 +429,25 @@ const AIChatWindow = ({
     setAbortController(controller);
 
     try {
+      // 加载记忆文件
+      const memory = await window.terminalAPI.loadMemory();
+
       // 生成系统提示词
-      const systemPrompt = generateSystemPrompt({
+      let systemPrompt = generateSystemPrompt({
         language: i18n.language,
         connectionInfo: connectionInfo,
       });
+
+      // 如果有记忆，注入到系统提示词开头
+      if (memory) {
+        const memoryContext = `[历史对话记忆 - ${memory.timestamp}]
+摘要：${memory.summary}
+关键点：${memory.keyPoints?.join('、') || '无'}
+${memory.pendingTasks?.length ? `待处理：${memory.pendingTasks.join('、')}` : ''}
+
+`;
+        systemPrompt = memoryContext + systemPrompt;
+      }
 
       // 构建消息列表，包含系统提示词
       const apiMessages = [
@@ -596,17 +643,105 @@ const AIChatWindow = ({
   };
 
   // 清空对话
-  const handleClearChat = () => {
+  const handleClearChat = async () => {
     setMessages([]);
     setError("");
+    setCompressedMessageCount(0);
+    // 删除记忆文件
+    if (window.terminalAPI?.deleteMemory) {
+      await window.terminalAPI.deleteMemory();
+    }
   };
 
-  // 处理关闭窗口（清空对话内容）
-  const handleClose = () => {
+  // 生成记忆摘要
+  const generateMemory = async (msgs, api) => {
+    const conversationText = msgs
+      .map(m => `${m.role === 'user' ? '用户' : 'AI'}: ${m.content}`)
+      .join('\n\n');
+
+    const prompt = `请对以下对话历史进行摘要，提取关键信息：
+1. 用户的主要意图和需求
+2. 已完成的操作和结果
+3. 重要的上下文信息（如文件路径、配置等）
+4. 未完成的任务或待处理事项
+
+请以JSON格式返回（不要包含markdown代码块标记）：
+{
+  "summary": "对话摘要",
+  "keyPoints": ["关键点1", "关键点2"],
+  "pendingTasks": ["待处理任务"],
+  "context": { "重要上下文键值对" }
+}
+
+对话历史：
+${conversationText}`;
+
+    const response = await window.terminalAPI.sendAPIRequest({
+      url: api.apiUrl,
+      apiKey: api.apiKey,
+      model: api.model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.3,
+      max_tokens: 4096,
+    }, false);
+
+    if (response.error) {
+      throw new Error(response.error);
+    }
+
+    // 从API响应中提取内容
+    const responseContent = response.content ||
+      (response.choices && response.choices[0]?.message?.content);
+
+    if (!responseContent) {
+      throw new Error('API返回内容为空');
+    }
+
+    // 尝试解析JSON，处理可能的markdown代码块
+    let content = responseContent.trim();
+    if (content.startsWith('```json')) {
+      content = content.slice(7);
+    } else if (content.startsWith('```')) {
+      content = content.slice(3);
+    }
+    if (content.endsWith('```')) {
+      content = content.slice(0, -3);
+    }
+    return JSON.parse(content.trim());
+  };
+
+  // 处理记忆压缩
+  const handleCompressMemory = async () => {
+    if (messages.length === 0 || !currentApi || isCompressing) return;
+
+    setIsCompressing(true);
+    try {
+      const memory = await generateMemory(messages, currentApi);
+      await window.terminalAPI.saveMemory({
+        ...memory,
+        timestamp: new Date().toISOString(),
+        messageCount: messages.length,
+      });
+      // 记录已压缩的消息数量，用于重置token计数
+      setCompressedMessageCount(messages.length);
+    } catch (err) {
+      setError(t('ai.compressFailed') + ': ' + err.message);
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
+  // 处理关闭窗口（清空对话内容并删除记忆文件）
+  const handleClose = async () => {
     setMessages([]);
     setInput("");
     setError("");
     setExpandedThinking({});
+    setCompressedMessageCount(0);
+    // 删除记忆文件
+    if (window.terminalAPI?.deleteMemory) {
+      await window.terminalAPI.deleteMemory();
+    }
     if (onClose) {
       onClose();
     }
@@ -1159,8 +1294,10 @@ const AIChatWindow = ({
           />
           {currentApi?.maxTokens && (
             <TokenUsageChart
-              used={messages.reduce((sum, m) => sum + estimateTokens(m.content), 0) + estimateTokens(input)}
+              used={messages.slice(compressedMessageCount).reduce((sum, m) => sum + estimateTokens(m.content), 0) + estimateTokens(input)}
               max={currentApi.maxTokens}
+              onCompressClick={handleCompressMemory}
+              isCompressing={isCompressing}
             />
           )}
         </Box>
