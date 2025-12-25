@@ -554,6 +554,7 @@ const AISettings = ({ open, onClose }) => {
       fullWidth
       disableEnforceFocus={false}
       disableAutoFocus={false}
+      sx={{ zIndex: 1500 }}
       PaperProps={{
         sx: {
           borderRadius: 2,
