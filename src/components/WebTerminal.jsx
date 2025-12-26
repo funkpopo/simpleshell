@@ -791,9 +791,6 @@ const WebTerminal = ({
   const pendingWriteHandleRef = useRef(null);
   const pendingWriteUsingRafRef = useRef(false);
 
-  // 本地回显缓冲区：用于跟踪已本地回显的字符，以便过滤服务器回显
-  const localEchoBufferRef = useRef([]);
-
   // 当前 tab 变为激活状态时，强制让终端获得键盘焦点
   useEffect(() => {
   if (!isActive || !termRef.current) return;
@@ -2061,27 +2058,6 @@ useEffect(() => {
         // 对于非Tab键输入，只有在非Tab补全状态下才追加到输入缓冲区
         if (!tabCompletionUsed) {
           currentInputBuffer += data;
-        }
-
-        // 本地回显：对于普通可打印字符，立即显示在终端上，不等待服务器确认
-        // 仅在非编辑器模式、非密码输入状态下进行本地回显
-        if (
-          !inEditorMode &&
-          !isPasswordPromptActiveRef.current &&
-          data.length === 1 &&
-          data.charCodeAt(0) >= 32 &&
-          data.charCodeAt(0) <= 126
-        ) {
-          term.write(data);
-          // 将字符添加到本地回显缓冲区，用于过滤服务器回显
-          localEchoBufferRef.current.push({
-            char: data,
-            time: Date.now()
-          });
-          // 限制缓冲区大小，防止内存泄漏（保留最近100个字符）
-          if (localEchoBufferRef.current.length > 100) {
-            localEchoBufferRef.current.shift();
-          }
         }
 
         // 实时更新光标位置
@@ -3962,51 +3938,11 @@ useEffect(() => {
         return;
       }
 
-      // 智能过滤：过滤掉已经本地回显的字符，防止重复显示
-      let filteredData = data;
-      const dataStr = typeof data === "string" ? data : data.toString();
-      const now = Date.now();
-      const echoTimeout = 2000; // 2秒超时，超过这个时间的本地回显不再过滤
-
-      // 清理过期的本地回显缓冲区条目
-      localEchoBufferRef.current = localEchoBufferRef.current.filter(
-        (entry) => now - entry.time < echoTimeout
-      );
-
-      // 如果有本地回显缓冲区中的字符，尝试过滤
-      if (localEchoBufferRef.current.length > 0) {
-        let result = "";
-        let i = 0;
-        while (i < dataStr.length) {
-          const char = dataStr[i];
-          const charCode = char.charCodeAt(0);
-
-          // 只过滤普通可打印字符（ASCII 32-126）
-          if (charCode >= 32 && charCode <= 126) {
-            // 查找缓冲区中是否有匹配的字符
-            const bufferIndex = localEchoBufferRef.current.findIndex(
-              (entry) => entry.char === char
-            );
-            if (bufferIndex !== -1) {
-              // 找到匹配，从缓冲区中移除并跳过该字符
-              localEchoBufferRef.current.splice(bufferIndex, 1);
-              i++;
-              continue;
-            }
-          }
-          // 保留该字符（包括ANSI转义序列）
-          result += char;
-          i++;
-        }
-        filteredData = result;
-      }
-
-      // 如果过滤后还有数据，写入终端
-      if (filteredData && filteredData.length > 0) {
-        enqueueTerminalWrite(term, filteredData);
-      }
+      enqueueTerminalWrite(term, data);
       // 更新内容状态标志，表示终端内容已更新
       setContentUpdated(true);
+
+      const dataStr = typeof data === "string" ? data : data.toString();
 
       // 检测密码和确认提示
       checkForPrompts(dataStr);
