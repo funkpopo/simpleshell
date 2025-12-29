@@ -9,6 +9,7 @@ const Client = require('ssh2').Client;
 const { getBasicSSHAlgorithms } = require('../../constants/sshAlgorithms');
 const proxyManager = require('../proxy/proxy-manager');
 const { createChannelPoolManager } = require('../utils/ssh-utils');
+const ReconnectionManager = require('./reconnection-manager');
 
 // 代理类型常量
 const PROXY_TYPES = {
@@ -45,6 +46,9 @@ class SSHPool extends BaseConnectionPool {
 
     // 为每个连接初始化通道管理器
     this.channelManagers = new Map();
+
+    // 初始化重连管理器
+    this.reconnectionManager = new ReconnectionManager();
   }
 
   /**
@@ -60,8 +64,38 @@ class SSHPool extends BaseConnectionPool {
     proxyManager.initialize();
     this.proxyManager = proxyManager;
 
+    // 初始化重连管理器
+    this.reconnectionManager.initialize();
+    this._setupReconnectionEvents();
+
     // 调用父类初始化
     super.initialize();
+  }
+
+  /**
+   * 设置重连管理器事件监听
+   * @private
+   */
+  _setupReconnectionEvents() {
+    // 监听重连成功事件，更新连接池中的连接
+    this.reconnectionManager.on('connectionReplaced', ({ sessionId, newConnection }) => {
+      this._logInfo(`重连成功，更新连接: ${sessionId}`);
+      const conn = this.connections.get(sessionId);
+      if (conn) {
+        conn.client = newConnection;
+        conn.ready = true;
+        conn.lastUsed = Date.now();
+        this.emit('connectionReconnected', { key: sessionId, connection: conn });
+      }
+    });
+
+    // 监听重连放弃事件
+    this.reconnectionManager.on('reconnectAbandoned', ({ sessionId, reason }) => {
+      this._logInfo(`重连放弃: ${sessionId} - ${reason}`);
+      // 从连接池中移除
+      this.connections.delete(sessionId);
+      this.emit('connectionAbandoned', { key: sessionId, reason });
+    });
   }
 
   /**
@@ -74,6 +108,11 @@ class SSHPool extends BaseConnectionPool {
       if (request && request.reject) {
         request.reject(new Error('连接池正在关闭'));
       }
+    }
+
+    // 关闭重连管理器
+    if (this.reconnectionManager) {
+      this.reconnectionManager.shutdown();
     }
 
     // 调用父类清理
@@ -280,6 +319,51 @@ class SSHPool extends BaseConnectionPool {
     }
 
     return null;
+  }
+
+  /**
+   * 根据标签页ID获取连接键
+   * @param {string} tabId - 标签页ID
+   * @returns {string|null} 连接键
+   */
+  getConnectionKeyByTabId(tabId) {
+    if (!tabId) return null;
+
+    // 先从标签页引用中查找
+    const key = this.tabReferences.get(tabId);
+    if (key) return key;
+
+    // 直接通过连接键前缀查找（向后兼容）
+    const tabPrefix = `tab:${tabId}:`;
+    for (const [connectionKey] of this.connections.entries()) {
+      if (connectionKey.startsWith(tabPrefix)) {
+        return connectionKey;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 获取连接状态
+   * @param {string} connectionKey - 连接键
+   * @returns {Object|null} 连接状态
+   */
+  getConnectionStatus(connectionKey) {
+    const conn = this.connections.get(connectionKey);
+    if (!conn) return null;
+
+    // 获取重连状态
+    const reconnectStatus = this.reconnectionManager.getSessionStatus(connectionKey);
+
+    return {
+      key: connectionKey,
+      ready: conn.ready,
+      refCount: conn.refCount,
+      createdAt: conn.createdAt,
+      lastUsed: conn.lastUsed,
+      reconnectStatus
+    };
   }
 
   /**
@@ -537,12 +621,31 @@ class SSHPool extends BaseConnectionPool {
   _handleSSHClose(connectionInfo, connectionKey) {
     this._logInfo(`SSH连接关闭: ${connectionKey}`);
 
-    // 如果连接意外关闭且还有引用，记录警告
-    if (connectionInfo.refCount > 0 && !connectionInfo.intentionalClose) {
-      this._logInfo(`检测到意外断开: ${connectionKey}`);
+    // 如果是有意关闭，直接清理
+    if (connectionInfo.intentionalClose) {
+      this._logInfo(`有意关闭连接: ${connectionKey}`);
+      this.connections.delete(connectionKey);
+      this.processRequestQueue();
+      return;
     }
 
-    this.connections.delete(connectionKey);
+    // 如果连接意外关闭且还有引用，尝试重连
+    if (connectionInfo.refCount > 0 || this.isConnectionReferencedByTabs(connectionKey)) {
+      this._logInfo(`检测到意外断开，尝试重连: ${connectionKey}`);
+
+      // 注册到重连管理器
+      this.reconnectionManager.registerSession(
+        connectionKey,
+        connectionInfo.client,
+        connectionInfo.config
+      );
+
+      // 发出连接丢失事件
+      this.emit('connectionLost', { key: connectionKey, connection: connectionInfo });
+    } else {
+      // 没有引用的连接直接清理
+      this.connections.delete(connectionKey);
+    }
 
     // 处理等待队列
     this.processRequestQueue();
