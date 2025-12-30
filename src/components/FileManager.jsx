@@ -3121,11 +3121,20 @@ const FileManager = memo(
             size: file.size || 0,
           }));
 
-          if (window.terminalAPI && window.terminalAPI.downloadFiles) {
-            const result = await window.terminalAPI.downloadFiles(
-              tabId,
-              files,
-              (
+          const result = await window.terminalAPI.downloadFiles(
+            tabId,
+            files,
+            (
+              progress,
+              fileName,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime,
+              processedFiles,
+              totalFiles,
+            ) => {
+              updateTransferProgress(batchTransferId, {
                 progress,
                 fileName,
                 transferredBytes,
@@ -3134,130 +3143,37 @@ const FileManager = memo(
                 remainingTime,
                 processedFiles,
                 totalFiles,
-              ) => {
-                updateTransferProgress(batchTransferId, {
-                  progress,
-                  fileName,
-                  transferredBytes,
-                  totalBytes,
-                  transferSpeed,
-                  remainingTime,
-                  processedFiles,
-                  totalFiles,
-                });
-              },
+              });
+            },
+          );
+
+          if (result?.cancelled) {
+            // 用户取消了下载
+            updateTransferProgress(batchTransferId, {
+              error: "用户取消下载",
+            });
+          } else if (result?.success) {
+            updateTransferProgress(batchTransferId, {
+              progress: 100,
+              fileName: `批量下载完成 (${result.completed} 个文件)`,
+            });
+            showNotification(`成功下载 ${result.completed} 个文件`, "success");
+          } else if (result?.completed > 0) {
+            updateTransferProgress(batchTransferId, {
+              error: `部分下载失败，已完成 ${result.completed}/${result.completed + result.failed} 个文件`,
+            });
+            showNotification(
+              `部分下载失败，已完成 ${result.completed}/${result.completed + result.failed} 个文件`,
+              "warning",
             );
-
-            if (result?.cancelled) {
-              // 用户取消了下载
-              updateTransferProgress(batchTransferId, {
-                error: "用户取消下载",
-              });
-            } else if (result?.success) {
-              updateTransferProgress(batchTransferId, {
-                progress: 100,
-                fileName: `批量下载完成 (${result.completed} 个文件)`,
-              });
-              showNotification(`成功下载 ${result.completed} 个文件`, "success");
-            } else if (result?.completed > 0) {
-              updateTransferProgress(batchTransferId, {
-                error: `部分下载失败，已完成 ${result.completed}/${result.completed + result.failed} 个文件`,
-              });
-              showNotification(
-                `部分下载失败，已完成 ${result.completed}/${result.completed + result.failed} 个文件`,
-                "warning",
-              );
-            } else if (result?.error) {
-              updateTransferProgress(batchTransferId, {
-                error: result.error,
-              });
-              showNotification(`下载失败: ${result.error}`, "error");
-            }
-
-            storeScheduleTransferCleanup(batchTransferId, 3000);
-          } else {
-            // 回退到旧的逐个下载方式
-            let completedFiles = 0;
-            let totalTransferredBytes = 0;
-            const totalBytes = filesToDownload.reduce(
-              (sum, file) => sum + (file.size || 0),
-              0,
-            );
-
-            for (const file of filesToDownload) {
-              if (transferCancelled) break;
-
-              const fullPath = joinPath(savedCurrentPath, file.name);
-
-              if (window.terminalAPI && window.terminalAPI.downloadFile) {
-                const result = await window.terminalAPI.downloadFile(
-                  tabId,
-                  fullPath,
-                  (progress, fileName, transferredBytes, fileBytes) => {
-                    const currentFileBytes = Math.min(
-                      transferredBytes || 0,
-                      file.size || 0,
-                    );
-                    const batchProgress =
-                      totalBytes > 0
-                        ? Math.round(
-                            ((totalTransferredBytes + currentFileBytes) /
-                              totalBytes) *
-                              100,
-                          )
-                        : 0;
-
-                    updateTransferProgress(batchTransferId, {
-                      progress: batchProgress,
-                      fileName: `正在下载: ${fileName} (${completedFiles + 1}/${filesToDownload.length})`,
-                      transferredBytes: totalTransferredBytes + currentFileBytes,
-                      totalBytes,
-                      processedFiles: completedFiles,
-                      totalFiles: filesToDownload.length,
-                    });
-                  },
-                );
-
-                if (result?.success) {
-                  completedFiles++;
-                  totalTransferredBytes += file.size || 0;
-
-                  updateTransferProgress(batchTransferId, {
-                    progress: Math.round(
-                      (completedFiles / filesToDownload.length) * 100,
-                    ),
-                    fileName: `已完成: ${completedFiles}/${filesToDownload.length} 个文件`,
-                    processedFiles: completedFiles,
-                    totalFiles: filesToDownload.length,
-                    transferredBytes: totalTransferredBytes,
-                  });
-                } else if (result?.error) {
-                  showNotification(
-                    `文件 ${file.name} 下载失败: ${result.error}`,
-                    "error",
-                  );
-                }
-              }
-            }
-
-            if (completedFiles === filesToDownload.length) {
-              updateTransferProgress(batchTransferId, {
-                progress: 100,
-                fileName: `批量下载完成 (${completedFiles} 个文件)`,
-              });
-              showNotification(`成功下载 ${completedFiles} 个文件`, "success");
-            } else {
-              updateTransferProgress(batchTransferId, {
-                error: `部分下载失败，已完成 ${completedFiles}/${filesToDownload.length} 个文件`,
-              });
-              showNotification(
-                `部分下载失败，已完成 ${completedFiles}/${filesToDownload.length} 个文件`,
-                "warning",
-              );
-            }
-
-            storeScheduleTransferCleanup(batchTransferId, 3000);
+          } else if (result?.error) {
+            updateTransferProgress(batchTransferId, {
+              error: result.error,
+            });
+            showNotification(`下载失败: ${result.error}`, "error");
           }
+
+          storeScheduleTransferCleanup(batchTransferId, 3000);
         } catch (error) {
           if (
             !transferCancelled &&
