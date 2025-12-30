@@ -601,6 +601,277 @@ async function handleDownloadFile(event, tabId, remotePath) {
   );
 }
 
+/**
+ * 批量下载多个文件到指定目录
+ * @param {Object} event - IPC事件对象
+ * @param {string} tabId - 标签页ID
+ * @param {Array<{remotePath: string, fileName: string, size: number}>} files - 要下载的文件列表
+ * @returns {Promise<{success: boolean, completed: number, failed: number, errors: Array}>}
+ */
+async function handleDownloadFiles(event, tabId, files) {
+  if (
+    !sftpCore ||
+    !dialog ||
+    !shell ||
+    !getChildProcessInfo ||
+    !sendToRenderer
+  ) {
+    logToFile(
+      "sftpTransfer not properly initialized for downloadFiles.",
+      "ERROR",
+    );
+    return { success: false, error: "SFTP Transfer module not initialized." };
+  }
+
+  if (!files || files.length === 0) {
+    return { success: false, error: "没有选择要下载的文件" };
+  }
+
+  const processInfo = getChildProcessInfo(tabId);
+  if (!processInfo || !processInfo.config) {
+    return {
+      success: false,
+      error: "Invalid SSH connection for download.",
+    };
+  }
+  const sshConfig = processInfo.config;
+
+  // 让用户选择保存目录（只弹出一次）
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: "选择保存目录",
+    defaultPath: sshConfig.downloadPath || (dialog.app ? dialog.app.getPath("downloads") : ""),
+    buttonLabel: "选择目录",
+    properties: ["openDirectory", "createDirectory"],
+  });
+
+  if (canceled || !filePaths || filePaths.length === 0) {
+    return { success: false, cancelled: true, error: "用户取消下载" };
+  }
+
+  const targetDir = filePaths[0];
+  const totalFiles = files.length;
+  let completedCount = 0;
+  let failedCount = 0;
+  const errors = [];
+  const batchTransferKey = `${tabId}-batch-download-${Date.now()}`;
+
+  // 计算总字节数
+  const totalBytes = files.reduce((sum, f) => sum + (f.size || 0), 0);
+  let totalTransferredBytes = 0;
+
+  // 发送批量下载开始事件
+  sendToRenderer("download-progress", {
+    tabId,
+    transferKey: batchTransferKey,
+    progress: 0,
+    fileName: `批量下载 (${totalFiles} 个文件)`,
+    transferredBytes: 0,
+    totalBytes,
+    processedFiles: 0,
+    totalFiles,
+    isBatch: true,
+  });
+
+  // 逐个下载文件
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const remotePath = file.remotePath;
+    const fileName = file.fileName || path.basename(remotePath);
+    const localPath = path.join(targetDir, fileName);
+
+    try {
+      // 使用会话池借用一个SFTP会话
+      let borrowed = null;
+      let sftp = null;
+      if (sftpCore && typeof sftpCore.borrowSftpSession === "function") {
+        borrowed = await sftpCore.borrowSftpSession(tabId);
+        sftp = borrowed.sftp;
+      } else {
+        sftp = await sftpCore.getRawSftpSession(tabId);
+      }
+
+      const transferKey = `${tabId}-download-${Date.now()}-${i}`;
+      activeTransfers.set(transferKey, {
+        sftp,
+        type: "download",
+        path: path.dirname(remotePath),
+        cancelled: false,
+        activeStreams: new Set(),
+        tabId,
+        remotePath,
+        localPath,
+      });
+
+      try {
+        // 获取文件信息
+        const stats = await new Promise((resolve, reject) => {
+          sftp.stat(remotePath, (err, stats) => {
+            if (err) reject(err);
+            else resolve(stats);
+          });
+        });
+
+        const fileBytes = stats.size;
+        const tempFilePath = localPath + ".part";
+        const chunkSize = chooseChunkSize(fileBytes);
+
+        let fileTransferredBytes = 0;
+        const transferStartTime = Date.now();
+        let lastProgressUpdate = 0;
+        let lastBytesTransferred = 0;
+        let lastTransferTime = transferStartTime;
+        let currentTransferSpeed = 0;
+
+        const getCancelled = () => {
+          const t = activeTransfers.get(transferKey);
+          return !t || t.cancelled;
+        };
+
+        const onBytes = (len) => {
+          fileTransferredBytes += len;
+          const now = Date.now();
+
+          if (now - lastProgressUpdate >= TRANSFER_CONFIG.PROGRESS_INTERVAL_MS) {
+            const timeElapsed = (now - lastTransferTime) / 1000;
+            if (timeElapsed > 0) {
+              const bytesDelta = fileTransferredBytes - lastBytesTransferred;
+              const instantSpeed = bytesDelta / timeElapsed;
+              currentTransferSpeed =
+                currentTransferSpeed === 0
+                  ? instantSpeed
+                  : TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR * instantSpeed +
+                    (1 - TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR) * currentTransferSpeed;
+              lastBytesTransferred = fileTransferredBytes;
+              lastTransferTime = now;
+            }
+
+            // 发送批量进度更新
+            const batchProgress = totalBytes > 0
+              ? Math.round(((totalTransferredBytes + fileTransferredBytes) / totalBytes) * 100)
+              : Math.round(((completedCount + failedCount) / totalFiles) * 100);
+
+            sendToRenderer("download-progress", {
+              tabId,
+              transferKey: batchTransferKey,
+              progress: batchProgress,
+              fileName: `正在下载: ${fileName} (${i + 1}/${totalFiles})`,
+              transferredBytes: totalTransferredBytes + fileTransferredBytes,
+              totalBytes,
+              transferSpeed: currentTransferSpeed,
+              processedFiles: completedCount + failedCount,
+              totalFiles,
+              isBatch: true,
+            });
+            lastProgressUpdate = now;
+          }
+        };
+
+        const timeoutMs = getNoProgressTimeout(fileBytes);
+
+        await downloadWithPipeline({
+          sftp,
+          remotePath,
+          localPath: tempFilePath,
+          chunkSize,
+          transferKey,
+          getCancelled,
+          onBytes,
+          resumeOffset: 0,
+          noProgressTimeoutMs: timeoutMs,
+        });
+
+        // 下载完成，重命名临时文件
+        fs.renameSync(tempFilePath, localPath);
+
+        completedCount++;
+        totalTransferredBytes += fileBytes;
+        activeTransfers.delete(transferKey);
+
+      } catch (error) {
+        logToFile(
+          `sftpTransfer: Batch download file error for ${remotePath}: ${error.message}`,
+          "ERROR",
+        );
+        failedCount++;
+        errors.push({ fileName, error: error.message });
+        activeTransfers.delete(transferKey);
+
+        // 清理临时文件
+        try {
+          const tempFilePath = localPath + ".part";
+          if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+          }
+        } catch (cleanupError) {
+          // ignore
+        }
+      } finally {
+        // 归还会话
+        try {
+          if (
+            borrowed &&
+            sftpCore &&
+            typeof sftpCore.releaseSftpSession === "function"
+          ) {
+            sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    } catch (error) {
+      logToFile(
+        `sftpTransfer: Failed to get SFTP session for ${remotePath}: ${error.message}`,
+        "ERROR",
+      );
+      failedCount++;
+      errors.push({ fileName, error: error.message });
+    }
+
+    // 更新批量进度
+    sendToRenderer("download-progress", {
+      tabId,
+      transferKey: batchTransferKey,
+      progress: Math.round(((completedCount + failedCount) / totalFiles) * 100),
+      fileName: completedCount + failedCount === totalFiles
+        ? `批量下载完成 (${completedCount}/${totalFiles})`
+        : `已完成: ${completedCount + failedCount}/${totalFiles}`,
+      transferredBytes: totalTransferredBytes,
+      totalBytes,
+      processedFiles: completedCount + failedCount,
+      totalFiles,
+      isBatch: true,
+    });
+  }
+
+  // 发送完成事件
+  sendToRenderer("download-progress", {
+    tabId,
+    transferKey: batchTransferKey,
+    progress: 100,
+    fileName: `批量下载完成 (${completedCount}/${totalFiles})`,
+    transferredBytes: totalTransferredBytes,
+    totalBytes,
+    processedFiles: totalFiles,
+    totalFiles,
+    isBatch: true,
+    completed: true,
+  });
+
+  // 打开目标目录
+  if (completedCount > 0) {
+    shell.openPath(targetDir);
+  }
+
+  return {
+    success: failedCount === 0,
+    completed: completedCount,
+    failed: failedCount,
+    errors,
+    targetDir,
+  };
+}
+
 async function handleUploadFile(
   event,
   tabId,
@@ -2253,6 +2524,7 @@ async function cleanupActiveTransfersForTab(tabId) {
 module.exports = {
   init,
   handleDownloadFile,
+  handleDownloadFiles,
   handleUploadFile,
   handleUploadFolder,
   handleDownloadFolder,
