@@ -296,6 +296,33 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       ipcRenderer.removeListener("download-progress", progressListener);
     });
   },
+  // 批量下载多个文件
+  downloadFiles: (tabId, files, progressCallback) => {
+    // 注册一个临时的进度监听器
+    const progressListener = (_, data) => {
+      if (data.tabId === tabId && data.isBatch && typeof progressCallback === "function") {
+        progressCallback(
+          data.progress || 0,
+          data.fileName || "",
+          data.transferredBytes || 0,
+          data.totalBytes || 0,
+          data.transferSpeed || 0,
+          data.remainingTime || 0,
+          data.processedFiles || 0,
+          data.totalFiles || 0,
+          data.transferKey || "",
+        );
+      }
+    };
+
+    // 添加进度事件监听器
+    ipcRenderer.on("download-progress", progressListener);
+
+    // 发起批量下载请求并在完成后移除监听器
+    return ipcRenderer.invoke("downloadFiles", tabId, files).finally(() => {
+      ipcRenderer.removeListener("download-progress", progressListener);
+    });
+  },
   // 新增API
   openFileInExternalEditor: (tabId, remotePath) =>
     ipcRenderer.invoke("external-editor:open", tabId, remotePath),

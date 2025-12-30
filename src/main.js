@@ -3244,6 +3244,24 @@ function setupIPC(mainWindow) {
     return sftpTransfer.handleDownloadFile(event, tabId, remotePath);
   });
 
+  // 批量下载多个文件
+  safeHandle(ipcMain, "downloadFiles", async (event, tabId, files) => {
+    if (
+      !sftpTransfer ||
+      typeof sftpTransfer.handleDownloadFiles !== "function"
+    ) {
+      logToFile(
+        "sftpTransfer.handleDownloadFiles is not available or not a function.",
+        "ERROR",
+      );
+      return {
+        success: false,
+        error: "SFTP Batch Download feature not properly initialized.",
+      };
+    }
+    return sftpTransfer.handleDownloadFiles(event, tabId, files);
+  });
+
   // 设置文件所有者/组
   safeHandle(
     "setFileOwnership",
