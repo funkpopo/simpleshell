@@ -927,14 +927,6 @@ useEffect(() => {
 
     termInstance.__webglAddon = null;
     termInstance.__webglEnabled = false;
-
-    try {
-      if (typeof termInstance.setOption === "function") {
-        termInstance.setOption("rendererType", "canvas");
-      } else if (termInstance.options) {
-        termInstance.options.rendererType = "canvas";
-      }
-    } catch (_error) {}
   }, []);
 
   const tryEnableWebglRenderer = useCallback(
@@ -2503,9 +2495,6 @@ useEffect(() => {
           rows: 30,
           convertEol: true,
           disableStdin: false,
-          rendererType: "canvas",
-          termName: "xterm-256color",
-          allowProposedApi: true,
           rightClickSelectsWord: false,
           copyOnSelect: false,
           selectionScrollSpeed: 5,
