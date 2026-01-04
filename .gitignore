@@ -37,6 +37,8 @@ temp/*
 .webpack_cache
 .webpack_cache/*
 
+installer
+
 .claude/
 
 CLAUDE.md
