@@ -64,6 +64,7 @@ import { alpha } from "@mui/material/styles";
 import { countries } from "countries-list";
 import { useTranslation } from "react-i18next";
 import { useNotification } from "../contexts/NotificationContext";
+import { ConnectionManagerSkeleton } from "./SkeletonLoader";
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -902,6 +903,8 @@ const ConnectionManager = memo(
       proxyUsername: "",
       proxyPassword: "",
       proxyUseDefault: true, // 使用默认代理配置
+      // X11转发配置
+      enableX11: false,
     });
 
     const filteredItems = useMemo(() => {
@@ -1048,6 +1051,8 @@ const ConnectionManager = memo(
           proxyPassword: item.proxy?.password || "",
           proxyUseDefault:
             item.proxy?.useDefault !== undefined ? item.proxy.useDefault : true,
+          // X11转发
+          enableX11: !!item.enableX11,
         });
       }
 
@@ -1230,6 +1235,8 @@ const ConnectionManager = memo(
               useDefault: formData.proxyUseDefault,
             }
           : null,
+        // X11转发
+        enableX11: formData.enableX11,
       };
 
       // 保存到本地状态
@@ -2171,6 +2178,28 @@ const ConnectionManager = memo(
                           )}
                         </>
                       )}
+
+                      {/* X11转发配置 */}
+                      <Divider sx={{ my: 1 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          X11转发 (可选)
+                        </Typography>
+                      </Divider>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={formData.enableX11}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                enableX11: e.target.checked,
+                              }))
+                            }
+                            size="small"
+                          />
+                        }
+                        label="启用X11转发"
+                      />
                     </>
                   )}
                 </Box>

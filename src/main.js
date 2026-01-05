@@ -25,6 +25,7 @@ const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers");
 const { safeHandle, wrapIpcHandler } = require("./core/ipc/ipcResponse");
 const { mainProcessResourceManager } = require("./core/utils/mainProcessResourceManager");
+const { xserverManager, setupX11Forwarding, getShellOptions } = require("./core/x11");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -920,6 +921,9 @@ app.on("before-quit", async (event) => {
   // 清理连接管理器
   connectionManager.cleanup();
 
+  // 停止X Server
+  xserverManager.stop();
+
   // 清理所有缓存文件
   (async () => {
     try {
@@ -1110,6 +1114,29 @@ function setupIPC(mainWindow) {
     logToFile(`Stack: ${error.stack}`, "ERROR");
   }
 
+  // X11处理器
+  try {
+    safeHandle(ipcMain, "x11:start", async (event, options = {}) => {
+      const result = await xserverManager.start(options);
+      logToFile(`X Server启动结果: ${JSON.stringify(result)}`, "INFO");
+      return result;
+    });
+
+    safeHandle(ipcMain, "x11:stop", () => {
+      xserverManager.stop();
+      logToFile("X Server已停止", "INFO");
+      return { success: true };
+    });
+
+    safeHandle(ipcMain, "x11:status", () => {
+      return { success: true, status: xserverManager.getStatus() };
+    });
+
+    logToFile("X11 handlers registered", "INFO");
+  } catch (error) {
+    logToFile(`Failed to register X11 handlers: ${error.message}`, "ERROR");
+  }
+
   // 启动SSH连接
   try {
     safeHandle(ipcMain, "terminal:startSSH", async (event, sshConfig) => {
@@ -1186,14 +1213,20 @@ function setupIPC(mainWindow) {
           );
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
+          // 设置X11转发（如果启用）
+          logToFile(`SSH配置: ${JSON.stringify({host: sshConfig.host, enableX11: sshConfig.enableX11, keys: Object.keys(sshConfig)})}`, "INFO");
+          if (sshConfig.enableX11) {
+            await setupX11Forwarding(ssh, sshConfig);
+          }
+
+          // 获取Shell选项（包含X11配置）
+          const shellOptions = getShellOptions(sshConfig);
+          logToFile(`Shell选项: ${JSON.stringify(shellOptions)}`, "INFO");
+
           // 创建Shell会话
           ssh.shell(
-            {
-              term: "xterm-256color",
-              cols: 120,
-              rows: 30,
-            },
+            shellOptions,
             (err, stream) => {
               if (err) {
                 logToFile(
@@ -1274,7 +1307,7 @@ function setupIPC(mainWindow) {
           }, 15000);
 
           // 监听就绪事件
-          ssh.on("ready", () => {
+          ssh.on("ready", async () => {
             clearTimeout(connectionTimeout);
 
             // 更新进程状态
@@ -1314,13 +1347,17 @@ function setupIPC(mainWindow) {
               );
             }
 
+            // 设置X11转发（如果启用）
+            if (sshConfig.enableX11) {
+              await setupX11Forwarding(ssh, sshConfig);
+            }
+
+            // 获取Shell选项（包含X11配置）
+            const shellOptions = getShellOptions(sshConfig);
+
             // 创建Shell会话
             ssh.shell(
-              {
-                term: "xterm-256color",
-                cols: 120,
-                rows: 30,
-              },
+              shellOptions,
               (err, stream) => {
                 if (err) {
                   logToFile(
