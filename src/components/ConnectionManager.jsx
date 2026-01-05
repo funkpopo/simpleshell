@@ -965,6 +965,14 @@ const ConnectionManager = memo(
           return item;
         });
 
+        // 保存到配置文件
+        if (window.terminalAPI?.saveConnections) {
+          isSavingRef.current = true;
+          window.terminalAPI.saveConnections(newConnections).finally(() => {
+            setTimeout(() => { isSavingRef.current = false; }, 100);
+          });
+        }
+
         // 确保状态更新
         return newConnections;
       });
@@ -1159,17 +1167,33 @@ const ConnectionManager = memo(
           items: selectedItem?.items || [],
         };
 
+        let newConnections;
         if (dialogMode === "add") {
-          setConnections((prevConnections) => [...prevConnections, groupData]);
+          newConnections = [...connections, groupData];
         } else {
-          setConnections((prevConnections) =>
-            prevConnections.map((item) =>
-              item.id === selectedItem.id
-                ? { ...item, name: formData.name }
-                : item,
-            ),
+          newConnections = connections.map((item) =>
+            item.id === selectedItem.id
+              ? { ...item, name: formData.name }
+              : item,
           );
         }
+
+        setConnections(newConnections);
+
+        // 保存到配置文件
+        if (window.terminalAPI && window.terminalAPI.saveConnections) {
+          isSavingRef.current = true;
+          window.terminalAPI.saveConnections(newConnections)
+            .catch(() => {
+              showError(t("connectionManager.saveFailed"));
+            })
+            .finally(() => {
+              setTimeout(() => {
+                isSavingRef.current = false;
+              }, 100);
+            });
+        }
+
         setDialogOpen(false);
         showSuccess(
           dialogMode === "add"
@@ -1346,6 +1370,16 @@ const ConnectionManager = memo(
         const activeData = active.data.current || {};
         const overData = over.data.current || {};
 
+        const saveToConfig = (newConnections) => {
+          setConnections(newConnections);
+          if (window.terminalAPI?.saveConnections) {
+            isSavingRef.current = true;
+            window.terminalAPI.saveConnections(newConnections).finally(() => {
+              setTimeout(() => { isSavingRef.current = false; }, 100);
+            });
+          }
+        };
+
         const findContainerId = (itemId, items = connections) => {
           if (!itemId) {
             return null;
@@ -1419,7 +1453,7 @@ const ConnectionManager = memo(
             return;
           }
 
-          setConnections(arrayMove(updatedConnections, oldIndex, newIndex));
+          saveToConfig(arrayMove(updatedConnections, oldIndex, newIndex));
           return;
         }
 
@@ -1444,7 +1478,7 @@ const ConnectionManager = memo(
               return;
             }
 
-            setConnections(arrayMove(updatedConnections, oldIndex, newIndex));
+            saveToConfig(arrayMove(updatedConnections, oldIndex, newIndex));
             return;
           }
 
@@ -1475,7 +1509,7 @@ const ConnectionManager = memo(
             items: arrayMove(items, oldIndex, newIndex),
           };
 
-          setConnections(updatedConnections);
+          saveToConfig(updatedConnections);
           return;
         }
 
@@ -1518,7 +1552,7 @@ const ConnectionManager = memo(
             insertIndex = updatedConnections.length;
           }
           updatedConnections.splice(insertIndex, 0, draggedItem);
-          setConnections(updatedConnections);
+          saveToConfig(updatedConnections);
           return;
         }
 
@@ -1551,7 +1585,7 @@ const ConnectionManager = memo(
           expanded: true,
         };
 
-        setConnections(updatedConnections);
+        saveToConfig(updatedConnections);
       },
       [connections, dragDisabled],
     );
