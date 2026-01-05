@@ -96,6 +96,7 @@ const RETRY_CONFIG = {
     "epipe",
     "no_progress_timeout",
     "channel closed",
+    "channel open failure",
     "sftp stream closed",
     "connection lost",
     "无法连接到远程主机",
@@ -115,6 +116,7 @@ const RETRY_CONFIG = {
     "connection timed out",
     "disconnected",
     "channel closed",
+    "channel open failure",
     "not connected",
   ],
 };
