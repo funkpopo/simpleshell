@@ -3,6 +3,7 @@ const TerminalHandlers = require("../ipc/handlers/terminalHandlers");
 const FileHandlers = require("../ipc/handlers/fileHandlers");
 const SettingsHandlers = require("../ipc/handlers/settingsHandlers");
 const AppHandlers = require("../ipc/handlers/appHandlers");
+const X11Handlers = require("../ipc/handlers/x11Handlers");
 const { logToFile } = require("../utils/logger");
 
 /**
@@ -15,6 +16,7 @@ class IPCManager {
       file: null,
       settings: null,
       app: null,
+      x11: null,
     };
     this.isInitialized = false;
   }
@@ -45,6 +47,7 @@ class IPCManager {
       this.handlers.file = new FileHandlers();
       this.handlers.settings = new SettingsHandlers();
       this.handlers.app = new AppHandlers();
+      this.handlers.x11 = new X11Handlers();
 
       // æ³¨å†Œæ‰€æœ‰å¤„ç†å™¨
       this.registerAllHandlers();
@@ -101,6 +104,12 @@ class IPCManager {
     if (this.handlers.app) {
       const appHandlers = this.handlers.app.getHandlers();
       ipcRegistry.registerBatch(appHandlers);
+    }
+
+    // ×¢²áX11´¦ÀíÆ÷
+    if (this.handlers.x11) {
+      const x11Handlers = this.handlers.x11.getHandlers();
+      ipcRegistry.registerBatch(x11Handlers);
     }
   }
 

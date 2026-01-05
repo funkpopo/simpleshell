@@ -560,6 +560,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   updatePrefetchSettings: (settings) =>
     ipcRenderer.invoke("settings:updatePrefetchSettings", settings),
 
+  // X11 API
+  x11Start: (options) => ipcRenderer.invoke("x11:start", options),
+  x11Stop: () => ipcRenderer.invoke("x11:stop"),
+  x11Status: () => ipcRenderer.invoke("x11:status"),
+
   // 窗口重新加载
   reloadWindow: () => ipcRenderer.invoke("app:reloadWindow"),
 

@@ -111,7 +111,8 @@ class BaseConnectionPool extends EventEmitter {
       password: config.password || '',
       privateKeyPath: config.privateKeyPath || '',
       name: config.name || `${config.host}:${config.port}`,
-      protocol: this.config.protocolType.toLowerCase()
+      protocol: this.config.protocolType.toLowerCase(),
+      enableX11: config.enableX11 || false
     });
 
     // 检查是否存在现有连接
@@ -477,6 +478,7 @@ class BaseConnectionPool extends EventEmitter {
           username: cachedConfig.username,
           password: cachedConfig.password,
           privateKeyPath: cachedConfig.privateKeyPath,
+          enableX11: cachedConfig.enableX11,
           lastUsed: Date.now()
         });
       } else {
@@ -493,6 +495,7 @@ class BaseConnectionPool extends EventEmitter {
             username: conn.config.username,
             password: conn.config.password || '',
             privateKeyPath: conn.config.privateKeyPath || '',
+            enableX11: conn.config.enableX11,
             lastUsed: conn.lastUsedAt || conn.createdAt
           });
         }
@@ -531,7 +534,8 @@ class BaseConnectionPool extends EventEmitter {
           password: conn.password || '',
           privateKeyPath: conn.privateKeyPath || '',
           name: conn.name || `${conn.host}:${conn.port}`,
-          protocol: conn.protocol || this.config.protocolType.toLowerCase()
+          protocol: conn.protocol || this.config.protocolType.toLowerCase(),
+          enableX11: conn.enableX11 || false
         });
       }
     }

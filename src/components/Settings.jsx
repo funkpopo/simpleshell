@@ -31,6 +31,7 @@ import ImageIcon from "@mui/icons-material/Image";
 import MemoryIcon from "@mui/icons-material/Memory";
 import CachedIcon from "@mui/icons-material/Cached";
 import BoltIcon from "@mui/icons-material/Bolt";
+import DesktopWindowsIcon from "@mui/icons-material/DesktopWindows";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 import { SettingsSkeleton } from "./SkeletonLoader.jsx";
@@ -159,6 +160,10 @@ const Settings = memo(({ open, onClose }) => {
   const [dndAutoScroll, setDndAutoScroll] = React.useState(true);
   const [dndCompactPreview, setDndCompactPreview] = React.useState(false);
 
+  // X11 settings
+  const [x11AutoStart, setX11AutoStart] = React.useState(false);
+  const [x11Status, setX11Status] = React.useState({ running: false });
+
   // 传输栏显示模式: "bottom" | "sidebar"
   const [transferBarMode, setTransferBarMode] = React.useState("bottom");
 
@@ -211,6 +216,10 @@ const Settings = memo(({ open, onClose }) => {
             setDndAutoScroll(dnd.autoScroll !== false);
             setDndCompactPreview(dnd.compactDragPreview === true);
 
+            // X11 settings
+            const x11 = settings.x11 || {};
+            setX11AutoStart(x11.autoStart === true);
+
             // 传输栏显示模式
             setTransferBarMode(settings.transferBarMode || "bottom");
 
@@ -238,6 +247,14 @@ const Settings = memo(({ open, onClose }) => {
                 : 5,
             );
             setCleanupIntervalDays(logSettings.cleanupIntervalDays || 7);
+          }
+        }
+
+        // 加载X11状态
+        if (window.terminalAPI?.x11Status) {
+          const status = await window.terminalAPI.x11Status();
+          if (status?.success) {
+            setX11Status(status.status || { running: false });
           }
         }
       } catch (error) {
@@ -375,6 +392,9 @@ const Settings = memo(({ open, onClose }) => {
             enabled: dndEnabled,
             autoScroll: dndAutoScroll,
             compactDragPreview: dndCompactPreview,
+          },
+          x11: {
+            autoStart: x11AutoStart,
           },
           transferBarMode,
           externalEditor: {
@@ -901,6 +921,42 @@ const Settings = memo(({ open, onClose }) => {
                   </Card>
                 </Grid>
               </Grid>
+            </Box>
+
+            <Divider sx={{ my: 1.5 }} />
+
+            {/* X11转发设置 */}
+            <Box sx={{ mb: 3 }}>
+              <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+                <DesktopWindowsIcon sx={{ mr: 1, color: "primary.main" }} />
+                <Typography variant="subtitle1">
+                  {t("settings.x11Settings", "X11转发设置")}
+                </Typography>
+                <Chip
+                  label={x11Status.running ? t("settings.running", "运行中") : t("settings.stopped", "已停止")}
+                  size="small"
+                  color={x11Status.running ? "success" : "default"}
+                  sx={{ ml: 1 }}
+                />
+              </Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={x11AutoStart}
+                    onChange={(e) => setX11AutoStart(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label={t("settings.x11AutoStart", "启用X11转发时自动启动X Server")}
+              />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                {t("settings.x11Description", "X11转发允许在远程服务器上运行图形应用程序并在本地显示")}
+              </Typography>
+              {x11Status.running && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  DISPLAY: {x11Status.display !== undefined ? `127.0.0.1:${x11Status.display}.0` : "N/A"}
+                </Typography>
+              )}
             </Box>
           </>
         )}
