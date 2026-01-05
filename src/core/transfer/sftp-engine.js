@@ -648,6 +648,7 @@ async function closeAllSftpSessionsForTab(tabId) {
 // 借出一个SFTP会话（尽量创建新的，或选择最空闲的）
 async function borrowSftpSession(tabId) {
   const pool = getOrCreatePool(tabId);
+  let createError = null;
 
   // 优先创建新会话（未达到上限）
   if (pool.sessions.size < SESSION_CONFIG.MAX_SESSIONS_PER_TAB) {
@@ -656,6 +657,7 @@ async function borrowSftpSession(tabId) {
       session.busyCount = 1;
       return { sftp: session.sftp, sessionId: session.id };
     } catch (e) {
+      createError = e;
       // 回退到已有会话
       logToFile(
         `sftpEngine: Failed to create new session on borrow, fallback to existing: ${e.message}`,
@@ -670,7 +672,11 @@ async function borrowSftpSession(tabId) {
     if (!target || sess.busyCount < target.busyCount) target = sess;
   }
   if (!target) {
-    // 无可用会话，则强制创建一个
+    // 无可用会话，如果之前创建失败则抛出该错误
+    if (createError) {
+      throw createError;
+    }
+    // 否则尝试创建一个新会话
     const session = await acquireSftpSession(tabId);
     session.busyCount = 1;
     return { sftp: session.sftp, sessionId: session.id };
