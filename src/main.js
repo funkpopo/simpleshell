@@ -2,7 +2,6 @@ const { app, BrowserWindow, dialog, ipcMain, shell, session } = require("electro
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
-const { Worker } = require("worker_threads");
 const {
   logToFile,
   initLogger,
@@ -25,6 +24,7 @@ const LatencyHandlers = require("./core/ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers");
 const { safeHandle, wrapIpcHandler } = require("./core/ipc/ipcResponse");
 const { mainProcessResourceManager } = require("./core/utils/mainProcessResourceManager");
+const aiWorkerManager = require("./core/workers/aiWorkerManager");
 
 // 应用设置和状态管理
 const childProcesses = new Map();
@@ -49,19 +49,8 @@ const editorExitRegex = new RegExp(
   "i",
 );
 
-// 全局变量用于存储AI worker实例
-let aiWorker = null;
-let aiRequestMap = new Map();
-let nextRequestId = 1;
-
 // 全局变量
 const terminalProcesses = new Map(); // 存储终端进程ID映射
-
-// 用于跟踪流式请求的会话
-const streamSessions = new Map(); // 存储会话ID -> 请求ID的映射
-
-// 跟踪当前活跃的会话ID
-let currentSessionId = null;
 
 // 导入IP地址查询模块
 const ipQuery = require("./modules/system-info/ip-query");
@@ -110,222 +99,6 @@ if (!gotTheLock) {
       mainWindow.focus();
     }
   });
-}
-
-// 获取worker文件路径
-function getWorkerPath() {
-  // 先尝试相对于__dirname的路径
-  let workerPath = path.join(__dirname, "workers", "ai-worker.js");
-
-  // 检查文件是否存在
-  if (fs.existsSync(workerPath)) {
-    return workerPath;
-  }
-
-  // 如果文件不存在，可能是在开发环境，尝试使用源代码路径
-  workerPath = path.join(__dirname, "..", "src", "workers", "ai-worker.js");
-  if (fs.existsSync(workerPath)) {
-    return workerPath;
-  }
-
-  // 如果都找不到，返回null
-  throw new Error("找不到AI worker文件");
-}
-
-// 创建AI Worker线程
-function createAIWorker() {
-  if (aiWorker) {
-    aiWorker.terminate();
-  }
-
-  try {
-    const workerPath = getWorkerPath();
-    logToFile(`创建AI Worker: ${workerPath}`, "INFO");
-
-    // 创建worker实例
-    aiWorker = new Worker(workerPath);
-
-    // 使用资源管理器注册Worker
-    mainProcessResourceManager.addWorker(aiWorker, 'AI Worker');
-
-    // 监听worker线程的消息
-    const messageHandler = (message) => {
-      const { id, type, result, error, data } = message;
-
-      // 处理不同类型的消息
-      if (type) {
-        handleWorkerTypeMessage(type, id, data, result, error);
-        return;
-      }
-
-      // 处理标准请求响应
-      const callback = aiRequestMap.get(id);
-      if (callback) {
-        if (error) {
-          // 将Worker错误对象转换为字符串，避免序列化问题
-          const errorMessage = error.message || 'Unknown error';
-          callback.reject(new Error(errorMessage));
-        } else {
-          callback.resolve(result);
-        }
-        // 处理完成后从Map中移除
-        aiRequestMap.delete(id);
-      } else {
-        logToFile(`收到未知请求ID的响应: ${id}`, "WARN");
-      }
-    };
-
-    aiWorker.on("message", messageHandler);
-    mainProcessResourceManager.addEventListener(aiWorker, 'message', messageHandler, 'AI Worker message handler');
-
-    // 处理worker错误
-    const errorHandler = (error) => {
-      logToFile(`AI Worker错误: ${error.message}`, "ERROR");
-
-      // 向所有待处理的请求返回错误
-      for (const [id, callback] of aiRequestMap.entries()) {
-        callback.reject(
-          new Error("AI Worker encountered an error: " + error.message),
-        );
-        aiRequestMap.delete(id);
-      }
-
-      // 清理所有流式会话
-      streamSessions.clear();
-    };
-
-    aiWorker.on("error", errorHandler);
-    mainProcessResourceManager.addEventListener(aiWorker, 'error', errorHandler, 'AI Worker error handler');
-
-    // 处理worker退出
-    const exitHandler = (code) => {
-      logToFile(`AI Worker退出，代码: ${code}`, "WARN");
-
-      // 如果退出码不是正常退出(0)，尝试重启worker
-      if (code !== 0) {
-        const timerId = setTimeout(() => {
-          logToFile("尝试重启AI Worker", "INFO");
-          createAIWorker();
-        }, 1000);
-        mainProcessResourceManager.addTimer(timerId, 'timeout', 'AI Worker restart timer');
-      }
-
-      // 向所有待处理的请求返回错误
-      for (const [id, callback] of aiRequestMap.entries()) {
-        callback.reject(
-          new Error(`AI Worker stopped unexpectedly with code ${code}`),
-        );
-        aiRequestMap.delete(id);
-      }
-
-      // 清理所有流式会话
-      streamSessions.clear();
-    };
-
-    aiWorker.on("exit", exitHandler);
-    mainProcessResourceManager.addEventListener(aiWorker, 'exit', exitHandler, 'AI Worker exit handler');
-
-    // 初始化系统代理配置
-    try {
-      const proxyManager = require("./core/proxy/proxy-manager");
-      const proxyConfig = proxyManager.getDefaultProxyConfig() || proxyManager.getSystemProxyConfig();
-      if (proxyConfig) {
-        aiWorker.postMessage({
-          type: "update_proxy",
-          id: `proxy_init_${Date.now()}`,
-          data: proxyConfig,
-        });
-        logToFile(`AI Worker 代理已配置: ${proxyConfig.host}:${proxyConfig.port}`, "INFO");
-      }
-    } catch (proxyError) {
-      logToFile(`AI Worker 代理配置失败: ${proxyError.message}`, "WARN");
-    }
-
-    return aiWorker;
-  } catch (error) {
-    logToFile(`创建AI Worker失败: ${error.message}`, "ERROR");
-    return null;
-  }
-}
-
-/**
- * 处理Worker发送的类型化消息
- * @param {string} type - 消息类型
- * @param {string} id - 请求ID
- * @param {Object} data - 消息数据
- * @param {Object} result - 结果数据
- * @param {Object} error - 错误数据
- */
-function handleWorkerTypeMessage(type, id, data, result, error) {
-  // 获取主窗口
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (
-    !mainWindow ||
-    !mainWindow.webContents ||
-    mainWindow.webContents.isDestroyed()
-  ) {
-    logToFile("无法发送Worker消息: 主窗口不可用", "ERROR");
-    return;
-  }
-
-  switch (type) {
-    case "init":
-      logToFile(`AI Worker初始化完成: ${JSON.stringify(result)}`, "INFO");
-      break;
-
-    case "stream_chunk":
-      if (data && data.sessionId) {
-        // 存储会话ID和请求ID的映射
-        streamSessions.set(data.sessionId, id);
-
-        // 转发流式数据块到渲染进程
-        mainWindow.webContents.send("stream-chunk", {
-          tabId: "ai",
-          chunk: data.chunk,
-          sessionId: data.sessionId,
-        });
-      }
-      break;
-
-    case "stream_end":
-      if (data && data.sessionId) {
-        // 转发流结束事件到渲染进程
-        mainWindow.webContents.send("stream-end", {
-          tabId: "ai",
-          sessionId: data.sessionId,
-          aborted: data.aborted || false,
-        });
-
-        // 清理会话映射
-        streamSessions.delete(data.sessionId);
-      }
-      break;
-
-    case "stream_error":
-      if (data && data.sessionId) {
-        // 转发流错误事件到渲染进程
-        mainWindow.webContents.send("stream-error", {
-          tabId: "ai",
-          sessionId: data.sessionId,
-          error: data.error || { message: "未知错误" },
-        });
-
-        // 清理会话映射
-        streamSessions.delete(data.sessionId);
-      }
-      break;
-
-    case "worker_error":
-      logToFile(`AI Worker内部错误: ${error?.message || "未知错误"}`, "ERROR");
-      break;
-
-    case "worker_exit":
-      logToFile(`AI Worker退出事件: ${JSON.stringify(result)}`, "INFO");
-      break;
-
-    default:
-      logToFile(`未知的Worker消息类型: ${type}`, "WARN");
-  }
 }
 
 // 处理生产和开发环境中的路径差异
@@ -701,7 +474,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
-  createAIWorker();
+  aiWorkerManager.createAIWorker();
 
   // 初始化命令历史服务
   try {
@@ -1004,13 +777,7 @@ app.on("before-quit", async (event) => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     // 关闭应用前终止worker线程
-    if (aiWorker) {
-      aiWorker
-        .terminate()
-        .catch((err) =>
-          logToFile(`Error terminating AI worker: ${err.message}`, "ERROR"),
-        );
-    }
+    aiWorkerManager.terminateAIWorker();
     app.quit();
   }
 });
@@ -2326,20 +2093,17 @@ function setupIPC(mainWindow) {
       }
 
       // 确保Worker已创建
+      const aiWorker = aiWorkerManager.ensureAIWorker();
       if (!aiWorker) {
-        logToFile("AI Worker未初始化，尝试创建", "WARN");
-        aiWorker = createAIWorker();
-        if (!aiWorker) {
-          throw new Error("无法创建AI Worker");
-        }
+        throw new Error("无法创建AI Worker");
       }
 
       // 生成请求ID
-      const requestId = `req_${nextRequestId++}`;
+      const requestId = aiWorkerManager.getNextRequestId();
 
       // 如果是流式请求，保存会话ID
       if (isStream) {
-        currentSessionId = requestData.sessionId;
+        aiWorkerManager.setCurrentSessionId(requestData.sessionId);
       }
 
       // 准备发送到Worker的数据
@@ -2352,12 +2116,12 @@ function setupIPC(mainWindow) {
       return new Promise((resolve, reject) => {
         // 设置请求超时
         const timeoutId = setTimeout(() => {
-          aiRequestMap.delete(requestId);
+          aiWorkerManager.deleteRequestCallback(requestId);
           reject(new Error("请求超时"));
         }, 60000); // 60秒超时
 
         // 存储回调函数
-        aiRequestMap.set(requestId, {
+        aiWorkerManager.setRequestCallback(requestId, {
           resolve: (result) => {
             clearTimeout(timeoutId);
             resolve(result);
@@ -2390,6 +2154,8 @@ function setupIPC(mainWindow) {
   // 处理中断API请求
   safeHandle(ipcMain, "ai:abortAPIRequest", async (event) => {
     try {
+      const currentSessionId = aiWorkerManager.getCurrentSessionId();
+      const aiWorker = aiWorkerManager.getAIWorker();
       // 检查是否有当前会话ID
       if (currentSessionId && aiWorker) {
         // 生成取消请求ID
@@ -2416,8 +2182,8 @@ function setupIPC(mainWindow) {
         }
 
         // 清理会话ID和映射
-        streamSessions.delete(currentSessionId);
-        currentSessionId = null;
+        aiWorkerManager.deleteStreamSession(currentSessionId);
+        aiWorkerManager.clearCurrentSessionId();
 
         return { success: true, message: "请求已中断" };
       } else {
@@ -2433,20 +2199,17 @@ function setupIPC(mainWindow) {
   safeHandle(ipcMain, "ai:fetchModels", async (event, requestData) => {
     try {
       // 确保Worker已创建
+      const aiWorker = aiWorkerManager.ensureAIWorker();
       if (!aiWorker) {
-        logToFile("AI Worker未初始化，尝试创建", "WARN");
-        aiWorker = createAIWorker();
-        if (!aiWorker) {
-          throw new Error("无法创建AI Worker");
-        }
+        throw new Error("无法创建AI Worker");
       }
 
-      const requestId = nextRequestId++;
+      const requestId = aiWorkerManager.getNextRequestId();
       const timeout = 30000; // 30秒超时
 
       return new Promise((resolve, reject) => {
         // 存储回调
-        aiRequestMap.set(requestId, { resolve, reject });
+        aiWorkerManager.setRequestCallback(requestId, { resolve, reject });
 
         // 发送消息到worker
         aiWorker.postMessage({
@@ -2460,8 +2223,8 @@ function setupIPC(mainWindow) {
 
         // 设置超时
         setTimeout(() => {
-          if (aiRequestMap.has(requestId)) {
-            aiRequestMap.delete(requestId);
+          if (aiWorkerManager.hasRequest(requestId)) {
+            aiWorkerManager.deleteRequestCallback(requestId);
             reject(new Error("获取模型列表请求超时"));
           }
         }, timeout);
