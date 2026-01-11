@@ -26,6 +26,11 @@ const { safeHandle, wrapIpcHandler } = require("./core/ipc/ipcResponse");
 const { mainProcessResourceManager } = require("./core/utils/mainProcessResourceManager");
 const aiWorkerManager = require("./core/workers/aiWorkerManager");
 const processManager = require("./core/process/processManager");
+const {
+  getPrimaryWindow,
+  safeSendToRenderer,
+  createWindow,
+} = require("./core/window/windowManager");
 
 // 跟踪编辑器会话状态的正则表达式
 const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
@@ -56,29 +61,6 @@ let latencyHandlers = null;
 
 // 全局本地终端处理器实例
 let localTerminalHandlers = null;
-
-function getPrimaryWindow() {
-  const windows = BrowserWindow.getAllWindows();
-  if (!windows || windows.length === 0) {
-    return null;
-  }
-  const [mainWindow] = windows;
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return null;
-  }
-  return mainWindow;
-}
-
-function safeSendToRenderer(channel, ...args) {
-  const targetWindow = getPrimaryWindow();
-  if (
-    targetWindow &&
-    targetWindow.webContents &&
-    !targetWindow.webContents.isDestroyed()
-  ) {
-    targetWindow.webContents.send(channel, ...args);
-  }
-}
 
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -118,87 +100,6 @@ const selectKeyFile = async () => {
   }
 
   return result.filePaths[0];
-};
-
-/**
- * 获取启动时的主题背景色
- * 在 configService 初始化后调用，同步读取用户主题设置
- * @returns {string} 背景色 hex 值
- */
-const getStartupBackgroundColor = () => {
-  try {
-    const uiSettings = configService.loadUISettings();
-    // 深色模式: #121212, 浅色模式: #f0f2f5
-    return uiSettings.darkMode ? "#121212" : "#f0f2f5";
-  } catch (error) {
-    // 默认返回深色背景（与默认 darkMode: true 一致）
-    return "#121212";
-  }
-};
-
-const createWindow = () => {
-  // 根据环境确定图标路径
-  let iconPath;
-  if (process.env.NODE_ENV === "development") {
-    // 开发环境使用绝对路径
-    iconPath = path.join(process.cwd(), "src", "assets", "logo.ico");
-  } else {
-    // 生产环境使用相对于__dirname的路径
-    iconPath = path.join(__dirname, "assets", "logo.ico");
-  }
-
-  // 获取用户主题对应的背景色，避免启动时白色闪烁
-  const backgroundColor = getStartupBackgroundColor();
-
-  // 创建浏览器窗口
-  const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    frame: false,
-    show: false, // 先隐藏窗口，等待内容加载完成
-    backgroundColor, // 设置窗口背景色，与主题一致
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
-    webPreferences: {
-      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-    icon: iconPath, // 使用环境相关的图标路径
-  });
-
-  // 隐藏菜单栏
-  mainWindow.setMenuBarVisibility(false);
-
-  const emitWindowState = () => {
-    if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send("window:state", {
-        isMaximized: mainWindow.isMaximized(),
-        isFullScreen: mainWindow.isFullScreen(),
-      });
-    }
-  };
-
-  mainWindow.on("maximize", emitWindowState);
-  mainWindow.on("unmaximize", emitWindowState);
-  mainWindow.on("enter-full-screen", emitWindowState);
-  mainWindow.on("leave-full-screen", emitWindowState);
-
-  // 窗口内容准备就绪后再显示，避免白色闪烁
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
-    emitWindowState();
-  });
-
-  // 加载应用 URL
-  mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
-
-  // 开发工具自动打开
-  if (process.env.NODE_ENV === "development") {
-    mainWindow.webContents.openDevTools();
-  }
-
-  // 注册IPC通信
-  setupIPC(mainWindow);
 };
 
 // 全局错误处理器
@@ -469,7 +370,11 @@ app.whenReady().then(async () => {
     logToFile(`Failed to register critical IPC handlers: ${error.message}`, "ERROR");
   }
 
-  createWindow();
+  createWindow({
+    preloadEntry: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+    webpackEntry: MAIN_WINDOW_WEBPACK_ENTRY,
+    onSetupIPC: setupIPC,
+  });
   aiWorkerManager.createAIWorker();
 
   // 初始化命令历史服务
@@ -780,7 +685,11 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    createWindow({
+    preloadEntry: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+    webpackEntry: MAIN_WINDOW_WEBPACK_ENTRY,
+    onSetupIPC: setupIPC,
+  });
   }
 });
 
