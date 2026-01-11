@@ -25,10 +25,7 @@ const LocalTerminalHandlers = require("./core/ipc/handlers/localTerminalHandlers
 const { safeHandle, wrapIpcHandler } = require("./core/ipc/ipcResponse");
 const { mainProcessResourceManager } = require("./core/utils/mainProcessResourceManager");
 const aiWorkerManager = require("./core/workers/aiWorkerManager");
-
-// 应用设置和状态管理
-const childProcesses = new Map();
-let nextProcessId = 1;
+const processManager = require("./core/process/processManager");
 
 // 跟踪编辑器会话状态的正则表达式
 const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
@@ -49,8 +46,7 @@ const editorExitRegex = new RegExp(
   "i",
 );
 
-// 全局变量
-const terminalProcesses = new Map(); // 存储终端进程ID映射
+// 全局变量（terminalProcesses已迁移到processManager）
 
 // 导入IP地址查询模块
 const ipQuery = require("./modules/system-info/ip-query");
@@ -268,7 +264,7 @@ app.whenReady().then(async () => {
   updateLogConfig(logSettings);
 
   // Initialize sftpCore module
-  sftpCore.init({ logToFile }, (tabId) => childProcesses.get(tabId)); // Pass logger and childProcesses getter
+  sftpCore.init({ logToFile }, (tabId) => processManager.getProcess(tabId)); // Pass logger and childProcesses getter
   sftpCore.startSftpHealthCheck(); // Start health check after core init
 
   // Initialize sftpTransfer module
@@ -277,7 +273,7 @@ app.whenReady().then(async () => {
     sftpCore,
     dialog,
     shell,
-    (tabId) => childProcesses.get(tabId),
+    (tabId) => processManager.getProcess(tabId),
     (channel, ...args) => safeSendToRenderer(channel, ...args),
   );
 
@@ -383,10 +379,10 @@ app.whenReady().then(async () => {
     safeHandle(ipcMain, "terminal:getSystemInfo", async (event, processId) => {
       try {
         const systemInfo = require("./modules/system-info");
-        if (!processId || !childProcesses.has(processId)) {
+        if (!processId || !processManager.hasProcess(processId)) {
           return await systemInfo.getLocalSystemInfo();
         } else {
-          const processObj = childProcesses.get(processId);
+          const processObj = processManager.getProcess(processId);
           if (
             (processObj.type === "ssh2" || processObj.type === "ssh") &&
             (processObj.process || processObj.client || processObj.channel)
@@ -427,10 +423,10 @@ app.whenReady().then(async () => {
     safeHandle(ipcMain, "terminal:getProcessList", async (event, processId) => {
       try {
         const systemInfo = require("./modules/system-info");
-        if (!processId || !childProcesses.has(processId)) {
+        if (!processId || !processManager.hasProcess(processId)) {
           return systemInfo.getProcessList();
         } else {
-          const processObj = childProcesses.get(processId);
+          const processObj = processManager.getProcess(processId);
           if (
             (processObj.type === "ssh2" || processObj.type === "ssh") &&
             (processObj.process || processObj.client || processObj.channel)
@@ -567,7 +563,7 @@ app.on("before-quit", async (event) => {
     }
   }
 
-  for (const [id, proc] of childProcesses.entries()) {
+  for (const [id, proc] of processManager.getAllProcesses()) {
     try {
       // 清理与此进程相关的待处理SFTP操作
       if (
@@ -688,7 +684,7 @@ app.on("before-quit", async (event) => {
     }
   }
   // 清空进程映射
-  childProcesses.clear();
+  processManager.clearAllProcesses();
 
   // 清理连接管理器
   connectionManager.cleanup();
@@ -880,7 +876,7 @@ function setupIPC(mainWindow) {
   // 启动SSH连接
   try {
     safeHandle(ipcMain, "terminal:startSSH", async (event, sshConfig) => {
-    const processId = nextProcessId++;
+    const processId = processManager.getNextProcessId();
 
     if (!sshConfig || !sshConfig.host) {
       logToFile("Invalid SSH configuration", "ERROR");
@@ -911,7 +907,7 @@ function setupIPC(mainWindow) {
       }
 
       // 存储进程信息 - 这里保存连接池返回的连接信息
-      childProcesses.set(processId, {
+      processManager.setProcess(processId, {
         process: ssh,
         connectionInfo: connectionInfo, // 保存完整的连接信息
         listeners: new Set(),
@@ -927,7 +923,7 @@ function setupIPC(mainWindow) {
 
       // 存储相同的SSH客户端，使用tabId
       if (sshConfig.tabId) {
-        childProcesses.set(sshConfig.tabId, {
+        processManager.setProcess(sshConfig.tabId, {
           process: ssh,
           connectionInfo: connectionInfo,
           listeners: new Set(),
@@ -973,17 +969,17 @@ function setupIPC(mainWindow) {
                   sshConfig.tabId,
                 );
                 // 清理进程信息
-                childProcesses.delete(processId);
-                if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+                processManager.deleteProcess(processId);
+                if (sshConfig.tabId) processManager.deleteProcess(sshConfig.tabId);
                 return reject(err);
               }
 
               // 更新进程信息中的stream
-              const procToUpdate = childProcesses.get(processId);
+              const procToUpdate = processManager.getProcess(processId);
               if (procToUpdate) {
                 procToUpdate.stream = stream;
               }
-              const tabProcToUpdate = childProcesses.get(sshConfig.tabId);
+              const tabProcToUpdate = processManager.getProcess(sshConfig.tabId);
               if (tabProcToUpdate) {
                 tabProcToUpdate.stream = stream;
               }
@@ -1045,12 +1041,12 @@ function setupIPC(mainWindow) {
             clearTimeout(connectionTimeout);
 
             // 更新进程状态
-            const procInfo = childProcesses.get(processId);
+            const procInfo = processManager.getProcess(processId);
             if (procInfo) {
               procInfo.ready = true;
             }
             if (sshConfig.tabId) {
-              const tabProcInfo = childProcesses.get(sshConfig.tabId);
+              const tabProcInfo = processManager.getProcess(sshConfig.tabId);
               if (tabProcInfo) {
                 tabProcInfo.ready = true;
               }
@@ -1100,17 +1096,17 @@ function setupIPC(mainWindow) {
                     sshConfig.tabId,
                   );
                   // 清理进程信息
-                  childProcesses.delete(processId);
-                  if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+                  processManager.deleteProcess(processId);
+                  if (sshConfig.tabId) processManager.deleteProcess(sshConfig.tabId);
                   return reject(err);
                 }
 
                 // 更新进程信息中的stream
-                const procToUpdate = childProcesses.get(processId);
+                const procToUpdate = processManager.getProcess(processId);
                 if (procToUpdate) {
                   procToUpdate.stream = stream;
                 }
-                const tabProcToUpdate = childProcesses.get(sshConfig.tabId);
+                const tabProcToUpdate = processManager.getProcess(sshConfig.tabId);
                 if (tabProcToUpdate) {
                   tabProcToUpdate.stream = stream;
                 }
@@ -1182,8 +1178,8 @@ function setupIPC(mainWindow) {
               sshConfig.tabId,
             );
             // 清理进程信息
-            childProcesses.delete(processId);
-            if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+            processManager.deleteProcess(processId);
+            if (sshConfig.tabId) processManager.deleteProcess(sshConfig.tabId);
             reject(err);
           });
         });
@@ -1204,7 +1200,7 @@ function setupIPC(mainWindow) {
   // 启动Telnet连接
   try {
     safeHandle(ipcMain, "terminal:startTelnet", async (event, telnetConfig) => {
-    const processId = nextProcessId++;
+    const processId = processManager.getNextProcessId();
 
     if (!telnetConfig || !telnetConfig.host) {
       logToFile("Invalid Telnet configuration", "ERROR");
@@ -1238,7 +1234,7 @@ function setupIPC(mainWindow) {
       }
 
       // 存储进程信息 - 这里保存连接池返回的连接信息
-      childProcesses.set(processId, {
+      processManager.setProcess(processId, {
         process: telnet,
         connectionInfo: connectionInfo, // 保存完整的连接信息
         listeners: new Set(),
@@ -1254,7 +1250,7 @@ function setupIPC(mainWindow) {
 
       // 存储相同的Telnet客户端，使用tabId
       if (telnetConfig.tabId) {
-        childProcesses.set(telnetConfig.tabId, {
+        processManager.setProcess(telnetConfig.tabId, {
           process: telnet,
           connectionInfo: connectionInfo,
           listeners: new Set(),
@@ -1458,7 +1454,7 @@ function setupIPC(mainWindow) {
       logToFile(`SSH stream closed for processId: ${processId}`, "INFO");
 
       // 发送断开连接通知
-      const procInfo = childProcesses.get(processId);
+      const procInfo = processManager.getProcess(processId);
 
       // 发送连接状态变化事件到渲染进程
       if (sshConfig.tabId && mainWindow && !mainWindow.isDestroyed()) {
@@ -1548,14 +1544,14 @@ function setupIPC(mainWindow) {
       );
 
       // 清理进程信息
-      childProcesses.delete(processId);
-      if (sshConfig.tabId) childProcesses.delete(sshConfig.tabId);
+      processManager.deleteProcess(processId);
+      if (sshConfig.tabId) processManager.deleteProcess(sshConfig.tabId);
     });
   }
 
   // 发送数据到进程
   safeHandle(ipcMain, "terminal:sendToProcess", async (event, processId, data) => {
-    const procInfo = childProcesses.get(processId);
+    const procInfo = processManager.getProcess(processId);
     if (!procInfo || !procInfo.process) {
       return false;
     }
@@ -1700,7 +1696,7 @@ function setupIPC(mainWindow) {
 
   // 终止进程
   safeHandle(ipcMain, "terminal:killProcess", async (event, processId) => {
-    const proc = childProcesses.get(processId);
+    const proc = processManager.getProcess(processId);
     if (proc && proc.process) {
       try {
         // 清理与此进程相关的待处理SFTP操作
@@ -1775,9 +1771,9 @@ function setupIPC(mainWindow) {
         }
 
         // 清理进程映射
-        childProcesses.delete(processId);
+        processManager.deleteProcess(processId);
         if (proc.config?.tabId && proc.config.tabId !== processId) {
-          childProcesses.delete(proc.config.tabId);
+          processManager.deleteProcess(proc.config.tabId);
         }
       } catch (error) {
         logToFile(`Error handling process kill: ${error.message}`, "ERROR");
@@ -1789,7 +1785,7 @@ function setupIPC(mainWindow) {
   safeHandle(
     "terminal:notifyEditorModeChange",
     async (event, processId, isEditorMode) => {
-      const procInfo = childProcesses.get(processId);
+      const procInfo = processManager.getProcess(processId);
       if (!procInfo) {
         return false;
       }
@@ -1892,7 +1888,7 @@ function setupIPC(mainWindow) {
 
   // 添加调整终端大小的处理
   safeHandle(ipcMain, "terminal:resize", async (event, processId, cols, rows) => {
-    const procInfo = childProcesses.get(processId);
+    const procInfo = processManager.getProcess(processId);
     if (!procInfo) {
       return false;
     }
@@ -1931,8 +1927,8 @@ function setupIPC(mainWindow) {
       logToFile(`Cleaning up connection for process ${processId}`, "INFO");
 
       // 删除子进程映射
-      if (childProcesses.has(processId)) {
-        const processObj = childProcesses.get(processId);
+      if (processManager.hasProcess(processId)) {
+        const processObj = processManager.getProcess(processId);
 
         // 关闭SSH连接（如果存在）
         try {
@@ -1955,11 +1951,11 @@ function setupIPC(mainWindow) {
           );
         }
 
-        childProcesses.delete(processId);
+        processManager.deleteProcess(processId);
 
         // 如果有tabId也清理
         if (processObj.config && processObj.config.tabId) {
-          childProcesses.delete(processObj.config.tabId);
+          processManager.deleteProcess(processObj.config.tabId);
         }
       }
 
@@ -2373,7 +2369,7 @@ function setupIPC(mainWindow) {
       return sftpCore.enqueueSftpOperation(tabId, async () => {
         try {
           // 查找对应的SSH客户端
-          const processInfo = childProcesses.get(tabId);
+          const processInfo = processManager.getProcess(tabId);
           if (
             !processInfo ||
             !processInfo.process ||
@@ -2446,7 +2442,7 @@ function setupIPC(mainWindow) {
       return sftpCore.enqueueSftpOperation(tabId, async () => {
         try {
           // 查找对应的SSH客户端
-          const processInfo = childProcesses.get(tabId);
+          const processInfo = processManager.getProcess(tabId);
           if (
             !processInfo ||
             !processInfo.process ||
@@ -2519,7 +2515,7 @@ function setupIPC(mainWindow) {
       return sftpCore.enqueueSftpOperation(tabId, async () => {
         try {
           // 查找对应的SSH客户端
-          const processInfo = childProcesses.get(tabId);
+          const processInfo = processManager.getProcess(tabId);
           if (
             !processInfo ||
             !processInfo.process ||
@@ -2673,7 +2669,7 @@ function setupIPC(mainWindow) {
         return sftpCore.enqueueSftpOperation(tabId, async () => {
           try {
             // 查找对应的SSH客户端
-            const processInfo = childProcesses.get(tabId);
+            const processInfo = processManager.getProcess(tabId);
             if (
               !processInfo ||
               !processInfo.process ||
@@ -3034,7 +3030,7 @@ function setupIPC(mainWindow) {
         return sftpCore.enqueueSftpOperation(tabId, async () => {
           try {
             // 查找对应的SSH客户端
-            const processInfo = childProcesses.get(tabId);
+            const processInfo = processManager.getProcess(tabId);
             if (
               !processInfo ||
               !processInfo.process ||
@@ -3149,7 +3145,7 @@ function setupIPC(mainWindow) {
   // Handle creating remote folder structure
   safeHandle(ipcMain, "createRemoteFolders", async (event, tabId, folderPath) => {
     try {
-      const processInfo = childProcesses.get(tabId);
+      const processInfo = processManager.getProcess(tabId);
       if (!processInfo || !processInfo.config || processInfo.type !== "ssh2") {
         return { success: false, error: "Invalid SSH connection" };
       }
@@ -3230,7 +3226,7 @@ function setupIPC(mainWindow) {
         };
       }
 
-      const processInfo = childProcesses.get(tabId);
+      const processInfo = processManager.getProcess(tabId);
       if (
         !processInfo ||
         !processInfo.config ||
@@ -3370,7 +3366,7 @@ function setupIPC(mainWindow) {
         };
       }
 
-      const processInfo = childProcesses.get(tabId);
+      const processInfo = processManager.getProcess(tabId);
       if (
         !processInfo ||
         !processInfo.config ||
@@ -3863,7 +3859,7 @@ function setupIPC(mainWindow) {
       return sftpCore.enqueueSftpOperation(tabId, async () => {
         try {
           // 查找对应的SSH客户端
-          const processInfo = childProcesses.get(tabId);
+          const processInfo = processManager.getProcess(tabId);
           if (
             !processInfo ||
             !processInfo.process ||
@@ -4209,7 +4205,7 @@ function setupIPC(mainWindow) {
         };
       }
 
-      const processInfo = childProcesses.get(tabId);
+      const processInfo = processManager.getProcess(tabId);
       if (
         !processInfo ||
         !processInfo.config ||
@@ -4370,7 +4366,7 @@ function setupIPC(mainWindow) {
       }
 
       // 检查是否有对应的进程信息
-      const processInfo = childProcesses.get(tabId);
+      const processInfo = processManager.getProcess(tabId);
 
       if (!processInfo) {
         return { success: true, data: null };
@@ -4461,7 +4457,7 @@ function setupIPC(mainWindow) {
 
   // 新增：获取进程信息
   safeHandle(ipcMain, "terminal:getProcessInfo", async (event, processId) => {
-    const procInfo = childProcesses.get(processId);
+    const procInfo = processManager.getProcess(processId);
     if (!procInfo) {
       return null;
     }
@@ -4665,7 +4661,7 @@ function setupIPC(mainWindow) {
 
   // 发送输入到进程
   ipcMain.on("terminal:sendInput", (event, { processId, input }) => {
-    const processInfo = childProcesses.get(processId);
+    const processInfo = processManager.getProcess(processId);
     if (!processInfo) {
       logToFile(`Process not found: ${processId}`, "ERROR");
       return;
