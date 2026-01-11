@@ -223,14 +223,6 @@ function createSSHConnectionPool(config = {}) {
   return new SSHConnectionPool(config);
 }
 
-/**
- * @deprecated Use createSSHConnectionPool() instead.
- * Kept for backward compatibility; logs a deprecation warning.
- */
-function createSSHPool(config = {}) {
-  logToFile("createSSHPool() is deprecated. Use createSSHConnectionPool() instead.", "WARN");
-  return createSSHConnectionPool(config);
-}
 
 function createConnectionMonitor(config = {}) {
   return new ConnectionMonitor(config);
@@ -253,7 +245,6 @@ module.exports = {
 
   // 工厂函数
   createSSHConnectionPool,
-  createSSHPool,
   createConnectionMonitor,
 
   async getConnection(sshConfig, options) {
