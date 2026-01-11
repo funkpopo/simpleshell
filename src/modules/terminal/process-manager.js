@@ -1,16 +1,10 @@
 const { spawn } = require("child_process");
 const Client = require("ssh2").Client;
 const { logToFile } = require("../../core/utils/logger");
+const coreProcessManager = require("../../core/process/processManager");
 
 class ProcessManager {
   constructor() {
-    // 应用设置和状态管理
-    this.childProcesses = new Map();
-    this.nextProcessId = 1;
-
-    // 全局变量
-    this.terminalProcesses = new Map(); // 存储终端进程ID映射
-
     // 跟踪编辑器会话状态的正则表达式
     this.editorCommandRegex =
       /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
@@ -30,6 +24,37 @@ class ProcessManager {
       `^(${this.editorExitCommands.join("|").replace(/\+/g, "\\+")}|:\\w+)$`,
       "i",
     );
+  }
+
+  // 代理到核心进程管理器
+  get childProcesses() {
+    return {
+      get: (id) => coreProcessManager.getProcess(id),
+      set: (id, info) => coreProcessManager.setProcess(id, info),
+      has: (id) => coreProcessManager.hasProcess(id),
+      delete: (id) => coreProcessManager.deleteProcess(id),
+      clear: () => coreProcessManager.clearAllProcesses(),
+      entries: () => coreProcessManager.getAllProcesses(),
+      [Symbol.iterator]: function* () {
+        for (const entry of coreProcessManager.getAllProcesses()) {
+          yield entry;
+        }
+      },
+    };
+  }
+
+  get terminalProcesses() {
+    return {
+      get: (id) => coreProcessManager.getTerminalProcess(id),
+      set: (id, info) => coreProcessManager.setTerminalProcess(id, info),
+      has: (id) => coreProcessManager.hasTerminalProcess(id),
+      delete: (id) => coreProcessManager.deleteTerminalProcess(id),
+      clear: () => {},
+    };
+  }
+
+  get nextProcessId() {
+    return coreProcessManager.getNextProcessId();
   }
 
   initialize() {
@@ -65,7 +90,7 @@ class ProcessManager {
   }
 
   async startSSH(sshConfig) {
-    const processId = this.nextProcessId++;
+    const processId = this.nextProcessId;
 
     if (!sshConfig || !sshConfig.host) {
       const error = new Error("Invalid SSH configuration");
@@ -223,7 +248,7 @@ class ProcessManager {
   }
 
   getAllProcesses() {
-    return this.childProcesses;
+    return coreProcessManager.getAllProcesses();
   }
 
   setProcessStream(processId, stream) {
@@ -237,6 +262,4 @@ class ProcessManager {
 // 创建单例实例
 const processManager = new ProcessManager();
 
-// 导出childProcesses以供其他模块使用（向后兼容）
 module.exports = processManager;
-module.exports.childProcesses = processManager.childProcesses;
