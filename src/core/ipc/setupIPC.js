@@ -22,6 +22,7 @@ const processManager = require("../process/processManager");
 const { getPrimaryWindow, safeSendToRenderer } = require("../window/windowManager");
 const ipQuery = require("../../modules/system-info/ip-query");
 const ipcSetup = require("../app/ipcSetup");
+const aiWorkerManager = require("../workers/aiWorkerManager");
 
 // 跟踪编辑器会话状态的正则表达式
 const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
@@ -1101,22 +1102,22 @@ function setupIPC(mainWindow) {
 
   // 代理配置相关IPC处理程序
   safeHandle(ipcMain, "proxy:getStatus", async () => {
-    const proxyManager = require("./core/proxy/proxy-manager");
+    const proxyManager = require("../proxy/proxy-manager");
     return proxyManager.getProxyStatus();
   });
 
   safeHandle(ipcMain, "proxy:getDefaultConfig", async () => {
-    const proxyManager = require("./core/proxy/proxy-manager");
+    const proxyManager = require("../proxy/proxy-manager");
     return proxyManager.getDefaultProxyConfig();
   });
 
   safeHandle(ipcMain, "proxy:saveDefaultConfig", async (event, proxyConfig) => {
-    const proxyManager = require("./core/proxy/proxy-manager");
+    const proxyManager = require("../proxy/proxy-manager");
     return proxyManager.saveDefaultProxyConfig(proxyConfig);
   });
 
   safeHandle(ipcMain, "proxy:getSystemConfig", async () => {
-    const proxyManager = require("./core/proxy/proxy-manager");
+    const proxyManager = require("../proxy/proxy-manager");
     return proxyManager.getSystemProxyConfig();
   });
 
@@ -3697,7 +3698,7 @@ function setupIPC(mainWindow) {
   safeHandle(ipcMain, "ip:query", async (event, ip = "") => {
     try {
       // 获取默认代理配置以用于IP查询
-      const proxyManager = require("./core/proxy/proxy-manager");
+      const proxyManager = require("../proxy/proxy-manager");
       const proxyConfig = proxyManager.getDefaultProxyConfig();
       return await ipQuery.queryIpAddress(ip, logToFile, proxyConfig);
     } catch (error) {
