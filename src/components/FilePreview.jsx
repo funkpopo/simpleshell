@@ -46,6 +46,7 @@ import { yaml } from "@codemirror/lang-yaml";
 import { markdown } from "@codemirror/lang-markdown";
 import { sql } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { formatFileSize } from "../core/utils/formatters.js";
 // 延迟导入 react-pdf 以避免 webpack 模块初始化问题
 let Document, Page, pdfjs;
 let reactPdfLoaded = false;
@@ -1419,15 +1420,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       </Snackbar>
     </Dialog>
   );
-};
-
-// 格式化文件大小
-const formatFileSize = (bytes) => {
-  if (bytes === 0) return "0 Bytes";
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 };
 
 export default memo(FilePreview);

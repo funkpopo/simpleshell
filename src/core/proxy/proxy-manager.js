@@ -1,5 +1,5 @@
 const { logToFile } = require("../utils/logger");
-const configManager = require("../configManager");
+const configService = require("../../services/configService");
 
 class ProxyManager {
   constructor() {
@@ -35,7 +35,7 @@ class ProxyManager {
    */
   loadDefaultProxyConfig() {
     try {
-      const config = configManager.get("defaultProxyConfig");
+      const config = configService.get("defaultProxyConfig");
       if (config && this.isValidProxyConfig(config)) {
         this.defaultProxyConfig = config;
         logToFile("Default proxy config loaded", "INFO");
@@ -56,7 +56,7 @@ class ProxyManager {
     try {
       if (this.isValidProxyConfig(proxyConfig)) {
         this.defaultProxyConfig = proxyConfig;
-        configManager.set("defaultProxyConfig", proxyConfig);
+        configService.set("defaultProxyConfig", proxyConfig);
         logToFile("Default proxy config saved", "INFO");
         return true;
       } else {

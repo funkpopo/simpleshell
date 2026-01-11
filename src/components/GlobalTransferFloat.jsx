@@ -25,15 +25,7 @@ import {
 } from "@mui/icons-material";
 import { useTheme } from "@mui/material/styles";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
-
-// 格式化文件大小
-const formatFileSize = (bytes) => {
-  if (!bytes || bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-};
+import { formatFileSize } from "../core/utils/formatters.js";
 
 // 格式化传输速度
 const formatSpeed = (bytesPerSecond) => {

@@ -60,25 +60,10 @@ import {
   ListItemButton,
 } from "@mui/material";
 import { InsertDriveFile as InsertDriveFileIcon } from "@mui/icons-material";
-import { formatLastRefreshTime } from "../core/utils/formatters.js";
+import { formatLastRefreshTime, formatFileSize } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
-
-// 格式化文件大小
-const formatFileSize = (bytes, t) => {
-  if (bytes === 0) return `0 ${t("fileManager.units.bytes")}`;
-  const k = 1024;
-  const sizes = [
-    t("fileManager.units.bytes"),
-    t("fileManager.units.kb"),
-    t("fileManager.units.mb"),
-    t("fileManager.units.gb"),
-    t("fileManager.units.tb"),
-  ];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-};
 
 const FileManager = memo(
   ({
@@ -2034,7 +2019,7 @@ const FileManager = memo(
                 : "";
               const formattedSize =
                 file?.size && !file?.isDirectory
-                  ? formatFileSize(file.size, t)
+                  ? formatFileSize(file.size, { t })
                   : "";
               const secondaryText = [formattedDate, formattedSize]
                 .filter(Boolean)
@@ -2904,7 +2889,7 @@ const FileManager = memo(
           setError(
             t("fileManager.messages.fileSizeExceedsLimit", {
               name: file.name,
-              size: formatFileSize(file.size, t),
+              size: formatFileSize(file.size, { t }),
             }),
           );
           return false;
