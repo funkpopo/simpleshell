@@ -1,4 +1,4 @@
-const { BrowserWindow } = require("electron");
+const { getPrimaryWindow } = require("../../window/windowManager");
 const { logToFile } = require("../../utils/logger");
 
 /**
@@ -33,23 +33,15 @@ class WindowHandlers {
     ];
   }
 
-  _getMainWindow() {
-    const windows = BrowserWindow.getAllWindows();
-    if (!windows || windows.length === 0) return null;
-    const mainWindow = windows[0];
-    if (!mainWindow || mainWindow.isDestroyed()) return null;
-    return mainWindow;
-  }
-
   async minimize(event) {
-    const mainWindow = this._getMainWindow();
+    const mainWindow = getPrimaryWindow();
     if (!mainWindow) return false;
     mainWindow.minimize();
     return true;
   }
 
   async toggleMaximize(event) {
-    const mainWindow = this._getMainWindow();
+    const mainWindow = getPrimaryWindow();
     if (!mainWindow) return false;
 
     if (mainWindow.isFullScreen()) {
@@ -67,14 +59,14 @@ class WindowHandlers {
   }
 
   async close(event) {
-    const mainWindow = this._getMainWindow();
+    const mainWindow = getPrimaryWindow();
     if (!mainWindow) return false;
     mainWindow.close();
     return true;
   }
 
   async getState(event) {
-    const mainWindow = this._getMainWindow();
+    const mainWindow = getPrimaryWindow();
     if (!mainWindow) {
       return { isMaximized: false, isFullScreen: false };
     }
