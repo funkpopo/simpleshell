@@ -3,6 +3,9 @@ const TerminalHandlers = require("../ipc/handlers/terminalHandlers");
 const FileHandlers = require("../ipc/handlers/fileHandlers");
 const SettingsHandlers = require("../ipc/handlers/settingsHandlers");
 const AppHandlers = require("../ipc/handlers/appHandlers");
+const DialogHandlers = require("../ipc/handlers/dialogHandlers");
+const WindowHandlers = require("../ipc/handlers/windowHandlers");
+const SSHHandlers = require("../ipc/handlers/sshHandlers");
 const { logToFile } = require("../utils/logger");
 
 /**
@@ -15,6 +18,9 @@ class IPCManager {
       file: null,
       settings: null,
       app: null,
+      dialog: null,
+      window: null,
+      ssh: null,
     };
     this.isInitialized = false;
   }
@@ -26,6 +32,11 @@ class IPCManager {
    * @param {Map} dependencies.terminalProcesses - 终端进程映射
    * @param {Object} dependencies.aiWorker - AI Worker实例
    * @param {Object} dependencies.mainWindow - 主窗口实例
+   * @param {Object} dependencies.connectionManager - 连接管理器
+   * @param {Object} dependencies.sftpCore - SFTP核心模块
+   * @param {Object} dependencies.sftpTransfer - SFTP传输模块
+   * @param {Function} dependencies.getNextProcessId - 获取下一个进程ID的函数
+   * @param {Function} dependencies.getLatencyHandlers - 获取延迟处理器的函数
    */
   initialize(dependencies) {
     if (this.isInitialized) {
@@ -33,8 +44,17 @@ class IPCManager {
       return;
     }
 
-    const { childProcesses, terminalProcesses, aiWorker, mainWindow } =
-      dependencies;
+    const {
+      childProcesses,
+      terminalProcesses,
+      aiWorker,
+      mainWindow,
+      connectionManager,
+      sftpCore,
+      sftpTransfer,
+      getNextProcessId,
+      getLatencyHandlers,
+    } = dependencies;
 
     try {
       // 创建各个处理器实例
@@ -45,6 +65,20 @@ class IPCManager {
       this.handlers.file = new FileHandlers();
       this.handlers.settings = new SettingsHandlers();
       this.handlers.app = new AppHandlers();
+      this.handlers.dialog = new DialogHandlers();
+      this.handlers.window = new WindowHandlers();
+
+      // 创建SSH处理器（需要更多依赖）
+      if (connectionManager && getNextProcessId) {
+        this.handlers.ssh = new SSHHandlers({
+          childProcesses,
+          connectionManager,
+          sftpCore,
+          sftpTransfer,
+          getNextProcessId,
+          getLatencyHandlers,
+        });
+      }
 
       // 注册所有处理器
       this.registerAllHandlers();
@@ -101,6 +135,24 @@ class IPCManager {
     if (this.handlers.app) {
       const appHandlers = this.handlers.app.getHandlers();
       ipcRegistry.registerBatch(appHandlers);
+    }
+
+    // 注册对话框处理器
+    if (this.handlers.dialog) {
+      const dialogHandlers = this.handlers.dialog.getHandlers();
+      ipcRegistry.registerBatch(dialogHandlers);
+    }
+
+    // 注册窗口处理器
+    if (this.handlers.window) {
+      const windowHandlers = this.handlers.window.getHandlers();
+      ipcRegistry.registerBatch(windowHandlers);
+    }
+
+    // 注册SSH/Telnet处理器
+    if (this.handlers.ssh) {
+      const sshHandlers = this.handlers.ssh.getHandlers();
+      ipcRegistry.registerBatch(sshHandlers);
     }
   }
 
