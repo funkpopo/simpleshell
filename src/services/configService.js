@@ -1129,6 +1129,52 @@ class ConfigService {
   isInitialized() {
     return this._initialized;
   }
+
+  /**
+   * 获取配置项
+   * @param {string} key - 配置键名
+   * @returns {*} 配置值
+   */
+  get(key) {
+    if (!key) return undefined;
+    if (!this._initialized) {
+      this._log("ConfigService: Service not initialized for get().", "ERROR");
+      return undefined;
+    }
+    try {
+      const config = this._readConfig();
+      return config?.[key];
+    } catch (error) {
+      this._log(`ConfigService: Failed to get config key '${key}' - ${error.message}`, "ERROR");
+      return undefined;
+    }
+  }
+
+  /**
+   * 设置配置项
+   * @param {string} key - 配置键名
+   * @param {*} value - 配置值
+   * @returns {boolean} 是否成功
+   */
+  set(key, value) {
+    if (!key) return false;
+    if (!this._initialized) {
+      this._log("ConfigService: Service not initialized for set().", "ERROR");
+      return false;
+    }
+    try {
+      const config = this._readConfig() || {};
+      config[key] = value;
+      const success = this._writeConfig(config);
+      if (success) {
+        this._log(`ConfigService: Saved config key '${key}' via set().`, "INFO");
+      }
+      return success;
+    } catch (error) {
+      this._log(`ConfigService: Failed to set config key '${key}' - ${error.message}`, "ERROR");
+      return false;
+    }
+  }
 }
 
 // 导出单例实例
