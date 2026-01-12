@@ -65,10 +65,19 @@ class SSHHandlers {
   _setupStreamEventListeners(stream, processId, sshConfig, connectionInfo) {
     const mainWindow = this._getMainWindow();
     let buffer = Buffer.from([]);
+    const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB 缓冲区上限
+    let isPaused = false;
 
-    stream.on("data", (data) => {
+    const dataHandler = (data) => {
       try {
-        buffer = Buffer.concat([buffer, data]);
+        // 检查缓冲区大小，防止无限增长
+        if (buffer.length + data.length > MAX_BUFFER_SIZE) {
+          logToFile(`Buffer overflow prevented for processId ${processId}, discarding old data`, "WARN");
+          buffer = data; // 丢弃旧数据，只保留新数据
+        } else {
+          buffer = Buffer.concat([buffer, data]);
+        }
+
         try {
           const bufferStr = buffer.toString();
           const containsChinese = /[\u4e00-\u9fa5]/.test(bufferStr);
@@ -79,18 +88,32 @@ class SSHHandlers {
           const processedOutput = terminalManager.processOutput(processId, output);
 
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
+            // 背压处理：检查渲染进程是否能跟上
+            const sendResult = mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
+            // 如果IPC队列过长，暂停流
+            if (!isPaused && mainWindow.webContents.getProcessId && buffer.length > 1024 * 1024) {
+              stream.pause();
+              isPaused = true;
+              setTimeout(() => {
+                if (!stream.destroyed) {
+                  stream.resume();
+                  isPaused = false;
+                }
+              }, 100);
+            }
           }
           buffer = Buffer.from([]);
         } catch (error) {
           logToFile(`Failed to convert buffer to string: ${error.message}`, "ERROR");
+          buffer = Buffer.from([]); // 错误时也清理缓冲区
         }
       } catch (error) {
         logToFile(`Error handling stream data: ${error.message}`, "ERROR");
+        buffer = Buffer.from([]); // 错误时清理缓冲区
       }
-    });
+    };
 
-    stream.on("extended data", (data, type) => {
+    const extendedDataHandler = (data, type) => {
       try {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(
@@ -101,10 +124,15 @@ class SSHHandlers {
       } catch (error) {
         logToFile(`Error handling extended data: ${error.message}`, "ERROR");
       }
-    });
+    };
 
-    stream.on("close", () => {
+    const closeHandler = () => {
       logToFile(`SSH stream closed for processId: ${processId}`, "INFO");
+
+      // 清理事件监听器，防止内存泄漏
+      stream.removeListener("data", dataHandler);
+      stream.removeListener("extended data", extendedDataHandler);
+      stream.removeListener("close", closeHandler);
 
       if (sshConfig.tabId && mainWindow && !mainWindow.isDestroyed()) {
         const connectionStatus = {
@@ -165,7 +193,12 @@ class SSHHandlers {
       // 清理进程信息
       this.childProcesses.delete(processId);
       if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
-    });
+    };
+
+    // 注册事件监听器
+    stream.on("data", dataHandler);
+    stream.on("extended data", extendedDataHandler);
+    stream.on("close", closeHandler);
   }
 
   _setupTelnetEventListeners(telnet, processId, telnetConfig, connectionInfo) {
@@ -326,7 +359,17 @@ class SSHHandlers {
     const mainWindow = this._getMainWindow();
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        ssh.removeListener("ready", readyHandler);
+        ssh.removeListener("error", errorHandler);
+      };
+
       const connectionTimeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
         logToFile("SSH connection timed out after 15 seconds", "ERROR");
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(
@@ -338,8 +381,11 @@ class SSHHandlers {
         reject(new Error("SSH connection timeout"));
       }, 15000);
 
-      ssh.on("ready", () => {
+      const readyHandler = () => {
+        if (settled) return;
+        settled = true;
         clearTimeout(connectionTimeout);
+        cleanup();
 
         // 更新进程状态
         const procInfo = this.childProcesses.get(processId);
@@ -376,10 +422,13 @@ class SSHHandlers {
         this._createSSHShell(ssh, processId, sshConfig, connectionInfo)
           .then(resolve)
           .catch(reject);
-      });
+      };
 
-      ssh.on("error", (err) => {
+      const errorHandler = (err) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(connectionTimeout);
+        cleanup();
         logToFile(`SSH connection error for processId ${processId}: ${err.message}`, "ERROR");
 
         if (sshConfig.tabId && mainWindow && !mainWindow.isDestroyed()) {
@@ -404,7 +453,11 @@ class SSHHandlers {
         this.childProcesses.delete(processId);
         if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
         reject(err);
-      });
+      };
+
+      // 注册事件监听器
+      ssh.on("ready", readyHandler);
+      ssh.on("error", errorHandler);
     });
   }
 
