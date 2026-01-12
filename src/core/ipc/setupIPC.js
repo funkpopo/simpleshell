@@ -21,10 +21,9 @@
  * - utilityHandlers.js - 实用工具处理器
  * - connectionHandlers.js - 连接状态处理器
  * - sshKeyHandlers.js - SSH密钥处理器
+ * - memoryHandlers.js - 记忆文件处理器
  */
 const { ipcMain } = require("electron");
-const path = require("path");
-const fs = require("fs");
 const { logToFile } = require("../utils/logger");
 const { safeHandle } = require("./ipcResponse");
 const processManager = require("../process/processManager");
@@ -85,53 +84,10 @@ function setupIPC(mainWindow) {
   // - generateSSHKeyPair
   // - saveSSHKey
 
-  // 获取temp目录路径
-  const getTempDir = () => {
-    const { app } = require("electron");
-    if (app.isPackaged) {
-      return path.join(path.dirname(app.getPath('exe')), 'temp');
-    } else {
-      return path.join(app.getAppPath(), 'temp');
-    }
-  };
-
-  // 保存记忆文件
-  safeHandle(ipcMain, "memory:save", async (event, memory) => {
-    try {
-      const tempDir = getTempDir();
-      await fs.promises.mkdir(tempDir, { recursive: true });
-      const filepath = path.join(tempDir, 'mem.json');
-      await fs.promises.writeFile(filepath, JSON.stringify(memory, null, 2), 'utf-8');
-      return { success: true, filepath };
-    } catch (error) {
-      logToFile(`Save memory failed: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
-
-  // 加载记忆文件
-  safeHandle(ipcMain, "memory:load", async () => {
-    try {
-      const tempDir = getTempDir();
-      const filepath = path.join(tempDir, 'mem.json');
-      const content = await fs.promises.readFile(filepath, 'utf-8');
-      return JSON.parse(content);
-    } catch (err) {
-      return null;
-    }
-  });
-
-  // 删除记忆文件
-  safeHandle(ipcMain, "memory:delete", async () => {
-    try {
-      const tempDir = getTempDir();
-      const filepath = path.join(tempDir, 'mem.json');
-      await fs.promises.unlink(filepath);
-      return true;
-    } catch (err) {
-      return false;
-    }
-  });
+  // 记忆处理器已迁移到 memoryHandlers.js
+  // - memory:save
+  // - memory:load
+  // - memory:delete
 
   // 发送输入到进程
   ipcMain.on("terminal:sendInput", (event, { processId, input }) => {

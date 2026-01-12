@@ -18,6 +18,7 @@ const SftpHandlers = require("../ipc/handlers/sftpHandlers");
 const UtilityHandlers = require("../ipc/handlers/utilityHandlers");
 const ConnectionHandlers = require("../ipc/handlers/connectionHandlers");
 const SshKeyHandlers = require("../ipc/handlers/sshKeyHandlers");
+const MemoryHandlers = require("../ipc/handlers/memoryHandlers");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
@@ -392,6 +393,21 @@ class IPCSetup {
   }
 
   /**
+   * 初始化记忆处理器
+   */
+  initializeMemoryHandlers() {
+    try {
+      const memoryHandlers = new MemoryHandlers();
+      memoryHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("Memory handlers registered", "INFO");
+    } catch (error) {
+      logToFile(`记忆处理器初始化失败: ${error.message}`, "ERROR");
+    }
+  }
+
+  /**
    * 在应用启动时执行的初始化（在窗口创建前）
    */
   initializeBeforeWindow() {
@@ -407,6 +423,7 @@ class IPCSetup {
     this.initializeUtilityHandlers();
     this.initializeConnectionHandlers();
     this.initializeSshKeyHandlers();
+    this.initializeMemoryHandlers();
   }
 
   /**
