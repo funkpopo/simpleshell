@@ -18,6 +18,8 @@
  * - localTerminalHandlers.js - 本地终端处理器
  * - reconnectHandlers.js - 重连处理器
  * - batchHandlers.js - 批量处理器
+ * - utilityHandlers.js - 实用工具处理器
+ * - connectionHandlers.js - 连接状态处理器
  */
 const { ipcMain } = require("electron");
 const path = require("path");
@@ -77,61 +79,6 @@ function setupIPC(mainWindow) {
       }
     },
   );
-
-  // 获取标签页连接状态
-  safeHandle(ipcMain, "connection:getTabStatus", async (event, tabId) => {
-    try {
-      if (!tabId || tabId === "welcome") {
-        return { success: true, data: null };
-      }
-
-      const processInfo = processManager.getProcess(tabId);
-
-      if (!processInfo) {
-        return { success: true, data: null };
-      }
-
-      if (processInfo.type === "ssh2") {
-        const connectionState = {
-          isConnected: processInfo.ready && !!processInfo.stream,
-          isConnecting: !processInfo.ready,
-          quality: processInfo.ready ? "excellent" : "offline",
-          lastUpdate: Date.now(),
-          connectionType: "SSH",
-          host: processInfo.config?.host,
-          port: processInfo.config?.port,
-          username: processInfo.config?.username,
-        };
-        return { success: true, data: connectionState };
-      } else if (processInfo.type === "powershell") {
-        const connectionState = {
-          isConnected: true,
-          isConnecting: false,
-          quality: "excellent",
-          lastUpdate: Date.now(),
-          connectionType: "Local",
-          host: "localhost",
-        };
-        return { success: true, data: connectionState };
-      } else if (processInfo.type === "telnet") {
-        const connectionState = {
-          isConnected: processInfo.ready && !!processInfo.process,
-          isConnecting: !processInfo.ready,
-          quality: processInfo.ready ? "good" : "offline",
-          lastUpdate: Date.now(),
-          connectionType: "Telnet",
-          host: processInfo.config?.host,
-          port: processInfo.config?.port,
-        };
-        return { success: true, data: connectionState };
-      }
-
-      return { success: true, data: null };
-    } catch (error) {
-      logToFile(`获取标签页连接状态失败: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  });
 
   // SSH密钥生成器处理
   safeHandle(ipcMain, "generateSSHKeyPair", async (event, options) => {
