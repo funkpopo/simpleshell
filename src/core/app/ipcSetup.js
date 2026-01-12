@@ -12,6 +12,7 @@ const WindowHandlers = require("../ipc/handlers/windowHandlers");
 const SSHHandlers = require("../ipc/handlers/sshHandlers");
 const ProxyHandlers = require("../ipc/handlers/proxyHandlers");
 const TerminalHandlers = require("../ipc/handlers/terminalHandlers");
+const AIHandlers = require("../ipc/handlers/aiHandlers");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
@@ -296,6 +297,21 @@ class IPCSetup {
   }
 
   /**
+   * 初始化AI处理器
+   */
+  initializeAIHandlers() {
+    try {
+      const aiHandlers = new AIHandlers();
+      aiHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("AI handlers registered", "INFO");
+    } catch (error) {
+      logToFile(`AI处理器初始化失败: ${error.message}`, "ERROR");
+    }
+  }
+
+  /**
    * 在应用启动时执行的初始化（在窗口创建前）
    */
   initializeBeforeWindow() {
@@ -305,6 +321,7 @@ class IPCSetup {
     this.registerCriticalHandlers();
     this.initializeSSHHandlers();
     this.initializeTerminalHandlers();
+    this.initializeAIHandlers();
   }
 
   /**

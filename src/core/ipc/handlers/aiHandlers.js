@@ -1,17 +1,14 @@
 const configService = require("../../../services/configService");
 const { logToFile } = require("../../utils/logger");
+const aiWorkerManager = require("../../workers/aiWorkerManager");
+const { BrowserWindow } = require("electron");
 
 /**
  * AI相关的IPC处理器
  */
 class AIHandlers {
-  constructor(aiWorker, mainWindow) {
-    this.aiWorker = aiWorker;
-    this.mainWindow = mainWindow;
-    this.aiRequestMap = new Map();
-    this.streamSessions = new Map();
-    this.nextRequestId = 1;
-    this.currentSessionId = null;
+  constructor() {
+    // 使用aiWorkerManager管理状态
   }
 
   /**
@@ -72,248 +69,231 @@ class AIHandlers {
     ];
   }
 
-  // 实现各个处理器方法
   async loadSettings(event) {
-    try {
-      const settings = configService.loadAISettings();
-      return settings || {};
-    } catch (error) {
-      logToFile(`Error loading AI settings: ${error.message}`, "ERROR");
-      throw error;
-    }
+    return configService.loadAISettings();
   }
 
   async saveSettings(event, settings) {
-    try {
-      configService.saveAISettings(settings);
-      logToFile("AI settings saved", "INFO");
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error saving AI settings: ${error.message}`, "ERROR");
-      throw error;
-    }
+    return configService.saveAISettings(settings);
   }
 
   async saveApiConfig(event, config) {
     try {
-      const currentSettings = configService.loadAISettings() || {};
-
-      if (!currentSettings.apiConfigs) {
-        currentSettings.apiConfigs = [];
-      }
-
-      // 如果配置有ID，更新现有配置；否则添加新配置
-      if (config.id) {
-        const index = currentSettings.apiConfigs.findIndex(
-          (c) => c.id === config.id,
-        );
-        if (index !== -1) {
-          currentSettings.apiConfigs[index] = config;
-        } else {
-          currentSettings.apiConfigs.push(config);
-        }
+      logToFile(
+        `Saving API config: ${JSON.stringify({
+          id: config.id,
+          name: config.name,
+          model: config.model,
+        })}`,
+        "INFO"
+      );
+      const settings = configService.loadAISettings();
+      if (!settings.configs) settings.configs = [];
+      if (!config.id) config.id = Date.now().toString();
+      const existingIndex = settings.configs.findIndex(
+        (c) => c.id === config.id
+      );
+      if (existingIndex >= 0) {
+        settings.configs[existingIndex] = config;
       } else {
-        config.id = Date.now().toString();
-        currentSettings.apiConfigs.push(config);
+        settings.configs.push(config);
       }
-
-      configService.saveAISettings(currentSettings);
-      logToFile(`API config saved: ${config.name || config.id}`, "INFO");
-
-      return { success: true, config };
+      return configService.saveAISettings(settings);
     } catch (error) {
-      logToFile(`Error saving API config: ${error.message}`, "ERROR");
-      throw error;
+      logToFile(`Failed to save API config: ${error.message}`, "ERROR");
+      return false;
     }
   }
 
   async deleteApiConfig(event, configId) {
     try {
-      const currentSettings = configService.loadAISettings() || {};
-
-      if (!currentSettings.apiConfigs) {
-        return { success: false, error: "No API configs found" };
-      }
-
-      const initialLength = currentSettings.apiConfigs.length;
-      currentSettings.apiConfigs = currentSettings.apiConfigs.filter(
-        (c) => c.id !== configId,
-      );
-
-      if (currentSettings.apiConfigs.length < initialLength) {
-        // 如果删除的是当前配置，清除当前配置ID
-        if (currentSettings.currentApiConfigId === configId) {
-          delete currentSettings.currentApiConfigId;
+      const settings = configService.loadAISettings();
+      if (!settings.configs) settings.configs = [];
+      const originalLength = settings.configs.length;
+      settings.configs = settings.configs.filter((c) => c.id !== configId);
+      if (settings.current && settings.current.id === configId) {
+        if (settings.configs.length > 0) {
+          settings.current = { ...settings.configs[0] };
+        } else {
+          settings.current = {
+            apiUrl: "",
+            apiKey: "",
+            model: "",
+            streamEnabled: true,
+          };
         }
-
-        configService.saveAISettings(currentSettings);
-        logToFile(`API config deleted: ${configId}`, "INFO");
-        return { success: true };
       }
-
-      return { success: false, error: "Config not found" };
+      if (settings.configs.length !== originalLength) {
+        return configService.saveAISettings(settings);
+      }
+      return true;
     } catch (error) {
-      logToFile(`Error deleting API config: ${error.message}`, "ERROR");
-      throw error;
+      logToFile(`Failed to delete API config: ${error.message}`, "ERROR");
+      return false;
     }
   }
 
   async setCurrentApiConfig(event, configId) {
     try {
-      const currentSettings = configService.loadAISettings() || {};
-
-      if (!currentSettings.apiConfigs) {
-        return { success: false, error: "No API configs found" };
+      logToFile(`Setting current API config with ID: ${configId}`, "INFO");
+      const settings = configService.loadAISettings();
+      if (!settings.configs) settings.configs = [];
+      const selectedConfig = settings.configs.find((c) => c.id === configId);
+      if (selectedConfig) {
+        settings.current = { ...selectedConfig };
+        return configService.saveAISettings(settings);
       }
-
-      const config = currentSettings.apiConfigs.find((c) => c.id === configId);
-      if (!config) {
-        return { success: false, error: "Config not found" };
-      }
-
-      currentSettings.currentApiConfigId = configId;
-      configService.saveAISettings(currentSettings);
-      logToFile(
-        `Current API config set to: ${config.name || configId}`,
-        "INFO",
-      );
-
-      return { success: true };
+      return false;
     } catch (error) {
-      logToFile(`Error setting current API config: ${error.message}`, "ERROR");
-      throw error;
+      logToFile(`Failed to set current API config: ${error.message}`, "ERROR");
+      return false;
     }
   }
 
   async sendPrompt(event, prompt, settings) {
-    if (!this.aiWorker) {
-      throw new Error("AI Worker not initialized");
-    }
-
     try {
-      const requestId = this.nextRequestId++;
-
-      return new Promise((resolve, reject) => {
-        // 存储回调
-        this.aiRequestMap.set(requestId, { resolve, reject });
-
-        // 发送消息到worker
-        this.aiWorker.postMessage({
-          id: requestId,
-          type: "prompt",
-          prompt: prompt,
-          settings: settings,
-        });
-
-        // 设置超时
-        setTimeout(() => {
-          if (this.aiRequestMap.has(requestId)) {
-            this.aiRequestMap.delete(requestId);
-            reject(new Error("Request timeout"));
-          }
-        }, 120000); // 2分钟超时
-      });
+      return await configService.sendAIPrompt(prompt, settings);
     } catch (error) {
-      logToFile(`Error sending prompt to AI: ${error.message}`, "ERROR");
-      throw error;
+      logToFile(`Error sending AI prompt: ${error.message}`, "ERROR");
+      return { error: error.message || "发送请求时出错" };
     }
   }
 
   async sendAPIRequest(event, requestData, isStream) {
-    if (!this.aiWorker) {
-      throw new Error("AI Worker not initialized");
-    }
-
     try {
-      const requestId = this.nextRequestId++;
-      const sessionId = Date.now().toString();
-
-      if (isStream) {
-        // 存储流式会话
-        this.streamSessions.set(sessionId, requestId);
-        this.currentSessionId = sessionId;
-
-        // 发送消息到worker
-        this.aiWorker.postMessage({
-          id: requestId,
-          type: "stream",
-          sessionId: sessionId,
-          requestData: requestData,
-        });
-
-        return { sessionId: sessionId };
-      } else {
-        // 非流式请求
-        return new Promise((resolve, reject) => {
-          this.aiRequestMap.set(requestId, { resolve, reject });
-
-          this.aiWorker.postMessage({
-            id: requestId,
-            type: "api",
-            requestData: requestData,
-          });
-
-          setTimeout(() => {
-            if (this.aiRequestMap.has(requestId)) {
-              this.aiRequestMap.delete(requestId);
-              reject(new Error("Request timeout"));
-            }
-          }, 120000);
-        });
+      // 验证请求数据
+      if (
+        !requestData ||
+        !requestData.url ||
+        !requestData.apiKey ||
+        !requestData.model
+      ) {
+        throw new Error("请先配置 AI API，包括 API 地址、密钥和模型");
       }
+
+      if (!requestData.messages) {
+        throw new Error("请求数据无效，缺少消息内容");
+      }
+
+      // 确保Worker已创建
+      const aiWorker = aiWorkerManager.ensureAIWorker();
+      if (!aiWorker) {
+        throw new Error("无法创建AI Worker");
+      }
+
+      // 生成请求ID
+      const requestId = aiWorkerManager.getNextRequestId();
+
+      // 如果是流式请求，保存会话ID
+      if (isStream) {
+        aiWorkerManager.setCurrentSessionId(requestData.sessionId);
+      }
+
+      // 准备发送到Worker的数据
+      const workerData = {
+        ...requestData,
+        isStream,
+      };
+
+      // 发送请求到Worker
+      return new Promise((resolve, reject) => {
+        // 设置请求超时
+        const timeoutId = setTimeout(() => {
+          aiWorkerManager.deleteRequestCallback(requestId);
+          reject(new Error("请求超时"));
+        }, 60000); // 60秒超时
+
+        // 存储回调函数
+        aiWorkerManager.setRequestCallback(requestId, {
+          resolve: (result) => {
+            clearTimeout(timeoutId);
+            resolve(result);
+          },
+          reject: (error) => {
+            clearTimeout(timeoutId);
+            reject(error);
+          },
+          timestamp: Date.now(),
+        });
+
+        // 发送消息到Worker
+        aiWorker.postMessage({
+          type: "api_request",
+          id: requestId,
+          data: workerData,
+        });
+
+        // 如果是流式请求，立即返回成功
+        if (isStream) {
+          resolve({ success: true, message: "流式请求已开始" });
+        }
+      });
     } catch (error) {
-      logToFile(`Error sending API request: ${error.message}`, "ERROR");
-      throw error;
+      logToFile(`处理AI请求时出错: ${error.message}`, "ERROR");
+      return { error: error.message || "处理请求时出错" };
     }
   }
 
   async abortAPIRequest(event) {
     try {
-      if (!this.currentSessionId) {
-        return { success: false, error: "No active session" };
-      }
+      const currentSessionId = aiWorkerManager.getCurrentSessionId();
+      const aiWorker = aiWorkerManager.getAIWorker();
+      // 检查是否有当前会话ID
+      if (currentSessionId && aiWorker) {
+        // 生成取消请求ID
+        const cancelRequestId = `cancel_${Date.now()}`;
 
-      const requestId = this.streamSessions.get(this.currentSessionId);
-      if (!requestId) {
-        return { success: false, error: "Session not found" };
-      }
-
-      // 发送中止消息到worker
-      if (this.aiWorker) {
-        this.aiWorker.postMessage({
-          type: "abort",
-          sessionId: this.currentSessionId,
-          requestId: requestId,
+        // 尝试通过Worker取消请求
+        aiWorker.postMessage({
+          type: "cancel_request",
+          id: cancelRequestId,
+          data: {
+            sessionId: currentSessionId,
+          },
         });
+
+        // 获取主窗口
+        const mainWindow = BrowserWindow.getAllWindows()[0];
+        if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+          // 发送中断消息给渲染进程
+          mainWindow.webContents.send("stream-end", {
+            tabId: "ai",
+            aborted: true,
+            sessionId: currentSessionId,
+          });
+        }
+
+        // 清理会话ID和映射
+        aiWorkerManager.deleteStreamSession(currentSessionId);
+        aiWorkerManager.clearCurrentSessionId();
+
+        return { success: true, message: "请求已中断" };
+      } else {
+        return { success: false, message: "没有活跃的请求" };
       }
-
-      // 清理会话
-      this.streamSessions.delete(this.currentSessionId);
-      this.currentSessionId = null;
-
-      logToFile(
-        `Aborted AI request for session: ${this.currentSessionId}`,
-        "INFO",
-      );
-      return { success: true };
     } catch (error) {
-      logToFile(`Error aborting API request: ${error.message}`, "ERROR");
+      logToFile(`中断API请求时出错: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }
 
   async fetchModels(event, requestData) {
-    if (!this.aiWorker) {
-      throw new Error("AI Worker not initialized");
-    }
-
     try {
-      const requestId = this.nextRequestId++;
+      // 确保Worker已创建
+      const aiWorker = aiWorkerManager.ensureAIWorker();
+      if (!aiWorker) {
+        throw new Error("无法创建AI Worker");
+      }
+
+      const requestId = aiWorkerManager.getNextRequestId();
+      const timeout = 30000; // 30秒超时
 
       return new Promise((resolve, reject) => {
-        this.aiRequestMap.set(requestId, { resolve, reject });
+        // 存储回调
+        aiWorkerManager.setRequestCallback(requestId, { resolve, reject });
 
-        this.aiWorker.postMessage({
+        // 发送消息到worker
+        aiWorker.postMessage({
           id: requestId,
           type: "api_request",
           data: {
@@ -322,15 +302,16 @@ class AIHandlers {
           },
         });
 
+        // 设置超时
         setTimeout(() => {
-          if (this.aiRequestMap.has(requestId)) {
-            this.aiRequestMap.delete(requestId);
-            reject(new Error("Request timeout"));
+          if (aiWorkerManager.hasRequest(requestId)) {
+            aiWorkerManager.deleteRequestCallback(requestId);
+            reject(new Error("获取模型列表请求超时"));
           }
-        }, 30000); // 30秒超时，获取模型列表可能需要更长时间
+        }, timeout);
       });
     } catch (error) {
-      logToFile(`Error fetching models: ${error.message}`, "ERROR");
+      logToFile(`获取模型列表失败: ${error.message}`, "ERROR");
       throw error;
     }
   }
@@ -345,68 +326,6 @@ class AIHandlers {
     } catch (error) {
       logToFile(`Error saving custom risk rules: ${error.message}`, "ERROR");
       throw error;
-    }
-  }
-
-  /**
-   * 处理Worker消息
-   */
-  handleWorkerMessage(message) {
-    const { id, type, result, error, data } = message;
-
-    if (type === "stream") {
-      // 处理流式响应
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send("ai:streamData", {
-          sessionId: data.sessionId,
-          data: data.content,
-          done: data.done,
-        });
-
-        if (data.done) {
-          this.streamSessions.delete(data.sessionId);
-          if (this.currentSessionId === data.sessionId) {
-            this.currentSessionId = null;
-          }
-        }
-      }
-    } else {
-      // 处理普通请求响应
-      const callback = this.aiRequestMap.get(id);
-      if (callback) {
-        if (error) {
-          callback.reject(error);
-        } else {
-          callback.resolve(result);
-        }
-        this.aiRequestMap.delete(id);
-      }
-    }
-  }
-
-  /**
-   * 清理AI处理器
-   */
-  cleanup() {
-    // 清理所有待处理的请求
-    for (const [id, callback] of this.aiRequestMap) {
-      callback.reject(new Error("AI handler cleanup"));
-    }
-    this.aiRequestMap.clear();
-
-    // 清理流式会话
-    this.streamSessions.clear();
-    this.currentSessionId = null;
-
-    // 终止Worker
-    if (this.aiWorker) {
-      try {
-        this.aiWorker.terminate();
-        this.aiWorker = null;
-        logToFile("AI Worker terminated", "INFO");
-      } catch (error) {
-        logToFile(`Error terminating AI Worker: ${error.message}`, "ERROR");
-      }
     }
   }
 }
