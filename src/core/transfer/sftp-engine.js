@@ -1061,6 +1061,179 @@ class SftpTransfer {
 // 创建单例实例（向后兼容）
 const sftpEngine = new SftpEngine();
 
+// 文件操作函数
+async function listFiles(tabId, dirPath, options = {}) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+      return new Promise((resolve, reject) => {
+        sftp.readdir(dirPath, (err, list) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          const data = list.map((item) => {
+            // 检查是否为目录：mode的高4位为0o04表示目录
+            const isDirectory = (item.attrs.mode & 0o170000) === 0o040000;
+            return {
+              name: item.filename,
+              isDirectory,
+              type: isDirectory ? "directory" : "file",
+              size: item.attrs.size,
+              modifyTime: item.attrs.mtime * 1000,
+              accessTime: item.attrs.atime * 1000,
+              mode: item.attrs.mode,
+              uid: item.attrs.uid,
+              gid: item.attrs.gid,
+            };
+          });
+          resolve({ success: true, data });
+        });
+      });
+    },
+    { type: "listFiles", path: dirPath, canMerge: true }
+  );
+}
+
+async function copyFile(tabId, sourcePath, targetPath) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+      return new Promise((resolve, reject) => {
+        const readStream = sftp.createReadStream(sourcePath);
+        const writeStream = sftp.createWriteStream(targetPath);
+        readStream.on("error", reject);
+        writeStream.on("error", reject);
+        writeStream.on("close", () => resolve({ success: true }));
+        readStream.pipe(writeStream);
+      });
+    },
+    { type: "copyFile", path: sourcePath }
+  );
+}
+
+async function createFolder(tabId, folderPath) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+      return new Promise((resolve, reject) => {
+        sftp.mkdir(folderPath, (err) => {
+          if (err) reject(err);
+          else resolve({ success: true });
+        });
+      });
+    },
+    { type: "createFolder", path: folderPath }
+  );
+}
+
+async function createFile(tabId, filePath) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+      return new Promise((resolve, reject) => {
+        const writeStream = sftp.createWriteStream(filePath);
+        writeStream.on("error", reject);
+        writeStream.on("close", () => resolve({ success: true }));
+        writeStream.end();
+      });
+    },
+    { type: "createFile", path: filePath }
+  );
+}
+
+async function getFilePermissions(tabId, filePath) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+      return new Promise((resolve, reject) => {
+        sftp.stat(filePath, (err, stats) => {
+          if (err) reject(err);
+          else resolve({ success: true, mode: stats.mode, uid: stats.uid, gid: stats.gid });
+        });
+      });
+    },
+    { type: "getFilePermissions", path: filePath }
+  );
+}
+
+async function getAbsolutePath(tabId, relativePath) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+      return new Promise((resolve, reject) => {
+        sftp.realpath(relativePath, (err, absPath) => {
+          if (err) reject(err);
+          else resolve({ success: true, path: absPath });
+        });
+      });
+    },
+    { type: "getAbsolutePath", path: relativePath }
+  );
+}
+
+async function readFileContent(tabId, filePath) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+      return new Promise((resolve, reject) => {
+        const chunks = [];
+        const readStream = sftp.createReadStream(filePath);
+        readStream.on("data", (chunk) => chunks.push(chunk));
+        readStream.on("error", reject);
+        readStream.on("end", () => {
+          const content = Buffer.concat(chunks).toString("utf8");
+          resolve({ success: true, content });
+        });
+      });
+    },
+    { type: "readFileContent", path: filePath }
+  );
+}
+
+async function readFileAsBase64(tabId, filePath) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+      return new Promise((resolve, reject) => {
+        const chunks = [];
+        const readStream = sftp.createReadStream(filePath);
+        readStream.on("data", (chunk) => chunks.push(chunk));
+        readStream.on("error", reject);
+        readStream.on("end", () => {
+          const content = Buffer.concat(chunks).toString("base64");
+          resolve({ success: true, content });
+        });
+      });
+    },
+    { type: "readFileAsBase64", path: filePath }
+  );
+}
+
+async function saveFileContent(tabId, filePath, content) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+      return new Promise((resolve, reject) => {
+        const writeStream = sftp.createWriteStream(filePath);
+        writeStream.on("error", reject);
+        writeStream.on("close", () => resolve({ success: true }));
+        writeStream.end(content, "utf8");
+      });
+    },
+    { type: "saveFileContent", path: filePath }
+  );
+}
+
 module.exports = {
   // 主要API
   init,
@@ -1078,6 +1251,17 @@ module.exports = {
   calculateDynamicTimeout,
   borrowSftpSession,
   releaseSftpSession,
+
+  // 文件操作API
+  listFiles,
+  copyFile,
+  createFolder,
+  createFile,
+  getFilePermissions,
+  getAbsolutePath,
+  readFileContent,
+  readFileAsBase64,
+  saveFileContent,
 
   // 向后兼容导出
   SftpEngine,
