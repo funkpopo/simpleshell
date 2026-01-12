@@ -1,6 +1,5 @@
 const sftpCore = require("../../transfer/sftp-engine"); // 已合并到sftp-engine
 const sftpTransfer = require("../../../modules/sftp/sftpTransfer");
-const fileCache = require("../../utils/fileCache");
 const { logToFile } = require("../../utils/logger");
 const processManager = require("../../process/processManager");
 const path = require("path");
@@ -77,21 +76,6 @@ class FileHandlers {
         handler: this.getAbsolutePath.bind(this),
       },
       {
-        channel: "readFileContent",
-        category: "file",
-        handler: this.readFileContent.bind(this),
-      },
-      {
-        channel: "readFileAsBase64",
-        category: "file",
-        handler: this.readFileAsBase64.bind(this),
-      },
-      {
-        channel: "saveFileContent",
-        category: "file",
-        handler: this.saveFileContent.bind(this),
-      },
-      {
         channel: "checkPathExists",
         category: "file",
         handler: this.checkPathExists.bind(this),
@@ -105,31 +89,6 @@ class FileHandlers {
         channel: "cancelTransfer",
         category: "file",
         handler: this.cancelTransfer.bind(this),
-      },
-      {
-        channel: "getSftpSession",
-        category: "file",
-        handler: this.getSftpSession.bind(this),
-      },
-      {
-        channel: "enqueueSftpOperation",
-        category: "file",
-        handler: this.enqueueSftpOperation.bind(this),
-      },
-      {
-        channel: "processSftpQueue",
-        category: "file",
-        handler: this.processSftpQueue.bind(this),
-      },
-      {
-        channel: "cleanupFileCache",
-        category: "file",
-        handler: this.cleanupFileCache.bind(this),
-      },
-      {
-        channel: "cleanupTabCache",
-        category: "file",
-        handler: this.cleanupTabCache.bind(this),
       },
       {
         channel: "downloadFiles",
@@ -400,36 +359,6 @@ class FileHandlers {
     }
   }
 
-  async readFileContent(event, tabId, filePath) {
-    try {
-      const result = await sftpCore.readFileContent(tabId, filePath);
-      return result;
-    } catch (error) {
-      logToFile(`Error reading file content: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
-  async readFileAsBase64(event, tabId, filePath) {
-    try {
-      const result = await sftpCore.readFileAsBase64(tabId, filePath);
-      return result;
-    } catch (error) {
-      logToFile(`Error reading file as base64: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
-  async saveFileContent(event, tabId, filePath, content) {
-    try {
-      const result = await sftpCore.saveFileContent(tabId, filePath, content);
-      return result;
-    } catch (error) {
-      logToFile(`Error saving file content: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
   async checkPathExists(event, checkPath) {
     try {
       const exists = fs.existsSync(checkPath);
@@ -457,56 +386,6 @@ class FileHandlers {
       return result;
     } catch (error) {
       logToFile(`Error canceling transfer: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
-  async getSftpSession(event, tabId) {
-    try {
-      const session = await sftpCore.getSftpSession(tabId);
-      return { success: true, session };
-    } catch (error) {
-      logToFile(`Error getting SFTP session: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
-  async enqueueSftpOperation(event, tabId, operation) {
-    try {
-      const result = await sftpCore.enqueueSftpOperation(tabId, operation);
-      return result;
-    } catch (error) {
-      logToFile(`Error enqueueing SFTP operation: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
-  async processSftpQueue(event, tabId) {
-    try {
-      const result = await sftpCore.processSftpQueue(tabId);
-      return result;
-    } catch (error) {
-      logToFile(`Error processing SFTP queue: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
-  async cleanupFileCache(event, cacheFilePath) {
-    try {
-      await fileCache.cleanup(cacheFilePath);
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error cleaning up file cache: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
-  async cleanupTabCache(event, tabId) {
-    try {
-      await fileCache.cleanupTabFiles(tabId);
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error cleaning up tab cache: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }
