@@ -1967,11 +1967,11 @@ const ConnectionManager = memo(
                                 ) {
                                   window.terminalAPI
                                     .selectKeyFile()
-                                    .then((filePath) => {
-                                      if (filePath) {
+                                    .then((result) => {
+                                      if (result && result.success && result.path) {
                                         setFormData((prev) => ({
                                           ...prev,
-                                          privateKeyPath: filePath,
+                                          privateKeyPath: result.path,
                                         }));
                                       }
                                     });
