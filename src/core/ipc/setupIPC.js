@@ -349,26 +349,7 @@ function setupIPC(mainWindow) {
     return selectKeyFile();
   });
 
-  // 代理配置相关IPC处理程序
-  safeHandle(ipcMain, "proxy:getStatus", async () => {
-    const proxyManager = require("../proxy/proxy-manager");
-    return proxyManager.getProxyStatus();
-  });
-
-  safeHandle(ipcMain, "proxy:getDefaultConfig", async () => {
-    const proxyManager = require("../proxy/proxy-manager");
-    return proxyManager.getDefaultProxyConfig();
-  });
-
-  safeHandle(ipcMain, "proxy:saveDefaultConfig", async (event, proxyConfig) => {
-    const proxyManager = require("../proxy/proxy-manager");
-    return proxyManager.saveDefaultProxyConfig(proxyConfig);
-  });
-
-  safeHandle(ipcMain, "proxy:getSystemConfig", async () => {
-    const proxyManager = require("../proxy/proxy-manager");
-    return proxyManager.getSystemProxyConfig();
-  });
+  // proxy:* 处理器已迁移到 proxyHandlers.js
 
   // Note: app:getVersion, app:close, app:reloadWindow, app:openExternal,
   // and app:checkForUpdate are registered before window creation via AppHandlers
