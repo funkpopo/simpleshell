@@ -14,6 +14,7 @@ const ProxyHandlers = require("../ipc/handlers/proxyHandlers");
 const TerminalHandlers = require("../ipc/handlers/terminalHandlers");
 const AIHandlers = require("../ipc/handlers/aiHandlers");
 const FileHandlers = require("../ipc/handlers/fileHandlers");
+const SftpHandlers = require("../ipc/handlers/sftpHandlers");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
@@ -328,6 +329,21 @@ class IPCSetup {
   }
 
   /**
+   * 初始化SFTP处理器
+   */
+  initializeSftpHandlers() {
+    try {
+      const sftpHandlers = new SftpHandlers();
+      sftpHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("SFTP handlers registered", "INFO");
+    } catch (error) {
+      logToFile(`SFTP处理器初始化失败: ${error.message}`, "ERROR");
+    }
+  }
+
+  /**
    * 在应用启动时执行的初始化（在窗口创建前）
    */
   initializeBeforeWindow() {
@@ -339,6 +355,7 @@ class IPCSetup {
     this.initializeTerminalHandlers();
     this.initializeAIHandlers();
     this.initializeFileHandlers();
+    this.initializeSftpHandlers();
   }
 
   /**

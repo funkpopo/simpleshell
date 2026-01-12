@@ -9,6 +9,7 @@
  * - sshHandlers.js - SSH/Telnet处理器
  * - aiHandlers.js - AI处理器
  * - fileHandlers.js - 文件操作处理器
+ * - sftpHandlers.js - SFTP会话和缓存处理器
  * - terminalHandlers.js - 终端处理器
  * - proxyHandlers.js - 代理处理器
  * - settingsHandlers.js - 设置处理器
