@@ -13,6 +13,7 @@ const SSHHandlers = require("../ipc/handlers/sshHandlers");
 const ProxyHandlers = require("../ipc/handlers/proxyHandlers");
 const TerminalHandlers = require("../ipc/handlers/terminalHandlers");
 const AIHandlers = require("../ipc/handlers/aiHandlers");
+const FileHandlers = require("../ipc/handlers/fileHandlers");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
@@ -312,6 +313,21 @@ class IPCSetup {
   }
 
   /**
+   * 初始化文件处理器
+   */
+  initializeFileHandlers() {
+    try {
+      const fileHandlers = new FileHandlers();
+      fileHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("File handlers registered", "INFO");
+    } catch (error) {
+      logToFile(`文件处理器初始化失败: ${error.message}`, "ERROR");
+    }
+  }
+
+  /**
    * 在应用启动时执行的初始化（在窗口创建前）
    */
   initializeBeforeWindow() {
@@ -322,6 +338,7 @@ class IPCSetup {
     this.initializeSSHHandlers();
     this.initializeTerminalHandlers();
     this.initializeAIHandlers();
+    this.initializeFileHandlers();
   }
 
   /**
