@@ -86,6 +86,56 @@ class TerminalHandlers {
   }
 
   /**
+   * 获取事件类型处理器（使用ipcMain.on而非safeHandle）
+   */
+  getEventHandlers() {
+    return [
+      {
+        channel: "terminal:sendInput",
+        category: "terminal",
+        handler: this.sendInput.bind(this),
+      },
+    ];
+  }
+
+  /**
+   * 发送输入到进程（事件类型，无返回值）
+   */
+  sendInput(_event, { processId, input }) {
+    const processInfo = this.processManager.getProcess(processId);
+    if (!processInfo) {
+      logToFile(`Process not found: ${processId}`, "ERROR");
+      return;
+    }
+
+    try {
+      if (processInfo.type === "node-pty") {
+        processInfo.process.write(input);
+      } else if (processInfo.type === "ssh2" && processInfo.stream) {
+        processInfo.stream.write(input);
+      } else if (processInfo.type === "telnet" && processInfo.process) {
+        processInfo.process.shell((err, stream) => {
+          if (err) {
+            logToFile(`Error getting telnet shell: ${err.message}`, "ERROR");
+            return;
+          }
+          stream.write(input);
+        });
+      } else {
+        logToFile(
+          `Invalid process type or stream for input: ${processId}`,
+          "ERROR",
+        );
+      }
+    } catch (error) {
+      logToFile(
+        `Error sending input to process ${processId}: ${error.message}`,
+        "ERROR",
+      );
+    }
+  }
+
+  /**
    * 发送数据到进程
    */
   async sendToProcess(event, processId, data) {

@@ -19,6 +19,7 @@ const UtilityHandlers = require("../ipc/handlers/utilityHandlers");
 const ConnectionHandlers = require("../ipc/handlers/connectionHandlers");
 const SshKeyHandlers = require("../ipc/handlers/sshKeyHandlers");
 const MemoryHandlers = require("../ipc/handlers/memoryHandlers");
+const ExternalEditorHandlers = require("../ipc/handlers/externalEditorHandlers");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
@@ -296,6 +297,12 @@ class IPCSetup {
       this.terminalHandlers.getHandlers().forEach(({ channel, handler }) => {
         safeHandle(ipcMain, channel, handler);
       });
+      // 注册事件类型处理器（使用ipcMain.on）
+      if (typeof this.terminalHandlers.getEventHandlers === "function") {
+        this.terminalHandlers.getEventHandlers().forEach(({ channel, handler }) => {
+          ipcMain.on(channel, handler);
+        });
+      }
       logToFile("Terminal handlers registered", "INFO");
     } catch (error) {
       logToFile(`终端处理器初始化失败: ${error.message}`, "ERROR");
@@ -408,6 +415,21 @@ class IPCSetup {
   }
 
   /**
+   * 初始化外部编辑器处理器
+   */
+  initializeExternalEditorHandlers() {
+    try {
+      const externalEditorHandlers = new ExternalEditorHandlers();
+      externalEditorHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("External editor handlers registered", "INFO");
+    } catch (error) {
+      logToFile(`外部编辑器处理器初始化失败: ${error.message}`, "ERROR");
+    }
+  }
+
+  /**
    * 在应用启动时执行的初始化（在窗口创建前）
    */
   initializeBeforeWindow() {
@@ -424,6 +446,7 @@ class IPCSetup {
     this.initializeConnectionHandlers();
     this.initializeSshKeyHandlers();
     this.initializeMemoryHandlers();
+    this.initializeExternalEditorHandlers();
   }
 
   /**
