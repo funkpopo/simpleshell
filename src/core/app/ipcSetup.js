@@ -10,6 +10,7 @@ const AppHandlers = require("../ipc/handlers/appHandlers");
 const DialogHandlers = require("../ipc/handlers/dialogHandlers");
 const WindowHandlers = require("../ipc/handlers/windowHandlers");
 const SSHHandlers = require("../ipc/handlers/sshHandlers");
+const ProxyHandlers = require("../ipc/handlers/proxyHandlers");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
@@ -115,6 +116,13 @@ class IPCSetup {
         safeHandle(ipcMain, channel, handler);
       });
       logToFile("Window handlers registered", "INFO");
+
+      // 注册代理处理器
+      const proxyHandlers = new ProxyHandlers();
+      proxyHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("Proxy handlers registered", "INFO");
 
       // 注册基本终端处理器
       this.registerBasicTerminalHandlers();
