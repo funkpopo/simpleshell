@@ -65,6 +65,14 @@ function getAllProcesses() {
 }
 
 /**
+ * 获取进程映射表
+ * @returns {Map}
+ */
+function getProcessMap() {
+  return childProcesses;
+}
+
+/**
  * 清空所有进程
  */
 function clearAllProcesses() {
@@ -248,6 +256,7 @@ module.exports = {
   setProcess,
   deleteProcess,
   getAllProcesses,
+  getProcessMap,
   clearAllProcesses,
   getProcessCount,
 
