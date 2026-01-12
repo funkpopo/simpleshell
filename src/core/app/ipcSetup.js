@@ -15,6 +15,7 @@ const TerminalHandlers = require("../ipc/handlers/terminalHandlers");
 const AIHandlers = require("../ipc/handlers/aiHandlers");
 const FileHandlers = require("../ipc/handlers/fileHandlers");
 const SftpHandlers = require("../ipc/handlers/sftpHandlers");
+const UtilityHandlers = require("../ipc/handlers/utilityHandlers");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
@@ -344,6 +345,21 @@ class IPCSetup {
   }
 
   /**
+   * 初始化实用工具处理器
+   */
+  initializeUtilityHandlers() {
+    try {
+      const utilityHandlers = new UtilityHandlers();
+      utilityHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("Utility handlers registered", "INFO");
+    } catch (error) {
+      logToFile(`实用工具处理器初始化失败: ${error.message}`, "ERROR");
+    }
+  }
+
+  /**
    * 在应用启动时执行的初始化（在窗口创建前）
    */
   initializeBeforeWindow() {
@@ -356,6 +372,7 @@ class IPCSetup {
     this.initializeAIHandlers();
     this.initializeFileHandlers();
     this.initializeSftpHandlers();
+    this.initializeUtilityHandlers();
   }
 
   /**

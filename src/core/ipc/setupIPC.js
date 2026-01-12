@@ -26,7 +26,6 @@ const { logToFile } = require("../utils/logger");
 const { safeHandle } = require("./ipcResponse");
 const processManager = require("../process/processManager");
 const externalEditorManager = require("../../modules/sftp/externalEditorManager");
-const ipQuery = require("../../modules/system-info/ip-query");
 const ipcSetup = require("../app/ipcSetup");
 
 function setupIPC(mainWindow) {
@@ -131,21 +130,6 @@ function setupIPC(mainWindow) {
     } catch (error) {
       logToFile(`获取标签页连接状态失败: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
-    }
-  });
-
-  // IP地址查询API
-  safeHandle(ipcMain, "ip:query", async (event, ip = "") => {
-    try {
-      const proxyManager = require("../proxy/proxy-manager");
-      const proxyConfig = proxyManager.getDefaultProxyConfig();
-      return await ipQuery.queryIpAddress(ip, logToFile, proxyConfig);
-    } catch (error) {
-      logToFile(`IP地址查询失败: ${error.message}`, "ERROR");
-      return {
-        ret: "failed",
-        msg: error.message,
-      };
     }
   });
 
