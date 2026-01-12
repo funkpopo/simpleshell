@@ -7,9 +7,14 @@ const LatencyHandlers = require("../ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("../ipc/handlers/localTerminalHandlers");
 const SettingsHandlers = require("../ipc/handlers/settingsHandlers");
 const AppHandlers = require("../ipc/handlers/appHandlers");
+const DialogHandlers = require("../ipc/handlers/dialogHandlers");
+const WindowHandlers = require("../ipc/handlers/windowHandlers");
+const SSHHandlers = require("../ipc/handlers/sshHandlers");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
+const sftpCore = require("../transfer/sftp-engine");
+const sftpTransfer = require("../../modules/sftp/sftpTransfer");
 
 /**
  * IPC设置模块
@@ -19,6 +24,7 @@ class IPCSetup {
   constructor() {
     this.latencyHandlers = null;
     this.localTerminalHandlers = null;
+    this.sshHandlers = null;
   }
 
   /**
@@ -95,6 +101,20 @@ class IPCSetup {
         safeHandle(ipcMain, channel, handler);
       });
       logToFile("App handlers registered", "INFO");
+
+      // 注册对话框处理器
+      const dialogHandlers = new DialogHandlers();
+      dialogHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("Dialog handlers registered", "INFO");
+
+      // 注册窗口处理器
+      const windowHandlers = new WindowHandlers();
+      windowHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("Window handlers registered", "INFO");
 
       // 注册基本终端处理器
       this.registerBasicTerminalHandlers();
@@ -224,6 +244,28 @@ class IPCSetup {
   }
 
   /**
+   * 初始化SSH/Telnet处理器
+   */
+  initializeSSHHandlers() {
+    try {
+      this.sshHandlers = new SSHHandlers({
+        childProcesses: processManager.getProcessMap(),
+        connectionManager,
+        sftpCore,
+        sftpTransfer,
+        getNextProcessId: () => processManager.getNextProcessId(),
+        getLatencyHandlers: () => this.latencyHandlers,
+      });
+      this.sshHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("SSH/Telnet handlers registered", "INFO");
+    } catch (error) {
+      logToFile(`SSH/Telnet处理器初始化失败: ${error.message}`, "ERROR");
+    }
+  }
+
+  /**
    * 在应用启动时执行的初始化（在窗口创建前）
    */
   initializeBeforeWindow() {
@@ -231,6 +273,7 @@ class IPCSetup {
     this.registerBatchHandlers();
     this.initializeLatencyHandlers();
     this.registerCriticalHandlers();
+    this.initializeSSHHandlers();
   }
 
   /**
