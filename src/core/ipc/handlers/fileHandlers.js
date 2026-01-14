@@ -453,8 +453,15 @@ class FileHandlers {
 
   async cancelTransfer(event, tabId, transferKey) {
     try {
-      const result = await sftpTransfer.cancelTransfer(transferKey);
-      this.activeTransfers.delete(`${tabId}-${transferKey}`);
+      // NOTE: sftpTransfer.cancelTransfer uses strict signature (tabId, transferKey).
+      const result = await sftpTransfer.cancelTransfer(tabId, transferKey);
+
+      // Clean up any local bookkeeping that maps to this transferKey (if present).
+      for (const [k, v] of this.activeTransfers.entries()) {
+        if (v === transferKey) {
+          this.activeTransfers.delete(k);
+        }
+      }
       return result;
     } catch (error) {
       logToFile(`Error canceling transfer: ${error.message}`, "ERROR");
@@ -775,7 +782,9 @@ class FileHandlers {
   cleanup() {
     for (const [key, transferKey] of this.activeTransfers) {
       try {
-        sftpTransfer.cancelTransfer(transferKey);
+        // Back-compat: cancelTransfer can take only transferKey, but we also try to pass tabId when we can.
+        const tabId = String(key).split("-")[0];
+        sftpTransfer.cancelTransfer(tabId, transferKey);
       } catch (error) {
         logToFile(
           `Error cleaning up transfer ${key}: ${error.message}`,

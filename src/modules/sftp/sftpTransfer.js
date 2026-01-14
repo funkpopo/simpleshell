@@ -2200,6 +2200,15 @@ async function handleCancelTransfer(event, tabId, transferKey) {
       "INFO",
     );
 
+    // 如果没有tabId，无法做“按tabId兜底查找”，直接返回
+    if (!tabId) {
+      return {
+        success: false,
+        error: "没有找到活动的传输任务",
+        userCancelled: true,
+      };
+    }
+
     // 查找与tabId相关的任何传输
     let foundTransferKey = null;
     for (const [key, transfer] of activeTransfers.entries()) {
@@ -2449,6 +2458,15 @@ async function handleCancelTransfer(event, tabId, transferKey) {
 }
 
 /**
+ * Cancel a transfer (strict signature).
+ * @param {string|number} tabId
+ * @param {string} transferKey
+ */
+async function cancelTransfer(tabId, transferKey) {
+  return handleCancelTransfer(null, tabId, transferKey);
+}
+
+/**
  * 清理指定tab的所有活跃SFTP传输
  * 当连接关闭、应用退出前或页面刷新时调用，确保所有相关资源被释放
  * @param {string|number} tabId 要清理的标签ID
@@ -2523,6 +2541,13 @@ async function cleanupActiveTransfersForTab(tabId) {
 
 module.exports = {
   init,
+  // Back-compat aliases used by IPC handlers / older UI code
+  downloadFile: handleDownloadFile,
+  downloadFiles: handleDownloadFiles,
+  uploadFile: handleUploadFile,
+  uploadFolder: handleUploadFolder,
+  downloadFolder: handleDownloadFolder,
+  cancelTransfer,
   handleDownloadFile,
   handleDownloadFiles,
   handleUploadFile,
