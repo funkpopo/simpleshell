@@ -3,6 +3,7 @@ const { logToFile } = require("../utils/logger");
 const { safeHandle, wrapIpcHandler } = require("../ipc/ipcResponse");
 const { registerReconnectHandlers } = require("../ipc/handlers/reconnectHandlers");
 const { registerBatchHandlers } = require("../ipc/handlers/batchHandlers");
+const { registerBatchInvokeHandlers } = require("../ipc/handlers/batchInvokeHandlers");
 const LatencyHandlers = require("../ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("../ipc/handlers/localTerminalHandlers");
 const SettingsHandlers = require("../ipc/handlers/settingsHandlers");
@@ -435,6 +436,7 @@ class IPCSetup {
   initializeBeforeWindow() {
     this.registerReconnectHandlers();
     this.registerBatchHandlers();
+    registerBatchInvokeHandlers(ipcMain, safeHandle);
     this.initializeLatencyHandlers();
     this.registerCriticalHandlers();
     this.initializeSSHHandlers();

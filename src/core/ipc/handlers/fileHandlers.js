@@ -136,6 +136,78 @@ class FileHandlers {
   // 实现各个处理器方法
   async listFiles(event, tabId, path, options = {}) {
     try {
+      // 支持非阻塞/分片目录加载：
+      // 立即返回 { chunked, token }，并通过 listFiles:chunk 增量推送 items
+      if (options && options.nonBlocking) {
+        const requestedPath = path;
+        const chunkSize =
+          typeof options.chunkSize === "number" && options.chunkSize > 0
+            ? Math.floor(options.chunkSize)
+            : 300;
+        const token = `${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}`;
+
+        // Fire-and-forget chunk producer
+        Promise.resolve()
+          .then(async () => {
+            const result = await sftpCore.listFiles(tabId, requestedPath, {
+              ...options,
+              nonBlocking: false, // avoid nested nonBlocking semantics in lower layers
+            });
+
+            const send = (payload) => {
+              try {
+                if (event && event.sender && !event.sender.isDestroyed()) {
+                  event.sender.send("listFiles:chunk", payload);
+                }
+              } catch (_) {
+                // ignore send errors (window may be gone)
+              }
+            };
+
+            if (!result || result.success === false) {
+              send({
+                tabId,
+                path: requestedPath,
+                token,
+                items: [],
+                done: true,
+                error: result?.error || "listFiles failed",
+              });
+              return;
+            }
+
+            const data = Array.isArray(result.data) ? result.data : [];
+            for (let i = 0; i < data.length; i += chunkSize) {
+              const items = data.slice(i, i + chunkSize);
+              const done = i + chunkSize >= data.length;
+              send({ tabId, path: requestedPath, token, items, done });
+            }
+
+            // Ensure done signal even for empty directories
+            if (data.length === 0) {
+              send({ tabId, path: requestedPath, token, items: [], done: true });
+            }
+          })
+          .catch((err) => {
+            try {
+              if (event && event.sender && !event.sender.isDestroyed()) {
+                event.sender.send("listFiles:chunk", {
+                  tabId,
+                  path: requestedPath,
+                  token,
+                  items: [],
+                  done: true,
+                  error: err?.message || String(err),
+                });
+              }
+            } catch (_) {}
+          });
+
+        return { success: true, data: [], chunked: true, token };
+      }
+
       const result = await sftpCore.listFiles(tabId, path, options);
       return result;
     } catch (error) {
