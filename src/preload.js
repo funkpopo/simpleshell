@@ -3,31 +3,23 @@
 
 const { contextBridge, ipcRenderer } = require("electron");
 
+// Listener wrapper stores (avoid mutating callback functions with hidden properties)
+const topConnectionsChangedWrappers = new WeakMap();
+const connectionsChangedWrappers = new WeakMap();
+const streamWrappersByChannel = {
+  "stream-chunk": new WeakMap(),
+  "stream-end": new WeakMap(),
+  "stream-error": new WeakMap(),
+};
+
 // 暴露安全的API给渲染进程
 contextBridge.exposeInMainWorld("terminalAPI", {
   // 发送命令到主进程处理 (用于模拟终端)
   sendCommand: (command) => ipcRenderer.invoke("terminal:command", command),
 
   // 终端进程管理
-  onProcessData: (callback) => ipcRenderer.on("terminal:processData", callback),
-  onResizeTerminal: (callback) =>
-    ipcRenderer.on("terminal:resizeTerminal", callback),
-  onProcessCompletion: (callback) =>
-    ipcRenderer.on("terminal:processCompletion", callback),
-  onProcessExit: (callback) => ipcRenderer.on("terminal:processExit", callback),
-  onSshConnectionUpdated: (callback) =>
-    ipcRenderer.on("terminal:sshConnectionUpdated", callback),
-  removeProcessListeners: () => {
-    ipcRenderer.removeAllListeners("terminal:processData");
-    ipcRenderer.removeAllListeners("terminal:resizeTerminal");
-    ipcRenderer.removeAllListeners("terminal:processCompletion");
-    ipcRenderer.removeAllListeners("terminal:processExit");
-    ipcRenderer.removeAllListeners("terminal:sshConnectionUpdated");
-  },
   sendToProcess: (processId, data) =>
     ipcRenderer.invoke("terminal:sendToProcess", processId, data),
-  setTerminalSize: (processId, cols, rows) =>
-    ipcRenderer.invoke("terminal:setTerminalSize", processId, cols, rows),
   killProcess: (processId) =>
     ipcRenderer.invoke("terminal:killProcess", processId),
   // 新增：获取进程信息
@@ -110,20 +102,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     };
   },
 
-  // 兼容旧版API
-  onOutput: (callback) => {
-    const listener = (_, data) => callback(data);
-    ipcRenderer.on("terminal:output", listener);
-    return () => {
-      ipcRenderer.removeListener("terminal:output", listener);
-    };
-  },
-
   removeOutputListener: (processId) => {
     if (processId) {
       ipcRenderer.removeAllListeners(`process:output:${processId}`);
-    } else {
-      ipcRenderer.removeAllListeners("terminal:output");
     }
   },
 
@@ -137,29 +118,39 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   onTopConnectionsChanged: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrapped = (_e, ids) => callback(ids);
+    topConnectionsChangedWrappers.set(callback, wrapped);
     ipcRenderer.on("top-connections-changed", wrapped);
-    return () => ipcRenderer.removeListener("top-connections-changed", wrapped);
+    return () => {
+      ipcRenderer.removeListener("top-connections-changed", wrapped);
+      topConnectionsChangedWrappers.delete(callback);
+    };
   },
   offTopConnectionsChanged: (callback) => {
-    const wrapped = callback && callback._wrappedCallback ? callback._wrappedCallback : callback;
-    if (wrapped) ipcRenderer.removeListener("top-connections-changed", wrapped);
+    if (!callback) return;
+    const wrapped = topConnectionsChangedWrappers.get(callback);
+    if (wrapped) {
+      ipcRenderer.removeListener("top-connections-changed", wrapped);
+      topConnectionsChangedWrappers.delete(callback);
+    }
   },
 
   // 连接配置变化事件监听
   onConnectionsChanged: (callback) => {
+    if (typeof callback !== "function") return () => {};
     const wrappedCallback = () => callback();
-    // 保存包装后的回调引用，以便正确移除
-    callback._wrappedConnectionsCallback = wrappedCallback;
+    connectionsChangedWrappers.set(callback, wrappedCallback);
     ipcRenderer.on("connections-changed", wrappedCallback);
     return () => {
       ipcRenderer.removeListener("connections-changed", wrappedCallback);
+      connectionsChangedWrappers.delete(callback);
     };
   },
   offConnectionsChanged: (callback) => {
-    // 使用保存的包装回调引用来正确移除监听器
-    const wrappedCallback = callback && callback._wrappedConnectionsCallback ? callback._wrappedConnectionsCallback : callback;
+    if (!callback) return;
+    const wrappedCallback = connectionsChangedWrappers.get(callback);
     if (wrappedCallback) {
       ipcRenderer.removeListener("connections-changed", wrappedCallback);
+      connectionsChangedWrappers.delete(callback);
     }
   },
 
@@ -208,10 +199,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         callback(event, data);
       };
       ipcRenderer.on(channel, wrappedCallback);
-      // 存储原始回调和包装回调的映射，用于后续移除
-      if (!callback._wrappedCallback) {
-        callback._wrappedCallback = wrappedCallback;
-      }
+      // 存储映射，用于后续移除（按 channel 区分）
+      streamWrappersByChannel[channel].set(callback, wrappedCallback);
     }
   },
   // 添加off方法作为removeListener的别名
@@ -219,8 +208,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     const validChannels = ["stream-chunk", "stream-end", "stream-error"];
     if (validChannels.includes(channel)) {
       // 使用包装的回调函数进行移除
-      const wrappedCallback = callback._wrappedCallback || callback;
-      ipcRenderer.removeListener(channel, wrappedCallback);
+      const wrappedCallback =
+        callback && streamWrappersByChannel[channel].get(callback);
+      if (wrappedCallback) {
+        ipcRenderer.removeListener(channel, wrappedCallback);
+        streamWrappersByChannel[channel].delete(callback);
+      }
     }
   },
   // 添加事件监听器移除方法
@@ -228,8 +221,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     const validChannels = ["stream-chunk", "stream-end", "stream-error"];
     if (validChannels.includes(channel)) {
       // 使用包装的回调函数进行移除
-      const wrappedCallback = callback._wrappedCallback || callback;
-      ipcRenderer.removeListener(channel, wrappedCallback);
+      const wrappedCallback =
+        callback && streamWrappersByChannel[channel].get(callback);
+      if (wrappedCallback) {
+        ipcRenderer.removeListener(channel, wrappedCallback);
+        streamWrappersByChannel[channel].delete(callback);
+      }
     }
   },
 
@@ -645,24 +642,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // SSH连接相关
   startSSH: (sshConfig) => ipcRenderer.invoke("terminal:startSSH", sshConfig),
-  // 兼容旧版: createSSHTerminal 别名，支持两种参数形式
-  // 用法1: createSSHTerminal(sshConfig)
-  // 用法2: createSSHTerminal(processId, sshConfig) -> processId 参数会被忽略
-  createSSHTerminal: (...args) => {
-    const [arg1, arg2] = args || [];
-    const sshConfig = arg2 && typeof arg2 === "object" ? arg2 : arg1;
-    return ipcRenderer.invoke("terminal:startSSH", sshConfig);
-  },
 
   // Telnet连接相关
   startTelnet: (telnetConfig) =>
     ipcRenderer.invoke("terminal:startTelnet", telnetConfig),
-  // 兼容旧版: createTelnetTerminal 别名，支持两种参数形式
-  createTelnetTerminal: (...args) => {
-    const [arg1, arg2] = args || [];
-    const telnetConfig = arg2 && typeof arg2 === "object" ? arg2 : arg1;
-    return ipcRenderer.invoke("terminal:startTelnet", telnetConfig);
-  },
 });
 
 // SSH密钥生成器API

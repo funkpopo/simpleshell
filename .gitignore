@@ -39,6 +39,12 @@ temp/*
 
 installer
 
+# 其他常见构建/打包产物（保险兜底）
+*.asar
+*.exe
+*.msi
+*.dmg
+
 .claude/
 
 CLAUDE.md
