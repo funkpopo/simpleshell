@@ -9,10 +9,6 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   sendCommand: (command) => ipcRenderer.invoke("terminal:command", command),
 
   // 终端进程管理
-  startCmd: (args) => ipcRenderer.invoke("terminal:startCmd", args),
-  startBash: (args) => ipcRenderer.invoke("terminal:startBash", args),
-  startSSH: (args) => ipcRenderer.invoke("terminal:startSSH", args),
-  startBatchSSH: (args) => ipcRenderer.invoke("terminal:startBatchSSH", args),
   onProcessData: (callback) => ipcRenderer.on("terminal:processData", callback),
   onResizeTerminal: (callback) =>
     ipcRenderer.on("terminal:resizeTerminal", callback),
@@ -593,18 +589,6 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       processId,
       isEditorMode,
     ),
-
-  // 新增: 写入pty的方法
-  writePty: (data) => ipcRenderer.invoke("terminal:writePty", data),
-
-  // 新增: 调整pty大小的方法
-  resizePty: (size) => ipcRenderer.invoke("terminal:resizePty", size),
-
-  // 新增: 复制剪贴板的方法
-  copyClipboard: (text) => ipcRenderer.invoke("clipboard:copy", text),
-
-  // 新增: 粘贴剪贴板的方法
-  pasteClipboard: () => ipcRenderer.invoke("clipboard:paste"),
 
   // 命令历史相关API
   addToCommandHistory: (command) =>
