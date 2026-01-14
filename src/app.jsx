@@ -404,22 +404,6 @@ function AppContent() {
 
   // 应用启动时加载连接配置和预加载组件
   React.useEffect(() => {
-    const findConnectionsByIds = (ids, allConnections) => {
-      const found = [];
-      const search = (items) => {
-        for (const item of items) {
-          if (item.type === "group") {
-            search(item.items || []);
-          } else if (ids.includes(item.id)) {
-            found.push(item);
-          }
-        }
-      };
-      search(allConnections);
-      // Preserve the order from the ids array
-      return ids.map((id) => found.find((c) => c.id === id)).filter(Boolean);
-    };
-
     const loadData = async () => {
       try {
         if (window.terminalAPI) {
@@ -489,21 +473,6 @@ function AppContent() {
 
   // 当连接列表更新时，同步更新置顶连接列表
   React.useEffect(() => {
-    const findConnectionsByIds = (ids, allConnections) => {
-      const found = [];
-      const search = (items) => {
-        for (const item of items) {
-          if (item.type === "group") {
-            search(item.items || []);
-          } else if (ids.includes(item.id)) {
-            found.push(item);
-          }
-        }
-      };
-      search(allConnections);
-      return ids.map((id) => found.find((c) => c.id === id)).filter(Boolean);
-    };
-
     if (window.terminalAPI?.loadTopConnections) {
       window.terminalAPI
         .loadTopConnections()
@@ -525,21 +494,6 @@ function AppContent() {
   // 热门连接实时更新订阅（无需重启）
   React.useEffect(() => {
     if (!window.terminalAPI?.onTopConnectionsChanged) return undefined;
-
-    const findConnectionsByIds = (ids, allConnections) => {
-      const found = [];
-      const search = (items) => {
-        for (const item of items) {
-          if (item.type === "group") {
-            search(item.items || []);
-          } else if (ids.includes(item.id)) {
-            found.push(item);
-          }
-        }
-      };
-      search(allConnections);
-      return ids.map((id) => found.find((c) => c.id === id)).filter(Boolean);
-    };
 
     const handleTopChanged = async (lastConnectionObjs) => {
       try {
