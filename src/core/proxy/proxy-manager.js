@@ -1,5 +1,8 @@
 const { logToFile } = require("../utils/logger");
 const configService = require("../../services/configService");
+const net = require("node:net");
+const tls = require("node:tls");
+const { Buffer } = require("node:buffer");
 
 class ProxyManager {
   constructor() {
@@ -224,6 +227,135 @@ class ProxyManager {
   }
 
   /**
+   * 异步确保系统代理已检测（支持 Electron 的 PAC/系统代理规则）
+   * @returns {Promise<object|null>}
+   */
+  async ensureSystemProxyConfig() {
+    // 已有缓存
+    if (this.systemProxyConfig && this.isValidProxyConfig(this.systemProxyConfig)) {
+      return this.systemProxyConfig;
+    }
+
+    // 先同步检测环境变量（快速路径）
+    try {
+      this.detectSystemProxy();
+      if (this.systemProxyConfig && this.isValidProxyConfig(this.systemProxyConfig)) {
+        return this.systemProxyConfig;
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    // 再尝试从 Electron session 解析系统代理（支持 Windows 系统代理 / PAC）
+    try {
+      const cfg = await this.detectElectronSystemProxy();
+      if (cfg && this.isValidProxyConfig(cfg)) {
+        this.systemProxyConfig = cfg;
+        return this.systemProxyConfig;
+      }
+    } catch (error) {
+      logToFile(`Electron system proxy detection failed: ${error.message}`, "WARN");
+    }
+
+    return null;
+  }
+
+  /**
+   * 从 Electron session.resolveProxy() 获取系统代理（含 PAC 结果）
+   * @returns {Promise<object|null>}
+   */
+  async detectElectronSystemProxy() {
+    let electronSession = null;
+    try {
+      // 在主进程中可用；在纯 Node 环境中可能不可用
+      electronSession = require("electron")?.session || null;
+    } catch (_) {
+      electronSession = null;
+    }
+
+    const defaultSession = electronSession?.defaultSession;
+    if (!defaultSession || typeof defaultSession.resolveProxy !== "function") {
+      return null;
+    }
+
+    // resolveProxy 不会真正发起网络请求，任意 URL 仅用于匹配规则
+    const proxyRules = await defaultSession.resolveProxy("http://example.com");
+    const parsed = this.parseElectronProxyRules(proxyRules);
+    return parsed;
+  }
+
+  /**
+   * 解析 Electron resolveProxy 返回的规则字符串
+   * 形如： "PROXY 127.0.0.1:7890; DIRECT"
+   *       "SOCKS5 127.0.0.1:1080; DIRECT"
+   * @param {string} rules
+   * @returns {object|null}
+   */
+  parseElectronProxyRules(rules) {
+    if (!rules || typeof rules !== "string") return null;
+
+    const entries = rules
+      .split(";")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    for (const entry of entries) {
+      if (/^DIRECT$/i.test(entry)) continue;
+
+      const parts = entry.split(/\s+/).filter(Boolean);
+      if (parts.length < 2) continue;
+
+      const scheme = String(parts[0]).toUpperCase();
+      const hostPort = parts.slice(1).join(" ");
+
+      const { host, port } = this.parseHostPort(hostPort);
+      if (!host || !port) continue;
+
+      const type = (() => {
+        // Electron: PROXY=HTTP 代理，HTTPS=HTTPS 代理，SOCKS/SOCKS5/SOCKS4
+        if (scheme === "PROXY") return "http";
+        if (scheme === "HTTPS") return "https";
+        if (scheme === "SOCKS5") return "socks5";
+        if (scheme === "SOCKS4") return "socks4";
+        if (scheme === "SOCKS") return "socks5";
+        return null;
+      })();
+
+      if (!type) continue;
+
+      return { type, host, port, source: "electron" };
+    }
+
+    return null;
+  }
+
+  /**
+   * 解析 host:port（兼容 IPv6 [::1]:7890）
+   * @param {string} hostPort
+   * @returns {{host: string|null, port: number|null}}
+   */
+  parseHostPort(hostPort) {
+    if (!hostPort || typeof hostPort !== "string") return { host: null, port: null };
+
+    const s = hostPort.trim();
+    if (!s) return { host: null, port: null };
+
+    // [IPv6]:port
+    const ipv6Match = s.match(/^\[([^\]]+)\]:(\d+)$/);
+    if (ipv6Match) {
+      return { host: ipv6Match[1], port: Number(ipv6Match[2]) };
+    }
+
+    // host:port (host 不含冒号)
+    const idx = s.lastIndexOf(":");
+    if (idx <= 0) return { host: null, port: null };
+    const host = s.slice(0, idx).trim();
+    const port = Number(s.slice(idx + 1));
+    if (!host || !Number.isFinite(port)) return { host: null, port: null };
+    return { host, port };
+  }
+
+  /**
    * 解析连接的代理配置
    * @param {object} sshConfig - SSH连接配置
    * @returns {object|null} 最终使用的代理配置
@@ -260,6 +392,409 @@ class ProxyManager {
     }
 
     return null;
+  }
+
+  /**
+   * resolveProxyConfig 的异步版本：当需要“系统代理”时，会尝试异步解析（Electron/PAC）
+   * @param {object} sshConfig
+   * @returns {Promise<object|null>}
+   */
+  async resolveProxyConfigAsync(sshConfig) {
+    // 如果连接明确配置了代理（自定义 host/port）
+    if (sshConfig?.proxy && !sshConfig.proxy.useDefault) {
+      return sshConfig.proxy;
+    }
+
+    // useDefault/未配置代理：先默认代理，再系统代理（系统代理可能需要异步解析）
+    if (!sshConfig?.proxy || sshConfig.proxy.useDefault) {
+      if (this.defaultProxyConfig) return this.defaultProxyConfig;
+      return await this.ensureSystemProxyConfig();
+    }
+
+    return null;
+  }
+
+  /**
+   * 通过代理创建到目标的 TCP 隧道 socket（用于 ssh2 的 sock）
+   * @param {object} proxyConfig
+   * @param {string} targetHost
+   * @param {number} targetPort
+   * @param {object} options
+   * @returns {Promise<import("net").Socket>}
+   */
+  async createTunnelSocket(proxyConfig, targetHost, targetPort, options = {}) {
+    const timeoutMs = Number(options.timeoutMs) || 15000;
+    const type = String(proxyConfig?.type || "").toLowerCase();
+
+    if (!proxyConfig || !this.isValidProxyConfig(proxyConfig)) {
+      throw new Error("Invalid proxy configuration");
+    }
+
+    if (type === "http" || type === "https") {
+      return await this._connectViaHttpProxy(proxyConfig, targetHost, targetPort, { timeoutMs });
+    }
+    if (type === "socks5") {
+      return await this._connectViaSocks5(proxyConfig, targetHost, targetPort, { timeoutMs });
+    }
+    if (type === "socks4") {
+      return await this._connectViaSocks4(proxyConfig, targetHost, targetPort, { timeoutMs });
+    }
+
+    throw new Error(`Unsupported proxy type: ${proxyConfig.type}`);
+  }
+
+  _createTimeoutError(message) {
+    const err = new Error(message || "Proxy connection timeout");
+    err.code = "ETIMEDOUT";
+    return err;
+  }
+
+  _withTimeout(promise, timeoutMs, message) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(this._createTimeoutError(message)), timeoutMs),
+      ),
+    ]);
+  }
+
+  _readUntil(socket, delimiter, timeoutMs) {
+    return this._withTimeout(
+      new Promise((resolve, reject) => {
+        let buffer = Buffer.alloc(0);
+
+        const cleanup = () => {
+          socket.off("data", onData);
+          socket.off("error", onError);
+          socket.off("close", onClose);
+        };
+
+        const onError = (e) => {
+          cleanup();
+          reject(e);
+        };
+        const onClose = () => {
+          cleanup();
+          reject(new Error("Proxy socket closed before response"));
+        };
+        const onData = (chunk) => {
+          buffer = Buffer.concat([buffer, chunk]);
+          const idx = buffer.indexOf(delimiter);
+          if (idx === -1) return;
+
+          const head = buffer.slice(0, idx + delimiter.length);
+          const rest = buffer.slice(idx + delimiter.length);
+          cleanup();
+          resolve({ head, rest });
+        };
+
+        socket.on("data", onData);
+        socket.once("error", onError);
+        socket.once("close", onClose);
+      }),
+      timeoutMs,
+      "Proxy handshake timed out",
+    );
+  }
+
+  async _connectViaHttpProxy(proxyConfig, targetHost, targetPort, { timeoutMs }) {
+    const connectPromise = new Promise((resolve, reject) => {
+      const onError = (e) => reject(e);
+
+      const socket =
+        String(proxyConfig.type).toLowerCase() === "https"
+          ? tls.connect(proxyConfig.port, proxyConfig.host)
+          : net.connect(proxyConfig.port, proxyConfig.host);
+
+      socket.setNoDelay(true);
+      socket.once("error", onError);
+      socket.once("connect", () => {
+        socket.off("error", onError);
+        resolve(socket);
+      });
+    });
+
+    const socket = await this._withTimeout(
+      connectPromise,
+      timeoutMs,
+      "Connect to HTTP proxy timed out",
+    );
+
+    try {
+      const headers = [
+        `CONNECT ${targetHost}:${targetPort} HTTP/1.1`,
+        `Host: ${targetHost}:${targetPort}`,
+        "Proxy-Connection: Keep-Alive",
+        "Connection: Keep-Alive",
+      ];
+
+      if (proxyConfig.username) {
+        const token = Buffer.from(
+          `${proxyConfig.username}:${proxyConfig.password || ""}`,
+        ).toString("base64");
+        headers.push(`Proxy-Authorization: Basic ${token}`);
+      }
+
+      socket.write(headers.join("\r\n") + "\r\n\r\n");
+
+      const { head, rest } = await this._readUntil(
+        socket,
+        Buffer.from("\r\n\r\n"),
+        timeoutMs,
+      );
+
+      const headStr = head.toString("utf8");
+      const statusLine = (headStr.split("\r\n")[0] || "").trim();
+      const match = statusLine.match(/^HTTP\/\d+\.\d+\s+(\d+)/i);
+      const code = match ? Number(match[1]) : 0;
+
+      if (code !== 200) {
+        socket.destroy();
+        if (code === 407) {
+          throw new Error(`HTTP proxy authentication required: ${statusLine}`);
+        }
+        throw new Error(`HTTP proxy CONNECT failed: ${statusLine}`);
+      }
+
+      // 把多余数据塞回去（极少数代理会在 CONNECT 后立刻发送额外数据）
+      if (rest && rest.length > 0 && typeof socket.unshift === "function") {
+        socket.unshift(rest);
+      }
+
+      return socket;
+    } catch (error) {
+      try {
+        socket.destroy();
+      } catch (_) {
+        // ignore
+      }
+      throw error;
+    }
+  }
+
+  _readExact(socket, size, timeoutMs) {
+    return this._withTimeout(
+      new Promise((resolve, reject) => {
+        let buffer = Buffer.alloc(0);
+
+        const cleanup = () => {
+          socket.off("data", onData);
+          socket.off("error", onError);
+          socket.off("close", onClose);
+        };
+        const onError = (e) => {
+          cleanup();
+          reject(e);
+        };
+        const onClose = () => {
+          cleanup();
+          reject(new Error("Proxy socket closed unexpectedly"));
+        };
+        const onData = (chunk) => {
+          buffer = Buffer.concat([buffer, chunk]);
+          if (buffer.length < size) return;
+          const out = buffer.slice(0, size);
+          const rest = buffer.slice(size);
+          cleanup();
+          if (rest.length > 0 && typeof socket.unshift === "function") {
+            socket.unshift(rest);
+          }
+          resolve(out);
+        };
+
+        socket.on("data", onData);
+        socket.once("error", onError);
+        socket.once("close", onClose);
+      }),
+      timeoutMs,
+      "Proxy handshake timed out",
+    );
+  }
+
+  async _connectViaSocks5(proxyConfig, targetHost, targetPort, { timeoutMs }) {
+    const socket = await this._withTimeout(
+      new Promise((resolve, reject) => {
+        const s = net.connect(proxyConfig.port, proxyConfig.host);
+        s.setNoDelay(true);
+        s.once("error", reject);
+        s.once("connect", () => resolve(s));
+      }),
+      timeoutMs,
+      "Connect to SOCKS5 proxy timed out",
+    );
+
+    try {
+      const hasAuth = Boolean(proxyConfig.username);
+      const methods = hasAuth ? [0x02, 0x00] : [0x00];
+      socket.write(Buffer.from([0x05, methods.length, ...methods]));
+
+      const methodResp = await this._readExact(socket, 2, timeoutMs);
+      if (methodResp[0] !== 0x05) {
+        throw new Error("Invalid SOCKS5 proxy response (bad version)");
+      }
+      const method = methodResp[1];
+      if (method === 0xff) {
+        throw new Error("SOCKS5: no acceptable authentication methods");
+      }
+
+      if (method === 0x02) {
+        const u = Buffer.from(String(proxyConfig.username || ""), "utf8");
+        const p = Buffer.from(String(proxyConfig.password || ""), "utf8");
+        if (u.length > 255 || p.length > 255) {
+          throw new Error("SOCKS5: username/password too long");
+        }
+        socket.write(
+          Buffer.concat([Buffer.from([0x01, u.length]), u, Buffer.from([p.length]), p]),
+        );
+        const authResp = await this._readExact(socket, 2, timeoutMs);
+        if (authResp[0] !== 0x01 || authResp[1] !== 0x00) {
+          throw new Error("SOCKS5 authentication failed");
+        }
+      } else if (method !== 0x00) {
+        throw new Error(`SOCKS5: unsupported auth method selected: 0x${method.toString(16)}`);
+      }
+
+      // CONNECT request
+      const atyp = (() => {
+        const ipType = net.isIP(targetHost);
+        if (ipType === 4) return 0x01;
+        if (ipType === 6) return 0x04;
+        return 0x03;
+      })();
+
+      let addrPart;
+      if (atyp === 0x01) {
+        addrPart = Buffer.from(targetHost.split(".").map((n) => Number(n)));
+      } else if (atyp === 0x04) {
+        // 16 bytes IPv6
+        const packed = this._packIPv6(targetHost);
+        addrPart = packed;
+      } else {
+        const domain = Buffer.from(String(targetHost), "utf8");
+        if (domain.length > 255) {
+          throw new Error("SOCKS5: domain name too long");
+        }
+        addrPart = Buffer.concat([Buffer.from([domain.length]), domain]);
+      }
+
+      const portPart = Buffer.alloc(2);
+      portPart.writeUInt16BE(Number(targetPort), 0);
+
+      socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00, atyp]), addrPart, portPart]));
+
+      const head = await this._readExact(socket, 4, timeoutMs);
+      if (head[0] !== 0x05) throw new Error("Invalid SOCKS5 proxy response (bad version)");
+      const rep = head[1];
+      const repAtyp = head[3];
+      if (rep !== 0x00) {
+        throw new Error(`SOCKS5 CONNECT failed (REP=0x${rep.toString(16)})`);
+      }
+
+      // Consume BND.ADDR and BND.PORT
+      if (repAtyp === 0x01) {
+        await this._readExact(socket, 4 + 2, timeoutMs);
+      } else if (repAtyp === 0x04) {
+        await this._readExact(socket, 16 + 2, timeoutMs);
+      } else if (repAtyp === 0x03) {
+        const lenBuf = await this._readExact(socket, 1, timeoutMs);
+        const len = lenBuf[0];
+        await this._readExact(socket, len + 2, timeoutMs);
+      } else {
+        throw new Error("Invalid SOCKS5 proxy response (unknown ATYP)");
+      }
+
+      return socket;
+    } catch (error) {
+      try {
+        socket.destroy();
+      } catch (_) {
+        // ignore
+      }
+      throw error;
+    }
+  }
+
+  // 简单 IPv6 文本转 16 字节（不依赖额外依赖；仅满足常见格式）
+  _packIPv6(ip) {
+    // Node 内部没有公开 pack；这里用 net.isIP 校验后做最小实现
+    // 支持 :: 压缩
+    const input = String(ip);
+    const parts = input.split("::");
+    const left = parts[0] ? parts[0].split(":").filter(Boolean) : [];
+    const right = parts[1] ? parts[1].split(":").filter(Boolean) : [];
+    const fill = 8 - (left.length + right.length);
+    const full = [...left, ...Array(Math.max(0, fill)).fill("0"), ...right];
+    if (full.length !== 8) {
+      throw new Error("Invalid IPv6 address");
+    }
+    const buf = Buffer.alloc(16);
+    for (let i = 0; i < 8; i++) {
+      buf.writeUInt16BE(parseInt(full[i], 16) || 0, i * 2);
+    }
+    return buf;
+  }
+
+  async _connectViaSocks4(proxyConfig, targetHost, targetPort, { timeoutMs }) {
+    const socket = await this._withTimeout(
+      new Promise((resolve, reject) => {
+        const s = net.connect(proxyConfig.port, proxyConfig.host);
+        s.setNoDelay(true);
+        s.once("error", reject);
+        s.once("connect", () => resolve(s));
+      }),
+      timeoutMs,
+      "Connect to SOCKS4 proxy timed out",
+    );
+
+    try {
+      const userId = Buffer.from(String(proxyConfig.username || ""), "utf8");
+      const portBuf = Buffer.alloc(2);
+      portBuf.writeUInt16BE(Number(targetPort), 0);
+
+      const ipType = net.isIP(targetHost);
+      let ipBuf;
+      let hostBuf = null;
+
+      if (ipType === 4) {
+        ipBuf = Buffer.from(targetHost.split(".").map((n) => Number(n)));
+      } else {
+        // SOCKS4a：0.0.0.1 + domain\0
+        ipBuf = Buffer.from([0x00, 0x00, 0x00, 0x01]);
+        hostBuf = Buffer.from(String(targetHost), "utf8");
+      }
+
+      const reqParts = [
+        Buffer.from([0x04, 0x01]),
+        portBuf,
+        ipBuf,
+        userId,
+        Buffer.from([0x00]),
+      ];
+      if (hostBuf) {
+        reqParts.push(hostBuf, Buffer.from([0x00]));
+      }
+
+      socket.write(Buffer.concat(reqParts));
+
+      const resp = await this._readExact(socket, 8, timeoutMs);
+      const vn = resp[0];
+      const cd = resp[1];
+      if (vn !== 0x00 && vn !== 0x04) {
+        throw new Error("Invalid SOCKS4 proxy response");
+      }
+      if (cd !== 0x5a) {
+        throw new Error(`SOCKS4 CONNECT failed (CD=0x${cd.toString(16)})`);
+      }
+
+      return socket;
+    } catch (error) {
+      try {
+        socket.destroy();
+      } catch (_) {
+        // ignore
+      }
+      throw error;
+    }
   }
 
   /**

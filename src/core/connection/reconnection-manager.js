@@ -1,5 +1,6 @@
 const { EventEmitter } = require("events");
 const { logToFile } = require("../utils/logger");
+const proxyManager = require("../proxy/proxy-manager");
 
 // 重连策略配置 - 使用指数退避算法
 const RECONNECT_CONFIG = {
@@ -544,6 +545,7 @@ class ReconnectionManager extends EventEmitter {
   async createNewConnection(config) {
     const Client = require("ssh2").Client;
     const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
+    const { processSSHPrivateKey } = require("../utils/ssh-utils");
 
     return new Promise((resolve, reject) => {
       const ssh = new Client();
@@ -563,20 +565,50 @@ class ReconnectionManager extends EventEmitter {
         reject(err);
       });
 
+      const processedConfig = processSSHPrivateKey(config);
+
       const connectionOptions = {
-        host: config.host,
-        port: config.port || 22,
-        username: config.username,
-        password: config.password,
-        privateKey: config.privateKey,
-        passphrase: config.passphrase,
+        host: processedConfig.host,
+        port: processedConfig.port || 22,
+        username: processedConfig.username,
+        algorithms: getBasicSSHAlgorithms(),
         keepaliveInterval: 30000,
         keepaliveCountMax: 3,
         readyTimeout: 10000,
-        algorithms: getBasicSSHAlgorithms(),
       };
 
-      ssh.connect(connectionOptions);
+      if (processedConfig.password) connectionOptions.password = processedConfig.password;
+      if (processedConfig.privateKey) connectionOptions.privateKey = processedConfig.privateKey;
+      if (processedConfig.passphrase) connectionOptions.passphrase = processedConfig.passphrase;
+
+      (async () => {
+        try {
+          // 重连也必须走同一套代理逻辑（否则会退化为直连）
+          const resolvedProxyConfig = await proxyManager.resolveProxyConfigAsync(processedConfig);
+          const usingProxy =
+            resolvedProxyConfig &&
+            proxyManager.isValidProxyConfig(resolvedProxyConfig) &&
+            String(resolvedProxyConfig.type || "").toLowerCase() !== "none";
+
+          if (usingProxy) {
+            const sock = await proxyManager.createTunnelSocket(
+              resolvedProxyConfig,
+              processedConfig.host,
+              processedConfig.port || 22,
+              { timeoutMs: 10000 },
+            );
+            connectionOptions.sock = sock;
+          }
+
+          ssh.connect(connectionOptions);
+        } catch (e) {
+          clearTimeout(timeout);
+          try {
+            ssh.end();
+          } catch (_) {}
+          reject(e);
+        }
+      })();
     });
   }
 
