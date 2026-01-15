@@ -1,7 +1,6 @@
 const { logToFile } = require("../utils/logger");
 const configService = require("../../services/configService");
 const net = require("node:net");
-const tls = require("node:tls");
 const { Buffer } = require("node:buffer");
 
 class ProxyManager {
@@ -9,6 +8,7 @@ class ProxyManager {
     this.defaultProxyConfig = null;
     this.systemProxyConfig = null;
     this.initialized = false;
+    this._systemProxyByHost = new Map(); // cache for Electron/PAC per host
   }
 
   initialize() {
@@ -227,6 +227,38 @@ class ProxyManager {
   }
 
   /**
+   * 为指定目标主机解析系统代理（支持 Electron/PAC 按 host 分流）
+   * - 若 PAC/系统规则对该 host 返回 DIRECT，则返回 null（表示应直连/走 VPN 路由）
+   * - 环境变量代理无法按 host 分流，若存在则直接返回
+   * @param {string} targetHost
+   * @returns {Promise<object|null>}
+   */
+  async resolveSystemProxyForTarget(targetHost) {
+    // 环境变量代理（全局，不按 host）
+    if (this.systemProxyConfig && this.isValidProxyConfig(this.systemProxyConfig)) {
+      return this.systemProxyConfig;
+    }
+
+    const hostKey = String(targetHost || "").trim().toLowerCase();
+    if (!hostKey) return null;
+
+    if (this._systemProxyByHost.has(hostKey)) {
+      return this._systemProxyByHost.get(hostKey);
+    }
+
+    try {
+      const cfg = await this.detectElectronSystemProxyForTarget(targetHost);
+      // 缓存结果（包含 null，避免频繁 resolveProxy）
+      this._systemProxyByHost.set(hostKey, cfg || null);
+      return cfg || null;
+    } catch (error) {
+      logToFile(`Electron system proxy detection failed for ${targetHost}: ${error.message}`, "WARN");
+      this._systemProxyByHost.set(hostKey, null);
+      return null;
+    }
+  }
+
+  /**
    * 异步确保系统代理已检测（支持 Electron 的 PAC/系统代理规则）
    * @returns {Promise<object|null>}
    */
@@ -246,25 +278,15 @@ class ProxyManager {
       // ignore
     }
 
-    // 再尝试从 Electron session 解析系统代理（支持 Windows 系统代理 / PAC）
-    try {
-      const cfg = await this.detectElectronSystemProxy();
-      if (cfg && this.isValidProxyConfig(cfg)) {
-        this.systemProxyConfig = cfg;
-        return this.systemProxyConfig;
-      }
-    } catch (error) {
-      logToFile(`Electron system proxy detection failed: ${error.message}`, "WARN");
-    }
-
+    // 对于 Electron/PAC，代理可能按目标主机变化；这里不再设置全局 systemProxyConfig
     return null;
   }
 
   /**
-   * 从 Electron session.resolveProxy() 获取系统代理（含 PAC 结果）
+   * 从 Electron session.resolveProxy() 获取系统代理（含 PAC 结果），按目标主机解析
    * @returns {Promise<object|null>}
    */
-  async detectElectronSystemProxy() {
+  async detectElectronSystemProxyForTarget(targetHost) {
     let electronSession = null;
     try {
       // 在主进程中可用；在纯 Node 环境中可能不可用
@@ -278,8 +300,11 @@ class ProxyManager {
       return null;
     }
 
-    // resolveProxy 不会真正发起网络请求，任意 URL 仅用于匹配规则
-    const proxyRules = await defaultSession.resolveProxy("http://example.com");
+    // resolveProxy 不会真正发起网络请求，用目标 host 构造 URL 以便 PAC 做按 host 分流
+    // 注意：这里用 http://<host>/ 只是用于匹配规则，SSH 仍然是 TCP 直连/走代理隧道
+    const safeHost = String(targetHost || "").trim();
+    if (!safeHost) return null;
+    const proxyRules = await defaultSession.resolveProxy(`http://${safeHost}/`);
     const parsed = this.parseElectronProxyRules(proxyRules);
     return parsed;
   }
@@ -361,7 +386,12 @@ class ProxyManager {
    * @returns {object|null} 最终使用的代理配置
    */
   resolveProxyConfig(sshConfig) {
-    // 如果连接明确配置了代理
+    // 只有当连接项显式启用代理（存在 proxy 字段）时，才应用任何代理策略
+    if (!sshConfig || !sshConfig.proxy) {
+      return null;
+    }
+
+    // 如果连接明确配置了代理（自定义 host/port）
     if (sshConfig.proxy && !sshConfig.proxy.useDefault) {
       logToFile(
         `Using connection-specific proxy: ${sshConfig.proxy.host}:${sshConfig.proxy.port}`,
@@ -371,7 +401,7 @@ class ProxyManager {
     }
 
     // 如果连接配置了使用默认代理或没有配置代理信息
-    if (!sshConfig.proxy || sshConfig.proxy.useDefault) {
+    if (sshConfig.proxy.useDefault) {
       // 优先使用默认配置
       if (this.defaultProxyConfig) {
         logToFile(
@@ -400,18 +430,17 @@ class ProxyManager {
    * @returns {Promise<object|null>}
    */
   async resolveProxyConfigAsync(sshConfig) {
-    // 如果连接明确配置了代理（自定义 host/port）
-    if (sshConfig?.proxy && !sshConfig.proxy.useDefault) {
+    // 只有当连接项显式启用代理（存在 proxy 字段）时，才应用任何代理策略
+    if (!sshConfig?.proxy) return null;
+
+    // 自定义代理
+    if (!sshConfig.proxy.useDefault) {
       return sshConfig.proxy;
     }
 
-    // useDefault/未配置代理：先默认代理，再系统代理（系统代理可能需要异步解析）
-    if (!sshConfig?.proxy || sshConfig.proxy.useDefault) {
-      if (this.defaultProxyConfig) return this.defaultProxyConfig;
-      return await this.ensureSystemProxyConfig();
-    }
-
-    return null;
+    // useDefault：先默认代理，再系统代理（系统代理需要按目标 host 解析，支持 PAC/DIRECT）
+    if (this.defaultProxyConfig) return this.defaultProxyConfig;
+    return await this.resolveSystemProxyForTarget(sshConfig.host);
   }
 
   /**
@@ -430,6 +459,7 @@ class ProxyManager {
       throw new Error("Invalid proxy configuration");
     }
 
+    // 注意：系统规则中 "HTTPS host:port" 表示“用于 HTTPS 请求的代理”，但代理本身通常仍是 HTTP 代理（明文 CONNECT）
     if (type === "http" || type === "https") {
       return await this._connectViaHttpProxy(proxyConfig, targetHost, targetPort, { timeoutMs });
     }
@@ -501,10 +531,9 @@ class ProxyManager {
     const connectPromise = new Promise((resolve, reject) => {
       const onError = (e) => reject(e);
 
-      const socket =
-        String(proxyConfig.type).toLowerCase() === "https"
-          ? tls.connect(proxyConfig.port, proxyConfig.host)
-          : net.connect(proxyConfig.port, proxyConfig.host);
+      // 重要：不要把 proxy type=HTTPS 误当成“对代理服务器做 TLS 连接”
+      // 大多数系统代理的 HTTPS 代理依然是明文 HTTP 代理（通过 CONNECT 建隧道）
+      const socket = net.connect(proxyConfig.port, proxyConfig.host);
 
       socket.setNoDelay(true);
       socket.once("error", onError);
@@ -856,6 +885,11 @@ class ProxyManager {
     this.defaultProxyConfig = null;
     this.systemProxyConfig = null;
     this.initialized = false;
+    try {
+      this._systemProxyByHost?.clear?.();
+    } catch (_) {
+      // ignore
+    }
     logToFile("ProxyManager cleanup completed", "INFO");
   }
 }
