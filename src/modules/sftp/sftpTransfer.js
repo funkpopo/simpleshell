@@ -342,7 +342,7 @@ function init(
   logToFile("sftpTransfer initialized with resume support.", "INFO");
 }
 
-async function handleDownloadFile(event, tabId, remotePath) {
+async function handleDownloadFile(tabId, remotePath) {
   if (
     !sftpCore ||
     !dialog ||
