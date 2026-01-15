@@ -83,15 +83,26 @@ class ReconnectionManager extends EventEmitter {
   }
 
   // 注册连接会话
-  registerSession(sessionId, connection, config) {
+  registerSession(sessionId, connection, config, options = {}) {
+    const {
+      // 断线场景默认应进入 pending 并启动重连；手动注册（例如用户点“手动重连”）可关闭 autoStart
+      autoStart = true,
+      state,
+      failureReason = FAILURE_REASON.NETWORK,
+      intentionalClose = false,
+    } = options || {};
+
     const session = {
       id: sessionId,
       connection,
       config,
-      state: RECONNECT_STATE.CONNECTED,
+      state:
+        state ??
+        (autoStart ? RECONNECT_STATE.PENDING : RECONNECT_STATE.CONNECTED),
       retryCount: 0,
       lastAttempt: null,
       lastError: null,
+      intentionalClose,
       createdAt: Date.now(),
       reconnectHistory: [],
       qualityMetrics: {
@@ -108,6 +119,12 @@ class ReconnectionManager extends EventEmitter {
 
     logToFile(`注册重连会话: ${sessionId}`, "DEBUG");
     this.emit("sessionRegistered", { sessionId, session });
+
+    // 关键：很多场景（例如 ssh2 的 close 已经触发后才注册）不会再收到旧连接事件，
+    // 因此需要在注册时就直接安排一次重连。
+    if (autoStart && session.state === RECONNECT_STATE.PENDING) {
+      void this.scheduleReconnect(session, failureReason);
+    }
   }
 
   // 设置连接监听器
@@ -116,26 +133,30 @@ class ReconnectionManager extends EventEmitter {
 
     // 监听连接错误
     connection.on("error", (error) => {
-      this.handleConnectionError(session, error);
+      this.handleConnectionError(session, error, connection);
     });
 
     // 监听连接关闭
     connection.on("close", () => {
-      this.handleConnectionClose(session);
+      this.handleConnectionClose(session, connection);
     });
 
     // 监听连接超时
     connection.on("timeout", () => {
-      this.handleConnectionTimeout(session);
+      this.handleConnectionTimeout(session, connection);
     });
   }
 
   // 处理连接错误
-  async handleConnectionError(session, error) {
-    // 如果已经处于重连中或已连接状态，忽略旧连接的错误
+  async handleConnectionError(session, error, sourceConnection) {
+    // 仅处理“当前连接对象”的事件，避免旧连接残留事件干扰
+    if (session.connection !== sourceConnection) {
+      return;
+    }
+
+    // 如果已经处于重连中或已放弃，忽略
     if (
       session.state === RECONNECT_STATE.RECONNECTING ||
-      session.state === RECONNECT_STATE.CONNECTED ||
       session.state === RECONNECT_STATE.ABANDONED
     ) {
       logToFile(
@@ -165,11 +186,15 @@ class ReconnectionManager extends EventEmitter {
   }
 
   // 处理连接关闭
-  async handleConnectionClose(session) {
-    // 如果已经处于重连中或已连接状态，忽略旧连接的关闭事件
+  async handleConnectionClose(session, sourceConnection) {
+    // 仅处理“当前连接对象”的事件，避免旧连接残留事件干扰
+    if (session.connection !== sourceConnection) {
+      return;
+    }
+
+    // 如果已经处于重连中或已放弃，忽略
     if (
       session.state === RECONNECT_STATE.RECONNECTING ||
-      session.state === RECONNECT_STATE.CONNECTED ||
       session.state === RECONNECT_STATE.ABANDONED
     ) {
       logToFile(`忽略连接关闭(状态: ${session.state}): ${session.id}`, "DEBUG");
@@ -190,11 +215,15 @@ class ReconnectionManager extends EventEmitter {
   }
 
   // 处理连接超时
-  async handleConnectionTimeout(session) {
-    // 如果已经处于重连中或已连接状态，忽略旧连接的超时事件
+  async handleConnectionTimeout(session, sourceConnection) {
+    // 仅处理“当前连接对象”的事件，避免旧连接残留事件干扰
+    if (session.connection !== sourceConnection) {
+      return;
+    }
+
+    // 如果已经处于重连中或已放弃，忽略
     if (
       session.state === RECONNECT_STATE.RECONNECTING ||
-      session.state === RECONNECT_STATE.CONNECTED ||
       session.state === RECONNECT_STATE.ABANDONED
     ) {
       logToFile(`忽略连接超时(状态: ${session.state}): ${session.id}`, "DEBUG");
@@ -400,11 +429,6 @@ class ReconnectionManager extends EventEmitter {
       return;
     }
 
-    if (session.state === RECONNECT_STATE.CONNECTED) {
-      logToFile(`跳过重连(已连接): ${session.id}`, "DEBUG");
-      return;
-    }
-
     // 检查是否正在重连中（防止并发重连）
     if (session.state === RECONNECT_STATE.RECONNECTING) {
       logToFile(`跳过重连(正在重连中): ${session.id}`, "DEBUG");
@@ -428,6 +452,7 @@ class ReconnectionManager extends EventEmitter {
     this.statistics.totalAttempts++;
 
     try {
+      const attemptNumber = session.retryCount;
       // 创建新连接
       const newConnection = await this.createNewConnection(session.config);
 
@@ -456,7 +481,7 @@ class ReconnectionManager extends EventEmitter {
       session.reconnectHistory.push({
         timestamp: Date.now(),
         success: true,
-        attempts: session.retryCount,
+        attempts: attemptNumber,
         duration: Date.now() - session.lastAttempt,
       });
 
@@ -703,7 +728,12 @@ class ReconnectionManager extends EventEmitter {
       throw new Error("正在重连中");
     }
 
+    // 取消任何待执行的重连任务，避免并发
+    this.cancelPendingReconnect(sessionId);
+
     session.retryCount = 0; // 重置重试次数
+    session.intentionalClose = false;
+    session.state = RECONNECT_STATE.PENDING;
     logToFile(`手动触发重连: ${sessionId}`, "INFO");
     await this.executeReconnect(session);
   }
@@ -712,6 +742,7 @@ class ReconnectionManager extends EventEmitter {
   pauseReconnection(sessionId) {
     const session = this.sessions.get(sessionId);
     if (session) {
+      this.cancelPendingReconnect(sessionId);
       session.state = RECONNECT_STATE.ABANDONED;
       logToFile(`暂停重连: ${sessionId}`, "INFO");
     }
@@ -723,7 +754,7 @@ class ReconnectionManager extends EventEmitter {
     if (session && session.state === RECONNECT_STATE.ABANDONED) {
       session.state = RECONNECT_STATE.PENDING;
       session.retryCount = 0;
-      this.scheduleReconnect(session, FAILURE_REASON.NETWORK);
+      void this.scheduleReconnect(session, FAILURE_REASON.NETWORK);
       logToFile(`恢复重连: ${sessionId}`, "INFO");
     }
   }
