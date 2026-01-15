@@ -4,9 +4,12 @@ const { safeHandle } = require("../ipcResponse");
 
 // 存储重连事件监听器
 const reconnectListeners = new Map();
+let boundConnectionPool = null;
 
 // 注册重连相关的IPC处理器
 function registerReconnectHandlers(connectionPool) {
+  boundConnectionPool = connectionPool;
+
   // 监听重连状态请求
   safeHandle(
     ipcMain,
@@ -33,6 +36,21 @@ function registerReconnectHandlers(connectionPool) {
         // 如果没有连接，创建新连接
         const newConnection = await connectionPool.getConnection(sshConfig);
         return { success: true, connectionKey: newConnection.key };
+      }
+
+      // 如果还未注册重连会话（比如用户在连接正常时点击“手动重连”），先注册但不自动启动
+      const existingSession =
+        connectionPool.reconnectionManager?.getSessionStatus(connectionKey);
+      if (!existingSession) {
+        const conn = connectionPool.connections?.get(connectionKey);
+        if (conn && conn.client && conn.config) {
+          connectionPool.reconnectionManager.registerSession(
+            connectionKey,
+            conn.client,
+            conn.config,
+            { autoStart: false, state: "connected" },
+          );
+        }
       }
 
       // 触发手动重连
@@ -152,17 +170,19 @@ function registerReconnectHandlers(connectionPool) {
         });
       },
     );
-
-    // 连接丢失事件
-    connectionPool.reconnectionManager.on("connectionLost", ({ sessionId }) => {
-      const tabId = extractTabIdFromSessionId(sessionId);
-      broadcastToRenderer("connection-lost", {
-        tabId,
-        sessionId,
-        timestamp: Date.now(),
-      });
-    });
   }
+
+  // 连接丢失事件（实际由连接池发出，而非 reconnectionManager）
+  const onPoolConnectionLost = ({ key }) => {
+    const tabId = extractTabIdFromSessionId(key);
+    broadcastToRenderer("connection-lost", {
+      tabId,
+      sessionId: key,
+      timestamp: Date.now(),
+    });
+  };
+  connectionPool.on("connectionLost", onPoolConnectionLost);
+  reconnectListeners.set("pool:connectionLost", onPoolConnectionLost);
 }
 
 // 从sessionId提取tabId
@@ -191,6 +211,14 @@ function broadcastToRenderer(channel, data) {
 
 // 清理函数
 function cleanupReconnectHandlers() {
+  // 移除连接池事件监听器
+  if (boundConnectionPool) {
+    const onPoolConnectionLost = reconnectListeners.get("pool:connectionLost");
+    if (onPoolConnectionLost) {
+      boundConnectionPool.removeListener("connectionLost", onPoolConnectionLost);
+    }
+  }
+  boundConnectionPool = null;
   reconnectListeners.clear();
 
   // 移除所有IPC处理器

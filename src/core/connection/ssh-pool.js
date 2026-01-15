@@ -637,7 +637,8 @@ class SSHPool extends BaseConnectionPool {
       this.reconnectionManager.registerSession(
         connectionKey,
         connectionInfo.client,
-        connectionInfo.config
+        connectionInfo.config,
+        { state: 'pending', autoStart: true, failureReason: 'network' }
       );
 
       // 发出连接丢失事件
