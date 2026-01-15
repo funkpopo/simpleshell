@@ -19,10 +19,10 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@babel/core": "^7.26.10",
-    "@babel/eslint-parser": "^7.27.1",
-    "@babel/plugin-transform-private-property-in-object": "^7.27.1",
-    "@babel/preset-react": "^7.26.3",
+    "@babel/core": "^7.28.6",
+    "@babel/eslint-parser": "^7.28.6",
+    "@babel/plugin-transform-private-property-in-object": "^7.28.6",
+    "@babel/preset-react": "^7.28.5",
     "@electron-forge/cli": "^7.11.1",
     "@electron-forge/maker-deb": "^7.11.1",
     "@electron-forge/maker-rpm": "^7.11.1",
@@ -41,10 +41,10 @@
     "electron": "38.1.2",
     "eslint": "^9.27.0",
     "eslint-config-prettier": "^10.1.5",
-    "eslint-plugin-prettier": "^5.4.0",
+    "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-react": "^7.37.5",
     "node-loader": "^2.1.0",
-    "prettier": "^3.7.4",
+    "prettier": "^3.8.0",
     "style-loader": "^4.0.0"
   },
   "dependencies": {
