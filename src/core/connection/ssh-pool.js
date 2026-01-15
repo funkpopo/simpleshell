@@ -169,8 +169,10 @@ class SSHPool extends BaseConnectionPool {
     this._logInfo(`创建新SSH连接: ${connectionKey}`);
 
     // 解析代理配置
-    const resolvedProxyConfig = this.proxyManager.resolveProxyConfig(sshConfig);
-    const usingProxy = this._isProxyConfigValid(resolvedProxyConfig);
+    const resolvedProxyConfig = await this.proxyManager.resolveProxyConfigAsync(sshConfig);
+    const usingProxy =
+      this._isProxyConfigValid(resolvedProxyConfig) &&
+      String(resolvedProxyConfig.type || '').toLowerCase() !== PROXY_TYPES.NONE;
 
     if (usingProxy) {
       this._logInfo(
@@ -191,12 +193,19 @@ class SSHPool extends BaseConnectionPool {
         stream: null,
         listeners: new Set(),
         usingProxy: usingProxy,
+        proxySocket: null,
         channelManager: createChannelPoolManager(30) // 最多30个并发通道
       };
 
       // 设置连接超时
       const timeout = setTimeout(() => {
         this._logInfo(`SSH连接超时: ${connectionKey}`);
+        try {
+          if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
+        } catch (_) {}
+        try {
+          ssh.end();
+        } catch (_) {}
         reject(new Error(`连接超时: ${sshConfig.host}:${sshConfig.port || 22}`));
       }, this.config.connectionTimeout);
 
@@ -220,6 +229,9 @@ class SSHPool extends BaseConnectionPool {
       // 监听错误事件
       ssh.on('error', (err) => {
         clearTimeout(timeout);
+        try {
+          if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
+        } catch (_) {}
 
         const enhancedError = this._handleSSHError(
           err,
@@ -239,13 +251,33 @@ class SSHPool extends BaseConnectionPool {
       });
 
       // 建立连接
-      const connectionOptions = this._buildSSHOptions(
-        sshConfig,
-        resolvedProxyConfig,
-        usingProxy
-      );
+      const connectionOptions = this._buildSSHOptions(sshConfig);
 
-      ssh.connect(connectionOptions);
+      // 关键：ssh2 不支持 options.proxy，必须传入已建立好的代理隧道 socket（sock）
+      if (usingProxy) {
+        (async () => {
+          try {
+            const targetPort = sshConfig.port || 22;
+            const sock = await this.proxyManager.createTunnelSocket(
+              resolvedProxyConfig,
+              sshConfig.host,
+              targetPort,
+              { timeoutMs: this.config.connectionTimeout }
+            );
+            connectionInfo.proxySocket = sock;
+            connectionOptions.sock = sock;
+            ssh.connect(connectionOptions);
+          } catch (e) {
+            clearTimeout(timeout);
+            try {
+              if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
+            } catch (_) {}
+            reject(e);
+          }
+        })();
+      } else {
+        ssh.connect(connectionOptions);
+      }
     });
   }
 
@@ -467,7 +499,7 @@ class SSHPool extends BaseConnectionPool {
    * @returns {Object} SSH连接选项
    * @private
    */
-  _buildSSHOptions(sshConfig, proxyConfig, usingProxy) {
+  _buildSSHOptions(sshConfig) {
     const { processSSHPrivateKey } = require('../utils/ssh-utils');
     const processedConfig = processSSHPrivateKey(sshConfig);
 
@@ -497,23 +529,6 @@ class SSHPool extends BaseConnectionPool {
       options.privateKey = processedConfig.privateKey;
       if (processedConfig.passphrase) {
         options.passphrase = processedConfig.passphrase;
-      }
-    }
-
-    // 处理代理配置
-    if (usingProxy) {
-      options.proxy = {
-        host: proxyConfig.host,
-        port: proxyConfig.port,
-        type: this._getProxyProtocol(proxyConfig.type)
-      };
-
-      // 处理代理身份认证
-      if (proxyConfig.username) {
-        options.proxy.username = proxyConfig.username;
-        if (proxyConfig.password) {
-          options.proxy.password = proxyConfig.password;
-        }
       }
     }
 
@@ -624,6 +639,9 @@ class SSHPool extends BaseConnectionPool {
     // 如果是有意关闭，直接清理
     if (connectionInfo.intentionalClose) {
       this._logInfo(`有意关闭连接: ${connectionKey}`);
+      try {
+        if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
+      } catch (_) {}
       this.connections.delete(connectionKey);
       this.processRequestQueue();
       return;
