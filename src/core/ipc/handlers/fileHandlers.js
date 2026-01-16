@@ -479,30 +479,22 @@ class FileHandlers {
 
   async setFilePermissions(event, tabId, filePath, permissions) {
     try {
+      const permissionStr = String(permissions || "").trim();
+      const mode = parseInt(permissionStr, 8);
+      if (!permissionStr || Number.isNaN(mode)) {
+        return { success: false, error: "无效的权限值" };
+      }
+
       return sftpCore.enqueueSftpOperation(tabId, async () => {
-        const processInfo = processManager.getProcess(tabId);
-        if (!processInfo || !processInfo.process || processInfo.type !== "ssh2") {
-          return { success: false, error: "无效的SSH连接" };
-        }
-        const sshClient = processInfo.process;
+        const sftp = await sftpCore.getSftpSession(tabId);
         return new Promise((resolve) => {
-          const command = `chmod ${permissions} "${filePath}"`;
-          sshClient.exec(command, (err, stream) => {
+          sftp.chmod(filePath, mode, (err) => {
             if (err) {
               logToFile(`Failed to set file permissions: ${err.message}`, "ERROR");
-              return resolve({ success: false, error: `设置权限失败: ${err.message}` });
+              resolve({ success: false, error: `设置权限失败: ${err.message}` });
+            } else {
+              resolve({ success: true });
             }
-            let stderr = "";
-            stream
-              .on("close", (code) => {
-                if (code === 0) {
-                  resolve({ success: true });
-                } else {
-                  resolve({ success: false, error: stderr || `chmod命令执行失败，退出码: ${code}` });
-                }
-              })
-              .on("data", () => {})
-              .stderr.on("data", (data) => { stderr += data.toString(); });
           });
         });
       });
@@ -552,28 +544,52 @@ class FileHandlers {
 
   async setFileOwnership(event, tabId, filePath, owner, group) {
     try {
+      const ownerStr = String(owner ?? "").trim();
+      const groupStr = String(group ?? "").trim();
+      if (!ownerStr && !groupStr) return { success: true };
+
+      const ownerId =
+        ownerStr && /^\d+$/.test(ownerStr) ? parseInt(ownerStr, 10) : null;
+      const groupId =
+        groupStr && /^\d+$/.test(groupStr) ? parseInt(groupStr, 10) : null;
+
+      if (ownerStr && ownerId === null) {
+        return { success: false, error: "所有者必须是数字UID" };
+      }
+      if (groupStr && groupId === null) {
+        return { success: false, error: "组必须是数字GID" };
+      }
+
       return sftpCore.enqueueSftpOperation(tabId, async () => {
-        const processInfo = processManager.getProcess(tabId);
-        if (!processInfo || !processInfo.process || processInfo.type !== "ssh2") {
-          return { success: false, error: "无效的SSH连接" };
-        }
-        const ownerSpec = owner && group ? `${owner}:${group}` : owner ? `${owner}` : group ? `:${group}` : null;
-        if (!ownerSpec) return { success: true };
-        const sshClient = processInfo.process;
+        const sftp = await sftpCore.getSftpSession(tabId);
         return new Promise((resolve) => {
-          const command = `chown ${ownerSpec} "${filePath}"`;
-          sshClient.exec(command, (err, stream) => {
-            if (err) {
-              return resolve({ success: false, error: `设置所有者/组失败: ${err.message}` });
+          const applyChown = (uid, gid) => {
+            sftp.chown(filePath, uid, gid, (err) => {
+              if (err) {
+                return resolve({
+                  success: false,
+                  error: `设置所有者/组失败: ${err.message}`,
+                });
+              }
+              resolve({ success: true });
+            });
+          };
+
+          if (ownerId !== null && groupId !== null) {
+            applyChown(ownerId, groupId);
+            return;
+          }
+
+          sftp.stat(filePath, (statErr, stats) => {
+            if (statErr) {
+              return resolve({
+                success: false,
+                error: `获取现有所有者/组失败: ${statErr.message}`,
+              });
             }
-            let stderr = "";
-            stream
-              .on("close", (code) => {
-                if (code === 0) resolve({ success: true });
-                else resolve({ success: false, error: stderr || `chown命令执行失败，退出码: ${code}` });
-              })
-              .on("data", () => {})
-              .stderr.on("data", (data) => { stderr += data.toString(); });
+            const uid = ownerId !== null ? ownerId : stats.uid;
+            const gid = groupId !== null ? groupId : stats.gid;
+            applyChown(uid, gid);
           });
         });
       });
