@@ -360,7 +360,7 @@ class FileHandlers {
       return { success: false, error: "Cannot rename root directory" };
     }
 
-    const newPath = path.join(path.dirname(oldPath), newName);
+    const newPath = path.posix.join(path.posix.dirname(oldPath), newName);
     logToFile(
       `[Sensitive Operation] renameFile triggered. TabId: ${tabId}, Old: ${oldPath}, New: ${newPath}, Source: IPC`,
       "INFO"
