@@ -12,6 +12,7 @@ const {
   QUEUE_CONFIG,
   calculateDynamicTimeout: configCalculateDynamicTimeout,
   isRetryableError: configIsRetryableError,
+  isSessionError: configIsSessionError,
   parsePriority,
 } = require("../../modules/sftp/sftpConfig");
 
@@ -152,14 +153,27 @@ async function checkSftpSessionsHealth() {
     // 优化：收集需要检查的会话，然后限制并发
     const sessionsToCheck = [];
     for (const [tabId, pool] of sftpPools.entries()) {
+      const tabQueue = pendingOperations.get(tabId);
+      const tabHasActiveOp =
+        Array.isArray(tabQueue) && tabQueue.some((op) => op && op.inProgress);
+
       for (const session of pool.sessions.values()) {
         const idleTime = Date.now() - session.lastUsed;
-        if (idleTime > SESSION_CONFIG.SESSION_IDLE_TIMEOUT && session.busyCount === 0) {
+        const busyCount = session.busyCount || 0;
+        if (idleTime > SESSION_CONFIG.SESSION_IDLE_TIMEOUT && busyCount === 0) {
           logToFile(
             `sftpEngine: SFTP session ${session.id} (tab ${tabId}) idle for ${idleTime}ms, closing`,
             "INFO",
           );
           await closeSftpSession(tabId, session.id);
+          continue;
+        }
+        // If this tab is currently running queued operations, skip the health probe to avoid false timeouts.
+        if (tabHasActiveOp) {
+          continue;
+        }
+        // Avoid probing active/busy sessions; the probe itself can time out and close a healthy session.
+        if (busyCount > 0) {
           continue;
         }
         sessionsToCheck.push({ tabId, session });
@@ -189,12 +203,19 @@ async function checkSftpSessionsHealth() {
 // 检查会话是否存活
 async function checkSessionAlive(tabId, session) {
   try {
+    let timeoutId = null;
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("SFTP health check timeout")), SESSION_CONFIG.HEALTH_CHECK_TIMEOUT);
+      timeoutId = setTimeout(
+        () => reject(new Error("SFTP health check timeout")),
+        SESSION_CONFIG.HEALTH_CHECK_TIMEOUT,
+      );
     });
     const checkPromise = new Promise((resolve, reject) => {
-      session.sftp.readdir("/", (err, _) => {
-        // Assuming session.sftp is the ssh2.sftp instance
+      // Lightweight liveness probe; avoid readdir("/") which may be slow or permission-restricted.
+      session.sftp.stat(".", (err) => {
+        try {
+          if (timeoutId) clearTimeout(timeoutId);
+        } catch (_) {}
         if (err) reject(err);
         else resolve();
       });
@@ -354,17 +375,65 @@ async function handleUnhealthySession(tabId, session) {
 
     // 检查SSH连接状态
     const processInfo = getChildProcessInfo(tabId);
-    if (!processInfo || !processInfo.process) {
+    if (!processInfo) {
       throw new Error(`找不到tabId ${tabId} 对应的SSH连接`);
     }
 
-    // 检查SSH连接是否健康
-    if (processInfo.process.destroyed || !processInfo.process._channel) {
+    // 检查SSH连接是否健康；不健康时尝试触发连接池的自动重连机制
+    const sshClient = processInfo.process;
+    const sshHealthy = Boolean(sshClient && !sshClient.destroyed && sshClient._channel);
+    if (!sshHealthy) {
       logToFile(
-        `sftpEngine: SSH连接不健康，需要重新建立SSH连接: tabId=${tabId}`,
-        "ERROR",
+        `sftpEngine: SSH连接不健康，尝试自动重连: tabId=${tabId}`,
+        "WARN",
       );
-      throw new Error("SSH连接已断开，请重新连接");
+
+      try {
+        // Lazy require to avoid circular deps at module load time.
+        const { sshConnectionPool } = require("../connection");
+        const connectionKey =
+          processInfo.connectionKey ||
+          (sshConnectionPool &&
+          typeof sshConnectionPool.getConnectionKeyByTabId === "function"
+            ? sshConnectionPool.getConnectionKeyByTabId(tabId)
+            : null);
+
+        if (
+          sshConnectionPool &&
+          sshConnectionPool.reconnectionManager &&
+          connectionKey
+        ) {
+          const existingSession =
+            sshConnectionPool.reconnectionManager.getSessionStatus(connectionKey);
+
+          // If not registered (e.g. manual recovery path), register but do not auto start.
+          if (!existingSession) {
+            const conn = sshConnectionPool.connections?.get(connectionKey);
+            if (conn && conn.client && conn.config) {
+              sshConnectionPool.reconnectionManager.registerSession(
+                connectionKey,
+                conn.client,
+                conn.config,
+                { autoStart: false, state: "connected" },
+              );
+            }
+          }
+
+          await sshConnectionPool.reconnectionManager.manualReconnect(connectionKey);
+          logToFile(
+            `sftpEngine: SSH自动重连成功: tabId=${tabId}, key=${connectionKey}`,
+            "INFO",
+          );
+        } else {
+          throw new Error("SSH connection pool or reconnect manager not available");
+        }
+      } catch (reconnectError) {
+        logToFile(
+          `sftpEngine: SSH自动重连失败: tabId=${tabId}, error=${reconnectError.message}`,
+          "ERROR",
+        );
+        throw new Error("SSH连接已断开，且自动重连失败，请重新连接");
+      }
     }
 
     // 重试创建新的SFTP会话
@@ -394,7 +463,7 @@ async function checkSessionHealth(session) {
         resolve(false);
       }, SESSION_CONFIG.QUICK_HEALTH_CHECK_TIMEOUT);
 
-      session.sftp.readdir(".", (err) => {
+      session.sftp.stat(".", (err) => {
         clearTimeout(timeout);
         resolve(!err);
       });
@@ -534,11 +603,13 @@ async function acquireSftpSession(tabId) {
 
           // 创建一个全新的会话对象
           const now = Date.now();
+          const sessionId = genSessionId(tabId);
           const session = {
-            id: genSessionId(tabId),
+            id: sessionId,
             sftp, // This is the ssh2.sftp instance
             timeoutId: setTimeout(() => {
-              closeSftpSession(tabId, undefined);
+              // Only close this session; do not take down the whole tab pool.
+              closeSftpSession(tabId, sessionId);
             }, SESSION_CONFIG.SESSION_IDLE_TIMEOUT),
             active: true,
             createdAt: now,
@@ -723,13 +794,25 @@ async function enqueueSftpOperation(tabId, operation, options = {}) {
     let matchingOpIndex = -1;
     let matchingOp = null;
 
-    // Only merge waiting operations, not those in progress
+    // Prefer merging with an in-progress matching operation (prevents bursty listFiles from ballooning the queue).
     for (let i = 0; i < queue.length; i++) {
       const op = queue[i];
-      if (!op.inProgress && op.type === type && op.path === path) {
+      if (op.inProgress && op.type === type && op.path === path) {
         matchingOpIndex = i;
         matchingOp = op;
         break;
+      }
+    }
+
+    // Otherwise merge with a queued (waiting) operation.
+    if (!matchingOp) {
+      for (let i = 0; i < queue.length; i++) {
+        const op = queue[i];
+        if (!op.inProgress && op.type === type && op.path === path) {
+          matchingOpIndex = i;
+          matchingOp = op;
+          break;
+        }
       }
     }
 
@@ -739,8 +822,8 @@ async function enqueueSftpOperation(tabId, operation, options = {}) {
         "INFO",
       );
 
-      // Update existing operation with new priority if higher
-      if (priorityValue > matchingOp.priorityValue) {
+      // Update existing operation with new priority if higher (only meaningful for queued ops)
+      if (!matchingOp.inProgress && priorityValue > matchingOp.priorityValue) {
         queue[matchingOpIndex].priorityValue = priorityValue;
       }
 
@@ -863,6 +946,22 @@ async function processSftpQueue(tabId) {
   } catch (error) {
     // 操作失败，考虑是否重试
     if (nextOp.retries < nextOp.maxRetries && configIsRetryableError(error)) {
+      // 会话级错误：先回收当前tab的SFTP会话，避免在坏会话上重复执行导致“断开-重试-再断开”循环
+      if (configIsSessionError(error)) {
+        try {
+          logToFile(
+            `sftpEngine: Session error detected on tab ${tabId}, closing SFTP sessions before retry: ${error.message}`,
+            "WARN",
+          );
+          await closeAllSftpSessionsForTab(tabId);
+        } catch (cleanupErr) {
+          logToFile(
+            `sftpEngine: Failed to cleanup sessions for tab ${tabId} during retry: ${cleanupErr.message}`,
+            "WARN",
+          );
+        }
+      }
+
       nextOp.retries++;
       nextOp.inProgress = false;
 

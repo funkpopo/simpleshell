@@ -84,6 +84,22 @@ const FileManager = memo(
     const [lastRefreshTime, setLastRefreshTime] = useState(null);
     const [, forceUpdate] = useState(0); // 用于强制更新组件以刷新时间显示
     const directoryCacheRef = useRef(new Map());
+
+    // 使用 ref 读取最新状态，避免将高频状态放入 useCallback/useMemo 依赖导致函数频繁重建
+    const currentPathRef = useRef(currentPath);
+    useEffect(() => {
+      currentPathRef.current = currentPath;
+    }, [currentPath]);
+
+    const loadingRef = useRef(loading);
+    useEffect(() => {
+      loadingRef.current = loading;
+    }, [loading]);
+
+    const lastRefreshTimeRef = useRef(lastRefreshTime);
+    useEffect(() => {
+      lastRefreshTimeRef.current = lastRefreshTime;
+    }, [lastRefreshTime]);
     const [contextMenu, setContextMenu] = useState(null);
     const [searchTerm, setSearchTerm] = useState("");
     const searchInputRef = useRef(null);
@@ -147,6 +163,10 @@ const FileManager = memo(
     // 拖拽事件处理函数
     // 增量加载优化：状态与缓冲
     const [isChunking, setIsChunking] = useState(false);
+    const isChunkingRef = useRef(isChunking);
+    useEffect(() => {
+      isChunkingRef.current = isChunking;
+    }, [isChunking]);
     const chunkBufferRef = useRef([]);
     const flushTimerRef = useRef(null);
     const filesRef = useRef(files);
@@ -350,6 +370,17 @@ const FileManager = memo(
     // 自动刷新相关参数
     const USER_ACTIVITY_REFRESH_DELAY = 300; // 将用户活动后刷新延迟从1000ms减少到300ms
 
+    // 低负载轮询与后台刷新参数（仅用于刷新当前目录列表）
+    const FILE_LIST_POLL_BASE_INTERVAL_MS = 5000;
+    const FILE_LIST_POLL_MAX_INTERVAL_MS = 30000;
+    const FILE_LIST_POLL_NO_CHANGE_BACKOFF_AFTER = 3;
+    const FILE_LIST_POLL_BACKOFF_STEP_MS = 5000;
+    const FILE_LIST_POLL_ERROR_BACKOFF_STEP_MS = 5000;
+
+    // 防止主进程阻塞时反复触发 IPC，导致 listFiles 积压
+    const BACKGROUND_REFRESH_MIN_INTERVAL_MS = 2000;
+    const BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS = 60000;
+
     // 传输进度管理函数
     // 添加新的传输任务
     const addTransferProgress = (transferData) => {
@@ -453,6 +484,75 @@ const FileManager = memo(
     // 从缓存中获取目录内容
     // 增量目录加载 token（listFiles 首批响应返回）
     const [listToken, setListToken] = useState(null);
+    const listTokenRef = useRef(listToken);
+    useEffect(() => {
+      listTokenRef.current = listToken;
+    }, [listToken]);
+
+    // 后台目录刷新（用于轮询/用户活动后的静默刷新），与前台目录加载(listToken)分离
+    const backgroundListRequestRef = useRef({
+      inFlight: false,
+      token: null,
+      apiPath: null,
+      startedAt: 0,
+      reason: null, // "poll" | "userActivity" | "manual" | ...
+      resolve: null,
+      reject: null,
+      watchdog: null,
+    });
+    const backgroundListBufferRef = useRef([]);
+    const backgroundListLastAttemptAtRef = useRef(0);
+
+    // 稳定列表签名（用于判断文件列表是否变化，避免对大列表 JSON.stringify）
+    const stableListSignatureRef = useRef(null);
+    const stableListSignatureKeyRef = useRef(null);
+
+    // 轮询状态（使用 ref 避免频繁重渲染）
+    const pollTimerRef = useRef(null);
+    const pollStateRef = useRef({
+      intervalMs: FILE_LIST_POLL_BASE_INTERVAL_MS,
+      noChangeCount: 0,
+      errorCount: 0,
+    });
+
+    const toApiPath = useCallback((path) => {
+      if (path === "~") return "";
+      return path || "";
+    }, []);
+
+    const makeListKey = useCallback((id, apiPath) => {
+      return `${id || ""}::${apiPath || ""}`;
+    }, []);
+
+    // 低成本(近似)签名：对每个条目做 hash，再用 sum/xor 合并，避免对大数组 JSON.stringify
+    const computeFileListSignature = useCallback((list) => {
+      if (!Array.isArray(list) || list.length === 0) return "0:0:0";
+
+      let xor = 0;
+      let sum = 0;
+
+      for (let i = 0; i < list.length; i++) {
+        const f = list[i] || {};
+        const name = typeof f.name === "string" ? f.name : "";
+        const modifyTime = Number.isFinite(f.modifyTime) ? f.modifyTime : 0;
+        const size = Number.isFinite(f.size) ? f.size : 0;
+        const isDir = f.isDirectory ? 1 : 0;
+
+        // FNV-1a 32-bit (via Math.imul for speed)
+        let h = 2166136261;
+        const s = `${name}\u0000${modifyTime}\u0000${size}\u0000${isDir}`;
+        for (let j = 0; j < s.length; j++) {
+          h ^= s.charCodeAt(j);
+          h = Math.imul(h, 16777619);
+        }
+        h >>>= 0;
+
+        xor ^= h;
+        sum = (sum + h) >>> 0;
+      }
+
+      return `${list.length}:${(xor >>> 0).toString(16)}:${sum.toString(16)}`;
+    }, []);
 
     const getDirectoryFromCache = (path) => {
       // 优先使用全局缓存（跨次打开可复用）
@@ -488,25 +588,96 @@ const FileManager = memo(
     // 订阅非阻塞目录分片事件
     useEffect(() => {
       if (!window.terminalAPI || !window.terminalAPI.onListFilesChunk) return;
+
       const unsubscribe = window.terminalAPI.onListFilesChunk((payload) => {
         try {
           // 侧边栏关闭或组件未挂载时忽略异步分片更新，防止竞态/异常
           if (!open) return;
-          const apiPath = currentPath === "~" ? "" : currentPath;
-          if (
-            !payload ||
-            payload.tabId !== tabId ||
-            payload.path !== apiPath ||
-            !payload.token ||
-            payload.token !== listToken
-          ) {
+          if (!payload || payload.tabId !== tabId || !payload.token) return;
+
+          const apiPath = toApiPath(currentPath);
+          const bg = backgroundListRequestRef.current;
+
+          const isForeground =
+            payload.path === apiPath && payload.token === listToken;
+          const isBackground =
+            Boolean(bg?.inFlight) &&
+            payload.path === bg.apiPath &&
+            payload.token === bg.token;
+
+          if (!isForeground && !isBackground) return;
+
+          // 后台刷新：先缓冲，done 时再一次性判断变化并更新 UI（避免轮询导致列表闪烁/重置选择）
+          if (isBackground) {
+            if (Array.isArray(payload.items) && payload.items.length > 0) {
+              // 直接 push，避免 concat 产生额外数组
+              backgroundListBufferRef.current.push(...payload.items);
+            }
+
+            if (payload.done) {
+              const nextList = Array.isArray(backgroundListBufferRef.current)
+                ? backgroundListBufferRef.current
+                : [];
+              backgroundListBufferRef.current = [];
+
+              // 清理 watchdog/状态
+              try {
+                if (bg.watchdog) clearTimeout(bg.watchdog);
+              } catch (_) {}
+              bg.watchdog = null;
+
+              const resolve = bg.resolve;
+              bg.inFlight = false;
+              bg.token = null;
+              bg.apiPath = null;
+              bg.startedAt = 0;
+              bg.reason = null;
+              bg.resolve = null;
+              bg.reject = null;
+
+              // 路径切换/前台加载时丢弃后台结果（避免覆盖用户的显式操作）
+              const stillSamePath = toApiPath(currentPath) === payload.path;
+              const canApply = stillSamePath && !loading && !listToken && !isChunking;
+
+              if (canApply) {
+                const key = makeListKey(tabId, payload.path);
+                const prevSig =
+                  stableListSignatureKeyRef.current === key
+                    ? stableListSignatureRef.current
+                    : computeFileListSignature(filesRef.current || []);
+                const nextSig = computeFileListSignature(nextList);
+                const changed = prevSig !== nextSig;
+
+                // 即使未变化，也更新缓存与刷新时间（保证侧边栏“最近刷新”正确）
+                updateDirectoryCache(currentPath, nextList);
+                setLastRefreshTime(Date.now());
+
+                if (changed) {
+                  setFiles(nextList);
+                  clearSelection();
+                }
+
+                stableListSignatureKeyRef.current = key;
+                stableListSignatureRef.current = nextSig;
+
+                if (typeof resolve === "function") {
+                  resolve({ ok: true, changed });
+                }
+              } else {
+                if (typeof resolve === "function") {
+                  resolve({ ok: true, changed: false, discarded: true });
+                }
+              }
+            }
             return;
           }
 
+          // 前台目录加载：分片增量更新 UI
           if (Array.isArray(payload.items) && payload.items.length > 0) {
             setIsChunking(true);
             if (typeof scheduleChunkingReset === "function")
               scheduleChunkingReset();
+
             // buffer chunks and batch update to reduce re-renders
             try {
               chunkBufferRef.current.push(payload.items);
@@ -545,17 +716,20 @@ const FileManager = memo(
               filesRef.current = nextFiles;
               setFiles(nextFiles);
             }
+
             updateDirectoryCache(currentPath, filesRef.current || []);
+
+            // 更新稳定签名，供轮询快速比较
+            try {
+              const key = makeListKey(tabId, apiPath);
+              stableListSignatureKeyRef.current = key;
+              stableListSignatureRef.current = computeFileListSignature(
+                filesRef.current || [],
+              );
+            } catch (_) {}
+
             setListToken(null);
             setIsChunking(false);
-          }
-
-          if (payload.done) {
-            // 完成后，刷新缓存
-            updateDirectoryCache(
-              currentPath,
-              (files || []).concat(payload.items || []),
-            );
           }
         } catch (_) {
           // ignore
@@ -565,90 +739,312 @@ const FileManager = memo(
       return () => {
         if (typeof unsubscribe === "function") unsubscribe();
       };
-    }, [tabId, currentPath, listToken, open]);
+    }, [
+      tabId,
+      currentPath,
+      listToken,
+      open,
+      loading,
+      isChunking,
+      toApiPath,
+      makeListKey,
+      computeFileListSignature,
+      clearSelection,
+    ]);
 
-    // 静默刷新当前目录（不显示加载指示器）
-    const silentRefreshCurrentDirectory = async () => {
-      // 若侧边栏未打开或缺少必要信息则跳过
-      if (!open || !sshConnection || !tabId || !currentPath) return;
-      // 若正在进行显式加载，避免并发触发静默刷新
-      if (loading) return;
-      // 避免在一次完整刷新刚完成后立即再次刷新，减少竞态
-      try {
-        if (lastRefreshTime && Date.now() - lastRefreshTime < 700) {
-          return;
+    const startBackgroundDirectoryRefresh = useCallback(
+      async ({ reason = "userActivity", awaitDone = true } = {}) => {
+        const curPath = currentPathRef.current;
+        const curLoading = loadingRef.current;
+        const curChunking = isChunkingRef.current;
+        const curListToken = listTokenRef.current;
+        const curLastRefresh = lastRefreshTimeRef.current;
+
+        // 仅在侧边栏打开且连接信息齐全时运行
+        if (!open || !sshConnection || !tabId || !curPath) {
+          return { ok: false, skipped: true, reason: "missingContext" };
         }
-      } catch (_) {}
+        if (!window.terminalAPI || !window.terminalAPI.listFiles) {
+          return { ok: false, skipped: true, reason: "apiUnavailable" };
+        }
 
-      try {
-        if (window.terminalAPI && window.terminalAPI.listFiles) {
-          // 将~转换为空字符串，用于API调用
-          const apiPath = currentPath === "~" ? "" : currentPath;
+        // 避免与前台目录加载/分片渲染并发，减少队列积压
+        if (curLoading || curChunking || curListToken) {
+          return { ok: false, skipped: true, reason: "busy" };
+        }
 
-          // 使用可合并的目录读取操作
-          const options = {
-            type: "readdir",
-            path: apiPath,
-            canMerge: true,
-            priority: "low", // 使用低优先级，避免阻塞用户主动操作
-            nonBlocking: true, // 添加非阻塞标志，确保不会阻塞UI
-          };
+        // 避免在一次刷新刚完成后立即再次刷新，减少竞态/抖动
+        try {
+          if (curLastRefresh && Date.now() - curLastRefresh < 700) {
+            return { ok: false, skipped: true, reason: "recentlyRefreshed" };
+          }
+        } catch (_) {}
 
-          // 使用Promise.race和超时保证即使API响应慢也不会阻塞UI
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error(t("fileManager.errors.refreshTimeout"))),
-              3000,
-            ),
-          );
+        const now = Date.now();
+        const lastAttempt = backgroundListLastAttemptAtRef.current || 0;
+        if (now - lastAttempt < BACKGROUND_REFRESH_MIN_INTERVAL_MS) {
+          return { ok: false, skipped: true, reason: "throttled" };
+        }
+        backgroundListLastAttemptAtRef.current = now;
 
-          try {
-            const response = await Promise.race([
-              window.terminalAPI.listFiles(tabId, apiPath, options),
-              timeoutPromise,
-            ]);
-
-            if (response?.success) {
-              const fileData = response.data || [];
-              if (response.chunked && response.token) {
-                setListToken(response.token);
-                setIsChunking(true);
-                scheduleChunkingReset();
-              } else {
-                setListToken(null);
-                setIsChunking(false);
-              }
-
-              // 检查数据是否有变化
-              const currentFiles = JSON.stringify(files);
-              const newFiles = JSON.stringify(fileData);
-
-              if (currentFiles !== newFiles) {
-                // 更新缓存
-                updateDirectoryCache(currentPath, fileData);
-                // 更新视图
-                setFiles(fileData);
-                // 加载新目录时重置选中文件
-                setSelectedFile(null);
-                setSelectedFiles([]);
-                setLastSelectedIndex(-1);
-                setAnchorIndex(-1);
-              }
-
-              // 记录刷新时间
-              setLastRefreshTime(Date.now());
-            } else {
-              // 静默刷新失败不显示错误，只记录日志
-            }
-          } catch (error) {
-            // 超时或其他错误，静默处理
-            // 避免在UI上显示错误信息
+        const bg = backgroundListRequestRef.current;
+        if (bg.inFlight) {
+          // 超过最大等待时间认为卡死，释放锁（防止一直无法刷新）
+          if (bg.startedAt && now - bg.startedAt > BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS) {
+            try {
+              if (bg.watchdog) clearTimeout(bg.watchdog);
+            } catch (_) {}
+            bg.watchdog = null;
+            bg.inFlight = false;
+            bg.token = null;
+            bg.apiPath = null;
+            bg.startedAt = 0;
+            bg.reason = null;
+            bg.resolve = null;
+            bg.reject = null;
+            backgroundListBufferRef.current = [];
+          } else {
+            return { ok: false, skipped: true, reason: "inFlight" };
           }
         }
-      } catch (error) {
-        // 静默刷新失败不显示错误，只记录日志
-      }
-    };
+
+        const apiPath = toApiPath(curPath);
+
+        // 初始化后台刷新上下文（结果由 listFiles:chunk done 回调统一处理）
+        bg.inFlight = true;
+        bg.token = null;
+        bg.apiPath = apiPath;
+        bg.startedAt = now;
+        bg.reason = reason;
+        backgroundListBufferRef.current = [];
+
+        const donePromise = new Promise((resolve) => {
+          bg.resolve = resolve;
+        });
+
+        const options = {
+          type: "readdir",
+          path: apiPath,
+          canMerge: true,
+          priority: "low",
+          nonBlocking: true,
+          chunkSize: 300,
+        };
+
+        let response = null;
+        try {
+          response = await window.terminalAPI.listFiles(tabId, apiPath, options);
+        } catch (error) {
+          const resolve = bg.resolve;
+          bg.inFlight = false;
+          bg.token = null;
+          bg.apiPath = null;
+          bg.startedAt = 0;
+          bg.reason = null;
+          bg.resolve = null;
+          bg.reject = null;
+          backgroundListBufferRef.current = [];
+          if (typeof resolve === "function") {
+            resolve({ ok: false, error: error?.message || String(error) });
+          }
+          return { ok: false, error: error?.message || String(error) };
+        }
+
+        if (!response?.success) {
+          const resolve = bg.resolve;
+          bg.inFlight = false;
+          bg.token = null;
+          bg.apiPath = null;
+          bg.startedAt = 0;
+          bg.reason = null;
+          bg.resolve = null;
+          bg.reject = null;
+          backgroundListBufferRef.current = [];
+          if (typeof resolve === "function") {
+            resolve({ ok: false, error: response?.error || "listFiles failed" });
+          }
+          return { ok: false, error: response?.error || "listFiles failed" };
+        }
+
+        // nonBlocking 模式下依赖 token + chunk 事件完成
+        if (response.chunked && response.token) {
+          bg.token = response.token;
+
+          // watchdog：避免主进程/IPC异常导致 inFlight 永久卡住
+          try {
+            if (bg.watchdog) clearTimeout(bg.watchdog);
+          } catch (_) {}
+          bg.watchdog = setTimeout(() => {
+            try {
+              const cur = backgroundListRequestRef.current;
+              if (cur && cur.inFlight && cur.token === response.token) {
+                const resolve = cur.resolve;
+                cur.inFlight = false;
+                cur.token = null;
+                cur.apiPath = null;
+                cur.startedAt = 0;
+                cur.reason = null;
+                cur.resolve = null;
+                cur.reject = null;
+                try {
+                  if (cur.watchdog) clearTimeout(cur.watchdog);
+                } catch (_) {}
+                cur.watchdog = null;
+                backgroundListBufferRef.current = [];
+                if (typeof resolve === "function") {
+                  resolve({ ok: false, timeout: true });
+                }
+              }
+            } catch (_) {}
+          }, BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS);
+
+          if (awaitDone) {
+            return await donePromise;
+          }
+
+          // fire-and-forget 场景：避免未捕获 promise
+          donePromise.catch(() => {});
+          return { ok: true, started: true };
+        }
+
+        // 兜底：成功但没有 token（理论上不该发生）
+        const resolve = bg.resolve;
+        bg.inFlight = false;
+        bg.token = null;
+        bg.apiPath = null;
+        bg.startedAt = 0;
+        bg.reason = null;
+        bg.resolve = null;
+        bg.reject = null;
+        backgroundListBufferRef.current = [];
+        if (typeof resolve === "function") {
+          resolve({ ok: true, changed: false, immediate: true });
+        }
+        return { ok: true, changed: false, immediate: true };
+      },
+      [
+        open,
+        sshConnection,
+        tabId,
+        toApiPath,
+      ],
+    );
+
+    // 静默刷新当前目录（不显示加载指示器）：用于用户活动触发，采用后台刷新并避免重复请求
+    const silentRefreshCurrentDirectory = useCallback(() => {
+      startBackgroundDirectoryRefresh({ reason: "userActivity", awaitDone: false }).catch(
+        () => {},
+      );
+    }, [startBackgroundDirectoryRefresh]);
+
+    // 低负载轮询：保证侧边栏列表可及时刷新（自动退避）
+    useEffect(() => {
+      if (!open) return;
+
+      // 每次打开/切换 tab/path 时重置轮询状态
+      pollStateRef.current = {
+        intervalMs: FILE_LIST_POLL_BASE_INTERVAL_MS,
+        noChangeCount: 0,
+        errorCount: 0,
+      };
+
+      let cancelled = false;
+
+      const schedule = (delayMs) => {
+        try {
+          if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+        } catch (_) {}
+        pollTimerRef.current = setTimeout(() => {
+          tick().catch(() => {});
+        }, Math.max(250, delayMs || FILE_LIST_POLL_BASE_INTERVAL_MS));
+      };
+
+      const tick = async () => {
+        if (cancelled) return;
+
+        // 条件不满足时降低频率尝试，避免空转
+        if (!open || !sshConnection || !tabId || !currentPath) {
+          schedule(1000);
+          return;
+        }
+
+        // 页面不可见时降低刷新频率（低负载）
+        try {
+          if (typeof document !== "undefined" && document.hidden) {
+            schedule(Math.min(pollStateRef.current.intervalMs, 15000));
+            return;
+          }
+        } catch (_) {}
+
+        const result = await startBackgroundDirectoryRefresh({
+          reason: "poll",
+          awaitDone: true,
+        });
+
+        const state = pollStateRef.current;
+
+        if (!result || result.skipped || result.discarded) {
+          schedule(state.intervalMs);
+          return;
+        }
+
+        if (result.ok) {
+          state.errorCount = 0;
+
+          if (result.changed) {
+            state.noChangeCount = 0;
+            state.intervalMs = FILE_LIST_POLL_BASE_INTERVAL_MS;
+          } else {
+            state.noChangeCount = (state.noChangeCount || 0) + 1;
+            if (state.noChangeCount >= FILE_LIST_POLL_NO_CHANGE_BACKOFF_AFTER) {
+              state.intervalMs = Math.min(
+                FILE_LIST_POLL_MAX_INTERVAL_MS,
+                state.intervalMs + FILE_LIST_POLL_BACKOFF_STEP_MS,
+              );
+            }
+          }
+        } else {
+          state.errorCount = (state.errorCount || 0) + 1;
+          state.intervalMs = Math.min(
+            FILE_LIST_POLL_MAX_INTERVAL_MS,
+            state.intervalMs + FILE_LIST_POLL_ERROR_BACKOFF_STEP_MS,
+          );
+        }
+
+        schedule(state.intervalMs);
+      };
+
+      schedule(pollStateRef.current.intervalMs);
+
+      return () => {
+        cancelled = true;
+        try {
+          if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+        } catch (_) {}
+        pollTimerRef.current = null;
+
+        // 清理后台刷新上下文，避免 promise 永久悬挂
+        const bg = backgroundListRequestRef.current;
+        if (bg && bg.inFlight) {
+          try {
+            if (bg.watchdog) clearTimeout(bg.watchdog);
+          } catch (_) {}
+          const resolve = bg.resolve;
+          bg.inFlight = false;
+          bg.token = null;
+          bg.apiPath = null;
+          bg.startedAt = 0;
+          bg.reason = null;
+          bg.resolve = null;
+          bg.reject = null;
+          bg.watchdog = null;
+          backgroundListBufferRef.current = [];
+          if (typeof resolve === "function") {
+            resolve({ ok: false, cancelled: true });
+          }
+        }
+      };
+    }, [open, sshConnection, tabId, currentPath, startBackgroundDirectoryRefresh]);
 
     // 添加路径到历史记录
     const addToHistory = (path) => {

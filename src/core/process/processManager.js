@@ -27,7 +27,26 @@ function getNextProcessId() {
  * @returns {Object|undefined} 进程信息对象
  */
 function getProcess(processId) {
-  return childProcesses.get(processId);
+  const proc = childProcesses.get(processId);
+
+  // Keep SSH client reference in sync with the connection pool. When the pool
+  // reconnects it replaces `connectionInfo.client`, but older process entries may
+  // still point to the stale client instance.
+  if (
+    proc &&
+    proc.type === "ssh2" &&
+    proc.connectionInfo &&
+    proc.connectionInfo.client
+  ) {
+    if (proc.process !== proc.connectionInfo.client) {
+      proc.process = proc.connectionInfo.client;
+    }
+    if (typeof proc.connectionInfo.ready === "boolean") {
+      proc.ready = proc.connectionInfo.ready;
+    }
+  }
+
+  return proc;
 }
 
 /**
