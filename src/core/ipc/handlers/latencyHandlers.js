@@ -66,21 +66,21 @@ class LatencyHandlers {
   /**
    * 注册SSH连接的延迟检测
    */
-  async registerConnection(event, { tabId, host, port, sshConnection }) {
+  async registerConnection(event, { tabId, host, port }) {
     try {
-      // 从连接管理器获取SSH连接实例
-      const connectionManager = require("../../modules/connection");
-      const connection = await connectionManager.getConnection(tabId);
-
-      if (!connection || !connection.client) {
+      // 从进程管理器获取SSH连接实例（tabId 对应的 ssh2.Client）
+      const processManager = require("../../process/processManager");
+      const proc = processManager.getProcess(tabId);
+      if (!proc || proc.type !== "ssh2" || !proc.process) {
         throw new Error("SSH连接不存在或未建立");
       }
 
       this.latencyService.registerSSHConnection(
         tabId,
-        connection.client,
+        proc.process,
         host,
         port,
+        proc.config?.proxy || null,
       );
 
       return {

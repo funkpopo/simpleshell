@@ -110,6 +110,8 @@ class BaseConnectionPool extends EventEmitter {
       username: config.username,
       password: config.password || '',
       privateKeyPath: config.privateKeyPath || '',
+      // 关键：保留代理配置，避免“最近连接/快捷连接”丢失 proxy 导致退化为直连
+      proxy: config.proxy || null,
       name: config.name || `${config.host}:${config.port}`,
       protocol: this.config.protocolType.toLowerCase()
     });
@@ -477,6 +479,7 @@ class BaseConnectionPool extends EventEmitter {
           username: cachedConfig.username,
           password: cachedConfig.password,
           privateKeyPath: cachedConfig.privateKeyPath,
+          proxy: cachedConfig.proxy || null,
           lastUsed: Date.now()
         });
       } else {
@@ -493,6 +496,7 @@ class BaseConnectionPool extends EventEmitter {
             username: conn.config.username,
             password: conn.config.password || '',
             privateKeyPath: conn.config.privateKeyPath || '',
+            proxy: conn.config.proxy || null,
             lastUsed: conn.lastUsedAt || conn.createdAt
           });
         }
@@ -530,6 +534,7 @@ class BaseConnectionPool extends EventEmitter {
           username: conn.username,
           password: conn.password || '',
           privateKeyPath: conn.privateKeyPath || '',
+          proxy: conn.proxy || null,
           name: conn.name || `${conn.host}:${conn.port}`,
           protocol: conn.protocol || this.config.protocolType.toLowerCase()
         });

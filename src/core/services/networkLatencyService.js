@@ -1,5 +1,7 @@
 const { EventEmitter } = require("events");
 const { logToFile } = require("../utils/logger");
+const net = require("node:net");
+const proxyManager = require("../proxy/proxy-manager");
 
 /**
  * 网络延迟检测服务
@@ -20,6 +22,13 @@ class NetworkLatencyService extends EventEmitter {
 
     // 是否正在运行
     this.isRunning = false;
+
+    // 确保代理管理器就绪：延迟测试需要按连接项代理配置建隧道
+    try {
+      proxyManager.initialize();
+    } catch (_) {
+      // ignore
+    }
 
     logToFile("网络延迟检测服务已初始化", "INFO");
   }
@@ -65,8 +74,9 @@ class NetworkLatencyService extends EventEmitter {
    * @param {object} sshConnection SSH连接实例
    * @param {string} host 主机地址
    * @param {number} port 端口号
+   * @param {object|null} proxyConfig 代理配置（连接项的 proxy 字段，支持 useDefault）
    */
-  registerSSHConnection(tabId, sshConnection, host, port = 22) {
+  registerSSHConnection(tabId, sshConnection, host, port = 22, proxyConfig = null) {
     if (!this.isRunning) {
       logToFile(`服务未启动，无法注册连接: ${tabId}`, "WARN");
       return;
@@ -82,6 +92,7 @@ class NetworkLatencyService extends EventEmitter {
       host,
       port,
       sshConnection, // 保存SSH连接实例以便后续使用
+      proxyConfig: proxyConfig || null,
       latency: null,
       lastCheck: null,
       checkCount: 0,
@@ -131,11 +142,16 @@ class NetworkLatencyService extends EventEmitter {
       return;
     }
 
-    const startTime = Date.now();
-
     try {
-      // 使用SSH连接执行简单的echo命令来测量延迟
-      const latency = await this.measureLatency(sshConnection);
+      // 关键：延迟测试应走“连接项对应的代理配置”
+      // - 若连接项配置了代理：通过代理 CONNECT 建 TCP 隧道测量建连耗时（更贴近真实路径）
+      // - 否则：直连 TCP connect 测量建连耗时
+      // - 若上述失败：回退到 SSH exec echo 测量往返耗时
+      const latency = await this.measureLatency(sshConnection, {
+        host: data.host,
+        port: data.port,
+        proxyConfig: data.proxyConfig,
+      });
 
       // 更新延迟数据
       data.latency = latency;
@@ -210,7 +226,70 @@ class NetworkLatencyService extends EventEmitter {
    * @param {object} sshConnection SSH连接实例
    * @returns {Promise<number>} 延迟时间(毫秒)
    */
-  measureLatency(sshConnection) {
+  async measureLatency(sshConnection, { host, port, proxyConfig } = {}) {
+    // 优先使用 TCP connect 测量（可通过代理建隧道）
+    if (host && port) {
+      try {
+        const resolvedProxy = await proxyManager.resolveProxyConfigAsync({
+          host,
+          port,
+          proxy: proxyConfig || null,
+        });
+
+        if (resolvedProxy && proxyManager.isValidProxyConfig(resolvedProxy)) {
+          return await this._measureTcpLatencyViaProxy(resolvedProxy, host, port);
+        }
+
+        return await this._measureTcpLatencyDirect(host, port);
+      } catch (e) {
+        // 回退到 SSH exec（例如代理握手失败、DNS/路由异常等）
+      }
+    }
+
+    // 回退：使用SSH连接执行简单的echo命令来测量延迟（兼容旧逻辑）
+    return await this._measureLatencyViaSshExec(sshConnection);
+  }
+
+  _measureTcpLatencyDirect(host, port, timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      const socket = net.connect({ host, port });
+
+      const cleanup = () => {
+        socket.removeAllListeners();
+        try {
+          socket.destroy();
+        } catch (_) {}
+      };
+
+      const onError = (e) => {
+        cleanup();
+        reject(e);
+      };
+
+      socket.setTimeout(timeoutMs, () => onError(new Error("延迟检测超时 (5秒)")));
+      socket.once("error", onError);
+      socket.once("connect", () => {
+        const latency = Date.now() - startTime;
+        cleanup();
+        resolve(latency);
+      });
+    });
+  }
+
+  async _measureTcpLatencyViaProxy(resolvedProxyConfig, host, port, timeoutMs = 5000) {
+    const startTime = Date.now();
+    const sock = await proxyManager.createTunnelSocket(resolvedProxyConfig, host, port, {
+      timeoutMs,
+    });
+    const latency = Date.now() - startTime;
+    try {
+      sock.destroy();
+    } catch (_) {}
+    return latency;
+  }
+
+  _measureLatencyViaSshExec(sshConnection) {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
       let timeoutId = null;

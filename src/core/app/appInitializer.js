@@ -111,6 +111,45 @@ class AppInitializer {
 
     try {
       const lastConnections = configService.loadLastConnections();
+
+      // 兼容/修复：旧版本保存的 lastConnections 可能缺少 proxy 字段，
+      // 导致从“最近连接/快捷连接”打开时无法走用户配置的 HTTP 代理。
+      // 这里用主连接列表里的同 host/port/username 条目补齐 proxy（不写回配置，仅用于本次启动）。
+      let proxyByServerKey = null;
+      try {
+        const allConnections = configService.loadConnections();
+        const flat = [];
+        const walk = (items) => {
+          if (!Array.isArray(items)) return;
+          for (const it of items) {
+            if (!it) continue;
+            if (it.type === "connection") flat.push(it);
+            if (it.type === "group" && Array.isArray(it.items)) walk(it.items);
+          }
+        };
+        walk(allConnections);
+        proxyByServerKey = new Map(
+          flat
+            .filter((c) => c?.host && (c?.username || c?.protocol === "telnet"))
+            .map((c) => [
+              `${c.host}:${c.port || (c.protocol === "telnet" ? 23 : 22)}:${c.username || ""}`,
+              c.proxy || null,
+            ]),
+        );
+      } catch (_) {
+        proxyByServerKey = null;
+      }
+
+      if (Array.isArray(lastConnections) && proxyByServerKey) {
+        for (const lc of lastConnections) {
+          if (!lc || lc.type !== "connection") continue;
+          if (lc.protocol && String(lc.protocol).toLowerCase() !== "ssh") continue;
+          if (lc.proxy) continue;
+          const key = `${lc.host}:${lc.port || 22}:${lc.username || ""}`;
+          const p = proxyByServerKey.get(key);
+          if (p) lc.proxy = p;
+        }
+      }
       if (lastConnections && lastConnections.length > 0) {
         connectionManager.loadLastConnectionsFromConfig(lastConnections);
         logToFile(`Loaded ${lastConnections.length} last connections on startup`, "INFO");
