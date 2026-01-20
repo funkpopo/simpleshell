@@ -2374,6 +2374,24 @@ const FileManager = memo(
 
       // 渲染简单文件列表（替代虚拟化列表）
       if (!displayFiles || displayFiles.length === 0) {
+        // chunked/nonBlocking 目录加载：首批数据可能为空，但仍在持续接收分片
+        // 这时应该显示加载动画，而不是“当前目录为空”
+        if (!searchTerm && (isChunking || listToken)) {
+          return (
+            <Box
+              sx={{
+                height: "100%",
+                width: "100%",
+                padding: 1,
+              }}
+              onContextMenu={handleBlankContextMenu}
+              onClick={handleBlankClick}
+            >
+              <FileManagerSkeleton />
+            </Box>
+          );
+        }
+
         return (
           <Box
             sx={{
