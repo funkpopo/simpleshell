@@ -342,7 +342,8 @@ class SSHHandlers {
               sshConfig.tabId,
               ssh,
               sshConfig.host,
-              sshConfig.port || 22
+              sshConfig.port || 22,
+              sshConfig.proxy || null
             );
             logToFile(`已为SSH连接注册延迟检测: ${sshConfig.tabId}`, "DEBUG");
           } catch (latencyError) {
