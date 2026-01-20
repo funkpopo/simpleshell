@@ -184,6 +184,10 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   // 当侧边栏打开或标签页切换时获取信息
   useEffect(() => {
     if (open) {
+      // 打开瞬间或连接未就绪时，避免内容区域空白
+      setLoading(true);
+      setError(null);
+
       fetchSystemInfo();
       fetchProcessList();
 
@@ -259,6 +263,26 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
               height: "calc(100% - 56px)",
             }}
           >
+            {loading && !error && !systemInfo ? (
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: "100%",
+                  width: "100%",
+                  gap: 1.5,
+                  py: 4,
+                }}
+              >
+                <CircularProgress size={24} />
+                <Typography variant="body2" color="text.secondary" align="center">
+                  {t("resourceMonitor.loading")}
+                </Typography>
+              </Box>
+            ) : null}
+
             {error ? (
               <Box sx={{ py: 2 }}>
                 <Typography color="error" align="center">
