@@ -20,7 +20,7 @@ const SESSION_CONFIG = {
   QUICK_HEALTH_CHECK_TIMEOUT: 2000, // 快速健康检查超时 (2 秒)
 
   // Session creation
-  SSH_READY_WAIT_TIMEOUT: 10000, // 等待SSH连接就绪的最大时间 (10 秒)
+  SSH_READY_WAIT_TIMEOUT: 30000, // 等待SSH连接就绪的最大时间 (30 秒)
   SSH_READY_CHECK_INTERVAL: 100, // SSH就绪状态检查间隔 (100 毫秒)
   SESSION_CREATION_TIMEOUT: 172800000, // 会话创建操作超时 (48 小时, 用于慢速网络)
 };
