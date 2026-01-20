@@ -81,6 +81,9 @@ const FileManager = memo(
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    // 连接/重试期间的轻量 loading（避免侧边栏内容区域空白）
+    const [connectionLoading, setConnectionLoading] = useState(false);
+    const [connectionLoadingMessage, setConnectionLoadingMessage] = useState("");
     const [lastRefreshTime, setLastRefreshTime] = useState(null);
     const [, forceUpdate] = useState(0); // 用于强制更新组件以刷新时间显示
     const directoryCacheRef = useRef(new Map());
@@ -95,6 +98,13 @@ const FileManager = memo(
     useEffect(() => {
       loadingRef.current = loading;
     }, [loading]);
+
+    useEffect(() => {
+      if (!open) {
+        setConnectionLoading(false);
+        setConnectionLoadingMessage("");
+      }
+    }, [open]);
 
     const lastRefreshTimeRef = useRef(lastRefreshTime);
     useEffect(() => {
@@ -1150,6 +1160,8 @@ const FileManager = memo(
           );
 
           if (response?.success) {
+            setConnectionLoading(false);
+            setConnectionLoadingMessage("");
             const fileData = response.data || [];
             if (response.chunked && response.token) {
               setListToken(response.token);
@@ -1190,8 +1202,8 @@ const FileManager = memo(
                   500 * Math.pow(1.5, retryCount),
                   5000,
                 ); // 最长等待5秒
-
-                setError(
+                setConnectionLoading(true);
+                setConnectionLoadingMessage(
                   t("fileManager.messages.retrying", {
                     current: retryCount + 1,
                     max: 5,
@@ -1211,11 +1223,15 @@ const FileManager = memo(
             }
 
             // 重试失败或其他错误
+            setConnectionLoading(false);
+            setConnectionLoadingMessage("");
             setError(
               response?.error || t("fileManager.errors.loadDirectoryFailed"),
             );
           }
         } else {
+          setConnectionLoading(false);
+          setConnectionLoadingMessage("");
           setError(t("fileManager.errors.fileApiNotAvailable"));
         }
       } catch (error) {
@@ -1225,8 +1241,8 @@ const FileManager = memo(
         if (retryCount < 5) {
           // 增加重试等待时间，指数退避算法
           const waitTime = Math.min(500 * Math.pow(1.5, retryCount), 5000); // 最长等待5秒
-
-          setError(
+          setConnectionLoading(true);
+          setConnectionLoadingMessage(
             t("fileManager.messages.retrying", {
               current: retryCount + 1,
               max: 5,
@@ -1244,6 +1260,8 @@ const FileManager = memo(
           return;
         }
 
+        setConnectionLoading(false);
+        setConnectionLoadingMessage("");
         setError(
           t("fileManager.errors.loadDirectoryFailed") +
             ": " +
@@ -4627,7 +4645,29 @@ const FileManager = memo(
           }}
           onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
         >
-          {loading ? <FileManagerSkeleton /> : renderFileList()}
+          {connectionLoading ? (
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                alignItems: "center",
+                height: "100%",
+                width: "100%",
+                gap: 1.5,
+                px: 2,
+              }}
+            >
+              <CircularProgress size={24} />
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+                {connectionLoadingMessage || t("fileManager.loading")}
+              </Typography>
+            </Box>
+          ) : loading ? (
+            <FileManagerSkeleton />
+          ) : (
+            renderFileList()
+          )}
         </Box>
 
         <Menu
