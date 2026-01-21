@@ -331,19 +331,31 @@ class SSHPool extends BaseConnectionPool {
   }
 
   _shouldAutoReconnectOnInitialFailure(error, sshConfig, usingProxy) {
-    // 仅对“带 tabId 的交互连接”启用（避免影响非交互/后台调用）
-    if (!sshConfig?.tabId) return false;
+    // 默认仅对“带 tabId 的交互连接”启用（避免影响非交互/后台调用）
+    // 如需在非 tabId 场景启用初连自动重试，可通过以下方式显式开启：
+    // - 连接配置：sshConfig.autoReconnect === true
+    // - 连接池配置：this.config.enableInitialAutoReconnectWithoutTabId === true
+    const allowWithoutTabId =
+      sshConfig?.autoReconnect === true ||
+      this.config?.enableInitialAutoReconnectWithoutTabId === true;
+    if (!sshConfig?.tabId && !allowWithoutTabId) return false;
 
     const msg = String(error?.message || "");
     const code = String(error?.code || error?.originalError?.code || "");
 
     // 认证失败不做自动重试
+    // 若确有需要（例如外部凭据/私钥稍后才就绪），可显式开启：
+    // - 连接配置：sshConfig.retryOnAuthFailure === true
+    // - 连接池配置：this.config.enableAuthFailureAutoReconnect === true
     if (
       msg.includes("SSH认证失败") ||
       msg.includes("All configured authentication methods failed") ||
       msg.toLowerCase().includes("authentication")
     ) {
-      return false;
+      const allowAuthRetry =
+        sshConfig?.retryOnAuthFailure === true ||
+        this.config?.enableAuthFailureAutoReconnect === true;
+      return allowAuthRetry;
     }
 
     // 代理/VPN 场景优先重试（本地代理端口拒绝/超时很常见）
