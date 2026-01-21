@@ -995,6 +995,14 @@ const ConnectionManager = memo(
         os: "",
         connectionType: "",
         protocol: "ssh", // 默认为SSH
+        // 代理配置（保持字段完整，避免 undefined）
+        enableProxy: false,
+        proxyType: "http",
+        proxyHost: "",
+        proxyPort: 8080,
+        proxyUsername: "",
+        proxyPassword: "",
+        proxyUseDefault: true,
       });
       setDialogOpen(true);
     }, []);
@@ -2123,6 +2131,7 @@ const ConnectionManager = memo(
                                     onChange={handleFormChange}
                                   >
                                     <MenuItem value="http">HTTP</MenuItem>
+                                    <MenuItem value="https">HTTPS</MenuItem>
                                     <MenuItem value="socks4">SOCKS4</MenuItem>
                                     <MenuItem value="socks5">SOCKS5</MenuItem>
                                   </Select>
