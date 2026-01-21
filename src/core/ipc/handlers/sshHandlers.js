@@ -361,28 +361,68 @@ class SSHHandlers {
 
     return new Promise((resolve, reject) => {
       let settled = false;
+      let reconnectWaitStarted = false;
+      let reconnectTimeoutId = null;
+
+      const connectionKey = connectionInfo?.key;
+      const sshPool = this.connectionManager?.sshConnectionPool;
+      const reconnectManager = sshPool?.reconnectionManager;
+
+      const getLatestClient = () => {
+        const latest = sshPool?.connections?.get(connectionKey);
+        return latest?.client || ssh;
+      };
+
+      const startWaitForReconnect = () => {
+        if (reconnectWaitStarted || !reconnectManager || !connectionKey) return;
+        reconnectWaitStarted = true;
+
+        // 给用户一次性提示：正在等待代理/VPN/网络恢复并自动重试
+        try {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(
+              `process:output:${processId}`,
+              `\r\n连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多1分钟）...\r\n`,
+            );
+          }
+        } catch (_) {}
+
+        reconnectManager
+          .waitForReconnect(connectionKey, 60_000)
+          .then(() => {
+            // 走统一成功路径
+            readyHandler(true);
+          })
+          .catch((e) => {
+            errorHandler(e);
+          });
+      };
 
       const cleanup = () => {
         ssh.removeListener("ready", readyHandler);
         ssh.removeListener("error", errorHandler);
+        if (reconnectTimeoutId) {
+          clearTimeout(reconnectTimeoutId);
+          reconnectTimeoutId = null;
+        }
       };
 
       const connectionTimeout = setTimeout(() => {
         if (settled) return;
         settled = true;
         cleanup();
-        logToFile("SSH connection timed out after 15 seconds", "ERROR");
+        logToFile("SSH connection timed out after 60 seconds", "ERROR");
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(
             `process:output:${processId}`,
-            `\r\n连接超时，请检查网络和服务器状态\r\n`
+            `\r\n自动重连超时（1分钟），请检查代理/VPN/网络后手动重连\r\n`
           );
         }
         this.connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
         reject(new Error("SSH connection timeout"));
-      }, 15000);
+      }, 60_000);
 
-      const readyHandler = () => {
+      const readyHandler = (fromReconnectManager = false) => {
         if (settled) return;
         settled = true;
         clearTimeout(connectionTimeout);
@@ -420,17 +460,30 @@ class SSHHandlers {
           );
         }
 
-        this._createSSHShell(ssh, processId, sshConfig, connectionInfo)
+        const clientToUse = fromReconnectManager ? getLatestClient() : ssh;
+        this._createSSHShell(clientToUse, processId, sshConfig, connectionInfo)
           .then(resolve)
           .catch(reject);
       };
 
       const errorHandler = (err) => {
         if (settled) return;
+        // 若已进入重连状态机，则不要立刻失败，改为等待重连结果
+        if (!reconnectWaitStarted && reconnectManager && connectionKey) {
+          const st = reconnectManager.getSessionStatus(connectionKey);
+          if (st && (st.state === "pending" || st.state === "reconnecting")) {
+            startWaitForReconnect();
+            return;
+          }
+        }
+
         settled = true;
         clearTimeout(connectionTimeout);
         cleanup();
-        logToFile(`SSH connection error for processId ${processId}: ${err.message}`, "ERROR");
+        logToFile(
+          `SSH connection error for processId ${processId}: ${err?.message || err}`,
+          "ERROR",
+        );
 
         if (sshConfig.tabId && mainWindow && !mainWindow.isDestroyed()) {
           const connectionStatus = {
@@ -442,7 +495,7 @@ class SSHHandlers {
             host: sshConfig.host,
             port: sshConfig.port,
             username: sshConfig.username,
-            error: err.message,
+            error: err?.message || String(err),
           };
           mainWindow.webContents.send("tab-connection-status", {
             tabId: sshConfig.tabId,
@@ -459,6 +512,14 @@ class SSHHandlers {
       // 注册事件监听器
       ssh.on("ready", readyHandler);
       ssh.on("error", errorHandler);
+
+      // 若创建连接时已经进入重连状态机（比如代理端口 ECONNREFUSED），主动等待
+      if (reconnectManager && connectionKey) {
+        const st = reconnectManager.getSessionStatus(connectionKey);
+        if (st && (st.state === "pending" || st.state === "reconnecting")) {
+          startWaitForReconnect();
+        }
+      }
     });
   }
 

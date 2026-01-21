@@ -367,7 +367,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   // 复制命令到剪贴板
   const handleCopyCommand = async (command) => {
     try {
-      await navigator.clipboard.writeText(command);
+      await window.clipboardAPI.writeText(command);
       showNotification(t("commandHistory.commandCopied"));
     } catch (error) {
       showNotification(t("commandHistory.copyFailed"), "error");
