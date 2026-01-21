@@ -27,6 +27,9 @@ let historySnapshotCache = null;
 const generateTransferId = () =>
   `transfer_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
+const generateHistoryId = () =>
+  `history_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+
 const notify = () => {
   // 清除快照缓存，强制重新计算
   snapshotCache.clear();
@@ -55,6 +58,7 @@ const notifyHistory = () => {
 const addToHistory = (transfer) => {
   const historyEntry = {
     ...transfer,
+    historyId: transfer.historyId || generateHistoryId(),
     completedTime: Date.now(),
   };
   transferHistory.unshift(historyEntry);
@@ -62,6 +66,23 @@ const addToHistory = (transfer) => {
   if (transferHistory.length > MAX_HISTORY_SIZE) {
     transferHistory.pop();
   }
+  notifyHistory();
+};
+
+// 删除单条历史记录
+const removeHistoryAt = (index) => {
+  if (typeof index !== "number") return;
+  if (index < 0 || index >= transferHistory.length) return;
+  transferHistory.splice(index, 1);
+  notifyHistory();
+};
+
+// 删除单条历史记录（优先按 historyId）
+const removeHistoryById = (historyId) => {
+  if (!historyId) return;
+  const idx = transferHistory.findIndex((h) => h.historyId === historyId);
+  if (idx === -1) return;
+  transferHistory.splice(idx, 1);
   notifyHistory();
 };
 
@@ -342,9 +363,19 @@ export const useTransferHistory = () => {
     notifyHistory();
   }, []);
 
+  const removeHistoryItemAt = useCallback((index) => {
+    removeHistoryAt(index);
+  }, []);
+
+  const removeHistoryItemById = useCallback((historyId) => {
+    removeHistoryById(historyId);
+  }, []);
+
   return {
     history,
     clearHistory,
+    removeHistoryItemAt,
+    removeHistoryItemById,
   };
 };
 
