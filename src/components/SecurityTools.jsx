@@ -150,7 +150,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
 
   const copyToClipboard = (text, type) => {
     if (text) {
-      navigator.clipboard.writeText(text).then(() => {
+      window.clipboardAPI.writeText(text).then(() => {
         setCopySuccess({ ...copySuccess, [type]: true });
         setTimeout(() => {
           setCopySuccess({ ...copySuccess, [type]: false });

@@ -2340,8 +2340,7 @@ const FileManager = memo(
             relativePath,
           );
           if (response?.success && response.path) {
-            // 使用navigator.clipboard API复制到剪贴板
-            await navigator.clipboard.writeText(response.path);
+            await window.clipboardAPI.writeText(response.path);
           }
         }
       } catch (error) {
