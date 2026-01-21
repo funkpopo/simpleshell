@@ -3,6 +3,10 @@ const { logToFile } = require("../utils/logger");
 const net = require("node:net");
 const proxyManager = require("../proxy/proxy-manager");
 
+function nowMs() {
+  return Date.now();
+}
+
 /**
  * 网络延迟检测服务
  * 负责检测SSH连接的网络延迟，每分钟更新一次
@@ -155,14 +159,14 @@ class NetworkLatencyService extends EventEmitter {
 
       // 更新延迟数据
       data.latency = latency;
-      data.lastCheck = Date.now();
+      data.lastCheck = nowMs();
       data.checkCount++;
       data.status = "connected";
 
       // 添加到历史记录 (最多保留10条)
       data.history.push({
         latency,
-        timestamp: Date.now(),
+        timestamp: nowMs(),
       });
 
       if (data.history.length > 10) {
@@ -175,6 +179,8 @@ class NetworkLatencyService extends EventEmitter {
         latency,
         host: data.host,
         port: data.port,
+        // 统一字段：lastCheck 用于 UI 展示；timestamp 保留向后兼容
+        lastCheck: data.lastCheck,
         timestamp: data.lastCheck,
         status: data.status,
       });
@@ -183,7 +189,7 @@ class NetworkLatencyService extends EventEmitter {
     } catch (error) {
       data.errors++;
       data.status = "error";
-      data.lastCheck = Date.now();
+      data.lastCheck = nowMs();
 
       logToFile(`SSH连接${tabId}延迟检测失败: ${error.message}`, "WARN");
 
@@ -192,7 +198,8 @@ class NetworkLatencyService extends EventEmitter {
         error: error.message,
         host: data.host,
         port: data.port,
-        timestamp: Date.now(),
+        lastCheck: data.lastCheck,
+        timestamp: data.lastCheck,
       });
     }
   }
@@ -252,10 +259,15 @@ class NetworkLatencyService extends EventEmitter {
 
   _measureTcpLatencyDirect(host, port, timeoutMs = 5000) {
     return new Promise((resolve, reject) => {
-      const startTime = Date.now();
+      const startTime = nowMs();
       const socket = net.connect({ host, port });
+      let fallbackTimer = null;
 
       const cleanup = () => {
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
         socket.removeAllListeners();
         try {
           socket.destroy();
@@ -267,25 +279,68 @@ class NetworkLatencyService extends EventEmitter {
         reject(e);
       };
 
+      // 更贴近真实：等待 SSH 服务端 banner（"SSH-"）返回的耗时，而非仅 TCP connect 耗时
       socket.setTimeout(timeoutMs, () => onError(new Error("延迟检测超时 (5秒)")));
       socket.once("error", onError);
-      socket.once("connect", () => {
-        const latency = Date.now() - startTime;
+
+      // 一旦收到任何数据（SSH banner），就认为链路可达并计算耗时
+      socket.once("data", () => {
+        const latency = nowMs() - startTime;
         cleanup();
         resolve(latency);
+      });
+
+      // 某些极端情况下可能收不到 banner，但 connect 已完成；
+      // 为避免永远等待，这里用一个更短的兜底窗口返回 connect 耗时。
+      socket.once("connect", () => {
+        fallbackTimer = setTimeout(() => {
+          const latency = nowMs() - startTime;
+          cleanup();
+          resolve(latency);
+        }, Math.min(300, timeoutMs));
       });
     });
   }
 
   async _measureTcpLatencyViaProxy(resolvedProxyConfig, host, port, timeoutMs = 5000) {
-    const startTime = Date.now();
+    const startTime = nowMs();
     const sock = await proxyManager.createTunnelSocket(resolvedProxyConfig, host, port, {
       timeoutMs,
     });
-    const latency = Date.now() - startTime;
-    try {
-      sock.destroy();
-    } catch (_) {}
+
+    // 关键修复：仅测“隧道建立/CONNECT 成功”在本地代理场景可能几乎恒定很小（比如 1ms）。
+    // 为更贴近实际体验，这里等待目标 SSH 服务端 banner 返回，用首包耗时作为延迟指标。
+    const latency = await new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        sock.removeAllListeners();
+        try {
+          sock.destroy();
+        } catch (_) {}
+      };
+
+      const onError = (e) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(e);
+      };
+
+      const onData = () => {
+        if (settled) return;
+        settled = true;
+        const ms = nowMs() - startTime;
+        cleanup();
+        resolve(ms);
+      };
+
+      sock.setTimeout(timeoutMs, () => onError(new Error("延迟检测超时 (5秒)")));
+      sock.once("error", onError);
+      sock.once("close", () => onError(new Error("Proxy tunnel socket closed")));
+      sock.once("data", onData);
+    });
+
     return latency;
   }
 

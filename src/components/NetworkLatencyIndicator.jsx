@@ -248,6 +248,8 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   const SignalIcon = signalInfo.icon;
 
   // 构建工具提示内容
+  const hasLatencyNumber = typeof latencyData.latency === "number";
+  const lastCheckValue = latencyData.lastCheck ?? latencyData.timestamp ?? null;
   const tooltipContent = (
     <Box>
       <Typography variant="body2" sx={{ fontWeight: "bold", mb: 1 }}>
@@ -258,7 +260,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
       </Typography>
       <Typography variant="caption" sx={{ display: "block" }}>
         {t("latency.current")}:{" "}
-        {latencyData.latency
+        {hasLatencyNumber
           ? `${latencyData.latency}ms`
           : t("latency.unknown")}
       </Typography>
@@ -267,8 +269,8 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
       </Typography>
       <Typography variant="caption" sx={{ display: "block" }}>
         {t("latency.lastCheck")}:{" "}
-        {latencyData.lastCheck
-          ? new Date(latencyData.lastCheck).toLocaleTimeString()
+        {lastCheckValue
+          ? new Date(lastCheckValue).toLocaleTimeString()
           : t("latency.never")}
       </Typography>
       <Typography
@@ -313,7 +315,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
         <Tooltip title={tooltipContent} placement={tooltipPlacement} arrow>
           <Chip
             icon={<SignalIcon />}
-            label={latencyData.latency ? `${latencyData.latency}ms` : "--"}
+            label={hasLatencyNumber ? `${latencyData.latency}ms` : "--"}
             size="small"
             variant="outlined"
             onClick={handleLatencyClick}
