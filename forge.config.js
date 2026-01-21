@@ -126,6 +126,9 @@ module.exports = async () => {
     packagerConfig: {
       asar: true,
       icon: "./src/assets/logo",
+      download: {
+        unsafelyDisableChecksums: true,
+      },
     },
     rebuildConfig: {
       // `cpu-features` is an optional dependency of `ssh2`.
