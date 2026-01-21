@@ -14,6 +14,7 @@ const ReconnectionManager = require('./reconnection-manager');
 // 代理类型常量
 const PROXY_TYPES = {
   HTTP: 'http',
+  HTTPS: 'https',
   SOCKS4: 'socks4',
   SOCKS5: 'socks5',
   NONE: 'none'
@@ -481,6 +482,7 @@ class SSHPool extends BaseConnectionPool {
 
     switch (type) {
       case PROXY_TYPES.HTTP:
+      case PROXY_TYPES.HTTPS:
         return 'http';
       case PROXY_TYPES.SOCKS4:
         return 'socks4';
