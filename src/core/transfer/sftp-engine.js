@@ -391,48 +391,51 @@ async function handleUnhealthySession(tabId, session) {
       try {
         // Lazy require to avoid circular deps at module load time.
         const { sshConnectionPool } = require("../connection");
+        const reconnectManager = sshConnectionPool?.reconnectionManager;
         const connectionKey =
-          processInfo.connectionKey ||
+          processInfo?.connectionInfo?.key ||
           (sshConnectionPool &&
           typeof sshConnectionPool.getConnectionKeyByTabId === "function"
             ? sshConnectionPool.getConnectionKeyByTabId(tabId)
             : null);
 
-        if (
-          sshConnectionPool &&
-          sshConnectionPool.reconnectionManager &&
-          connectionKey
-        ) {
-          const existingSession =
-            sshConnectionPool.reconnectionManager.getSessionStatus(connectionKey);
-
-          // If not registered (e.g. manual recovery path), register but do not auto start.
-          if (!existingSession) {
-            const conn = sshConnectionPool.connections?.get(connectionKey);
-            if (conn && conn.client && conn.config) {
-              sshConnectionPool.reconnectionManager.registerSession(
-                connectionKey,
-                conn.client,
-                conn.config,
-                { autoStart: false, state: "connected" },
-              );
-            }
-          }
-
-          await sshConnectionPool.reconnectionManager.manualReconnect(connectionKey);
-          logToFile(
-            `sftpEngine: SSH自动重连成功: tabId=${tabId}, key=${connectionKey}`,
-            "INFO",
-          );
-        } else {
+        if (!sshConnectionPool || !reconnectManager || !connectionKey) {
           throw new Error("SSH connection pool or reconnect manager not available");
         }
+
+        const existingSession = reconnectManager.getSessionStatus(connectionKey);
+
+        // 统一：SFTP 不单独做“手动重连”，只复用 SSH 的自动重连状态机
+        if (!existingSession) {
+          const cfg =
+            processInfo?.config || sshConnectionPool.connections?.get(connectionKey)?.config;
+          const client =
+            processInfo?.connectionInfo?.client || processInfo?.process || sshClient;
+          if (!cfg) {
+            throw new Error("无法获取SSH连接配置，无法自动重连");
+          }
+          reconnectManager.registerSession(connectionKey, client, cfg, {
+            autoStart: true,
+            state: "pending",
+            failureReason: "network",
+          });
+        } else {
+          // 已存在会话：确保进入自动重连流程（避免重复安排）
+          await reconnectManager.requestAutoReconnect(connectionKey, "network");
+        }
+
+        // 等待重连结果（最多 1 分钟，总耗时由状态机封顶）
+        await reconnectManager.waitForReconnect(connectionKey, 60_000);
+        logToFile(
+          `sftpEngine: SSH自动重连完成: tabId=${tabId}, key=${connectionKey}`,
+          "INFO",
+        );
       } catch (reconnectError) {
         logToFile(
           `sftpEngine: SSH自动重连失败: tabId=${tabId}, error=${reconnectError.message}`,
           "ERROR",
         );
-        throw new Error("SSH连接已断开，且自动重连失败，请重新连接");
+        throw reconnectError;
       }
     }
 
