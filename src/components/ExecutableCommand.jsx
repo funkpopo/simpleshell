@@ -129,7 +129,7 @@ const ExecutableCommand = memo(({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(command);
+      await window.clipboardAPI.writeText(command);
       setCopied(true);
       onCopy?.(command);
       setTimeout(() => setCopied(false), 2000);

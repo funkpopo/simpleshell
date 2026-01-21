@@ -572,7 +572,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理复制命令
   const handleCopyCommand = (command) => {
-    navigator.clipboard.writeText(command).catch((err) => {});
+    window.clipboardAPI.writeText(command).catch((err) => {});
   };
 
   // 过滤命令

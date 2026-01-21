@@ -396,7 +396,7 @@ const AIChatWindow = ({
   // 复制消息
   const handleCopyMessage = async (content) => {
     try {
-      await navigator.clipboard.writeText(content);
+      await window.clipboardAPI.writeText(content);
     } catch (err) {
       console.error("Failed to copy:", err);
     }
