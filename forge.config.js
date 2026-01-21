@@ -35,7 +35,9 @@ const isPortAvailable = (port) =>
       tester.close();
     });
 
-    tester.listen({ port, host: "127.0.0.1", exclusive: true });
+    // Don't bind only to 127.0.0.1: Forge's logger binds to all interfaces (often `:::PORT`),
+    // and a port can be "free" on 127.0.0.1 but already taken on ::/0.0.0.0.
+    tester.listen({ port, exclusive: true });
   });
 
 const findAvailablePort = async (preferredPorts, fallbackStart) => {
@@ -125,7 +127,12 @@ module.exports = async () => {
       asar: true,
       icon: "./src/assets/logo",
     },
-    rebuildConfig: {},
+    rebuildConfig: {
+      // `cpu-features` is an optional dependency of `ssh2`.
+      // Under Electron 40 (Node 24 / new V8), rebuilding it from source may fail on Windows,
+      // but `ssh2` works fine without it (it falls back to pure JS).
+      ignoreModules: ["cpu-features"],
+    },
     makers: [
       {
         name: "@electron-forge/maker-squirrel",
