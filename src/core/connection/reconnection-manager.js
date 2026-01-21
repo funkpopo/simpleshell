@@ -176,7 +176,15 @@ class ReconnectionManager extends EventEmitter {
     const failureReason = this.analyzeFailureReason(error);
 
     // 记录失败模式
-    this.recordFailurePattern(session.id, failureReason);
+    try {
+      this.recordFailurePattern(session.id, failureReason);
+    } catch (patternErr) {
+      // 失败模式统计不应影响断线/重连主流程
+      logToFile(
+        `记录失败模式异常(已忽略): ${session.id} - ${patternErr?.message || patternErr}`,
+        "WARN",
+      );
+    }
 
     // 决定是否需要重连
     if (this.shouldReconnect(session, failureReason)) {
@@ -285,6 +293,72 @@ class ReconnectionManager extends EventEmitter {
     }
 
     return FAILURE_REASON.UNKNOWN;
+  }
+
+  /**
+   * 记录失败模式（用于后续智能重连策略分析）
+   * 注意：该统计逻辑不应影响主流程，调用方应自行 try/catch。
+   */
+  recordFailurePattern(sessionId, failureReason) {
+    const now = Date.now();
+    const reason = failureReason || FAILURE_REASON.UNKNOWN;
+
+    const existing = this.failurePatterns.get(sessionId) || {
+      total: 0,
+      reasons: Object.create(null),
+      lastReason: null,
+      lastAt: 0,
+      consecutive: 0,
+    };
+
+    existing.total += 1;
+    existing.reasons[reason] = (existing.reasons[reason] || 0) + 1;
+
+    // 连续失败统计：同类原因、且时间间隔不太长则计为连续
+    const isSameReason = existing.lastReason === reason;
+    const isCloseInTime = now - (existing.lastAt || 0) < 5 * 60 * 1000; // 5分钟窗口
+    existing.consecutive = isSameReason && isCloseInTime ? existing.consecutive + 1 : 1;
+
+    existing.lastReason = reason;
+    existing.lastAt = now;
+
+    this.failurePatterns.set(sessionId, existing);
+    return existing;
+  }
+
+  // 将底层错误映射为用户可理解的提示（详细信息写日志）
+  formatReconnectErrorForUser(error, config) {
+    const msg = String(error?.message || "");
+    const code = String(error?.code || "");
+    const host = config?.host || "目标主机";
+    const port = config?.port || 22;
+
+    // 这一类属于开发/内部异常，不应直接暴露给用户
+    if (msg.includes("is not a function") || msg.includes("undefined")) {
+      return "连接发生异常并已断开，自动重连失败。请重试连接，或查看日志获取详细信息。";
+    }
+
+    // SSH2 常见错误映射
+    if (msg.includes("All configured authentication methods failed")) {
+      return "SSH 认证失败：请检查用户名/密码/私钥与权限设置。";
+    }
+    if (code === "ECONNREFUSED" || msg.includes("connect ECONNREFUSED")) {
+      return `连接被拒绝：无法连接到 ${host}:${port}。请检查端口、服务状态与防火墙。`;
+    }
+    if (code === "ENOTFOUND" || msg.includes("getaddrinfo ENOTFOUND")) {
+      return `主机名无法解析：${host}。请检查主机名/DNS/网络。`;
+    }
+    if (code === "ETIMEDOUT" || msg.toLowerCase().includes("timeout")) {
+      return `连接超时：${host}:${port}。请检查网络质量或服务器负载。`;
+    }
+    if (code === "ECONNRESET" || msg.includes("ECONNRESET")) {
+      return "连接被远端重置：网络不稳定或服务器主动断开。";
+    }
+    if (code === "EPIPE" || msg.includes("EPIPE")) {
+      return "连接管道已关闭：网络不稳定或会话被中止。";
+    }
+
+    return "连接已断开，自动重连失败，请重新连接。";
   }
 
   // 判断是否应该重连
@@ -531,9 +605,20 @@ class ReconnectionManager extends EventEmitter {
           `达到最大重试次数(${this.config.maxRetries}次)或不满足重连条件`,
         );
 
+        const userFacingError = this.formatReconnectErrorForUser(
+          error,
+          session?.config,
+        );
+        if (userFacingError !== error.message) {
+          logToFile(
+            `重连失败(用户提示): ${session.id} - ${userFacingError}`,
+            "WARN",
+          );
+        }
+
         this.emit("reconnectFailed", {
           sessionId: session.id,
-          error: error.message,
+          error: userFacingError,
           attempts: session.retryCount,
           maxRetries: this.config.maxRetries,
         });
