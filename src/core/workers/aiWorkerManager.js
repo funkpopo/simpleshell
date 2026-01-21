@@ -12,6 +12,82 @@ let nextRequestId = 1;
 const streamSessions = new Map();
 let currentSessionId = null;
 
+// 资源管理器注册的清理函数（用于避免资源表无限增长/误报）
+let disposeWorkerResource = null;
+let disposeMessageListenerResource = null;
+let disposeErrorListenerResource = null;
+let disposeExitListenerResource = null;
+let disposeRestartTimerResource = null;
+
+// 记录当前绑定到 worker 的 handler，便于在重建/退出时主动解绑
+let currentWorkerHandlers = null;
+
+function safeCallDisposer(disposer) {
+  try {
+    if (!disposer) return null;
+    const result = disposer();
+    // removeResource 是 async，这里允许返回 Promise
+    return Promise.resolve(result);
+  } catch (e) {
+    return Promise.reject(e);
+  }
+}
+
+async function cleanupRestartTimerRegistration() {
+  if (!disposeRestartTimerResource) return;
+  const disposer = disposeRestartTimerResource;
+  disposeRestartTimerResource = null;
+  await Promise.allSettled([safeCallDisposer(disposer)]);
+}
+
+function detachCurrentWorkerEventHandlers(worker) {
+  if (!worker || !currentWorkerHandlers) return;
+  try {
+    if (currentWorkerHandlers.messageHandler) {
+      worker.removeListener("message", currentWorkerHandlers.messageHandler);
+    }
+    if (currentWorkerHandlers.errorHandler) {
+      worker.removeListener("error", currentWorkerHandlers.errorHandler);
+    }
+    if (currentWorkerHandlers.exitHandler) {
+      worker.removeListener("exit", currentWorkerHandlers.exitHandler);
+    }
+  } catch (e) {
+    // 忽略解绑异常，避免影响后续清理流程
+  } finally {
+    currentWorkerHandlers = null;
+  }
+}
+
+async function cleanupWorkerRegistrations({ terminateWorker } = { terminateWorker: true }) {
+  // 先清理 restart timer 的资源注册（如果存在）
+  await cleanupRestartTimerRegistration();
+
+  // 清理事件监听器资源注册（会触发 removeListener）
+  const listenerDisposers = [
+    disposeMessageListenerResource,
+    disposeErrorListenerResource,
+    disposeExitListenerResource,
+  ].filter(Boolean);
+  disposeMessageListenerResource = null;
+  disposeErrorListenerResource = null;
+  disposeExitListenerResource = null;
+  await Promise.allSettled(listenerDisposers.map(safeCallDisposer));
+
+  // 清理 worker 资源注册（会触发 terminate）
+  if (disposeWorkerResource) {
+    const disposer = disposeWorkerResource;
+    disposeWorkerResource = null;
+    if (terminateWorker) {
+      await Promise.allSettled([safeCallDisposer(disposer)]);
+    } else {
+      // 当前资源管理器的 worker 清理逻辑会 terminate；这里仍然执行，
+      // 但如果 worker 已退出，terminate 通常是幂等/可忽略。
+      await Promise.allSettled([safeCallDisposer(disposer)]);
+    }
+  }
+}
+
 /**
  * 获取worker文件路径
  */
@@ -101,7 +177,19 @@ function handleWorkerTypeMessage(type, id, data, result, error) {
  */
 function createAIWorker() {
   if (aiWorker) {
-    aiWorker.terminate();
+    // 先解绑监听器，避免旧 worker / handler 残留
+    detachCurrentWorkerEventHandlers(aiWorker);
+    // 尽量从资源管理器中移除旧注册，避免资源表增长
+    void cleanupWorkerRegistrations({ terminateWorker: true });
+    // 如果未通过资源管理器登记 worker，则直接终止旧 worker（不等待）
+    if (!disposeWorkerResource) {
+      try {
+        aiWorker.terminate();
+      } catch (e) {
+        // ignore
+      }
+    }
+    aiWorker = null;
   }
 
   try {
@@ -109,7 +197,10 @@ function createAIWorker() {
     logToFile(`创建AI Worker: ${workerPath}`, "INFO");
 
     aiWorker = new Worker(workerPath);
-    mainProcessResourceManager.addWorker(aiWorker, 'AI Worker');
+    // AI Worker 属于预期长生命周期资源，避免被 30 分钟阈值误判为泄漏
+    disposeWorkerResource = mainProcessResourceManager.addWorker(aiWorker, "AI Worker", {
+      skipLeakCheck: true,
+    });
 
     const messageHandler = (message) => {
       const { id, type, result, error, data } = message;
@@ -134,7 +225,13 @@ function createAIWorker() {
     };
 
     aiWorker.on("message", messageHandler);
-    mainProcessResourceManager.addEventListener(aiWorker, 'message', messageHandler, 'AI Worker message handler');
+    disposeMessageListenerResource = mainProcessResourceManager.addEventListener(
+      aiWorker,
+      "message",
+      messageHandler,
+      "AI Worker message handler",
+      { skipLeakCheck: true }
+    );
 
     const errorHandler = (error) => {
       logToFile(`AI Worker错误: ${error.message}`, "ERROR");
@@ -146,26 +243,52 @@ function createAIWorker() {
     };
 
     aiWorker.on("error", errorHandler);
-    mainProcessResourceManager.addEventListener(aiWorker, 'error', errorHandler, 'AI Worker error handler');
+    disposeErrorListenerResource = mainProcessResourceManager.addEventListener(
+      aiWorker,
+      "error",
+      errorHandler,
+      "AI Worker error handler",
+      { skipLeakCheck: true }
+    );
 
     const exitHandler = (code) => {
       logToFile(`AI Worker退出，代码: ${code}`, "WARN");
       if (code !== 0) {
         const timerId = setTimeout(() => {
           logToFile("尝试重启AI Worker", "INFO");
+          // timer 已触发，移除其资源注册（避免资源管理器长期保留一次性 timer）
+          void cleanupRestartTimerRegistration();
           createAIWorker();
         }, 1000);
-        mainProcessResourceManager.addTimer(timerId, 'timeout', 'AI Worker restart timer');
+        // timer 是一次性的，但仍登记以便应用退出时统一清理
+        disposeRestartTimerResource = mainProcessResourceManager.addTimer(
+          timerId,
+          "timeout",
+          "AI Worker restart timer"
+        );
       }
       for (const [id, callback] of aiRequestMap.entries()) {
         callback.reject(new Error(`AI Worker stopped unexpectedly with code ${code}`));
         aiRequestMap.delete(id);
       }
       streamSessions.clear();
+
+      // worker 已退出，清理当前注册（不阻塞 exit 回调）
+      detachCurrentWorkerEventHandlers(aiWorker);
+      void cleanupWorkerRegistrations({ terminateWorker: false });
+      aiWorker = null;
     };
 
     aiWorker.on("exit", exitHandler);
-    mainProcessResourceManager.addEventListener(aiWorker, 'exit', exitHandler, 'AI Worker exit handler');
+    disposeExitListenerResource = mainProcessResourceManager.addEventListener(
+      aiWorker,
+      "exit",
+      exitHandler,
+      "AI Worker exit handler",
+      { skipLeakCheck: true }
+    );
+
+    currentWorkerHandlers = { messageHandler, errorHandler, exitHandler };
 
     // 初始化系统代理配置
     try {
@@ -214,7 +337,8 @@ function ensureAIWorker() {
 async function terminateAIWorker() {
   if (aiWorker) {
     try {
-      await aiWorker.terminate();
+      detachCurrentWorkerEventHandlers(aiWorker);
+      await cleanupWorkerRegistrations({ terminateWorker: true });
     } catch (err) {
       logToFile(`Error terminating AI worker: ${err.message}`, "ERROR");
     }

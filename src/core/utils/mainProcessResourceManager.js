@@ -43,6 +43,25 @@ class MainProcessResourceManager {
   }
 
   /**
+   * 规范化 description/options 兼容入参
+   * - 兼容旧签名：(..., description)
+   * - 新签名：(..., description, options) 或 (..., options)
+   */
+  normalizeDescriptionAndOptions(descriptionOrOptions, options) {
+    if (descriptionOrOptions && typeof descriptionOrOptions === 'object') {
+      return {
+        description: descriptionOrOptions.description || '',
+        options: descriptionOrOptions || {}
+      };
+    }
+
+    return {
+      description: descriptionOrOptions || '',
+      options: options || {}
+    };
+  }
+
+  /**
    * 生成唯一资源ID
    */
   generateId(type) {
@@ -52,18 +71,22 @@ class MainProcessResourceManager {
   /**
    * 注册 Worker 线程
    */
-  addWorker(worker, description = '') {
+  addWorker(worker, descriptionOrOptions = '', options = {}) {
     if (this.isShuttingDown || !worker) {
       return () => {};
     }
 
+    const normalized = this.normalizeDescriptionAndOptions(descriptionOrOptions, options);
+    const description = normalized.description;
+    const { skipLeakCheck = false } = normalized.options;
     const id = this.generateId('worker');
 
     this.resources.set(id, {
       type: 'worker',
       resource: worker,
       description,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      skipLeakCheck
     });
 
     this.stats.workers++;
@@ -75,11 +98,14 @@ class MainProcessResourceManager {
   /**
    * 注册 IPC Handler
    */
-  addIpcHandler(ipcMain, channel, description = '') {
+  addIpcHandler(ipcMain, channel, descriptionOrOptions = '', options = {}) {
     if (this.isShuttingDown || !ipcMain || !channel) {
       return () => {};
     }
 
+    const normalized = this.normalizeDescriptionAndOptions(descriptionOrOptions, options);
+    const description = normalized.description;
+    const { skipLeakCheck = false } = normalized.options;
     const id = this.generateId('ipcHandler');
 
     this.resources.set(id, {
@@ -87,7 +113,8 @@ class MainProcessResourceManager {
       ipcMain,
       channel,
       description,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      skipLeakCheck
     });
 
     this.stats.ipcHandlers++;
@@ -99,11 +126,14 @@ class MainProcessResourceManager {
   /**
    * 注册事件监听器
    */
-  addEventListener(target, eventName, handler, description = '') {
+  addEventListener(target, eventName, handler, descriptionOrOptions = '', options = {}) {
     if (this.isShuttingDown || !target || !eventName) {
       return () => {};
     }
 
+    const normalized = this.normalizeDescriptionAndOptions(descriptionOrOptions, options);
+    const description = normalized.description;
+    const { skipLeakCheck = false } = normalized.options;
     const id = this.generateId('eventListener');
 
     this.resources.set(id, {
@@ -112,7 +142,8 @@ class MainProcessResourceManager {
       eventName,
       handler,
       description,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      skipLeakCheck
     });
 
     this.stats.eventListeners++;
@@ -124,11 +155,14 @@ class MainProcessResourceManager {
   /**
    * 注册 SSH/Telnet 连接
    */
-  addConnection(connection, type = 'connection', description = '') {
+  addConnection(connection, type = 'connection', descriptionOrOptions = '', options = {}) {
     if (this.isShuttingDown || !connection) {
       return () => {};
     }
 
+    const normalized = this.normalizeDescriptionAndOptions(descriptionOrOptions, options);
+    const description = normalized.description;
+    const { skipLeakCheck = false } = normalized.options;
     const id = this.generateId('connection');
 
     this.resources.set(id, {
@@ -136,7 +170,8 @@ class MainProcessResourceManager {
       connectionType: type,
       resource: connection,
       description,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      skipLeakCheck
     });
 
     this.stats.connections++;
@@ -148,18 +183,22 @@ class MainProcessResourceManager {
   /**
    * 注册子进程
    */
-  addChildProcess(process, description = '') {
+  addChildProcess(process, descriptionOrOptions = '', options = {}) {
     if (this.isShuttingDown || !process) {
       return () => {};
     }
 
+    const normalized = this.normalizeDescriptionAndOptions(descriptionOrOptions, options);
+    const description = normalized.description;
+    const { skipLeakCheck = false } = normalized.options;
     const id = this.generateId('childProcess');
 
     this.resources.set(id, {
       type: 'childProcess',
       resource: process,
       description,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      skipLeakCheck
     });
 
     this.stats.childProcesses++;
@@ -171,11 +210,14 @@ class MainProcessResourceManager {
   /**
    * 注册定时器
    */
-  addTimer(timerId, timerType = 'timeout', description = '') {
+  addTimer(timerId, timerType = 'timeout', descriptionOrOptions = '', options = {}) {
     if (this.isShuttingDown) {
       return () => {};
     }
 
+    const normalized = this.normalizeDescriptionAndOptions(descriptionOrOptions, options);
+    const description = normalized.description;
+    const { skipLeakCheck = false } = normalized.options;
     const id = this.generateId('timer');
 
     this.resources.set(id, {
@@ -183,7 +225,8 @@ class MainProcessResourceManager {
       timerType,
       timerId,
       description,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      skipLeakCheck
     });
 
     this.stats.timers++;
@@ -194,18 +237,22 @@ class MainProcessResourceManager {
   /**
    * 注册自定义清理函数
    */
-  addCleanup(cleanupFn, description = '') {
+  addCleanup(cleanupFn, descriptionOrOptions = '', options = {}) {
     if (this.isShuttingDown || typeof cleanupFn !== 'function') {
       return () => {};
     }
 
+    const normalized = this.normalizeDescriptionAndOptions(descriptionOrOptions, options);
+    const description = normalized.description;
+    const { skipLeakCheck = false } = normalized.options;
     const id = this.generateId('custom');
 
     this.resources.set(id, {
       type: 'custom',
       cleanupFn,
       description,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      skipLeakCheck
     });
 
     logToFile(`[资源管理器] 注册自定义清理: ${description} (${id})`, 'DEBUG');
@@ -418,6 +465,9 @@ class MainProcessResourceManager {
     const leaks = [];
 
     for (const [id, resource] of this.resources) {
+      if (resource && resource.skipLeakCheck) {
+        continue;
+      }
       const age = now - resource.createdAt;
       if (age > maxAge) {
         leaks.push({
