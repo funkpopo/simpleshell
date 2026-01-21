@@ -134,7 +134,7 @@ const formatTime = (timestamp) => {
 /**
  * 单个传输项组件
  */
-const TransferItem = memo(({ transfer, isActive, onCancel }) => {
+const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
   const statusIcon = getStatusIcon(transfer);
@@ -142,6 +142,7 @@ const TransferItem = memo(({ transfer, isActive, onCancel }) => {
   const hasError = !!transfer.error;
   const isCancelled = transfer.isCancelled;
   const canCancel = isActive && !isCompleted && !hasError && !isCancelled;
+  const canDeleteHistory = !isActive && typeof onDelete === "function";
 
   // 判断是否有文件列表可展开（单文件也允许展开）
   const hasFileList = transfer.fileList && transfer.fileList.length > 0;
@@ -189,6 +190,27 @@ const TransferItem = memo(({ transfer, isActive, onCancel }) => {
           {formatTime(transfer.startTime || transfer.completedTime)}
         </Typography>
         {statusIcon}
+        {/* 删除历史记录按钮 */}
+        {canDeleteHistory && (
+          <Tooltip title="删除记录">
+            <IconButton
+              size="small"
+              onClick={() => onDelete?.(transfer)}
+              sx={{
+                width: 20,
+                height: 20,
+                p: 0,
+                color: theme.palette.text.secondary,
+                "&:hover": {
+                  color: "#f44336",
+                  backgroundColor: "rgba(244,67,54,0.1)",
+                },
+              }}
+            >
+              <CloseIcon sx={{ fontSize: 14 }} />
+            </IconButton>
+          </Tooltip>
+        )}
         {/* 展开/折叠按钮 */}
         {canExpand && (
           <IconButton
@@ -351,7 +373,7 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
   const theme = useTheme();
   const { t } = useTranslation();
   const { allTransfers, clearCompletedTransfers, updateTransferProgress } = useAllGlobalTransfers();
-  const { history, clearHistory } = useTransferHistory();
+  const { history, clearHistory, removeHistoryItemAt } = useTransferHistory();
   const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
 
@@ -591,9 +613,10 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
             <Box>
               {history.map((transfer, index) => (
                 <TransferItem
-                  key={`history-${transfer.transferId}-${index}`}
+                  key={`history-${transfer.historyId ?? transfer.transferId}-${transfer.completedTime ?? index}`}
                   transfer={transfer}
                   isActive={false}
+                  onDelete={() => removeHistoryItemAt(index)}
                 />
               ))}
             </Box>

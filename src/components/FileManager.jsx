@@ -1978,6 +1978,9 @@ const FileManager = memo(
         }
 
         if (window.terminalAPI && window.terminalAPI.uploadFile) {
+          // 触发应用内状态提示（与拖拽上传保持一致）
+          showNotification(t("fileManager.messages.preparingUpload"), "info", 2000);
+
           // 创建新的传输任务
           const transferId = addTransferProgress({
             type: "upload-multifile", // Always use upload-multifile for file uploads
@@ -2049,6 +2052,9 @@ const FileManager = memo(
             // 如果有警告信息（部分文件上传失败），显示给用户
             if (result.partialSuccess && result.warning) {
               setError(result.warning);
+              showNotification(result.warning, "warning", 6000);
+            } else {
+              showNotification(t("fileManager.messages.uploadSuccess"), "success", 2000);
             }
 
             // 检查是否是用户取消操作
@@ -2064,6 +2070,11 @@ const FileManager = memo(
             if (!isUserCancellationError(result)) {
               // 只有在不是用户主动取消的情况下才显示错误
               setError(result.error || t("fileManager.errors.uploadFailed"));
+              showNotification(
+                result.error || t("fileManager.errors.uploadFailed"),
+                "error",
+                6000,
+              );
               updateTransferProgress(transferId, {
                 error: result.error || t("fileManager.errors.uploadFailed"),
               });
@@ -2094,6 +2105,12 @@ const FileManager = memo(
           !isUserCancellationError(error) &&
           !error.message?.includes("reply was never sent")
         ) {
+          showNotification(
+            (error && (error.message || error.error)) ||
+              t("fileManager.errors.uploadFailed"),
+            "error",
+            6000,
+          );
           setError(
             t("fileManager.errors.uploadFailed") +
               ": " +
@@ -2162,6 +2179,9 @@ const FileManager = memo(
         }
 
         if (window.terminalAPI && window.terminalAPI.uploadFolder) {
+          // 触发应用内状态提示（与拖拽上传保持一致）
+          showNotification(t("fileManager.messages.preparingUpload"), "info", 2000);
+
           // 创建新的文件夹传输任务
           const transferId = addTransferProgress({
             type: "upload-folder",
@@ -2235,6 +2255,9 @@ const FileManager = memo(
             // 如果有警告信息（部分文件上传失败），显示给用户
             if (result.partialSuccess && result.warning) {
               setError(result.warning);
+              showNotification(result.warning, "warning", 6000);
+            } else {
+              showNotification(t("fileManager.messages.uploadSuccess"), "success", 2000);
             }
 
             // 检查是否是用户取消操作
@@ -2250,6 +2273,11 @@ const FileManager = memo(
             if (!isUserCancellationError(result)) {
               // 只有在不是用户主动取消的情况下才显示错误
               setError(result.error || t("fileManager.errors.uploadFailed"));
+              showNotification(
+                result.error || t("fileManager.errors.uploadFailed"),
+                "error",
+                6000,
+              );
               updateTransferProgress(transferId, {
                 error: result.error || t("fileManager.errors.uploadFailed"),
               });
@@ -2274,6 +2302,12 @@ const FileManager = memo(
           !isUserCancellationError(error) &&
           !error.message?.includes("reply was never sent")
         ) {
+          showNotification(
+            (error && (error.message || error.error)) ||
+              t("fileManager.errors.uploadFailed"),
+            "error",
+            6000,
+          );
           setError(
             t("fileManager.errors.uploadFailed") +
               ": " +
