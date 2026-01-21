@@ -71,6 +71,11 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
       preload: preloadEntry,
       contextIsolation: true,
       nodeIntegration: false,
+      // Electron 40 may run preloads in a sandboxed context depending on defaults.
+      // Our webpack preload bundle includes asset-relocator runtime that uses `__dirname`,
+      // which is not available in sandboxed preloads. Keep renderer Node disabled, but
+      // ensure preload runs in the normal (non-sandboxed) context.
+      sandbox: false,
     },
     icon: iconPath,
   });

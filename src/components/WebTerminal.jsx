@@ -1449,7 +1449,7 @@ useEffect(() => {
       setCurrentInput("");
       setSuggestionsHiddenByEsc(false);
 
-      navigator.clipboard.readText().then((text) => {
+      window.clipboardAPI.readText().then((text) => {
         if (text && processCache[tabId]) {
           // 检测文本是否包含中文字符
           const containsChinese = /[\u4e00-\u9fa5]/.test(text);
@@ -2865,7 +2865,7 @@ useEffect(() => {
           const selection = term.getSelection();
           if (selection) {
             e.preventDefault();
-            navigator.clipboard.writeText(selection);
+            window.clipboardAPI.writeText(selection);
           }
         }
         // Ctrl+' 粘贴 (改为Ctrl+')
@@ -2882,7 +2882,7 @@ useEffect(() => {
           // 更新最后粘贴时间
           lastPasteTimeRef.current = now;
 
-          navigator.clipboard.readText().then((text) => {
+          window.clipboardAPI.readText().then((text) => {
             if (text && processCache[tabId]) {
               // 使用预处理函数处理多行文本，防止注释和缩进问题
               const processedText = processMultilineInput(text);
@@ -3686,7 +3686,7 @@ useEffect(() => {
   // 复制选中的文本
   const handleCopy = () => {
     if (selectedText) {
-      navigator.clipboard.writeText(selectedText).catch((err) => {
+      window.clipboardAPI.writeText(selectedText).catch((err) => {
         // 复制到剪贴板失败
       });
     }
@@ -3710,7 +3710,7 @@ useEffect(() => {
     // 更新最后粘贴时间
     lastPasteTimeRef.current = now;
 
-    navigator.clipboard
+    window.clipboardAPI
       .readText()
       .then((text) => {
         if (text && termRef.current && processCache[tabId]) {

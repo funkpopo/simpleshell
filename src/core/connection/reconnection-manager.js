@@ -1,4 +1,5 @@
 const { EventEmitter } = require("events");
+const net = require("node:net");
 const { logToFile } = require("../utils/logger");
 const proxyManager = require("../proxy/proxy-manager");
 
@@ -6,9 +7,17 @@ const proxyManager = require("../proxy/proxy-manager");
 const RECONNECT_CONFIG = {
   maxRetries: 5, // 最大重试次数
   initialDelay: 1000, // 初始延迟 1 秒
-  maxDelay: 16000, // 最大延迟 16 秒
+  maxDelay: 30000, // 最大延迟 30 秒（总耗时封顶由 totalTimeCapMs 控制）
   exponentialFactor: 2.0, // 指数因子 (每次翻倍)
   jitter: 1000, // 随机抖动 0-1000ms，避免雷鸣效应
+  totalTimeCapMs: 60_000, // 总耗时封顶（包含等待网络/代理恢复）
+
+  // 网络/代理可用性探测：在真正发起 ssh2.connect 前先等待网络稳定
+  networkProbe: {
+    enabled: true,
+    intervalMs: 3000,
+    tcpTimeoutMs: 1500,
+  },
 
   // 启用指数退避策略
   useExponentialBackoff: true,
@@ -104,6 +113,7 @@ class ReconnectionManager extends EventEmitter {
       lastAttempt: null,
       lastError: null,
       intentionalClose,
+      reconnectWindowStartedAt: null, // 首次进入自动重连窗口的时间（用于总耗时封顶）
       createdAt: Date.now(),
       reconnectHistory: [],
       qualityMetrics: {
@@ -124,6 +134,7 @@ class ReconnectionManager extends EventEmitter {
     // 关键：很多场景（例如 ssh2 的 close 已经触发后才注册）不会再收到旧连接事件，
     // 因此需要在注册时就直接安排一次重连。
     if (autoStart && session.state === RECONNECT_STATE.PENDING) {
+      this._ensureReconnectWindowStarted(session);
       void this.scheduleReconnect(session, failureReason);
     }
   }
@@ -174,9 +185,18 @@ class ReconnectionManager extends EventEmitter {
 
     // 分析错误原因
     const failureReason = this.analyzeFailureReason(error);
+    this._ensureReconnectWindowStarted(session);
 
     // 记录失败模式
-    this.recordFailurePattern(session.id, failureReason);
+    try {
+      this.recordFailurePattern(session.id, failureReason);
+    } catch (patternErr) {
+      // 失败模式统计不应影响断线/重连主流程
+      logToFile(
+        `记录失败模式异常(已忽略): ${session.id} - ${patternErr?.message || patternErr}`,
+        "WARN",
+      );
+    }
 
     // 决定是否需要重连
     if (this.shouldReconnect(session, failureReason)) {
@@ -210,6 +230,7 @@ class ReconnectionManager extends EventEmitter {
     if (!session.intentionalClose) {
       const failureReason = FAILURE_REASON.NETWORK;
       if (this.shouldReconnect(session, failureReason)) {
+        this._ensureReconnectWindowStarted(session);
         await this.scheduleReconnect(session, failureReason);
       }
     }
@@ -238,6 +259,7 @@ class ReconnectionManager extends EventEmitter {
     const failureReason = FAILURE_REASON.TIMEOUT;
 
     if (this.shouldReconnect(session, failureReason)) {
+      this._ensureReconnectWindowStarted(session);
       await this.scheduleReconnect(session, failureReason);
     }
   }
@@ -287,6 +309,171 @@ class ReconnectionManager extends EventEmitter {
     return FAILURE_REASON.UNKNOWN;
   }
 
+  _ensureReconnectWindowStarted(session) {
+    if (!session) return;
+    if (!session.reconnectWindowStartedAt) {
+      session.reconnectWindowStartedAt = Date.now();
+    }
+  }
+
+  _getRemainingReconnectWindowMs(session) {
+    const cap = Number(this.config.totalTimeCapMs || 0);
+    if (!cap || !session?.reconnectWindowStartedAt) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const elapsed = Date.now() - session.reconnectWindowStartedAt;
+    return Math.max(0, cap - elapsed);
+  }
+
+  _isReconnectWindowExpired(session) {
+    const remaining = this._getRemainingReconnectWindowMs(session);
+    return Number.isFinite(remaining) && remaining <= 0;
+  }
+
+  _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  _probeTcp(host, port, timeoutMs) {
+    return new Promise((resolve) => {
+      if (!host || !port) {
+        resolve(false);
+        return;
+      }
+
+      const socket = net.createConnection({ host, port });
+      let done = false;
+
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        try {
+          socket.destroy();
+        } catch (_) {}
+        resolve(ok);
+      };
+
+      socket.setTimeout(timeoutMs);
+      socket.once("connect", () => finish(true));
+      socket.once("timeout", () => finish(false));
+      socket.once("error", () => finish(false));
+    });
+  }
+
+  async _isPreflightReady(config) {
+    const enabled = Boolean(this.config.networkProbe?.enabled);
+    if (!enabled) return true;
+
+    const resolvedProxyConfig = await proxyManager.resolveProxyConfigAsync(config);
+    const usingProxy =
+      resolvedProxyConfig &&
+      proxyManager.isValidProxyConfig(resolvedProxyConfig) &&
+      String(resolvedProxyConfig.type || "").toLowerCase() !== "none";
+
+    const tcpTimeoutMs = Number(this.config.networkProbe?.tcpTimeoutMs || 1500);
+
+    if (usingProxy) {
+      return this._probeTcp(
+        resolvedProxyConfig.host,
+        resolvedProxyConfig.port,
+        tcpTimeoutMs,
+      );
+    }
+
+    return this._probeTcp(config?.host, config?.port || 22, tcpTimeoutMs);
+  }
+
+  async _waitForPreflight(session) {
+    // 总耗时封顶：在预检阶段同样生效
+    const intervalMs = Number(this.config.networkProbe?.intervalMs || 3000);
+
+    while (true) {
+      if (this._isReconnectWindowExpired(session)) {
+        return false;
+      }
+
+      try {
+        if (await this._isPreflightReady(session.config)) {
+          return true;
+        }
+      } catch (e) {
+        // 探测异常视为不可用（避免因探测异常阻断重连流程）
+      }
+
+      const remaining = this._getRemainingReconnectWindowMs(session);
+      if (Number.isFinite(remaining) && remaining <= 0) {
+        return false;
+      }
+      await this._sleep(Math.min(intervalMs, remaining));
+    }
+  }
+
+  /**
+   * 记录失败模式（用于后续智能重连策略分析）
+   * 注意：该统计逻辑不应影响主流程，调用方应自行 try/catch。
+   */
+  recordFailurePattern(sessionId, failureReason) {
+    const now = Date.now();
+    const reason = failureReason || FAILURE_REASON.UNKNOWN;
+
+    const existing = this.failurePatterns.get(sessionId) || {
+      total: 0,
+      reasons: Object.create(null),
+      lastReason: null,
+      lastAt: 0,
+      consecutive: 0,
+    };
+
+    existing.total += 1;
+    existing.reasons[reason] = (existing.reasons[reason] || 0) + 1;
+
+    // 连续失败统计：同类原因、且时间间隔不太长则计为连续
+    const isSameReason = existing.lastReason === reason;
+    const isCloseInTime = now - (existing.lastAt || 0) < 5 * 60 * 1000; // 5分钟窗口
+    existing.consecutive = isSameReason && isCloseInTime ? existing.consecutive + 1 : 1;
+
+    existing.lastReason = reason;
+    existing.lastAt = now;
+
+    this.failurePatterns.set(sessionId, existing);
+    return existing;
+  }
+
+  // 将底层错误映射为用户可理解的提示（详细信息写日志）
+  formatReconnectErrorForUser(error, config) {
+    const msg = String(error?.message || "");
+    const code = String(error?.code || "");
+    const host = config?.host || "目标主机";
+    const port = config?.port || 22;
+
+    // 这一类属于开发/内部异常，不应直接暴露给用户
+    if (msg.includes("is not a function") || msg.includes("undefined")) {
+      return "连接发生异常并已断开，自动重连失败。请重试连接，或查看日志获取详细信息。";
+    }
+
+    // SSH2 常见错误映射
+    if (msg.includes("All configured authentication methods failed")) {
+      return "SSH 认证失败：请检查用户名/密码/私钥与权限设置。";
+    }
+    if (code === "ECONNREFUSED" || msg.includes("connect ECONNREFUSED")) {
+      return `连接被拒绝：无法连接到 ${host}:${port}。请检查端口、服务状态与防火墙。`;
+    }
+    if (code === "ENOTFOUND" || msg.includes("getaddrinfo ENOTFOUND")) {
+      return `主机名无法解析：${host}。请检查主机名/DNS/网络。`;
+    }
+    if (code === "ETIMEDOUT" || msg.toLowerCase().includes("timeout")) {
+      return `连接超时：${host}:${port}。请检查网络质量或服务器负载。`;
+    }
+    if (code === "ECONNRESET" || msg.includes("ECONNRESET")) {
+      return "连接被远端重置：网络不稳定或服务器主动断开。";
+    }
+    if (code === "EPIPE" || msg.includes("EPIPE")) {
+      return "连接管道已关闭：网络不稳定或会话被中止。";
+    }
+
+    return "连接已断开，自动重连失败，请重新连接。";
+  }
+
   // 判断是否应该重连
   shouldReconnect(session, failureReason) {
     // 检查重试次数 - 固定为5次
@@ -312,7 +499,39 @@ class ReconnectionManager extends EventEmitter {
 
   // 计划重连 - 使用指数退避算法
   async scheduleReconnect(session, failureReason) {
-    session.retryCount++;
+    this._ensureReconnectWindowStarted(session);
+
+    // 总耗时封顶：到期则停止自动重连
+    if (this._isReconnectWindowExpired(session)) {
+      session.isReconnecting = false;
+      this.abandonReconnection(
+        session,
+        `自动重连超时(>${this.config.totalTimeCapMs}ms)`,
+      );
+      this.emit("reconnectFailed", {
+        sessionId: session.id,
+        error: "自动重连超时（1分钟），请检查代理/VPN/网络后手动重连。",
+        attempts: session.retryCount,
+        maxRetries: this.config.maxRetries,
+      });
+      return;
+    }
+
+    const nextAttempt = session.retryCount + 1;
+    if (nextAttempt > this.config.maxRetries) {
+      session.isReconnecting = false;
+      this.abandonReconnection(
+        session,
+        `达到最大重试次数(${this.config.maxRetries}次)`,
+      );
+      this.emit("reconnectFailed", {
+        sessionId: session.id,
+        error: "达到最大重试次数（5次），请检查代理/VPN/网络后手动重连。",
+        attempts: session.retryCount,
+        maxRetries: this.config.maxRetries,
+      });
+      return;
+    }
 
     // 计算延迟时间
     let delay;
@@ -320,7 +539,7 @@ class ReconnectionManager extends EventEmitter {
     // 1. 检查是否满足快速重连条件
     if (
       this.config.fastReconnect.enabled &&
-      session.retryCount <= this.config.fastReconnect.maxAttempts
+      nextAttempt <= this.config.fastReconnect.maxAttempts
     ) {
       const errorCode = session.lastError?.code || "";
       if (this.config.fastReconnect.conditions.includes(errorCode)) {
@@ -338,7 +557,7 @@ class ReconnectionManager extends EventEmitter {
         // 指数退避: base * (factor ^ retries) + jitter
         const exponentialDelay =
           this.config.initialDelay *
-          Math.pow(this.config.exponentialFactor, session.retryCount - 1);
+          Math.pow(this.config.exponentialFactor, nextAttempt - 1);
         const cappedDelay = Math.min(exponentialDelay, this.config.maxDelay);
         const jitter = Math.random() * this.config.jitter;
         delay = Math.round(cappedDelay + jitter);
@@ -364,13 +583,19 @@ class ReconnectionManager extends EventEmitter {
       }
     }
 
+    // 总耗时封顶：确保延迟不会把执行时间推到窗口之外
+    const remainingMs = this._getRemainingReconnectWindowMs(session);
+    if (Number.isFinite(remainingMs)) {
+      delay = Math.min(delay, remainingMs);
+    }
+
     // 加入重连队列
     const reconnectTask = {
       sessionId: session.id,
       scheduledAt: Date.now(),
       executeAt: Date.now() + delay,
       failureReason,
-      retryCount: session.retryCount,
+      retryCount: nextAttempt,
       delay,
     };
 
@@ -380,7 +605,7 @@ class ReconnectionManager extends EventEmitter {
     this.reconnectQueues.get(session.id).push(reconnectTask);
 
     logToFile(
-      `计划重连: ${session.id}, 延迟 ${delay}ms (指数退避), 第 ${session.retryCount}/${this.config.maxRetries} 次尝试`,
+      `计划重连: ${session.id}, 延迟 ${delay}ms (指数退避), 第 ${nextAttempt}/${this.config.maxRetries} 次尝试`,
       "INFO",
     );
 
@@ -397,7 +622,7 @@ class ReconnectionManager extends EventEmitter {
     this.emit("reconnectScheduled", {
       sessionId: session.id,
       delay,
-      retryCount: session.retryCount,
+      retryCount: nextAttempt,
       maxRetries: this.config.maxRetries,
     });
   }
@@ -424,6 +649,8 @@ class ReconnectionManager extends EventEmitter {
 
   // 执行重连
   async executeReconnect(session) {
+    this._ensureReconnectWindowStarted(session);
+
     // 检查是否应该跳过本次重连（已放弃或已连接）
     if (session.state === RECONNECT_STATE.ABANDONED) {
       logToFile(`跳过重连(已放弃): ${session.id}`, "DEBUG");
@@ -436,9 +663,60 @@ class ReconnectionManager extends EventEmitter {
       return;
     }
 
+    // 总耗时封顶：到期则停止自动重连
+    if (this._isReconnectWindowExpired(session)) {
+      session.isReconnecting = false;
+      this.abandonReconnection(
+        session,
+        `自动重连超时(>${this.config.totalTimeCapMs}ms)`,
+      );
+      this.emit("reconnectFailed", {
+        sessionId: session.id,
+        error: "自动重连超时（1分钟），请检查代理/VPN/网络后手动重连。",
+        attempts: session.retryCount,
+        maxRetries: this.config.maxRetries,
+      });
+      return;
+    }
+
     session.state = RECONNECT_STATE.RECONNECTING;
-    session.lastAttempt = Date.now();
     session.isReconnecting = true; // 标记正在重连
+
+    // 等待网络/代理恢复（不消耗重试次数，但计入总耗时封顶）
+    const preflightOk = await this._waitForPreflight(session);
+    if (!preflightOk) {
+      session.isReconnecting = false;
+      this.abandonReconnection(
+        session,
+        `自动重连超时(>${this.config.totalTimeCapMs}ms)`,
+      );
+      this.emit("reconnectFailed", {
+        sessionId: session.id,
+        error: "自动重连超时（1分钟），请检查代理/VPN/网络后手动重连。",
+        attempts: session.retryCount,
+        maxRetries: this.config.maxRetries,
+      });
+      return;
+    }
+
+    const attemptNumber = session.retryCount + 1;
+    if (attemptNumber > this.config.maxRetries) {
+      session.isReconnecting = false;
+      this.abandonReconnection(
+        session,
+        `达到最大重试次数(${this.config.maxRetries}次)`,
+      );
+      this.emit("reconnectFailed", {
+        sessionId: session.id,
+        error: "达到最大重试次数（5次），请检查代理/VPN/网络后手动重连。",
+        attempts: session.retryCount,
+        maxRetries: this.config.maxRetries,
+      });
+      return;
+    }
+
+    session.retryCount = attemptNumber;
+    session.lastAttempt = Date.now();
 
     logToFile(
       `开始重连: ${session.id} (第 ${session.retryCount}/${this.config.maxRetries} 次)`,
@@ -474,6 +752,7 @@ class ReconnectionManager extends EventEmitter {
       session.retryCount = 0;
       session.lastError = null;
       session.isReconnecting = false; // 清除重连标记
+      session.reconnectWindowStartedAt = null; // 成功后清空窗口，下次断线重新计时
 
       // 清空重连队列
       this.reconnectQueues.delete(session.id);
@@ -491,7 +770,7 @@ class ReconnectionManager extends EventEmitter {
       logToFile(`重连成功: ${session.id}`, "INFO");
       this.emit("reconnectSuccess", {
         sessionId: session.id,
-        attempts: session.retryCount,
+        attempts: attemptNumber,
       });
     } catch (error) {
       // 重连过程中再次检查状态，避免在连接已成功时报告错误
@@ -531,9 +810,20 @@ class ReconnectionManager extends EventEmitter {
           `达到最大重试次数(${this.config.maxRetries}次)或不满足重连条件`,
         );
 
+        const userFacingError = this.formatReconnectErrorForUser(
+          error,
+          session?.config,
+        );
+        if (userFacingError !== error.message) {
+          logToFile(
+            `重连失败(用户提示): ${session.id} - ${userFacingError}`,
+            "WARN",
+          );
+        }
+
         this.emit("reconnectFailed", {
           sessionId: session.id,
-          error: error.message,
+          error: userFacingError,
           attempts: session.retryCount,
           maxRetries: this.config.maxRetries,
         });
@@ -749,6 +1039,106 @@ class ReconnectionManager extends EventEmitter {
     };
   }
 
+  /**
+   * 请求自动重连（与状态机合并，避免重复触发）
+   * - 若当前会话已在 pending/reconnecting，则不会重复安排
+   * - 若当前会话处于 connected，但上层判断连接不健康，可调用此方法触发一次自动重连
+   */
+  async requestAutoReconnect(sessionId, failureReason = FAILURE_REASON.NETWORK) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`会话不存在: ${sessionId}`);
+    }
+
+    this._ensureReconnectWindowStarted(session);
+
+    if (
+      session.state === RECONNECT_STATE.RECONNECTING ||
+      session.state === RECONNECT_STATE.PENDING
+    ) {
+      return;
+    }
+
+    session.intentionalClose = false;
+    session.state = RECONNECT_STATE.PENDING;
+    await this.scheduleReconnect(session, failureReason);
+  }
+
+  /**
+   * 等待一次重连结果（成功/失败/放弃/超时）
+   * 供 SFTP 等模块复用 SSH 的重连状态机，避免各自重复重试与刷屏提示。
+   */
+  waitForReconnect(sessionId, timeoutMs = this.config.totalTimeCapMs) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return Promise.reject(new Error(`会话不存在: ${sessionId}`));
+    }
+
+    if (session.state === RECONNECT_STATE.CONNECTED) {
+      return Promise.resolve(true);
+    }
+
+    const remainingWindow = this._getRemainingReconnectWindowMs(session);
+    const effectiveTimeout = Math.min(
+      Number(timeoutMs || 0) || remainingWindow,
+      remainingWindow,
+    );
+
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      let timeoutId = null;
+
+      const cleanup = () => {
+        this.removeListener("reconnectSuccess", onSuccess);
+        this.removeListener("reconnectFailed", onFailed);
+        this.removeListener("reconnectAbandoned", onAbandoned);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
+
+      const finishResolve = () => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        resolve(true);
+      };
+
+      const finishReject = (err) => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        reject(err);
+      };
+
+      const onSuccess = ({ sessionId: sid }) => {
+        if (sid === sessionId) finishResolve();
+      };
+
+      const onFailed = ({ sessionId: sid, error }) => {
+        if (sid === sessionId) finishReject(new Error(error || "自动重连失败"));
+      };
+
+      const onAbandoned = ({ sessionId: sid, reason }) => {
+        if (sid === sessionId)
+          finishReject(new Error(reason || "自动重连已放弃"));
+      };
+
+      this.on("reconnectSuccess", onSuccess);
+      this.on("reconnectFailed", onFailed);
+      this.on("reconnectAbandoned", onAbandoned);
+
+      if (Number.isFinite(effectiveTimeout) && effectiveTimeout > 0) {
+        timeoutId = setTimeout(() => {
+          finishReject(
+            new Error("自动重连超时（1分钟），请检查代理/VPN/网络后手动重连。"),
+          );
+        }, effectiveTimeout);
+      }
+    });
+  }
+
   // 手动触发重连
   async manualReconnect(sessionId) {
     const session = this.sessions.get(sessionId);
@@ -764,6 +1154,7 @@ class ReconnectionManager extends EventEmitter {
     this.cancelPendingReconnect(sessionId);
 
     session.retryCount = 0; // 重置重试次数
+    session.reconnectWindowStartedAt = Date.now(); // 手动重连开启新的总耗时窗口
     session.intentionalClose = false;
     session.state = RECONNECT_STATE.PENDING;
     logToFile(`手动触发重连: ${sessionId}`, "INFO");
@@ -786,6 +1177,7 @@ class ReconnectionManager extends EventEmitter {
     if (session && session.state === RECONNECT_STATE.ABANDONED) {
       session.state = RECONNECT_STATE.PENDING;
       session.retryCount = 0;
+      session.reconnectWindowStartedAt = Date.now();
       void this.scheduleReconnect(session, FAILURE_REASON.NETWORK);
       logToFile(`恢复重连: ${sessionId}`, "INFO");
     }

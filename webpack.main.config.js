@@ -6,6 +6,14 @@ module.exports = {
     index: "./src/main.js",
     "workers/ai-worker": "./src/workers/ai-worker.js",
   },
+  resolve: {
+    // Make optional native deps safe for bundling/package.
+    alias: {
+      // `ssh2` optionally loads this native module for cipher ordering.
+      // We skip rebuilding it for Electron 40 (Node 24) on Windows, so bundle a shim.
+      "cpu-features$": path.join(__dirname, "src", "shims", "cpu-features.js"),
+    },
+  },
   module: {
     rules: require("./webpack.rules"),
   },
