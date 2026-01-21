@@ -373,14 +373,24 @@ class ReconnectionManager extends EventEmitter {
     const tcpTimeoutMs = Number(this.config.networkProbe?.tcpTimeoutMs || 1500);
 
     if (usingProxy) {
+      const proxyPort = Number(resolvedProxyConfig.port);
+      if (!Number.isFinite(proxyPort) || proxyPort <= 0) {
+        return false;
+      }
       return this._probeTcp(
         resolvedProxyConfig.host,
-        resolvedProxyConfig.port,
+        proxyPort,
         tcpTimeoutMs,
       );
     }
 
-    return this._probeTcp(config?.host, config?.port || 22, tcpTimeoutMs);
+    // 直连预检必须探测“会话配置的端口”，避免非 22 端口被误判为不可用。
+    // 注意：使用 ?? 而不是 ||，避免空字符串/0 这类无效输入被错误回退到 22。
+    const targetPort = Number(config?.port ?? 22);
+    if (!Number.isFinite(targetPort) || targetPort <= 0) {
+      return false;
+    }
+    return this._probeTcp(config?.host, targetPort, tcpTimeoutMs);
   }
 
   async _waitForPreflight(session) {
@@ -476,16 +486,29 @@ class ReconnectionManager extends EventEmitter {
 
   // 判断是否应该重连
   shouldReconnect(session, failureReason) {
-    // 检查重试次数 - 固定为5次
-    if (session.retryCount >= this.config.maxRetries) {
-      logToFile(`达到最大重试次数(5次): ${session.id}`, "WARN");
+    const maxRetries = this._getMaxRetriesForSession(session, failureReason);
+
+    // maxRetries <= 0 表示该原因不允许重连
+    if (maxRetries <= 0) {
+      logToFile(`不满足重连条件(禁止该原因重连): ${session.id}`, "WARN");
       return false;
     }
 
-    // 认证失败不重连
-    if (failureReason === FAILURE_REASON.AUTHENTICATION) {
-      logToFile(`认证失败，不进行重连: ${session.id}`, "WARN");
+    // 检查重试次数
+    if (session.retryCount >= maxRetries) {
+      logToFile(`达到最大重试次数(${maxRetries}次): ${session.id}`, "WARN");
       return false;
+    }
+
+    // 认证失败默认不重连（除非会话/全局显式开启）
+    if (failureReason === FAILURE_REASON.AUTHENTICATION) {
+      const enabled =
+        Boolean(session?.config?.retryOnAuthFailure) ||
+        Boolean(this.config?.authFailure?.enabled);
+      if (!enabled) {
+        logToFile(`认证失败，不进行重连: ${session.id}`, "WARN");
+        return false;
+      }
     }
 
     // 资源限制不重连
@@ -497,9 +520,31 @@ class ReconnectionManager extends EventEmitter {
     return true;
   }
 
+  _getMaxRetriesForSession(session, failureReason) {
+    const baseMax = Number(this.config.maxRetries ?? 5);
+
+    if (failureReason === FAILURE_REASON.AUTHENTICATION) {
+      const enabled =
+        Boolean(session?.config?.retryOnAuthFailure) ||
+        Boolean(this.config?.authFailure?.enabled);
+      if (!enabled) return 0;
+
+      const authMax = Number(
+        session?.config?.authFailureMaxRetries ??
+          this.config?.authFailure?.maxRetries ??
+          1,
+      );
+      if (!Number.isFinite(authMax) || authMax <= 0) return 0;
+      return Math.max(0, Math.min(baseMax, authMax));
+    }
+
+    return baseMax;
+  }
+
   // 计划重连 - 使用指数退避算法
   async scheduleReconnect(session, failureReason) {
     this._ensureReconnectWindowStarted(session);
+    const maxRetries = this._getMaxRetriesForSession(session, failureReason);
 
     // 总耗时封顶：到期则停止自动重连
     if (this._isReconnectWindowExpired(session)) {
@@ -512,23 +557,23 @@ class ReconnectionManager extends EventEmitter {
         sessionId: session.id,
         error: "自动重连超时（1分钟），请检查代理/VPN/网络后手动重连。",
         attempts: session.retryCount,
-        maxRetries: this.config.maxRetries,
+        maxRetries,
       });
       return;
     }
 
     const nextAttempt = session.retryCount + 1;
-    if (nextAttempt > this.config.maxRetries) {
+    if (nextAttempt > maxRetries) {
       session.isReconnecting = false;
       this.abandonReconnection(
         session,
-        `达到最大重试次数(${this.config.maxRetries}次)`,
+        `达到最大重试次数(${maxRetries}次)`,
       );
       this.emit("reconnectFailed", {
         sessionId: session.id,
-        error: "达到最大重试次数（5次），请检查代理/VPN/网络后手动重连。",
+        error: `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后手动重连。`,
         attempts: session.retryCount,
-        maxRetries: this.config.maxRetries,
+        maxRetries,
       });
       return;
     }
@@ -605,7 +650,7 @@ class ReconnectionManager extends EventEmitter {
     this.reconnectQueues.get(session.id).push(reconnectTask);
 
     logToFile(
-      `计划重连: ${session.id}, 延迟 ${delay}ms (指数退避), 第 ${nextAttempt}/${this.config.maxRetries} 次尝试`,
+      `计划重连: ${session.id}, 延迟 ${delay}ms (指数退避), 第 ${nextAttempt}/${maxRetries} 次尝试`,
       "INFO",
     );
 
@@ -615,7 +660,7 @@ class ReconnectionManager extends EventEmitter {
     // 执行重连，保存定时器引用以便后续取消
     const timerId = setTimeout(() => {
       this.reconnectTimers.delete(session.id);
-      this.executeReconnect(session);
+      this.executeReconnect(session, failureReason);
     }, delay);
     this.reconnectTimers.set(session.id, timerId);
 
@@ -623,7 +668,7 @@ class ReconnectionManager extends EventEmitter {
       sessionId: session.id,
       delay,
       retryCount: nextAttempt,
-      maxRetries: this.config.maxRetries,
+      maxRetries,
     });
   }
 
@@ -648,8 +693,9 @@ class ReconnectionManager extends EventEmitter {
   }
 
   // 执行重连
-  async executeReconnect(session) {
+  async executeReconnect(session, failureReason = FAILURE_REASON.NETWORK) {
     this._ensureReconnectWindowStarted(session);
+    const maxRetries = this._getMaxRetriesForSession(session, failureReason);
 
     // 检查是否应该跳过本次重连（已放弃或已连接）
     if (session.state === RECONNECT_STATE.ABANDONED) {
@@ -674,7 +720,7 @@ class ReconnectionManager extends EventEmitter {
         sessionId: session.id,
         error: "自动重连超时（1分钟），请检查代理/VPN/网络后手动重连。",
         attempts: session.retryCount,
-        maxRetries: this.config.maxRetries,
+        maxRetries,
       });
       return;
     }
@@ -694,23 +740,23 @@ class ReconnectionManager extends EventEmitter {
         sessionId: session.id,
         error: "自动重连超时（1分钟），请检查代理/VPN/网络后手动重连。",
         attempts: session.retryCount,
-        maxRetries: this.config.maxRetries,
+        maxRetries,
       });
       return;
     }
 
     const attemptNumber = session.retryCount + 1;
-    if (attemptNumber > this.config.maxRetries) {
+    if (attemptNumber > maxRetries) {
       session.isReconnecting = false;
       this.abandonReconnection(
         session,
-        `达到最大重试次数(${this.config.maxRetries}次)`,
+        `达到最大重试次数(${maxRetries}次)`,
       );
       this.emit("reconnectFailed", {
         sessionId: session.id,
-        error: "达到最大重试次数（5次），请检查代理/VPN/网络后手动重连。",
+        error: `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后手动重连。`,
         attempts: session.retryCount,
-        maxRetries: this.config.maxRetries,
+        maxRetries,
       });
       return;
     }
@@ -719,13 +765,13 @@ class ReconnectionManager extends EventEmitter {
     session.lastAttempt = Date.now();
 
     logToFile(
-      `开始重连: ${session.id} (第 ${session.retryCount}/${this.config.maxRetries} 次)`,
+      `开始重连: ${session.id} (第 ${session.retryCount}/${maxRetries} 次)`,
       "INFO",
     );
     this.emit("reconnectStarted", {
       sessionId: session.id,
       attempt: session.retryCount,
-      maxRetries: this.config.maxRetries,
+      maxRetries,
     });
 
     this.statistics.totalAttempts++;
@@ -780,7 +826,7 @@ class ReconnectionManager extends EventEmitter {
       }
 
       logToFile(
-        `重连失败: ${session.id} - ${error.message} (第 ${session.retryCount}/${this.config.maxRetries} 次)`,
+        `重连失败: ${session.id} - ${error.message} (第 ${session.retryCount}/${maxRetries} 次)`,
         "ERROR",
       );
 
@@ -797,17 +843,17 @@ class ReconnectionManager extends EventEmitter {
       this.statistics.failedReconnects++;
 
       // 决定是否继续重试
-      const failureReason = this.analyzeFailureReason(error);
-      if (this.shouldReconnect(session, failureReason)) {
+      const nextFailureReason = this.analyzeFailureReason(error);
+      if (this.shouldReconnect(session, nextFailureReason)) {
         // 继续重试，不发送失败事件（避免触发错误通知）
-        await this.scheduleReconnect(session, failureReason);
+        await this.scheduleReconnect(session, nextFailureReason);
       } else {
         // 达到最大重试次数，清除重连标记并发送失败事件
         session.isReconnecting = false;
 
         this.abandonReconnection(
           session,
-          `达到最大重试次数(${this.config.maxRetries}次)或不满足重连条件`,
+          `达到最大重试次数(${maxRetries}次)或不满足重连条件`,
         );
 
         const userFacingError = this.formatReconnectErrorForUser(
@@ -825,7 +871,7 @@ class ReconnectionManager extends EventEmitter {
           sessionId: session.id,
           error: userFacingError,
           attempts: session.retryCount,
-          maxRetries: this.config.maxRetries,
+          maxRetries,
         });
       }
     }
@@ -1158,7 +1204,7 @@ class ReconnectionManager extends EventEmitter {
     session.intentionalClose = false;
     session.state = RECONNECT_STATE.PENDING;
     logToFile(`手动触发重连: ${sessionId}`, "INFO");
-    await this.executeReconnect(session);
+    await this.executeReconnect(session, FAILURE_REASON.NETWORK);
   }
 
   // 暂停重连
