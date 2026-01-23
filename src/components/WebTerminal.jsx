@@ -45,13 +45,14 @@ const terminalStyles = `
 .xterm {
   height: 100%;
   width: 100%;
-  padding: 0 0 0 5px;
   background: inherit;
+  overflow: hidden;
 }
 .xterm-viewport {
   width: 100% !important;
   height: 100% !important;
   overflow-y: auto;
+  overflow-x: hidden;
   background: inherit !important;
 }
 .xterm-viewport::-webkit-scrollbar {
@@ -69,14 +70,6 @@ const terminalStyles = `
 }
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background-color: rgba(128, 128, 128, 0.7);
-}
-.xterm-screen {
-  width: 100% !important;
-  height: 100% !important;
-}
-.xterm-scrollable-element {
-  width: 100% !important;
-  height: 100% !important;
 }
 .terminal-container {
   display: flex;

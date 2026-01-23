@@ -19,6 +19,7 @@
   width: 100% !important;
   height: 100% !important;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .xterm-viewport::-webkit-scrollbar {
@@ -38,20 +39,6 @@
 
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: rgba(128, 128, 128, 0.6);
-}
-
-.xterm-screen {
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 100% !important;
-  display: block !important;
-}
-
-.xterm-scrollable-element {
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 100% !important;
-  display: block !important;
 }
 
 /* 光标优化 - 平滑动画和视觉增强 */
