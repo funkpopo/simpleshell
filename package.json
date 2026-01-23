@@ -44,7 +44,7 @@
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-react": "^7.37.5",
     "node-loader": "^2.1.0",
-    "prettier": "^3.8.1",
+    "prettier": "^3.8.0",
     "style-loader": "^4.0.0"
   },
   "dependencies": {
