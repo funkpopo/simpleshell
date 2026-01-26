@@ -444,6 +444,14 @@ const SSHAuthDialog = ({
       <DialogActions sx={{ px: 3, py: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}>
         <Button
           variant="outlined"
+          onClick={handleCancel}
+          sx={{ minWidth: 80 }}
+        >
+          {t("sshAuth.cancel", "取消")}
+        </Button>
+        <Button
+          variant="contained"
+          color="primary"
           onClick={step === "hostVerify" ? handleHostVerifyContinue : handleCredentialsContinue}
           disabled={
             (step === "hostVerify" && !username.trim()) ||
@@ -453,13 +461,6 @@ const SSHAuthDialog = ({
           sx={{ minWidth: 80 }}
         >
           {t("sshAuth.continue", "继续")}
-        </Button>
-        <Button
-          variant="outlined"
-          onClick={handleCancel}
-          sx={{ minWidth: 80 }}
-        >
-          {t("sshAuth.cancel", "取消")}
         </Button>
       </DialogActions>
     </Dialog>
