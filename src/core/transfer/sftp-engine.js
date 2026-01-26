@@ -352,6 +352,74 @@ async function getSftpSession(tabId) {
   }
 }
 
+function isSshClientHealthy(processInfo) {
+  if (!processInfo) return false;
+
+  const connectionInfo = processInfo.connectionInfo;
+  if (typeof connectionInfo?.ready === "boolean" && !connectionInfo.ready) {
+    return false;
+  }
+
+  const sshClient = processInfo.process;
+  if (!sshClient) return false;
+  if (sshClient.destroyed) return false;
+
+  const sock = sshClient._sock;
+  if (
+    sock &&
+    (sock.destroyed || (sock.readable === false && sock.writable === false))
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+async function ensureSshAutoReconnect(tabId, processInfo) {
+  // Lazy require to avoid circular deps at module load time.
+  const { sshConnectionPool } = require("../connection");
+  const reconnectManager = sshConnectionPool?.reconnectionManager;
+  const connectionKey =
+    processInfo?.connectionInfo?.key ||
+    (sshConnectionPool &&
+    typeof sshConnectionPool.getConnectionKeyByTabId === "function"
+      ? sshConnectionPool.getConnectionKeyByTabId(tabId)
+      : null);
+
+  if (!sshConnectionPool || !reconnectManager || !connectionKey) {
+    throw new Error("SSH connection pool or reconnect manager not available");
+  }
+
+  const existingSession = reconnectManager.getSessionStatus(connectionKey);
+  const poolConn = sshConnectionPool.connections?.get(connectionKey);
+  const cfg = processInfo?.config || poolConn?.config;
+  const client =
+    processInfo?.connectionInfo?.client ||
+    processInfo?.process ||
+    poolConn?.client;
+  if (!cfg || !client) {
+    throw new Error("无法获取SSH连接配置，无法自动重连");
+  }
+
+  if (!existingSession) {
+    reconnectManager.registerSession(connectionKey, client, cfg, {
+      autoStart: true,
+      state: "pending",
+      failureReason: "network",
+    });
+  } else {
+    await reconnectManager.requestAutoReconnect(connectionKey, "network");
+  }
+
+  // 等待重连结果（最多 1 分钟，总耗时由状态机封顶）
+  await reconnectManager.waitForReconnect(connectionKey, 60_000);
+  return connectionKey;
+}
+
+function shouldAttemptReconnectForSftpError(error) {
+  return configIsSessionError(error) || configIsRetryableError(error);
+}
+
 // 处理不健康的SFTP会话
 async function handleUnhealthySession(tabId, session) {
   try {
@@ -380,8 +448,7 @@ async function handleUnhealthySession(tabId, session) {
     }
 
     // 检查SSH连接是否健康；不健康时尝试触发连接池的自动重连机制
-    const sshClient = processInfo.process;
-    const sshHealthy = Boolean(sshClient && !sshClient.destroyed && sshClient._channel);
+    const sshHealthy = isSshClientHealthy(processInfo);
     if (!sshHealthy) {
       logToFile(
         `sftpEngine: SSH连接不健康，尝试自动重连: tabId=${tabId}`,
@@ -389,45 +456,9 @@ async function handleUnhealthySession(tabId, session) {
       );
 
       try {
-        // Lazy require to avoid circular deps at module load time.
-        const { sshConnectionPool } = require("../connection");
-        const reconnectManager = sshConnectionPool?.reconnectionManager;
-        const connectionKey =
-          processInfo?.connectionInfo?.key ||
-          (sshConnectionPool &&
-          typeof sshConnectionPool.getConnectionKeyByTabId === "function"
-            ? sshConnectionPool.getConnectionKeyByTabId(tabId)
-            : null);
-
-        if (!sshConnectionPool || !reconnectManager || !connectionKey) {
-          throw new Error("SSH connection pool or reconnect manager not available");
-        }
-
-        const existingSession = reconnectManager.getSessionStatus(connectionKey);
-
-        // 统一：SFTP 不单独做“手动重连”，只复用 SSH 的自动重连状态机
-        if (!existingSession) {
-          const cfg =
-            processInfo?.config || sshConnectionPool.connections?.get(connectionKey)?.config;
-          const client =
-            processInfo?.connectionInfo?.client || processInfo?.process || sshClient;
-          if (!cfg) {
-            throw new Error("无法获取SSH连接配置，无法自动重连");
-          }
-          reconnectManager.registerSession(connectionKey, client, cfg, {
-            autoStart: true,
-            state: "pending",
-            failureReason: "network",
-          });
-        } else {
-          // 已存在会话：确保进入自动重连流程（避免重复安排）
-          await reconnectManager.requestAutoReconnect(connectionKey, "network");
-        }
-
-        // 等待重连结果（最多 1 分钟，总耗时由状态机封顶）
-        await reconnectManager.waitForReconnect(connectionKey, 60_000);
+        await ensureSshAutoReconnect(tabId, processInfo);
         logToFile(
-          `sftpEngine: SSH自动重连完成: tabId=${tabId}, key=${connectionKey}`,
+          `sftpEngine: SSH自动重连完成: tabId=${tabId}`,
           "INFO",
         );
       } catch (reconnectError) {
@@ -477,8 +508,10 @@ async function checkSessionHealth(session) {
 }
 
 // 创建新的 SFTP 会话 (heavily dependent on getChildProcessInfo)
-async function acquireSftpSession(tabId) {
+async function acquireSftpSession(tabId, options = {}) {
+  const { allowReconnect = true } = options;
   sftpSessionLocks.set(tabId, true);
+  let processInfo = null;
   try {
     const pool = getOrCreatePool(tabId);
     const perTabCount = pool.sessions.size;
@@ -493,7 +526,7 @@ async function acquireSftpSession(tabId) {
     }
 
     // 增强获取SSH连接的逻辑
-    const processInfo = getChildProcessInfo(tabId); // Critical dependency
+    processInfo = getChildProcessInfo(tabId); // Critical dependency
 
     // 更详细的SSH连接验证
     if (!processInfo) {
@@ -583,31 +616,44 @@ async function acquireSftpSession(tabId) {
       );
     }
 
-    return new Promise((resolve, reject) => {
+    const session = await new Promise((resolve, reject) => {
+      let finished = false;
+      const finish = (handler) => {
+        if (finished) return;
+        finished = true;
+        handler();
+      };
+
       // 增加更长的超时时间，以防止网络延迟导致的问题
       const timeoutId = setTimeout(() => {
-        sftpSessionLocks.delete(tabId);
-        reject(new Error("sftpEngine: SFTP session creation timed out"));
+        finish(() =>
+          reject(new Error("sftpEngine: SFTP session creation timed out")),
+        );
       }, TIMEOUT_CONFIG.BASE_OPERATION_TIMEOUT * 2);
 
       try {
         // 确保每次调用返回一个新的SFTP会话
         sshClient.sftp((err, sftp) => {
           clearTimeout(timeoutId);
+          if (finished) {
+            try {
+              if (sftp && typeof sftp.end === "function") {
+                sftp.end();
+              }
+            } catch (_) {}
+            return;
+          }
           if (err) {
-            sftpSessionLocks.delete(tabId);
-            logToFile(
-              `sftpEngine: SFTP session creation error for session ${tabId}: ${err.message}`,
-              "ERROR",
+            finish(() =>
+              reject(new Error(`sftpEngine: SFTP error: ${err.message}`)),
             );
-            reject(new Error(`sftpEngine: SFTP error: ${err.message}`));
             return;
           }
 
           // 创建一个全新的会话对象
           const now = Date.now();
           const sessionId = genSessionId(tabId);
-          const session = {
+          const createdSession = {
             id: sessionId,
             sftp, // This is the ssh2.sftp instance
             timeoutId: setTimeout(() => {
@@ -624,42 +670,56 @@ async function acquireSftpSession(tabId) {
 
           // 将会话加入池
           const poolRef = getOrCreatePool(tabId);
-          poolRef.sessions.set(session.id, session);
-          if (!poolRef.primaryId) poolRef.primaryId = session.id;
-          sftpSessionLocks.delete(tabId);
+          poolRef.sessions.set(createdSession.id, createdSession);
+          if (!poolRef.primaryId) poolRef.primaryId = createdSession.id;
 
           // 监听SFTP会话事件
           sftp.on("error", (sftpErr) => {
             logToFile(
-              `sftpEngine: SFTP session error for ${tabId} (${session.id}): ${sftpErr.message}`,
+              `sftpEngine: SFTP session error for ${tabId} (${createdSession.id}): ${sftpErr.message}`,
               "ERROR",
             );
-            closeSftpSession(tabId, session.id);
+            closeSftpSession(tabId, createdSession.id);
           });
           sftp.on("close", () => {
             logToFile(
-              `sftpEngine: SFTP session closed by remote for ${tabId} (${session.id})`,
+              `sftpEngine: SFTP session closed by remote for ${tabId} (${createdSession.id})`,
               "INFO",
             );
-            closeSftpSession(tabId, session.id);
+            closeSftpSession(tabId, createdSession.id);
           });
           if (!sftpHealthCheckTimer) {
             startSftpHealthCheck();
           }
-          resolve(session); // Resolve with the session object
+          finish(() => resolve(createdSession)); // Resolve with the session object
         });
       } catch (sftpError) {
         clearTimeout(timeoutId);
-        sftpSessionLocks.delete(tabId);
-        logToFile(
-          `sftpEngine: Error creating SFTP session for ${tabId}: ${sftpError.message}`,
-          "ERROR",
-        );
-        reject(sftpError);
+        finish(() => reject(sftpError));
       }
     });
+
+    sftpSessionLocks.delete(tabId);
+    return session;
   } catch (error) {
     sftpSessionLocks.delete(tabId);
+    if (allowReconnect && shouldAttemptReconnectForSftpError(error)) {
+      const latestInfo = processInfo || getChildProcessInfo(tabId);
+      try {
+        logToFile(
+          `sftpEngine: SFTP session creation failed, attempting SSH auto reconnect: ${error.message}`,
+          "WARN",
+        );
+        await ensureSshAutoReconnect(tabId, latestInfo);
+        return await acquireSftpSession(tabId, { allowReconnect: false });
+      } catch (reconnectError) {
+        logToFile(
+          `sftpEngine: SSH自动重连失败(创建SFTP会话): ${reconnectError.message}`,
+          "ERROR",
+        );
+        throw reconnectError;
+      }
+    }
     logToFile(
       `sftpEngine: Error in acquireSftpSession for ${tabId}: ${error.message}`,
       "ERROR",

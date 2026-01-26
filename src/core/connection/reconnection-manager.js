@@ -950,27 +950,117 @@ class ReconnectionManager extends EventEmitter {
 
   // 验证连接
   async validateConnection(connection) {
-    return new Promise((resolve) => {
-      // 执行简单命令测试连接
-      connection.exec("echo test", (err, stream) => {
-        if (err) {
-          resolve(false);
-          return;
+    const timeoutMs = 3000;
+
+    const tryExec = () =>
+      new Promise((resolve) => {
+        let finished = false;
+        const finish = (ok) => {
+          if (finished) return;
+          finished = true;
+          resolve(ok);
+        };
+        const timeoutId = setTimeout(() => finish(false), timeoutMs);
+
+        try {
+          // 执行简单命令测试连接
+          connection.exec("echo test", (err, stream) => {
+            if (err) {
+              clearTimeout(timeoutId);
+              finish(false);
+              return;
+            }
+
+            stream.on("data", () => {
+              clearTimeout(timeoutId);
+              finish(true);
+            });
+
+            stream.on("error", () => {
+              clearTimeout(timeoutId);
+              finish(false);
+            });
+
+            stream.on("close", () => {
+              clearTimeout(timeoutId);
+              finish(false);
+            });
+          });
+        } catch (_) {
+          clearTimeout(timeoutId);
+          finish(false);
         }
-
-        stream.on("data", () => {
-          resolve(true);
-        });
-
-        stream.on("error", () => {
-          resolve(false);
-        });
-
-        setTimeout(() => {
-          resolve(false);
-        }, 3000);
       });
-    });
+
+    const trySftp = () =>
+      new Promise((resolve) => {
+        let finished = false;
+        const finish = (ok) => {
+          if (finished) return;
+          finished = true;
+          resolve(ok);
+        };
+        const timeoutId = setTimeout(() => finish(false), timeoutMs);
+
+        try {
+          connection.sftp((err, sftp) => {
+            if (err) {
+              clearTimeout(timeoutId);
+              finish(false);
+              return;
+            }
+
+            try {
+              if (sftp && typeof sftp.end === "function") {
+                sftp.end();
+              }
+            } catch (_) {}
+
+            clearTimeout(timeoutId);
+            finish(true);
+          });
+        } catch (_) {
+          clearTimeout(timeoutId);
+          finish(false);
+        }
+      });
+
+    const tryShell = () =>
+      new Promise((resolve) => {
+        let finished = false;
+        const finish = (ok) => {
+          if (finished) return;
+          finished = true;
+          resolve(ok);
+        };
+        const timeoutId = setTimeout(() => finish(false), timeoutMs);
+
+        try {
+          connection.shell((err, stream) => {
+            if (err) {
+              clearTimeout(timeoutId);
+              finish(false);
+              return;
+            }
+
+            try {
+              if (stream && typeof stream.close === "function") {
+                stream.close();
+              }
+            } catch (_) {}
+
+            clearTimeout(timeoutId);
+            finish(true);
+          });
+        } catch (_) {
+          clearTimeout(timeoutId);
+          finish(false);
+        }
+      });
+
+    if (await tryExec()) return true;
+    if (await trySftp()) return true;
+    return await tryShell();
   }
 
   // 替换连接

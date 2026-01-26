@@ -85,6 +85,7 @@ class SSHPool extends BaseConnectionPool {
       if (conn) {
         conn.client = newConnection;
         conn.ready = true;
+        conn.intentionalClose = false;
         conn.lastUsed = Date.now();
         this.emit('connectionReconnected', { key: sessionId, connection: conn });
       }
@@ -95,6 +96,12 @@ class SSHPool extends BaseConnectionPool {
       this._logInfo(`重连放弃: ${sessionId} - ${reason}`);
       // 从连接池中移除
       this.connections.delete(sessionId);
+      // 清理可能残留的tab引用，避免后续查到已失效连接
+      for (const [tabId, key] of this.tabReferences.entries()) {
+        if (key === sessionId) {
+          this.tabReferences.delete(tabId);
+        }
+      }
       this.emit('connectionAbandoned', { key: sessionId, reason });
     });
   }
@@ -770,6 +777,9 @@ class SSHPool extends BaseConnectionPool {
    */
   _handleSSHClose(connectionInfo, connectionKey) {
     this._logInfo(`SSH连接关闭: ${connectionKey}`);
+    if (connectionInfo) {
+      connectionInfo.ready = false;
+    }
 
     // 如果是有意关闭，直接清理
     if (connectionInfo.intentionalClose) {

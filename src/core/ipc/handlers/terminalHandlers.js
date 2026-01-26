@@ -307,6 +307,8 @@ class TerminalHandlers {
 
         // 如果是SSH连接，释放连接池中的连接引用
         if (proc.type === "ssh2" && proc.connectionInfo) {
+          // 标记为用户主动断开，避免自动重连误触发
+          proc.connectionInfo.intentionalClose = true;
           this.connectionManager.releaseSSHConnection(
             proc.connectionInfo.key,
             proc.config?.tabId
@@ -475,6 +477,9 @@ class TerminalHandlers {
 
         // 关闭SSH连接（如果存在）
         try {
+          if (processObj.connectionInfo) {
+            processObj.connectionInfo.intentionalClose = true;
+          }
           if (
             processObj.client &&
             typeof processObj.client.end === "function"
