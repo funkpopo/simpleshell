@@ -89,6 +89,135 @@ import GlobalTransferFloat from "./components/GlobalTransferFloat.jsx";
 import TransferSidebar from "./components/TransferSidebar.jsx";
 import TransferSidebarButton from "./components/TransferSidebarButton.jsx";
 
+const resolveConnectionPort = (connection) => {
+  if (!connection) return null;
+  const parsed = Number(connection.port);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  const protocol = String(connection.protocol || "ssh").toLowerCase();
+  return protocol === "telnet" ? 23 : 22;
+};
+
+const buildServerKey = (connection) => {
+  if (!connection || !connection.host) return null;
+  const port = resolveConnectionPort(connection);
+  if (!port) return null;
+  return `${connection.host}:${port}:${connection.username}`;
+};
+
+const parseServerKey = (serverKey) => {
+  if (typeof serverKey !== "string") return null;
+  const parts = serverKey.split(":");
+  if (parts.length < 3) return null;
+  const username = parts.pop();
+  const portPart = parts.pop();
+  const host = parts.join(":");
+  const port = Number(portPart);
+  if (!host || !Number.isFinite(port)) return null;
+  return {
+    id: serverKey,
+    serverKey,
+    type: "connection",
+    host,
+    port,
+    username,
+    protocol: port === 23 ? "telnet" : "ssh",
+  };
+};
+
+const findConnectionById = (items, id) => {
+  if (!id || !Array.isArray(items)) return null;
+  for (const item of items) {
+    if (!item) continue;
+    if (item.type === "connection" && item.id === id) {
+      return item;
+    }
+    if (item.type === "group" && Array.isArray(item.items)) {
+      const found = findConnectionById(item.items, id);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+const findConnectionByServerKey = (items, serverKey) => {
+  if (!serverKey || !Array.isArray(items)) return null;
+  for (const item of items) {
+    if (!item) continue;
+    if (item.type === "connection") {
+      const key = buildServerKey(item);
+      if (key && key === serverKey) {
+        return item;
+      }
+    }
+    if (item.type === "group" && Array.isArray(item.items)) {
+      const found = findConnectionByServerKey(item.items, serverKey);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+const resolveRecentConnection = (candidate, connections) => {
+  if (!candidate) return null;
+  const items = Array.isArray(connections) ? connections : [];
+
+  const connectionId =
+    typeof candidate === "string"
+      ? candidate
+      : candidate.connectionId || candidate.id;
+  if (connectionId) {
+    const byId = findConnectionById(items, connectionId);
+    if (byId) return byId;
+  }
+
+  const serverKey =
+    typeof candidate === "string"
+      ? candidate
+      : candidate.serverKey || buildServerKey(candidate);
+  if (serverKey) {
+    const byServerKey = findConnectionByServerKey(items, serverKey);
+    if (byServerKey) return byServerKey;
+  }
+
+  if (typeof candidate === "string") {
+    return parseServerKey(candidate);
+  }
+
+  if (!candidate.host && candidate.serverKey) {
+    const parsed = parseServerKey(candidate.serverKey);
+    if (parsed) {
+      return {
+        ...parsed,
+        protocol: candidate.protocol || parsed.protocol,
+      };
+    }
+  }
+
+  if (candidate.host) {
+    const serverKeyValue = candidate.serverKey || buildServerKey(candidate);
+    if (candidate.type === "connection" && candidate.id) {
+      return candidate;
+    }
+    return {
+      ...candidate,
+      type: "connection",
+      id: candidate.id || serverKeyValue,
+      serverKey: serverKeyValue || candidate.serverKey,
+    };
+  }
+
+  return null;
+};
+
+const normalizeRecentConnections = (recentConnections, connections) => {
+  if (!Array.isArray(recentConnections)) return [];
+  return recentConnections
+    .map((candidate) => resolveRecentConnection(candidate, connections))
+    .filter(Boolean);
+};
+
 function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
@@ -511,7 +640,13 @@ function AppContent() {
               Array.isArray(lastConnectionObjs) &&
               lastConnectionObjs.length > 0
             ) {
-              dispatch(actions.setTopConnections(lastConnectionObjs));
+              const normalizedRecent = normalizeRecentConnections(
+                lastConnectionObjs,
+                loadedConnections,
+              );
+              if (normalizedRecent.length > 0) {
+                dispatch(actions.setTopConnections(normalizedRecent));
+              }
             }
           }
         }
@@ -572,8 +707,15 @@ function AppContent() {
           if (Array.isArray(lastConnectionObjs) && lastConnectionObjs.length > 0) {
             // lastConnectionObjs 现在是完整的连接对象数组
             // 只有当计算出的列表与当前状态不同时才更新，避免不必要的渲染
-            if (JSON.stringify(lastConnectionObjs) !== JSON.stringify(topConnections)) {
-              dispatch(actions.setTopConnections(lastConnectionObjs));
+            const normalizedRecent = normalizeRecentConnections(
+              lastConnectionObjs,
+              connections,
+            );
+            if (
+              JSON.stringify(normalizedRecent) !==
+              JSON.stringify(topConnections)
+            ) {
+              dispatch(actions.setTopConnections(normalizedRecent));
             }
           }
         })
@@ -590,10 +732,14 @@ function AppContent() {
     const handleTopChanged = async (lastConnectionObjs) => {
       try {
         // lastConnectionObjs 现在是完整的连接对象数组，不再是ID数组
-        const connections = Array.isArray(lastConnectionObjs)
+        const recentConnections = Array.isArray(lastConnectionObjs)
           ? lastConnectionObjs
           : await window.terminalAPI.loadTopConnections();
-        dispatch(actions.setTopConnections(connections));
+        const normalizedRecent = normalizeRecentConnections(
+          recentConnections,
+          connections,
+        );
+        dispatch(actions.setTopConnections(normalizedRecent));
       } catch (e) {
         // 忽略错误
       }
@@ -909,34 +1055,12 @@ function AppContent() {
 
   // 处理从连接管理器或欢迎页打开连接
   const handleOpenConnection = useCallback((connection) => {
-    if (!connection || connection.type !== "connection") {
+    const resolvedConnection = resolveRecentConnection(connection, connections);
+    if (!resolvedConnection || resolvedConnection.type !== "connection") {
       return;
     }
 
-    // 递归查找连接配置
-    const findConnectionById = (items, id) => {
-      for (const item of items) {
-        if (item.type === "connection" && item.id === id) {
-          return item;
-        }
-        if (item.type === "group" && Array.isArray(item.items)) {
-          const found = findConnectionById(item.items, id);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-
-    // 优先从最新的 connections 配置中查找连接
-    let latestConnection = connection;
-    if (connection.id) {
-      const foundConnection = findConnectionById(connections, connection.id);
-      if (foundConnection) {
-        latestConnection = foundConnection;
-      }
-    }
-
-    handleCreateSSHConnection(latestConnection);
+    handleCreateSSHConnection(resolvedConnection);
   }, [connections, handleCreateSSHConnection]);
 
   // 关闭标签页
