@@ -2662,6 +2662,36 @@ useEffect(() => {
             term.writeln(`正在连接到 ${sshConfig.host}...`);
           }
 
+          const formatConnectionError = (error) => {
+            const rawMessage =
+              typeof error?.message === "string" && error.message.trim()
+                ? error.message
+                : String(error || "").trim();
+            const isCancelled =
+              /cancel(l)?ed/i.test(rawMessage) || rawMessage.includes("取消");
+            if (isCancelled) {
+              return "\r\n已取消连接";
+            }
+            const fallbackMessage = rawMessage || "未知错误";
+            return sshConfig.splitReconnect
+              ? `\r\n重连失败: ${fallbackMessage}`
+              : `\r\n连接失败: ${fallbackMessage}`;
+          };
+
+          const normalizeConnectResult = (result) => {
+            if (
+              result &&
+              typeof result === "object" &&
+              Object.prototype.hasOwnProperty.call(result, "success")
+            ) {
+              if (!result.success) {
+                return { processId: null, error: result.error };
+              }
+              return { processId: result.data ?? null, error: null };
+            }
+            return { processId: result, error: null };
+          };
+
           try {
             // 根据协议类型选择连接方式
             const connectPromise =
@@ -2671,7 +2701,12 @@ useEffect(() => {
 
             // 启动连接
             connectPromise
-              .then((processId) => {
+              .then((result) => {
+                const { processId, error } = normalizeConnectResult(result);
+                if (error) {
+                  term.writeln(formatConnectionError(error));
+                  return;
+                }
                 if (processId) {
                   // 存储进程ID
                   currentProcessId.current = processId;
@@ -2780,16 +2815,10 @@ useEffect(() => {
                 }
               })
               .catch((error) => {
-                const errorMsg = sshConfig.splitReconnect
-                  ? `\r\n重连失败: ${error.message || "未知错误"}`
-                  : `\r\n连接失败: ${error.message || "未知错误"}`;
-                term.writeln(errorMsg);
+                term.writeln(formatConnectionError(error));
               });
           } catch (error) {
-            const errorMsg = sshConfig.splitReconnect
-              ? `\r\n重连失败: ${error.message || "未知错误"}`
-              : `\r\n连接失败: ${error.message || "未知错误"}`;
-            term.writeln(errorMsg);
+            term.writeln(formatConnectionError(error));
           }
         }
         // 使用模拟终端
