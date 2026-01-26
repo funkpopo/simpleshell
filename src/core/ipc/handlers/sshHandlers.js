@@ -467,6 +467,10 @@ class SSHHandlers {
    * 检查错误是否为认证失败
    */
   _isAuthenticationError(error) {
+    if (this._isAuthCancelledError(error)) {
+      return false;
+    }
+
     const msg = String(error?.message || "").toLowerCase();
     return (
       msg.includes("authentication") ||
@@ -476,6 +480,19 @@ class SSHHandlers {
       msg.includes("publickey") ||
       msg.includes("password") ||
       msg.includes("keyboard-interactive")
+    );
+  }
+
+  /**
+   * 检查错误是否为用户取消认证
+   */
+  _isAuthCancelledError(error) {
+    const rawMessage = String(error?.message || "");
+    const lowerMessage = rawMessage.toLowerCase();
+    return (
+      lowerMessage.includes("cancelled") ||
+      lowerMessage.includes("canceled") ||
+      rawMessage.includes("取消")
     );
   }
 
