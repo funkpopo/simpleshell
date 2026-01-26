@@ -188,6 +188,10 @@ class ProcessManager {
       if (processInfo.type === "ssh2") {
         // SSH连接处理 - 释放连接池中的连接引用
         if (processInfo.connectionKey) {
+          if (processInfo.connectionInfo) {
+            // 标记为用户主动断开，避免自动重连误触发
+            processInfo.connectionInfo.intentionalClose = true;
+          }
           const connectionManager = require("../connection");
           // 传递tabId以便连接池正确管理标签页引用
           connectionManager.releaseSSHConnection(

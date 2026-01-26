@@ -103,6 +103,7 @@ class AppCleanup {
   releaseSSHConnection(proc) {
     if (proc.type === "ssh2" && proc.connectionInfo) {
       try {
+        proc.connectionInfo.intentionalClose = true;
         connectionManager.releaseSSHConnection(proc.connectionInfo.key, proc.config?.tabId);
         logToFile(`释放SSH连接池引用 (app quit): ${proc.connectionInfo.key}`, "INFO");
       } catch (error) {

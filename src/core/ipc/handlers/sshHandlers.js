@@ -380,8 +380,19 @@ class SSHHandlers {
         logToFile(`Error closing SFTP sessions on SSH close: ${err.message}`, "ERROR");
       }
 
-      // 释放连接引用
-      this.connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+      const shouldReleaseConnection = Boolean(connectionInfo?.intentionalClose);
+      if (shouldReleaseConnection) {
+        // 仅在用户主动关闭时释放连接引用，避免阻断自动重连
+        this.connectionManager.releaseSSHConnection(
+          connectionInfo.key,
+          sshConfig.tabId,
+        );
+      } else {
+        logToFile(
+          `SSH stream closed without intentional flag, keeping connection for auto-reconnect: ${connectionInfo.key}`,
+          "DEBUG",
+        );
+      }
 
       // 清理进程信息
       this.childProcesses.delete(processId);
