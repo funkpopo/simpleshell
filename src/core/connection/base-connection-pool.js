@@ -105,10 +105,11 @@ class BaseConnectionPool extends EventEmitter {
 
     // 缓存连接配置，用于后续获取详细信息
     this.lastConnectionConfigs.set(serverKey, {
+      connectionId: config?.id || null,
       host: config.host,
       port: config.port,
       username: config.username,
-      password: config.password || '',
+      password: '',
       privateKeyPath: config.privateKeyPath || '',
       // 关键：保留代理配置，避免“最近连接/快捷连接”丢失 proxy 导致退化为直连
       proxy: config.proxy || null,
@@ -469,15 +470,18 @@ class BaseConnectionPool extends EventEmitter {
       const cachedConfig = this.lastConnectionConfigs.get(serverKey);
 
       if (cachedConfig) {
+        const connectionId = cachedConfig.connectionId || null;
         result.push({
-          id: serverKey,
+          id: connectionId || serverKey,
+          connectionId,
+          serverKey,
           name: cachedConfig.name,
           type: 'connection',
           protocol: cachedConfig.protocol,
           host: cachedConfig.host,
           port: cachedConfig.port,
           username: cachedConfig.username,
-          password: cachedConfig.password,
+          password: '',
           privateKeyPath: cachedConfig.privateKeyPath,
           proxy: cachedConfig.proxy || null,
           lastUsed: Date.now()
@@ -486,15 +490,18 @@ class BaseConnectionPool extends EventEmitter {
         // 如果缓存中没有，尝试从活跃连接中获取
         const conn = this.connections.get(serverKey);
         if (conn && conn.config) {
+          const connectionId = conn.config?.id || null;
           result.push({
-            id: serverKey,
+            id: connectionId || serverKey,
+            connectionId,
+            serverKey,
             name: conn.config.name || `${conn.config.host}:${conn.config.port}`,
             type: 'connection',
             protocol: this.config.protocolType.toLowerCase(),
             host: conn.config.host,
             port: conn.config.port,
             username: conn.config.username,
-            password: conn.config.password || '',
+            password: '',
             privateKeyPath: conn.config.privateKeyPath || '',
             proxy: conn.config.proxy || null,
             lastUsed: conn.lastUsedAt || conn.createdAt
@@ -527,12 +534,17 @@ class BaseConnectionPool extends EventEmitter {
         const key = this.generateServerKey(conn);
         this.lastConnections.push(key);
 
+        const connectionId =
+          conn.connectionId ||
+          (conn.id && conn.id !== key ? conn.id : null);
+
         // 缓存连接配置
         this.lastConnectionConfigs.set(key, {
+          connectionId,
           host: conn.host,
           port: conn.port,
           username: conn.username,
-          password: conn.password || '',
+          password: '',
           privateKeyPath: conn.privateKeyPath || '',
           proxy: conn.proxy || null,
           name: conn.name || `${conn.host}:${conn.port}`,

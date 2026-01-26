@@ -56,6 +56,7 @@ import CustomTab from "./components/CustomTab.jsx";
 import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
 import WindowControls from "./components/WindowControls.jsx";
 import AboutDialog from "./components/AboutDialog.jsx";
+import SSHAuthDialog from "./components/SSHAuthDialog.jsx";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -100,6 +101,12 @@ function AppContent() {
   // 错误处理状态（保持本地，因为不需要全局共享）
   const [appError, setAppError] = React.useState(null);
   const [errorNotificationOpen, setErrorNotificationOpen] = React.useState(false);
+
+  // SSH 认证对话框状态
+  const [sshAuthDialogOpen, setSshAuthDialogOpen] = React.useState(false);
+  const [sshAuthData, setSshAuthData] = React.useState(null);
+  const [sshAuthConnectionConfig, setSshAuthConnectionConfig] = React.useState(null);
+  const sshAuthRequestIdRef = React.useRef(null);
 
   // 监听主进程的错误事件
   React.useEffect(() => {
@@ -198,6 +205,91 @@ function AppContent() {
 
   // 锁定的文件管理器tabId（在打开时不随标签页切换而变化）
   const [lockedFileManagerTabId, setLockedFileManagerTabId] = useState(null);
+
+  // 监听 SSH 认证请求
+  React.useEffect(() => {
+    if (!window.terminalAPI?.onSSHAuthRequest) return;
+
+    const handleSSHAuthRequest = (data) => {
+      console.log('SSH Auth request received:', data);
+      sshAuthRequestIdRef.current = data.requestId;
+      
+      // 查找对应的连接配置
+      let connectionConfig = null;
+      if (data.connectionId) {
+        // 递归查找连接配置
+        const findConnection = (items) => {
+          for (const item of items) {
+            if (item.type === 'connection' && item.id === data.connectionId) {
+              return item;
+            }
+            if (item.type === 'group' && Array.isArray(item.items)) {
+              const found = findConnection(item.items);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        connectionConfig = findConnection(connections);
+      }
+      
+      // 也可以从 tabId 获取配置
+      if (!connectionConfig && data.tabId && terminalInstances[`${data.tabId}-config`]) {
+        connectionConfig = terminalInstances[`${data.tabId}-config`];
+      }
+      
+      setSshAuthConnectionConfig(connectionConfig);
+      setSshAuthData(data);
+      setSshAuthDialogOpen(true);
+    };
+
+    const cleanup = window.terminalAPI.onSSHAuthRequest(handleSSHAuthRequest);
+
+    return () => {
+      if (cleanup) cleanup();
+      if (window.terminalAPI?.offSSHAuthRequest) {
+        window.terminalAPI.offSSHAuthRequest();
+      }
+    };
+  }, [connections, terminalInstances]);
+
+  // 处理 SSH 认证对话框确认
+  const handleSSHAuthConfirm = React.useCallback(async (authResult) => {
+    if (!sshAuthRequestIdRef.current) return;
+    
+    try {
+      await window.terminalAPI.respondSSHAuth({
+        requestId: sshAuthRequestIdRef.current,
+        ...authResult,
+      });
+    } catch (error) {
+      console.error('Failed to respond SSH auth:', error);
+    }
+    
+    setSshAuthDialogOpen(false);
+    setSshAuthData(null);
+    setSshAuthConnectionConfig(null);
+    sshAuthRequestIdRef.current = null;
+  }, []);
+
+  // 处理 SSH 认证对话框关闭/取消
+  const handleSSHAuthClose = React.useCallback(async (result) => {
+    if (sshAuthRequestIdRef.current) {
+      try {
+        await window.terminalAPI.respondSSHAuth({
+          requestId: sshAuthRequestIdRef.current,
+          cancelled: true,
+        });
+      } catch (error) {
+        console.error('Failed to cancel SSH auth:', error);
+      }
+    }
+    
+    setSshAuthDialogOpen(false);
+    setSshAuthData(null);
+    setSshAuthConnectionConfig(null);
+    sshAuthRequestIdRef.current = null;
+  }, []);
 
   // 根据主题模式更新 body 类名
   React.useEffect(() => {
@@ -815,12 +907,37 @@ function AppContent() {
     dispatch(actions.setCurrentTab(newTabs.length - 1));
   }, [tabs, terminalInstances, dispatch]);
 
-  // 处理从连接管理器打开连接
-  const handleOpenConnection = (connection) => {
-    if (connection && connection.type === "connection") {
-      handleCreateSSHConnection(connection);
+  // 处理从连接管理器或欢迎页打开连接
+  const handleOpenConnection = useCallback((connection) => {
+    if (!connection || connection.type !== "connection") {
+      return;
     }
-  };
+
+    // 递归查找连接配置
+    const findConnectionById = (items, id) => {
+      for (const item of items) {
+        if (item.type === "connection" && item.id === id) {
+          return item;
+        }
+        if (item.type === "group" && Array.isArray(item.items)) {
+          const found = findConnectionById(item.items, id);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    // 优先从最新的 connections 配置中查找连接
+    let latestConnection = connection;
+    if (connection.id) {
+      const foundConnection = findConnectionById(connections, connection.id);
+      if (foundConnection) {
+        latestConnection = foundConnection;
+      }
+    }
+
+    handleCreateSSHConnection(latestConnection);
+  }, [connections, handleCreateSSHConnection]);
 
   // 关闭标签页
   const handleCloseTab = (index) => {
@@ -2510,6 +2627,15 @@ function AppContent() {
 
       {/* 关于对话框 */}
       <AboutDialog open={aboutDialogOpen} onClose={handleCloseAbout} />
+
+      {/* SSH 认证对话框 */}
+      <SSHAuthDialog
+        open={sshAuthDialogOpen}
+        onClose={handleSSHAuthClose}
+        onConfirm={handleSSHAuthConfirm}
+        authData={sshAuthData}
+        connectionConfig={sshAuthConnectionConfig}
+      />
 
       {/* 设置对话框 */}
       <Settings open={settingsDialogOpen} onClose={handleCloseSettings} />
