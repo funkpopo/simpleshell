@@ -646,6 +646,27 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // Telnet连接相关
   startTelnet: (telnetConfig) =>
     ipcRenderer.invoke("terminal:startTelnet", telnetConfig),
+
+  // SSH 认证相关 IPC
+  // 监听 SSH 认证请求（主机密钥验证、凭证请求等）
+  onSSHAuthRequest: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_, data) => callback(data);
+    ipcRenderer.on("ssh:auth-request", wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener("ssh:auth-request", wrappedCallback);
+    };
+  },
+  offSSHAuthRequest: (callback) => {
+    ipcRenderer.removeAllListeners("ssh:auth-request");
+  },
+  
+  // 响应 SSH 认证请求
+  respondSSHAuth: (response) => ipcRenderer.invoke("ssh:auth-response", response),
+  
+  // 更新连接配置（用于保存自动登录凭据）
+  updateConnectionCredentials: (connectionId, credentials) =>
+    ipcRenderer.invoke("terminal:updateConnectionCredentials", connectionId, credentials),
 });
 
 // SSH密钥生成器API

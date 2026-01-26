@@ -495,6 +495,27 @@
       "securityWarning": "Please keep your private key safe and do not share it with others",
       "commentPlaceholder": "user@hostname"
     },
+    "sshAuth": {
+      "login": "Login",
+      "host": "Host",
+      "account": "Account",
+      "username": "User",
+      "enterUsername": "Enter username",
+      "password": "Password",
+      "enterPassword": "Enter password",
+      "publicKey": "Public Key",
+      "privateKeyPath": "Private Key Path",
+      "selectKeyFile": "Select private key file",
+      "browse": "Browse...",
+      "autoLoginNext": "Auto login next time",
+      "continue": "Continue",
+      "cancel": "Cancel",
+      "changed": "Changed",
+      "fingerprintWarning": "Server fingerprint has changed. Please verify this is expected.",
+      "authCancelled": "Authentication cancelled",
+      "authFailed": "Authentication failed",
+      "pleaseRetry": "Invalid username or password, please try again"
+    },
     "fileManager": {
       "title": "File Manager",
       "loading": "Loading...",

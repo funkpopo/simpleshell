@@ -495,6 +495,27 @@
       "securityWarning": "请妥善保管你的私钥，不要泄露给他人。",
       "commentPlaceholder": "user@hostname"
     },
+    "sshAuth": {
+      "login": "登录",
+      "host": "主机",
+      "account": "账户",
+      "username": "用户",
+      "enterUsername": "请输入用户名",
+      "password": "密码",
+      "enterPassword": "请输入密码",
+      "publicKey": "公钥",
+      "privateKeyPath": "私钥路径",
+      "selectKeyFile": "选择私钥文件",
+      "browse": "浏览...",
+      "autoLoginNext": "下次自动登录",
+      "continue": "继续",
+      "cancel": "取消",
+      "changed": "已更改",
+      "fingerprintWarning": "服务器指纹已更改，请确认是否为预期更改。",
+      "authCancelled": "认证已取消",
+      "authFailed": "认证失败",
+      "pleaseRetry": "用户名或密码错误，请重新输入"
+    },
     "fileManager": {
       "title": "文件管理",
       "loading": "加载中...",

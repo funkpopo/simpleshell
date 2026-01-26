@@ -1,6 +1,8 @@
 const { BrowserWindow } = require("electron");
 const { logToFile } = require("../../utils/logger");
 const terminalManager = require("../../../modules/terminal");
+const crypto = require("crypto");
+const configService = require("../../../services/configService");
 
 /**
  * SSH/Telnet连接相关的IPC处理器
@@ -23,6 +25,12 @@ class SSHHandlers {
     this.sftpTransfer = dependencies.sftpTransfer;
     this.getNextProcessId = dependencies.getNextProcessId;
     this.getLatencyHandlers = dependencies.getLatencyHandlers;
+    
+    // 待处理的认证请求
+    this.pendingAuthRequests = new Map();
+    
+    // 已知主机指纹缓存 (host:port -> fingerprint)
+    this.knownHostsCache = new Map();
   }
 
   getHandlers() {
@@ -37,7 +45,192 @@ class SSHHandlers {
         category: "terminal",
         handler: this.startTelnet.bind(this),
       },
+      {
+        channel: "ssh:auth-response",
+        category: "terminal",
+        handler: this.handleAuthResponse.bind(this),
+      },
+      {
+        channel: "terminal:updateConnectionCredentials",
+        category: "terminal",
+        handler: this.updateConnectionCredentials.bind(this),
+      },
     ];
+  }
+
+  /**
+   * 处理认证响应
+   */
+  async handleAuthResponse(event, response) {
+    const { requestId, ...authData } = response;
+    
+    if (!requestId || !this.pendingAuthRequests.has(requestId)) {
+      logToFile(`Invalid auth response: requestId=${requestId}`, "WARN");
+      return { success: false, error: "Invalid request ID" };
+    }
+    
+    const pendingRequest = this.pendingAuthRequests.get(requestId);
+    this.pendingAuthRequests.delete(requestId);
+    
+    if (authData.cancelled) {
+      pendingRequest.reject(new Error("Authentication cancelled by user"));
+      return { success: false, cancelled: true };
+    }
+    
+    pendingRequest.resolve(authData);
+    return { success: true };
+  }
+
+  /**
+   * 更新连接凭据（用于保存自动登录信息）
+   */
+  async updateConnectionCredentials(event, connectionId, credentials) {
+    try {
+      if (!connectionId || !credentials) {
+        return { success: false, error: "Invalid parameters" };
+      }
+      
+      // 加载现有连接配置
+      const connections = configService.loadConnections();
+      
+      // 递归查找并更新连接
+      const updateConnection = (items) => {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type === "connection" && item.id === connectionId) {
+            // 更新凭据
+            if (credentials.username) {
+              items[i].username = credentials.username;
+            }
+            if (credentials.password !== undefined) {
+              items[i].password = credentials.password;
+            }
+            if (credentials.privateKeyPath !== undefined) {
+              items[i].privateKeyPath = credentials.privateKeyPath;
+            }
+            if (credentials.authType) {
+              items[i].authType = credentials.authType;
+            }
+            return true;
+          }
+          if (item.type === "group" && Array.isArray(item.items)) {
+            if (updateConnection(item.items)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+      
+      const updated = updateConnection(connections);
+      
+      if (updated) {
+        configService.saveConnections(connections);
+        logToFile(`Updated credentials for connection: ${connectionId}`, "INFO");
+        
+        // 通知前端连接配置已更改
+        const windows = BrowserWindow.getAllWindows();
+        for (const win of windows) {
+          if (win && !win.isDestroyed() && win.webContents) {
+            win.webContents.send("connections-changed");
+          }
+        }
+        
+        return { success: true };
+      } else {
+        return { success: false, error: "Connection not found" };
+      }
+    } catch (error) {
+      logToFile(`Failed to update connection credentials: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 计算主机密钥指纹
+   */
+  _computeFingerprint(key) {
+    try {
+      const hash = crypto.createHash("sha1");
+      hash.update(key);
+      const fingerprint = hash.digest("hex");
+      // 格式化为 xx:xx:xx:xx... 形式
+      return fingerprint.match(/.{2}/g).join(":");
+    } catch (error) {
+      logToFile(`Failed to compute fingerprint: ${error.message}`, "ERROR");
+      return null;
+    }
+  }
+
+  /**
+   * 检查主机密钥是否已知且匹配
+   */
+  _checkHostKey(host, port, fingerprint) {
+    const hostKey = `${host}:${port || 22}`;
+    const knownFingerprint = this.knownHostsCache.get(hostKey);
+    
+    if (!knownFingerprint) {
+      return { known: false, changed: false };
+    }
+    
+    if (knownFingerprint !== fingerprint) {
+      return { known: true, changed: true, previousFingerprint: knownFingerprint };
+    }
+    
+    return { known: true, changed: false };
+  }
+
+  /**
+   * 保存主机密钥
+   */
+  _saveHostKey(host, port, fingerprint) {
+    const hostKey = `${host}:${port || 22}`;
+    this.knownHostsCache.set(hostKey, fingerprint);
+  }
+
+  /**
+   * 请求用户认证（发送请求到渲染进程并等待响应）
+   */
+  async _requestUserAuth(tabId, authData) {
+    const mainWindow = this._getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error("No main window available for authentication");
+    }
+    
+    const requestId = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    return new Promise((resolve, reject) => {
+      // 设置超时（5分钟）
+      const timeout = setTimeout(() => {
+        if (this.pendingAuthRequests.has(requestId)) {
+          this.pendingAuthRequests.delete(requestId);
+          reject(new Error("Authentication timeout"));
+        }
+      }, 5 * 60 * 1000);
+      
+      // 存储待处理请求
+      this.pendingAuthRequests.set(requestId, {
+        resolve: (data) => {
+          clearTimeout(timeout);
+          resolve(data);
+        },
+        reject: (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+        tabId,
+        authData,
+      });
+      
+      // 发送认证请求到渲染进程
+      mainWindow.webContents.send("ssh:auth-request", {
+        requestId,
+        tabId,
+        ...authData,
+      });
+      
+      logToFile(`Sent auth request: ${requestId} for tab ${tabId}`, "INFO");
+    });
   }
 
   _getMainWindow() {
@@ -270,6 +463,22 @@ class SSHHandlers {
     };
   }
 
+  /**
+   * 检查错误是否为认证失败
+   */
+  _isAuthenticationError(error) {
+    const msg = String(error?.message || "").toLowerCase();
+    return (
+      msg.includes("authentication") ||
+      msg.includes("auth fail") ||
+      msg.includes("all configured authentication methods failed") ||
+      msg.includes("permission denied") ||
+      msg.includes("publickey") ||
+      msg.includes("password") ||
+      msg.includes("keyboard-interactive")
+    );
+  }
+
   async startSSH(event, sshConfig) {
     const processId = this.getNextProcessId();
     const mainWindow = this._getMainWindow();
@@ -279,40 +488,149 @@ class SSHHandlers {
       throw new Error("Invalid SSH configuration");
     }
 
-    try {
-      const connectionInfo = await this.connectionManager.getSSHConnection(sshConfig);
-      this._broadcastTopConnections();
-      const ssh = connectionInfo.client;
+    // 最大重试次数（用于认证失败后重试）
+    const maxAuthRetries = 3;
+    let authRetryCount = 0;
+    let finalConfig = { ...sshConfig };
+    let lastAuthResult = null;
 
-      if (sshConfig.tabId) {
-        this.connectionManager.addTabReference(sshConfig.tabId, connectionInfo.key);
-      }
+    // 检查是否需要预先认证（没有用户名或密码/密钥）
+    const needsPreAuth = !sshConfig.username || 
+      (!sshConfig.password && !sshConfig.privateKeyPath && sshConfig.authType !== "privateKey");
 
-      // 存储进程信息
-      const procInfo = this._createProcessInfo(ssh, connectionInfo, sshConfig, "ssh2");
-      this.childProcesses.set(processId, procInfo);
-      if (sshConfig.tabId) {
-        this.childProcesses.set(sshConfig.tabId, { ...procInfo });
-      }
-
-      if (connectionInfo.ready) {
-        logToFile(`复用现有SSH连接: ${connectionInfo.key}`, "INFO");
-
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(
-            `process:output:${processId}`,
-            `\r\n*** ${sshConfig.host} SSH连接已建立（复用现有连接） ***\r\n`
-          );
+    while (authRetryCount <= maxAuthRetries) {
+      try {
+        // 如果需要预先认证（第一次）或者上次认证失败需要重试
+        if (needsPreAuth && authRetryCount === 0) {
+          logToFile(`SSH connection requires authentication for ${sshConfig.host}`, "INFO");
+          
+          const authResult = await this._requestUserAuth(sshConfig.tabId, {
+            step: "hostVerify",
+            host: sshConfig.host,
+            port: sshConfig.port || 22,
+            serverVersion: null,
+            fingerprint: null,
+            fingerprintChanged: false,
+            requireCredentials: true,
+            connectionId: sshConfig.id,
+            existingUsername: sshConfig.username || "",
+            isRetry: false,
+          });
+          
+          if (authResult.cancelled) {
+            throw new Error("Authentication cancelled by user");
+          }
+          
+          lastAuthResult = authResult;
+          finalConfig = {
+            ...sshConfig,
+            username: authResult.username || sshConfig.username,
+            password: authResult.password || sshConfig.password,
+            privateKeyPath: authResult.privateKeyPath || sshConfig.privateKeyPath,
+            authType: authResult.authType || sshConfig.authType || "password",
+          };
         }
 
-        return this._createSSHShell(ssh, processId, sshConfig, connectionInfo);
-      } else {
-        return this._waitForSSHReady(ssh, processId, sshConfig, connectionInfo);
+        // 尝试建立SSH连接
+        const connectionInfo = await this.connectionManager.getSSHConnection(finalConfig);
+        this._broadcastTopConnections();
+        const ssh = connectionInfo.client;
+
+        if (finalConfig.tabId) {
+          this.connectionManager.addTabReference(finalConfig.tabId, connectionInfo.key);
+        }
+
+        // 存储进程信息
+        const procInfo = this._createProcessInfo(ssh, connectionInfo, finalConfig, "ssh2");
+        this.childProcesses.set(processId, procInfo);
+        if (finalConfig.tabId) {
+          this.childProcesses.set(finalConfig.tabId, { ...procInfo });
+        }
+
+        let result;
+        if (connectionInfo.ready) {
+          logToFile(`复用现有SSH连接: ${connectionInfo.key}`, "INFO");
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(
+              `process:output:${processId}`,
+              `\r\n*** ${finalConfig.host} SSH连接已建立（复用现有连接） ***\r\n`
+            );
+          }
+
+          result = await this._createSSHShell(ssh, processId, finalConfig, connectionInfo);
+        } else {
+          result = await this._waitForSSHReady(ssh, processId, finalConfig, connectionInfo);
+        }
+
+        // 连接成功，如果用户选择了"下次自动登录"，保存凭据
+        if (lastAuthResult?.autoLogin && sshConfig.id) {
+          await this.updateConnectionCredentials(event, sshConfig.id, {
+            username: finalConfig.username,
+            password: finalConfig.password,
+            privateKeyPath: finalConfig.privateKeyPath,
+            authType: finalConfig.authType,
+          });
+        }
+
+        return result;
+
+      } catch (error) {
+        logToFile(`SSH connection attempt ${authRetryCount + 1} failed: ${error.message}`, "ERROR");
+
+        // 检查是否为认证错误
+        if (this._isAuthenticationError(error) && authRetryCount < maxAuthRetries) {
+          authRetryCount++;
+          logToFile(`Authentication failed, prompting user for credentials (attempt ${authRetryCount}/${maxAuthRetries})`, "INFO");
+
+          // 清理之前的连接尝试
+          this.childProcesses.delete(processId);
+          if (finalConfig.tabId) this.childProcesses.delete(finalConfig.tabId);
+
+          // 显示认证对话框让用户重新输入凭据
+          try {
+            const authResult = await this._requestUserAuth(sshConfig.tabId, {
+              step: "hostVerify",
+              host: sshConfig.host,
+              port: sshConfig.port || 22,
+              serverVersion: null,
+              fingerprint: null,
+              fingerprintChanged: false,
+              requireCredentials: true,
+              connectionId: sshConfig.id,
+              existingUsername: finalConfig.username || sshConfig.username || "",
+              isRetry: true,
+              errorMessage: error.message,
+            });
+
+            if (authResult.cancelled) {
+              throw new Error("Authentication cancelled by user");
+            }
+
+            lastAuthResult = authResult;
+            finalConfig = {
+              ...sshConfig,
+              username: authResult.username || finalConfig.username,
+              password: authResult.password,  // 使用新密码
+              privateKeyPath: authResult.privateKeyPath || finalConfig.privateKeyPath,
+              authType: authResult.authType || finalConfig.authType || "password",
+            };
+
+            // 继续循环重试
+            continue;
+
+          } catch (authError) {
+            logToFile(`User cancelled authentication: ${authError.message}`, "INFO");
+            throw authError;
+          }
+        }
+
+        // 非认证错误或已达到最大重试次数
+        throw error;
       }
-    } catch (error) {
-      logToFile(`Failed to start SSH connection: ${error.message}`, "ERROR");
-      throw error;
     }
+
+    throw new Error("Max authentication retries exceeded");
   }
 
   _createSSHShell(ssh, processId, sshConfig, connectionInfo) {
