@@ -102,7 +102,7 @@
     "remark-gfm": "^4.0.1",
     "socks-proxy-agent": "^8.0.5",
     "ssh2": "^1.17.0",
-    "systeminformation": "^5.30.5",
+    "systeminformation": "^5.30.6",
     "telnet-client": "^2.2.9"
   }
 }
