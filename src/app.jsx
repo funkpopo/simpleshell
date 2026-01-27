@@ -804,7 +804,7 @@ function AppContent() {
     dispatch(actions.setAnchorEl(null));
   }, [dispatch]);
 
-  // React 19: 利用自动批处理优化主题切换
+  // React 19: 利用自动批处理和 startTransition 优化主题切换
   const toggleTheme = useCallback(async (event) => {
     try {
       const newDarkMode = !darkMode;
@@ -835,16 +835,16 @@ function AppContent() {
         overlay.classList.add("animating");
       });
 
-      // 在动画早期切换主题状态，让内容也能跟随过渡
-      setTimeout(() => {
+      // 立即切换主题状态，使用 startTransition 避免阻塞
+      React.startTransition(() => {
         dispatch(actions.setDarkMode(newDarkMode));
-      }, 100);
+      });
 
-      // 动画结束后清理（0.8s 动画时长）
+      // 动画结束后清理（0.5s 动画时长）
       setTimeout(() => {
         document.body.classList.remove("theme-switching");
         overlay.remove();
-      }, 800);
+      }, 500);
 
       // 保存主题设置到配置文件
       if (window.terminalAPI?.saveUISettings) {
