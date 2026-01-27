@@ -1,5 +1,8 @@
 /* Main styles entry point - imports all modular styles */
 
+/* Theme CSS variables (must be first) */
+@import "./theme-variables.css";
+
 /* Global base styles */
 @import "./global.css";
 
