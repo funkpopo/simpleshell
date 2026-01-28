@@ -569,7 +569,7 @@ const AISettings = ({ open, onClose }) => {
           alignItems: "center",
         }}
       >
-        <Typography variant="h6">{t("aiSettings.title")}</Typography>
+        <Typography variant="h6" component="span">{t("aiSettings.title")}</Typography>
         <IconButton onClick={handleClose} size="small">
           <CloseIcon />
         </IconButton>
