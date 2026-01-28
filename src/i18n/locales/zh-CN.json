@@ -385,6 +385,7 @@
       "setAsCurrent": "设为当前",
       "apiName": "配置名称",
       "apiNameRequired": "配置名称不能为空",
+      "providerType": "渠道类型",
       "deleteConfirmTitle": "删除确认",
       "deleteConfirm": "确定要删除该 API 配置吗？",
       "deleteSuccess": "API 配置已删除",

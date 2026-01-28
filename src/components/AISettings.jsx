@@ -46,6 +46,13 @@ import {
 } from "../utils/aiSystemPrompt";
 import LockIcon from "@mui/icons-material/Lock";
 
+// 渠道类型常量 - 定义在组件外部以保持稳定引用
+const PROVIDER_TYPES = {
+  OPENAI: "openai",
+  ANTHROPIC: "anthropic",
+  GEMINI: "gemini",
+};
+
 const AISettings = ({ open, onClose }) => {
   const { t } = useTranslation();
   const firstInputRef = useRef(null);
@@ -72,6 +79,7 @@ const AISettings = ({ open, onClose }) => {
   const [config, setConfig] = useState({
     id: "",
     name: "",
+    provider: PROVIDER_TYPES.OPENAI,
     apiUrl: "",
     apiKey: "",
     model: "",
@@ -140,6 +148,7 @@ const AISettings = ({ open, onClose }) => {
           setConfig({
             id: settings.current.id || "",
             name: settings.current.name || "",
+            provider: settings.current.provider || PROVIDER_TYPES.OPENAI,
             apiUrl: settings.current.apiUrl || "",
             apiKey: settings.current.apiKey || "",
             model: settings.current.model || "",
@@ -171,6 +180,7 @@ const AISettings = ({ open, onClose }) => {
     setConfig({
       id: "",
       name: "",
+      provider: PROVIDER_TYPES.OPENAI,
       apiUrl: "",
       apiKey: "",
       model: "",
@@ -201,6 +211,7 @@ const AISettings = ({ open, onClose }) => {
     setConfig({
       id: apiConfig.id,
       name: apiConfig.name,
+      provider: apiConfig.provider || PROVIDER_TYPES.OPENAI,
       apiUrl: apiConfig.apiUrl,
       apiKey: apiConfig.apiKey,
       model: apiConfig.model,
@@ -217,6 +228,7 @@ const AISettings = ({ open, onClose }) => {
     setConfig({
       id: "", // 新配置ID为空
       name: `${apiConfig.name} (副本)`, // 添加副本标识
+      provider: apiConfig.provider || PROVIDER_TYPES.OPENAI,
       apiUrl: apiConfig.apiUrl, // 保持相同的API URL
       apiKey: apiConfig.apiKey, // 保持相同的API Key
       model: apiConfig.model, // 可以使用相同的模型或修改
@@ -390,6 +402,8 @@ const AISettings = ({ open, onClose }) => {
           url: config.apiUrl,
           apiKey: config.apiKey,
           model: config.model,
+          provider: config.provider,
+          maxTokens: config.maxTokens,
           messages: [{ role: "user", content: "Hello" }],
         };
 
@@ -451,6 +465,7 @@ const AISettings = ({ open, onClose }) => {
       const result = await window.terminalAPI.fetchModels({
         url: config.apiUrl,
         apiKey: config.apiKey,
+        provider: config.provider,
       });
 
       if (result && result.models && Array.isArray(result.models)) {
@@ -552,13 +567,18 @@ const AISettings = ({ open, onClose }) => {
       onClose={handleClose}
       maxWidth="sm"
       fullWidth
-      disableEnforceFocus={false}
-      disableAutoFocus={false}
-      sx={{ zIndex: 1500 }}
+      sx={{
+        zIndex: (theme) => theme.zIndex.modal + 200,
+        pointerEvents: "auto",
+        "& .MuiDialog-container": {
+          pointerEvents: "auto",
+        },
+      }}
       PaperProps={{
         sx: {
           borderRadius: 2,
           backdropFilter: "blur(10px)",
+          pointerEvents: "auto",
         },
       }}
     >
@@ -685,6 +705,13 @@ const AISettings = ({ open, onClose }) => {
                                       color="text.secondary"
                                       sx={{ mb: 0.5 }}
                                     >
+                                      {t("aiSettings.providerType")}: {(apiConfig.provider || "openai").toUpperCase()}
+                                    </Typography>
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                      sx={{ mb: 0.5 }}
+                                    >
                                       {t("aiSettings.model")}: {apiConfig.model}
                                     </Typography>
                                     <Typography
@@ -792,6 +819,31 @@ const AISettings = ({ open, onClose }) => {
                         variant="outlined"
                         required
                       />
+                      <FormControl fullWidth variant="outlined">
+                        <InputLabel>{t("aiSettings.providerType")}</InputLabel>
+                        <Select
+                          value={config.provider}
+                          onChange={(e) =>
+                            handleConfigChange("provider", e.target.value)
+                          }
+                          label={t("aiSettings.providerType")}
+                          MenuProps={{
+                            sx: {
+                              zIndex: (theme) => theme.zIndex.modal + 210,
+                            },
+                          }}
+                        >
+                          <MenuItem value={PROVIDER_TYPES.OPENAI}>
+                            OpenAI
+                          </MenuItem>
+                          <MenuItem value={PROVIDER_TYPES.ANTHROPIC}>
+                            Anthropic
+                          </MenuItem>
+                          <MenuItem value={PROVIDER_TYPES.GEMINI}>
+                            Gemini
+                          </MenuItem>
+                        </Select>
+                      </FormControl>
                       <TextField
                         label={t("aiSettings.apiUrl")}
                         value={config.apiUrl}
@@ -834,6 +886,11 @@ const AISettings = ({ open, onClose }) => {
                                 border: 1,
                                 borderColor: "divider",
                                 boxShadow: 3,
+                              },
+                            },
+                            popper: {
+                              sx: {
+                                zIndex: (theme) => theme.zIndex.modal + 210,
                               },
                             },
                           }}
@@ -956,6 +1013,11 @@ const AISettings = ({ open, onClose }) => {
                           value={newRuleLevel}
                           onChange={(e) => setNewRuleLevel(e.target.value)}
                           label={t("aiSettings.riskLevel")}
+                          MenuProps={{
+                            sx: {
+                              zIndex: (theme) => theme.zIndex.modal + 210,
+                            },
+                          }}
                         >
                           <MenuItem value="critical">
                             <Chip
@@ -1168,6 +1230,13 @@ const AISettings = ({ open, onClose }) => {
         onClose={handleCancelDelete}
         maxWidth="xs"
         fullWidth
+        sx={{
+          zIndex: (theme) => theme.zIndex.modal + 220,
+          pointerEvents: "auto",
+          "& .MuiDialog-container": {
+            pointerEvents: "auto",
+          },
+        }}
         slotProps={{
           paper: {
             sx: {

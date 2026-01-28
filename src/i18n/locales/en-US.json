@@ -385,6 +385,7 @@
       "setAsCurrent": "Set as Current",
       "apiName": "Configuration Name",
       "apiNameRequired": "Configuration name is required",
+      "providerType": "Provider Type",
       "deleteConfirmTitle": "Confirm Delete",
       "deleteConfirm": "Are you sure you want to delete this API configuration?",
       "deleteSuccess": "API configuration deleted",
