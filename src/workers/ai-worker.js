@@ -11,6 +11,419 @@ const activeRequests = new Map();
 // 存储系统代理配置
 let systemProxyConfig = null;
 
+// ============================================
+// API 适配器定义
+// ============================================
+
+/**
+ * OpenAI API 适配器
+ */
+const openaiAdapter = {
+  name: "openai",
+
+  /**
+   * 构建聊天完成API的URL
+   */
+  buildChatUrl(baseUrl) {
+    if (!baseUrl.includes('/chat/completions')) {
+      return baseUrl.replace(/\/$/, '') + '/chat/completions';
+    }
+    return baseUrl;
+  },
+
+  /**
+   * 构建模型列表API的URL
+   */
+  buildModelsUrl(baseUrl) {
+    const parsedUrl = new URL(baseUrl);
+    const pathParts = parsedUrl.pathname.split('/');
+    if (pathParts.length >= 3 && pathParts[1] === 'v1') {
+      pathParts[pathParts.length - 1] = 'models';
+      parsedUrl.pathname = pathParts.join('/');
+      return parsedUrl.toString();
+    }
+    return baseUrl.replace(/\/$/, '') + '/models';
+  },
+
+  /**
+   * 构建请求头
+   */
+  buildHeaders(apiKey) {
+    return {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    };
+  },
+
+  /**
+   * 构建请求体
+   */
+  buildRequestBody(model, messages, isStream, maxTokens) {
+    const body = {
+      model: model,
+      messages: messages,
+    };
+    if (isStream) {
+      body.stream = true;
+    }
+    return body;
+  },
+
+  /**
+   * 解析标准响应
+   */
+  parseResponse(data) {
+    if (data.choices && data.choices[0] && data.choices[0].message) {
+      return {
+        success: true,
+        choices: data.choices,
+        usage: data.usage,
+      };
+    }
+    return null;
+  },
+
+  /**
+   * 解析流式响应块
+   */
+  parseStreamChunk(line) {
+    if (line.startsWith("data: ") && line !== "data: [DONE]") {
+      try {
+        const jsonData = JSON.parse(line.substring(6));
+        if (jsonData.choices && jsonData.choices[0] &&
+            jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
+          return { content: jsonData.choices[0].delta.content };
+        }
+      } catch (e) {
+        // 忽略解析错误
+      }
+    } else if (line === "data: [DONE]") {
+      return { done: true };
+    }
+    return null;
+  },
+
+  /**
+   * 解析模型列表响应
+   */
+  parseModelsResponse(data) {
+    if (data.data && Array.isArray(data.data)) {
+      return data.data.map(model => model.id).filter(id => id);
+    } else if (Array.isArray(data)) {
+      return data.map(model => model.id || model).filter(id => id);
+    } else if (data.models && Array.isArray(data.models)) {
+      return data.models.map(model => model.id || model).filter(id => id);
+    }
+    return [];
+  },
+};
+
+/**
+ * Anthropic API 适配器
+ */
+const anthropicAdapter = {
+  name: "anthropic",
+
+  /**
+   * 构建聊天完成API的URL
+   */
+  buildChatUrl(baseUrl) {
+    if (!baseUrl.includes('/messages')) {
+      return baseUrl.replace(/\/$/, '') + '/v1/messages';
+    }
+    return baseUrl;
+  },
+
+  /**
+   * 构建模型列表API的URL
+   */
+  buildModelsUrl(baseUrl) {
+    // Anthropic 没有官方的模型列表API，返回null
+    return null;
+  },
+
+  /**
+   * 构建请求头
+   */
+  buildHeaders(apiKey) {
+    return {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    };
+  },
+
+  /**
+   * 构建请求体
+   */
+  buildRequestBody(model, messages, isStream, maxTokens) {
+    // 转换消息格式：OpenAI格式 -> Anthropic格式
+    // Anthropic需要将system消息单独提取出来
+    let systemMessage = "";
+    const convertedMessages = [];
+
+    for (const msg of messages) {
+      if (msg.role === "system") {
+        systemMessage = msg.content;
+      } else {
+        convertedMessages.push({
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.content,
+        });
+      }
+    }
+
+    const body = {
+      model: model,
+      messages: convertedMessages,
+      max_tokens: maxTokens || 4096,
+    };
+
+    if (systemMessage) {
+      body.system = systemMessage;
+    }
+
+    if (isStream) {
+      body.stream = true;
+    }
+
+    return body;
+  },
+
+  /**
+   * 解析标准响应
+   */
+  parseResponse(data) {
+    if (data.content && Array.isArray(data.content)) {
+      const textContent = data.content.find(c => c.type === "text");
+      if (textContent) {
+        return {
+          success: true,
+          choices: [{
+            message: {
+              role: "assistant",
+              content: textContent.text,
+            },
+          }],
+          usage: data.usage ? {
+            prompt_tokens: data.usage.input_tokens,
+            completion_tokens: data.usage.output_tokens,
+            total_tokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0),
+          } : undefined,
+        };
+      }
+    }
+    return null;
+  },
+
+  /**
+   * 解析流式响应块
+   */
+  parseStreamChunk(line) {
+    if (line.startsWith("data: ")) {
+      try {
+        const jsonData = JSON.parse(line.substring(6));
+
+        // Anthropic流式响应类型
+        if (jsonData.type === "content_block_delta" &&
+            jsonData.delta && jsonData.delta.text) {
+          return { content: jsonData.delta.text };
+        } else if (jsonData.type === "message_stop") {
+          return { done: true };
+        }
+      } catch (e) {
+        // 忽略解析错误
+      }
+    }
+    return null;
+  },
+
+  /**
+   * 解析模型列表响应
+   */
+  parseModelsResponse(data) {
+    // Anthropic没有模型列表API，返回预定义列表
+    return [
+      "claude-3-5-sonnet-20241022",
+      "claude-3-5-haiku-20241022",
+      "claude-3-opus-20240229",
+      "claude-3-sonnet-20240229",
+      "claude-3-haiku-20240307",
+    ];
+  },
+};
+
+/**
+ * Gemini API 适配器
+ */
+const geminiAdapter = {
+  name: "gemini",
+
+  /**
+   * 构建聊天完成API的URL
+   */
+  buildChatUrl(baseUrl, model, apiKey, isStream) {
+    // Gemini API格式: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}
+    let url = baseUrl.replace(/\/$/, '');
+
+    // 如果URL不包含models路径，添加它
+    if (!url.includes('/models/')) {
+      url = url + '/v1beta/models/' + model;
+    }
+
+    // 添加操作类型
+    if (isStream) {
+      url = url.replace(/:generateContent.*$/, '') + ':streamGenerateContent';
+    } else {
+      url = url.replace(/:streamGenerateContent.*$/, '') + ':generateContent';
+    }
+
+    // 添加API key作为查询参数
+    const separator = url.includes('?') ? '&' : '?';
+    url = url + separator + 'key=' + apiKey;
+
+    return url;
+  },
+
+  /**
+   * 构建模型列表API的URL
+   */
+  buildModelsUrl(baseUrl, apiKey) {
+    let url = baseUrl.replace(/\/$/, '');
+    if (!url.includes('/models')) {
+      url = url + '/v1beta/models';
+    }
+    const separator = url.includes('?') ? '&' : '?';
+    return url + separator + 'key=' + apiKey;
+  },
+
+  /**
+   * 构建请求头
+   */
+  buildHeaders(apiKey) {
+    // Gemini使用URL参数传递API key，不需要Authorization头
+    return {
+      "Content-Type": "application/json",
+    };
+  },
+
+  /**
+   * 构建请求体
+   */
+  buildRequestBody(model, messages, isStream, maxTokens) {
+    // 转换消息格式：OpenAI格式 -> Gemini格式
+    const contents = [];
+    let systemInstruction = null;
+
+    for (const msg of messages) {
+      if (msg.role === "system") {
+        systemInstruction = { parts: [{ text: msg.content }] };
+      } else {
+        contents.push({
+          role: msg.role === "assistant" ? "model" : "user",
+          parts: [{ text: msg.content }],
+        });
+      }
+    }
+
+    const body = {
+      contents: contents,
+      generationConfig: {
+        maxOutputTokens: maxTokens || 4096,
+      },
+    };
+
+    if (systemInstruction) {
+      body.systemInstruction = systemInstruction;
+    }
+
+    return body;
+  },
+
+  /**
+   * 解析标准响应
+   */
+  parseResponse(data) {
+    if (data.candidates && data.candidates[0] &&
+        data.candidates[0].content && data.candidates[0].content.parts) {
+      const textPart = data.candidates[0].content.parts.find(p => p.text);
+      if (textPart) {
+        return {
+          success: true,
+          choices: [{
+            message: {
+              role: "assistant",
+              content: textPart.text,
+            },
+          }],
+          usage: data.usageMetadata ? {
+            prompt_tokens: data.usageMetadata.promptTokenCount,
+            completion_tokens: data.usageMetadata.candidatesTokenCount,
+            total_tokens: data.usageMetadata.totalTokenCount,
+          } : undefined,
+        };
+      }
+    }
+    return null;
+  },
+
+  /**
+   * 解析流式响应块
+   */
+  parseStreamChunk(line) {
+    // Gemini流式响应是JSON数组格式
+    if (line.startsWith("[") || line.startsWith(",") || line.startsWith("{")) {
+      try {
+        // 清理行首的逗号或方括号
+        let cleanLine = line.replace(/^[\[,\s]+/, '').replace(/\]$/, '');
+        if (!cleanLine || cleanLine === ']') return null;
+
+        const jsonData = JSON.parse(cleanLine);
+        if (jsonData.candidates && jsonData.candidates[0] &&
+            jsonData.candidates[0].content && jsonData.candidates[0].content.parts) {
+          const textPart = jsonData.candidates[0].content.parts.find(p => p.text);
+          if (textPart) {
+            return { content: textPart.text };
+          }
+        }
+      } catch (e) {
+        // 忽略解析错误
+      }
+    }
+    return null;
+  },
+
+  /**
+   * 解析模型列表响应
+   */
+  parseModelsResponse(data) {
+    if (data.models && Array.isArray(data.models)) {
+      return data.models
+        .filter(model => model.supportedGenerationMethods &&
+                model.supportedGenerationMethods.includes("generateContent"))
+        .map(model => model.name.replace("models/", ""));
+    }
+    return [];
+  },
+};
+
+/**
+ * 获取API适配器
+ * @param {string} provider - 提供商类型 (openai, anthropic, gemini)
+ * @returns {object} API适配器
+ */
+function getApiAdapter(provider) {
+  switch (provider) {
+    case "anthropic":
+      return anthropicAdapter;
+    case "gemini":
+      return geminiAdapter;
+    case "openai":
+    default:
+      return openaiAdapter;
+  }
+}
+
 /**
  * 创建代理Agent
  * @param {string} protocol - 目标URL协议 (http: 或 https:)
@@ -137,13 +550,17 @@ function handleAPIRequest(requestId, requestData) {
  * @param {Object} requestData - 请求数据
  */
 function handleStandardRequest(requestId, requestData) {
-  const { url, apiKey, model, messages } = requestData;
+  const { url, apiKey, model, messages, provider, maxTokens } = requestData;
 
-  // 解析URL，确保包含完整的API路径
-  let apiUrl = url;
-  if (!url.includes('/chat/completions')) {
-    // 如果URL不包含chat/completions路径，自动添加
-    apiUrl = url.replace(/\/$/, '') + '/chat/completions';
+  // 获取适配器
+  const adapter = getApiAdapter(provider);
+
+  // 构建API URL
+  let apiUrl;
+  if (adapter.name === "gemini") {
+    apiUrl = adapter.buildChatUrl(url, model, apiKey, false);
+  } else {
+    apiUrl = adapter.buildChatUrl(url);
   }
 
   const parsedUrl = new URL(apiUrl);
@@ -154,10 +571,7 @@ function handleStandardRequest(requestId, requestData) {
     hostname: parsedUrl.hostname,
     path: parsedUrl.pathname + parsedUrl.search,
     port: parsedUrl.port || (parsedUrl.protocol === "https:" ? 443 : 80),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: adapter.buildHeaders(apiKey),
   };
 
   // 添加代理Agent
@@ -172,12 +586,27 @@ function handleStandardRequest(requestId, requestData) {
 
     // 处理状态码非200的情况
     if (res.statusCode !== 200) {
-      parentPort.postMessage({
-        id: requestId,
-        error: {
-          message: `API请求失败: ${res.statusCode} ${res.statusMessage}`,
-          statusCode: res.statusCode,
-        },
+      // 收集错误响应体
+      res.on("data", (chunk) => {
+        responseData += chunk.toString("utf-8");
+      });
+      res.on("end", () => {
+        let errorMessage = `API请求失败: ${res.statusCode} ${res.statusMessage}`;
+        try {
+          const errorData = JSON.parse(responseData);
+          if (errorData.error && errorData.error.message) {
+            errorMessage = errorData.error.message;
+          }
+        } catch (e) {
+          // 忽略解析错误
+        }
+        parentPort.postMessage({
+          id: requestId,
+          error: {
+            message: errorMessage,
+            statusCode: res.statusCode,
+          },
+        });
       });
       return;
     }
@@ -191,15 +620,12 @@ function handleStandardRequest(requestId, requestData) {
         // 解析JSON响应
         const data = JSON.parse(responseData);
 
-        // 提取响应内容
-        if (data.choices && data.choices[0] && data.choices[0].message) {
+        // 使用适配器解析响应
+        const result = adapter.parseResponse(data);
+        if (result) {
           parentPort.postMessage({
             id: requestId,
-            result: {
-              success: true,
-              choices: data.choices,
-              usage: data.usage,
-            },
+            result: result,
           });
         } else {
           parentPort.postMessage({
@@ -236,13 +662,11 @@ function handleStandardRequest(requestId, requestData) {
   // 存储请求引用
   activeRequests.set(requestId, { req, type: "standard" });
 
+  // 使用适配器构建请求体
+  const requestBody = adapter.buildRequestBody(model, messages, false, maxTokens);
+
   // 发送请求数据
-  req.write(
-    JSON.stringify({
-      model: model,
-      messages: messages,
-    }),
-  );
+  req.write(JSON.stringify(requestBody));
 
   req.end();
 }
@@ -253,13 +677,17 @@ function handleStandardRequest(requestId, requestData) {
  * @param {Object} requestData - 请求数据
  */
 function handleStreamRequest(requestId, requestData) {
-  const { url, apiKey, model, messages, sessionId } = requestData;
+  const { url, apiKey, model, messages, sessionId, provider, maxTokens } = requestData;
 
-  // 解析URL，确保包含完整的API路径
-  let apiUrl = url;
-  if (!url.includes('/chat/completions')) {
-    // 如果URL不包含chat/completions路径，自动添加
-    apiUrl = url.replace(/\/$/, '') + '/chat/completions';
+  // 获取适配器
+  const adapter = getApiAdapter(provider);
+
+  // 构建API URL
+  let apiUrl;
+  if (adapter.name === "gemini") {
+    apiUrl = adapter.buildChatUrl(url, model, apiKey, true);
+  } else {
+    apiUrl = adapter.buildChatUrl(url);
   }
 
   const parsedUrl = new URL(apiUrl);
@@ -270,10 +698,7 @@ function handleStreamRequest(requestId, requestData) {
     hostname: parsedUrl.hostname,
     path: parsedUrl.pathname + parsedUrl.search,
     port: parsedUrl.port || (parsedUrl.protocol === "https:" ? 443 : 80),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: adapter.buildHeaders(apiKey),
   };
 
   // 添加代理Agent
@@ -282,20 +707,38 @@ function handleStreamRequest(requestId, requestData) {
     options.agent = proxyAgent;
   }
 
+  // 用于处理Gemini的JSON数组流式响应
+  let geminiBuffer = "";
+
   // 创建请求
   const req = requestModule.request(options, (res) => {
     // 处理状态码非200的情况
     if (res.statusCode !== 200) {
-      parentPort.postMessage({
-        id: requestId,
-        type: "stream_error",
-        data: {
-          sessionId,
-          error: {
-            message: `API请求失败: ${res.statusCode} ${res.statusMessage}`,
-            statusCode: res.statusCode,
+      let errorData = "";
+      res.on("data", (chunk) => {
+        errorData += chunk.toString("utf-8");
+      });
+      res.on("end", () => {
+        let errorMessage = `API请求失败: ${res.statusCode} ${res.statusMessage}`;
+        try {
+          const parsed = JSON.parse(errorData);
+          if (parsed.error && parsed.error.message) {
+            errorMessage = parsed.error.message;
+          }
+        } catch (e) {
+          // 忽略解析错误
+        }
+        parentPort.postMessage({
+          id: requestId,
+          type: "stream_error",
+          data: {
+            sessionId,
+            error: {
+              message: errorMessage,
+              statusCode: res.statusCode,
+            },
           },
-        },
+        });
       });
       return;
     }
@@ -304,41 +747,69 @@ function handleStreamRequest(requestId, requestData) {
     res.on("data", (chunk) => {
       try {
         const data = chunk.toString("utf-8");
-        const lines = data.split("\n");
 
-        for (const line of lines) {
-          if (line.startsWith("data: ") && line !== "data: [DONE]") {
-            try {
-              const jsonData = JSON.parse(line.substring(6));
+        // Gemini使用不同的流式格式（JSON数组）
+        if (adapter.name === "gemini") {
+          geminiBuffer += data;
+          // 尝试解析完整的JSON对象
+          const lines = geminiBuffer.split("\n");
+          geminiBuffer = "";
 
-              // 提取内容并发送到主线程
-              if (
-                jsonData.choices &&
-                jsonData.choices[0] &&
-                jsonData.choices[0].delta &&
-                jsonData.choices[0].delta.content
-              ) {
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine) continue;
+
+            const result = adapter.parseStreamChunk(trimmedLine);
+            if (result) {
+              if (result.content) {
                 parentPort.postMessage({
                   id: requestId,
                   type: "stream_chunk",
                   data: {
                     sessionId,
-                    chunk: jsonData.choices[0].delta.content,
+                    chunk: result.content,
+                  },
+                });
+              } else if (result.done) {
+                parentPort.postMessage({
+                  id: requestId,
+                  type: "stream_end",
+                  data: {
+                    sessionId,
                   },
                 });
               }
-            } catch (e) {
-              // 忽略无法解析的行
+            } else {
+              // 保留未完成的行
+              geminiBuffer += trimmedLine;
             }
-          } else if (line === "data: [DONE]") {
-            // 流结束
-            parentPort.postMessage({
-              id: requestId,
-              type: "stream_end",
-              data: {
-                sessionId,
-              },
-            });
+          }
+        } else {
+          // OpenAI和Anthropic使用SSE格式
+          const lines = data.split("\n");
+
+          for (const line of lines) {
+            const result = adapter.parseStreamChunk(line);
+            if (result) {
+              if (result.content) {
+                parentPort.postMessage({
+                  id: requestId,
+                  type: "stream_chunk",
+                  data: {
+                    sessionId,
+                    chunk: result.content,
+                  },
+                });
+              } else if (result.done) {
+                parentPort.postMessage({
+                  id: requestId,
+                  type: "stream_end",
+                  data: {
+                    sessionId,
+                  },
+                });
+              }
+            }
           }
         }
       } catch (error) {
@@ -393,14 +864,11 @@ function handleStreamRequest(requestId, requestData) {
   // 存储请求引用
   activeRequests.set(requestId, { req, type: "stream", sessionId });
 
+  // 使用适配器构建请求体
+  const requestBody = adapter.buildRequestBody(model, messages, true, maxTokens);
+
   // 发送请求数据
-  req.write(
-    JSON.stringify({
-      model: model,
-      messages: messages,
-      stream: true,
-    }),
-  );
+  req.write(JSON.stringify(requestBody));
 
   req.end();
 }
@@ -481,23 +949,35 @@ process.on("uncaughtException", (error) => {
  * @param {Object} requestData - 请求数据
  */
 function handleModelsRequest(requestId, requestData) {
-  const { url, apiKey } = requestData;
+  const { url, apiKey, provider } = requestData;
 
-  // 解析URL，构建模型列表API地址
+  // 获取适配器
+  const adapter = getApiAdapter(provider);
+
+  // Anthropic没有模型列表API，直接返回预定义列表
+  if (adapter.name === "anthropic") {
+    const models = adapter.parseModelsResponse({});
+    parentPort.postMessage({
+      id: requestId,
+      result: {
+        success: true,
+        models: models,
+      },
+    });
+    return;
+  }
+
+  // 构建模型列表API地址
   let modelsUrl;
   try {
-    const parsedUrl = new URL(url);
-    // 从chat completions URL构建models URL
-    // 例如: https://api.openai.com/v1/chat/completions -> https://api.openai.com/v1/models
-    const pathParts = parsedUrl.pathname.split('/');
-    if (pathParts.length >= 3 && pathParts[1] === 'v1') {
-      // 替换路径中的最后一个部分
-      pathParts[pathParts.length - 1] = 'models';
-      parsedUrl.pathname = pathParts.join('/');
-      modelsUrl = parsedUrl.toString();
+    if (adapter.name === "gemini") {
+      modelsUrl = adapter.buildModelsUrl(url, apiKey);
     } else {
-      // 如果不是标准OpenAI格式，尝试直接添加/models
-      modelsUrl = url.replace(/\/$/, '') + '/models';
+      modelsUrl = adapter.buildModelsUrl(url);
+    }
+
+    if (!modelsUrl) {
+      throw new Error("无法构建模型列表URL");
     }
   } catch (error) {
     parentPort.postMessage({
@@ -518,10 +998,7 @@ function handleModelsRequest(requestId, requestData) {
     hostname: parsedModelsUrl.hostname,
     path: parsedModelsUrl.pathname + parsedModelsUrl.search,
     port: parsedModelsUrl.port || (parsedModelsUrl.protocol === "https:" ? 443 : 80),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: adapter.buildHeaders(apiKey),
   };
 
   // 添加代理Agent
@@ -555,18 +1032,8 @@ function handleModelsRequest(requestId, requestData) {
         // 解析JSON响应
         const data = JSON.parse(responseData);
 
-        // 提取模型列表
-        let models = [];
-        if (data.data && Array.isArray(data.data)) {
-          // OpenAI格式: {data: [{id: "gpt-3.5-turbo"}, ...]}
-          models = data.data.map(model => model.id).filter(id => id);
-        } else if (Array.isArray(data)) {
-          // 其他格式: [{id: "model1"}, ...]
-          models = data.map(model => model.id || model).filter(id => id);
-        } else if (data.models && Array.isArray(data.models)) {
-          // 某些API格式
-          models = data.models.map(model => model.id || model).filter(id => id);
-        }
+        // 使用适配器解析模型列表
+        const models = adapter.parseModelsResponse(data);
 
         parentPort.postMessage({
           id: requestId,

@@ -460,9 +460,10 @@ ${memory.pendingTasks?.length ? `待处理：${memory.pendingTasks.join('、')}`
         url: currentApi.apiUrl,
         apiKey: currentApi.apiKey,
         model: currentApi.model,
+        provider: currentApi.provider || "openai",
         messages: apiMessages,
         temperature: currentApi.temperature || 0.7,
-        max_tokens: currentApi.maxTokens || 2000,
+        maxTokens: currentApi.maxTokens || 2000,
         stream: currentApi.streamEnabled !== false,
       };
 
@@ -680,9 +681,10 @@ ${conversationText}`;
       url: api.apiUrl,
       apiKey: api.apiKey,
       model: api.model,
+      provider: api.provider || "openai",
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
-      max_tokens: 4096,
+      maxTokens: 4096,
     }, false);
 
     if (response.error) {
