@@ -99,6 +99,11 @@ const FileManager = memo(
       loadingRef.current = loading;
     }, [loading]);
 
+    const openRef = useRef(open);
+    useEffect(() => {
+      openRef.current = open;
+    }, [open]);
+
     useEffect(() => {
       if (!open) {
         setConnectionLoading(false);
@@ -137,6 +142,8 @@ const FileManager = memo(
     const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
     const [pathHistory, setPathHistory] = useState([]); // 路径历史记录
     const [historyIndex, setHistoryIndex] = useState(-1); // 当前在历史记录中的位置
+    const skipInitialPathSyncRef = useRef(false);
+    const previousInitialPathRef = useRef(initialPath);
     const [isDragging, setIsDragging] = useState(false); // 拖拽状态
     const [dragCounter, setDragCounter] = useState(0); // 拖拽计数器，用于处理子元素的dragenter/dragleave
 
@@ -193,6 +200,7 @@ const FileManager = memo(
           clearTimeout(chunkingResetTimerRef.current);
       } catch (_) {}
       chunkingResetTimerRef.current = setTimeout(() => {
+        isChunkingRef.current = false;
         setIsChunking(false);
       }, 800);
     }, []);
@@ -460,8 +468,10 @@ const FileManager = memo(
 
     // 更新当前路径并通知父组件
     const updateCurrentPath = (newPath, isHistoryNavigation = false) => {
+      currentPathRef.current = newPath;
       setCurrentPath(newPath);
       if (onPathChange && tabId) {
+        skipInitialPathSyncRef.current = true;
         onPathChange(tabId, newPath);
       }
 
@@ -473,22 +483,37 @@ const FileManager = memo(
 
     // 当SSH连接改变时，重置状态并加载目录
     useEffect(() => {
-      if (open && sshConnection && tabId) {
-        // 先检查API是否可用
-        if (!window.terminalAPI || !window.terminalAPI.listFiles) {
-          setError(t("fileManager.errors.fileApiNotAvailable"));
-          return;
-        }
-
-        // 清空缓存
-        directoryCacheRef.current.clear();
-
-        // 使用记忆的路径或默认路径
-        const pathToLoad = initialPath || "/";
-        updateCurrentPath(pathToLoad);
-        setPathInput(pathToLoad);
-        loadDirectory(pathToLoad);
+      if (!open || !sshConnection || !tabId) {
+        return;
       }
+
+      // 先检查API是否可用
+      if (!window.terminalAPI || !window.terminalAPI.listFiles) {
+        setError(t("fileManager.errors.fileApiNotAvailable"));
+        return;
+      }
+
+      // 使用记忆的路径或默认路径
+      const pathToLoad = initialPath || "/";
+      const isSamePath = pathToLoad === currentPathRef.current;
+      const initialPathChanged =
+        previousInitialPathRef.current !== initialPath;
+      previousInitialPathRef.current = initialPath;
+
+      if (skipInitialPathSyncRef.current && initialPathChanged && isSamePath) {
+        skipInitialPathSyncRef.current = false;
+        setPathInput(pathToLoad);
+        return;
+      }
+
+      skipInitialPathSyncRef.current = false;
+
+      // 清空缓存
+      directoryCacheRef.current.clear();
+
+      updateCurrentPath(pathToLoad);
+      setPathInput(pathToLoad);
+      loadDirectory(pathToLoad);
     }, [open, sshConnection, tabId, initialPath]);
 
     // 从缓存中获取目录内容
@@ -602,14 +627,15 @@ const FileManager = memo(
       const unsubscribe = window.terminalAPI.onListFilesChunk((payload) => {
         try {
           // 侧边栏关闭或组件未挂载时忽略异步分片更新，防止竞态/异常
-          if (!open) return;
+          if (!openRef.current) return;
           if (!payload || payload.tabId !== tabId || !payload.token) return;
 
-          const apiPath = toApiPath(currentPath);
+          const apiPath = toApiPath(currentPathRef.current);
           const bg = backgroundListRequestRef.current;
+          const fgToken = listTokenRef.current;
 
           const isForeground =
-            payload.path === apiPath && payload.token === listToken;
+            payload.path === apiPath && payload.token === fgToken;
           const isBackground =
             Boolean(bg?.inFlight) &&
             payload.path === bg.apiPath &&
@@ -646,8 +672,13 @@ const FileManager = memo(
               bg.reject = null;
 
               // 路径切换/前台加载时丢弃后台结果（避免覆盖用户的显式操作）
-              const stillSamePath = toApiPath(currentPath) === payload.path;
-              const canApply = stillSamePath && !loading && !listToken && !isChunking;
+              const stillSamePath =
+                toApiPath(currentPathRef.current) === payload.path;
+              const canApply =
+                stillSamePath &&
+                !loadingRef.current &&
+                !listTokenRef.current &&
+                !isChunkingRef.current;
 
               if (canApply) {
                 const key = makeListKey(tabId, payload.path);
@@ -659,7 +690,7 @@ const FileManager = memo(
                 const changed = prevSig !== nextSig;
 
                 // 即使未变化，也更新缓存与刷新时间（保证侧边栏“最近刷新”正确）
-                updateDirectoryCache(currentPath, nextList);
+                updateDirectoryCache(currentPathRef.current, nextList);
                 setLastRefreshTime(Date.now());
 
                 if (changed) {
@@ -684,6 +715,7 @@ const FileManager = memo(
 
           // 前台目录加载：分片增量更新 UI
           if (Array.isArray(payload.items) && payload.items.length > 0) {
+            isChunkingRef.current = true;
             setIsChunking(true);
             if (typeof scheduleChunkingReset === "function")
               scheduleChunkingReset();
@@ -727,7 +759,7 @@ const FileManager = memo(
               setFiles(nextFiles);
             }
 
-            updateDirectoryCache(currentPath, filesRef.current || []);
+            updateDirectoryCache(currentPathRef.current, filesRef.current || []);
 
             // 更新稳定签名，供轮询快速比较
             try {
@@ -738,7 +770,9 @@ const FileManager = memo(
               );
             } catch (_) {}
 
+            listTokenRef.current = null;
             setListToken(null);
+            isChunkingRef.current = false;
             setIsChunking(false);
           }
         } catch (_) {
@@ -751,15 +785,11 @@ const FileManager = memo(
       };
     }, [
       tabId,
-      currentPath,
-      listToken,
-      open,
-      loading,
-      isChunking,
       toApiPath,
       makeListKey,
       computeFileListSignature,
       clearSelection,
+      scheduleChunkingReset,
     ]);
 
     const startBackgroundDirectoryRefresh = useCallback(
@@ -1121,6 +1151,23 @@ const FileManager = memo(
         return;
       }
 
+      // 切换路径时重置前台分片状态，避免旧分片残留导致持续加载
+      try {
+        if (flushTimerRef.current) {
+          clearTimeout(flushTimerRef.current);
+        }
+      } catch (_) {}
+      flushTimerRef.current = null;
+      chunkBufferRef.current = [];
+      if (listTokenRef.current) {
+        listTokenRef.current = null;
+        setListToken(null);
+      }
+      if (isChunkingRef.current) {
+        isChunkingRef.current = false;
+        setIsChunking(false);
+      }
+
       // 如果不是强制刷新，尝试从缓存获取数据
       if (!forceRefresh) {
         const cachedData = getDirectoryFromCache(path);
@@ -1164,11 +1211,15 @@ const FileManager = memo(
             setConnectionLoadingMessage("");
             const fileData = response.data || [];
             if (response.chunked && response.token) {
+              listTokenRef.current = response.token;
               setListToken(response.token);
+              isChunkingRef.current = true;
               setIsChunking(true);
               scheduleChunkingReset();
             } else {
+              listTokenRef.current = null;
               setListToken(null);
+              isChunkingRef.current = false;
               setIsChunking(false);
             }
 
@@ -5446,4 +5497,3 @@ const FileManager = memo(
 FileManager.displayName = "FileManager";
 
 export default FileManager;
-
