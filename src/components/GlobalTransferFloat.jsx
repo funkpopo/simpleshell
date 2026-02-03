@@ -367,12 +367,15 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
   // 初始化选中的tabId
   useEffect(() => {
     if (open && initialTransfer && initialTransfer.tabId) {
-      setSelectedTabId(initialTransfer.tabId);
+      // 只在 tabId 不同时才更新，避免不必要的重新渲染
+      if (selectedTabId !== initialTransfer.tabId) {
+        setSelectedTabId(initialTransfer.tabId);
+      }
     } else if (open && transfersByTab.size > 0 && !selectedTabId) {
       // 默认选择第一个tab
       setSelectedTabId([...transfersByTab.keys()][0]);
     }
-  }, [open, initialTransfer, transfersByTab, selectedTabId]);
+  }, [open, initialTransfer, transfersByTab.size, selectedTabId]);
 
   // 如果窗口关闭,重置状态
   useEffect(() => {
