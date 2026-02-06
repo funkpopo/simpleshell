@@ -15,9 +15,6 @@ module.exports = {
       "cpu-features$": path.join(__dirname, "src", "shims", "cpu-features.js"),
     },
   },
-  externals: {
-    "better-sqlite3": "commonjs2 better-sqlite3",
-  },
 
   module: {
     rules: require("./webpack.rules"),
