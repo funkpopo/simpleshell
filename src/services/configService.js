@@ -1,30 +1,25 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
 const Ajv = require("ajv");
 const addFormats = require("ajv-formats");
+const SQLiteConfigStorage = require("../core/storage/sqliteConfigStorage");
 
-/**
- * ConfigService - 配置管理服务类
- * 负责应用程序配置的加载、保存、验证和加密处理
- */
 class ConfigService {
   constructor() {
     this.app = null;
     this.logger = null;
     this.crypto = null;
-    this.mainConfigPath = null;
+
+    this.legacyConfigPath = null;
+    this.databasePath = null;
+
+    this.storage = null;
     this.ajv = null;
     this.validators = {};
     this._initialized = false;
   }
 
-  /**
-   * 初始化配置服务
-   * @param {Object} appInstance - Electron app 实例
-   * @param {Object} loggerModule - 日志模块，包含 logToFile 方法
-   * @param {Object} cryptoModule - 加密模块，包含 encryptText 和 decryptText 方法
-   */
   init(appInstance, loggerModule, cryptoModule) {
     if (!appInstance || !loggerModule || !cryptoModule) {
       console.error("ConfigService: Missing required dependencies");
@@ -35,7 +30,6 @@ class ConfigService {
     this.logger = loggerModule;
     this.crypto = cryptoModule;
 
-    // 验证依赖的函数是否可用
     if (
       typeof this.logger.logToFile !== "function" ||
       typeof this.crypto.encryptText !== "function" ||
@@ -45,85 +39,34 @@ class ConfigService {
       return false;
     }
 
-    // 初始化 JSON Schema 验证器
     this._initializeValidator();
 
-    // 设置配置文件路径
     try {
-      this.mainConfigPath = this._getMainConfigPath();
-      this._log(
-        `ConfigService initialized. Main config path: ${this.mainConfigPath}`,
-        "INFO"
-      );
+      this.legacyConfigPath = this._getLegacyConfigPath();
+      this.databasePath = this._getDatabasePath();
+      this.storage = new SQLiteConfigStorage({
+        dbPath: this.databasePath,
+        logger: this.logger,
+        encryptText: this.crypto.encryptText,
+        decryptText: this.crypto.decryptText,
+      });
+
       this._initialized = true;
+      this._log(
+        `ConfigService initialized. DB path: ${this.databasePath}, legacy config path: ${this.legacyConfigPath}`,
+        "INFO",
+      );
       return true;
     } catch (error) {
-      this._log(
-        `ConfigService: Error setting paths during init - ${error.message}`,
-        "ERROR"
-      );
+      this._log(`ConfigService init failed: ${error.message}`, "ERROR");
       return false;
     }
   }
 
-  /**
-   * 初始化 Ajv 验证器并定义配置的 JSON Schema
-   */
   _initializeValidator() {
     this.ajv = new Ajv({ allErrors: true, useDefaults: true, strict: false });
     addFormats(this.ajv);
 
-    // 连接配置验证 Schema
-    this.validators.connection = this.ajv.compile({
-      type: "object",
-      properties: {
-        id: { type: "string" },
-        name: { type: "string" },
-        type: { type: "string", enum: ["connection", "group"] },
-        protocol: { type: "string", enum: ["ssh", "telnet"] },
-        host: { type: "string" },
-        port: { type: "number", minimum: 1, maximum: 65535 },
-        username: { type: "string" },
-        password: { type: "string" },
-        privateKeyPath: { type: "string" },
-        items: { type: "array" },
-      },
-    });
-
-    // AI 设置验证 Schema
-    this.validators.aiSettings = this.ajv.compile({
-      type: "object",
-      properties: {
-        configs: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              name: { type: "string" },
-              apiUrl: { type: "string", format: "uri" },
-              apiKey: { type: "string" },
-              model: { type: "string" },
-              streamEnabled: { type: "boolean", default: true },
-            },
-            required: ["id", "name", "apiUrl"],
-          },
-        },
-        current: {
-          type: ["object", "null"],
-          properties: {
-            apiUrl: { type: "string" },
-            apiKey: { type: "string" },
-            model: { type: "string" },
-            streamEnabled: { type: "boolean", default: true },
-          },
-        },
-      },
-      required: ["configs"],
-      default: { configs: [], current: null },
-    });
-
-    // UI 设置验证 Schema
     this.validators.uiSettings = this.ajv.compile({
       type: "object",
       properties: {
@@ -144,7 +87,6 @@ class ConfigService {
       default: {},
     });
 
-    // 日志设置验证 Schema
     this.validators.logSettings = this.ajv.compile({
       type: "object",
       properties: {
@@ -160,519 +102,367 @@ class ConfigService {
       },
       default: {},
     });
+
+    this.validators.aiSettings = this.ajv.compile({
+      type: "object",
+      properties: {
+        configs: { type: "array", default: [] },
+        current: { type: ["object", "null"], default: null },
+      },
+      default: { configs: [], current: null },
+    });
   }
 
-  /**
-   * 验证数据是否符合指定的 Schema
-   * @param {string} schemaName - Schema 名称
-   * @param {*} data - 待验证的数据
-   * @returns {boolean} 验证是否通过
-   */
-  _validate(schemaName, data) {
-    const validator = this.validators[schemaName];
+  _validate(type, data) {
+    const validator = this.validators[type];
     if (!validator) {
-      this._log(
-        `ConfigService: No validator found for schema: ${schemaName}`,
-        "WARN"
-      );
-      return true; // 如果没有验证器，默认通过
+      return true;
     }
 
-    const valid = validator(data);
-    if (!valid) {
+    if (!validator(data)) {
       this._log(
-        `ConfigService: Validation failed for ${schemaName}: ${JSON.stringify(validator.errors)}`,
-        "ERROR"
+        `ConfigService validation failed for ${type}: ${JSON.stringify(validator.errors)}`,
+        "WARN",
       );
+      return false;
     }
-    return valid;
+
+    return true;
   }
 
-  /**
-   * 记录日志
-   * @param {string} message - 日志消息
-   * @param {string} level - 日志级别
-   */
   _log(message, level = "INFO") {
-    if (this.logger && typeof this.logger.logToFile === "function") {
+    if (this.logger?.logToFile) {
       this.logger.logToFile(message, level);
     }
   }
 
-  /**
-   * 获取主配置文件路径
-   * @returns {string} 配置文件路径
-   */
-  _getMainConfigPath() {
-    if (!this.app) {
-      const fallbackCwd = process.cwd ? process.cwd() : ".";
-      return path.join(fallbackCwd, "config.json_fallback_no_app");
-    }
-
-    try {
-      const isDev = process.env.NODE_ENV === "development" || !this.app.isPackaged;
-      if (isDev) {
-        return path.join(process.cwd(), "config.json");
-      } else {
-        return path.join(path.dirname(this.app.getPath("exe")), "config.json");
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Error getting main config path - ${error.message}`,
-        "ERROR"
-      );
-      return path.join(
-        this.app.getPath("userData"),
-        "config.json_fallback_general_error"
-      );
-    }
+  _isDevEnvironment() {
+    return process.env.NODE_ENV === "development" || !this.app?.isPackaged;
   }
 
-  /**
-   * 初始化主配置文件（如果不存在则创建）
-   */
+  _getLegacyConfigPath() {
+    if (!this.app) {
+      return path.join(process.cwd(), "config.json");
+    }
+
+    if (this._isDevEnvironment()) {
+      return path.join(process.cwd(), "config.json");
+    }
+
+    return path.join(path.dirname(this.app.getPath("exe")), "config.json");
+  }
+
+  _getDatabasePath() {
+    if (!this.app) {
+      return path.join(process.cwd(), "simpleshell.db");
+    }
+
+    if (this._isDevEnvironment()) {
+      return path.join(process.cwd(), "simpleshell.db");
+    }
+
+    return path.join(path.dirname(this.app.getPath("exe")), "simpleshell.db");
+  }
+
+  getDatabasePath() {
+    return this.databasePath;
+  }
+
   initializeMainConfig() {
-    if (!this._initialized) {
+    if (!this._initialized || !this.storage) {
       this._log(
         "ConfigService: Service not initialized. Call init() first.",
-        "ERROR"
+        "ERROR",
       );
       return;
     }
 
     try {
-      if (!fs.existsSync(this.mainConfigPath)) {
-        const defaultConfig = {
-          connections: [],
-          uiSettings: {
-            language: "zh-CN",
-            fontSize: 14,
-            editorFont: "system",
-            darkMode: true,
-            terminalFont: "Fira Code",
-            terminalFontSize: 14,
-            performance: {},
-            externalEditor: {},
-          },
-          aiSettings: {
-            configs: [],
-            current: null,
-          },
-          logSettings: {
-            level: "INFO",
-            maxFileSize: 5242880,
-            maxFiles: 5,
-            compressOldLogs: true,
-            cleanupInterval: 24,
-          },
-          shortcutCommands: "{}",
-          commandHistory: {
-            compressed: false,
-            data: [],
-          },
-          topConnections: [],
-          lastConnections: [],
-        };
-
-        fs.writeFileSync(
-          this.mainConfigPath,
-          JSON.stringify(defaultConfig, null, 2),
-          "utf8"
-        );
-        this._log("ConfigService: Main config file created.", "INFO");
-      }
+      this.storage.initialize();
+      this._migrateLegacyConfigIfNeeded();
+      this._ensureDefaultSettings();
     } catch (error) {
       this._log(
-        `ConfigService: Failed to initialize main config - ${error.message}`,
-        "ERROR"
+        `ConfigService: Failed to initialize storage - ${error.message}`,
+        "ERROR",
       );
     }
   }
 
-  /**
-   * 读取配置文件
-   * @returns {Object} 配置对象
-   */
-  _readConfig() {
-    if (!this.mainConfigPath) {
-      this._log("ConfigService: Main config path not set.", "ERROR");
-      return {};
+  _migrateLegacyConfigIfNeeded() {
+    if (this.storage.hasAnyData()) {
+      return;
+    }
+
+    if (!fs.existsSync(this.legacyConfigPath)) {
+      return;
     }
 
     try {
-      if (fs.existsSync(this.mainConfigPath)) {
-        const data = fs.readFileSync(this.mainConfigPath, "utf8");
-        return JSON.parse(data);
-      }
+      const legacyConfig = JSON.parse(
+        fs.readFileSync(this.legacyConfigPath, "utf8"),
+      );
+
+      const legacyConnections = this._processConnectionsForLoad(
+        Array.isArray(legacyConfig.connections) ? legacyConfig.connections : [],
+      );
+      this.saveConnections(legacyConnections);
+
+      const legacyAISettings = this._decodeLegacyAISettings(
+        legacyConfig.aiSettings,
+      );
+      this.saveAISettings(legacyAISettings);
+
+      const legacyUISettings = {
+        ...this._getDefaultUISettings(),
+        ...(legacyConfig.uiSettings || {}),
+      };
+      this.saveUISettings(legacyUISettings);
+
+      const legacyLogSettings = {
+        ...this._getDefaultLogSettings(),
+        ...(legacyConfig.logSettings || {}),
+      };
+      this.saveLogSettings(legacyLogSettings);
+
+      const legacyShortcuts = this._decodeShortcutCommands(
+        legacyConfig.shortcutCommands,
+      );
+      this.saveShortcutCommands(legacyShortcuts);
+
+      const legacyHistory = this._decodeLegacyCommandHistory(
+        legacyConfig.commandHistory,
+      );
+      this.saveCommandHistory(legacyHistory);
+
+      const legacyTopConnections = this._processConnectionsForLoad(
+        Array.isArray(legacyConfig.topConnections)
+          ? legacyConfig.topConnections
+          : [],
+      );
+      const legacyLastConnections = this._processConnectionsForLoad(
+        Array.isArray(legacyConfig.lastConnections)
+          ? legacyConfig.lastConnections
+          : [],
+      );
+      this.saveTopConnections(legacyTopConnections);
+      this.saveLastConnections(legacyLastConnections);
+
+      this.set("meta.migratedFromConfigJson", {
+        migratedAt: Date.now(),
+        sourcePath: this.legacyConfigPath,
+      });
+
+      const backupPath = `${this.legacyConfigPath}.bak-${Date.now()}`;
+      fs.renameSync(this.legacyConfigPath, backupPath);
+
+      this._log(
+        `ConfigService: Legacy config migrated and backed up to ${backupPath}`,
+        "INFO",
+      );
     } catch (error) {
       this._log(
-        `ConfigService: Failed to read config - ${error.message}`,
-        "ERROR"
+        `ConfigService: Failed to migrate legacy config - ${error.message}`,
+        "ERROR",
       );
-    }
-    return {};
-  }
-
-  /**
-   * 写入配置文件
-   * @param {Object} config - 配置对象
-   * @returns {boolean} 是否成功
-   */
-  _writeConfig(config) {
-    if (!this.mainConfigPath) {
-      this._log("ConfigService: Main config path not set.", "ERROR");
-      return false;
-    }
-
-    try {
-      fs.writeFileSync(
-        this.mainConfigPath,
-        JSON.stringify(config, null, 2),
-        "utf8"
-      );
-      return true;
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to write config - ${error.message}`,
-        "ERROR"
-      );
-      return false;
     }
   }
 
-  /**
-   * 处理连接配置以进行加密保存
-   * @param {Array} items - 连接项数组
-   * @returns {Array} 处理后的连接项
-   */
-  _processConnectionsForSave(items) {
-    if (!this.crypto || !this.crypto.encryptText) {
-      this._log(
-        "ConfigService: encryptText function is not available.",
-        "ERROR"
-      );
-      return items;
+  _ensureDefaultSettings() {
+    if (this.get("uiSettings") == null) {
+      this.saveUISettings(this._getDefaultUISettings());
+    }
+
+    if (this.get("logSettings") == null) {
+      this.saveLogSettings(this._getDefaultLogSettings());
+    }
+
+    if (this.get("shortcutCommands") == null) {
+      this.saveShortcutCommands({});
+    }
+
+    if (this.get("topConnections") == null) {
+      this.saveTopConnections([]);
+    }
+
+    if (this.get("lastConnections") == null) {
+      this.saveLastConnections([]);
+    }
+  }
+
+  _encodeConnectionSecretsForStore(items) {
+    if (!Array.isArray(items)) {
+      return [];
     }
 
     return items.map((item) => {
+      if (!item || typeof item !== "object") {
+        return item;
+      }
+
       const result = { ...item };
+
       if (item.type === "connection") {
-        if (item.password) {
-          result.password = this.crypto.encryptText(item.password);
+        if (typeof item.password === "string" && item.password) {
+          result.password = this._encryptMaybe(item.password);
         }
-        if (item.privateKeyPath) {
-          result.privateKeyPath = this.crypto.encryptText(item.privateKeyPath);
+        if (typeof item.privateKeyPath === "string" && item.privateKeyPath) {
+          result.privateKeyPath = this._encryptMaybe(item.privateKeyPath);
+        }
+        if (typeof item.privateKey === "string" && item.privateKey) {
+          result.privateKey = this._encryptMaybe(item.privateKey);
+        }
+        if (
+          typeof item.privateKeyPassphrase === "string" &&
+          item.privateKeyPassphrase
+        ) {
+          result.privateKeyPassphrase = this._encryptMaybe(
+            item.privateKeyPassphrase,
+          );
         }
       }
+
       if (item.type === "group" && Array.isArray(item.items)) {
-        result.items = this._processConnectionsForSave(item.items);
+        result.items = this._encodeConnectionSecretsForStore(item.items);
       }
+
       return result;
     });
   }
 
-  /**
-   * 处理连接配置以进行解密加载
-   * @param {Array} items - 连接项数组
-   * @returns {Array} 处理后的连接项
-   */
   _processConnectionsForLoad(items) {
-    if (!this.crypto || !this.crypto.decryptText) {
-      this._log(
-        "ConfigService: decryptText function is not available.",
-        "ERROR"
-      );
-      return items;
+    if (!Array.isArray(items)) {
+      return [];
     }
 
     return items.map((item) => {
+      if (!item || typeof item !== "object") {
+        return item;
+      }
+
       const result = { ...item };
+
       if (item.type === "connection") {
-        if (item.password) {
-          try {
-            result.password = this.crypto.decryptText(item.password);
-          } catch (error) {
-            this._log(
-              `ConfigService: Failed to decrypt password - ${error.message}`,
-              "WARN"
-            );
-            result.password = "";
-          }
+        if (typeof item.password === "string" && item.password) {
+          result.password = this._decryptMaybe(item.password);
         }
-        if (item.privateKeyPath) {
-          try {
-            result.privateKeyPath = this.crypto.decryptText(
-              item.privateKeyPath
-            );
-          } catch (error) {
-            this._log(
-              `ConfigService: Failed to decrypt privateKeyPath - ${error.message}`,
-              "WARN"
-            );
-            result.privateKeyPath = "";
-          }
+        if (typeof item.privateKeyPath === "string" && item.privateKeyPath) {
+          result.privateKeyPath = this._decryptMaybe(item.privateKeyPath);
+        }
+        if (typeof item.privateKey === "string" && item.privateKey) {
+          result.privateKey = this._decryptMaybe(item.privateKey);
+        }
+        if (
+          typeof item.privateKeyPassphrase === "string" &&
+          item.privateKeyPassphrase
+        ) {
+          result.privateKeyPassphrase = this._decryptMaybe(
+            item.privateKeyPassphrase,
+          );
+        }
+        if (result.authType === "key") {
+          result.authType = "privateKey";
         }
       }
+
       if (item.type === "group" && Array.isArray(item.items)) {
         result.items = this._processConnectionsForLoad(item.items);
       }
+
       return result;
     });
   }
 
-  /**
-   * 加载连接配置
-   * @returns {Array} 连接配置数组
-   */
   loadConnections() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load connections.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return [];
     }
 
     try {
-      const config = this._readConfig();
-      if (config.connections && Array.isArray(config.connections)) {
-        return this._processConnectionsForLoad(config.connections);
-      }
+      return this.storage.loadConnections();
     } catch (error) {
       this._log(
         `ConfigService: Failed to load connections - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
+      return [];
     }
-    return [];
   }
 
-  /**
-   * 保存连接配置
-   * @param {Array} connections - 连接配置数组
-   * @returns {boolean} 是否成功
-   */
   saveConnections(connections) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save connections.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return false;
     }
 
     try {
-      const config = this._readConfig();
-      const processedConnections = this._processConnectionsForSave(connections);
-      config.connections = processedConnections;
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: Connections saved successfully.", "INFO");
-        return true;
-      }
+      return this.storage.saveConnections(connections);
     } catch (error) {
       this._log(
         `ConfigService: Failed to save connections - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
+      return false;
     }
-    return false;
   }
 
-  /**
-   * 加载 AI 设置
-   * @returns {Object} AI 设置对象
-   */
   loadAISettings() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load AI settings.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return {
         configs: [],
         current: { apiUrl: "", apiKey: "", model: "", streamEnabled: true },
       };
     }
 
-    this._log(
-      `ConfigService: Loading AI settings from ${this.mainConfigPath}`,
-      "INFO"
-    );
-
     try {
-      const config = this._readConfig();
-      if (config.aiSettings) {
-        const settings = { ...config.aiSettings };
-
-        // 解密 configs 数组中的 API keys
-        if (settings.configs && Array.isArray(settings.configs)) {
-          settings.configs = settings.configs.map((cfg) => {
-            if (cfg.apiKey && this.crypto.decryptText) {
-              try {
-                return { ...cfg, apiKey: this.crypto.decryptText(cfg.apiKey) };
-              } catch (error) {
-                this._log(
-                  `ConfigService: Failed to decrypt API key for config ${cfg.name || cfg.id} - ${error.message}`,
-                  "WARN"
-                );
-                return { ...cfg, apiKey: "" };
-              }
-            }
-            return cfg;
-          });
-        }
-
-        // 解密当前配置的 API key
-        if (settings.current && settings.current.apiKey && this.crypto.decryptText) {
-          try {
-            settings.current.apiKey = this.crypto.decryptText(
-              settings.current.apiKey
-            );
-          } catch (error) {
-            this._log(
-              `ConfigService: Failed to decrypt current API key - ${error.message}`,
-              "WARN"
-            );
-            settings.current.apiKey = "";
-          }
-        }
-
-        // 验证加载的数据
-        this._validate("aiSettings", settings);
-
-        this._log(
-          `ConfigService: Loaded ${settings.configs?.length || 0} AI configurations.`,
-          "INFO"
-        );
-        return settings;
-      }
+      const settings = this.storage.loadAISettings();
+      this._validate("aiSettings", settings);
+      return settings;
     } catch (error) {
       this._log(
         `ConfigService: Failed to load AI settings - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
+      return {
+        configs: [],
+        current: { apiUrl: "", apiKey: "", model: "", streamEnabled: true },
+      };
     }
-
-    return {
-      configs: [],
-      current: { apiUrl: "", apiKey: "", model: "", streamEnabled: true },
-    };
   }
 
-  /**
-   * 保存 AI 设置
-   * @param {Object} settings - AI 设置对象
-   * @returns {boolean} 是否成功
-   */
   saveAISettings(settings) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save AI settings.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return false;
     }
 
-    this._log(
-      `ConfigService: Saving AI settings to ${this.mainConfigPath}`,
-      "INFO"
-    );
-
     try {
-      const config = this._readConfig();
-      const settingsToSave = { ...settings };
-
-      // 加密 configs 数组中的 API keys
-      if (
-        settingsToSave.configs &&
-        Array.isArray(settingsToSave.configs) &&
-        this.crypto.encryptText
-      ) {
-        settingsToSave.configs = settingsToSave.configs.map((cfg) => {
-          if (cfg.apiKey) {
-            try {
-              const encryptedKey = this.crypto.encryptText(cfg.apiKey);
-              return { ...cfg, apiKey: encryptedKey };
-            } catch (error) {
-              this._log(
-                `ConfigService: Failed to encrypt API key for config ${cfg.name || cfg.id} - ${error.message}`,
-                "WARN"
-              );
-              return { ...cfg, apiKey: "" };
-            }
-          }
-          return cfg;
-        });
+      if (!this._validate("aiSettings", settings || {})) {
+        return false;
       }
-
-      // 加密当前配置的 API key
-      if (
-        settingsToSave.current &&
-        settingsToSave.current.apiKey &&
-        this.crypto.encryptText
-      ) {
-        try {
-          settingsToSave.current.apiKey = this.crypto.encryptText(
-            settingsToSave.current.apiKey
-          );
-        } catch (error) {
-          this._log(
-            `ConfigService: Failed to encrypt current API key - ${error.message}`,
-            "WARN"
-          );
-          settingsToSave.current.apiKey = "";
-        }
-      }
-
-      config.aiSettings = settingsToSave;
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: AI settings saved successfully.", "INFO");
-        return true;
-      }
+      return this.storage.saveAISettings(settings || {});
     } catch (error) {
       this._log(
         `ConfigService: Failed to save AI settings - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
+      return false;
     }
-    return false;
   }
 
-  /**
-   * 加载 UI 设置
-   * @returns {Object} UI 设置对象
-   */
   loadUISettings() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load UI settings.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return this._getDefaultUISettings();
     }
 
-    try {
-      const config = this._readConfig();
-      if (config.uiSettings) {
-        const settings = { ...this._getDefaultUISettings(), ...config.uiSettings };
-        this._validate("uiSettings", settings);
-        return settings;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load UI settings - ${error.message}`,
-        "ERROR"
-      );
+    const settings = this.get("uiSettings");
+    if (!settings || typeof settings !== "object") {
+      return this._getDefaultUISettings();
     }
-    return this._getDefaultUISettings();
+
+    const merged = { ...this._getDefaultUISettings(), ...settings };
+    this._validate("uiSettings", merged);
+    return merged;
   }
 
-  /**
-   * 获取默认 UI 设置
-   * @returns {Object} 默认 UI 设置
-   */
   _getDefaultUISettings() {
     return {
       language: "zh-CN",
@@ -686,78 +476,33 @@ class ConfigService {
     };
   }
 
-  /**
-   * 保存 UI 设置
-   * @param {Object} settings - UI 设置对象
-   * @returns {boolean} 是否成功
-   */
   saveUISettings(settings) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save UI settings.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return false;
     }
 
-    try {
-      // 验证数据
-      if (!this._validate("uiSettings", settings)) {
-        return false;
-      }
-
-      const config = this._readConfig();
-      config.uiSettings = settings;
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: UI settings saved successfully.", "INFO");
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save UI settings - ${error.message}`,
-        "ERROR"
-      );
+    if (!this._validate("uiSettings", settings || {})) {
+      return false;
     }
-    return false;
+
+    return this.set("uiSettings", settings);
   }
 
-  /**
-   * 加载日志设置
-   * @returns {Object} 日志设置对象
-   */
   loadLogSettings() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load log settings.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return this._getDefaultLogSettings();
     }
 
-    try {
-      const config = this._readConfig();
-      if (config.logSettings) {
-        const settings = {
-          ...this._getDefaultLogSettings(),
-          ...config.logSettings,
-        };
-        this._validate("logSettings", settings);
-        return settings;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load log settings - ${error.message}`,
-        "ERROR"
-      );
+    const settings = this.get("logSettings");
+    if (!settings || typeof settings !== "object") {
+      return this._getDefaultLogSettings();
     }
-    return this._getDefaultLogSettings();
+
+    const merged = { ...this._getDefaultLogSettings(), ...settings };
+    this._validate("logSettings", merged);
+    return merged;
   }
 
-  /**
-   * 获取默认日志设置
-   * @returns {Object} 默认日志设置
-   */
   _getDefaultLogSettings() {
     return {
       level: "INFO",
@@ -768,414 +513,307 @@ class ConfigService {
     };
   }
 
-  /**
-   * 保存日志设置
-   * @param {Object} settings - 日志设置对象
-   * @returns {boolean} 是否成功
-   */
   saveLogSettings(settings) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save log settings.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return false;
     }
 
-    try {
-      // 验证数据
-      if (!this._validate("logSettings", settings)) {
-        return false;
-      }
-
-      const config = this._readConfig();
-      config.logSettings = settings;
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: Log settings saved successfully.", "INFO");
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save log settings - ${error.message}`,
-        "ERROR"
-      );
+    if (!this._validate("logSettings", settings || {})) {
+      return false;
     }
-    return false;
+
+    return this.set("logSettings", settings);
   }
 
-  /**
-   * 加载快捷命令
-   * @returns {Object} 快捷命令对象
-   */
   loadShortcutCommands() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load shortcut commands.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return {};
     }
 
-    try {
-      const config = this._readConfig();
-      if (config.shortcutCommands) {
-        if (typeof config.shortcutCommands === "string") {
-          return JSON.parse(config.shortcutCommands);
-        }
-        return config.shortcutCommands;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load shortcut commands - ${error.message}`,
-        "ERROR"
-      );
-    }
-    return {};
+    const shortcuts = this.get("shortcutCommands");
+    return shortcuts && typeof shortcuts === "object" ? shortcuts : {};
   }
 
-  /**
-   * 保存快捷命令
-   * @param {Object} commands - 快捷命令对象
-   * @returns {boolean} 是否成功
-   */
   saveShortcutCommands(commands) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save shortcut commands.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return false;
     }
 
-    try {
-      const config = this._readConfig();
-      config.shortcutCommands = JSON.stringify(commands);
-
-      if (this._writeConfig(config)) {
-        this._log(
-          "ConfigService: Shortcut commands saved successfully.",
-          "INFO"
-        );
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save shortcut commands - ${error.message}`,
-        "ERROR"
-      );
-    }
-    return false;
+    return this.set("shortcutCommands", commands || {});
   }
 
-  /**
-   * 压缩命令历史
-   * @param {Array} history - 命令历史数组
-   * @returns {Object} 压缩后的数据对象
-   */
   _compressCommandHistory(history) {
     try {
-      const jsonStr = JSON.stringify(history);
+      const jsonStr = JSON.stringify(history || []);
       const compressed = zlib.gzipSync(jsonStr);
-      const base64Data = compressed.toString("base64");
-
-      const result = {
+      return {
         compressed: true,
-        data: base64Data,
-        originalSize: Buffer.byteLength(jsonStr, "utf8"),
-        compressedSize: compressed.length,
-        timestamp: Date.now(),
+        data: compressed.toString("base64"),
       };
-
-      this._log(
-        `ConfigService: Command history compressed from ${result.originalSize} to ${result.compressedSize} bytes (${((result.compressedSize / result.originalSize) * 100).toFixed(2)}%)`,
-        "INFO"
-      );
-
-      return result;
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to compress command history - ${error.message}`,
-        "ERROR"
-      );
+    } catch (_error) {
       return {
         compressed: false,
-        data: history,
-        timestamp: Date.now(),
+        data: history || [],
       };
     }
   }
 
-  /**
-   * 解压命令历史
-   * @param {Object} data - 压缩后的数据对象
-   * @returns {Array} 命令历史数组
-   */
   _decompressCommandHistory(data) {
     try {
+      if (!data || typeof data !== "object") {
+        return [];
+      }
       if (!data.compressed) {
         return Array.isArray(data.data) ? data.data : [];
       }
 
       const compressed = Buffer.from(data.data, "base64");
       const decompressed = zlib.gunzipSync(compressed);
-      const jsonStr = decompressed.toString("utf8");
-      return JSON.parse(jsonStr);
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to decompress command history - ${error.message}`,
-        "ERROR"
-      );
+      return JSON.parse(decompressed.toString("utf8"));
+    } catch (_error) {
       return [];
     }
   }
 
-  /**
-   * 加载命令历史
-   * @returns {Array} 命令历史数组
-   */
+  _decodeLegacyCommandHistory(history) {
+    if (Array.isArray(history)) {
+      return history;
+    }
+    return this._decompressCommandHistory(history);
+  }
+
   loadCommandHistory() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load command history.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return [];
     }
 
     try {
-      const config = this._readConfig();
-      if (config.commandHistory) {
-        // 支持旧格式（未压缩的数组）
-        if (Array.isArray(config.commandHistory)) {
-          this._log(
-            "ConfigService: Migrating old command history format to compressed format.",
-            "INFO"
-          );
-          return config.commandHistory;
-        }
-        // 新格式（压缩对象）
-        return this._decompressCommandHistory(config.commandHistory);
-      }
+      return this.storage.loadCommandHistory();
     } catch (error) {
       this._log(
         `ConfigService: Failed to load command history - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
+      return [];
     }
-    return [];
   }
 
-  /**
-   * 保存命令历史
-   * @param {Array} history - 命令历史数组
-   * @returns {boolean} 是否成功
-   */
   saveCommandHistory(history) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save command history.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return false;
     }
 
     try {
-      const config = this._readConfig();
-      config.commandHistory = this._compressCommandHistory(history);
-
-      if (this._writeConfig(config)) {
-        this._log(
-          "ConfigService: Command history saved successfully.",
-          "INFO"
-        );
-        return true;
-      }
+      return this.storage.saveCommandHistory(history || []);
     } catch (error) {
       this._log(
         `ConfigService: Failed to save command history - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
+      return false;
     }
-    return false;
   }
 
-  /**
-   * 加载热门连接
-   * @returns {Array} 热门连接数组
-   */
   loadTopConnections() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load top connections.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return [];
     }
 
-    try {
-      const config = this._readConfig();
-      if (config.topConnections && Array.isArray(config.topConnections)) {
-        return this._processConnectionsForLoad(config.topConnections);
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load top connections - ${error.message}`,
-        "ERROR"
-      );
-    }
-    return [];
+    return this._processConnectionsForLoad(this.get("topConnections") || []);
   }
 
-  /**
-   * 保存热门连接
-   * @param {Array} connections - 热门连接数组
-   * @returns {boolean} 是否成功
-   */
   saveTopConnections(connections) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save top connections.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return false;
     }
 
-    try {
-      const config = this._readConfig();
-      config.topConnections = this._processConnectionsForSave(connections);
-
-      if (this._writeConfig(config)) {
-        this._log(
-          "ConfigService: Top connections saved successfully.",
-          "INFO"
-        );
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save top connections - ${error.message}`,
-        "ERROR"
-      );
-    }
-    return false;
+    const payload = this._encodeConnectionSecretsForStore(connections || []);
+    return this.set("topConnections", payload);
   }
 
-  /**
-   * 加载最近连接
-   * @returns {Array} 最近连接数组
-   */
   loadLastConnections() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load last connections.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return [];
     }
 
-    try {
-      const config = this._readConfig();
-      if (config.lastConnections && Array.isArray(config.lastConnections)) {
-        return this._processConnectionsForLoad(config.lastConnections);
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load last connections - ${error.message}`,
-        "ERROR"
-      );
-    }
-    return [];
+    return this._processConnectionsForLoad(this.get("lastConnections") || []);
   }
 
-  /**
-   * 保存最近连接
-   * @param {Array} connections - 最近连接数组
-   * @returns {boolean} 是否成功
-   */
   saveLastConnections(connections) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save last connections.",
-        "ERROR"
-      );
+    if (!this._initialized || !this.storage) {
       return false;
     }
 
-    try {
-      const config = this._readConfig();
-      config.lastConnections = this._processConnectionsForSave(connections);
-
-      if (this._writeConfig(config)) {
-        this._log(
-          "ConfigService: Last connections saved successfully.",
-          "INFO"
-        );
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save last connections - ${error.message}`,
-        "ERROR"
-      );
-    }
-    return false;
+    const payload = this._encodeConnectionSecretsForStore(connections || []);
+    return this.set("lastConnections", payload);
   }
 
-  /**
-   * 检查服务是否已初始化
-   * @returns {boolean} 是否已初始化
-   */
   isInitialized() {
     return this._initialized;
   }
 
-  /**
-   * 获取配置项
-   * @param {string} key - 配置键名
-   * @returns {*} 配置值
-   */
   get(key) {
-    if (!key) return undefined;
-    if (!this._initialized) {
-      this._log("ConfigService: Service not initialized for get().", "ERROR");
+    if (!this._initialized || !this.storage || !key) {
       return undefined;
     }
+
     try {
-      const config = this._readConfig();
-      return config?.[key];
+      return this.storage.readSetting(key, undefined);
     } catch (error) {
-      this._log(`ConfigService: Failed to get config key '${key}' - ${error.message}`, "ERROR");
+      this._log(
+        `ConfigService: Failed to get key '${key}' - ${error.message}`,
+        "ERROR",
+      );
       return undefined;
     }
   }
 
-  /**
-   * 设置配置项
-   * @param {string} key - 配置键名
-   * @param {*} value - 配置值
-   * @returns {boolean} 是否成功
-   */
   set(key, value) {
-    if (!key) return false;
-    if (!this._initialized) {
-      this._log("ConfigService: Service not initialized for set().", "ERROR");
+    if (!this._initialized || !this.storage || !key) {
       return false;
     }
+
     try {
-      const config = this._readConfig() || {};
-      config[key] = value;
-      const success = this._writeConfig(config);
-      if (success) {
-        this._log(`ConfigService: Saved config key '${key}' via set().`, "INFO");
-      }
-      return success;
+      return this.storage.writeSetting(key, value);
     } catch (error) {
-      this._log(`ConfigService: Failed to set config key '${key}' - ${error.message}`, "ERROR");
+      this._log(
+        `ConfigService: Failed to set key '${key}' - ${error.message}`,
+        "ERROR",
+      );
       return false;
     }
+  }
+
+  async exportSyncPackage(targetPath) {
+    if (!this._initialized || !this.storage) {
+      throw new Error("ConfigService is not initialized");
+    }
+
+    await this.storage.exportDatabase(targetPath);
+    return targetPath;
+  }
+
+  async importSyncPackage(sourcePath) {
+    if (!this._initialized || !this.storage) {
+      throw new Error("ConfigService is not initialized");
+    }
+
+    return this.storage.importDatabase(sourcePath);
+  }
+
+  async sendAIPrompt(_prompt, _settings) {
+    return {
+      error: "Deprecated API: use ai:sendAPIRequest instead.",
+    };
+  }
+
+  _encryptMaybe(value) {
+    if (typeof value !== "string") {
+      return value;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "";
+    }
+
+    if (this._looksEncrypted(trimmed)) {
+      return trimmed;
+    }
+
+    const encrypted = this.crypto.encryptText(trimmed);
+    return encrypted || trimmed;
+  }
+
+  _decryptMaybe(value) {
+    if (typeof value !== "string") {
+      return value;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "";
+    }
+
+    if (!this._looksEncrypted(trimmed)) {
+      return trimmed;
+    }
+
+    const decrypted = this.crypto.decryptText(trimmed);
+    return decrypted || "";
+  }
+
+  _looksEncrypted(value) {
+    const index = value.indexOf(":");
+    if (index <= 0 || index === value.length - 1) {
+      return false;
+    }
+
+    const ivHex = value.slice(0, index);
+    const cipherHex = value.slice(index + 1);
+    if (ivHex.length !== 32 || cipherHex.length % 2 !== 0) {
+      return false;
+    }
+
+    const hexPattern = /^[0-9a-fA-F]+$/;
+    return hexPattern.test(ivHex) && hexPattern.test(cipherHex);
+  }
+
+  _decodeShortcutCommands(rawValue) {
+    if (!rawValue) {
+      return {};
+    }
+
+    if (typeof rawValue === "object") {
+      return rawValue;
+    }
+
+    if (typeof rawValue === "string") {
+      try {
+        return JSON.parse(rawValue);
+      } catch (_error) {
+        return {};
+      }
+    }
+
+    return {};
+  }
+
+  _decodeLegacyAISettings(rawSettings) {
+    if (!rawSettings || typeof rawSettings !== "object") {
+      return {
+        configs: [],
+        current: { apiUrl: "", apiKey: "", model: "", streamEnabled: true },
+      };
+    }
+
+    const settings = {
+      configs: Array.isArray(rawSettings.configs)
+        ? rawSettings.configs.map((item) => ({
+            ...item,
+            apiKey:
+              typeof item?.apiKey === "string"
+                ? this._decryptMaybe(item.apiKey)
+                : item?.apiKey,
+          }))
+        : [],
+      current: rawSettings.current
+        ? {
+            ...rawSettings.current,
+            apiKey:
+              typeof rawSettings.current.apiKey === "string"
+                ? this._decryptMaybe(rawSettings.current.apiKey)
+                : rawSettings.current.apiKey,
+          }
+        : null,
+    };
+
+    if (Object.prototype.hasOwnProperty.call(rawSettings, "customRiskRules")) {
+      settings.customRiskRules = rawSettings.customRiskRules;
+    }
+
+    return settings;
   }
 }
 
-// 导出单例实例
 module.exports = new ConfigService();

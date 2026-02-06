@@ -1,15 +1,10 @@
+﻿const { dialog, BrowserWindow } = require("electron");
 const configService = require("../../../services/configService");
 const commandHistoryService = require("../../../modules/terminal/command-history");
 const { logToFile, updateLogConfig } = require("../../utils/logger");
 const fileCache = require("../../utils/fileCache");
 
-/**
- * 设置相关的IPC处理器
- */
 class SettingsHandlers {
-  /**
-   * 获取所有设置处理器
-   */
   getHandlers() {
     return [
       {
@@ -92,22 +87,45 @@ class SettingsHandlers {
         category: "settings",
         handler: this.deleteCommandBatch.bind(this),
       },
+      {
+        channel: "settings:exportSyncPackage",
+        category: "settings",
+        handler: this.exportSyncPackage.bind(this),
+      },
+      {
+        channel: "settings:importSyncPackage",
+        category: "settings",
+        handler: this.importSyncPackage.bind(this),
+      },
     ];
   }
 
-  // 实现各个处理器方法
-  async loadUISettings(event) {
+  _getMainWindow() {
+    const windows = BrowserWindow.getAllWindows();
+    return windows.length > 0 ? windows[0] : null;
+  }
+
+  _notifySyncDataChanged() {
+    const lastConnections = configService.loadLastConnections();
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      if (win && !win.isDestroyed() && win.webContents) {
+        win.webContents.send("connections-changed");
+        win.webContents.send("top-connections-changed", lastConnections);
+      }
+    }
+  }
+
+  async loadUISettings() {
     try {
-      const settings = configService.loadUISettings();
-      // 直接返回设置对象,避免嵌套
-      return settings;
+      return configService.loadUISettings();
     } catch (error) {
       logToFile(`Error loading UI settings: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }
 
-  async saveUISettings(event, settings) {
+  async saveUISettings(_event, settings) {
     try {
       configService.saveUISettings(settings);
       return { success: true };
@@ -117,7 +135,7 @@ class SettingsHandlers {
     }
   }
 
-  async loadLogSettings(event) {
+  async loadLogSettings() {
     try {
       const settings = configService.loadLogSettings();
       return { success: true, settings };
@@ -127,7 +145,7 @@ class SettingsHandlers {
     }
   }
 
-  async saveLogSettings(event, settings) {
+  async saveLogSettings(_event, settings) {
     try {
       configService.saveLogSettings(settings);
       updateLogConfig(settings);
@@ -139,7 +157,7 @@ class SettingsHandlers {
     }
   }
 
-  async updateCacheSettings(event, settings) {
+  async updateCacheSettings(_event, settings) {
     try {
       if (fileCache && fileCache.updateSettings) {
         fileCache.updateSettings(settings);
@@ -152,20 +170,12 @@ class SettingsHandlers {
     }
   }
 
-  async updatePrefetchSettings(event, settings) {
-    try {
-      // Prefetch settings 可能需要单独的处理逻辑
-      // 暂时注释掉，因为 ConfigService 中没有对应的方法
-      // configService.savePrefetchSettings(settings);
-      logToFile("Prefetch settings updated (not implemented)", "WARN");
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error updating prefetch settings: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+  async updatePrefetchSettings() {
+    logToFile("Prefetch settings updated (not implemented)", "WARN");
+    return { success: true };
   }
 
-  async getShortcutCommands(event) {
+  async getShortcutCommands() {
     try {
       const shortcuts = configService.loadShortcutCommands();
       return { success: true, data: shortcuts };
@@ -175,7 +185,7 @@ class SettingsHandlers {
     }
   }
 
-  async saveShortcutCommands(event, data) {
+  async saveShortcutCommands(_event, data) {
     try {
       configService.saveShortcutCommands(data);
       logToFile("Shortcut commands saved", "INFO");
@@ -186,9 +196,10 @@ class SettingsHandlers {
     }
   }
 
-  async addCommandHistory(event, command) {
+  async addCommandHistory(_event, command) {
     try {
       const history = commandHistoryService.addCommand(command);
+      configService.saveCommandHistory(commandHistoryService.exportHistory());
       return { success: true, data: history };
     } catch (error) {
       logToFile(`Error adding command to history: ${error.message}`, "ERROR");
@@ -196,9 +207,12 @@ class SettingsHandlers {
     }
   }
 
-  async getCommandSuggestions(event, input, maxResults = 10) {
+  async getCommandSuggestions(_event, input, maxResults = 10) {
     try {
-      const suggestions = commandHistoryService.getSuggestions(input, maxResults);
+      const suggestions = commandHistoryService.getSuggestions(
+        input,
+        maxResults,
+      );
       return { success: true, suggestions };
     } catch (error) {
       logToFile(`Error getting command suggestions: ${error.message}`, "ERROR");
@@ -206,9 +220,10 @@ class SettingsHandlers {
     }
   }
 
-  async incrementCommandUsage(event, command) {
+  async incrementCommandUsage(_event, command) {
     try {
       commandHistoryService.incrementCommandUsage(command);
+      configService.saveCommandHistory(commandHistoryService.exportHistory());
       return { success: true };
     } catch (error) {
       logToFile(`Error incrementing command usage: ${error.message}`, "ERROR");
@@ -216,9 +231,10 @@ class SettingsHandlers {
     }
   }
 
-  async clearCommandHistory(event) {
+  async clearCommandHistory() {
     try {
       commandHistoryService.clearHistory();
+      configService.saveCommandHistory([]);
       logToFile("Command history cleared", "INFO");
       return { success: true };
     } catch (error) {
@@ -227,7 +243,7 @@ class SettingsHandlers {
     }
   }
 
-  async getCommandStatistics(event) {
+  async getCommandStatistics() {
     try {
       const stats = commandHistoryService.getStatistics();
       return { success: true, data: stats };
@@ -237,7 +253,7 @@ class SettingsHandlers {
     }
   }
 
-  async getAllCommandHistory(event) {
+  async getAllCommandHistory() {
     try {
       const history = commandHistoryService.getAllHistory();
       return { success: true, data: history };
@@ -247,9 +263,12 @@ class SettingsHandlers {
     }
   }
 
-  async deleteCommand(event, command) {
+  async deleteCommand(_event, command) {
     try {
       const result = commandHistoryService.deleteCommand(command);
+      if (result) {
+        configService.saveCommandHistory(commandHistoryService.exportHistory());
+      }
       return { success: result };
     } catch (error) {
       logToFile(`Error deleting command: ${error.message}`, "ERROR");
@@ -257,18 +276,79 @@ class SettingsHandlers {
     }
   }
 
-  async deleteCommandBatch(event, commands) {
+  async deleteCommandBatch(_event, commands) {
     try {
       let deletedCount = 0;
       for (const command of commands) {
         if (commandHistoryService.deleteCommand(command)) {
-          deletedCount++;
+          deletedCount += 1;
         }
+      }
+      if (deletedCount > 0) {
+        configService.saveCommandHistory(commandHistoryService.exportHistory());
       }
       logToFile(`Deleted ${deletedCount} commands from history`, "INFO");
       return { success: true, deletedCount };
     } catch (error) {
       logToFile(`Error deleting command batch: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async exportSyncPackage() {
+    try {
+      const mainWindow = this._getMainWindow();
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+      const defaultFileName = `simpleshell-sync-${stamp}.ssdb`;
+
+      const saveResult = await dialog.showSaveDialog(mainWindow, {
+        title: "导出同步包",
+        defaultPath: defaultFileName,
+        filters: [{ name: "SimpleShell Sync DB", extensions: ["ssdb"] }],
+        properties: ["showOverwriteConfirmation", "createDirectory"],
+      });
+
+      if (saveResult.canceled || !saveResult.filePath) {
+        return { success: false, canceled: true };
+      }
+
+      await configService.exportSyncPackage(saveResult.filePath);
+      logToFile(`Sync package exported: ${saveResult.filePath}`, "INFO");
+      return { success: true, filePath: saveResult.filePath };
+    } catch (error) {
+      logToFile(`Error exporting sync package: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async importSyncPackage() {
+    try {
+      const mainWindow = this._getMainWindow();
+      const openResult = await dialog.showOpenDialog(mainWindow, {
+        title: "导入同步包（覆盖当前数据）",
+        properties: ["openFile"],
+        filters: [
+          { name: "SimpleShell Sync DB", extensions: ["ssdb", "db", "sqlite"] },
+        ],
+      });
+
+      if (openResult.canceled || !openResult.filePaths?.[0]) {
+        return { success: false, canceled: true };
+      }
+
+      const sourcePath = openResult.filePaths[0];
+      const backupPath = await configService.importSyncPackage(sourcePath);
+      commandHistoryService.initialize(configService.loadCommandHistory());
+      this._notifySyncDataChanged();
+
+      logToFile(
+        `Sync package imported: ${sourcePath}, local backup: ${backupPath}`,
+        "INFO",
+      );
+      return { success: true, sourcePath, backupPath };
+    } catch (error) {
+      logToFile(`Error importing sync package: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }

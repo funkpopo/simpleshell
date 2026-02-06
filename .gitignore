@@ -44,6 +44,7 @@ installer
 *.exe
 *.msi
 *.dmg
+*.db
 
 .claude/
 
