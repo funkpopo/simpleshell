@@ -7,7 +7,7 @@ import React, {
   useEffect,
 } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
-import { FixedSizeList as List } from "react-window";
+import { List } from "react-window";
 import {
   ListItem,
   ListItemButton,
@@ -28,17 +28,8 @@ import {
 } from "@mui/icons-material";
 
 // Connection group or item component for virtualization
-const ConnectionItem = memo(({ index, style, data }) => {
+const ConnectionItem = memo(({ index, style, ariaAttributes, flattenedItems, selectedItem, onToggleGroup, onSelectConnection, onDoubleClick, dragHandleProps, isDragging }) => {
   const theme = useTheme();
-  const {
-    flattenedItems,
-    selectedItem,
-    onToggleGroup,
-    onSelectConnection,
-    onDoubleClick,
-    dragHandleProps,
-    isDragging,
-  } = data;
 
   const item = flattenedItems[index];
   if (!item) return null;
@@ -440,7 +431,7 @@ const VirtualizedConnectionList = ({
             key={`${item.id}-${item.type}-${index}`}
             index={index}
             style={{ height: itemHeight }}
-            data={itemData}
+            {...itemData}
           />
         ))}
       </Box>
@@ -472,28 +463,26 @@ const VirtualizedConnectionList = ({
     >
       {actualHeight > 0 && (
         <List
-          ref={listRef}
+          listRef={listRef}
           className="react-window-list"
-          height={actualHeight}
-          itemCount={flattenedItems.length}
-          itemSize={itemHeight}
-          itemData={itemData}
+          style={{ height: actualHeight, width: '100%' }}
+          rowCount={flattenedItems.length}
+          rowHeight={itemHeight}
+          rowProps={itemData}
           overscanCount={dynamicOverscan}
-          width="100%"
-          onItemsRendered={({ visibleStartIndex, visibleStopIndex }) => {
+          rowComponent={ConnectionItem}
+          onRowsRendered={(visibleRows, allRows) => {
             // Performance monitoring in development
             if (
               typeof window !== "undefined" &&
               window.location?.hostname === "localhost"
             ) {
               console.debug(
-                `虚拟化连接列表渲染: ${visibleStartIndex}-${visibleStopIndex} / ${flattenedItems.length}`,
+                `虚拟化连接列表渲染: ${allRows.startIndex}-${allRows.stopIndex} / ${flattenedItems.length}`,
               );
             }
           }}
-        >
-          {ConnectionItem}
-        </List>
+        />
       )}
     </Box>
   );

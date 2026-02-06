@@ -48,11 +48,9 @@ import { useTranslation } from "react-i18next";
 import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 
 // 虚拟化命令项组件
-const CommandItem = React.memo(({ index, style, data }) => {
+const CommandItem = React.memo(({ index, style, ariaAttributes, commands, handleSendCommand, handleCopyCommand, handleMenuOpen }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { commands, handleSendCommand, handleCopyCommand, handleMenuOpen } =
-    data;
   const cmd = commands[index];
 
   if (!cmd) return null;
@@ -684,7 +682,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               key={cmd.id}
               index={filteredCommands.indexOf(cmd)}
               style={{ height: 72 }}
-              data={listItemData}
+              {...listItemData}
             />
           ))}
         </Box>
@@ -695,15 +693,13 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     return (
       containerHeight > 0 && (
         <List
-          height={containerHeight}
-          itemCount={filteredCommands.length}
-          itemSize={72}
-          itemData={listItemData}
+          style={{ height: containerHeight, width: '100%' }}
+          rowCount={filteredCommands.length}
+          rowHeight={72}
+          rowProps={listItemData}
           overscanCount={10}
-          width="100%"
-        >
-          {CommandItem}
-        </List>
+          rowComponent={CommandItem}
+        />
       )
     );
   };

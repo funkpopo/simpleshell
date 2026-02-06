@@ -42,18 +42,9 @@ import { useTranslation } from "react-i18next";
 import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 
 // 虚拟化历史记录项组件
-const HistoryItem = React.memo(({ index, style, data }) => {
+const HistoryItem = React.memo(({ index, style, ariaAttributes, filteredHistory, selectMode, selectedCommands, toggleCommandSelection, handleSendCommand, handleMenuOpen, formatTime }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const {
-    filteredHistory,
-    selectMode,
-    selectedCommands,
-    toggleCommandSelection,
-    handleSendCommand,
-    handleMenuOpen,
-    formatTime,
-  } = data;
 
   const item = filteredHistory[index];
   if (!item) return null;
@@ -695,7 +686,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                       key={`${item.command}-${item.timestamp}-${index}`}
                       index={index}
                       style={{ height: 48 }}
-                      data={listItemData}
+                      {...listItemData}
                     />
                   ))}
                 </Box>
@@ -703,15 +694,13 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                 // 对于大量数据，使用虚拟化渲染
                 containerHeight > 0 && (
                   <List
-                    height={containerHeight}
-                    itemCount={filteredHistory.length}
-                    itemSize={48}
-                    itemData={listItemData}
+                    style={{ height: containerHeight, width: '100%' }}
+                    rowCount={filteredHistory.length}
+                    rowHeight={48}
+                    rowProps={listItemData}
                     overscanCount={15}
-                    width="100%"
-                  >
-                    {HistoryItem}
-                  </List>
+                    rowComponent={HistoryItem}
+                  />
                 )
               )}
             </Box>
