@@ -86,6 +86,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   getShortcutCommands: () => ipcRenderer.invoke("get-shortcut-commands"),
   saveShortcutCommands: (data) =>
     ipcRenderer.invoke("save-shortcut-commands", data),
+  exportSyncPackage: () => ipcRenderer.invoke("settings:exportSyncPackage"),
+  importSyncPackage: () => ipcRenderer.invoke("settings:importSyncPackage"),
 
   // 事件监听
   onProcessOutput: (processId, callback) => {
@@ -181,9 +183,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   setCurrentApiConfig: (configId) =>
     ipcRenderer.invoke("ai:setCurrentApiConfig", configId),
   // 新增: 获取模型列表方法
-  fetchModels: (requestData) => ipcRenderer.invoke("ai:fetchModels", requestData),
+  fetchModels: (requestData) =>
+    ipcRenderer.invoke("ai:fetchModels", requestData),
   // 新增: 保存自定义风险规则
-  saveCustomRiskRules: (rules) => ipcRenderer.invoke("ai:saveCustomRiskRules", rules),
+  saveCustomRiskRules: (rules) =>
+    ipcRenderer.invoke("ai:saveCustomRiskRules", rules),
 
   // 记忆文件管理API
   saveMemory: (memory) => ipcRenderer.invoke("memory:save", memory),
@@ -293,7 +297,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   downloadFiles: (tabId, files, progressCallback) => {
     // 注册一个临时的进度监听器
     const progressListener = (_, data) => {
-      if (data.tabId === tabId && data.isBatch && typeof progressCallback === "function") {
+      if (
+        data.tabId === tabId &&
+        data.isBatch &&
+        typeof progressCallback === "function"
+      ) {
         progressCallback(
           data.progress || 0,
           data.fileName || "",
@@ -660,13 +668,18 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   offSSHAuthRequest: (callback) => {
     ipcRenderer.removeAllListeners("ssh:auth-request");
   },
-  
+
   // 响应 SSH 认证请求
-  respondSSHAuth: (response) => ipcRenderer.invoke("ssh:auth-response", response),
-  
+  respondSSHAuth: (response) =>
+    ipcRenderer.invoke("ssh:auth-response", response),
+
   // 更新连接配置（用于保存自动登录凭据）
   updateConnectionCredentials: (connectionId, credentials) =>
-    ipcRenderer.invoke("terminal:updateConnectionCredentials", connectionId, credentials),
+    ipcRenderer.invoke(
+      "terminal:updateConnectionCredentials",
+      connectionId,
+      credentials,
+    ),
 });
 
 // SSH密钥生成器API
@@ -702,7 +715,7 @@ contextBridge.exposeInMainWorld("appErrorAPI", {
   // 移除错误监听
   removeErrorListener: () => {
     ipcRenderer.removeAllListeners("app:error");
-  }
+  },
 });
 
 // Clipboard API (Electron 40+ safe access pattern)
@@ -713,5 +726,3 @@ contextBridge.exposeInMainWorld("clipboardAPI", {
     return true;
   },
 });
-
-

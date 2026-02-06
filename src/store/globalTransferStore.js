@@ -31,8 +31,8 @@ const generateHistoryId = () =>
   `history_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
 const notify = () => {
-  // 清除快照缓存，强制重新计算
-  snapshotCache.clear();
+  // 不再清除快照缓存，让 getSnapshot 通过比较来决定是否返回新值
+  // 这样可以避免不必要的重新渲染
 
   for (const listener of listeners) {
     try {
@@ -238,14 +238,47 @@ const subscribe = (listener) => {
   };
 };
 
+// 用于深比较两个传输对象是否相等
+const isTransferEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  // 比较关键字段
+  return (
+    a.transferId === b.transferId &&
+    a.progress === b.progress &&
+    a.fileName === b.fileName &&
+    a.transferredBytes === b.transferredBytes &&
+    a.totalBytes === b.totalBytes &&
+    a.transferSpeed === b.transferSpeed &&
+    a.remainingTime === b.remainingTime &&
+    a.currentFileIndex === b.currentFileIndex &&
+    a.totalFiles === b.totalFiles &&
+    a.isCancelled === b.isCancelled &&
+    a.error === b.error &&
+    a.isCompleted === b.isCompleted &&
+    a.tabId === b.tabId
+  );
+};
+
+// 用于比较两个传输列表是否相等
+const areTransfersEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!isTransferEqual(a[i], b[i])) return false;
+  }
+  return true;
+};
+
 const getSnapshot = (tabId) => {
   const key = tabId || '__all__';
 
   if (tabId) {
     const transfers = getTransfersInternal(tabId);
-    // 检查是否有变化
+    // 检查是否有变化（使用浅比较）
     const cached = snapshotCache.get(key);
-    if (cached && JSON.stringify(cached) === JSON.stringify(transfers)) {
+    if (cached && areTransfersEqual(cached, transfers)) {
       return cached;
     }
     snapshotCache.set(key, transfers);
@@ -254,7 +287,8 @@ const getSnapshot = (tabId) => {
 
   const allTransfers = getAllTransfersInternal();
   const cached = snapshotCache.get(key);
-  if (cached && JSON.stringify(cached) === JSON.stringify(allTransfers)) {
+  // 使用浅比较检查是否有变化
+  if (cached && areTransfersEqual(cached, allTransfers)) {
     return cached;
   }
   snapshotCache.set(key, allTransfers);
