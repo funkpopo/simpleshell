@@ -60,15 +60,10 @@ class SQLiteConfigStorage {
   async importDatabase(sourcePath) {
     this._validateSyncPackage(sourcePath);
 
-    const backupPath = `${this.dbPath}.bak-${Date.now()}.ssdb`;
-    await this.exportDatabase(backupPath);
-
     this.close();
     this._deleteSidecars(this.dbPath);
     fs.copyFileSync(sourcePath, this.dbPath);
     this.initialize();
-
-    return backupPath;
   }
 
   loadConnections() {

@@ -3,7 +3,6 @@ const fs = require("fs");
 const zlib = require("zlib");
 
 let logFile = null;
-let appInstance = null;
 
 const LOG_LEVELS = {
   DEBUG: 0,
@@ -51,25 +50,14 @@ function getLogDirectory(electronApp) {
 }
 
 function loadLogConfig() {
-  try {
-    const configPath = appInstance
-      ? appInstance.isPackaged
-        ? path.join(path.dirname(process.execPath), "config.json")
-        : path.join(process.cwd(), "config.json")
-      : path.join(process.cwd(), "config.json");
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-      if (config.logSettings) {
-        logConfig = { ...DEFAULT_LOG_CONFIG, ...config.logSettings };
-      }
-    }
-  } catch (_) {}
+  logConfig = { ...DEFAULT_LOG_CONFIG };
   return logConfig;
 }
 
 function startFlushTimer() {
   stopFlushTimer();
-  const interval = Number(logConfig.flushIntervalMs) || DEFAULT_LOG_CONFIG.flushIntervalMs;
+  const interval =
+    Number(logConfig.flushIntervalMs) || DEFAULT_LOG_CONFIG.flushIntervalMs;
   flushTimer = setInterval(() => {
     flushQueue();
   }, interval);
@@ -150,7 +138,9 @@ function rotateLogs() {
           if (logConfig.compressOldLogs && i + 1 > 1) {
             if (fs.existsSync(dstGz)) fs.unlinkSync(dstGz);
             gzipFileSync(srcPlain, dstGz);
-            try { fs.unlinkSync(srcPlain); } catch (_) {}
+            try {
+              fs.unlinkSync(srcPlain);
+            } catch (_) {}
           } else {
             if (fs.existsSync(dstPlain)) fs.unlinkSync(dstPlain);
             fs.renameSync(srcPlain, dstPlain);
@@ -172,10 +162,14 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
     const files = fs.readdirSync(logDir);
     const rotated = files.filter((file) => {
       const plain = file.match(
-        new RegExp(`^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}$`),
+        new RegExp(
+          `^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}$`,
+        ),
       );
       const gz = file.match(
-        new RegExp(`^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}\\.gz$`),
+        new RegExp(
+          `^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}\\.gz$`,
+        ),
       );
       return !!(plain || gz);
     });
@@ -187,7 +181,9 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
     if (rotated.length >= logConfig.maxFiles) {
       for (let i = logConfig.maxFiles; i < rotated.length; i++) {
         const fileToRemove = path.join(logDir, rotated[i]);
-        try { fs.unlinkSync(fileToRemove); } catch (_) {}
+        try {
+          fs.unlinkSync(fileToRemove);
+        } catch (_) {}
       }
     }
   } catch (_) {}
@@ -229,7 +225,6 @@ function cleanupOldLogEntries() {
 }
 
 function initLogger(electronApp) {
-  appInstance = electronApp;
   const environment = detectEnvironment(electronApp);
   loadLogConfig();
   try {
@@ -247,7 +242,8 @@ function initLogger(electronApp) {
   } catch (_) {
     try {
       const electronLogDir = electronApp.getPath("logs");
-      if (!fs.existsSync(electronLogDir)) fs.mkdirSync(electronLogDir, { recursive: true });
+      if (!fs.existsSync(electronLogDir))
+        fs.mkdirSync(electronLogDir, { recursive: true });
       logFile = path.join(electronLogDir, "app.log");
       logToFileInternal(
         `Logger initialized with Electron default path (fallback level 1): ${logFile}`,
@@ -258,7 +254,8 @@ function initLogger(electronApp) {
     } catch (_) {
       try {
         const fallbackLogDir = path.join(__dirname, "..", "..", "..", "logs");
-        if (!fs.existsSync(fallbackLogDir)) fs.mkdirSync(fallbackLogDir, { recursive: true });
+        if (!fs.existsSync(fallbackLogDir))
+          fs.mkdirSync(fallbackLogDir, { recursive: true });
         logFile = path.join(fallbackLogDir, "app_fallback.log");
         logToFileInternal(
           `Logger initialized with __dirname-based path (fallback level 2): ${logFile}`,
@@ -293,7 +290,9 @@ function logToFileInternal(message, type = "INFO", isInitialization = false) {
     if (logFile) {
       enqueue(logEntry);
     } else {
-      try { fs.appendFileSync("app_init_error.log", logEntry); } catch (_) {}
+      try {
+        fs.appendFileSync("app_init_error.log", logEntry);
+      } catch (_) {}
     }
     if (!isInitialization && logFile) {
       checkLogFileSize();
@@ -325,11 +324,15 @@ function updateLogConfig(newConfig) {
 
 function extractRotationIndex(fileName, nameWithoutExt, ext) {
   const plain = fileName.match(
-    new RegExp(`^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}$`),
+    new RegExp(
+      `^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}$`,
+    ),
   );
   if (plain) return parseInt(plain[1], 10);
   const gz = fileName.match(
-    new RegExp(`^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}\\.gz$`),
+    new RegExp(
+      `^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}\\.gz$`,
+    ),
   );
   if (gz) return parseInt(gz[1], 10);
   return -1;
@@ -380,4 +383,3 @@ module.exports = {
   updateLogConfig,
   cleanupOldLogEntries,
 };
-

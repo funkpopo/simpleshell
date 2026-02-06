@@ -169,7 +169,7 @@ const Settings = memo(({ open, onClose }) => {
   const [originalPerformanceSettings, setOriginalPerformanceSettings] =
     React.useState({});
 
-  // Load settings from config.json via API
+  // Load persisted settings via API
   React.useEffect(() => {
     const loadSettings = async () => {
       try {

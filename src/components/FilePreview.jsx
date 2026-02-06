@@ -54,13 +54,13 @@ let reactPdfLoaded = false;
 // 动态加载 react-pdf
 const loadReactPdf = async () => {
   if (reactPdfLoaded) return;
-  
+
   try {
     const reactPdfModule = await import("react-pdf");
     Document = reactPdfModule.Document;
     Page = reactPdfModule.Page;
     pdfjs = reactPdfModule.pdfjs;
-    
+
     // 配置PDF.js worker - 使用本地文件
     if (typeof window !== "undefined" && pdfjs) {
       try {
@@ -73,11 +73,11 @@ const loadReactPdf = async () => {
         console.warn("使用备用路径加载 PDF worker:", e);
       }
     }
-    
+
     // 动态导入 CSS
     await import("react-pdf/dist/Page/AnnotationLayer.css");
     await import("react-pdf/dist/Page/TextLayer.css");
-    
+
     reactPdfLoaded = true;
   } catch (error) {
     console.error("Failed to load react-pdf:", error);
@@ -572,7 +572,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   useEffect(() => {
     const loadFontSetting = async () => {
       try {
-        // 从config.json加载文件预览字体设置
+        // 从settings store加载文件预览字体设置
         if (window.terminalAPI?.loadUISettings) {
           const settings = await window.terminalAPI.loadUISettings();
           if (settings?.filePreviewFont) {
@@ -682,7 +682,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             setLoading(false);
             return;
           }
-          
+
           if (window.terminalAPI && window.terminalAPI.readFileAsBase64) {
             const response = await window.terminalAPI.readFileAsBase64(
               tabId,
@@ -874,7 +874,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     setEditorFont(newFont);
 
     try {
-      // 保存到config.json
+      // 保存到settings store
       if (window.terminalAPI?.saveUISettings) {
         // 先获取当前设置
         const currentSettings =
@@ -1119,7 +1119,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           </Box>
         );
       }
-      
+
       return (
         <Box
           sx={{

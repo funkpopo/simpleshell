@@ -1,6 +1,4 @@
-﻿const fs = require("fs");
-const path = require("path");
-const zlib = require("zlib");
+﻿const path = require("path");
 const Ajv = require("ajv");
 const addFormats = require("ajv-formats");
 const SQLiteConfigStorage = require("../core/storage/sqliteConfigStorage");
@@ -11,7 +9,6 @@ class ConfigService {
     this.logger = null;
     this.crypto = null;
 
-    this.legacyConfigPath = null;
     this.databasePath = null;
 
     this.storage = null;
@@ -42,7 +39,6 @@ class ConfigService {
     this._initializeValidator();
 
     try {
-      this.legacyConfigPath = this._getLegacyConfigPath();
       this.databasePath = this._getDatabasePath();
       this.storage = new SQLiteConfigStorage({
         dbPath: this.databasePath,
@@ -53,7 +49,7 @@ class ConfigService {
 
       this._initialized = true;
       this._log(
-        `ConfigService initialized. DB path: ${this.databasePath}, legacy config path: ${this.legacyConfigPath}`,
+        `ConfigService initialized. DB path: ${this.databasePath}`,
         "INFO",
       );
       return true;
@@ -140,18 +136,6 @@ class ConfigService {
     return process.env.NODE_ENV === "development" || !this.app?.isPackaged;
   }
 
-  _getLegacyConfigPath() {
-    if (!this.app) {
-      return path.join(process.cwd(), "config.json");
-    }
-
-    if (this._isDevEnvironment()) {
-      return path.join(process.cwd(), "config.json");
-    }
-
-    return path.join(path.dirname(this.app.getPath("exe")), "config.json");
-  }
-
   _getDatabasePath() {
     if (!this.app) {
       return path.join(process.cwd(), "simpleshell.db");
@@ -179,90 +163,10 @@ class ConfigService {
 
     try {
       this.storage.initialize();
-      this._migrateLegacyConfigIfNeeded();
       this._ensureDefaultSettings();
     } catch (error) {
       this._log(
         `ConfigService: Failed to initialize storage - ${error.message}`,
-        "ERROR",
-      );
-    }
-  }
-
-  _migrateLegacyConfigIfNeeded() {
-    if (this.storage.hasAnyData()) {
-      return;
-    }
-
-    if (!fs.existsSync(this.legacyConfigPath)) {
-      return;
-    }
-
-    try {
-      const legacyConfig = JSON.parse(
-        fs.readFileSync(this.legacyConfigPath, "utf8"),
-      );
-
-      const legacyConnections = this._processConnectionsForLoad(
-        Array.isArray(legacyConfig.connections) ? legacyConfig.connections : [],
-      );
-      this.saveConnections(legacyConnections);
-
-      const legacyAISettings = this._decodeLegacyAISettings(
-        legacyConfig.aiSettings,
-      );
-      this.saveAISettings(legacyAISettings);
-
-      const legacyUISettings = {
-        ...this._getDefaultUISettings(),
-        ...(legacyConfig.uiSettings || {}),
-      };
-      this.saveUISettings(legacyUISettings);
-
-      const legacyLogSettings = {
-        ...this._getDefaultLogSettings(),
-        ...(legacyConfig.logSettings || {}),
-      };
-      this.saveLogSettings(legacyLogSettings);
-
-      const legacyShortcuts = this._decodeShortcutCommands(
-        legacyConfig.shortcutCommands,
-      );
-      this.saveShortcutCommands(legacyShortcuts);
-
-      const legacyHistory = this._decodeLegacyCommandHistory(
-        legacyConfig.commandHistory,
-      );
-      this.saveCommandHistory(legacyHistory);
-
-      const legacyTopConnections = this._processConnectionsForLoad(
-        Array.isArray(legacyConfig.topConnections)
-          ? legacyConfig.topConnections
-          : [],
-      );
-      const legacyLastConnections = this._processConnectionsForLoad(
-        Array.isArray(legacyConfig.lastConnections)
-          ? legacyConfig.lastConnections
-          : [],
-      );
-      this.saveTopConnections(legacyTopConnections);
-      this.saveLastConnections(legacyLastConnections);
-
-      this.set("meta.migratedFromConfigJson", {
-        migratedAt: Date.now(),
-        sourcePath: this.legacyConfigPath,
-      });
-
-      const backupPath = `${this.legacyConfigPath}.bak-${Date.now()}`;
-      fs.renameSync(this.legacyConfigPath, backupPath);
-
-      this._log(
-        `ConfigService: Legacy config migrated and backed up to ${backupPath}`,
-        "INFO",
-      );
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to migrate legacy config - ${error.message}`,
         "ERROR",
       );
     }
@@ -542,46 +446,6 @@ class ConfigService {
     return this.set("shortcutCommands", commands || {});
   }
 
-  _compressCommandHistory(history) {
-    try {
-      const jsonStr = JSON.stringify(history || []);
-      const compressed = zlib.gzipSync(jsonStr);
-      return {
-        compressed: true,
-        data: compressed.toString("base64"),
-      };
-    } catch (_error) {
-      return {
-        compressed: false,
-        data: history || [],
-      };
-    }
-  }
-
-  _decompressCommandHistory(data) {
-    try {
-      if (!data || typeof data !== "object") {
-        return [];
-      }
-      if (!data.compressed) {
-        return Array.isArray(data.data) ? data.data : [];
-      }
-
-      const compressed = Buffer.from(data.data, "base64");
-      const decompressed = zlib.gunzipSync(compressed);
-      return JSON.parse(decompressed.toString("utf8"));
-    } catch (_error) {
-      return [];
-    }
-  }
-
-  _decodeLegacyCommandHistory(history) {
-    if (Array.isArray(history)) {
-      return history;
-    }
-    return this._decompressCommandHistory(history);
-  }
-
   loadCommandHistory() {
     if (!this._initialized || !this.storage) {
       return [];
@@ -698,7 +562,7 @@ class ConfigService {
       throw new Error("ConfigService is not initialized");
     }
 
-    return this.storage.importDatabase(sourcePath);
+    await this.storage.importDatabase(sourcePath);
   }
 
   async sendAIPrompt(_prompt, _settings) {
@@ -757,62 +621,6 @@ class ConfigService {
 
     const hexPattern = /^[0-9a-fA-F]+$/;
     return hexPattern.test(ivHex) && hexPattern.test(cipherHex);
-  }
-
-  _decodeShortcutCommands(rawValue) {
-    if (!rawValue) {
-      return {};
-    }
-
-    if (typeof rawValue === "object") {
-      return rawValue;
-    }
-
-    if (typeof rawValue === "string") {
-      try {
-        return JSON.parse(rawValue);
-      } catch (_error) {
-        return {};
-      }
-    }
-
-    return {};
-  }
-
-  _decodeLegacyAISettings(rawSettings) {
-    if (!rawSettings || typeof rawSettings !== "object") {
-      return {
-        configs: [],
-        current: { apiUrl: "", apiKey: "", model: "", streamEnabled: true },
-      };
-    }
-
-    const settings = {
-      configs: Array.isArray(rawSettings.configs)
-        ? rawSettings.configs.map((item) => ({
-            ...item,
-            apiKey:
-              typeof item?.apiKey === "string"
-                ? this._decryptMaybe(item.apiKey)
-                : item?.apiKey,
-          }))
-        : [],
-      current: rawSettings.current
-        ? {
-            ...rawSettings.current,
-            apiKey:
-              typeof rawSettings.current.apiKey === "string"
-                ? this._decryptMaybe(rawSettings.current.apiKey)
-                : rawSettings.current.apiKey,
-          }
-        : null,
-    };
-
-    if (Object.prototype.hasOwnProperty.call(rawSettings, "customRiskRules")) {
-      settings.customRiskRules = rawSettings.customRiskRules;
-    }
-
-    return settings;
   }
 }
 

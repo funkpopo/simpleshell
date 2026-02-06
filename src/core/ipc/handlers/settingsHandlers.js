@@ -338,15 +338,12 @@ class SettingsHandlers {
       }
 
       const sourcePath = openResult.filePaths[0];
-      const backupPath = await configService.importSyncPackage(sourcePath);
+      await configService.importSyncPackage(sourcePath);
       commandHistoryService.initialize(configService.loadCommandHistory());
       this._notifySyncDataChanged();
 
-      logToFile(
-        `Sync package imported: ${sourcePath}, local backup: ${backupPath}`,
-        "INFO",
-      );
-      return { success: true, sourcePath, backupPath };
+      logToFile(`Sync package imported: ${sourcePath}`, "INFO");
+      return { success: true, sourcePath };
     } catch (error) {
       logToFile(`Error importing sync package: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
