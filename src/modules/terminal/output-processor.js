@@ -176,7 +176,7 @@ class OutputProcessor {
       let regex;
       try {
         regex = new RegExp(rule.pattern, rule.flags || "g");
-      } catch (error) {
+      } catch {
         return null;
       }
 

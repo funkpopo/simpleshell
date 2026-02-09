@@ -1,5 +1,4 @@
 const fs = require("fs");
-const path = require("path");
 const { logToFile } = require("./logger");
 
 /**
@@ -23,7 +22,7 @@ function readPrivateKeyFile(privateKeyPath) {
     // 检查文件是否可读
     try {
       fs.accessSync(privateKeyPath, fs.constants.R_OK);
-    } catch (accessError) {
+    } catch {
       logToFile(`私钥文件无读取权限: ${privateKeyPath}`, "ERROR");
       return null;
     }
@@ -69,7 +68,7 @@ async function readPrivateKeyFileAsync(privateKeyPath) {
     // 检查文件是否可读
     try {
       await fs.promises.access(privateKeyPath, fs.constants.R_OK);
-    } catch (accessError) {
+    } catch {
       logToFile(`私钥文件无读取权限: ${privateKeyPath}`, "ERROR");
       return null;
     }

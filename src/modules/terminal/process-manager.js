@@ -1,5 +1,3 @@
-const { spawn } = require("child_process");
-const Client = require("ssh2").Client;
 const { logToFile } = require("../../core/utils/logger");
 const coreProcessManager = require("../../core/process/processManager");
 

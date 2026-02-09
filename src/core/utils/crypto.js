@@ -21,7 +21,7 @@ function encryptText(text) {
     encrypted += cipher.final("hex");
     // 将IV附加到加密文本的前面，以便解密时使用
     return iv.toString("hex") + ":" + encrypted;
-  } catch (error) {
+  } catch {
     // logToFile(`Encryption failed: ${error.message}`, "ERROR");
     return null;
   }
@@ -48,7 +48,7 @@ function decryptText(text) {
     let decrypted = decipher.update(encryptedText, "hex", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
-  } catch (error) {
+  } catch {
     // logToFile(`Decryption failed: ${error.message}`, "ERROR");
     return null;
   }

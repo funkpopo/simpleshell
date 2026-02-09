@@ -161,7 +161,7 @@ class FileHandlers {
                 if (event && event.sender && !event.sender.isDestroyed()) {
                   event.sender.send("listFiles:chunk", payload);
                 }
-              } catch (_) {
+              } catch {
                 // ignore send errors (window may be gone)
               }
             };
@@ -202,7 +202,7 @@ class FileHandlers {
                   error: err?.message || String(err),
                 });
               }
-            } catch (_) {}
+            } catch {}
           });
 
         return { success: true, data: [], chunked: true, token };

@@ -16,7 +16,6 @@ import {
   Box,
   Typography,
   useTheme,
-  Collapse,
   IconButton,
 } from "@mui/material";
 import {
@@ -28,7 +27,7 @@ import {
 } from "@mui/icons-material";
 
 // Connection group or item component for virtualization
-const ConnectionItem = memo(({ index, style, ariaAttributes, flattenedItems, selectedItem, onToggleGroup, onSelectConnection, onDoubleClick, dragHandleProps, isDragging }) => {
+const ConnectionItem = memo(({ index, style, flattenedItems, selectedItem, onToggleGroup, onSelectConnection, onDoubleClick, dragHandleProps, isDragging }) => {
   const theme = useTheme();
 
   const item = flattenedItems[index];
@@ -251,7 +250,6 @@ const VirtualizedConnectionList = ({
   enableVirtualization = true,
   devicePerformance = "medium",
   enableDragDrop = false,
-  onReorder,
   searchTerm = "",
   emptyMessage = "No connections",
   className,

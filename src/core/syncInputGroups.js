@@ -15,7 +15,6 @@ const DEFAULT_COLORS = [
 ];
 
 let syncGroups = [];
-let groupCounter = 1;
 
 function getGroups() {
   return syncGroups;
@@ -74,7 +73,6 @@ function getGroupById(groupId) {
 
 function resetGroups() {
   syncGroups = [];
-  groupCounter = 1;
 }
 
 module.exports = {

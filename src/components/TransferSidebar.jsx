@@ -30,7 +30,6 @@ import SwapVertIcon from "@mui/icons-material/SwapVert";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
-import { useTranslation } from "react-i18next";
 import {
   useAllGlobalTransfers,
   useTransferHistory,
@@ -371,7 +370,6 @@ TransferItem.displayName = "TransferItem";
  */
 const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) => {
   const theme = useTheme();
-  const { t } = useTranslation();
   const { allTransfers, clearCompletedTransfers, updateTransferProgress } = useAllGlobalTransfers();
   const { history, clearHistory, removeHistoryItemAt } = useTransferHistory();
   const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);

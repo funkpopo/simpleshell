@@ -18,7 +18,6 @@ import {
   Close,
   ExpandLess,
   ExpandMore,
-  Delete,
 } from "@mui/icons-material";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
 
@@ -80,7 +79,6 @@ const getStatusIcon = (transfer) => {
  * 单个传输任务标签
  */
 const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
-  const theme = useTheme();
   const { type, fileName, progress, isCancelled, error } = transfer;
 
   const isCompleted = progress >= 100;

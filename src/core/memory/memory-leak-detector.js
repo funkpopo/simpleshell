@@ -319,7 +319,7 @@ class MemoryLeakDetector extends EventEmitter {
     let longLivedCount = 0;
     let totalSize = 0;
 
-    for (const [id, allocation] of this.longLivedAllocations) {
+    for (const allocation of this.longLivedAllocations.values()) {
       const age = now - allocation.allocatedAt;
       if (age > threshold) {
         longLivedCount++;

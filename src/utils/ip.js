@@ -18,13 +18,13 @@ function isValidIPv6(ip) {
     if (!ipv4Regex.test(v4Part)) return false;
     const v6Part = ip.slice(0, lastColon);
     // Allow ::ffff:0:0/96 forms
-    return isValidPureIPv6(v6Part, true);
+    return isValidPureIPv6(v6Part);
   }
 
-  return isValidPureIPv6(ip, false);
+  return isValidPureIPv6(ip);
 }
 
-function isValidPureIPv6(ip, allowTrailingEmpty) {
+function isValidPureIPv6(ip) {
   // Only hex, colon, and optional leading/trailing empty from compression
   if (!/^[:0-9a-fA-F]+$/.test(ip)) return false;
 

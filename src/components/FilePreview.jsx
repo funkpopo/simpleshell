@@ -752,7 +752,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           () => {}, // 简单进度回调
         );
       }
-    } catch (error) {}
+    } catch {}
   };
 
   // 处理文本编辑

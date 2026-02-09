@@ -136,7 +136,7 @@ class AppInitializer {
               c.proxy || null,
             ]),
         );
-      } catch (_) {
+      } catch {
         proxyByServerKey = null;
       }
 

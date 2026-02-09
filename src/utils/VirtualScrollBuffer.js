@@ -172,7 +172,7 @@ export class VirtualScrollBuffer {
     if (linesToRemove <= 0) return;
 
     // 删除最旧的行
-    const removed = this.buffer.splice(0, linesToRemove);
+    this.buffer.splice(0, linesToRemove);
 
     this.totalLines = this.buffer.length;
     this.stats.totalLinesPruned += linesToRemove;

@@ -186,7 +186,7 @@ class MemoryPool extends EventEmitter {
 
     // 记录详细的泄漏信息
     const leakSummary = Object.entries(leakResults)
-      .filter(([_, result]) => result.detected)
+      .filter(([, result]) => result.detected)
       .map(([type, result]) => `${type}: ${result.reason}`)
       .join("; ");
 

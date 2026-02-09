@@ -5,7 +5,6 @@ import {
   Typography,
   IconButton,
   Fade,
-  Slide,
   Tooltip,
   Tabs,
   Tab,
