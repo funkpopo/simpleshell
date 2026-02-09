@@ -114,18 +114,6 @@ const Settings = memo(({ open, onClose }) => {
     { value: "Consolas", label: "Consolas", description: "系统默认字体" },
   ];
 
-  const terminalFontLabelMap = {
-    "Fira Code": t("settings.fonts.fira-code"),
-    "Space Mono": t("settings.fonts.space-mono"),
-    Consolas: t("settings.fonts.consolas"),
-  };
-
-  const terminalFontDescriptionMap = {
-    "Fira Code": t("settings.terminalFonts.firaCodeDescription"),
-    "Space Mono": t("settings.terminalFonts.spaceMonoDescription"),
-    Consolas: t("settings.terminalFonts.consolasDescription"),
-  };
-
   // Define log level options
   const logLevels = [
     { value: "DEBUG", label: t("settings.logLevels.debug") },
@@ -240,7 +228,7 @@ const Settings = memo(({ open, onClose }) => {
             setCleanupIntervalDays(logSettings.cleanupIntervalDays || 7);
           }
         }
-      } catch (error) {
+      } catch {
       } finally {
         setIsLoading(false);
       }
@@ -292,15 +280,6 @@ const Settings = memo(({ open, onClose }) => {
     // 确保输入的是数字，且大于0
     if (!isNaN(value) && Number(value) > 0) {
       setMaxFileSize(Number(value));
-    }
-  };
-
-  // Handle cleanup interval days change
-  const handleCleanupIntervalDaysChange = (event) => {
-    const value = event.target.value;
-    // 确保输入的是数字，且大于0
-    if (!isNaN(value) && Number(value) > 0) {
-      setCleanupIntervalDays(Number(value));
     }
   };
 
@@ -441,7 +420,7 @@ const Settings = memo(({ open, onClose }) => {
       setTimeout(() => {
         onClose();
       }, 500);
-    } catch (error) {
+    } catch {
       showError(t("settings.saveError"));
     }
   };

@@ -168,7 +168,7 @@ const AISettings = ({ open, onClose }) => {
           applyCustomRiskRules(settings.customRiskRules);
         }
       }
-    } catch (err) {
+    } catch {
       setError(t("aiSettings.configSaveFailed"));
     } finally {
       setLoading(false);
@@ -258,7 +258,7 @@ const AISettings = ({ open, onClose }) => {
       } else {
         setError(t("aiSettings.deleteFailed"));
       }
-    } catch (err) {
+    } catch {
       setError(t("aiSettings.deleteFailed"));
     } finally {
       setDeleteConfirmOpen(false);
@@ -282,7 +282,7 @@ const AISettings = ({ open, onClose }) => {
       } else {
         setError(t("aiSettings.setCurrentFailed"));
       }
-    } catch (err) {
+    } catch {
       setError(t("aiSettings.setCurrentFailed"));
     }
   };
@@ -382,7 +382,7 @@ const AISettings = ({ open, onClose }) => {
           setError(t("aiSettings.configSaveFailed"));
         }
       }
-    } catch (err) {
+    } catch {
       setError(t("aiSettings.configSaveFailed"));
     } finally {
       setLoading(false);
@@ -506,7 +506,7 @@ const AISettings = ({ open, onClose }) => {
     // 验证正则表达式
     try {
       new RegExp(newRulePattern, 'i');
-    } catch (e) {
+    } catch {
       setRuleError(t("aiSettings.invalidRegex"));
       return;
     }
@@ -542,7 +542,7 @@ const AISettings = ({ open, onClose }) => {
           setError(t("aiSettings.rulesSaveFailed"));
         }
       }
-    } catch (err) {
+    } catch {
       setError(t("aiSettings.rulesSaveFailed"));
     } finally {
       setLoading(false);
