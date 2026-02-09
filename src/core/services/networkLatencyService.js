@@ -30,7 +30,7 @@ class NetworkLatencyService extends EventEmitter {
     // 确保代理管理器就绪：延迟测试需要按连接项代理配置建隧道
     try {
       proxyManager.initialize();
-    } catch (_) {
+    } catch {
       // ignore
     }
 
@@ -59,7 +59,7 @@ class NetworkLatencyService extends EventEmitter {
     }
 
     // 清除所有定时器
-    this.timers.forEach((timer, tabId) => {
+    this.timers.forEach((timer) => {
       clearInterval(timer);
     });
     this.timers.clear();
@@ -248,7 +248,7 @@ class NetworkLatencyService extends EventEmitter {
         }
 
         return await this._measureTcpLatencyDirect(host, port);
-      } catch (e) {
+      } catch {
         // 回退到 SSH exec（例如代理握手失败、DNS/路由异常等）
       }
     }
@@ -271,7 +271,7 @@ class NetworkLatencyService extends EventEmitter {
         socket.removeAllListeners();
         try {
           socket.destroy();
-        } catch (_) {}
+        } catch {}
       };
 
       const onError = (e) => {
@@ -317,7 +317,7 @@ class NetworkLatencyService extends EventEmitter {
         sock.removeAllListeners();
         try {
           sock.destroy();
-        } catch (_) {}
+        } catch {}
       };
 
       const onError = (e) => {
@@ -396,7 +396,7 @@ class NetworkLatencyService extends EventEmitter {
                 } else if (typeof stream.destroy === 'function') {
                   stream.destroy();
                 }
-              } catch (e) {
+              } catch {
                 // 忽略关闭错误
               }
 
@@ -413,7 +413,7 @@ class NetworkLatencyService extends EventEmitter {
                 if (typeof stream.close === 'function') {
                   stream.close();
                 }
-              } catch (e) {
+              } catch {
                 // 忽略关闭错误
               }
               cleanup(streamErr);
@@ -436,7 +436,7 @@ class NetworkLatencyService extends EventEmitter {
                 if (typeof stream.close === 'function') {
                   stream.close();
                 }
-              } catch (e) {
+              } catch {
                 // 忽略关闭错误
               }
             }
