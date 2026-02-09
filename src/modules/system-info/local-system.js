@@ -95,13 +95,13 @@ async function getLocalSystemInfo() {
           }
         }
       }
-    } catch {}
+    } catch { /* intentionally ignored */ }
 
     // 添加架构信息
     try {
       const arch = os.arch();
       osInfo.release = `${osInfo.distro} ${osInfo.release} (${arch})`;
-    } catch {}
+    } catch { /* intentionally ignored */ }
   } else if (osInfo.platform === "linux") {
     osInfo.distro = "Linux";
     os;

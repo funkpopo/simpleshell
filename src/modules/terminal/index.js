@@ -67,9 +67,6 @@ class TerminalManager {
     this.processManager.killProcess(processId);
   }
 
-  resizeTerminal(processId, cols, rows) {
-    this.processManager.resizeTerminal(processId, cols, rows);
-  }
 
   getProcessInfo(processId) {
     return this.processManager.getProcessInfo(processId);

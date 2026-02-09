@@ -1586,6 +1586,9 @@ function AppContent() {
       }
       throw new Error("Local terminal API not available");
     } catch (error) {
+      if (!error) {
+        throw new Error("Local terminal launch failed");
+      }
       throw error;
     }
   }, []);

@@ -55,7 +55,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   useEffect(() => {
     try {
       sessionStorage.setItem("ipQueryHistory", JSON.stringify(history));
-    } catch {}
+    } catch { /* intentionally ignored */ }
   }, [history]);
 
   // 查询IP信息
@@ -110,7 +110,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
                 MY_IP_CACHE_KEY,
                 JSON.stringify({ ts: Date.now(), result }),
               );
-            } catch {}
+            } catch { /* intentionally ignored */ }
           }
         } else {
           throw new Error(result.msg || t("ipAddressQuery.networkError"));
@@ -165,7 +165,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             }
           }
         }
-      } catch {}
+      } catch { /* intentionally ignored */ }
 
       handleQueryMyIP();
     }

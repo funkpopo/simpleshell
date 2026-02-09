@@ -87,7 +87,7 @@ class LocalTerminalManager extends EventEmitter {
 
     // 根据终端类型配置参数
     switch (config.type) {
-      case "wsl":
+      case "wsl": {
         // WSL最好通过Windows Terminal启动以避免闪退
         // 检查是否有Windows Terminal可用
         const hasWindowsTerminal = await this.isWindowsTerminalAvailable();
@@ -152,6 +152,7 @@ class LocalTerminalManager extends EventEmitter {
           }
         }
         break;
+      }
 
       case "cmd":
         config.executablePath = config.executable || "cmd.exe";

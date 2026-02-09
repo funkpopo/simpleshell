@@ -379,7 +379,7 @@ const geminiAdapter = {
     if (line.startsWith("[") || line.startsWith(",") || line.startsWith("{")) {
       try {
         // 清理行首的逗号或方括号
-        let cleanLine = line.replace(/^[\[,\s]+/, '').replace(/\]$/, '');
+        let cleanLine = line.replace(/^[[,\s]+/, '').replace(/\]$/, '');
         if (!cleanLine || cleanLine === ']') return null;
 
         const jsonData = JSON.parse(cleanLine);

@@ -349,7 +349,7 @@ class ReconnectionManager extends EventEmitter {
         done = true;
         try {
           socket.destroy();
-        } catch {}
+        } catch { /* intentionally ignored */ }
         resolve(ok);
       };
 
@@ -941,7 +941,7 @@ class ReconnectionManager extends EventEmitter {
           clearTimeout(timeout);
           try {
             ssh.end();
-          } catch {}
+          } catch { /* intentionally ignored */ }
           reject(e);
         }
       })();
@@ -1014,7 +1014,7 @@ class ReconnectionManager extends EventEmitter {
               if (sftp && typeof sftp.end === "function") {
                 sftp.end();
               }
-            } catch {}
+            } catch { /* intentionally ignored */ }
 
             clearTimeout(timeoutId);
             finish(true);
@@ -1047,7 +1047,7 @@ class ReconnectionManager extends EventEmitter {
               if (stream && typeof stream.close === "function") {
                 stream.close();
               }
-            } catch {}
+            } catch { /* intentionally ignored */ }
 
             clearTimeout(timeoutId);
             finish(true);

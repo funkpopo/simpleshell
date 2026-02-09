@@ -271,7 +271,7 @@ class NetworkLatencyService extends EventEmitter {
         socket.removeAllListeners();
         try {
           socket.destroy();
-        } catch {}
+        } catch { /* intentionally ignored */ }
       };
 
       const onError = (e) => {
@@ -317,7 +317,7 @@ class NetworkLatencyService extends EventEmitter {
         sock.removeAllListeners();
         try {
           sock.destroy();
-        } catch {}
+        } catch { /* intentionally ignored */ }
       };
 
       const onError = (e) => {

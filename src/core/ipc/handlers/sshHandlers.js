@@ -731,7 +731,7 @@ class SSHHandlers {
               `\r\n连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多1分钟）...\r\n`,
             );
           }
-        } catch {}
+        } catch { /* intentionally ignored */ }
 
         reconnectManager
           .waitForReconnect(connectionKey, 60_000)

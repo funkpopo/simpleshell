@@ -63,7 +63,7 @@ function loadLogConfig() {
         logConfig = { ...DEFAULT_LOG_CONFIG, ...config.logSettings };
       }
     }
-  } catch {}
+  } catch { /* intentionally ignored */ }
   return logConfig;
 }
 
@@ -102,7 +102,7 @@ async function flushQueue() {
       writeQueue = [];
       const data = batch.join("");
       fs.appendFileSync(logFile || "app_emergency.log", data);
-    } catch {}
+    } catch { /* intentionally ignored */ }
   } finally {
     isFlushing = false;
     if (pendingFlush) {
@@ -123,7 +123,7 @@ function checkLogFileSize() {
     if (!logFile || !fs.existsSync(logFile)) return;
     const stats = fs.statSync(logFile);
     if (stats.size >= logConfig.maxFileSize) rotateLogs();
-  } catch {}
+  } catch { /* intentionally ignored */ }
 }
 
 function rotateLogs() {
@@ -150,13 +150,13 @@ function rotateLogs() {
           if (logConfig.compressOldLogs && i + 1 > 1) {
             if (fs.existsSync(dstGz)) fs.unlinkSync(dstGz);
             gzipFileSync(srcPlain, dstGz);
-            try { fs.unlinkSync(srcPlain); } catch {}
+            try { fs.unlinkSync(srcPlain); } catch { /* intentionally ignored */ }
           } else {
             if (fs.existsSync(dstPlain)) fs.unlinkSync(dstPlain);
             fs.renameSync(srcPlain, dstPlain);
           }
         }
-      } catch {}
+      } catch { /* intentionally ignored */ }
     }
 
     const firstRotated = path.join(logDir, `${nameWithoutExt}.1${ext}`);
@@ -164,7 +164,7 @@ function rotateLogs() {
     fs.renameSync(logFile, firstRotated);
     fs.writeFileSync(logFile, "", "utf8");
     logToFileInternal("Log rotation completed.", "INFO", true);
-  } catch {}
+  } catch { /* intentionally ignored */ }
 }
 
 function cleanupOldLogs(logDir, nameWithoutExt, ext) {
@@ -187,10 +187,10 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
     if (rotated.length >= logConfig.maxFiles) {
       for (let i = logConfig.maxFiles; i < rotated.length; i++) {
         const fileToRemove = path.join(logDir, rotated[i]);
-        try { fs.unlinkSync(fileToRemove); } catch {}
+        try { fs.unlinkSync(fileToRemove); } catch { /* intentionally ignored */ }
       }
     }
-  } catch {}
+  } catch { /* intentionally ignored */ }
 }
 
 function cleanupOldLogEntries() {
@@ -223,7 +223,7 @@ function cleanupOldLogEntries() {
   } catch {
     try {
       logToFileInternal(`Log cleanup failed`, "ERROR", true);
-    } catch {}
+    } catch { /* intentionally ignored */ }
   }
 }
 
@@ -292,12 +292,12 @@ function logToFileInternal(message, type = "INFO", isInitialization = false) {
     if (logFile) {
       enqueue(logEntry);
     } else {
-      try { fs.appendFileSync("app_init_error.log", logEntry); } catch {}
+      try { fs.appendFileSync("app_init_error.log", logEntry); } catch { /* intentionally ignored */ }
     }
     if (!isInitialization && logFile) {
       checkLogFileSize();
     }
-  } catch {}
+  } catch { /* intentionally ignored */ }
 }
 
 const logToFile = (message, type = "INFO") => {
@@ -343,7 +343,7 @@ function gzipFileSync(srcPath, destPath) {
     const buf = fs.readFileSync(srcPath);
     const gz = zlib.gzipSync(buf);
     fs.writeFileSync(destPath, gz);
-  } catch {}
+  } catch { /* intentionally ignored */ }
 }
 
 function setupProcessFlushHooks() {
@@ -357,11 +357,11 @@ function setupProcessFlushHooks() {
               const data = writeQueue.join("");
               writeQueue = [];
               fs.appendFileSync(logFile, data);
-            } catch {}
+            } catch { /* intentionally ignored */ }
           }
-        } catch {}
+        } catch { /* intentionally ignored */ }
       });
-    } catch {}
+    } catch { /* intentionally ignored */ }
   });
 }
 

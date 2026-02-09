@@ -39,6 +39,10 @@ import { findGroupByTab } from "../core/syncInputGroups";
 import CommandSuggestion from "./CommandSuggestion";
 
 // 添加全局样式以确保xterm正确填满容器
+const ESC_CHAR = String.fromCharCode(27);
+const ANSI_CSI_SEQUENCE_REGEX = new RegExp(ESC_CHAR + "[[][0-9;]*[a-zA-Z]", "g");
+const TERMINAL_RESIZE_QUERY_REGEX = new RegExp(ESC_CHAR + "[[]8;[0-9]+;[0-9]+t");
+
 const terminalStyles = `
 .xterm {
   height: 100%;
@@ -806,7 +810,7 @@ useEffect(() => {
             setWebglRendererEnabled(enabled);
           }
         }
-      } catch {}
+      } catch { /* intentionally ignored */ }
     };
 
     loadRendererPreference();
@@ -886,7 +890,7 @@ useEffect(() => {
       ) {
         termInstance.__webglAddon.dispose();
       }
-    } catch {}
+    } catch { /* intentionally ignored */ }
 
     termInstance.__webglAddon = null;
     termInstance.__webglEnabled = false;
@@ -1589,7 +1593,7 @@ useEffect(() => {
       const dataStr = typeof data === "string" ? data : data.toString();
 
       // 忽略ANSI转义序列
-      const cleanData = dataStr.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+      const cleanData = dataStr.replace(ANSI_CSI_SEQUENCE_REGEX, "");
 
       // 检查是否包含密码提示
       const hasPasswordPrompt = passwordPromptPatterns.some((pattern) =>
@@ -1858,7 +1862,7 @@ useEffect(() => {
           // 提取用户输入的命令（去除提示符）
           // 改进提示符检测，支持更多类型的shell提示符
           const commandMatch = lastLine.match(
-            /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/,
+            /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/,
           );
 
           // 获取实际命令，优先使用终端行显示的内容（包含tab补全后的结果）
@@ -1879,7 +1883,7 @@ useEffect(() => {
           if (tabCompletionUsed) {
             // 从当前行获取Tab补全后的完整命令
             const fullCommand = lastLine.match(
-              /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/,
+              /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/,
             );
             if (fullCommand && fullCommand[1] && fullCommand[1].trim() !== "") {
               command = fullCommand[1].trim();
@@ -2037,7 +2041,7 @@ useEffect(() => {
                 setSuggestionsSuppressedUntilEnter(false);
                 setSuggestionsHiddenByEsc(false);
               }
-            } catch {}
+            } catch { /* intentionally ignored */ }
           }
 
           // 只有在非命令执行状态下才触发建议搜索
@@ -2077,7 +2081,7 @@ useEffect(() => {
                 .getLine(linesCount - 1 - i)
                 ?.translateToString() || "";
             // 检查是否包含典型的shell提示符
-            if (/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*$/.test(line)) {
+            if (/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*$/.test(line)) {
               inEditorMode = false;
 
               // 通知主进程编辑器模式状态变更
@@ -2116,7 +2120,7 @@ useEffect(() => {
           if (currentLine !== previousContent) {
             // 尝试提取命令部分（去除提示符）
             const commandMatch = currentLine.match(
-              /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.+)$/,
+              /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/,
             );
             if (
               commandMatch &&
@@ -3260,7 +3264,7 @@ useEffect(() => {
             if (processId) {
               sendResizeIfNeeded(processId, tabId, cols, rows);
             }
-          } catch {}
+          } catch { /* intentionally ignored */ }
         }
       };
 
@@ -3940,12 +3944,12 @@ useEffect(() => {
         // 检测屏幕清除到结尾（常见于全屏刷新）
         dataStr.includes("\u001b[J") ||
         // 检测常见的全屏应用命令名称
-        /(top|htop|vi|vim|nano|less|more|tail -f|watch)/.test(dataStr) ||
+        /(^|\s)(top|htop|vi|vim|nano|less|more|tail -f|watch)(\s|$)/.test(dataStr) ||
         // 检测终端屏幕缓冲区交替（用于全屏应用）
         dataStr.includes("\u001b[?1049h") ||
         dataStr.includes("\u001b[?1049l") ||
         // 检测终端大小查询回复
-        /\u001b\[8;\d+;\d+t/.test(dataStr)
+        TERMINAL_RESIZE_QUERY_REGEX.test(dataStr)
       ) {
         // 使用EventManager管理一系列延迟执行，以适应不同应用的启动速度
         const delayTimes = [100, 300, 600, 1000];
@@ -4114,8 +4118,7 @@ useEffect(() => {
           ) {
             helperTextarea.focus();
           }
-        } catch {
-        }
+        } catch { /* intentionally ignored */ }
       }, 120);
     };
 
@@ -4880,7 +4883,7 @@ useEffect(() => {
 
         // 提取当前输入的命令部分（去除提示符）
         const commandMatch = currentLine.match(
-          /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w\/.]+[$#>])\s*(.*)$/,
+          /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.*)$/,
         );
 
         const currentInputOnLine = commandMatch ? commandMatch[1] : "";

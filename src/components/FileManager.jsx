@@ -198,7 +198,7 @@ const FileManager = memo(
       try {
         if (chunkingResetTimerRef.current)
           clearTimeout(chunkingResetTimerRef.current);
-      } catch {}
+      } catch { /* intentionally ignored */ }
       chunkingResetTimerRef.current = setTimeout(() => {
         isChunkingRef.current = false;
         setIsChunking(false);
@@ -209,7 +209,7 @@ const FileManager = memo(
         try {
           if (chunkingResetTimerRef.current)
             clearTimeout(chunkingResetTimerRef.current);
-        } catch {}
+        } catch { /* intentionally ignored */ }
       },
       [],
     );
@@ -260,7 +260,7 @@ const FileManager = memo(
         if (
           targetElement &&
           typeof targetElement.closest === "function" &&
-          targetElement.closest('[data-file-preview-dialog=\"true\"]')
+          targetElement.closest('[data-file-preview-dialog="true"]')
         ) {
           return;
         }
@@ -588,7 +588,7 @@ const FileManager = memo(
       try {
         const globalCached = dirCache.get(tabId, path, CACHE_EXPIRY_TIME);
         if (globalCached) return globalCached;
-      } catch {}
+      } catch { /* intentionally ignored */ }
       const cacheEntry = directoryCacheRef.current.get(path);
       if (!cacheEntry) {
         return null;
@@ -607,7 +607,7 @@ const FileManager = memo(
       // 写入全局缓存
       try {
         dirCache.set(tabId, path, data);
-      } catch {}
+      } catch { /* intentionally ignored */ }
       directoryCacheRef.current.set(path, {
         data,
         timestamp: Date.now(),
@@ -653,7 +653,7 @@ const FileManager = memo(
               // 清理 watchdog/状态
               try {
                 if (bg.watchdog) clearTimeout(bg.watchdog);
-              } catch {}
+              } catch { /* intentionally ignored */ }
               bg.watchdog = null;
 
               const resolve = bg.resolve;
@@ -762,7 +762,7 @@ const FileManager = memo(
               stableListSignatureRef.current = computeFileListSignature(
                 filesRef.current || [],
               );
-            } catch {}
+            } catch { /* intentionally ignored */ }
 
             listTokenRef.current = null;
             setListToken(null);
@@ -812,7 +812,7 @@ const FileManager = memo(
           if (curLastRefresh && Date.now() - curLastRefresh < 700) {
             return { ok: false, skipped: true, reason: "recentlyRefreshed" };
           }
-        } catch {}
+        } catch { /* intentionally ignored */ }
 
         const now = Date.now();
         const lastAttempt = backgroundListLastAttemptAtRef.current || 0;
@@ -827,7 +827,7 @@ const FileManager = memo(
           if (bg.startedAt && now - bg.startedAt > BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS) {
             try {
               if (bg.watchdog) clearTimeout(bg.watchdog);
-            } catch {}
+            } catch { /* intentionally ignored */ }
             bg.watchdog = null;
             bg.inFlight = false;
             bg.token = null;
@@ -907,7 +907,7 @@ const FileManager = memo(
           // watchdog：避免主进程/IPC异常导致 inFlight 永久卡住
           try {
             if (bg.watchdog) clearTimeout(bg.watchdog);
-          } catch {}
+          } catch { /* intentionally ignored */ }
           bg.watchdog = setTimeout(() => {
             try {
               const cur = backgroundListRequestRef.current;
@@ -922,14 +922,14 @@ const FileManager = memo(
                 cur.reject = null;
                 try {
                   if (cur.watchdog) clearTimeout(cur.watchdog);
-                } catch {}
+                } catch { /* intentionally ignored */ }
                 cur.watchdog = null;
                 backgroundListBufferRef.current = [];
                 if (typeof resolve === "function") {
                   resolve({ ok: false, timeout: true });
                 }
               }
-            } catch {}
+            } catch { /* intentionally ignored */ }
           }, BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS);
 
           if (awaitDone) {
@@ -987,7 +987,7 @@ const FileManager = memo(
       const schedule = (delayMs) => {
         try {
           if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        } catch {}
+        } catch { /* intentionally ignored */ }
         pollTimerRef.current = setTimeout(() => {
           tick().catch(() => {});
         }, Math.max(250, delayMs || FILE_LIST_POLL_BASE_INTERVAL_MS));
@@ -1008,7 +1008,7 @@ const FileManager = memo(
             schedule(Math.min(pollStateRef.current.intervalMs, 15000));
             return;
           }
-        } catch {}
+        } catch { /* intentionally ignored */ }
 
         const result = await startBackgroundDirectoryRefresh({
           reason: "poll",
@@ -1054,7 +1054,7 @@ const FileManager = memo(
         cancelled = true;
         try {
           if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        } catch {}
+        } catch { /* intentionally ignored */ }
         pollTimerRef.current = null;
 
         // 清理后台刷新上下文，避免 promise 永久悬挂
@@ -1062,7 +1062,7 @@ const FileManager = memo(
         if (bg && bg.inFlight) {
           try {
             if (bg.watchdog) clearTimeout(bg.watchdog);
-          } catch {}
+          } catch { /* intentionally ignored */ }
           const resolve = bg.resolve;
           bg.inFlight = false;
           bg.token = null;
@@ -1144,7 +1144,7 @@ const FileManager = memo(
         if (flushTimerRef.current) {
           clearTimeout(flushTimerRef.current);
         }
-      } catch {}
+      } catch { /* intentionally ignored */ }
       flushTimerRef.current = null;
       chunkBufferRef.current = [];
       if (listTokenRef.current) {
@@ -3751,6 +3751,9 @@ const FileManager = memo(
               }, 1500);
             } catch (downloadError) {
               // 文件夹下载过程中出错
+              if (!downloadError) {
+                throw new Error("Download failed");
+              }
               throw downloadError; // 重新抛出错误，让外层 catch 处理
             }
           } else {
@@ -4092,7 +4095,7 @@ const FileManager = memo(
       if (
         targetElement &&
         typeof targetElement.closest === "function" &&
-        targetElement.closest('[data-file-preview-dialog=\"true\"]')
+        targetElement.closest('[data-file-preview-dialog="true"]')
       ) {
         return;
       }

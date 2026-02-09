@@ -89,16 +89,16 @@ async function uploadWithPipeline({
     if (typeof onBytes === "function") onBytes(buf.length);
     lastProgressAt = Date.now();
     if (typeof getCancelled === "function" && getCancelled()) {
-      try { read.destroy(new Error("Transfer cancelled by user")); } catch {}
-      try { write.destroy(new Error("Transfer cancelled by user")); } catch {}
+      try { read.destroy(new Error("Transfer cancelled by user")); } catch { /* intentionally ignored */ }
+      try { write.destroy(new Error("Transfer cancelled by user")); } catch { /* intentionally ignored */ }
     }
   };
   read.on("data", onData);
 
   const watchdog = setInterval(() => {
     if (Date.now() - lastProgressAt > noProgressTimeoutMs) {
-      try { read.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch {}
-      try { write.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch {}
+      try { read.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch { /* intentionally ignored */ }
+      try { write.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch { /* intentionally ignored */ }
     }
   }, 1000);
 
@@ -165,16 +165,16 @@ async function downloadWithPipeline({
     if (typeof onBytes === "function") onBytes(buf.length);
     lastProgressAt = Date.now();
     if (typeof getCancelled === "function" && getCancelled()) {
-      try { read.destroy(new Error("Transfer cancelled by user")); } catch {}
-      try { write.destroy(new Error("Transfer cancelled by user")); } catch {}
+      try { read.destroy(new Error("Transfer cancelled by user")); } catch { /* intentionally ignored */ }
+      try { write.destroy(new Error("Transfer cancelled by user")); } catch { /* intentionally ignored */ }
     }
   };
   read.on("data", onData);
 
   const watchdog = setInterval(() => {
     if (Date.now() - lastProgressAt > noProgressTimeoutMs) {
-      try { read.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch {}
-      try { write.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch {}
+      try { read.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch { /* intentionally ignored */ }
+      try { write.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch { /* intentionally ignored */ }
     }
   }, 1000);
 
@@ -285,6 +285,9 @@ async function createRemoteDirectoryRecursive(sftp, remotePath) {
         });
       });
     } catch (error) {
+      if (!error) {
+        throw new Error("Failed to create remote directory");
+      }
       throw error;
     }
   }
@@ -314,8 +317,10 @@ function init(
   if (electronShell) shell = electronShell;
 
   if (typeof getChildProcessInfoFunc !== "function") {
+    getChildProcessInfo = () => null;
+  } else {
+    getChildProcessInfo = getChildProcessInfoFunc;
   }
-  getChildProcessInfo = getChildProcessInfoFunc;
 
   if (typeof sendToRendererFunc !== "function") {
     sendToRenderer = (channel, ...args) =>
