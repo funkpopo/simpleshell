@@ -152,38 +152,7 @@ async function getRemoteSystemInfo(sshClient) {
           }
         }
 
-        // 获取macOS版本
-        function getMacOSVersion() {
-          sshClient.exec("sw_vers", (err, stream) => {
-            if (err) {
-              getHostname();
-              return;
-            }
-
-            let macOutput = "";
-            stream.on("data", (data) => {
-              macOutput += data.toString();
-            });
-
-            stream.on("close", () => {
-              const productMatch = macOutput.match(/ProductName:\s+(.+)/);
-              const versionMatch = macOutput.match(/ProductVersion:\s+(.+)/);
-
-              if (productMatch) {
-                result.os.distro = productMatch[1].trim();
-              }
-              if (versionMatch) {
-                result.os.version = versionMatch[1].trim();
-              }
-
-              result.os.release =
-                `${result.os.distro || "macOS"} ${result.os.version || ""}`.trim();
-              getHostname();
-            });
-          });
-        }
-
-        // 获取Windows版本
+        // Get Windows version
         function getWindowsVersion() {
           sshClient.exec(
             "wmic os get Caption,Version,OSArchitecture /value",
@@ -309,7 +278,7 @@ async function getRemoteSystemInfo(sshClient) {
                     }
                   }
                 }
-              } catch (error) {}
+              } catch {}
 
               getCpuInfo();
             });
@@ -347,7 +316,7 @@ async function getRemoteSystemInfo(sshClient) {
                   // 解析Linux CPU核心数
                   result.cpu.cores = parseInt(cpuOutput.trim(), 10) / 2; // 除以2因为每个处理器有两行信息
                 }
-              } catch (error) {}
+              } catch {}
 
               getCpuModel();
             });
@@ -386,7 +355,7 @@ async function getRemoteSystemInfo(sshClient) {
                     result.cpu.model = match[1].trim();
                   }
                 }
-              } catch (error) {}
+              } catch {}
 
               getCpuUsage();
             });
@@ -433,7 +402,7 @@ async function getRemoteSystemInfo(sshClient) {
                   // 解析Linux CPU使用率
                   result.cpu.usage = parseFloat(usageOutput.trim());
                 }
-              } catch (error) {}
+              } catch {}
 
               finalize();
             });

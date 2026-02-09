@@ -28,7 +28,6 @@ import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
-import LaunchIcon from "@mui/icons-material/Launch";
 import { RiTerminalBoxLine } from "react-icons/ri";
 import {
   VscTerminalLinux,
@@ -140,7 +139,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           severity: "error",
         });
       }
-    } catch (error) {
+    } catch {
       setHasInitialDetection(true);
       setSnackbar({
         open: true,
@@ -217,25 +216,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   );
 
   // 处理右键菜单
-  const handleContextMenu = useCallback((event, terminal) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setSelectedTerminal(terminal);
-    setContextMenu({
-      mouseX: event.clientX - 2,
-      mouseY: event.clientY - 4,
-    });
-  }, []);
-
-  const handleCloseContextMenu = useCallback(() => {
-    setContextMenu(null);
-    setSelectedTerminal(null);
-  }, []);
-
-  // 移除自定义终端相关功能
-  // 只保留系统终端检测和启动功能
-
-  // 清空搜索
   const clearSearch = useCallback(() => {
     setSearchQuery("");
     if (searchInputRef.current) {
