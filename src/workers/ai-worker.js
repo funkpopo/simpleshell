@@ -58,7 +58,7 @@ const openaiAdapter = {
   /**
    * 构建请求体
    */
-  buildRequestBody(model, messages, isStream, maxTokens) {
+  buildRequestBody(model, messages, isStream) {
     const body = {
       model: model,
       messages: messages,
@@ -94,7 +94,7 @@ const openaiAdapter = {
             jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
           return { content: jsonData.choices[0].delta.content };
         }
-      } catch (e) {
+      } catch {
         // 忽略解析错误
       }
     } else if (line === "data: [DONE]") {
@@ -138,6 +138,7 @@ const anthropicAdapter = {
    * 构建模型列表API的URL
    */
   buildModelsUrl(baseUrl) {
+    void baseUrl;
     // Anthropic 没有官方的模型列表API，返回null
     return null;
   },
@@ -231,7 +232,7 @@ const anthropicAdapter = {
         } else if (jsonData.type === "message_stop") {
           return { done: true };
         }
-      } catch (e) {
+      } catch {
         // 忽略解析错误
       }
     }
@@ -242,6 +243,7 @@ const anthropicAdapter = {
    * 解析模型列表响应
    */
   parseModelsResponse(data) {
+    void data;
     // Anthropic没有模型列表API，返回预定义列表
     return [
       "claude-3-5-sonnet-20241022",
@@ -301,6 +303,7 @@ const geminiAdapter = {
    * 构建请求头
    */
   buildHeaders(apiKey) {
+    void apiKey;
     // Gemini使用URL参数传递API key，不需要Authorization头
     return {
       "Content-Type": "application/json",
@@ -311,6 +314,7 @@ const geminiAdapter = {
    * 构建请求体
    */
   buildRequestBody(model, messages, isStream, maxTokens) {
+    void isStream;
     // 转换消息格式：OpenAI格式 -> Gemini格式
     const contents = [];
     let systemInstruction = null;
@@ -386,7 +390,7 @@ const geminiAdapter = {
             return { content: textPart.text };
           }
         }
-      } catch (e) {
+      } catch {
         // 忽略解析错误
       }
     }
@@ -460,7 +464,7 @@ function createProxyAgent(protocol) {
         return new HttpProxyAgent(proxyUrl);
       }
     }
-  } catch (error) {
+  } catch {
     // 创建代理Agent失败，返回null使用直连
     return null;
   }
@@ -520,7 +524,7 @@ parentPort.on("message", async (message) => {
  * @param {Object} requestData - 请求数据
  */
 function handleAPIRequest(requestId, requestData) {
-  const { url, apiKey, model, messages, isStream, sessionId, type } = requestData;
+  const { isStream, type } = requestData;
 
   try {
     if (type === "models") {
@@ -597,7 +601,7 @@ function handleStandardRequest(requestId, requestData) {
           if (errorData.error && errorData.error.message) {
             errorMessage = errorData.error.message;
           }
-        } catch (e) {
+        } catch {
           // 忽略解析错误
         }
         parentPort.postMessage({
@@ -725,7 +729,7 @@ function handleStreamRequest(requestId, requestData) {
           if (parsed.error && parsed.error.message) {
             errorMessage = parsed.error.message;
           }
-        } catch (e) {
+        } catch {
           // 忽略解析错误
         }
         parentPort.postMessage({
@@ -1081,7 +1085,7 @@ process.on("exit", (code) => {
         timestamp: Date.now(),
       },
     });
-  } catch (e) {
+  } catch {
     // 忽略退出时的通信错误
   }
 });
