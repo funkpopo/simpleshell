@@ -104,12 +104,7 @@ const escapeRegex = (value = "") =>
     .map((char) => (REGEX_META_CHARS.has(char) ? `\${char}` : char))
     .join("");
 
-const ESC_CHAR = String.fromCharCode(27);
-const BELL_CHAR = String.fromCharCode(7);
-const OSC_SEQUENCE_REGEX = new RegExp(
-  `${ESC_CHAR}][^]*?(?:${BELL_CHAR}|${ESC_CHAR}${String.fromCharCode(92)})`,
-  "g",
-);
+const OSC_SEQUENCE_REGEX = /\u001b\][^]*?(?:\u0007|\u001b\\)/g;
 const HOST_HEX_SUFFIX_REGEX = /(@[A-Za-z0-9_.-]+)-([0-9a-f]{6,16})(?=[:#\s])/gi;
 
 const parseStyleToFormat = (style) => {
