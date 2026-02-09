@@ -15,14 +15,14 @@ import { translateError } from '../utils/errorTranslator';
 const ErrorNotification = ({ error, open, onClose }) => {
   const [showDetails, setShowDetails] = useState(false);
 
-  if (!error) return null;
-
   // 不对展开/收起状态做“持久化”：
   // - error 变化（例如切换到其他标签页触发了不同错误）时，重置为收起
   // - 重新打开通知时，也重置为收起
   useEffect(() => {
-    if (open) setShowDetails(false);
+    if (open && error) setShowDetails(false);
   }, [open, error]);
+
+  if (!error) return null;
 
   // 使用新的错误翻译器
   const translatedError = translateError(error);
