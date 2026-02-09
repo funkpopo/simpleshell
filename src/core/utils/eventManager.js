@@ -20,7 +20,7 @@ class EventManager {
     const wrappedHandler = (...args) => {
       try {
         return handler(...args);
-      } catch (error) {
+      } catch {
         // 事件处理器执行失败，可以考虑使用项目的日志系统
       }
     };
@@ -59,7 +59,7 @@ class EventManager {
     const wrappedCallback = () => {
       try {
         callback();
-      } catch (error) {
+      } catch {
         // 定时器回调执行失败，可以考虑使用项目的日志系统
       }
     };
@@ -145,11 +145,11 @@ class EventManager {
     }
 
     // 清理所有事件监听器
-    for (const [id, listener] of this.listeners) {
+    for (const [, listener] of this.listeners) {
       const { target, event, handler, options } = listener;
       try {
         target.removeEventListener(event, handler, options);
-      } catch (error) {
+      } catch {
         // 移除事件监听器失败，可以考虑使用项目的日志系统
       }
     }
@@ -163,7 +163,7 @@ class EventManager {
         } else {
           clearTimeout(timer.id);
         }
-      } catch (error) {
+      } catch {
         // 清除定时器失败，可以考虑使用项目的日志系统
       }
     }
@@ -175,7 +175,7 @@ class EventManager {
         if (observer && typeof observer.disconnect === "function") {
           observer.disconnect();
         }
-      } catch (error) {
+      } catch {
         // 断开观察者失败，可以考虑使用项目的日志系统
       }
     }
@@ -185,7 +185,7 @@ class EventManager {
     for (const cleanupFn of this.cleanupFunctions) {
       try {
         cleanupFn();
-      } catch (error) {
+      } catch {
         // 执行清理函数失败，可以考虑使用项目的日志系统
       }
     }

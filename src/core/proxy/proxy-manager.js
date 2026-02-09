@@ -274,7 +274,7 @@ class ProxyManager {
       if (this.systemProxyConfig && this.isValidProxyConfig(this.systemProxyConfig)) {
         return this.systemProxyConfig;
       }
-    } catch (_) {
+    } catch {
       // ignore
     }
 
@@ -291,7 +291,7 @@ class ProxyManager {
     try {
       // 在主进程中可用；在纯 Node 环境中可能不可用
       electronSession = require("electron")?.session || null;
-    } catch (_) {
+    } catch {
       electronSession = null;
     }
 
@@ -594,7 +594,7 @@ class ProxyManager {
     } catch (error) {
       try {
         socket.destroy();
-      } catch (_) {
+      } catch {
         // ignore
       }
       throw error;
@@ -736,7 +736,7 @@ class ProxyManager {
     } catch (error) {
       try {
         socket.destroy();
-      } catch (_) {
+      } catch {
         // ignore
       }
       throw error;
@@ -819,7 +819,7 @@ class ProxyManager {
     } catch (error) {
       try {
         socket.destroy();
-      } catch (_) {
+      } catch {
         // ignore
       }
       throw error;
@@ -887,7 +887,7 @@ class ProxyManager {
     this.initialized = false;
     try {
       this._systemProxyByHost?.clear?.();
-    } catch (_) {
+    } catch {
       // ignore
     }
     logToFile("ProxyManager cleanup completed", "INFO");
