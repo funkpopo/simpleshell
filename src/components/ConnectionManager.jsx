@@ -756,14 +756,14 @@ const ConnectionManager = memo(
                 }
                 setIsLoading(false);
               })
-              .catch((error) => {
+              .catch(() => {
                 showError(t("connectionManager.loadFailed"));
                 setIsLoading(false);
               });
           } else {
             setIsLoading(false);
           }
-        } catch (error) {
+        } catch {
           setIsLoading(false);
         }
       }
@@ -814,7 +814,7 @@ const ConnectionManager = memo(
               }
             }
           })
-          .catch((error) => {
+          .catch(() => {
             if (isMounted) {
               showError(t("connectionManager.reloadFailed"));
             }
@@ -1108,7 +1108,7 @@ const ConnectionManager = memo(
         // 设置标志，避免自己触发的变更事件导致重复加载
         isSavingRef.current = true;
         window.terminalAPI.saveConnections(newConnections)
-          .catch((error) => {
+          .catch(() => {
             showError(t("connectionManager.saveFailed"));
           })
           .finally(() => {
@@ -1333,7 +1333,7 @@ const ConnectionManager = memo(
         // 设置标志，避免自己触发的变更事件导致重复加载
         isSavingRef.current = true;
         window.terminalAPI.saveConnections(newConnections)
-          .catch((error) => {
+          .catch(() => {
             showError(t("connectionManager.saveFailed"));
           })
           .finally(() => {
