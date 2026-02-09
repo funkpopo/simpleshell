@@ -1,5 +1,4 @@
 const { EventEmitter } = require("events");
-const { logToFile } = require("../utils/logger");
 
 // 零拷贝引擎配置
 const ZERO_COPY_CONFIG = {
@@ -23,50 +22,6 @@ const TRANSFER_STATE = {
   COMPLETED: "completed",
   FAILED: "failed",
 };
-
-class ZeroCopyBuffer {
-  constructor(source, size) {
-    this.source = source;
-    this.size = size;
-    this.views = new Set();
-    this.refCount = 0;
-
-    this.createBuffer();
-  }
-
-  createBuffer() {
-    if (Buffer.isBuffer(this.source)) {
-      this.buffer = this.source;
-    } else if (typeof this.source === "number") {
-      this.buffer = Buffer.allocUnsafeSlow(this.source);
-    } else {
-      throw new Error("不支持的缓冲区源类型");
-    }
-  }
-
-  createView(offset = 0, length = this.buffer.length) {
-    const actualLength = Math.min(length, this.buffer.length - offset);
-    const view = this.buffer.subarray(offset, offset + actualLength);
-
-    this.views.add(view);
-    this.refCount++;
-
-    return view;
-  }
-
-  releaseView(view) {
-    if (this.views.has(view)) {
-      this.views.delete(view);
-      this.refCount--;
-      return true;
-    }
-    return false;
-  }
-
-  getRawBuffer() {
-    return this.buffer;
-  }
-}
 
 class ZeroCopyTransfer extends EventEmitter {
   constructor(source, destination, options = {}) {
@@ -172,12 +127,12 @@ class ZeroCopyEngine extends EventEmitter {
   async createTransfer(source, destination, options = {}) {
     const transfer = new ZeroCopyTransfer(source, destination, options);
 
-    transfer.on("completed", (result) => {
+    transfer.on("completed", () => {
       this.activeTransfers.delete(transfer.id);
       this.stats.completedTransfers++;
     });
 
-    transfer.on("failed", (result) => {
+    transfer.on("failed", () => {
       this.activeTransfers.delete(transfer.id);
       this.stats.failedTransfers++;
     });

@@ -250,7 +250,7 @@ class SSHHandlers {
           win.webContents.send("top-connections-changed", lastConnections);
         }
       }
-    } catch (err) {
+    } catch {
       // ignore broadcast errors
     }
   }
@@ -282,7 +282,7 @@ class SSHHandlers {
 
           if (mainWindow && !mainWindow.isDestroyed()) {
             // 背压处理：检查渲染进程是否能跟上
-            const sendResult = mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
+            mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
             // 如果IPC队列过长，暂停流
             if (!isPaused && mainWindow.webContents.getProcessId && buffer.length > 1024 * 1024) {
               stream.pause();
@@ -306,7 +306,7 @@ class SSHHandlers {
       }
     };
 
-    const extendedDataHandler = (data, type) => {
+    const extendedDataHandler = (data) => {
       try {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(
@@ -731,7 +731,7 @@ class SSHHandlers {
               `\r\n连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多1分钟）...\r\n`,
             );
           }
-        } catch (_) {}
+        } catch {}
 
         reconnectManager
           .waitForReconnect(connectionKey, 60_000)
