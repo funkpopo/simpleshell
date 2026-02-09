@@ -33,7 +33,7 @@ class ProxyHandlers {
     ];
   }
 
-  async getStatus(event) {
+  async getStatus() {
     try {
       return proxyManager.getProxyStatus();
     } catch (error) {
@@ -42,7 +42,7 @@ class ProxyHandlers {
     }
   }
 
-  async getDefaultConfig(event) {
+  async getDefaultConfig() {
     try {
       return proxyManager.getDefaultProxyConfig();
     } catch (error) {
@@ -51,7 +51,7 @@ class ProxyHandlers {
     }
   }
 
-  async saveDefaultConfig(event, proxyConfig) {
+  async saveDefaultConfig(proxyConfig) {
     try {
       return proxyManager.saveDefaultProxyConfig(proxyConfig);
     } catch (error) {
@@ -60,7 +60,7 @@ class ProxyHandlers {
     }
   }
 
-  async getSystemConfig(event) {
+  async getSystemConfig() {
     try {
       return proxyManager.getSystemProxyConfig();
     } catch (error) {

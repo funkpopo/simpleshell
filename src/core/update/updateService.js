@@ -266,7 +266,7 @@ class UpdateService {
           dataTimer = setTimeout(() => {
             handleError(new Error("Download timeout: no data received for 60 seconds"));
             if (this.currentRequest) {
-              try { this.currentRequest.abort(); } catch (e) {}
+              try { this.currentRequest.abort(); } catch {}
             }
           }, DATA_TIMEOUT);
         };
@@ -286,7 +286,7 @@ class UpdateService {
         // 连接超时
         connectionTimer = setTimeout(() => {
           handleError(new Error("Connection timeout: unable to connect within 30 seconds"));
-          try { request.abort(); } catch (e) {}
+          try { request.abort(); } catch {}
         }, CONNECTION_TIMEOUT);
 
         request.on("response", async (response) => {
@@ -523,7 +523,7 @@ class UpdateService {
     } else if (fileExt === ".deb") {
       // DEB package
       return new Promise((resolve, reject) => {
-        exec(`pkexec dpkg -i "${filePath}"`, (error, stdout, stderr) => {
+        exec(`pkexec dpkg -i "${filePath}"`, (error) => {
           if (error) {
             logToFile(`DEB installer error: ${error.message}`, "ERROR");
             reject(error);

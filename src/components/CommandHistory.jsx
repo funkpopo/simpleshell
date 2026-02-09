@@ -41,10 +41,8 @@ import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
 
 // 虚拟化历史记录项组件
-const HistoryItem = React.memo(({ index, style, ariaAttributes, filteredHistory, selectMode, selectedCommands, toggleCommandSelection, handleSendCommand, handleMenuOpen, formatTime }) => {
+const HistoryItem = React.memo(({ index, style, filteredHistory, selectMode, selectedCommands, toggleCommandSelection, handleSendCommand, handleMenuOpen, formatTime }) => {
   const theme = useTheme();
-  const { t } = useTranslation();
-
   const item = filteredHistory[index];
   if (!item) return null;
 
@@ -184,7 +182,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
   // 对话框状态
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [currentCommand, setCurrentCommand] = useState(null);
+  const [, setCurrentCommand] = useState(null);
   const [editedCommand, setEditedCommand] = useState("");
 
   // 菜单状态
@@ -243,7 +241,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
           showNotification("加载历史记录失败", "error");
         }
       }
-    } catch (error) {
+    } catch {
       showNotification("加载历史记录出错", "error");
     } finally {
       setLoading(false);
@@ -349,17 +347,13 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     ],
   );
 
-  // 获取过滤后的历史记录
-  const getFilteredHistory = () => {
-    return filteredHistory;
-  };
 
   // 复制命令到剪贴板
   const handleCopyCommand = async (command) => {
     try {
       await window.clipboardAPI.writeText(command);
       showNotification(t("commandHistory.commandCopied"));
-    } catch (error) {
+    } catch {
       showNotification(t("commandHistory.copyFailed"), "error");
     }
     handleMenuClose();
@@ -414,7 +408,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
           }
         }
       }
-    } catch (error) {
+    } catch {
       showNotification(t("commandHistory.saveToShortcutsFailed"), "error");
     }
 
@@ -435,7 +429,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
           showNotification(t("commandHistory.deleteFailed"), "error");
         }
       }
-    } catch (error) {
+    } catch {
       showNotification(t("commandHistory.deleteFailed"), "error");
     }
     handleMenuClose();
@@ -478,7 +472,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
           showNotification(t("commandHistory.batchDeleteFailed"), "error");
         }
       }
-    } catch (error) {
+    } catch {
       showNotification(t("commandHistory.batchDeleteFailed"), "error");
     }
   };
@@ -497,7 +491,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
           showNotification(t("commandHistory.clearAllFailed"), "error");
         }
       }
-    } catch (error) {
+    } catch {
       showNotification(t("commandHistory.clearAllFailed"), "error");
     }
   };

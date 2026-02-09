@@ -32,14 +32,14 @@ class WindowHandlers {
     ];
   }
 
-  async minimize(event) {
+  async minimize() {
     const mainWindow = getPrimaryWindow();
     if (!mainWindow) return false;
     mainWindow.minimize();
     return true;
   }
 
-  async toggleMaximize(event) {
+  async toggleMaximize() {
     const mainWindow = getPrimaryWindow();
     if (!mainWindow) return false;
 
@@ -57,14 +57,14 @@ class WindowHandlers {
     };
   }
 
-  async close(event) {
+  async close() {
     const mainWindow = getPrimaryWindow();
     if (!mainWindow) return false;
     mainWindow.close();
     return true;
   }
 
-  async getState(event) {
+  async getState() {
     const mainWindow = getPrimaryWindow();
     if (!mainWindow) {
       return { isMaximized: false, isFullScreen: false };

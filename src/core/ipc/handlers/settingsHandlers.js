@@ -96,7 +96,7 @@ class SettingsHandlers {
   }
 
   // 实现各个处理器方法
-  async loadUISettings(event) {
+  async loadUISettings() {
     try {
       const settings = configService.loadUISettings();
       // 直接返回设置对象,避免嵌套
@@ -117,7 +117,7 @@ class SettingsHandlers {
     }
   }
 
-  async loadLogSettings(event) {
+  async loadLogSettings() {
     try {
       const settings = configService.loadLogSettings();
       return { success: true, settings };
@@ -152,7 +152,7 @@ class SettingsHandlers {
     }
   }
 
-  async updatePrefetchSettings(event, settings) {
+  async updatePrefetchSettings() {
     try {
       // Prefetch settings 可能需要单独的处理逻辑
       // 暂时注释掉，因为 ConfigService 中没有对应的方法
@@ -165,7 +165,7 @@ class SettingsHandlers {
     }
   }
 
-  async getShortcutCommands(event) {
+  async getShortcutCommands() {
     try {
       const shortcuts = configService.loadShortcutCommands();
       return { success: true, data: shortcuts };
@@ -216,7 +216,7 @@ class SettingsHandlers {
     }
   }
 
-  async clearCommandHistory(event) {
+  async clearCommandHistory() {
     try {
       commandHistoryService.clearHistory();
       logToFile("Command history cleared", "INFO");
@@ -227,7 +227,7 @@ class SettingsHandlers {
     }
   }
 
-  async getCommandStatistics(event) {
+  async getCommandStatistics() {
     try {
       const stats = commandHistoryService.getStatistics();
       return { success: true, data: stats };
@@ -237,7 +237,7 @@ class SettingsHandlers {
     }
   }
 
-  async getAllCommandHistory(event) {
+  async getAllCommandHistory() {
     try {
       const history = commandHistoryService.getAllHistory();
       return { success: true, data: history };

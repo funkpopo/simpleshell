@@ -1,5 +1,4 @@
 const { spawn } = require("child_process");
-const path = require("path");
 const EventEmitter = require("events");
 
 class LocalTerminalManager extends EventEmitter {
@@ -70,7 +69,7 @@ class LocalTerminalManager extends EventEmitter {
    * 启动Windows终端
    */
   async launchWindowsTerminal(terminalInfo) {
-    const { config, tabId, options, distribution } = terminalInfo;
+    const { config, tabId, distribution } = terminalInfo;
 
     // 统一字段名：支持 executable 和 executablePath
     if (!config.executablePath && config.executable) {
@@ -188,7 +187,7 @@ class LocalTerminalManager extends EventEmitter {
       if (!fs.existsSync(config.executablePath)) {
         throw new Error(`可执行文件不存在: ${config.executablePath}`);
       }
-    } catch (fsError) {
+    } catch {
       // File check failed, continue with launch attempt
     }
 
@@ -209,7 +208,6 @@ class LocalTerminalManager extends EventEmitter {
     }
 
     if (!childProcess.pid) {
-      const error = new Error(`进程启动失败，未获得PID`);
       terminalInfo.status = "error";
       this.emit("terminalError", {
         tabId,
@@ -234,7 +232,7 @@ class LocalTerminalManager extends EventEmitter {
           terminalInfo.status = "ready";
           this.emit("terminalReady", { tabId, hwnd, pid: childProcess.pid });
         }
-      } catch (error) {
+      } catch {
         // Error finding window handle
       }
     }, 1000);
@@ -367,7 +365,7 @@ class LocalTerminalManager extends EventEmitter {
 
       this.activeTerminals.delete(tabId);
       this.emit("terminalClosed", { tabId });
-    } catch (error) {
+    } catch {
       // Error closing terminal
     }
   }
@@ -420,19 +418,19 @@ class LocalTerminalManager extends EventEmitter {
   async cleanup() {
     try {
       // 关闭所有活动的终端
-      for (const [tabId, terminalInfo] of this.activeTerminals.entries()) {
+      for (const [, terminalInfo] of this.activeTerminals.entries()) {
         try {
           if (terminalInfo.process && !terminalInfo.process.killed) {
             terminalInfo.process.kill();
           }
-        } catch (error) {
+        } catch {
           // Error closing individual terminal
         }
       }
 
       this.activeTerminals.clear();
       this.removeAllListeners();
-    } catch (error) {
+    } catch {
       // Error during terminal manager cleanup
     }
   }

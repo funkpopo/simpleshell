@@ -60,7 +60,7 @@ class AppHandlers {
   }
 
   // 实现各个处理器方法
-  async getVersion(event) {
+  async getVersion() {
     try {
       return {
         success: true,
@@ -72,7 +72,7 @@ class AppHandlers {
     }
   }
 
-  async closeApp(event) {
+  async closeApp() {
     try {
       logToFile("Application closing via IPC", "INFO");
       app.quit();
@@ -83,7 +83,7 @@ class AppHandlers {
     }
   }
 
-  async reloadWindow(event) {
+  async reloadWindow() {
     try {
       const mainWindow = BrowserWindow.getAllWindows()[0];
       if (mainWindow) {
@@ -98,7 +98,7 @@ class AppHandlers {
     }
   }
 
-  async openExternal(event, url) {
+  async openExternal(url) {
     try {
       if (!url || typeof url !== "string") {
         return { success: false, error: "Invalid URL" };
@@ -125,7 +125,7 @@ class AppHandlers {
     }
   }
 
-  async checkForUpdate(event) {
+  async checkForUpdate() {
     try {
       return await updateService.checkForUpdate();
     } catch (error) {
@@ -162,7 +162,7 @@ class AppHandlers {
     }
   }
 
-  async installUpdate(event, filePath) {
+  async installUpdate(filePath) {
     try {
       if (!filePath || typeof filePath !== "string") {
         return { success: false, error: "Invalid file path" };
@@ -181,7 +181,7 @@ class AppHandlers {
     }
   }
 
-  async getDownloadProgress(event) {
+  async getDownloadProgress() {
     try {
       const progress = updateService.getDownloadProgress();
       return { success: true, progress };
@@ -191,7 +191,7 @@ class AppHandlers {
     }
   }
 
-  async cancelDownload(event) {
+  async cancelDownload() {
     try {
       updateService.cancelDownload();
       return { success: true, message: "Download cancelled" };

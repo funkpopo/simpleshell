@@ -762,7 +762,7 @@ ${conversationText}`;
   }, [onExecuteCommand]);
 
   // 处理命令复制
-  const handleCopyCommand = useCallback((command) => {
+  const handleCopyCommand = useCallback(() => {
     // 可以添加额外的复制成功提示逻辑
   }, []);
 
@@ -783,7 +783,7 @@ ${conversationText}`;
                 {children}
               </Typography>
             ),
-            code: ({ className, children }) => (
+            code: ({ children }) => (
               <Box
                 component="code"
                 sx={{
@@ -871,7 +871,7 @@ ${conversationText}`;
                       {children}
                     </Typography>
                   ),
-                  code: ({ className, children }) => (
+                  code: ({ children }) => (
                     <Box
                       component="code"
                       sx={{
@@ -1127,7 +1127,7 @@ ${conversationText}`;
                             {children}
                           </Typography>
                         ),
-                        code: ({ className, children }) => (
+                        code: ({ children }) => (
                           <Box
                             component="code"
                             sx={{
@@ -1200,7 +1200,7 @@ ${conversationText}`;
                   : "rgba(255, 255, 255, 0.8)",
             }}
           >
-            {messages.map((message, index) => (
+            {messages.map((message) => (
               <Box
                 key={message.id}
                 onClick={() => scrollToMessage(message.id)}
