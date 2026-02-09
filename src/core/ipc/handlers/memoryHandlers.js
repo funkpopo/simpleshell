@@ -54,7 +54,7 @@ class MemoryHandlers {
       const filepath = path.join(tempDir, "mem.json");
       const content = await fs.readFile(filepath, "utf-8");
       return JSON.parse(content);
-    } catch (err) {
+    } catch {
       return null;
     }
   }
@@ -65,7 +65,7 @@ class MemoryHandlers {
       const filepath = path.join(tempDir, "mem.json");
       await fs.unlink(filepath);
       return true;
-    } catch (err) {
+    } catch {
       return false;
     }
   }

@@ -7,7 +7,6 @@ import {
   SettingsSkeleton,
   CommandHistorySkeleton,
   AIChatSkeleton,
-  ConnectionManagerSkeleton,
 } from "./SkeletonLoader.jsx";
 
 // React 19 优化：使用 memo 包装懒加载组件工厂函数，减少不必要的重渲染

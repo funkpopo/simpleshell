@@ -18,11 +18,11 @@ class TerminalManager {
     this.processManager.cleanup();
   }
 
-  async createSSHTerminal(processId, sshConfig, mainWindow) {
+  async createSSHTerminal(sshConfig) {
     return this.processManager.startSSH(sshConfig);
   }
 
-  async createTelnetTerminal(processId, telnetConfig, mainWindow) {
+  async createTelnetTerminal() {
     // Implement Telnet terminal creation
     return { success: false, error: "Telnet not implemented" };
   }

@@ -12,7 +12,7 @@ function serializeError(error) {
   if (typeof error === "object") return error.message || JSON.stringify(error);
   try {
     return String(error);
-  } catch (_) {
+  } catch {
     return "Unknown error";
   }
 }

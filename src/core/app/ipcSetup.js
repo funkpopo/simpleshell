@@ -155,7 +155,7 @@ class IPCSetup {
     safeHandle(ipcMain, "terminal:loadTopConnections", async () => {
       try {
         return configService.loadLastConnections();
-      } catch (e) {
+      } catch {
         return [];
       }
     });
@@ -195,7 +195,7 @@ class IPCSetup {
         try {
           const systemInfo = require("../../modules/system-info");
           return await systemInfo.getLocalSystemInfo();
-        } catch (fallbackError) {
+        } catch {
           return {
             error: "获取系统信息失败",
             message: error.message,
@@ -239,7 +239,7 @@ class IPCSetup {
         try {
           const systemInfo = require("../../modules/system-info");
           return systemInfo.getProcessList();
-        } catch (fallbackError) {
+        } catch {
           return {
             error: "获取进程列表失败",
             message: error.message,

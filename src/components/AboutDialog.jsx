@@ -99,7 +99,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   const handleOpenExternalLink = useCallback(
     (url) => {
       if (window.terminalAPI?.openExternal) {
-        window.terminalAPI.openExternal(url).catch((error) => {
+        window.terminalAPI.openExternal(url).catch(() => {
           showError(t("app.cannotOpenLinkAlert", { url }));
         });
       } else {

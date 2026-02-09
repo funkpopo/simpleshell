@@ -1,4 +1,4 @@
-const logToFile = (message, level = "INFO") => {
+const logToFile = () => {
   // 在开发环境下输出日志
   if (
     process.env.NODE_ENV === "development" &&
@@ -55,7 +55,7 @@ export const detectImageSupport = () => {
       if (dataUrl.startsWith(`data:${mimeType}`)) {
         supportedFormats.push(format);
       }
-    } catch (error) {
+    } catch {
       // 格式不支持
     }
   });
@@ -63,7 +63,7 @@ export const detectImageSupport = () => {
   cachedImageSupport = {
     supported: true,
     formats: supportedFormats,
-    maxTextureSize: getMaxTextureSize(ctx),
+    maxTextureSize: getMaxTextureSize(),
     memoryLimit: getEstimatedMemoryLimit(),
   };
 
@@ -73,7 +73,7 @@ export const detectImageSupport = () => {
 // 缓存WebGL检测结果
 let cachedMaxTextureSize = null;
 
-const getMaxTextureSize = (ctx) => {
+const getMaxTextureSize = () => {
   // 使用缓存避免重复检测
   if (cachedMaxTextureSize !== null) {
     return cachedMaxTextureSize;

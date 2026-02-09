@@ -28,7 +28,7 @@ function safeCallDisposer(disposer) {
     const result = disposer();
     // removeResource 是 async，这里允许返回 Promise
     return Promise.resolve(result);
-  } catch (e) {
+  } catch {
     return Promise.reject(e);
   }
 }
@@ -52,7 +52,7 @@ function detachCurrentWorkerEventHandlers(worker) {
     if (currentWorkerHandlers.exitHandler) {
       worker.removeListener("exit", currentWorkerHandlers.exitHandler);
     }
-  } catch (e) {
+  } catch {
     // 忽略解绑异常，避免影响后续清理流程
   } finally {
     currentWorkerHandlers = null;
@@ -185,7 +185,7 @@ function createAIWorker() {
     if (!disposeWorkerResource) {
       try {
         aiWorker.terminate();
-      } catch (e) {
+      } catch {
         // ignore
       }
     }

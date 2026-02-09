@@ -74,7 +74,7 @@ class ErrorBoundary extends React.Component {
     this.errorLogger = GlobalErrorLogger.getInstance();
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError() {
     return { hasError: true };
   }
 
@@ -172,7 +172,7 @@ class GlobalErrorBoundary extends React.Component {
     }
   };
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError() {
     return { hasError: true };
   }
 

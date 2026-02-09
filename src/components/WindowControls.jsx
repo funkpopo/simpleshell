@@ -42,7 +42,7 @@ const WindowControls = () => {
       try {
         const state = await window.terminalAPI.getWindowState();
         updateState(state);
-      } catch (error) {
+      } catch {
         // 状态获取失败时忽略错误，保持默认值
       }
     };
@@ -68,7 +68,7 @@ const WindowControls = () => {
     try {
       const state = await window.terminalAPI.toggleMaximizeWindow();
       updateState(state);
-    } catch (error) {
+    } catch {
       // 忽略切换失败，状态会通过事件同步
     }
   }, [updateState]);

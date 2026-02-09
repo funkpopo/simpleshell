@@ -92,11 +92,11 @@ class WindowEmbedder extends EventEmitter {
     return null;
   }
 
-  async hideWindow(_hwnd) {
+  async hideWindow() {
     return false;
   }
 
-  async showWindow(_hwnd) {
+  async showWindow() {
     return false;
   }
 

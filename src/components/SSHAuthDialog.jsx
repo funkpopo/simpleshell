@@ -276,10 +276,6 @@ const SSHAuthDialog = ({
   // 渲染凭证步骤
   const renderCredentialsStep = () => {
     // 部分隐藏用户名用于显示
-    const displayUsername = username.length > 1 
-      ? username[0] + "*".repeat(Math.min(username.length - 1, 3))
-      : username;
-    
     return (
       <>
         <Tabs

@@ -38,7 +38,7 @@ function getStartupBackgroundColor() {
   try {
     const uiSettings = configService.loadUISettings();
     return uiSettings.darkMode ? "#121212" : "#f0f2f5";
-  } catch (error) {
+  } catch {
     return "#121212";
   }
 }

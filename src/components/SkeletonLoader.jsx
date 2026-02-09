@@ -382,7 +382,6 @@ export const SettingsSkeleton = memo(() => {
 });
 
 export const CommandHistorySkeleton = memo(() => {
-  const { t } = useTranslation();
   return (
     <Box sx={{ p: 1 }}>
       <SkeletonLoader width="100%" height={36} />

@@ -51,7 +51,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.on("reconnect-success", callback),
   onReconnectFailed: (callback) => ipcRenderer.on("reconnect-failed", callback),
   onConnectionLost: (callback) => ipcRenderer.on("connection-lost", callback),
-  removeReconnectListeners: (tabId) => {
+  removeReconnectListeners: () => {
     ipcRenderer.removeAllListeners("reconnect-started");
     ipcRenderer.removeAllListeners("reconnect-progress");
     ipcRenderer.removeAllListeners("reconnect-success");
@@ -657,7 +657,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       ipcRenderer.removeListener("ssh:auth-request", wrappedCallback);
     };
   },
-  offSSHAuthRequest: (callback) => {
+  offSSHAuthRequest: () => {
     ipcRenderer.removeAllListeners("ssh:auth-request");
   },
   

@@ -245,9 +245,9 @@ class BackpressureController extends EventEmitter {
       this.handleCpuPressure(data);
     });
 
-    this.monitor.on("metricsUpdated", (metrics) => {
+    this.monitor.on("metricsUpdated", () => {
       if (this.config.adaptation.enabled) {
-        this.performAdaptiveControl(metrics);
+        this.performAdaptiveControl();
       }
     });
   }
@@ -306,8 +306,6 @@ class BackpressureController extends EventEmitter {
   }
 
   async makeControlDecision(streamId, pressureState, options) {
-    const metrics = this.monitor.getMetrics();
-
     // 检查并发限制
     if (this.activeStreams.size >= this.config.limits.maxConcurrentStreams) {
       return {
@@ -543,7 +541,7 @@ class BackpressureController extends EventEmitter {
     }, this.config.adaptation.adjustmentInterval);
   }
 
-  performAdaptiveControl(metrics) {
+  performAdaptiveControl() {
     const now = Date.now();
     const timeSinceLastAdjustment = now - this.controlState.lastAdjustment;
 
@@ -552,13 +550,12 @@ class BackpressureController extends EventEmitter {
     }
 
     const pressureState = this.monitor.getCurrentPressureState();
-    this.adaptControlStrategy(pressureState, metrics);
+    this.adaptControlStrategy(pressureState);
 
     this.controlState.lastAdjustment = now;
   }
 
   performAdaptiveAdjustment() {
-    const metrics = this.monitor.getMetrics();
     const pressureState = this.monitor.getCurrentPressureState();
 
     // 根据系统状态调整控制策略
@@ -591,7 +588,7 @@ class BackpressureController extends EventEmitter {
     );
   }
 
-  adaptControlStrategy(pressureState, metrics) {
+  adaptControlStrategy(pressureState) {
     switch (pressureState) {
       case PRESSURE_STATE.CRITICAL:
         this.controlState.strategy = CONTROL_STRATEGY.DROP;

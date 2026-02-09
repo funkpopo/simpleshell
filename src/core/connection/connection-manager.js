@@ -136,7 +136,7 @@ class ConnectionManager extends EventEmitter {
         };
 
         // 聚合所有池的指标
-        for (const [serverKey, pool] of this.pools) {
+        for (const pool of this.pools.values()) {
           const status = pool.getPoolStatus();
           const details = pool.getConnectionDetails();
 
@@ -205,18 +205,18 @@ class ConnectionManager extends EventEmitter {
     // 初始化恢复策略
     this.recoveryStrategies.set("connection_timeout", {
       name: "连接超时恢复",
-      execute: async (serverKey, context) => {
+      execute: async (serverKey) => {
         const pool = this.pools.get(serverKey);
         if (pool) {
           // 清理超时连接，创建新连接
-          await this.recreatePool(serverKey, context.config);
+          await this.recreatePool(serverKey);
         }
       },
     });
 
     this.recoveryStrategies.set("high_error_rate", {
       name: "高错误率恢复",
-      execute: async (serverKey, context) => {
+      execute: async (serverKey) => {
         // 减少并发连接数，逐步恢复
         await this.scaleDownPool(serverKey, 0.5);
         setTimeout(() => {
@@ -258,7 +258,7 @@ class ConnectionManager extends EventEmitter {
 
     try {
       // 1. 获取或创建连接池
-      let pool = await this.getOrCreatePool(serverKey, sshConfig);
+      let pool = await this.getOrCreatePool(serverKey);
 
       // 2. 检查池状态
       const poolState = this.poolStates.get(serverKey);
@@ -299,7 +299,7 @@ class ConnectionManager extends EventEmitter {
     }
   }
 
-  async getOrCreatePool(serverKey, sshConfig) {
+  async getOrCreatePool(serverKey) {
     let pool = this.pools.get(serverKey);
 
     if (!pool) {
@@ -367,7 +367,7 @@ class ConnectionManager extends EventEmitter {
     logToFile(`释放连接: ${connectionId} <- ${serverKey}`, "DEBUG");
   }
 
-  async recreatePool(serverKey, sshConfig) {
+  async recreatePool(serverKey) {
     logToFile(`重建连接池: ${serverKey}`, "INFO");
 
     // 关闭旧池
@@ -380,7 +380,7 @@ class ConnectionManager extends EventEmitter {
     this.pools.delete(serverKey);
     this.poolStates.delete(serverKey);
 
-    await this.getOrCreatePool(serverKey, sshConfig);
+    await this.getOrCreatePool(serverKey);
   }
 
   async scaleDownPool(serverKey, factor) {

@@ -12,7 +12,7 @@ function set(tabId, path, data) {
       data: Array.isArray(data) ? data : [],
       timestamp: Date.now(),
     });
-  } catch (_) {
+  } catch {
     // ignore
   }
 }
@@ -24,7 +24,7 @@ function get(tabId, path, maxAgeMs = 10000) {
     if (!entry) return null;
     if (Date.now() - entry.timestamp > maxAgeMs) return null;
     return entry.data;
-  } catch (_) {
+  } catch {
     return null;
   }
 }
