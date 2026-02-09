@@ -15,7 +15,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on("second-instance", (event, commandLine, workingDirectory) => {
+  app.on("second-instance", () => {
     const mainWindow = BrowserWindow.getAllWindows()[0];
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
@@ -46,7 +46,7 @@ process.on("uncaughtException", (error) => {
   }
 });
 
-process.on("unhandledRejection", (reason, promise) => {
+process.on("unhandledRejection", (reason) => {
   const errorMessage = reason instanceof Error ? reason.message : String(reason);
   const errorStack = reason instanceof Error ? reason.stack : "";
 
