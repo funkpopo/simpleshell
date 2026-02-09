@@ -3,7 +3,6 @@ import React, {
   useRef,
   useState,
   useCallback,
-  useMemo,
 } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -37,7 +36,6 @@ import Typography from "@mui/material/Typography";
 import Tooltip from "@mui/material/Tooltip";
 import IconButton from "@mui/material/IconButton";
 import { findGroupByTab } from "../core/syncInputGroups";
-import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 import CommandSuggestion from "./CommandSuggestion";
 
 // 添加全局样式以确保xterm正确填满容器
@@ -423,7 +421,7 @@ const getCharacterMetricsCss = (term) => {
         charHeight = charHeight / dpr;
       }
     }
-  } catch (e) {
+  } catch {
     // ignore
   }
   return { ...base, charWidth, charHeight, scaleFactor: 1 };
@@ -474,7 +472,7 @@ const sendResizeIfNeeded = (processId, tabId, cols, rows) => {
 
   return window.terminalAPI
     .resizeTerminal(processId || tabId, nextCols, nextRows)
-    .catch((error) => {
+    .catch(() => {
       if (key) {
         terminalGeometryCache.delete(key);
       }
@@ -600,34 +598,6 @@ const getCharacterMetrics = (term) => {
 };
 
 // 字符网格坐标转换函数
-const getCharacterGridPosition = (term, pixelX, pixelY) => {
-  const metrics = getCharacterMetricsCss(term);
-  if (!metrics) return null;
-
-  try {
-    // 计算相对于终端屏幕的像素位置
-    const relativeX = pixelX - metrics.screenOffset.x;
-    const relativeY = pixelY - metrics.screenOffset.y;
-
-    // 转换为字符网格坐标
-    const col = Math.floor(relativeX / metrics.charWidth);
-    const row = Math.floor(relativeY / metrics.charHeight);
-
-    // 确保坐标在有效范围内
-    const boundedCol = Math.max(0, Math.min(col, term.cols - 1));
-    const boundedRow = Math.max(0, Math.min(row, term.rows - 1));
-
-    return {
-      col: boundedCol,
-      row: boundedRow,
-      pixelX: boundedCol * metrics.charWidth + metrics.screenOffset.x,
-      pixelY: boundedRow * metrics.charHeight + metrics.screenOffset.y,
-    };
-  } catch (error) {
-    // 字符网格坐标转换失败
-    return null;
-  }
-};
 
 // 优化的终端尺寸调整函数，使用防抖机制减少频繁调用
 const forceResizeTerminal = debounce(
@@ -671,7 +641,7 @@ const forceResizeTerminal = debounce(
       if (resolvedProcessId) {
         sendResizeIfNeeded(resolvedProcessId, tabId, cols, rows);
       }
-    } catch (error) {
+    } catch {
       // Error in forceResizeTerminal
     }
   },
@@ -772,8 +742,8 @@ const WebTerminal = ({
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
   const [webglRendererEnabled, setWebglRendererEnabled] = useState(true);
-  const [performanceStats, setPerformanceStats] = useState(null);
-  const [writeStrategy, setWriteStrategy] = useState('low');
+  const [, setPerformanceStats] = useState(null);
+  const [, setWriteStrategy] = useState('low');
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
@@ -793,7 +763,7 @@ const WebTerminal = ({
       if (termRef.current && typeof termRef.current.focus === "function") {
         termRef.current.focus();
       }
-    } catch (_error) {
+    } catch {
       // ignore focus errors
     }
   }, 50);
@@ -813,7 +783,7 @@ useEffect(() => {
         if (termRef.current && typeof termRef.current.focus === "function") {
           termRef.current.focus();
         }
-      } catch (_error) {
+      } catch {
         // ignore focus errors
       }
     }, 50);
@@ -836,7 +806,7 @@ useEffect(() => {
             setWebglRendererEnabled(enabled);
           }
         }
-      } catch (_error) {}
+      } catch {}
     };
 
     loadRendererPreference();
@@ -916,7 +886,7 @@ useEffect(() => {
       ) {
         termInstance.__webglAddon.dispose();
       }
-    } catch (_error) {}
+    } catch {}
 
     termInstance.__webglAddon = null;
     termInstance.__webglEnabled = false;
@@ -948,7 +918,7 @@ useEffect(() => {
         ) {
           try {
             termInstance.__webglAddon.dispose();
-          } catch (e) {
+          } catch {
             // 忽略 dispose 错误
           }
         }
@@ -986,7 +956,7 @@ useEffect(() => {
             }, false);
           }
         }
-      } catch (_error) {
+      } catch {
         // WebGL 初始化失败，降级到 Canvas
         termInstance.__webglEnabled = false;
         termInstance.__webglAddon = null;
@@ -1029,7 +999,7 @@ useEffect(() => {
         termInstance.write(dataToWrite, () =>
           scheduleHighlightRefresh(termInstance),
         );
-      } catch (_error) {
+      } catch {
         termInstance.write(dataToWrite);
         scheduleHighlightRefresh(termInstance);
       }
@@ -1316,7 +1286,7 @@ useEffect(() => {
       const currentLeft = parseFloat(computedStyle.left) || 0;
       const currentTop = parseFloat(computedStyle.top) || 0;
       const currentWidth = parseFloat(computedStyle.width) || 0;
-      const currentHeight = parseFloat(computedStyle.height) || 0;
+      
 
       // 计算需要的偏移量
       const leftOffset =
@@ -1371,7 +1341,7 @@ useEffect(() => {
           primaryElement.style.width = `${idealWidth}px`;
         }
       }
-    } catch (error) {
+    } catch {
       // 选择元素调整失败，简化的回退处理 - 清理所有transform
       const selectionElements = document.querySelectorAll(
         ".xterm .xterm-selection div",
@@ -1401,7 +1371,7 @@ useEffect(() => {
   };
 
   // 添加选择事件监听，确保在用户通过键盘选择时也能调整选择区域
-  const handleSelectionChange = (e) => {
+  const handleSelectionChange = () => {
     const selection = window.getSelection();
     if (selection && selection.toString().length > 0) {
       // 只有当选择发生在终端内部时才进行调整
@@ -1464,7 +1434,7 @@ useEffect(() => {
                   const decoder = new TextDecoder("utf-8");
                   const encoded = encoder.encode(processedText);
                   processedText = decoder.decode(encoded);
-                } catch (e) {
+                } catch {
                   // 备用方法
                 }
               } else if (
@@ -1479,7 +1449,7 @@ useEffect(() => {
                     const encoded = encoder.encode(line);
                     return decoder.decode(encoded);
                   });
-                } catch (e) {
+                } catch {
                   // 备用方法
                 }
               }
@@ -1543,7 +1513,7 @@ useEffect(() => {
     }
   };
 
-  const handleMouseUp = (e) => {
+  const handleMouseUp = () => {
     // 鼠标释放时进行一次性选择区域调整
     if (termRef.current) {
       const selection = window.getSelection?.();
@@ -1667,7 +1637,6 @@ useEffect(() => {
     // 标记上一个按键是否是特殊键序列的开始
     let isEscapeSequence = false;
     // 用于存储转义序列
-    let escapeBuffer = "";
     // 用于记录最后一个执行的命令，避免重复添加到历史记录
     let lastExecutedCommand = "";
     // 跟踪编辑器模式状态
@@ -1722,7 +1691,7 @@ useEffect(() => {
     // 监听buffer类型变化
     if (term.buffer && typeof term.buffer.onBufferChange === "function") {
       // 如果xterm.js版本支持此方法
-      const bufferDisposable = term.buffer.onBufferChange((e) => {
+      const bufferDisposable = term.buffer.onBufferChange(() => {
         bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
       });
       if (bufferDisposable && typeof bufferDisposable.dispose === "function") {
@@ -1770,7 +1739,6 @@ useEffect(() => {
       // 检查是否是ESC开头的转义序列（通常是方向键等特殊键）
       if (data === "\x1b") {
         isEscapeSequence = true;
-        escapeBuffer = data;
         // 方向键等特殊键不会影响命令历史记录，直接发送到进程
         if (processId && !shouldSkipSendToProcess) {
           window.terminalAPI.sendToProcess(processId, data);
@@ -1780,12 +1748,10 @@ useEffect(() => {
 
       // 处理转义序列的后续字符
       if (isEscapeSequence) {
-        escapeBuffer += data;
 
         // 检查是否是常见的转义序列结束符
         if (/[A-Za-z~]/.test(data)) {
           isEscapeSequence = false;
-          escapeBuffer = "";
         }
 
         // 转义序列不会记录到命令历史，直接发送到进程
@@ -2026,7 +1992,7 @@ useEffect(() => {
               }, delay);
             });
           }
-        } catch (error) {
+        } catch {
           // 忽略任何错误，不影响正常功能
           // 即使发生错误也要重置命令执行状态
           setTimeout(() => {
@@ -2071,7 +2037,7 @@ useEffect(() => {
                 setSuggestionsSuppressedUntilEnter(false);
                 setSuggestionsHiddenByEsc(false);
               }
-            } catch (_e) {}
+            } catch {}
           }
 
           // 只有在非命令执行状态下才触发建议搜索
@@ -2122,7 +2088,7 @@ useEffect(() => {
             }
           }
         }
-      } catch (error) {
+      } catch {
         // 忽略任何错误，不影响正常功能
       }
     });
@@ -2171,7 +2137,7 @@ useEffect(() => {
           setTimeout(() => {
             currentLineBeforeTab = null;
           }, 100);
-        } catch (error) {
+        } catch {
           // 处理Tab补全后内容时出错
         }
       }
@@ -2251,7 +2217,7 @@ useEffect(() => {
           fontWeight: settings.terminalFontWeight || 500,
         };
       }
-    } catch (error) {
+    } catch {
       // Failed to load font settings from config
     }
     webglRendererEnabledRef.current = true;
@@ -2272,7 +2238,7 @@ useEffect(() => {
           if (window.terminalAPI && window.terminalAPI.killProcess) {
             window.terminalAPI.killProcess(processCache[tabId]);
           }
-        } catch (error) {
+        } catch {
           // Failed to kill process
         }
         clearGeometryFor(processCache[tabId], tabId);
@@ -2282,7 +2248,7 @@ useEffect(() => {
       // 清除旧终端
       try {
         terminalCache[tabId].dispose();
-      } catch (error) {
+      } catch {
         // Failed to dispose terminal
       }
       delete terminalCache[tabId];
@@ -2458,7 +2424,7 @@ useEffect(() => {
             console.debug(
               `[WebTerminal] Rebinding listeners for tabId=${tabId}, processId=${existingProcessId}` ,
             );
-          } catch (e) {
+          } catch {
             // ignore log errors
           }
 
@@ -2516,7 +2482,7 @@ useEffect(() => {
                 }
               }
             }, 0);
-          } catch (error) {
+          } catch {
             // Failed to apply font settings
           }
         })();
@@ -2532,7 +2498,7 @@ useEffect(() => {
 
           // 使用预加载脚本中定义的API在系统默认浏览器中打开链接
           if (window.terminalAPI && window.terminalAPI.openExternal) {
-            window.terminalAPI.openExternal(uri).catch((err) => {
+            window.terminalAPI.openExternal(uri).catch(() => {
               // 打开链接失败
             });
           } else {
@@ -2604,7 +2570,7 @@ useEffect(() => {
         if (!writeStrategyManagerRef.current) {
           writeStrategyManagerRef.current = new WriteStrategyManager({
             adaptiveEnabled: true,
-            onFlush: (data, context) => {
+            onFlush: (data) => {
               // 实际写入到终端
               if (term && data) {
                 const startTime = performance.now();
@@ -2616,7 +2582,7 @@ useEffect(() => {
                     }
                     scheduleHighlightRefresh(term);
                   });
-                } catch (error) {
+                } catch {
                   term.write(data);
                   const duration = performance.now() - startTime;
                   if (performanceMonitorRef.current) {
@@ -3129,7 +3095,7 @@ useEffect(() => {
               }
             }, 300);
           }
-        } catch (error) {
+        } catch {
           // Error resizing terminal
         }
       };
@@ -3294,7 +3260,7 @@ useEffect(() => {
             if (processId) {
               sendResizeIfNeeded(processId, tabId, cols, rows);
             }
-          } catch (error) {}
+          } catch {}
         }
       };
 
@@ -3391,7 +3357,7 @@ useEffect(() => {
                 element.removeChild(element.firstChild);
               }
             }
-          } catch (err) {
+          } catch {
             // Error detaching terminal
           }
         }
@@ -3434,7 +3400,7 @@ useEffect(() => {
             if (disposable && typeof disposable.dispose === "function") {
               disposable.dispose();
             }
-          } catch (error) {
+          } catch {
             // 忽略disposal错误
           }
         });
@@ -3583,7 +3549,7 @@ useEffect(() => {
             }));
           }
         }
-      } catch (error) {
+      } catch {
         // Search error
         setNoMatchFound(true);
       }
@@ -3609,7 +3575,7 @@ useEffect(() => {
             }));
           }
         }
-      } catch (error) {
+      } catch {
         // Search error
         setNoMatchFound(true);
       }
@@ -3644,7 +3610,7 @@ useEffect(() => {
 
       setSearchResults({ count, current: count > 0 ? 1 : 0 });
       setNoMatchFound(count === 0);
-    } catch (error) {
+    } catch {
       // 搜索结果计算失败，重置为默认值
       setSearchResults({ count: 0, current: 0 });
     }
@@ -3708,7 +3674,7 @@ useEffect(() => {
   // 复制选中的文本
   const handleCopy = () => {
     if (selectedText) {
-      window.clipboardAPI.writeText(selectedText).catch((err) => {
+      window.clipboardAPI.writeText(selectedText).catch(() => {
         // 复制到剪贴板失败
       });
     }
@@ -3760,7 +3726,7 @@ useEffect(() => {
                   const decoder = new TextDecoder("utf-8");
                   const encoded = encoder.encode(processedText);
                   processedText = decoder.decode(encoded);
-                } catch (e) {
+                } catch {
                   // 如果浏览器不支持TextEncoder/TextDecoder，使用备用方法
                   processedText = processedText
                     .split("")
@@ -3787,7 +3753,7 @@ useEffect(() => {
                     const encoded = encoder.encode(line);
                     return decoder.decode(encoded);
                   });
-                } catch (e) {
+                } catch {
                   // 备用方法
                   processedText.lines = processedText.lines.map((line) => {
                     return line
@@ -3830,7 +3796,7 @@ useEffect(() => {
           }
         }
       })
-      .catch((err) => {
+      .catch(() => {
         // 从剪贴板读取失败
       });
     handleClose();
@@ -3868,7 +3834,7 @@ useEffect(() => {
           detail: { terminalId, processId },
         });
         window.dispatchEvent(event);
-      } catch (error) {
+      } catch {
         // Failed to update SSH process ID
       }
     };
@@ -4019,7 +3985,7 @@ useEffect(() => {
           if (processId) {
             sendResizeIfNeeded(processId, tabId, term.cols, term.rows);
           }
-        } catch (error) {
+        } catch {
           // 终端大小适配失败
         }
       }
@@ -4148,7 +4114,7 @@ useEffect(() => {
           ) {
             helperTextarea.focus();
           }
-        } catch (_error) {
+        } catch {
         }
       }, 120);
     };
@@ -4258,7 +4224,7 @@ useEffect(() => {
                   termRef.current
                 ) {
                   const container = terminalRef.current;
-                  const termElement = termRef.current.element;
+                  
 
                   // 检查容器是否可见且有正确的尺寸
                   if (
@@ -4360,7 +4326,7 @@ useEffect(() => {
 
     // 添加专门的终端resize事件监听，用于分屏布局变化
     const handleTerminalResize = (event) => {
-      const { tabId: eventTabId, layoutType, timestamp } = event.detail || {};
+      const { tabId: eventTabId, layoutType } = event.detail || {};
 
       // 只处理属于当前终端的事件
       if (
@@ -4426,8 +4392,6 @@ useEffect(() => {
       const {
         tabId: eventTabId,
         layoutType,
-        timestamp,
-        retryAttempt,
       } = event.detail || {};
 
       // 只处理属于当前终端的事件
@@ -4587,7 +4551,7 @@ useEffect(() => {
             layoutType === "post-split-reconnect" ? 2000 : 1500;
           setTimeout(() => {
             if (terminalRef.current && fitAddonRef.current && termRef.current) {
-              const container = terminalRef.current;
+              
               const termElement = termRef.current.element;
 
               // 最后检查：如果仍然有问题，进行强制修复
@@ -4628,29 +4592,6 @@ useEffect(() => {
     );
   }, [tabId]);
 
-  // 在创建终端前获取当前字体设置
-  const createTerminal = () => {
-    if (terminalRef.current) {
-      // 根据存储的设置获取字体设置
-      const currentFontSettings = getFontSettings();
-
-      // 创建新的终端实例
-      const newTerm = new Terminal({
-        cursorBlink: true,
-        cursorStyle: "block",
-        scrollback: 10000,
-        theme: terminalTheme,
-        fontSize: currentFontSettings.fontSize, // 使用存储的字体大小
-        fontFamily: currentFontSettings.fontFamily, // 使用存储的字体族
-        allowTransparency: true,
-        disableStdin: false, // 允许用户输入
-        convertEol: true, // 将回车转换为换行
-        // ... 其他现有选项
-      });
-
-      // ... 其余代码保持不变
-    }
-  };
 
   // 清理最近输出行缓存
   useEffect(() => {
@@ -4784,7 +4725,7 @@ useEffect(() => {
         cursorHeight: 18,
         cursorBottom: containerRect.top + 38,
       });
-    } catch (error) {
+    } catch {
       // 最后的降级方案
       try {
         const containerRect = terminalRef.current.getBoundingClientRect();
@@ -4794,7 +4735,7 @@ useEffect(() => {
           cursorHeight: 18,
           cursorBottom: containerRect.top + 68,
         });
-      } catch (fallbackError) {
+      } catch {
         setCursorPosition({
           x: 100,
           y: 100,
@@ -4893,7 +4834,7 @@ useEffect(() => {
           setSuggestions([]);
           setShowSuggestions(false);
         }
-      } catch (error) {
+      } catch {
         // 获取建议失败，隐藏建议窗口
         setSuggestions([]);
         setShowSuggestions(false);
@@ -4965,7 +4906,7 @@ useEffect(() => {
         // 隐藏建议窗口
         setShowSuggestions(false);
         setSuggestions([]);
-      } catch (error) {
+      } catch {
         setShowSuggestions(false);
       }
     },
@@ -4984,9 +4925,7 @@ useEffect(() => {
   }, [currentInput]);
 
   // 示例：假设有如下输入处理函数
-  const handleUserInput = (input) => {
-    dispatchCommandToGroup(tabId, input);
-  };
+  
 
   // 注册表初始化
   if (typeof window !== "undefined" && !window.webTerminalRefs) {
@@ -5007,7 +4946,7 @@ useEffect(() => {
   // 监听来自其它终端的输入同步事件
   useEffect(() => {
     const handler = (e) => {
-      const { input, sourceTabId, targetTabId } = e.detail || {};
+      const { input, targetTabId } = e.detail || {};
       if (targetTabId === tabId && processCache[tabId]) {
         // 直接写入本地进程，且不再广播，防止回环
         if (termRef.current) {
