@@ -63,7 +63,7 @@ function loadLogConfig() {
         logConfig = { ...DEFAULT_LOG_CONFIG, ...config.logSettings };
       }
     }
-  } catch (_) {}
+  } catch {}
   return logConfig;
 }
 
@@ -96,13 +96,13 @@ async function flushQueue() {
     const data = batch.join("");
     await fs.promises.appendFile(logFile, data);
     checkLogFileSize();
-  } catch (_) {
+  } catch {
     try {
       const batch = writeQueue;
       writeQueue = [];
       const data = batch.join("");
       fs.appendFileSync(logFile || "app_emergency.log", data);
-    } catch (_) {}
+    } catch {}
   } finally {
     isFlushing = false;
     if (pendingFlush) {
@@ -123,7 +123,7 @@ function checkLogFileSize() {
     if (!logFile || !fs.existsSync(logFile)) return;
     const stats = fs.statSync(logFile);
     if (stats.size >= logConfig.maxFileSize) rotateLogs();
-  } catch (_) {}
+  } catch {}
 }
 
 function rotateLogs() {
@@ -150,13 +150,13 @@ function rotateLogs() {
           if (logConfig.compressOldLogs && i + 1 > 1) {
             if (fs.existsSync(dstGz)) fs.unlinkSync(dstGz);
             gzipFileSync(srcPlain, dstGz);
-            try { fs.unlinkSync(srcPlain); } catch (_) {}
+            try { fs.unlinkSync(srcPlain); } catch {}
           } else {
             if (fs.existsSync(dstPlain)) fs.unlinkSync(dstPlain);
             fs.renameSync(srcPlain, dstPlain);
           }
         }
-      } catch (_) {}
+      } catch {}
     }
 
     const firstRotated = path.join(logDir, `${nameWithoutExt}.1${ext}`);
@@ -164,7 +164,7 @@ function rotateLogs() {
     fs.renameSync(logFile, firstRotated);
     fs.writeFileSync(logFile, "", "utf8");
     logToFileInternal("Log rotation completed.", "INFO", true);
-  } catch (_) {}
+  } catch {}
 }
 
 function cleanupOldLogs(logDir, nameWithoutExt, ext) {
@@ -187,10 +187,10 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
     if (rotated.length >= logConfig.maxFiles) {
       for (let i = logConfig.maxFiles; i < rotated.length; i++) {
         const fileToRemove = path.join(logDir, rotated[i]);
-        try { fs.unlinkSync(fileToRemove); } catch (_) {}
+        try { fs.unlinkSync(fileToRemove); } catch {}
       }
     }
-  } catch (_) {}
+  } catch {}
 }
 
 function cleanupOldLogEntries() {
@@ -203,7 +203,6 @@ function cleanupOldLogEntries() {
     const logContent = fs.readFileSync(logFile, "utf8");
     const lines = logContent.split("\n").filter((line) => line.trim());
     const validLines = lines.filter((line) => {
-      const m = line.match(/^(\[[^\]]+\])/);
       const ts = line.match(
         /^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\]/,
       );
@@ -221,10 +220,10 @@ function cleanupOldLogEntries() {
         true,
       );
     }
-  } catch (_) {
+  } catch {
     try {
       logToFileInternal(`Log cleanup failed`, "ERROR", true);
-    } catch (_) {}
+    } catch {}
   }
 }
 
@@ -244,7 +243,7 @@ function initLogger(electronApp) {
       true,
     );
     startFlushTimer();
-  } catch (_) {
+  } catch {
     try {
       const electronLogDir = electronApp.getPath("logs");
       if (!fs.existsSync(electronLogDir)) fs.mkdirSync(electronLogDir, { recursive: true });
@@ -255,7 +254,7 @@ function initLogger(electronApp) {
         true,
       );
       startFlushTimer();
-    } catch (_) {
+    } catch {
       try {
         const fallbackLogDir = path.join(__dirname, "..", "..", "..", "logs");
         if (!fs.existsSync(fallbackLogDir)) fs.mkdirSync(fallbackLogDir, { recursive: true });
@@ -266,7 +265,7 @@ function initLogger(electronApp) {
           true,
         );
         startFlushTimer();
-      } catch (_) {
+      } catch {
         logFile = "app_emergency.log";
         logToFileInternal(
           `Logger initialized with emergency path in current working directory (fallback level 3): ${logFile}`,
@@ -293,12 +292,12 @@ function logToFileInternal(message, type = "INFO", isInitialization = false) {
     if (logFile) {
       enqueue(logEntry);
     } else {
-      try { fs.appendFileSync("app_init_error.log", logEntry); } catch (_) {}
+      try { fs.appendFileSync("app_init_error.log", logEntry); } catch {}
     }
     if (!isInitialization && logFile) {
       checkLogFileSize();
     }
-  } catch (_) {}
+  } catch {}
 }
 
 const logToFile = (message, type = "INFO") => {
@@ -344,7 +343,7 @@ function gzipFileSync(srcPath, destPath) {
     const buf = fs.readFileSync(srcPath);
     const gz = zlib.gzipSync(buf);
     fs.writeFileSync(destPath, gz);
-  } catch (_) {}
+  } catch {}
 }
 
 function setupProcessFlushHooks() {
@@ -358,11 +357,11 @@ function setupProcessFlushHooks() {
               const data = writeQueue.join("");
               writeQueue = [];
               fs.appendFileSync(logFile, data);
-            } catch (_) {}
+            } catch {}
           }
-        } catch (_) {}
+        } catch {}
       });
-    } catch (_) {}
+    } catch {}
   });
 }
 

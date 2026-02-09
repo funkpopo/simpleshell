@@ -349,7 +349,7 @@ class ReconnectionManager extends EventEmitter {
         done = true;
         try {
           socket.destroy();
-        } catch (_) {}
+        } catch {}
         resolve(ok);
       };
 
@@ -406,7 +406,7 @@ class ReconnectionManager extends EventEmitter {
         if (await this._isPreflightReady(session.config)) {
           return true;
         }
-      } catch (e) {
+      } catch {
         // 探测异常视为不可用（避免因探测异常阻断重连流程）
       }
 
@@ -941,7 +941,7 @@ class ReconnectionManager extends EventEmitter {
           clearTimeout(timeout);
           try {
             ssh.end();
-          } catch (_) {}
+          } catch {}
           reject(e);
         }
       })();
@@ -986,7 +986,7 @@ class ReconnectionManager extends EventEmitter {
               finish(false);
             });
           });
-        } catch (_) {
+        } catch {
           clearTimeout(timeoutId);
           finish(false);
         }
@@ -1014,12 +1014,12 @@ class ReconnectionManager extends EventEmitter {
               if (sftp && typeof sftp.end === "function") {
                 sftp.end();
               }
-            } catch (_) {}
+            } catch {}
 
             clearTimeout(timeoutId);
             finish(true);
           });
-        } catch (_) {
+        } catch {
           clearTimeout(timeoutId);
           finish(false);
         }
@@ -1047,12 +1047,12 @@ class ReconnectionManager extends EventEmitter {
               if (stream && typeof stream.close === "function") {
                 stream.close();
               }
-            } catch (_) {}
+            } catch {}
 
             clearTimeout(timeoutId);
             finish(true);
           });
-        } catch (_) {
+        } catch {
           clearTimeout(timeoutId);
           finish(false);
         }
@@ -1079,7 +1079,7 @@ class ReconnectionManager extends EventEmitter {
     // 尝试优雅关闭旧连接
     try {
       oldConnection.end();
-    } catch (error) {
+    } catch {
       // 忽略关闭错误
     }
 
@@ -1122,7 +1122,7 @@ class ReconnectionManager extends EventEmitter {
     // 关闭连接
     try {
       session.connection.end();
-    } catch (error) {
+    } catch {
       // 忽略错误
     }
 
