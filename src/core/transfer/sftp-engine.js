@@ -8,8 +8,6 @@
 const {
   SESSION_CONFIG,
   TIMEOUT_CONFIG,
-  RETRY_CONFIG,
-  QUEUE_CONFIG,
   calculateDynamicTimeout: configCalculateDynamicTimeout,
   isRetryableError: configIsRetryableError,
   isSessionError: configIsSessionError,
@@ -74,7 +72,7 @@ const calculateDynamicTimeout = configCalculateDynamicTimeout;
 function init(logger, getChildProcessInfoFunc) {
   if (!logger || !logger.logToFile) {
     // Logger not provided during init, using fallback
-    logToFile = (message, type = "INFO") => {
+    logToFile = () => {
       // Fallback logging - could be enhanced to write to file or use alternative logging
     };
   } else {
@@ -215,7 +213,7 @@ async function checkSessionAlive(tabId, session) {
       session.sftp.stat(".", (err) => {
         try {
           if (timeoutId) clearTimeout(timeoutId);
-        } catch (_) {}
+        } catch {}
         if (err) reject(err);
         else resolve();
       });
@@ -427,7 +425,7 @@ async function handleUnhealthySession(tabId, session) {
     if (session && session.sftp) {
       try {
         session.sftp.end();
-      } catch (error) {
+      } catch {
         // 忽略关闭错误
       }
     }
@@ -502,7 +500,7 @@ async function checkSessionHealth(session) {
         resolve(!err);
       });
     });
-  } catch (error) {
+  } catch {
     return false;
   }
 }
@@ -640,7 +638,7 @@ async function acquireSftpSession(tabId, options = {}) {
               if (sftp && typeof sftp.end === "function") {
                 sftp.end();
               }
-            } catch (_) {}
+            } catch {}
             return;
           }
           if (err) {
@@ -1225,6 +1223,7 @@ const sftpEngine = new SftpEngine();
 
 // 文件操作函数
 async function listFiles(tabId, dirPath, options = {}) {
+  void options;
   return enqueueSftpOperation(
     tabId,
     async () => {

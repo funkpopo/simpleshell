@@ -45,10 +45,9 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import CategoryIcon from "@mui/icons-material/Category";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
-import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 
 // 虚拟化命令项组件
-const CommandItem = React.memo(({ index, style, ariaAttributes, commands, handleSendCommand, handleCopyCommand, handleMenuOpen }) => {
+const CommandItem = React.memo(({ index, style, commands, handleSendCommand, handleCopyCommand, handleMenuOpen }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const cmd = commands[index];
@@ -228,7 +227,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const searchInputRef = useRef(null);
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedCategory] = useState("all");
   const [tabValue, setTabValue] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState({});
   const [containerHeight, setContainerHeight] = useState(400);
@@ -333,7 +332,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
         } else {
         }
       }
-    } catch (error) {
+    } catch {
     } finally {
       setLoading(false);
     }
@@ -350,7 +349,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
         if (!result.success) {
         }
       }
-    } catch (error) {}
+    } catch {}
   };
 
   // 生成唯一ID
@@ -570,7 +569,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理复制命令
   const handleCopyCommand = (command) => {
-    window.clipboardAPI.writeText(command).catch((err) => {});
+    window.clipboardAPI.writeText(command).catch(() => {});
   };
 
   // 过滤命令
@@ -602,11 +601,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     [filteredCommands, handleSendCommand, handleCopyCommand, handleMenuOpen],
   );
 
-  // 过滤命令 (保留原函数以兼容其他地方的调用)
-  const getFilteredCommands = () => {
-    return filteredCommands;
-  };
-
   // 获取按分类分组的命令
   const commandsByCategory = useMemo(() => {
     const result = {};
@@ -637,11 +631,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     // 过滤掉没有命令的分类
     return Object.values(result).filter((cat) => cat.commands.length > 0);
   }, [categories, filteredCommands, t]);
-
-  // 获取按分类分组的命令 (保留原函数以兼容其他地方的调用)
-  const getCommandsByCategory = () => {
-    return commandsByCategory;
-  };
 
   // 渲染命令列表
   const renderCommandList = () => {
