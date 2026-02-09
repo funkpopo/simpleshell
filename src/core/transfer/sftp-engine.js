@@ -213,7 +213,7 @@ async function checkSessionAlive(tabId, session) {
       session.sftp.stat(".", (err) => {
         try {
           if (timeoutId) clearTimeout(timeoutId);
-        } catch {}
+        } catch { /* intentionally ignored */ }
         if (err) reject(err);
         else resolve();
       });
@@ -638,7 +638,7 @@ async function acquireSftpSession(tabId, options = {}) {
               if (sftp && typeof sftp.end === "function") {
                 sftp.end();
               }
-            } catch {}
+            } catch { /* intentionally ignored */ }
             return;
           }
           if (err) {

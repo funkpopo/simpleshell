@@ -202,7 +202,7 @@ class FileHandlers {
                   error: err?.message || String(err),
                 });
               }
-            } catch {}
+            } catch { /* intentionally ignored */ }
           });
 
         return { success: true, data: [], chunked: true, token };

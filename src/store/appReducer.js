@@ -132,14 +132,16 @@ export function appReducer(state = initialState, action) {
     case ActionTypes.ADD_TAB:
       return { ...state, tabs: [...state.tabs, action.payload] };
 
-    case ActionTypes.REMOVE_TAB:
+    case ActionTypes.REMOVE_TAB: {
       const newTabs = state.tabs.filter((_, index) => index !== action.payload);
       return { ...state, tabs: newTabs };
+    }
 
-    case ActionTypes.UPDATE_TAB:
+    case ActionTypes.UPDATE_TAB: {
       const updatedTabs = [...state.tabs];
       updatedTabs[action.payload.index] = action.payload.tab;
       return { ...state, tabs: updatedTabs };
+    }
 
     case ActionTypes.SET_CURRENT_TAB:
       return { ...state, currentTab: action.payload };

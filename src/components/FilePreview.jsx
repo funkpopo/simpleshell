@@ -616,9 +616,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               const content = response.content;
               if (typeof content === "string") {
                 // 简单检查是否包含大量不可打印字符（可能是二进制文件）
-                const nonPrintableCount = (
-                  content.match(/[\x00-\x08\x0E-\x1F\x7F-\xFF]/g) || []
-                ).length;
+                const nonPrintableCount = [...content].filter((char) => {
+                  const code = char.charCodeAt(0);
+                  return (
+                    (code >= 0 && code <= 8) ||
+                    (code >= 14 && code <= 31) ||
+                    (code >= 127 && code <= 255)
+                  );
+                }).length;
                 const nonPrintableRatio =
                   content.length > 0 ? nonPrintableCount / content.length : 0;
 
@@ -752,7 +757,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           () => {}, // 简单进度回调
         );
       }
-    } catch {}
+    } catch { /* intentionally ignored */ }
   };
 
   // 处理文本编辑

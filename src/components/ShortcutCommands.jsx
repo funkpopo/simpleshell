@@ -329,11 +329,10 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
             expanded[category.id] = true;
           });
           setExpandedCategories(expanded);
-        } else {
+
         }
       }
-    } catch {
-    } finally {
+    } catch { /* intentionally ignored */ } finally {
       setLoading(false);
     }
   };
@@ -347,9 +346,10 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           categories: newCategories || categories,
         });
         if (!result.success) {
+          console.warn("Failed to save shortcut commands");
         }
       }
-    } catch {}
+    } catch { /* intentionally ignored */ }
   };
 
   // 生成唯一ID

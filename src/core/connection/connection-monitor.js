@@ -662,7 +662,7 @@ class ConnectionMonitor extends EventEmitter {
         }
         break;
 
-      case "throughput":
+      case "throughput": {
         // 检查吞吐量下降
         const monitorData = this.connections.get(connectionId);
         if (monitorData && monitorData.performance.throughput.length > 5) {
@@ -687,6 +687,7 @@ class ConnectionMonitor extends EventEmitter {
           }
         }
         break;
+      }
     }
   }
 

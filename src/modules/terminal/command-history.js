@@ -23,15 +23,26 @@ class CommandHistoryService {
     }
 
     // 过滤ANSI转义序列
-    if (/\x1b\[|\u001b\[/.test(trimmedCommand)) {
+    if (trimmedCommand.includes("\u001b[")) {
       return false;
     }
 
     // 过滤控制字符（除了常见的空白字符）
     // ASCII控制字符范围：0-31，但允许空格(32)、制表符(9)、换行符(10)、回车符(13)
-    const hasInvalidControlChars = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(
-      trimmedCommand,
-    );
+    let hasInvalidControlChars = false;
+    for (const char of trimmedCommand) {
+      const charCode = char.charCodeAt(0);
+      if (
+        (charCode >= 0 && charCode <= 8) ||
+        charCode === 11 ||
+        charCode === 12 ||
+        (charCode >= 14 && charCode <= 31) ||
+        charCode === 127
+      ) {
+        hasInvalidControlChars = true;
+        break;
+      }
+    }
     if (hasInvalidControlChars) {
       return false;
     }
@@ -43,9 +54,9 @@ class CommandHistoryService {
 
     // 过滤只包含特殊字符组合的命令
     const specialCharPatterns = [
-      /^[\[\]]+$/, // 只包含方括号
+      /^[\][]+$/, // 只包含方括号
       /^[<>]+$/, // 只包含尖括号
-      /^[\-=_]+$/, // 只包含横线、等号、下划线
+      /^[-=_]+$/, // 只包含横线、等号、下划线
       /^[~`!@#$%^&*()+=|\\{}[\]:";'<>?,./]+$/, // 只包含特殊符号
       /^[\s]+$/, // 只包含空白字符
     ];

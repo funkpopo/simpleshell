@@ -73,7 +73,7 @@ class TelnetConnectionPool extends BaseConnectionPool {
         password: telnetConfig.password,
         passwordPrompt: /Password:|密码:/i,
         loginPrompt: /login:|用户名:/i,
-        shellPrompt: /#|\$|>|\%/
+        shellPrompt: /#|\$|>|%/
       };
 
       // 监听错误事件

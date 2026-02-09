@@ -266,7 +266,7 @@ class UpdateService {
           dataTimer = setTimeout(() => {
             handleError(new Error("Download timeout: no data received for 60 seconds"));
             if (this.currentRequest) {
-              try { this.currentRequest.abort(); } catch {}
+              try { this.currentRequest.abort(); } catch { /* intentionally ignored */ }
             }
           }, DATA_TIMEOUT);
         };
@@ -286,7 +286,7 @@ class UpdateService {
         // 连接超时
         connectionTimer = setTimeout(() => {
           handleError(new Error("Connection timeout: unable to connect within 30 seconds"));
-          try { request.abort(); } catch {}
+          try { request.abort(); } catch { /* intentionally ignored */ }
         }, CONNECTION_TIMEOUT);
 
         request.on("response", async (response) => {

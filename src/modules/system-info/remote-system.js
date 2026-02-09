@@ -278,7 +278,7 @@ async function getRemoteSystemInfo(sshClient) {
                     }
                   }
                 }
-              } catch {}
+              } catch { /* intentionally ignored */ }
 
               getCpuInfo();
             });
@@ -316,7 +316,7 @@ async function getRemoteSystemInfo(sshClient) {
                   // 解析Linux CPU核心数
                   result.cpu.cores = parseInt(cpuOutput.trim(), 10) / 2; // 除以2因为每个处理器有两行信息
                 }
-              } catch {}
+              } catch { /* intentionally ignored */ }
 
               getCpuModel();
             });
@@ -355,7 +355,7 @@ async function getRemoteSystemInfo(sshClient) {
                     result.cpu.model = match[1].trim();
                   }
                 }
-              } catch {}
+              } catch { /* intentionally ignored */ }
 
               getCpuUsage();
             });
@@ -402,7 +402,7 @@ async function getRemoteSystemInfo(sshClient) {
                   // 解析Linux CPU使用率
                   result.cpu.usage = parseFloat(usageOutput.trim());
                 }
-              } catch {}
+              } catch { /* intentionally ignored */ }
 
               finalize();
             });

@@ -228,8 +228,7 @@ const Settings = memo(({ open, onClose }) => {
             setCleanupIntervalDays(logSettings.cleanupIntervalDays || 7);
           }
         }
-      } catch {
-      } finally {
+      } catch { /* intentionally ignored */ } finally {
         setIsLoading(false);
       }
     };
