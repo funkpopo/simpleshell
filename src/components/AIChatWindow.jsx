@@ -15,7 +15,6 @@ import {
   Menu,
   MenuItem,
   Chip,
-  Avatar,
   Divider,
   Collapse,
   FormControlLabel,
@@ -30,7 +29,6 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
-import RefreshIcon from "@mui/icons-material/Refresh";
 import AIIcon from "./AIIcon";
 import AISettings from "./AISettings";
 import ExecutableCommand from "./ExecutableCommand";
@@ -40,7 +38,6 @@ import ReactMarkdown from "react-markdown";
 import {
   generateSystemPrompt,
   parseCommandsFromResponse,
-  RISK_LEVELS,
   setCustomRiskRules,
 } from "../utils/aiSystemPrompt";
 import "./AIChatWindow.css";
@@ -181,8 +178,6 @@ const MessageBubble = styled(Paper)(({ theme, isUser }) => ({
 
 // 思考内容组件
 const ThinkContent = ({ content, isExpanded, onToggle }) => {
-  const { t } = useTranslation();
-
   return (
     <Box
       sx={{
@@ -245,7 +240,6 @@ const AIChatWindow = ({
   const [apiMenuAnchor, setApiMenuAnchor] = useState(null);
   const [availableApis, setAvailableApis] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [commandExecutionStatus, setCommandExecutionStatus] = useState({});
   const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [prevWindowState, setPrevWindowState] = useState(null);

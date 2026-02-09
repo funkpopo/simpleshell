@@ -1,13 +1,7 @@
-import React, { memo, useCallback, useState } from "react";
+import React, { memo, useCallback } from "react";
 import { Box, Typography, Tab, GlobalStyles } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import {
-  findGroupByTab,
-  getGroups,
-  addGroup,
-  addTabToGroup,
-  removeTabFromGroup,
-} from "../core/syncInputGroups";
+import { findGroupByTab } from "../core/syncInputGroups";
 
 // 添加拖拽指示器动画和磁吸效果的全局样式
 const dragIndicatorStyles = (

@@ -20,10 +20,7 @@ export const NotificationProvider = ({ children }) => {
   const [duration, setDuration] = useState(5000);
 
   const showNotification = useCallback((msg, type = 'info', options = {}) => {
-    const {
-      autoHideDuration = 5000,
-      anchorOrigin = { vertical: 'bottom', horizontal: 'left' }
-    } = options;
+    const { autoHideDuration = 5000 } = options;
 
     setMessage(msg);
     setSeverity(type);

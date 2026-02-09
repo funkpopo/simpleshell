@@ -1,6 +1,6 @@
-const { ipcMain, dialog, shell, BrowserWindow } = require("electron");
+const { ipcMain } = require("electron");
 const { logToFile } = require("../utils/logger");
-const { safeHandle, wrapIpcHandler } = require("../ipc/ipcResponse");
+const { safeHandle } = require("../ipc/ipcResponse");
 const { registerReconnectHandlers } = require("../ipc/handlers/reconnectHandlers");
 const { registerBatchHandlers } = require("../ipc/handlers/batchHandlers");
 const { registerBatchInvokeHandlers } = require("../ipc/handlers/batchInvokeHandlers");
