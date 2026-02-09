@@ -225,10 +225,10 @@ class SSHPool extends BaseConnectionPool {
         this._logInfo(`SSH连接超时: ${connectionKey}`);
         try {
           if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
-        } catch (_) {}
+        } catch {}
         try {
           ssh.end();
-        } catch (_) {}
+        } catch {}
         const err = new Error(`连接超时: ${sshConfig.host}:${sshConfig.port || 22}`);
         // 初次连接超时：若可重试，则进入统一的自动重连状态机（1分钟封顶）
         if (this._shouldAutoReconnectOnInitialFailure(err, sshConfig, usingProxy)) {
@@ -261,7 +261,7 @@ class SSHPool extends BaseConnectionPool {
         clearTimeout(timeout);
         try {
           if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
-        } catch (_) {}
+        } catch {}
 
         const enhancedError = this._handleSSHError(
           err,
@@ -314,7 +314,7 @@ class SSHPool extends BaseConnectionPool {
             clearTimeout(timeout);
             try {
               if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
-            } catch (_) {}
+            } catch {}
             // 代理隧道创建失败：多为本地代理/VPN未就绪，按可重试处理
             if (this._shouldAutoReconnectOnInitialFailure(e, sshConfig, usingProxy)) {
               void this._startInitialAutoReconnect(
@@ -786,7 +786,7 @@ class SSHPool extends BaseConnectionPool {
       this._logInfo(`有意关闭连接: ${connectionKey}`);
       try {
         if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
-      } catch (_) {}
+      } catch {}
       this.connections.delete(connectionKey);
       this.processRequestQueue();
       return;
