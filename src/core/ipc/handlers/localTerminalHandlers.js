@@ -1,4 +1,4 @@
-const { safeHandle, failure, success, wrapIpcHandler } = require("../ipcResponse");
+const { safeHandle } = require("../ipcResponse");
 const { ipcMain: electronIpcMain } = require("electron");
 const TerminalDetector = require("../../local-terminal/terminal-detector");
 const LocalTerminalManager = require("../../local-terminal/local-terminal-manager");

@@ -5,7 +5,6 @@ import {
   Paper,
   List,
   ListItem,
-  ListItemText,
   ListItemButton,
   alpha,
   Chip,
@@ -14,7 +13,7 @@ import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import { countries } from "countries-list";
 
-const WelcomePage = ({ connections, topConnections, onOpenConnection }) => {
+const WelcomePage = ({ topConnections, onOpenConnection }) => {
   const theme = useTheme();
   const { t } = useTranslation();
 

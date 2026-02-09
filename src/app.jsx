@@ -6,11 +6,10 @@ import { createUnifiedTheme } from "./theme";
 import CssBaseline from "@mui/material/CssBaseline";
 import { GlobalErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { AppProvider, useAppState, useAppDispatch } from "./store/AppContext.jsx";
-import { NotificationProvider, useNotification } from "./contexts/NotificationContext.jsx";
+import { NotificationProvider } from "./contexts/NotificationContext.jsx";
 import { actions } from "./store/appReducer.js";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
-import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
@@ -63,7 +62,6 @@ import "./i18n/i18n";
 import { changeLanguage } from "./i18n/i18n";
 import "./styles/index.css";
 import "./styles/theme-switch-animation.css";
-import { styled } from "@mui/material/styles";
 import { SIDEBAR_WIDTHS } from "./constants/layout.js";
 import "flag-icons/css/flag-icons.min.css";
 import {
@@ -79,10 +77,6 @@ import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import AddIcon from "@mui/icons-material/Add";
 import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
 import { useEventManager } from "./core/utils/eventManager.js";
-import {
-  useWindowEvents,
-  useElementEvent,
-} from "./hooks/useWindowEvent.js";
 import ErrorNotification from "./components/ErrorNotification.jsx";
 import GlobalTransferBar from "./components/GlobalTransferBar.jsx";
 import GlobalTransferFloat from "./components/GlobalTransferFloat.jsx";
@@ -1596,22 +1590,6 @@ function AppContent() {
     }
   }, []);
 
-  // 更新关闭所有侧边栏的函数
-  const closeAllSidebars = () => {
-    dispatch(actions.setConnectionManagerOpen(false));
-    dispatch(actions.setResourceMonitorOpen(false));
-    dispatch(actions.setFileManagerOpen(false));
-    dispatch(actions.setShortcutCommandsOpen(false));
-    dispatch(actions.setCommandHistoryOpen(false));
-    dispatch(actions.setIpAddressQueryOpen(false));
-    dispatch(actions.setSecurityToolsOpen(false));
-    setLocalTerminalSidebarOpen(false);
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
-  };
 
   // 获取右侧面板应该使用的当前标签页信息
   const getCurrentPanelTab = useCallback(() => {

@@ -1,5 +1,4 @@
 const { getPrimaryWindow } = require("../../window/windowManager");
-const { logToFile } = require("../../utils/logger");
 
 /**
  * 窗口控制相关的IPC处理器

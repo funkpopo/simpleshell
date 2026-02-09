@@ -39,7 +39,6 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
-import { dispatchCommandToGroup } from "../core/syncGroupCommandDispatcher";
 
 // 虚拟化历史记录项组件
 const HistoryItem = React.memo(({ index, style, ariaAttributes, filteredHistory, selectMode, selectedCommands, toggleCommandSelection, handleSendCommand, handleMenuOpen, formatTime }) => {

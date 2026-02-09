@@ -3,7 +3,6 @@ const fs = require("fs").promises;
 const path = require("path");
 const { spawn, exec } = require("child_process");
 const { logToFile } = require("../utils/logger");
-const os = require("os");
 
 class UpdateService {
   constructor() {
@@ -78,10 +77,8 @@ class UpdateService {
       }
 
       let responseData = [];
-      let response = null;
 
       request.on("response", (res) => {
-        response = res;
 
         res.on("data", (chunk) => {
           responseData.push(chunk);
