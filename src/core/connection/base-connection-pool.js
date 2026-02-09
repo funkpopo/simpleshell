@@ -154,6 +154,8 @@ class BaseConnectionPool extends EventEmitter {
    * @returns {Promise<Object>} 连接信息对象
    */
   async createConnection(config, key) {
+    void config;
+    void key;
     throw new Error('createConnection() 必须由子类实现');
   }
 
@@ -163,6 +165,7 @@ class BaseConnectionPool extends EventEmitter {
    * @returns {string} 连接键
    */
   generateConnectionKey(config) {
+    void config;
     throw new Error('generateConnectionKey() 必须由子类实现');
   }
 
@@ -172,6 +175,7 @@ class BaseConnectionPool extends EventEmitter {
    * @returns {boolean} 是否健康
    */
   isConnectionHealthy(connectionInfo) {
+    void connectionInfo;
     throw new Error('isConnectionHealthy() 必须由子类实现');
   }
 
@@ -257,7 +261,7 @@ class BaseConnectionPool extends EventEmitter {
         if (conn.client && typeof conn.client.destroy === 'function') {
           conn.client.destroy();
         }
-      } catch (_) {
+      } catch {
         // 忽略销毁时的错误
       }
     }
@@ -282,7 +286,7 @@ class BaseConnectionPool extends EventEmitter {
    * @returns {boolean} 是否被引用
    */
   isConnectionReferencedByTabs(key) {
-    for (const [tabId, connKey] of this.tabReferences) {
+    for (const [, connKey] of this.tabReferences) {
       if (connKey === key) {
         return true;
       }
@@ -663,6 +667,7 @@ class BaseConnectionPool extends EventEmitter {
    * @private
    */
   async _handleUnhealthyConnection(conn, config) {
+    void config;
     // 默认实现：直接关闭连接
     // 子类可以覆盖此方法以实现重连逻辑
     this._logInfo(`关闭不健康的连接: ${conn.key}`);

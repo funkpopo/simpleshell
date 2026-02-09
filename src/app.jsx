@@ -282,7 +282,7 @@ function AppContent() {
             dispatch(actions.setDarkMode(settings.darkMode));
           }
         }
-      } catch (error) {
+      } catch {
         // 如果加载失败，尝试从 localStorage 恢复作为备选
         const fallbackTheme = localStorage.getItem("terminalDarkMode");
         if (fallbackTheme !== null) {
@@ -396,7 +396,7 @@ function AppContent() {
   }, []);
 
   // 处理 SSH 认证对话框关闭/取消
-  const handleSSHAuthClose = React.useCallback(async (result) => {
+  const handleSSHAuthClose = React.useCallback(async () => {
     if (sshAuthRequestIdRef.current) {
       try {
         await window.terminalAPI.respondSSHAuth({
@@ -644,7 +644,7 @@ function AppContent() {
             }
           }
         }
-      } catch (error) {
+      } catch {
         // 连接加载失败，应用仍可正常启动
       }
     };
@@ -713,7 +713,7 @@ function AppContent() {
             }
           }
         })
-        .catch((error) => {
+        .catch(() => {
           // 处理加载最近连接失败的情况
         });
     }
@@ -734,7 +734,7 @@ function AppContent() {
           connections,
         );
         dispatch(actions.setTopConnections(normalizedRecent));
-      } catch (e) {
+      } catch {
         // 忽略错误
       }
     };
@@ -851,7 +851,7 @@ function AppContent() {
               currentSettings = loadedSettings;
             }
           }
-        } catch (loadError) {
+        } catch {
           // 获取当前设置失败，使用默认值
         }
 
@@ -866,7 +866,7 @@ function AppContent() {
 
       // 同时更新 localStorage 作为备选（向后兼容）
       localStorage.setItem("terminalDarkMode", newDarkMode.toString());
-    } catch (error) {
+    } catch {
       // 如果保存失败，至少更新 localStorage
       localStorage.setItem("terminalDarkMode", (!darkMode).toString());
     }
@@ -1803,7 +1803,7 @@ function AppContent() {
             }
           }
         }
-      } catch (error) {
+      } catch {
         // 使用默认字体大小
         document.documentElement.style.fontSize = "14px";
       }

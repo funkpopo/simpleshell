@@ -34,7 +34,7 @@ class TerminalDetector {
       } else if (this.isLinux) {
         await this.detectLinuxTerminals();
       }
-    } catch (error) {
+    } catch {
       // 忽略异常，尽力返回已检测到的终端
     }
 
@@ -247,7 +247,7 @@ class TerminalDetector {
                   return true;
                 }
               }
-            } catch (error) {
+            } catch {
               // 忽略
             }
             return false;
@@ -268,7 +268,7 @@ class TerminalDetector {
                 terminal.executablePath = terminal.executable;
                 return true;
               }
-            } catch (error) {
+            } catch {
               // 忽略
             }
             return false;
@@ -294,7 +294,7 @@ class TerminalDetector {
                 terminal.executablePath = stdout.trim();
                 return true;
               }
-            } catch (error) {
+            } catch {
               // 忽略
             }
             return false;
@@ -313,7 +313,7 @@ class TerminalDetector {
       }
 
       return false;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -371,7 +371,7 @@ class TerminalDetector {
       }
 
       return false;
-    } catch (error) {
+    } catch {
       // WSL 不可用或执行失败
       return false;
     }
@@ -432,7 +432,7 @@ class TerminalDetector {
     try {
       await fs.access(filePath);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
