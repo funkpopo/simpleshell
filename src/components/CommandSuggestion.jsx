@@ -109,7 +109,7 @@ const CommandSuggestion = ({
     let actualTextWidth = 0;
     try {
       actualTextWidth = measureCommandText(longestCommand, COMMAND_FONT);
-    } catch (error) {
+    } catch {
       actualTextWidth = 0;
     }
 
@@ -190,7 +190,7 @@ const CommandSuggestion = ({
 
   // 处理删除建议
   const handleDeleteSuggestion = useCallback(
-    async (suggestion, index) => {
+    async (suggestion) => {
       try {
         // 调用删除API
         if (window.terminalAPI && window.terminalAPI.deleteCommandHistory) {
@@ -211,7 +211,7 @@ const CommandSuggestion = ({
         } else {
           // deleteCommandHistory API not available
         }
-      } catch (error) {
+      } catch {
         // Error deleting command from history
       }
     },

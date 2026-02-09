@@ -69,7 +69,7 @@ class AIHandlers {
     ];
   }
 
-  async loadSettings(event) {
+  async loadSettings() {
     return configService.loadAISettings();
   }
 
@@ -234,7 +234,7 @@ class AIHandlers {
     }
   }
 
-  async abortAPIRequest(event) {
+  async abortAPIRequest() {
     try {
       const currentSessionId = aiWorkerManager.getCurrentSessionId();
       const aiWorker = aiWorkerManager.getAIWorker();

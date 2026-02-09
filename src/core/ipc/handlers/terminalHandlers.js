@@ -396,7 +396,7 @@ class TerminalHandlers {
   /**
    * 选择密钥文件
    */
-  async selectKeyFile(event) {
+  async selectKeyFile() {
     const result = await dialog.showOpenDialog({
       properties: ["openFile"],
       filters: [
@@ -414,7 +414,7 @@ class TerminalHandlers {
   /**
    * 执行简单命令
    */
-  async executeCommand(event, command) {
+  async executeCommand(command) {
     try {
       // 简单内部命令处理
       if (command === "date") {

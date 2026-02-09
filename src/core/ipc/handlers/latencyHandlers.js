@@ -141,7 +141,7 @@ class LatencyHandlers {
   /**
    * 获取所有连接的延迟信息
    */
-  async getAllLatencyInfo(event) {
+  async getAllLatencyInfo() {
     try {
       const info = this.latencyService.getAllLatencyInfo();
 
@@ -161,7 +161,7 @@ class LatencyHandlers {
   /**
    * 获取服务状态
    */
-  async getServiceStatus(event) {
+  async getServiceStatus() {
     try {
       const status = this.latencyService.getServiceStatus();
 

@@ -14,7 +14,7 @@ function registerReconnectHandlers(connectionPool) {
   safeHandle(
     ipcMain,
     "get-reconnect-status",
-    async (event, { tabId, processId }) => {
+    async (_event, { tabId }) => {
       const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
       if (!connectionKey) {
         return null;
@@ -29,7 +29,7 @@ function registerReconnectHandlers(connectionPool) {
   safeHandle(
     ipcMain,
     "manual-reconnect",
-    async (event, { tabId, processId, sshConfig }) => {
+    async (_event, { tabId, sshConfig }) => {
       const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
 
       if (!connectionKey) {
@@ -80,7 +80,7 @@ function registerReconnectHandlers(connectionPool) {
   });
 
   // 获取重连统计信息
-  safeHandle(ipcMain, "get-reconnect-statistics", async (event) => {
+  safeHandle(ipcMain, "get-reconnect-statistics", async () => {
     if (connectionPool.reconnectionManager) {
       return connectionPool.reconnectionManager.getStatistics();
     }
