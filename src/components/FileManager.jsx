@@ -121,7 +121,7 @@ const FileManager = memo(
     const [showSearch, setShowSearch] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [selectedFiles, setSelectedFiles] = useState([]); // 多选文件列表
-    const [lastSelectedIndex, setLastSelectedIndex] = useState(-1); // 用于Shift范围选择
+    const [, setLastSelectedIndex] = useState(-1); // 用于Shift范围选择
     const [anchorIndex, setAnchorIndex] = useState(-1); // Shift选择的锚点索引
     const [showRenameDialog, setShowRenameDialog] = useState(false);
     const [newName, setNewName] = useState("");
@@ -134,7 +134,7 @@ const FileManager = memo(
     const [showPreview, setShowPreview] = useState(false);
     const [pathInput, setPathInput] = useState("");
     const [transferCancelled, setTransferCancelled] = useState(false);
-    const [isClosing, setIsClosing] = useState(false);
+    const [isClosing] = useState(false);
     const [notification, setNotification] = useState(null);
     const [uploadMenuAnchor, setUploadMenuAnchor] = useState(null);
     const [externalEditorEnabled, setExternalEditorEnabled] = useState(false);
@@ -145,7 +145,7 @@ const FileManager = memo(
     const skipInitialPathSyncRef = useRef(false);
     const previousInitialPathRef = useRef(initialPath);
     const [isDragging, setIsDragging] = useState(false); // 拖拽状态
-    const [dragCounter, setDragCounter] = useState(0); // 拖拽计数器，用于处理子元素的dragenter/dragleave
+    const [, setDragCounter] = useState(0); // 拖拽计数器，用于处理子元素的dragenter/dragleave
 
     // 权限弹窗状态
     const [showPermissionDialog, setShowPermissionDialog] = useState(false);
@@ -198,7 +198,7 @@ const FileManager = memo(
       try {
         if (chunkingResetTimerRef.current)
           clearTimeout(chunkingResetTimerRef.current);
-      } catch (_) {}
+      } catch {}
       chunkingResetTimerRef.current = setTimeout(() => {
         isChunkingRef.current = false;
         setIsChunking(false);
@@ -209,7 +209,7 @@ const FileManager = memo(
         try {
           if (chunkingResetTimerRef.current)
             clearTimeout(chunkingResetTimerRef.current);
-        } catch (_) {}
+        } catch {}
       },
       [],
     );
@@ -317,7 +317,7 @@ const FileManager = memo(
               settings?.externalEditor?.enabled === true,
             );
           }
-        } catch (error) {
+        } catch {
           if (!ignore) {
             setExternalEditorEnabled(false);
           }
@@ -375,8 +375,6 @@ const FileManager = memo(
       addTransferProgress: storeAddTransferProgress,
       updateTransferProgress: storeUpdateTransferProgress,
       removeTransferProgress: storeRemoveTransferProgress,
-      clearCompletedTransfers: storeClearCompletedTransfers,
-      clearAllTransfers: storeClearAllTransfers,
       scheduleTransferCleanup: storeScheduleTransferCleanup,
     } = useGlobalTransfers(tabId);
 
@@ -416,14 +414,10 @@ const FileManager = memo(
     };
 
     // 清理已完成的传输任务
-    const clearCompletedTransfers = () => {
-      storeClearCompletedTransfers();
-    };
+    
 
     // 清理所有传输任务
-    const clearAllTransfers = () => {
-      storeClearAllTransfers();
-    };
+    
 
     // 检查错误消息是否与用户取消操作相关
     const isUserCancellationError = (error) => {
@@ -594,7 +588,7 @@ const FileManager = memo(
       try {
         const globalCached = dirCache.get(tabId, path, CACHE_EXPIRY_TIME);
         if (globalCached) return globalCached;
-      } catch (_) {}
+      } catch {}
       const cacheEntry = directoryCacheRef.current.get(path);
       if (!cacheEntry) {
         return null;
@@ -613,7 +607,7 @@ const FileManager = memo(
       // 写入全局缓存
       try {
         dirCache.set(tabId, path, data);
-      } catch (_) {}
+      } catch {}
       directoryCacheRef.current.set(path, {
         data,
         timestamp: Date.now(),
@@ -659,7 +653,7 @@ const FileManager = memo(
               // 清理 watchdog/状态
               try {
                 if (bg.watchdog) clearTimeout(bg.watchdog);
-              } catch (_) {}
+              } catch {}
               bg.watchdog = null;
 
               const resolve = bg.resolve;
@@ -740,7 +734,7 @@ const FileManager = memo(
                   }
                 }, 80);
               }
-            } catch (_) {
+            } catch {
               setFiles((prev) => prev.concat(payload.items));
             }
           }
@@ -768,14 +762,14 @@ const FileManager = memo(
               stableListSignatureRef.current = computeFileListSignature(
                 filesRef.current || [],
               );
-            } catch (_) {}
+            } catch {}
 
             listTokenRef.current = null;
             setListToken(null);
             isChunkingRef.current = false;
             setIsChunking(false);
           }
-        } catch (_) {
+        } catch {
           // ignore
         }
       });
@@ -818,7 +812,7 @@ const FileManager = memo(
           if (curLastRefresh && Date.now() - curLastRefresh < 700) {
             return { ok: false, skipped: true, reason: "recentlyRefreshed" };
           }
-        } catch (_) {}
+        } catch {}
 
         const now = Date.now();
         const lastAttempt = backgroundListLastAttemptAtRef.current || 0;
@@ -833,7 +827,7 @@ const FileManager = memo(
           if (bg.startedAt && now - bg.startedAt > BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS) {
             try {
               if (bg.watchdog) clearTimeout(bg.watchdog);
-            } catch (_) {}
+            } catch {}
             bg.watchdog = null;
             bg.inFlight = false;
             bg.token = null;
@@ -913,7 +907,7 @@ const FileManager = memo(
           // watchdog：避免主进程/IPC异常导致 inFlight 永久卡住
           try {
             if (bg.watchdog) clearTimeout(bg.watchdog);
-          } catch (_) {}
+          } catch {}
           bg.watchdog = setTimeout(() => {
             try {
               const cur = backgroundListRequestRef.current;
@@ -928,14 +922,14 @@ const FileManager = memo(
                 cur.reject = null;
                 try {
                   if (cur.watchdog) clearTimeout(cur.watchdog);
-                } catch (_) {}
+                } catch {}
                 cur.watchdog = null;
                 backgroundListBufferRef.current = [];
                 if (typeof resolve === "function") {
                   resolve({ ok: false, timeout: true });
                 }
               }
-            } catch (_) {}
+            } catch {}
           }, BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS);
 
           if (awaitDone) {
@@ -993,7 +987,7 @@ const FileManager = memo(
       const schedule = (delayMs) => {
         try {
           if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        } catch (_) {}
+        } catch {}
         pollTimerRef.current = setTimeout(() => {
           tick().catch(() => {});
         }, Math.max(250, delayMs || FILE_LIST_POLL_BASE_INTERVAL_MS));
@@ -1014,7 +1008,7 @@ const FileManager = memo(
             schedule(Math.min(pollStateRef.current.intervalMs, 15000));
             return;
           }
-        } catch (_) {}
+        } catch {}
 
         const result = await startBackgroundDirectoryRefresh({
           reason: "poll",
@@ -1060,7 +1054,7 @@ const FileManager = memo(
         cancelled = true;
         try {
           if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        } catch (_) {}
+        } catch {}
         pollTimerRef.current = null;
 
         // 清理后台刷新上下文，避免 promise 永久悬挂
@@ -1068,7 +1062,7 @@ const FileManager = memo(
         if (bg && bg.inFlight) {
           try {
             if (bg.watchdog) clearTimeout(bg.watchdog);
-          } catch (_) {}
+          } catch {}
           const resolve = bg.resolve;
           bg.inFlight = false;
           bg.token = null;
@@ -1122,13 +1116,7 @@ const FileManager = memo(
     };
 
     // 返回先前路径
-    const handleGoToPreviousPath = () => {
-      if (historyIndex > 0) {
-        const previousPath = pathHistory[historyIndex - 1];
-        setHistoryIndex(historyIndex - 1);
-        loadDirectory(previousPath, 0, false, true); // 最后一个参数表示是历史导航
-      }
-    };
+    
 
     // 前进到下一个路径
     const handleGoToNextPath = () => {
@@ -1156,7 +1144,7 @@ const FileManager = memo(
         if (flushTimerRef.current) {
           clearTimeout(flushTimerRef.current);
         }
-      } catch (_) {}
+      } catch {}
       flushTimerRef.current = null;
       chunkBufferRef.current = [];
       if (listTokenRef.current) {
@@ -1327,9 +1315,7 @@ const FileManager = memo(
     };
 
     // 刷新目录（强制从服务器重新加载）
-    const refreshDirectory = (path) => {
-      loadDirectory(path, 0, true);
-    };
+    
 
     // 节流函数，用于限制连续的目录加载操作
     const throttleLoadDirectory = (() => {
@@ -1708,7 +1694,7 @@ const FileManager = memo(
             });
           }
         }
-      } catch (e) {
+      } catch {
         // 忽略预取失败，使用默认
       }
       setShowPermissionDialog(true);
@@ -1878,7 +1864,7 @@ const FileManager = memo(
       const fileToDelete = filesToDelete[0];
 
       // 创建一个标识符，用于跟踪当前的删除操作
-      const deleteOperationId = Date.now();
+      
 
       setLoading(true);
       setError(null);
@@ -1916,7 +1902,7 @@ const FileManager = memo(
                 if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
                   refreshAfterUserActivity();
                 }
-              } catch (_) {
+              } catch {
                 // 兜底触发
                 refreshAfterUserActivity();
               }
@@ -2143,7 +2129,7 @@ const FileManager = memo(
             if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
               refreshAfterUserActivity();
             }
-          } catch (_) {
+          } catch {
             refreshAfterUserActivity();
           }
         }
@@ -2201,7 +2187,7 @@ const FileManager = memo(
           if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
             refreshAfterUserActivity();
           }
-        } catch (_) {
+        } catch {
           refreshAfterUserActivity();
         }
       }
@@ -2664,101 +2650,7 @@ const FileManager = memo(
     };
 
     // 处理取消传输
-    const handleCancelTransfer = async (transferId) => {
-      if (!window.terminalAPI) {
-        return;
-      }
-
-      // 如果没有提供transferId，取消所有活跃传输
-      const transfersToCancel = transferId
-        ? transferProgressList.filter((t) => t.transferId === transferId)
-        : transferProgressList.filter(
-            (t) => t.progress < 100 && !t.isCancelled && !t.error,
-          );
-
-      if (transfersToCancel.length === 0) {
-        return;
-      }
-
-      try {
-        // 标记传输已取消，用于避免显示错误消息
-        setTransferCancelled(true);
-
-        for (const transfer of transfersToCancel) {
-          const transferKey = transfer.transferKey;
-
-          // 显示取消中状态
-          updateTransferProgress(transfer.transferId, {
-            cancelInProgress: true,
-            cancelMessage: "正在取消传输...",
-          });
-
-          // 调用取消API传递transferKey
-          if (window.terminalAPI.cancelTransfer && transferKey) {
-            try {
-              const result = await window.terminalAPI.cancelTransfer(
-                tabId,
-                transferKey,
-              );
-
-              if (result.success) {
-                // 更新UI以显示已取消
-                updateTransferProgress(transfer.transferId, {
-                  progress: 0,
-                  isCancelled: true,
-                  cancelMessage: "传输已取消",
-                });
-              } else {
-                // 仍然更新UI以避免用户困惑
-                updateTransferProgress(transfer.transferId, {
-                  progress: 0,
-                  isCancelled: true,
-                  cancelMessage: t("fileManager.errors.transferCancelled"),
-                });
-              }
-            } catch (apiError) {
-              // API调用失败，但仍标记为取消
-              updateTransferProgress(transfer.transferId, {
-                progress: 0,
-                isCancelled: true,
-                cancelMessage: t("fileManager.errors.transferCancelled"),
-              });
-            }
-          } else {
-            // API不可用，直接标记为取消
-            updateTransferProgress(transfer.transferId, {
-              progress: 0,
-              isCancelled: true,
-              cancelMessage: t("fileManager.errors.transferCancelled"),
-            });
-          }
-        }
-
-        // 添加额外延迟，确保取消操作完成后再刷新
-        addTimeout(() => {
-          // 无论是否成功取消传输，都刷新文件列表
-          refreshAfterUserActivity();
-
-          // 也执行一次强制刷新
-          loadDirectory(currentPath, 0, true);
-        }, 800); // 延迟800ms等待后端处理完成
-      } catch (error) {
-        // 即使出现错误，也标记相关传输为已中断
-        transfersToCancel.forEach((transfer) => {
-          updateTransferProgress(transfer.transferId, {
-            progress: 0,
-            isCancelled: true,
-            cancelMessage: t("fileManager.errors.transferCancelled"),
-          });
-        });
-
-        // 发生错误时也刷新文件列表，确保UI状态一致
-        addTimeout(() => {
-          refreshAfterUserActivity();
-          loadDirectory(currentPath, 0, true);
-        }, 800);
-      }
-    };
+    
 
     // 处理空白区域右键菜单
     const handleBlankContextMenu = (event) => {
@@ -2835,7 +2727,7 @@ const FileManager = memo(
                 if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
                   refreshAfterUserActivity();
                 }
-              } catch (_) {
+              } catch {
                 refreshAfterUserActivity();
               }
             } else if (
@@ -2932,7 +2824,7 @@ const FileManager = memo(
               if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
                 refreshAfterUserActivity();
               }
-            } catch (_) {
+            } catch {
               refreshAfterUserActivity();
             }
           } else {
@@ -3817,7 +3709,7 @@ const FileManager = memo(
                               const folderUrl = `file://${normalizedPath}`;
                               window.terminalAPI
                                 .openExternal(folderUrl)
-                                .catch((e) => {
+                                .catch(() => {
                                   // 无法打开文件夹，尝试替代方法
                                   window.terminalAPI
                                     .showItemInFolder?.(normalizedPath)
@@ -3981,16 +3873,6 @@ const FileManager = memo(
           for (const folder of foldersToDownload) {
             if (transferCancelled) break;
 
-            const fullPath = (() => {
-              if (savedCurrentPath === "/") {
-                return "/" + folder.name;
-              } else if (savedCurrentPath === "~") {
-                return "~/" + folder.name;
-              } else {
-                return savedCurrentPath + "/" + folder.name;
-              }
-            })();
-
             if (window.terminalAPI && window.terminalAPI.downloadFolder) {
               // 创建单个文件夹下载传输任务
               const transferId = addTransferProgress({
@@ -4007,7 +3889,17 @@ const FileManager = memo(
               });
 
               try {
-                const downloadResult = await window.terminalAPI.downloadFolder(
+                const fullPath = (() => {
+                  if (savedCurrentPath === "/") {
+                    return "/" + folder.name;
+                  } else if (savedCurrentPath === "~") {
+                    return "~/" + folder.name;
+                  } else {
+                    return savedCurrentPath + "/" + folder.name;
+                  }
+                })();
+
+                await window.terminalAPI.downloadFolder(
                   tabId,
                   fullPath,
                   (
@@ -4120,7 +4012,6 @@ const FileManager = memo(
                 ? currentPath + "/" + selectedFile.name
                 : selectedFile.name;
 
-          let finalPath = oldPath;
 
           // 如果需要重命名
           if (
@@ -4134,29 +4025,26 @@ const FileManager = memo(
               newName,
             );
 
-            if (renameResponse?.success) {
-              // 重命名成功，更新最终路径
-              const dirPath = currentPath === "/" ? "/" : currentPath || "/";
-              finalPath =
-                dirPath === "/" ? `/${newName}` : `${dirPath}/${newName}`;
-            } else if (
-              renameResponse?.error?.includes("SFTP错误") &&
-              retryCount < maxRetries
-            ) {
-              // SFTP错误，尝试重试
-              retryCount++;
-              setError(
-                t("fileManager.messages.updateFailedRetrying", {
-                  current: retryCount,
-                  max: maxRetries,
-                }),
-              );
-              setTimeout(attemptUpdate, 500 * retryCount);
-              return;
-            } else {
-              // 重命名失败
-              setError(renameResponse?.error || "重命名失败");
-              return;
+            if (!renameResponse?.success) {
+              if (
+                renameResponse?.error?.includes("SFTP错误") &&
+                retryCount < maxRetries
+              ) {
+                // SFTP错误，尝试重试
+                retryCount++;
+                setError(
+                  t("fileManager.messages.updateFailedRetrying", {
+                    current: retryCount,
+                    max: maxRetries,
+                  }),
+                );
+                setTimeout(attemptUpdate, 500 * retryCount);
+                return;
+              } else {
+                // 重命名失败
+                setError(renameResponse?.error || "重命名失败");
+                return;
+              }
             }
           }
 
@@ -4360,7 +4248,7 @@ const FileManager = memo(
       const keydownHandler = (event) => {
         try {
           handleKeyDown(event);
-        } catch (error) {
+        } catch {
           // Silently handle keyboard event errors
         }
       };
