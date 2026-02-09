@@ -14,6 +14,8 @@ const {
   parsePriority,
 } = require("../../modules/sftp/sftpConfig");
 
+const path = require("path");
+
 let logToFile = null;
 let getChildProcessInfo = null; // Function to get info from main.js's childProcesses map
 
@@ -917,6 +919,9 @@ async function enqueueSftpOperation(tabId, operation, options = {}) {
       operationObj.innerReject = rej;
     });
 
+    // Avoid unhandled rejection logs when no merge subscriber is attached.
+    operationObj.promise.catch(() => {});
+
     // Add to queue
     const queue = pendingOperations.get(tabId);
     queue.push(operationObj);
@@ -1275,6 +1280,131 @@ async function copyFile(tabId, sourcePath, targetPath) {
   );
 }
 
+
+const DIRECTORY_TYPE_MASK = 0o170000;
+const DIRECTORY_MODE = 0o040000;
+
+function isDirectoryMode(mode) {
+  return typeof mode === "number" && (mode & DIRECTORY_TYPE_MASK) === DIRECTORY_MODE;
+}
+
+function isMissingPathError(error) {
+  const code = String(error?.code || "").toUpperCase();
+  const message = String(error?.message || "").toLowerCase();
+  return code === "ENOENT" || code === "NO_SUCH_FILE" || message.includes("no such file");
+}
+
+function sftpLstat(sftp, targetPath) {
+  return new Promise((resolve, reject) => {
+    sftp.lstat(targetPath, (err, attrs) => {
+      if (err) reject(err);
+      else resolve(attrs);
+    });
+  });
+}
+
+function sftpReaddir(sftp, targetPath) {
+  return new Promise((resolve, reject) => {
+    sftp.readdir(targetPath, (err, list) => {
+      if (err) reject(err);
+      else resolve(list || []);
+    });
+  });
+}
+
+function sftpUnlink(sftp, targetPath) {
+  return new Promise((resolve, reject) => {
+    sftp.unlink(targetPath, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+function sftpRmdir(sftp, targetPath) {
+  return new Promise((resolve, reject) => {
+    sftp.rmdir(targetPath, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+async function deleteRemoteDirectoryRecursive(sftp, targetPath) {
+  const list = await sftpReaddir(sftp, targetPath);
+
+  for (const item of list) {
+    const name = item?.filename;
+    if (!name || name === "." || name === "..") {
+      continue;
+    }
+
+    const childPath = path.posix.join(targetPath, name);
+    let childIsDirectory = isDirectoryMode(item?.attrs?.mode);
+
+    if (typeof item?.attrs?.mode !== "number") {
+      try {
+        const attrs = await sftpLstat(sftp, childPath);
+        childIsDirectory = isDirectoryMode(attrs?.mode);
+      } catch (error) {
+        if (isMissingPathError(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (childIsDirectory) {
+      await deleteRemoteDirectoryRecursive(sftp, childPath);
+      try {
+        await sftpRmdir(sftp, childPath);
+      } catch (error) {
+        if (!isMissingPathError(error)) {
+          throw error;
+        }
+      }
+      continue;
+    }
+
+    try {
+      await sftpUnlink(sftp, childPath);
+    } catch (error) {
+      if (!isMissingPathError(error)) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function deleteFile(tabId, filePath, isDirectory = false) {
+  return enqueueSftpOperation(
+    tabId,
+    async () => {
+      const sftp = await getSftpSession(tabId);
+
+      let shouldDeleteDirectory = Boolean(isDirectory);
+      try {
+        const attrs = await sftpLstat(sftp, filePath);
+        shouldDeleteDirectory = isDirectoryMode(attrs?.mode);
+      } catch (error) {
+        if (!isMissingPathError(error)) {
+          throw error;
+        }
+      }
+
+      if (shouldDeleteDirectory) {
+        await deleteRemoteDirectoryRecursive(sftp, filePath);
+        await sftpRmdir(sftp, filePath);
+      } else {
+        await sftpUnlink(sftp, filePath);
+      }
+
+      return { success: true };
+    },
+    { type: "deleteFile", path: filePath }
+  );
+}
+
 async function createFolder(tabId, folderPath) {
   return enqueueSftpOperation(
     tabId,
@@ -1416,6 +1546,7 @@ module.exports = {
   // 文件操作API
   listFiles,
   copyFile,
+  deleteFile,
   createFolder,
   createFile,
   getFilePermissions,

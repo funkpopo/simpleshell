@@ -303,20 +303,24 @@ class FileHandlers {
       }
 
       // Fallback implementation
-      return await sftpCore.enqueueSftpOperation(tabId, async () => {
-        const sftp = await sftpCore.getSftpSession(tabId);
-        return new Promise((resolve, reject) => {
-          const cb = (err) => {
-            if (err) reject(err);
-            else resolve({ success: true });
-          };
-          if (isDirectory) {
-            sftp.rmdir(filePath, cb);
-          } else {
-            sftp.unlink(filePath, cb);
-          }
-        });
-      });
+      return await sftpCore.enqueueSftpOperation(
+        tabId,
+        async () => {
+          const sftp = await sftpCore.getSftpSession(tabId);
+          return new Promise((resolve, reject) => {
+            const cb = (err) => {
+              if (err) reject(err);
+              else resolve({ success: true });
+            };
+            if (isDirectory) {
+              sftp.rmdir(filePath, cb);
+            } else {
+              sftp.unlink(filePath, cb);
+            }
+          });
+        },
+        { type: "deleteFile", path: filePath }
+      );
     } catch (error) {
       logToFile(`Error deleting file: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
