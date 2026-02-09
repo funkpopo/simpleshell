@@ -117,18 +117,12 @@ export const isElementVisible = (element) => {
 
 export const performanceMonitor = {
   measure: (func, label = "function") => {
-    const start = performance.now();
-    const result = func();
-    const end = performance.now();
-
-    return result;
+    void label;
+    return func();
   },
 
   measureAsync: async (asyncFunc, label = "async function") => {
-    const start = performance.now();
-    const result = await asyncFunc();
-    const end = performance.now();
-
-    return result;
+    void label;
+    return asyncFunc();
   },
 };
