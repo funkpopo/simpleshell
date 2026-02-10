@@ -98,8 +98,10 @@ class AppHandlers {
     }
   }
 
-  async openExternal(url) {
+  async openExternal(event, url) {
     try {
+      void event;
+
       if (!url || typeof url !== "string") {
         return { success: false, error: "Invalid URL" };
       }
@@ -162,8 +164,10 @@ class AppHandlers {
     }
   }
 
-  async installUpdate(filePath) {
+  async installUpdate(event, filePath) {
     try {
+      void event;
+
       if (!filePath || typeof filePath !== "string") {
         return { success: false, error: "Invalid file path" };
       }

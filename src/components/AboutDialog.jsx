@@ -97,13 +97,19 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
   // Open external link
   const handleOpenExternalLink = useCallback(
-    (url) => {
-      if (window.terminalAPI?.openExternal) {
-        window.terminalAPI.openExternal(url).catch(() => {
-          showError(t("app.cannotOpenLinkAlert", { url }));
-        });
-      } else {
-        window.open(url, "_blank");
+    async (url) => {
+      try {
+        if (window.terminalAPI?.openExternal) {
+          await window.terminalAPI.openExternal(url);
+          return;
+        }
+
+        const popup = window.open(url, "_blank", "noopener,noreferrer");
+        if (!popup) {
+          throw new Error("Popup was blocked");
+        }
+      } catch {
+        showError(t("app.cannotOpenLinkAlert", { url }));
       }
     },
     [t, showError],
