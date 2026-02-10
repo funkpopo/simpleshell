@@ -206,23 +206,24 @@ function chooseConcurrency(totalFiles, totalBytes, isUpload = true) {
   const baseConcurrency = isUpload
     ? TRANSFER_CONFIG.PARALLEL_FILES_UPLOAD
     : TRANSFER_CONFIG.PARALLEL_FILES_DOWNLOAD;
+  const sessionCap = Number.isFinite(SESSION_CONFIG.MAX_SESSIONS_PER_TAB)
+    ? SESSION_CONFIG.MAX_SESSIONS_PER_TAB
+    : totalFiles;
 
-  // 大量小文件:提高并发
+  let recommended = baseConcurrency;
+
+  // Many small files: increase concurrency.
   if (totalFiles >= 8 && avgFileSize <= TRANSFER_CONFIG.SMALL_FILE_THRESHOLD) {
-    return Math.min(TRANSFER_CONFIG.HIGH_CONCURRENCY, totalFiles);
+    recommended = TRANSFER_CONFIG.HIGH_CONCURRENCY;
+  } else if (avgFileSize > TRANSFER_CONFIG.MEDIUM_FILE_THRESHOLD) {
+    // Very large files: lower concurrency.
+    recommended = TRANSFER_CONFIG.LOW_CONCURRENCY;
+  } else if (avgFileSize > TRANSFER_CONFIG.SMALL_FILE_THRESHOLD) {
+    // Medium files: use medium concurrency.
+    recommended = TRANSFER_CONFIG.MEDIUM_CONCURRENCY;
   }
 
-  // 巨大文件:降低并发
-  if (avgFileSize > TRANSFER_CONFIG.MEDIUM_FILE_THRESHOLD) {
-    return Math.min(TRANSFER_CONFIG.LOW_CONCURRENCY, totalFiles);
-  }
-
-  // 中等文件:使用默认并发
-  if (avgFileSize > TRANSFER_CONFIG.SMALL_FILE_THRESHOLD) {
-    return Math.min(TRANSFER_CONFIG.MEDIUM_CONCURRENCY, totalFiles);
-  }
-
-  return Math.min(baseConcurrency, totalFiles);
+  return Math.min(recommended, totalFiles, sessionCap);
 }
 
 /**
