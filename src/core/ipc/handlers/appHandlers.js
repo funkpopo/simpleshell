@@ -1,4 +1,5 @@
 const { app, BrowserWindow, shell } = require("electron");
+const { execFile } = require("child_process");
 const { logToFile } = require("../../utils/logger");
 const updateService = require("../../update/updateService");
 
@@ -118,13 +119,80 @@ class AppHandlers {
         return { success: false, error: "Unsupported protocol" };
       }
 
-      await shell.openExternal(url);
+      logToFile(`Attempting to open external URL: ${url}`, "INFO");
+
+      // shell.openExternal 在生产环境可能挂起，添加超时和回退机制
+      const TIMEOUT_MS = 5000;
+      let opened = false;
+
+      try {
+        await Promise.race([
+          shell.openExternal(url).then(() => {
+            opened = true;
+          }),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("shell.openExternal timed out")),
+              TIMEOUT_MS,
+            ),
+          ),
+        ]);
+      } catch (shellError) {
+        logToFile(
+          `shell.openExternal failed: ${shellError.message}, trying fallback`,
+          "WARN",
+        );
+      }
+
+      if (!opened) {
+        await this._openExternalFallback(url);
+      }
+
       logToFile(`Opened external URL: ${url}`, "INFO");
       return { success: true };
     } catch (error) {
       logToFile(`Error opening external URL: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * 使用系统命令打开外部链接（回退方案）
+   */
+  _openExternalFallback(url) {
+    return new Promise((resolve, reject) => {
+      let cmd;
+      let args;
+
+      if (process.platform === "win32") {
+        // explorer.exe 可安全打开 URL，不会像 cmd.exe /c start 那样误解析 & 等特殊字符
+        cmd = "explorer.exe";
+        args = [url];
+      } else if (process.platform === "darwin") {
+        cmd = "open";
+        args = [url];
+      } else {
+        cmd = "xdg-open";
+        args = [url];
+      }
+
+      execFile(cmd, args, { timeout: 5000 }, (error) => {
+        if (error && process.platform === "win32") {
+          // explorer.exe 委托给已有进程时返回退出码 1，属于正常行为
+          logToFile(
+            `Opened external URL via fallback (explorer exit code: ${error.code}): ${url}`,
+            "INFO",
+          );
+          resolve();
+        } else if (error) {
+          logToFile(`Fallback open failed: ${error.message}`, "ERROR");
+          reject(error);
+        } else {
+          logToFile(`Opened external URL via fallback: ${url}`, "INFO");
+          resolve();
+        }
+      });
+    });
   }
 
   async checkForUpdate() {
