@@ -5,7 +5,6 @@ const fs = require("fs");
 const path = require("path");
 const { pipeline } = require("stream/promises");
 
-
 // Import centralized configuration
 const {
   TRANSFER_CONFIG,
@@ -19,14 +18,33 @@ const {
 } = require("./sftpConfig");
 
 // Import progress coordinator
-const { TransferProgressCoordinator } = require("./TransferProgressCoordinator");
+const {
+  TransferProgressCoordinator,
+} = require("./TransferProgressCoordinator");
 
 // Import async folder scanner
-const { scanFolderAsync, scanFolderSync } = require("../../workers/folder-scanner");
+const {
+  scanFolderAsync,
+  scanFolderSync,
+} = require("../../workers/folder-scanner");
 
 // SFTP streaming helpers
 function delay(ms) {
   return new Promise((res) => setTimeout(res, ms));
+}
+
+function isCancelledTransferError(error) {
+  const message = (
+    error && typeof error.message === "string"
+      ? error.message
+      : String(error || "")
+  ).toLowerCase();
+
+  return (
+    message.includes("cancel") ||
+    message.includes("abort") ||
+    message.includes("user cancelled")
+  );
 }
 
 async function statRemoteSize(sftp, remotePath) {
@@ -79,7 +97,7 @@ async function uploadWithPipeline({
       const errDesc = err.description || err.message || "未知错误";
       logToFile(
         `sftpTransfer: SFTP写入流错误 [code=${errCode}] - ${remotePath}: ${errDesc}`,
-        "ERROR"
+        "ERROR",
       );
     }
   });
@@ -89,16 +107,32 @@ async function uploadWithPipeline({
     if (typeof onBytes === "function") onBytes(buf.length);
     lastProgressAt = Date.now();
     if (typeof getCancelled === "function" && getCancelled()) {
-      try { read.destroy(new Error("Transfer cancelled by user")); } catch { /* intentionally ignored */ }
-      try { write.destroy(new Error("Transfer cancelled by user")); } catch { /* intentionally ignored */ }
+      try {
+        read.destroy(new Error("Transfer cancelled by user"));
+      } catch {
+        /* intentionally ignored */
+      }
+      try {
+        write.destroy(new Error("Transfer cancelled by user"));
+      } catch {
+        /* intentionally ignored */
+      }
     }
   };
   read.on("data", onData);
 
   const watchdog = setInterval(() => {
     if (Date.now() - lastProgressAt > noProgressTimeoutMs) {
-      try { read.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch { /* intentionally ignored */ }
-      try { write.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch { /* intentionally ignored */ }
+      try {
+        read.destroy(new Error("NO_PROGRESS_TIMEOUT"));
+      } catch {
+        /* intentionally ignored */
+      }
+      try {
+        write.destroy(new Error("NO_PROGRESS_TIMEOUT"));
+      } catch {
+        /* intentionally ignored */
+      }
     }
   }, 1000);
 
@@ -118,7 +152,7 @@ async function uploadWithPipeline({
         : "";
       logToFile(
         `sftpTransfer: 上传管道错误 [${errorType}] - ${remotePath}: ${pipelineError.message}${extraInfo}`,
-        "ERROR"
+        "ERROR",
       );
     }
     throw pipelineError;
@@ -165,16 +199,32 @@ async function downloadWithPipeline({
     if (typeof onBytes === "function") onBytes(buf.length);
     lastProgressAt = Date.now();
     if (typeof getCancelled === "function" && getCancelled()) {
-      try { read.destroy(new Error("Transfer cancelled by user")); } catch { /* intentionally ignored */ }
-      try { write.destroy(new Error("Transfer cancelled by user")); } catch { /* intentionally ignored */ }
+      try {
+        read.destroy(new Error("Transfer cancelled by user"));
+      } catch {
+        /* intentionally ignored */
+      }
+      try {
+        write.destroy(new Error("Transfer cancelled by user"));
+      } catch {
+        /* intentionally ignored */
+      }
     }
   };
   read.on("data", onData);
 
   const watchdog = setInterval(() => {
     if (Date.now() - lastProgressAt > noProgressTimeoutMs) {
-      try { read.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch { /* intentionally ignored */ }
-      try { write.destroy(new Error("NO_PROGRESS_TIMEOUT")); } catch { /* intentionally ignored */ }
+      try {
+        read.destroy(new Error("NO_PROGRESS_TIMEOUT"));
+      } catch {
+        /* intentionally ignored */
+      }
+      try {
+        write.destroy(new Error("NO_PROGRESS_TIMEOUT"));
+      } catch {
+        /* intentionally ignored */
+      }
     }
   }, 1000);
 
@@ -190,7 +240,7 @@ async function downloadWithPipeline({
           : "传输错误";
       logToFile(
         `sftpTransfer: 下载管道错误 [${errorType}] - ${remotePath}: ${pipelineError.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     throw pipelineError;
@@ -249,6 +299,37 @@ async function runWithConcurrency(items, limit, worker) {
     };
     tick();
   });
+}
+
+function createConcurrencyLimiter(limit) {
+  const maxConcurrency = Math.max(
+    1,
+    Number.isFinite(limit) ? Math.floor(limit) : 1,
+  );
+  let active = 0;
+  const queue = [];
+
+  const tryDequeue = () => {
+    if (active >= maxConcurrency) return;
+    const resume = queue.shift();
+    if (resume) resume();
+  };
+
+  return async (task) => {
+    if (active >= maxConcurrency) {
+      await new Promise((resolve) => {
+        queue.push(resolve);
+      });
+    }
+
+    active++;
+    try {
+      return await task();
+    } finally {
+      active = Math.max(0, active - 1);
+      tryDequeue();
+    }
+  };
 }
 
 // 递归创建远程目录
@@ -333,7 +414,9 @@ function init(
   }
 
   // 初始化断点续传管理器
-  const { TransferResumeManager } = require("../../core/transfer/transfer-resume-manager");
+  const {
+    TransferResumeManager,
+  } = require("../../core/transfer/transfer-resume-manager");
   transferResumeManager = new TransferResumeManager(logger);
 
   // 监听断点续传事件
@@ -434,7 +517,6 @@ async function handleDownloadFile(tabId, remotePath) {
         let lastTransferTime = transferStartTime;
         let currentTransferSpeed = 0;
         let currentRemainingTime = 0;
-        
 
         // Robust download flow using pipeline + watchdog + retries
         const getCancelled = () => {
@@ -446,7 +528,10 @@ async function handleDownloadFile(tabId, remotePath) {
           transferredBytes += len;
           const now = Date.now();
 
-          if (now - lastProgressUpdate >= TRANSFER_CONFIG.PROGRESS_INTERVAL_MS) {
+          if (
+            now - lastProgressUpdate >=
+            TRANSFER_CONFIG.PROGRESS_INTERVAL_MS
+          ) {
             const timeElapsed = (now - lastTransferTime) / 1000;
             if (timeElapsed > 0) {
               const bytesDelta = transferredBytes - lastBytesTransferred;
@@ -455,10 +540,13 @@ async function handleDownloadFile(tabId, remotePath) {
                 currentTransferSpeed === 0
                   ? instantSpeed
                   : TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR * instantSpeed +
-                    (1 - TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR) * currentTransferSpeed;
+                    (1 - TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR) *
+                      currentTransferSpeed;
               const remainingBytes = totalBytes - transferredBytes;
               currentRemainingTime =
-                currentTransferSpeed > 0 ? remainingBytes / currentTransferSpeed : 0;
+                currentTransferSpeed > 0
+                  ? remainingBytes / currentTransferSpeed
+                  : 0;
               lastBytesTransferred = transferredBytes;
               lastTransferTime = now;
             }
@@ -487,7 +575,10 @@ async function handleDownloadFile(tabId, remotePath) {
               try {
                 const tempStats = fs.statSync(tempFilePath);
                 resumeOffset = tempStats.size;
-                if (!Number.isFinite(resumeOffset) || resumeOffset > totalBytes) {
+                if (
+                  !Number.isFinite(resumeOffset) ||
+                  resumeOffset > totalBytes
+                ) {
                   resumeOffset = 0;
                 }
                 transferredBytes = resumeOffset;
@@ -527,7 +618,12 @@ async function handleDownloadFile(tabId, remotePath) {
               throw new Error("Transfer cancelled by user");
             }
             attempt += 1;
-            if (!(attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS && isRetryableError(e))) {
+            if (
+              !(
+                attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS &&
+                isRetryableError(e)
+              )
+            ) {
               throw e;
             }
             await delay(calculateRetryDelay(attempt));
@@ -626,7 +722,10 @@ async function handleDownloadFiles(event, tabId, files) {
   }
 
   if (!files || files.length === 0) {
-    return { success: false, error: "没有选择要下载的文件" };
+    return {
+      success: false,
+      error: "\u6ca1\u6709\u9009\u62e9\u8981\u4e0b\u8f7d\u7684\u6587\u4ef6",
+    };
   }
 
   const processInfo = getChildProcessInfo(tabId);
@@ -638,35 +737,49 @@ async function handleDownloadFiles(event, tabId, files) {
   }
   const sshConfig = processInfo.config;
 
-  // 让用户选择保存目录（只弹出一次）
+  // Ask user to choose target directory once
   const { canceled, filePaths } = await dialog.showOpenDialog({
-    title: "选择保存目录",
-    defaultPath: sshConfig.downloadPath || (dialog.app ? dialog.app.getPath("downloads") : ""),
-    buttonLabel: "选择目录",
+    title: "\u9009\u62e9\u4fdd\u5b58\u76ee\u5f55",
+    defaultPath:
+      sshConfig.downloadPath ||
+      (dialog.app ? dialog.app.getPath("downloads") : ""),
+    buttonLabel: "\u9009\u62e9\u76ee\u5f55",
     properties: ["openDirectory", "createDirectory"],
   });
 
   if (canceled || !filePaths || filePaths.length === 0) {
-    return { success: false, cancelled: true, error: "用户取消下载" };
+    return {
+      success: false,
+      cancelled: true,
+      error: "\u7528\u6237\u53d6\u6d88\u4e0b\u8f7d",
+    };
   }
 
   const targetDir = filePaths[0];
   const totalFiles = files.length;
   let completedCount = 0;
   let failedCount = 0;
+  let userCancelled = false;
   const errors = [];
   const batchTransferKey = `${tabId}-batch-download-${Date.now()}`;
 
-  // 计算总字节数
+  // Calculate total bytes
   const totalBytes = files.reduce((sum, f) => sum + (f.size || 0), 0);
-  let totalTransferredBytes = 0;
 
-  // 发送批量下载开始事件
+  // Register batch transfer in activeTransfers for cancellation
+  activeTransfers.set(batchTransferKey, {
+    type: "batch-download",
+    cancelled: false,
+    activeStreams: new Set(),
+    tabId,
+  });
+
+  // Emit batch transfer start event
   sendToRenderer("download-progress", {
     tabId,
     transferKey: batchTransferKey,
     progress: 0,
-    fileName: `批量下载 (${totalFiles} 个文件)`,
+    fileName: `\u6279\u91cf\u4e0b\u8f7d (${totalFiles} \u4e2a\u6587\u4ef6)`,
     transferredBytes: 0,
     totalBytes,
     processedFiles: 0,
@@ -674,16 +787,38 @@ async function handleDownloadFiles(event, tabId, files) {
     isBatch: true,
   });
 
-  // 逐个下载文件
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
+  // Create progress coordinator for stable updates during concurrency
+  const progressCoordinator = new TransferProgressCoordinator({
+    totalFiles,
+    totalBytes,
+    progressIntervalMs: TRANSFER_CONFIG.PROGRESS_INTERVAL_MS || 250,
+    speedSmoothingFactor: TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR,
+    onProgress: (progressData) => {
+      sendToRenderer("download-progress", {
+        tabId,
+        transferKey: batchTransferKey,
+        ...progressData,
+        isBatch: true,
+      });
+    },
+  });
+
+  // Build concurrent download tasks
+  const tasks = files.map((file, fileIndex) => async () => {
+    const batchTransfer = activeTransfers.get(batchTransferKey);
+    if (!batchTransfer || batchTransfer.cancelled) {
+      throw new Error("Transfer cancelled by user");
+    }
+
     const remotePath = file.remotePath;
     const fileName = file.fileName || path.basename(remotePath);
     const localPath = path.join(targetDir, fileName);
+    const tempFilePath = localPath + ".part";
+
+    let borrowed = null;
+    let transferKey = null;
 
     try {
-      // 使用会话池借用一个SFTP会话
-      let borrowed = null;
       let sftp = null;
       if (sftpCore && typeof sftpCore.borrowSftpSession === "function") {
         borrowed = await sftpCore.borrowSftpSession(tabId);
@@ -692,7 +827,7 @@ async function handleDownloadFiles(event, tabId, files) {
         sftp = await sftpCore.getRawSftpSession(tabId);
       }
 
-      const transferKey = `${tabId}-download-${Date.now()}-${i}`;
+      transferKey = `${tabId}-download-${Date.now()}-${fileIndex}`;
       activeTransfers.set(transferKey, {
         sftp,
         type: "download",
@@ -704,163 +839,170 @@ async function handleDownloadFiles(event, tabId, files) {
         localPath,
       });
 
-      try {
-        // 获取文件信息
-        const stats = await new Promise((resolve, reject) => {
-          sftp.stat(remotePath, (err, stats) => {
-            if (err) reject(err);
-            else resolve(stats);
-          });
+      // Read remote file metadata
+      const stats = await new Promise((resolve, reject) => {
+        sftp.stat(remotePath, (err, st) => {
+          if (err) reject(err);
+          else resolve(st);
         });
+      });
 
-        const fileBytes = stats.size;
-        const tempFilePath = localPath + ".part";
-        const chunkSize = chooseChunkSize(fileBytes);
+      const fileBytes = Number.isFinite(stats.size)
+        ? stats.size
+        : file.size || 0;
+      const chunkSize = chooseChunkSize(fileBytes);
 
-        let fileTransferredBytes = 0;
-        const transferStartTime = Date.now();
-        let lastProgressUpdate = 0;
-        let lastBytesTransferred = 0;
-        let lastTransferTime = transferStartTime;
-        let currentTransferSpeed = 0;
+      // Register file with the progress coordinator
+      progressCoordinator.registerFile(fileIndex, fileName, fileBytes);
 
-        const getCancelled = () => {
-          const t = activeTransfers.get(transferKey);
-          return !t || t.cancelled;
-        };
+      let fileTransferredBytes = 0;
+      const getCancelled = () => {
+        const t = activeTransfers.get(transferKey);
+        const bt = activeTransfers.get(batchTransferKey);
+        return !t || t.cancelled || !bt || bt.cancelled;
+      };
 
-        const onBytes = (len) => {
-          fileTransferredBytes += len;
-          const now = Date.now();
+      const onBytes = (len) => {
+        fileTransferredBytes += len;
+        progressCoordinator.updateFileProgress(fileIndex, fileTransferredBytes);
+      };
 
-          if (now - lastProgressUpdate >= TRANSFER_CONFIG.PROGRESS_INTERVAL_MS) {
-            const timeElapsed = (now - lastTransferTime) / 1000;
-            if (timeElapsed > 0) {
-              const bytesDelta = fileTransferredBytes - lastBytesTransferred;
-              const instantSpeed = bytesDelta / timeElapsed;
-              currentTransferSpeed =
-                currentTransferSpeed === 0
-                  ? instantSpeed
-                  : TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR * instantSpeed +
-                    (1 - TRANSFER_CONFIG.SPEED_SMOOTHING_FACTOR) * currentTransferSpeed;
-              lastBytesTransferred = fileTransferredBytes;
-              lastTransferTime = now;
-            }
+      const timeoutMs = getNoProgressTimeout(fileBytes);
 
-            // 发送批量进度更新
-            const batchProgress = totalBytes > 0
-              ? Math.round(((totalTransferredBytes + fileTransferredBytes) / totalBytes) * 100)
-              : Math.round(((completedCount + failedCount) / totalFiles) * 100);
+      await downloadWithPipeline({
+        sftp,
+        remotePath,
+        localPath: tempFilePath,
+        chunkSize,
+        transferKey,
+        getCancelled,
+        onBytes,
+        resumeOffset: 0,
+        noProgressTimeoutMs: timeoutMs,
+      });
 
-            sendToRenderer("download-progress", {
-              tabId,
-              transferKey: batchTransferKey,
-              progress: batchProgress,
-              fileName: `正在下载: ${fileName} (${i + 1}/${totalFiles})`,
-              transferredBytes: totalTransferredBytes + fileTransferredBytes,
-              totalBytes,
-              transferSpeed: currentTransferSpeed,
-              processedFiles: completedCount + failedCount,
-              totalFiles,
-              isBatch: true,
-            });
-            lastProgressUpdate = now;
-          }
-        };
+      // Rename temp file after download succeeds
+      fs.renameSync(tempFilePath, localPath);
 
-        const timeoutMs = getNoProgressTimeout(fileBytes);
-
-        await downloadWithPipeline({
-          sftp,
-          remotePath,
-          localPath: tempFilePath,
-          chunkSize,
-          transferKey,
-          getCancelled,
-          onBytes,
-          resumeOffset: 0,
-          noProgressTimeoutMs: timeoutMs,
-        });
-
-        // 下载完成，重命名临时文件
-        fs.renameSync(tempFilePath, localPath);
-
-        completedCount++;
-        totalTransferredBytes += fileBytes;
-        activeTransfers.delete(transferKey);
-
-      } catch (error) {
-        logToFile(
-          `sftpTransfer: Batch download file error for ${remotePath}: ${error.message}`,
-          "ERROR",
-        );
-        failedCount++;
-        errors.push({ fileName, error: error.message });
-        activeTransfers.delete(transferKey);
-
-        // 清理临时文件
-        try {
-          const tempFilePath = localPath + ".part";
-          if (fs.existsSync(tempFilePath)) {
-            fs.unlinkSync(tempFilePath);
-          }
-        } catch {
-          // ignore
-        }
-      } finally {
-        // 归还会话
-        try {
-          if (
-            borrowed &&
-            sftpCore &&
-            typeof sftpCore.releaseSftpSession === "function"
-          ) {
-            sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
-          }
-        } catch {
-          // ignore
-        }
-      }
+      completedCount++;
+      progressCoordinator.markFileCompleted(fileIndex);
     } catch (error) {
+      const isCancelled = isCancelledTransferError(error);
+      const errorMessage =
+        error && error.message ? error.message : String(error);
+
+      if (isCancelled) {
+        userCancelled = true;
+      } else {
+        failedCount++;
+        errors.push({ fileName, error: errorMessage });
+      }
+
       logToFile(
-        `sftpTransfer: Failed to get SFTP session for ${remotePath}: ${error.message}`,
-        "ERROR",
+        `sftpTransfer: Batch download file error for ${remotePath}: ${errorMessage}`,
+        isCancelled ? "INFO" : "ERROR",
       );
-      failedCount++;
-      errors.push({ fileName, error: error.message });
+
+      // Clean temporary file
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+      } catch {
+        // ignore
+      }
+    } finally {
+      if (transferKey) {
+        activeTransfers.delete(transferKey);
+      }
+
+      // Release borrowed session
+      try {
+        if (
+          borrowed &&
+          sftpCore &&
+          typeof sftpCore.releaseSftpSession === "function"
+        ) {
+          sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  // Tune concurrency based on file count and size
+  const dynamicConcurrency = chooseConcurrency(totalFiles, totalBytes, false);
+  const { errors: schedulerErrors } = await runWithConcurrency(
+    tasks,
+    dynamicConcurrency,
+    (fn) => fn(),
+  );
+
+  for (const { index, error } of schedulerErrors) {
+    const isCancelled = isCancelledTransferError(error);
+    if (isCancelled) {
+      userCancelled = true;
+      continue;
     }
 
-    // 更新批量进度
-    sendToRenderer("download-progress", {
-      tabId,
-      transferKey: batchTransferKey,
-      progress: Math.round(((completedCount + failedCount) / totalFiles) * 100),
-      fileName: completedCount + failedCount === totalFiles
-        ? `批量下载完成 (${completedCount}/${totalFiles})`
-        : `已完成: ${completedCount + failedCount}/${totalFiles}`,
-      transferredBytes: totalTransferredBytes,
-      totalBytes,
-      processedFiles: completedCount + failedCount,
-      totalFiles,
-      isBatch: true,
-    });
+    failedCount++;
+    const file = files[index] || {};
+    const fileName = file.fileName || file.remotePath || `file-${index}`;
+    const errorMessage = error && error.message ? error.message : String(error);
+    errors.push({ fileName, error: errorMessage });
+    logToFile(
+      `sftpTransfer: Batch scheduler error for ${fileName}: ${errorMessage}`,
+      "ERROR",
+    );
   }
 
-  // 发送完成事件
+  const batchTransfer = activeTransfers.get(batchTransferKey);
+  const batchWasCancelled =
+    userCancelled || (batchTransfer && batchTransfer.cancelled);
+  if (batchWasCancelled) {
+    progressCoordinator.destroy();
+    activeTransfers.delete(batchTransferKey);
+    return {
+      success: false,
+      cancelled: true,
+      userCancelled: true,
+      completed: completedCount,
+      failed: failedCount,
+      errors,
+      targetDir,
+    };
+  }
+
+  const finalStats = progressCoordinator.getFinalStats();
+  if (failedCount === 0) {
+    // Only force 100% transferred bytes when all files succeed
+    progressCoordinator.finalize();
+  }
+
+  progressCoordinator.destroy();
+  activeTransfers.delete(batchTransferKey);
+
+  // Emit completion event
   sendToRenderer("download-progress", {
     tabId,
     transferKey: batchTransferKey,
     progress: 100,
-    fileName: `批量下载完成 (${completedCount}/${totalFiles})`,
-    transferredBytes: totalTransferredBytes,
+    fileName:
+      failedCount === 0
+        ? `\u6279\u91cf\u4e0b\u8f7d\u5b8c\u6210 (${completedCount}/${totalFiles})`
+        : `\u6279\u91cf\u4e0b\u8f7d\u5b8c\u6210\uff0c\u5931\u8d25 ${failedCount} \u4e2a\u6587\u4ef6`,
+    transferredBytes:
+      failedCount === 0 ? totalBytes : finalStats.transferredBytes,
     totalBytes,
-    processedFiles: totalFiles,
+    processedFiles: completedCount + failedCount,
     totalFiles,
     isBatch: true,
-    completed: true,
+    completed: failedCount === 0,
+    hasErrors: failedCount > 0,
   });
 
-  // 打开目标目录
+  // Open target directory
   if (completedCount > 0) {
     shell.openPath(targetDir);
   }
@@ -1091,8 +1233,14 @@ async function handleUploadFile(
               try {
                 let resumeOffset = 0;
                 if (attempt > 0) {
-                  resumeOffset = await statRemoteSize(sftpForFile, remoteFilePath);
-                  if (!Number.isFinite(resumeOffset) || resumeOffset > currentFileSize) {
+                  resumeOffset = await statRemoteSize(
+                    sftpForFile,
+                    remoteFilePath,
+                  );
+                  if (
+                    !Number.isFinite(resumeOffset) ||
+                    resumeOffset > currentFileSize
+                  ) {
                     resumeOffset = 0;
                   }
                 }
@@ -1113,18 +1261,26 @@ async function handleUploadFile(
                 });
                 break;
               } catch (e) {
-                if (getCancelled()) throw new Error("Transfer cancelled by user");
+                if (getCancelled())
+                  throw new Error("Transfer cancelled by user");
                 attempt += 1;
                 // 记录详细的上传失败信息
                 if (logToFile) {
                   const isServerError = e.message === "Failure" || e.code === 4;
                   logToFile(
                     `sftpTransfer: 文件上传失败 [attempt=${attempt}] - ${remoteFilePath}: ${e.message}` +
-                    (isServerError ? " (服务器端错误，可能是磁盘空间不足或权限问题)" : ""),
-                    "ERROR"
+                      (isServerError
+                        ? " (服务器端错误，可能是磁盘空间不足或权限问题)"
+                        : ""),
+                    "ERROR",
                   );
                 }
-                if (!(attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS && isRetryableError(e))) {
+                if (
+                  !(
+                    attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS &&
+                    isRetryableError(e)
+                  )
+                ) {
                   throw e;
                 }
                 await delay(calculateRetryDelay(attempt));
@@ -1148,7 +1304,10 @@ async function handleUploadFile(
 
         // 根据文件规模动态调整并发度
         // 使用并发传输来提升性能，进度协调器会确保显示稳定
-        const dynamicParallelUpload = chooseConcurrency(totalFilesToUpload, totalBytesToUpload);
+        const dynamicParallelUpload = chooseConcurrency(
+          totalFilesToUpload,
+          totalBytesToUpload,
+        );
 
         // 执行并发任务
         await runWithConcurrency(tasks, dynamicParallelUpload, (fn) => fn());
@@ -1369,11 +1528,10 @@ async function handleUploadFolder(
         let scanResult;
         try {
           // Try async scan with worker thread first
-          scanResult = await scanFolderAsync(localFolderPath, "", { timeout: 60000 });
-          logToFile(
-            `sftpTransfer: Async scan completed successfully`,
-            "INFO",
-          );
+          scanResult = await scanFolderAsync(localFolderPath, "", {
+            timeout: 60000,
+          });
+          logToFile(`sftpTransfer: Async scan completed successfully`, "INFO");
         } catch (workerError) {
           // Fallback to sync scan if worker fails
           logToFile(
@@ -1395,10 +1553,7 @@ async function handleUploadFolder(
             "WARN",
           );
           for (const error of scanResult.errors.slice(0, 5)) {
-            logToFile(
-              `  - ${error.path}: ${error.error}`,
-              "WARN",
-            );
+            logToFile(`  - ${error.path}: ${error.error}`, "WARN");
           }
           if (scanResult.errors.length > 5) {
             logToFile(
@@ -1594,7 +1749,10 @@ async function handleUploadFolder(
             const onBytes = (len) => {
               fileTransferredBytes += len;
               // 更新进度协调器
-              progressCoordinator.updateFileProgress(fileIndex, fileTransferredBytes);
+              progressCoordinator.updateFileProgress(
+                fileIndex,
+                fileTransferredBytes,
+              );
             };
 
             let attempt = 0;
@@ -1602,8 +1760,14 @@ async function handleUploadFolder(
               try {
                 let resumeOffset = 0;
                 if (attempt > 0) {
-                  resumeOffset = await statRemoteSize(sftpForFile, remoteFilePath);
-                  if (!Number.isFinite(resumeOffset) || resumeOffset > file.size) {
+                  resumeOffset = await statRemoteSize(
+                    sftpForFile,
+                    remoteFilePath,
+                  );
+                  if (
+                    !Number.isFinite(resumeOffset) ||
+                    resumeOffset > file.size
+                  ) {
                     resumeOffset = 0;
                   }
                 }
@@ -1624,9 +1788,15 @@ async function handleUploadFolder(
                 });
                 break;
               } catch (e) {
-                if (getCancelled()) throw new Error("Transfer cancelled by user");
+                if (getCancelled())
+                  throw new Error("Transfer cancelled by user");
                 attempt += 1;
-                if (!(attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS && isRetryableError(e))) {
+                if (
+                  !(
+                    attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS &&
+                    isRetryableError(e)
+                  )
+                ) {
                   throw e;
                 }
                 await delay(calculateRetryDelay(attempt));
@@ -1638,7 +1808,11 @@ async function handleUploadFolder(
             progressCoordinator.markFileCompleted(fileIndex);
           } finally {
             // 归还会话
-            if (borrowed && sftpCore && typeof sftpCore.releaseSftpSession === "function") {
+            if (
+              borrowed &&
+              sftpCore &&
+              typeof sftpCore.releaseSftpSession === "function"
+            ) {
               sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
             }
           }
@@ -1646,18 +1820,17 @@ async function handleUploadFolder(
 
         // 根据文件规模动态调整并发度
         // 使用并发传输来提升性能，进度协调器会确保显示稳定
-        const dynamicParallelUpload = chooseConcurrency(totalFilesToUpload, totalBytesToUpload);
+        const dynamicParallelUpload = chooseConcurrency(
+          totalFilesToUpload,
+          totalBytesToUpload,
+        );
 
         logToFile(
           `sftpTransfer: Starting folder upload with ${dynamicParallelUpload} workers (managed by progress coordinator)`,
           "INFO",
         );
 
-        await runWithConcurrency(
-          tasks,
-          dynamicParallelUpload,
-          (fn) => fn(),
-        );
+        await runWithConcurrency(tasks, dynamicParallelUpload, (fn) => fn());
 
         // 完成后强制更新到100%
         progressCoordinator.finalize();
@@ -1847,8 +2020,13 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
       let totalFilesToDownload = 0;
       let totalBytesToDownload = 0;
       const allFiles = []; // Flat list { remotePath, relativePath, name, size }
+      const scanConcurrencyLimit = Math.max(
+        2,
+        Math.min(8, TRANSFER_CONFIG.PARALLEL_FILES_DOWNLOAD || 4),
+      );
+      const runScanWithLimit = createConcurrencyLimiter(scanConcurrencyLimit);
 
-      // 1. Scan remote folder and calculate totals
+      // 1. Scan remote folder and calculate totals (并发扫描子目录)
       async function scanRemoteAndCalculateTotals(
         currentRemotePath,
         relativeBasePath,
@@ -1879,6 +2057,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           });
         });
 
+        const subdirPromises = [];
         for (const entry of entries) {
           if (entry.name === "." || entry.name === "..") continue;
 
@@ -1892,10 +2071,14 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           ); // POSIX for relative paths from remote
 
           if (entry.type === "d") {
-            // Directory
-            await scanRemoteAndCalculateTotals(
-              entryRemotePath,
-              entryRelativePath,
+            // Directory - 收集子目录扫描任务，稍后并发执行
+            subdirPromises.push(
+              runScanWithLimit(() =>
+                scanRemoteAndCalculateTotals(
+                  entryRemotePath,
+                  entryRelativePath,
+                ),
+              ),
             );
           } else {
             // File
@@ -1908,6 +2091,11 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
             totalBytesToDownload += entry.size;
             totalFilesToDownload++;
           }
+        }
+
+        // 并发扫描所有子目录
+        if (subdirPromises.length > 0) {
+          await Promise.all(subdirPromises);
         }
       }
 
@@ -2024,9 +2212,6 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           let fileDownloadedBytes = 0;
           const chunkSize = chooseChunkSize(file.size);
 
-          const writeStream = fs.createWriteStream(tempLocalFilePath, {
-            highWaterMark: chunkSize,
-          });
           // 借用一个SFTP会话
           let borrowed = null;
           let sftpForFile = null;
@@ -2037,75 +2222,122 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
             sftpForFile = sftp; // 回退
           }
 
-          const readStream = sftpForFile.createReadStream(file.remotePath, {
-            highWaterMark: chunkSize,
-          });
-
-          // 跟踪活跃流，便于取消
-          const tr = activeTransfers.get(transferKey);
-          if (tr && tr.activeStreams) {
-            tr.activeStreams.add(readStream);
-            tr.activeStreams.add(writeStream);
-          }
-
-          await new Promise((resolve, reject) => {
-            writeStream.on("error", (error) => reject(error));
-            readStream.on("error", (error) => {
-              writeStream.destroy();
-              reject(error);
-            });
-            readStream.on("data", (chunk) => {
-              const current = activeTransfers.get(transferKey);
-              if (current && current.cancelled) {
-                readStream.destroy();
-                writeStream.destroy();
-                reject(new Error("Transfer cancelled by user"));
-                return;
-              }
-              fileDownloadedBytes += chunk.length;
-              // 更新进度协调器
-              progressCoordinator.updateFileProgress(fileIndex, fileDownloadedBytes);
-            });
-            readStream.on("end", () => resolve());
-            readStream.pipe(writeStream);
-          });
-
           try {
-            fs.renameSync(tempLocalFilePath, localFilePath);
-          } catch {
-            try {
-              fs.copyFileSync(tempLocalFilePath, localFilePath);
-              fs.unlinkSync(tempLocalFilePath);
-            } catch {
-              // ignore secondary errors
+            const getCancelled = () => {
+              const current = activeTransfers.get(transferKey);
+              return !current || current.cancelled;
+            };
+
+            const onBytes = (len) => {
+              fileDownloadedBytes += len;
+              progressCoordinator.updateFileProgress(
+                fileIndex,
+                fileDownloadedBytes,
+              );
+            };
+
+            const timeoutMs = getNoProgressTimeout(file.size);
+
+            // 使用 downloadWithPipeline 获得 watchdog 超时保护和重试支持
+            let attempt = 0;
+            while (true) {
+              try {
+                let resumeOffset = 0;
+                if (attempt > 0) {
+                  try {
+                    const tempStats = fs.statSync(tempLocalFilePath);
+                    resumeOffset = tempStats.size;
+                    if (
+                      !Number.isFinite(resumeOffset) ||
+                      resumeOffset > file.size
+                    ) {
+                      resumeOffset = 0;
+                    }
+                    fileDownloadedBytes = resumeOffset;
+                  } catch {
+                    resumeOffset = 0;
+                  }
+                }
+
+                await downloadWithPipeline({
+                  sftp: sftpForFile,
+                  remotePath: file.remotePath,
+                  localPath: tempLocalFilePath,
+                  chunkSize,
+                  transferKey,
+                  getCancelled,
+                  onBytes,
+                  resumeOffset,
+                  noProgressTimeoutMs: timeoutMs,
+                });
+                break;
+              } catch (e) {
+                if (getCancelled())
+                  throw new Error("Transfer cancelled by user");
+                attempt += 1;
+                if (
+                  !(
+                    attempt <= RETRY_CONFIG.MAX_OPERATION_ATTEMPTS &&
+                    isRetryableError(e)
+                  )
+                ) {
+                  throw e;
+                }
+                await delay(calculateRetryDelay(attempt));
+              }
             }
-          }
 
-          filesDownloadedCount++;
-          // 标记文件完成到协调器
-          progressCoordinator.markFileCompleted(fileIndex);
+            try {
+              fs.renameSync(tempLocalFilePath, localFilePath);
+            } catch {
+              try {
+                fs.copyFileSync(tempLocalFilePath, localFilePath);
+                fs.unlinkSync(tempLocalFilePath);
+              } catch {
+                // ignore secondary errors
+              }
+            }
 
-          // 从活跃流集合中移除
-          const tr2 = activeTransfers.get(transferKey);
-          if (tr2 && tr2.activeStreams) {
-            tr2.activeStreams.delete(readStream);
-            tr2.activeStreams.delete(writeStream);
-          }
-          // 归还会话
-          if (
-            borrowed &&
-            sftpCore &&
-            typeof sftpCore.releaseSftpSession === "function"
-          ) {
-            sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
+            filesDownloadedCount++;
+            progressCoordinator.markFileCompleted(fileIndex);
+          } catch (fileError) {
+            // 清理临时文件
+            try {
+              if (fs.existsSync(tempLocalFilePath)) {
+                fs.unlinkSync(tempLocalFilePath);
+              }
+            } catch {
+              // ignore
+            }
+            throw fileError;
+          } finally {
+            // 归还会话
+            if (
+              borrowed &&
+              sftpCore &&
+              typeof sftpCore.releaseSftpSession === "function"
+            ) {
+              sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
+            }
           }
         });
 
         // 根据文件规模动态调整并发度（下载）
         // 使用并发传输来提升性能，进度协调器会确保显示稳定
-        const dynamicParallelDownload = chooseConcurrency(totalFilesToDownload, totalBytesToDownload);
+        const dynamicParallelDownload = chooseConcurrency(
+          totalFilesToDownload,
+          totalBytesToDownload,
+          false,
+        );
 
-        await runWithConcurrency(tasks, dynamicParallelDownload, (fn) => fn());
+        const { errors: downloadTaskErrors } = await runWithConcurrency(
+          tasks,
+          dynamicParallelDownload,
+          (fn) => fn(),
+        );
+        if (downloadTaskErrors.length > 0) {
+          throw downloadTaskErrors[0].error;
+        }
 
         // 完成后上报100%
         progressCoordinator.finalize();
@@ -2137,13 +2369,14 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           totalFilesDownloaded: filesDownloadedCount,
         };
       } catch (error) {
+        const cancelled = isCancelledTransferError(error);
         logToFile(
           `sftpTransfer: downloadFolder error for "${remoteFolderPath}" to "${localBaseDownloadPath}": ${error.message}`,
-          "ERROR",
+          cancelled ? "INFO" : "ERROR",
         );
 
         // 检查是否是会话相关错误，如果是则尝试恢复会话
-        if (isSessionError(error) && sftpCore) {
+        if (!cancelled && isSessionError(error) && sftpCore) {
           logToFile(
             `sftpTransfer: 检测到会话错误，尝试恢复SFTP会话 (tab: ${tabId})`,
             "WARN",
@@ -2163,8 +2396,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           tabId,
           transferKey,
           error: error.message,
-          cancelled:
-            error.message.includes("cancel") || error.message.includes("abort"),
+          cancelled,
           progress: -1,
           filesProcessed: filesDownloadedCount,
           totalFiles: totalFilesToDownload,
@@ -2172,8 +2404,7 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         return {
           success: false,
           error: error.message,
-          cancelled:
-            error.message.includes("cancel") || error.message.includes("abort"),
+          cancelled,
         };
       } finally {
         activeTransfers.delete(transferKey);
@@ -2233,11 +2464,20 @@ async function handleCancelTransfer(event, tabId, transferKey) {
   }
 
   const transfer = activeTransfers.get(transferKey);
-  try {
-    if (transfer && transfer.sftp) {
-      // 添加取消标志
-      transfer.cancelled = true;
+  if (!transfer) {
+    return {
+      success: false,
+      error:
+        "\u6ca1\u6709\u627e\u5230\u6d3b\u52a8\u7684\u4f20\u8f93\u4efb\u52a1",
+      userCancelled: true,
+    };
+  }
 
+  try {
+    // Mark cancelled first so batch transfers without sftp can observe it
+    transfer.cancelled = true;
+
+    if (transfer.sftp) {
       logToFile(
         `sftpTransfer: Marking transfer ${transferKey} as cancelled and attempting to stop all operations`,
         "INFO",
@@ -2338,11 +2578,11 @@ async function handleCancelTransfer(event, tabId, transferKey) {
 
     // 根据传输类型发送正确的取消通知
     let channel = "upload-progress";
-    if (transfer.type === "download") {
+    if (transfer.type === "download" || transfer.type === "batch-download") {
       channel = "download-progress";
     } else if (transfer.type === "download-folder") {
       channel = "download-folder-progress";
-    } else if (transfer.type.includes("upload-folder")) {
+    } else if (transfer.type && transfer.type.includes("upload-folder")) {
       channel = "upload-folder-progress";
     }
 

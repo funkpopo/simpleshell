@@ -10,7 +10,7 @@
 
 const SESSION_CONFIG = {
   // Session pool limits
-  MAX_SESSIONS_PER_TAB: 3, // 每个标签页的最大并发会话数
+  MAX_SESSIONS_PER_TAB: 8, // 每个标签页的最大并发会话数（匹配并发下载数）
   MAX_TOTAL_SESSIONS: 50, // 所有标签页累计的最大会话数
 
   // Session lifecycle
@@ -48,7 +48,7 @@ const TIMEOUT_CONFIG = {
 const TRANSFER_CONFIG = {
   // Concurrent file transfer limits
   PARALLEL_FILES_UPLOAD: 4, // 并发上传文件数
-  PARALLEL_FILES_DOWNLOAD: 4, // 并发下载文件数
+  PARALLEL_FILES_DOWNLOAD: 6, // 并发下载文件数
 
   // Dynamic concurrency adjustment thresholds
   SMALL_FILE_THRESHOLD: 10 * 1024 * 1024, // 小文件阈值 (10 MB)
@@ -60,9 +60,9 @@ const TRANSFER_CONFIG = {
   LOW_CONCURRENCY: 2, // 低并发度 (用于大文件)
 
   // Stream chunk sizes (highWaterMark for fs/sftp streams)
-  CHUNK_SIZE_SMALL: 256 * 1024, // 小文件块大小 (256 KB)
-  CHUNK_SIZE_MEDIUM: 1024 * 1024, // 中等文件块大小 (1 MB)
-  CHUNK_SIZE_LARGE: 2 * 1024 * 1024, // 大文件块大小 (2 MB)
+  CHUNK_SIZE_SMALL: 512 * 1024, // 小文件块大小 (512 KB)
+  CHUNK_SIZE_MEDIUM: 2 * 1024 * 1024, // 中等文件块大小 (2 MB)
+  CHUNK_SIZE_LARGE: 4 * 1024 * 1024, // 大文件块大小 (4 MB)
 
   // Progress reporting
   PROGRESS_INTERVAL_MS: 100, // 进度上报节流间隔 (100 毫秒)
