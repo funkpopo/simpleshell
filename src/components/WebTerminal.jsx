@@ -2496,17 +2496,35 @@ useEffect(() => {
         searchAddon = new SearchAddon();
 
         // 自定义WebLinksAddon的链接处理逻辑，使用系统默认浏览器打开链接
-        const webLinksAddon = new WebLinksAddon((event, uri) => {
-          // 阻止默认行为（在应用内打开）
+        const webLinksAddon = new WebLinksAddon(async (event, uri) => {
+          // Prevent in-app navigation; open links externally.
           event.preventDefault();
 
-          // 使用预加载脚本中定义的API在系统默认浏览器中打开链接
-          if (window.terminalAPI && window.terminalAPI.openExternal) {
-            window.terminalAPI.openExternal(uri).catch(() => {
-              // 打开链接失败
-            });
-          } else {
-            // terminalAPI.openExternal不可用，无法打开链接
+          try {
+            if (!window.terminalAPI?.openExternal) {
+              throw new Error("terminalAPI.openExternal is unavailable");
+            }
+
+            const result = await window.terminalAPI.openExternal(uri);
+            if (
+              result &&
+              typeof result === "object" &&
+              "success" in result &&
+              !result.success
+            ) {
+              throw new Error(result.error || "Failed to open external URL");
+            }
+          } catch (error) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "Failed to open external URL";
+            console.error(`Failed to open external link: ${uri}`, error);
+
+            if (typeof term.writeln === "function") {
+              term.writeln(`\r\n[Link Error] ${message}`);
+              term.writeln(`[Link Error] ${uri}`);
+            }
           }
         });
 

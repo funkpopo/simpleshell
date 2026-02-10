@@ -531,7 +531,16 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("readFileAsBase64", tabId, filePath),
 
   // 在外部浏览器打开链接
-  openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
+  openExternal: async (url) => {
+    const result = await ipcRenderer.invoke("app:openExternal", url);
+    if (result && typeof result === "object" && "success" in result) {
+      if (!result.success) {
+        throw new Error(result.error || "Failed to open external URL");
+      }
+      return result;
+    }
+    return { success: true };
+  },
 
   // 文件系统辅助API
   checkPathExists: (path) => ipcRenderer.invoke("checkPathExists", path),
