@@ -23,6 +23,7 @@ let getChildProcessInfo = null; // Function to get info from main.js's childProc
 // 结构: sftpPools: Map<tabId, { sessions: Map<sessionId, Session>, primaryId: string|null }>
 const sftpPools = new Map();
 const sftpSessionLocks = new Map(); // 按tabId加锁，避免并发创建
+const sftpBorrowLocks = new Map(); // Serialize borrow flow per tab to avoid race over-creation
 let pendingOperations = new Map(); // key: tabId, value: Array of pending operations
 
 let sftpHealthCheckTimer = null;
@@ -70,6 +71,33 @@ function genSessionId(tabId) {
 
 // 使用配置模块的动态超时计算函数
 const calculateDynamicTimeout = configCalculateDynamicTimeout;
+
+async function waitForSftpSessionUnlock(tabId) {
+  while (sftpSessionLocks.has(tabId)) {
+    await new Promise((resolve) => {
+      setTimeout(resolve, SESSION_CONFIG.SSH_READY_CHECK_INTERVAL);
+    });
+  }
+}
+
+async function acquireBorrowLock(tabId) {
+  while (sftpBorrowLocks.has(tabId)) {
+    await sftpBorrowLocks.get(tabId);
+  }
+
+  let release;
+  const lockPromise = new Promise((resolve) => {
+    release = resolve;
+  });
+  sftpBorrowLocks.set(tabId, lockPromise);
+
+  return () => {
+    if (sftpBorrowLocks.get(tabId) === lockPromise) {
+      sftpBorrowLocks.delete(tabId);
+    }
+    release();
+  };
+}
 
 function init(logger, getChildProcessInfoFunc) {
   if (!logger || !logger.logToFile) {
@@ -510,6 +538,7 @@ async function checkSessionHealth(session) {
 // 创建新的 SFTP 会话 (heavily dependent on getChildProcessInfo)
 async function acquireSftpSession(tabId, options = {}) {
   const { allowReconnect = true } = options;
+  await waitForSftpSessionUnlock(tabId);
   sftpSessionLocks.set(tabId, true);
   let processInfo = null;
   try {
@@ -781,43 +810,48 @@ async function closeAllSftpSessionsForTab(tabId) {
 
 // 借出一个SFTP会话（尽量创建新的，或选择最空闲的）
 async function borrowSftpSession(tabId) {
-  const pool = getOrCreatePool(tabId);
-  let createError = null;
+  const releaseBorrowLock = await acquireBorrowLock(tabId);
+  try {
+    const pool = getOrCreatePool(tabId);
+    let createError = null;
 
-  // 优先创建新会话（未达到上限）
-  if (pool.sessions.size < SESSION_CONFIG.MAX_SESSIONS_PER_TAB) {
-    try {
+    // Prefer creating a new session while still under the per-tab cap.
+    if (pool.sessions.size < SESSION_CONFIG.MAX_SESSIONS_PER_TAB) {
+      try {
+        const session = await acquireSftpSession(tabId);
+        session.busyCount = 1;
+        return { sftp: session.sftp, sessionId: session.id };
+      } catch (e) {
+        createError = e;
+        // Fallback to an existing session when new session creation fails.
+        logToFile(
+          `sftpEngine: Failed to create new session on borrow, fallback to existing: ${e.message}`,
+          "WARN",
+        );
+      }
+    }
+
+    // Choose the least busy existing session.
+    let target = null;
+    for (const sess of pool.sessions.values()) {
+      if (!target || sess.busyCount < target.busyCount) target = sess;
+    }
+    if (!target) {
+      // Surface the creation error if there is still no usable session.
+      if (createError) {
+        throw createError;
+      }
+      // Last chance: create a new session.
       const session = await acquireSftpSession(tabId);
       session.busyCount = 1;
       return { sftp: session.sftp, sessionId: session.id };
-    } catch (e) {
-      createError = e;
-      // 回退到已有会话
-      logToFile(
-        `sftpEngine: Failed to create new session on borrow, fallback to existing: ${e.message}`,
-        "WARN",
-      );
     }
+    target.busyCount++;
+    target.lastUsed = Date.now();
+    return { sftp: target.sftp, sessionId: target.id };
+  } finally {
+    releaseBorrowLock();
   }
-
-  // 从现有会话中选择busyCount最小的
-  let target = null;
-  for (const sess of pool.sessions.values()) {
-    if (!target || sess.busyCount < target.busyCount) target = sess;
-  }
-  if (!target) {
-    // 无可用会话，如果之前创建失败则抛出该错误
-    if (createError) {
-      throw createError;
-    }
-    // 否则尝试创建一个新会话
-    const session = await acquireSftpSession(tabId);
-    session.busyCount = 1;
-    return { sftp: session.sftp, sessionId: session.id };
-  }
-  target.busyCount++;
-  target.lastUsed = Date.now();
-  return { sftp: target.sftp, sessionId: target.id };
 }
 
 // 归还一个SFTP会话
