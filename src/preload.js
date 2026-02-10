@@ -532,7 +532,16 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 在外部浏览器打开链接
   openExternal: async (url) => {
-    const result = await ipcRenderer.invoke("app:openExternal", url);
+    const IPC_TIMEOUT = 10000;
+    const result = await Promise.race([
+      ipcRenderer.invoke("app:openExternal", url),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("openExternal IPC timed out")),
+          IPC_TIMEOUT,
+        ),
+      ),
+    ]);
     if (result && typeof result === "object" && "success" in result) {
       if (!result.success) {
         throw new Error(result.error || "Failed to open external URL");
