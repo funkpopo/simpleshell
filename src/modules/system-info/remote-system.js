@@ -1,4 +1,25 @@
+const REMOTE_SYSTEM_INFO_CACHE_TTL_MS = 4000;
+const REMOTE_PROCESS_LIST_CACHE_TTL_MS = 5000;
+const remoteSystemInfoCache = new WeakMap();
+const remoteProcessListCache = new WeakMap();
+
+const cloneSystemInfo = (info) => ({
+  ...info,
+  os: info?.os ? { ...info.os } : {},
+  cpu: info?.cpu ? { ...info.cpu } : {},
+  memory: info?.memory ? { ...info.memory } : {},
+  processes: Array.isArray(info?.processes) ? [...info.processes] : [],
+});
+
 async function getRemoteSystemInfo(sshClient) {
+  const cached = remoteSystemInfoCache.get(sshClient);
+  if (
+    cached &&
+    Date.now() - cached.timestamp < REMOTE_SYSTEM_INFO_CACHE_TTL_MS
+  ) {
+    return cloneSystemInfo(cached.data);
+  }
+
   return new Promise((resolve, reject) => {
     // 检查SSH连接是否有效
     if (
@@ -278,7 +299,9 @@ async function getRemoteSystemInfo(sshClient) {
                     }
                   }
                 }
-              } catch { /* intentionally ignored */ }
+              } catch {
+                /* intentionally ignored */
+              }
 
               getCpuInfo();
             });
@@ -316,7 +339,9 @@ async function getRemoteSystemInfo(sshClient) {
                   // 解析Linux CPU核心数
                   result.cpu.cores = parseInt(cpuOutput.trim(), 10) / 2; // 除以2因为每个处理器有两行信息
                 }
-              } catch { /* intentionally ignored */ }
+              } catch {
+                /* intentionally ignored */
+              }
 
               getCpuModel();
             });
@@ -355,7 +380,9 @@ async function getRemoteSystemInfo(sshClient) {
                     result.cpu.model = match[1].trim();
                   }
                 }
-              } catch { /* intentionally ignored */ }
+              } catch {
+                /* intentionally ignored */
+              }
 
               getCpuUsage();
             });
@@ -402,7 +429,9 @@ async function getRemoteSystemInfo(sshClient) {
                   // 解析Linux CPU使用率
                   result.cpu.usage = parseFloat(usageOutput.trim());
                 }
-              } catch { /* intentionally ignored */ }
+              } catch {
+                /* intentionally ignored */
+              }
 
               finalize();
             });
@@ -410,6 +439,10 @@ async function getRemoteSystemInfo(sshClient) {
         }
 
         function finalize() {
+          remoteSystemInfoCache.set(sshClient, {
+            timestamp: Date.now(),
+            data: cloneSystemInfo(result),
+          });
           resolve(result);
         }
       });
@@ -418,6 +451,14 @@ async function getRemoteSystemInfo(sshClient) {
 }
 
 async function getRemoteProcessList(sshClient) {
+  const cached = remoteProcessListCache.get(sshClient);
+  if (
+    cached &&
+    Date.now() - cached.timestamp < REMOTE_PROCESS_LIST_CACHE_TTL_MS
+  ) {
+    return [...cached.data];
+  }
+
   return new Promise((resolve, reject) => {
     // 检查SSH连接是否有效
     if (
@@ -469,6 +510,11 @@ async function getRemoteProcessList(sshClient) {
             })
             .filter(Boolean) // 过滤掉解析失败的行
             .sort((a, b) => b.memory - a.memory);
+
+          remoteProcessListCache.set(sshClient, {
+            timestamp: Date.now(),
+            data: processes,
+          });
 
           resolve(processes);
         } catch (parseError) {

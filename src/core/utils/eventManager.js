@@ -139,11 +139,7 @@ class EventManager {
     };
   }
 
-  destroy() {
-    if (this.isDestroyed) {
-      return;
-    }
-
+  _clearResources() {
     // 清理所有事件监听器
     for (const [, listener] of this.listeners) {
       const { target, event, handler, options } = listener;
@@ -190,7 +186,23 @@ class EventManager {
       }
     }
     this.cleanupFunctions.clear();
+  }
 
+  /**
+   * 重置当前 manager（保留实例可继续复用）
+   */
+  reset() {
+    if (this.isDestroyed) {
+      return;
+    }
+    this._clearResources();
+  }
+
+  destroy() {
+    if (this.isDestroyed) {
+      return;
+    }
+    this._clearResources();
     this.isDestroyed = true;
   }
 }

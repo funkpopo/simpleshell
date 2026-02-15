@@ -29,6 +29,10 @@ let writeQueue = [];
 let isFlushing = false;
 let pendingFlush = false;
 let flushTimer = null;
+let flushesSinceSizeCheck = 0;
+let lastSizeCheckAt = 0;
+const SIZE_CHECK_FLUSH_INTERVAL = 10;
+const SIZE_CHECK_MIN_INTERVAL_MS = 5000;
 
 function detectEnvironment(electronApp) {
   if (electronApp && typeof electronApp.isPackaged === "boolean") {
@@ -63,13 +67,16 @@ function loadLogConfig() {
         logConfig = { ...DEFAULT_LOG_CONFIG, ...config.logSettings };
       }
     }
-  } catch { /* intentionally ignored */ }
+  } catch {
+    /* intentionally ignored */
+  }
   return logConfig;
 }
 
 function startFlushTimer() {
   stopFlushTimer();
-  const interval = Number(logConfig.flushIntervalMs) || DEFAULT_LOG_CONFIG.flushIntervalMs;
+  const interval =
+    Number(logConfig.flushIntervalMs) || DEFAULT_LOG_CONFIG.flushIntervalMs;
   flushTimer = setInterval(() => {
     flushQueue();
   }, interval);
@@ -95,14 +102,26 @@ async function flushQueue() {
     writeQueue = [];
     const data = batch.join("");
     await fs.promises.appendFile(logFile, data);
-    checkLogFileSize();
+
+    flushesSinceSizeCheck += 1;
+    const now = Date.now();
+    if (
+      flushesSinceSizeCheck >= SIZE_CHECK_FLUSH_INTERVAL ||
+      now - lastSizeCheckAt >= SIZE_CHECK_MIN_INTERVAL_MS
+    ) {
+      flushesSinceSizeCheck = 0;
+      lastSizeCheckAt = now;
+      checkLogFileSize();
+    }
   } catch {
     try {
       const batch = writeQueue;
       writeQueue = [];
       const data = batch.join("");
       fs.appendFileSync(logFile || "app_emergency.log", data);
-    } catch { /* intentionally ignored */ }
+    } catch {
+      /* intentionally ignored */
+    }
   } finally {
     isFlushing = false;
     if (pendingFlush) {
@@ -123,7 +142,9 @@ function checkLogFileSize() {
     if (!logFile || !fs.existsSync(logFile)) return;
     const stats = fs.statSync(logFile);
     if (stats.size >= logConfig.maxFileSize) rotateLogs();
-  } catch { /* intentionally ignored */ }
+  } catch {
+    /* intentionally ignored */
+  }
 }
 
 function rotateLogs() {
@@ -150,13 +171,19 @@ function rotateLogs() {
           if (logConfig.compressOldLogs && i + 1 > 1) {
             if (fs.existsSync(dstGz)) fs.unlinkSync(dstGz);
             gzipFileSync(srcPlain, dstGz);
-            try { fs.unlinkSync(srcPlain); } catch { /* intentionally ignored */ }
+            try {
+              fs.unlinkSync(srcPlain);
+            } catch {
+              /* intentionally ignored */
+            }
           } else {
             if (fs.existsSync(dstPlain)) fs.unlinkSync(dstPlain);
             fs.renameSync(srcPlain, dstPlain);
           }
         }
-      } catch { /* intentionally ignored */ }
+      } catch {
+        /* intentionally ignored */
+      }
     }
 
     const firstRotated = path.join(logDir, `${nameWithoutExt}.1${ext}`);
@@ -164,7 +191,9 @@ function rotateLogs() {
     fs.renameSync(logFile, firstRotated);
     fs.writeFileSync(logFile, "", "utf8");
     logToFileInternal("Log rotation completed.", "INFO", true);
-  } catch { /* intentionally ignored */ }
+  } catch {
+    /* intentionally ignored */
+  }
 }
 
 function cleanupOldLogs(logDir, nameWithoutExt, ext) {
@@ -172,10 +201,14 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
     const files = fs.readdirSync(logDir);
     const rotated = files.filter((file) => {
       const plain = file.match(
-        new RegExp(`^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}$`),
+        new RegExp(
+          `^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}$`,
+        ),
       );
       const gz = file.match(
-        new RegExp(`^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}\\.gz$`),
+        new RegExp(
+          `^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}\\.gz$`,
+        ),
       );
       return !!(plain || gz);
     });
@@ -187,10 +220,16 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
     if (rotated.length >= logConfig.maxFiles) {
       for (let i = logConfig.maxFiles; i < rotated.length; i++) {
         const fileToRemove = path.join(logDir, rotated[i]);
-        try { fs.unlinkSync(fileToRemove); } catch { /* intentionally ignored */ }
+        try {
+          fs.unlinkSync(fileToRemove);
+        } catch {
+          /* intentionally ignored */
+        }
       }
     }
-  } catch { /* intentionally ignored */ }
+  } catch {
+    /* intentionally ignored */
+  }
 }
 
 function cleanupOldLogEntries() {
@@ -223,7 +262,9 @@ function cleanupOldLogEntries() {
   } catch {
     try {
       logToFileInternal(`Log cleanup failed`, "ERROR", true);
-    } catch { /* intentionally ignored */ }
+    } catch {
+      /* intentionally ignored */
+    }
   }
 }
 
@@ -231,6 +272,8 @@ function initLogger(electronApp) {
   appInstance = electronApp;
   const environment = detectEnvironment(electronApp);
   loadLogConfig();
+  flushesSinceSizeCheck = 0;
+  lastSizeCheckAt = 0;
   try {
     const logDir = getLogDirectory(electronApp);
     if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
@@ -246,7 +289,8 @@ function initLogger(electronApp) {
   } catch {
     try {
       const electronLogDir = electronApp.getPath("logs");
-      if (!fs.existsSync(electronLogDir)) fs.mkdirSync(electronLogDir, { recursive: true });
+      if (!fs.existsSync(electronLogDir))
+        fs.mkdirSync(electronLogDir, { recursive: true });
       logFile = path.join(electronLogDir, "app.log");
       logToFileInternal(
         `Logger initialized with Electron default path (fallback level 1): ${logFile}`,
@@ -257,7 +301,8 @@ function initLogger(electronApp) {
     } catch {
       try {
         const fallbackLogDir = path.join(__dirname, "..", "..", "..", "logs");
-        if (!fs.existsSync(fallbackLogDir)) fs.mkdirSync(fallbackLogDir, { recursive: true });
+        if (!fs.existsSync(fallbackLogDir))
+          fs.mkdirSync(fallbackLogDir, { recursive: true });
         logFile = path.join(fallbackLogDir, "app_fallback.log");
         logToFileInternal(
           `Logger initialized with __dirname-based path (fallback level 2): ${logFile}`,
@@ -292,12 +337,15 @@ function logToFileInternal(message, type = "INFO", isInitialization = false) {
     if (logFile) {
       enqueue(logEntry);
     } else {
-      try { fs.appendFileSync("app_init_error.log", logEntry); } catch { /* intentionally ignored */ }
+      try {
+        fs.appendFileSync("app_init_error.log", logEntry);
+      } catch {
+        /* intentionally ignored */
+      }
     }
-    if (!isInitialization && logFile) {
-      checkLogFileSize();
-    }
-  } catch { /* intentionally ignored */ }
+  } catch {
+    /* intentionally ignored */
+  }
 }
 
 const logToFile = (message, type = "INFO") => {
@@ -324,11 +372,15 @@ function updateLogConfig(newConfig) {
 
 function extractRotationIndex(fileName, nameWithoutExt, ext) {
   const plain = fileName.match(
-    new RegExp(`^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}$`),
+    new RegExp(
+      `^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}$`,
+    ),
   );
   if (plain) return parseInt(plain[1], 10);
   const gz = fileName.match(
-    new RegExp(`^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}\\.gz$`),
+    new RegExp(
+      `^${escapeRegExp(nameWithoutExt)}\\.(\\d+)${escapeRegExp(ext)}\\.gz$`,
+    ),
   );
   if (gz) return parseInt(gz[1], 10);
   return -1;
@@ -343,7 +395,9 @@ function gzipFileSync(srcPath, destPath) {
     const buf = fs.readFileSync(srcPath);
     const gz = zlib.gzipSync(buf);
     fs.writeFileSync(destPath, gz);
-  } catch { /* intentionally ignored */ }
+  } catch {
+    /* intentionally ignored */
+  }
 }
 
 function setupProcessFlushHooks() {
@@ -357,11 +411,17 @@ function setupProcessFlushHooks() {
               const data = writeQueue.join("");
               writeQueue = [];
               fs.appendFileSync(logFile, data);
-            } catch { /* intentionally ignored */ }
+            } catch {
+              /* intentionally ignored */
+            }
           }
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
       });
-    } catch { /* intentionally ignored */ }
+    } catch {
+      /* intentionally ignored */
+    }
   });
 }
 
@@ -379,4 +439,3 @@ module.exports = {
   updateLogConfig,
   cleanupOldLogEntries,
 };
-

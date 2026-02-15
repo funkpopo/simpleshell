@@ -1,5 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from "react";
-import useAutoCleanup from "../hooks/useAutoCleanup";
+import React, { useState, useEffect, memo, useCallback, useRef } from "react";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
@@ -14,6 +13,7 @@ import StorageIcon from "@mui/icons-material/Storage";
 import { useTheme } from "@mui/material/styles";
 import Tooltip from "@mui/material/Tooltip";
 import { useTranslation } from "react-i18next";
+import PropTypes from "prop-types";
 import { formatFileSize } from "../core/utils/formatters";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import Collapse from "@mui/material/Collapse";
@@ -78,6 +78,25 @@ const PercentageBar = memo(({ value, theme }) => {
 });
 
 PercentageBar.displayName = "PercentageBar";
+PercentageBar.propTypes = {
+  value: PropTypes.number.isRequired,
+  theme: PropTypes.shape({
+    palette: PropTypes.shape({
+      error: PropTypes.shape({
+        main: PropTypes.string.isRequired,
+      }).isRequired,
+      warning: PropTypes.shape({
+        main: PropTypes.string.isRequired,
+      }).isRequired,
+      success: PropTypes.shape({
+        main: PropTypes.string.isRequired,
+      }).isRequired,
+      text: PropTypes.shape({
+        primary: PropTypes.string.isRequired,
+      }).isRequired,
+    }).isRequired,
+  }).isRequired,
+};
 
 const AccordionHeader = ({ title, icon, expanded, onClick }) => {
   const theme = useTheme();
@@ -116,6 +135,12 @@ const AccordionHeader = ({ title, icon, expanded, onClick }) => {
     </Box>
   );
 };
+AccordionHeader.propTypes = {
+  title: PropTypes.node.isRequired,
+  icon: PropTypes.node.isRequired,
+  expanded: PropTypes.bool.isRequired,
+  onClick: PropTypes.func.isRequired,
+};
 
 // 资源监控组件
 const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
@@ -132,32 +157,43 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
     memory: true,
     processes: false,
   });
+  const systemInfoIntervalRef = useRef(null);
+  const processListIntervalRef = useRef(null);
 
   const handleExpansion = (panel) => () => {
     setExpanded((prev) => ({ ...prev, [panel]: !prev[panel] }));
   };
 
   // 获取系统信息
-  const fetchSystemInfo = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      if (window.terminalAPI && window.terminalAPI.getSystemInfo) {
-        const info = await window.terminalAPI.getSystemInfo(currentTabId);
-        if (info.error) {
-          setError(info.message || t("resourceMonitor.errors.systemInfoFailed"));
-        } else {
-          setSystemInfo(info);
+  const fetchSystemInfo = useCallback(
+    async (showLoading = false) => {
+      try {
+        if (showLoading) {
+          setLoading(true);
         }
-      } else {
-        setError(t("resourceMonitor.errors.apiUnavailable"));
+        setError(null);
+        if (window.terminalAPI && window.terminalAPI.getSystemInfo) {
+          const info = await window.terminalAPI.getSystemInfo(currentTabId);
+          if (info.error) {
+            setError(
+              info.message || t("resourceMonitor.errors.systemInfoFailed"),
+            );
+          } else {
+            setSystemInfo(info);
+          }
+        } else {
+          setError(t("resourceMonitor.errors.apiUnavailable"));
+        }
+      } catch (err) {
+        setError(err.message || t("resourceMonitor.errors.fetchSystemInfo"));
+      } finally {
+        if (showLoading) {
+          setLoading(false);
+        }
       }
-    } catch (err) {
-      setError(err.message || t("resourceMonitor.errors.fetchSystemInfo"));
-    } finally {
-      setLoading(false);
-    }
-  }, [currentTabId]);
+    },
+    [currentTabId, t],
+  );
 
   const fetchProcessList = useCallback(async () => {
     try {
@@ -166,7 +202,10 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
         const processList =
           await window.terminalAPI.getProcessList(currentTabId);
         if (processList.error) {
-          setProcessError(processList.message || t("resourceMonitor.errors.processListFailed"));
+          setProcessError(
+            processList.message ||
+              t("resourceMonitor.errors.processListFailed"),
+          );
         } else {
           setProcesses(processList);
         }
@@ -174,39 +213,66 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
         setProcessError(t("resourceMonitor.errors.apiUnavailable"));
       }
     } catch (err) {
-      setProcessError(err.message || t("resourceMonitor.errors.fetchProcessList"));
+      setProcessError(
+        err.message || t("resourceMonitor.errors.fetchProcessList"),
+      );
     }
-  }, [currentTabId]);
+  }, [currentTabId, t]);
 
-  // 使用自动清理Hook
-  const { addInterval } = useAutoCleanup();
+  const clearPollingTimers = useCallback(() => {
+    if (systemInfoIntervalRef.current) {
+      clearInterval(systemInfoIntervalRef.current);
+      systemInfoIntervalRef.current = null;
+    }
+    if (processListIntervalRef.current) {
+      clearInterval(processListIntervalRef.current);
+      processListIntervalRef.current = null;
+    }
+  }, []);
 
-  // 当侧边栏打开或标签页切换时获取信息
+  // 当侧边栏打开、标签页切换或进程面板展开状态变化时，重建轮询
   useEffect(() => {
-    if (open) {
-      // 打开瞬间或连接未就绪时，避免内容区域空白
-      setLoading(true);
-      setError(null);
+    clearPollingTimers();
 
-      fetchSystemInfo();
-      fetchProcessList();
-
-      // 使用 addInterval 自动管理定时器，组件卸载时自动清理
-      // addInterval 返回资源ID，我们不需要在 useEffect 中返回它
-      addInterval(() => {
-        fetchSystemInfo();
-        fetchProcessList();
-      }, 5000); // 统一5秒刷新
+    if (!open) {
+      return clearPollingTimers;
     }
-    // useEffect 不应该返回 addInterval 的返回值
-    // eslint-disable-next-line consistent-return
-  }, [open, currentTabId, fetchSystemInfo, fetchProcessList, addInterval]);
+
+    // 打开瞬间优先拉取一次，避免内容区域空白
+    fetchSystemInfo(true);
+
+    // 进程列表仅在面板展开时拉取和轮询，避免无意义的远程 ps 开销
+    if (expanded.processes) {
+      fetchProcessList();
+    }
+
+    systemInfoIntervalRef.current = setInterval(() => {
+      fetchSystemInfo(false);
+    }, 5000);
+
+    if (expanded.processes) {
+      processListIntervalRef.current = setInterval(() => {
+        fetchProcessList();
+      }, 15000);
+    }
+
+    return clearPollingTimers;
+  }, [
+    open,
+    currentTabId,
+    expanded.processes,
+    fetchSystemInfo,
+    fetchProcessList,
+    clearPollingTimers,
+  ]);
 
   // 手动刷新
   const handleRefresh = useCallback(() => {
-    fetchSystemInfo();
-    fetchProcessList();
-  }, [fetchSystemInfo, fetchProcessList]);
+    fetchSystemInfo(false);
+    if (expanded.processes) {
+      fetchProcessList();
+    }
+  }, [fetchSystemInfo, fetchProcessList, expanded.processes]);
 
   return (
     <Paper
@@ -277,7 +343,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 }}
               >
                 <CircularProgress size={24} />
-                <Typography variant="body2" color="text.secondary" align="center">
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  align="center"
+                >
                   {t("resourceMonitor.loading")}
                 </Typography>
               </Box>
@@ -301,7 +371,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                       />
                     }
                     expanded={expanded.system}
-                    onClick={handleExpansion("system" )}
+                    onClick={handleExpansion("system")}
                   />
                   <Collapse in={expanded.system} timeout="auto" unmountOnExit>
                     <Box sx={{ p: 2, pt: 0 }}>
@@ -328,26 +398,29 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 {/* CPU信息卡片 */}
                 <Paper elevation={2} sx={{ borderRadius: 1 }}>
                   <AccordionHeader
-                    title={t("resourceMonitor.cpu" )}
+                    title={t("resourceMonitor.cpu")}
                     icon={
                       <MemoryIcon
                         sx={{ mr: 1, color: theme.palette.warning.main }}
                       />
                     }
                     expanded={expanded.cpu}
-                    onClick={handleExpansion("cpu" )}
+                    onClick={handleExpansion("cpu")}
                   />
                   <Collapse in={expanded.cpu} timeout="auto" unmountOnExit>
                     <Box sx={{ p: 2, pt: 0 }}>
                       <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.cpuModel")}:</strong> {systemInfo.cpu.model}
+                        <strong>{t("resourceMonitor.cpuModel")}:</strong>{" "}
+                        {systemInfo.cpu.model}
                       </Typography>
                       <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.cpuCores")}:</strong> {systemInfo.cpu.cores}
+                        <strong>{t("resourceMonitor.cpuCores")}:</strong>{" "}
+                        {systemInfo.cpu.cores}
                       </Typography>
                       <Box sx={{ mt: 1, mb: 0.5 }}>
                         <Typography variant="body2">
-                          <strong>{t("resourceMonitor.usage")}:</strong> {systemInfo.cpu.usage}%
+                          <strong>{t("resourceMonitor.usage")}:</strong>{" "}
+                          {systemInfo.cpu.usage}%
                         </Typography>
                         <LinearProgress
                           variant="determinate"
@@ -381,22 +454,22 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                       />
                     }
                     expanded={expanded.memory}
-                    onClick={handleExpansion("memory" )}
+                    onClick={handleExpansion("memory")}
                   />
                   <Collapse in={expanded.memory} timeout="auto" unmountOnExit>
                     <Box sx={{ p: 2, pt: 0 }}>
                       <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.totalMemory")}:</strong> 
-                        {formatFileSize(systemInfo.memory.total )}
+                        <strong>{t("resourceMonitor.totalMemory")}:</strong>
+                        {formatFileSize(systemInfo.memory.total)}
                       </Typography>
                       <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.usedMemory")}:</strong> 
+                        <strong>{t("resourceMonitor.usedMemory")}:</strong>
                         {formatFileSize(systemInfo.memory.used)} (
                         {systemInfo.memory.usagePercent}%)
                       </Typography>
                       <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.freeMemory")}:</strong> 
-                        {formatFileSize(systemInfo.memory.free )}
+                        <strong>{t("resourceMonitor.freeMemory")}:</strong>
+                        {formatFileSize(systemInfo.memory.free)}
                       </Typography>
                       <Box sx={{ mt: 1, mb: 0.5 }}>
                         <LinearProgress
@@ -431,7 +504,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                       />
                     }
                     expanded={expanded.processes}
-                    onClick={handleExpansion("processes" )}
+                    onClick={handleExpansion("processes")}
                   />
                   <Collapse
                     in={expanded.processes}
@@ -541,9 +614,9 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                                 </Box>
                               </ListItem>
                             ),
-                           )}
+                          )}
                         </List>
-                       )}
+                      )}
                     </Box>
                   </Collapse>
                 </Paper>
@@ -566,13 +639,16 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
             ) : null}
           </Box>
         </>
-       )}
+      )}
     </Paper>
   );
 });
 
 ResourceMonitor.displayName = "ResourceMonitor";
+ResourceMonitor.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  currentTabId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+};
 
 export default ResourceMonitor;
-
-

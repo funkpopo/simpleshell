@@ -5,7 +5,11 @@ import { ThemeProvider } from "@mui/material/styles";
 import { createUnifiedTheme } from "./theme";
 import CssBaseline from "@mui/material/CssBaseline";
 import { GlobalErrorBoundary } from "./components/ErrorBoundary.jsx";
-import { AppProvider, useAppState, useAppDispatch } from "./store/AppContext.jsx";
+import {
+  AppProvider,
+  useAppState,
+  useAppDispatch,
+} from "./store/AppContext.jsx";
 import { NotificationProvider } from "./contexts/NotificationContext.jsx";
 import { actions } from "./store/appReducer.js";
 import AppBar from "@mui/material/AppBar";
@@ -212,6 +216,20 @@ const normalizeRecentConnections = (recentConnections, connections) => {
     .filter(Boolean);
 };
 
+const buildRecentConnectionsSignature = (items) => {
+  if (!Array.isArray(items) || items.length === 0) return "";
+
+  return items
+    .map((item) => {
+      if (!item) return "";
+      const id = item.id || item.connectionId || item.serverKey || "";
+      const serverKey = item.serverKey || buildServerKey(item) || "";
+      const updatedAt = item.updatedAt || item.lastUsedAt || "";
+      return `${id}#${serverKey}#${updatedAt}`;
+    })
+    .join("|");
+};
+
 function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
@@ -223,18 +241,20 @@ function AppContent() {
 
   // 错误处理状态（保持本地，因为不需要全局共享）
   const [appError, setAppError] = React.useState(null);
-  const [errorNotificationOpen, setErrorNotificationOpen] = React.useState(false);
+  const [errorNotificationOpen, setErrorNotificationOpen] =
+    React.useState(false);
 
   // SSH 认证对话框状态
   const [sshAuthDialogOpen, setSshAuthDialogOpen] = React.useState(false);
   const [sshAuthData, setSshAuthData] = React.useState(null);
-  const [sshAuthConnectionConfig, setSshAuthConnectionConfig] = React.useState(null);
+  const [sshAuthConnectionConfig, setSshAuthConnectionConfig] =
+    React.useState(null);
   const sshAuthRequestIdRef = React.useRef(null);
 
   // 监听主进程的错误事件
   React.useEffect(() => {
     const handleAppError = (event, error) => {
-      console.error('Application error:', error);
+      console.error("Application error:", error);
       setAppError(error);
       setErrorNotificationOpen(true);
     };
@@ -262,10 +282,7 @@ function AppContent() {
       const newLabel = t("terminal.welcome");
       if (tabs[0].label !== newLabel) {
         dispatch(
-          actions.setTabs([
-            { ...tabs[0], label: newLabel },
-            ...tabs.slice(1),
-          ])
+          actions.setTabs([{ ...tabs[0], label: newLabel }, ...tabs.slice(1)]),
         );
       }
     }
@@ -325,6 +342,16 @@ function AppContent() {
   const dragInsertPosition = state.dragInsertPosition;
   const anchorEl = state.anchorEl;
   const open = Boolean(anchorEl);
+  const connectionsRef = React.useRef(connections);
+  const topConnectionsRef = React.useRef(topConnections);
+
+  React.useEffect(() => {
+    connectionsRef.current = connections;
+  }, [connections]);
+
+  React.useEffect(() => {
+    topConnectionsRef.current = topConnections;
+  }, [topConnections]);
 
   // 锁定的文件管理器tabId（在打开时不随标签页切换而变化）
   const [lockedFileManagerTabId, setLockedFileManagerTabId] = useState(null);
@@ -334,19 +361,19 @@ function AppContent() {
     if (!window.terminalAPI?.onSSHAuthRequest) return;
 
     const handleSSHAuthRequest = (data) => {
-      console.log('SSH Auth request received:', data);
+      console.log("SSH Auth request received:", data);
       sshAuthRequestIdRef.current = data.requestId;
-      
+
       // 查找对应的连接配置
       let connectionConfig = null;
       if (data.connectionId) {
         // 递归查找连接配置
         const findConnection = (items) => {
           for (const item of items) {
-            if (item.type === 'connection' && item.id === data.connectionId) {
+            if (item.type === "connection" && item.id === data.connectionId) {
               return item;
             }
-            if (item.type === 'group' && Array.isArray(item.items)) {
+            if (item.type === "group" && Array.isArray(item.items)) {
               const found = findConnection(item.items);
               if (found) return found;
             }
@@ -355,12 +382,16 @@ function AppContent() {
         };
         connectionConfig = findConnection(connections);
       }
-      
+
       // 也可以从 tabId 获取配置
-      if (!connectionConfig && data.tabId && terminalInstances[`${data.tabId}-config`]) {
+      if (
+        !connectionConfig &&
+        data.tabId &&
+        terminalInstances[`${data.tabId}-config`]
+      ) {
         connectionConfig = terminalInstances[`${data.tabId}-config`];
       }
-      
+
       setSshAuthConnectionConfig(connectionConfig);
       setSshAuthData(data);
       setSshAuthDialogOpen(true);
@@ -379,16 +410,16 @@ function AppContent() {
   // 处理 SSH 认证对话框确认
   const handleSSHAuthConfirm = React.useCallback(async (authResult) => {
     if (!sshAuthRequestIdRef.current) return;
-    
+
     try {
       await window.terminalAPI.respondSSHAuth({
         requestId: sshAuthRequestIdRef.current,
         ...authResult,
       });
     } catch (error) {
-      console.error('Failed to respond SSH auth:', error);
+      console.error("Failed to respond SSH auth:", error);
     }
-    
+
     setSshAuthDialogOpen(false);
     setSshAuthData(null);
     setSshAuthConnectionConfig(null);
@@ -404,10 +435,10 @@ function AppContent() {
           cancelled: true,
         });
       } catch (error) {
-        console.error('Failed to cancel SSH auth:', error);
+        console.error("Failed to cancel SSH auth:", error);
       }
     }
-    
+
     setSshAuthDialogOpen(false);
     setSshAuthData(null);
     setSshAuthConnectionConfig(null);
@@ -417,26 +448,29 @@ function AppContent() {
   // 根据主题模式更新 body 类名
   React.useEffect(() => {
     if (darkMode) {
-      document.body.classList.add('dark-theme');
-      document.body.classList.remove('light-theme');
+      document.body.classList.add("dark-theme");
+      document.body.classList.remove("light-theme");
     } else {
-      document.body.classList.add('light-theme');
-      document.body.classList.remove('dark-theme');
+      document.body.classList.add("light-theme");
+      document.body.classList.remove("dark-theme");
     }
   }, [darkMode]);
 
   // ============ 保持本地状态(不在 reducer 中)============
-  const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] = React.useState(false);
+  const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] =
+    React.useState(false);
   const [prevTabsLength, setPrevTabsLength] = React.useState(tabs.length);
   const [transferFloatOpen, setTransferFloatOpen] = React.useState(false);
-  const [transferFloatInitialTransfer, setTransferFloatInitialTransfer] = React.useState(null);
+  const [transferFloatInitialTransfer, setTransferFloatInitialTransfer] =
+    React.useState(null);
   const [dndEnabled, setDndEnabled] = React.useState(true);
   // 传输栏显示模式: "bottom" | "sidebar"
   const [transferBarMode, setTransferBarMode] = React.useState("bottom");
   // 传输侧边栏状态
   const [transferSidebarOpen, setTransferSidebarOpen] = React.useState(false);
   // 最后激活的浮动窗口（用于控制z-index层叠顺序）: "ai" | "transfer"
-  const [lastActiveFloatWindow, setLastActiveFloatWindow] = React.useState("ai");
+  const [lastActiveFloatWindow, setLastActiveFloatWindow] =
+    React.useState("ai");
 
   const tabsRef = useRef(null);
   const dragRafRef = React.useRef(null);
@@ -486,7 +520,7 @@ function AppContent() {
       scroller,
       "wheel",
       handleTabsWheel,
-      { passive: false }
+      { passive: false },
     );
 
     return removeListener;
@@ -665,16 +699,20 @@ function AppContent() {
       const { terminalId, processId } = event.detail;
       if (terminalId && processId) {
         // 更新终端实例中的进程ID
-        dispatch(actions.setTerminalInstances({
-          ...terminalInstances,
-          [`${terminalId}-processId`]: processId,
-        }));
+        dispatch(
+          actions.setTerminalInstances({
+            ...terminalInstances,
+            [`${terminalId}-processId`]: processId,
+          }),
+        );
 
         // 更新进程缓存
-        dispatch(actions.setProcessCache({
-          ...processCache,
-          [terminalId]: processId,
-        }));
+        dispatch(
+          actions.setProcessCache({
+            ...processCache,
+            [terminalId]: processId,
+          }),
+        );
       }
     };
 
@@ -694,30 +732,22 @@ function AppContent() {
 
   // 当连接列表更新时，同步更新置顶连接列表
   React.useEffect(() => {
-    if (window.terminalAPI?.loadTopConnections) {
-      window.terminalAPI
-        .loadTopConnections()
-        .then((lastConnectionObjs) => {
-          if (Array.isArray(lastConnectionObjs) && lastConnectionObjs.length > 0) {
-            // lastConnectionObjs 现在是完整的连接对象数组
-            // 只有当计算出的列表与当前状态不同时才更新，避免不必要的渲染
-            const normalizedRecent = normalizeRecentConnections(
-              lastConnectionObjs,
-              connections,
-            );
-            if (
-              JSON.stringify(normalizedRecent) !==
-              JSON.stringify(topConnections)
-            ) {
-              dispatch(actions.setTopConnections(normalizedRecent));
-            }
-          }
-        })
-        .catch(() => {
-          // 处理加载最近连接失败的情况
-        });
+    if (!Array.isArray(topConnections) || topConnections.length === 0) {
+      return;
     }
-  }, [connections]); // 依赖于 connections state
+
+    const normalizedRecent = normalizeRecentConnections(
+      topConnections,
+      connections,
+    );
+
+    const nextSignature = buildRecentConnectionsSignature(normalizedRecent);
+    const currentSignature = buildRecentConnectionsSignature(topConnections);
+
+    if (nextSignature !== currentSignature) {
+      dispatch(actions.setTopConnections(normalizedRecent));
+    }
+  }, [connections, topConnections, dispatch]);
 
   // 热门连接实时更新订阅（无需重启）
   React.useEffect(() => {
@@ -731,37 +761,50 @@ function AppContent() {
           : await window.terminalAPI.loadTopConnections();
         const normalizedRecent = normalizeRecentConnections(
           recentConnections,
-          connections,
+          connectionsRef.current,
         );
-        dispatch(actions.setTopConnections(normalizedRecent));
+
+        const nextSignature = buildRecentConnectionsSignature(normalizedRecent);
+        const currentSignature = buildRecentConnectionsSignature(
+          topConnectionsRef.current,
+        );
+
+        if (nextSignature !== currentSignature) {
+          dispatch(actions.setTopConnections(normalizedRecent));
+        }
       } catch {
         // 忽略错误
       }
     };
 
-    const unsubscribe = window.terminalAPI.onTopConnectionsChanged(
-      handleTopChanged,
-    );
+    const unsubscribe =
+      window.terminalAPI.onTopConnectionsChanged(handleTopChanged);
     return () => {
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [connections]);
+  }, [dispatch]);
 
   // 保存更新后的连接配置
-  const handleConnectionsUpdate = useCallback((updatedConnections) => {
-    dispatch(actions.setConnections(updatedConnections));
-    if (window.terminalAPI && window.terminalAPI.saveConnections) {
-      window.terminalAPI.saveConnections(updatedConnections);
-    }
-  }, [dispatch]);
+  const handleConnectionsUpdate = useCallback(
+    (updatedConnections) => {
+      dispatch(actions.setConnections(updatedConnections));
+      if (window.terminalAPI && window.terminalAPI.saveConnections) {
+        window.terminalAPI.saveConnections(updatedConnections);
+      }
+    },
+    [dispatch],
+  );
 
   // 创建动态主题
   const theme = React.useMemo(() => createUnifiedTheme(darkMode), [darkMode]);
 
   // 处理菜单打开
-  const handleMenu = useCallback((event) => {
-    dispatch(actions.setAnchorEl(event.currentTarget));
-  }, [dispatch]);
+  const handleMenu = useCallback(
+    (event) => {
+      dispatch(actions.setAnchorEl(event.currentTarget));
+    },
+    [dispatch],
+  );
 
   // 处理菜单关闭
   const handleClose = useCallback(() => {
@@ -799,78 +842,81 @@ function AppContent() {
   }, [dispatch]);
 
   // React 19: 利用自动批处理和 startTransition 优化主题切换
-  const toggleTheme = useCallback(async (event) => {
-    try {
-      const newDarkMode = !darkMode;
+  const toggleTheme = useCallback(
+    async (event) => {
+      try {
+        const newDarkMode = !darkMode;
 
-      // 保存按钮引用，避免在 setTimeout 中访问已失效的 event
-      const button = event?.currentTarget;
+        // 保存按钮引用，避免在 setTimeout 中访问已失效的 event
+        const button = event?.currentTarget;
 
-      // 添加按钮点击动画
-      if (button) {
-        button.classList.add("theme-button-pulse");
-        setTimeout(() => {
-          if (button) {
-            button.classList.remove("theme-button-pulse");
-          }
-        }, 300);
-      }
-
-      // 创建动画遮罩层
-      const overlay = document.createElement("div");
-      overlay.className = `theme-switch-overlay ${newDarkMode ? "dark" : "light"}`;
-      document.body.appendChild(overlay);
-
-      // 添加主题切换标记，启用过渡效果
-      document.body.classList.add("theme-switching");
-
-      // 启动动画
-      requestAnimationFrame(() => {
-        overlay.classList.add("animating");
-      });
-
-      // 立即切换主题状态，使用 startTransition 避免阻塞
-      React.startTransition(() => {
-        dispatch(actions.setDarkMode(newDarkMode));
-      });
-
-      // 动画结束后清理（0.5s 动画时长）
-      setTimeout(() => {
-        document.body.classList.remove("theme-switching");
-        overlay.remove();
-      }, 500);
-
-      // 保存主题设置到配置文件
-      if (window.terminalAPI?.saveUISettings) {
-        // 先获取当前设置，然后更新主题设置
-        let currentSettings = { language: "zh-CN", fontSize: 14 };
-        try {
-          if (window.terminalAPI?.loadUISettings) {
-            const loadedSettings = await window.terminalAPI.loadUISettings();
-            if (loadedSettings) {
-              currentSettings = loadedSettings;
+        // 添加按钮点击动画
+        if (button) {
+          button.classList.add("theme-button-pulse");
+          setTimeout(() => {
+            if (button) {
+              button.classList.remove("theme-button-pulse");
             }
-          }
-        } catch {
-          // 获取当前设置失败，使用默认值
+          }, 300);
         }
 
-        // 更新主题设置并保存
-        const updatedSettings = {
-          ...currentSettings,
-          darkMode: newDarkMode,
-        };
+        // 创建动画遮罩层
+        const overlay = document.createElement("div");
+        overlay.className = `theme-switch-overlay ${newDarkMode ? "dark" : "light"}`;
+        document.body.appendChild(overlay);
 
-        await window.terminalAPI.saveUISettings(updatedSettings);
+        // 添加主题切换标记，启用过渡效果
+        document.body.classList.add("theme-switching");
+
+        // 启动动画
+        requestAnimationFrame(() => {
+          overlay.classList.add("animating");
+        });
+
+        // 立即切换主题状态，使用 startTransition 避免阻塞
+        React.startTransition(() => {
+          dispatch(actions.setDarkMode(newDarkMode));
+        });
+
+        // 动画结束后清理（0.5s 动画时长）
+        setTimeout(() => {
+          document.body.classList.remove("theme-switching");
+          overlay.remove();
+        }, 500);
+
+        // 保存主题设置到配置文件
+        if (window.terminalAPI?.saveUISettings) {
+          // 先获取当前设置，然后更新主题设置
+          let currentSettings = { language: "zh-CN", fontSize: 14 };
+          try {
+            if (window.terminalAPI?.loadUISettings) {
+              const loadedSettings = await window.terminalAPI.loadUISettings();
+              if (loadedSettings) {
+                currentSettings = loadedSettings;
+              }
+            }
+          } catch {
+            // 获取当前设置失败，使用默认值
+          }
+
+          // 更新主题设置并保存
+          const updatedSettings = {
+            ...currentSettings,
+            darkMode: newDarkMode,
+          };
+
+          await window.terminalAPI.saveUISettings(updatedSettings);
+        }
+
+        // 同时更新 localStorage 作为备选（向后兼容）
+        localStorage.setItem("terminalDarkMode", newDarkMode.toString());
+      } catch {
+        // 如果保存失败，至少更新 localStorage
+        localStorage.setItem("terminalDarkMode", (!darkMode).toString());
       }
-
-      // 同时更新 localStorage 作为备选（向后兼容）
-      localStorage.setItem("terminalDarkMode", newDarkMode.toString());
-    } catch {
-      // 如果保存失败，至少更新 localStorage
-      localStorage.setItem("terminalDarkMode", (!darkMode).toString());
-    }
-  }, [darkMode, dispatch]);
+    },
+    [darkMode, dispatch],
+  );
 
   // 标签页相关函数
   const handleTabChange = useCallback(
@@ -916,24 +962,28 @@ function AppContent() {
       // 欢迎页不显示右键菜单
       if (tabs[index].id === "welcome") return;
 
-      dispatch(actions.setTabContextMenu({
-        mouseX: event.clientX - 2,
-        mouseY: event.clientY - 4,
-        tabIndex: index,
-        tabId: tabId,
-      }));
+      dispatch(
+        actions.setTabContextMenu({
+          mouseX: event.clientX - 2,
+          mouseY: event.clientY - 4,
+          tabIndex: index,
+          tabId: tabId,
+        }),
+      );
     },
     [tabs, dispatch],
   );
 
   // 标签页右键菜单关闭
   const handleTabContextMenuClose = useCallback(() => {
-    dispatch(actions.setTabContextMenu({
-      mouseX: null,
-      mouseY: null,
-      tabIndex: null,
-      tabId: null,
-    }));
+    dispatch(
+      actions.setTabContextMenu({
+        mouseX: null,
+        mouseY: null,
+        tabIndex: null,
+        tabId: null,
+      }),
+    );
   }, [dispatch]);
 
   // 刷新终端连接
@@ -963,18 +1013,22 @@ function AppContent() {
       }
 
       // 从缓存中先移除旧实例
-      dispatch(actions.setTerminalInstances({
-        ...terminalInstances,
-        [tabId]: undefined,
-      }));
+      dispatch(
+        actions.setTerminalInstances({
+          ...terminalInstances,
+          [tabId]: undefined,
+        }),
+      );
 
       // 添加新实例标记，触发WebTerminal重新创建
       setTimeout(() => {
-        dispatch(actions.setTerminalInstances({
-          ...terminalInstances,
-          [tabId]: true,
-          [`${tabId}-refresh`]: Date.now(), // 添加时间戳确保组件被重新渲染
-        }));
+        dispatch(
+          actions.setTerminalInstances({
+            ...terminalInstances,
+            [tabId]: true,
+            [`${tabId}-refresh`]: Date.now(), // 添加时间戳确保组件被重新渲染
+          }),
+        );
       }, 100);
     }
 
@@ -1011,51 +1065,62 @@ function AppContent() {
   };
 
   // 创建远程连接（SSH或Telnet）
-  const handleCreateSSHConnection = useCallback((connection) => {
-    // 创建唯一的标签页ID
-    const terminalId = `${connection.protocol || "ssh"}-${Date.now()}`;
+  const handleCreateSSHConnection = useCallback(
+    (connection) => {
+      // 创建唯一的标签页ID
+      const terminalId = `${connection.protocol || "ssh"}-${Date.now()}`;
 
-    // 创建标签名（使用连接配置中的名称）
-    const protocol = connection.protocol === "telnet" ? "Telnet" : "SSH";
-    const tabName = connection.name || `${protocol}: ${connection.host}`;
+      // 创建标签名（使用连接配置中的名称）
+      const protocol = connection.protocol === "telnet" ? "Telnet" : "SSH";
+      const tabName = connection.name || `${protocol}: ${connection.host}`;
 
-    // 创建新标签页
-    const newTab = {
-      id: terminalId,
-      label: tabName,
-      type: connection.protocol || "ssh",
-      connectionId: connection.id, // 存储连接ID以便后续使用
-    };
+      // 创建新标签页
+      const newTab = {
+        id: terminalId,
+        label: tabName,
+        type: connection.protocol || "ssh",
+        connectionId: connection.id, // 存储连接ID以便后续使用
+      };
 
-    // 为连接添加tabId以便在main进程中识别
-    const connectionConfigWithTabId = {
-      ...connection,
-      tabId: terminalId,
-    };
+      // 为连接添加tabId以便在main进程中识别
+      const connectionConfigWithTabId = {
+        ...connection,
+        tabId: terminalId,
+      };
 
-    // 为新标签页创建终端实例缓存，并包含连接配置
-    dispatch(actions.setTerminalInstances({
-      ...terminalInstances,
-      [terminalId]: true,
-      [`${terminalId}-config`]: connectionConfigWithTabId, // 将完整的连接配置存储在缓存中
-      [`${terminalId}-processId`]: null, // 预留存储进程ID的位置
-    }));
+      // 为新标签页创建终端实例缓存，并包含连接配置
+      dispatch(
+        actions.setTerminalInstances({
+          ...terminalInstances,
+          [terminalId]: true,
+          [`${terminalId}-config`]: connectionConfigWithTabId, // 将完整的连接配置存储在缓存中
+          [`${terminalId}-processId`]: null, // 预留存储进程ID的位置
+        }),
+      );
 
-    // 添加标签并立即切换到新标签（使用当前tabs长度作为新索引）
-    const newTabs = [...tabs, newTab];
-    dispatch(actions.setTabs(newTabs));
-    dispatch(actions.setCurrentTab(newTabs.length - 1));
-  }, [tabs, terminalInstances, dispatch]);
+      // 添加标签并立即切换到新标签（使用当前tabs长度作为新索引）
+      const newTabs = [...tabs, newTab];
+      dispatch(actions.setTabs(newTabs));
+      dispatch(actions.setCurrentTab(newTabs.length - 1));
+    },
+    [tabs, terminalInstances, dispatch],
+  );
 
   // 处理从连接管理器或欢迎页打开连接
-  const handleOpenConnection = useCallback((connection) => {
-    const resolvedConnection = resolveRecentConnection(connection, connections);
-    if (!resolvedConnection || resolvedConnection.type !== "connection") {
-      return;
-    }
+  const handleOpenConnection = useCallback(
+    (connection) => {
+      const resolvedConnection = resolveRecentConnection(
+        connection,
+        connections,
+      );
+      if (!resolvedConnection || resolvedConnection.type !== "connection") {
+        return;
+      }
 
-    handleCreateSSHConnection(resolvedConnection);
-  }, [connections, handleCreateSSHConnection]);
+      handleCreateSSHConnection(resolvedConnection);
+    },
+    [connections, handleCreateSSHConnection],
+  );
 
   // 关闭标签页
   const handleCloseTab = (index) => {
@@ -1066,14 +1131,21 @@ function AppContent() {
 
     // 关闭SSH/Telnet连接 - 在清理缓存之前先断开连接
     const processId = processCache[tabToRemove.id];
-    if (processId && (tabToRemove.type === 'ssh' || tabToRemove.type === 'telnet')) {
+    if (
+      processId &&
+      (tabToRemove.type === "ssh" || tabToRemove.type === "telnet")
+    ) {
       window.terminalAPI.killProcess(processId).catch((err) => {
         console.warn(`关闭连接时出错: ${err.message}`);
       });
     }
 
     // 检查文件管理器是否为该标签页打开，如果是则关闭它
-    if (fileManagerOpen && (fileManagerProps.tabId === tabToRemove.id || lockedFileManagerTabId === tabToRemove.id)) {
+    if (
+      fileManagerOpen &&
+      (fileManagerProps.tabId === tabToRemove.id ||
+        lockedFileManagerTabId === tabToRemove.id)
+    ) {
       dispatch(actions.setFileManagerOpen(false));
       setLockedFileManagerTabId(null);
     }
@@ -1199,12 +1271,15 @@ function AppContent() {
   );
 
   // 处理拖动离开
-  const handleDragLeave = useCallback((e) => {
-    if (!e.currentTarget.contains(e.relatedTarget)) {
-      dispatch(actions.setDragOverTab(null));
-      dispatch(actions.setDragInsertPosition(null));
-    }
-  }, [dispatch]);
+  const handleDragLeave = useCallback(
+    (e) => {
+      if (!e.currentTarget.contains(e.relatedTarget)) {
+        dispatch(actions.setDragOverTab(null));
+        dispatch(actions.setDragInsertPosition(null));
+      }
+    },
+    [dispatch],
+  );
 
   // 清理拖拽状态的辅助函数
   const cleanupDragState = useCallback(() => {
@@ -1233,16 +1308,18 @@ function AppContent() {
       // 计算最终插入位置
       // 如果位置是 "after"，最终位置应该是 targetIndex + 1
       // 如果位置是 "before"，最终位置就是 targetIndex
-      let finalInsertIndex = position === "after" ? targetIndex + 1 : targetIndex;
+      let finalInsertIndex =
+        position === "after" ? targetIndex + 1 : targetIndex;
 
       // 确保不会插入到欢迎页之前
       if (finalInsertIndex < 1) finalInsertIndex = 1;
 
       // 如果源标签在目标位置之前，移除源标签后，后面的索引都会减1
       // 所以需要调整最终插入位置
-      const adjustedInsertIndex = sourceIndex < finalInsertIndex
-        ? finalInsertIndex - 1
-        : finalInsertIndex;
+      const adjustedInsertIndex =
+        sourceIndex < finalInsertIndex
+          ? finalInsertIndex - 1
+          : finalInsertIndex;
 
       // 如果调整后的插入位置等于源位置，不需要移动
       if (adjustedInsertIndex === sourceIndex) return;
@@ -1259,10 +1336,16 @@ function AppContent() {
       if (currentTab === sourceIndex) {
         // 被拖拽的标签是当前选中的标签
         newCurrentTab = adjustedInsertIndex;
-      } else if (sourceIndex < currentTab && adjustedInsertIndex >= currentTab) {
+      } else if (
+        sourceIndex < currentTab &&
+        adjustedInsertIndex >= currentTab
+      ) {
         // 源在当前之前，目标在当前或之后 -> 当前标签索引减1
         newCurrentTab = currentTab - 1;
-      } else if (sourceIndex > currentTab && adjustedInsertIndex <= currentTab) {
+      } else if (
+        sourceIndex > currentTab &&
+        adjustedInsertIndex <= currentTab
+      ) {
         // 源在当前之后，目标在当前或之前 -> 当前标签索引加1
         newCurrentTab = currentTab + 1;
       }
@@ -1275,66 +1358,75 @@ function AppContent() {
   );
 
   // 处理放置 - 仅支持排序
-  const handleDrop = useCallback((e, targetIndex) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDrop = useCallback(
+    (e, targetIndex) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    // 不允许放置到欢迎页
-    if (targetIndex === 0) {
-      cleanupDragState();
-      return;
-    }
-
-    let sourceIndex = draggedTabIndex;
-
-    // 如果状态中没有源索引，尝试从 dataTransfer 获取
-    if (sourceIndex === null) {
-      try {
-        const raw = e.dataTransfer?.getData("application/json");
-        if (raw) {
-          const payload = JSON.parse(raw);
-          if (payload?.type === "tab" && typeof payload.tabIndex === "number") {
-            sourceIndex = payload.tabIndex;
-          }
-        }
-      } catch (error) {
-        console.warn("Failed to parse drag payload", error);
+      // 不允许放置到欢迎页
+      if (targetIndex === 0) {
+        cleanupDragState();
+        return;
       }
-    }
 
-    // 验证源索引
-    if (sourceIndex === null || sourceIndex === targetIndex) {
+      let sourceIndex = draggedTabIndex;
+
+      // 如果状态中没有源索引，尝试从 dataTransfer 获取
+      if (sourceIndex === null) {
+        try {
+          const raw = e.dataTransfer?.getData("application/json");
+          if (raw) {
+            const payload = JSON.parse(raw);
+            if (
+              payload?.type === "tab" &&
+              typeof payload.tabIndex === "number"
+            ) {
+              sourceIndex = payload.tabIndex;
+            }
+          }
+        } catch (error) {
+          console.warn("Failed to parse drag payload", error);
+        }
+      }
+
+      // 验证源索引
+      if (sourceIndex === null || sourceIndex === targetIndex) {
+        cleanupDragState();
+        return;
+      }
+
+      // 确定放置位置
+      const rect = e.currentTarget?.getBoundingClientRect();
+      let position = dragInsertPosition;
+      if (!position && rect) {
+        position = e.clientX - rect.left <= rect.width / 2 ? "before" : "after";
+      }
+      if (!position) {
+        position = "after";
+      }
+
+      // 执行排序
+      reorderTab(sourceIndex, targetIndex, position);
       cleanupDragState();
-      return;
-    }
 
-    // 确定放置位置
-    const rect = e.currentTarget?.getBoundingClientRect();
-    let position = dragInsertPosition;
-    if (!position && rect) {
-      position = e.clientX - rect.left <= rect.width / 2 ? "before" : "after";
-    }
-    if (!position) {
-      position = "after";
-    }
-
-    // 执行排序
-    reorderTab(sourceIndex, targetIndex, position);
-    cleanupDragState();
-
-    // 恢复透明度
-    if (e.currentTarget) {
-      e.currentTarget.style.opacity = "1";
-    }
-  }, [draggedTabIndex, dragInsertPosition, cleanupDragState, reorderTab]);
+      // 恢复透明度
+      if (e.currentTarget) {
+        e.currentTarget.style.opacity = "1";
+      }
+    },
+    [draggedTabIndex, dragInsertPosition, cleanupDragState, reorderTab],
+  );
 
   // 处理拖动结束（无论是否成功放置）
-  const handleDragEnd = useCallback((e) => {
-    if (e.currentTarget) {
-      e.currentTarget.style.opacity = "1";
-    }
-    cleanupDragState();
-  }, [cleanupDragState]);
+  const handleDragEnd = useCallback(
+    (e) => {
+      if (e.currentTarget) {
+        e.currentTarget.style.opacity = "1";
+      }
+      cleanupDragState();
+    },
+    [cleanupDragState],
+  );
 
   // 切换资源监控侧边栏
   const toggleResourceMonitor = useCallback(() => {
@@ -1394,10 +1486,12 @@ function AppContent() {
   // 更新文件管理路径记忆
   const updateFileManagerPath = (tabId, path) => {
     if (tabId && path) {
-      dispatch(actions.setFileManagerPaths({
-        ...fileManagerPaths,
-        [tabId]: path,
-      }));
+      dispatch(
+        actions.setFileManagerPaths({
+          ...fileManagerPaths,
+          [tabId]: path,
+        }),
+      );
     }
   };
 
@@ -1593,7 +1687,6 @@ function AppContent() {
     }
   }, []);
 
-
   // 获取右侧面板应该使用的当前标签页信息
   const getCurrentPanelTab = useCallback(() => {
     if (currentTab > 0 && tabs[currentTab]) {
@@ -1603,20 +1696,23 @@ function AppContent() {
   }, [tabs, currentTab]);
 
   // 添加发送快捷命令到终端的函数
-  const handleSendCommand = useCallback((command) => {
-    const panelTab = getCurrentPanelTab();
+  const handleSendCommand = useCallback(
+    (command) => {
+      const panelTab = getCurrentPanelTab();
 
-    if (panelTab && panelTab.type === "ssh") {
-      dispatchCommandToGroup(panelTab.id, command);
-      return { success: true };
-    } else if (panelTab) {
-      console.warn("Current tab is not SSH:", panelTab.type);
-      return { success: false, error: "当前标签页不是SSH连接" };
-    } else {
-      console.warn("No panel tab found");
-      return { success: false, error: "请先建立SSH连接" };
-    }
-  }, [getCurrentPanelTab]);
+      if (panelTab && panelTab.type === "ssh") {
+        dispatchCommandToGroup(panelTab.id, command);
+        return { success: true };
+      } else if (panelTab) {
+        console.warn("Current tab is not SSH:", panelTab.type);
+        return { success: false, error: "当前标签页不是SSH连接" };
+      } else {
+        console.warn("No panel tab found");
+        return { success: false, error: "请先建立SSH连接" };
+      }
+    },
+    [getCurrentPanelTab],
+  );
 
   // 计算右侧面板的当前标签页信息
   const currentPanelTab = getCurrentPanelTab();
@@ -1638,7 +1734,8 @@ function AppContent() {
   // 计算文件管理器的props（使用锁定的tabId）
   const fileManagerProps = useMemo(() => {
     // 如果没有锁定的tabId，则使用当前激活的标签页
-    const targetTabId = lockedFileManagerTabId || (currentPanelTab ? currentPanelTab.id : null);
+    const targetTabId =
+      lockedFileManagerTabId || (currentPanelTab ? currentPanelTab.id : null);
 
     if (!targetTabId) {
       return {
@@ -1650,7 +1747,7 @@ function AppContent() {
     }
 
     // 查找对应的tab
-    const targetTab = tabs.find(tab => tab.id === targetTabId);
+    const targetTab = tabs.find((tab) => tab.id === targetTabId);
     if (!targetTab) {
       return {
         tabId: null,
@@ -1669,11 +1766,20 @@ function AppContent() {
           : null,
       initialPath: getFileManagerPath(targetTab.id),
     };
-  }, [lockedFileManagerTabId, currentPanelTab, tabs, terminalInstances, fileManagerPaths]);
+  }, [
+    lockedFileManagerTabId,
+    currentPanelTab,
+    tabs,
+    terminalInstances,
+    fileManagerPaths,
+  ]);
 
   // 计算AI聊天窗口的连接信息
   const aiChatConnectionInfo = useMemo(() => {
-    if (!currentPanelTab || (currentPanelTab.type !== "ssh" && currentPanelTab.type !== "telnet")) {
+    if (
+      !currentPanelTab ||
+      (currentPanelTab.type !== "ssh" && currentPanelTab.type !== "telnet")
+    ) {
       return null;
     }
 
@@ -1681,7 +1787,7 @@ function AppContent() {
     if (!config) {
       return {
         host: currentPanelTab.label,
-        type: currentPanelTab.type?.toUpperCase() || 'SSH',
+        type: currentPanelTab.type?.toUpperCase() || "SSH",
       };
     }
 
@@ -1689,7 +1795,7 @@ function AppContent() {
       host: config.host || currentPanelTab.label,
       port: config.port,
       username: config.username,
-      type: currentPanelTab.type?.toUpperCase() || 'SSH',
+      type: currentPanelTab.type?.toUpperCase() || "SSH",
     };
   }, [currentPanelTab, terminalInstances]);
 
@@ -1701,7 +1807,13 @@ function AppContent() {
   // React 19: 利用自动批处理特性优化设置变更处理
   React.useEffect(() => {
     const handleSettingsChanged = (event) => {
-      const { language, fontSize, darkMode: newDarkMode, dnd, transferBarMode: newTransferBarMode } = event.detail;
+      const {
+        language,
+        fontSize,
+        darkMode: newDarkMode,
+        dnd,
+        transferBarMode: newTransferBarMode,
+      } = event.detail;
 
       // React 19: 所有状态更新会自动批处理，提高性能
       // 应用主题设置
@@ -2035,8 +2147,7 @@ function AppContent() {
                           draggedTabIndex !== index
                         }
                         dragInsertPosition={
-                          draggedTabIndex !== null &&
-                          dragOverTabIndex === index
+                          draggedTabIndex !== null && dragOverTabIndex === index
                             ? dragInsertPosition
                             : null
                         }
@@ -2163,538 +2274,541 @@ function AppContent() {
               position: "relative",
             }}
           >
-          {/* 主内容区域 */}
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              overflow: "hidden",
-              p: 0,
-              display: "flex",
-              flexDirection: "column",
-            }}
-          >
-            {/* 标签页内容 */}
+            {/* 主内容区域 */}
             <Box
               sx={{
                 flex: 1,
                 minHeight: 0,
-                width: "100%",
-                bgcolor: "background.paper",
-                borderRadius: 0,
                 overflow: "hidden",
+                p: 0,
                 display: "flex",
                 flexDirection: "column",
-                padding: 0,
-                margin: 0,
-                boxShadow: "none",
-                position: "relative",
               }}
             >
-              {/* 欢迎页 - 使用条件渲染优化性能 */}
-              {currentTab === 0 && (
-                <Box
-                  sx={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "100%",
-                    zIndex: 1,
-                  }}
-                >
-                  <WelcomePage
-                    connections={connections}
-                    topConnections={topConnections}
-                    onOpenConnection={handleOpenConnection}
-                    onConnectionsUpdate={handleConnectionsUpdate}
-                  />
-                </Box>
-              )}
-
-              {/* 终端标签页 - 保持所有标签页DOM以维持连接状态 */}
-              {tabs.slice(1).map((tab, index) => {
-                const isActive = currentTab === index + 1;
-
-                return (
+              {/* 标签页内容 */}
+              <Box
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                  width: "100%",
+                  bgcolor: "background.paper",
+                  borderRadius: 0,
+                  overflow: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                  padding: 0,
+                  margin: 0,
+                  boxShadow: "none",
+                  position: "relative",
+                }}
+              >
+                {/* 欢迎页 - 使用条件渲染优化性能 */}
+                {currentTab === 0 && (
                   <Box
-                    key={tab.id}
                     sx={{
                       position: "absolute",
                       top: 0,
                       left: 0,
                       width: "100%",
                       height: "100%",
-                      zIndex: isActive ? 1 : 0,
-                      backgroundColor: "inherit",
-                      visibility: isActive ? "visible" : "hidden",
-                      opacity: isActive ? 1 : 0,
-                      pointerEvents: isActive ? "auto" : "none",
-                      transition: isActive
-                        ? "opacity 0.2s ease-in-out"
-                        : "none",
+                      zIndex: 1,
                     }}
                   >
-                    {terminalInstances[tab.id] && (
-                      <WebTerminal
-                        tabId={tab.id}
-                        refreshKey={terminalInstances[`${tab.id}-refresh`]}
-                        sshConfig={
-                          tab.type === "ssh"
-                            ? terminalInstances[`${tab.id}-config`]
-                            : null
-                        }
-                        isActive={isActive}
-                      />
-                    )}
+                    <WelcomePage
+                      connections={connections}
+                      topConnections={topConnections}
+                      onOpenConnection={handleOpenConnection}
+                      onConnectionsUpdate={handleConnectionsUpdate}
+                    />
                   </Box>
-                );
-              })}
-            </Box>
-          </Box>
+                )}
 
-          {/* 右侧边栏容器 */}
-          <Box
-            sx={{
-              position: "relative",
-              height: "100%",
-              display: "flex",
-              flexShrink: 0,
-              flexDirection: "row",
-              zIndex: 90,
-            }}
-          >
-            {/* 侧边栏内容区域 - 根据是否有侧边栏打开来显示 */}
+                {/* 终端标签页 - 保持所有标签页DOM以维持连接状态 */}
+                {tabs.slice(1).map((tab, index) => {
+                  const isActive = currentTab === index + 1;
+
+                  return (
+                    <Box
+                      key={tab.id}
+                      sx={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        zIndex: isActive ? 1 : 0,
+                        backgroundColor: "inherit",
+                        visibility: isActive ? "visible" : "hidden",
+                        opacity: isActive ? 1 : 0,
+                        pointerEvents: isActive ? "auto" : "none",
+                        transition: isActive
+                          ? "opacity 0.2s ease-in-out"
+                          : "none",
+                      }}
+                    >
+                      {terminalInstances[tab.id] && (
+                        <WebTerminal
+                          tabId={tab.id}
+                          refreshKey={terminalInstances[`${tab.id}-refresh`]}
+                          sshConfig={
+                            tab.type === "ssh"
+                              ? terminalInstances[`${tab.id}-config`]
+                              : null
+                          }
+                          isActive={isActive}
+                        />
+                      )}
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Box>
+
+            {/* 右侧边栏容器 */}
             <Box
               sx={{
-                width: `${
-                  activeSidebarMargin > SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH
-                    ? activeSidebarMargin - SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH
-                    : 0
-                }px`,
-                height: "100%",
                 position: "relative",
-                transition: "width 0.25s ease-out",
-                overflow: "hidden",
-              }}
-            >
-              {/* 资源监控侧边栏 */}
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  zIndex: lastOpenedSidebar === "resource" ? 101 : 98,
-                  height: "100%",
-                  display: "flex",
-                }}
-              >
-                {resourceMonitorOpen && (
-                  <ResourceMonitor
-                    open={resourceMonitorOpen}
-                    onClose={handleCloseResourceMonitor}
-                    currentTabId={resourceMonitorTabId}
-                  />
-                )}
-              </Box>
-
-              {/* 连接管理侧边栏 */}
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  zIndex: lastOpenedSidebar === "connection" ? 101 : 99,
-                  height: "100%",
-                  display: "flex",
-                }}
-              >
-                {connectionManagerOpen && (
-                  <ConnectionManager
-                    open={connectionManagerOpen}
-                    onClose={handleCloseConnectionManager}
-                    initialConnections={connections}
-                    onConnectionsUpdate={handleConnectionsUpdate}
-                    onOpenConnection={handleOpenConnection}
-                  />
-                )}
-              </Box>
-
-              {/* 文件管理侧边栏 */}
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  zIndex: lastOpenedSidebar === "file" ? 103 : 96,
-                  height: "100%",
-                  display: "flex",
-                }}
-              >
-                {fileManagerOpen && (
-                  <FileManager
-                    open={fileManagerOpen}
-                    onClose={handleCloseFileManager}
-                    tabId={fileManagerProps.tabId}
-                    tabName={fileManagerProps.tabName}
-                    sshConnection={fileManagerProps.sshConnection}
-                    initialPath={fileManagerProps.initialPath}
-                    onPathChange={updateFileManagerPath}
-                  />
-                )}
-              </Box>
-
-              {/* 添加快捷命令侧边栏 */}
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  zIndex: lastOpenedSidebar === "shortcut" ? 104 : 95,
-                  height: "100%",
-                  display: "flex",
-                }}
-              >
-                {shortcutCommandsOpen && (
-                  <ShortcutCommands
-                    open={shortcutCommandsOpen}
-                    onClose={handleCloseShortcutCommands}
-                    onSendCommand={handleSendCommand}
-                  />
-                )}
-              </Box>
-
-              {/* 添加历史命令侧边栏 */}
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  zIndex: lastOpenedSidebar === "history" ? 105 : 94,
-                  height: "100%",
-                  display: "flex",
-                }}
-              >
-                {commandHistoryOpen && (
-                  <CommandHistory
-                    open={commandHistoryOpen}
-                    onClose={handleCloseCommandHistory}
-                    onSendCommand={handleSendCommand}
-                  />
-                )}
-              </Box>
-
-              {/* 传输侧边栏已改为浮动窗口，移至底部与AI助手窗口同级 */}
-
-              {/* IP地址查询侧边栏 */}
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  zIndex: lastOpenedSidebar === "ipquery" ? 106 : 93,
-                  height: "100%",
-                  display: "flex",
-                }}
-              >
-                {ipAddressQueryOpen && (
-                  <IPAddressQuery
-                    open={ipAddressQueryOpen}
-                    onClose={handleCloseIpAddressQuery}
-                  />
-                )}
-              </Box>
-
-              {/* 随机密码生成器侧边栏 */}
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  zIndex: lastOpenedSidebar === "password" ? 107 : 92,
-                  height: "100%",
-                  display: "flex",
-                }}
-              >
-                {securityToolsOpen && (
-                  <SecurityTools
-                    open={securityToolsOpen}
-                    onClose={() => dispatch(actions.setSecurityToolsOpen(false))}
-                  />
-                )}
-              </Box>
-
-              {/* 本地终端侧边栏 */}
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  zIndex: lastOpenedSidebar === "localTerminal" ? 108 : 91,
-                  height: "100%",
-                  display: "flex",
-                }}
-              >
-                {localTerminalSidebarOpen && (
-                  <LocalTerminalSidebar
-                    open={localTerminalSidebarOpen}
-                    onClose={handleCloseLocalTerminalSidebar}
-                    onLaunchTerminal={handleLaunchLocalTerminal}
-                  />
-                )}
-              </Box>
-            </Box>
-
-            {/* 右侧边栏按钮栏 */}
-            <Paper
-              elevation={3}
-              square={true}
-              sx={{
-                width: "48px",
+                height: "100%",
                 display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                py: 2,
-                gap: 2,
-                borderRadius: 0,
-                zIndex: 110,
                 flexShrink: 0,
+                flexDirection: "row",
+                zIndex: 90,
               }}
             >
-              {/* 主题切换按钮 */}
-              <Tooltip title={t("sidebar.theme")} placement="left">
-                <IconButton onClick={toggleTheme} color="primary">
-                  {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
-                </IconButton>
-              </Tooltip>
-
-              {/* 资源监控按钮 */}
-              <Tooltip title={t("sidebar.monitor")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleResourceMonitor}
+              {/* 侧边栏内容区域 - 根据是否有侧边栏打开来显示 */}
+              <Box
+                sx={{
+                  width: `${
+                    activeSidebarMargin > SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH
+                      ? activeSidebarMargin -
+                        SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH
+                      : 0
+                  }px`,
+                  height: "100%",
+                  position: "relative",
+                  transition: "width 0.25s ease-out",
+                  overflow: "hidden",
+                }}
+              >
+                {/* 资源监控侧边栏 */}
+                <Box
                   sx={{
-                    bgcolor: resourceMonitorOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    zIndex: lastOpenedSidebar === "resource" ? 101 : 98,
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
+                  {resourceMonitorOpen && (
+                    <ResourceMonitor
+                      open={resourceMonitorOpen}
+                      onClose={handleCloseResourceMonitor}
+                      currentTabId={resourceMonitorTabId}
+                    />
+                  )}
+                </Box>
+
+                {/* 连接管理侧边栏 */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    zIndex: lastOpenedSidebar === "connection" ? 101 : 99,
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
+                  {connectionManagerOpen && (
+                    <ConnectionManager
+                      open={connectionManagerOpen}
+                      onClose={handleCloseConnectionManager}
+                      initialConnections={connections}
+                      onConnectionsUpdate={handleConnectionsUpdate}
+                      onOpenConnection={handleOpenConnection}
+                    />
+                  )}
+                </Box>
+
+                {/* 文件管理侧边栏 */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    zIndex: lastOpenedSidebar === "file" ? 103 : 96,
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
+                  {fileManagerOpen && (
+                    <FileManager
+                      open={fileManagerOpen}
+                      onClose={handleCloseFileManager}
+                      tabId={fileManagerProps.tabId}
+                      tabName={fileManagerProps.tabName}
+                      sshConnection={fileManagerProps.sshConnection}
+                      initialPath={fileManagerProps.initialPath}
+                      onPathChange={updateFileManagerPath}
+                    />
+                  )}
+                </Box>
+
+                {/* 添加快捷命令侧边栏 */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    zIndex: lastOpenedSidebar === "shortcut" ? 104 : 95,
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
+                  {shortcutCommandsOpen && (
+                    <ShortcutCommands
+                      open={shortcutCommandsOpen}
+                      onClose={handleCloseShortcutCommands}
+                      onSendCommand={handleSendCommand}
+                    />
+                  )}
+                </Box>
+
+                {/* 添加历史命令侧边栏 */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    zIndex: lastOpenedSidebar === "history" ? 105 : 94,
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
+                  {commandHistoryOpen && (
+                    <CommandHistory
+                      open={commandHistoryOpen}
+                      onClose={handleCloseCommandHistory}
+                      onSendCommand={handleSendCommand}
+                    />
+                  )}
+                </Box>
+
+                {/* 传输侧边栏已改为浮动窗口，移至底部与AI助手窗口同级 */}
+
+                {/* IP地址查询侧边栏 */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    zIndex: lastOpenedSidebar === "ipquery" ? 106 : 93,
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
+                  {ipAddressQueryOpen && (
+                    <IPAddressQuery
+                      open={ipAddressQueryOpen}
+                      onClose={handleCloseIpAddressQuery}
+                    />
+                  )}
+                </Box>
+
+                {/* 随机密码生成器侧边栏 */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    zIndex: lastOpenedSidebar === "password" ? 107 : 92,
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
+                  {securityToolsOpen && (
+                    <SecurityTools
+                      open={securityToolsOpen}
+                      onClose={() =>
+                        dispatch(actions.setSecurityToolsOpen(false))
+                      }
+                    />
+                  )}
+                </Box>
+
+                {/* 本地终端侧边栏 */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    zIndex: lastOpenedSidebar === "localTerminal" ? 108 : 91,
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
+                  {localTerminalSidebarOpen && (
+                    <LocalTerminalSidebar
+                      open={localTerminalSidebarOpen}
+                      onClose={handleCloseLocalTerminalSidebar}
+                      onLaunchTerminal={handleLaunchLocalTerminal}
+                    />
+                  )}
+                </Box>
+              </Box>
+
+              {/* 右侧边栏按钮栏 */}
+              <Paper
+                elevation={3}
+                square={true}
+                sx={{
+                  width: "48px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  py: 2,
+                  gap: 2,
+                  borderRadius: 0,
+                  zIndex: 110,
+                  flexShrink: 0,
+                }}
+              >
+                {/* 主题切换按钮 */}
+                <Tooltip title={t("sidebar.theme")} placement="left">
+                  <IconButton onClick={toggleTheme} color="primary">
+                    {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
+                  </IconButton>
+                </Tooltip>
+
+                {/* 资源监控按钮 */}
+                <Tooltip title={t("sidebar.monitor")} placement="left">
+                  <IconButton
+                    color="primary"
+                    onClick={toggleResourceMonitor}
+                    sx={{
                       bgcolor: resourceMonitorOpen
                         ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                >
-                  <MonitorHeartIcon />
-                </IconButton>
-              </Tooltip>
+                        : "transparent",
+                      "&:hover": {
+                        bgcolor: resourceMonitorOpen
+                          ? "action.selected"
+                          : "action.hover",
+                      },
+                    }}
+                  >
+                    <MonitorHeartIcon />
+                  </IconButton>
+                </Tooltip>
 
-              {/* 连接管理按钮 */}
-              <Tooltip title={t("sidebar.connections")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleConnectionManager}
-                  sx={{
-                    bgcolor: connectionManagerOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
+                {/* 连接管理按钮 */}
+                <Tooltip title={t("sidebar.connections")} placement="left">
+                  <IconButton
+                    color="primary"
+                    onClick={toggleConnectionManager}
+                    sx={{
                       bgcolor: connectionManagerOpen
                         ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                >
-                  <LinkIcon />
-                </IconButton>
-              </Tooltip>
+                        : "transparent",
+                      "&:hover": {
+                        bgcolor: connectionManagerOpen
+                          ? "action.selected"
+                          : "action.hover",
+                      },
+                    }}
+                  >
+                    <LinkIcon />
+                  </IconButton>
+                </Tooltip>
 
-              {/* 文件管理按钮 */}
-              <Tooltip title={t("sidebar.files")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleFileManager}
-                  sx={{
-                    bgcolor: fileManagerOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
+                {/* 文件管理按钮 */}
+                <Tooltip title={t("sidebar.files")} placement="left">
+                  <IconButton
+                    color="primary"
+                    onClick={toggleFileManager}
+                    sx={{
                       bgcolor: fileManagerOpen
                         ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                  disabled={isSSHButtonDisabled}
-                >
-                  <FolderIcon />
-                </IconButton>
-              </Tooltip>
+                        : "transparent",
+                      "&:hover": {
+                        bgcolor: fileManagerOpen
+                          ? "action.selected"
+                          : "action.hover",
+                      },
+                    }}
+                    disabled={isSSHButtonDisabled}
+                  >
+                    <FolderIcon />
+                  </IconButton>
+                </Tooltip>
 
-              {/* 快捷命令按钮 - 应该放在文件按钮的后面 */}
-              <Tooltip title={t("sidebar.shortcutCommands")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleShortcutCommands}
-                  sx={{
-                    bgcolor: shortcutCommandsOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
+                {/* 快捷命令按钮 - 应该放在文件按钮的后面 */}
+                <Tooltip title={t("sidebar.shortcutCommands")} placement="left">
+                  <IconButton
+                    color="primary"
+                    onClick={toggleShortcutCommands}
+                    sx={{
                       bgcolor: shortcutCommandsOpen
                         ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                  disabled={isSSHButtonDisabled}
-                >
-                  <TerminalIcon />
-                </IconButton>
-              </Tooltip>
+                        : "transparent",
+                      "&:hover": {
+                        bgcolor: shortcutCommandsOpen
+                          ? "action.selected"
+                          : "action.hover",
+                      },
+                    }}
+                    disabled={isSSHButtonDisabled}
+                  >
+                    <TerminalIcon />
+                  </IconButton>
+                </Tooltip>
 
-              {/* 历史命令按钮 */}
-              <Tooltip title={t("sidebar.history")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleCommandHistory}
-                  sx={{
-                    bgcolor: commandHistoryOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
+                {/* 历史命令按钮 */}
+                <Tooltip title={t("sidebar.history")} placement="left">
+                  <IconButton
+                    color="primary"
+                    onClick={toggleCommandHistory}
+                    sx={{
                       bgcolor: commandHistoryOpen
                         ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                >
-                  <HistoryIcon />
-                </IconButton>
-              </Tooltip>
+                        : "transparent",
+                      "&:hover": {
+                        bgcolor: commandHistoryOpen
+                          ? "action.selected"
+                          : "action.hover",
+                      },
+                    }}
+                  >
+                    <HistoryIcon />
+                  </IconButton>
+                </Tooltip>
 
-              {/* IP地址查询按钮 */}
-              <Tooltip title={t("sidebar.ipQuery")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleIpAddressQuery}
-                  sx={{
-                    bgcolor: ipAddressQueryOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
+                {/* IP地址查询按钮 */}
+                <Tooltip title={t("sidebar.ipQuery")} placement="left">
+                  <IconButton
+                    color="primary"
+                    onClick={toggleIpAddressQuery}
+                    sx={{
                       bgcolor: ipAddressQueryOpen
                         ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                >
-                  <PublicIcon />
-                </IconButton>
-              </Tooltip>
+                        : "transparent",
+                      "&:hover": {
+                        bgcolor: ipAddressQueryOpen
+                          ? "action.selected"
+                          : "action.hover",
+                      },
+                    }}
+                  >
+                    <PublicIcon />
+                  </IconButton>
+                </Tooltip>
 
-              {/* 安全工具按钮 */}
-              <Tooltip title={t("sidebar.securityTool")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleSecurityTools}
-                  sx={{
-                    bgcolor: securityToolsOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
+                {/* 安全工具按钮 */}
+                <Tooltip title={t("sidebar.securityTool")} placement="left">
+                  <IconButton
+                    color="primary"
+                    onClick={toggleSecurityTools}
+                    sx={{
                       bgcolor: securityToolsOpen
                         ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                >
-                  <VpnKeyIcon />
-                </IconButton>
-              </Tooltip>
+                        : "transparent",
+                      "&:hover": {
+                        bgcolor: securityToolsOpen
+                          ? "action.selected"
+                          : "action.hover",
+                      },
+                    }}
+                  >
+                    <VpnKeyIcon />
+                  </IconButton>
+                </Tooltip>
 
-              {/* 分隔符 */}
-              <Box
-                sx={{
-                  height: "1px",
-                  width: "30px",
-                  bgcolor: "divider",
-                  my: 1,
-                }}
-              />
-
-              {/* 本地终端按钮 */}
-              <Tooltip title={t("sidebar.localTerminal")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={toggleLocalTerminalSidebar}
+                {/* 分隔符 */}
+                <Box
                   sx={{
-                    bgcolor: localTerminalSidebarOpen
-                      ? "action.selected"
-                      : "transparent",
-                    "&:hover": {
+                    height: "1px",
+                    width: "30px",
+                    bgcolor: "divider",
+                    my: 1,
+                  }}
+                />
+
+                {/* 本地终端按钮 */}
+                <Tooltip title={t("sidebar.localTerminal")} placement="left">
+                  <IconButton
+                    color="primary"
+                    onClick={toggleLocalTerminalSidebar}
+                    sx={{
                       bgcolor: localTerminalSidebarOpen
                         ? "action.selected"
-                        : "action.hover",
-                    },
-                  }}
-                >
-                  <ComputerIcon />
-                </IconButton>
-              </Tooltip>
-
-              {/* 传输侧边栏按钮 - 仅在sidebar模式下显示 */}
-              {transferBarMode === "sidebar" && (
-                <TransferSidebarButton
-                  isOpen={transferSidebarOpen}
-                  onClick={() => {
-                    const newState = !transferSidebarOpen;
-                    setTransferSidebarOpen(newState);
-                    if (newState) {
-                      setLastActiveFloatWindow("transfer");
-                    }
-                  }}
-                  tooltip="文件传输"
-                />
-              )}
-
-              {/* AI助手按钮 */}
-              <Tooltip title={t("sidebar.ai")} placement="left">
-                <IconButton
-                  color="primary"
-                  onClick={handleToggleGlobalAiChatWindow}
-                  sx={{
-                    position: "relative",
-                    bgcolor:
-                      aiChatStatus === "visible"
-                        ? "action.selected"
                         : "transparent",
-                    "&:hover": {
+                      "&:hover": {
+                        bgcolor: localTerminalSidebarOpen
+                          ? "action.selected"
+                          : "action.hover",
+                      },
+                    }}
+                  >
+                    <ComputerIcon />
+                  </IconButton>
+                </Tooltip>
+
+                {/* 传输侧边栏按钮 - 仅在sidebar模式下显示 */}
+                {transferBarMode === "sidebar" && (
+                  <TransferSidebarButton
+                    isOpen={transferSidebarOpen}
+                    onClick={() => {
+                      const newState = !transferSidebarOpen;
+                      setTransferSidebarOpen(newState);
+                      if (newState) {
+                        setLastActiveFloatWindow("transfer");
+                      }
+                    }}
+                    tooltip="文件传输"
+                  />
+                )}
+
+                {/* AI助手按钮 */}
+                <Tooltip title={t("sidebar.ai")} placement="left">
+                  <IconButton
+                    color="primary"
+                    onClick={handleToggleGlobalAiChatWindow}
+                    sx={{
+                      position: "relative",
                       bgcolor:
                         aiChatStatus === "visible"
                           ? "action.selected"
-                          : "action.hover",
-                    },
-                  }}
-                >
-                  <AIIcon />
-                  {/* 最小化状态指示灯 */}
-                  {aiChatStatus === "minimized" && (
-                    <Box
-                      sx={{
-                        position: "absolute",
-                        top: 4,
-                        right: 4,
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        bgcolor: "#4caf50",
-                        boxShadow: "0 0 4px #4caf50",
-                      }}
-                    />
-                  )}
-                </IconButton>
-              </Tooltip>
-            </Paper>
+                          : "transparent",
+                      "&:hover": {
+                        bgcolor:
+                          aiChatStatus === "visible"
+                            ? "action.selected"
+                            : "action.hover",
+                      },
+                    }}
+                  >
+                    <AIIcon />
+                    {/* 最小化状态指示灯 */}
+                    {aiChatStatus === "minimized" && (
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          top: 4,
+                          right: 4,
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          bgcolor: "#4caf50",
+                          boxShadow: "0 0 4px #4caf50",
+                        }}
+                      />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              </Paper>
+            </Box>
           </Box>
-        </Box>
 
           {/* 全局传输底部栏 - 仅在bottom模式下显示 */}
           {transferBarMode === "bottom" && (
