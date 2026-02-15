@@ -65,6 +65,7 @@ import { countries } from "countries-list";
 import { useTranslation } from "react-i18next";
 import { useNotification } from "../contexts/NotificationContext";
 import { ConnectionManagerSkeleton } from "./SkeletonLoader.jsx";
+import VirtualizedConnectionList from "./VirtualizedConnectionList.jsx";
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -207,21 +208,27 @@ const cloneConnectionList = (list = []) => list.map(cloneConnectionNode);
 
 const ROOT_CONTAINER_ID = "connection-list";
 const getGroupContainerId = (groupId) => `group-container-${groupId}`;
+const CONNECTION_LIST_VIRTUALIZATION_THRESHOLD = 200;
 
 // IP地址排序辅助函数
 const parseIpAddress = (ipString) => {
   if (!ipString) return null;
 
   // 移除端口号（如果有的话）
-  const ipWithoutPort = ipString.split(':')[0];
+  const ipWithoutPort = ipString.split(":")[0];
 
   // 支持IPv4格式
-  const ipv4Parts = ipWithoutPort.split('.');
+  const ipv4Parts = ipWithoutPort.split(".");
   if (ipv4Parts.length === 4) {
-    const numericParts = ipv4Parts.map(part => parseInt(part, 10));
-    if (numericParts.every(num => !isNaN(num) && num >= 0 && num <= 255)) {
+    const numericParts = ipv4Parts.map((part) => parseInt(part, 10));
+    if (numericParts.every((num) => !isNaN(num) && num >= 0 && num <= 255)) {
       // 将IPv4转换为数字以便比较
-      return numericParts[0] * 16777216 + numericParts[1] * 65536 + numericParts[2] * 256 + numericParts[3];
+      return (
+        numericParts[0] * 16777216 +
+        numericParts[1] * 65536 +
+        numericParts[2] * 256 +
+        numericParts[3]
+      );
     }
   }
 
@@ -236,13 +243,13 @@ const sortConnectionsByIp = (connections) => {
 
   return [...connections].sort((a, b) => {
     // 分组类型始终按名称排序
-    if (a.type === 'group' && b.type === 'group') {
-      return (a.name || '').localeCompare(b.name || '');
+    if (a.type === "group" && b.type === "group") {
+      return (a.name || "").localeCompare(b.name || "");
     }
 
     // 分组始终在连接之前
-    if (a.type === 'group') return -1;
-    if (b.type === 'group') return 1;
+    if (a.type === "group") return -1;
+    if (b.type === "group") return 1;
 
     // 对于连接，按IP地址排序
     const ipA = parseIpAddress(a.host);
@@ -258,8 +265,27 @@ const sortConnectionsByIp = (connections) => {
     if (ipB !== null) return 1;
 
     // 如果都不是有效IP，按主机名字符串排序
-    return (a.host || '').localeCompare(b.host || '');
+    return (a.host || "").localeCompare(b.host || "");
   });
+};
+
+const countVisibleItems = (items = []) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return 0;
+  }
+
+  return items.reduce((total, item) => {
+    if (!item || typeof item !== "object") {
+      return total;
+    }
+
+    if (item.type === "group") {
+      const children = item.expanded ? countVisibleItems(item.items || []) : 0;
+      return total + 1 + children;
+    }
+
+    return total + 1;
+  }, 0);
 };
 
 const ConnectionListItem = memo(function ConnectionListItem({
@@ -324,10 +350,14 @@ const ConnectionListItem = memo(function ConnectionListItem({
   useEffect(() => {
     const checkTruncation = () => {
       if (primaryRef.current) {
-        setIsPrimaryTruncated(primaryRef.current.scrollWidth > primaryRef.current.clientWidth);
+        setIsPrimaryTruncated(
+          primaryRef.current.scrollWidth > primaryRef.current.clientWidth,
+        );
       }
       if (secondaryRef.current) {
-        setIsSecondaryTruncated(secondaryRef.current.scrollWidth > secondaryRef.current.clientWidth);
+        setIsSecondaryTruncated(
+          secondaryRef.current.scrollWidth > secondaryRef.current.clientWidth,
+        );
       }
     };
     checkTruncation();
@@ -420,7 +450,11 @@ const ConnectionListItem = memo(function ConnectionListItem({
         </ListItemIcon>
         <ListItemText
           primary={
-            <Tooltip title={primaryContent} placement="top" disableHoverListener={!isPrimaryTruncated}>
+            <Tooltip
+              title={primaryContent}
+              placement="top"
+              disableHoverListener={!isPrimaryTruncated}
+            >
               <span ref={primaryRef}>{primaryContent}</span>
             </Tooltip>
           }
@@ -431,7 +465,11 @@ const ConnectionListItem = memo(function ConnectionListItem({
             fontSize: "0.85rem",
           }}
           secondary={
-            <Tooltip title={secondaryText} placement="top" disableHoverListener={!isSecondaryTruncated}>
+            <Tooltip
+              title={secondaryText}
+              placement="top"
+              disableHoverListener={!isSecondaryTruncated}
+            >
               <span ref={secondaryRef}>{secondaryText}</span>
             </Tooltip>
           }
@@ -488,10 +526,7 @@ const GroupListItem = memo(function GroupListItem({
     disabled: dragDisabled,
   });
 
-  const {
-    setNodeRef: setGroupDroppableRef,
-    isOver,
-  } = useDroppable({
+  const { setNodeRef: setGroupDroppableRef, isOver } = useDroppable({
     id: containerId,
     data: {
       type: "container",
@@ -506,8 +541,7 @@ const GroupListItem = memo(function GroupListItem({
     transition,
   };
 
-  const shouldShowChildren =
-    group.expanded || (isOver && !dragDisabled);
+  const shouldShowChildren = group.expanded || (isOver && !dragDisabled);
 
   return (
     <React.Fragment>
@@ -806,7 +840,9 @@ const ConnectionManager = memo(
               // 检查数据是否真的发生了变化，避免不必要的重渲染
               const sanitized = Array.isArray(data) ? data : [];
               // 使用 ref 获取当前状态进行比较
-              if (!areConnectionListsEqual(connectionsStateRef.current, sanitized)) {
+              if (
+                !areConnectionListsEqual(connectionsStateRef.current, sanitized)
+              ) {
                 setConnections(sanitized);
                 if (onConnectionsUpdate) {
                   onConnectionsUpdate(sanitized);
@@ -936,11 +972,11 @@ const ConnectionManager = memo(
       }
 
       // 对根级别的项目进行排序，并对每个分组内的连接项进行排序
-      const sortedItems = sortConnectionsByIp(items).map(item => {
-        if (item.type === 'group' && item.items) {
+      const sortedItems = sortConnectionsByIp(items).map((item) => {
+        if (item.type === "group" && item.items) {
           return {
             ...item,
-            items: sortConnectionsByIp(item.items)
+            items: sortConnectionsByIp(item.items),
           };
         }
         return item;
@@ -970,7 +1006,9 @@ const ConnectionManager = memo(
         if (window.terminalAPI?.saveConnections) {
           isSavingRef.current = true;
           window.terminalAPI.saveConnections(newConnections).finally(() => {
-            setTimeout(() => { isSavingRef.current = false; }, 100);
+            setTimeout(() => {
+              isSavingRef.current = false;
+            }, 100);
           });
         }
 
@@ -1107,7 +1145,8 @@ const ConnectionManager = memo(
       if (window.terminalAPI && window.terminalAPI.saveConnections) {
         // 设置标志，避免自己触发的变更事件导致重复加载
         isSavingRef.current = true;
-        window.terminalAPI.saveConnections(newConnections)
+        window.terminalAPI
+          .saveConnections(newConnections)
           .catch(() => {
             showError(t("connectionManager.saveFailed"));
           })
@@ -1192,7 +1231,8 @@ const ConnectionManager = memo(
         // 保存到配置文件
         if (window.terminalAPI && window.terminalAPI.saveConnections) {
           isSavingRef.current = true;
-          window.terminalAPI.saveConnections(newConnections)
+          window.terminalAPI
+            .saveConnections(newConnections)
             .catch(() => {
               showError(t("connectionManager.saveFailed"));
             })
@@ -1207,7 +1247,7 @@ const ConnectionManager = memo(
         showSuccess(
           dialogMode === "add"
             ? t("connectionManager.createSuccess")
-            : t("connectionManager.updateSuccess")
+            : t("connectionManager.updateSuccess"),
         );
         return;
       }
@@ -1332,7 +1372,8 @@ const ConnectionManager = memo(
       if (window.terminalAPI && window.terminalAPI.saveConnections) {
         // 设置标志，避免自己触发的变更事件导致重复加载
         isSavingRef.current = true;
-        window.terminalAPI.saveConnections(newConnections)
+        window.terminalAPI
+          .saveConnections(newConnections)
           .catch(() => {
             showError(t("connectionManager.saveFailed"));
           })
@@ -1348,9 +1389,18 @@ const ConnectionManager = memo(
       showSuccess(
         dialogMode === "add"
           ? t("connectionManager.createSuccess")
-          : t("connectionManager.updateSuccess")
+          : t("connectionManager.updateSuccess"),
       );
-    }, [dialogType, dialogMode, formData, selectedItem, connections, t, showError, showSuccess]);
+    }, [
+      dialogType,
+      dialogMode,
+      formData,
+      selectedItem,
+      connections,
+      t,
+      showError,
+      showSuccess,
+    ]);
 
     const handleOpenConnection = useCallback(
       (connection) => {
@@ -1361,7 +1411,13 @@ const ConnectionManager = memo(
       [onOpenConnection],
     );
 
-    const dragDisabled = searchQuery.length > 0;
+    const visibleItemCount = useMemo(
+      () => countVisibleItems(filteredItems),
+      [filteredItems],
+    );
+    const useVirtualizedConnectionList =
+      visibleItemCount >= CONNECTION_LIST_VIRTUALIZATION_THRESHOLD;
+    const dragDisabled = searchQuery.length > 0 || useVirtualizedConnectionList;
 
     const handleDragEnd = useCallback(
       ({ active, over }) => {
@@ -1384,7 +1440,9 @@ const ConnectionManager = memo(
           if (window.terminalAPI?.saveConnections) {
             isSavingRef.current = true;
             window.terminalAPI.saveConnections(newConnections).finally(() => {
-              setTimeout(() => { isSavingRef.current = false; }, 100);
+              setTimeout(() => {
+                isSavingRef.current = false;
+              }, 100);
             });
           }
         };
@@ -1423,14 +1481,14 @@ const ConnectionManager = memo(
           if (containerId === ROOT_CONTAINER_ID) {
             return -1;
           }
-          const groupId = containerId.replace('group-container-', '');
+          const groupId = containerId.replace("group-container-", "");
           return updatedConnections.findIndex((item) => item.id === groupId);
         };
 
         const sourceContainerId =
           activeData.parentId || findContainerId(activeId, updatedConnections);
         const destinationContainerId =
-          overData.type === 'container'
+          overData.type === "container"
             ? overId
             : overData.parentId || findContainerId(overId, updatedConnections);
 
@@ -1438,7 +1496,7 @@ const ConnectionManager = memo(
           return;
         }
 
-        if (activeData.type === 'group') {
+        if (activeData.type === "group") {
           if (destinationContainerId !== ROOT_CONTAINER_ID) {
             return;
           }
@@ -1454,7 +1512,7 @@ const ConnectionManager = memo(
             (item) => item.id === overId,
           );
 
-          if (overData.type === 'container' || newIndex === -1) {
+          if (overData.type === "container" || newIndex === -1) {
             newIndex = updatedConnections.length - 1;
           }
 
@@ -1466,7 +1524,7 @@ const ConnectionManager = memo(
           return;
         }
 
-        if (activeData.type !== 'connection') {
+        if (activeData.type !== "connection") {
           return;
         }
 
@@ -1479,7 +1537,7 @@ const ConnectionManager = memo(
               (item) => item.id === overId,
             );
 
-            if (overData.type === 'container' || newIndex === -1) {
+            if (overData.type === "container" || newIndex === -1) {
               newIndex = updatedConnections.length - 1;
             }
 
@@ -1501,7 +1559,7 @@ const ConnectionManager = memo(
           const oldIndex = items.findIndex((item) => item.id === activeId);
           let newIndex = items.findIndex((item) => item.id === overId);
 
-          if (overData.type === 'container' || newIndex === -1) {
+          if (overData.type === "container" || newIndex === -1) {
             newIndex = items.length - 1;
           }
 
@@ -1532,9 +1590,8 @@ const ConnectionManager = memo(
             [draggedItem] = updatedConnections.splice(sourceIndex, 1);
           }
         } else {
-          const sourceGroupIndex = getGroupIndexFromContainer(
-            sourceContainerId,
-          );
+          const sourceGroupIndex =
+            getGroupIndexFromContainer(sourceContainerId);
           if (sourceGroupIndex !== -1) {
             const group = updatedConnections[sourceGroupIndex];
             const items = Array.isArray(group.items) ? [...group.items] : [];
@@ -1549,7 +1606,7 @@ const ConnectionManager = memo(
           }
         }
 
-        if (!draggedItem || draggedItem.type !== 'connection') {
+        if (!draggedItem || draggedItem.type !== "connection") {
           return;
         }
 
@@ -1557,7 +1614,7 @@ const ConnectionManager = memo(
           let insertIndex = updatedConnections.findIndex(
             (item) => item.id === overId,
           );
-          if (insertIndex === -1 || overData.type === 'container') {
+          if (insertIndex === -1 || overData.type === "container") {
             insertIndex = updatedConnections.length;
           }
           updatedConnections.splice(insertIndex, 0, draggedItem);
@@ -1579,7 +1636,7 @@ const ConnectionManager = memo(
 
         let insertIndex = targetItems.findIndex((item) => item.id === overId);
         if (
-          overData.type !== 'connection' ||
+          overData.type !== "connection" ||
           overData.parentId !== destinationContainerId ||
           insertIndex === -1
         ) {
@@ -1789,30 +1846,50 @@ const ConnectionManager = memo(
                 height: "calc(100% - 160px)", // 调整高度以适应搜索框
               }}
             >
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <List
-                  dense
-                  ref={setRootDroppableRef}
-                  sx={{
-                    p: 1,
-                    backgroundColor: isRootDraggingOver
-                      ? theme.palette.mode === "dark"
-                        ? alpha(theme.palette.primary.main, 0.2)
-                        : alpha(theme.palette.primary.main, 0.15)
-                      : "transparent",
-                    transition: "background-color 0.2s ease",
-                  }}
+              {isLoading ? (
+                <List dense sx={{ p: 1 }}>
+                  <ConnectionManagerSkeleton />
+                </List>
+              ) : useVirtualizedConnectionList ? (
+                <VirtualizedConnectionList
+                  className="connection-manager-virtualized-list"
+                  connections={filteredItems}
+                  selectedItem={null}
+                  onToggleGroup={handleToggleGroup}
+                  onSelectConnection={handleOpenConnection}
+                  onDoubleClick={handleOpenConnection}
+                  onEditConnection={handleEdit}
+                  onDeleteConnection={handleDelete}
+                  onEditGroup={handleEdit}
+                  onDeleteGroup={handleDelete}
+                  onAddConnectionToGroup={handleAddConnection}
+                  height="100%"
+                  itemHeight={36}
+                  enableVirtualization
+                  emptyMessage="没有连接项"
+                />
+              ) : (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
                 >
-                  {isLoading ? (
-                    <ConnectionManagerSkeleton />
-                  ) : (
+                  <List
+                    dense
+                    ref={setRootDroppableRef}
+                    sx={{
+                      p: 1,
+                      backgroundColor: isRootDraggingOver
+                        ? theme.palette.mode === "dark"
+                          ? alpha(theme.palette.primary.main, 0.2)
+                          : alpha(theme.palette.primary.main, 0.15)
+                        : "transparent",
+                      transition: "background-color 0.2s ease",
+                    }}
+                  >
                     <>
                       {connectionsList}
-                      {connections.length === 0 && (
+                      {filteredItems.length === 0 && (
                         <ListItem>
                           <ListItemText
                             primary="没有连接项"
@@ -1828,9 +1905,9 @@ const ConnectionManager = memo(
                         </ListItem>
                       )}
                     </>
-                  )}
-                </List>
-              </DndContext>
+                  </List>
+                </DndContext>
+              )}
             </Box>
 
             {/* 添加/编辑对话框 */}
@@ -1977,7 +2054,11 @@ const ConnectionManager = memo(
                                   window.terminalAPI
                                     .selectKeyFile()
                                     .then((result) => {
-                                      if (result && result.success && result.path) {
+                                      if (
+                                        result &&
+                                        result.success &&
+                                        result.path
+                                      ) {
                                         setFormData((prev) => ({
                                           ...prev,
                                           privateKeyPath: result.path,

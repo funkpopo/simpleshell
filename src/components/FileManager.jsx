@@ -54,16 +54,121 @@ import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import FilePreview from "./FilePreview.jsx";
 // TransferProgressFloat 已移至全局显示,不再导入
 import FilePermissionEditor from "./FilePermissionEditor.jsx";
-import {
-  List,
-  ListItem,
-  ListItemButton,
-} from "@mui/material";
+import { List, ListItem, ListItemButton } from "@mui/material";
+import { List as VirtualizedList } from "react-window";
 import { InsertDriveFile as InsertDriveFileIcon } from "@mui/icons-material";
-import { formatLastRefreshTime, formatFileSize } from "../core/utils/formatters.js";
+import {
+  formatLastRefreshTime,
+  formatFileSize,
+} from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
+
+const FILE_LIST_ROW_HEIGHT = 36;
+const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
+const FILE_LIST_OVERSCAN = 12;
+
+const VirtualizedFileRow = memo(function VirtualizedFileRow({
+  index,
+  style,
+  rows,
+  isFileSelected,
+  onContextMenu,
+  onSelect,
+  onActivate,
+  theme,
+}) {
+  const row = rows[index];
+  if (!row) return null;
+
+  const { file, secondaryText } = row;
+  const isSelected = isFileSelected(file);
+
+  return (
+    <div
+      style={{
+        ...style,
+        boxSizing: "border-box",
+        padding: "2px 4px",
+      }}
+    >
+      <ListItem
+        disablePadding
+        disableGutters
+        onContextMenu={(e) => onContextMenu(e, file, index)}
+        sx={{
+          py: 0,
+          my: 0,
+          minHeight: 32,
+          height: 32,
+        }}
+      >
+        <ListItemButton
+          data-file-item="true"
+          onClick={(e) => onSelect(file, index, e)}
+          onDoubleClick={() => onActivate(file)}
+          dense
+          selected={isSelected}
+          sx={{
+            minHeight: 32,
+            height: 32,
+            px: 1.5,
+            py: 0.5,
+            borderRadius: 1,
+            transition: "all 0.15s ease-in-out",
+            userSelect: "none",
+            cursor: "pointer",
+            "&.Mui-selected": {
+              backgroundColor: alpha(theme.palette.primary.main, 0.12),
+              "&:hover": {
+                backgroundColor: alpha(theme.palette.primary.main, 0.18),
+              },
+            },
+            "&:hover": {
+              backgroundColor: theme.palette.action.hover,
+            },
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 24, mr: 0.75 }}>
+            {file.isDirectory ? (
+              <FolderIcon color="primary" sx={{ fontSize: 20 }} />
+            ) : (
+              <InsertDriveFileIcon sx={{ fontSize: 20 }} />
+            )}
+          </ListItemIcon>
+          <ListItemText
+            primary={file.name || ""}
+            secondary={secondaryText}
+            sx={{
+              my: 0,
+              "& .MuiListItemText-primary": {
+                fontSize: "0.875rem",
+                lineHeight: 1.2,
+                marginBottom: "2px",
+                fontWeight: 500,
+              },
+              "& .MuiListItemText-secondary": {
+                fontSize: "0.75rem",
+                lineHeight: 1.1,
+                marginTop: 0,
+              },
+            }}
+            primaryTypographyProps={{
+              variant: "body2",
+              noWrap: true,
+            }}
+            secondaryTypographyProps={{
+              variant: "caption",
+              color: "text.secondary",
+              noWrap: true,
+            }}
+          />
+        </ListItemButton>
+      </ListItem>
+    </div>
+  );
+});
 
 const FileManager = memo(
   ({
@@ -83,7 +188,8 @@ const FileManager = memo(
     const [error, setError] = useState(null);
     // 连接/重试期间的轻量 loading（避免侧边栏内容区域空白）
     const [connectionLoading, setConnectionLoading] = useState(false);
-    const [connectionLoadingMessage, setConnectionLoadingMessage] = useState("");
+    const [connectionLoadingMessage, setConnectionLoadingMessage] =
+      useState("");
     const [lastRefreshTime, setLastRefreshTime] = useState(null);
     const [, forceUpdate] = useState(0); // 用于强制更新组件以刷新时间显示
     const directoryCacheRef = useRef(new Map());
@@ -198,7 +304,9 @@ const FileManager = memo(
       try {
         if (chunkingResetTimerRef.current)
           clearTimeout(chunkingResetTimerRef.current);
-      } catch { /* intentionally ignored */ }
+      } catch {
+        /* intentionally ignored */
+      }
       chunkingResetTimerRef.current = setTimeout(() => {
         isChunkingRef.current = false;
         setIsChunking(false);
@@ -209,7 +317,9 @@ const FileManager = memo(
         try {
           if (chunkingResetTimerRef.current)
             clearTimeout(chunkingResetTimerRef.current);
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
       },
       [],
     );
@@ -414,10 +524,8 @@ const FileManager = memo(
     };
 
     // 清理已完成的传输任务
-    
 
     // 清理所有传输任务
-    
 
     // 检查错误消息是否与用户取消操作相关
     const isUserCancellationError = (error) => {
@@ -490,8 +598,7 @@ const FileManager = memo(
       // 使用记忆的路径或默认路径
       const pathToLoad = initialPath || "/";
       const isSamePath = pathToLoad === currentPathRef.current;
-      const initialPathChanged =
-        previousInitialPathRef.current !== initialPath;
+      const initialPathChanged = previousInitialPathRef.current !== initialPath;
       previousInitialPathRef.current = initialPath;
 
       if (skipInitialPathSyncRef.current && initialPathChanged && isSamePath) {
@@ -588,7 +695,9 @@ const FileManager = memo(
       try {
         const globalCached = dirCache.get(tabId, path, CACHE_EXPIRY_TIME);
         if (globalCached) return globalCached;
-      } catch { /* intentionally ignored */ }
+      } catch {
+        /* intentionally ignored */
+      }
       const cacheEntry = directoryCacheRef.current.get(path);
       if (!cacheEntry) {
         return null;
@@ -607,7 +716,9 @@ const FileManager = memo(
       // 写入全局缓存
       try {
         dirCache.set(tabId, path, data);
-      } catch { /* intentionally ignored */ }
+      } catch {
+        /* intentionally ignored */
+      }
       directoryCacheRef.current.set(path, {
         data,
         timestamp: Date.now(),
@@ -653,7 +764,9 @@ const FileManager = memo(
               // 清理 watchdog/状态
               try {
                 if (bg.watchdog) clearTimeout(bg.watchdog);
-              } catch { /* intentionally ignored */ }
+              } catch {
+                /* intentionally ignored */
+              }
               bg.watchdog = null;
 
               const resolve = bg.resolve;
@@ -753,7 +866,10 @@ const FileManager = memo(
               setFiles(nextFiles);
             }
 
-            updateDirectoryCache(currentPathRef.current, filesRef.current || []);
+            updateDirectoryCache(
+              currentPathRef.current,
+              filesRef.current || [],
+            );
 
             // 更新稳定签名，供轮询快速比较
             try {
@@ -762,7 +878,9 @@ const FileManager = memo(
               stableListSignatureRef.current = computeFileListSignature(
                 filesRef.current || [],
               );
-            } catch { /* intentionally ignored */ }
+            } catch {
+              /* intentionally ignored */
+            }
 
             listTokenRef.current = null;
             setListToken(null);
@@ -812,7 +930,9 @@ const FileManager = memo(
           if (curLastRefresh && Date.now() - curLastRefresh < 700) {
             return { ok: false, skipped: true, reason: "recentlyRefreshed" };
           }
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
 
         const now = Date.now();
         const lastAttempt = backgroundListLastAttemptAtRef.current || 0;
@@ -824,10 +944,15 @@ const FileManager = memo(
         const bg = backgroundListRequestRef.current;
         if (bg.inFlight) {
           // 超过最大等待时间认为卡死，释放锁（防止一直无法刷新）
-          if (bg.startedAt && now - bg.startedAt > BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS) {
+          if (
+            bg.startedAt &&
+            now - bg.startedAt > BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS
+          ) {
             try {
               if (bg.watchdog) clearTimeout(bg.watchdog);
-            } catch { /* intentionally ignored */ }
+            } catch {
+              /* intentionally ignored */
+            }
             bg.watchdog = null;
             bg.inFlight = false;
             bg.token = null;
@@ -867,7 +992,11 @@ const FileManager = memo(
 
         let response = null;
         try {
-          response = await window.terminalAPI.listFiles(tabId, apiPath, options);
+          response = await window.terminalAPI.listFiles(
+            tabId,
+            apiPath,
+            options,
+          );
         } catch (error) {
           const resolve = bg.resolve;
           bg.inFlight = false;
@@ -895,7 +1024,10 @@ const FileManager = memo(
           bg.reject = null;
           backgroundListBufferRef.current = [];
           if (typeof resolve === "function") {
-            resolve({ ok: false, error: response?.error || "listFiles failed" });
+            resolve({
+              ok: false,
+              error: response?.error || "listFiles failed",
+            });
           }
           return { ok: false, error: response?.error || "listFiles failed" };
         }
@@ -907,7 +1039,9 @@ const FileManager = memo(
           // watchdog：避免主进程/IPC异常导致 inFlight 永久卡住
           try {
             if (bg.watchdog) clearTimeout(bg.watchdog);
-          } catch { /* intentionally ignored */ }
+          } catch {
+            /* intentionally ignored */
+          }
           bg.watchdog = setTimeout(() => {
             try {
               const cur = backgroundListRequestRef.current;
@@ -922,14 +1056,18 @@ const FileManager = memo(
                 cur.reject = null;
                 try {
                   if (cur.watchdog) clearTimeout(cur.watchdog);
-                } catch { /* intentionally ignored */ }
+                } catch {
+                  /* intentionally ignored */
+                }
                 cur.watchdog = null;
                 backgroundListBufferRef.current = [];
                 if (typeof resolve === "function") {
                   resolve({ ok: false, timeout: true });
                 }
               }
-            } catch { /* intentionally ignored */ }
+            } catch {
+              /* intentionally ignored */
+            }
           }, BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS);
 
           if (awaitDone) {
@@ -956,19 +1094,15 @@ const FileManager = memo(
         }
         return { ok: true, changed: false, immediate: true };
       },
-      [
-        open,
-        sshConnection,
-        tabId,
-        toApiPath,
-      ],
+      [open, sshConnection, tabId, toApiPath],
     );
 
     // 静默刷新当前目录（不显示加载指示器）：用于用户活动触发，采用后台刷新并避免重复请求
     const silentRefreshCurrentDirectory = useCallback(() => {
-      startBackgroundDirectoryRefresh({ reason: "userActivity", awaitDone: false }).catch(
-        () => {},
-      );
+      startBackgroundDirectoryRefresh({
+        reason: "userActivity",
+        awaitDone: false,
+      }).catch(() => {});
     }, [startBackgroundDirectoryRefresh]);
 
     // 低负载轮询：保证侧边栏列表可及时刷新（自动退避）
@@ -987,10 +1121,15 @@ const FileManager = memo(
       const schedule = (delayMs) => {
         try {
           if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        } catch { /* intentionally ignored */ }
-        pollTimerRef.current = setTimeout(() => {
-          tick().catch(() => {});
-        }, Math.max(250, delayMs || FILE_LIST_POLL_BASE_INTERVAL_MS));
+        } catch {
+          /* intentionally ignored */
+        }
+        pollTimerRef.current = setTimeout(
+          () => {
+            tick().catch(() => {});
+          },
+          Math.max(250, delayMs || FILE_LIST_POLL_BASE_INTERVAL_MS),
+        );
       };
 
       const tick = async () => {
@@ -1008,7 +1147,9 @@ const FileManager = memo(
             schedule(Math.min(pollStateRef.current.intervalMs, 15000));
             return;
           }
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
 
         const result = await startBackgroundDirectoryRefresh({
           reason: "poll",
@@ -1054,7 +1195,9 @@ const FileManager = memo(
         cancelled = true;
         try {
           if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
         pollTimerRef.current = null;
 
         // 清理后台刷新上下文，避免 promise 永久悬挂
@@ -1062,7 +1205,9 @@ const FileManager = memo(
         if (bg && bg.inFlight) {
           try {
             if (bg.watchdog) clearTimeout(bg.watchdog);
-          } catch { /* intentionally ignored */ }
+          } catch {
+            /* intentionally ignored */
+          }
           const resolve = bg.resolve;
           bg.inFlight = false;
           bg.token = null;
@@ -1078,7 +1223,13 @@ const FileManager = memo(
           }
         }
       };
-    }, [open, sshConnection, tabId, currentPath, startBackgroundDirectoryRefresh]);
+    }, [
+      open,
+      sshConnection,
+      tabId,
+      currentPath,
+      startBackgroundDirectoryRefresh,
+    ]);
 
     // 添加路径到历史记录
     const addToHistory = (path) => {
@@ -1116,7 +1267,6 @@ const FileManager = memo(
     };
 
     // 返回先前路径
-    
 
     // 前进到下一个路径
     const handleGoToNextPath = () => {
@@ -1144,7 +1294,9 @@ const FileManager = memo(
         if (flushTimerRef.current) {
           clearTimeout(flushTimerRef.current);
         }
-      } catch { /* intentionally ignored */ }
+      } catch {
+        /* intentionally ignored */
+      }
       flushTimerRef.current = null;
       chunkBufferRef.current = [];
       if (listTokenRef.current) {
@@ -1315,7 +1467,6 @@ const FileManager = memo(
     };
 
     // 刷新目录（强制从服务器重新加载）
-    
 
     // 节流函数，用于限制连续的目录加载操作
     const throttleLoadDirectory = (() => {
@@ -1401,7 +1552,7 @@ const FileManager = memo(
     // 多选文件管理函数 - 使用 Set 优化性能
     const selectedFilesSet = useMemo(() => {
       const set = new Set();
-      selectedFiles.forEach(file => {
+      selectedFiles.forEach((file) => {
         set.add(`${file.name}-${file.modifyTime}`);
       });
       return set;
@@ -1456,6 +1607,51 @@ const FileManager = memo(
       });
     }, [files, searchTerm, sortMode, isChunking]);
 
+    // 格式化日期函数
+    const formatDate = useCallback((date) => {
+      const now = new Date();
+      const diff = now - date;
+      const day = 24 * 60 * 60 * 1000;
+
+      // 如果是今天的文件，显示时间
+      if (diff < day && date.getDate() === now.getDate()) {
+        return date.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+
+      // 如果是最近一周的文件，显示星期几
+      if (diff < 7 * day) {
+        const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+        return days[date.getDay()];
+      }
+
+      // 其他情况显示年-月-日
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    }, []);
+
+    // 文件渲染数据预处理，避免 render 阶段重复做格式化
+    const displayFileRows = useMemo(() => {
+      return displayFiles.map((file, index) => {
+        const formattedDate = file?.modifyTime
+          ? formatDate(new Date(file.modifyTime))
+          : "";
+        const formattedSize =
+          file?.size && !file?.isDirectory
+            ? formatFileSize(file.size, { t })
+            : "";
+
+        return {
+          file,
+          index,
+          secondaryText: [formattedDate, formattedSize]
+            .filter(Boolean)
+            .join(" · "),
+        };
+      });
+    }, [displayFiles, formatDate, t]);
+
     // 过滤和排序文件列表（根据搜索词） - 优化版本，使用useMemo缓存
 
     // 搜索过滤
@@ -1487,11 +1683,15 @@ const FileManager = memo(
           if (isMultiSelect) {
             // 合并现有选择和范围选择
             const newSelection = [...selectedFiles];
-            rangeFiles.forEach(rangeFile => {
+            rangeFiles.forEach((rangeFile) => {
               // 只添加未选中的文件
-              if (!newSelection.some(f =>
-                f.name === rangeFile.name && f.modifyTime === rangeFile.modifyTime
-              )) {
+              if (
+                !newSelection.some(
+                  (f) =>
+                    f.name === rangeFile.name &&
+                    f.modifyTime === rangeFile.modifyTime,
+                )
+              ) {
                 newSelection.push(rangeFile);
               }
             });
@@ -1565,43 +1765,49 @@ const FileManager = memo(
     }, [selectedFiles, selectedFile]);
 
     // 处理批量操作确认 - 显示确认对话框
-    const showBatchOperationConfirm = useCallback((operation, files, onConfirm) => {
-      const fileCount = files.length;
-      const fileList = files.map((f) => f.name).join(", ");
-      const message = t("fileManager.batchOperationConfirm", {
-        operation,
-        count: fileCount,
-        files: fileList,
-      });
-      setConfirmDialog({
-        open: true,
-        title: t("fileManager.confirmTitle"),
-        message,
-        onConfirm,
-        confirmText: operation,
-        confirmColor: "error",
-      });
-    }, [t]);
+    const showBatchOperationConfirm = useCallback(
+      (operation, files, onConfirm) => {
+        const fileCount = files.length;
+        const fileList = files.map((f) => f.name).join(", ");
+        const message = t("fileManager.batchOperationConfirm", {
+          operation,
+          count: fileCount,
+          files: fileList,
+        });
+        setConfirmDialog({
+          open: true,
+          title: t("fileManager.confirmTitle"),
+          message,
+          onConfirm,
+          confirmText: operation,
+          confirmColor: "error",
+        });
+      },
+      [t],
+    );
 
     // 处理右键菜单 - 优化版本，立即显示菜单
-    const handleContextMenu = useCallback((event, file, index) => {
-      event.preventDefault();
-      event.stopPropagation();
+    const handleContextMenu = useCallback(
+      (event, file, index) => {
+        event.preventDefault();
+        event.stopPropagation();
 
-      // 立即设置菜单位置，不等待任何状态更新
-      setContextMenu({
-        mouseX: event.clientX,
-        mouseY: event.clientY,
-      });
+        // 立即设置菜单位置，不等待任何状态更新
+        setContextMenu({
+          mouseX: event.clientX,
+          mouseY: event.clientY,
+        });
 
-      // 然后更新选中状态（如果需要）
-      if (!isFileSelected(file)) {
-        setSelectedFiles([file]);
-        setSelectedFile(file);
-        setLastSelectedIndex(index);
-        setAnchorIndex(index);
-      }
-    }, [isFileSelected]);
+        // 然后更新选中状态（如果需要）
+        if (!isFileSelected(file)) {
+          setSelectedFiles([file]);
+          setSelectedFile(file);
+          setLastSelectedIndex(index);
+          setAnchorIndex(index);
+        }
+      },
+      [isFileSelected],
+    );
 
     // 关闭右键菜单
     const handleContextMenuClose = useCallback(() => {
@@ -1610,16 +1816,17 @@ const FileManager = memo(
 
     // 缓存菜单显示逻辑，避免每次渲染时重新计算
     const menuItems = useMemo(() => {
-      const selected = selectedFiles.length > 0
-        ? selectedFiles
-        : selectedFile
-          ? [selectedFile]
-          : [];
+      const selected =
+        selectedFiles.length > 0
+          ? selectedFiles
+          : selectedFile
+            ? [selectedFile]
+            : [];
 
-      const hasFiles = selected.some(f => !f.isDirectory);
-      const hasFolders = selected.some(f => f.isDirectory);
-      const fileCount = selected.filter(f => !f.isDirectory).length;
-      const folderCount = selected.filter(f => f.isDirectory).length;
+      const hasFiles = selected.some((f) => !f.isDirectory);
+      const hasFolders = selected.some((f) => f.isDirectory);
+      const fileCount = selected.filter((f) => !f.isDirectory).length;
+      const folderCount = selected.filter((f) => f.isDirectory).length;
 
       return {
         isSingleSelection: selectedFiles.length === 1,
@@ -1731,7 +1938,10 @@ const FileManager = memo(
           // 所有者/组变更
           const ownerChanged = permDialogOwner !== permInitial.owner;
           const groupChanged = permDialogGroup !== permInitial.group;
-          if ((ownerChanged || groupChanged) && window.terminalAPI?.setFileOwnership) {
+          if (
+            (ownerChanged || groupChanged) &&
+            window.terminalAPI?.setFileOwnership
+          ) {
             ops.push(
               window.terminalAPI.setFileOwnership(
                 tabId,
@@ -1840,7 +2050,11 @@ const FileManager = memo(
       };
 
       // 显示确认对话框
-      showBatchOperationConfirm(t("fileManager.delete"), filesToDelete, doDelete);
+      showBatchOperationConfirm(
+        t("fileManager.delete"),
+        filesToDelete,
+        doDelete,
+      );
     }, [
       getSelectedFiles,
       currentPath,
@@ -1864,7 +2078,6 @@ const FileManager = memo(
       const fileToDelete = filesToDelete[0];
 
       // 创建一个标识符，用于跟踪当前的删除操作
-      
 
       setLoading(true);
       setError(null);
@@ -1988,7 +2201,9 @@ const FileManager = memo(
         return "~/" + childName;
       } else {
         // 移除 basePath 末尾的斜杠（如果有）
-        const normalizedBase = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+        const normalizedBase = basePath.endsWith("/")
+          ? basePath.slice(0, -1)
+          : basePath;
         return normalizedBase + "/" + childName;
       }
     };
@@ -2016,7 +2231,11 @@ const FileManager = memo(
 
         if (window.terminalAPI && window.terminalAPI.uploadFile) {
           // 触发应用内状态提示（与拖拽上传保持一致）
-          showNotification(t("fileManager.messages.preparingUpload"), "info", 2000);
+          showNotification(
+            t("fileManager.messages.preparingUpload"),
+            "info",
+            2000,
+          );
 
           // 创建新的传输任务
           const transferId = addTransferProgress({
@@ -2091,7 +2310,11 @@ const FileManager = memo(
               setError(result.warning);
               showNotification(result.warning, "warning", 6000);
             } else {
-              showNotification(t("fileManager.messages.uploadSuccess"), "success", 2000);
+              showNotification(
+                t("fileManager.messages.uploadSuccess"),
+                "success",
+                2000,
+              );
             }
 
             // 检查是否是用户取消操作
@@ -2158,8 +2381,7 @@ const FileManager = memo(
             error.message || t("fileManager.errors.unknownError");
           transferProgressList
             .filter(
-              (transfer) =>
-                transfer.progress < 100 && !transfer.isCancelled,
+              (transfer) => transfer.progress < 100 && !transfer.isCancelled,
             )
             .forEach((transfer) => {
               updateTransferProgress(transfer.transferId, {
@@ -2171,8 +2393,7 @@ const FileManager = memo(
           // 标记所有未完成的传输为取消状态
           transferProgressList
             .filter(
-              (transfer) =>
-                transfer.progress < 100 && !transfer.isCancelled,
+              (transfer) => transfer.progress < 100 && !transfer.isCancelled,
             )
             .forEach((transfer) => {
               updateTransferProgress(transfer.transferId, {
@@ -2217,7 +2438,11 @@ const FileManager = memo(
 
         if (window.terminalAPI && window.terminalAPI.uploadFolder) {
           // 触发应用内状态提示（与拖拽上传保持一致）
-          showNotification(t("fileManager.messages.preparingUpload"), "info", 2000);
+          showNotification(
+            t("fileManager.messages.preparingUpload"),
+            "info",
+            2000,
+          );
 
           // 创建新的文件夹传输任务
           const transferId = addTransferProgress({
@@ -2294,7 +2519,11 @@ const FileManager = memo(
               setError(result.warning);
               showNotification(result.warning, "warning", 6000);
             } else {
-              showNotification(t("fileManager.messages.uploadSuccess"), "success", 2000);
+              showNotification(
+                t("fileManager.messages.uploadSuccess"),
+                "success",
+                2000,
+              );
             }
 
             // 检查是否是用户取消操作
@@ -2442,8 +2671,7 @@ const FileManager = memo(
         );
       }
 
-      // 渲染简单文件列表（替代虚拟化列表）
-      if (!displayFiles || displayFiles.length === 0) {
+      if (!displayFileRows || displayFileRows.length === 0) {
         // chunked/nonBlocking 目录加载：首批数据可能为空，但仍在持续接收分片
         // 这时应该显示加载动画，而不是“当前目录为空”
         if (!searchTerm && (isChunking || listToken)) {
@@ -2482,6 +2710,9 @@ const FileManager = memo(
         );
       }
 
+      const shouldVirtualize =
+        displayFileRows.length >= FILE_LIST_VIRTUALIZATION_THRESHOLD;
+
       return (
         <Box
           sx={{
@@ -2492,148 +2723,162 @@ const FileManager = memo(
               width: 10,
             },
             "&::-webkit-scrollbar-track": {
-              backgroundColor: theme.palette.mode === "dark"
-                ? alpha(theme.palette.action.hover, 0.3)
-                : alpha(theme.palette.action.hover, 0.5),
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? alpha(theme.palette.action.hover, 0.3)
+                  : alpha(theme.palette.action.hover, 0.5),
               borderRadius: 5,
               margin: "4px",
             },
             "&::-webkit-scrollbar-thumb": {
-              backgroundColor: theme.palette.mode === "dark"
-                ? alpha(theme.palette.action.disabled, 0.8)
-                : theme.palette.action.disabled,
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? alpha(theme.palette.action.disabled, 0.8)
+                  : theme.palette.action.disabled,
               borderRadius: 5,
               transition: "background-color 0.2s ease",
               "&:hover": {
                 backgroundColor: theme.palette.action.focus,
               },
             },
+            "& .file-manager-virtualized-list::-webkit-scrollbar": {
+              width: 10,
+            },
+            "& .file-manager-virtualized-list::-webkit-scrollbar-track": {
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? alpha(theme.palette.action.hover, 0.3)
+                  : alpha(theme.palette.action.hover, 0.5),
+              borderRadius: 5,
+              margin: "4px",
+            },
+            "& .file-manager-virtualized-list::-webkit-scrollbar-thumb": {
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? alpha(theme.palette.action.disabled, 0.8)
+                  : theme.palette.action.disabled,
+              borderRadius: 5,
+              transition: "background-color 0.2s ease",
+            },
+            "& .file-manager-virtualized-list::-webkit-scrollbar-thumb:hover": {
+              backgroundColor: theme.palette.action.focus,
+            },
           }}
           onContextMenu={handleBlankContextMenu}
           onClick={handleBlankClick}
         >
-          <List dense disablePadding sx={{ py: 0.5, px: 0.5 }}>
-            {displayFiles.map((file, index) => {
-              const isSelected = isFileSelected(file);
+          {shouldVirtualize ? (
+            <VirtualizedList
+              className="file-manager-virtualized-list"
+              style={{ height: "100%", width: "100%" }}
+              rowCount={displayFileRows.length}
+              rowHeight={FILE_LIST_ROW_HEIGHT}
+              rowProps={{
+                rows: displayFileRows,
+                isFileSelected,
+                onContextMenu: handleContextMenu,
+                onSelect: handleFileSelect,
+                onActivate: handleFileActivate,
+                theme,
+              }}
+              overscanCount={FILE_LIST_OVERSCAN}
+              rowComponent={VirtualizedFileRow}
+            />
+          ) : (
+            <List dense disablePadding sx={{ py: 0.5, px: 0.5 }}>
+              {displayFileRows.map(({ file, index, secondaryText }) => {
+                const isSelected = isFileSelected(file);
 
-              const formattedDate = file?.modifyTime
-                ? formatDate(new Date(file.modifyTime))
-                : "";
-              const formattedSize =
-                file?.size && !file?.isDirectory
-                  ? formatFileSize(file.size, { t })
-                  : "";
-              const secondaryText = [formattedDate, formattedSize]
-                .filter(Boolean)
-                .join(" · ");
-
-              return (
-                <ListItem
-                  key={`${file.name}-${index}`}
-                  disablePadding
-                  disableGutters
-                  onContextMenu={(e) => handleContextMenu(e, file, index)}
-                  sx={{
-                    py: 0,
-                    my: 0,
-                    minHeight: 32,
-                    height: 32,
-                    '&:not(:last-child)': {
-                      mb: 0.5,
-                    },
-                  }}
-                >
-                  <ListItemButton
-                    data-file-item="true"
-                    onClick={(e) => handleFileSelect(file, index, e)}
-                    onDoubleClick={() => handleFileActivate(file)}
-                    dense
-                    selected={isSelected}
+                return (
+                  <ListItem
+                    key={`${file.name}-${file.modifyTime ?? index}`}
+                    disablePadding
+                    disableGutters
+                    onContextMenu={(e) => handleContextMenu(e, file, index)}
                     sx={{
+                      py: 0,
+                      my: 0,
                       minHeight: 32,
                       height: 32,
-                      px: 1.5,
-                      py: 0.5,
-                      borderRadius: 1,
-                      transition: "all 0.15s ease-in-out",
-                      userSelect: 'none',
-                      cursor: 'pointer',
-                      '&.Mui-selected': {
-                        backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                        '&:hover': {
-                          backgroundColor: alpha(theme.palette.primary.main, 0.18),
-                        },
-                      },
-                      '&:hover': {
-                        backgroundColor: theme.palette.action.hover,
+                      "&:not(:last-child)": {
+                        mb: 0.5,
                       },
                     }}
                   >
-                    <ListItemIcon sx={{ minWidth: 24, mr: 0.75 }}>
-                      {file.isDirectory ? (
-                        <FolderIcon color="primary" sx={{ fontSize: 20 }} />
-                      ) : (
-                        <InsertDriveFileIcon sx={{ fontSize: 20 }} />
-                      )}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={file.name || ""}
-                      secondary={secondaryText}
+                    <ListItemButton
+                      data-file-item="true"
+                      onClick={(e) => handleFileSelect(file, index, e)}
+                      onDoubleClick={() => handleFileActivate(file)}
+                      dense
+                      selected={isSelected}
                       sx={{
-                        my: 0,
-                        "& .MuiListItemText-primary": {
-                          fontSize: "0.875rem",
-                          lineHeight: 1.2,
-                          marginBottom: "2px",
-                          fontWeight: 500,
+                        minHeight: 32,
+                        height: 32,
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: 1,
+                        transition: "all 0.15s ease-in-out",
+                        userSelect: "none",
+                        cursor: "pointer",
+                        "&.Mui-selected": {
+                          backgroundColor: alpha(
+                            theme.palette.primary.main,
+                            0.12,
+                          ),
+                          "&:hover": {
+                            backgroundColor: alpha(
+                              theme.palette.primary.main,
+                              0.18,
+                            ),
+                          },
                         },
-                        "& .MuiListItemText-secondary": {
-                          fontSize: "0.75rem",
-                          lineHeight: 1.1,
-                          marginTop: 0,
+                        "&:hover": {
+                          backgroundColor: theme.palette.action.hover,
                         },
                       }}
-                      primaryTypographyProps={{
-                        variant: "body2",
-                        noWrap: true,
-                      }}
-                      secondaryTypographyProps={{
-                        variant: "caption",
-                        color: "text.secondary",
-                        noWrap: true,
-                      }}
-                    />
-                  </ListItemButton>
-                </ListItem>
-              );
-            })}
-          </List>
+                    >
+                      <ListItemIcon sx={{ minWidth: 24, mr: 0.75 }}>
+                        {file.isDirectory ? (
+                          <FolderIcon color="primary" sx={{ fontSize: 20 }} />
+                        ) : (
+                          <InsertDriveFileIcon sx={{ fontSize: 20 }} />
+                        )}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={file.name || ""}
+                        secondary={secondaryText}
+                        sx={{
+                          my: 0,
+                          "& .MuiListItemText-primary": {
+                            fontSize: "0.875rem",
+                            lineHeight: 1.2,
+                            marginBottom: "2px",
+                            fontWeight: 500,
+                          },
+                          "& .MuiListItemText-secondary": {
+                            fontSize: "0.75rem",
+                            lineHeight: 1.1,
+                            marginTop: 0,
+                          },
+                        }}
+                        primaryTypographyProps={{
+                          variant: "body2",
+                          noWrap: true,
+                        }}
+                        secondaryTypographyProps={{
+                          variant: "caption",
+                          color: "text.secondary",
+                          noWrap: true,
+                        }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                );
+              })}
+            </List>
+          )}
         </Box>
       );
-    };
-
-    // 格式化日期函数
-    const formatDate = (date) => {
-      const now = new Date();
-      const diff = now - date;
-      const day = 24 * 60 * 60 * 1000;
-
-      // 如果是今天的文件，显示时间
-      if (diff < day && date.getDate() === now.getDate()) {
-        return date.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-      }
-
-      // 如果是最近一周的文件，显示星期几
-      if (diff < 7 * day) {
-        const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-        return days[date.getDay()];
-      }
-
-      // 其他情况显示年-月-日
-      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     };
 
     // 处理路径输入更改
@@ -2650,7 +2895,6 @@ const FileManager = memo(
     };
 
     // 处理取消传输
-    
 
     // 处理空白区域右键菜单
     const handleBlankContextMenu = (event) => {
@@ -2846,8 +3090,6 @@ const FileManager = memo(
         setShowCreateFileDialog(false);
       }
     };
-
-    
 
     // 处理拖拽的文件和文件夹
     const handleDroppedItems = useCallback(
@@ -3209,7 +3451,6 @@ const FileManager = memo(
       [sshConnection, t, handleDroppedItems, setNotification],
     );
 
-
     useEffect(() => {
       if (!window.terminalAPI?.onExternalEditorEvent || !tabId) {
         externalEditorEventThrottles.current.clear();
@@ -3240,7 +3481,8 @@ const FileManager = memo(
         if (event.status === "success") {
           const throttleKey = `${event.tabId}::${event.remotePath || event.fileName || displayName}`;
           const now = Date.now();
-          const last = externalEditorEventThrottles.current.get(throttleKey) || 0;
+          const last =
+            externalEditorEventThrottles.current.get(throttleKey) || 0;
           if (now - last < 4000) {
             return;
           }
@@ -3279,7 +3521,8 @@ const FileManager = memo(
     // 处理文件激活（双击）
     const handleFileActivate = async (file) => {
       if (file.isDirectory) {
-        const basePath = currentPath && currentPath.length > 0 ? currentPath : "/";
+        const basePath =
+          currentPath && currentPath.length > 0 ? currentPath : "/";
         const newPath =
           basePath === "/"
             ? `/${file.name}`
@@ -3309,7 +3552,10 @@ const FileManager = memo(
         return true;
       };
 
-      if (!externalEditorEnabled || !window.terminalAPI?.openFileInExternalEditor) {
+      if (
+        !externalEditorEnabled ||
+        !window.terminalAPI?.openFileInExternalEditor
+      ) {
         openInPreview();
         return;
       }
@@ -3323,7 +3569,8 @@ const FileManager = memo(
         return;
       }
 
-      const basePath = currentPath && currentPath.length > 0 ? currentPath : "/";
+      const basePath =
+        currentPath && currentPath.length > 0 ? currentPath : "/";
       let remotePath;
       if (basePath === "/") {
         remotePath = `/${file.name}`;
@@ -3377,7 +3624,7 @@ const FileManager = memo(
         );
         openInPreview();
       }
-    };    // 关闭预览
+    }; // 关闭预览
     const handleClosePreview = () => {
       setShowPreview(false);
     };
@@ -3476,8 +3723,7 @@ const FileManager = memo(
               error.message || t("fileManager.errors.unknownError");
             transferProgressList
               .filter(
-                (transfer) =>
-                  transfer.progress < 100 && !transfer.isCancelled,
+                (transfer) => transfer.progress < 100 && !transfer.isCancelled,
               )
               .forEach((transfer) => {
                 updateTransferProgress(transfer.transferId, {
@@ -3853,8 +4099,7 @@ const FileManager = memo(
             error.message || t("fileManager.errors.unknownError");
           transferProgressList
             .filter(
-              (transfer) =>
-                transfer.progress < 100 && !transfer.isCancelled,
+              (transfer) => transfer.progress < 100 && !transfer.isCancelled,
             )
             .forEach((transfer) => {
               updateTransferProgress(transfer.transferId, {
@@ -4015,7 +4260,6 @@ const FileManager = memo(
                 ? currentPath + "/" + selectedFile.name
                 : selectedFile.name;
 
-
           // 如果需要重命名
           if (
             nameChanged &&
@@ -4087,162 +4331,162 @@ const FileManager = memo(
     // 重命名不再处理权限变化
 
     // 处理键盘快捷键
-    const handleKeyDown = useCallback((event) => {
-      // 只有当文件管理器打开时才处理键盘事件
-      if (!open || showPreview) return;
+    const handleKeyDown = useCallback(
+      (event) => {
+        // 只有当文件管理器打开时才处理键盘事件
+        if (!open || showPreview) return;
 
-      const targetElement = event.target || document.activeElement;
-      if (
-        targetElement &&
-        typeof targetElement.closest === "function" &&
-        targetElement.closest('[data-file-preview-dialog="true"]')
-      ) {
-        return;
-      }
+        const targetElement = event.target || document.activeElement;
+        if (
+          targetElement &&
+          typeof targetElement.closest === "function" &&
+          targetElement.closest('[data-file-preview-dialog="true"]')
+        ) {
+          return;
+        }
 
-      // 防止在输入框中触发快捷键
-      if (
-        event.target.tagName === "INPUT" ||
-        event.target.tagName === "TEXTAREA"
-      ) {
-        return;
-      }
+        // 防止在输入框中触发快捷键
+        if (
+          event.target.tagName === "INPUT" ||
+          event.target.tagName === "TEXTAREA"
+        ) {
+          return;
+        }
 
-      const selectedFilesData = getSelectedFiles();
+        const selectedFilesData = getSelectedFiles();
 
-      // Ctrl+D: 下载文件/文件夹
-      if (event.ctrlKey && event.key === "d") {
-        event.preventDefault();
-        if (selectedFilesData.length > 0) {
-          if (selectedFilesData.some((f) => f.isDirectory)) {
-            handleDownloadFolder();
+        // Ctrl+D: 下载文件/文件夹
+        if (event.ctrlKey && event.key === "d") {
+          event.preventDefault();
+          if (selectedFilesData.length > 0) {
+            if (selectedFilesData.some((f) => f.isDirectory)) {
+              handleDownloadFolder();
+            } else {
+              handleDownload();
+            }
           } else {
-            handleDownload();
+            showNotification("请先选择要下载的文件或文件夹", "warning");
           }
-        } else {
-          showNotification("请先选择要下载的文件或文件夹", "warning");
         }
-      }
 
-      // Delete: 删除文件/文件夹
-      if (event.key === "Delete") {
-        event.preventDefault();
-        if (selectedFilesData.length > 0) {
-          handleDelete();
-        } else {
-          showNotification("请先选择要删除的文件或文件夹", "warning");
+        // Delete: 删除文件/文件夹
+        if (event.key === "Delete") {
+          event.preventDefault();
+          if (selectedFilesData.length > 0) {
+            handleDelete();
+          } else {
+            showNotification("请先选择要删除的文件或文件夹", "warning");
+          }
         }
-      }
 
-      // F2: 重命名
-      if (event.key === "F2") {
-        event.preventDefault();
-        if (selectedFilesData.length === 1) {
-          handleRename();
-        } else if (selectedFilesData.length > 1) {
-          showNotification("无法批量重命名，请选择单个文件", "warning");
-        } else {
-          showNotification("请先选择要重命名的文件", "warning");
+        // F2: 重命名
+        if (event.key === "F2") {
+          event.preventDefault();
+          if (selectedFilesData.length === 1) {
+            handleRename();
+          } else if (selectedFilesData.length > 1) {
+            showNotification("无法批量重命名，请选择单个文件", "warning");
+          } else {
+            showNotification("请先选择要重命名的文件", "warning");
+          }
         }
-      }
 
-      // F3: 权限设置
-      if (event.key === "F3") {
-        event.preventDefault();
-        if (selectedFilesData.length === 1) {
-          handleOpenPermissions();
-        } else if (selectedFilesData.length > 1) {
-          showNotification(
-            "暂不支持批量权限设置，请选择单个文件/文件夹",
-            "warning",
-          );
-        } else {
-          showNotification(
-            "请先选择要设置权限的文件/文件夹",
-            "warning",
-          );
+        // F3: 权限设置
+        if (event.key === "F3") {
+          event.preventDefault();
+          if (selectedFilesData.length === 1) {
+            handleOpenPermissions();
+          } else if (selectedFilesData.length > 1) {
+            showNotification(
+              "暂不支持批量权限设置，请选择单个文件/文件夹",
+              "warning",
+            );
+          } else {
+            showNotification("请先选择要设置权限的文件/文件夹", "warning");
+          }
         }
-      }
 
-      // F5: 刷新
-      if (event.key === "F5") {
-        event.preventDefault();
-        handleRefresh();
-      }
-
-      // Ctrl+A: 全选
-      if (event.ctrlKey && event.key === "a") {
-        event.preventDefault();
-        setSelectedFiles([...displayFiles]);
-        setSelectedFile(displayFiles[0] || null);
-        setLastSelectedIndex(0);
-        setAnchorIndex(0); // 设置锚点为第一个文件
-      }
-
-      // Escape: 取消选择
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setSelectedFiles([]);
-        setSelectedFile(null);
-        setLastSelectedIndex(-1);
-        setAnchorIndex(-1);
-      }
-
-      // Ctrl+Shift+C: 复制绝对路径
-      if (event.ctrlKey && event.shiftKey && event.key === "C") {
-        event.preventDefault();
-        if (selectedFilesData.length === 1) {
-          handleCopyAbsolutePath();
-        } else {
-          showNotification("只能复制单个文件的路径", "warning");
+        // F5: 刷新
+        if (event.key === "F5") {
+          event.preventDefault();
+          handleRefresh();
         }
-      }
 
-      // Ctrl+N: 创建文件
-      if (event.ctrlKey && !event.shiftKey && event.key === "n") {
-        event.preventDefault();
-        handleCreateFile();
-      }
+        // Ctrl+A: 全选
+        if (event.ctrlKey && event.key === "a") {
+          event.preventDefault();
+          setSelectedFiles([...displayFiles]);
+          setSelectedFile(displayFiles[0] || null);
+          setLastSelectedIndex(0);
+          setAnchorIndex(0); // 设置锚点为第一个文件
+        }
 
-      // Ctrl+Shift+N: 创建文件夹
-      if (event.ctrlKey && event.shiftKey && event.key === "N") {
-        event.preventDefault();
-        handleCreateFolder();
-      }
+        // Escape: 取消选择
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setSelectedFiles([]);
+          setSelectedFile(null);
+          setLastSelectedIndex(-1);
+          setAnchorIndex(-1);
+        }
 
-      // Ctrl+U: 上传文件
-      if (event.ctrlKey && !event.shiftKey && event.key === "u") {
-        event.preventDefault();
-        handleUploadFile();
-      }
+        // Ctrl+Shift+C: 复制绝对路径
+        if (event.ctrlKey && event.shiftKey && event.key === "C") {
+          event.preventDefault();
+          if (selectedFilesData.length === 1) {
+            handleCopyAbsolutePath();
+          } else {
+            showNotification("只能复制单个文件的路径", "warning");
+          }
+        }
 
-      // Ctrl+Shift+U: 上传文件夹
-      if (event.ctrlKey && event.shiftKey && event.key === "U") {
-        event.preventDefault();
-        handleUploadFolder();
-      }
-    }, [
-      open,
-      showPreview,
-      getSelectedFiles,
-      handleDownloadFolder,
-      handleDownload,
-      handleDelete,
-      handleRename,
-      handleOpenPermissions,
-      handleRefresh,
-      displayFiles,
-      handleCopyAbsolutePath,
-      handleCreateFile,
-      handleCreateFolder,
-      handleUploadFile,
-      handleUploadFolder,
-      showNotification,
-      setSelectedFiles,
-      setSelectedFile,
-      setLastSelectedIndex,
-      setAnchorIndex,
-    ]);
+        // Ctrl+N: 创建文件
+        if (event.ctrlKey && !event.shiftKey && event.key === "n") {
+          event.preventDefault();
+          handleCreateFile();
+        }
+
+        // Ctrl+Shift+N: 创建文件夹
+        if (event.ctrlKey && event.shiftKey && event.key === "N") {
+          event.preventDefault();
+          handleCreateFolder();
+        }
+
+        // Ctrl+U: 上传文件
+        if (event.ctrlKey && !event.shiftKey && event.key === "u") {
+          event.preventDefault();
+          handleUploadFile();
+        }
+
+        // Ctrl+Shift+U: 上传文件夹
+        if (event.ctrlKey && event.shiftKey && event.key === "U") {
+          event.preventDefault();
+          handleUploadFolder();
+        }
+      },
+      [
+        open,
+        showPreview,
+        getSelectedFiles,
+        handleDownloadFolder,
+        handleDownload,
+        handleDelete,
+        handleRename,
+        handleOpenPermissions,
+        handleRefresh,
+        displayFiles,
+        handleCopyAbsolutePath,
+        handleCreateFile,
+        handleCreateFolder,
+        handleUploadFile,
+        handleUploadFolder,
+        showNotification,
+        setSelectedFiles,
+        setSelectedFile,
+        setLastSelectedIndex,
+        setAnchorIndex,
+      ],
+    );
 
     // 添加键盘事件监听器
     useEffect(() => {
@@ -4256,10 +4500,10 @@ const FileManager = memo(
         }
       };
 
-      window.addEventListener('keydown', keydownHandler);
+      window.addEventListener("keydown", keydownHandler);
 
       return () => {
-        window.removeEventListener('keydown', keydownHandler);
+        window.removeEventListener("keydown", keydownHandler);
       };
     }, [open, handleKeyDown]);
 
@@ -4269,7 +4513,7 @@ const FileManager = memo(
 
       // 设置定时器,每60秒触发一次更新
       const intervalId = setInterval(() => {
-        forceUpdate(prev => prev + 1);
+        forceUpdate((prev) => prev + 1);
       }, 60000);
 
       return () => {
@@ -4391,9 +4635,10 @@ const FileManager = memo(
             py: 1.25,
             borderBottom: `1px solid ${theme.palette.divider}`,
             flexShrink: 0,
-            backgroundColor: theme.palette.mode === "dark"
-              ? alpha(theme.palette.background.paper, 0.8)
-              : theme.palette.background.default,
+            backgroundColor:
+              theme.palette.mode === "dark"
+                ? alpha(theme.palette.background.paper, 0.8)
+                : theme.palette.background.default,
           }}
         >
           <Typography
@@ -4537,9 +4782,10 @@ const FileManager = memo(
               sx={{
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 1.5,
-                  backgroundColor: theme.palette.mode === "dark"
-                    ? alpha(theme.palette.background.default, 0.5)
-                    : theme.palette.background.default,
+                  backgroundColor:
+                    theme.palette.mode === "dark"
+                      ? alpha(theme.palette.background.default, 0.5)
+                      : theme.palette.background.default,
                   transition: "all 0.2s ease",
                   "&:hover": {
                     backgroundColor: theme.palette.background.paper,
@@ -4625,7 +4871,6 @@ const FileManager = memo(
           </Tooltip>
         </Box>
 
-
         <Box
           sx={{
             flexGrow: 1,
@@ -4652,7 +4897,11 @@ const FileManager = memo(
               }}
             >
               <CircularProgress size={24} />
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ textAlign: "center" }}
+              >
                 {connectionLoadingMessage || t("fileManager.loading")}
               </Typography>
             </Box>
@@ -4801,7 +5050,11 @@ const FileManager = memo(
                   ? `删除 ${selectedFiles.length} 个项目`
                   : "删除"}
               </ListItemText>
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ ml: 2 }}
+              >
                 Delete
               </Typography>
             </MenuItem>,

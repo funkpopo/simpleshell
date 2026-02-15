@@ -24,150 +24,223 @@ import {
   FolderOpen as FolderOpenIcon,
   ExpandMore as ExpandMoreIcon,
   DragIndicator as DragIndicatorIcon,
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
 } from "@mui/icons-material";
 
 // Connection group or item component for virtualization
-const ConnectionItem = memo(({ index, style, flattenedItems, selectedItem, onToggleGroup, onSelectConnection, onDoubleClick, dragHandleProps, isDragging }) => {
-  const theme = useTheme();
+const ConnectionItem = memo(
+  ({
+    index,
+    style,
+    flattenedItems,
+    selectedItem,
+    onToggleGroup,
+    onSelectConnection,
+    onDoubleClick,
+    dragHandleProps,
+    isDragging,
+    onEditConnection,
+    onDeleteConnection,
+    onEditGroup,
+    onDeleteGroup,
+    onAddConnectionToGroup,
+  }) => {
+    const theme = useTheme();
 
-  const item = flattenedItems[index];
-  if (!item) return null;
+    const item = flattenedItems[index];
+    if (!item) return null;
 
-  const isSelected = selectedItem?.id === item.id;
-  const isGroup = item.type === "group";
-  const depth = item.depth || 0;
-  const paddingLeft = 16 + depth * 20; // Indentation based on nesting level
+    const isSelected = selectedItem?.id === item.id;
+    const isGroup = item.type === "group";
+    const depth = item.depth || 0;
+    const paddingLeft = 16 + depth * 20; // Indentation based on nesting level
 
-  const handleClick = useCallback(() => {
-    if (isGroup) {
-      onToggleGroup(item.id);
-    } else {
-      onSelectConnection(item);
-    }
-  }, [item, isGroup, onToggleGroup, onSelectConnection]);
+    const handleClick = useCallback(() => {
+      if (isGroup) {
+        onToggleGroup(item.id);
+      } else {
+        onSelectConnection(item);
+      }
+    }, [item, isGroup, onToggleGroup, onSelectConnection]);
 
-  const handleDoubleClick = useCallback(() => {
-    if (onDoubleClick) {
-      onDoubleClick(item);
-    }
-  }, [item, onDoubleClick]);
+    const handleDoubleClick = useCallback(() => {
+      if (onDoubleClick) {
+        onDoubleClick(item);
+      }
+    }, [item, onDoubleClick]);
 
-  const itemIcon = useMemo(() => {
-    if (isGroup) {
-      return item.expanded ? (
-        <FolderOpenIcon color="primary" />
-      ) : (
-        <FolderIcon color="primary" />
-      );
-    }
-    return <ComputerIcon color={item.connected ? "success" : "disabled"} />;
-  }, [isGroup, item.expanded, item.connected]);
+    const itemIcon = useMemo(() => {
+      if (isGroup) {
+        return item.expanded ? (
+          <FolderOpenIcon color="primary" />
+        ) : (
+          <FolderIcon color="primary" />
+        );
+      }
+      return <ComputerIcon color={item.connected ? "success" : "disabled"} />;
+    }, [isGroup, item.expanded, item.connected]);
 
-  return (
-    <div style={style}>
-      <ListItem
-        disablePadding
-        sx={{
-          bgcolor: isSelected ? "action.selected" : "transparent",
-          borderLeft: isSelected
-            ? `3px solid ${theme.palette.primary.main}`
-            : "3px solid transparent",
-          opacity: isDragging ? 0.5 : 1,
-        }}
-      >
-        <ListItemButton
-          onClick={handleClick}
-          onDoubleClick={handleDoubleClick}
+    const handleEdit = (event) => {
+      event.stopPropagation();
+      if (isGroup) {
+        onEditGroup?.(item);
+      } else {
+        onEditConnection?.(item, item.parentGroup || null);
+      }
+    };
+
+    const handleDelete = (event) => {
+      event.stopPropagation();
+      if (isGroup) {
+        onDeleteGroup?.(item.id);
+      } else {
+        onDeleteConnection?.(item.id, item.parentGroup || null);
+      }
+    };
+
+    const handleAddConnection = (event) => {
+      event.stopPropagation();
+      if (isGroup) {
+        onAddConnectionToGroup?.(item.id);
+      }
+    };
+
+    return (
+      <div style={style}>
+        <ListItem
+          disablePadding
           sx={{
-            pl: `${paddingLeft}px`,
-            minHeight: 48,
-            "&:hover": {
-              backgroundColor: "action.hover",
+            bgcolor: isSelected ? "action.selected" : "transparent",
+            borderLeft: isSelected
+              ? `3px solid ${theme.palette.primary.main}`
+              : "3px solid transparent",
+            opacity: isDragging ? 0.5 : 1,
+            "&:hover .connection-actions": {
+              opacity: 1,
             },
           }}
         >
-          {/* Drag handle for reordering */}
-          {dragHandleProps && (
+          <ListItemButton
+            onClick={handleClick}
+            onDoubleClick={handleDoubleClick}
+            sx={{
+              pl: `${paddingLeft}px`,
+              minHeight: 36,
+              "&:hover": {
+                backgroundColor: "action.hover",
+              },
+            }}
+          >
+            {/* Drag handle for reordering */}
+            {dragHandleProps && (
+              <Box
+                {...dragHandleProps}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  mr: 1,
+                  cursor: "grab",
+                  opacity: 0.6,
+                  "&:hover": { opacity: 1 },
+                }}
+              >
+                <DragIndicatorIcon fontSize="small" />
+              </Box>
+            )}
+
+            <ListItemIcon sx={{ minWidth: 30 }}>{itemIcon}</ListItemIcon>
+
+            <ListItemText
+              primary={
+                <Box display="flex" alignItems="center" gap={1}>
+                  <Typography
+                    variant="body2"
+                    color={isSelected ? "primary" : "text.primary"}
+                    fontWeight={isSelected ? "medium" : "normal"}
+                    noWrap
+                  >
+                    {item.name}
+                  </Typography>
+                  {item.status && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        px: 0.5,
+                        py: 0.25,
+                        borderRadius: 1,
+                        bgcolor: "action.hover",
+                      }}
+                    >
+                      {item.status}
+                    </Typography>
+                  )}
+                </Box>
+              }
+              secondary={
+                !isGroup && item.host ? (
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {item.username}@{item.host}:{item.port || 22}
+                  </Typography>
+                ) : (
+                  isGroup && (
+                    <Typography variant="caption" color="text.secondary">
+                      {item.items?.length || 0} connections
+                    </Typography>
+                  )
+                )
+              }
+            />
+
+            {isGroup && (
+              <IconButton
+                size="small"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleGroup(item.id);
+                }}
+                sx={{
+                  transform: item.expanded ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: theme.transitions.create("transform"),
+                }}
+              >
+                <ExpandMoreIcon fontSize="small" />
+              </IconButton>
+            )}
+
             <Box
-              {...dragHandleProps}
+              className="connection-actions"
               sx={{
                 display: "flex",
                 alignItems: "center",
-                mr: 1,
-                cursor: "grab",
-                opacity: 0.6,
-                "&:hover": { opacity: 1 },
+                opacity: 0,
+                transition: "opacity 0.2s ease",
               }}
             >
-              <DragIndicatorIcon fontSize="small" />
-            </Box>
-          )}
-
-          <ListItemIcon sx={{ minWidth: 36 }}>{itemIcon}</ListItemIcon>
-
-          <ListItemText
-            primary={
-              <Box display="flex" alignItems="center" gap={1}>
-                <Typography
-                  variant="body2"
-                  color={isSelected ? "primary" : "text.primary"}
-                  fontWeight={isSelected ? "medium" : "normal"}
-                  noWrap
+              {isGroup && (
+                <IconButton
+                  size="small"
+                  onClick={handleAddConnection}
+                  title="添加连接"
                 >
-                  {item.name}
-                </Typography>
-                {item.status && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{
-                      px: 0.5,
-                      py: 0.25,
-                      borderRadius: 1,
-                      bgcolor: "action.hover",
-                    }}
-                  >
-                    {item.status}
-                  </Typography>
-                )}
-              </Box>
-            }
-            secondary={
-              !isGroup && item.host ? (
-                <Typography variant="caption" color="text.secondary" noWrap>
-                  {item.username}@{item.host}:{item.port || 22}
-                </Typography>
-              ) : (
-                isGroup && (
-                  <Typography variant="caption" color="text.secondary">
-                    {item.items?.length || 0} connections
-                  </Typography>
-                )
-              )
-            }
-          />
-
-          {/* Expand/Collapse for groups */}
-          {isGroup && (
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleGroup(item.id);
-              }}
-              sx={{
-                transform: item.expanded ? "rotate(180deg)" : "rotate(0deg)",
-                transition: theme.transitions.create("transform"),
-              }}
-            >
-              <ExpandMoreIcon />
-            </IconButton>
-          )}
-        </ListItemButton>
-      </ListItem>
-    </div>
-  );
-});
+                  <AddIcon fontSize="small" />
+                </IconButton>
+              )}
+              <IconButton size="small" onClick={handleEdit} title="编辑">
+                <EditIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={handleDelete} title="删除">
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </ListItemButton>
+        </ListItem>
+      </div>
+    );
+  },
+);
 
 ConnectionItem.displayName = "ConnectionItem";
 
@@ -175,13 +248,18 @@ ConnectionItem.displayName = "ConnectionItem";
 const flattenConnections = (
   connections,
   expandedGroups = new Set(),
+  parentGroup = null,
   depth = 0,
 ) => {
   const flattened = [];
 
   connections.forEach((item) => {
     // Add the current item
-    flattened.push({ ...item, depth });
+    flattened.push({
+      ...item,
+      depth,
+      parentGroup,
+    });
 
     // If it's an expanded group, add its children
     if (
@@ -193,6 +271,7 @@ const flattenConnections = (
       const children = flattenConnections(
         item.items,
         expandedGroups,
+        item,
         depth + 1,
       );
       flattened.push(...children);
@@ -200,6 +279,20 @@ const flattenConnections = (
   });
 
   return flattened;
+};
+
+const collectExpandedGroups = (connections, expanded = new Set()) => {
+  connections.forEach((item) => {
+    if (item?.type === "group") {
+      if (item.expanded) {
+        expanded.add(item.id);
+      }
+      if (Array.isArray(item.items) && item.items.length > 0) {
+        collectExpandedGroups(item.items, expanded);
+      }
+    }
+  });
+  return expanded;
 };
 
 // Calculate dynamic overscan based on list characteristics
@@ -245,6 +338,11 @@ const VirtualizedConnectionList = ({
   onToggleGroup,
   onSelectConnection,
   onDoubleClick,
+  onEditConnection,
+  onDeleteConnection,
+  onEditGroup,
+  onDeleteGroup,
+  onAddConnectionToGroup,
   height = 400,
   itemHeight = 48,
   enableVirtualization = true,
@@ -260,6 +358,10 @@ const VirtualizedConnectionList = ({
   const listRef = useRef(null);
   const [containerHeight, setContainerHeight] = useState(400);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
+
+  useEffect(() => {
+    setExpandedGroups(collectExpandedGroups(connections));
+  }, [connections]);
 
   // Dynamic height calculation
   useEffect(() => {
@@ -360,6 +462,11 @@ const VirtualizedConnectionList = ({
       onToggleGroup: handleToggleGroup,
       onSelectConnection,
       onDoubleClick,
+      onEditConnection,
+      onDeleteConnection,
+      onEditGroup,
+      onDeleteGroup,
+      onAddConnectionToGroup,
       dragHandleProps: enableDragDrop ? { "data-drag-handle": true } : null,
       isDragging: false,
     }),
@@ -369,6 +476,11 @@ const VirtualizedConnectionList = ({
       handleToggleGroup,
       onSelectConnection,
       onDoubleClick,
+      onEditConnection,
+      onDeleteConnection,
+      onEditGroup,
+      onDeleteGroup,
+      onAddConnectionToGroup,
       enableDragDrop,
     ],
   );
@@ -463,7 +575,7 @@ const VirtualizedConnectionList = ({
         <List
           listRef={listRef}
           className="react-window-list"
-          style={{ height: actualHeight, width: '100%' }}
+          style={{ height: actualHeight, width: "100%" }}
           rowCount={flattenedItems.length}
           rowHeight={itemHeight}
           rowProps={itemData}
