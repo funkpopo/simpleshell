@@ -1,9 +1,4 @@
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-} from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -35,13 +30,19 @@ import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 import Tooltip from "@mui/material/Tooltip";
 import IconButton from "@mui/material/IconButton";
+import PropTypes from "prop-types";
 import { findGroupByTab } from "../core/syncInputGroups";
 import CommandSuggestion from "./CommandSuggestion";
 
 // 添加全局样式以确保xterm正确填满容器
 const ESC_CHAR = String.fromCharCode(27);
-const ANSI_CSI_SEQUENCE_REGEX = new RegExp(ESC_CHAR + "[[][0-9;]*[a-zA-Z]", "g");
-const TERMINAL_RESIZE_QUERY_REGEX = new RegExp(ESC_CHAR + "[[]8;[0-9]+;[0-9]+t");
+const ANSI_CSI_SEQUENCE_REGEX = new RegExp(
+  ESC_CHAR + "[[][0-9;]*[a-zA-Z]",
+  "g",
+);
+const TERMINAL_RESIZE_QUERY_REGEX = new RegExp(
+  ESC_CHAR + "[[]8;[0-9]+;[0-9]+t",
+);
 
 const terminalStyles = `
 .xterm {
@@ -418,10 +419,10 @@ const getCharacterMetricsCss = (term) => {
       const rect = refEl.getBoundingClientRect
         ? refEl.getBoundingClientRect()
         : { width: term.cols * charWidth, height: term.rows * charHeight };
-      if (charWidth * (term.cols || 1) > ((rect.width || 0) + 2)) {
+      if (charWidth * (term.cols || 1) > (rect.width || 0) + 2) {
         charWidth = charWidth / dpr;
       }
-      if (charHeight * (term.rows || 1) > ((rect.height || 0) + 2)) {
+      if (charHeight * (term.rows || 1) > (rect.height || 0) + 2) {
         charHeight = charHeight / dpr;
       }
     }
@@ -725,6 +726,33 @@ const processMultilineInput = (text, options = {}) => {
   return result;
 };
 
+const getTerminalConfigSignature = (config) => {
+  if (!config) return "__NO_CONFIG__";
+
+  return [
+    config.id || "",
+    config.connectionId || "",
+    config.host || "",
+    config.port || "",
+    config.username || "",
+    config.protocol || "ssh",
+    config.authType || "",
+    config.privateKeyPath || "",
+    config.splitReconnect ? "1" : "0",
+  ].join("|");
+};
+
+const areWebTerminalPropsEqual = (prevProps, nextProps) => {
+  if (prevProps.tabId !== nextProps.tabId) return false;
+  if (prevProps.refreshKey !== nextProps.refreshKey) return false;
+  if (prevProps.isActive !== nextProps.isActive) return false;
+
+  return (
+    getTerminalConfigSignature(prevProps.sshConfig) ===
+    getTerminalConfigSignature(nextProps.sshConfig)
+  );
+};
+
 const WebTerminal = ({
   tabId,
   refreshKey,
@@ -743,11 +771,12 @@ const WebTerminal = ({
 
   const theme = useTheme();
   const eventManager = useEventManager(); // 使用统一的事件管理器
+  const lifecycleEventManager = useEventManager(); // 生命周期重资源单独管理
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
   const [webglRendererEnabled, setWebglRendererEnabled] = useState(true);
   const [, setPerformanceStats] = useState(null);
-  const [, setWriteStrategy] = useState('low');
+  const [, setWriteStrategy] = useState("low");
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
@@ -757,32 +786,17 @@ const WebTerminal = ({
   const pendingWriteLengthRef = useRef(0);
   const pendingWriteHandleRef = useRef(null);
   const pendingWriteUsingRafRef = useRef(false);
+  const isActiveRef = useRef(isActive);
+
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
 
   // 当前 tab 变为激活状态时，强制让终端获得键盘焦点
   useEffect(() => {
-  if (!isActive || !termRef.current) return;
+    if (!isActive || !termRef.current) return;
 
-  const timer = setTimeout(() => {
-    try {
-      if (termRef.current && typeof termRef.current.focus === "function") {
-        termRef.current.focus();
-      }
-    } catch {
-      // ignore focus errors
-    }
-  }, 50);
-
-  return () => clearTimeout(timer);
-}, [isActive, tabId]);
-
-// 标签切换事件触发时，对应 tab 的终端再做一轮聚焦兜底
-useEffect(() => {
-  const handleTabFocus = (event) => {
-    const detail = event.detail || {};
-    if (detail.tabId !== tabId) return;
-    if (!termRef.current) return;
-
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       try {
         if (termRef.current && typeof termRef.current.focus === "function") {
           termRef.current.focus();
@@ -791,11 +805,31 @@ useEffect(() => {
         // ignore focus errors
       }
     }, 50);
-  };
 
-  window.addEventListener("tabChanged", handleTabFocus);
-  return () => window.removeEventListener("tabChanged", handleTabFocus);
-}, [tabId]);
+    return () => clearTimeout(timer);
+  }, [isActive, tabId]);
+
+  // 标签切换事件触发时，对应 tab 的终端再做一轮聚焦兜底
+  useEffect(() => {
+    const handleTabFocus = (event) => {
+      const detail = event.detail || {};
+      if (detail.tabId !== tabId) return;
+      if (!termRef.current) return;
+
+      setTimeout(() => {
+        try {
+          if (termRef.current && typeof termRef.current.focus === "function") {
+            termRef.current.focus();
+          }
+        } catch {
+          // ignore focus errors
+        }
+      }, 50);
+    };
+
+    window.addEventListener("tabChanged", handleTabFocus);
+    return () => window.removeEventListener("tabChanged", handleTabFocus);
+  }, [tabId]);
 
   useEffect(() => {
     let isActive = true;
@@ -810,7 +844,9 @@ useEffect(() => {
             setWebglRendererEnabled(enabled);
           }
         }
-      } catch { /* intentionally ignored */ }
+      } catch {
+        /* intentionally ignored */
+      }
     };
 
     loadRendererPreference();
@@ -890,7 +926,9 @@ useEffect(() => {
       ) {
         termInstance.__webglAddon.dispose();
       }
-    } catch { /* intentionally ignored */ }
+    } catch {
+      /* intentionally ignored */
+    }
 
     termInstance.__webglAddon = null;
     termInstance.__webglEnabled = false;
@@ -926,7 +964,7 @@ useEffect(() => {
             // 忽略 dispose 错误
           }
         }
-        
+
         // 创建新的 WebGL addon
         const webglAddon = new WebglAddon();
         webglAddon.onContextLoss(() => {
@@ -934,30 +972,41 @@ useEffect(() => {
           termInstance.__webglNeedsRestore = true;
           termInstance.__webglEnabled = false;
         });
-        
+
         termInstance.loadAddon(webglAddon);
         termInstance.__webglAddon = webglAddon;
         termInstance.__webglEnabled = true;
         termInstance.__webglNeedsRestore = false;
-        
+
         // 添加 WebGL 上下文丢失监听
         if (termInstance.element) {
-          const canvas = termInstance.element.querySelector('canvas');
+          const canvas = termInstance.element.querySelector("canvas");
           if (canvas) {
-            canvas.addEventListener('webglcontextlost', (e) => {
-              e.preventDefault();
-              termInstance.__webglEnabled = false;
-              termInstance.__webglNeedsRestore = true;
-            }, false);
-            
-            canvas.addEventListener('webglcontextrestored', () => {
-              // 延迟恢复，确保上下文完全可用
-              setTimeout(() => {
-                if (termInstance.__webglNeedsRestore && webglRendererEnabledRef.current) {
-                  tryEnableWebglRenderer(termInstance);
-                }
-              }, 100);
-            }, false);
+            canvas.addEventListener(
+              "webglcontextlost",
+              (e) => {
+                e.preventDefault();
+                termInstance.__webglEnabled = false;
+                termInstance.__webglNeedsRestore = true;
+              },
+              false,
+            );
+
+            canvas.addEventListener(
+              "webglcontextrestored",
+              () => {
+                // 延迟恢复，确保上下文完全可用
+                setTimeout(() => {
+                  if (
+                    termInstance.__webglNeedsRestore &&
+                    webglRendererEnabledRef.current
+                  ) {
+                    tryEnableWebglRenderer(termInstance);
+                  }
+                }, 100);
+              },
+              false,
+            );
           }
         }
       } catch {
@@ -1290,7 +1339,6 @@ useEffect(() => {
       const currentLeft = parseFloat(computedStyle.left) || 0;
       const currentTop = parseFloat(computedStyle.top) || 0;
       const currentWidth = parseFloat(computedStyle.width) || 0;
-      
 
       // 计算需要的偏移量
       const leftOffset =
@@ -1367,7 +1415,7 @@ useEffect(() => {
       return; // 100ms内不重复调整
     }
     lastSelectionAdjustmentRef.current = now;
-    
+
     // 使用EventManager管理定时器
     eventManager.setTimeout(() => {
       requestAnimationFrame(adjustSelectionElements);
@@ -1633,7 +1681,7 @@ useEffect(() => {
     disposables = [],
   ) => {
     console.debug(
-      `[setupCommandDetection] Starting for processId=${processId}, isRemoteInput=${isRemoteInput}, disposables.length=${disposables.length}`
+      `[setupCommandDetection] Starting for processId=${processId}, isRemoteInput=${isRemoteInput}, disposables.length=${disposables.length}`,
     );
 
     // 用于存储用户正在输入的命令
@@ -1752,7 +1800,6 @@ useEffect(() => {
 
       // 处理转义序列的后续字符
       if (isEscapeSequence) {
-
         // 检查是否是常见的转义序列结束符
         if (/[A-Za-z~]/.test(data)) {
           isEscapeSequence = false;
@@ -2035,13 +2082,17 @@ useEffect(() => {
           // 若用户在手动关闭后继续输入了新内容，则自动解除抑制
           if (suggestionsSuppressedRef.current) {
             try {
-              const anchor = (suppressionContextRef.current?.input || "").trim();
+              const anchor = (
+                suppressionContextRef.current?.input || ""
+              ).trim();
               const nowInput = currentInputBuffer.trim();
               if (!anchor || nowInput.length === 0 || nowInput !== anchor) {
                 setSuggestionsSuppressedUntilEnter(false);
                 setSuggestionsHiddenByEsc(false);
               }
-            } catch { /* intentionally ignored */ }
+            } catch {
+              /* intentionally ignored */
+            }
           }
 
           // 只有在非命令执行状态下才触发建议搜索
@@ -2063,7 +2114,7 @@ useEffect(() => {
 
     // 添加输出监听，以检测编辑器退出（仅作为备用方法）
     const onLineFeedDisposable = term.onLineFeed(() => {
-        // 当获得新的一行时，检查是否有shell提示符出现，这可能表示编辑器已退出
+      // 当获得新的一行时，检查是否有shell提示符出现，这可能表示编辑器已退出
       // 注意：如果buffer类型检测可用，此方法是不必要的
       try {
         // 只在不支持buffer类型检测时使用此备用方法
@@ -2263,7 +2314,12 @@ useEffect(() => {
   // 监听设置变更事件
   useEffect(() => {
     const handleSettingsChanged = async (event) => {
-      const { terminalFontSize, terminalFont, terminalFontWeight, performance } = event.detail;
+      const {
+        terminalFontSize,
+        terminalFont,
+        terminalFontWeight,
+        performance,
+      } = event.detail;
 
       if (
         performance &&
@@ -2307,7 +2363,11 @@ useEffect(() => {
 
             // Canvas 渲染器需要手动刷新
             const cachedTerminal = terminalCache[tabId];
-            if (cachedTerminal && !cachedTerminal.__webglEnabled && typeof cachedTerminal.refresh === "function") {
+            if (
+              cachedTerminal &&
+              !cachedTerminal.__webglEnabled &&
+              typeof cachedTerminal.refresh === "function"
+            ) {
               cachedTerminal.refresh(0, cachedTerminal.rows - 1);
             }
 
@@ -2329,14 +2389,22 @@ useEffect(() => {
     };
 
     // 使用EventManager管理事件监听器
-    eventManager.addEventListener(
+    const removeSettingsChangedListener = eventManager.addEventListener(
       window,
       "settingsChanged",
       handleSettingsChanged,
     );
+
+    return () => {
+      removeSettingsChangedListener();
+    };
   }, [tabId, eventManager, disableWebglRenderer, tryEnableWebglRenderer]);
 
   useEffect(() => {
+    // 为重资源初始化流程使用独立 EventManager，避免与轻量监听互相干扰
+    const eventManager = lifecycleEventManager;
+    eventManager.reset();
+
     // 添加全局样式
     const styleElement = ensureSharedTerminalStyles();
     if (styleElement.textContent !== terminalStyles + searchBarStyles) {
@@ -2361,7 +2429,7 @@ useEffect(() => {
         // 清理旧的事件监听器
         if (disposablesCache[tabId] && Array.isArray(disposablesCache[tabId])) {
           console.debug(
-            `[WebTerminal] Cleaning up ${disposablesCache[tabId].length} old event listeners for tabId=${tabId}`
+            `[WebTerminal] Cleaning up ${disposablesCache[tabId].length} old event listeners for tabId=${tabId}`,
           );
           disposablesCache[tabId].forEach((disposable) => {
             try {
@@ -2371,7 +2439,7 @@ useEffect(() => {
             } catch (error) {
               console.error(
                 `[WebTerminal] Failed to dispose event listener for tabId=${tabId}:`,
-                error
+                error,
               );
             }
           });
@@ -2384,7 +2452,7 @@ useEffect(() => {
         fitAddon = fitAddonCache[tabId];
 
         console.debug(
-          `[WebTerminal] Reusing cached terminal for tabId=${tabId}, processId=${processCache[tabId]}`
+          `[WebTerminal] Reusing cached terminal for tabId=${tabId}, processId=${processCache[tabId]}`,
         );
 
         // 当主题变化时，更新终端主题
@@ -2411,11 +2479,11 @@ useEffect(() => {
         }
 
         // 如果标签页不活跃，避免立即触发resize以减少性能影响
-        if (isActive) {
+        if (isActiveRef.current) {
           // 使用EventManager管理确保适配容器大小
           eventManager.setTimeout(() => {
             fitAddon.fit();
-            
+
             // Canvas 渲染器需要手动刷新
             if (!term.__webglEnabled && typeof term.refresh === "function") {
               term.refresh(0, term.rows - 1);
@@ -2426,7 +2494,7 @@ useEffect(() => {
         if (existingProcessId) {
           try {
             console.debug(
-              `[WebTerminal] Rebinding listeners for tabId=${tabId}, processId=${existingProcessId}` ,
+              `[WebTerminal] Rebinding listeners for tabId=${tabId}, processId=${existingProcessId}`,
             );
           } catch {
             // ignore log errors
@@ -2440,7 +2508,6 @@ useEffect(() => {
             terminalDisposables,
           );
         }
-
       } else {
         // 创建新的终端实例
         term = new Terminal({
@@ -2481,7 +2548,10 @@ useEffect(() => {
                 fitAddon.fit();
 
                 // Canvas 渲染器需要手动刷新
-                if (!term.__webglEnabled && typeof term.refresh === "function") {
+                if (
+                  !term.__webglEnabled &&
+                  typeof term.refresh === "function"
+                ) {
                   term.refresh(0, term.rows - 1);
                 }
               }
@@ -2554,8 +2624,8 @@ useEffect(() => {
             sampleRate: 100,
             maxHistorySize: 1000,
             onWarning: (warning) => {
-              if (process.env.NODE_ENV === 'development') {
-                console.warn('[WebTerminal Performance]', warning);
+              if (process.env.NODE_ENV === "development") {
+                console.warn("[WebTerminal Performance]", warning);
               }
             },
             onStats: (stats) => {
@@ -2565,7 +2635,7 @@ useEffect(() => {
                 lastStatsUpdate = now;
                 setPerformanceStats(stats);
               }
-            }
+            },
           });
         }
 
@@ -2581,10 +2651,10 @@ useEffect(() => {
               if (performanceMonitorRef.current) {
                 performanceMonitorRef.current.recordBufferSize(info.bufferSize);
                 performanceMonitorRef.current.recordScrollbackUsage(
-                  (info.totalLines / 50000) * 100
+                  (info.totalLines / 50000) * 100,
                 );
               }
-            }
+            },
           });
         }
 
@@ -2600,7 +2670,10 @@ useEffect(() => {
                   term.write(data, () => {
                     const duration = performance.now() - startTime;
                     if (performanceMonitorRef.current) {
-                      performanceMonitorRef.current.recordWrite(data.length, duration);
+                      performanceMonitorRef.current.recordWrite(
+                        data.length,
+                        duration,
+                      );
                     }
                     scheduleHighlightRefresh(term);
                   });
@@ -2608,7 +2681,10 @@ useEffect(() => {
                   term.write(data);
                   const duration = performance.now() - startTime;
                   if (performanceMonitorRef.current) {
-                    performanceMonitorRef.current.recordWrite(data.length, duration);
+                    performanceMonitorRef.current.recordWrite(
+                      data.length,
+                      duration,
+                    );
                   }
                   scheduleHighlightRefresh(term);
                 }
@@ -2616,10 +2692,10 @@ useEffect(() => {
             },
             onStrategyChange: (change) => {
               setWriteStrategy(change.newStrategy);
-              if (process.env.NODE_ENV === 'development') {
-                console.log('[WebTerminal Strategy]', change);
+              if (process.env.NODE_ENV === "development") {
+                console.log("[WebTerminal Strategy]", change);
               }
-            }
+            },
           });
         }
 
@@ -2632,7 +2708,7 @@ useEffect(() => {
         // 使用EventManager管理确保适配容器大小
         eventManager.setTimeout(() => {
           fitAddon.fit();
-          
+
           // Canvas 渲染器需要手动刷新
           if (!term.__webglEnabled && typeof term.refresh === "function") {
             term.refresh(0, term.rows - 1);
@@ -2721,17 +2797,20 @@ useEffect(() => {
 
                   // 在重新绑定事件监听器之前，清理旧的监听器
                   console.debug(
-                    `[WebTerminal] Clearing old event listeners before rebinding for tabId=${tabId}, old count=${terminalDisposables.length}`
+                    `[WebTerminal] Clearing old event listeners before rebinding for tabId=${tabId}, old count=${terminalDisposables.length}`,
                   );
                   terminalDisposables.forEach((disposable) => {
                     try {
-                      if (disposable && typeof disposable.dispose === "function") {
+                      if (
+                        disposable &&
+                        typeof disposable.dispose === "function"
+                      ) {
                         disposable.dispose();
                       }
                     } catch (error) {
                       console.error(
                         `[WebTerminal] Failed to dispose event listener:`,
-                        error
+                        error,
                       );
                     }
                   });
@@ -2743,7 +2822,7 @@ useEffect(() => {
 
                   // 设置命令检测（包含密码提示检测）
                   console.debug(
-                    `[WebTerminal] Setting up command detection for tabId=${tabId}, processId=${processId}`
+                    `[WebTerminal] Setting up command detection for tabId=${tabId}, processId=${processId}`,
                   );
                   setupCommandDetection(
                     term,
@@ -2906,7 +2985,7 @@ useEffect(() => {
         // Ctrl+/ 搜索切换 (打开/关闭搜索栏)
         else if (e.ctrlKey && e.key === "/") {
           // 只有当前活跃的终端才处理搜索快捷键
-          if (!isActive) return;
+          if (!isActiveRef.current) return;
 
           e.preventDefault();
           e.stopPropagation();
@@ -2918,7 +2997,7 @@ useEffect(() => {
         else if (e.key === "Escape") {
           if (showSearchBar) {
             // 只有当前活跃的终端才处理搜索相关快捷键
-            if (!isActive) return;
+            if (!isActiveRef.current) return;
             e.preventDefault();
             setShowSearchBar(false);
           } else if (showSuggestions) {
@@ -2942,7 +3021,7 @@ useEffect(() => {
         ) {
           if (searchAddonRef.current && searchTerm) {
             // 只有当前活跃的终端才处理搜索相关快捷键
-            if (!isActive) return;
+            if (!isActiveRef.current) return;
             e.preventDefault();
             handleSearch();
           }
@@ -2954,7 +3033,7 @@ useEffect(() => {
         ) {
           if (searchAddonRef.current && searchTerm) {
             // 只有当前活跃的终端才处理搜索相关快捷键
-            if (!isActive) return;
+            if (!isActiveRef.current) return;
             e.preventDefault();
             handleSearchPrevious();
           }
@@ -3075,9 +3154,12 @@ useEffect(() => {
                 Math.abs(elemHeight - currentHeight) > 5
               ) {
                 fitAddon.fit();
-                
+
                 // Canvas 渲染器需要手动刷新
-                if (!term.__webglEnabled && typeof term.refresh === "function") {
+                if (
+                  !term.__webglEnabled &&
+                  typeof term.refresh === "function"
+                ) {
                   term.refresh(0, term.rows - 1);
                 }
               }
@@ -3282,7 +3364,9 @@ useEffect(() => {
             if (processId) {
               sendResizeIfNeeded(processId, tabId, cols, rows);
             }
-          } catch { /* intentionally ignored */ }
+          } catch {
+            /* intentionally ignored */
+          }
         }
       };
 
@@ -3387,12 +3471,10 @@ useEffect(() => {
         // 移除样式元素
       });
 
-      // 添加选择变化事件监听
-      if (document.onselectionchange !== undefined) {
-        eventManager.addEventListener(
-          document,
-          "selectionchange",
-          handleSelectionChange,
+      if (process.env.NODE_ENV === "development") {
+        console.debug(
+          `[WebTerminal] lifecycle manager setup tabId=${tabId}`,
+          eventManager.getStats(),
         );
       }
 
@@ -3428,25 +3510,22 @@ useEffect(() => {
         });
         terminalDisposables.length = 0; // 清空数组
 
-        // 移除选择变化事件监听器
-        eventManager.removeEventListener(
-          document,
-          "selectionchange",
-          handleSelectionChange,
-        );
+        if (process.env.NODE_ENV === "development") {
+          console.debug(
+            `[WebTerminal] lifecycle manager cleanup tabId=${tabId}`,
+            eventManager.getStats(),
+          );
+        }
 
-        // 移除样式元素
-
-        // 这个函数现在很简洁，因为EventManager处理了大部分清理工作
-        // 组件卸载时的清理工作由EventManager处理
+        // 清理本 effect 的事件/定时器/观察器，防止切换标签后叠加
+        eventManager.reset();
       };
     }
   }, [
     tabId,
     refreshKey,
     sshConfig,
-    isActive,
-    eventManager,
+    lifecycleEventManager,
     tryEnableWebglRenderer,
     disableWebglRenderer,
     enqueueTerminalWrite,
@@ -3658,7 +3737,7 @@ useEffect(() => {
   // 处理快捷搜索选项
   const handleSearchFromMenu = () => {
     // 只有当前活跃的终端才处理搜索
-    if (!isActive) return;
+    if (!isActiveRef.current) return;
     setShowSearchBar(true);
     handleClose();
   };
@@ -3962,7 +4041,9 @@ useEffect(() => {
         // 检测屏幕清除到结尾（常见于全屏刷新）
         dataStr.includes("\u001b[J") ||
         // 检测常见的全屏应用命令名称
-        /(^|\s)(top|htop|vi|vim|nano|less|more|tail -f|watch)(\s|$)/.test(dataStr) ||
+        /(^|\s)(top|htop|vi|vim|nano|less|more|tail -f|watch)(\s|$)/.test(
+          dataStr,
+        ) ||
         // 检测终端屏幕缓冲区交替（用于全屏应用）
         dataStr.includes("\u001b[?1049h") ||
         dataStr.includes("\u001b[?1049l") ||
@@ -3997,12 +4078,12 @@ useEffect(() => {
       if (fitAddonRef.current) {
         try {
           fitAddonRef.current.fit();
-          
+
           // Canvas 渲染器需要手动刷新
           if (!term.__webglEnabled && typeof term.refresh === "function") {
             term.refresh(0, term.rows - 1);
           }
-          
+
           const processId = processCache[tabId];
           if (processId) {
             sendResizeIfNeeded(processId, tabId, term.cols, term.rows);
@@ -4065,11 +4146,14 @@ useEffect(() => {
                 // 让终端获得焦点，使其能够接收键盘输入
                 helperTextarea.focus();
                 console.debug(
-                  `[WebTerminal] Successfully focused terminal for tabId=${tabId} on attempt ${focusAttempt + 1}` ,
+                  `[WebTerminal] Successfully focused terminal for tabId=${tabId} on attempt ${focusAttempt + 1}`,
                 );
-              } else if (helperTextarea && document.activeElement === helperTextarea) {
+              } else if (
+                helperTextarea &&
+                document.activeElement === helperTextarea
+              ) {
                 console.debug(
-                  `[WebTerminal] Terminal already focused for tabId=${tabId}` ,
+                  `[WebTerminal] Terminal already focused for tabId=${tabId}`,
                 );
                 return; // 已经获得焦点，不需要继续尝试
               }
@@ -4087,7 +4171,7 @@ useEffect(() => {
           // 记录焦点设置失败的错误
           console.error(
             `[WebTerminal] Terminal focus failed for tabId=${tabId} on attempt ${focusAttempt + 1}:`,
-            error
+            error,
           );
 
           // 继续重试（如果还未达到最大尝试次数）
@@ -4127,22 +4211,29 @@ useEffect(() => {
             return;
           }
 
-          const helperTextarea =
-            termRef.current.element?.querySelector(".xterm-helper-textarea");
+          const helperTextarea = termRef.current.element?.querySelector(
+            ".xterm-helper-textarea",
+          );
 
-          if (
-            helperTextarea &&
-            document.activeElement !== helperTextarea
-          ) {
+          if (helperTextarea && document.activeElement !== helperTextarea) {
             helperTextarea.focus();
           }
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
       }, 120);
     };
 
-    eventManager.addEventListener(window, "tabChanged", handleTabFocus);
-  }, [tabId, eventManager]);
+    const removeTabFocusListener = eventManager.addEventListener(
+      window,
+      "tabChanged",
+      handleTabFocus,
+    );
 
+    return () => {
+      removeTabFocusListener();
+    };
+  }, [tabId, eventManager]);
 
   // 添加标签切换监听器
   useEffect(() => {
@@ -4245,7 +4336,6 @@ useEffect(() => {
                   termRef.current
                 ) {
                   const container = terminalRef.current;
-                  
 
                   // 检查容器是否可见且有正确的尺寸
                   if (
@@ -4410,10 +4500,7 @@ useEffect(() => {
 
     // 添加专门的终端强制刷新事件监听
     const handleTerminalForceRefresh = (event) => {
-      const {
-        tabId: eventTabId,
-        layoutType,
-      } = event.detail || {};
+      const { tabId: eventTabId, layoutType } = event.detail || {};
 
       // 只处理属于当前终端的事件
       if (
@@ -4572,7 +4659,6 @@ useEffect(() => {
             layoutType === "post-split-reconnect" ? 2000 : 1500;
           setTimeout(() => {
             if (terminalRef.current && fitAddonRef.current && termRef.current) {
-              
               const termElement = termRef.current.element;
 
               // 最后检查：如果仍然有问题，进行强制修复
@@ -4600,19 +4686,28 @@ useEffect(() => {
     };
 
     // 使用EventManager添加事件监听器
-    eventManager.addEventListener(window, "tabChanged", handleTabChanged);
-    eventManager.addEventListener(
+    const removeTabChangedListener = eventManager.addEventListener(
+      window,
+      "tabChanged",
+      handleTabChanged,
+    );
+    const removeTerminalResizeListener = eventManager.addEventListener(
       window,
       "terminalResize",
       handleTerminalResize,
     );
-    eventManager.addEventListener(
+    const removeTerminalForceRefreshListener = eventManager.addEventListener(
       window,
       "terminalForceRefresh",
       handleTerminalForceRefresh,
     );
-  }, [tabId]);
 
+    return () => {
+      removeTabChangedListener();
+      removeTerminalResizeListener();
+      removeTerminalForceRefreshListener();
+    };
+  }, [tabId, eventManager]);
 
   // 清理最近输出行缓存
   useEffect(() => {
@@ -4877,7 +4972,12 @@ useEffect(() => {
         getSuggestions(input);
       }
     },
-    [getSuggestions, suggestionsHiddenByEsc, suggestionsSuppressedUntilEnter, isCommandExecuting]
+    [
+      getSuggestions,
+      suggestionsHiddenByEsc,
+      suggestionsSuppressedUntilEnter,
+      isCommandExecuting,
+    ],
   );
 
   useWindowEvent("refreshCommandSuggestions", handleRefreshSuggestions);
@@ -4946,7 +5046,6 @@ useEffect(() => {
   }, [currentInput]);
 
   // 示例：假设有如下输入处理函数
-  
 
   // 注册表初始化
   if (typeof window !== "undefined" && !window.webTerminalRefs) {
@@ -5044,13 +5143,15 @@ useEffect(() => {
               onClick={() => setShowSearchBar(true)}
               sx={{
                 padding: "4px",
-                color: theme.palette.mode === "dark"
-                  ? "rgba(255, 255, 255, 0.7) !important"
-                  : "rgba(0, 0, 0, 0.7) !important",
+                color:
+                  theme.palette.mode === "dark"
+                    ? "rgba(255, 255, 255, 0.7) !important"
+                    : "rgba(0, 0, 0, 0.7) !important",
                 "&:hover": {
-                  color: theme.palette.mode === "dark"
-                    ? "white !important"
-                    : "rgba(0, 0, 0, 0.9) !important",
+                  color:
+                    theme.palette.mode === "dark"
+                      ? "white !important"
+                      : "rgba(0, 0, 0, 0.9) !important",
                 },
                 "& svg": {
                   fontSize: "18px",
@@ -5172,7 +5273,7 @@ useEffect(() => {
           </ListItemIcon>
           <ListItemText>粘贴</ListItemText>
           <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-            Ctrl+' / 中键
+            Ctrl+&apos; / 中键
           </Typography>
         </MenuItem>
         <MenuItem onClick={handleSendToAI} disabled={!selectedText}>
@@ -5220,4 +5321,11 @@ useEffect(() => {
   );
 };
 
-export default WebTerminal;
+WebTerminal.propTypes = {
+  tabId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  refreshKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  sshConfig: PropTypes.object,
+  isActive: PropTypes.bool,
+};
+
+export default React.memo(WebTerminal, areWebTerminalPropsEqual);

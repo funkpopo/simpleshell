@@ -17,6 +17,8 @@ class ConfigService {
     this.ajv = null;
     this.validators = {};
     this._initialized = false;
+    this._configCache = null;
+    this._lastSerializedConfig = null;
   }
 
   /**
@@ -51,16 +53,18 @@ class ConfigService {
     // 设置配置文件路径
     try {
       this.mainConfigPath = this._getMainConfigPath();
+      this._configCache = null;
+      this._lastSerializedConfig = null;
       this._log(
         `ConfigService initialized. Main config path: ${this.mainConfigPath}`,
-        "INFO"
+        "INFO",
       );
       this._initialized = true;
       return true;
     } catch (error) {
       this._log(
         `ConfigService: Error setting paths during init - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -173,7 +177,7 @@ class ConfigService {
     if (!validator) {
       this._log(
         `ConfigService: No validator found for schema: ${schemaName}`,
-        "WARN"
+        "WARN",
       );
       return true; // 如果没有验证器，默认通过
     }
@@ -182,7 +186,7 @@ class ConfigService {
     if (!valid) {
       this._log(
         `ConfigService: Validation failed for ${schemaName}: ${JSON.stringify(validator.errors)}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return valid;
@@ -210,7 +214,8 @@ class ConfigService {
     }
 
     try {
-      const isDev = process.env.NODE_ENV === "development" || !this.app.isPackaged;
+      const isDev =
+        process.env.NODE_ENV === "development" || !this.app.isPackaged;
       if (isDev) {
         return path.join(process.cwd(), "config.json");
       } else {
@@ -219,11 +224,11 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Error getting main config path - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
       return path.join(
         this.app.getPath("userData"),
-        "config.json_fallback_general_error"
+        "config.json_fallback_general_error",
       );
     }
   }
@@ -235,7 +240,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Call init() first.",
-        "ERROR"
+        "ERROR",
       );
       return;
     }
@@ -277,39 +282,69 @@ class ConfigService {
         fs.writeFileSync(
           this.mainConfigPath,
           JSON.stringify(defaultConfig, null, 2),
-          "utf8"
+          "utf8",
         );
+        this._configCache = defaultConfig;
+        this._lastSerializedConfig = JSON.stringify(defaultConfig, null, 2);
         this._log("ConfigService: Main config file created.", "INFO");
       }
     } catch (error) {
       this._log(
         `ConfigService: Failed to initialize main config - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
   }
 
   /**
+   * 深拷贝配置对象，避免缓存被外部引用意外修改
+   * @param {Object} config - 原始配置对象
+   * @returns {Object} 拷贝后的配置对象
+   */
+  _cloneConfig(config) {
+    if (!config || typeof config !== "object") {
+      return {};
+    }
+
+    try {
+      return JSON.parse(JSON.stringify(config));
+    } catch {
+      return {};
+    }
+  }
+
+  /**
    * 读取配置文件
+   * @param {boolean} forceRefresh - 是否强制从磁盘刷新
    * @returns {Object} 配置对象
    */
-  _readConfig() {
+  _readConfig(forceRefresh = false) {
     if (!this.mainConfigPath) {
       this._log("ConfigService: Main config path not set.", "ERROR");
       return {};
     }
 
+    if (!forceRefresh && this._configCache) {
+      return this._cloneConfig(this._configCache);
+    }
+
     try {
       if (fs.existsSync(this.mainConfigPath)) {
         const data = fs.readFileSync(this.mainConfigPath, "utf8");
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        this._configCache = parsed;
+        this._lastSerializedConfig = JSON.stringify(parsed, null, 2);
+        return this._cloneConfig(parsed);
       }
     } catch (error) {
       this._log(
         `ConfigService: Failed to read config - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
+
+    this._configCache = {};
+    this._lastSerializedConfig = JSON.stringify({}, null, 2);
     return {};
   }
 
@@ -325,16 +360,22 @@ class ConfigService {
     }
 
     try {
-      fs.writeFileSync(
-        this.mainConfigPath,
-        JSON.stringify(config, null, 2),
-        "utf8"
-      );
+      const serialized = JSON.stringify(config, null, 2);
+
+      // 内容未变更时跳过写盘，减少高频同步 I/O
+      if (this._lastSerializedConfig === serialized) {
+        this._configCache = this._cloneConfig(config);
+        return true;
+      }
+
+      fs.writeFileSync(this.mainConfigPath, serialized, "utf8");
+      this._configCache = this._cloneConfig(config);
+      this._lastSerializedConfig = serialized;
       return true;
     } catch (error) {
       this._log(
         `ConfigService: Failed to write config - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -349,7 +390,7 @@ class ConfigService {
     if (!this.crypto || !this.crypto.encryptText) {
       this._log(
         "ConfigService: encryptText function is not available.",
-        "ERROR"
+        "ERROR",
       );
       return items;
     }
@@ -380,7 +421,7 @@ class ConfigService {
     if (!this.crypto || !this.crypto.decryptText) {
       this._log(
         "ConfigService: decryptText function is not available.",
-        "ERROR"
+        "ERROR",
       );
       return items;
     }
@@ -394,7 +435,7 @@ class ConfigService {
           } catch (error) {
             this._log(
               `ConfigService: Failed to decrypt password - ${error.message}`,
-              "WARN"
+              "WARN",
             );
             result.password = "";
           }
@@ -402,12 +443,12 @@ class ConfigService {
         if (item.privateKeyPath) {
           try {
             result.privateKeyPath = this.crypto.decryptText(
-              item.privateKeyPath
+              item.privateKeyPath,
             );
           } catch (error) {
             this._log(
               `ConfigService: Failed to decrypt privateKeyPath - ${error.message}`,
-              "WARN"
+              "WARN",
             );
             result.privateKeyPath = "";
           }
@@ -428,7 +469,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot load connections.",
-        "ERROR"
+        "ERROR",
       );
       return [];
     }
@@ -441,7 +482,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to load connections - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return [];
@@ -456,7 +497,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot save connections.",
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -473,7 +514,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to save connections - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return false;
@@ -487,7 +528,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot load AI settings.",
-        "ERROR"
+        "ERROR",
       );
       return {
         configs: [],
@@ -497,7 +538,7 @@ class ConfigService {
 
     this._log(
       `ConfigService: Loading AI settings from ${this.mainConfigPath}`,
-      "INFO"
+      "INFO",
     );
 
     try {
@@ -514,7 +555,7 @@ class ConfigService {
               } catch (error) {
                 this._log(
                   `ConfigService: Failed to decrypt API key for config ${cfg.name || cfg.id} - ${error.message}`,
-                  "WARN"
+                  "WARN",
                 );
                 return { ...cfg, apiKey: "" };
               }
@@ -524,15 +565,19 @@ class ConfigService {
         }
 
         // 解密当前配置的 API key
-        if (settings.current && settings.current.apiKey && this.crypto.decryptText) {
+        if (
+          settings.current &&
+          settings.current.apiKey &&
+          this.crypto.decryptText
+        ) {
           try {
             settings.current.apiKey = this.crypto.decryptText(
-              settings.current.apiKey
+              settings.current.apiKey,
             );
           } catch (error) {
             this._log(
               `ConfigService: Failed to decrypt current API key - ${error.message}`,
-              "WARN"
+              "WARN",
             );
             settings.current.apiKey = "";
           }
@@ -543,14 +588,14 @@ class ConfigService {
 
         this._log(
           `ConfigService: Loaded ${settings.configs?.length || 0} AI configurations.`,
-          "INFO"
+          "INFO",
         );
         return settings;
       }
     } catch (error) {
       this._log(
         `ConfigService: Failed to load AI settings - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
 
@@ -569,14 +614,14 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot save AI settings.",
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
 
     this._log(
       `ConfigService: Saving AI settings to ${this.mainConfigPath}`,
-      "INFO"
+      "INFO",
     );
 
     try {
@@ -597,7 +642,7 @@ class ConfigService {
             } catch (error) {
               this._log(
                 `ConfigService: Failed to encrypt API key for config ${cfg.name || cfg.id} - ${error.message}`,
-                "WARN"
+                "WARN",
               );
               return { ...cfg, apiKey: "" };
             }
@@ -614,12 +659,12 @@ class ConfigService {
       ) {
         try {
           settingsToSave.current.apiKey = this.crypto.encryptText(
-            settingsToSave.current.apiKey
+            settingsToSave.current.apiKey,
           );
         } catch (error) {
           this._log(
             `ConfigService: Failed to encrypt current API key - ${error.message}`,
-            "WARN"
+            "WARN",
           );
           settingsToSave.current.apiKey = "";
         }
@@ -634,7 +679,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to save AI settings - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return false;
@@ -648,7 +693,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot load UI settings.",
-        "ERROR"
+        "ERROR",
       );
       return this._getDefaultUISettings();
     }
@@ -656,14 +701,17 @@ class ConfigService {
     try {
       const config = this._readConfig();
       if (config.uiSettings) {
-        const settings = { ...this._getDefaultUISettings(), ...config.uiSettings };
+        const settings = {
+          ...this._getDefaultUISettings(),
+          ...config.uiSettings,
+        };
         this._validate("uiSettings", settings);
         return settings;
       }
     } catch (error) {
       this._log(
         `ConfigService: Failed to load UI settings - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return this._getDefaultUISettings();
@@ -695,7 +743,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot save UI settings.",
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -716,7 +764,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to save UI settings - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return false;
@@ -730,7 +778,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot load log settings.",
-        "ERROR"
+        "ERROR",
       );
       return this._getDefaultLogSettings();
     }
@@ -748,7 +796,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to load log settings - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return this._getDefaultLogSettings();
@@ -777,7 +825,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot save log settings.",
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -798,7 +846,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to save log settings - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return false;
@@ -812,7 +860,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot load shortcut commands.",
-        "ERROR"
+        "ERROR",
       );
       return {};
     }
@@ -828,7 +876,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to load shortcut commands - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return {};
@@ -843,7 +891,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot save shortcut commands.",
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -855,14 +903,14 @@ class ConfigService {
       if (this._writeConfig(config)) {
         this._log(
           "ConfigService: Shortcut commands saved successfully.",
-          "INFO"
+          "INFO",
         );
         return true;
       }
     } catch (error) {
       this._log(
         `ConfigService: Failed to save shortcut commands - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return false;
@@ -889,14 +937,14 @@ class ConfigService {
 
       this._log(
         `ConfigService: Command history compressed from ${result.originalSize} to ${result.compressedSize} bytes (${((result.compressedSize / result.originalSize) * 100).toFixed(2)}%)`,
-        "INFO"
+        "INFO",
       );
 
       return result;
     } catch (error) {
       this._log(
         `ConfigService: Failed to compress command history - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
       return {
         compressed: false,
@@ -924,7 +972,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to decompress command history - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
       return [];
     }
@@ -938,7 +986,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot load command history.",
-        "ERROR"
+        "ERROR",
       );
       return [];
     }
@@ -950,7 +998,7 @@ class ConfigService {
         if (Array.isArray(config.commandHistory)) {
           this._log(
             "ConfigService: Migrating old command history format to compressed format.",
-            "INFO"
+            "INFO",
           );
           return config.commandHistory;
         }
@@ -960,7 +1008,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to load command history - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return [];
@@ -975,7 +1023,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot save command history.",
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -985,16 +1033,13 @@ class ConfigService {
       config.commandHistory = this._compressCommandHistory(history);
 
       if (this._writeConfig(config)) {
-        this._log(
-          "ConfigService: Command history saved successfully.",
-          "INFO"
-        );
+        this._log("ConfigService: Command history saved successfully.", "INFO");
         return true;
       }
     } catch (error) {
       this._log(
         `ConfigService: Failed to save command history - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return false;
@@ -1008,7 +1053,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot load top connections.",
-        "ERROR"
+        "ERROR",
       );
       return [];
     }
@@ -1021,7 +1066,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to load top connections - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return [];
@@ -1036,7 +1081,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot save top connections.",
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -1046,16 +1091,13 @@ class ConfigService {
       config.topConnections = this._processConnectionsForSave(connections);
 
       if (this._writeConfig(config)) {
-        this._log(
-          "ConfigService: Top connections saved successfully.",
-          "INFO"
-        );
+        this._log("ConfigService: Top connections saved successfully.", "INFO");
         return true;
       }
     } catch (error) {
       this._log(
         `ConfigService: Failed to save top connections - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return false;
@@ -1069,7 +1111,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot load last connections.",
-        "ERROR"
+        "ERROR",
       );
       return [];
     }
@@ -1082,7 +1124,7 @@ class ConfigService {
     } catch (error) {
       this._log(
         `ConfigService: Failed to load last connections - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return [];
@@ -1097,7 +1139,7 @@ class ConfigService {
     if (!this._initialized) {
       this._log(
         "ConfigService: Service not initialized. Cannot save last connections.",
-        "ERROR"
+        "ERROR",
       );
       return false;
     }
@@ -1109,14 +1151,14 @@ class ConfigService {
       if (this._writeConfig(config)) {
         this._log(
           "ConfigService: Last connections saved successfully.",
-          "INFO"
+          "INFO",
         );
         return true;
       }
     } catch (error) {
       this._log(
         `ConfigService: Failed to save last connections - ${error.message}`,
-        "ERROR"
+        "ERROR",
       );
     }
     return false;
@@ -1145,7 +1187,10 @@ class ConfigService {
       const config = this._readConfig();
       return config?.[key];
     } catch (error) {
-      this._log(`ConfigService: Failed to get config key '${key}' - ${error.message}`, "ERROR");
+      this._log(
+        `ConfigService: Failed to get config key '${key}' - ${error.message}`,
+        "ERROR",
+      );
       return undefined;
     }
   }
@@ -1167,11 +1212,17 @@ class ConfigService {
       config[key] = value;
       const success = this._writeConfig(config);
       if (success) {
-        this._log(`ConfigService: Saved config key '${key}' via set().`, "INFO");
+        this._log(
+          `ConfigService: Saved config key '${key}' via set().`,
+          "INFO",
+        );
       }
       return success;
     } catch (error) {
-      this._log(`ConfigService: Failed to set config key '${key}' - ${error.message}`, "ERROR");
+      this._log(
+        `ConfigService: Failed to set config key '${key}' - ${error.message}`,
+        "ERROR",
+      );
       return false;
     }
   }

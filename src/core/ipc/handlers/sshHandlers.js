@@ -25,10 +25,10 @@ class SSHHandlers {
     this.sftpTransfer = dependencies.sftpTransfer;
     this.getNextProcessId = dependencies.getNextProcessId;
     this.getLatencyHandlers = dependencies.getLatencyHandlers;
-    
+
     // 待处理的认证请求
     this.pendingAuthRequests = new Map();
-    
+
     // 已知主机指纹缓存 (host:port -> fingerprint)
     this.knownHostsCache = new Map();
   }
@@ -63,20 +63,20 @@ class SSHHandlers {
    */
   async handleAuthResponse(event, response) {
     const { requestId, ...authData } = response;
-    
+
     if (!requestId || !this.pendingAuthRequests.has(requestId)) {
       logToFile(`Invalid auth response: requestId=${requestId}`, "WARN");
       return { success: false, error: "Invalid request ID" };
     }
-    
+
     const pendingRequest = this.pendingAuthRequests.get(requestId);
     this.pendingAuthRequests.delete(requestId);
-    
+
     if (authData.cancelled) {
       pendingRequest.reject(new Error("Authentication cancelled by user"));
       return { success: false, cancelled: true };
     }
-    
+
     pendingRequest.resolve(authData);
     return { success: true };
   }
@@ -89,10 +89,10 @@ class SSHHandlers {
       if (!connectionId || !credentials) {
         return { success: false, error: "Invalid parameters" };
       }
-      
+
       // 加载现有连接配置
       const connections = configService.loadConnections();
-      
+
       // 递归查找并更新连接
       const updateConnection = (items) => {
         for (let i = 0; i < items.length; i++) {
@@ -121,13 +121,16 @@ class SSHHandlers {
         }
         return false;
       };
-      
+
       const updated = updateConnection(connections);
-      
+
       if (updated) {
         configService.saveConnections(connections);
-        logToFile(`Updated credentials for connection: ${connectionId}`, "INFO");
-        
+        logToFile(
+          `Updated credentials for connection: ${connectionId}`,
+          "INFO",
+        );
+
         // 通知前端连接配置已更改
         const windows = BrowserWindow.getAllWindows();
         for (const win of windows) {
@@ -135,13 +138,16 @@ class SSHHandlers {
             win.webContents.send("connections-changed");
           }
         }
-        
+
         return { success: true };
       } else {
         return { success: false, error: "Connection not found" };
       }
     } catch (error) {
-      logToFile(`Failed to update connection credentials: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to update connection credentials: ${error.message}`,
+        "ERROR",
+      );
       return { success: false, error: error.message };
     }
   }
@@ -168,15 +174,19 @@ class SSHHandlers {
   _checkHostKey(host, port, fingerprint) {
     const hostKey = `${host}:${port || 22}`;
     const knownFingerprint = this.knownHostsCache.get(hostKey);
-    
+
     if (!knownFingerprint) {
       return { known: false, changed: false };
     }
-    
+
     if (knownFingerprint !== fingerprint) {
-      return { known: true, changed: true, previousFingerprint: knownFingerprint };
+      return {
+        known: true,
+        changed: true,
+        previousFingerprint: knownFingerprint,
+      };
     }
-    
+
     return { known: true, changed: false };
   }
 
@@ -196,18 +206,21 @@ class SSHHandlers {
     if (!mainWindow || mainWindow.isDestroyed()) {
       throw new Error("No main window available for authentication");
     }
-    
+
     const requestId = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     return new Promise((resolve, reject) => {
       // 设置超时（5分钟）
-      const timeout = setTimeout(() => {
-        if (this.pendingAuthRequests.has(requestId)) {
-          this.pendingAuthRequests.delete(requestId);
-          reject(new Error("Authentication timeout"));
-        }
-      }, 5 * 60 * 1000);
-      
+      const timeout = setTimeout(
+        () => {
+          if (this.pendingAuthRequests.has(requestId)) {
+            this.pendingAuthRequests.delete(requestId);
+            reject(new Error("Authentication timeout"));
+          }
+        },
+        5 * 60 * 1000,
+      );
+
       // 存储待处理请求
       this.pendingAuthRequests.set(requestId, {
         resolve: (data) => {
@@ -221,14 +234,14 @@ class SSHHandlers {
         tabId,
         authData,
       });
-      
+
       // 发送认证请求到渲染进程
       mainWindow.webContents.send("ssh:auth-request", {
         requestId,
         tabId,
         ...authData,
       });
-      
+
       logToFile(`Sent auth request: ${requestId} for tab ${tabId}`, "INFO");
     });
   }
@@ -256,64 +269,109 @@ class SSHHandlers {
   }
 
   _setupStreamEventListeners(stream, processId, sshConfig, connectionInfo) {
-    const mainWindow = this._getMainWindow();
-    let buffer = Buffer.from([]);
+    let buffer = Buffer.alloc(0);
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB 缓冲区上限
+    const FLUSH_INTERVAL_MS = 24; // 约 1~2 帧内合并，控制在 <50ms 延迟
+    const FLUSH_THRESHOLD_BYTES = 64 * 1024;
+    const BACKPRESSURE_PAUSE_THRESHOLD = 1024 * 1024;
     let isPaused = false;
+    let flushTimer = null;
+
+    const emitOutput = (payload) => {
+      const mainWindow = this._getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      mainWindow.webContents.send(`process:output:${processId}`, payload);
+    };
+
+    const flushBufferedOutput = () => {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+
+      if (!buffer.length) {
+        return;
+      }
+
+      const pendingBuffer = buffer;
+      buffer = Buffer.alloc(0);
+
+      try {
+        const output = pendingBuffer.toString("utf8");
+        const processedOutput = terminalManager.processOutput(
+          processId,
+          output,
+        );
+        if (processedOutput) {
+          emitOutput(processedOutput);
+        }
+      } catch (error) {
+        logToFile(
+          `Failed to process buffered output: ${error.message}`,
+          "ERROR",
+        );
+      }
+    };
+
+    const scheduleFlush = () => {
+      if (flushTimer) {
+        return;
+      }
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        flushBufferedOutput();
+      }, FLUSH_INTERVAL_MS);
+    };
 
     const dataHandler = (data) => {
       try {
+        const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+
         // 检查缓冲区大小，防止无限增长
-        if (buffer.length + data.length > MAX_BUFFER_SIZE) {
-          logToFile(`Buffer overflow prevented for processId ${processId}, discarding old data`, "WARN");
-          buffer = data; // 丢弃旧数据，只保留新数据
+        if (buffer.length + chunk.length > MAX_BUFFER_SIZE) {
+          logToFile(
+            `Buffer overflow prevented for processId ${processId}, discarding old data`,
+            "WARN",
+          );
+          buffer = chunk; // 丢弃旧数据，只保留新数据
+        } else if (buffer.length === 0) {
+          // fast path：避免空缓冲区时的 Buffer.concat 拷贝
+          buffer = chunk;
         } else {
-          buffer = Buffer.concat([buffer, data]);
+          buffer = Buffer.concat([buffer, chunk], buffer.length + chunk.length);
         }
 
-        try {
-          const bufferStr = buffer.toString();
-          const containsChinese = /[\u4e00-\u9fa5]/.test(bufferStr);
-          let output = containsChinese
-            ? Buffer.from(buffer).toString("utf8")
-            : buffer.toString("utf8");
+        // 达到阈值时立即 flush，其他情况用短时间窗口微批处理
+        if (buffer.length >= FLUSH_THRESHOLD_BYTES) {
+          flushBufferedOutput();
+        } else {
+          scheduleFlush();
+        }
 
-          const processedOutput = terminalManager.processOutput(processId, output);
-
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            // 背压处理：检查渲染进程是否能跟上
-            mainWindow.webContents.send(`process:output:${processId}`, processedOutput);
-            // 如果IPC队列过长，暂停流
-            if (!isPaused && mainWindow.webContents.getProcessId && buffer.length > 1024 * 1024) {
-              stream.pause();
-              isPaused = true;
-              setTimeout(() => {
-                if (!stream.destroyed) {
-                  stream.resume();
-                  isPaused = false;
-                }
-              }, 100);
+        // 背压处理：如果缓冲区短时过大，暂停读取让 Renderer 追上
+        if (!isPaused && buffer.length > BACKPRESSURE_PAUSE_THRESHOLD) {
+          stream.pause();
+          isPaused = true;
+          setTimeout(() => {
+            if (!stream.destroyed) {
+              stream.resume();
+              isPaused = false;
             }
-          }
-          buffer = Buffer.from([]);
-        } catch (error) {
-          logToFile(`Failed to convert buffer to string: ${error.message}`, "ERROR");
-          buffer = Buffer.from([]); // 错误时也清理缓冲区
+          }, 100);
         }
       } catch (error) {
         logToFile(`Error handling stream data: ${error.message}`, "ERROR");
-        buffer = Buffer.from([]); // 错误时清理缓冲区
+        buffer = Buffer.alloc(0); // 错误时清理缓冲区
       }
     };
 
     const extendedDataHandler = (data) => {
       try {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(
-            `process:output:${processId}`,
-            `\x1b[31m${data.toString("utf8")}\x1b[0m`
-          );
-        }
+        // 保证 stderr 信息顺序，先刷掉 stdout 缓冲
+        flushBufferedOutput();
+        emitOutput(`\x1b[31m${data.toString("utf8")}\x1b[0m`);
       } catch (error) {
         logToFile(`Error handling extended data: ${error.message}`, "ERROR");
       }
@@ -322,10 +380,19 @@ class SSHHandlers {
     const closeHandler = () => {
       logToFile(`SSH stream closed for processId: ${processId}`, "INFO");
 
+      flushBufferedOutput();
+
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+
       // 清理事件监听器，防止内存泄漏
       stream.removeListener("data", dataHandler);
       stream.removeListener("extended data", extendedDataHandler);
       stream.removeListener("close", closeHandler);
+
+      const mainWindow = this._getMainWindow();
 
       if (sshConfig.tabId && mainWindow && !mainWindow.isDestroyed()) {
         const connectionStatus = {
@@ -345,39 +412,59 @@ class SSHHandlers {
       }
 
       const procInfo = this.childProcesses.get(processId);
-      if (procInfo && procInfo.ready && mainWindow && !mainWindow.isDestroyed()) {
+      if (
+        procInfo &&
+        procInfo.ready &&
+        mainWindow &&
+        !mainWindow.isDestroyed()
+      ) {
         mainWindow.webContents.send(
           `process:output:${processId}`,
-          `\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`
+          `\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`,
         );
       }
 
       // 清理SFTP传输
       if (this.sftpTransfer?.cleanupActiveTransfersForTab) {
-        this.sftpTransfer.cleanupActiveTransfersForTab(processId).catch((err) => {
-          logToFile(`Error cleaning up SFTP transfers: ${err.message}`, "ERROR");
-        });
-        if (sshConfig.tabId && sshConfig.tabId !== processId) {
-          this.sftpTransfer.cleanupActiveTransfersForTab(sshConfig.tabId).catch((err) => {
-            logToFile(`Error cleaning up SFTP transfers for tabId: ${err.message}`, "ERROR");
+        this.sftpTransfer
+          .cleanupActiveTransfersForTab(processId)
+          .catch((err) => {
+            logToFile(
+              `Error cleaning up SFTP transfers: ${err.message}`,
+              "ERROR",
+            );
           });
+        if (sshConfig.tabId && sshConfig.tabId !== processId) {
+          this.sftpTransfer
+            .cleanupActiveTransfersForTab(sshConfig.tabId)
+            .catch((err) => {
+              logToFile(
+                `Error cleaning up SFTP transfers for tabId: ${err.message}`,
+                "ERROR",
+              );
+            });
         }
       }
 
       // 清理SFTP操作
       if (this.sftpCore?.clearPendingOperationsForTab) {
         this.sftpCore.clearPendingOperationsForTab(processId);
-        if (sshConfig.tabId) this.sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
+        if (sshConfig.tabId)
+          this.sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
       }
 
       // 清理SFTP会话池
       try {
         if (this.sftpCore?.closeAllSftpSessionsForTab) {
           this.sftpCore.closeAllSftpSessionsForTab(processId);
-          if (sshConfig.tabId) this.sftpCore.closeAllSftpSessionsForTab(sshConfig.tabId);
+          if (sshConfig.tabId)
+            this.sftpCore.closeAllSftpSessionsForTab(sshConfig.tabId);
         }
       } catch (err) {
-        logToFile(`Error closing SFTP sessions on SSH close: ${err.message}`, "ERROR");
+        logToFile(
+          `Error closing SFTP sessions on SSH close: ${err.message}`,
+          "ERROR",
+        );
       }
 
       const shouldReleaseConnection = Boolean(connectionInfo?.intentionalClose);
@@ -411,7 +498,10 @@ class SSHHandlers {
     telnet.on("data", (data) => {
       try {
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(`process:output:${processId}`, data.toString());
+          mainWindow.webContents.send(
+            `process:output:${processId}`,
+            data.toString(),
+          );
         }
       } catch (error) {
         logToFile(`Error handling Telnet data: ${error.message}`, "ERROR");
@@ -419,17 +509,26 @@ class SSHHandlers {
     });
 
     telnet.on("error", (err) => {
-      logToFile(`Telnet error for processId ${processId}: ${err.message}`, "ERROR");
+      logToFile(
+        `Telnet error for processId ${processId}: ${err.message}`,
+        "ERROR",
+      );
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(
           `process:output:${processId}`,
-          `\r\n*** Telnet连接错误: ${err.message} ***\r\n`
+          `\r\n*** Telnet连接错误: ${err.message} ***\r\n`,
         );
-        mainWindow.webContents.send(`process:exit:${processId}`, { code: 1, signal: null });
+        mainWindow.webContents.send(`process:exit:${processId}`, {
+          code: 1,
+          signal: null,
+        });
       }
 
-      this.connectionManager.releaseTelnetConnection(connectionInfo.key, telnetConfig.tabId);
+      this.connectionManager.releaseTelnetConnection(
+        connectionInfo.key,
+        telnetConfig.tabId,
+      );
     });
 
     telnet.on("end", () => {
@@ -438,12 +537,18 @@ class SSHHandlers {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(
           `process:output:${processId}`,
-          `\r\n*** Telnet连接已关闭 ***\r\n`
+          `\r\n*** Telnet连接已关闭 ***\r\n`,
         );
-        mainWindow.webContents.send(`process:exit:${processId}`, { code: 0, signal: null });
+        mainWindow.webContents.send(`process:exit:${processId}`, {
+          code: 0,
+          signal: null,
+        });
       }
 
-      this.connectionManager.releaseTelnetConnection(connectionInfo.key, telnetConfig.tabId);
+      this.connectionManager.releaseTelnetConnection(
+        connectionInfo.key,
+        telnetConfig.tabId,
+      );
     });
 
     telnet.on("timeout", () => {
@@ -452,7 +557,7 @@ class SSHHandlers {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(
           `process:output:${processId}`,
-          `\r\n*** Telnet连接超时 ***\r\n`
+          `\r\n*** Telnet连接超时 ***\r\n`,
         );
       }
     });
@@ -523,15 +628,21 @@ class SSHHandlers {
     let lastAuthResult = null;
 
     // 检查是否需要预先认证（没有用户名或密码/密钥）
-    const needsPreAuth = !sshConfig.username || 
-      (!sshConfig.password && !sshConfig.privateKeyPath && sshConfig.authType !== "privateKey");
+    const needsPreAuth =
+      !sshConfig.username ||
+      (!sshConfig.password &&
+        !sshConfig.privateKeyPath &&
+        sshConfig.authType !== "privateKey");
 
     while (authRetryCount <= maxAuthRetries) {
       try {
         // 如果需要预先认证（第一次）或者上次认证失败需要重试
         if (needsPreAuth && authRetryCount === 0) {
-          logToFile(`SSH connection requires authentication for ${sshConfig.host}`, "INFO");
-          
+          logToFile(
+            `SSH connection requires authentication for ${sshConfig.host}`,
+            "INFO",
+          );
+
           const authResult = await this._requestUserAuth(sshConfig.tabId, {
             step: "hostVerify",
             host: sshConfig.host,
@@ -544,32 +655,42 @@ class SSHHandlers {
             existingUsername: sshConfig.username || "",
             isRetry: false,
           });
-          
+
           if (authResult.cancelled) {
             throw new Error("Authentication cancelled by user");
           }
-          
+
           lastAuthResult = authResult;
           finalConfig = {
             ...sshConfig,
             username: authResult.username || sshConfig.username,
             password: authResult.password || sshConfig.password,
-            privateKeyPath: authResult.privateKeyPath || sshConfig.privateKeyPath,
+            privateKeyPath:
+              authResult.privateKeyPath || sshConfig.privateKeyPath,
             authType: authResult.authType || sshConfig.authType || "password",
           };
         }
 
         // 尝试建立SSH连接
-        const connectionInfo = await this.connectionManager.getSSHConnection(finalConfig);
+        const connectionInfo =
+          await this.connectionManager.getSSHConnection(finalConfig);
         this._broadcastTopConnections();
         const ssh = connectionInfo.client;
 
         if (finalConfig.tabId) {
-          this.connectionManager.addTabReference(finalConfig.tabId, connectionInfo.key);
+          this.connectionManager.addTabReference(
+            finalConfig.tabId,
+            connectionInfo.key,
+          );
         }
 
         // 存储进程信息
-        const procInfo = this._createProcessInfo(ssh, connectionInfo, finalConfig, "ssh2");
+        const procInfo = this._createProcessInfo(
+          ssh,
+          connectionInfo,
+          finalConfig,
+          "ssh2",
+        );
         this.childProcesses.set(processId, procInfo);
         if (finalConfig.tabId) {
           this.childProcesses.set(finalConfig.tabId, { ...procInfo });
@@ -582,13 +703,23 @@ class SSHHandlers {
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send(
               `process:output:${processId}`,
-              `\r\n*** ${finalConfig.host} SSH连接已建立（复用现有连接） ***\r\n`
+              `\r\n*** ${finalConfig.host} SSH连接已建立（复用现有连接） ***\r\n`,
             );
           }
 
-          result = await this._createSSHShell(ssh, processId, finalConfig, connectionInfo);
+          result = await this._createSSHShell(
+            ssh,
+            processId,
+            finalConfig,
+            connectionInfo,
+          );
         } else {
-          result = await this._waitForSSHReady(ssh, processId, finalConfig, connectionInfo);
+          result = await this._waitForSSHReady(
+            ssh,
+            processId,
+            finalConfig,
+            connectionInfo,
+          );
         }
 
         // 连接成功，如果用户选择了"下次自动登录"，保存凭据
@@ -602,14 +733,22 @@ class SSHHandlers {
         }
 
         return result;
-
       } catch (error) {
-        logToFile(`SSH connection attempt ${authRetryCount + 1} failed: ${error.message}`, "ERROR");
+        logToFile(
+          `SSH connection attempt ${authRetryCount + 1} failed: ${error.message}`,
+          "ERROR",
+        );
 
         // 检查是否为认证错误
-        if (this._isAuthenticationError(error) && authRetryCount < maxAuthRetries) {
+        if (
+          this._isAuthenticationError(error) &&
+          authRetryCount < maxAuthRetries
+        ) {
           authRetryCount++;
-          logToFile(`Authentication failed, prompting user for credentials (attempt ${authRetryCount}/${maxAuthRetries})`, "INFO");
+          logToFile(
+            `Authentication failed, prompting user for credentials (attempt ${authRetryCount}/${maxAuthRetries})`,
+            "INFO",
+          );
 
           // 清理之前的连接尝试
           this.childProcesses.delete(processId);
@@ -626,7 +765,8 @@ class SSHHandlers {
               fingerprintChanged: false,
               requireCredentials: true,
               connectionId: sshConfig.id,
-              existingUsername: finalConfig.username || sshConfig.username || "",
+              existingUsername:
+                finalConfig.username || sshConfig.username || "",
               isRetry: true,
               errorMessage: error.message,
             });
@@ -639,16 +779,20 @@ class SSHHandlers {
             finalConfig = {
               ...sshConfig,
               username: authResult.username || finalConfig.username,
-              password: authResult.password,  // 使用新密码
-              privateKeyPath: authResult.privateKeyPath || finalConfig.privateKeyPath,
-              authType: authResult.authType || finalConfig.authType || "password",
+              password: authResult.password, // 使用新密码
+              privateKeyPath:
+                authResult.privateKeyPath || finalConfig.privateKeyPath,
+              authType:
+                authResult.authType || finalConfig.authType || "password",
             };
 
             // 继续循环重试
             continue;
-
           } catch (authError) {
-            logToFile(`User cancelled authentication: ${authError.message}`, "INFO");
+            logToFile(
+              `User cancelled authentication: ${authError.message}`,
+              "INFO",
+            );
             throw authError;
           }
         }
@@ -663,42 +807,56 @@ class SSHHandlers {
 
   _createSSHShell(ssh, processId, sshConfig, connectionInfo) {
     return new Promise((resolve, reject) => {
-      ssh.shell({ term: "xterm-256color", cols: 120, rows: 30 }, (err, stream) => {
-        if (err) {
-          logToFile(`SSH shell error for processId ${processId}: ${err.message}`, "ERROR");
-          this.connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
-          this.childProcesses.delete(processId);
-          if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
-          return reject(err);
-        }
-
-        // 更新进程信息中的stream
-        const procToUpdate = this.childProcesses.get(processId);
-        if (procToUpdate) procToUpdate.stream = stream;
-        const tabProcToUpdate = this.childProcesses.get(sshConfig.tabId);
-        if (tabProcToUpdate) tabProcToUpdate.stream = stream;
-
-        this._setupStreamEventListeners(stream, processId, sshConfig, connectionInfo);
-
-        // 注册延迟检测
-        const latencyHandlers = this.getLatencyHandlers();
-        if (latencyHandlers && sshConfig.tabId) {
-          try {
-            latencyHandlers.latencyService.registerSSHConnection(
-              sshConfig.tabId,
-              ssh,
-              sshConfig.host,
-              sshConfig.port || 22,
-              sshConfig.proxy || null
+      ssh.shell(
+        { term: "xterm-256color", cols: 120, rows: 30 },
+        (err, stream) => {
+          if (err) {
+            logToFile(
+              `SSH shell error for processId ${processId}: ${err.message}`,
+              "ERROR",
             );
-            logToFile(`已为SSH连接注册延迟检测: ${sshConfig.tabId}`, "DEBUG");
-          } catch (latencyError) {
-            logToFile(`延迟检测注册失败: ${latencyError.message}`, "WARN");
+            this.connectionManager.releaseSSHConnection(
+              connectionInfo.key,
+              sshConfig.tabId,
+            );
+            this.childProcesses.delete(processId);
+            if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
+            return reject(err);
           }
-        }
 
-        resolve(processId);
-      });
+          // 更新进程信息中的stream
+          const procToUpdate = this.childProcesses.get(processId);
+          if (procToUpdate) procToUpdate.stream = stream;
+          const tabProcToUpdate = this.childProcesses.get(sshConfig.tabId);
+          if (tabProcToUpdate) tabProcToUpdate.stream = stream;
+
+          this._setupStreamEventListeners(
+            stream,
+            processId,
+            sshConfig,
+            connectionInfo,
+          );
+
+          // 注册延迟检测
+          const latencyHandlers = this.getLatencyHandlers();
+          if (latencyHandlers && sshConfig.tabId) {
+            try {
+              latencyHandlers.latencyService.registerSSHConnection(
+                sshConfig.tabId,
+                ssh,
+                sshConfig.host,
+                sshConfig.port || 22,
+                sshConfig.proxy || null,
+              );
+              logToFile(`已为SSH连接注册延迟检测: ${sshConfig.tabId}`, "DEBUG");
+            } catch (latencyError) {
+              logToFile(`延迟检测注册失败: ${latencyError.message}`, "WARN");
+            }
+          }
+
+          resolve(processId);
+        },
+      );
     });
   }
 
@@ -731,7 +889,9 @@ class SSHHandlers {
               `\r\n连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多1分钟）...\r\n`,
             );
           }
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
 
         reconnectManager
           .waitForReconnect(connectionKey, 60_000)
@@ -761,10 +921,13 @@ class SSHHandlers {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(
             `process:output:${processId}`,
-            `\r\n自动重连超时（1分钟），请检查代理/VPN/网络后手动重连\r\n`
+            `\r\n自动重连超时（1分钟），请检查代理/VPN/网络后手动重连\r\n`,
           );
         }
-        this.connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+        this.connectionManager.releaseSSHConnection(
+          connectionInfo.key,
+          sshConfig.tabId,
+        );
         reject(new Error("SSH connection timeout"));
       }, 60_000);
 
@@ -802,7 +965,7 @@ class SSHHandlers {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(
             `process:output:${processId}`,
-            `\r\n*** ${sshConfig.host} SSH连接已建立 ***\r\n`
+            `\r\n*** ${sshConfig.host} SSH连接已建立 ***\r\n`,
           );
         }
 
@@ -849,7 +1012,10 @@ class SSHHandlers {
           });
         }
 
-        this.connectionManager.releaseSSHConnection(connectionInfo.key, sshConfig.tabId);
+        this.connectionManager.releaseSSHConnection(
+          connectionInfo.key,
+          sshConfig.tabId,
+        );
         this.childProcesses.delete(processId);
         if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
         reject(err);
@@ -879,16 +1045,25 @@ class SSHHandlers {
     }
 
     try {
-      const connectionInfo = await this.connectionManager.getTelnetConnection(telnetConfig);
+      const connectionInfo =
+        await this.connectionManager.getTelnetConnection(telnetConfig);
       this._broadcastTopConnections();
       const telnet = connectionInfo.client;
 
       if (telnetConfig.tabId) {
-        this.connectionManager.addTabReference(telnetConfig.tabId, connectionInfo.key);
+        this.connectionManager.addTabReference(
+          telnetConfig.tabId,
+          connectionInfo.key,
+        );
       }
 
       // 存储进程信息
-      const procInfo = this._createProcessInfo(telnet, connectionInfo, telnetConfig, "telnet");
+      const procInfo = this._createProcessInfo(
+        telnet,
+        connectionInfo,
+        telnetConfig,
+        "telnet",
+      );
       this.childProcesses.set(processId, procInfo);
       if (telnetConfig.tabId) {
         this.childProcesses.set(telnetConfig.tabId, { ...procInfo });
@@ -900,11 +1075,16 @@ class SSHHandlers {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(
             `process:output:${processId}`,
-            `\r\n*** ${telnetConfig.host} Telnet连接已建立（复用现有连接） ***\r\n`
+            `\r\n*** ${telnetConfig.host} Telnet连接已建立（复用现有连接） ***\r\n`,
           );
         }
 
-        this._setupTelnetEventListeners(telnet, processId, telnetConfig, connectionInfo);
+        this._setupTelnetEventListeners(
+          telnet,
+          processId,
+          telnetConfig,
+          connectionInfo,
+        );
         return processId;
       } else {
         logToFile(`Telnet连接未就绪`, "ERROR");
