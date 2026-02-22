@@ -4,6 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 const { pipeline } = require("stream/promises");
+const { sanitizePathForLog } = require("../../core/utils/log-sanitizer");
 
 // Import centralized configuration
 const {
@@ -1049,7 +1050,10 @@ async function handleUploadFile(
       const stats = fs.statSync(filePath);
       totalBytesToUpload += stats.size;
     } catch (statError) {
-      logToFile(`Error stating file ${filePath}: ${statError.message}`, "WARN");
+      logToFile(
+        `Error stating file ${sanitizePathForLog(filePath)}: ${statError.message}`,
+        "WARN",
+      );
       // Optionally, count this as a failed file upfront or skip
     }
   }
@@ -1114,7 +1118,9 @@ async function handleUploadFile(
           }
         } catch (statErr) {
           logToFile(
-            `sftpTransfer: Target folder check/stat failed for "${normalizedTargetFolder}": ${statErr.message}`,
+            `sftpTransfer: Target folder check/stat failed for "${sanitizePathForLog(
+              normalizedTargetFolder || ".",
+            )}": ${statErr.message}`,
             "WARN",
           );
           activeTransfers.delete(transferKey);
@@ -1472,7 +1478,9 @@ async function handleUploadFolder(
   );
 
   logToFile(
-    `sftpTransfer: Queuing folder upload: "${localFolderPath}" to "${normalizedTargetFolder}" (as "${folderName}") for tab ${tabId}`,
+    `sftpTransfer: Queuing folder upload: "${sanitizePathForLog(
+      localFolderPath,
+    )}" to "${sanitizePathForLog(normalizedTargetFolder)}" (as "${folderName}") for tab ${tabId}`,
     "INFO",
   );
 
@@ -1509,7 +1517,9 @@ async function handleUploadFolder(
       // 1. Scan local folder and calculate totals (using async worker)
       try {
         logToFile(
-          `sftpTransfer: Starting async folder scan for "${localFolderPath}"`,
+          `sftpTransfer: Starting async folder scan for "${sanitizePathForLog(
+            localFolderPath,
+          )}"`,
           "INFO",
         );
 
@@ -1541,7 +1551,10 @@ async function handleUploadFolder(
             "WARN",
           );
           for (const error of scanResult.errors.slice(0, 5)) {
-            logToFile(`  - ${error.path}: ${error.error}`, "WARN");
+            logToFile(
+              `  - ${sanitizePathForLog(error.path)}: ${error.error}`,
+              "WARN",
+            );
           }
           if (scanResult.errors.length > 5) {
             logToFile(
@@ -1552,13 +1565,17 @@ async function handleUploadFolder(
         }
 
         logToFile(
-          `sftpTransfer: Found ${totalFilesToUpload} files, total size ${totalBytesToUpload} bytes for upload from "${localFolderPath}".`,
+          `sftpTransfer: Found ${totalFilesToUpload} files, total size ${totalBytesToUpload} bytes for upload from "${sanitizePathForLog(
+            localFolderPath,
+          )}".`,
           "INFO",
         );
 
         if (totalFilesToUpload === 0) {
           logToFile(
-            `sftpTransfer: No files to upload in "${localFolderPath}".`,
+            `sftpTransfer: No files to upload in "${sanitizePathForLog(
+              localFolderPath,
+            )}".`,
             "INFO",
           );
           return {
@@ -1590,7 +1607,9 @@ async function handleUploadFolder(
           // 递归创建目录
           await createRemoteDirectoryRecursive(sftp, remoteBaseUploadPath);
           logToFile(
-            `sftpTransfer: Created remote base directory "${remoteBaseUploadPath}".`,
+            `sftpTransfer: Created remote base directory "${sanitizePathForLog(
+              remoteBaseUploadPath,
+            )}".`,
             "INFO",
           );
         }
@@ -1666,7 +1685,9 @@ async function handleUploadFolder(
                       !mkdirError.message.includes("already exists"))
                   ) {
                     logToFile(
-                      `sftpTransfer: Error creating remote directory "${dir}": ${mkdirError.message}`,
+                      `sftpTransfer: Error creating remote directory "${sanitizePathForLog(
+                        dir,
+                      )}": ${mkdirError.message}`,
                       "ERROR",
                     );
                     throw mkdirError;
@@ -1678,7 +1699,9 @@ async function handleUploadFolder(
           }
         }
         logToFile(
-          `sftpTransfer: Ensured all remote subdirectories under "${remoteBaseUploadPath}".`,
+          `sftpTransfer: Ensured all remote subdirectories under "${sanitizePathForLog(
+            remoteBaseUploadPath,
+          )}".`,
           "INFO",
         );
 
@@ -1859,7 +1882,9 @@ async function handleUploadFolder(
           });
         }
         logToFile(
-          `sftpTransfer: Folder upload completed for "${localFolderPath}". ${filesUploadedCount} files uploaded.`,
+          `sftpTransfer: Folder upload completed for "${sanitizePathForLog(
+            localFolderPath,
+          )}". ${filesUploadedCount} files uploaded.`,
           "INFO",
         );
         return {
@@ -1870,7 +1895,9 @@ async function handleUploadFolder(
         };
       } catch (error) {
         logToFile(
-          `sftpTransfer: uploadFolder error for "${localFolderPath}" to "${remoteBaseUploadPath}": ${error.message}`,
+          `sftpTransfer: uploadFolder error for "${sanitizePathForLog(
+            localFolderPath,
+          )}" to "${sanitizePathForLog(remoteBaseUploadPath)}": ${error.message}`,
           "ERROR",
         );
 
@@ -1979,7 +2006,9 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
     fs.unlinkSync(testFilePath);
   } catch (err) {
     logToFile(
-      `sftpTransfer: Error creating or checking local download directory "${localBaseDownloadPath}": ${err.message}`,
+      `sftpTransfer: Error creating or checking local download directory "${sanitizePathForLog(
+        localBaseDownloadPath,
+      )}": ${err.message}`,
       "ERROR",
     );
     return {
@@ -1989,7 +2018,9 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
   }
 
   logToFile(
-    `sftpTransfer: Queuing folder download: "${remoteFolderPath}" to "${localBaseDownloadPath}" for tab ${tabId}`,
+    `sftpTransfer: Queuing folder download: "${sanitizePathForLog(
+      remoteFolderPath,
+    )}" to "${sanitizePathForLog(localBaseDownloadPath)}" for tab ${tabId}`,
     "INFO",
   );
 
@@ -2116,13 +2147,17 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
         });
         await scanRemoteAndCalculateTotals(remoteFolderPath, "");
         logToFile(
-          `sftpTransfer: Found ${totalFilesToDownload} files, total size ${totalBytesToDownload} bytes for download from "${remoteFolderPath}".`,
+          `sftpTransfer: Found ${totalFilesToDownload} files, total size ${totalBytesToDownload} bytes for download from "${sanitizePathForLog(
+            remoteFolderPath,
+          )}".`,
           "INFO",
         );
 
         if (totalFilesToDownload === 0) {
           logToFile(
-            `sftpTransfer: No files to download in "${remoteFolderPath}".`,
+            `sftpTransfer: No files to download in "${sanitizePathForLog(
+              remoteFolderPath,
+            )}".`,
             "INFO",
           );
           shell.showItemInFolder(localBaseDownloadPath);
@@ -2170,7 +2205,9 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           }
         }
         logToFile(
-          `sftpTransfer: Ensured all local subdirectories under "${localBaseDownloadPath}".`,
+          `sftpTransfer: Ensured all local subdirectories under "${sanitizePathForLog(
+            localBaseDownloadPath,
+          )}".`,
           "INFO",
         );
 
@@ -2360,7 +2397,9 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
           remainingTime: 0, // 传输完成，剩余时间为0
         });
         logToFile(
-          `sftpTransfer: Folder download completed for "${remoteFolderPath}". ${filesDownloadedCount} files downloaded.`,
+          `sftpTransfer: Folder download completed for "${sanitizePathForLog(
+            remoteFolderPath,
+          )}". ${filesDownloadedCount} files downloaded.`,
           "INFO",
         );
         shell.showItemInFolder(localBaseDownloadPath);
@@ -2373,7 +2412,9 @@ async function handleDownloadFolder(tabId, remoteFolderPath) {
       } catch (error) {
         const cancelled = isCancelledTransferError(error);
         logToFile(
-          `sftpTransfer: downloadFolder error for "${remoteFolderPath}" to "${localBaseDownloadPath}": ${error.message}`,
+          `sftpTransfer: downloadFolder error for "${sanitizePathForLog(
+            remoteFolderPath,
+          )}" to "${sanitizePathForLog(localBaseDownloadPath)}": ${error.message}`,
           cancelled ? "INFO" : "ERROR",
         );
 

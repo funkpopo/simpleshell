@@ -353,6 +353,7 @@
       "apiUrl": "API 基础地址",
       "apiUrlHelp": "请输入基础 API 地址，如：https://api.openai.com/v1（不要包含 /chat/completions）",
       "apiKey": "API 密钥",
+      "keyStoredInMain": "密钥已在主进程安全保存，留空表示保持不变",
       "model": "模型名称",
       "placeholders": {
         "name": "我的 API",
@@ -513,6 +514,7 @@
       "cancel": "取消",
       "changed": "已更改",
       "fingerprintWarning": "服务器指纹已更改，请确认是否为预期更改。",
+      "previousFingerprint": "历史指纹",
       "authCancelled": "认证已取消",
       "authFailed": "认证失败",
       "pleaseRetry": "用户名或密码错误，请重新输入"
@@ -910,10 +912,7 @@
       "UNKNOWN": {
         "title": "发生错误",
         "message": "遇到了一个未知错误",
-        "solutions": [
-          "请稍后重试",
-          "如问题持续，请联系管理员"
-        ],
+        "solutions": ["请稍后重试", "如问题持续，请联系管理员"],
         "action": "重试",
         "severity": "error"
       }

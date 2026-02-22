@@ -353,6 +353,7 @@
       "apiUrl": "API Base URL",
       "apiUrlHelp": "Enter the base API URL, e.g., https://api.openai.com/v1 (do not include /chat/completions)",
       "apiKey": "API Key",
+      "keyStoredInMain": "Key is securely stored in main process; leave blank to keep unchanged",
       "model": "Model Name",
       "placeholders": {
         "name": "My API",
@@ -513,6 +514,7 @@
       "cancel": "Cancel",
       "changed": "Changed",
       "fingerprintWarning": "Server fingerprint has changed. Please verify this is expected.",
+      "previousFingerprint": "Previous Fingerprint",
       "authCancelled": "Authentication cancelled",
       "authFailed": "Authentication failed",
       "pleaseRetry": "Invalid username or password, please try again"

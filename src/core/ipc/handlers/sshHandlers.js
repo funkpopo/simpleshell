@@ -31,6 +31,8 @@ class SSHHandlers {
 
     // 已知主机指纹缓存 (host:port -> fingerprint)
     this.knownHostsCache = new Map();
+    this.knownHostsLoaded = false;
+    this.pendingHostVerifications = new Map();
   }
 
   getHandlers() {
@@ -153,7 +155,7 @@ class SSHHandlers {
   }
 
   /**
-   * 计算主机密钥指纹
+   * 计算主机密钥指纹（fallback）
    */
   _computeFingerprint(key) {
     try {
@@ -169,17 +171,112 @@ class SSHHandlers {
   }
 
   /**
+   * 获取主机缓存键
+   */
+  _getHostCacheKey(host, port) {
+    return `${host}:${port || 22}`;
+  }
+
+  /**
+   * 规范化主机指纹
+   */
+  _normalizeFingerprint(fingerprint) {
+    if (typeof fingerprint !== "string") {
+      return null;
+    }
+
+    const trimmed = fingerprint.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (trimmed.toUpperCase().startsWith("SHA256:")) {
+      return `SHA256:${trimmed.slice(7)}`;
+    }
+
+    return `SHA256:${trimmed}`;
+  }
+
+  /**
+   * 从配置中加载已知主机指纹
+   */
+  _ensureKnownHostsLoaded() {
+    if (this.knownHostsLoaded) {
+      return;
+    }
+
+    this.knownHostsLoaded = true;
+    this.knownHostsCache.clear();
+
+    try {
+      const storedHosts = configService.get("sshKnownHosts");
+      if (!storedHosts || typeof storedHosts !== "object") {
+        return;
+      }
+
+      Object.entries(storedHosts).forEach(([hostKey, entry]) => {
+        const fingerprint =
+          typeof entry === "string" ? entry : entry?.fingerprint;
+        const normalizedFingerprint = this._normalizeFingerprint(fingerprint);
+        if (!normalizedFingerprint) {
+          return;
+        }
+
+        this.knownHostsCache.set(hostKey, {
+          fingerprint: normalizedFingerprint,
+          updatedAt:
+            typeof entry === "object" && entry?.updatedAt
+              ? entry.updatedAt
+              : new Date().toISOString(),
+        });
+      });
+    } catch (error) {
+      logToFile(`Failed to load known SSH hosts: ${error.message}`, "WARN");
+    }
+  }
+
+  /**
+   * 持久化已知主机指纹到配置文件
+   */
+  _persistKnownHosts() {
+    try {
+      const serializedHosts = {};
+      for (const [hostKey, entry] of this.knownHostsCache.entries()) {
+        serializedHosts[hostKey] = {
+          fingerprint: entry.fingerprint,
+          updatedAt: entry.updatedAt || new Date().toISOString(),
+        };
+      }
+
+      const saved = configService.set("sshKnownHosts", serializedHosts);
+      if (!saved) {
+        logToFile("Failed to persist known SSH hosts", "WARN");
+      }
+    } catch (error) {
+      logToFile(`Failed to persist known SSH hosts: ${error.message}`, "WARN");
+    }
+  }
+
+  /**
    * 检查主机密钥是否已知且匹配
    */
   _checkHostKey(host, port, fingerprint) {
-    const hostKey = `${host}:${port || 22}`;
-    const knownFingerprint = this.knownHostsCache.get(hostKey);
+    this._ensureKnownHostsLoaded();
+    const hostKey = this._getHostCacheKey(host, port);
+    const normalizedFingerprint = this._normalizeFingerprint(fingerprint);
+    if (!normalizedFingerprint) {
+      return { known: false, changed: false };
+    }
+
+    const knownEntry = this.knownHostsCache.get(hostKey);
+    const knownFingerprint =
+      typeof knownEntry === "string" ? knownEntry : knownEntry?.fingerprint;
 
     if (!knownFingerprint) {
       return { known: false, changed: false };
     }
 
-    if (knownFingerprint !== fingerprint) {
+    if (knownFingerprint !== normalizedFingerprint) {
       return {
         known: true,
         changed: true,
@@ -194,8 +291,18 @@ class SSHHandlers {
    * 保存主机密钥
    */
   _saveHostKey(host, port, fingerprint) {
-    const hostKey = `${host}:${port || 22}`;
-    this.knownHostsCache.set(hostKey, fingerprint);
+    this._ensureKnownHostsLoaded();
+    const hostKey = this._getHostCacheKey(host, port);
+    const normalizedFingerprint = this._normalizeFingerprint(fingerprint);
+    if (!normalizedFingerprint) {
+      return;
+    }
+
+    this.knownHostsCache.set(hostKey, {
+      fingerprint: normalizedFingerprint,
+      updatedAt: new Date().toISOString(),
+    });
+    this._persistKnownHosts();
   }
 
   /**
@@ -244,6 +351,95 @@ class SSHHandlers {
 
       logToFile(`Sent auth request: ${requestId} for tab ${tabId}`, "INFO");
     });
+  }
+
+  /**
+   * 请求用户确认主机指纹
+   */
+  async _requestHostFingerprintApproval(sshConfig, fingerprint) {
+    const host = sshConfig.host;
+    const port = sshConfig.port || 22;
+    const normalizedFingerprint = this._normalizeFingerprint(fingerprint);
+    if (!normalizedFingerprint) {
+      return false;
+    }
+
+    const hostKeyStatus = this._checkHostKey(host, port, normalizedFingerprint);
+    if (hostKeyStatus.known && !hostKeyStatus.changed) {
+      return true;
+    }
+
+    const pendingKey = `${host}:${port}:${normalizedFingerprint}`;
+    if (this.pendingHostVerifications.has(pendingKey)) {
+      return this.pendingHostVerifications.get(pendingKey);
+    }
+
+    const verificationPromise = (async () => {
+      const authResult = await this._requestUserAuth(sshConfig.tabId, {
+        step: "hostVerify",
+        host,
+        port,
+        serverVersion: null,
+        fingerprint: normalizedFingerprint,
+        previousFingerprint: hostKeyStatus.previousFingerprint || null,
+        fingerprintChanged: hostKeyStatus.changed,
+        requireCredentials: false,
+        connectionId: sshConfig.id,
+        username: sshConfig.username || "",
+        existingUsername: sshConfig.username || "",
+        isRetry: false,
+      });
+
+      if (!authResult || authResult.cancelled || !authResult.acceptHostKey) {
+        return false;
+      }
+
+      this._saveHostKey(host, port, normalizedFingerprint);
+      return true;
+    })();
+
+    this.pendingHostVerifications.set(pendingKey, verificationPromise);
+
+    try {
+      return await verificationPromise;
+    } finally {
+      this.pendingHostVerifications.delete(pendingKey);
+    }
+  }
+
+  /**
+   * 创建 ssh2 hostVerifier 回调
+   */
+  _createHostVerifier(sshConfig) {
+    return (fingerprint, callback) => {
+      if (typeof callback !== "function") {
+        return false;
+      }
+
+      void this._requestHostFingerprintApproval(sshConfig, fingerprint)
+        .then((approved) => {
+          callback(Boolean(approved));
+        })
+        .catch((error) => {
+          logToFile(
+            `Host fingerprint verification failed: ${error.message}`,
+            "WARN",
+          );
+          callback(false);
+        });
+      return undefined;
+    };
+  }
+
+  /**
+   * 为 SSH 配置附加主机指纹校验能力
+   */
+  _attachHostVerificationConfig(sshConfig) {
+    return {
+      ...sshConfig,
+      hostHash: "sha256",
+      hostVerifier: this._createHostVerifier(sshConfig),
+    };
   }
 
   _getMainWindow() {
@@ -671,15 +867,17 @@ class SSHHandlers {
           };
         }
 
-        // 尝试建立SSH连接
+        // 尝试建立SSH连接（附加主机指纹校验）
+        const connectionConfig =
+          this._attachHostVerificationConfig(finalConfig);
         const connectionInfo =
-          await this.connectionManager.getSSHConnection(finalConfig);
+          await this.connectionManager.getSSHConnection(connectionConfig);
         this._broadcastTopConnections();
         const ssh = connectionInfo.client;
 
-        if (finalConfig.tabId) {
+        if (connectionConfig.tabId) {
           this.connectionManager.addTabReference(
-            finalConfig.tabId,
+            connectionConfig.tabId,
             connectionInfo.key,
           );
         }
@@ -688,12 +886,12 @@ class SSHHandlers {
         const procInfo = this._createProcessInfo(
           ssh,
           connectionInfo,
-          finalConfig,
+          connectionConfig,
           "ssh2",
         );
         this.childProcesses.set(processId, procInfo);
-        if (finalConfig.tabId) {
-          this.childProcesses.set(finalConfig.tabId, { ...procInfo });
+        if (connectionConfig.tabId) {
+          this.childProcesses.set(connectionConfig.tabId, { ...procInfo });
         }
 
         let result;
@@ -703,21 +901,21 @@ class SSHHandlers {
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send(
               `process:output:${processId}`,
-              `\r\n*** ${finalConfig.host} SSH连接已建立（复用现有连接） ***\r\n`,
+              `\r\n*** ${connectionConfig.host} SSH连接已建立（复用现有连接） ***\r\n`,
             );
           }
 
           result = await this._createSSHShell(
             ssh,
             processId,
-            finalConfig,
+            connectionConfig,
             connectionInfo,
           );
         } else {
           result = await this._waitForSSHReady(
             ssh,
             processId,
-            finalConfig,
+            connectionConfig,
             connectionInfo,
           );
         }
