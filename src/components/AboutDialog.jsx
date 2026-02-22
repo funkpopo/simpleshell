@@ -47,7 +47,6 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   const [updateStatus, setUpdateStatus] = useState("idle"); // idle, checking, available, downloading, downloaded, installing, error, upToDate
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadedFilePath, setDownloadedFilePath] = useState("");
   const [error, setError] = useState("");
 
   // Get app version
@@ -99,15 +98,16 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   const handleOpenExternalLink = useCallback(
     async (url) => {
       try {
-        if (window.terminalAPI?.openExternal) {
-          await window.terminalAPI.openExternal(url);
-          return;
+        if (!window.terminalAPI?.openExternal) {
+          throw new Error("terminalAPI.openExternal is unavailable");
         }
 
-        const popup = window.open(url, "_blank", "noopener,noreferrer");
-        if (!popup) {
-          throw new Error("Popup was blocked");
-        }
+        const isRestrictedProtocol =
+          typeof url === "string" && url.toLowerCase().startsWith("mailto:");
+        await window.terminalAPI.openExternal(url, {
+          source: "about-dialog",
+          allowRestrictedProtocols: isRestrictedProtocol,
+        });
       } catch {
         showError(t("app.cannotOpenLinkAlert", { url }));
       }
@@ -152,12 +152,9 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     setUpdateStatus("downloading");
 
     try {
-      const result = await window.terminalAPI.downloadUpdate(
-        updateInfo.downloadUrl,
-      );
+      const result = await window.terminalAPI.downloadUpdate();
 
       if (result.success) {
-        setDownloadedFilePath(result.filePath);
         setUpdateStatus("downloaded");
       } else {
         setError(result.error || t("update.errors.downloadFailed"));
@@ -173,7 +170,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
   // Install update
   const installUpdate = useCallback(async () => {
-    if (!downloadedFilePath) {
+    if (updateStatus !== "downloaded") {
       setError(t("update.errors.noInstallerFile"));
       return;
     }
@@ -182,7 +179,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     setError("");
 
     try {
-      const result = await window.terminalAPI.installUpdate(downloadedFilePath);
+      const result = await window.terminalAPI.installUpdate();
 
       if (!result.success) {
         setError(result.error || t("update.errors.installationFailed"));
@@ -193,7 +190,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
       setError(err.message || t("update.errors.installationFailed"));
       setUpdateStatus("error");
     }
-  }, [downloadedFilePath]);
+  }, [updateStatus]);
 
   // Cancel download
   const cancelDownload = useCallback(async () => {

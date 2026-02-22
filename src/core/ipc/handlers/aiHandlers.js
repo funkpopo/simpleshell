@@ -11,6 +11,199 @@ class AIHandlers {
     // 使用aiWorkerManager管理状态
   }
 
+  _toRendererSafeApiConfig(config) {
+    if (!config || typeof config !== "object") {
+      return config;
+    }
+
+    return {
+      ...config,
+      hasApiKey: Boolean(config.apiKey),
+      apiKey: "",
+    };
+  }
+
+  _toRendererSafeSettings(settings) {
+    const safeSettings =
+      settings && typeof settings === "object" ? { ...settings } : {};
+
+    const configs = Array.isArray(safeSettings.configs)
+      ? safeSettings.configs
+      : [];
+    safeSettings.configs = configs.map((config) =>
+      this._toRendererSafeApiConfig(config),
+    );
+
+    safeSettings.current = safeSettings.current
+      ? this._toRendererSafeApiConfig(safeSettings.current)
+      : null;
+
+    return safeSettings;
+  }
+
+  _stripApiConfigMeta(config) {
+    if (!config || typeof config !== "object") {
+      return config;
+    }
+
+    const normalizedConfig = { ...config };
+    delete normalizedConfig.hasApiKey;
+    return normalizedConfig;
+  }
+
+  _normalizeSettingsForStorage(settings) {
+    const normalizedSettings =
+      settings && typeof settings === "object" ? { ...settings } : {};
+    const configs = Array.isArray(normalizedSettings.configs)
+      ? normalizedSettings.configs
+      : [];
+
+    normalizedSettings.configs = configs.map((config) =>
+      this._stripApiConfigMeta(config),
+    );
+    normalizedSettings.current = normalizedSettings.current
+      ? this._stripApiConfigMeta(normalizedSettings.current)
+      : null;
+
+    return normalizedSettings;
+  }
+
+  _isNonEmptyString(value) {
+    return typeof value === "string" && value.trim() !== "";
+  }
+
+  _findStoredApiConfig(settings, apiConfigId) {
+    const configs = Array.isArray(settings?.configs) ? settings.configs : [];
+
+    if (this._isNonEmptyString(apiConfigId)) {
+      return configs.find((config) => config.id === apiConfigId) || null;
+    }
+
+    if (settings?.current?.id) {
+      return (
+        configs.find((config) => config.id === settings.current.id) ||
+        settings.current
+      );
+    }
+
+    return settings?.current || null;
+  }
+
+  _preserveStoredApiKeys(rawSettings, normalizedSettings) {
+    const mergedSettings =
+      normalizedSettings && typeof normalizedSettings === "object"
+        ? { ...normalizedSettings }
+        : {};
+    const existingSettings = configService.loadAISettings();
+    const existingConfigs = Array.isArray(existingSettings?.configs)
+      ? existingSettings.configs
+      : [];
+    const existingApiKeyById = new Map(
+      existingConfigs
+        .filter((config) => this._isNonEmptyString(config?.id))
+        .map((config) => [config.id, config.apiKey]),
+    );
+
+    const rawConfigs = Array.isArray(rawSettings?.configs)
+      ? rawSettings.configs
+      : [];
+    const normalizedConfigs = Array.isArray(mergedSettings.configs)
+      ? mergedSettings.configs
+      : [];
+
+    mergedSettings.configs = normalizedConfigs.map((config, index) => {
+      const rawConfig = rawConfigs[index];
+      const shouldPreserveExistingKey =
+        rawConfig?.hasApiKey === true &&
+        !this._isNonEmptyString(config?.apiKey);
+
+      if (!shouldPreserveExistingKey || !this._isNonEmptyString(config?.id)) {
+        return config;
+      }
+
+      const existingKey = existingApiKeyById.get(config.id);
+      if (!this._isNonEmptyString(existingKey)) {
+        return config;
+      }
+
+      return {
+        ...config,
+        apiKey: existingKey,
+      };
+    });
+
+    const rawCurrent = rawSettings?.current;
+    const normalizedCurrent = mergedSettings.current;
+    if (
+      normalizedCurrent &&
+      rawCurrent?.hasApiKey === true &&
+      !this._isNonEmptyString(normalizedCurrent.apiKey)
+    ) {
+      let existingKey = null;
+      if (this._isNonEmptyString(normalizedCurrent.id)) {
+        existingKey = existingApiKeyById.get(normalizedCurrent.id) || null;
+      }
+
+      if (!this._isNonEmptyString(existingKey)) {
+        const existingCurrent = existingSettings?.current;
+        existingKey = existingCurrent?.apiKey || null;
+      }
+
+      if (this._isNonEmptyString(existingKey)) {
+        mergedSettings.current = {
+          ...normalizedCurrent,
+          apiKey: existingKey,
+        };
+      }
+    }
+
+    return mergedSettings;
+  }
+
+  _resolveApiRequestData(requestData) {
+    const resolvedData = {
+      ...requestData,
+    };
+    if (typeof resolvedData.apiKey === "string") {
+      resolvedData.apiKey = resolvedData.apiKey.trim();
+    }
+
+    const settings = configService.loadAISettings();
+    const targetConfig = this._findStoredApiConfig(
+      settings,
+      resolvedData.apiConfigId,
+    );
+    const hasInlineApiKey = this._isNonEmptyString(resolvedData.apiKey);
+
+    if (targetConfig) {
+      // When using a stored API key, keep endpoint/model pinned to saved config.
+      if (!hasInlineApiKey) {
+        resolvedData.url = targetConfig.apiUrl;
+        resolvedData.model = targetConfig.model;
+        resolvedData.provider = targetConfig.provider;
+        resolvedData.apiKey = targetConfig.apiKey;
+      } else {
+        resolvedData.url = resolvedData.url || targetConfig.apiUrl;
+        resolvedData.model = resolvedData.model || targetConfig.model;
+        resolvedData.provider = resolvedData.provider || targetConfig.provider;
+      }
+      if (
+        resolvedData.maxTokens === undefined &&
+        targetConfig.maxTokens !== undefined
+      ) {
+        resolvedData.maxTokens = targetConfig.maxTokens;
+      }
+      if (
+        resolvedData.temperature === undefined &&
+        targetConfig.temperature !== undefined
+      ) {
+        resolvedData.temperature = targetConfig.temperature;
+      }
+    }
+
+    return resolvedData;
+  }
+
   /**
    * 获取所有AI处理器
    */
@@ -70,11 +263,17 @@ class AIHandlers {
   }
 
   async loadSettings() {
-    return configService.loadAISettings();
+    const settings = configService.loadAISettings();
+    return this._toRendererSafeSettings(settings);
   }
 
   async saveSettings(event, settings) {
-    return configService.saveAISettings(settings);
+    const normalizedSettings = this._normalizeSettingsForStorage(settings);
+    const mergedSettings = this._preserveStoredApiKeys(
+      settings,
+      normalizedSettings,
+    );
+    return configService.saveAISettings(mergedSettings);
   }
 
   async saveApiConfig(event, config) {
@@ -85,18 +284,31 @@ class AIHandlers {
           name: config.name,
           model: config.model,
         })}`,
-        "INFO"
+        "INFO",
       );
       const settings = configService.loadAISettings();
       if (!settings.configs) settings.configs = [];
       if (!config.id) config.id = Date.now().toString();
       const existingIndex = settings.configs.findIndex(
-        (c) => c.id === config.id
+        (c) => c.id === config.id,
       );
+      const normalizedConfig = { ...config };
+      delete normalizedConfig.hasApiKey;
+
       if (existingIndex >= 0) {
-        settings.configs[existingIndex] = config;
+        const existingConfig = settings.configs[existingIndex];
+        if (!normalizedConfig.apiKey && existingConfig?.apiKey) {
+          normalizedConfig.apiKey = existingConfig.apiKey;
+        }
+        settings.configs[existingIndex] = {
+          ...existingConfig,
+          ...normalizedConfig,
+        };
       } else {
-        settings.configs.push(config);
+        if (!normalizedConfig.apiKey) {
+          throw new Error("API Key is required for a new API config");
+        }
+        settings.configs.push(normalizedConfig);
       }
       return configService.saveAISettings(settings);
     } catch (error) {
@@ -161,17 +373,21 @@ class AIHandlers {
 
   async sendAPIRequest(event, requestData, isStream) {
     try {
+      const resolvedRequestData = this._resolveApiRequestData(
+        requestData || {},
+      );
+
       // 验证请求数据
       if (
-        !requestData ||
-        !requestData.url ||
-        !requestData.apiKey ||
-        !requestData.model
+        !resolvedRequestData ||
+        !resolvedRequestData.url ||
+        !resolvedRequestData.apiKey ||
+        !resolvedRequestData.model
       ) {
         throw new Error("请先配置 AI API，包括 API 地址、密钥和模型");
       }
 
-      if (!requestData.messages) {
+      if (!resolvedRequestData.messages) {
         throw new Error("请求数据无效，缺少消息内容");
       }
 
@@ -186,12 +402,12 @@ class AIHandlers {
 
       // 如果是流式请求，保存会话ID
       if (isStream) {
-        aiWorkerManager.setCurrentSessionId(requestData.sessionId);
+        aiWorkerManager.setCurrentSessionId(resolvedRequestData.sessionId);
       }
 
       // 准备发送到Worker的数据
       const workerData = {
-        ...requestData,
+        ...resolvedRequestData,
         isStream,
       };
 
@@ -279,6 +495,13 @@ class AIHandlers {
 
   async fetchModels(event, requestData) {
     try {
+      const resolvedRequestData = this._resolveApiRequestData(
+        requestData || {},
+      );
+      if (!resolvedRequestData.url || !resolvedRequestData.apiKey) {
+        throw new Error("请先配置有效的 API 地址和密钥");
+      }
+
       // 确保Worker已创建
       const aiWorker = aiWorkerManager.ensureAIWorker();
       if (!aiWorker) {
@@ -297,7 +520,7 @@ class AIHandlers {
           id: requestId,
           type: "api_request",
           data: {
-            ...requestData,
+            ...resolvedRequestData,
             type: "models",
           },
         });

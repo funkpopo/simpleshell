@@ -1,4 +1,5 @@
 const { logToFile } = require("../../core/utils/logger");
+const { sanitizeCommandForLog } = require("../../core/utils/log-sanitizer");
 const highlightRuleConfigs = require("../../constants/highlight-configs"); // New import
 
 // 添加ANSI颜色代码
@@ -335,7 +336,10 @@ class OutputProcessor {
                   ) {
                     procInfo.lastExtractedCommand = command;
                     procInfo.lastExtractedTime = now;
-                    logToFile(`Extracted remote command: ${command}`, "INFO");
+                    logToFile(
+                      `Extracted remote command: ${sanitizeCommandForLog(command)}`,
+                      "INFO",
+                    );
                   }
                 }
 

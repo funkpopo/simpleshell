@@ -349,7 +349,9 @@ class ReconnectionManager extends EventEmitter {
         done = true;
         try {
           socket.destroy();
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
         resolve(ok);
       };
 
@@ -364,7 +366,8 @@ class ReconnectionManager extends EventEmitter {
     const enabled = Boolean(this.config.networkProbe?.enabled);
     if (!enabled) return true;
 
-    const resolvedProxyConfig = await proxyManager.resolveProxyConfigAsync(config);
+    const resolvedProxyConfig =
+      await proxyManager.resolveProxyConfigAsync(config);
     const usingProxy =
       resolvedProxyConfig &&
       proxyManager.isValidProxyConfig(resolvedProxyConfig) &&
@@ -377,11 +380,7 @@ class ReconnectionManager extends EventEmitter {
       if (!Number.isFinite(proxyPort) || proxyPort <= 0) {
         return false;
       }
-      return this._probeTcp(
-        resolvedProxyConfig.host,
-        proxyPort,
-        tcpTimeoutMs,
-      );
+      return this._probeTcp(resolvedProxyConfig.host, proxyPort, tcpTimeoutMs);
     }
 
     // 直连预检必须探测“会话配置的端口”，避免非 22 端口被误判为不可用。
@@ -440,7 +439,8 @@ class ReconnectionManager extends EventEmitter {
     // 连续失败统计：同类原因、且时间间隔不太长则计为连续
     const isSameReason = existing.lastReason === reason;
     const isCloseInTime = now - (existing.lastAt || 0) < 5 * 60 * 1000; // 5分钟窗口
-    existing.consecutive = isSameReason && isCloseInTime ? existing.consecutive + 1 : 1;
+    existing.consecutive =
+      isSameReason && isCloseInTime ? existing.consecutive + 1 : 1;
 
     existing.lastReason = reason;
     existing.lastAt = now;
@@ -565,10 +565,7 @@ class ReconnectionManager extends EventEmitter {
     const nextAttempt = session.retryCount + 1;
     if (nextAttempt > maxRetries) {
       session.isReconnecting = false;
-      this.abandonReconnection(
-        session,
-        `达到最大重试次数(${maxRetries}次)`,
-      );
+      this.abandonReconnection(session, `达到最大重试次数(${maxRetries}次)`);
       this.emit("reconnectFailed", {
         sessionId: session.id,
         error: `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后手动重连。`,
@@ -589,10 +586,7 @@ class ReconnectionManager extends EventEmitter {
       const errorCode = session.lastError?.code || "";
       if (this.config.fastReconnect.conditions.includes(errorCode)) {
         delay = this.config.fastReconnect.delay;
-        logToFile(
-          `使用快速重连策略: ${session.id}, 延迟 ${delay}ms`,
-          "DEBUG",
-        );
+        logToFile(`使用快速重连策略: ${session.id}, 延迟 ${delay}ms`, "DEBUG");
       }
     }
 
@@ -748,10 +742,7 @@ class ReconnectionManager extends EventEmitter {
     const attemptNumber = session.retryCount + 1;
     if (attemptNumber > maxRetries) {
       session.isReconnecting = false;
-      this.abandonReconnection(
-        session,
-        `达到最大重试次数(${maxRetries}次)`,
-      );
+      this.abandonReconnection(session, `达到最大重试次数(${maxRetries}次)`);
       this.emit("reconnectFailed", {
         sessionId: session.id,
         error: `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后手动重连。`,
@@ -913,14 +904,23 @@ class ReconnectionManager extends EventEmitter {
         readyTimeout: 10000,
       };
 
-      if (processedConfig.password) connectionOptions.password = processedConfig.password;
-      if (processedConfig.privateKey) connectionOptions.privateKey = processedConfig.privateKey;
-      if (processedConfig.passphrase) connectionOptions.passphrase = processedConfig.passphrase;
+      if (processedConfig.password)
+        connectionOptions.password = processedConfig.password;
+      if (processedConfig.privateKey)
+        connectionOptions.privateKey = processedConfig.privateKey;
+      if (processedConfig.passphrase)
+        connectionOptions.passphrase = processedConfig.passphrase;
+      if (processedConfig.hostHash)
+        connectionOptions.hostHash = processedConfig.hostHash;
+      if (typeof processedConfig.hostVerifier === "function") {
+        connectionOptions.hostVerifier = processedConfig.hostVerifier;
+      }
 
       (async () => {
         try {
           // 重连也必须走同一套代理逻辑（否则会退化为直连）
-          const resolvedProxyConfig = await proxyManager.resolveProxyConfigAsync(processedConfig);
+          const resolvedProxyConfig =
+            await proxyManager.resolveProxyConfigAsync(processedConfig);
           const usingProxy =
             resolvedProxyConfig &&
             proxyManager.isValidProxyConfig(resolvedProxyConfig) &&
@@ -941,7 +941,9 @@ class ReconnectionManager extends EventEmitter {
           clearTimeout(timeout);
           try {
             ssh.end();
-          } catch { /* intentionally ignored */ }
+          } catch {
+            /* intentionally ignored */
+          }
           reject(e);
         }
       })();
@@ -1014,7 +1016,9 @@ class ReconnectionManager extends EventEmitter {
               if (sftp && typeof sftp.end === "function") {
                 sftp.end();
               }
-            } catch { /* intentionally ignored */ }
+            } catch {
+              /* intentionally ignored */
+            }
 
             clearTimeout(timeoutId);
             finish(true);
@@ -1047,7 +1051,9 @@ class ReconnectionManager extends EventEmitter {
               if (stream && typeof stream.close === "function") {
                 stream.close();
               }
-            } catch { /* intentionally ignored */ }
+            } catch {
+              /* intentionally ignored */
+            }
 
             clearTimeout(timeoutId);
             finish(true);
@@ -1180,7 +1186,10 @@ class ReconnectionManager extends EventEmitter {
    * - 若当前会话已在 pending/reconnecting，则不会重复安排
    * - 若当前会话处于 connected，但上层判断连接不健康，可调用此方法触发一次自动重连
    */
-  async requestAutoReconnect(sessionId, failureReason = FAILURE_REASON.NETWORK) {
+  async requestAutoReconnect(
+    sessionId,
+    failureReason = FAILURE_REASON.NETWORK,
+  ) {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new Error(`会话不存在: ${sessionId}`);

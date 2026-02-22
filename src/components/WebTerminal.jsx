@@ -2575,7 +2575,9 @@ const WebTerminal = ({
               throw new Error("terminalAPI.openExternal is unavailable");
             }
 
-            const result = await window.terminalAPI.openExternal(uri);
+            const result = await window.terminalAPI.openExternal(uri, {
+              source: "terminal",
+            });
             if (
               result &&
               typeof result === "object" &&

@@ -1,5 +1,6 @@
 const fs = require("fs");
 const { logToFile } = require("./logger");
+const { sanitizePathForLog } = require("./log-sanitizer");
 
 /**
  * 读取SSH私钥文件内容
@@ -12,10 +13,12 @@ function readPrivateKeyFile(privateKeyPath) {
     return null;
   }
 
+  const sanitizedPath = sanitizePathForLog(privateKeyPath);
+
   try {
     // 检查文件是否存在
     if (!fs.existsSync(privateKeyPath)) {
-      logToFile(`私钥文件不存在: ${privateKeyPath}`, "ERROR");
+      logToFile(`私钥文件不存在: ${sanitizedPath}`, "ERROR");
       return null;
     }
 
@@ -23,7 +26,7 @@ function readPrivateKeyFile(privateKeyPath) {
     try {
       fs.accessSync(privateKeyPath, fs.constants.R_OK);
     } catch {
-      logToFile(`私钥文件无读取权限: ${privateKeyPath}`, "ERROR");
+      logToFile(`私钥文件无读取权限: ${sanitizedPath}`, "ERROR");
       return null;
     }
 
@@ -32,17 +35,14 @@ function readPrivateKeyFile(privateKeyPath) {
 
     // 验证私钥格式
     if (!validatePrivateKeyFormat(keyContent)) {
-      logToFile(`私钥文件格式无效: ${privateKeyPath}`, "ERROR");
+      logToFile(`私钥文件格式无效: ${sanitizedPath}`, "ERROR");
       return null;
     }
 
-    logToFile(`成功读取私钥文件: ${privateKeyPath}`, "INFO");
+    logToFile(`成功读取私钥文件: ${sanitizedPath}`, "INFO");
     return keyContent;
   } catch (error) {
-    logToFile(
-      `读取私钥文件失败: ${privateKeyPath} - ${error.message}`,
-      "ERROR",
-    );
+    logToFile(`读取私钥文件失败: ${sanitizedPath} - ${error.message}`, "ERROR");
     return null;
   }
 }
@@ -58,10 +58,12 @@ async function readPrivateKeyFileAsync(privateKeyPath) {
     return null;
   }
 
+  const sanitizedPath = sanitizePathForLog(privateKeyPath);
+
   try {
     // 检查文件是否存在
     if (!fs.existsSync(privateKeyPath)) {
-      logToFile(`私钥文件不存在: ${privateKeyPath}`, "ERROR");
+      logToFile(`私钥文件不存在: ${sanitizedPath}`, "ERROR");
       return null;
     }
 
@@ -69,7 +71,7 @@ async function readPrivateKeyFileAsync(privateKeyPath) {
     try {
       await fs.promises.access(privateKeyPath, fs.constants.R_OK);
     } catch {
-      logToFile(`私钥文件无读取权限: ${privateKeyPath}`, "ERROR");
+      logToFile(`私钥文件无读取权限: ${sanitizedPath}`, "ERROR");
       return null;
     }
 
@@ -78,17 +80,14 @@ async function readPrivateKeyFileAsync(privateKeyPath) {
 
     // 验证私钥格式
     if (!validatePrivateKeyFormat(keyContent)) {
-      logToFile(`私钥文件格式无效: ${privateKeyPath}`, "ERROR");
+      logToFile(`私钥文件格式无效: ${sanitizedPath}`, "ERROR");
       return null;
     }
 
-    logToFile(`成功读取私钥文件: ${privateKeyPath}`, "INFO");
+    logToFile(`成功读取私钥文件: ${sanitizedPath}`, "INFO");
     return keyContent;
   } catch (error) {
-    logToFile(
-      `读取私钥文件失败: ${privateKeyPath} - ${error.message}`,
-      "ERROR",
-    );
+    logToFile(`读取私钥文件失败: ${sanitizedPath} - ${error.message}`, "ERROR");
     return null;
   }
 }
@@ -163,7 +162,9 @@ function processSSHPrivateKey(sshConfig) {
       };
     } else {
       logToFile(
-        `无法读取私钥文件，将尝试其他认证方式: ${sshConfig.privateKeyPath}`,
+        `无法读取私钥文件，将尝试其他认证方式: ${sanitizePathForLog(
+          sshConfig.privateKeyPath,
+        )}`,
         "WARN",
       );
     }
@@ -198,7 +199,9 @@ async function processSSHPrivateKeyAsync(sshConfig) {
       };
     } else {
       logToFile(
-        `无法读取私钥文件，将尝试其他认证方式: ${sshConfig.privateKeyPath}`,
+        `无法读取私钥文件，将尝试其他认证方式: ${sanitizePathForLog(
+          sshConfig.privateKeyPath,
+        )}`,
         "WARN",
       );
     }
@@ -255,7 +258,7 @@ function createChannelPoolManager(maxChannels = 30) {
     reset() {
       activeChannels = 0;
       waitingQueue.length = 0;
-    }
+    },
   };
 }
 

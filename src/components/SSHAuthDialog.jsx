@@ -35,20 +35,20 @@ const SSHAuthDialog = ({
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  
+
   // 对话框步骤: 'hostVerify' | 'credentials'
   const [step, setStep] = useState("hostVerify");
-  
+
   // 凭证步骤的标签页: 0 = 密码, 1 = 公钥
   const [credTabValue, setCredTabValue] = useState(0);
-  
+
   // 表单数据
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [autoLogin, setAutoLogin] = useState(false);
-  
+
   // 输入框引用
   const usernameRef = useRef(null);
   const passwordRef = useRef(null);
@@ -62,7 +62,7 @@ const SSHAuthDialog = ({
       setPrivateKeyPath(connectionConfig?.privateKeyPath || "");
       setAutoLogin(false);
       setShowPassword(false);
-      
+
       // 根据连接配置设置认证类型
       if (connectionConfig?.authType === "privateKey") {
         setCredTabValue(1);
@@ -91,7 +91,7 @@ const SSHAuthDialog = ({
     if (!username.trim()) {
       return;
     }
-    
+
     // 如果是首次认证流程，进入凭证步骤
     if (authData?.requireCredentials !== false) {
       setStep("credentials");
@@ -108,15 +108,15 @@ const SSHAuthDialog = ({
   // 处理凭证步骤的继续
   const handleCredentialsContinue = useCallback(() => {
     const authType = credTabValue === 0 ? "password" : "privateKey";
-    
+
     if (authType === "password" && !password) {
       return;
     }
-    
+
     if (authType === "privateKey" && !privateKeyPath) {
       return;
     }
-    
+
     onConfirm({
       username: username.trim(),
       password: authType === "password" ? password : undefined,
@@ -133,18 +133,21 @@ const SSHAuthDialog = ({
   }, [onClose]);
 
   // 处理键盘事件
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (step === "hostVerify") {
-        handleHostVerifyContinue();
-      } else {
-        handleCredentialsContinue();
+  const handleKeyDown = useCallback(
+    (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (step === "hostVerify") {
+          handleHostVerifyContinue();
+        } else {
+          handleCredentialsContinue();
+        }
+      } else if (e.key === "Escape") {
+        handleCancel();
       }
-    } else if (e.key === "Escape") {
-      handleCancel();
-    }
-  }, [step, handleHostVerifyContinue, handleCredentialsContinue, handleCancel]);
+    },
+    [step, handleHostVerifyContinue, handleCredentialsContinue, handleCancel],
+  );
 
   // 选择私钥文件
   const handleSelectKeyFile = useCallback(async () => {
@@ -159,24 +162,37 @@ const SSHAuthDialog = ({
   // 渲染主机指纹信息
   const renderHostInfo = () => {
     if (!authData) return null;
-    
-    const { host, port, serverVersion, fingerprint, fingerprintChanged, isRetry, errorMessage } = authData;
-    
+
+    const {
+      host,
+      port,
+      serverVersion,
+      fingerprint,
+      previousFingerprint,
+      fingerprintChanged,
+      isRetry,
+      errorMessage,
+    } = authData;
+    const fingerprintLabel =
+      typeof fingerprint === "string" && fingerprint.startsWith("SHA256:")
+        ? "SHA256"
+        : "SHA1";
+
     return (
       <Box sx={{ mb: 2 }}>
         {/* 认证失败提示 */}
         {isRetry && (
-          <Box 
-            sx={{ 
-              mb: 2, 
-              p: 1.5, 
+          <Box
+            sx={{
+              mb: 2,
+              p: 1.5,
               borderRadius: 1,
               bgcolor: alpha(theme.palette.error.main, 0.1),
               border: `1px solid ${alpha(theme.palette.error.main, 0.3)}`,
             }}
           >
-            <Typography 
-              variant="body2" 
+            <Typography
+              variant="body2"
               color="error"
               sx={{ fontWeight: 500, mb: 0.5 }}
             >
@@ -195,12 +211,21 @@ const SSHAuthDialog = ({
         <Typography variant="body2" sx={{ mb: 1.5, fontFamily: "monospace" }}>
           {host}:{port || 22} {serverVersion && `[${serverVersion}]`}
         </Typography>
-        
-        {/* SHA1 指纹 */}
+
+        {fingerprintChanged && (
+          <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
+            {t(
+              "sshAuth.fingerprintWarning",
+              "服务器指纹已更改，请确认是否为预期更改。",
+            )}
+          </Typography>
+        )}
+
+        {/* 主机指纹 */}
         {fingerprint && (
           <>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-              SHA1:
+              {fingerprintLabel}:
             </Typography>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
               {fingerprintChanged && (
@@ -209,24 +234,46 @@ const SSHAuthDialog = ({
                   label={t("sshAuth.changed", "已更改")}
                   size="small"
                   color="warning"
-                  sx={{ 
+                  sx={{
                     height: 22,
-                    "& .MuiChip-label": { px: 1, fontSize: "0.75rem" }
+                    "& .MuiChip-label": { px: 1, fontSize: "0.75rem" },
                   }}
                 />
               )}
-              <Typography 
-                variant="body2" 
-                sx={{ 
+              <Typography
+                variant="body2"
+                sx={{
                   fontFamily: "monospace",
                   fontSize: "0.8rem",
                   wordBreak: "break-all",
-                  color: fingerprintChanged ? "warning.main" : "text.primary"
+                  color: fingerprintChanged ? "warning.main" : "text.primary",
                 }}
               >
                 [{fingerprint}]
               </Typography>
             </Box>
+            {previousFingerprint && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mb: 0.25 }}
+                >
+                  {t("sshAuth.previousFingerprint", "Previous")}:
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontFamily: "monospace",
+                    fontSize: "0.75rem",
+                    wordBreak: "break-all",
+                    color: "text.secondary",
+                  }}
+                >
+                  [{previousFingerprint}]
+                </Typography>
+              </Box>
+            )}
           </>
         )}
       </Box>
@@ -237,13 +284,9 @@ const SSHAuthDialog = ({
   const renderHostVerifyStep = () => (
     <Box sx={{ pt: 1 }}>
       {renderHostInfo()}
-      
+
       <Box>
-        <Typography 
-          variant="body2" 
-          color="text.secondary" 
-          sx={{ mb: 0.5 }}
-        >
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
           {t("sshAuth.username", "用户")}:(<u>U</u>)
         </Typography>
         <TextField
@@ -266,7 +309,7 @@ const SSHAuthDialog = ({
           sx={{
             "& .MuiOutlinedInput-root": {
               borderRadius: 1,
-            }
+            },
           }}
         />
       </Box>
@@ -281,23 +324,23 @@ const SSHAuthDialog = ({
         <Tabs
           value={credTabValue}
           onChange={(_, newValue) => setCredTabValue(newValue)}
-          sx={{ 
+          sx={{
             minHeight: 36,
-            borderBottom: 1, 
+            borderBottom: 1,
             borderColor: "divider",
-            "& .MuiTab-root": { minHeight: 36, py: 0 }
+            "& .MuiTab-root": { minHeight: 36, py: 0 },
           }}
         >
           <Tab label={t("sshAuth.password", "密码")} />
           <Tab label={t("sshAuth.publicKey", "公钥")} />
         </Tabs>
-        
+
         <Box sx={{ pt: 2 }}>
           {credTabValue === 0 && (
             <Box>
-              <Typography 
-                variant="body2" 
-                color="text.secondary" 
+              <Typography
+                variant="body2"
+                color="text.secondary"
                 sx={{ mb: 0.5 }}
               >
                 {t("sshAuth.password", "密码")}:(<u>P</u>)
@@ -331,17 +374,17 @@ const SSHAuthDialog = ({
                 sx={{
                   "& .MuiOutlinedInput-root": {
                     borderRadius: 1,
-                  }
+                  },
                 }}
               />
             </Box>
           )}
-          
+
           {credTabValue === 1 && (
             <Box>
-              <Typography 
-                variant="body2" 
-                color="text.secondary" 
+              <Typography
+                variant="body2"
+                color="text.secondary"
                 sx={{ mb: 0.5 }}
               >
                 {t("sshAuth.privateKeyPath", "私钥路径")}:
@@ -357,7 +400,7 @@ const SSHAuthDialog = ({
                   sx={{
                     "& .MuiOutlinedInput-root": {
                       borderRadius: 1,
-                    }
+                    },
                   }}
                 />
                 <Button
@@ -379,9 +422,10 @@ const SSHAuthDialog = ({
   // 计算标题
   const getTitle = () => {
     if (step === "credentials" && username) {
-      const displayUsername = username.length > 1 
-        ? username[0] + "*".repeat(Math.min(username.length - 1, 3))
-        : username;
+      const displayUsername =
+        username.length > 1
+          ? username[0] + "*".repeat(Math.min(username.length - 1, 3))
+          : username;
       return `${t("sshAuth.login", "登录")}：${displayUsername}`;
     }
     return t("sshAuth.login", "登录");
@@ -400,8 +444,8 @@ const SSHAuthDialog = ({
             maxWidth: 500,
             borderRadius: 2,
             border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
-          }
-        }
+          },
+        },
       }}
     >
       <DialogTitle
@@ -415,11 +459,13 @@ const SSHAuthDialog = ({
       >
         {getTitle()}
       </DialogTitle>
-      
+
       <DialogContent sx={{ pt: 0, pb: 1 }}>
-        {step === "hostVerify" ? renderHostVerifyStep() : renderCredentialsStep()}
+        {step === "hostVerify"
+          ? renderHostVerifyStep()
+          : renderCredentialsStep()}
       </DialogContent>
-      
+
       <Box sx={{ px: 3, pb: 1 }}>
         <FormControlLabel
           control={
@@ -436,19 +482,21 @@ const SSHAuthDialog = ({
           }
         />
       </Box>
-      
-      <DialogActions sx={{ px: 3, py: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}>
-        <Button
-          variant="outlined"
-          onClick={handleCancel}
-          sx={{ minWidth: 80 }}
-        >
+
+      <DialogActions
+        sx={{ px: 3, py: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}
+      >
+        <Button variant="outlined" onClick={handleCancel} sx={{ minWidth: 80 }}>
           {t("sshAuth.cancel", "取消")}
         </Button>
         <Button
           variant="contained"
           color="primary"
-          onClick={step === "hostVerify" ? handleHostVerifyContinue : handleCredentialsContinue}
+          onClick={
+            step === "hostVerify"
+              ? handleHostVerifyContinue
+              : handleCredentialsContinue
+          }
           disabled={
             (step === "hostVerify" && !username.trim()) ||
             (step === "credentials" && credTabValue === 0 && !password) ||

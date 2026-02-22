@@ -3947,26 +3947,22 @@ const FileManager = memo(
                           15000, // 显示更长时间
                           true, // 提供打开选项
                           () => {
-                            // 尝试使用window.shell打开文件夹位置
-                            if (
-                              window.terminalAPI &&
-                              window.terminalAPI.openExternal
-                            ) {
-                              const folderUrl = `file://${normalizedPath}`;
-                              window.terminalAPI
-                                .openExternal(folderUrl)
-                                .catch(() => {
-                                  // 无法打开文件夹，尝试替代方法
-                                  window.terminalAPI
-                                    .showItemInFolder?.(normalizedPath)
-                                    .catch(() => {
-                                      showNotification(
-                                        `无法自动打开文件夹，位置: ${normalizedPath}`,
-                                        "warning",
-                                      );
-                                    });
-                                });
+                            if (!window.terminalAPI?.showItemInFolder) {
+                              showNotification(
+                                `无法自动打开文件夹，位置: ${normalizedPath}`,
+                                "warning",
+                              );
+                              return;
                             }
+
+                            window.terminalAPI
+                              .showItemInFolder(normalizedPath)
+                              .catch(() => {
+                                showNotification(
+                                  `无法自动打开文件夹，位置: ${normalizedPath}`,
+                                  "warning",
+                                );
+                              });
                           },
                         );
                       } else {

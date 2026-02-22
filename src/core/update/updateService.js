@@ -1,22 +1,37 @@
 const { app, dialog, shell, net, session } = require("electron");
-const fs = require("fs").promises;
+const fs = require("fs");
+const fsp = fs.promises;
 const path = require("path");
-const { spawn, exec } = require("child_process");
+const crypto = require("crypto");
+const { spawn, execFile } = require("child_process");
 const { logToFile } = require("../utils/logger");
+
+const UPDATE_TEMP_RETENTION_MS = 24 * 60 * 60 * 1000;
+const DOWNLOAD_CONNECTION_TIMEOUT = 30000;
+const DOWNLOAD_DATA_TIMEOUT = 60000;
+const MAX_REDIRECTS = 5;
+const TRUSTED_DOWNLOAD_HOSTS = new Set([
+  "github.com",
+  "objects.githubusercontent.com",
+  "github-releases.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+]);
 
 class UpdateService {
   constructor() {
-    // 使用程序运行目录下的 temp 文件夹
-    const appPath = app.isPackaged
-      ? path.dirname(app.getPath("exe"))
-      : app.getAppPath();
-    this.tempDir = path.join(appPath, "temp");
+    this.tempDir = path.join(app.getPath("userData"), "updates");
+    this.installerMetaPath = path.join(
+      this.tempDir,
+      "latest-installer-meta.json",
+    );
     this.currentVersion = app.getVersion();
     this.updateCheckUrl =
       "https://api.github.com/repos/funkpopo/simpleshell/releases/latest";
     this.isDownloading = false;
     this.downloadProgress = 0;
-    this.abortController = null;
+    this.currentRequest = null;
+    this.latestReleaseAsset = null;
+    this.lastDownloadedInstaller = null;
   }
 
   /**
@@ -28,14 +43,15 @@ class UpdateService {
     try {
       const proxyUrl = await session.defaultSession.resolveProxy(url);
       logToFile(`Resolved proxy for ${url}: ${proxyUrl}`, "INFO");
-      // proxyUrl格式: "DIRECT" 或 "PROXY host:port" 或 "SOCKS5 host:port"
       if (proxyUrl === "DIRECT") {
         return null;
       }
       const match = proxyUrl.match(/^(PROXY|SOCKS5?)\s+(.+)$/i);
       if (match) {
         const [, type, hostPort] = match;
-        const protocol = type.toLowerCase().startsWith("socks") ? "socks5" : "http";
+        const protocol = type.toLowerCase().startsWith("socks")
+          ? "socks5"
+          : "http";
         return `${protocol}://${hostPort}`;
       }
       return null;
@@ -52,7 +68,6 @@ class UpdateService {
    * @returns {Promise<{response: Electron.IncomingMessage, body: Buffer}>}
    */
   async electronFetch(url, options = {}) {
-    // 先解析系统代理
     const proxyUrl = await this.resolveSystemProxy(url);
 
     return new Promise((resolve, reject) => {
@@ -62,24 +77,21 @@ class UpdateService {
         useSessionCookies: false,
       };
 
-      // 如果有代理，使用partition来设置代理
       if (proxyUrl) {
         requestOptions.session = session.defaultSession;
       }
 
       const request = net.request(requestOptions);
 
-      // 设置请求头
       if (options.headers) {
         for (const [key, value] of Object.entries(options.headers)) {
           request.setHeader(key, value);
         }
       }
 
-      let responseData = [];
+      const responseData = [];
 
       request.on("response", (res) => {
-
         res.on("data", (chunk) => {
           responseData.push(chunk);
         });
@@ -108,10 +120,10 @@ class UpdateService {
    */
   async ensureTempDir() {
     try {
-      await fs.access(this.tempDir);
+      await fsp.access(this.tempDir);
     } catch {
-      await fs.mkdir(this.tempDir, { recursive: true });
-      logToFile(`Created temp directory: ${this.tempDir}`, "INFO");
+      await fsp.mkdir(this.tempDir, { recursive: true });
+      logToFile(`Created update directory: ${this.tempDir}`, "INFO");
     }
   }
 
@@ -120,18 +132,25 @@ class UpdateService {
    */
   async cleanupTempDir() {
     try {
-      const files = await fs.readdir(this.tempDir);
-      for (const file of files) {
-        const filePath = path.join(this.tempDir, file);
-        const stats = await fs.stat(filePath);
-        // 删除超过24小时的文件
-        if (Date.now() - stats.mtime.getTime() > 24 * 60 * 60 * 1000) {
-          await fs.unlink(filePath);
-          logToFile(`Cleaned up old update file: ${file}`, "INFO");
+      const entries = await fsp.readdir(this.tempDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) {
+          continue;
+        }
+
+        if (entry.name === path.basename(this.installerMetaPath)) {
+          continue;
+        }
+
+        const filePath = path.join(this.tempDir, entry.name);
+        const stats = await fsp.stat(filePath);
+        if (Date.now() - stats.mtime.getTime() > UPDATE_TEMP_RETENTION_MS) {
+          await fsp.unlink(filePath);
+          logToFile(`Cleaned up old update file: ${entry.name}`, "INFO");
         }
       }
     } catch (error) {
-      logToFile(`Error cleaning temp directory: ${error.message}`, "WARN");
+      logToFile(`Error cleaning update directory: ${error.message}`, "WARN");
     }
   }
 
@@ -149,21 +168,34 @@ class UpdateService {
       });
 
       if (response.statusCode !== 200) {
-        throw new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`);
+        throw new Error(
+          `HTTP ${response.statusCode}: ${response.statusMessage}`,
+        );
       }
 
       const releaseData = JSON.parse(body.toString());
       const latestVersion = releaseData.tag_name.replace(/^v/, "");
-
       const hasUpdate =
         this.compareVersions(latestVersion, this.currentVersion) > 0;
+      const targetAsset = this.getDownloadAsset(releaseData.assets);
+      const downloadUrl = targetAsset ? targetAsset.browser_download_url : null;
+      const expectedSha256 = this.extractExpectedSha256(targetAsset);
+
+      this.latestReleaseAsset = targetAsset
+        ? {
+            name: targetAsset.name,
+            downloadUrl,
+            expectedSha256,
+            version: latestVersion,
+          }
+        : null;
 
       const updateInfo = {
         hasUpdate,
         currentVersion: this.currentVersion,
         latestVersion,
         releaseNotes: releaseData.body || "",
-        downloadUrl: this.getDownloadUrl(releaseData.assets),
+        downloadUrl,
         publishedAt: releaseData.published_at,
         releaseName: releaseData.name || `Version ${latestVersion}`,
       };
@@ -181,238 +213,542 @@ class UpdateService {
   }
 
   /**
-   * 获取下载URL
+   * 获取平台对应的安装包资源
+   * @param {Array<{name: string, browser_download_url: string, digest?: string}>} assets
+   * @returns {object|null}
    */
-  getDownloadUrl(assets) {
+  getDownloadAsset(assets) {
     if (!Array.isArray(assets)) return null;
 
     const platform = process.platform;
-    let targetAsset = null;
 
     if (platform === "win32") {
-      targetAsset = assets.find(
-        (asset) =>
-          asset.name.endsWith(".exe") ||
-          asset.name.includes("win") ||
-          asset.name.includes("windows"),
-      );
-    } else if (platform === "darwin") {
-      targetAsset = assets.find(
-        (asset) =>
-          asset.name.endsWith(".dmg") ||
-          asset.name.includes("mac") ||
-          asset.name.includes("darwin"),
-      );
-    } else if (platform === "linux") {
-      targetAsset = assets.find(
-        (asset) =>
-          asset.name.endsWith(".AppImage") ||
-          asset.name.endsWith(".deb") ||
-          asset.name.includes("linux"),
+      return (
+        assets.find((asset) => asset.name.toLowerCase().endsWith(".exe")) ||
+        null
       );
     }
 
-    return targetAsset ? targetAsset.browser_download_url : null;
+    if (platform === "darwin") {
+      return (
+        assets.find((asset) => asset.name.toLowerCase().endsWith(".dmg")) ||
+        null
+      );
+    }
+
+    if (platform === "linux") {
+      return (
+        assets.find((asset) =>
+          asset.name.toLowerCase().endsWith(".appimage"),
+        ) ||
+        assets.find((asset) => asset.name.toLowerCase().endsWith(".deb")) ||
+        null
+      );
+    }
+
+    return null;
   }
 
   /**
-   * 下载更新文件（使用系统代理）
+   * 从 release 资源中提取 sha256 摘要（若存在）
+   * @param {object|null} asset
+   * @returns {string|null}
    */
-  async downloadUpdate(downloadUrl, onProgress) {
+  extractExpectedSha256(asset) {
+    if (!asset || typeof asset.digest !== "string") {
+      return null;
+    }
+
+    const match = asset.digest.trim().match(/^sha256:([a-fA-F0-9]{64})$/);
+    return match ? match[1].toLowerCase() : null;
+  }
+
+  /**
+   * 获取当前平台允许的安装包后缀
+   * @returns {Set<string>}
+   */
+  getAllowedInstallerExtensions() {
+    if (process.platform === "win32") {
+      return new Set([".exe"]);
+    }
+
+    if (process.platform === "darwin") {
+      return new Set([".dmg"]);
+    }
+
+    if (process.platform === "linux") {
+      return new Set([".appimage", ".deb"]);
+    }
+
+    return new Set();
+  }
+
+  /**
+   * 仅允许官方可信下载域名
+   * @param {string} hostname
+   * @returns {boolean}
+   */
+  isTrustedDownloadHost(hostname) {
+    const normalized = String(hostname || "").toLowerCase();
+    if (TRUSTED_DOWNLOAD_HOSTS.has(normalized)) {
+      return true;
+    }
+    return (
+      normalized.endsWith(".github.com") ||
+      normalized.endsWith(".githubusercontent.com")
+    );
+  }
+
+  /**
+   * 校验并标准化下载URL
+   * @param {string} downloadUrl
+   * @returns {string}
+   */
+  validateAndNormalizeDownloadUrl(downloadUrl) {
+    let urlObj;
+    try {
+      urlObj = new URL(downloadUrl);
+    } catch {
+      throw new Error("Invalid update download URL");
+    }
+
+    if (urlObj.protocol !== "https:") {
+      throw new Error(`Unsupported download protocol: ${urlObj.protocol}`);
+    }
+
+    if (!this.isTrustedDownloadHost(urlObj.hostname)) {
+      throw new Error(`Untrusted update host: ${urlObj.hostname}`);
+    }
+
+    const fileName = path.basename(urlObj.pathname || "");
+    if (!fileName) {
+      throw new Error("Invalid update package file name");
+    }
+
+    const fileExt = path.extname(fileName).toLowerCase();
+    const allowedExt = this.getAllowedInstallerExtensions();
+    if (!allowedExt.has(fileExt)) {
+      throw new Error(`Unsupported update package extension: ${fileExt}`);
+    }
+
+    return urlObj.toString();
+  }
+
+  /**
+   * 生成受控目录下的安装包文件路径
+   * @param {string} rawFileName
+   * @returns {string}
+   */
+  buildInstallerPath(rawFileName) {
+    const originalFileName = path.basename(String(rawFileName || ""));
+    const safeFileName = originalFileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+    if (!safeFileName) {
+      throw new Error("Invalid installer file name");
+    }
+
+    const ext = path.extname(safeFileName).toLowerCase();
+    const allowedExt = this.getAllowedInstallerExtensions();
+    if (!allowedExt.has(ext)) {
+      throw new Error(`Installer extension not allowed: ${ext}`);
+    }
+
+    const finalFileName = `${Date.now()}-${safeFileName}`;
+    const targetPath = path.resolve(this.tempDir, finalFileName);
+    this.assertPathInTempDir(targetPath);
+    return targetPath;
+  }
+
+  /**
+   * 防止路径越界
+   * @param {string} filePath
+   */
+  assertPathInTempDir(filePath) {
+    const resolvedBase = path.resolve(this.tempDir);
+    const resolvedTarget = path.resolve(filePath);
+    if (
+      resolvedTarget !== resolvedBase &&
+      !resolvedTarget.startsWith(`${resolvedBase}${path.sep}`)
+    ) {
+      throw new Error("Installer path escaped controlled update directory");
+    }
+  }
+
+  /**
+   * 获取当前可下载的 release asset
+   * @returns {Promise<{name: string, downloadUrl: string, expectedSha256: string|null}>}
+   */
+  async getLatestReleaseAsset() {
+    if (this.latestReleaseAsset?.downloadUrl) {
+      return this.latestReleaseAsset;
+    }
+
+    const checkResult = await this.checkForUpdate();
+    if (!checkResult.success) {
+      throw new Error(checkResult.error || "Failed to refresh update metadata");
+    }
+
+    if (!this.latestReleaseAsset?.downloadUrl) {
+      throw new Error("No update package found for current platform");
+    }
+
+    return this.latestReleaseAsset;
+  }
+
+  /**
+   * 解析并校验重定向地址
+   * @param {string} currentUrl
+   * @param {string} locationHeader
+   * @returns {string}
+   */
+  resolveRedirectUrl(currentUrl, locationHeader) {
+    const redirectUrl = new URL(locationHeader, currentUrl).toString();
+    return this.validateAndNormalizeDownloadUrl(redirectUrl);
+  }
+
+  /**
+   * 下载更新文件（仅使用主进程内部确认的官方地址）
+   * @param {(progressData: {downloaded: number, total: number, progress: number}) => void} onProgress
+   * @returns {Promise<string>}
+   */
+  async downloadUpdate(onProgress) {
     if (this.isDownloading) {
       throw new Error("Download already in progress");
     }
 
-    try {
-      this.isDownloading = true;
-      this.downloadProgress = 0;
+    this.isDownloading = true;
+    this.downloadProgress = 0;
+    this.currentRequest = null;
 
+    try {
       await this.ensureTempDir();
       await this.cleanupTempDir();
 
-      const fileName = path.basename(new URL(downloadUrl).pathname);
-      const filePath = path.join(this.tempDir, fileName);
+      const asset = await this.getLatestReleaseAsset();
+      const downloadUrl = this.validateAndNormalizeDownloadUrl(
+        asset.downloadUrl,
+      );
+      const fileName =
+        asset.name ||
+        path.basename(new URL(downloadUrl).pathname || "update.bin");
+      const filePath = this.buildInstallerPath(fileName);
 
-      // 解析系统代理
-      const proxyUrl = await this.resolveSystemProxy(downloadUrl);
-      logToFile(`Starting download: ${downloadUrl}, proxy: ${proxyUrl || "DIRECT"}`, "INFO");
+      const { buffer, finalUrl } = await this.downloadFileWithRedirects(
+        downloadUrl,
+        onProgress,
+        0,
+      );
+      const actualSha256 = this.calculateBufferSha256(buffer);
 
-      // 连接超时时间（30秒）
-      const CONNECTION_TIMEOUT = 30000;
-      // 数据接收超时时间（60秒无数据则超时）
-      const DATA_TIMEOUT = 60000;
+      if (asset.expectedSha256 && asset.expectedSha256 !== actualSha256) {
+        throw new Error(
+          "Downloaded update hash mismatch with release metadata",
+        );
+      }
 
-      return new Promise((resolve, reject) => {
-        let connectionTimer = null;
-        let dataTimer = null;
-        let isResolved = false;
+      this.assertPathInTempDir(filePath);
+      await fsp.writeFile(filePath, buffer);
 
-        const cleanup = () => {
-          if (connectionTimer) clearTimeout(connectionTimer);
-          if (dataTimer) clearTimeout(dataTimer);
-        };
+      const installerMeta = {
+        filePath,
+        sha256: actualSha256,
+        expectedSha256: asset.expectedSha256 || null,
+        downloadedAt: new Date().toISOString(),
+        sourceUrl: finalUrl,
+      };
 
-        const handleError = (error) => {
-          if (isResolved) return;
-          isResolved = true;
-          cleanup();
-          this.isDownloading = false;
-          this.currentRequest = null;
-          reject(error);
-        };
+      this.lastDownloadedInstaller = installerMeta;
+      await this.saveInstallerMeta(installerMeta);
 
-        const resetDataTimer = () => {
-          if (dataTimer) clearTimeout(dataTimer);
-          dataTimer = setTimeout(() => {
-            handleError(new Error("Download timeout: no data received for 60 seconds"));
-            if (this.currentRequest) {
-              try { this.currentRequest.abort(); } catch { /* intentionally ignored */ }
+      this.downloadProgress = 100;
+      logToFile(`Download completed: ${filePath}`, "INFO");
+      return filePath;
+    } catch (error) {
+      logToFile(`Download error: ${error.message}`, "ERROR");
+      throw error;
+    } finally {
+      this.isDownloading = false;
+      this.currentRequest = null;
+    }
+  }
+
+  /**
+   * 执行下载请求并处理重定向
+   * @param {string} requestUrl
+   * @param {(progressData: {downloaded: number, total: number, progress: number}) => void} onProgress
+   * @param {number} redirectCount
+   * @returns {Promise<{buffer: Buffer, finalUrl: string}>}
+   */
+  downloadFileWithRedirects(requestUrl, onProgress, redirectCount) {
+    if (redirectCount > MAX_REDIRECTS) {
+      return Promise.reject(
+        new Error("Too many redirects during update download"),
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      let connectionTimer = null;
+      let dataTimer = null;
+      let settled = false;
+
+      const cleanup = () => {
+        if (connectionTimer) clearTimeout(connectionTimer);
+        if (dataTimer) clearTimeout(dataTimer);
+      };
+
+      const handleError = (error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
+      const resetDataTimer = () => {
+        if (dataTimer) clearTimeout(dataTimer);
+        dataTimer = setTimeout(() => {
+          handleError(
+            new Error("Download timeout: no data received for 60 seconds"),
+          );
+          if (this.currentRequest) {
+            try {
+              this.currentRequest.abort();
+            } catch {
+              // intentionally ignored
             }
-          }, DATA_TIMEOUT);
-        };
-
-        // 使用session确保代理设置生效
-        const request = net.request({
-          url: downloadUrl,
-          method: "GET",
-          session: session.defaultSession,
-        });
-
-        request.setHeader("User-Agent", "SimpleShell-UpdateDownloader");
-
-        // 保存请求引用以便取消
-        this.currentRequest = request;
-
-        // 连接超时
-        connectionTimer = setTimeout(() => {
-          handleError(new Error("Connection timeout: unable to connect within 30 seconds"));
-          try { request.abort(); } catch { /* intentionally ignored */ }
-        }, CONNECTION_TIMEOUT);
-
-        request.on("response", async (response) => {
-          // 收到响应，清除连接超时
-          if (connectionTimer) {
-            clearTimeout(connectionTimer);
-            connectionTimer = null;
           }
+        }, DOWNLOAD_DATA_TIMEOUT);
+      };
 
-          // 处理重定向
-          if (response.statusCode >= 300 && response.statusCode < 400) {
-            const redirectUrl = response.headers.location;
-            if (redirectUrl) {
-              logToFile(`Following redirect to: ${redirectUrl}`, "INFO");
-              cleanup();
-              this.isDownloading = false;
-              try {
-                const result = await this.downloadUpdate(redirectUrl, onProgress);
-                if (!isResolved) {
-                  isResolved = true;
-                  resolve(result);
-                }
-              } catch (error) {
-                handleError(error);
-              }
-              return;
-            }
-          }
+      const request = net.request({
+        url: requestUrl,
+        method: "GET",
+        session: session.defaultSession,
+      });
+      this.currentRequest = request;
+      request.setHeader("User-Agent", "SimpleShell-UpdateDownloader");
 
-          if (response.statusCode !== 200) {
-            handleError(new Error(`HTTP ${response.statusCode}: Download failed`));
+      connectionTimer = setTimeout(() => {
+        handleError(
+          new Error("Connection timeout: unable to connect within 30 seconds"),
+        );
+        try {
+          request.abort();
+        } catch {
+          // intentionally ignored
+        }
+      }, DOWNLOAD_CONNECTION_TIMEOUT);
+
+      request.on("response", async (response) => {
+        if (connectionTimer) {
+          clearTimeout(connectionTimer);
+          connectionTimer = null;
+        }
+
+        if (response.statusCode >= 300 && response.statusCode < 400) {
+          const redirectLocation = response.headers.location;
+          if (!redirectLocation) {
+            handleError(new Error("Redirect response missing location header"));
             return;
           }
 
-          // 开始数据超时计时
-          resetDataTimer();
-
-          const totalSize = parseInt(response.headers["content-length"], 10) || 0;
-          let downloadedSize = 0;
-          const chunks = [];
-
-          response.on("data", (chunk) => {
-            // 收到数据，重置数据超时
-            resetDataTimer();
-
-            chunks.push(chunk);
-            downloadedSize += chunk.length;
-            this.downloadProgress =
-              totalSize > 0 ? (downloadedSize / totalSize) * 100 : 0;
-
-            if (onProgress) {
-              onProgress({
-                downloaded: downloadedSize,
-                total: totalSize,
-                progress: this.downloadProgress,
-              });
-            }
-          });
-
-          response.on("end", async () => {
-            if (isResolved) return;
-            isResolved = true;
+          try {
+            const redirectUrl = this.resolveRedirectUrl(
+              requestUrl,
+              redirectLocation,
+            );
             cleanup();
-
-            try {
-              const buffer = Buffer.concat(chunks);
-              await fs.writeFile(filePath, buffer);
-
-              this.isDownloading = false;
-              this.downloadProgress = 100;
-              this.currentRequest = null;
-
-              logToFile(`Download completed: ${filePath}`, "INFO");
-              resolve(filePath);
-            } catch (error) {
-              this.isDownloading = false;
-              this.currentRequest = null;
-              reject(error);
+            const result = await this.downloadFileWithRedirects(
+              redirectUrl,
+              onProgress,
+              redirectCount + 1,
+            );
+            if (!settled) {
+              settled = true;
+              resolve(result);
             }
-          });
-
-          response.on("error", (error) => {
-            logToFile(`Download response error: ${error.message}`, "ERROR");
+          } catch (error) {
             handleError(error);
+          }
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          handleError(
+            new Error(`HTTP ${response.statusCode}: Download failed`),
+          );
+          return;
+        }
+
+        resetDataTimer();
+
+        const totalSize =
+          Number.parseInt(response.headers["content-length"], 10) || 0;
+        let downloadedSize = 0;
+        const chunks = [];
+
+        response.on("data", (chunk) => {
+          resetDataTimer();
+          chunks.push(chunk);
+          downloadedSize += chunk.length;
+          this.downloadProgress =
+            totalSize > 0 ? (downloadedSize / totalSize) * 100 : 0;
+
+          if (onProgress) {
+            onProgress({
+              downloaded: downloadedSize,
+              total: totalSize,
+              progress: this.downloadProgress,
+            });
+          }
+        });
+
+        response.on("end", () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve({
+            buffer: Buffer.concat(chunks),
+            finalUrl: requestUrl,
           });
         });
 
-        request.on("error", (error) => {
-          logToFile(`Download request error: ${error.message}`, "ERROR");
+        response.on("error", (error) => {
+          logToFile(`Download response error: ${error.message}`, "ERROR");
           handleError(error);
         });
-
-        request.end();
       });
-    } catch (error) {
-      this.isDownloading = false;
-      this.currentRequest = null;
-      logToFile(`Download error: ${error.message}`, "ERROR");
-      throw error;
+
+      request.on("error", (error) => {
+        logToFile(`Download request error: ${error.message}`, "ERROR");
+        handleError(error);
+      });
+
+      request.end();
+    });
+  }
+
+  /**
+   * 计算内存数据的 SHA-256
+   * @param {Buffer} buffer
+   * @returns {string}
+   */
+  calculateBufferSha256(buffer) {
+    return crypto.createHash("sha256").update(buffer).digest("hex");
+  }
+
+  /**
+   * 计算文件 SHA-256
+   * @param {string} filePath
+   * @returns {Promise<string>}
+   */
+  async calculateFileSha256(filePath) {
+    return new Promise((resolve, reject) => {
+      const hash = crypto.createHash("sha256");
+      const stream = fs.createReadStream(filePath);
+
+      stream.on("data", (chunk) => {
+        hash.update(chunk);
+      });
+
+      stream.on("error", reject);
+
+      stream.on("end", () => {
+        resolve(hash.digest("hex"));
+      });
+    });
+  }
+
+  /**
+   * 持久化下载后的安装包元数据
+   * @param {object} meta
+   */
+  async saveInstallerMeta(meta) {
+    await this.ensureTempDir();
+    await fsp.writeFile(
+      this.installerMetaPath,
+      JSON.stringify(meta, null, 2),
+      "utf8",
+    );
+  }
+
+  /**
+   * 读取最近一次下载的安装包元数据
+   * @returns {Promise<object|null>}
+   */
+  async loadInstallerMeta() {
+    if (this.lastDownloadedInstaller) {
+      return this.lastDownloadedInstaller;
     }
+
+    try {
+      const raw = await fsp.readFile(this.installerMetaPath, "utf8");
+      const meta = JSON.parse(raw);
+
+      if (
+        !meta ||
+        typeof meta.filePath !== "string" ||
+        typeof meta.sha256 !== "string"
+      ) {
+        return null;
+      }
+
+      this.assertPathInTempDir(meta.filePath);
+      this.lastDownloadedInstaller = meta;
+      return meta;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 安装前执行路径与哈希校验
+   * @returns {Promise<{filePath: string, fileExt: string}>}
+   */
+  async verifyInstallerBeforeInstall() {
+    const meta = await this.loadInstallerMeta();
+    if (!meta) {
+      throw new Error("No downloaded update package available");
+    }
+
+    const filePath = path.resolve(meta.filePath);
+    this.assertPathInTempDir(filePath);
+    await fsp.access(filePath);
+
+    const fileExt = path.extname(filePath).toLowerCase();
+    const allowedExt = this.getAllowedInstallerExtensions();
+    if (!allowedExt.has(fileExt)) {
+      throw new Error(`Unsupported installer format: ${fileExt}`);
+    }
+
+    const actualSha256 = await this.calculateFileSha256(filePath);
+    if (meta.sha256 !== actualSha256) {
+      throw new Error("Installer hash verification failed before execution");
+    }
+
+    if (meta.expectedSha256 && meta.expectedSha256 !== actualSha256) {
+      throw new Error("Installer hash does not match expected release hash");
+    }
+
+    return { filePath, fileExt };
   }
 
   /**
    * 安装更新
    */
-  async installUpdate(filePath) {
+  async installUpdate() {
     try {
-      logToFile(`Installing update: ${filePath}`, "INFO");
-
-      // 验证文件存在
-      await fs.access(filePath);
+      const { filePath, fileExt } = await this.verifyInstallerBeforeInstall();
+      logToFile(`Installing update from trusted file: ${filePath}`, "INFO");
 
       const platform = process.platform;
-      const fileExt = path.extname(filePath).toLowerCase();
-
       if (platform === "win32" && fileExt === ".exe") {
-        // Windows installer
         await this.installWindowsUpdate(filePath);
       } else if (platform === "darwin" && fileExt === ".dmg") {
-        // macOS DMG
         await this.installMacUpdate(filePath);
       } else if (
         platform === "linux" &&
         (fileExt === ".appimage" || fileExt === ".deb")
       ) {
-        // Linux package
         await this.installLinuxUpdate(filePath);
       } else {
         throw new Error(
@@ -434,12 +770,10 @@ class UpdateService {
     return new Promise((resolve, reject) => {
       logToFile(`Starting Windows installer: ${filePath}`, "INFO");
 
-      // 使用 /S 参数进行静默安装
-      // detached: true 确保安装程序独立于当前进程运行
       const installer = spawn(filePath, ["/S"], {
         detached: true,
         stdio: "ignore",
-        windowsHide: false, // 显示安装程序窗口（如果有）
+        windowsHide: false,
       });
 
       installer.on("error", (error) => {
@@ -447,18 +781,13 @@ class UpdateService {
         reject(error);
       });
 
-      // 分离子进程，确保安装程序独立运行
       installer.unref();
-
-      // 安装程序已启动，立即返回成功
       logToFile(
         "Windows installer started, preparing to quit application",
         "INFO",
       );
       resolve();
 
-      // 短暂延迟后强制退出应用，避免安装冲突
-      // 使用 app.exit() 而非 app.quit() 确保立即退出，不会被 beforeunload 事件阻止
       setTimeout(() => {
         logToFile("Force exiting application for update installation", "INFO");
         app.exit(0);
@@ -471,7 +800,8 @@ class UpdateService {
    */
   async cleanupInstallerFile(filePath) {
     try {
-      await fs.unlink(filePath);
+      this.assertPathInTempDir(filePath);
+      await fsp.unlink(filePath);
       logToFile(`Cleaned up installer file: ${filePath}`, "INFO");
     } catch (error) {
       logToFile(`Failed to cleanup installer file: ${error.message}`, "WARN");
@@ -483,15 +813,13 @@ class UpdateService {
    */
   async installMacUpdate(filePath) {
     return new Promise((resolve, reject) => {
-      // 打开DMG文件
-      exec(`open "${filePath}"`, (error) => {
+      execFile("open", [filePath], (error) => {
         if (error) {
           logToFile(`macOS installer error: ${error.message}`, "ERROR");
           reject(error);
         } else {
           logToFile("macOS DMG opened successfully", "INFO");
           resolve();
-          // 提示用户手动安装
           dialog.showMessageBox({
             type: "info",
             title: "Update Ready",
@@ -511,7 +839,6 @@ class UpdateService {
     const fileExt = path.extname(filePath).toLowerCase();
 
     if (fileExt === ".appimage") {
-      // AppImage - 让用户手动替换
       shell.showItemInFolder(filePath);
       dialog.showMessageBox({
         type: "info",
@@ -520,16 +847,26 @@ class UpdateService {
           "The update has been downloaded. Please replace your current application with the new AppImage file.",
         buttons: ["OK"],
       });
-    } else if (fileExt === ".deb") {
-      // DEB package
-      return new Promise((resolve, reject) => {
-        exec(`pkexec dpkg -i "${filePath}"`, (error) => {
-          if (error) {
-            logToFile(`DEB installer error: ${error.message}`, "ERROR");
-            reject(error);
-          } else {
+      return;
+    }
+
+    if (fileExt === ".deb") {
+      await new Promise((resolve, reject) => {
+        const installer = spawn("pkexec", ["dpkg", "-i", filePath], {
+          stdio: "ignore",
+        });
+
+        installer.on("error", (error) => {
+          logToFile(`DEB installer error: ${error.message}`, "ERROR");
+          reject(error);
+        });
+
+        installer.on("close", (code) => {
+          if (code === 0) {
             logToFile("DEB package installed successfully", "INFO");
             resolve();
+          } else {
+            reject(new Error(`DEB installer exited with code ${code}`));
           }
         });
       });
@@ -540,12 +877,11 @@ class UpdateService {
    * 版本比较
    */
   compareVersions(version1, version2) {
-    const v1Parts = version1.split(".").map((n) => parseInt(n, 10));
-    const v2Parts = version2.split(".").map((n) => parseInt(n, 10));
+    const v1Parts = version1.split(".").map((n) => Number.parseInt(n, 10));
+    const v2Parts = version2.split(".").map((n) => Number.parseInt(n, 10));
 
     const maxLength = Math.max(v1Parts.length, v2Parts.length);
-
-    for (let i = 0; i < maxLength; i++) {
+    for (let i = 0; i < maxLength; i += 1) {
       const v1Part = v1Parts[i] || 0;
       const v2Part = v2Parts[i] || 0;
 

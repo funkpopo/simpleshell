@@ -12,6 +12,52 @@ const streamWrappersByChannel = {
   "stream-error": new WeakMap(),
 };
 
+const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
+const RESTRICTED_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
+const MAX_EXTERNAL_URL_LENGTH = 2048;
+const OPEN_EXTERNAL_IPC_TIMEOUT = 10000;
+
+const normalizeExternalOpenRequest = (url, options = {}) => {
+  if (typeof url !== "string") {
+    throw new Error("Invalid URL");
+  }
+
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl || trimmedUrl.length > MAX_EXTERNAL_URL_LENGTH) {
+    throw new Error("Invalid URL length");
+  }
+
+  let urlObj;
+  try {
+    urlObj = new URL(trimmedUrl);
+  } catch {
+    throw new Error("Invalid URL format");
+  }
+
+  const protocol = urlObj.protocol.toLowerCase();
+  const allowRestrictedProtocols = options?.allowRestrictedProtocols === true;
+  const isDefaultProtocol = DEFAULT_EXTERNAL_PROTOCOLS.has(protocol);
+  const isRestrictedProtocol = RESTRICTED_EXTERNAL_PROTOCOLS.has(protocol);
+
+  if (
+    !isDefaultProtocol &&
+    !(allowRestrictedProtocols && isRestrictedProtocol)
+  ) {
+    throw new Error(`Blocked external URL protocol: ${protocol}`);
+  }
+
+  const source =
+    typeof options?.source === "string" && options.source.trim()
+      ? options.source.trim().slice(0, 64)
+      : "renderer";
+
+  return {
+    url: urlObj.toString(),
+    source,
+    allowRestrictedProtocols,
+  };
+};
+
 // 暴露安全的API给渲染进程
 contextBridge.exposeInMainWorld("terminalAPI", {
   // 发送命令到主进程处理 (用于模拟终端)
@@ -181,9 +227,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   setCurrentApiConfig: (configId) =>
     ipcRenderer.invoke("ai:setCurrentApiConfig", configId),
   // 新增: 获取模型列表方法
-  fetchModels: (requestData) => ipcRenderer.invoke("ai:fetchModels", requestData),
+  fetchModels: (requestData) =>
+    ipcRenderer.invoke("ai:fetchModels", requestData),
   // 新增: 保存自定义风险规则
-  saveCustomRiskRules: (rules) => ipcRenderer.invoke("ai:saveCustomRiskRules", rules),
+  saveCustomRiskRules: (rules) =>
+    ipcRenderer.invoke("ai:saveCustomRiskRules", rules),
 
   // 记忆文件管理API
   saveMemory: (memory) => ipcRenderer.invoke("memory:save", memory),
@@ -293,7 +341,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   downloadFiles: (tabId, files, progressCallback) => {
     // 注册一个临时的进度监听器
     const progressListener = (_, data) => {
-      if (data.tabId === tabId && data.isBatch && typeof progressCallback === "function") {
+      if (
+        data.tabId === tabId &&
+        data.isBatch &&
+        typeof progressCallback === "function"
+      ) {
         progressCallback(
           data.progress || 0,
           data.fileName || "",
@@ -531,14 +583,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("readFileAsBase64", tabId, filePath),
 
   // 在外部浏览器打开链接
-  openExternal: async (url) => {
-    const IPC_TIMEOUT = 10000;
+  openExternal: async (url, options = {}) => {
+    const payload = normalizeExternalOpenRequest(url, options);
     const result = await Promise.race([
-      ipcRenderer.invoke("app:openExternal", url),
+      ipcRenderer.invoke("app:openExternal", payload),
       new Promise((_, reject) =>
         setTimeout(
           () => reject(new Error("openExternal IPC timed out")),
-          IPC_TIMEOUT,
+          OPEN_EXTERNAL_IPC_TIMEOUT,
         ),
       ),
     ]);
@@ -590,10 +642,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   // 更新相关API
-  downloadUpdate: (downloadUrl) =>
-    ipcRenderer.invoke("app:downloadUpdate", downloadUrl),
-  installUpdate: (filePath) =>
-    ipcRenderer.invoke("app:installUpdate", filePath),
+  downloadUpdate: () => ipcRenderer.invoke("app:downloadUpdate"),
+  installUpdate: () => ipcRenderer.invoke("app:installUpdate"),
   getDownloadProgress: () => ipcRenderer.invoke("app:getDownloadProgress"),
   cancelDownload: () => ipcRenderer.invoke("app:cancelDownload"),
 
@@ -678,13 +728,18 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   offSSHAuthRequest: () => {
     ipcRenderer.removeAllListeners("ssh:auth-request");
   },
-  
+
   // 响应 SSH 认证请求
-  respondSSHAuth: (response) => ipcRenderer.invoke("ssh:auth-response", response),
-  
+  respondSSHAuth: (response) =>
+    ipcRenderer.invoke("ssh:auth-response", response),
+
   // 更新连接配置（用于保存自动登录凭据）
   updateConnectionCredentials: (connectionId, credentials) =>
-    ipcRenderer.invoke("terminal:updateConnectionCredentials", connectionId, credentials),
+    ipcRenderer.invoke(
+      "terminal:updateConnectionCredentials",
+      connectionId,
+      credentials,
+    ),
 });
 
 // SSH密钥生成器API
@@ -720,7 +775,7 @@ contextBridge.exposeInMainWorld("appErrorAPI", {
   // 移除错误监听
   removeErrorListener: () => {
     ipcRenderer.removeAllListeners("app:error");
-  }
+  },
 });
 
 // Clipboard API (Electron 40+ safe access pattern)
@@ -731,5 +786,3 @@ contextBridge.exposeInMainWorld("clipboardAPI", {
     return true;
   },
 });
-
-

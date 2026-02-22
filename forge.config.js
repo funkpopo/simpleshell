@@ -127,7 +127,7 @@ module.exports = async () => {
       asar: true,
       icon: "./src/assets/logo",
       download: {
-        unsafelyDisableChecksums: true,
+        unsafelyDisableChecksums: false,
       },
     },
     rebuildConfig: {

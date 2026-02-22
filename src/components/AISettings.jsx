@@ -53,6 +53,27 @@ const PROVIDER_TYPES = {
   GEMINI: "gemini",
 };
 
+const createEmptyConfig = () => ({
+  id: "",
+  name: "",
+  provider: PROVIDER_TYPES.OPENAI,
+  apiUrl: "",
+  apiKey: "",
+  hasApiKey: false,
+  model: "",
+  maxTokens: 2000,
+  temperature: 0.7,
+  streamEnabled: true,
+});
+
+const hasConfiguredApiKey = (config) =>
+  Boolean(config?.apiKey?.trim()) || Boolean(config?.hasApiKey);
+
+const buildInlineApiKeyPayload = (config) => {
+  const apiKey = typeof config?.apiKey === "string" ? config.apiKey.trim() : "";
+  return apiKey ? { apiKey } : {};
+};
+
 const AISettings = ({ open, onClose }) => {
   const { t } = useTranslation();
   const firstInputRef = useRef(null);
@@ -76,17 +97,7 @@ const AISettings = ({ open, onClose }) => {
   const [editingConfig, setEditingConfig] = useState(null); // 正在编辑的配置
 
   // AI配置状态
-  const [config, setConfig] = useState({
-    id: "",
-    name: "",
-    provider: PROVIDER_TYPES.OPENAI,
-    apiUrl: "",
-    apiKey: "",
-    model: "",
-    maxTokens: 2000,
-    temperature: 0.7,
-    streamEnabled: true,
-  });
+  const [config, setConfig] = useState(createEmptyConfig());
 
   // 自定义风险规则状态
   const [customRules, setCustomRules] = useState({
@@ -112,7 +123,9 @@ const AISettings = ({ open, onClose }) => {
 
       // 在对话框完全渲染后设置焦点到添加按钮
       setTimeout(() => {
-        const addButton = document.querySelector('[data-testid="add-api-button"]');
+        const addButton = document.querySelector(
+          '[data-testid="add-api-button"]',
+        );
         if (addButton) {
           addButton.focus();
         }
@@ -151,6 +164,7 @@ const AISettings = ({ open, onClose }) => {
             provider: settings.current.provider || PROVIDER_TYPES.OPENAI,
             apiUrl: settings.current.apiUrl || "",
             apiKey: settings.current.apiKey || "",
+            hasApiKey: settings.current.hasApiKey === true,
             model: settings.current.model || "",
             maxTokens: settings.current.maxTokens || 2000,
             temperature: settings.current.temperature || 0.7,
@@ -177,24 +191,28 @@ const AISettings = ({ open, onClose }) => {
 
   // 重置配置表单
   const resetConfig = () => {
-    setConfig({
-      id: "",
-      name: "",
-      provider: PROVIDER_TYPES.OPENAI,
-      apiUrl: "",
-      apiKey: "",
-      model: "",
-      maxTokens: 2000,
-      temperature: 0.7,
-      streamEnabled: true,
-    });
+    setConfig(createEmptyConfig());
   };
 
   const handleConfigChange = (field, value) => {
-    setConfig((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setConfig((prev) => {
+      if (field === "apiKey") {
+        const typedApiKey = typeof value === "string" ? value.trim() : "";
+        const keepStoredKey = Boolean(
+          prev.id && prev.hasApiKey && !typedApiKey,
+        );
+        return {
+          ...prev,
+          apiKey: value,
+          hasApiKey: keepStoredKey || Boolean(typedApiKey),
+        };
+      }
+
+      return {
+        ...prev,
+        [field]: value,
+      };
+    });
     setError("");
     setSuccess("");
   };
@@ -214,6 +232,7 @@ const AISettings = ({ open, onClose }) => {
       provider: apiConfig.provider || PROVIDER_TYPES.OPENAI,
       apiUrl: apiConfig.apiUrl,
       apiKey: apiConfig.apiKey,
+      hasApiKey: apiConfig.hasApiKey === true,
       model: apiConfig.model,
       maxTokens: apiConfig.maxTokens || 2000,
       temperature: apiConfig.temperature || 0.7,
@@ -230,7 +249,8 @@ const AISettings = ({ open, onClose }) => {
       name: `${apiConfig.name} (副本)`, // 添加副本标识
       provider: apiConfig.provider || PROVIDER_TYPES.OPENAI,
       apiUrl: apiConfig.apiUrl, // 保持相同的API URL
-      apiKey: apiConfig.apiKey, // 保持相同的API Key
+      apiKey: "",
+      hasApiKey: false,
       model: apiConfig.model, // 可以使用相同的模型或修改
       maxTokens: apiConfig.maxTokens || 2000,
       temperature: apiConfig.temperature || 0.7,
@@ -305,7 +325,7 @@ const AISettings = ({ open, onClose }) => {
       setError(t("aiSettings.apiUrlRequired"));
       return false;
     }
-    if (!config.apiKey.trim()) {
+    if (!hasConfiguredApiKey(config)) {
       setError(t("aiSettings.apiKeyRequired"));
       return false;
     }
@@ -399,8 +419,9 @@ const AISettings = ({ open, onClose }) => {
     try {
       if (window.terminalAPI?.sendAPIRequest) {
         const requestData = {
+          apiConfigId: config.id || undefined,
           url: config.apiUrl,
-          apiKey: config.apiKey,
+          ...buildInlineApiKeyPayload(config),
           model: config.model,
           provider: config.provider,
           maxTokens: config.maxTokens,
@@ -453,7 +474,7 @@ const AISettings = ({ open, onClose }) => {
 
   // 获取可用模型列表
   const handleFetchModels = async () => {
-    if (!config.apiUrl.trim() || !config.apiKey.trim()) {
+    if (!config.apiUrl.trim() || !hasConfiguredApiKey(config)) {
       setError(t("aiSettings.apiUrlAndKeyRequired"));
       return;
     }
@@ -463,8 +484,9 @@ const AISettings = ({ open, onClose }) => {
 
     try {
       const result = await window.terminalAPI.fetchModels({
+        apiConfigId: config.id || undefined,
         url: config.apiUrl,
-        apiKey: config.apiKey,
+        ...buildInlineApiKeyPayload(config),
         provider: config.provider,
       });
 
@@ -505,13 +527,13 @@ const AISettings = ({ open, onClose }) => {
 
     // 验证正则表达式
     try {
-      new RegExp(newRulePattern, 'i');
+      new RegExp(newRulePattern, "i");
     } catch {
       setRuleError(t("aiSettings.invalidRegex"));
       return;
     }
 
-    setCustomRules(prev => ({
+    setCustomRules((prev) => ({
       ...prev,
       [newRuleLevel]: [...prev[newRuleLevel], newRulePattern],
     }));
@@ -521,7 +543,7 @@ const AISettings = ({ open, onClose }) => {
 
   // 删除自定义规则
   const handleDeleteRule = (level, index) => {
-    setCustomRules(prev => ({
+    setCustomRules((prev) => ({
       ...prev,
       [level]: prev[level].filter((_, i) => i !== index),
     }));
@@ -533,7 +555,8 @@ const AISettings = ({ open, onClose }) => {
     setError("");
     try {
       if (window.terminalAPI?.saveCustomRiskRules) {
-        const result = await window.terminalAPI.saveCustomRiskRules(customRules);
+        const result =
+          await window.terminalAPI.saveCustomRiskRules(customRules);
         if (result) {
           // 应用到风险评估模块
           applyCustomRiskRules(customRules);
@@ -552,7 +575,7 @@ const AISettings = ({ open, onClose }) => {
   // 获取风险等级颜色
   const getRiskLevelColor = (level) => {
     const riskKey = level.toUpperCase();
-    return RISK_LEVELS[riskKey]?.color || '#666';
+    return RISK_LEVELS[riskKey]?.color || "#666";
   };
 
   // 获取风险等级标签
@@ -589,7 +612,9 @@ const AISettings = ({ open, onClose }) => {
           alignItems: "center",
         }}
       >
-        <Typography variant="h6" component="span">{t("aiSettings.title")}</Typography>
+        <Typography variant="h6" component="span">
+          {t("aiSettings.title")}
+        </Typography>
         <IconButton onClick={handleClose} size="small">
           <CloseIcon />
         </IconButton>
@@ -705,7 +730,10 @@ const AISettings = ({ open, onClose }) => {
                                       color="text.secondary"
                                       sx={{ mb: 0.5 }}
                                     >
-                                      {t("aiSettings.providerType")}: {(apiConfig.provider || "openai").toUpperCase()}
+                                      {t("aiSettings.providerType")}:{" "}
+                                      {(
+                                        apiConfig.provider || "openai"
+                                      ).toUpperCase()}
                                     </Typography>
                                     <Typography
                                       variant="body2"
@@ -801,11 +829,13 @@ const AISettings = ({ open, onClose }) => {
                             {t("aiSettings.editingExistingConfig")}
                           </Alert>
                         )}
-                        {!editingConfig && config.apiUrl && config.apiKey && (
-                          <Alert severity="success" sx={{ mb: 2 }}>
-                            {t("aiSettings.clonedConfigHint")}
-                          </Alert>
-                        )}
+                        {!editingConfig &&
+                          config.apiUrl &&
+                          hasConfiguredApiKey(config) && (
+                            <Alert severity="success" sx={{ mb: 2 }}>
+                              {t("aiSettings.clonedConfigHint")}
+                            </Alert>
+                          )}
                       </Box>
                       <TextField
                         inputRef={firstInputRef}
@@ -867,8 +897,22 @@ const AISettings = ({ open, onClose }) => {
                         placeholder={t("aiSettings.placeholders.apiKey")}
                         variant="outlined"
                         required
+                        helperText={
+                          config.hasApiKey && !config.apiKey
+                            ? t(
+                                "aiSettings.keyStoredInMain",
+                                "已在主进程安全保存，留空表示保持不变",
+                              )
+                            : undefined
+                        }
                       />
-                      <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          gap: 1,
+                          alignItems: "flex-start",
+                        }}
+                      >
                         <Autocomplete
                           value={config.model}
                           onChange={(event, newValue) => {
@@ -912,7 +956,11 @@ const AISettings = ({ open, onClose }) => {
                         <Tooltip title={t("aiSettings.fetchModels")}>
                           <IconButton
                             onClick={handleFetchModels}
-                            disabled={fetchingModels || !config.apiUrl.trim() || !config.apiKey.trim()}
+                            disabled={
+                              fetchingModels ||
+                              !config.apiUrl.trim() ||
+                              !hasConfiguredApiKey(config)
+                            }
                             sx={{ mt: 1 }}
                           >
                             {fetchingModels ? (
@@ -988,7 +1036,11 @@ const AISettings = ({ open, onClose }) => {
               {/* 自定义风险规则标签页 */}
               {tabValue === 1 && (
                 <Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 3 }}
+                  >
                     {t("aiSettings.customRulesDescription")}
                   </Typography>
 
@@ -997,7 +1049,13 @@ const AISettings = ({ open, onClose }) => {
                     <Typography variant="subtitle2" sx={{ mb: 2 }}>
                       {t("aiSettings.addNewRule")}
                     </Typography>
-                    <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        gap: 1.5,
+                        alignItems: "flex-start",
+                      }}
+                    >
                       <TextField
                         value={newRulePattern}
                         onChange={(e) => setNewRulePattern(e.target.value)}
@@ -1023,28 +1081,40 @@ const AISettings = ({ open, onClose }) => {
                             <Chip
                               label={t("ai.riskLevels.critical")}
                               size="small"
-                              sx={{ bgcolor: RISK_LEVELS.CRITICAL.color, color: "white" }}
+                              sx={{
+                                bgcolor: RISK_LEVELS.CRITICAL.color,
+                                color: "white",
+                              }}
                             />
                           </MenuItem>
                           <MenuItem value="high">
                             <Chip
                               label={t("ai.riskLevels.high")}
                               size="small"
-                              sx={{ bgcolor: RISK_LEVELS.HIGH.color, color: "white" }}
+                              sx={{
+                                bgcolor: RISK_LEVELS.HIGH.color,
+                                color: "white",
+                              }}
                             />
                           </MenuItem>
                           <MenuItem value="medium">
                             <Chip
                               label={t("ai.riskLevels.medium")}
                               size="small"
-                              sx={{ bgcolor: RISK_LEVELS.MEDIUM.color, color: "white" }}
+                              sx={{
+                                bgcolor: RISK_LEVELS.MEDIUM.color,
+                                color: "white",
+                              }}
                             />
                           </MenuItem>
                           <MenuItem value="low">
                             <Chip
                               label={t("ai.riskLevels.low")}
                               size="small"
-                              sx={{ bgcolor: RISK_LEVELS.LOW.color, color: "white" }}
+                              sx={{
+                                bgcolor: RISK_LEVELS.LOW.color,
+                                color: "white",
+                              }}
                             />
                           </MenuItem>
                         </Select>
@@ -1062,65 +1132,91 @@ const AISettings = ({ open, onClose }) => {
                   </Card>
 
                   {/* 自定义规则列表 */}
-                  <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 500 }}>
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ mb: 1.5, fontWeight: 500 }}
+                  >
                     {t("aiSettings.customRulesList")}
                   </Typography>
-                  {Object.values(customRules).every(arr => arr.length === 0) ? (
-                    <Box sx={{ textAlign: "center", py: 3, bgcolor: "action.hover", borderRadius: 1 }}>
+                  {Object.values(customRules).every(
+                    (arr) => arr.length === 0,
+                  ) ? (
+                    <Box
+                      sx={{
+                        textAlign: "center",
+                        py: 3,
+                        bgcolor: "action.hover",
+                        borderRadius: 1,
+                      }}
+                    >
                       <Typography color="text.secondary">
                         {t("aiSettings.noCustomRules")}
                       </Typography>
                     </Box>
                   ) : (
-                    ["critical", "high", "medium", "low"].map((level) => (
-                      customRules[level]?.length > 0 && (
-                        <Box key={level} sx={{ mb: 2 }}>
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                              mb: 0.5,
-                            }}
-                          >
-                            <Chip
-                              label={getRiskLevelLabel(level)}
-                              size="small"
-                              sx={{ bgcolor: getRiskLevelColor(level), color: "white" }}
-                            />
-                            <Typography variant="body2" color="text.secondary">
-                              ({customRules[level].length})
-                            </Typography>
+                    ["critical", "high", "medium", "low"].map(
+                      (level) =>
+                        customRules[level]?.length > 0 && (
+                          <Box key={level} sx={{ mb: 2 }}>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 1,
+                                mb: 0.5,
+                              }}
+                            >
+                              <Chip
+                                label={getRiskLevelLabel(level)}
+                                size="small"
+                                sx={{
+                                  bgcolor: getRiskLevelColor(level),
+                                  color: "white",
+                                }}
+                              />
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                ({customRules[level].length})
+                              </Typography>
+                            </Box>
+                            <List
+                              dense
+                              sx={{ bgcolor: "action.hover", borderRadius: 1 }}
+                            >
+                              {customRules[level].map((pattern, index) => (
+                                <ListItem key={index} sx={{ py: 0.5 }}>
+                                  <ListItemText
+                                    primary={pattern}
+                                    primaryTypographyProps={{
+                                      fontFamily: "monospace",
+                                      fontSize: "0.85rem",
+                                    }}
+                                  />
+                                  <ListItemSecondaryAction>
+                                    <IconButton
+                                      edge="end"
+                                      size="small"
+                                      onClick={() =>
+                                        handleDeleteRule(level, index)
+                                      }
+                                    >
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </ListItemSecondaryAction>
+                                </ListItem>
+                              ))}
+                            </List>
                           </Box>
-                          <List dense sx={{ bgcolor: "action.hover", borderRadius: 1 }}>
-                            {customRules[level].map((pattern, index) => (
-                              <ListItem key={index} sx={{ py: 0.5 }}>
-                                <ListItemText
-                                  primary={pattern}
-                                  primaryTypographyProps={{
-                                    fontFamily: "monospace",
-                                    fontSize: "0.85rem",
-                                  }}
-                                />
-                                <ListItemSecondaryAction>
-                                  <IconButton
-                                    edge="end"
-                                    size="small"
-                                    onClick={() => handleDeleteRule(level, index)}
-                                  >
-                                    <DeleteIcon fontSize="small" />
-                                  </IconButton>
-                                </ListItemSecondaryAction>
-                              </ListItem>
-                            ))}
-                          </List>
-                        </Box>
-                      )
-                    ))
+                        ),
+                    )
                   )}
 
                   {/* 保存按钮 */}
-                  <Box sx={{ mt: 2, display: "flex", justifyContent: "flex-end" }}>
+                  <Box
+                    sx={{ mt: 2, display: "flex", justifyContent: "flex-end" }}
+                  >
                     <Button
                       variant="contained"
                       onClick={handleSaveRules}
@@ -1132,7 +1228,14 @@ const AISettings = ({ open, onClose }) => {
 
                   {/* 内置规则（只读） */}
                   <Box sx={{ mt: 4 }}>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        mb: 1.5,
+                      }}
+                    >
                       <LockIcon fontSize="small" color="action" />
                       <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
                         {t("aiSettings.builtinRules")}
@@ -1141,54 +1244,67 @@ const AISettings = ({ open, onClose }) => {
                         ({t("aiSettings.readOnly")})
                       </Typography>
                     </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 2 }}
+                    >
                       {t("aiSettings.builtinRulesDescription")}
                     </Typography>
                     {["critical", "high", "medium", "low"].map((level) => {
-                      const builtinPatterns = getBuiltinRiskPatterns()[level] || [];
-                      return builtinPatterns.length > 0 && (
-                        <Box key={`builtin-${level}`} sx={{ mb: 2 }}>
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                              mb: 0.5,
-                            }}
-                          >
-                            <Chip
-                              label={getRiskLevelLabel(level)}
-                              size="small"
-                              sx={{ bgcolor: getRiskLevelColor(level), color: "white" }}
-                            />
-                            <Typography variant="body2" color="text.secondary">
-                              ({builtinPatterns.length})
-                            </Typography>
+                      const builtinPatterns =
+                        getBuiltinRiskPatterns()[level] || [];
+                      return (
+                        builtinPatterns.length > 0 && (
+                          <Box key={`builtin-${level}`} sx={{ mb: 2 }}>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 1,
+                                mb: 0.5,
+                              }}
+                            >
+                              <Chip
+                                label={getRiskLevelLabel(level)}
+                                size="small"
+                                sx={{
+                                  bgcolor: getRiskLevelColor(level),
+                                  color: "white",
+                                }}
+                              />
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                ({builtinPatterns.length})
+                              </Typography>
+                            </Box>
+                            <List
+                              dense
+                              sx={{
+                                bgcolor: "action.hover",
+                                borderRadius: 1,
+                                maxHeight: 200,
+                                overflow: "auto",
+                                opacity: 0.8,
+                              }}
+                            >
+                              {builtinPatterns.map((pattern, index) => (
+                                <ListItem key={index} sx={{ py: 0.25 }}>
+                                  <ListItemText
+                                    primary={pattern}
+                                    primaryTypographyProps={{
+                                      fontFamily: "monospace",
+                                      fontSize: "0.8rem",
+                                      color: "text.secondary",
+                                    }}
+                                  />
+                                </ListItem>
+                              ))}
+                            </List>
                           </Box>
-                          <List
-                            dense
-                            sx={{
-                              bgcolor: "action.hover",
-                              borderRadius: 1,
-                              maxHeight: 200,
-                              overflow: "auto",
-                              opacity: 0.8,
-                            }}
-                          >
-                            {builtinPatterns.map((pattern, index) => (
-                              <ListItem key={index} sx={{ py: 0.25 }}>
-                                <ListItemText
-                                  primary={pattern}
-                                  primaryTypographyProps={{
-                                    fontFamily: "monospace",
-                                    fontSize: "0.8rem",
-                                    color: "text.secondary",
-                                  }}
-                                />
-                              </ListItem>
-                            ))}
-                          </List>
-                        </Box>
+                        )
                       );
                     })}
                   </Box>
