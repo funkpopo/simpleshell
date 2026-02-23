@@ -4,12 +4,17 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Alert,
   Button,
   TextField,
   Box,
   Typography,
   Tabs,
   Tab,
+  FormControl,
+  FormLabel,
+  RadioGroup,
+  Radio,
   Checkbox,
   FormControlLabel,
   InputAdornment,
@@ -48,6 +53,7 @@ const SSHAuthDialog = ({
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [autoLogin, setAutoLogin] = useState(false);
+  const [hostTrustMode, setHostTrustMode] = useState("permanent");
 
   // 输入框引用
   const usernameRef = useRef(null);
@@ -57,11 +63,17 @@ const SSHAuthDialog = ({
   useEffect(() => {
     if (open && authData) {
       setStep(authData.step || "hostVerify");
-      setUsername(authData.username || connectionConfig?.username || "");
+      setUsername(
+        authData.username ||
+          authData.existingUsername ||
+          connectionConfig?.username ||
+          "",
+      );
       setPassword("");
       setPrivateKeyPath(connectionConfig?.privateKeyPath || "");
       setAutoLogin(false);
       setShowPassword(false);
+      setHostTrustMode(authData.fingerprintChanged ? "session" : "permanent");
 
       // 根据连接配置设置认证类型
       if (connectionConfig?.authType === "privateKey") {
@@ -88,22 +100,23 @@ const SSHAuthDialog = ({
 
   // 处理主机验证步骤的继续
   const handleHostVerifyContinue = useCallback(() => {
-    if (!username.trim()) {
+    const requiresCredentials = authData?.requireCredentials !== false;
+    if (requiresCredentials && !username.trim()) {
       return;
     }
 
     // 如果是首次认证流程，进入凭证步骤
-    if (authData?.requireCredentials !== false) {
+    if (requiresCredentials) {
       setStep("credentials");
     } else {
       // 只需要主机验证，直接确认
       onConfirm({
-        username: username.trim(),
-        autoLogin,
+        username: username.trim() || authData?.existingUsername || "",
+        hostTrustMode,
         acceptHostKey: true,
       });
     }
-  }, [username, autoLogin, authData, onConfirm]);
+  }, [username, authData, hostTrustMode, onConfirm]);
 
   // 处理凭证步骤的继续
   const handleCredentialsContinue = useCallback(() => {
@@ -170,6 +183,7 @@ const SSHAuthDialog = ({
       fingerprint,
       previousFingerprint,
       fingerprintChanged,
+      isFirstConnection,
       isRetry,
       errorMessage,
     } = authData;
@@ -177,6 +191,11 @@ const SSHAuthDialog = ({
       typeof fingerprint === "string" && fingerprint.startsWith("SHA256:")
         ? "SHA256"
         : "SHA1";
+    const showFingerprintConfirmNotice =
+      step === "hostVerify" && authData?.requireCredentials === false;
+    const showFirstConnectionNotice =
+      showFingerprintConfirmNotice &&
+      (isFirstConnection || (!fingerprintChanged && !previousFingerprint));
 
     return (
       <Box sx={{ mb: 2 }}>
@@ -212,7 +231,29 @@ const SSHAuthDialog = ({
           {host}:{port || 22} {serverVersion && `[${serverVersion}]`}
         </Typography>
 
-        {fingerprintChanged && (
+        {showFingerprintConfirmNotice && (
+          <Alert
+            severity={fingerprintChanged ? "warning" : "info"}
+            sx={{ mb: 1.5 }}
+          >
+            {fingerprintChanged
+              ? t(
+                  "sshAuth.fingerprintWarning",
+                  "服务器指纹已更改，请确认是否为预期更改。",
+                )
+              : showFirstConnectionNotice
+                ? t(
+                    "sshAuth.firstFingerprintNotice",
+                    "首次连接该服务器，请确认主机指纹后继续。",
+                  )
+                : t(
+                    "sshAuth.fingerprintConfirmNotice",
+                    "请确认主机指纹是否可信。",
+                  )}
+          </Alert>
+        )}
+
+        {!showFingerprintConfirmNotice && fingerprintChanged && (
           <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
             {t(
               "sshAuth.fingerprintWarning",
@@ -285,34 +326,75 @@ const SSHAuthDialog = ({
     <Box sx={{ pt: 1 }}>
       {renderHostInfo()}
 
-      <Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-          {t("sshAuth.username", "用户")}:(<u>U</u>)
-        </Typography>
-        <TextField
-          inputRef={usernameRef}
-          fullWidth
-          size="small"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={t("sshAuth.enterUsername", "请输入用户名")}
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton size="small" disabled>
-                  <VisibilityIcon fontSize="small" sx={{ opacity: 0.5 }} />
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-          sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 1,
-            },
-          }}
-        />
-      </Box>
+      {authData?.requireCredentials !== false && (
+        <Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+            {t("sshAuth.username", "用户")}:(<u>U</u>)
+          </Typography>
+          <TextField
+            inputRef={usernameRef}
+            fullWidth
+            size="small"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t("sshAuth.enterUsername", "请输入用户名")}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton size="small" disabled>
+                    <VisibilityIcon fontSize="small" sx={{ opacity: 0.5 }} />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 1,
+              },
+            }}
+          />
+        </Box>
+      )}
+
+      {authData?.requireCredentials === false && (
+        <Box sx={{ mt: 2 }}>
+          <FormControl component="fieldset" size="small">
+            <FormLabel
+              component="legend"
+              sx={{ mb: 1, color: "text.secondary", fontSize: "0.875rem" }}
+            >
+              {t("sshAuth.trustScopeLabel", "信任范围")}
+            </FormLabel>
+            <RadioGroup
+              value={hostTrustMode}
+              onChange={(e) => setHostTrustMode(e.target.value)}
+            >
+              <FormControlLabel
+                value="session"
+                control={<Radio size="small" />}
+                label={t("sshAuth.trustSession", "本次会话信任")}
+              />
+              <FormControlLabel
+                value="permanent"
+                control={<Radio size="small" />}
+                label={t("sshAuth.trustPermanent", "永久信任")}
+              />
+            </RadioGroup>
+          </FormControl>
+          <Typography variant="caption" color="text.secondary">
+            {hostTrustMode === "session"
+              ? t(
+                  "sshAuth.trustSessionHint",
+                  "仅当前运行有效，重启应用后需要再次确认。",
+                )
+              : t(
+                  "sshAuth.trustPermanentHint",
+                  "将写入已知主机列表，后续连接不再提示。",
+                )}
+          </Typography>
+        </Box>
+      )}
     </Box>
   );
 
@@ -421,6 +503,10 @@ const SSHAuthDialog = ({
 
   // 计算标题
   const getTitle = () => {
+    if (step === "hostVerify" && authData?.requireCredentials === false) {
+      return t("sshAuth.fingerprintTitle", "主机指纹确认");
+    }
+
     if (step === "credentials" && username) {
       const displayUsername =
         username.length > 1
@@ -466,22 +552,24 @@ const SSHAuthDialog = ({
           : renderCredentialsStep()}
       </DialogContent>
 
-      <Box sx={{ px: 3, pb: 1 }}>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={autoLogin}
-              onChange={(e) => setAutoLogin(e.target.checked)}
-              size="small"
-            />
-          }
-          label={
-            <Typography variant="body2">
-              {t("sshAuth.autoLoginNext", "下次自动登录")}(<u>A</u>)
-            </Typography>
-          }
-        />
-      </Box>
+      {authData?.requireCredentials !== false && (
+        <Box sx={{ px: 3, pb: 1 }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={autoLogin}
+                onChange={(e) => setAutoLogin(e.target.checked)}
+                size="small"
+              />
+            }
+            label={
+              <Typography variant="body2">
+                {t("sshAuth.autoLoginNext", "下次自动登录")}(<u>A</u>)
+              </Typography>
+            }
+          />
+        </Box>
+      )}
 
       <DialogActions
         sx={{ px: 3, py: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}
@@ -498,13 +586,17 @@ const SSHAuthDialog = ({
               : handleCredentialsContinue
           }
           disabled={
-            (step === "hostVerify" && !username.trim()) ||
+            (step === "hostVerify" &&
+              authData?.requireCredentials !== false &&
+              !username.trim()) ||
             (step === "credentials" && credTabValue === 0 && !password) ||
             (step === "credentials" && credTabValue === 1 && !privateKeyPath)
           }
           sx={{ minWidth: 80 }}
         >
-          {t("sshAuth.continue", "继续")}
+          {step === "hostVerify" && authData?.requireCredentials === false
+            ? t("sshAuth.confirmAndConnect", "确认并连接")
+            : t("sshAuth.continue", "继续")}
         </Button>
       </DialogActions>
     </Dialog>

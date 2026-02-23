@@ -33,6 +33,7 @@ class SSHHandlers {
     this.knownHostsCache = new Map();
     this.knownHostsLoaded = false;
     this.pendingHostVerifications = new Map();
+    this.sessionTrustedHosts = new Map();
   }
 
   getHandlers() {
@@ -268,6 +269,25 @@ class SSHHandlers {
       return { known: false, changed: false };
     }
 
+    const sessionEntry = this.sessionTrustedHosts.get(hostKey);
+    const sessionFingerprint =
+      typeof sessionEntry === "string"
+        ? sessionEntry
+        : sessionEntry?.fingerprint;
+
+    if (sessionFingerprint) {
+      if (sessionFingerprint === normalizedFingerprint) {
+        return { known: true, changed: false, trustScope: "session" };
+      }
+
+      return {
+        known: true,
+        changed: true,
+        previousFingerprint: sessionFingerprint,
+        trustScope: "session",
+      };
+    }
+
     const knownEntry = this.knownHostsCache.get(hostKey);
     const knownFingerprint =
       typeof knownEntry === "string" ? knownEntry : knownEntry?.fingerprint;
@@ -281,20 +301,33 @@ class SSHHandlers {
         known: true,
         changed: true,
         previousFingerprint: knownFingerprint,
+        trustScope: "permanent",
       };
     }
 
-    return { known: true, changed: false };
+    return { known: true, changed: false, trustScope: "permanent" };
   }
 
   /**
    * 保存主机密钥
    */
-  _saveHostKey(host, port, fingerprint) {
+  _saveHostKey(host, port, fingerprint, options = {}) {
     this._ensureKnownHostsLoaded();
     const hostKey = this._getHostCacheKey(host, port);
     const normalizedFingerprint = this._normalizeFingerprint(fingerprint);
     if (!normalizedFingerprint) {
+      return;
+    }
+
+    const shouldPersist = options.persist !== false;
+
+    this.sessionTrustedHosts.set(hostKey, {
+      fingerprint: normalizedFingerprint,
+      updatedAt: new Date().toISOString(),
+      scope: shouldPersist ? "permanent" : "session",
+    });
+
+    if (!shouldPersist) {
       return;
     }
 
@@ -368,6 +401,7 @@ class SSHHandlers {
     if (hostKeyStatus.known && !hostKeyStatus.changed) {
       return true;
     }
+    const isFirstConnection = !hostKeyStatus.known;
 
     const pendingKey = `${host}:${port}:${normalizedFingerprint}`;
     if (this.pendingHostVerifications.has(pendingKey)) {
@@ -383,6 +417,7 @@ class SSHHandlers {
         fingerprint: normalizedFingerprint,
         previousFingerprint: hostKeyStatus.previousFingerprint || null,
         fingerprintChanged: hostKeyStatus.changed,
+        isFirstConnection,
         requireCredentials: false,
         connectionId: sshConfig.id,
         username: sshConfig.username || "",
@@ -394,7 +429,11 @@ class SSHHandlers {
         return false;
       }
 
-      this._saveHostKey(host, port, normalizedFingerprint);
+      const hostTrustMode =
+        authResult.hostTrustMode === "session" ? "session" : "permanent";
+      this._saveHostKey(host, port, normalizedFingerprint, {
+        persist: hostTrustMode === "permanent",
+      });
       return true;
     })();
 
