@@ -893,6 +893,25 @@ class UpdateService {
   }
 
   /**
+   * 检查是否有已下载的安装包可供安装
+   * @returns {Promise<{available: boolean}>}
+   */
+  async hasDownloadedInstaller() {
+    try {
+      const meta = await this.loadInstallerMeta();
+      if (!meta) {
+        return { available: false };
+      }
+      const filePath = path.resolve(meta.filePath);
+      this.assertPathInTempDir(filePath);
+      await fsp.access(filePath);
+      return { available: true };
+    } catch {
+      return { available: false };
+    }
+  }
+
+  /**
    * 获取下载进度
    */
   getDownloadProgress() {
