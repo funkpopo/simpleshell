@@ -66,6 +66,19 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 终端进程管理
   sendToProcess: (processId, data) =>
     ipcRenderer.invoke("terminal:sendToProcess", processId, data),
+  notifyOutputConsumed: (processId, bytes) => {
+    if (processId === undefined || processId === null) {
+      return;
+    }
+    const normalizedBytes = Math.floor(Number(bytes));
+    if (!Number.isFinite(normalizedBytes) || normalizedBytes <= 0) {
+      return;
+    }
+    ipcRenderer.send("terminal:outputAck", {
+      processId,
+      bytes: normalizedBytes,
+    });
+  },
   killProcess: (processId) =>
     ipcRenderer.invoke("terminal:killProcess", processId),
   // 新增：获取进程信息

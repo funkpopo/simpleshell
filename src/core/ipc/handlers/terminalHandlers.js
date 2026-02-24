@@ -18,7 +18,7 @@ const editorExitCommands = [
 ];
 const editorExitRegex = new RegExp(
   `^(${editorExitCommands.join("|").replace(/\+/g, "\\+")}|:\\w+)$`,
-  "i"
+  "i",
 );
 
 /**
@@ -95,6 +95,11 @@ class TerminalHandlers {
         category: "terminal",
         handler: this.sendInput.bind(this),
       },
+      {
+        channel: "terminal:outputAck",
+        category: "terminal",
+        handler: this.handleOutputAck.bind(this),
+      },
     ];
   }
 
@@ -136,6 +141,39 @@ class TerminalHandlers {
   }
 
   /**
+   * 渲染进程输出消费确认（用于主进程背压控制）
+   */
+  handleOutputAck(_event, payload) {
+    const processId = payload?.processId;
+    const ackBytes = Math.floor(Number(payload?.bytes));
+    if (
+      processId === undefined ||
+      processId === null ||
+      !Number.isFinite(ackBytes) ||
+      ackBytes <= 0
+    ) {
+      return;
+    }
+
+    let procInfo = this.processManager.getProcess(processId);
+    if (!procInfo && typeof processId === "string" && /^\d+$/.test(processId)) {
+      procInfo = this.processManager.getProcess(Number(processId));
+    }
+    if (!procInfo || typeof procInfo.outputAckHandler !== "function") {
+      return;
+    }
+
+    try {
+      procInfo.outputAckHandler(ackBytes);
+    } catch (error) {
+      logToFile(
+        `Failed to handle output ack for process ${processId}: ${error.message}`,
+        "WARN",
+      );
+    }
+  }
+
+  /**
    * 发送数据到进程
    */
   async sendToProcess(event, processId, data) {
@@ -159,7 +197,7 @@ class TerminalHandlers {
         } catch (error) {
           logToFile(
             `Error encoding Chinese characters: ${error.message}`,
-            "ERROR"
+            "ERROR",
           );
           // 如果编码失败，使用原始数据
           processedData = data;
@@ -226,7 +264,7 @@ class TerminalHandlers {
               command.startsWith(">") ||
               (command.includes(" ") &&
                 !/^\s*(w|write|q|quit|exit|ZZ|x|c|change|d|delete|y|yank|p|put|u|undo|r|redo|i|insert|a|append)\s*/.test(
-                  command
+                  command,
                 ))
             ) {
               procInfo.editorMode = false;
@@ -311,7 +349,7 @@ class TerminalHandlers {
           proc.connectionInfo.intentionalClose = true;
           this.connectionManager.releaseSSHConnection(
             proc.connectionInfo.key,
-            proc.config?.tabId
+            proc.config?.tabId,
           );
           logToFile(`释放SSH连接池引用: ${proc.connectionInfo.key}`, "INFO");
 
@@ -320,7 +358,7 @@ class TerminalHandlers {
           if (latencyHandlers && proc.config?.tabId) {
             try {
               latencyHandlers.latencyService.unregisterConnection(
-                proc.config.tabId
+                proc.config.tabId,
               );
               logToFile(`已注销SSH连接延迟检测: ${proc.config.tabId}`, "DEBUG");
             } catch (latencyError) {
@@ -345,7 +383,7 @@ class TerminalHandlers {
           } catch (error) {
             logToFile(
               `Error closing SSH stream ${processId}: ${error.message}`,
-              "ERROR"
+              "ERROR",
             );
           }
         } else {
@@ -358,7 +396,7 @@ class TerminalHandlers {
           } catch (error) {
             logToFile(
               `Error killing process ${processId}: ${error.message}`,
-              "ERROR"
+              "ERROR",
             );
           }
         }
@@ -495,7 +533,7 @@ class TerminalHandlers {
         } catch (cleanupError) {
           logToFile(
             `Error during connection cleanup: ${cleanupError.message}`,
-            "WARN"
+            "WARN",
           );
         }
 
@@ -553,12 +591,12 @@ class TerminalHandlers {
       if (isEditorMode) {
         logToFile(
           `[EDITOR] 进程 ${processId} 进入编辑器模式（通过buffer类型检测）`,
-          "DEBUG"
+          "DEBUG",
         );
       } else {
         logToFile(
           `[EDITOR] 进程 ${processId} 退出编辑器模式（通过buffer类型检测）`,
-          "DEBUG"
+          "DEBUG",
         );
       }
     }
