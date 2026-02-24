@@ -221,6 +221,10 @@ const FileManager = memo(
     useEffect(() => {
       lastRefreshTimeRef.current = lastRefreshTime;
     }, [lastRefreshTime]);
+    const markLastRefreshTime = useCallback((timestamp = Date.now()) => {
+      lastRefreshTimeRef.current = timestamp;
+      setLastRefreshTime(timestamp);
+    }, []);
     const [contextMenu, setContextMenu] = useState(null);
     const [searchTerm, setSearchTerm] = useState("");
     const searchInputRef = useRef(null);
@@ -638,6 +642,8 @@ const FileManager = memo(
     });
     const backgroundListBufferRef = useRef([]);
     const backgroundListLastAttemptAtRef = useRef(0);
+    // 前台目录加载计数（同步更新，避免 setState 延迟导致与静默刷新竞态）
+    const foregroundLoadCountRef = useRef(0);
 
     // 稳定列表签名（用于判断文件列表是否变化，避免对大列表 JSON.stringify）
     const stableListSignatureRef = useRef(null);
@@ -783,6 +789,7 @@ const FileManager = memo(
                 toApiPath(currentPathRef.current) === payload.path;
               const canApply =
                 stillSamePath &&
+                foregroundLoadCountRef.current === 0 &&
                 !loadingRef.current &&
                 !listTokenRef.current &&
                 !isChunkingRef.current;
@@ -798,7 +805,7 @@ const FileManager = memo(
 
                 // 即使未变化，也更新缓存与刷新时间（保证侧边栏“最近刷新”正确）
                 updateDirectoryCache(currentPathRef.current, nextList);
-                setLastRefreshTime(Date.now());
+                markLastRefreshTime();
 
                 if (changed) {
                   setFiles(nextList);
@@ -886,6 +893,7 @@ const FileManager = memo(
             setListToken(null);
             isChunkingRef.current = false;
             setIsChunking(false);
+            markLastRefreshTime();
           }
         } catch {
           // ignore
@@ -902,6 +910,7 @@ const FileManager = memo(
       computeFileListSignature,
       clearSelection,
       scheduleChunkingReset,
+      markLastRefreshTime,
     ]);
 
     const startBackgroundDirectoryRefresh = useCallback(
@@ -921,7 +930,12 @@ const FileManager = memo(
         }
 
         // 避免与前台目录加载/分片渲染并发，减少队列积压
-        if (curLoading || curChunking || curListToken) {
+        if (
+          foregroundLoadCountRef.current > 0 ||
+          curLoading ||
+          curChunking ||
+          curListToken
+        ) {
           return { ok: false, skipped: true, reason: "busy" };
         }
 
@@ -1321,6 +1335,7 @@ const FileManager = memo(
         }
       }
 
+      foregroundLoadCountRef.current += 1;
       setLoading(true);
       setError(null);
       let isRetrying = false; // 标记是否正在重试
@@ -1375,8 +1390,10 @@ const FileManager = memo(
             setLastSelectedIndex(-1);
             setAnchorIndex(-1);
 
-            // 记录刷新时间
-            setLastRefreshTime(Date.now());
+            // 分片加载在 done 时记录刷新时间；非分片在此处记录
+            if (!(response.chunked && response.token)) {
+              markLastRefreshTime();
+            }
           } else {
             // 处理错误，检查是否需要重试
             if (
@@ -1459,6 +1476,10 @@ const FileManager = memo(
             (error.message || t("fileManager.errors.unknownError")),
         );
       } finally {
+        foregroundLoadCountRef.current = Math.max(
+          0,
+          foregroundLoadCountRef.current - 1,
+        );
         // 只有在不重试的情况下才关闭loading
         if (!isRetrying) {
           setLoading(false);
@@ -1842,7 +1863,7 @@ const FileManager = memo(
     const refreshAfterUserActivity = useMemo(
       () =>
         debounce(() => {
-          if (currentPath) {
+          if (currentPath && foregroundLoadCountRef.current === 0) {
             silentRefreshCurrentDirectory();
           }
         }, USER_ACTIVITY_REFRESH_DELAY),
@@ -2035,8 +2056,7 @@ const FileManager = memo(
           setAnchorIndex(-1);
 
           // 刷新目录
-          await loadDirectory(currentPath);
-          refreshAfterUserActivity();
+          await loadDirectory(currentPath, 0, true);
         } catch (error) {
           setError(
             t("fileManager.errors.deleteFailed") +
@@ -2061,7 +2081,6 @@ const FileManager = memo(
       tabId,
       t,
       loadDirectory,
-      refreshAfterUserActivity,
       handleContextMenuClose,
       showBatchOperationConfirm,
     ]);
@@ -2108,17 +2127,7 @@ const FileManager = memo(
               setAnchorIndex(-1);
 
               // 成功删除，刷新目录
-              await loadDirectory(currentPath);
-
-              // 删除操作完成后，必要时触发一次静默刷新以校验目录
-              try {
-                if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
-                  refreshAfterUserActivity();
-                }
-              } catch {
-                // 兜底触发
-                refreshAfterUserActivity();
-              }
+              await loadDirectory(currentPath, 0, true);
             } else if (
               response?.error?.includes("SFTP错误") &&
               retryCount < maxRetries
@@ -2219,6 +2228,7 @@ const FileManager = memo(
       // 保存当前路径状态
       const savedCurrentPath = currentPath;
       const savedSelectedFile = selectedFile;
+      let didForegroundRefresh = false;
 
       try {
         let targetPath;
@@ -2303,7 +2313,8 @@ const FileManager = memo(
 
             // 如果是上传到选中的文件夹，刷新当前目录即可
             // 不需要切换到目标文件夹
-            loadDirectory(savedCurrentPath, 0, true); // 强制刷新当前目录
+            await loadDirectory(savedCurrentPath, 0, true); // 强制刷新当前目录
+            didForegroundRefresh = true;
 
             // 如果有警告信息（部分文件上传失败），显示给用户
             if (result.partialSuccess && result.warning) {
@@ -2347,12 +2358,8 @@ const FileManager = memo(
             }
           }
 
-          // 无论上传结果如何，必要时刷新文件列表，避免与显式刷新竞态
-          try {
-            if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
-              refreshAfterUserActivity();
-            }
-          } catch {
+          // 上传未触发前台刷新时，安排一次静默刷新兜底
+          if (!didForegroundRefresh) {
             refreshAfterUserActivity();
           }
         }
@@ -2403,12 +2410,8 @@ const FileManager = memo(
             });
         }
 
-        // 无论上传结果如何，必要时刷新文件列表，避免与显式刷新竞态
-        try {
-          if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
-            refreshAfterUserActivity();
-          }
-        } catch {
+        // 异常分支如果尚未前台刷新，安排静默刷新兜底
+        if (!didForegroundRefresh) {
           refreshAfterUserActivity();
         }
       }
@@ -2426,6 +2429,7 @@ const FileManager = memo(
       // 保存当前路径状态
       const savedCurrentPath = currentPath;
       const savedSelectedFile = selectedFile;
+      let didForegroundRefresh = false;
 
       try {
         let targetPath;
@@ -2512,7 +2516,8 @@ const FileManager = memo(
 
             // 如果是上传到选中的文件夹，刷新当前目录即可
             // 不需要切换到目标文件夹
-            loadDirectory(savedCurrentPath, 0, true); // 强制刷新当前目录
+            await loadDirectory(savedCurrentPath, 0, true); // 强制刷新当前目录
+            didForegroundRefresh = true;
 
             // 如果有警告信息（部分文件上传失败），显示给用户
             if (result.partialSuccess && result.warning) {
@@ -2556,8 +2561,10 @@ const FileManager = memo(
             }
           }
 
-          // 无论上传结果如何，都刷新文件列表
-          refreshAfterUserActivity();
+          // 上传未触发前台刷新时，安排一次静默刷新兜底
+          if (!didForegroundRefresh) {
+            refreshAfterUserActivity();
+          }
         }
       } catch (error) {
         // t("fileManager.errors.uploadFailed")
@@ -2583,8 +2590,10 @@ const FileManager = memo(
           setTransferCancelled(true);
         }
 
-        // 无论上传结果如何，都刷新文件列表
-        refreshAfterUserActivity();
+        // 异常分支如果尚未前台刷新，安排静默刷新兜底
+        if (!didForegroundRefresh) {
+          refreshAfterUserActivity();
+        }
       }
     };
 
@@ -3201,6 +3210,7 @@ const FileManager = memo(
             currentFileIndex: 0,
             totalFiles: allFiles.length,
           });
+          let didForegroundRefresh = false;
 
           try {
             // 准备文件数据供IPC传输
@@ -3319,7 +3329,8 @@ const FileManager = memo(
               // 切换到上传的目标路径
               updateCurrentPath(targetPath);
               setPathInput(targetPath);
-              loadDirectory(targetPath, 0, true); // 强制刷新目标目录
+              await loadDirectory(targetPath, 0, true); // 强制刷新目标目录
+              didForegroundRefresh = true;
 
               // 如果有警告信息（部分文件上传失败），显示给用户
               if (result.partialSuccess && result.warning) {
@@ -3332,8 +3343,10 @@ const FileManager = memo(
                 });
               }
 
-              // 刷新文件列表
-              refreshAfterUserActivity();
+              // 上传未触发前台刷新时，安排一次静默刷新兜底
+              if (!didForegroundRefresh) {
+                refreshAfterUserActivity();
+              }
             } else {
               throw new Error(
                 result.error || t("fileManager.errors.uploadFailed"),
