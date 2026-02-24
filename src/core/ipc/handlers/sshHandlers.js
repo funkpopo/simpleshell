@@ -507,12 +507,23 @@ class SSHHandlers {
   _setupStreamEventListeners(stream, processId, sshConfig, connectionInfo) {
     let buffer = Buffer.alloc(0);
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB 缓冲区上限
-    const FLUSH_INTERVAL_MS = 24; // 约 1~2 帧内合并，控制在 <50ms 延迟
-    const FLUSH_THRESHOLD_BYTES = 64 * 1024;
-    const BACKPRESSURE_PAUSE_THRESHOLD = 1024 * 1024;
-    const BACKPRESSURE_RESUME_THRESHOLD = Math.floor(
-      BACKPRESSURE_PAUSE_THRESHOLD / 2,
-    );
+    const OUTPUT_PROFILES = {
+      "low-latency": {
+        flushIntervalMs: 8,
+        flushThresholdBytes: 16 * 1024,
+        pauseThresholdBytes: 512 * 1024,
+      },
+      balanced: {
+        flushIntervalMs: 24,
+        flushThresholdBytes: 64 * 1024,
+        pauseThresholdBytes: 1024 * 1024,
+      },
+      throughput: {
+        flushIntervalMs: 48,
+        flushThresholdBytes: 128 * 1024,
+        pauseThresholdBytes: 2 * 1024 * 1024,
+      },
+    };
     const BACKPRESSURE_RECOVERY_INTERVAL_MS = 100;
 
     let isPaused = false;
@@ -522,6 +533,46 @@ class SSHHandlers {
     let droppedBytes = 0;
     const stdoutDecoder = new StringDecoder("utf8");
     const stderrDecoder = new StringDecoder("utf8");
+
+    const normalizeOutputMode = (mode) => {
+      if (mode === "low-latency" || mode === "interactive") {
+        return "low-latency";
+      }
+      if (mode === "throughput" || mode === "log") {
+        return "throughput";
+      }
+      return "balanced";
+    };
+
+    const getProcessInfoForMode = () => {
+      const proc = this.childProcesses.get(processId);
+      if (proc) {
+        return proc;
+      }
+      if (sshConfig.tabId) {
+        return this.childProcesses.get(sshConfig.tabId) || null;
+      }
+      return null;
+    };
+
+    const resolveOutputMode = () => {
+      const procInfo = getProcessInfoForMode();
+      if (!procInfo) {
+        return "balanced";
+      }
+      if (procInfo.outputMode) {
+        return normalizeOutputMode(procInfo.outputMode);
+      }
+      if (procInfo.editorMode) {
+        return "low-latency";
+      }
+      return "balanced";
+    };
+
+    const getOutputProfile = () => {
+      const mode = resolveOutputMode();
+      return OUTPUT_PROFILES[mode] || OUTPUT_PROFILES.balanced;
+    };
 
     const getPayloadByteLength = (payload) => {
       if (Buffer.isBuffer(payload)) {
@@ -547,18 +598,19 @@ class SSHHandlers {
       }
 
       const totalPendingBytes = pendingAckBytes + buffer.length;
+      const backpressurePauseThreshold = getOutputProfile().pauseThresholdBytes;
+      const backpressureResumeThreshold = Math.floor(
+        backpressurePauseThreshold / 2,
+      );
 
-      if (!isPaused && totalPendingBytes >= BACKPRESSURE_PAUSE_THRESHOLD) {
+      if (!isPaused && totalPendingBytes >= backpressurePauseThreshold) {
         stream.pause();
         isPaused = true;
         logToFile(
           `Stream paused for processId ${processId}: pendingAck=${pendingAckBytes}, buffer=${buffer.length}`,
           "DEBUG",
         );
-      } else if (
-        isPaused &&
-        totalPendingBytes <= BACKPRESSURE_RESUME_THRESHOLD
-      ) {
+      } else if (isPaused && totalPendingBytes <= backpressureResumeThreshold) {
         stream.resume();
         isPaused = false;
         logToFile(
@@ -703,7 +755,7 @@ class SSHHandlers {
       flushTimer = setTimeout(() => {
         flushTimer = null;
         flushBufferedOutput();
-      }, FLUSH_INTERVAL_MS);
+      }, getOutputProfile().flushIntervalMs);
     };
 
     const dataHandler = (data) => {
@@ -750,7 +802,7 @@ class SSHHandlers {
         }
 
         // 达到阈值时立即 flush，其他情况用短时间窗口微批处理
-        if (buffer.length >= FLUSH_THRESHOLD_BYTES) {
+        if (buffer.length >= getOutputProfile().flushThresholdBytes) {
           flushBufferedOutput();
         } else {
           scheduleFlush();
@@ -996,6 +1048,7 @@ class SSHHandlers {
       lastOutputLines: [],
       outputBuffer: "",
       isRemote: true,
+      outputMode: "balanced",
     };
   }
 

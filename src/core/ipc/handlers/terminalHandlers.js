@@ -100,6 +100,11 @@ class TerminalHandlers {
         category: "terminal",
         handler: this.handleOutputAck.bind(this),
       },
+      {
+        channel: "terminal:setOutputMode",
+        category: "terminal",
+        handler: this.setOutputMode.bind(this),
+      },
     ];
   }
 
@@ -107,37 +112,11 @@ class TerminalHandlers {
    * 发送输入到进程（事件类型，无返回值）
    */
   sendInput(_event, { processId, input }) {
-    const processInfo = this.processManager.getProcess(processId);
-    if (!processInfo) {
-      logToFile(`Process not found: ${processId}`, "ERROR");
+    if (processId === undefined || processId === null) {
       return;
     }
 
-    try {
-      if (processInfo.type === "node-pty") {
-        processInfo.process.write(input);
-      } else if (processInfo.type === "ssh2" && processInfo.stream) {
-        processInfo.stream.write(input);
-      } else if (processInfo.type === "telnet" && processInfo.process) {
-        processInfo.process.shell((err, stream) => {
-          if (err) {
-            logToFile(`Error getting telnet shell: ${err.message}`, "ERROR");
-            return;
-          }
-          stream.write(input);
-        });
-      } else {
-        logToFile(
-          `Invalid process type or stream for input: ${processId}`,
-          "ERROR",
-        );
-      }
-    } catch (error) {
-      logToFile(
-        `Error sending input to process ${processId}: ${error.message}`,
-        "ERROR",
-      );
-    }
+    this.writeToProcess(processId, input);
   }
 
   /**
@@ -173,39 +152,103 @@ class TerminalHandlers {
     }
   }
 
-  /**
-   * 发送数据到进程
-   */
-  async sendToProcess(event, processId, data) {
-    const procInfo = this.processManager.getProcess(processId);
+  normalizeOutputMode(mode) {
+    if (typeof mode !== "string") {
+      return "balanced";
+    }
+
+    const normalized = mode.trim().toLowerCase();
+    if (normalized === "low-latency" || normalized === "interactive") {
+      return "low-latency";
+    }
+    if (normalized === "throughput" || normalized === "log") {
+      return "throughput";
+    }
+    return "balanced";
+  }
+
+  applyOutputMode(processId, mode) {
+    let procInfo = this.processManager.getProcess(processId);
+    if (!procInfo && typeof processId === "string" && /^\d+$/.test(processId)) {
+      procInfo = this.processManager.getProcess(Number(processId));
+    }
+    if (!procInfo) {
+      return false;
+    }
+
+    const normalizedMode = this.normalizeOutputMode(mode);
+    const relatedIds = new Set([processId]);
+    if (
+      procInfo.config?.tabId !== undefined &&
+      procInfo.config?.tabId !== null
+    ) {
+      relatedIds.add(procInfo.config.tabId);
+    }
+
+    if (typeof processId === "number" && Number.isFinite(processId)) {
+      relatedIds.add(String(processId));
+    } else if (typeof processId === "string" && /^\d+$/.test(processId)) {
+      relatedIds.add(Number(processId));
+    }
+
+    relatedIds.forEach((id) => {
+      const target = this.processManager.getProcess(id);
+      if (target) {
+        target.outputMode = normalizedMode;
+      }
+    });
+
+    return true;
+  }
+
+  setOutputMode(_event, payload) {
+    const processId = payload?.processId;
+    if (processId === undefined || processId === null) {
+      return;
+    }
+
+    this.applyOutputMode(processId, payload?.mode);
+  }
+
+  writeToProcess(processId, data) {
+    if (data === undefined || data === null) {
+      return false;
+    }
+
+    const input = typeof data === "string" ? data : data.toString();
+    let procInfo = this.processManager.getProcess(processId);
+    if (!procInfo && typeof processId === "string" && /^\d+$/.test(processId)) {
+      procInfo = this.processManager.getProcess(Number(processId));
+    }
+
     if (!procInfo || !procInfo.process) {
       return false;
     }
 
     try {
       // 确保退格键字符正确转换
-      let processedData = data;
+      let processedData = input;
 
       // 检测是否包含中文字符
-      const containsChinese = /[\u4e00-\u9fa5]/.test(data);
+      const containsChinese = /[\u4e00-\u9fa5]/.test(input);
       if (containsChinese && procInfo.type === "ssh2") {
         // 确保中文字符能够正确处理
         // 对于SSH连接，我们需要确保数据是UTF-8编码的
         try {
           // 创建Buffer时显式指定UTF-8编码
-          processedData = Buffer.from(data, "utf8").toString("utf8");
+          processedData = Buffer.from(input, "utf8").toString("utf8");
         } catch (error) {
           logToFile(
             `Error encoding Chinese characters: ${error.message}`,
             "ERROR",
           );
           // 如果编码失败，使用原始数据
-          processedData = data;
+          processedData = input;
         }
       }
 
       // 检测Tab键 (ASCII 9, \t, \x09)
-      if (data === "\t" || data === "\x09") {
+      if (input === "\t" || input === "\x09") {
         // 直接发送到进程
         if (procInfo.type === "ssh2") {
           if (procInfo.stream) {
@@ -228,7 +271,7 @@ class TerminalHandlers {
       }
 
       // 检测回车键并提取可能的命令
-      if (data === "\r" || data === "\n") {
+      if (input === "\r" || input === "\n") {
         // 可能是一个命令的结束，尝试从缓冲区获取命令
         if (procInfo.commandBuffer && procInfo.commandBuffer.trim()) {
           const command = procInfo.commandBuffer.trim();
@@ -286,7 +329,7 @@ class TerminalHandlers {
         procInfo.commandBuffer = "";
       } else {
         // 累积命令缓冲区
-        procInfo.commandBuffer += data;
+        procInfo.commandBuffer += input;
       }
 
       // 发送数据到进程
@@ -318,6 +361,13 @@ class TerminalHandlers {
       logToFile(`Failed to send data to process: ${error.message}`, "ERROR");
       return false;
     }
+  }
+
+  /**
+   * 发送数据到进程
+   */
+  async sendToProcess(_event, processId, data) {
+    return this.writeToProcess(processId, data);
   }
 
   /**
@@ -584,6 +634,7 @@ class TerminalHandlers {
 
     // 更新进程信息中的编辑器模式状态
     procInfo.editorMode = isEditorMode;
+    this.applyOutputMode(processId, isEditorMode ? "low-latency" : "balanced");
 
     // 仅当状态实际变化时记录详细日志
     if (previousState !== isEditorMode) {

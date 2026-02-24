@@ -11,11 +11,39 @@ const streamWrappersByChannel = {
   "stream-end": new WeakMap(),
   "stream-error": new WeakMap(),
 };
+const processOutputWrappersByChannel = new Map();
+const processOutputListenersByChannel = new Map();
 
 const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 const RESTRICTED_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
 const MAX_EXTERNAL_URL_LENGTH = 2048;
 const OPEN_EXTERNAL_IPC_TIMEOUT = 10000;
+
+const getProcessOutputWrapperStore = (channel) => {
+  if (!processOutputWrappersByChannel.has(channel)) {
+    processOutputWrappersByChannel.set(channel, new WeakMap());
+  }
+  if (!processOutputListenersByChannel.has(channel)) {
+    processOutputListenersByChannel.set(channel, new Set());
+  }
+
+  return {
+    wrappers: processOutputWrappersByChannel.get(channel),
+    listeners: processOutputListenersByChannel.get(channel),
+  };
+};
+
+const removeAllManagedProcessOutputListeners = (channel) => {
+  const listeners = processOutputListenersByChannel.get(channel);
+  if (!listeners || listeners.size === 0) {
+    return;
+  }
+
+  listeners.forEach((wrapped) => {
+    ipcRenderer.removeListener(channel, wrapped);
+  });
+  listeners.clear();
+};
 
 const normalizeExternalOpenRequest = (url, options = {}) => {
   if (typeof url !== "string") {
@@ -64,7 +92,21 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   sendCommand: (command) => ipcRenderer.invoke("terminal:command", command),
 
   // 终端进程管理
-  sendToProcess: (processId, data) =>
+  sendToProcess: (processId, data) => {
+    if (processId === undefined || processId === null) {
+      return false;
+    }
+    if (data === undefined || data === null) {
+      return false;
+    }
+
+    ipcRenderer.send("terminal:sendInput", {
+      processId,
+      input: typeof data === "string" ? data : data.toString(),
+    });
+    return true;
+  },
+  sendToProcessWithAck: (processId, data) =>
     ipcRenderer.invoke("terminal:sendToProcess", processId, data),
   notifyOutputConsumed: (processId, bytes) => {
     if (processId === undefined || processId === null) {
@@ -77,6 +119,16 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.send("terminal:outputAck", {
       processId,
       bytes: normalizedBytes,
+    });
+  },
+  setOutputMode: (processId, mode) => {
+    if (processId === undefined || processId === null) {
+      return;
+    }
+
+    ipcRenderer.send("terminal:setOutputMode", {
+      processId,
+      mode: typeof mode === "string" ? mode : "balanced",
     });
   },
   killProcess: (processId) =>
@@ -149,22 +201,45 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 事件监听
   onProcessOutput: (processId, callback) => {
     const channel = `process:output:${processId}`;
+    if (typeof callback !== "function") {
+      return () => {};
+    }
 
-    ipcRenderer.removeAllListeners(channel);
-
-    ipcRenderer.on(channel, (event, data) => {
+    const { wrappers, listeners } = getProcessOutputWrapperStore(channel);
+    const wrapped = (event, data) => {
       callback(data);
-    });
+    };
+    wrappers.set(callback, wrapped);
+    listeners.add(wrapped);
+    ipcRenderer.on(channel, wrapped);
 
     return () => {
-      ipcRenderer.removeAllListeners(channel);
+      ipcRenderer.removeListener(channel, wrapped);
+      listeners.delete(wrapped);
+      wrappers.delete(callback);
     };
   },
 
-  removeOutputListener: (processId) => {
-    if (processId) {
-      ipcRenderer.removeAllListeners(`process:output:${processId}`);
+  removeOutputListener: (processId, callback) => {
+    if (!processId) {
+      return;
     }
+
+    const channel = `process:output:${processId}`;
+    const { wrappers, listeners } = getProcessOutputWrapperStore(channel);
+
+    if (typeof callback === "function") {
+      const wrapped = wrappers.get(callback);
+      if (!wrapped) {
+        return;
+      }
+      ipcRenderer.removeListener(channel, wrapped);
+      listeners.delete(wrapped);
+      wrappers.delete(callback);
+      return;
+    }
+
+    removeAllManagedProcessOutputListeners(channel);
   },
 
   // 连接配置存储API

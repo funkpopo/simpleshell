@@ -3,7 +3,6 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
-import { WebglAddon } from "@xterm/addon-webgl";
 import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
 import "@xterm/xterm/css/xterm.css";
@@ -11,8 +10,9 @@ import "./WebTerminal.css";
 import { debounce, createResizeObserver } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
 import { useWindowEvent } from "../hooks/useWindowEvent.js";
+import { useTerminalRender } from "../hooks/useTerminalRender.js";
 import { TerminalPerformanceMonitor } from "../utils/TerminalPerformanceMonitor.js";
-import { VirtualScrollBuffer } from "../utils/VirtualScrollBuffer.js";
+import { ScrollbackUsageTracker } from "../utils/ScrollbackUsageTracker.js";
 import { WriteStrategyManager } from "../utils/WriteStrategyManager.js";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
@@ -499,34 +499,23 @@ const getCharacterMetrics = (term) => {
     let charWidth = 9; // 默认值
     let charHeight = 17; // 默认值
 
-    // 尝试多种方法获取精确的字符宽度
-    if (
-      term._core?._renderService?._renderer?.dimensions?.actualCellWidth > 0
-    ) {
-      // 优先使用渲染器提供的精确值
-      charWidth =
-        term._core._renderService._renderer.dimensions.actualCellWidth;
-    } else if (term._core?._renderService?.dimensions?.actualCellWidth > 0) {
-      // 兼容旧版本的路径
-      charWidth = term._core._renderService.dimensions.actualCellWidth;
-    } else if (charMeasureElement) {
-      // 回退到DOM元素测量
+    if (charMeasureElement) {
+      // 优先使用公开 DOM 测量，避免依赖 xterm 私有字段
       charWidth = charMeasureElement.getBoundingClientRect().width;
-    }
-
-    // 尝试多种方法获取精确的字符高度
-    if (
-      term._core?._renderService?._renderer?.dimensions?.actualCellHeight > 0
-    ) {
-      // 优先使用渲染器提供的精确值
-      charHeight =
-        term._core._renderService._renderer.dimensions.actualCellHeight;
-    } else if (term._core?._renderService?.dimensions?.actualCellHeight > 0) {
-      // 兼容旧版本的路径
-      charHeight = term._core._renderService.dimensions.actualCellHeight;
-    } else if (charMeasureElement) {
-      // 回退到DOM元素测量
       charHeight = charMeasureElement.getBoundingClientRect().height;
+    } else {
+      const viewport = term.element.querySelector(".xterm-viewport");
+      const screen = term.element.querySelector(".xterm-screen");
+      const fallbackRect = (screen || viewport)?.getBoundingClientRect();
+      const cols = Math.max(1, term.cols || 1);
+      const rows = Math.max(1, term.rows || 1);
+
+      if (fallbackRect?.width > 0) {
+        charWidth = fallbackRect.width / cols;
+      }
+      if (fallbackRect?.height > 0) {
+        charHeight = fallbackRect.height / rows;
+      }
     }
 
     // 确保尺寸至少为1，避免0或负值
@@ -552,8 +541,11 @@ const getCharacterMetrics = (term) => {
     const terminalScrollPosition = term.buffer?.active?.viewportY || 0;
     const terminalHasScrolled = terminalScrollPosition > 0;
 
-    // 计算偏移量时考虑终端的缩放因子
-    const termScale = term._core?.scaleFactor || 1;
+    // 使用浏览器设备像素比作为缩放因子
+    const termScale =
+      typeof window !== "undefined" && window.devicePixelRatio
+        ? window.devicePixelRatio
+        : 1;
 
     return {
       charWidth,
@@ -766,7 +758,7 @@ const WebTerminal = ({
 
   // 性能优化相关 refs
   const performanceMonitorRef = useRef(null);
-  const virtualScrollBufferRef = useRef(null);
+  const scrollbackUsageTrackerRef = useRef(null);
   const writeStrategyManagerRef = useRef(null);
 
   const theme = useTheme();
@@ -780,7 +772,6 @@ const WebTerminal = ({
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
-  const highlightRefreshFrameRef = useRef(null);
   const webglRendererEnabledRef = useRef(true);
   const pendingWriteBufferRef = useRef([]);
   const pendingWriteLengthRef = useRef(0);
@@ -792,6 +783,9 @@ const WebTerminal = ({
   const outputAckProcessIdRef = useRef(null);
   const outputAckBytesRef = useRef(0);
   const outputAckTimerRef = useRef(null);
+  const outputModeResetTimerRef = useRef(null);
+  const outputModeRef = useRef("balanced");
+  const processOutputUnsubscribeRef = useRef(null);
   const isActiveRef = useRef(isActive);
 
   useEffect(() => {
@@ -862,182 +856,18 @@ const WebTerminal = ({
     };
   }, []);
 
-  const lastHighlightRefreshRef = useRef(0);
-  const scheduleHighlightRefresh = useCallback((termInstance) => {
-    if (!termInstance || typeof termInstance.refresh !== "function") {
-      return;
-    }
-
-    // WebGL渲染器不需要手动刷新，跳过
-    if (termInstance.__webglEnabled) {
-      return;
-    }
-
-    // 节流：防止过于频繁的刷新（最少间隔16ms，约60fps）
-    const now = Date.now();
-    const timeSinceLastRefresh = now - lastHighlightRefreshRef.current;
-
-    if (
-      highlightRefreshFrameRef.current &&
-      typeof cancelAnimationFrame === "function"
-    ) {
-      cancelAnimationFrame(highlightRefreshFrameRef.current);
-    }
-
-    if (typeof requestAnimationFrame !== "function") {
-      // 降级到同步刷新
-      if (timeSinceLastRefresh >= 16) {
-        const startTime = performance.now();
-        termInstance.refresh(0, termInstance.rows - 1);
-        const duration = performance.now() - startTime;
-
-        // 记录渲染性能
-        if (performanceMonitorRef.current) {
-          performanceMonitorRef.current.recordRender(duration);
-        }
-
-        lastHighlightRefreshRef.current = now;
-      }
-      highlightRefreshFrameRef.current = null;
-      return;
-    }
-
-    highlightRefreshFrameRef.current = requestAnimationFrame(() => {
-      highlightRefreshFrameRef.current = null;
-      const currentTime = Date.now();
-      if (currentTime - lastHighlightRefreshRef.current >= 16) {
-        const startTime = performance.now();
-        termInstance.refresh(0, termInstance.rows - 1);
-        const duration = performance.now() - startTime;
-
-        // 记录渲染性能
-        if (performanceMonitorRef.current) {
-          performanceMonitorRef.current.recordRender(duration);
-        }
-
-        lastHighlightRefreshRef.current = currentTime;
-      }
-    });
-  }, []);
-
-  const disableWebglRenderer = useCallback((termInstance) => {
-    if (!termInstance) {
-      return;
-    }
-
-    try {
-      if (
-        termInstance.__webglAddon &&
-        typeof termInstance.__webglAddon.dispose === "function"
-      ) {
-        termInstance.__webglAddon.dispose();
-      }
-    } catch {
-      /* intentionally ignored */
-    }
-
-    termInstance.__webglAddon = null;
-    termInstance.__webglEnabled = false;
-  }, []);
-
-  const tryEnableWebglRenderer = useCallback(
-    (termInstance) => {
-      if (!termInstance) {
-        return;
-      }
-
-      if (!webglRendererEnabledRef.current) {
-        if (termInstance.__webglEnabled) {
-          disableWebglRenderer(termInstance);
-        }
-        return;
-      }
-
-      // 防止重复初始化
-      if (termInstance.__webglEnabled === true && termInstance.__webglAddon) {
-        return;
-      }
-
-      try {
-        // 清理旧的 WebGL addon
-        if (
-          termInstance.__webglAddon &&
-          typeof termInstance.__webglAddon.dispose === "function"
-        ) {
-          try {
-            termInstance.__webglAddon.dispose();
-          } catch {
-            // 忽略 dispose 错误
-          }
-        }
-
-        // 创建新的 WebGL addon
-        const webglAddon = new WebglAddon();
-        webglAddon.onContextLoss(() => {
-          // WebGL 上下文丢失，标记需要恢复
-          termInstance.__webglNeedsRestore = true;
-          termInstance.__webglEnabled = false;
-        });
-
-        termInstance.loadAddon(webglAddon);
-        termInstance.__webglAddon = webglAddon;
-        termInstance.__webglEnabled = true;
-        termInstance.__webglNeedsRestore = false;
-
-        // 添加 WebGL 上下文丢失监听
-        if (termInstance.element) {
-          const canvas = termInstance.element.querySelector("canvas");
-          if (canvas) {
-            canvas.addEventListener(
-              "webglcontextlost",
-              (e) => {
-                e.preventDefault();
-                termInstance.__webglEnabled = false;
-                termInstance.__webglNeedsRestore = true;
-              },
-              false,
-            );
-
-            canvas.addEventListener(
-              "webglcontextrestored",
-              () => {
-                // 延迟恢复，确保上下文完全可用
-                setTimeout(() => {
-                  if (
-                    termInstance.__webglNeedsRestore &&
-                    webglRendererEnabledRef.current
-                  ) {
-                    tryEnableWebglRenderer(termInstance);
-                  }
-                }, 100);
-              },
-              false,
-            );
-          }
-        }
-      } catch {
-        // WebGL 初始化失败，降级到 Canvas
-        termInstance.__webglEnabled = false;
-        termInstance.__webglAddon = null;
-        webglRendererEnabledRef.current = false;
-        setWebglRendererEnabled(false);
-        disableWebglRenderer(termInstance);
-      }
-    },
-    [disableWebglRenderer],
-  );
-
-  useEffect(() => {
-    if (!termRef.current) {
-      return;
-    }
-
-    if (webglRendererEnabled) {
-      tryEnableWebglRenderer(termRef.current);
-    } else {
-      disableWebglRenderer(termRef.current);
-    }
-  }, [webglRendererEnabled, tryEnableWebglRenderer, disableWebglRenderer]);
+  const {
+    scheduleHighlightRefresh,
+    tryEnableWebglRenderer,
+    disableWebglRenderer,
+    resetRenderState,
+  } = useTerminalRender({
+    termRef,
+    webglRendererEnabled,
+    webglRendererEnabledRef,
+    setWebglRendererEnabled,
+    performanceMonitorRef,
+  });
 
   const getUtf8ByteLength = useCallback((value) => {
     if (value === undefined || value === null) {
@@ -1124,6 +954,81 @@ const WebTerminal = ({
     [flushOutputAck],
   );
 
+  const setRendererOutputMode = useCallback((processId, mode) => {
+    if (
+      processId === undefined ||
+      processId === null ||
+      !window.terminalAPI?.setOutputMode
+    ) {
+      return;
+    }
+
+    const normalizedMode =
+      mode === "low-latency" || mode === "throughput" ? mode : "balanced";
+
+    if (outputModeRef.current === normalizedMode) {
+      return;
+    }
+
+    outputModeRef.current = normalizedMode;
+    if (writeStrategyManagerRef.current?.setMode) {
+      writeStrategyManagerRef.current.setMode(normalizedMode);
+    }
+    window.terminalAPI.setOutputMode(processId, normalizedMode);
+  }, []);
+
+  const restoreBalancedOutputMode = useCallback(
+    (processId) => {
+      if (outputModeResetTimerRef.current !== null) {
+        clearTimeout(outputModeResetTimerRef.current);
+      }
+      outputModeResetTimerRef.current = setTimeout(() => {
+        outputModeResetTimerRef.current = null;
+        setRendererOutputMode(processId, "balanced");
+      }, 1200);
+    },
+    [setRendererOutputMode],
+  );
+
+  const sendInputToProcess = useCallback(
+    (processId, input, options = {}) => {
+      if (
+        processId === undefined ||
+        processId === null ||
+        input === undefined ||
+        input === null
+      ) {
+        return;
+      }
+
+      const {
+        skipLatencyBoost = false,
+        forceOutputMode = null,
+        forceImmediateOutputMode = false,
+      } = options;
+      const inputStr = typeof input === "string" ? input : input.toString();
+      if (!inputStr) {
+        return;
+      }
+
+      if (forceOutputMode) {
+        setRendererOutputMode(processId, forceOutputMode);
+      } else if (!skipLatencyBoost) {
+        const modeForInput =
+          inputStr.length > 4096 ? "throughput" : "low-latency";
+        setRendererOutputMode(processId, modeForInput);
+        restoreBalancedOutputMode(processId);
+      } else if (forceImmediateOutputMode) {
+        setRendererOutputMode(processId, "balanced");
+      }
+
+      if (window.terminalAPI?.sendToProcess) {
+        window.terminalAPI.sendToProcess(processId, inputStr);
+      }
+    },
+    [restoreBalancedOutputMode, setRendererOutputMode],
+  );
+
   const flushPendingWrites = useCallback(
     (termInstance) => {
       if (!termInstance) {
@@ -1178,9 +1083,9 @@ const WebTerminal = ({
 
       // 如果启用了新的写入策略管理器，使用它
       if (writeStrategyManagerRef.current) {
-        // 添加到虚拟滚动缓冲区
-        if (virtualScrollBufferRef.current) {
-          virtualScrollBufferRef.current.addData(chunkStr);
+        // 仅记录滚回统计信息，避免重复缓存整份输出
+        if (scrollbackUsageTrackerRef.current) {
+          scrollbackUsageTrackerRef.current.addData(chunkStr);
         }
 
         // 使用写入策略管理器入队
@@ -1619,7 +1524,7 @@ const WebTerminal = ({
             // 使用EventManager管理逐行发送文本的延迟
             processedText.lines.forEach((line, index) => {
               eventManager.setTimeout(() => {
-                window.terminalAPI.sendToProcess(
+                sendInputToProcess(
                   processCache[tabId],
                   line + (index < processedText.lines.length - 1 ? "\n" : ""),
                 );
@@ -1627,10 +1532,7 @@ const WebTerminal = ({
             });
           } else {
             // 正常发送处理后的文本
-            window.terminalAPI.sendToProcess(
-              processCache[tabId],
-              processedText,
-            );
+            sendInputToProcess(processCache[tabId], processedText);
           }
         }
       });
@@ -1895,7 +1797,7 @@ const WebTerminal = ({
         isEscapeSequence = true;
         // 方向键等特殊键不会影响命令历史记录，直接发送到进程
         if (processId && !shouldSkipSendToProcess) {
-          window.terminalAPI.sendToProcess(processId, data);
+          sendInputToProcess(processId, data);
         }
         return;
       }
@@ -1909,7 +1811,7 @@ const WebTerminal = ({
 
         // 转义序列不会记录到命令历史，直接发送到进程
         if (processId && !shouldSkipSendToProcess) {
-          window.terminalAPI.sendToProcess(processId, data);
+          sendInputToProcess(processId, data);
         }
         return;
       }
@@ -1947,7 +1849,7 @@ const WebTerminal = ({
         }
         // 发送数据到进程
         if (processId && !shouldSkipSendToProcess) {
-          window.terminalAPI.sendToProcess(processId, data);
+          sendInputToProcess(processId, data);
         }
         return;
       }
@@ -1979,7 +1881,7 @@ const WebTerminal = ({
 
         // 发送数据到进程
         if (processId && !shouldSkipSendToProcess) {
-          window.terminalAPI.sendToProcess(processId, data);
+          sendInputToProcess(processId, data);
         }
 
         // 重要：阻止xterm.js的默认Tab处理，避免重复显示
@@ -2155,7 +2057,10 @@ const WebTerminal = ({
 
         // 发送回车键到进程
         if (processId) {
-          window.terminalAPI.sendToProcess(processId, data);
+          sendInputToProcess(processId, data, {
+            skipLatencyBoost: true,
+            forceImmediateOutputMode: true,
+          });
         }
         return;
       } else if (data !== "\t") {
@@ -2210,7 +2115,7 @@ const WebTerminal = ({
 
       // 发送数据到进程（如果不是外部命令）
       if (processId && !shouldSkipSendToProcess) {
-        window.terminalAPI.sendToProcess(processId, data);
+        sendInputToProcess(processId, data);
       }
     });
 
@@ -2743,19 +2648,15 @@ const WebTerminal = ({
           });
         }
 
-        // 初始化虚拟滚动缓冲区
-        if (!virtualScrollBufferRef.current) {
-          virtualScrollBufferRef.current = new VirtualScrollBuffer({
-            maxBufferLines: 50000,
-            visibleLines: 30,
-            overscanLines: 10,
-            pruneThreshold: 0.8,
-            pruneTargetRatio: 0.6,
-            onBufferChange: (info) => {
+        // 初始化轻量滚回统计器（只统计，不重复保存输出内容）
+        if (!scrollbackUsageTrackerRef.current) {
+          scrollbackUsageTrackerRef.current = new ScrollbackUsageTracker({
+            maxLines: 50000,
+            onChange: (info) => {
               if (performanceMonitorRef.current) {
                 performanceMonitorRef.current.recordBufferSize(info.bufferSize);
                 performanceMonitorRef.current.recordScrollbackUsage(
-                  (info.totalLines / 50000) * 100,
+                  info.usagePercent,
                 );
               }
             },
@@ -2801,6 +2702,8 @@ const WebTerminal = ({
             },
           });
         }
+        outputModeRef.current = "balanced";
+        writeStrategyManagerRef.current.setMode("balanced");
 
         if (webglRendererEnabledRef.current) {
           tryEnableWebglRenderer(term);
@@ -3078,10 +2981,7 @@ const WebTerminal = ({
             if (text && processCache[tabId]) {
               // 使用预处理函数处理多行文本，防止注释和缩进问题
               const processedText = processMultilineInput(text);
-              window.terminalAPI.sendToProcess(
-                processCache[tabId],
-                processedText,
-              );
+              sendInputToProcess(processCache[tabId], processedText);
             }
           });
         }
@@ -3591,10 +3491,10 @@ const WebTerminal = ({
           performanceMonitorRef.current = null;
         }
 
-        // 清理虚拟滚动缓冲区
-        if (virtualScrollBufferRef.current) {
-          virtualScrollBufferRef.current.destroy();
-          virtualScrollBufferRef.current = null;
+        // 清理滚回统计器
+        if (scrollbackUsageTrackerRef.current) {
+          scrollbackUsageTrackerRef.current.destroy();
+          scrollbackUsageTrackerRef.current = null;
         }
 
         // 清理写入策略管理器
@@ -3990,7 +3890,7 @@ const WebTerminal = ({
             // 使用EventManager管理逐行发送文本的延迟
             processedText.lines.forEach((line, index) => {
               eventManager.setTimeout(() => {
-                window.terminalAPI.sendToProcess(
+                sendInputToProcess(
                   processCache[tabId],
                   line + (index < processedText.lines.length - 1 ? "\n" : ""),
                 );
@@ -3998,10 +3898,7 @@ const WebTerminal = ({
             });
           } else {
             // 正常发送处理后的文本
-            window.terminalAPI.sendToProcess(
-              processCache[tabId],
-              processedText,
-            );
+            sendInputToProcess(processCache[tabId], processedText);
           }
         }
       })
@@ -4056,13 +3953,12 @@ const WebTerminal = ({
 
   useEffect(() => {
     return () => {
-      if (
-        highlightRefreshFrameRef.current &&
-        typeof cancelAnimationFrame === "function"
-      ) {
-        cancelAnimationFrame(highlightRefreshFrameRef.current);
+      if (typeof processOutputUnsubscribeRef.current === "function") {
+        processOutputUnsubscribeRef.current();
+        processOutputUnsubscribeRef.current = null;
       }
-      highlightRefreshFrameRef.current = null;
+
+      resetRenderState();
 
       if (pendingWriteHandleRef.current !== null) {
         if (
@@ -4080,8 +3976,16 @@ const WebTerminal = ({
       pendingWriteUsingRafRef.current = false;
       flushOutputAck();
       outputAckProcessIdRef.current = null;
+      if (outputModeResetTimerRef.current !== null) {
+        clearTimeout(outputModeResetTimerRef.current);
+        outputModeResetTimerRef.current = null;
+      }
+      outputModeRef.current = "balanced";
+      if (writeStrategyManagerRef.current?.setMode) {
+        writeStrategyManagerRef.current.setMode("balanced");
+      }
     };
-  }, [flushOutputAck]);
+  }, [flushOutputAck, resetRenderState]);
 
   useEffect(() => {
     if (!contentUpdated || !termRef.current) {
@@ -4093,8 +3997,12 @@ const WebTerminal = ({
 
   // 设置数据监听器的函数，处理终端输出
   const setupDataListener = (processId, term) => {
-    // 防止重复添加监听器
-    window.terminalAPI.removeOutputListener(processId);
+    if (typeof processOutputUnsubscribeRef.current === "function") {
+      processOutputUnsubscribeRef.current();
+      processOutputUnsubscribeRef.current = null;
+    }
+
+    const previousProcessId = processCache[tabId];
     resetOutputAckState(processId);
 
     // 清理待写入缓冲
@@ -4114,10 +4022,18 @@ const WebTerminal = ({
     pendingWriteUsingRafRef.current = false;
     if (writeStrategyManagerRef.current) {
       writeStrategyManagerRef.current.clear();
+      writeStrategyManagerRef.current.setMode("balanced");
+    }
+    outputModeRef.current = "balanced";
+    if (outputModeResetTimerRef.current !== null) {
+      clearTimeout(outputModeResetTimerRef.current);
+      outputModeResetTimerRef.current = null;
+    }
+    if (window.terminalAPI?.setOutputMode) {
+      window.terminalAPI.setOutputMode(processId, "balanced");
     }
 
     // 保存进程ID以便后续可以关闭
-    const previousProcessId = processCache[tabId];
     if (previousProcessId && previousProcessId !== processId) {
       clearGeometryFor(previousProcessId, tabId);
     }
@@ -4185,7 +4101,12 @@ const WebTerminal = ({
       }
     };
 
-    window.terminalAPI.onProcessOutput(processId, handleProcessOutput);
+    if (window.terminalAPI?.onProcessOutput) {
+      processOutputUnsubscribeRef.current = window.terminalAPI.onProcessOutput(
+        processId,
+        handleProcessOutput,
+      );
+    }
 
     // 同步终端大小
     const syncTerminalSize = () => {
@@ -5126,14 +5047,11 @@ const WebTerminal = ({
 
         // 发送退格键删除当前输入
         for (let i = 0; i < deleteCount; i++) {
-          window.terminalAPI.sendToProcess(processCache[tabId], "\b");
+          sendInputToProcess(processCache[tabId], "\b");
         }
 
         // 发送选中的命令
-        window.terminalAPI.sendToProcess(
-          processCache[tabId],
-          suggestion.command,
-        );
+        sendInputToProcess(processCache[tabId], suggestion.command);
 
         // 更新当前输入状态
         setCurrentInput(suggestion.command);
@@ -5186,7 +5104,7 @@ const WebTerminal = ({
         if (termRef.current) {
           // 通过setupCommandDetection的isRemoteInput参数，模拟远程输入
           // 这里只写入进程，不触发本地onData
-          window.terminalAPI.sendToProcess(processCache[tabId], input);
+          sendInputToProcess(processCache[tabId], input);
         }
       }
     };
