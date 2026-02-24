@@ -7,54 +7,59 @@ export class WriteStrategyManager {
   constructor(options = {}) {
     // 配置参数
     this.config = {
+      // 交互优先模式（低延迟）
+      lowLatencyBatchSize: options.lowLatencyBatchSize || 4096, // 交互模式：4KB
+      lowLatencyFlushDelay: options.lowLatencyFlushDelay || 8, // 交互模式：8ms
+
       // 批处理阈值
-      lowLoadBatchSize: options.lowLoadBatchSize || 16384,        // 低负载：16KB
-      mediumLoadBatchSize: options.mediumLoadBatchSize || 65536,  // 中负载：64KB
-      highLoadBatchSize: options.highLoadBatchSize || 262144,     // 高负载：256KB
+      lowLoadBatchSize: options.lowLoadBatchSize || 16384, // 低负载：16KB
+      mediumLoadBatchSize: options.mediumLoadBatchSize || 65536, // 中负载：64KB
+      highLoadBatchSize: options.highLoadBatchSize || 262144, // 高负载：256KB
 
       // 刷新延迟
-      lowLoadFlushDelay: options.lowLoadFlushDelay || 16,         // 低负载：16ms (60fps)
-      mediumLoadFlushDelay: options.mediumLoadFlushDelay || 33,   // 中负载：33ms (30fps)
-      highLoadFlushDelay: options.highLoadFlushDelay || 66,       // 高负载：66ms (15fps)
+      lowLoadFlushDelay: options.lowLoadFlushDelay || 16, // 低负载：16ms (60fps)
+      mediumLoadFlushDelay: options.mediumLoadFlushDelay || 33, // 中负载：33ms (30fps)
+      highLoadFlushDelay: options.highLoadFlushDelay || 66, // 高负载：66ms (15fps)
 
       // 负载阈值
-      lowLoadThreshold: options.lowLoadThreshold || 0.3,          // 低负载：<30%
-      mediumLoadThreshold: options.mediumLoadThreshold || 0.6,    // 中负载：30-60%
-      highLoadThreshold: options.highLoadThreshold || 0.8,        // 高负载：>60%
+      lowLoadThreshold: options.lowLoadThreshold || 0.3, // 低负载：<30%
+      mediumLoadThreshold: options.mediumLoadThreshold || 0.6, // 中负载：30-60%
+      highLoadThreshold: options.highLoadThreshold || 0.8, // 高负载：>60%
 
       // 自适应参数
-      adaptiveEnabled: options.adaptiveEnabled !== false,         // 启用自适应
-      loadCheckInterval: options.loadCheckInterval || 1000,       // 负载检查间隔：1秒
-      loadSampleWindow: options.loadSampleWindow || 5,            // 负载采样窗口：5个样本
+      adaptiveEnabled: options.adaptiveEnabled !== false, // 启用自适应
+      loadCheckInterval: options.loadCheckInterval || 1000, // 负载检查间隔：1秒
+      loadSampleWindow: options.loadSampleWindow || 5, // 负载采样窗口：5个样本
     };
 
     // 当前状态
-    this.currentLoad = 0;                     // 当前负载（0-1）
-    this.currentStrategy = 'low';             // 当前策略：low/medium/high
-    this.writeQueue = [];                     // 写入队列
-    this.queueSize = 0;                       // 队列大小（字节）
-    this.flushTimer = null;                   // 刷新定时器
-    this.flushTimerType = null;               // 定时器类型：'raf' | 'timeout'
+    this.currentLoad = 0; // 当前负载（0-1）
+    this.currentStrategy = "low"; // 当前策略：low/medium/high
+    this.mode = "adaptive"; // 输出模式：adaptive/low-latency/throughput
+    this.writeQueue = []; // 写入队列
+    this.queueSize = 0; // 队列大小（字节）
+    this.flushTimer = null; // 刷新定时器
+    this.flushTimerType = null; // 定时器类型：'raf' | 'timeout'
 
     // 性能指标采样
-    this.loadSamples = [];                    // 负载采样
-    this.lastLoadCheck = 0;                   // 上次负载检查时间
-    this.loadCheckTimer = null;               // 负载检查定时器
+    this.loadSamples = []; // 负载采样
+    this.lastLoadCheck = 0; // 上次负载检查时间
+    this.loadCheckTimer = null; // 负载检查定时器
 
     // 统计信息
     this.stats = {
-      totalEnqueued: 0,                       // 总入队次数
-      totalFlushed: 0,                        // 总刷新次数
-      totalBytesWritten: 0,                   // 总写入字节数
-      strategyChanges: 0,                     // 策略切换次数
-      avgQueueSize: 0,                        // 平均队列大小
-      avgFlushSize: 0,                        // 平均刷新大小
-      lastStrategyChange: 0,                  // 上次策略切换时间
+      totalEnqueued: 0, // 总入队次数
+      totalFlushed: 0, // 总刷新次数
+      totalBytesWritten: 0, // 总写入字节数
+      strategyChanges: 0, // 策略切换次数
+      avgQueueSize: 0, // 平均队列大小
+      avgFlushSize: 0, // 平均刷新大小
+      lastStrategyChange: 0, // 上次策略切换时间
     };
 
     // 回调
-    this.onFlush = options.onFlush || null;              // 刷新回调
-    this.onStrategyChange = options.onStrategyChange || null;  // 策略变化回调
+    this.onFlush = options.onFlush || null; // 刷新回调
+    this.onStrategyChange = options.onStrategyChange || null; // 策略变化回调
 
     // 启动自适应负载检查
     if (this.config.adaptiveEnabled) {
@@ -95,7 +100,8 @@ export class WriteStrategyManager {
     }
 
     // 计算平均负载
-    const avgLoad = this.loadSamples.reduce((sum, l) => sum + l, 0) / this.loadSamples.length;
+    const avgLoad =
+      this.loadSamples.reduce((sum, l) => sum + l, 0) / this.loadSamples.length;
     this.currentLoad = avgLoad;
 
     // 根据负载调整策略
@@ -113,21 +119,26 @@ export class WriteStrategyManager {
     let load = 0;
 
     // 1. 队列大小因素（权重：0.4）
-    const queueFactor = Math.min(1, this.queueSize / this.config.highLoadBatchSize);
+    const queueFactor = Math.min(
+      1,
+      this.queueSize / this.config.highLoadBatchSize,
+    );
     load += queueFactor * 0.4;
 
     // 2. 入队频率因素（权重：0.3）
     const now = Date.now();
     const timeSinceLastCheck = now - this.lastLoadCheck;
     if (timeSinceLastCheck > 0) {
-      const enqueueRate = (this.stats.totalEnqueued / timeSinceLastCheck) * 1000; // 每秒入队次数
+      const enqueueRate =
+        (this.stats.totalEnqueued / timeSinceLastCheck) * 1000; // 每秒入队次数
       const enqueueFactor = Math.min(1, enqueueRate / 100); // 假设100次/秒为高负载
       load += enqueueFactor * 0.3;
     }
 
     // 3. 内存使用因素（权重：0.3）
     if (performance.memory) {
-      const memoryUsage = performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit;
+      const memoryUsage =
+        performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit;
       load += memoryUsage * 0.3;
     }
 
@@ -139,14 +150,18 @@ export class WriteStrategyManager {
    * @param {number} load - 当前负载
    */
   adjustStrategy(load) {
+    if (this.mode !== "adaptive") {
+      return;
+    }
+
     let newStrategy;
 
     if (load < this.config.lowLoadThreshold) {
-      newStrategy = 'low';
+      newStrategy = "low";
     } else if (load < this.config.mediumLoadThreshold) {
-      newStrategy = 'medium';
+      newStrategy = "medium";
     } else {
-      newStrategy = 'high';
+      newStrategy = "high";
     }
 
     if (newStrategy !== this.currentStrategy) {
@@ -172,31 +187,75 @@ export class WriteStrategyManager {
    * @returns {Object} 配置对象
    */
   getCurrentConfig() {
+    if (this.mode === "low-latency") {
+      return {
+        batchSize: this.config.lowLatencyBatchSize,
+        flushDelay: this.config.lowLatencyFlushDelay,
+        strategy: "low-latency",
+      };
+    }
+
+    if (this.mode === "throughput") {
+      return {
+        batchSize: this.config.highLoadBatchSize,
+        flushDelay: this.config.highLoadFlushDelay,
+        strategy: "throughput",
+      };
+    }
+
     switch (this.currentStrategy) {
-      case 'low':
+      case "low":
         return {
           batchSize: this.config.lowLoadBatchSize,
           flushDelay: this.config.lowLoadFlushDelay,
-          strategy: 'low',
+          strategy: "adaptive-low",
         };
-      case 'medium':
+      case "medium":
         return {
           batchSize: this.config.mediumLoadBatchSize,
           flushDelay: this.config.mediumLoadFlushDelay,
-          strategy: 'medium',
+          strategy: "adaptive-medium",
         };
-      case 'high':
+      case "high":
         return {
           batchSize: this.config.highLoadBatchSize,
           flushDelay: this.config.highLoadFlushDelay,
-          strategy: 'high',
+          strategy: "adaptive-high",
         };
       default:
         return {
           batchSize: this.config.lowLoadBatchSize,
           flushDelay: this.config.lowLoadFlushDelay,
-          strategy: 'low',
+          strategy: "adaptive-low",
         };
+    }
+  }
+
+  /**
+   * 设置输出模式
+   * @param {string} mode - adaptive | low-latency | throughput
+   */
+  setMode(mode = "adaptive") {
+    const normalizedMode = ["adaptive", "low-latency", "throughput"].includes(
+      mode,
+    )
+      ? mode
+      : "adaptive";
+
+    if (normalizedMode === this.mode) {
+      return;
+    }
+
+    this.mode = normalizedMode;
+
+    if (this.onStrategyChange) {
+      this.onStrategyChange({
+        oldStrategy: this.currentStrategy,
+        newStrategy: this.getCurrentConfig().strategy,
+        load: this.currentLoad,
+        mode: this.mode,
+        config: this.getCurrentConfig(),
+      });
     }
   }
 
@@ -207,7 +266,7 @@ export class WriteStrategyManager {
   enqueue(data) {
     if (!data) return;
 
-    const dataStr = typeof data === 'string' ? data : data.toString();
+    const dataStr = typeof data === "string" ? data : data.toString();
     if (!dataStr) return;
 
     // 添加到队列
@@ -217,7 +276,8 @@ export class WriteStrategyManager {
 
     // 更新平均队列大小
     this.stats.avgQueueSize =
-      (this.stats.avgQueueSize * (this.stats.totalEnqueued - 1) + this.queueSize) /
+      (this.stats.avgQueueSize * (this.stats.totalEnqueued - 1) +
+        this.queueSize) /
       this.stats.totalEnqueued;
 
     // 获取当前策略配置
@@ -248,15 +308,15 @@ export class WriteStrategyManager {
    */
   scheduleFlush(delay) {
     // 对于很短的延迟，优先使用 RAF
-    if (delay <= 16 && typeof requestAnimationFrame === 'function') {
-      this.flushTimerType = 'raf';
+    if (delay <= 16 && typeof requestAnimationFrame === "function") {
+      this.flushTimerType = "raf";
       this.flushTimer = requestAnimationFrame(() => {
         this.flushTimer = null;
         this.flushTimerType = null;
         this.flush();
       });
     } else {
-      this.flushTimerType = 'timeout';
+      this.flushTimerType = "timeout";
       this.flushTimer = setTimeout(() => {
         this.flushTimer = null;
         this.flushTimerType = null;
@@ -271,9 +331,12 @@ export class WriteStrategyManager {
   cancelFlushTimer() {
     if (this.flushTimer === null) return;
 
-    if (this.flushTimerType === 'raf' && typeof cancelAnimationFrame === 'function') {
+    if (
+      this.flushTimerType === "raf" &&
+      typeof cancelAnimationFrame === "function"
+    ) {
       cancelAnimationFrame(this.flushTimer);
-    } else if (this.flushTimerType === 'timeout') {
+    } else if (this.flushTimerType === "timeout") {
       clearTimeout(this.flushTimer);
     }
 
@@ -291,7 +354,7 @@ export class WriteStrategyManager {
     }
 
     // 合并队列数据
-    const data = this.writeQueue.join('');
+    const data = this.writeQueue.join("");
     const byteCount = this.queueSize;
 
     // 清空队列
@@ -336,6 +399,7 @@ export class WriteStrategyManager {
       hasPendingFlush: this.flushTimer !== null,
       currentStrategy: this.currentStrategy,
       currentLoad: this.currentLoad,
+      mode: this.mode,
     };
   }
 
@@ -350,6 +414,7 @@ export class WriteStrategyManager {
       currentLoad: this.currentLoad,
       queueSize: this.queueSize,
       queueLength: this.writeQueue.length,
+      mode: this.mode,
       config: this.getCurrentConfig(),
     };
   }

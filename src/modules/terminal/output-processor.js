@@ -102,7 +102,7 @@ const REGEX_META_CHARS = new Set([
 
 const escapeRegex = (value = "") =>
   [...String(value)]
-    .map((char) => (REGEX_META_CHARS.has(char) ? `\${char}` : char))
+    .map((char) => (REGEX_META_CHARS.has(char) ? `\\${char}` : char))
     .join("");
 
 const OSC_SEQUENCE_REGEX = /\u001b\][^]*?(?:\u0007|\u001b\\)/g;
@@ -175,7 +175,7 @@ class OutputProcessor {
         return null;
       }
 
-      const pattern = `\b(${keywords.map(escapeRegex).join("|")})\b`;
+      const pattern = `\\b(${keywords.map(escapeRegex).join("|")})\\b`;
       const regex = new RegExp(pattern, "gi");
       const colorMap = new Map();
 
@@ -446,3 +446,6 @@ class OutputProcessor {
 const outputProcessor = new OutputProcessor();
 
 module.exports = outputProcessor;
+module.exports.__TEST_ONLY__ = {
+  escapeRegex,
+};
