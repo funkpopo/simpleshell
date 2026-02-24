@@ -734,6 +734,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   installUpdate: () => ipcRenderer.invoke("app:installUpdate"),
   getDownloadProgress: () => ipcRenderer.invoke("app:getDownloadProgress"),
   cancelDownload: () => ipcRenderer.invoke("app:cancelDownload"),
+  hasDownloadedInstaller: () =>
+    ipcRenderer.invoke("app:hasDownloadedInstaller"),
 
   // 新增: 通知主进程编辑器模式变化的API
   notifyEditorModeChange: (processId, isEditorMode) =>

@@ -63,6 +63,23 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     }
   }, []);
 
+  // 对话框打开时检测是否有已下载的安装包
+  useEffect(() => {
+    if (open && updateStatus === "idle") {
+      (async () => {
+        try {
+          const result =
+            await window.terminalAPI.hasDownloadedInstaller?.();
+          if (result?.available) {
+            setUpdateStatus("downloaded");
+          }
+        } catch {
+          // ignore
+        }
+      })();
+    }
+  }, [open]);
+
   // 监听下载进度
   useEffect(() => {
     let progressInterval;

@@ -61,6 +61,11 @@ class AppHandlers {
         category: "app",
         handler: this.cancelDownload.bind(this),
       },
+      {
+        channel: "app:hasDownloadedInstaller",
+        category: "app",
+        handler: this.hasDownloadedInstaller.bind(this),
+      },
     ];
   }
 
@@ -349,6 +354,18 @@ class AppHandlers {
     } catch (error) {
       logToFile(`Error cancelling download: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
+    }
+  }
+
+  async hasDownloadedInstaller() {
+    try {
+      return await updateService.hasDownloadedInstaller();
+    } catch (error) {
+      logToFile(
+        `Error checking downloaded installer: ${error.message}`,
+        "ERROR",
+      );
+      return { available: false };
     }
   }
 }
