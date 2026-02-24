@@ -1,4 +1,5 @@
 const { BrowserWindow } = require("electron");
+const { StringDecoder } = require("string_decoder");
 const { logToFile } = require("../../utils/logger");
 const terminalManager = require("../../../modules/terminal");
 const crypto = require("crypto");
@@ -509,24 +510,152 @@ class SSHHandlers {
     const FLUSH_INTERVAL_MS = 24; // 约 1~2 帧内合并，控制在 <50ms 延迟
     const FLUSH_THRESHOLD_BYTES = 64 * 1024;
     const BACKPRESSURE_PAUSE_THRESHOLD = 1024 * 1024;
+    const BACKPRESSURE_RESUME_THRESHOLD = Math.floor(
+      BACKPRESSURE_PAUSE_THRESHOLD / 2,
+    );
+    const BACKPRESSURE_RECOVERY_INTERVAL_MS = 100;
+
     let isPaused = false;
     let flushTimer = null;
+    let backpressureRecoveryTimer = null;
+    let pendingAckBytes = 0;
+    let droppedBytes = 0;
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
 
-    const emitOutput = (payload) => {
+    const getPayloadByteLength = (payload) => {
+      if (Buffer.isBuffer(payload)) {
+        return payload.length;
+      }
+      if (typeof payload === "string") {
+        return Buffer.byteLength(payload, "utf8");
+      }
+      return 0;
+    };
+
+    const clearBackpressureRecoveryTimer = () => {
+      if (backpressureRecoveryTimer) {
+        clearTimeout(backpressureRecoveryTimer);
+        backpressureRecoveryTimer = null;
+      }
+    };
+
+    const updateBackpressure = () => {
+      if (stream.destroyed) {
+        clearBackpressureRecoveryTimer();
+        return;
+      }
+
+      const totalPendingBytes = pendingAckBytes + buffer.length;
+
+      if (!isPaused && totalPendingBytes >= BACKPRESSURE_PAUSE_THRESHOLD) {
+        stream.pause();
+        isPaused = true;
+        logToFile(
+          `Stream paused for processId ${processId}: pendingAck=${pendingAckBytes}, buffer=${buffer.length}`,
+          "DEBUG",
+        );
+      } else if (
+        isPaused &&
+        totalPendingBytes <= BACKPRESSURE_RESUME_THRESHOLD
+      ) {
+        stream.resume();
+        isPaused = false;
+        logToFile(
+          `Stream resumed for processId ${processId}: pendingAck=${pendingAckBytes}, buffer=${buffer.length}`,
+          "DEBUG",
+        );
+      }
+
+      if (isPaused) {
+        if (!backpressureRecoveryTimer) {
+          backpressureRecoveryTimer = setTimeout(() => {
+            backpressureRecoveryTimer = null;
+            updateBackpressure();
+          }, BACKPRESSURE_RECOVERY_INTERVAL_MS);
+        }
+      } else {
+        clearBackpressureRecoveryTimer();
+      }
+    };
+
+    const outputAckHandler = (bytes) => {
+      const ackBytes = Math.floor(Number(bytes));
+      if (!Number.isFinite(ackBytes) || ackBytes <= 0) {
+        return;
+      }
+
+      pendingAckBytes = Math.max(0, pendingAckBytes - ackBytes);
+      updateBackpressure();
+    };
+
+    const bindOutputAckHandlers = () => {
+      const processIds = [processId];
+      if (sshConfig.tabId && sshConfig.tabId !== processId) {
+        processIds.push(sshConfig.tabId);
+      }
+
+      processIds.forEach((id) => {
+        const procInfo = this.childProcesses.get(id);
+        if (procInfo) {
+          procInfo.outputAckHandler = outputAckHandler;
+        }
+      });
+    };
+
+    const unbindOutputAckHandlers = () => {
+      const processIds = [processId];
+      if (sshConfig.tabId && sshConfig.tabId !== processId) {
+        processIds.push(sshConfig.tabId);
+      }
+
+      processIds.forEach((id) => {
+        const procInfo = this.childProcesses.get(id);
+        if (procInfo && procInfo.outputAckHandler === outputAckHandler) {
+          delete procInfo.outputAckHandler;
+        }
+      });
+    };
+
+    bindOutputAckHandlers();
+
+    const emitOutput = (payload, options = {}) => {
+      const { trackBackpressure = true } = options;
       const mainWindow = this._getMainWindow();
       if (!mainWindow || mainWindow.isDestroyed()) {
         return;
       }
       mainWindow.webContents.send(`process:output:${processId}`, payload);
+
+      if (trackBackpressure) {
+        const payloadBytes = getPayloadByteLength(payload);
+        if (payloadBytes > 0) {
+          pendingAckBytes += payloadBytes;
+          updateBackpressure();
+        }
+      }
     };
 
-    const flushBufferedOutput = () => {
+    const emitDroppedBytesWarning = () => {
+      if (!droppedBytes) {
+        return;
+      }
+
+      const dropped = droppedBytes;
+      droppedBytes = 0;
+      emitOutput(
+        `\r\n\x1b[33m*** 输出过快，已丢弃 ${dropped} 字节（请适当降低输出速率） ***\x1b[0m\r\n`,
+        { trackBackpressure: false },
+      );
+    };
+
+    const flushBufferedOutput = ({ flushDecoderRemainder = false } = {}) => {
       if (flushTimer) {
         clearTimeout(flushTimer);
         flushTimer = null;
       }
 
-      if (!buffer.length) {
+      if (!buffer.length && !droppedBytes && !flushDecoderRemainder) {
         return;
       }
 
@@ -534,7 +663,22 @@ class SSHHandlers {
       buffer = Buffer.alloc(0);
 
       try {
-        const output = pendingBuffer.toString("utf8");
+        let output = "";
+
+        if (pendingBuffer.length) {
+          output += stdoutDecoder.write(pendingBuffer);
+        }
+        if (flushDecoderRemainder) {
+          output += stdoutDecoder.end();
+        }
+
+        emitDroppedBytesWarning();
+
+        if (!output) {
+          updateBackpressure();
+          return;
+        }
+
         const processedOutput = terminalManager.processOutput(
           processId,
           output,
@@ -547,6 +691,8 @@ class SSHHandlers {
           `Failed to process buffered output: ${error.message}`,
           "ERROR",
         );
+      } finally {
+        updateBackpressure();
       }
     };
 
@@ -562,16 +708,41 @@ class SSHHandlers {
 
     const dataHandler = (data) => {
       try {
-        const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+        let chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+        const totalLength = buffer.length + chunk.length;
 
-        // 检查缓冲区大小，防止无限增长
-        if (buffer.length + chunk.length > MAX_BUFFER_SIZE) {
+        // 溢出时保留最近数据（环形缓冲思想），并累计丢弃字节用于可观测告警
+        if (totalLength > MAX_BUFFER_SIZE) {
+          let bytesToDrop = totalLength - MAX_BUFFER_SIZE;
+          const droppedThisRound = bytesToDrop;
+          droppedBytes += droppedThisRound;
+
+          if (bytesToDrop >= buffer.length) {
+            bytesToDrop -= buffer.length;
+            buffer = Buffer.alloc(0);
+
+            if (bytesToDrop >= chunk.length) {
+              chunk = Buffer.alloc(0);
+            } else if (bytesToDrop > 0) {
+              chunk = chunk.slice(bytesToDrop);
+            }
+          } else if (bytesToDrop > 0) {
+            buffer = buffer.slice(bytesToDrop);
+          }
+
           logToFile(
-            `Buffer overflow prevented for processId ${processId}, discarding old data`,
+            `Buffer overflow for processId ${processId}, dropped ${droppedThisRound} bytes`,
             "WARN",
           );
-          buffer = chunk; // 丢弃旧数据，只保留新数据
-        } else if (buffer.length === 0) {
+        }
+
+        if (chunk.length === 0) {
+          scheduleFlush();
+          updateBackpressure();
+          return;
+        }
+
+        if (buffer.length === 0) {
           // fast path：避免空缓冲区时的 Buffer.concat 拷贝
           buffer = chunk;
         } else {
@@ -585,28 +756,36 @@ class SSHHandlers {
           scheduleFlush();
         }
 
-        // 背压处理：如果缓冲区短时过大，暂停读取让 Renderer 追上
-        if (!isPaused && buffer.length > BACKPRESSURE_PAUSE_THRESHOLD) {
-          stream.pause();
-          isPaused = true;
-          setTimeout(() => {
-            if (!stream.destroyed) {
-              stream.resume();
-              isPaused = false;
-            }
-          }, 100);
-        }
+        updateBackpressure();
       } catch (error) {
         logToFile(`Error handling stream data: ${error.message}`, "ERROR");
         buffer = Buffer.alloc(0); // 错误时清理缓冲区
       }
     };
 
-    const extendedDataHandler = (data) => {
+    const extendedDataHandler = (typeOrData, maybeData) => {
       try {
         // 保证 stderr 信息顺序，先刷掉 stdout 缓冲
         flushBufferedOutput();
-        emitOutput(`\x1b[31m${data.toString("utf8")}\x1b[0m`);
+
+        const rawChunk =
+          maybeData !== undefined && maybeData !== null
+            ? maybeData
+            : typeOrData;
+        if (rawChunk === undefined || rawChunk === null) {
+          return;
+        }
+        if (!Buffer.isBuffer(rawChunk) && typeof rawChunk !== "string") {
+          return;
+        }
+
+        const stderrChunk = Buffer.isBuffer(rawChunk)
+          ? rawChunk
+          : Buffer.from(rawChunk);
+        const stderrOutput = stderrDecoder.write(stderrChunk);
+        if (stderrOutput) {
+          emitOutput(`\x1b[31m${stderrOutput}\x1b[0m`);
+        }
       } catch (error) {
         logToFile(`Error handling extended data: ${error.message}`, "ERROR");
       }
@@ -615,12 +794,18 @@ class SSHHandlers {
     const closeHandler = () => {
       logToFile(`SSH stream closed for processId: ${processId}`, "INFO");
 
-      flushBufferedOutput();
+      flushBufferedOutput({ flushDecoderRemainder: true });
+      const stderrTail = stderrDecoder.end();
+      if (stderrTail) {
+        emitOutput(`\x1b[31m${stderrTail}\x1b[0m`);
+      }
 
       if (flushTimer) {
         clearTimeout(flushTimer);
         flushTimer = null;
       }
+      clearBackpressureRecoveryTimer();
+      unbindOutputAckHandlers();
 
       // 清理事件监听器，防止内存泄漏
       stream.removeListener("data", dataHandler);

@@ -786,6 +786,12 @@ const WebTerminal = ({
   const pendingWriteLengthRef = useRef(0);
   const pendingWriteHandleRef = useRef(null);
   const pendingWriteUsingRafRef = useRef(false);
+  const utf8EncoderRef = useRef(
+    typeof TextEncoder !== "undefined" ? new TextEncoder() : null,
+  );
+  const outputAckProcessIdRef = useRef(null);
+  const outputAckBytesRef = useRef(0);
+  const outputAckTimerRef = useRef(null);
   const isActiveRef = useRef(isActive);
 
   useEffect(() => {
@@ -1033,6 +1039,91 @@ const WebTerminal = ({
     }
   }, [webglRendererEnabled, tryEnableWebglRenderer, disableWebglRenderer]);
 
+  const getUtf8ByteLength = useCallback((value) => {
+    if (value === undefined || value === null) {
+      return 0;
+    }
+
+    const str = typeof value === "string" ? value : value.toString();
+    if (!str) {
+      return 0;
+    }
+
+    if (utf8EncoderRef.current) {
+      return utf8EncoderRef.current.encode(str).length;
+    }
+
+    try {
+      return new Blob([str]).size;
+    } catch {
+      return str.length;
+    }
+  }, []);
+
+  const flushOutputAck = useCallback(() => {
+    if (outputAckTimerRef.current !== null) {
+      clearTimeout(outputAckTimerRef.current);
+      outputAckTimerRef.current = null;
+    }
+
+    const processId = outputAckProcessIdRef.current;
+    const ackBytes = outputAckBytesRef.current;
+    outputAckBytesRef.current = 0;
+
+    if (
+      processId === undefined ||
+      processId === null ||
+      !Number.isFinite(ackBytes) ||
+      ackBytes <= 0
+    ) {
+      return;
+    }
+
+    if (window.terminalAPI?.notifyOutputConsumed) {
+      window.terminalAPI.notifyOutputConsumed(processId, ackBytes);
+    }
+  }, []);
+
+  const queueOutputAck = useCallback(
+    (processId, byteLength) => {
+      const normalizedBytes = Math.floor(Number(byteLength));
+      if (
+        processId === undefined ||
+        processId === null ||
+        !Number.isFinite(normalizedBytes) ||
+        normalizedBytes <= 0
+      ) {
+        return;
+      }
+
+      outputAckProcessIdRef.current = processId;
+      outputAckBytesRef.current += normalizedBytes;
+
+      if (outputAckBytesRef.current >= 64 * 1024) {
+        flushOutputAck();
+        return;
+      }
+
+      if (outputAckTimerRef.current !== null) {
+        return;
+      }
+
+      outputAckTimerRef.current = setTimeout(() => {
+        outputAckTimerRef.current = null;
+        flushOutputAck();
+      }, 24);
+    },
+    [flushOutputAck],
+  );
+
+  const resetOutputAckState = useCallback(
+    (nextProcessId = null) => {
+      flushOutputAck();
+      outputAckProcessIdRef.current = nextProcessId;
+    },
+    [flushOutputAck],
+  );
+
   const flushPendingWrites = useCallback(
     (termInstance) => {
       if (!termInstance) {
@@ -1048,17 +1139,28 @@ const WebTerminal = ({
       if (!dataToWrite) {
         return;
       }
+      const processIdForAck = outputAckProcessIdRef.current;
+      const byteLength = getUtf8ByteLength(dataToWrite);
+      const onWriteComplete = () => {
+        scheduleHighlightRefresh(termInstance);
+        if (byteLength > 0) {
+          queueOutputAck(processIdForAck, byteLength);
+        }
+      };
       try {
-        termInstance.write(dataToWrite, () =>
-          scheduleHighlightRefresh(termInstance),
-        );
+        termInstance.write(dataToWrite, onWriteComplete);
       } catch {
         termInstance.write(dataToWrite);
-        scheduleHighlightRefresh(termInstance);
+        onWriteComplete();
       }
       setContentUpdated(true);
     },
-    [scheduleHighlightRefresh, setContentUpdated],
+    [
+      getUtf8ByteLength,
+      queueOutputAck,
+      scheduleHighlightRefresh,
+      setContentUpdated,
+    ],
   );
 
   // 优化：使用ref追踪内容更新状态，避免频繁的React状态更新
@@ -2668,19 +2770,9 @@ const WebTerminal = ({
               // 实际写入到终端
               if (term && data) {
                 const startTime = performance.now();
-                try {
-                  term.write(data, () => {
-                    const duration = performance.now() - startTime;
-                    if (performanceMonitorRef.current) {
-                      performanceMonitorRef.current.recordWrite(
-                        data.length,
-                        duration,
-                      );
-                    }
-                    scheduleHighlightRefresh(term);
-                  });
-                } catch {
-                  term.write(data);
+                const processIdForAck = outputAckProcessIdRef.current;
+                const byteLength = getUtf8ByteLength(data);
+                const onWriteComplete = () => {
                   const duration = performance.now() - startTime;
                   if (performanceMonitorRef.current) {
                     performanceMonitorRef.current.recordWrite(
@@ -2689,6 +2781,15 @@ const WebTerminal = ({
                     );
                   }
                   scheduleHighlightRefresh(term);
+                  if (byteLength > 0) {
+                    queueOutputAck(processIdForAck, byteLength);
+                  }
+                };
+                try {
+                  term.write(data, onWriteComplete);
+                } catch {
+                  term.write(data);
+                  onWriteComplete();
                 }
               }
             },
@@ -3455,6 +3556,8 @@ const WebTerminal = ({
             window.terminalAPI.removeOutputListener();
           }
         }
+        flushOutputAck();
+        outputAckProcessIdRef.current = null;
 
         // 从DOM中分离终端但保留缓存
         if (termRef.current) {
@@ -3531,6 +3634,9 @@ const WebTerminal = ({
     tryEnableWebglRenderer,
     disableWebglRenderer,
     enqueueTerminalWrite,
+    flushOutputAck,
+    getUtf8ByteLength,
+    queueOutputAck,
   ]);
 
   // 设置模拟终端（用于无法使用IPC API时的回退）
@@ -3972,8 +4078,10 @@ const WebTerminal = ({
       pendingWriteBufferRef.current = [];
       pendingWriteLengthRef.current = 0;
       pendingWriteUsingRafRef.current = false;
+      flushOutputAck();
+      outputAckProcessIdRef.current = null;
     };
-  }, []);
+  }, [flushOutputAck]);
 
   useEffect(() => {
     if (!contentUpdated || !termRef.current) {
@@ -3987,6 +4095,7 @@ const WebTerminal = ({
   const setupDataListener = (processId, term) => {
     // 防止重复添加监听器
     window.terminalAPI.removeOutputListener(processId);
+    resetOutputAckState(processId);
 
     // 清理待写入缓冲
     if (pendingWriteHandleRef.current !== null) {
@@ -4003,6 +4112,9 @@ const WebTerminal = ({
     pendingWriteBufferRef.current = [];
     pendingWriteLengthRef.current = 0;
     pendingWriteUsingRafRef.current = false;
+    if (writeStrategyManagerRef.current) {
+      writeStrategyManagerRef.current.clear();
+    }
 
     // 保存进程ID以便后续可以关闭
     const previousProcessId = processCache[tabId];
