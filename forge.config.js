@@ -176,6 +176,8 @@ module.exports = async () => {
               },
             ],
           },
+          devContentSecurityPolicy:
+            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: ws: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self';",
           port: devServerPort,
           loggerPort,
         },

@@ -1,4 +1,4 @@
-const { BrowserWindow } = require("electron");
+const { BrowserWindow, session } = require("electron");
 const path = require("path");
 const configService = require("../../services/configService");
 
@@ -102,6 +102,21 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
   });
 
   mainWindow.loadURL(webpackEntry);
+
+  // In production, enforce a strict CSP via response headers.
+  // In dev, Forge's devContentSecurityPolicy handles this.
+  if (process.env.NODE_ENV !== "development") {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          "Content-Security-Policy": [
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: ws: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';",
+          ],
+        },
+      });
+    });
+  }
 
   if (process.env.NODE_ENV === "development") {
     mainWindow.webContents.openDevTools();
