@@ -1982,8 +1982,7 @@ const FileManager = memo(
                 failed.error || t("fileManager.errors.permissionSetFailed"),
               );
             } else {
-              await loadDirectory(currentPath);
-              refreshAfterUserActivity();
+              await loadDirectory(currentPath, 0, true);
             }
           }
         } catch (err) {
@@ -2009,7 +2008,6 @@ const FileManager = memo(
         permInitial.group,
         loadDirectory,
         currentPath,
-        refreshAfterUserActivity,
         t,
       ],
     );
@@ -2973,16 +2971,8 @@ const FileManager = memo(
 
             if (response?.success) {
               // 成功创建文件夹，刷新目录
-              await loadDirectory(currentPath);
+              await loadDirectory(currentPath, 0, true);
               setShowCreateFolderDialog(false);
-              // 创建文件夹操作完成后选择性触发静默刷新，避免与显式刷新竞态
-              try {
-                if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
-                  refreshAfterUserActivity();
-                }
-              } catch {
-                refreshAfterUserActivity();
-              }
             } else if (
               response?.error?.includes("SFTP错误") &&
               retryCount < maxRetries
@@ -3071,15 +3061,7 @@ const FileManager = memo(
         if (window.terminalAPI && window.terminalAPI.createFile) {
           const result = await window.terminalAPI.createFile(tabId, fullPath);
           if (result.success) {
-            await loadDirectory(currentPath);
-            // 创建文件操作完成后选择性触发静默刷新，避免与显式刷新竞态
-            try {
-              if (!lastRefreshTime || Date.now() - lastRefreshTime > 700) {
-                refreshAfterUserActivity();
-              }
-            } catch {
-              refreshAfterUserActivity();
-            }
+            await loadDirectory(currentPath, 0, true);
           } else {
             setError(
               `${t("fileManager.errors.createFolderFailed")}: ${result.error || t("fileManager.errors.unknownError")}`,
@@ -3376,6 +3358,11 @@ const FileManager = memo(
             addTimeout(() => {
               removeTransferProgress(transferId);
             }, 3000);
+
+            // 异常分支如果尚未前台刷新，安排静默刷新兜底
+            if (!didForegroundRefresh) {
+              refreshAfterUserActivity();
+            }
           }
         } else {
           // 如果没有专门的拖拽上传API，显示错误
@@ -4307,8 +4294,7 @@ const FileManager = memo(
           // 重命名窗口中不再处理权限变更
 
           // 操作成功，刷新目录
-          await loadDirectory(currentPath);
-          refreshAfterUserActivity();
+          await loadDirectory(currentPath, 0, true);
         } catch (error) {
           // 操作失败
           if (retryCount < maxRetries) {
