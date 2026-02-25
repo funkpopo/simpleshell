@@ -268,11 +268,16 @@ class AIHandlers {
   }
 
   async saveSettings(event, settings) {
+    const existingSettings = configService.loadAISettings() || {};
     const normalizedSettings = this._normalizeSettingsForStorage(settings);
-    const mergedSettings = this._preserveStoredApiKeys(
+    const mergedInputSettings = this._preserveStoredApiKeys(
       settings,
       normalizedSettings,
     );
+    const mergedSettings = {
+      ...existingSettings,
+      ...mergedInputSettings,
+    };
     return configService.saveAISettings(mergedSettings);
   }
 

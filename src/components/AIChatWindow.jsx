@@ -199,9 +199,42 @@ const TokenUsageChart = ({ used, max, onCompressClick, isCompressing }) => {
   );
 };
 
-// 自定义浮动窗口对话框（支持动态宽度和z-index）
+const DIALOG_RIGHT_GAP = 50;
+const DIALOG_BOTTOM_GAP = 20;
+const DIALOG_TOP_GAP = 20;
+const DIALOG_PAPER_RADIUS = 16;
+const HANDLE_VISUAL_INSET = 12;
+
+// 默认和限制尺寸
+const DEFAULT_WIDTH = 400;
+const DEFAULT_HEIGHT = 600;
+const MIN_WIDTH = 360;
+const MIN_HEIGHT = 540;
+const MAX_WIDTH = 800;
+const MAX_HEIGHT = 900;
+
+const clampValue = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const normalizeWindowSize = (size) => {
+  if (!size || typeof size !== "object") {
+    return null;
+  }
+
+  const width = Number(size.width);
+  const height = Number(size.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    return null;
+  }
+
+  return {
+    width: clampValue(Math.round(width), MIN_WIDTH, MAX_WIDTH),
+    height: clampValue(Math.round(height), MIN_HEIGHT, MAX_HEIGHT),
+  };
+};
+
+// 自定义浮动窗口对话框（支持动态宽高和z-index）
 const FloatingDialog = styled(Dialog)(
-  ({ theme, customwidth, customzindex }) => ({
+  ({ theme, customwidth, customheight, customzindex }) => ({
     pointerEvents: "none",
     zIndex: customzindex || 1300,
     "& .MuiDialog-container": {
@@ -210,19 +243,21 @@ const FloatingDialog = styled(Dialog)(
     "& .MuiDialog-paper": {
       pointerEvents: "auto",
       position: "fixed",
-      right: 50,
-      bottom: 20,
+      right: DIALOG_RIGHT_GAP,
+      bottom: DIALOG_BOTTOM_GAP,
       margin: 0,
-      width: customwidth || 400,
-      maxWidth: "90vw",
-      height: 600,
-      maxHeight: "80vh",
+      width: customwidth || DEFAULT_WIDTH,
+      minWidth: MIN_WIDTH,
+      maxWidth: `calc(100vw - ${DIALOG_RIGHT_GAP * 2}px)`,
+      height: customheight || DEFAULT_HEIGHT,
+      minHeight: MIN_HEIGHT,
+      maxHeight: `calc(100vh - ${DIALOG_BOTTOM_GAP + DIALOG_TOP_GAP}px)`,
       backgroundColor:
         theme.palette.mode === "dark"
           ? "rgba(30, 30, 30, 0.95)"
           : "rgba(255, 255, 255, 0.95)",
       backdropFilter: "blur(10px)",
-      borderRadius: 16,
+      borderRadius: DIALOG_PAPER_RADIUS,
       boxShadow:
         theme.palette.mode === "dark"
           ? "0 10px 40px rgba(0, 0, 0, 0.6)"
@@ -286,11 +321,6 @@ const ThinkContent = ({ content, isExpanded, onToggle }) => {
   );
 };
 
-// 默认和限制宽度
-const DEFAULT_WIDTH = 400;
-const MIN_WIDTH = 300;
-const MAX_WIDTH = 800;
-
 const AIChatWindow = ({
   windowState,
   onClose,
@@ -316,7 +346,8 @@ const AIChatWindow = ({
   const [availableApis, setAvailableApis] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);
-  const [isResizing, setIsResizing] = useState(false);
+  const [windowHeight, setWindowHeight] = useState(DEFAULT_HEIGHT);
+  const [isResizing, setIsResizing] = useState(null);
   const [prevWindowState, setPrevWindowState] = useState(null);
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressedMessageCount, setCompressedMessageCount] = useState(0);
@@ -327,6 +358,7 @@ const AIChatWindow = ({
   const messageRefsMap = useRef({});
   const inputRef = useRef(null);
   const dialogRef = useRef(null);
+  const resizeListenersRef = useRef({ move: null, up: null });
 
   // 滚动到指定消息
   const scrollToMessage = useCallback((messageId) => {
@@ -363,34 +395,146 @@ const AIChatWindow = ({
     setPrevWindowState(windowState);
   }, [windowState, prevWindowState, scrollToBottom]);
 
-  // 拖拽调整宽度的处理
+  const getWidthLimit = useCallback(() => {
+    const viewportLimit = window.innerWidth - DIALOG_RIGHT_GAP * 2;
+    return clampValue(viewportLimit, MIN_WIDTH, MAX_WIDTH);
+  }, []);
+
+  const getHeightLimit = useCallback(() => {
+    const viewportLimit =
+      window.innerHeight - DIALOG_BOTTOM_GAP - DIALOG_TOP_GAP;
+    return clampValue(viewportLimit, MIN_HEIGHT, MAX_HEIGHT);
+  }, []);
+
+  const clearResizeListeners = useCallback(() => {
+    const { move, up } = resizeListenersRef.current;
+    if (move) {
+      document.removeEventListener("mousemove", move);
+    }
+    if (up) {
+      document.removeEventListener("mouseup", up);
+    }
+    resizeListenersRef.current = { move: null, up: null };
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearResizeListeners();
+    },
+    [clearResizeListeners],
+  );
+
+  // 窗口尺寸变化时，确保浮窗不会超过当前视口
+  useEffect(() => {
+    const syncSizeWithViewport = () => {
+      const maxWidth = getWidthLimit();
+      const maxHeight = getHeightLimit();
+      setWindowWidth((prev) => clampValue(prev, MIN_WIDTH, maxWidth));
+      setWindowHeight((prev) => clampValue(prev, MIN_HEIGHT, maxHeight));
+    };
+
+    syncSizeWithViewport();
+    window.addEventListener("resize", syncSizeWithViewport);
+    return () => {
+      window.removeEventListener("resize", syncSizeWithViewport);
+    };
+  }, [getHeightLimit, getWidthLimit]);
+
+  const persistWindowSize = useCallback(async (width, height) => {
+    if (
+      !window.terminalAPI?.loadAISettings ||
+      !window.terminalAPI?.saveAISettings
+    ) {
+      return;
+    }
+
+    const normalizedSize = normalizeWindowSize({ width, height });
+    if (!normalizedSize) {
+      return;
+    }
+
+    try {
+      const settings = (await window.terminalAPI.loadAISettings()) || {};
+      await window.terminalAPI.saveAISettings({
+        ...settings,
+        windowSize: normalizedSize,
+      });
+    } catch (err) {
+      console.error("Failed to persist AI window size:", err);
+    }
+  }, []);
+
+  // 拖拽调整宽高
   const handleResizeStart = useCallback(
-    (e) => {
+    (mode) => (e) => {
       e.preventDefault();
-      setIsResizing(true);
+      e.stopPropagation();
+      clearResizeListeners();
+      setIsResizing(mode);
 
       const startX = e.clientX;
+      const startY = e.clientY;
       const startWidth = windowWidth;
+      const startHeight = windowHeight;
+      const maxWidth = getWidthLimit();
+      const maxHeight = getHeightLimit();
+      let latestWidth = startWidth;
+      let latestHeight = startHeight;
 
       const handleMouseMove = (moveEvent) => {
-        const deltaX = startX - moveEvent.clientX;
-        const newWidth = Math.min(
-          MAX_WIDTH,
-          Math.max(MIN_WIDTH, startWidth + deltaX),
-        );
-        setWindowWidth(newWidth);
+        if (mode === "width" || mode === "both") {
+          const deltaX = startX - moveEvent.clientX;
+          const nextWidth = clampValue(
+            startWidth + deltaX,
+            MIN_WIDTH,
+            maxWidth,
+          );
+          latestWidth = nextWidth;
+          setWindowWidth(nextWidth);
+        }
+
+        if (mode === "height" || mode === "both") {
+          const deltaY = startY - moveEvent.clientY;
+          const nextHeight = clampValue(
+            startHeight + deltaY,
+            MIN_HEIGHT,
+            maxHeight,
+          );
+          latestHeight = nextHeight;
+          setWindowHeight(nextHeight);
+        }
       };
 
       const handleMouseUp = () => {
-        setIsResizing(false);
-        document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp);
+        setIsResizing(null);
+        clearResizeListeners();
+        persistWindowSize(latestWidth, latestHeight);
       };
 
+      resizeListenersRef.current = {
+        move: handleMouseMove,
+        up: handleMouseUp,
+      };
+      document.body.style.userSelect = "none";
+      document.body.style.cursor =
+        mode === "both"
+          ? "nwse-resize"
+          : mode === "height"
+            ? "ns-resize"
+            : "ew-resize";
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
     },
-    [windowWidth],
+    [
+      clearResizeListeners,
+      getHeightLimit,
+      getWidthLimit,
+      persistWindowSize,
+      windowHeight,
+      windowWidth,
+    ],
   );
 
   // 加载API配置
@@ -411,6 +555,16 @@ const AIChatWindow = ({
         // 加载自定义风险规则
         if (settings.customRiskRules) {
           setCustomRiskRules(settings.customRiskRules);
+        }
+
+        const normalizedSize = normalizeWindowSize(settings.windowSize);
+        if (normalizedSize) {
+          const maxWidth = getWidthLimit();
+          const maxHeight = getHeightLimit();
+          setWindowWidth(clampValue(normalizedSize.width, MIN_WIDTH, maxWidth));
+          setWindowHeight(
+            clampValue(normalizedSize.height, MIN_HEIGHT, maxHeight),
+          );
         }
       }
     } catch (err) {
@@ -1080,13 +1234,77 @@ ${conversationText}`;
       disableAutoFocus
       disableEscapeKeyDown={isPending || abortController}
       customwidth={windowWidth}
+      customheight={windowHeight}
       customzindex={zIndex}
       ref={dialogRef}
       onMouseDown={onFocus}
     >
+      {/* 左上角拖动调整宽高手柄 */}
+      <Box
+        onMouseDown={handleResizeStart("both")}
+        sx={{
+          position: "absolute",
+          left: -6,
+          top: -6,
+          width: 14,
+          height: 14,
+          cursor: "nwse-resize",
+          zIndex: 3,
+          borderRadius: "8px 0 0 0",
+          "&::after": {
+            content: '""',
+            position: "absolute",
+            left: 4,
+            top: 4,
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            backgroundColor: "primary.main",
+            opacity: isResizing === "both" ? 0.55 : 0,
+            transform: isResizing === "both" ? "scale(1.05)" : "scale(1)",
+            transition: "opacity 120ms ease, transform 120ms ease",
+          },
+          "&:hover::after": {
+            opacity: isResizing === "both" ? 0.55 : 0.35,
+          },
+        }}
+      />
+      {/* 顶部拖动调整高度手柄 */}
+      <Box
+        onMouseDown={handleResizeStart("height")}
+        sx={{
+          position: "absolute",
+          left: 0,
+          top: -4,
+          right: 0,
+          height: 8,
+          cursor: "ns-resize",
+          zIndex: 2,
+          "&::after": {
+            content: '""',
+            position: "absolute",
+            left: DIALOG_PAPER_RADIUS,
+            right: DIALOG_PAPER_RADIUS,
+            top: 3,
+            height: 2,
+            borderRadius: 999,
+            backgroundColor: "primary.main",
+            opacity: isResizing === "height" || isResizing === "both" ? 0.5 : 0,
+            transform:
+              isResizing === "height" || isResizing === "both"
+                ? "scaleY(1.2)"
+                : "scaleY(1)",
+            transition: "opacity 120ms ease, transform 120ms ease",
+          },
+          "&:hover::after": {
+            opacity:
+              isResizing === "height" || isResizing === "both" ? 0.5 : 0.3,
+          },
+        }}
+      />
       {/* 左侧拖动调整宽度手柄 */}
       <Box
-        onMouseDown={handleResizeStart}
+        onMouseDown={handleResizeStart("width")}
         sx={{
           position: "absolute",
           left: -4,
@@ -1094,15 +1312,28 @@ ${conversationText}`;
           bottom: 0,
           width: 8,
           cursor: "ew-resize",
-          zIndex: 1,
-          "&:hover": {
+          zIndex: 2,
+          "&::after": {
+            content: '""',
+            position: "absolute",
+            top: HANDLE_VISUAL_INSET,
+            bottom: HANDLE_VISUAL_INSET,
+            left: 3,
+            width: 2,
+            borderRadius: 999,
             backgroundColor: "primary.main",
-            opacity: 0.3,
+            opacity: isResizing === "width" || isResizing === "both" ? 0.5 : 0,
+            transform:
+              isResizing === "width" || isResizing === "both"
+                ? "scaleX(1.2)"
+                : "scaleX(1)",
+            transformOrigin: "left center",
+            transition: "opacity 120ms ease, transform 120ms ease",
           },
-          ...(isResizing && {
-            backgroundColor: "primary.main",
-            opacity: 0.5,
-          }),
+          "&:hover::after": {
+            opacity:
+              isResizing === "width" || isResizing === "both" ? 0.5 : 0.3,
+          },
         }}
       />
       <DialogTitle

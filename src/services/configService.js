@@ -122,6 +122,14 @@ class ConfigService {
             streamEnabled: { type: "boolean", default: true },
           },
         },
+        windowSize: {
+          type: "object",
+          properties: {
+            width: { type: "number", minimum: 300, maximum: 1000 },
+            height: { type: "number", minimum: 500, maximum: 1000 },
+          },
+          required: ["width", "height"],
+        },
       },
       required: ["configs"],
       default: { configs: [], current: null },
