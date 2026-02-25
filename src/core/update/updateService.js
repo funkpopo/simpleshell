@@ -16,6 +16,7 @@ const TRUSTED_DOWNLOAD_HOSTS = new Set([
   "github-releases.githubusercontent.com",
   "release-assets.githubusercontent.com",
 ]);
+const VERSION_TOKEN_REGEX = /v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i;
 
 class UpdateService {
   constructor() {
@@ -32,6 +33,9 @@ class UpdateService {
     this.currentRequest = null;
     this.latestReleaseAsset = null;
     this.lastDownloadedInstaller = null;
+
+    // 启动时清理“已安装版本”的遗留安装包，避免关于页反复显示“立即安装”
+    void this.cleanupConsumedInstaller();
   }
 
   /**
@@ -453,6 +457,7 @@ class UpdateService {
         filePath,
         sha256: actualSha256,
         expectedSha256: asset.expectedSha256 || null,
+        version: asset.version || null,
         downloadedAt: new Date().toISOString(),
         sourceUrl: finalUrl,
       };
@@ -701,8 +706,128 @@ class UpdateService {
   }
 
   /**
+   * 从文本中提取语义化版本号
+   * @param {string} value
+   * @returns {string|null}
+   */
+  extractVersionFromText(value) {
+    if (typeof value !== "string" || !value.trim()) {
+      return null;
+    }
+
+    const match = value.trim().match(VERSION_TOKEN_REGEX);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * 解析安装包目标版本（优先元数据）
+   * @param {object|null} meta
+   * @param {string} filePath
+   * @returns {string|null}
+   */
+  resolveInstallerVersion(meta, filePath = "") {
+    const candidates = [];
+
+    if (meta?.version) {
+      candidates.push(meta.version);
+    }
+
+    if (meta?.sourceUrl) {
+      try {
+        const sourceFileName = path.basename(new URL(meta.sourceUrl).pathname);
+        candidates.push(sourceFileName);
+      } catch {
+        // ignore invalid URL
+      }
+    }
+
+    if (meta?.filePath) {
+      candidates.push(path.basename(meta.filePath));
+    }
+
+    if (filePath) {
+      candidates.push(path.basename(filePath));
+    }
+
+    for (const candidate of candidates) {
+      const version = this.extractVersionFromText(candidate);
+      if (version) {
+        return version;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 删除安装包元数据
+   */
+  async cleanupInstallerMetaFile() {
+    this.lastDownloadedInstaller = null;
+
+    try {
+      await fsp.unlink(this.installerMetaPath);
+      logToFile(`Cleaned up installer meta: ${this.installerMetaPath}`, "INFO");
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        logToFile(`Failed to cleanup installer meta: ${error.message}`, "WARN");
+      }
+    }
+  }
+
+  /**
+   * 删除安装包及其元数据
+   * @param {string} filePath
+   */
+  async cleanupInstallerArtifacts(filePath) {
+    await this.cleanupInstallerFile(filePath);
+    await this.cleanupInstallerMetaFile();
+  }
+
+  /**
+   * 若当前版本已不低于安装包目标版本，自动清理遗留安装包
+   */
+  async cleanupConsumedInstaller() {
+    try {
+      const meta = await this.loadInstallerMeta();
+      if (!meta) {
+        return;
+      }
+
+      const filePath = path.resolve(meta.filePath);
+      this.assertPathInTempDir(filePath);
+      try {
+        await fsp.access(filePath);
+      } catch {
+        await this.cleanupInstallerMetaFile();
+        return;
+      }
+
+      const installerVersion = this.resolveInstallerVersion(meta, filePath);
+      if (!installerVersion) {
+        logToFile(
+          "Installer version metadata missing, cleaning stale installer artifact",
+          "WARN",
+        );
+        await this.cleanupInstallerArtifacts(filePath);
+        return;
+      }
+
+      if (this.compareVersions(installerVersion, this.currentVersion) <= 0) {
+        logToFile(
+          `Current version (${this.currentVersion}) already reached installer version (${installerVersion}), cleaning installer`,
+          "INFO",
+        );
+        await this.cleanupInstallerArtifacts(filePath);
+      }
+    } catch (error) {
+      logToFile(`Failed to cleanup consumed installer: ${error.message}`, "WARN");
+    }
+  }
+
+  /**
    * 安装前执行路径与哈希校验
-   * @returns {Promise<{filePath: string, fileExt: string}>}
+   * @returns {Promise<{filePath: string, fileExt: string, installerVersion: string}>}
    */
   async verifyInstallerBeforeInstall() {
     const meta = await this.loadInstallerMeta();
@@ -729,7 +854,18 @@ class UpdateService {
       throw new Error("Installer hash does not match expected release hash");
     }
 
-    return { filePath, fileExt };
+    const installerVersion = this.resolveInstallerVersion(meta, filePath);
+    if (!installerVersion) {
+      throw new Error("Installer version metadata is missing");
+    }
+
+    if (this.compareVersions(installerVersion, this.currentVersion) <= 0) {
+      throw new Error(
+        `Installer version ${installerVersion} is not newer than current version ${this.currentVersion}`,
+      );
+    }
+
+    return { filePath, fileExt, installerVersion };
   }
 
   /**
@@ -737,7 +873,8 @@ class UpdateService {
    */
   async installUpdate() {
     try {
-      const { filePath, fileExt } = await this.verifyInstallerBeforeInstall();
+      const { filePath, fileExt, installerVersion } =
+        await this.verifyInstallerBeforeInstall();
       logToFile(`Installing update from trusted file: ${filePath}`, "INFO");
 
       const platform = process.platform;
@@ -755,6 +892,11 @@ class UpdateService {
           `Unsupported installer format: ${fileExt} on ${platform}`,
         );
       }
+
+      logToFile(
+        `Update installer launched for version ${installerVersion}`,
+        "INFO",
+      );
 
       return { success: true };
     } catch (error) {
@@ -804,7 +946,9 @@ class UpdateService {
       await fsp.unlink(filePath);
       logToFile(`Cleaned up installer file: ${filePath}`, "INFO");
     } catch (error) {
-      logToFile(`Failed to cleanup installer file: ${error.message}`, "WARN");
+      if (error?.code !== "ENOENT") {
+        logToFile(`Failed to cleanup installer file: ${error.message}`, "WARN");
+      }
     }
   }
 
@@ -902,10 +1046,33 @@ class UpdateService {
       if (!meta) {
         return { available: false };
       }
+
       const filePath = path.resolve(meta.filePath);
       this.assertPathInTempDir(filePath);
-      await fsp.access(filePath);
-      return { available: true };
+
+      try {
+        await fsp.access(filePath);
+      } catch {
+        await this.cleanupInstallerMetaFile();
+        return { available: false };
+      }
+
+      const installerVersion = this.resolveInstallerVersion(meta, filePath);
+      if (!installerVersion) {
+        await this.cleanupInstallerArtifacts(filePath);
+        return { available: false };
+      }
+
+      if (this.compareVersions(installerVersion, this.currentVersion) <= 0) {
+        await this.cleanupInstallerArtifacts(filePath);
+        return { available: false };
+      }
+
+      return {
+        available: true,
+        installerVersion,
+        currentVersion: this.currentVersion,
+      };
     } catch {
       return { available: false };
     }
