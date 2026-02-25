@@ -135,6 +135,11 @@ class ConfigService {
         fontSize: { type: "number", minimum: 10, maximum: 30, default: 14 },
         editorFont: { type: "string", default: "system" },
         darkMode: { type: "boolean", default: true },
+        sidebarPosition: {
+          type: "string",
+          enum: ["left", "right"],
+          default: "right",
+        },
         terminalFont: { type: "string", default: "Fira Code" },
         terminalFontSize: {
           type: "number",
@@ -254,6 +259,7 @@ class ConfigService {
             fontSize: 14,
             editorFont: "system",
             darkMode: true,
+            sidebarPosition: "right",
             terminalFont: "Fira Code",
             terminalFontSize: 14,
             performance: {},
@@ -727,6 +733,7 @@ class ConfigService {
       fontSize: 14,
       editorFont: "system",
       darkMode: true,
+      sidebarPosition: "right",
       terminalFont: "Fira Code",
       terminalFontSize: 14,
       performance: {},
@@ -749,13 +756,19 @@ class ConfigService {
     }
 
     try {
+      const config = this._readConfig();
+      const mergedSettings = {
+        ...this._getDefaultUISettings(),
+        ...(config.uiSettings || {}),
+        ...settings,
+      };
+
       // 验证数据
-      if (!this._validate("uiSettings", settings)) {
+      if (!this._validate("uiSettings", mergedSettings)) {
         return false;
       }
 
-      const config = this._readConfig();
-      config.uiSettings = settings;
+      config.uiSettings = mergedSettings;
 
       if (this._writeConfig(config)) {
         this._log("ConfigService: UI settings saved successfully.", "INFO");
