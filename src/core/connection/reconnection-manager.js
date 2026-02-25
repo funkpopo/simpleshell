@@ -58,6 +58,11 @@ const FAILURE_REASON = {
   UNKNOWN: "unknown",
 };
 
+const FAILURE_PATTERN_GUARD = {
+  windowMs: 2 * 60 * 1000, // 2分钟窗口
+  maxConsecutive: 3, // 同类连续失败达到3次则停止自动重连
+};
+
 class ReconnectionManager extends EventEmitter {
   constructor(config = {}) {
     super();
@@ -431,6 +436,7 @@ class ReconnectionManager extends EventEmitter {
       lastReason: null,
       lastAt: 0,
       consecutive: 0,
+      recentFailures: [],
     };
 
     existing.total += 1;
@@ -444,6 +450,15 @@ class ReconnectionManager extends EventEmitter {
 
     existing.lastReason = reason;
     existing.lastAt = now;
+
+    const recentFailures = Array.isArray(existing.recentFailures)
+      ? existing.recentFailures
+      : [];
+    recentFailures.push({ reason, timestamp: now });
+    existing.recentFailures = recentFailures.filter(
+      (item) =>
+        now - Number(item?.timestamp || 0) <= FAILURE_PATTERN_GUARD.windowMs,
+    );
 
     this.failurePatterns.set(sessionId, existing);
     return existing;
@@ -484,6 +499,44 @@ class ReconnectionManager extends EventEmitter {
     return "连接已断开，自动重连失败，请重新连接。";
   }
 
+  _shouldStopReconnectByFailurePattern(session, failureReason) {
+    const pattern = this.failurePatterns.get(session?.id);
+    if (!pattern) {
+      return false;
+    }
+
+    const now = Date.now();
+    const reason = failureReason || FAILURE_REASON.UNKNOWN;
+    const recentFailures = Array.isArray(pattern.recentFailures)
+      ? pattern.recentFailures.filter(
+          (item) =>
+            now - Number(item?.timestamp || 0) <=
+            FAILURE_PATTERN_GUARD.windowMs,
+        )
+      : [];
+
+    pattern.recentFailures = recentFailures;
+    this.failurePatterns.set(session.id, pattern);
+
+    let sameReasonConsecutive = 0;
+    for (let i = recentFailures.length - 1; i >= 0; i -= 1) {
+      if (recentFailures[i].reason !== reason) {
+        break;
+      }
+      sameReasonConsecutive += 1;
+    }
+
+    if (sameReasonConsecutive >= FAILURE_PATTERN_GUARD.maxConsecutive) {
+      logToFile(
+        `停止自动重连(短时同类连续失败): ${session.id}, 原因=${reason}, 2分钟内连续 ${sameReasonConsecutive} 次(阈值 ${FAILURE_PATTERN_GUARD.maxConsecutive} 次)`,
+        "WARN",
+      );
+      return true;
+    }
+
+    return false;
+  }
+
   // 判断是否应该重连
   shouldReconnect(session, failureReason) {
     const maxRetries = this._getMaxRetriesForSession(session, failureReason);
@@ -514,6 +567,10 @@ class ReconnectionManager extends EventEmitter {
     // 资源限制不重连
     if (failureReason === FAILURE_REASON.RESOURCE) {
       logToFile(`资源限制，不进行重连: ${session.id}`, "WARN");
+      return false;
+    }
+
+    if (this._shouldStopReconnectByFailurePattern(session, failureReason)) {
       return false;
     }
 
@@ -835,6 +892,15 @@ class ReconnectionManager extends EventEmitter {
 
       // 决定是否继续重试
       const nextFailureReason = this.analyzeFailureReason(error);
+      try {
+        this.recordFailurePattern(session.id, nextFailureReason);
+      } catch (patternErr) {
+        logToFile(
+          `记录失败模式异常(已忽略): ${session.id} - ${patternErr?.message || patternErr}`,
+          "WARN",
+        );
+      }
+
       if (this.shouldReconnect(session, nextFailureReason)) {
         // 继续重试，不发送失败事件（避免触发错误通知）
         await this.scheduleReconnect(session, nextFailureReason);
