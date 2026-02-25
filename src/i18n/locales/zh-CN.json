@@ -136,7 +136,9 @@
       "shortcutCommands": "快捷命令",
       "ipQuery": "IP 地址查询",
       "securityTool": "安全工具",
-      "localTerminal": "本地终端"
+      "localTerminal": "本地终端",
+      "moveToLeft": "将侧边栏移动到左侧",
+      "moveToRight": "将侧边栏移动到右侧"
     },
     "latency": {
       "connectionInfo": "连接信息",

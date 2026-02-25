@@ -136,7 +136,9 @@
       "shortcutCommands": "Shortcut Commands",
       "ipQuery": "IP Address Query",
       "securityTool": "Security Tools",
-      "localTerminal": "Local Terminal"
+      "localTerminal": "Local Terminal",
+      "moveToLeft": "Move sidebar to left",
+      "moveToRight": "Move sidebar to right"
     },
     "latency": {
       "connectionInfo": "Connection Info",

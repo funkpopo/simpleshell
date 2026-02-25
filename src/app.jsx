@@ -54,6 +54,8 @@ import {
 
 import SecurityTools from "./components/SecurityTools.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
+import FirstPageIcon from "@mui/icons-material/FirstPage";
+import LastPageIcon from "@mui/icons-material/LastPage";
 import AIChatWindow from "./components/AIChatWindow.jsx";
 import CustomTab from "./components/CustomTab.jsx";
 import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
@@ -230,6 +232,9 @@ const buildRecentConnectionsSignature = (items) => {
     .join("|");
 };
 
+const normalizeSidebarPosition = (position) =>
+  position === "left" ? "left" : "right";
+
 function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
@@ -297,6 +302,11 @@ function AppContent() {
           const settings = await window.terminalAPI.loadUISettings();
           if (settings && settings.darkMode !== undefined) {
             dispatch(actions.setDarkMode(settings.darkMode));
+          }
+          if (settings?.sidebarPosition) {
+            setSidebarPosition(
+              normalizeSidebarPosition(settings.sidebarPosition),
+            );
           }
         }
       } catch {
@@ -466,6 +476,8 @@ function AppContent() {
   const [dndEnabled, setDndEnabled] = React.useState(true);
   // 传输栏显示模式: "bottom" | "sidebar"
   const [transferBarMode, setTransferBarMode] = React.useState("bottom");
+  // 侧边栏位置: "left" | "right"
+  const [sidebarPosition, setSidebarPosition] = React.useState("right");
   // 传输侧边栏状态
   const [transferSidebarOpen, setTransferSidebarOpen] = React.useState(false);
   // 最后激活的浮动窗口（用于控制z-index层叠顺序）: "ai" | "transfer"
@@ -475,6 +487,7 @@ function AppContent() {
   const tabsRef = useRef(null);
   const dragRafRef = React.useRef(null);
   const pendingDragStateRef = React.useRef(null);
+  const sidebarTooltipPlacement = sidebarPosition === "left" ? "right" : "left";
 
   const handleTabsWheel = useCallback((event) => {
     const scroller = event.currentTarget;
@@ -648,6 +661,7 @@ function AppContent() {
     securityToolsOpen,
     localTerminalSidebarOpen,
     lastOpenedSidebar,
+    sidebarPosition,
     SIDEBAR_WIDTHS,
   ]);
 
@@ -917,6 +931,32 @@ function AppContent() {
     },
     [darkMode, dispatch],
   );
+
+  const handleToggleSidebarPosition = useCallback(async () => {
+    const nextPosition = sidebarPosition === "left" ? "right" : "left";
+    setSidebarPosition(nextPosition);
+
+    if (!window.terminalAPI?.saveUISettings) {
+      return;
+    }
+
+    try {
+      let currentSettings = { language: "zh-CN", fontSize: 14 };
+      if (window.terminalAPI?.loadUISettings) {
+        const loadedSettings = await window.terminalAPI.loadUISettings();
+        if (loadedSettings) {
+          currentSettings = loadedSettings;
+        }
+      }
+
+      await window.terminalAPI.saveUISettings({
+        ...currentSettings,
+        sidebarPosition: nextPosition,
+      });
+    } catch (error) {
+      console.error("Failed to save sidebar position:", error);
+    }
+  }, [sidebarPosition]);
 
   // 标签页相关函数
   const handleTabChange = useCallback(
@@ -1813,6 +1853,7 @@ function AppContent() {
         darkMode: newDarkMode,
         dnd,
         transferBarMode: newTransferBarMode,
+        sidebarPosition: newSidebarPosition,
       } = event.detail;
 
       // React 19: 所有状态更新会自动批处理，提高性能
@@ -1843,6 +1884,11 @@ function AppContent() {
       // 应用传输栏模式设置
       if (newTransferBarMode) {
         setTransferBarMode(newTransferBarMode);
+      }
+
+      // 应用侧边栏位置设置
+      if (newSidebarPosition) {
+        setSidebarPosition(normalizeSidebarPosition(newSidebarPosition));
       }
     };
 
@@ -1915,6 +1961,13 @@ function AppContent() {
             // 应用传输栏模式设置
             if (settings.transferBarMode) {
               setTransferBarMode(settings.transferBarMode);
+            }
+
+            // 应用侧边栏位置设置
+            if (settings.sidebarPosition) {
+              setSidebarPosition(
+                normalizeSidebarPosition(settings.sidebarPosition),
+              );
             }
           }
         }
@@ -2272,6 +2325,7 @@ function AppContent() {
               minHeight: 0,
               overflow: "hidden",
               position: "relative",
+              flexDirection: sidebarPosition === "left" ? "row-reverse" : "row",
             }}
           >
             {/* 主内容区域 */}
@@ -2364,14 +2418,15 @@ function AppContent() {
               </Box>
             </Box>
 
-            {/* 右侧边栏容器 */}
+            {/* 可切换位置的侧边栏容器 */}
             <Box
               sx={{
                 position: "relative",
                 height: "100%",
                 display: "flex",
                 flexShrink: 0,
-                flexDirection: "row",
+                flexDirection:
+                  sidebarPosition === "left" ? "row-reverse" : "row",
                 zIndex: 90,
               }}
             >
@@ -2559,7 +2614,7 @@ function AppContent() {
                 </Box>
               </Box>
 
-              {/* 右侧边栏按钮栏 */}
+              {/* 侧边栏按钮栏 */}
               <Paper
                 elevation={3}
                 square={true}
@@ -2576,14 +2631,20 @@ function AppContent() {
                 }}
               >
                 {/* 主题切换按钮 */}
-                <Tooltip title={t("sidebar.theme")} placement="left">
+                <Tooltip
+                  title={t("sidebar.theme")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton onClick={toggleTheme} color="primary">
                     {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
                   </IconButton>
                 </Tooltip>
 
                 {/* 资源监控按钮 */}
-                <Tooltip title={t("sidebar.monitor")} placement="left">
+                <Tooltip
+                  title={t("sidebar.monitor")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton
                     color="primary"
                     onClick={toggleResourceMonitor}
@@ -2603,7 +2664,10 @@ function AppContent() {
                 </Tooltip>
 
                 {/* 连接管理按钮 */}
-                <Tooltip title={t("sidebar.connections")} placement="left">
+                <Tooltip
+                  title={t("sidebar.connections")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton
                     color="primary"
                     onClick={toggleConnectionManager}
@@ -2623,7 +2687,10 @@ function AppContent() {
                 </Tooltip>
 
                 {/* 文件管理按钮 */}
-                <Tooltip title={t("sidebar.files")} placement="left">
+                <Tooltip
+                  title={t("sidebar.files")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton
                     color="primary"
                     onClick={toggleFileManager}
@@ -2644,7 +2711,10 @@ function AppContent() {
                 </Tooltip>
 
                 {/* 快捷命令按钮 - 应该放在文件按钮的后面 */}
-                <Tooltip title={t("sidebar.shortcutCommands")} placement="left">
+                <Tooltip
+                  title={t("sidebar.shortcutCommands")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton
                     color="primary"
                     onClick={toggleShortcutCommands}
@@ -2665,7 +2735,10 @@ function AppContent() {
                 </Tooltip>
 
                 {/* 历史命令按钮 */}
-                <Tooltip title={t("sidebar.history")} placement="left">
+                <Tooltip
+                  title={t("sidebar.history")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton
                     color="primary"
                     onClick={toggleCommandHistory}
@@ -2685,7 +2758,10 @@ function AppContent() {
                 </Tooltip>
 
                 {/* IP地址查询按钮 */}
-                <Tooltip title={t("sidebar.ipQuery")} placement="left">
+                <Tooltip
+                  title={t("sidebar.ipQuery")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton
                     color="primary"
                     onClick={toggleIpAddressQuery}
@@ -2705,7 +2781,10 @@ function AppContent() {
                 </Tooltip>
 
                 {/* 安全工具按钮 */}
-                <Tooltip title={t("sidebar.securityTool")} placement="left">
+                <Tooltip
+                  title={t("sidebar.securityTool")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton
                     color="primary"
                     onClick={toggleSecurityTools}
@@ -2735,7 +2814,10 @@ function AppContent() {
                 />
 
                 {/* 本地终端按钮 */}
-                <Tooltip title={t("sidebar.localTerminal")} placement="left">
+                <Tooltip
+                  title={t("sidebar.localTerminal")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton
                     color="primary"
                     onClick={toggleLocalTerminalSidebar}
@@ -2766,11 +2848,15 @@ function AppContent() {
                       }
                     }}
                     tooltip="文件传输"
+                    tooltipPlacement={sidebarTooltipPlacement}
                   />
                 )}
 
                 {/* AI助手按钮 */}
-                <Tooltip title={t("sidebar.ai")} placement="left">
+                <Tooltip
+                  title={t("sidebar.ai")}
+                  placement={sidebarTooltipPlacement}
+                >
                   <IconButton
                     color="primary"
                     onClick={handleToggleGlobalAiChatWindow}
@@ -2803,6 +2889,29 @@ function AppContent() {
                           boxShadow: "0 0 4px #4caf50",
                         }}
                       />
+                    )}
+                  </IconButton>
+                </Tooltip>
+
+                <Box sx={{ flexGrow: 1 }} />
+
+                {/* 侧边栏左右切换按钮 */}
+                <Tooltip
+                  title={
+                    sidebarPosition === "left"
+                      ? t("sidebar.moveToRight")
+                      : t("sidebar.moveToLeft")
+                  }
+                  placement={sidebarTooltipPlacement}
+                >
+                  <IconButton
+                    color="primary"
+                    onClick={handleToggleSidebarPosition}
+                  >
+                    {sidebarPosition === "left" ? (
+                      <LastPageIcon />
+                    ) : (
+                      <FirstPageIcon />
                     )}
                   </IconButton>
                 </Tooltip>
