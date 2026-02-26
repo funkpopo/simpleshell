@@ -10,6 +10,10 @@ const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 const proxyManager = require("../proxy/proxy-manager");
 const { createChannelPoolManager } = require("../utils/ssh-utils");
 const { sanitizePathForLog } = require("../utils/log-sanitizer");
+const {
+  resolveSshNetworkProfile,
+  applySocketNetworkProfile,
+} = require("../utils/ssh-network-profile");
 const ReconnectionManager = require("./reconnection-manager");
 
 // 代理类型常量
@@ -185,6 +189,7 @@ class SSHPool extends BaseConnectionPool {
    */
   async createConnection(sshConfig, connectionKey) {
     this._logInfo(`创建新SSH连接: ${connectionKey}`);
+    const networkProfile = resolveSshNetworkProfile(sshConfig);
 
     // 解析代理配置
     const resolvedProxyConfig =
@@ -232,10 +237,14 @@ class SSHPool extends BaseConnectionPool {
       this.connections.set(connectionKey, connectionInfo);
 
       // hostVerifier 可能需要用户交互确认，超时窗口适当放宽
+      const baseConnectionTimeout = Math.max(
+        this.config.connectionTimeout,
+        networkProfile.readyTimeout + 5000,
+      );
       const connectionTimeoutMs =
         typeof sshConfig.hostVerifier === "function"
-          ? Math.max(this.config.connectionTimeout, 5 * 60 * 1000)
-          : this.config.connectionTimeout;
+          ? Math.max(baseConnectionTimeout, 5 * 60 * 1000)
+          : baseConnectionTimeout;
 
       // 设置连接超时
       const timeout = setTimeout(() => {
@@ -275,6 +284,7 @@ class SSHPool extends BaseConnectionPool {
       ssh.on("ready", () => {
         clearTimeout(timeout);
         connectionInfo.ready = true;
+        applySocketNetworkProfile(ssh._sock, networkProfile);
 
         this._logInfo(
           `SSH连接建立成功: ${connectionKey}${usingProxy ? " (通过代理)" : ""}`,
@@ -336,7 +346,10 @@ class SSHPool extends BaseConnectionPool {
       });
 
       // 建立连接
-      const connectionOptions = this._buildSSHOptions(sshConfig);
+      const connectionOptions = this._buildSSHOptions(
+        sshConfig,
+        networkProfile,
+      );
 
       // 关键：ssh2 不支持 options.proxy，必须传入已建立好的代理隧道 socket（sock）
       if (usingProxy) {
@@ -347,8 +360,9 @@ class SSHPool extends BaseConnectionPool {
               resolvedProxyConfig,
               sshConfig.host,
               targetPort,
-              { timeoutMs: this.config.connectionTimeout },
+              { timeoutMs: connectionTimeoutMs },
             );
+            applySocketNetworkProfile(sock, networkProfile);
             connectionInfo.proxySocket = sock;
             connectionOptions.sock = sock;
             ssh.connect(connectionOptions);
@@ -708,24 +722,25 @@ class SSHPool extends BaseConnectionPool {
   /**
    * 构建SSH连接选项
    * @param {Object} sshConfig - SSH配置
-   * @param {Object} proxyConfig - 代理配置
-   * @param {boolean} usingProxy - 是否使用代理
+   * @param {Object|null} networkProfile - 网络参数（可选）
    * @returns {Object} SSH连接选项
    * @private
    */
-  _buildSSHOptions(sshConfig) {
+  _buildSSHOptions(sshConfig, networkProfile = null) {
     const { processSSHPrivateKey } = require("../utils/ssh-utils");
     const processedConfig = processSSHPrivateKey(sshConfig);
+    const resolvedNetworkProfile =
+      networkProfile || resolveSshNetworkProfile(processedConfig);
 
     const options = {
       host: sshConfig.host,
       port: sshConfig.port || 22,
       username: sshConfig.username,
       algorithms: getBasicSSHAlgorithms(),
-      keepaliveInterval: 15000,
-      keepaliveCountMax: 6,
+      keepaliveInterval: resolvedNetworkProfile.keepaliveInterval,
+      keepaliveCountMax: resolvedNetworkProfile.keepaliveCountMax,
       // 增加通道管理配置以支持更多并发操作
-      readyTimeout: 20000, // 连接就绪超时
+      readyTimeout: resolvedNetworkProfile.readyTimeout,
     };
 
     if (typeof sshConfig.hostHash === "string" && sshConfig.hostHash.trim()) {

@@ -13,7 +13,7 @@ import { useWindowEvent } from "../hooks/useWindowEvent.js";
 import { useTerminalRender } from "../hooks/useTerminalRender.js";
 import { TerminalPerformanceMonitor } from "../utils/TerminalPerformanceMonitor.js";
 import { ScrollbackUsageTracker } from "../utils/ScrollbackUsageTracker.js";
-import { WriteStrategyManager } from "../utils/WriteStrategyManager.js";
+import { TerminalWriteQueue } from "../utils/TerminalWriteQueue.js";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -759,7 +759,7 @@ const WebTerminal = ({
   // 性能优化相关 refs
   const performanceMonitorRef = useRef(null);
   const scrollbackUsageTrackerRef = useRef(null);
-  const writeStrategyManagerRef = useRef(null);
+  const terminalWriteQueueRef = useRef(null);
 
   const theme = useTheme();
   const eventManager = useEventManager(); // 使用统一的事件管理器
@@ -768,7 +768,6 @@ const WebTerminal = ({
   const [contentUpdated, setContentUpdated] = useState(false);
   const [webglRendererEnabled, setWebglRendererEnabled] = useState(true);
   const [, setPerformanceStats] = useState(null);
-  const [, setWriteStrategy] = useState("low");
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
@@ -783,8 +782,6 @@ const WebTerminal = ({
   const outputAckProcessIdRef = useRef(null);
   const outputAckBytesRef = useRef(0);
   const outputAckTimerRef = useRef(null);
-  const outputModeResetTimerRef = useRef(null);
-  const outputModeRef = useRef("balanced");
   const processOutputUnsubscribeRef = useRef(null);
   const isActiveRef = useRef(isActive);
 
@@ -954,80 +951,25 @@ const WebTerminal = ({
     [flushOutputAck],
   );
 
-  const setRendererOutputMode = useCallback((processId, mode) => {
+  const sendInputToProcess = useCallback((processId, input) => {
     if (
       processId === undefined ||
       processId === null ||
-      !window.terminalAPI?.setOutputMode
+      input === undefined ||
+      input === null
     ) {
       return;
     }
 
-    const normalizedMode =
-      mode === "low-latency" || mode === "throughput" ? mode : "balanced";
-
-    if (outputModeRef.current === normalizedMode) {
+    const inputStr = typeof input === "string" ? input : input.toString();
+    if (!inputStr) {
       return;
     }
 
-    outputModeRef.current = normalizedMode;
-    if (writeStrategyManagerRef.current?.setMode) {
-      writeStrategyManagerRef.current.setMode(normalizedMode);
+    if (window.terminalAPI?.sendToProcess) {
+      window.terminalAPI.sendToProcess(processId, inputStr);
     }
-    window.terminalAPI.setOutputMode(processId, normalizedMode);
   }, []);
-
-  const restoreBalancedOutputMode = useCallback(
-    (processId) => {
-      if (outputModeResetTimerRef.current !== null) {
-        clearTimeout(outputModeResetTimerRef.current);
-      }
-      outputModeResetTimerRef.current = setTimeout(() => {
-        outputModeResetTimerRef.current = null;
-        setRendererOutputMode(processId, "balanced");
-      }, 1200);
-    },
-    [setRendererOutputMode],
-  );
-
-  const sendInputToProcess = useCallback(
-    (processId, input, options = {}) => {
-      if (
-        processId === undefined ||
-        processId === null ||
-        input === undefined ||
-        input === null
-      ) {
-        return;
-      }
-
-      const {
-        skipLatencyBoost = false,
-        forceOutputMode = null,
-        forceImmediateOutputMode = false,
-      } = options;
-      const inputStr = typeof input === "string" ? input : input.toString();
-      if (!inputStr) {
-        return;
-      }
-
-      if (forceOutputMode) {
-        setRendererOutputMode(processId, forceOutputMode);
-      } else if (!skipLatencyBoost) {
-        const modeForInput =
-          inputStr.length > 4096 ? "throughput" : "low-latency";
-        setRendererOutputMode(processId, modeForInput);
-        restoreBalancedOutputMode(processId);
-      } else if (forceImmediateOutputMode) {
-        setRendererOutputMode(processId, "balanced");
-      }
-
-      if (window.terminalAPI?.sendToProcess) {
-        window.terminalAPI.sendToProcess(processId, inputStr);
-      }
-    },
-    [restoreBalancedOutputMode, setRendererOutputMode],
-  );
 
   const flushPendingWrites = useCallback(
     (termInstance) => {
@@ -1081,15 +1023,15 @@ const WebTerminal = ({
         return;
       }
 
-      // 如果启用了新的写入策略管理器，使用它
-      if (writeStrategyManagerRef.current) {
+      // 如果启用了新的写入队列，使用它
+      if (terminalWriteQueueRef.current) {
         // 仅记录滚回统计信息，避免重复缓存整份输出
         if (scrollbackUsageTrackerRef.current) {
           scrollbackUsageTrackerRef.current.addData(chunkStr);
         }
 
-        // 使用写入策略管理器入队
-        writeStrategyManagerRef.current.enqueue(chunkStr);
+        // 使用写入队列入队
+        terminalWriteQueueRef.current.enqueue(chunkStr);
         // 优化：使用ref追踪，减少React状态更新频率
         contentUpdatedRef.current = true;
         return;
@@ -2057,10 +1999,7 @@ const WebTerminal = ({
 
         // 发送回车键到进程
         if (processId) {
-          sendInputToProcess(processId, data, {
-            skipLatencyBoost: true,
-            forceImmediateOutputMode: true,
-          });
+          sendInputToProcess(processId, data);
         }
         return;
       } else if (data !== "\t") {
@@ -2663,11 +2602,10 @@ const WebTerminal = ({
           });
         }
 
-        // 初始化写入策略管理器
-        if (!writeStrategyManagerRef.current) {
-          writeStrategyManagerRef.current = new WriteStrategyManager({
-            adaptiveEnabled: true,
-            onFlush: (data) => {
+        // 初始化写入队列
+        if (!terminalWriteQueueRef.current) {
+          terminalWriteQueueRef.current = new TerminalWriteQueue({
+            onDrain: (data) => {
               // 实际写入到终端
               if (term && data) {
                 const startTime = performance.now();
@@ -2694,17 +2632,8 @@ const WebTerminal = ({
                 }
               }
             },
-            onStrategyChange: (change) => {
-              setWriteStrategy(change.newStrategy);
-              if (process.env.NODE_ENV === "development") {
-                console.log("[WebTerminal Strategy]", change);
-              }
-            },
           });
         }
-        outputModeRef.current = "balanced";
-        writeStrategyManagerRef.current.setMode("balanced");
-
         if (webglRendererEnabledRef.current) {
           tryEnableWebglRenderer(term);
         } else {
@@ -3497,10 +3426,10 @@ const WebTerminal = ({
           scrollbackUsageTrackerRef.current = null;
         }
 
-        // 清理写入策略管理器
-        if (writeStrategyManagerRef.current) {
-          writeStrategyManagerRef.current.destroy();
-          writeStrategyManagerRef.current = null;
+        // 清理写入队列
+        if (terminalWriteQueueRef.current) {
+          terminalWriteQueueRef.current.destroy();
+          terminalWriteQueueRef.current = null;
         }
 
         // 清理终端事件监听器
@@ -3976,14 +3905,6 @@ const WebTerminal = ({
       pendingWriteUsingRafRef.current = false;
       flushOutputAck();
       outputAckProcessIdRef.current = null;
-      if (outputModeResetTimerRef.current !== null) {
-        clearTimeout(outputModeResetTimerRef.current);
-        outputModeResetTimerRef.current = null;
-      }
-      outputModeRef.current = "balanced";
-      if (writeStrategyManagerRef.current?.setMode) {
-        writeStrategyManagerRef.current.setMode("balanced");
-      }
     };
   }, [flushOutputAck, resetRenderState]);
 
@@ -4020,17 +3941,8 @@ const WebTerminal = ({
     pendingWriteBufferRef.current = [];
     pendingWriteLengthRef.current = 0;
     pendingWriteUsingRafRef.current = false;
-    if (writeStrategyManagerRef.current) {
-      writeStrategyManagerRef.current.clear();
-      writeStrategyManagerRef.current.setMode("balanced");
-    }
-    outputModeRef.current = "balanced";
-    if (outputModeResetTimerRef.current !== null) {
-      clearTimeout(outputModeResetTimerRef.current);
-      outputModeResetTimerRef.current = null;
-    }
-    if (window.terminalAPI?.setOutputMode) {
-      window.terminalAPI.setOutputMode(processId, "balanced");
+    if (terminalWriteQueueRef.current) {
+      terminalWriteQueueRef.current.clear();
     }
 
     // 保存进程ID以便后续可以关闭
