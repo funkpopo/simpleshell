@@ -121,16 +121,6 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       bytes: normalizedBytes,
     });
   },
-  setOutputMode: (processId, mode) => {
-    if (processId === undefined || processId === null) {
-      return;
-    }
-
-    ipcRenderer.send("terminal:setOutputMode", {
-      processId,
-      mode: typeof mode === "string" ? mode : "balanced",
-    });
-  },
   killProcess: (processId) =>
     ipcRenderer.invoke("terminal:killProcess", processId),
   // 新增：获取进程信息

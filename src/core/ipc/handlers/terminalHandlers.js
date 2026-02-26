@@ -100,11 +100,6 @@ class TerminalHandlers {
         category: "terminal",
         handler: this.handleOutputAck.bind(this),
       },
-      {
-        channel: "terminal:setOutputMode",
-        category: "terminal",
-        handler: this.setOutputMode.bind(this),
-      },
     ];
   }
 
@@ -150,64 +145,6 @@ class TerminalHandlers {
         "WARN",
       );
     }
-  }
-
-  normalizeOutputMode(mode) {
-    if (typeof mode !== "string") {
-      return "balanced";
-    }
-
-    const normalized = mode.trim().toLowerCase();
-    if (normalized === "low-latency" || normalized === "interactive") {
-      return "low-latency";
-    }
-    if (normalized === "throughput" || normalized === "log") {
-      return "throughput";
-    }
-    return "balanced";
-  }
-
-  applyOutputMode(processId, mode) {
-    let procInfo = this.processManager.getProcess(processId);
-    if (!procInfo && typeof processId === "string" && /^\d+$/.test(processId)) {
-      procInfo = this.processManager.getProcess(Number(processId));
-    }
-    if (!procInfo) {
-      return false;
-    }
-
-    const normalizedMode = this.normalizeOutputMode(mode);
-    const relatedIds = new Set([processId]);
-    if (
-      procInfo.config?.tabId !== undefined &&
-      procInfo.config?.tabId !== null
-    ) {
-      relatedIds.add(procInfo.config.tabId);
-    }
-
-    if (typeof processId === "number" && Number.isFinite(processId)) {
-      relatedIds.add(String(processId));
-    } else if (typeof processId === "string" && /^\d+$/.test(processId)) {
-      relatedIds.add(Number(processId));
-    }
-
-    relatedIds.forEach((id) => {
-      const target = this.processManager.getProcess(id);
-      if (target) {
-        target.outputMode = normalizedMode;
-      }
-    });
-
-    return true;
-  }
-
-  setOutputMode(_event, payload) {
-    const processId = payload?.processId;
-    if (processId === undefined || processId === null) {
-      return;
-    }
-
-    this.applyOutputMode(processId, payload?.mode);
   }
 
   writeToProcess(processId, data) {
@@ -634,7 +571,6 @@ class TerminalHandlers {
 
     // 更新进程信息中的编辑器模式状态
     procInfo.editorMode = isEditorMode;
-    this.applyOutputMode(processId, isEditorMode ? "low-latency" : "balanced");
 
     // 仅当状态实际变化时记录详细日志
     if (previousState !== isEditorMode) {

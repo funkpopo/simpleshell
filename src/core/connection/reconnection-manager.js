@@ -2,6 +2,10 @@ const { EventEmitter } = require("events");
 const net = require("node:net");
 const { logToFile } = require("../utils/logger");
 const proxyManager = require("../proxy/proxy-manager");
+const {
+  resolveSshNetworkProfile,
+  applySocketNetworkProfile,
+} = require("../utils/ssh-network-profile");
 
 // 重连策略配置 - 使用指数退避算法
 const RECONNECT_CONFIG = {
@@ -939,6 +943,12 @@ class ReconnectionManager extends EventEmitter {
     const Client = require("ssh2").Client;
     const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
     const { processSSHPrivateKey } = require("../utils/ssh-utils");
+    const processedConfig = processSSHPrivateKey(config);
+    const networkProfile = resolveSshNetworkProfile(processedConfig);
+    const connectionTimeoutMs = Math.max(
+      15000,
+      networkProfile.readyTimeout + 5000,
+    );
 
     return new Promise((resolve, reject) => {
       const ssh = new Client();
@@ -946,10 +956,11 @@ class ReconnectionManager extends EventEmitter {
       const timeout = setTimeout(() => {
         ssh.end();
         reject(new Error("连接超时"));
-      }, 10000);
+      }, connectionTimeoutMs);
 
       ssh.on("ready", () => {
         clearTimeout(timeout);
+        applySocketNetworkProfile(ssh._sock, networkProfile);
         resolve(ssh);
       });
 
@@ -958,16 +969,14 @@ class ReconnectionManager extends EventEmitter {
         reject(err);
       });
 
-      const processedConfig = processSSHPrivateKey(config);
-
       const connectionOptions = {
         host: processedConfig.host,
         port: processedConfig.port || 22,
         username: processedConfig.username,
         algorithms: getBasicSSHAlgorithms(),
-        keepaliveInterval: 30000,
-        keepaliveCountMax: 3,
-        readyTimeout: 10000,
+        keepaliveInterval: networkProfile.keepaliveInterval,
+        keepaliveCountMax: networkProfile.keepaliveCountMax,
+        readyTimeout: networkProfile.readyTimeout,
       };
 
       if (processedConfig.password)
@@ -997,8 +1006,9 @@ class ReconnectionManager extends EventEmitter {
               resolvedProxyConfig,
               processedConfig.host,
               processedConfig.port || 22,
-              { timeoutMs: 10000 },
+              { timeoutMs: connectionTimeoutMs },
             );
+            applySocketNetworkProfile(sock, networkProfile);
             connectionOptions.sock = sock;
           }
 

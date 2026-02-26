@@ -507,22 +507,10 @@ class SSHHandlers {
   _setupStreamEventListeners(stream, processId, sshConfig, connectionInfo) {
     let buffer = Buffer.alloc(0);
     const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB 缓冲区上限
-    const OUTPUT_PROFILES = {
-      "low-latency": {
-        flushIntervalMs: 8,
-        flushThresholdBytes: 16 * 1024,
-        pauseThresholdBytes: 512 * 1024,
-      },
-      balanced: {
-        flushIntervalMs: 24,
-        flushThresholdBytes: 64 * 1024,
-        pauseThresholdBytes: 1024 * 1024,
-      },
-      throughput: {
-        flushIntervalMs: 48,
-        flushThresholdBytes: 128 * 1024,
-        pauseThresholdBytes: 2 * 1024 * 1024,
-      },
+    const OUTPUT_PROFILE = {
+      flushIntervalMs: 8,
+      flushThresholdBytes: 16 * 1024,
+      pauseThresholdBytes: 512 * 1024,
     };
     const BACKPRESSURE_RECOVERY_INTERVAL_MS = 100;
 
@@ -534,45 +522,7 @@ class SSHHandlers {
     const stdoutDecoder = new StringDecoder("utf8");
     const stderrDecoder = new StringDecoder("utf8");
 
-    const normalizeOutputMode = (mode) => {
-      if (mode === "low-latency" || mode === "interactive") {
-        return "low-latency";
-      }
-      if (mode === "throughput" || mode === "log") {
-        return "throughput";
-      }
-      return "balanced";
-    };
-
-    const getProcessInfoForMode = () => {
-      const proc = this.childProcesses.get(processId);
-      if (proc) {
-        return proc;
-      }
-      if (sshConfig.tabId) {
-        return this.childProcesses.get(sshConfig.tabId) || null;
-      }
-      return null;
-    };
-
-    const resolveOutputMode = () => {
-      const procInfo = getProcessInfoForMode();
-      if (!procInfo) {
-        return "balanced";
-      }
-      if (procInfo.outputMode) {
-        return normalizeOutputMode(procInfo.outputMode);
-      }
-      if (procInfo.editorMode) {
-        return "low-latency";
-      }
-      return "balanced";
-    };
-
-    const getOutputProfile = () => {
-      const mode = resolveOutputMode();
-      return OUTPUT_PROFILES[mode] || OUTPUT_PROFILES.balanced;
-    };
+    const getOutputProfile = () => OUTPUT_PROFILE;
 
     const getPayloadByteLength = (payload) => {
       if (Buffer.isBuffer(payload)) {
@@ -1048,7 +998,6 @@ class SSHHandlers {
       lastOutputLines: [],
       outputBuffer: "",
       isRemote: true,
-      outputMode: "balanced",
     };
   }
 
