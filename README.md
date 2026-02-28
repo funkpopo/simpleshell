@@ -206,9 +206,9 @@ simpleshell/
 
 - Naming consistency
   - Use `*-connection-pool` for protocol-specific pools.
-  - Legacy advanced pool/manager were previously under `src/core/connection/legacy/`.
-    - `ssh-advanced-pool.js` has been renamed to `connection/ssh-pool.js` (replaces the old `ssh-pool.js`).
-    - `connection-manager.js` is the canonical advanced manager (legacy path removed).
+  - Legacy advanced pool/manager have been removed.
+    - `ssh-advanced-pool.js` was consolidated into `src/core/connection/ssh-pool.js`.
+    - Deprecated `src/core/connection/connection-manager.js` has been deleted to avoid split control paths.
 
 - Import guidance
   - For pools: `const { sshConnectionPool, telnetConnectionPool } = require("../../core/connection");`
