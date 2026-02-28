@@ -209,6 +209,10 @@ simpleshell/
   - Legacy advanced pool/manager have been removed.
     - `ssh-advanced-pool.js` was consolidated into `src/core/connection/ssh-pool.js`.
     - Deprecated `src/core/connection/connection-manager.js` has been deleted to avoid split control paths.
+  - Deprecated `src/core/connection/connection-monitor.js` has been removed. Connection health and observability now rely on:
+    - Pool health checks (`base-connection-pool.js`)
+    - Reconnection state machine (`reconnection-manager.js`)
+    - Network latency service (`networkLatencyService.js`)
 
 - Import guidance
   - For pools: `const { sshConnectionPool, telnetConnectionPool } = require("../../core/connection");`
