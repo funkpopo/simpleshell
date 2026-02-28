@@ -878,6 +878,321 @@ async function testDReconnectHandlersNoLeak() {
   }
 }
 
+async function testD2AppQuitReleasesAllResources() {
+  const appCleanupPath = path.join(ROOT, "src/core/app/appCleanup");
+  const loggerPath = path.join(ROOT, "src/core/utils/logger");
+  const resourceManagerPath = path.join(
+    ROOT,
+    "src/core/utils/mainProcessResourceManager",
+  );
+  const processManagerPath = path.join(ROOT, "src/core/process/processManager");
+  const connectionManagerPath = path.join(ROOT, "src/modules/connection");
+  const fileCachePath = path.join(ROOT, "src/core/utils/fileCache");
+  const configServicePath = path.join(ROOT, "src/services/configService");
+  const commandHistoryPath = path.join(
+    ROOT,
+    "src/modules/terminal/command-history",
+  );
+  const sftpCorePath = path.join(ROOT, "src/core/transfer/sftp-engine");
+  const sftpTransferPath = path.join(ROOT, "src/modules/sftp/sftpTransfer");
+  const externalEditorPath = path.join(
+    ROOT,
+    "src/modules/sftp/externalEditorManager",
+  );
+
+  const mockedModules = [];
+  const resolveId = (p) => require.resolve(p);
+  const injectMock = (modulePath, exportsValue) => {
+    const id = resolveId(modulePath);
+    mockedModules.push({ id, previous: require.cache[id] });
+    require.cache[id] = {
+      id,
+      filename: id,
+      loaded: true,
+      exports: exportsValue,
+    };
+  };
+  const restoreMocks = () => {
+    for (const { id, previous } of mockedModules) {
+      if (previous) {
+        require.cache[id] = previous;
+      } else {
+        delete require.cache[id];
+      }
+    }
+  };
+
+  let transferCleanupAllCount = 0;
+  let sftpShutdownCount = 0;
+  let connectionCleanupCount = 0;
+  let releasedSshCount = 0;
+
+  const processMap = new Map([
+    [
+      "tab-d2",
+      {
+        type: "ssh2",
+        process: {
+          stdout: { removeAllListeners() {} },
+          stderr: { removeAllListeners() {} },
+          kill() {},
+        },
+        stream: {
+          close() {},
+        },
+        connectionInfo: {
+          key: "ssh:d2",
+        },
+        config: {
+          tabId: "tab-d2",
+        },
+      },
+    ],
+  ]);
+
+  const reconnectTimer = setTimeout(() => {}, 10_000);
+  const sshHealthTimer = setInterval(() => {}, 10_000);
+  const telnetHealthTimer = setInterval(() => {}, 10_000);
+
+  let sftpStats = {
+    poolCount: 1,
+    sessionCount: 2,
+    pendingQueueCount: 1,
+    pendingOperationCount: 3,
+    inProgressOperationCount: 1,
+    sessionLockCount: 1,
+    borrowLockCount: 1,
+    healthCheckTimerActive: true,
+  };
+  let transferStats = {
+    activeTransferCount: 2,
+    activeStreamCount: 4,
+    trackedTabCount: 1,
+  };
+
+  const connectionManagerMock = {
+    sshConnectionPool: {
+      connections: new Map([["ssh:d2", { key: "ssh:d2" }]]),
+      tabReferences: new Map([["tab-d2", "ssh:d2"]]),
+      healthCheckTimer: sshHealthTimer,
+      reconnectTimerRef: reconnectTimer,
+      reconnectionManager: {
+        sessions: new Map([["ssh:d2", { id: "ssh:d2" }]]),
+        reconnectTimers: new Map([["ssh:d2", reconnectTimer]]),
+      },
+      removeTabReference(tabId) {
+        this.tabReferences.delete(tabId);
+      },
+    },
+    telnetConnectionPool: {
+      connections: new Map([["telnet:d2", { key: "telnet:d2" }]]),
+      tabReferences: new Map([["tab-d2-telnet", "telnet:d2"]]),
+      healthCheckTimer: telnetHealthTimer,
+    },
+    releaseSSHConnection() {
+      releasedSshCount += 1;
+    },
+    cleanup() {
+      connectionCleanupCount += 1;
+
+      this.sshConnectionPool.connections.clear();
+      this.sshConnectionPool.tabReferences.clear();
+      if (this.sshConnectionPool.healthCheckTimer) {
+        clearInterval(this.sshConnectionPool.healthCheckTimer);
+        this.sshConnectionPool.healthCheckTimer = null;
+      }
+
+      const reconnectTimers =
+        this.sshConnectionPool.reconnectionManager.reconnectTimers;
+      reconnectTimers.forEach((timer) => clearTimeout(timer));
+      reconnectTimers.clear();
+      this.sshConnectionPool.reconnectionManager.sessions.clear();
+
+      this.telnetConnectionPool.connections.clear();
+      this.telnetConnectionPool.tabReferences.clear();
+      if (this.telnetConnectionPool.healthCheckTimer) {
+        clearInterval(this.telnetConnectionPool.healthCheckTimer);
+        this.telnetConnectionPool.healthCheckTimer = null;
+      }
+    },
+    getLastConnections() {
+      return [];
+    },
+  };
+
+  const sftpCoreMock = {
+    clearPendingOperationsForTab() {},
+    async shutdownAllSftpResources() {
+      sftpShutdownCount += 1;
+      const before = { ...sftpStats };
+      sftpStats = {
+        poolCount: 0,
+        sessionCount: 0,
+        pendingQueueCount: 0,
+        pendingOperationCount: 0,
+        inProgressOperationCount: 0,
+        sessionLockCount: 0,
+        borrowLockCount: 0,
+        healthCheckTimerActive: false,
+      };
+      return {
+        cleanedTabs: 1,
+        before,
+        after: { ...sftpStats },
+      };
+    },
+    getSftpRuntimeStats() {
+      return { ...sftpStats };
+    },
+    stopSftpHealthCheck() {
+      sftpStats.healthCheckTimerActive = false;
+    },
+  };
+
+  const sftpTransferMock = {
+    async cleanupActiveTransfersForTab() {
+      return { success: true, cleanedCount: 0 };
+    },
+    async cleanupAllActiveTransfers() {
+      transferCleanupAllCount += 1;
+      transferStats = {
+        activeTransferCount: 0,
+        activeStreamCount: 0,
+        trackedTabCount: 0,
+      };
+      return {
+        success: true,
+        cleanedCount: 2,
+        stoppedStreams: 4,
+        reason: "app-quit",
+        remainingTransfers: 0,
+      };
+    },
+    getTransferRuntimeStats() {
+      return { ...transferStats };
+    },
+  };
+
+  injectMock(loggerPath, { logToFile() {} });
+  injectMock(resourceManagerPath, {
+    mainProcessResourceManager: {
+      async cleanup() {},
+    },
+  });
+  injectMock(processManagerPath, {
+    getAllProcesses() {
+      return processMap.entries();
+    },
+    clearAllProcesses() {
+      processMap.clear();
+    },
+  });
+  injectMock(connectionManagerPath, connectionManagerMock);
+  injectMock(fileCachePath, {
+    cacheDir: "mock-cache",
+    async cleanupAllCaches() {
+      return 0;
+    },
+    async clearCacheDirectory() {
+      return true;
+    },
+  });
+  injectMock(configServicePath, {
+    saveCommandHistory() {},
+    saveLastConnections() {
+      return true;
+    },
+  });
+  injectMock(commandHistoryPath, {
+    exportHistory() {
+      return [];
+    },
+  });
+  injectMock(sftpCorePath, sftpCoreMock);
+  injectMock(sftpTransferPath, sftpTransferMock);
+  injectMock(externalEditorPath, {
+    async cleanup() {},
+  });
+
+  clearRequire(appCleanupPath);
+
+  try {
+    const AppCleanup = require(appCleanupPath);
+    const cleaner = new AppCleanup({
+      isPackaged: false,
+      getPath() {
+        return ROOT;
+      },
+      getAppPath() {
+        return ROOT;
+      },
+      quit() {},
+    });
+
+    await cleaner.performCleanup({
+      async cleanup() {},
+    });
+
+    assert.equal(transferCleanupAllCount, 1, "退出时应清理所有活跃SFTP传输");
+    assert.equal(sftpShutdownCount, 1, "退出时应执行SFTP引擎全量关停");
+    assert.equal(connectionCleanupCount, 1, "退出时应清理连接管理器");
+    assert.ok(releasedSshCount >= 1, "退出时应释放SSH连接引用");
+    assert.equal(processMap.size, 0, "退出后进程表应清空");
+
+    const finalSftpStats = sftpCoreMock.getSftpRuntimeStats();
+    assert.equal(finalSftpStats.sessionCount, 0, "退出后SFTP会话应为0");
+    assert.equal(finalSftpStats.pendingOperationCount, 0, "退出后SFTP队列应为0");
+    assert.equal(finalSftpStats.sessionLockCount, 0, "退出后SFTP锁应清零");
+    assert.equal(
+      finalSftpStats.healthCheckTimerActive,
+      false,
+      "退出后SFTP健康检查定时器应停止",
+    );
+
+    const finalTransferStats = sftpTransferMock.getTransferRuntimeStats();
+    assert.equal(
+      finalTransferStats.activeTransferCount,
+      0,
+      "退出后活跃SFTP传输应为0",
+    );
+    assert.equal(
+      finalTransferStats.activeStreamCount,
+      0,
+      "退出后SFTP传输流应全部停止",
+    );
+
+    assert.equal(
+      connectionManagerMock.sshConnectionPool.connections.size,
+      0,
+      "退出后SSH连接应为0",
+    );
+    assert.equal(
+      connectionManagerMock.sshConnectionPool.reconnectionManager.sessions.size,
+      0,
+      "退出后重连会话应为0",
+    );
+    assert.equal(
+      connectionManagerMock.sshConnectionPool.reconnectionManager.reconnectTimers
+        .size,
+      0,
+      "退出后重连定时器应为0",
+    );
+    assert.equal(
+      connectionManagerMock.telnetConnectionPool.connections.size,
+      0,
+      "退出后Telnet连接应为0",
+    );
+
+    return true;
+  } finally {
+    clearTimeout(reconnectTimer);
+    clearInterval(sshHealthTimer);
+    clearInterval(telnetHealthTimer);
+    clearRequire(appCleanupPath);
+    restoreMocks();
+  }
+}
+
 async function run() {
   const results = [];
   const tasks = [
@@ -910,6 +1225,11 @@ async function run() {
       id: "D1",
       name: "D. 重复初始化/清理后监听器数量稳定（无泄漏）",
       fn: testDReconnectHandlersNoLeak,
+    },
+    {
+      id: "D2",
+      name: "D. app quit 后连接、SFTP会话、定时器全部释放",
+      fn: testD2AppQuitReleasesAllResources,
     },
   ];
 

@@ -144,6 +144,88 @@ function stopSftpHealthCheck() {
   }
 }
 
+function getSftpRuntimeStats() {
+  let pendingCount = 0;
+  let inProgressCount = 0;
+
+  for (const queue of pendingOperations.values()) {
+    if (!Array.isArray(queue)) {
+      continue;
+    }
+    pendingCount += queue.length;
+    inProgressCount += queue.filter((op) => Boolean(op?.inProgress)).length;
+  }
+
+  return {
+    poolCount: sftpPools.size,
+    sessionCount: getTotalSessionCount(),
+    pendingQueueCount: pendingOperations.size,
+    pendingOperationCount: pendingCount,
+    inProgressOperationCount: inProgressCount,
+    sessionLockCount: sftpSessionLocks.size,
+    borrowLockCount: sftpBorrowLocks.size,
+    healthCheckTimerActive: Boolean(sftpHealthCheckTimer),
+  };
+}
+
+async function shutdownAllSftpResources(options = {}) {
+  const { userCancelled = false } = options;
+  const before = getSftpRuntimeStats();
+  const tabIds = new Set([
+    ...sftpPools.keys(),
+    ...pendingOperations.keys(),
+    ...sftpSessionLocks.keys(),
+    ...sftpBorrowLocks.keys(),
+  ]);
+
+  stopSftpHealthCheck();
+
+  for (const tabId of tabIds) {
+    try {
+      await closeAllSftpSessionsForTab(tabId);
+    } catch (error) {
+      if (typeof logToFile === "function") {
+        logToFile(
+          `sftpEngine: Failed to close all sessions for tab ${tabId}: ${error.message}`,
+          "WARN",
+        );
+      }
+    }
+
+    try {
+      clearPendingOperationsForTab(tabId, { userCancelled });
+    } catch (error) {
+      if (typeof logToFile === "function") {
+        logToFile(
+          `sftpEngine: Failed to clear pending operations for tab ${tabId}: ${error.message}`,
+          "WARN",
+        );
+      }
+    }
+  }
+
+  sftpPools.clear();
+  pendingOperations.clear();
+  sftpSessionLocks.clear();
+  sftpBorrowLocks.clear();
+
+  const after = getSftpRuntimeStats();
+  const summary = {
+    cleanedTabs: tabIds.size,
+    before,
+    after,
+  };
+
+  if (typeof logToFile === "function") {
+    logToFile(
+      `sftpEngine: shutdownAllSftpResources summary=${JSON.stringify(summary)}`,
+      "INFO",
+    );
+  }
+
+  return summary;
+}
+
 // 检查SFTP会话健康状况
 // 优化：添加并发限制，避免同时检查过多会话阻塞事件循环
 async function checkSftpSessionsHealth() {
@@ -1564,6 +1646,8 @@ module.exports = {
   init,
   startSftpHealthCheck,
   stopSftpHealthCheck,
+  shutdownAllSftpResources,
+  getSftpRuntimeStats,
   getSftpSession,
   getRawSftpSession,
   getSftpSessionInfo,

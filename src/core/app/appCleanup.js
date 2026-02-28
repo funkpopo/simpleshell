@@ -185,6 +185,107 @@ class AppCleanup {
     connectionManager.cleanup();
   }
 
+  buildCleanupSnapshot(stage) {
+    const sshPool = connectionManager.sshConnectionPool;
+    const telnetPool = connectionManager.telnetConnectionPool;
+    const reconnectManager = sshPool?.reconnectionManager;
+    const allProcesses =
+      typeof processManager.getAllProcesses === "function"
+        ? processManager.getAllProcesses()
+        : [];
+
+    return {
+      stage,
+      processCount: Array.from(allProcesses).length,
+      ssh: {
+        connections: sshPool?.connections?.size || 0,
+        tabReferences: sshPool?.tabReferences?.size || 0,
+        healthCheckTimerActive: Boolean(sshPool?.healthCheckTimer),
+        reconnectSessions: reconnectManager?.sessions?.size || 0,
+        reconnectTimers: reconnectManager?.reconnectTimers?.size || 0,
+      },
+      telnet: {
+        connections: telnetPool?.connections?.size || 0,
+        tabReferences: telnetPool?.tabReferences?.size || 0,
+        healthCheckTimerActive: Boolean(telnetPool?.healthCheckTimer),
+      },
+      sftp:
+        sftpCore && typeof sftpCore.getSftpRuntimeStats === "function"
+          ? sftpCore.getSftpRuntimeStats()
+          : null,
+      sftpTransfer:
+        sftpTransfer &&
+        typeof sftpTransfer.getTransferRuntimeStats === "function"
+          ? sftpTransfer.getTransferRuntimeStats()
+          : null,
+    };
+  }
+
+  hasResidualRuntimeResources(snapshot) {
+    const sftpStats = snapshot?.sftp || {};
+    const transferStats = snapshot?.sftpTransfer || {};
+
+    return Boolean(
+      (snapshot?.processCount || 0) > 0 ||
+      (snapshot?.ssh?.connections || 0) > 0 ||
+      (snapshot?.ssh?.tabReferences || 0) > 0 ||
+      (snapshot?.ssh?.reconnectSessions || 0) > 0 ||
+      (snapshot?.ssh?.reconnectTimers || 0) > 0 ||
+      snapshot?.ssh?.healthCheckTimerActive ||
+      (snapshot?.telnet?.connections || 0) > 0 ||
+      (snapshot?.telnet?.tabReferences || 0) > 0 ||
+      snapshot?.telnet?.healthCheckTimerActive ||
+      (sftpStats.poolCount || 0) > 0 ||
+      (sftpStats.sessionCount || 0) > 0 ||
+      (sftpStats.pendingQueueCount || 0) > 0 ||
+      (sftpStats.pendingOperationCount || 0) > 0 ||
+      (sftpStats.sessionLockCount || 0) > 0 ||
+      (sftpStats.borrowLockCount || 0) > 0 ||
+      sftpStats.healthCheckTimerActive ||
+      (transferStats.activeTransferCount || 0) > 0 ||
+      (transferStats.activeStreamCount || 0) > 0
+    );
+  }
+
+  async cleanupGlobalSftpResources() {
+    if (
+      sftpTransfer &&
+      typeof sftpTransfer.cleanupAllActiveTransfers === "function"
+    ) {
+      try {
+        const summary = await sftpTransfer.cleanupAllActiveTransfers({
+          reason: "app-quit",
+        });
+        logToFile(
+          `App quit transfer cleanup summary: ${JSON.stringify(summary)}`,
+          "INFO",
+        );
+      } catch (error) {
+        logToFile(
+          `App quit transfer cleanup failed: ${error.message}`,
+          "ERROR",
+        );
+      }
+    }
+
+    if (sftpCore && typeof sftpCore.shutdownAllSftpResources === "function") {
+      try {
+        const summary = await sftpCore.shutdownAllSftpResources();
+        logToFile(
+          `App quit SFTP core shutdown summary: ${JSON.stringify(summary)}`,
+          "INFO",
+        );
+      } catch (error) {
+        logToFile(`App quit SFTP core shutdown failed: ${error.message}`, "ERROR");
+      }
+      return;
+    }
+
+    if (sftpCore && typeof sftpCore.stopSftpHealthCheck === "function") {
+      sftpCore.stopSftpHealthCheck();
+    }
+  }
+
   /**
    * 清理缓存文件
    */
@@ -245,6 +346,11 @@ class AppCleanup {
    */
   async performCleanup(ipcSetup) {
     logToFile("应用开始退出流程，执行清理操作...", "INFO");
+    const beforeSnapshot = this.buildCleanupSnapshot("before-cleanup");
+    logToFile(
+      `App quit runtime snapshot(before): ${JSON.stringify(beforeSnapshot)}`,
+      "INFO",
+    );
 
     await this.cleanupResourceManager();
 
@@ -256,10 +362,23 @@ class AppCleanup {
     await this.cleanupMemoryFile();
     await this.cleanupExternalEditorManager();
     await this.cleanupAllProcesses();
+    await this.cleanupGlobalSftpResources();
     this.cleanupConnectionManager();
     await this.cleanupCacheFiles();
     this.saveCommandHistory();
     this.saveLastConnections();
+
+    const afterSnapshot = this.buildCleanupSnapshot("after-cleanup");
+    logToFile(
+      `App quit runtime snapshot(after): ${JSON.stringify(afterSnapshot)}`,
+      "INFO",
+    );
+    if (this.hasResidualRuntimeResources(afterSnapshot)) {
+      logToFile(
+        `App quit cleanup residual resources detected: ${JSON.stringify(afterSnapshot)}`,
+        "WARN",
+      );
+    }
 
     logToFile("所有清理操作完成，应用即将退出", "INFO");
   }

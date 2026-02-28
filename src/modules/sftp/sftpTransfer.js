@@ -2744,6 +2744,106 @@ async function cancelTransfer(tabId, transferKey) {
   return handleCancelTransfer(null, tabId, transferKey);
 }
 
+function forceStopTransfer(transferKey, transfer, reason = "app-quit") {
+  if (!transfer) {
+    activeTransfers.delete(transferKey);
+    return { stoppedStreams: 0 };
+  }
+
+  transfer.cancelled = true;
+  let stoppedStreams = 0;
+
+  if (transfer.activeStreams && transfer.activeStreams.size > 0) {
+    for (const stream of transfer.activeStreams) {
+      if (!stream || typeof stream.destroy !== "function") {
+        continue;
+      }
+      try {
+        stream.destroy(new Error(`Transfer cancelled: ${reason}`));
+        stoppedStreams++;
+      } catch {
+        // ignore stream destroy errors
+      }
+    }
+  }
+
+  activeTransfers.delete(transferKey);
+  return { stoppedStreams };
+}
+
+function getTransferRuntimeStats() {
+  let activeStreamCount = 0;
+  const tabIds = new Set();
+
+  for (const transfer of activeTransfers.values()) {
+    if (transfer?.tabId) {
+      tabIds.add(String(transfer.tabId));
+    }
+    if (transfer?.activeStreams && transfer.activeStreams.size > 0) {
+      activeStreamCount += transfer.activeStreams.size;
+    }
+  }
+
+  return {
+    activeTransferCount: activeTransfers.size,
+    activeStreamCount,
+    trackedTabCount: tabIds.size,
+  };
+}
+
+async function cleanupAllActiveTransfers(options = {}) {
+  const { reason = "app-quit", userCancelled = false } = options;
+  const transferKeys = Array.from(activeTransfers.keys());
+  const tabIds = new Set();
+  let cleanedCount = 0;
+  let stoppedStreams = 0;
+
+  for (const transferKey of transferKeys) {
+    const transfer = activeTransfers.get(transferKey);
+    if (transfer?.tabId) {
+      tabIds.add(String(transfer.tabId));
+    }
+
+    const result = forceStopTransfer(transferKey, transfer, reason);
+    stoppedStreams += result.stoppedStreams;
+    cleanedCount++;
+  }
+
+  if (
+    sftpCore &&
+    typeof sftpCore.clearPendingOperationsForTab === "function"
+  ) {
+    for (const tabId of tabIds) {
+      try {
+        sftpCore.clearPendingOperationsForTab(tabId, { userCancelled });
+      } catch (error) {
+        logToFile(
+          `sftpTransfer: Failed to clear pending operations during ${reason} cleanup for tab ${tabId}: ${error.message}`,
+          "WARN",
+        );
+      }
+    }
+  }
+
+  const summary = {
+    cleanedCount,
+    stoppedStreams,
+    reason,
+    remainingTransfers: activeTransfers.size,
+  };
+
+  logToFile(
+    `sftpTransfer: cleanupAllActiveTransfers summary=${JSON.stringify(summary)}`,
+    "INFO",
+  );
+
+  return {
+    success: true,
+    message: `已清理${cleanedCount}个活跃传输`,
+    ...summary,
+  };
+}
+
 /**
  * 清理指定tab的所有活跃SFTP传输
  * 当连接关闭、应用退出前或页面刷新时调用，确保所有相关资源被释放
@@ -2782,17 +2882,18 @@ async function cleanupActiveTransfersForTab(tabId) {
         "INFO",
       );
       const transfer = activeTransfers.get(transferKey);
-
-      if (transfer && transfer.sftp) {
+      const result = forceStopTransfer(
+        transferKey,
+        transfer,
+        "tab-cleanup",
+      );
+      if (result.stoppedStreams > 0) {
         logToFile(
-          `sftpTransfer: SFTP connection for ${transferKey} is managed by sftpCore, no need to close it manually`,
+          `sftpTransfer: Stopped ${result.stoppedStreams} streams for ${transferKey}`,
           "INFO",
         );
-
-        // 从活跃传输映射中删除
-        activeTransfers.delete(transferKey);
-        cleanedCount++;
       }
+      cleanedCount++;
     }
 
     logToFile(
@@ -2833,6 +2934,8 @@ module.exports = {
   handleDownloadFolder,
   handleCancelTransfer,
   cleanupActiveTransfersForTab,
+  cleanupAllActiveTransfers,
+  getTransferRuntimeStats,
   // 新增：断点续传相关功能
   getResumableTransfers: () => {
     if (!transferResumeManager) return [];
