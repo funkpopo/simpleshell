@@ -307,6 +307,29 @@ class TerminalHandlers {
     return this.writeToProcess(processId, data);
   }
 
+  _removeSSHProcessTabReference(proc, processId) {
+    const sshPool = this.connectionManager?.sshConnectionPool;
+    if (!sshPool || typeof sshPool.removeTabReference !== "function") {
+      return;
+    }
+
+    const tabCandidates = new Set();
+    if (proc?.config?.tabId) {
+      tabCandidates.add(String(proc.config.tabId));
+    }
+    if (processId !== undefined && processId !== null) {
+      tabCandidates.add(String(processId));
+    }
+
+    for (const tabId of tabCandidates) {
+      sshPool.removeTabReference(tabId, {
+        closeIfIdle: false,
+        closeOptions: { reason: "user", intentional: true },
+      });
+      logToFile(`清理SSH tab引用: ${tabId}`, "DEBUG");
+    }
+  }
+
   /**
    * 终止进程
    */
@@ -333,11 +356,14 @@ class TerminalHandlers {
         // 如果是SSH连接，释放连接池中的连接引用
         if (proc.type === "ssh2" && proc.connectionInfo) {
           // 标记为用户主动断开，避免自动重连误触发
+          proc.connectionInfo.closeReason = "user";
           proc.connectionInfo.intentionalClose = true;
           this.connectionManager.releaseSSHConnection(
             proc.connectionInfo.key,
             proc.config?.tabId,
+            { reason: "user", intentional: true },
           );
+          this._removeSSHProcessTabReference(proc, processId);
           logToFile(`释放SSH连接池引用: ${proc.connectionInfo.key}`, "INFO");
 
           // 注销延迟检测
@@ -503,7 +529,14 @@ class TerminalHandlers {
         // 关闭SSH连接（如果存在）
         try {
           if (processObj.connectionInfo) {
+            processObj.connectionInfo.closeReason = "user";
             processObj.connectionInfo.intentionalClose = true;
+            this.connectionManager.releaseSSHConnection(
+              processObj.connectionInfo.key,
+              processObj.config?.tabId,
+              { reason: "user", intentional: true },
+            );
+            this._removeSSHProcessTabReference(processObj, processId);
           }
           if (
             processObj.client &&

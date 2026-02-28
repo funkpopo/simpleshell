@@ -141,8 +141,8 @@ class ConnectionManager {
     return this.sshConnectionPool.getConnection(sshConfig);
   }
 
-  releaseSSHConnection(connectionKey, tabId = null) {
-    this.sshConnectionPool.releaseConnection(connectionKey, tabId);
+  releaseSSHConnection(connectionKey, tabId = null, options = {}) {
+    this.sshConnectionPool.releaseConnection(connectionKey, tabId, options);
   }
 
   // Telnet连接池相关方法
@@ -150,8 +150,8 @@ class ConnectionManager {
     return this.telnetConnectionPool.getConnection(telnetConfig);
   }
 
-  releaseTelnetConnection(connectionKey, tabId = null) {
-    this.telnetConnectionPool.releaseConnection(connectionKey, tabId);
+  releaseTelnetConnection(connectionKey, tabId = null, options = {}) {
+    this.telnetConnectionPool.releaseConnection(connectionKey, tabId, options);
   }
 
   // 添加标签页引用追踪
@@ -187,10 +187,16 @@ class ConnectionManager {
     try {
       // 根据连接键前缀判断是SSH还是Telnet
       if (connectionKey.startsWith("telnet:")) {
-        this.telnetConnectionPool.closeConnection(connectionKey);
+        this.telnetConnectionPool.closeConnection(connectionKey, {
+          reason: "user",
+          intentional: true,
+        });
         logToFile(`手动关闭Telnet连接: ${connectionKey}`, "INFO");
       } else {
-        this.sshConnectionPool.closeConnection(connectionKey);
+        this.sshConnectionPool.closeConnection(connectionKey, {
+          reason: "user",
+          intentional: true,
+        });
         logToFile(`手动关闭SSH连接: ${connectionKey}`, "INFO");
       }
     } catch (error) {

@@ -6,6 +6,13 @@
 const EventEmitter = require("events");
 const { logToFile } = require("../utils/logger");
 
+const CLOSE_REASON = Object.freeze({
+  USER: "user",
+  SYSTEM: "system",
+  HEALTH: "health",
+  NETWORK: "network",
+});
+
 class BaseConnectionPool extends EventEmitter {
   /**
    * 构造函数
@@ -75,7 +82,10 @@ class BaseConnectionPool extends EventEmitter {
 
     // 关闭所有连接
     for (const key of this.connections.keys()) {
-      this.closeConnection(key);
+      this.closeConnection(key, {
+        reason: CLOSE_REASON.SYSTEM,
+        intentional: false,
+      });
     }
 
     // 清理数据结构
@@ -183,12 +193,58 @@ class BaseConnectionPool extends EventEmitter {
     throw new Error("isConnectionHealthy() 必须由子类实现");
   }
 
+  _normalizeReleaseArgs(tabIdOrOptions, options) {
+    if (
+      tabIdOrOptions &&
+      typeof tabIdOrOptions === "object" &&
+      !Array.isArray(tabIdOrOptions)
+    ) {
+      return {
+        tabId: null,
+        options: tabIdOrOptions,
+      };
+    }
+
+    return {
+      tabId: tabIdOrOptions || null,
+      options: options || {},
+    };
+  }
+
+  _normalizeCloseOptions(options, defaultReason = CLOSE_REASON.SYSTEM) {
+    let normalized = {};
+    if (typeof options === "string") {
+      normalized.reason = options;
+    } else if (options && typeof options === "object") {
+      normalized = { ...options };
+    }
+
+    const reason =
+      typeof normalized.reason === "string" && normalized.reason.trim()
+        ? normalized.reason.trim().toLowerCase()
+        : defaultReason;
+    const intentional =
+      typeof normalized.intentional === "boolean"
+        ? normalized.intentional
+        : reason === CLOSE_REASON.USER;
+
+    return {
+      ...normalized,
+      reason,
+      intentional,
+    };
+  }
+
   /**
    * 释放连接
    * @param {string} key - 连接键
    * @param {string|null} tabId - 标签页ID
    */
-  releaseConnection(key, tabId = null) {
+  releaseConnection(key, tabIdOrOptions = null, maybeOptions = {}) {
+    const { tabId, options } = this._normalizeReleaseArgs(
+      tabIdOrOptions,
+      maybeOptions,
+    );
     const conn = this.connections.get(key);
 
     if (!conn) {
@@ -196,32 +252,66 @@ class BaseConnectionPool extends EventEmitter {
       return;
     }
 
+    const closeOptions = this._normalizeCloseOptions(
+      options,
+      CLOSE_REASON.SYSTEM,
+    );
+    const closeIfIdle = closeOptions.closeIfIdle !== false;
+
     // 减少引用计数
     conn.refCount = Math.max(0, conn.refCount - 1);
     conn.lastUsed = Date.now();
+    conn.closeReason = closeOptions.reason;
+    conn.intentionalClose = closeOptions.intentional;
 
-    this._logInfo(`释放连接: ${key}, 当前引用计数: ${conn.refCount}`);
+    this._logInfo(
+      `释放连接: ${key}, 当前引用计数: ${conn.refCount}, 原因=${closeOptions.reason}`,
+    );
 
     // 删除标签页引用
-    if (tabId && this.tabReferences.has(tabId)) {
-      this.tabReferences.delete(tabId);
-      this._logInfo(`删除标签页引用: ${tabId} -> ${key}`);
+    if (tabId) {
+      this.removeTabReference(tabId, { closeIfIdle: false });
     }
 
     // 如果没有引用且没有标签页关联，关闭连接
-    if (conn.refCount === 0 && !this.isConnectionReferencedByTabs(key)) {
+    if (
+      closeIfIdle &&
+      conn.refCount === 0 &&
+      !this.isConnectionReferencedByTabs(key)
+    ) {
       this._logInfo(`连接无引用，准备关闭: ${key}`);
-      this.closeConnection(key);
+      this.closeConnection(key, closeOptions);
     }
 
-    this.emit("connectionReleased", { key, refCount: conn.refCount });
+    this.emit("connectionReleased", {
+      key,
+      refCount: conn.refCount,
+      reason: closeOptions.reason,
+    });
+  }
+
+  _removeTabReferencesForConnection(key) {
+    if (!key) return [];
+    const removedTabIds = [];
+
+    for (const [tabId, connectionKey] of this.tabReferences.entries()) {
+      if (connectionKey !== key) {
+        continue;
+      }
+      this.tabReferences.delete(tabId);
+      removedTabIds.push(tabId);
+      this._logInfo(`移除标签页引用: ${tabId} -> ${key}`);
+      this.emit("tabReferenceRemoved", { tabId, key });
+    }
+
+    return removedTabIds;
   }
 
   /**
    * 关闭连接
    * @param {string} key - 连接键
    */
-  closeConnection(key) {
+  closeConnection(key, options = {}) {
     const conn = this.connections.get(key);
 
     if (!conn) {
@@ -229,13 +319,19 @@ class BaseConnectionPool extends EventEmitter {
       return;
     }
 
-    this._logInfo(`关闭连接: ${key}`);
+    const closeOptions = this._normalizeCloseOptions(
+      options,
+      CLOSE_REASON.SYSTEM,
+    );
+    this._logInfo(`关闭连接: ${key}, 原因=${closeOptions.reason}`);
 
-    // 标记为有意关闭，避免触发重连
-    conn.intentionalClose = true;
+    // 关闭来源（用于下游重连策略判断）
+    conn.intentionalClose = closeOptions.intentional;
+    conn.closeReason = closeOptions.reason;
 
     // 先从连接池中删除，避免重复关闭
     this.connections.delete(key);
+    const removedTabIds = this._removeTabReferencesForConnection(key);
 
     // 清理监听器
     if (conn.listeners && conn.listeners.size > 0) {
@@ -274,7 +370,13 @@ class BaseConnectionPool extends EventEmitter {
       }
     }
 
-    this.emit("connectionClosed", { key, connection: conn });
+    this.emit("connectionClosed", {
+      key,
+      connection: conn,
+      reason: closeOptions.reason,
+      intentional: closeOptions.intentional,
+      removedTabIds,
+    });
   }
 
   /**
@@ -316,9 +418,23 @@ class BaseConnectionPool extends EventEmitter {
    * 移除标签页引用
    * @param {string} tabId - 标签页ID
    */
-  removeTabReference(tabId) {
+  removeTabReference(tabId, options = {}) {
     const key = this.tabReferences.get(tabId);
     if (key) {
+      const closeIfIdle = !(
+        options &&
+        typeof options === "object" &&
+        options.closeIfIdle === false
+      );
+      const closeOptionsSource =
+        options && typeof options === "object" && options.closeOptions
+          ? options.closeOptions
+          : options;
+      const closeOptions = this._normalizeCloseOptions(
+        closeOptionsSource,
+        CLOSE_REASON.SYSTEM,
+      );
+
       this.tabReferences.delete(tabId);
       this._logInfo(`移除标签页引用: ${tabId} -> ${key}`);
       this.emit("tabReferenceRemoved", { tabId, key });
@@ -326,11 +442,12 @@ class BaseConnectionPool extends EventEmitter {
       // 检查连接是否还有其他引用
       const conn = this.connections.get(key);
       if (
+        closeIfIdle &&
         conn &&
         conn.refCount === 0 &&
         !this.isConnectionReferencedByTabs(key)
       ) {
-        this.closeConnection(key);
+        this.closeConnection(key, closeOptions);
       }
     }
   }
@@ -452,7 +569,10 @@ class BaseConnectionPool extends EventEmitter {
     // 仅关闭真正空闲且无引用的连接
     toClose.forEach(({ key, reason }) => {
       this._logInfo(`健康检查命中: ${key}, 动作=关闭, 原因=${reason}`);
-      this.closeConnection(key);
+      this.closeConnection(key, {
+        reason: CLOSE_REASON.HEALTH,
+        intentional: false,
+      });
     });
 
     this.emit("healthCheckCompleted", {
@@ -488,7 +608,10 @@ class BaseConnectionPool extends EventEmitter {
     // 清理指定数量的连接
     let cleaned = 0;
     for (let i = 0; i < Math.min(count, idle.length); i++) {
-      this.closeConnection(idle[i].key);
+      this.closeConnection(idle[i].key, {
+        reason: CLOSE_REASON.SYSTEM,
+        intentional: false,
+      });
       cleaned++;
     }
 
@@ -751,7 +874,10 @@ class BaseConnectionPool extends EventEmitter {
     // 默认实现：直接关闭连接
     // 子类可以覆盖此方法以实现重连逻辑
     this._logInfo(`关闭不健康的连接: ${conn.key}`);
-    this.closeConnection(conn.key);
+    this.closeConnection(conn.key, {
+      reason: CLOSE_REASON.HEALTH,
+      intentional: false,
+    });
   }
 
   /**
@@ -803,5 +929,7 @@ class BaseConnectionPool extends EventEmitter {
     logToFile(fullMessage, "INFO");
   }
 }
+
+BaseConnectionPool.CLOSE_REASON = CLOSE_REASON;
 
 module.exports = BaseConnectionPool;

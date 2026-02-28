@@ -6,6 +6,78 @@ const { safeHandle } = require("../ipcResponse");
 const reconnectListeners = new Map();
 let boundConnectionPool = null;
 let boundReconnectionManager = null;
+const recentReconnectTerminalEvents = new Map();
+
+const DEFAULT_RECONNECT_HINT =
+  "请检查代理/VPN和网络后重试，可点击“手动重连”。";
+const DUPLICATE_TERMINAL_EVENT_TTL_MS = 3000;
+
+function resolveMaxAttempts(reconnectionManager, sessionId, fallback = null) {
+  if (Number.isFinite(fallback)) {
+    return fallback;
+  }
+  if (!reconnectionManager || !sessionId) {
+    return null;
+  }
+  const status = reconnectionManager.getSessionStatus?.(sessionId);
+  const maxRetries = Number(status?.maxRetries);
+  return Number.isFinite(maxRetries) ? maxRetries : null;
+}
+
+function normalizeReconnectPayload(
+  reconnectionManager,
+  payload = {},
+  options = {},
+) {
+  const sessionId = payload.sessionId || options.sessionId || null;
+  const attemptsValue =
+    payload.attempts ?? payload.retryCount ?? payload.attempt ?? 0;
+  const maxAttemptsValue = payload.maxAttempts ?? payload.maxRetries ?? null;
+  const normalized = {
+    tabId: extractTabIdFromSessionId(sessionId),
+    sessionId,
+    attempts: Number.isFinite(Number(attemptsValue))
+      ? Number(attemptsValue)
+      : 0,
+    maxAttempts: resolveMaxAttempts(
+      reconnectionManager,
+      sessionId,
+      Number(maxAttemptsValue),
+    ),
+    error:
+      payload.error === undefined || payload.error === null
+        ? null
+        : String(payload.error),
+  };
+
+  if (payload.reason !== undefined) {
+    normalized.reason = payload.reason;
+  }
+  if (payload.delay !== undefined) {
+    normalized.delay = payload.delay;
+  }
+  if (options.hint) {
+    normalized.hint = options.hint;
+  }
+
+  return normalized;
+}
+
+function shouldSkipDuplicateTerminalEvent(channel, payload) {
+  if (channel !== "reconnect-failed" && channel !== "reconnect-abandoned") {
+    return false;
+  }
+
+  const signature = `${channel}|${payload.sessionId}|${payload.attempts}|${payload.error}`;
+  const now = Date.now();
+  const lastAt = recentReconnectTerminalEvents.get(signature);
+  if (lastAt && now - lastAt < DUPLICATE_TERMINAL_EVENT_TTL_MS) {
+    return true;
+  }
+
+  recentReconnectTerminalEvents.set(signature, now);
+  return false;
+}
 
 // 注册重连相关的IPC处理器
 function registerReconnectHandlers(connectionPool) {
@@ -103,11 +175,18 @@ function registerReconnectHandlers(connectionPool) {
   // 设置重连事件转发
   if (boundReconnectionManager) {
     // 重连开始事件
-    const onReconnectStarted = ({ sessionId }) => {
-      const tabId = extractTabIdFromSessionId(sessionId);
+    const onReconnectStarted = ({ sessionId, attempt, maxRetries }) => {
+      const payload = normalizeReconnectPayload(
+        boundReconnectionManager,
+        {
+          sessionId,
+          attempts: attempt,
+          maxAttempts: maxRetries,
+          error: null,
+        },
+      );
       broadcastToRenderer("reconnect-started", {
-        tabId,
-        sessionId,
+        ...payload,
         timestamp: Date.now(),
       });
     };
@@ -115,14 +194,24 @@ function registerReconnectHandlers(connectionPool) {
     reconnectListeners.set("rm:reconnectStarted", onReconnectStarted);
 
     // 重连进度事件
-    const onReconnectScheduled = ({ sessionId, delay, retryCount }) => {
-      const tabId = extractTabIdFromSessionId(sessionId);
+    const onReconnectScheduled = ({
+      sessionId,
+      delay,
+      retryCount,
+      maxRetries,
+    }) => {
+      const payload = normalizeReconnectPayload(
+        boundReconnectionManager,
+        {
+          sessionId,
+          attempts: retryCount,
+          maxAttempts: maxRetries,
+          delay,
+          error: null,
+        },
+      );
       broadcastToRenderer("reconnect-progress", {
-        tabId,
-        sessionId,
-        attempts: retryCount,
-        maxAttempts: 5,
-        delay,
+        ...payload,
         timestamp: Date.now(),
       });
     };
@@ -130,17 +219,23 @@ function registerReconnectHandlers(connectionPool) {
     reconnectListeners.set("rm:reconnectScheduled", onReconnectScheduled);
 
     // 重连成功事件
-    const onReconnectSuccess = ({ sessionId, attempts }) => {
-      const tabId = extractTabIdFromSessionId(sessionId);
+    const onReconnectSuccess = ({ sessionId, attempts, maxRetries }) => {
+      const payload = normalizeReconnectPayload(
+        boundReconnectionManager,
+        {
+          sessionId,
+          attempts,
+          maxAttempts: maxRetries,
+          error: null,
+        },
+      );
       logToFile(
-        `重连成功通知前端: tabId=${tabId}, attempts=${attempts}`,
+        `重连成功通知前端: tabId=${payload.tabId}, attempts=${payload.attempts}`,
         "INFO",
       );
 
       broadcastToRenderer("reconnect-success", {
-        tabId,
-        sessionId,
-        attempts,
+        ...payload,
         timestamp: Date.now(),
       });
     };
@@ -148,15 +243,32 @@ function registerReconnectHandlers(connectionPool) {
     reconnectListeners.set("rm:reconnectSuccess", onReconnectSuccess);
 
     // 重连失败事件
-    const onReconnectFailed = ({ sessionId, error, attempts }) => {
-      const tabId = extractTabIdFromSessionId(sessionId);
-      logToFile(`重连失败通知前端: tabId=${tabId}, error=${error}`, "ERROR");
+    const onReconnectFailed = ({ sessionId, error, attempts, maxRetries }) => {
+      const payload = normalizeReconnectPayload(
+        boundReconnectionManager,
+        {
+          sessionId,
+          attempts,
+          maxAttempts: maxRetries,
+          error,
+        },
+        { hint: DEFAULT_RECONNECT_HINT },
+      );
+      if (shouldSkipDuplicateTerminalEvent("reconnect-failed", payload)) {
+        logToFile(
+          `跳过重复重连失败广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
+          "DEBUG",
+        );
+        return;
+      }
+
+      logToFile(
+        `重连失败通知前端: tabId=${payload.tabId}, error=${payload.error}`,
+        "ERROR",
+      );
 
       broadcastToRenderer("reconnect-failed", {
-        tabId,
-        sessionId,
-        error,
-        attempts,
+        ...payload,
         timestamp: Date.now(),
       });
     };
@@ -164,15 +276,40 @@ function registerReconnectHandlers(connectionPool) {
     reconnectListeners.set("rm:reconnectFailed", onReconnectFailed);
 
     // 重连放弃事件
-    const onReconnectAbandoned = ({ sessionId, reason, attempts }) => {
-      const tabId = extractTabIdFromSessionId(sessionId);
-      logToFile(`重连放弃通知前端: tabId=${tabId}, reason=${reason}`, "WARN");
+    const onReconnectAbandoned = ({
+      sessionId,
+      reason,
+      error,
+      attempts,
+      maxRetries,
+    }) => {
+      const finalError = error || reason || "自动重连已放弃";
+      const payload = normalizeReconnectPayload(
+        boundReconnectionManager,
+        {
+          sessionId,
+          attempts,
+          maxAttempts: maxRetries,
+          error: finalError,
+          reason,
+        },
+        { hint: DEFAULT_RECONNECT_HINT },
+      );
+      if (shouldSkipDuplicateTerminalEvent("reconnect-abandoned", payload)) {
+        logToFile(
+          `跳过重复重连放弃广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
+          "DEBUG",
+        );
+        return;
+      }
+
+      logToFile(
+        `重连放弃通知前端: tabId=${payload.tabId}, reason=${payload.error}`,
+        "WARN",
+      );
 
       broadcastToRenderer("reconnect-abandoned", {
-        tabId,
-        sessionId,
-        reason,
-        attempts,
+        ...payload,
         timestamp: Date.now(),
       });
     };
@@ -251,6 +388,7 @@ function cleanupReconnectHandlers() {
   boundConnectionPool = null;
   boundReconnectionManager = null;
   reconnectListeners.clear();
+  recentReconnectTerminalEvents.clear();
 
   // 移除所有IPC处理器
   ipcMain.removeHandler("get-reconnect-status");
