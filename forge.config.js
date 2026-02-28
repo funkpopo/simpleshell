@@ -126,6 +126,7 @@ module.exports = async () => {
     packagerConfig: {
       asar: true,
       icon: "./src/assets/logo",
+      electronLanguages: ["en-US", "zh-CN"],
       download: {
         unsafelyDisableChecksums: false,
       },
