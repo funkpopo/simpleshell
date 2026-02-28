@@ -151,12 +151,15 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   onReconnectSuccess: (callback) =>
     ipcRenderer.on("reconnect-success", callback),
   onReconnectFailed: (callback) => ipcRenderer.on("reconnect-failed", callback),
+  onReconnectAbandoned: (callback) =>
+    ipcRenderer.on("reconnect-abandoned", callback),
   onConnectionLost: (callback) => ipcRenderer.on("connection-lost", callback),
   removeReconnectListeners: () => {
     ipcRenderer.removeAllListeners("reconnect-started");
     ipcRenderer.removeAllListeners("reconnect-progress");
     ipcRenderer.removeAllListeners("reconnect-success");
     ipcRenderer.removeAllListeners("reconnect-failed");
+    ipcRenderer.removeAllListeners("reconnect-abandoned");
     ipcRenderer.removeAllListeners("connection-lost");
   },
 

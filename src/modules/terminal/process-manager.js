@@ -188,6 +188,7 @@ class ProcessManager {
         if (processInfo.connectionKey) {
           if (processInfo.connectionInfo) {
             // 标记为用户主动断开，避免自动重连误触发
+            processInfo.connectionInfo.closeReason = "user";
             processInfo.connectionInfo.intentionalClose = true;
           }
           const connectionManager = require("../connection");
@@ -195,6 +196,7 @@ class ProcessManager {
           connectionManager.releaseSSHConnection(
             processInfo.connectionKey,
             processInfo.tabId,
+            { reason: "user", intentional: true },
           );
           logToFile(
             `释放连接池连接: ${processInfo.connectionKey}, 标签页: ${processInfo.tabId}`,

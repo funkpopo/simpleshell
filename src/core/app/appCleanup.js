@@ -103,8 +103,24 @@ class AppCleanup {
   releaseSSHConnection(proc) {
     if (proc.type === "ssh2" && proc.connectionInfo) {
       try {
-        proc.connectionInfo.intentionalClose = true;
-        connectionManager.releaseSSHConnection(proc.connectionInfo.key, proc.config?.tabId);
+        proc.connectionInfo.closeReason = "system";
+        proc.connectionInfo.intentionalClose = false;
+        connectionManager.releaseSSHConnection(
+          proc.connectionInfo.key,
+          proc.config?.tabId,
+          { reason: "system", intentional: false },
+        );
+        if (connectionManager.sshConnectionPool?.removeTabReference) {
+          if (proc.config?.tabId) {
+            connectionManager.sshConnectionPool.removeTabReference(
+              String(proc.config.tabId),
+              {
+                closeIfIdle: false,
+                closeOptions: { reason: "system", intentional: false },
+              },
+            );
+          }
+        }
         logToFile(`释放SSH连接池引用 (app quit): ${proc.connectionInfo.key}`, "INFO");
       } catch (error) {
         logToFile(`Error releasing SSH connection during app quit: ${error.message}`, "ERROR");

@@ -77,6 +77,7 @@ class ReconnectionManager extends EventEmitter {
     this.reconnectQueues = new Map();
     this.failurePatterns = new Map();
     this.reconnectTimers = new Map(); // 保存定时器引用，用于取消待执行的重连
+    this.replacingSessions = new Set(); // 防止同一 session 并发替换连接对象
 
     // 统计信息
     this.statistics = {
@@ -103,13 +104,74 @@ class ReconnectionManager extends EventEmitter {
 
   // 注册连接会话
   registerSession(sessionId, connection, config, options = {}) {
+    if (!sessionId || !connection) {
+      throw new Error("注册重连会话失败: sessionId 或 connection 不可用");
+    }
+
     const {
       // 断线场景默认应进入 pending 并启动重连；手动注册（例如用户点“手动重连”）可关闭 autoStart
       autoStart = true,
       state,
       failureReason = FAILURE_REASON.NETWORK,
       intentionalClose = false,
+      replaceConnection = true,
     } = options || {};
+
+    const existingSession = this.sessions.get(sessionId);
+    if (existingSession) {
+      const shouldReplaceConnection =
+        replaceConnection &&
+        connection &&
+        existingSession.connection !== connection;
+
+      if (shouldReplaceConnection) {
+        const oldConnection = existingSession.connection;
+        try {
+          if (
+            oldConnection &&
+            typeof oldConnection.removeAllListeners === "function"
+          ) {
+            oldConnection.removeAllListeners();
+          }
+        } catch {
+          // 忽略旧连接清理异常
+        }
+
+        existingSession.connection = connection;
+        this.setupConnectionListeners(existingSession);
+      }
+
+      if (config) {
+        existingSession.config = config;
+      }
+      existingSession.intentionalClose = intentionalClose;
+
+      if (state && existingSession.state !== RECONNECT_STATE.RECONNECTING) {
+        existingSession.state = state;
+      } else if (autoStart && existingSession.state === RECONNECT_STATE.CONNECTED) {
+        existingSession.state = RECONNECT_STATE.PENDING;
+      }
+
+      logToFile(`复用重连会话: ${sessionId}`, "DEBUG");
+      this.emit("sessionRegistered", {
+        sessionId,
+        session: existingSession,
+        reused: true,
+      });
+
+      if (autoStart && existingSession.state === RECONNECT_STATE.PENDING) {
+        const hasPendingTimer = this.reconnectTimers.has(sessionId);
+        if (
+          !hasPendingTimer &&
+          existingSession.state !== RECONNECT_STATE.RECONNECTING
+        ) {
+          this._ensureReconnectWindowStarted(existingSession);
+          void this.scheduleReconnect(existingSession, failureReason);
+        }
+      }
+
+      return existingSession;
+    }
 
     const session = {
       id: sessionId,
@@ -146,11 +208,17 @@ class ReconnectionManager extends EventEmitter {
       this._ensureReconnectWindowStarted(session);
       void this.scheduleReconnect(session, failureReason);
     }
+
+    return session;
   }
 
   // 设置连接监听器
   setupConnectionListeners(session) {
     const connection = session.connection;
+    if (!connection || typeof connection.on !== "function") {
+      logToFile(`跳过注册重连监听(连接对象不可监听): ${session.id}`, "WARN");
+      return;
+    }
 
     // 监听连接错误
     connection.on("error", (error) => {
@@ -1147,28 +1215,51 @@ class ReconnectionManager extends EventEmitter {
 
   // 替换连接
   async replaceConnection(session, newConnection) {
-    const oldConnection = session.connection;
-
-    // 移除旧连接的监听器
-    oldConnection.removeAllListeners();
-
-    // 设置新连接
-    session.connection = newConnection;
-
-    // 设置新连接的监听器
-    this.setupConnectionListeners(session);
-
-    // 尝试优雅关闭旧连接
-    try {
-      oldConnection.end();
-    } catch {
-      // 忽略关闭错误
+    if (!session || !newConnection) {
+      return;
     }
 
-    this.emit("connectionReplaced", {
-      sessionId: session.id,
-      newConnection,
-    });
+    if (this.replacingSessions.has(session.id)) {
+      logToFile(`跳过并发连接替换: ${session.id}`, "DEBUG");
+      return;
+    }
+
+    this.replacingSessions.add(session.id);
+    const oldConnection = session.connection;
+
+    if (oldConnection === newConnection) {
+      this.replacingSessions.delete(session.id);
+      return;
+    }
+
+    try {
+      // 移除旧连接的监听器
+      if (oldConnection && typeof oldConnection.removeAllListeners === "function") {
+        oldConnection.removeAllListeners();
+      }
+
+      // 设置新连接
+      session.connection = newConnection;
+
+      // 设置新连接的监听器
+      this.setupConnectionListeners(session);
+
+      // 尝试优雅关闭旧连接
+      try {
+        if (oldConnection && typeof oldConnection.end === "function") {
+          oldConnection.end();
+        }
+      } catch {
+        // 忽略关闭错误
+      }
+
+      this.emit("connectionReplaced", {
+        sessionId: session.id,
+        newConnection,
+      });
+    } finally {
+      this.replacingSessions.delete(session.id);
+    }
   }
 
   // 放弃重连

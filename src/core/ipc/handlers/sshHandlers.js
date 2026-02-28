@@ -1126,13 +1126,36 @@ class SSHHandlers {
         );
       }
 
-      const shouldReleaseConnection = Boolean(connectionInfo?.intentionalClose);
+      const closeReason =
+        connectionInfo?.closeReason ||
+        (connectionInfo?.intentionalClose ? "user" : "network");
+      const shouldReleaseConnection =
+        closeReason === "user" || closeReason === "system";
       if (shouldReleaseConnection) {
-        // 仅在用户主动关闭时释放连接引用，避免阻断自动重连
+        // 用户/系统主动关闭时释放连接引用；网络断线路径保留以便自动重连
         this.connectionManager.releaseSSHConnection(
           connectionInfo.key,
           sshConfig.tabId,
+          {
+            reason: closeReason,
+            intentional: closeReason === "user",
+          },
         );
+        if (
+          sshConfig?.tabId &&
+          this.connectionManager?.sshConnectionPool?.removeTabReference
+        ) {
+          this.connectionManager.sshConnectionPool.removeTabReference(
+            String(sshConfig.tabId),
+            {
+              closeIfIdle: false,
+              closeOptions: {
+                reason: closeReason,
+                intentional: closeReason === "user",
+              },
+            },
+          );
+        }
         this._unbindConnectionProcess(connectionInfo?.key);
         this._unbindConnectionProcessByProcess(processId, sshConfig?.tabId);
       } else {

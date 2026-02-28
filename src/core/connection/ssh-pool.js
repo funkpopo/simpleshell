@@ -5,6 +5,7 @@
  */
 
 const BaseConnectionPool = require("./base-connection-pool");
+const CLOSE_REASON = BaseConnectionPool.CLOSE_REASON;
 const Client = require("ssh2").Client;
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 const proxyManager = require("../proxy/proxy-manager");
@@ -93,6 +94,7 @@ class SSHPool extends BaseConnectionPool {
           conn.client = newConnection;
           conn.ready = true;
           conn.intentionalClose = false;
+          conn.closeReason = CLOSE_REASON.NETWORK;
           conn.lastUsed = Date.now();
           this.emit("connectionReconnected", {
             key: sessionId,
@@ -110,11 +112,7 @@ class SSHPool extends BaseConnectionPool {
         // 从连接池中移除
         this.connections.delete(sessionId);
         // 清理可能残留的tab引用，避免后续查到已失效连接
-        for (const [tabId, key] of this.tabReferences.entries()) {
-          if (key === sessionId) {
-            this.tabReferences.delete(tabId);
-          }
-        }
+        this._removeTabReferencesForConnection(sessionId);
         this.emit("connectionAbandoned", { key: sessionId, reason });
       },
     );
@@ -230,6 +228,7 @@ class SSHPool extends BaseConnectionPool {
         listeners: new Set(),
         usingProxy: usingProxy,
         proxySocket: null,
+        closeReason: CLOSE_REASON.NETWORK,
         channelManager: createChannelPoolManager(30), // 最多30个并发通道
       };
 
@@ -342,7 +341,7 @@ class SSHPool extends BaseConnectionPool {
 
       // 监听关闭事件
       ssh.on("close", () => {
-        this._handleSSHClose(connectionInfo, connectionKey);
+        this._handleSSHClose(connectionInfo, connectionKey, ssh);
       });
 
       // 建立连接
@@ -482,6 +481,7 @@ class SSHPool extends BaseConnectionPool {
             state: "pending",
             failureReason: "network",
             intentionalClose: false,
+            replaceConnection: true,
           },
         );
       } else {
@@ -552,7 +552,7 @@ class SSHPool extends BaseConnectionPool {
       }
 
       void this.reconnectionManager
-        .requestAutoReconnect(key, "network")
+        .requestAutoReconnect(key, reconnectReason)
         .catch((error) => {
           this._logInfo(
             `健康检查触发自动重连失败: ${key} - ${error?.message || error}`,
@@ -575,8 +575,9 @@ class SSHPool extends BaseConnectionPool {
         {
           autoStart: true,
           state: "pending",
-          failureReason: "network",
+          failureReason: reconnectReason,
           intentionalClose: false,
+          replaceConnection: true,
         },
       );
 
@@ -595,19 +596,11 @@ class SSHPool extends BaseConnectionPool {
   }
 
   /**
-   * 关闭SSH连接（覆盖父类方法以标记有意关闭）
+   * 关闭SSH连接（覆盖父类方法以支持关闭原因）
    * @param {string} key - 连接键
    */
-  closeConnection(key) {
-    const conn = this.connections.get(key);
-
-    if (conn) {
-      // 标记为有意关闭，避免触发重连
-      conn.intentionalClose = true;
-    }
-
-    // 调用父类方法
-    super.closeConnection(key);
+  closeConnection(key, options = {}) {
+    super.closeConnection(key, options);
   }
 
   /**
@@ -966,17 +959,35 @@ class SSHPool extends BaseConnectionPool {
    * 处理SSH连接关闭事件
    * @param {Object} connectionInfo - 连接信息对象
    * @param {string} connectionKey - 连接键
+   * @param {Object|null} sourceClient - 触发 close 的连接对象
    * @private
    */
-  _handleSSHClose(connectionInfo, connectionKey) {
+  _handleSSHClose(connectionInfo, connectionKey, sourceClient = null) {
+    if (
+      sourceClient &&
+      connectionInfo?.client &&
+      sourceClient !== connectionInfo.client
+    ) {
+      this._logInfo(`忽略过期SSH close事件: ${connectionKey}`);
+      return;
+    }
+
     this._logInfo(`SSH连接关闭: ${connectionKey}`);
     if (connectionInfo) {
       connectionInfo.ready = false;
     }
 
-    // 如果是有意关闭，直接清理
-    if (connectionInfo.intentionalClose) {
-      this._logInfo(`有意关闭连接: ${connectionKey}`);
+    const closeReason =
+      connectionInfo?.closeReason ||
+      (connectionInfo?.intentionalClose
+        ? CLOSE_REASON.USER
+        : CLOSE_REASON.NETWORK);
+    const isActiveClose =
+      closeReason === CLOSE_REASON.USER || closeReason === CLOSE_REASON.SYSTEM;
+
+    // 用户/系统主动关闭：直接清理，不触发自动重连
+    if (isActiveClose) {
+      this._logInfo(`主动关闭连接: ${connectionKey}, 原因=${closeReason}`);
       try {
         if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
       } catch {
@@ -994,18 +1005,48 @@ class SSHPool extends BaseConnectionPool {
     ) {
       this._logInfo(`检测到意外断开，尝试重连: ${connectionKey}`);
 
-      // 注册到重连管理器
-      this.reconnectionManager.registerSession(
-        connectionKey,
-        connectionInfo.client,
-        connectionInfo.config,
-        { state: "pending", autoStart: true, failureReason: "network" },
-      );
+      const existingStatus =
+        this.reconnectionManager.getSessionStatus(connectionKey);
+      const reconnectReason =
+        closeReason === CLOSE_REASON.HEALTH
+          ? CLOSE_REASON.HEALTH
+          : CLOSE_REASON.NETWORK;
+      if (
+        existingStatus &&
+        (existingStatus.state === "pending" ||
+          existingStatus.state === "reconnecting")
+      ) {
+        this._logInfo(
+          `跳过重复重连注册: ${connectionKey}, 状态=${existingStatus.state}`,
+        );
+      } else if (existingStatus) {
+        void this.reconnectionManager
+          .requestAutoReconnect(connectionKey, reconnectReason)
+          .catch((error) => {
+            this._logInfo(
+              `触发自动重连失败: ${connectionKey} - ${error?.message || error}`,
+            );
+          });
+      } else {
+        this.reconnectionManager.registerSession(
+          connectionKey,
+          connectionInfo.client,
+          connectionInfo.config,
+          {
+            state: "pending",
+            autoStart: true,
+            failureReason: reconnectReason,
+            intentionalClose: false,
+            replaceConnection: true,
+          },
+        );
+      }
 
       // 发出连接丢失事件
       this.emit("connectionLost", {
         key: connectionKey,
         connection: connectionInfo,
+        reason: reconnectReason,
       });
     } else {
       // 没有引用的连接直接清理
