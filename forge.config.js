@@ -1,4 +1,6 @@
 const net = require("node:net");
+const fs = require("node:fs/promises");
+const path = require("node:path");
 const { FusesPlugin } = require("@electron-forge/plugin-fuses");
 const { FuseV1Options, FuseVersion } = require("@electron/fuses");
 
@@ -6,6 +8,7 @@ const MIN_PORT = 1024;
 const MAX_PORT = 65535;
 const DEFAULT_DEV_SERVER_PORT = 3001;
 const DEFAULT_LOGGER_PORT = 19001;
+const LOCALE_PAKS_TO_KEEP = new Set(["en-US.pak", "zh-CN.pak"]);
 
 const parsePort = (rawValue, fallback) => {
   if (!rawValue) {
@@ -76,6 +79,46 @@ const findAvailablePort = async (preferredPorts, fallbackStart) => {
   throw new Error("Unable to locate a free TCP port in the 1024-65535 range");
 };
 
+const keepOnlyRequiredLocalePaks = async (buildPath) => {
+  const localesDir = path.join(buildPath, "locales");
+
+  let localeEntries = [];
+
+  try {
+    localeEntries = await fs.readdir(localesDir, { withFileTypes: true });
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+
+  const filesToRemove = localeEntries
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.endsWith(".pak") &&
+        !LOCALE_PAKS_TO_KEEP.has(entry.name),
+    )
+    .map((entry) => fs.unlink(path.join(localesDir, entry.name)));
+
+  await Promise.all(filesToRemove);
+};
+
+const cleanupLocalesHook = (
+  buildPath,
+  _electronVersion,
+  _platform,
+  _arch,
+  callback,
+) => {
+  keepOnlyRequiredLocalePaks(buildPath).then(
+    () => callback(),
+    (error) => callback(error),
+  );
+};
+
 module.exports = async () => {
   const devPortPreference = parsePort(
     process.env.WEBPACK_DEV_PORT,
@@ -126,7 +169,7 @@ module.exports = async () => {
     packagerConfig: {
       asar: true,
       icon: "./src/assets/logo",
-      electronLanguages: ["en-US", "zh-CN"],
+      afterComplete: [cleanupLocalesHook],
       download: {
         unsafelyDisableChecksums: false,
       },
