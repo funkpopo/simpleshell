@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
@@ -2511,11 +2510,8 @@ const WebTerminal = ({
         fitAddon = new FitAddon();
         searchAddon = new SearchAddon();
 
-        // 自定义WebLinksAddon的链接处理逻辑，使用系统默认浏览器打开链接
-        const webLinksAddon = new WebLinksAddon(async (event, uri) => {
-          // Prevent in-app navigation; open links externally.
-          event.preventDefault();
-
+        // 使用轻量链接提供器替代 WebLinksAddon，避免大输出时的错位链接热区问题
+        const openExternalUrl = async (uri) => {
           try {
             if (!window.terminalAPI?.openExternal) {
               throw new Error("terminalAPI.openExternal is unavailable");
@@ -2544,11 +2540,113 @@ const WebTerminal = ({
               term.writeln(`[Link Error] ${uri}`);
             }
           }
+        };
+
+        const simpleUrlRegex = /https?:\/\/[^\s"'`<>]+/g;
+        term.registerLinkProvider({
+          provideLinks: (y, callback) => {
+            const buffer = term.buffer.active;
+            const targetLineIndex = y - 1;
+            const targetLine = buffer.getLine(targetLineIndex);
+            if (!targetLine) {
+              callback([]);
+              return;
+            }
+
+            // 收集与当前行同属一个 wrapped 块的所有行，实现跨行 URL 识别
+            let blockStart = targetLineIndex;
+            while (blockStart > 0) {
+              const current = buffer.getLine(blockStart);
+              if (!current || !current.isWrapped) {
+                break;
+              }
+              blockStart -= 1;
+            }
+
+            let blockEnd = targetLineIndex;
+            while (true) {
+              const next = buffer.getLine(blockEnd + 1);
+              if (!next || !next.isWrapped) {
+                break;
+              }
+              blockEnd += 1;
+            }
+
+            const segments = [];
+            let offset = 0;
+            for (let lineIndex = blockStart; lineIndex <= blockEnd; lineIndex++) {
+              const line = buffer.getLine(lineIndex);
+              if (!line) {
+                continue;
+              }
+              const text = line.translateToString(true);
+              segments.push({
+                lineIndex,
+                text,
+                startOffset: offset,
+                endOffset: offset + text.length,
+              });
+              offset += text.length;
+            }
+
+            const fullText = segments.map((seg) => seg.text).join("");
+            const links = [];
+            let match = null;
+
+            simpleUrlRegex.lastIndex = 0;
+            while ((match = simpleUrlRegex.exec(fullText)) !== null) {
+              const rawUrl = match[0];
+              const trimmedUrl = rawUrl.replace(/[),.;!?]+$/g, "");
+              if (!trimmedUrl) {
+                continue;
+              }
+
+              const globalStart = match.index;
+              const globalEndExclusive = globalStart + trimmedUrl.length;
+
+              for (const seg of segments) {
+                // 只返回当前行的可点击片段，避免为其他行重复注册
+                if (seg.lineIndex !== targetLineIndex) {
+                  continue;
+                }
+
+                const intersectStart = Math.max(globalStart, seg.startOffset);
+                const intersectEndExclusive = Math.min(
+                  globalEndExclusive,
+                  seg.endOffset,
+                );
+                if (intersectStart >= intersectEndExclusive) {
+                  continue;
+                }
+
+                const localStart = intersectStart - seg.startOffset;
+                const localEndExclusive = intersectEndExclusive - seg.startOffset;
+
+                links.push({
+                  text: trimmedUrl,
+                  range: {
+                    start: { x: localStart + 1, y },
+                    end: { x: localEndExclusive, y },
+                  },
+                  activate: (event, uri) => {
+                    event?.preventDefault?.();
+                    void openExternalUrl(uri);
+                  },
+                });
+              }
+
+              // 避免 rawUrl 被裁剪后，正则 lastIndex 指向错误位置
+              if (trimmedUrl.length !== rawUrl.length) {
+                simpleUrlRegex.lastIndex = globalStart + trimmedUrl.length;
+              }
+            }
+
+            callback(links);
+          },
         });
 
         term.loadAddon(fitAddon);
         term.loadAddon(searchAddon);
-        term.loadAddon(webLinksAddon);
 
         // 打开终端
         term.open(terminalRef.current);
