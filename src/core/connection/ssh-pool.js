@@ -519,6 +519,82 @@ class SSHPool extends BaseConnectionPool {
   }
 
   /**
+   * 健康检查发现“活跃但不健康”连接时，转入自动重连而不是直接关闭
+   * @param {string} key - 连接键
+   * @param {Object} connectionInfo - 连接信息对象
+   * @param {Object} metadata - 附加上下文
+   * @returns {boolean} 是否成功交由重连状态机接管
+   */
+  handleActiveUnhealthyConnection(key, connectionInfo, metadata = {}) {
+    if (!key || !connectionInfo || !this.reconnectionManager) {
+      return false;
+    }
+
+    if (!connectionInfo.client || !connectionInfo.config) {
+      this._logInfo(`健康检查命中但无法接管重连(缺少连接上下文): ${key}`);
+      return false;
+    }
+
+    connectionInfo.ready = false;
+
+    const sessionStatus = this.reconnectionManager.getSessionStatus(key);
+    const reconnectReason = metadata.reason || "health";
+
+    if (sessionStatus) {
+      if (
+        sessionStatus.state === "pending" ||
+        sessionStatus.state === "reconnecting"
+      ) {
+        this._logInfo(
+          `健康检查命中: ${key}, 已处于重连状态(${sessionStatus.state})`,
+        );
+        return true;
+      }
+
+      void this.reconnectionManager
+        .requestAutoReconnect(key, "network")
+        .catch((error) => {
+          this._logInfo(
+            `健康检查触发自动重连失败: ${key} - ${error?.message || error}`,
+          );
+        });
+
+      this.emit("connectionLost", {
+        key,
+        connection: connectionInfo,
+        reason: reconnectReason,
+      });
+      return true;
+    }
+
+    try {
+      this.reconnectionManager.registerSession(
+        key,
+        connectionInfo.client,
+        connectionInfo.config,
+        {
+          autoStart: true,
+          state: "pending",
+          failureReason: "network",
+          intentionalClose: false,
+        },
+      );
+
+      this.emit("connectionLost", {
+        key,
+        connection: connectionInfo,
+        reason: reconnectReason,
+      });
+      return true;
+    } catch (error) {
+      this._logInfo(
+        `健康检查注册重连会话失败: ${key} - ${error?.message || error}`,
+      );
+      return false;
+    }
+  }
+
+  /**
    * 关闭SSH连接（覆盖父类方法以标记有意关闭）
    * @param {string} key - 连接键
    */

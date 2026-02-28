@@ -35,6 +35,17 @@ class SSHHandlers {
     this.knownHostsLoaded = false;
     this.pendingHostVerifications = new Map();
     this.sessionTrustedHosts = new Map();
+
+    // 连接键 -> { processId, tabId }，用于断线重连后恢复终端流
+    this.connectionProcessBindings = new Map();
+    // 防止同一连接并发创建 shell stream
+    this.pendingShellCreations = new Map();
+    // 防止同一连接并发触发恢复流程
+    this.reconnectingShells = new Set();
+
+    this.boundReconnectPool = null;
+    this.onConnectionReconnected = null;
+    this._ensureReconnectListener();
   }
 
   getHandlers() {
@@ -490,6 +501,232 @@ class SSHHandlers {
     return mainWindow;
   }
 
+  _emitProcessOutput(processId, output) {
+    const mainWindow = this._getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+
+    mainWindow.webContents.send(`process:output:${processId}`, output);
+  }
+
+  _ensureReconnectListener() {
+    const sshPool = this.connectionManager?.sshConnectionPool;
+    if (!sshPool) {
+      return;
+    }
+
+    if (this.boundReconnectPool === sshPool && this.onConnectionReconnected) {
+      return;
+    }
+
+    if (this.boundReconnectPool && this.onConnectionReconnected) {
+      this.boundReconnectPool.removeListener(
+        "connectionReconnected",
+        this.onConnectionReconnected,
+      );
+    }
+
+    this.boundReconnectPool = sshPool;
+    this.onConnectionReconnected = ({ key, connection }) => {
+      void this._handleConnectionReconnected(key, connection);
+    };
+    sshPool.on("connectionReconnected", this.onConnectionReconnected);
+  }
+
+  _bindConnectionProcess(connectionKey, processId, tabId = null) {
+    if (!connectionKey || processId === undefined || processId === null) return;
+    this.connectionProcessBindings.set(connectionKey, {
+      processId,
+      tabId: tabId || null,
+    });
+  }
+
+  _unbindConnectionProcess(connectionKey) {
+    if (!connectionKey) return;
+    this.connectionProcessBindings.delete(connectionKey);
+  }
+
+  _unbindConnectionProcessByProcess(processId, tabId = null) {
+    for (const [connectionKey, binding] of this.connectionProcessBindings) {
+      if (
+        String(binding.processId) === String(processId) ||
+        (tabId && String(binding.tabId) === String(tabId))
+      ) {
+        this.connectionProcessBindings.delete(connectionKey);
+      }
+    }
+  }
+
+  _resolveProcessBinding(connectionKey) {
+    const binding = this.connectionProcessBindings.get(connectionKey);
+    if (binding) {
+      const hasProcess = this.childProcesses.has(binding.processId);
+      const hasTab = binding.tabId
+        ? this.childProcesses.has(binding.tabId)
+        : false;
+      if (hasProcess || hasTab) {
+        return binding;
+      }
+      this.connectionProcessBindings.delete(connectionKey);
+    }
+
+    let fallback = null;
+    for (const [
+      candidateProcessId,
+      procInfo,
+    ] of this.childProcesses.entries()) {
+      if (
+        procInfo?.type === "ssh2" &&
+        procInfo?.connectionInfo?.key === connectionKey
+      ) {
+        const candidateTabId = procInfo?.config?.tabId || null;
+        const candidate = {
+          processId: candidateProcessId,
+          tabId: candidateTabId,
+        };
+        if (
+          candidateTabId &&
+          String(candidateProcessId) !== String(candidateTabId)
+        ) {
+          this.connectionProcessBindings.set(connectionKey, candidate);
+          return candidate;
+        }
+        if (!fallback) {
+          fallback = candidate;
+        }
+      }
+    }
+
+    if (fallback) {
+      this.connectionProcessBindings.set(connectionKey, fallback);
+    }
+    return fallback;
+  }
+
+  _isSSHStreamUsable(stream) {
+    if (!stream || typeof stream.write !== "function") return false;
+    if (stream.destroyed === true) return false;
+    if (stream.closed === true || stream._closed === true) return false;
+    if (stream.writable === false) return false;
+    return true;
+  }
+
+  async _handleConnectionReconnected(connectionKey, connectionInfoFromPool) {
+    if (!connectionKey) return;
+
+    const binding = this._resolveProcessBinding(connectionKey);
+    if (!binding) {
+      return;
+    }
+
+    const { processId, tabId } = binding;
+    const procInfo = this.childProcesses.get(processId);
+    const tabProcInfo = tabId ? this.childProcesses.get(tabId) : null;
+    if (!procInfo && !tabProcInfo) {
+      this._unbindConnectionProcess(connectionKey);
+      return;
+    }
+
+    const activeProc = procInfo || tabProcInfo;
+    if (!activeProc || activeProc.type !== "ssh2") {
+      return;
+    }
+
+    const existingStream = procInfo?.stream || tabProcInfo?.stream;
+    if (this._isSSHStreamUsable(existingStream)) {
+      return;
+    }
+
+    if (this.reconnectingShells.has(connectionKey)) {
+      return;
+    }
+
+    const latestConnInfo =
+      this.connectionManager?.sshConnectionPool?.connections?.get(
+        connectionKey,
+      ) || connectionInfoFromPool;
+    if (!latestConnInfo?.client) {
+      return;
+    }
+
+    const sshConfig = activeProc.config || latestConnInfo.config;
+    if (!sshConfig) {
+      return;
+    }
+
+    this.reconnectingShells.add(connectionKey);
+    this._emitProcessOutput(
+      processId,
+      `\r\n\x1b[36m*** 连接已恢复，正在重建终端会话... ***\x1b[0m\r\n`,
+    );
+
+    try {
+      await this._createSSHShell(
+        latestConnInfo.client,
+        processId,
+        sshConfig,
+        latestConnInfo,
+        { isReconnectRecovery: true },
+      );
+
+      const mainWindow = this._getMainWindow();
+      if (tabId && mainWindow && !mainWindow.isDestroyed()) {
+        const connectionStatus = {
+          isConnected: true,
+          isConnecting: false,
+          quality: "excellent",
+          lastUpdate: Date.now(),
+          connectionType: "SSH",
+          host: sshConfig.host,
+          port: sshConfig.port,
+          username: sshConfig.username,
+        };
+        mainWindow.webContents.send("tab-connection-status", {
+          tabId,
+          connectionStatus,
+        });
+      }
+
+      this._emitProcessOutput(
+        processId,
+        `\r\n\x1b[32m*** 终端会话已自动恢复 ***\x1b[0m\r\n`,
+      );
+    } catch (error) {
+      const message =
+        error?.message || "自动恢复终端会话失败，请检查网络后手动重连。";
+      const mainWindow = this._getMainWindow();
+      if (tabId && mainWindow && !mainWindow.isDestroyed()) {
+        const connectionStatus = {
+          isConnected: false,
+          isConnecting: false,
+          quality: "offline",
+          lastUpdate: Date.now(),
+          connectionType: "SSH",
+          host: sshConfig.host,
+          port: sshConfig.port,
+          username: sshConfig.username,
+          error: message,
+        };
+        mainWindow.webContents.send("tab-connection-status", {
+          tabId,
+          connectionStatus,
+        });
+      }
+
+      logToFile(
+        `自动恢复终端会话失败: connection=${connectionKey}, process=${processId}, error=${message}`,
+        "ERROR",
+      );
+      this._emitProcessOutput(
+        processId,
+        `\r\n\x1b[31m*** 自动恢复终端会话失败: ${message}。请点击手动重连。 ***\x1b[0m\r\n`,
+      );
+    } finally {
+      this.reconnectingShells.delete(connectionKey);
+    }
+  }
+
   _broadcastTopConnections() {
     try {
       const lastConnections = this.connectionManager.getLastConnections(5);
@@ -896,16 +1133,32 @@ class SSHHandlers {
           connectionInfo.key,
           sshConfig.tabId,
         );
+        this._unbindConnectionProcess(connectionInfo?.key);
+        this._unbindConnectionProcessByProcess(processId, sshConfig?.tabId);
       } else {
         logToFile(
           `SSH stream closed without intentional flag, keeping connection for auto-reconnect: ${connectionInfo.key}`,
           "DEBUG",
         );
+        const processInfo = this.childProcesses.get(processId);
+        if (processInfo) {
+          processInfo.stream = null;
+          processInfo.ready = false;
+        }
+        if (sshConfig.tabId) {
+          const tabProcessInfo = this.childProcesses.get(sshConfig.tabId);
+          if (tabProcessInfo) {
+            tabProcessInfo.stream = null;
+            tabProcessInfo.ready = false;
+          }
+        }
       }
 
-      // 清理进程信息
-      this.childProcesses.delete(processId);
-      if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
+      // 仅主动关闭时清理进程映射；意外断线时保留以便自动恢复 shell
+      if (shouldReleaseConnection) {
+        this.childProcesses.delete(processId);
+        if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
+      }
     };
 
     // 注册事件监听器
@@ -1119,6 +1372,11 @@ class SSHHandlers {
         if (connectionConfig.tabId) {
           this.childProcesses.set(connectionConfig.tabId, { ...procInfo });
         }
+        this._bindConnectionProcess(
+          connectionInfo.key,
+          processId,
+          connectionConfig.tabId,
+        );
 
         let result;
         if (connectionInfo.ready) {
@@ -1177,6 +1435,7 @@ class SSHHandlers {
           // 清理之前的连接尝试
           this.childProcesses.delete(processId);
           if (finalConfig.tabId) this.childProcesses.delete(finalConfig.tabId);
+          this._unbindConnectionProcessByProcess(processId, finalConfig.tabId);
 
           // 显示认证对话框让用户重新输入凭据
           try {
@@ -1229,8 +1488,27 @@ class SSHHandlers {
     throw new Error("Max authentication retries exceeded");
   }
 
-  _createSSHShell(ssh, processId, sshConfig, connectionInfo) {
-    return new Promise((resolve, reject) => {
+  _createSSHShell(ssh, processId, sshConfig, connectionInfo, options = {}) {
+    const { isReconnectRecovery = false } = options;
+    const shellCreationKey = `${connectionInfo?.key || "unknown"}:${processId}`;
+
+    if (this.pendingShellCreations.has(shellCreationKey)) {
+      return this.pendingShellCreations.get(shellCreationKey);
+    }
+
+    const creationPromise = new Promise((resolve, reject) => {
+      const procToUpdate = this.childProcesses.get(processId);
+      const tabProcToUpdate = sshConfig?.tabId
+        ? this.childProcesses.get(sshConfig.tabId)
+        : null;
+      const existingStream = procToUpdate?.stream || tabProcToUpdate?.stream;
+
+      // 幂等保护：若已有可用 stream，避免重复创建
+      if (this._isSSHStreamUsable(existingStream)) {
+        resolve(processId);
+        return;
+      }
+
       ssh.shell(
         { term: "xterm-256color", cols: 120, rows: 30 },
         (err, stream) => {
@@ -1239,20 +1517,46 @@ class SSHHandlers {
               `SSH shell error for processId ${processId}: ${err.message}`,
               "ERROR",
             );
+
+            if (isReconnectRecovery) {
+              return reject(err);
+            }
+
             this.connectionManager.releaseSSHConnection(
               connectionInfo.key,
               sshConfig.tabId,
             );
             this.childProcesses.delete(processId);
             if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
+            this._unbindConnectionProcess(connectionInfo?.key);
+            this._unbindConnectionProcessByProcess(processId, sshConfig?.tabId);
             return reject(err);
           }
 
-          // 更新进程信息中的stream
-          const procToUpdate = this.childProcesses.get(processId);
-          if (procToUpdate) procToUpdate.stream = stream;
-          const tabProcToUpdate = this.childProcesses.get(sshConfig.tabId);
-          if (tabProcToUpdate) tabProcToUpdate.stream = stream;
+          // 更新进程信息中的 stream 与最新连接对象
+          const latestProc = this.childProcesses.get(processId);
+          if (latestProc) {
+            latestProc.stream = stream;
+            latestProc.process = ssh;
+            latestProc.connectionInfo = connectionInfo;
+            latestProc.ready = true;
+          }
+
+          if (sshConfig?.tabId) {
+            const latestTabProc = this.childProcesses.get(sshConfig.tabId);
+            if (latestTabProc) {
+              latestTabProc.stream = stream;
+              latestTabProc.process = ssh;
+              latestTabProc.connectionInfo = connectionInfo;
+              latestTabProc.ready = true;
+            }
+          }
+
+          this._bindConnectionProcess(
+            connectionInfo?.key,
+            processId,
+            sshConfig?.tabId,
+          );
 
           this._setupStreamEventListeners(
             stream,
@@ -1282,6 +1586,15 @@ class SSHHandlers {
         },
       );
     });
+
+    this.pendingShellCreations.set(shellCreationKey, creationPromise);
+    return creationPromise.finally(() => {
+      if (
+        this.pendingShellCreations.get(shellCreationKey) === creationPromise
+      ) {
+        this.pendingShellCreations.delete(shellCreationKey);
+      }
+    });
   }
 
   _waitForSSHReady(ssh, processId, sshConfig, connectionInfo) {
@@ -1290,7 +1603,8 @@ class SSHHandlers {
     return new Promise((resolve, reject) => {
       let settled = false;
       let reconnectWaitStarted = false;
-      let reconnectTimeoutId = null;
+      let waitForReconnectPromise = null;
+      let connectionTimeout = null;
 
       const connectionKey = connectionInfo?.key;
       const sshPool = this.connectionManager?.sshConnectionPool;
@@ -1301,64 +1615,18 @@ class SSHHandlers {
         return latest?.client || ssh;
       };
 
-      const startWaitForReconnect = () => {
-        if (reconnectWaitStarted || !reconnectManager || !connectionKey) return;
-        reconnectWaitStarted = true;
-
-        // 给用户一次性提示：正在等待代理/VPN/网络恢复并自动重试
-        try {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
-              `\r\n连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多1分钟）...\r\n`,
-            );
-          }
-        } catch {
-          /* intentionally ignored */
-        }
-
-        reconnectManager
-          .waitForReconnect(connectionKey, 60_000)
-          .then(() => {
-            // 走统一成功路径
-            readyHandler(true);
-          })
-          .catch((e) => {
-            errorHandler(e);
-          });
-      };
-
       const cleanup = () => {
         ssh.removeListener("ready", readyHandler);
         ssh.removeListener("error", errorHandler);
-        if (reconnectTimeoutId) {
-          clearTimeout(reconnectTimeoutId);
-          reconnectTimeoutId = null;
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+          connectionTimeout = null;
         }
       };
-
-      const connectionTimeout = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        logToFile("SSH connection timed out after 60 seconds", "ERROR");
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(
-            `process:output:${processId}`,
-            `\r\n自动重连超时（1分钟），请检查代理/VPN/网络后手动重连\r\n`,
-          );
-        }
-        this.connectionManager.releaseSSHConnection(
-          connectionInfo.key,
-          sshConfig.tabId,
-        );
-        reject(new Error("SSH connection timeout"));
-      }, 60_000);
 
       const readyHandler = (fromReconnectManager = false) => {
         if (settled) return;
         settled = true;
-        clearTimeout(connectionTimeout);
         cleanup();
 
         // 更新进程状态
@@ -1399,10 +1667,63 @@ class SSHHandlers {
           .catch(reject);
       };
 
-      const errorHandler = (err) => {
+      const startWaitForReconnect = () => {
+        if (
+          reconnectWaitStarted ||
+          waitForReconnectPromise ||
+          !reconnectManager ||
+          !connectionKey
+        ) {
+          return;
+        }
+        reconnectWaitStarted = true;
+
+        // 给用户一次性提示：正在等待代理/VPN/网络恢复并自动重试
+        try {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(
+              `process:output:${processId}`,
+              `\r\n连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多1分钟）...\r\n`,
+            );
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+
+        waitForReconnectPromise = reconnectManager
+          .waitForReconnect(connectionKey, 60_000)
+          .then(() => {
+            // 走统一成功路径
+            readyHandler(true);
+          })
+          .catch((e) => {
+            errorHandler(e, { fromReconnectWait: true });
+          })
+          .finally(() => {
+            waitForReconnectPromise = null;
+          });
+      };
+
+      const errorHandler = (err, options = {}) => {
+        const fromReconnectWait = options.fromReconnectWait === true;
         if (settled) return;
+
+        // 已进入等待重连窗口时，旧连接错误只记录不终止流程
+        if (reconnectWaitStarted && !fromReconnectWait) {
+          logToFile(
+            `忽略等待重连期间的旧连接错误: ${processId} - ${err?.message || err}`,
+            "DEBUG",
+          );
+          return;
+        }
+
         // 若已进入重连状态机，则不要立刻失败，改为等待重连结果
-        if (!reconnectWaitStarted && reconnectManager && connectionKey) {
+        if (
+          !fromReconnectWait &&
+          !reconnectWaitStarted &&
+          reconnectManager &&
+          connectionKey
+        ) {
           const st = reconnectManager.getSessionStatus(connectionKey);
           if (st && (st.state === "pending" || st.state === "reconnecting")) {
             startWaitForReconnect();
@@ -1411,7 +1732,6 @@ class SSHHandlers {
         }
 
         settled = true;
-        clearTimeout(connectionTimeout);
         cleanup();
         logToFile(
           `SSH connection error for processId ${processId}: ${err?.message || err}`,
@@ -1442,8 +1762,24 @@ class SSHHandlers {
         );
         this.childProcesses.delete(processId);
         if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
+        this._unbindConnectionProcess(connectionInfo?.key);
+        this._unbindConnectionProcessByProcess(processId, sshConfig?.tabId);
         reject(err);
       };
+
+      connectionTimeout = setTimeout(() => {
+        if (settled) return;
+        logToFile("SSH connection timed out after 60 seconds", "ERROR");
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(
+            `process:output:${processId}`,
+            `\r\n自动重连超时（1分钟），请检查代理/VPN/网络后手动重连\r\n`,
+          );
+        }
+        errorHandler(new Error("SSH connection timeout"), {
+          fromReconnectWait: true,
+        });
+      }, 60_000);
 
       // 注册事件监听器
       ssh.on("ready", readyHandler);

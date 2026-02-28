@@ -5,25 +5,38 @@ const { safeHandle } = require("../ipcResponse");
 // 存储重连事件监听器
 const reconnectListeners = new Map();
 let boundConnectionPool = null;
+let boundReconnectionManager = null;
 
 // 注册重连相关的IPC处理器
 function registerReconnectHandlers(connectionPool) {
+  if (!connectionPool) {
+    logToFile("registerReconnectHandlers: connectionPool 不可用", "WARN");
+    return;
+  }
+
+  // 防止重复注册导致事件重复广播
+  if (
+    boundConnectionPool ||
+    boundReconnectionManager ||
+    reconnectListeners.size > 0
+  ) {
+    logToFile("检测到重复注册重连处理器，先执行清理", "WARN");
+    cleanupReconnectHandlers();
+  }
+
   boundConnectionPool = connectionPool;
+  boundReconnectionManager = connectionPool.reconnectionManager || null;
 
   // 监听重连状态请求
-  safeHandle(
-    ipcMain,
-    "get-reconnect-status",
-    async (_event, { tabId }) => {
-      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-      if (!connectionKey) {
-        return null;
-      }
+  safeHandle(ipcMain, "get-reconnect-status", async (_event, { tabId }) => {
+    const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
+    if (!connectionKey) {
+      return null;
+    }
 
-      const status = connectionPool.getConnectionStatus(connectionKey);
-      return status?.reconnectStatus || null;
-    },
-  );
+    const status = connectionPool.getConnectionStatus(connectionKey);
+    return status?.reconnectStatus || null;
+  });
 
   // 手动触发重连
   safeHandle(
@@ -88,88 +101,83 @@ function registerReconnectHandlers(connectionPool) {
   });
 
   // 设置重连事件转发
-  if (connectionPool.reconnectionManager) {
+  if (boundReconnectionManager) {
     // 重连开始事件
-    connectionPool.reconnectionManager.on(
-      "reconnectStarted",
-      ({ sessionId }) => {
-        const tabId = extractTabIdFromSessionId(sessionId);
-        broadcastToRenderer("reconnect-started", {
-          tabId,
-          sessionId,
-          timestamp: Date.now(),
-        });
-      },
-    );
+    const onReconnectStarted = ({ sessionId }) => {
+      const tabId = extractTabIdFromSessionId(sessionId);
+      broadcastToRenderer("reconnect-started", {
+        tabId,
+        sessionId,
+        timestamp: Date.now(),
+      });
+    };
+    boundReconnectionManager.on("reconnectStarted", onReconnectStarted);
+    reconnectListeners.set("rm:reconnectStarted", onReconnectStarted);
 
     // 重连进度事件
-    connectionPool.reconnectionManager.on(
-      "reconnectScheduled",
-      ({ sessionId, delay, retryCount }) => {
-        const tabId = extractTabIdFromSessionId(sessionId);
-        broadcastToRenderer("reconnect-progress", {
-          tabId,
-          sessionId,
-          attempts: retryCount,
-          maxAttempts: 5,
-          delay,
-          timestamp: Date.now(),
-        });
-      },
-    );
+    const onReconnectScheduled = ({ sessionId, delay, retryCount }) => {
+      const tabId = extractTabIdFromSessionId(sessionId);
+      broadcastToRenderer("reconnect-progress", {
+        tabId,
+        sessionId,
+        attempts: retryCount,
+        maxAttempts: 5,
+        delay,
+        timestamp: Date.now(),
+      });
+    };
+    boundReconnectionManager.on("reconnectScheduled", onReconnectScheduled);
+    reconnectListeners.set("rm:reconnectScheduled", onReconnectScheduled);
 
     // 重连成功事件
-    connectionPool.reconnectionManager.on(
-      "reconnectSuccess",
-      ({ sessionId, attempts }) => {
-        const tabId = extractTabIdFromSessionId(sessionId);
-        logToFile(
-          `重连成功通知前端: tabId=${tabId}, attempts=${attempts}`,
-          "INFO",
-        );
+    const onReconnectSuccess = ({ sessionId, attempts }) => {
+      const tabId = extractTabIdFromSessionId(sessionId);
+      logToFile(
+        `重连成功通知前端: tabId=${tabId}, attempts=${attempts}`,
+        "INFO",
+      );
 
-        broadcastToRenderer("reconnect-success", {
-          tabId,
-          sessionId,
-          attempts,
-          timestamp: Date.now(),
-        });
-      },
-    );
+      broadcastToRenderer("reconnect-success", {
+        tabId,
+        sessionId,
+        attempts,
+        timestamp: Date.now(),
+      });
+    };
+    boundReconnectionManager.on("reconnectSuccess", onReconnectSuccess);
+    reconnectListeners.set("rm:reconnectSuccess", onReconnectSuccess);
 
     // 重连失败事件
-    connectionPool.reconnectionManager.on(
-      "reconnectFailed",
-      ({ sessionId, error, attempts }) => {
-        const tabId = extractTabIdFromSessionId(sessionId);
-        logToFile(`重连失败通知前端: tabId=${tabId}, error=${error}`, "ERROR");
+    const onReconnectFailed = ({ sessionId, error, attempts }) => {
+      const tabId = extractTabIdFromSessionId(sessionId);
+      logToFile(`重连失败通知前端: tabId=${tabId}, error=${error}`, "ERROR");
 
-        broadcastToRenderer("reconnect-failed", {
-          tabId,
-          sessionId,
-          error,
-          attempts,
-          timestamp: Date.now(),
-        });
-      },
-    );
+      broadcastToRenderer("reconnect-failed", {
+        tabId,
+        sessionId,
+        error,
+        attempts,
+        timestamp: Date.now(),
+      });
+    };
+    boundReconnectionManager.on("reconnectFailed", onReconnectFailed);
+    reconnectListeners.set("rm:reconnectFailed", onReconnectFailed);
 
     // 重连放弃事件
-    connectionPool.reconnectionManager.on(
-      "reconnectAbandoned",
-      ({ sessionId, reason, attempts }) => {
-        const tabId = extractTabIdFromSessionId(sessionId);
-        logToFile(`重连放弃通知前端: tabId=${tabId}, reason=${reason}`, "WARN");
+    const onReconnectAbandoned = ({ sessionId, reason, attempts }) => {
+      const tabId = extractTabIdFromSessionId(sessionId);
+      logToFile(`重连放弃通知前端: tabId=${tabId}, reason=${reason}`, "WARN");
 
-        broadcastToRenderer("reconnect-abandoned", {
-          tabId,
-          sessionId,
-          reason,
-          attempts,
-          timestamp: Date.now(),
-        });
-      },
-    );
+      broadcastToRenderer("reconnect-abandoned", {
+        tabId,
+        sessionId,
+        reason,
+        attempts,
+        timestamp: Date.now(),
+      });
+    };
+    boundReconnectionManager.on("reconnectAbandoned", onReconnectAbandoned);
+    reconnectListeners.set("rm:reconnectAbandoned", onReconnectAbandoned);
   }
 
   // 连接丢失事件（实际由连接池发出，而非 reconnectionManager）
@@ -215,10 +223,33 @@ function cleanupReconnectHandlers() {
   if (boundConnectionPool) {
     const onPoolConnectionLost = reconnectListeners.get("pool:connectionLost");
     if (onPoolConnectionLost) {
-      boundConnectionPool.removeListener("connectionLost", onPoolConnectionLost);
+      boundConnectionPool.removeListener(
+        "connectionLost",
+        onPoolConnectionLost,
+      );
     }
   }
+
+  // 移除重连管理器事件监听器
+  if (boundReconnectionManager) {
+    const reconnectEventBindings = [
+      ["reconnectStarted", "rm:reconnectStarted"],
+      ["reconnectScheduled", "rm:reconnectScheduled"],
+      ["reconnectSuccess", "rm:reconnectSuccess"],
+      ["reconnectFailed", "rm:reconnectFailed"],
+      ["reconnectAbandoned", "rm:reconnectAbandoned"],
+    ];
+
+    reconnectEventBindings.forEach(([eventName, listenerKey]) => {
+      const listener = reconnectListeners.get(listenerKey);
+      if (listener) {
+        boundReconnectionManager.removeListener(eventName, listener);
+      }
+    });
+  }
+
   boundConnectionPool = null;
+  boundReconnectionManager = null;
   reconnectListeners.clear();
 
   // 移除所有IPC处理器

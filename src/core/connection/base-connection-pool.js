@@ -3,8 +3,8 @@
  * 提供通用的连接池管理功能，所有协议特定的连接池都应继承此类
  */
 
-const EventEmitter = require('events');
-const { logToFile } = require('../utils/logger');
+const EventEmitter = require("events");
+const { logToFile } = require("../utils/logger");
 
 class BaseConnectionPool extends EventEmitter {
   /**
@@ -24,8 +24,8 @@ class BaseConnectionPool extends EventEmitter {
       idleTimeout: config.idleTimeout || 30 * 60 * 1000, // 30分钟
       healthCheckInterval: config.healthCheckInterval || 5 * 60 * 1000, // 5分钟
       connectionTimeout: config.connectionTimeout || 15 * 1000, // 15秒
-      protocolType: config.protocolType || 'UNKNOWN',
-      ...config
+      protocolType: config.protocolType || "UNKNOWN",
+      ...config,
     };
 
     // 通用数据结构
@@ -59,7 +59,7 @@ class BaseConnectionPool extends EventEmitter {
     this.startHealthCheck();
 
     this.isInitialized = true;
-    this.emit('initialized');
+    this.emit("initialized");
 
     this._logInfo(`${this.config.protocolType}连接池初始化完成`);
   }
@@ -84,7 +84,7 @@ class BaseConnectionPool extends EventEmitter {
     this.tabReferences.clear();
 
     this.isInitialized = false;
-    this.emit('cleanup');
+    this.emit("cleanup");
 
     this._logInfo(`${this.config.protocolType}连接池资源清理完成`);
   }
@@ -109,12 +109,12 @@ class BaseConnectionPool extends EventEmitter {
       host: config.host,
       port: config.port,
       username: config.username,
-      password: '',
-      privateKeyPath: config.privateKeyPath || '',
+      password: "",
+      privateKeyPath: config.privateKeyPath || "",
       // 关键：保留代理配置，避免“最近连接/快捷连接”丢失 proxy 导致退化为直连
       proxy: config.proxy || null,
       name: config.name || `${config.host}:${config.port}`,
-      protocol: this.config.protocolType.toLowerCase()
+      protocol: this.config.protocolType.toLowerCase(),
     });
 
     // 检查是否存在现有连接
@@ -132,12 +132,16 @@ class BaseConnectionPool extends EventEmitter {
 
     // 检查连接数限制
     if (this.connections.size >= this.config.maxConnections) {
-      this._logInfo(`连接池已满（${this.connections.size}/${this.config.maxConnections}），尝试清理空闲连接`);
+      this._logInfo(
+        `连接池已满（${this.connections.size}/${this.config.maxConnections}），尝试清理空闲连接`,
+      );
       const cleaned = this.cleanupIdleConnections(1);
 
       if (!cleaned) {
-        const error = new Error(`连接池已满，最大连接数: ${this.config.maxConnections}`);
-        this._logError('连接池已满', error);
+        const error = new Error(
+          `连接池已满，最大连接数: ${this.config.maxConnections}`,
+        );
+        this._logError("连接池已满", error);
         throw error;
       }
     }
@@ -156,7 +160,7 @@ class BaseConnectionPool extends EventEmitter {
   async createConnection(config, key) {
     void config;
     void key;
-    throw new Error('createConnection() 必须由子类实现');
+    throw new Error("createConnection() 必须由子类实现");
   }
 
   /**
@@ -166,7 +170,7 @@ class BaseConnectionPool extends EventEmitter {
    */
   generateConnectionKey(config) {
     void config;
-    throw new Error('generateConnectionKey() 必须由子类实现');
+    throw new Error("generateConnectionKey() 必须由子类实现");
   }
 
   /**
@@ -176,7 +180,7 @@ class BaseConnectionPool extends EventEmitter {
    */
   isConnectionHealthy(connectionInfo) {
     void connectionInfo;
-    throw new Error('isConnectionHealthy() 必须由子类实现');
+    throw new Error("isConnectionHealthy() 必须由子类实现");
   }
 
   /**
@@ -210,7 +214,7 @@ class BaseConnectionPool extends EventEmitter {
       this.closeConnection(key);
     }
 
-    this.emit('connectionReleased', { key, refCount: conn.refCount });
+    this.emit("connectionReleased", { key, refCount: conn.refCount });
   }
 
   /**
@@ -241,16 +245,20 @@ class BaseConnectionPool extends EventEmitter {
     try {
       // 优先使用 end() 方法发送正确的断开信号
       // end() 会发送 SSH_MSG_DISCONNECT 消息给服务器
-      if (conn.client && typeof conn.client.end === 'function') {
+      if (conn.client && typeof conn.client.end === "function") {
         conn.client.end();
         // 设置超时，如果 end() 没有在合理时间内完成，强制销毁
         setTimeout(() => {
-          if (conn.client && !conn.client.destroyed && typeof conn.client.destroy === 'function') {
+          if (
+            conn.client &&
+            !conn.client.destroyed &&
+            typeof conn.client.destroy === "function"
+          ) {
             this._logInfo(`连接 ${key} 的 end() 超时，强制销毁`);
             conn.client.destroy();
           }
         }, 3000);
-      } else if (conn.client && typeof conn.client.destroy === 'function') {
+      } else if (conn.client && typeof conn.client.destroy === "function") {
         // 如果没有 end() 方法，直接销毁
         conn.client.destroy();
       }
@@ -258,7 +266,7 @@ class BaseConnectionPool extends EventEmitter {
       this._logError(`关闭连接时出错: ${key}`, error);
       // 出错时尝试强制销毁
       try {
-        if (conn.client && typeof conn.client.destroy === 'function') {
+        if (conn.client && typeof conn.client.destroy === "function") {
           conn.client.destroy();
         }
       } catch {
@@ -266,7 +274,7 @@ class BaseConnectionPool extends EventEmitter {
       }
     }
 
-    this.emit('connectionClosed', { key, connection: conn });
+    this.emit("connectionClosed", { key, connection: conn });
   }
 
   /**
@@ -277,7 +285,7 @@ class BaseConnectionPool extends EventEmitter {
   addTabReference(tabId, key) {
     this.tabReferences.set(tabId, key);
     this._logInfo(`添加标签页引用: ${tabId} -> ${key}`);
-    this.emit('tabReferenceAdded', { tabId, key });
+    this.emit("tabReferenceAdded", { tabId, key });
   }
 
   /**
@@ -313,11 +321,15 @@ class BaseConnectionPool extends EventEmitter {
     if (key) {
       this.tabReferences.delete(tabId);
       this._logInfo(`移除标签页引用: ${tabId} -> ${key}`);
-      this.emit('tabReferenceRemoved', { tabId, key });
+      this.emit("tabReferenceRemoved", { tabId, key });
 
       // 检查连接是否还有其他引用
       const conn = this.connections.get(key);
-      if (conn && conn.refCount === 0 && !this.isConnectionReferencedByTabs(key)) {
+      if (
+        conn &&
+        conn.refCount === 0 &&
+        !this.isConnectionReferencedByTabs(key)
+      ) {
         this.closeConnection(key);
       }
     }
@@ -328,7 +340,7 @@ class BaseConnectionPool extends EventEmitter {
    */
   startHealthCheck() {
     if (this.healthCheckTimer) {
-      this._logInfo('健康检查已经在运行');
+      this._logInfo("健康检查已经在运行");
       return;
     }
 
@@ -338,7 +350,7 @@ class BaseConnectionPool extends EventEmitter {
       this.performHealthCheck();
     }, this.config.healthCheckInterval);
 
-    this.emit('healthCheckStarted');
+    this.emit("healthCheckStarted");
   }
 
   /**
@@ -348,9 +360,27 @@ class BaseConnectionPool extends EventEmitter {
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
       this.healthCheckTimer = null;
-      this._logInfo('健康检查已停止');
-      this.emit('healthCheckStopped');
+      this._logInfo("健康检查已停止");
+      this.emit("healthCheckStopped");
     }
+  }
+
+  /**
+   * 处理“活跃但不健康”的连接（默认不处理，由子类按需覆盖）
+   * @param {string} key - 连接键
+   * @param {Object} connectionInfo - 连接信息对象
+   * @param {Object} metadata - 额外上下文
+   * @returns {boolean|Promise<boolean>} 是否已由子类接管恢复流程
+   */
+  handleActiveUnhealthyConnection(key, connectionInfo, metadata = {}) {
+    void key;
+    void connectionInfo;
+    void metadata;
+    return false;
+  }
+
+  _isPromiseLike(value) {
+    return Boolean(value && typeof value.then === "function");
   }
 
   /**
@@ -358,15 +388,53 @@ class BaseConnectionPool extends EventEmitter {
    */
   performHealthCheck() {
     const now = Date.now();
-    const unhealthy = [];
+    const toClose = [];
+    let redirectedToRecovery = 0;
 
     this._logInfo(`执行健康检查，当前连接数: ${this.connections.size}`);
 
     for (const [key, conn] of this.connections) {
+      const hasActiveReference =
+        conn.refCount > 0 || this.isConnectionReferencedByTabs(key);
+
       // 检查连接健康状态
       if (!this.isConnectionHealthy(conn)) {
-        this._logInfo(`发现不健康的连接: ${key}`);
-        unhealthy.push(key);
+        if (hasActiveReference) {
+          let handledByRecovery = false;
+          try {
+            const result = this.handleActiveUnhealthyConnection(key, conn, {
+              reason: "health",
+              checkedAt: now,
+            });
+            if (this._isPromiseLike(result)) {
+              handledByRecovery = true;
+              result.catch((error) => {
+                this._logError(
+                  `健康检查触发恢复失败: ${key} - ${error?.message || error}`,
+                  error,
+                );
+              });
+            } else {
+              handledByRecovery = result === true;
+            }
+          } catch (error) {
+            this._logError(
+              `健康检查恢复处理异常: ${key} - ${error?.message || error}`,
+              error,
+            );
+          }
+
+          if (handledByRecovery) {
+            redirectedToRecovery++;
+            this._logInfo(`健康检查命中: ${key}, 动作=转入重连`);
+          } else {
+            this._logInfo(`健康检查命中: ${key}, 动作=保留活跃连接`);
+          }
+          continue;
+        }
+
+        this._logInfo(`发现不健康的空闲连接: ${key}`);
+        toClose.push({ key, reason: "unhealthy" });
       }
       // 检查空闲超时
       else if (
@@ -374,17 +442,23 @@ class BaseConnectionPool extends EventEmitter {
         !this.isConnectionReferencedByTabs(key) &&
         now - conn.lastUsed > this.config.idleTimeout
       ) {
-        this._logInfo(`发现空闲超时的连接: ${key}, 空闲时间: ${now - conn.lastUsed}ms`);
-        unhealthy.push(key);
+        this._logInfo(
+          `发现空闲超时的连接: ${key}, 空闲时间: ${now - conn.lastUsed}ms`,
+        );
+        toClose.push({ key, reason: "idle-timeout" });
       }
     }
 
-    // 关闭不健康的连接
-    unhealthy.forEach(key => this.closeConnection(key));
+    // 仅关闭真正空闲且无引用的连接
+    toClose.forEach(({ key, reason }) => {
+      this._logInfo(`健康检查命中: ${key}, 动作=关闭, 原因=${reason}`);
+      this.closeConnection(key);
+    });
 
-    this.emit('healthCheckCompleted', {
+    this.emit("healthCheckCompleted", {
       totalConnections: this.connections.size,
-      unhealthyCount: unhealthy.length
+      unhealthyCount: toClose.length,
+      redirectedToRecovery,
     });
   }
 
@@ -420,7 +494,7 @@ class BaseConnectionPool extends EventEmitter {
 
     if (cleaned > 0) {
       this._logInfo(`清理了 ${cleaned} 个空闲连接`);
-      this.emit('idleConnectionsCleaned', { count: cleaned });
+      this.emit("idleConnectionsCleaned", { count: cleaned });
     }
 
     return cleaned > 0;
@@ -480,15 +554,15 @@ class BaseConnectionPool extends EventEmitter {
           connectionId,
           serverKey,
           name: cachedConfig.name,
-          type: 'connection',
+          type: "connection",
           protocol: cachedConfig.protocol,
           host: cachedConfig.host,
           port: cachedConfig.port,
           username: cachedConfig.username,
-          password: '',
+          password: "",
           privateKeyPath: cachedConfig.privateKeyPath,
           proxy: cachedConfig.proxy || null,
-          lastUsed: Date.now()
+          lastUsed: Date.now(),
         });
       } else {
         // 如果缓存中没有，尝试从活跃连接中获取
@@ -500,15 +574,15 @@ class BaseConnectionPool extends EventEmitter {
             connectionId,
             serverKey,
             name: conn.config.name || `${conn.config.host}:${conn.config.port}`,
-            type: 'connection',
+            type: "connection",
             protocol: this.config.protocolType.toLowerCase(),
             host: conn.config.host,
             port: conn.config.port,
             username: conn.config.username,
-            password: '',
-            privateKeyPath: conn.config.privateKeyPath || '',
+            password: "",
+            privateKeyPath: conn.config.privateKeyPath || "",
             proxy: conn.config.proxy || null,
-            lastUsed: conn.lastUsedAt || conn.createdAt
+            lastUsed: conn.lastUsedAt || conn.createdAt,
           });
         }
       }
@@ -539,8 +613,7 @@ class BaseConnectionPool extends EventEmitter {
         this.lastConnections.push(key);
 
         const connectionId =
-          conn.connectionId ||
-          (conn.id && conn.id !== key ? conn.id : null);
+          conn.connectionId || (conn.id && conn.id !== key ? conn.id : null);
 
         // 缓存连接配置
         this.lastConnectionConfigs.set(key, {
@@ -548,11 +621,11 @@ class BaseConnectionPool extends EventEmitter {
           host: conn.host,
           port: conn.port,
           username: conn.username,
-          password: '',
-          privateKeyPath: conn.privateKeyPath || '',
+          password: "",
+          privateKeyPath: conn.privateKeyPath || "",
           proxy: conn.proxy || null,
           name: conn.name || `${conn.host}:${conn.port}`,
-          protocol: conn.protocol || this.config.protocolType.toLowerCase()
+          protocol: conn.protocol || this.config.protocolType.toLowerCase(),
         });
       }
     }
@@ -593,7 +666,7 @@ class BaseConnectionPool extends EventEmitter {
     return [...this.connectionUsage.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, count)
-      .map(entry => entry[0]);
+      .map((entry) => entry[0]);
   }
 
   /**
@@ -602,10 +675,12 @@ class BaseConnectionPool extends EventEmitter {
    */
   getStatus() {
     const active = this.connections.size;
-    const withRefs = Array.from(this.connections.values())
-      .filter(c => c.refCount > 0).length;
-    const idle = Array.from(this.connections.values())
-      .filter(c => c.refCount === 0).length;
+    const withRefs = Array.from(this.connections.values()).filter(
+      (c) => c.refCount > 0,
+    ).length;
+    const idle = Array.from(this.connections.values()).filter(
+      (c) => c.refCount === 0,
+    ).length;
 
     return {
       protocolType: this.config.protocolType,
@@ -615,7 +690,7 @@ class BaseConnectionPool extends EventEmitter {
       maxConnections: this.config.maxConnections,
       isInitialized: this.isInitialized,
       tabReferences: this.tabReferences.size,
-      connectionDetails: this._getConnectionDetails()
+      connectionDetails: this._getConnectionDetails(),
     };
   }
 
@@ -630,18 +705,23 @@ class BaseConnectionPool extends EventEmitter {
     const stats = {
       protocolType: this.config.protocolType,
       totalConnections: conns.length,
-      healthyConnections: conns.filter(c => this.isConnectionHealthy(c)).length,
-      connectionsWithRefs: conns.filter(c => c.refCount > 0).length,
-      idleConnections: conns.filter(c => c.refCount === 0).length,
+      healthyConnections: conns.filter((c) => this.isConnectionHealthy(c))
+        .length,
+      connectionsWithRefs: conns.filter((c) => c.refCount > 0).length,
+      idleConnections: conns.filter((c) => c.refCount === 0).length,
       totalRefCount: conns.reduce((sum, c) => sum + c.refCount, 0),
-      oldestConnection: conns.length > 0 ? Math.min(...conns.map(c => c.createdAt)) : null,
-      newestConnection: conns.length > 0 ? Math.max(...conns.map(c => c.createdAt)) : null,
-      averageAge: conns.length > 0
-        ? conns.reduce((sum, c) => sum + (now - c.createdAt), 0) / conns.length
-        : 0,
+      oldestConnection:
+        conns.length > 0 ? Math.min(...conns.map((c) => c.createdAt)) : null,
+      newestConnection:
+        conns.length > 0 ? Math.max(...conns.map((c) => c.createdAt)) : null,
+      averageAge:
+        conns.length > 0
+          ? conns.reduce((sum, c) => sum + (now - c.createdAt), 0) /
+            conns.length
+          : 0,
       tabReferences: this.tabReferences.size,
       topConnections: this.getTopConnections(5),
-      lastConnections: this.getLastConnections(5)
+      lastConnections: this.getLastConnections(5),
     };
 
     return stats;
@@ -656,7 +736,7 @@ class BaseConnectionPool extends EventEmitter {
   _reuseConnection(conn) {
     conn.lastUsed = Date.now();
     conn.refCount++;
-    this.emit('connectionReused', { key: conn.key, refCount: conn.refCount });
+    this.emit("connectionReused", { key: conn.key, refCount: conn.refCount });
     return conn;
   }
 
@@ -687,7 +767,7 @@ class BaseConnectionPool extends EventEmitter {
       lastUsed: new Date(conn.lastUsed).toISOString(),
       ready: conn.ready,
       host: conn.config.host,
-      port: conn.config.port
+      port: conn.config.port,
     }));
   }
 
@@ -709,8 +789,8 @@ class BaseConnectionPool extends EventEmitter {
    */
   _logError(message, error) {
     const fullMessage = `[${this.config.protocolType}连接池] ${message} - ${error.message}`;
-    logToFile(fullMessage, 'ERROR');
-    this.emit('error', { message, error });
+    logToFile(fullMessage, "ERROR");
+    this.emit("error", { message, error });
   }
 
   /**
@@ -720,7 +800,7 @@ class BaseConnectionPool extends EventEmitter {
    */
   _logInfo(message) {
     const fullMessage = `[${this.config.protocolType}连接池] ${message}`;
-    logToFile(fullMessage, 'INFO');
+    logToFile(fullMessage, "INFO");
   }
 }
 
