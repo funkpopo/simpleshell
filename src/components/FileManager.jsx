@@ -644,6 +644,8 @@ const FileManager = memo(
     const backgroundListLastAttemptAtRef = useRef(0);
     // 前台目录加载计数（同步更新，避免 setState 延迟导致与静默刷新竞态）
     const foregroundLoadCountRef = useRef(0);
+    // 前台目录加载请求序号：仅允许最新请求回写 UI，避免旧响应覆盖新目录
+    const activeForegroundLoadRequestIdRef = useRef(0);
 
     // 稳定列表签名（用于判断文件列表是否变化，避免对大列表 JSON.stringify）
     const stableListSignatureRef = useRef(null);
@@ -1297,9 +1299,23 @@ const FileManager = memo(
       retryCount = 0,
       forceRefresh = false,
       isHistoryNavigation = false,
+      requestId = undefined,
     ) => {
+      const loadRequestId =
+        typeof requestId === "number"
+          ? requestId
+          : (activeForegroundLoadRequestIdRef.current += 1);
+      const isCurrentLoadRequest = () =>
+        activeForegroundLoadRequestIdRef.current === loadRequestId;
+
+      if (!isCurrentLoadRequest()) {
+        return;
+      }
+
       if (!sshConnection || !tabId) {
-        setError(t("fileManager.errors.missingConnectionInfo"));
+        if (isCurrentLoadRequest()) {
+          setError(t("fileManager.errors.missingConnectionInfo"));
+        }
         return;
       }
 
@@ -1326,6 +1342,10 @@ const FileManager = memo(
       if (!forceRefresh) {
         const cachedData = getDirectoryFromCache(path);
         if (cachedData) {
+          if (!isCurrentLoadRequest()) {
+            return;
+          }
+          filesRef.current = cachedData;
           setFiles(cachedData);
           updateCurrentPath(path, isHistoryNavigation);
           setPathInput(path);
@@ -1341,6 +1361,18 @@ const FileManager = memo(
       let isRetrying = false; // 标记是否正在重试
 
       try {
+        if (!isCurrentLoadRequest()) {
+          return;
+        }
+
+        const isPathChanged = path !== currentPathRef.current;
+        if (isPathChanged) {
+          // 进入新目录前同步清空 ref/state，避免旧列表在分片到达前残留
+          filesRef.current = [];
+          setFiles([]);
+          clearSelection();
+        }
+
         if (window.terminalAPI && window.terminalAPI.listFiles) {
           // 将~转换为空字符串，用于API调用
           const apiPath = path === "~" ? "" : path;
@@ -1361,10 +1393,14 @@ const FileManager = memo(
             options,
           );
 
+          if (!isCurrentLoadRequest()) {
+            return;
+          }
+
           if (response?.success) {
             setConnectionLoading(false);
             setConnectionLoadingMessage("");
-            const fileData = response.data || [];
+            const fileData = Array.isArray(response.data) ? response.data : [];
             if (response.chunked && response.token) {
               listTokenRef.current = response.token;
               setListToken(response.token);
@@ -1381,6 +1417,7 @@ const FileManager = memo(
             // 更新缓存
             updateDirectoryCache(path, fileData);
 
+            filesRef.current = fileData;
             setFiles(fileData);
             updateCurrentPath(path, isHistoryNavigation); // 保持UI中显示~
             setPathInput(path);
@@ -1419,30 +1456,46 @@ const FileManager = memo(
                 );
 
                 // 先关闭loading状态，避免持续显示
-                setLoading(false);
+                if (isCurrentLoadRequest()) {
+                  setLoading(false);
+                }
                 isRetrying = true; // 标记正在重试
 
                 // 添加延迟，避免立即重试
                 setTimeout(() => {
-                  loadDirectory(path, retryCount + 1, forceRefresh);
+                  loadDirectory(
+                    path,
+                    retryCount + 1,
+                    forceRefresh,
+                    isHistoryNavigation,
+                    loadRequestId,
+                  );
                 }, waitTime);
                 return;
               }
             }
 
             // 重试失败或其他错误
-            setConnectionLoading(false);
-            setConnectionLoadingMessage("");
-            setError(
-              response?.error || t("fileManager.errors.loadDirectoryFailed"),
-            );
+            if (isCurrentLoadRequest()) {
+              setConnectionLoading(false);
+              setConnectionLoadingMessage("");
+              setError(
+                response?.error || t("fileManager.errors.loadDirectoryFailed"),
+              );
+            }
           }
         } else {
-          setConnectionLoading(false);
-          setConnectionLoadingMessage("");
-          setError(t("fileManager.errors.fileApiNotAvailable"));
+          if (isCurrentLoadRequest()) {
+            setConnectionLoading(false);
+            setConnectionLoadingMessage("");
+            setError(t("fileManager.errors.fileApiNotAvailable"));
+          }
         }
       } catch (error) {
+        if (!isCurrentLoadRequest()) {
+          return;
+        }
+
         // 加载目录失败
 
         // 如果是异常错误且重试次数未达到上限，则进行重试
@@ -1458,30 +1511,40 @@ const FileManager = memo(
           );
 
           // 先关闭loading状态，避免持续显示
-          setLoading(false);
+          if (isCurrentLoadRequest()) {
+            setLoading(false);
+          }
           isRetrying = true; // 标记正在重试
 
           // 添加延迟，避免立即重试
           setTimeout(() => {
-            loadDirectory(path, retryCount + 1, forceRefresh);
+            loadDirectory(
+              path,
+              retryCount + 1,
+              forceRefresh,
+              isHistoryNavigation,
+              loadRequestId,
+            );
           }, waitTime);
           return;
         }
 
-        setConnectionLoading(false);
-        setConnectionLoadingMessage("");
-        setError(
-          t("fileManager.errors.loadDirectoryFailed") +
-            ": " +
-            (error.message || t("fileManager.errors.unknownError")),
-        );
+        if (isCurrentLoadRequest()) {
+          setConnectionLoading(false);
+          setConnectionLoadingMessage("");
+          setError(
+            t("fileManager.errors.loadDirectoryFailed") +
+              ": " +
+              (error.message || t("fileManager.errors.unknownError")),
+          );
+        }
       } finally {
         foregroundLoadCountRef.current = Math.max(
           0,
           foregroundLoadCountRef.current - 1,
         );
         // 只有在不重试的情况下才关闭loading
-        if (!isRetrying) {
+        if (!isRetrying && isCurrentLoadRequest()) {
           setLoading(false);
         }
       }
