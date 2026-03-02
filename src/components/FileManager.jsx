@@ -498,17 +498,19 @@ const FileManager = memo(
     const CACHE_EXPIRY_TIME = 10000; // 10秒
 
     // 自动刷新相关参数
-    const USER_ACTIVITY_REFRESH_DELAY = 300; // 将用户活动后刷新延迟从1000ms减少到300ms
+    const USER_ACTIVITY_REFRESH_DELAY = 120;
+    const DIRECTORY_NAV_THROTTLE_MS = 120;
 
     // 低负载轮询与后台刷新参数（仅用于刷新当前目录列表）
-    const FILE_LIST_POLL_BASE_INTERVAL_MS = 5000;
-    const FILE_LIST_POLL_MAX_INTERVAL_MS = 30000;
-    const FILE_LIST_POLL_NO_CHANGE_BACKOFF_AFTER = 3;
-    const FILE_LIST_POLL_BACKOFF_STEP_MS = 5000;
-    const FILE_LIST_POLL_ERROR_BACKOFF_STEP_MS = 5000;
+    const FILE_LIST_POLL_BASE_INTERVAL_MS = 1200;
+    const FILE_LIST_POLL_MAX_INTERVAL_MS = 8000;
+    const FILE_LIST_POLL_NO_CHANGE_BACKOFF_AFTER = 4;
+    const FILE_LIST_POLL_BACKOFF_STEP_MS = 1000;
+    const FILE_LIST_POLL_ERROR_BACKOFF_STEP_MS = 1500;
 
     // 防止主进程阻塞时反复触发 IPC，导致 listFiles 积压
-    const BACKGROUND_REFRESH_MIN_INTERVAL_MS = 2000;
+    const BACKGROUND_REFRESH_MIN_INTERVAL_MS = 400;
+    const BACKGROUND_REFRESH_RECENT_GUARD_MS = 200;
     const BACKGROUND_REFRESH_MAX_IN_FLIGHT_MS = 60000;
 
     // 传输进度管理函数
@@ -943,7 +945,10 @@ const FileManager = memo(
 
         // 避免在一次刷新刚完成后立即再次刷新，减少竞态/抖动
         try {
-          if (curLastRefresh && Date.now() - curLastRefresh < 700) {
+          if (
+            curLastRefresh &&
+            Date.now() - curLastRefresh < BACKGROUND_REFRESH_RECENT_GUARD_MS
+          ) {
             return { ok: false, skipped: true, reason: "recentlyRefreshed" };
           }
         } catch {
@@ -1144,7 +1149,7 @@ const FileManager = memo(
           () => {
             tick().catch(() => {});
           },
-          Math.max(250, delayMs || FILE_LIST_POLL_BASE_INTERVAL_MS),
+          Math.max(120, delayMs || FILE_LIST_POLL_BASE_INTERVAL_MS),
         );
       };
 
@@ -1160,7 +1165,7 @@ const FileManager = memo(
         // 页面不可见时降低刷新频率（低负载）
         try {
           if (typeof document !== "undefined" && document.hidden) {
-            schedule(Math.min(pollStateRef.current.intervalMs, 15000));
+            schedule(Math.max(pollStateRef.current.intervalMs, 15000));
             return;
           }
         } catch {
@@ -1561,8 +1566,8 @@ const FileManager = memo(
         const now = Date.now();
         const timeSinceLastCall = now - lastExecution;
 
-        // 如果上次调用在300ms内，则防止立即执行
-        if (timeSinceLastCall < 300) {
+        // 如果上次调用在短时间内，则防止立即执行
+        if (timeSinceLastCall < DIRECTORY_NAV_THROTTLE_MS) {
           // 取消之前的定时器
           if (timeoutId) {
             clearTimeout(timeoutId);
@@ -1572,9 +1577,9 @@ const FileManager = memo(
           timeoutId = setTimeout(() => {
             lastExecution = Date.now();
             loadDirectory(path, 0, forceRefresh);
-          }, 300 - timeSinceLastCall);
+          }, DIRECTORY_NAV_THROTTLE_MS - timeSinceLastCall);
         } else {
-          // 如果距离上次调用超过300ms，则立即执行
+          // 如果距离上次调用超过节流窗口，则立即执行
           lastExecution = now;
           loadDirectory(path, 0, forceRefresh);
         }
