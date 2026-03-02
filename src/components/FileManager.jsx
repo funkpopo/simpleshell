@@ -294,8 +294,12 @@ const FileManager = memo(
     useEffect(() => {
       isChunkingRef.current = isChunking;
     }, [isChunking]);
-    const chunkBufferRef = useRef([]);
     const flushTimerRef = useRef(null);
+    const foregroundChunkSessionRef = useRef({
+      token: null,
+      path: null,
+      entries: new Map(),
+    });
     const filesRef = useRef(files);
     useEffect(() => {
       filesRef.current = files;
@@ -642,7 +646,7 @@ const FileManager = memo(
       reject: null,
       watchdog: null,
     });
-    const backgroundListBufferRef = useRef([]);
+    const backgroundListBufferRef = useRef(new Map());
     const backgroundListLastAttemptAtRef = useRef(0);
     // 前台目录加载计数（同步更新，避免 setState 延迟导致与静默刷新竞态）
     const foregroundLoadCountRef = useRef(0);
@@ -666,9 +670,76 @@ const FileManager = memo(
       return path || "";
     }, []);
 
-    const makeListKey = useCallback((id, apiPath) => {
-      return `${id || ""}::${apiPath || ""}`;
+    const normalizeComparablePath = useCallback((pathValue) => {
+      if (pathValue === null || pathValue === undefined) return "";
+      const normalized = String(pathValue).trim();
+      if (!normalized || normalized === ".") return "";
+      return normalized;
     }, []);
+
+    const makeListKey = useCallback(
+      (id, apiPath) => {
+        return `${id || ""}::${normalizeComparablePath(apiPath)}`;
+      },
+      [normalizeComparablePath],
+    );
+
+    const getFileEntryKey = useCallback((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const name = typeof entry.name === "string" ? entry.name : "";
+      if (!name) return null;
+      const typeFlag = entry.isDirectory ? "d" : "f";
+      return `${typeFlag}:${name}`;
+    }, []);
+
+    const upsertFileEntries = useCallback(
+      (targetMap, entries = []) => {
+        if (!(targetMap instanceof Map) || !Array.isArray(entries)) {
+          return targetMap;
+        }
+
+        for (let i = 0; i < entries.length; i += 1) {
+          const entry = entries[i];
+          const key = getFileEntryKey(entry);
+          if (!key) continue;
+
+          const existing = targetMap.get(key);
+          if (!existing) {
+            targetMap.set(key, entry);
+            continue;
+          }
+
+          const existingMtime = Number.isFinite(existing?.modifyTime)
+            ? existing.modifyTime
+            : 0;
+          const incomingMtime = Number.isFinite(entry?.modifyTime)
+            ? entry.modifyTime
+            : 0;
+
+          if (incomingMtime >= existingMtime) {
+            targetMap.set(key, entry);
+          }
+        }
+
+        return targetMap;
+      },
+      [getFileEntryKey],
+    );
+
+    const mapToFileList = useCallback((entryMap) => {
+      if (!(entryMap instanceof Map)) return [];
+      return Array.from(entryMap.values());
+    }, []);
+
+    const normalizeFileList = useCallback(
+      (list) => {
+        if (!Array.isArray(list) || list.length === 0) return [];
+        const entryMap = new Map();
+        upsertFileEntries(entryMap, list);
+        return mapToFileList(entryMap);
+      },
+      [upsertFileEntries, mapToFileList],
+    );
 
     // 低成本(近似)签名：对每个条目做 hash，再用 sum/xor 合并，避免对大数组 JSON.stringify
     const computeFileListSignature = useCallback((list) => {
@@ -700,40 +771,81 @@ const FileManager = memo(
       return `${list.length}:${(xor >>> 0).toString(16)}:${sum.toString(16)}`;
     }, []);
 
-    const getDirectoryFromCache = (path) => {
-      // 优先使用全局缓存（跨次打开可复用）
+    const resetForegroundChunkSession = useCallback(() => {
       try {
-        const globalCached = dirCache.get(tabId, path, CACHE_EXPIRY_TIME);
-        if (globalCached) return globalCached;
+        if (flushTimerRef.current) {
+          clearTimeout(flushTimerRef.current);
+        }
       } catch {
         /* intentionally ignored */
       }
-      const cacheEntry = directoryCacheRef.current.get(path);
-      if (!cacheEntry) {
-        return null;
-      }
-      const now = Date.now();
+      flushTimerRef.current = null;
+      foregroundChunkSessionRef.current = {
+        token: null,
+        path: null,
+        entries: new Map(),
+      };
+    }, []);
 
-      // 检查缓存是否过期
-      if (now - cacheEntry.timestamp > CACHE_EXPIRY_TIME) {
-        return null;
-      }
-      return cacheEntry.data;
-    };
+    const flushForegroundChunkSession = useCallback(
+      (expectedToken = null) => {
+        const session = foregroundChunkSessionRef.current;
+        if (!session || !(session.entries instanceof Map)) {
+          return filesRef.current || [];
+        }
+        if (expectedToken && session.token !== expectedToken) {
+          return filesRef.current || [];
+        }
+
+        const nextFiles = mapToFileList(session.entries);
+        filesRef.current = nextFiles;
+        setFiles(nextFiles);
+        return nextFiles;
+      },
+      [mapToFileList],
+    );
+
+    const getDirectoryFromCache = useCallback(
+      (path) => {
+        // 优先使用全局缓存（跨次打开可复用）
+        try {
+          const globalCached = dirCache.get(tabId, path, CACHE_EXPIRY_TIME);
+          if (globalCached) return normalizeFileList(globalCached);
+        } catch {
+          /* intentionally ignored */
+        }
+        const cacheEntry = directoryCacheRef.current.get(path);
+        if (!cacheEntry) {
+          return null;
+        }
+        const now = Date.now();
+
+        // 检查缓存是否过期
+        if (now - cacheEntry.timestamp > CACHE_EXPIRY_TIME) {
+          return null;
+        }
+        return normalizeFileList(cacheEntry.data);
+      },
+      [tabId, normalizeFileList],
+    );
 
     // 更新目录缓存
-    const updateDirectoryCache = (path, data) => {
-      // 写入全局缓存
-      try {
-        dirCache.set(tabId, path, data);
-      } catch {
-        /* intentionally ignored */
-      }
-      directoryCacheRef.current.set(path, {
-        data,
-        timestamp: Date.now(),
-      });
-    };
+    const updateDirectoryCache = useCallback(
+      (path, data) => {
+        const normalizedData = normalizeFileList(data);
+        // 写入全局缓存
+        try {
+          dirCache.set(tabId, path, normalizedData);
+        } catch {
+          /* intentionally ignored */
+        }
+        directoryCacheRef.current.set(path, {
+          data: normalizedData,
+          timestamp: Date.now(),
+        });
+      },
+      [tabId, normalizeFileList],
+    );
 
     // 订阅非阻塞目录分片事件
     useEffect(() => {
@@ -745,15 +857,19 @@ const FileManager = memo(
           if (!openRef.current) return;
           if (!payload || payload.tabId !== tabId || !payload.token) return;
 
-          const apiPath = toApiPath(currentPathRef.current);
+          const payloadPath = normalizeComparablePath(payload.path);
+          const apiPath = normalizeComparablePath(
+            toApiPath(currentPathRef.current),
+          );
           const bg = backgroundListRequestRef.current;
+          const bgPath = normalizeComparablePath(bg?.apiPath);
           const fgToken = listTokenRef.current;
 
           const isForeground =
-            payload.path === apiPath && payload.token === fgToken;
+            payloadPath === apiPath && payload.token === fgToken;
           const isBackground =
             Boolean(bg?.inFlight) &&
-            payload.path === bg.apiPath &&
+            payloadPath === bgPath &&
             payload.token === bg.token;
 
           if (!isForeground && !isBackground) return;
@@ -761,15 +877,12 @@ const FileManager = memo(
           // 后台刷新：先缓冲，done 时再一次性判断变化并更新 UI（避免轮询导致列表闪烁/重置选择）
           if (isBackground) {
             if (Array.isArray(payload.items) && payload.items.length > 0) {
-              // 直接 push，避免 concat 产生额外数组
-              backgroundListBufferRef.current.push(...payload.items);
+              upsertFileEntries(backgroundListBufferRef.current, payload.items);
             }
 
             if (payload.done) {
-              const nextList = Array.isArray(backgroundListBufferRef.current)
-                ? backgroundListBufferRef.current
-                : [];
-              backgroundListBufferRef.current = [];
+              const nextList = mapToFileList(backgroundListBufferRef.current);
+              backgroundListBufferRef.current = new Map();
 
               // 清理 watchdog/状态
               try {
@@ -790,7 +903,8 @@ const FileManager = memo(
 
               // 路径切换/前台加载时丢弃后台结果（避免覆盖用户的显式操作）
               const stillSamePath =
-                toApiPath(currentPathRef.current) === payload.path;
+                normalizeComparablePath(toApiPath(currentPathRef.current)) ===
+                payloadPath;
               const canApply =
                 stillSamePath &&
                 foregroundLoadCountRef.current === 0 &&
@@ -799,7 +913,7 @@ const FileManager = memo(
                 !isChunkingRef.current;
 
               if (canApply) {
-                const key = makeListKey(tabId, payload.path);
+                const key = makeListKey(tabId, payloadPath);
                 const prevSig =
                   stableListSignatureKeyRef.current === key
                     ? stableListSignatureRef.current
@@ -812,6 +926,7 @@ const FileManager = memo(
                 markLastRefreshTime();
 
                 if (changed) {
+                  filesRef.current = nextList;
                   setFiles(nextList);
                   clearSelection();
                 }
@@ -832,34 +947,35 @@ const FileManager = memo(
           }
 
           // 前台目录加载：分片增量更新 UI
+          const session = foregroundChunkSessionRef.current;
+          if (session.token !== payload.token || session.path !== payloadPath) {
+            foregroundChunkSessionRef.current = {
+              token: payload.token,
+              path: payloadPath,
+              entries: new Map(),
+            };
+          }
+
           if (Array.isArray(payload.items) && payload.items.length > 0) {
             isChunkingRef.current = true;
             setIsChunking(true);
             if (typeof scheduleChunkingReset === "function")
               scheduleChunkingReset();
 
-            // buffer chunks and batch update to reduce re-renders
-            try {
-              chunkBufferRef.current.push(payload.items);
-              if (!flushTimerRef.current) {
-                flushTimerRef.current = setTimeout(() => {
-                  try {
-                    const buffered = chunkBufferRef.current.flat();
-                    chunkBufferRef.current = [];
-                    if (buffered.length > 0) {
-                      const nextFiles = (filesRef.current || []).concat(
-                        buffered,
-                      );
-                      filesRef.current = nextFiles;
-                      setFiles(nextFiles);
-                    }
-                  } finally {
-                    flushTimerRef.current = null;
-                  }
-                }, 80);
-              }
-            } catch {
-              setFiles((prev) => prev.concat(payload.items));
+            upsertFileEntries(
+              foregroundChunkSessionRef.current.entries,
+              payload.items,
+            );
+
+            if (!flushTimerRef.current) {
+              const expectedToken = payload.token;
+              flushTimerRef.current = setTimeout(() => {
+                try {
+                  flushForegroundChunkSession(expectedToken);
+                } finally {
+                  flushTimerRef.current = null;
+                }
+              }, 80);
             }
           }
 
@@ -869,30 +985,25 @@ const FileManager = memo(
               clearTimeout(flushTimerRef.current);
               flushTimerRef.current = null;
             }
-            const remaining = chunkBufferRef.current.flat();
-            chunkBufferRef.current = [];
-            if (remaining.length > 0) {
-              const nextFiles = (filesRef.current || []).concat(remaining);
-              filesRef.current = nextFiles;
-              setFiles(nextFiles);
-            }
+            const finalList = flushForegroundChunkSession(payload.token);
 
-            updateDirectoryCache(
-              currentPathRef.current,
-              filesRef.current || [],
-            );
+            updateDirectoryCache(currentPathRef.current, finalList);
 
             // 更新稳定签名，供轮询快速比较
             try {
-              const key = makeListKey(tabId, apiPath);
+              const key = makeListKey(tabId, payloadPath);
               stableListSignatureKeyRef.current = key;
-              stableListSignatureRef.current = computeFileListSignature(
-                filesRef.current || [],
-              );
+              stableListSignatureRef.current =
+                computeFileListSignature(finalList);
             } catch {
               /* intentionally ignored */
             }
 
+            foregroundChunkSessionRef.current = {
+              token: null,
+              path: null,
+              entries: new Map(),
+            };
             listTokenRef.current = null;
             setListToken(null);
             isChunkingRef.current = false;
@@ -910,11 +1021,16 @@ const FileManager = memo(
     }, [
       tabId,
       toApiPath,
+      normalizeComparablePath,
       makeListKey,
       computeFileListSignature,
       clearSelection,
       scheduleChunkingReset,
       markLastRefreshTime,
+      upsertFileEntries,
+      mapToFileList,
+      flushForegroundChunkSession,
+      updateDirectoryCache,
     ]);
 
     const startBackgroundDirectoryRefresh = useCallback(
@@ -982,21 +1098,22 @@ const FileManager = memo(
             bg.reason = null;
             bg.resolve = null;
             bg.reject = null;
-            backgroundListBufferRef.current = [];
+            backgroundListBufferRef.current = new Map();
           } else {
             return { ok: false, skipped: true, reason: "inFlight" };
           }
         }
 
         const apiPath = toApiPath(curPath);
+        const normalizedApiPath = normalizeComparablePath(apiPath);
 
         // 初始化后台刷新上下文（结果由 listFiles:chunk done 回调统一处理）
         bg.inFlight = true;
         bg.token = null;
-        bg.apiPath = apiPath;
+        bg.apiPath = normalizedApiPath;
         bg.startedAt = now;
         bg.reason = reason;
-        backgroundListBufferRef.current = [];
+        backgroundListBufferRef.current = new Map();
 
         const donePromise = new Promise((resolve) => {
           bg.resolve = resolve;
@@ -1027,7 +1144,7 @@ const FileManager = memo(
           bg.reason = null;
           bg.resolve = null;
           bg.reject = null;
-          backgroundListBufferRef.current = [];
+          backgroundListBufferRef.current = new Map();
           if (typeof resolve === "function") {
             resolve({ ok: false, error: error?.message || String(error) });
           }
@@ -1043,7 +1160,7 @@ const FileManager = memo(
           bg.reason = null;
           bg.resolve = null;
           bg.reject = null;
-          backgroundListBufferRef.current = [];
+          backgroundListBufferRef.current = new Map();
           if (typeof resolve === "function") {
             resolve({
               ok: false,
@@ -1081,7 +1198,7 @@ const FileManager = memo(
                   /* intentionally ignored */
                 }
                 cur.watchdog = null;
-                backgroundListBufferRef.current = [];
+                backgroundListBufferRef.current = new Map();
                 if (typeof resolve === "function") {
                   resolve({ ok: false, timeout: true });
                 }
@@ -1109,13 +1226,13 @@ const FileManager = memo(
         bg.reason = null;
         bg.resolve = null;
         bg.reject = null;
-        backgroundListBufferRef.current = [];
+        backgroundListBufferRef.current = new Map();
         if (typeof resolve === "function") {
           resolve({ ok: true, changed: false, immediate: true });
         }
         return { ok: true, changed: false, immediate: true };
       },
-      [open, sshConnection, tabId, toApiPath],
+      [open, sshConnection, tabId, toApiPath, normalizeComparablePath],
     );
 
     // 静默刷新当前目录（不显示加载指示器）：用于用户活动触发，采用后台刷新并避免重复请求
@@ -1238,7 +1355,7 @@ const FileManager = memo(
           bg.resolve = null;
           bg.reject = null;
           bg.watchdog = null;
-          backgroundListBufferRef.current = [];
+          backgroundListBufferRef.current = new Map();
           if (typeof resolve === "function") {
             resolve({ ok: false, cancelled: true });
           }
@@ -1325,15 +1442,7 @@ const FileManager = memo(
       }
 
       // 切换路径时重置前台分片状态，避免旧分片残留导致持续加载
-      try {
-        if (flushTimerRef.current) {
-          clearTimeout(flushTimerRef.current);
-        }
-      } catch {
-        /* intentionally ignored */
-      }
-      flushTimerRef.current = null;
-      chunkBufferRef.current = [];
+      resetForegroundChunkSession();
       if (listTokenRef.current) {
         listTokenRef.current = null;
         setListToken(null);
@@ -1352,10 +1461,16 @@ const FileManager = memo(
           }
           filesRef.current = cachedData;
           setFiles(cachedData);
+          const cacheKey = makeListKey(
+            tabId,
+            normalizeComparablePath(toApiPath(path)),
+          );
+          stableListSignatureKeyRef.current = cacheKey;
+          stableListSignatureRef.current = computeFileListSignature(cachedData);
           updateCurrentPath(path, isHistoryNavigation);
           setPathInput(path);
           // 加载新目录时重置选中文件
-          setSelectedFile(null);
+          clearSelection();
           return;
         }
       }
@@ -1405,25 +1520,52 @@ const FileManager = memo(
           if (response?.success) {
             setConnectionLoading(false);
             setConnectionLoadingMessage("");
-            const fileData = Array.isArray(response.data) ? response.data : [];
+            const normalizedApiPath = normalizeComparablePath(apiPath);
+            const fileData = normalizeFileList(
+              Array.isArray(response.data) ? response.data : [],
+            );
+
             if (response.chunked && response.token) {
               listTokenRef.current = response.token;
               setListToken(response.token);
               isChunkingRef.current = true;
               setIsChunking(true);
               scheduleChunkingReset();
+
+              const seedEntries = new Map();
+              upsertFileEntries(seedEntries, fileData);
+              foregroundChunkSessionRef.current = {
+                token: response.token,
+                path: normalizedApiPath,
+                entries: seedEntries,
+              };
+
+              const seedList = mapToFileList(seedEntries);
+              filesRef.current = seedList;
+              setFiles(seedList);
             } else {
               listTokenRef.current = null;
               setListToken(null);
               isChunkingRef.current = false;
               setIsChunking(false);
+              foregroundChunkSessionRef.current = {
+                token: null,
+                path: null,
+                entries: new Map(),
+              };
+
+              // 更新缓存
+              updateDirectoryCache(path, fileData);
+
+              filesRef.current = fileData;
+              setFiles(fileData);
+
+              // 更新稳定签名，供后台轮询快速比较
+              const key = makeListKey(tabId, normalizedApiPath);
+              stableListSignatureKeyRef.current = key;
+              stableListSignatureRef.current =
+                computeFileListSignature(fileData);
             }
-
-            // 更新缓存
-            updateDirectoryCache(path, fileData);
-
-            filesRef.current = fileData;
-            setFiles(fileData);
             updateCurrentPath(path, isHistoryNavigation); // 保持UI中显示~
             setPathInput(path);
             // 加载新目录时重置选中文件
