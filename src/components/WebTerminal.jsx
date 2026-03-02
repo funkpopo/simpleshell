@@ -13,6 +13,7 @@ import { useTerminalRender } from "../hooks/useTerminalRender.js";
 import { TerminalPerformanceMonitor } from "../utils/TerminalPerformanceMonitor.js";
 import { ScrollbackUsageTracker } from "../utils/ScrollbackUsageTracker.js";
 import { TerminalWriteQueue } from "../utils/TerminalWriteQueue.js";
+import { highlightPromptInputLine } from "../utils/realtimeInputHighlighter.js";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -1121,6 +1122,104 @@ const WebTerminal = ({
   useEffect(() => {
     suggestionsSuppressedRef.current = suggestionsSuppressedUntilEnter;
   }, [suggestionsSuppressedUntilEnter]);
+  const inEditorModeRef = useRef(false);
+  const isCommandExecutingRef = useRef(false);
+  const realtimeInputHighlightFrameRef = useRef(null);
+  const realtimeInputHighlightSnapshotRef = useRef("");
+  const realtimeInputHighlightWritingRef = useRef(false);
+
+  useEffect(() => {
+    inEditorModeRef.current = inEditorMode;
+  }, [inEditorMode]);
+
+  useEffect(() => {
+    isCommandExecutingRef.current = isCommandExecuting;
+  }, [isCommandExecuting]);
+
+  const repaintCurrentInputLineHighlight = useCallback((term) => {
+    if (!term || realtimeInputHighlightWritingRef.current) {
+      return;
+    }
+
+    if (inEditorModeRef.current || isCommandExecutingRef.current) {
+      realtimeInputHighlightSnapshotRef.current = "";
+      return;
+    }
+
+    const activeBuffer = term?.buffer?.active;
+    if (!activeBuffer || typeof activeBuffer.getLine !== "function") {
+      return;
+    }
+
+    const cursorY = activeBuffer.cursorY;
+    const cursorX = activeBuffer.cursorX;
+    const lineObject = activeBuffer.getLine(cursorY);
+    if (!lineObject || typeof lineObject.translateToString !== "function") {
+      return;
+    }
+
+    const currentLine = lineObject.translateToString(false);
+    if (!currentLine || !currentLine.trim()) {
+      realtimeInputHighlightSnapshotRef.current = "";
+      return;
+    }
+
+    const highlighted = highlightPromptInputLine(currentLine);
+    if (!highlighted) {
+      realtimeInputHighlightSnapshotRef.current = "";
+      return;
+    }
+
+    const snapshotKey = `${cursorY}:${cursorX}:${highlighted.plainLine}`;
+    if (snapshotKey === realtimeInputHighlightSnapshotRef.current) {
+      return;
+    }
+
+    realtimeInputHighlightSnapshotRef.current = snapshotKey;
+    const cursorRestore = cursorX > 0 ? `\r\x1b[${Math.floor(cursorX)}C` : "\r";
+    const repaintSequence = `\r\x1b[2K${highlighted.renderedLine}${cursorRestore}`;
+
+    realtimeInputHighlightWritingRef.current = true;
+    try {
+      term.write(repaintSequence, () => {
+        realtimeInputHighlightWritingRef.current = false;
+      });
+    } catch {
+      try {
+        term.write(repaintSequence);
+      } catch {
+        // intentionally ignored
+      }
+      realtimeInputHighlightWritingRef.current = false;
+    }
+  }, []);
+
+  const scheduleRealtimeInputHighlight = useCallback(
+    (term) => {
+      if (!term || !isActiveRef.current) {
+        return;
+      }
+
+      if (
+        realtimeInputHighlightFrameRef.current !== null &&
+        typeof cancelAnimationFrame === "function"
+      ) {
+        cancelAnimationFrame(realtimeInputHighlightFrameRef.current);
+      }
+
+      const run = () => {
+        realtimeInputHighlightFrameRef.current = null;
+        repaintCurrentInputLineHighlight(term);
+      };
+
+      if (typeof requestAnimationFrame === "function") {
+        realtimeInputHighlightFrameRef.current = requestAnimationFrame(run);
+      } else {
+        run();
+      }
+    },
+    [repaintCurrentInputLineHighlight],
+  );
 
   // 密码提示检测模式（支持多语言和格式）
   const passwordPromptPatterns = [
@@ -1631,6 +1730,8 @@ const WebTerminal = ({
 
     // 用于存储用户正在输入的命令
     let currentInputBuffer = "";
+    // 最近一次输入活动时间，用于在输出回显到达时维持短时间实时重绘
+    let lastInputActivityAt = 0;
     // 标记上一个按键是否是特殊键序列的开始
     let isEscapeSequence = false;
     // 用于存储转义序列
@@ -1705,6 +1806,11 @@ const WebTerminal = ({
       if (data && data.length > 0) {
         // console.log("[onData]", JSON.stringify(data), "processId=", processId);
       }
+      lastInputActivityAt = Date.now();
+
+      // 输入阶段也触发刷新，避免高频输入时出现高亮状态滞后
+      scheduleHighlightRefresh(term);
+      scheduleRealtimeInputHighlight(term);
 
       // 检查是否正在处理外部命令
       let shouldSkipSendToProcess = false;
@@ -2150,6 +2256,21 @@ const WebTerminal = ({
       disposables.push(onRenderDisposable);
     }
 
+    const onWriteParsedDisposable = term.onWriteParsed((data) => {
+      checkForPrompts(data);
+      scheduleHighlightRefresh(term);
+      if (Date.now() - lastInputActivityAt <= 1500) {
+        scheduleRealtimeInputHighlight(term);
+      }
+    });
+
+    if (
+      onWriteParsedDisposable &&
+      typeof onWriteParsedDisposable.dispose === "function"
+    ) {
+      disposables.push(onWriteParsedDisposable);
+    }
+
     // 添加 onData disposable 到列表
     if (onDataDisposable && typeof onDataDisposable.dispose === "function") {
       disposables.push(onDataDisposable);
@@ -2585,7 +2706,11 @@ const WebTerminal = ({
 
             const segments = [];
             let offset = 0;
-            for (let lineIndex = blockStart; lineIndex <= blockEnd; lineIndex++) {
+            for (
+              let lineIndex = blockStart;
+              lineIndex <= blockEnd;
+              lineIndex++
+            ) {
               const line = buffer.getLine(lineIndex);
               if (!line) {
                 continue;
@@ -2900,18 +3025,6 @@ const WebTerminal = ({
                     false,
                     terminalDisposables,
                   );
-
-                  // 监听数据输出以检测密码提示（补充命令检测中的输出监听）
-                  const onWriteParsedDisposable = term.onWriteParsed((data) => {
-                    checkForPrompts(data);
-                    scheduleHighlightRefresh(term);
-                  });
-                  if (
-                    onWriteParsedDisposable &&
-                    typeof onWriteParsedDisposable.dispose === "function"
-                  ) {
-                    terminalDisposables.push(onWriteParsedDisposable);
-                  }
 
                   // 拆分重连模式需要更快的resize响应
                   const resizeDelays = sshConfig.splitReconnect
@@ -4023,6 +4136,16 @@ const WebTerminal = ({
       }
 
       resetRenderState();
+
+      if (
+        realtimeInputHighlightFrameRef.current !== null &&
+        typeof cancelAnimationFrame === "function"
+      ) {
+        cancelAnimationFrame(realtimeInputHighlightFrameRef.current);
+      }
+      realtimeInputHighlightFrameRef.current = null;
+      realtimeInputHighlightWritingRef.current = false;
+      realtimeInputHighlightSnapshotRef.current = "";
 
       if (pendingWriteHandleRef.current !== null) {
         if (
