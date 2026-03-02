@@ -38,6 +38,7 @@ const COLOR_TO_ANSI = {
   orange: ANSI_COLORS.yellow,
   cyan: ANSI_COLORS.cyan,
   magenta: ANSI_COLORS.magenta,
+  purple: ANSI_COLORS.magenta,
   grey: ANSI_COLORS.brightBlack,
   lightgreen: ANSI_COLORS.brightGreen,
   lightcoral: ANSI_COLORS.brightRed,
@@ -105,7 +106,15 @@ const escapeRegex = (value = "") =>
     .map((char) => (REGEX_META_CHARS.has(char) ? `\\${char}` : char))
     .join("");
 
+const ensureGlobalRegexFlags = (flags = "") => {
+  const normalized = typeof flags === "string" ? flags : "";
+  return normalized.includes("g") ? normalized : `${normalized}g`;
+};
+
 const OSC_SEQUENCE_REGEX = /\u001b\][^]*?(?:\u0007|\u001b\\)/g;
+const ANSI_SEQUENCE_REGEX = /\u001b(?:\[[0-9;?]*[ -/]*[@-~]|[@-Z\\-_])/g;
+const ANSI_SGR_SEQUENCE_REGEX = /^\u001b\[([0-9;]*)m$/;
+const STYLE_CLEAR_CODES = new Set([0, 22, 23, 24, 25, 27, 28, 29, 39, 49, 59]);
 const HOST_HEX_SUFFIX_REGEX = /(@[A-Za-z0-9_.-]+)-([0-9a-f]{6,16})(?=[:#\s])/gi;
 
 const parseStyleToFormat = (style) => {
@@ -160,14 +169,18 @@ class OutputProcessor {
     this.highlightRules = Array.isArray(rules) ? rules : [];
     this.compiledHighlightRules = this.highlightRules
       .filter((rule) => rule && rule.enabled)
-      .map((rule) => this.compileHighlightRule(rule))
+      .map((rule, index) => this.compileHighlightRule(rule, index))
       .filter(Boolean);
   }
 
-  compileHighlightRule(rule) {
+  compileHighlightRule(rule, index = 0) {
     if (!rule) {
       return null;
     }
+
+    const priority = Number.isFinite(Number(rule.priority))
+      ? Number(rule.priority)
+      : this.highlightRules.length - index;
 
     if (rule.type === "keyword" && rule.items) {
       const keywords = Object.keys(rule.items);
@@ -189,13 +202,17 @@ class OutputProcessor {
         type: "keyword",
         regex,
         colorMap,
+        format: "",
+        ansiColor: "",
+        priority,
+        order: index,
       };
     }
 
     if (rule.type === "regex" && rule.pattern) {
       let regex;
       try {
-        regex = new RegExp(rule.pattern, rule.flags || "g");
+        regex = new RegExp(rule.pattern, ensureGlobalRegexFlags(rule.flags));
       } catch {
         return null;
       }
@@ -212,6 +229,8 @@ class OutputProcessor {
           Number.isInteger(rule.groupIndex) && rule.groupIndex > 0
             ? rule.groupIndex
             : null,
+        priority,
+        order: index,
       };
     }
 
@@ -368,6 +387,248 @@ class OutputProcessor {
     return procInfo ? procInfo.lastExtractedCommand : null;
   }
 
+  collectHighlightCandidates(text) {
+    if (!text) {
+      return [];
+    }
+
+    const candidates = [];
+
+    for (const rule of this.compiledHighlightRules) {
+      try {
+        rule.regex.lastIndex = 0;
+
+        let match = null;
+        while ((match = rule.regex.exec(text)) !== null) {
+          const matchedText = match[0];
+
+          if (!matchedText) {
+            rule.regex.lastIndex += 1;
+            continue;
+          }
+
+          let start = match.index;
+          let end = start + matchedText.length;
+          let ansiColor = rule.ansiColor || "";
+
+          if (rule.type === "keyword") {
+            const keywordColor = rule.colorMap.get(matchedText.toLowerCase());
+            if (!keywordColor) {
+              if (!rule.regex.global) {
+                break;
+              }
+              continue;
+            }
+            ansiColor = keywordColor;
+          } else if (rule.groupIndex) {
+            const targetGroup = match[rule.groupIndex];
+            if (!targetGroup) {
+              if (!rule.regex.global) {
+                break;
+              }
+              continue;
+            }
+
+            const relativeIndex = matchedText.indexOf(targetGroup);
+            if (relativeIndex < 0) {
+              if (!rule.regex.global) {
+                break;
+              }
+              continue;
+            }
+
+            start = match.index + relativeIndex;
+            end = start + targetGroup.length;
+          }
+
+          if (start < 0 || end <= start || end > text.length) {
+            if (!rule.regex.global) {
+              break;
+            }
+            continue;
+          }
+
+          const format = rule.format || "";
+          if (!format && !ansiColor) {
+            if (!rule.regex.global) {
+              break;
+            }
+            continue;
+          }
+
+          candidates.push({
+            start,
+            end,
+            priority: rule.priority || 0,
+            order: rule.order || 0,
+            format,
+            ansiColor,
+          });
+
+          if (!rule.regex.global) {
+            break;
+          }
+        }
+      } catch (e) {
+        logToFile(
+          `Error collecting highlight matches for rule '${rule.id}': ${e.message}`,
+          "ERROR",
+        );
+      }
+    }
+
+    return candidates;
+  }
+
+  selectStableHighlightRanges(candidates) {
+    if (!Array.isArray(candidates) || !candidates.length) {
+      return [];
+    }
+
+    const sorted = [...candidates].sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return b.priority - a.priority;
+      }
+
+      const aLength = a.end - a.start;
+      const bLength = b.end - b.start;
+      if (aLength !== bLength) {
+        return bLength - aLength;
+      }
+
+      if (a.order !== b.order) {
+        return a.order - b.order;
+      }
+
+      return a.start - b.start;
+    });
+
+    const selected = [];
+
+    for (const candidate of sorted) {
+      const hasOverlap = selected.some(
+        (existing) =>
+          candidate.start < existing.end && existing.start < candidate.end,
+      );
+
+      if (!hasOverlap) {
+        selected.push(candidate);
+      }
+    }
+
+    selected.sort((a, b) => a.start - b.start);
+    return selected;
+  }
+
+  applyHighlightRanges(text, ranges) {
+    if (!text || !Array.isArray(ranges) || !ranges.length) {
+      return text;
+    }
+
+    let result = "";
+    let cursor = 0;
+
+    for (const range of ranges) {
+      if (range.start > cursor) {
+        result += text.slice(cursor, range.start);
+      }
+
+      const prefix = `${range.format || ""}${range.ansiColor || ""}`;
+      if (!prefix) {
+        result += text.slice(range.start, range.end);
+      } else {
+        result += `${prefix}${text.slice(range.start, range.end)}${ANSI_COLORS.reset}`;
+      }
+
+      cursor = range.end;
+    }
+
+    if (cursor < text.length) {
+      result += text.slice(cursor);
+    }
+
+    return result;
+  }
+
+  highlightPlainTextSegment(text) {
+    if (!text) {
+      return text;
+    }
+
+    const candidates = this.collectHighlightCandidates(text);
+    if (!candidates.length) {
+      return text;
+    }
+
+    const ranges = this.selectStableHighlightRanges(candidates);
+    if (!ranges.length) {
+      return text;
+    }
+
+    return this.applyHighlightRanges(text, ranges);
+  }
+
+  applyHighlightWithAnsiIsolation(output) {
+    if (!output) {
+      return output;
+    }
+
+    const segments = [];
+    let lastIndex = 0;
+    let ansiStyleActive = false;
+
+    ANSI_SEQUENCE_REGEX.lastIndex = 0;
+    let match = null;
+    while ((match = ANSI_SEQUENCE_REGEX.exec(output)) !== null) {
+      if (match.index > lastIndex) {
+        const textSegment = output.slice(lastIndex, match.index);
+        segments.push(
+          ansiStyleActive
+            ? textSegment
+            : this.highlightPlainTextSegment(textSegment),
+        );
+      }
+
+      const ansiSequence = match[0];
+      segments.push(ansiSequence);
+
+      const sgrMatch = ansiSequence.match(ANSI_SGR_SEQUENCE_REGEX);
+      if (sgrMatch) {
+        const rawCodes = sgrMatch[1];
+        if (!rawCodes) {
+          ansiStyleActive = false;
+        } else {
+          const codes = rawCodes
+            .split(";")
+            .map((code) => Number(code))
+            .filter(Number.isFinite);
+
+          if (
+            !codes.length ||
+            codes.every((code) => STYLE_CLEAR_CODES.has(code))
+          ) {
+            ansiStyleActive = false;
+          } else {
+            ansiStyleActive = true;
+          }
+        }
+      }
+
+      lastIndex = ANSI_SEQUENCE_REGEX.lastIndex;
+    }
+
+    if (lastIndex < output.length) {
+      const remainingSegment = output.slice(lastIndex);
+      segments.push(
+        ansiStyleActive
+          ? remainingSegment
+          : this.highlightPlainTextSegment(remainingSegment),
+      );
+    }
+
+    return segments.join("");
+  }
+
   applySyntaxHighlighting(output) {
     if (!output || typeof output !== "string") {
       return output;
@@ -388,49 +649,7 @@ class OutputProcessor {
     });
 
     processedOutput = processedOutput.replace(HOST_HEX_SUFFIX_REGEX, "$1");
-
-    for (const rule of this.compiledHighlightRules) {
-      try {
-        rule.regex.lastIndex = 0;
-
-        if (rule.type === "keyword") {
-          processedOutput = processedOutput.replace(rule.regex, (match) => {
-            const color = rule.colorMap.get(match.toLowerCase());
-            if (color) {
-              return `${color}${match}${ANSI_COLORS.reset}`;
-            }
-            return match;
-          });
-        } else if (rule.type === "regex") {
-          processedOutput = processedOutput.replace(rule.regex, (...args) => {
-            const match = args[0];
-            const format = rule.format || "";
-            const color = rule.ansiColor || "";
-
-            if (rule.groupIndex && rule.groupIndex > 0) {
-              const capturedGroups = args.slice(1, -2);
-              const target = capturedGroups[rule.groupIndex - 1];
-
-              if (target) {
-                const targetIndex = match.indexOf(target);
-                if (targetIndex !== -1) {
-                  const before = match.slice(0, targetIndex);
-                  const after = match.slice(targetIndex + target.length);
-                  return `${before}${format}${color}${target}${ANSI_COLORS.reset}${after}`;
-                }
-              }
-            }
-
-            return `${format}${color}${match}${ANSI_COLORS.reset}`;
-          });
-        }
-      } catch (e) {
-        logToFile(
-          `Error applying compiled highlight rule '${rule.id}': ${e.message}`,
-          "ERROR",
-        );
-      }
-    }
+    processedOutput = this.applyHighlightWithAnsiIsolation(processedOutput);
 
     if (oscPlaceholders.length) {
       for (const { token, value } of oscPlaceholders) {

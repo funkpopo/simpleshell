@@ -102,6 +102,17 @@ module.exports = [
     flags: "gi",
     style: `color: ${HIGHLIGHT_COLORS.statusCode};`,
   },
+  // 访问日志状态码补充（例如 Nginx/Apache）
+  {
+    id: "accessLogStatusCode",
+    type: "regex",
+    name: "Access Log Status Code",
+    enabled: true,
+    pattern: '"\\s([1-5]\\d{2})\\s\\d+\\b',
+    flags: "g",
+    style: `color: ${HIGHLIGHT_COLORS.statusCode}; font-weight: bold;`,
+    groupIndex: 1,
+  },
   // Docker ID 高亮
   {
     id: "dockerId",
@@ -111,6 +122,17 @@ module.exports = [
     pattern: "\\b[0-9a-f]{12}\\b|\\b[0-9a-f]{64}\\b",
     flags: "gi",
     style: `color: ${HIGHLIGHT_COLORS.dockerId};`,
+  },
+  // sha256 摘要补充（保留前缀仅高亮摘要体）
+  {
+    id: "sha256Digest",
+    type: "regex",
+    name: "SHA256 Digest",
+    enabled: true,
+    pattern: "\\bsha256:([0-9a-f]{64})\\b",
+    flags: "gi",
+    style: `color: ${HIGHLIGHT_COLORS.dockerId};`,
+    groupIndex: 1,
   },
   // Unix 路径高亮，使用捕获组避免吞掉前缀字符
   {
@@ -154,6 +176,18 @@ module.exports = [
     pattern:
       "([\\s'\"(])([A-Z_][A-Z0-9_]*)=(?:\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s;\"']+)",
     flags: "gm",
+    style: `color: ${HIGHLIGHT_COLORS.envVariable};`,
+    groupIndex: 2,
+  },
+  // 环境变量引用补充（例如 $PATH、${HOME}）
+  {
+    id: "envVariableReference",
+    type: "regex",
+    name: "Environment Variable Reference",
+    enabled: true,
+    pattern:
+      "(^|[^\\w$])(\\$(?:\\{[A-Z_][A-Z0-9_]*\\}|[A-Z_][A-Z0-9_]*))(?![A-Z0-9_])",
+    flags: "g",
     style: `color: ${HIGHLIGHT_COLORS.envVariable};`,
     groupIndex: 2,
   },
