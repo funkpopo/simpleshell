@@ -718,6 +718,28 @@ const processMultilineInput = (text, options = {}) => {
   return result;
 };
 
+const INPUT_SEND_CHUNK_SIZE = 1024;
+const INPUT_SEND_MAX_CHUNKS_PER_FRAME = 8;
+const INPUT_SEND_FRAME_DELAY_MS = 8;
+const LARGE_INPUT_LENGTH_THRESHOLD = 2048;
+const MULTILINE_INPUT_LENGTH_THRESHOLD = 512;
+const COMMENT_LINE_SEND_INTERVAL_MS = 12;
+
+const shouldChunkInputPayload = (input) => {
+  if (!input || typeof input !== "string") {
+    return false;
+  }
+
+  if (input.length >= LARGE_INPUT_LENGTH_THRESHOLD) {
+    return true;
+  }
+
+  return (
+    input.length >= MULTILINE_INPUT_LENGTH_THRESHOLD &&
+    (input.includes("\n") || input.includes("\r"))
+  );
+};
+
 const getTerminalConfigSignature = (config) => {
   if (!config) return "__NO_CONFIG__";
 
@@ -771,6 +793,10 @@ const WebTerminal = ({
 
   // 添加最近粘贴时间引用，用于防止重复粘贴
   const lastPasteTimeRef = useRef(0);
+  const inputQueueRef = useRef([]);
+  const inputQueueBytesRef = useRef(0);
+  const inputQueueDrainHandleRef = useRef(null);
+  const inputQueueDrainHandleTypeRef = useRef(null);
   const webglRendererEnabledRef = useRef(true);
   const pendingWriteBufferRef = useRef([]);
   const pendingWriteLengthRef = useRef(0);
@@ -970,6 +996,203 @@ const WebTerminal = ({
       window.terminalAPI.sendToProcess(processId, inputStr);
     }
   }, []);
+
+  const cancelInputQueueDrain = useCallback(() => {
+    if (inputQueueDrainHandleRef.current === null) {
+      return;
+    }
+
+    if (
+      inputQueueDrainHandleTypeRef.current === "raf" &&
+      typeof cancelAnimationFrame === "function"
+    ) {
+      cancelAnimationFrame(inputQueueDrainHandleRef.current);
+    } else {
+      clearTimeout(inputQueueDrainHandleRef.current);
+    }
+
+    inputQueueDrainHandleRef.current = null;
+    inputQueueDrainHandleTypeRef.current = null;
+  }, []);
+
+  const scheduleInputQueueDrain = useCallback(() => {
+    if (inputQueueDrainHandleRef.current !== null) {
+      return;
+    }
+
+    const runDrain = () => {
+      inputQueueDrainHandleRef.current = null;
+      inputQueueDrainHandleTypeRef.current = null;
+
+      const queue = inputQueueRef.current;
+      if (!queue.length) {
+        return;
+      }
+
+      let processedChunks = 0;
+      while (
+        queue.length > 0 &&
+        processedChunks < INPUT_SEND_MAX_CHUNKS_PER_FRAME
+      ) {
+        const chunkItem = queue.shift();
+        if (!chunkItem) {
+          continue;
+        }
+
+        inputQueueBytesRef.current = Math.max(
+          0,
+          inputQueueBytesRef.current - chunkItem.input.length,
+        );
+        sendInputToProcess(chunkItem.processId, chunkItem.input);
+        processedChunks += 1;
+      }
+
+      if (queue.length > 0) {
+        scheduleInputQueueDrain();
+      }
+    };
+
+    if (
+      INPUT_SEND_FRAME_DELAY_MS <= 16 &&
+      typeof requestAnimationFrame === "function"
+    ) {
+      inputQueueDrainHandleTypeRef.current = "raf";
+      inputQueueDrainHandleRef.current = requestAnimationFrame(runDrain);
+      return;
+    }
+
+    inputQueueDrainHandleTypeRef.current = "timeout";
+    inputQueueDrainHandleRef.current = setTimeout(
+      runDrain,
+      INPUT_SEND_FRAME_DELAY_MS,
+    );
+  }, [sendInputToProcess]);
+
+  const enqueueInputToProcess = useCallback(
+    (processId, input, options = {}) => {
+      if (
+        processId === undefined ||
+        processId === null ||
+        input === undefined ||
+        input === null
+      ) {
+        return;
+      }
+
+      const inputStr = typeof input === "string" ? input : input.toString();
+      if (!inputStr) {
+        return;
+      }
+
+      const forceChunk = options.forceChunk === true;
+      const chunkSize = Math.max(
+        256,
+        Math.floor(Number(options.chunkSize) || INPUT_SEND_CHUNK_SIZE),
+      );
+      const hasPendingQueue = inputQueueRef.current.length > 0;
+      const shouldChunk =
+        forceChunk || hasPendingQueue || shouldChunkInputPayload(inputStr);
+
+      if (!shouldChunk) {
+        sendInputToProcess(processId, inputStr);
+        return;
+      }
+
+      for (let offset = 0; offset < inputStr.length; offset += chunkSize) {
+        const chunk = inputStr.slice(offset, offset + chunkSize);
+        inputQueueRef.current.push({ processId, input: chunk });
+        inputQueueBytesRef.current += chunk.length;
+      }
+
+      scheduleInputQueueDrain();
+    },
+    [scheduleInputQueueDrain, sendInputToProcess],
+  );
+
+  const sendCommentLinesToProcess = useCallback(
+    (processId, lines) => {
+      if (!Array.isArray(lines) || lines.length === 0) {
+        return;
+      }
+
+      let currentIndex = 0;
+      const sendNextLine = () => {
+        if (currentIndex >= lines.length) {
+          return;
+        }
+
+        const line = lines[currentIndex] || "";
+        const chunk = `${line}${currentIndex < lines.length - 1 ? "\n" : ""}`;
+        enqueueInputToProcess(processId, chunk, { forceChunk: true });
+        currentIndex += 1;
+
+        if (currentIndex < lines.length) {
+          eventManager.setTimeout(sendNextLine, COMMENT_LINE_SEND_INTERVAL_MS);
+        }
+      };
+
+      sendNextLine();
+    },
+    [enqueueInputToProcess, eventManager],
+  );
+
+  const sendProcessedInputToProcess = useCallback(
+    (processId, processedInput, options = {}) => {
+      if (
+        processId === undefined ||
+        processId === null ||
+        processedInput === undefined ||
+        processedInput === null
+      ) {
+        return;
+      }
+
+      if (
+        processedInput &&
+        typeof processedInput === "object" &&
+        processedInput.type === "multiline-with-comments"
+      ) {
+        sendCommentLinesToProcess(processId, processedInput.lines);
+        return;
+      }
+
+      enqueueInputToProcess(processId, processedInput, options);
+    },
+    [enqueueInputToProcess, sendCommentLinesToProcess],
+  );
+
+  const markPasteIfAllowed = useCallback(() => {
+    const now = Date.now();
+    if (now - lastPasteTimeRef.current < 100) {
+      return false;
+    }
+
+    lastPasteTimeRef.current = now;
+    return true;
+  }, []);
+
+  const handlePasteText = useCallback(
+    (text, options = {}) => {
+      const processId = processCache[tabId];
+      if (!text || !processId) {
+        return;
+      }
+
+      // 粘贴时隐藏建议，减少额外渲染与计算
+      setShowSuggestions(false);
+      setSuggestions([]);
+      setCurrentInput("");
+      setSuggestionsHiddenByEsc(false);
+
+      // 使用预处理函数处理多行文本，防止注释和缩进问题
+      const processedText = processMultilineInput(text);
+      sendProcessedInputToProcess(processId, processedText, {
+        ...options,
+        forceChunk: true,
+      });
+    },
+    [sendProcessedInputToProcess, tabId],
+  );
 
   const flushPendingWrites = useCallback(
     (termInstance) => {
@@ -1496,85 +1719,13 @@ const WebTerminal = ({
       e.stopImmediatePropagation(); // 阻止同一元素上的其他监听器执行
 
       // 检查是否是重复粘贴（100毫秒内的操作视为重复）
-      const now = Date.now();
-      if (now - lastPasteTimeRef.current < 100) {
+      if (!markPasteIfAllowed()) {
         // 忽略短时间内的重复粘贴请求
         return;
       }
 
-      // 更新最后粘贴时间
-      lastPasteTimeRef.current = now;
-
-      // 隐藏命令建议窗口，避免与粘贴操作冲突
-      setShowSuggestions(false);
-      setSuggestions([]);
-      setCurrentInput("");
-      setSuggestionsHiddenByEsc(false);
-
       window.clipboardAPI.readText().then((text) => {
-        if (text && processCache[tabId]) {
-          // 检测文本是否包含中文字符
-          const containsChinese = /[\u4e00-\u9fa5]/.test(text);
-
-          // 使用预处理函数处理多行文本，防止注释和缩进问题
-          let processedText = processMultilineInput(text);
-
-          // 如果包含中文字符，确保正确编码
-          if (containsChinese) {
-            const processInfo =
-              window.terminalAPI && window.terminalAPI.getProcessInfo
-                ? window.terminalAPI.getProcessInfo(processCache[tabId])
-                : null;
-
-            if (processInfo && processInfo.type === "ssh2") {
-              if (typeof processedText === "string") {
-                try {
-                  const encoder = new TextEncoder();
-                  const decoder = new TextDecoder("utf-8");
-                  const encoded = encoder.encode(processedText);
-                  processedText = decoder.decode(encoded);
-                } catch {
-                  // 备用方法
-                }
-              } else if (
-                processedText &&
-                typeof processedText === "object" &&
-                processedText.type === "multiline-with-comments"
-              ) {
-                try {
-                  const encoder = new TextEncoder();
-                  const decoder = new TextDecoder("utf-8");
-                  processedText.lines = processedText.lines.map((line) => {
-                    const encoded = encoder.encode(line);
-                    return decoder.decode(encoded);
-                  });
-                } catch {
-                  // 备用方法
-                }
-              }
-            }
-          }
-
-          // 检查是否需要逐行发送（含有注释的多行文本）
-          if (
-            processedText &&
-            typeof processedText === "object" &&
-            processedText.type === "multiline-with-comments"
-          ) {
-            // 使用EventManager管理逐行发送文本的延迟
-            processedText.lines.forEach((line, index) => {
-              eventManager.setTimeout(() => {
-                sendInputToProcess(
-                  processCache[tabId],
-                  line + (index < processedText.lines.length - 1 ? "\n" : ""),
-                );
-              }, index * 50);
-            });
-          } else {
-            // 正常发送处理后的文本
-            sendInputToProcess(processCache[tabId], processedText);
-          }
-        }
+        handlePasteText(text);
       });
     }
 
@@ -1839,6 +1990,23 @@ const WebTerminal = ({
       if (!isRemoteInput) {
         broadcastInputToGroup(data, tabId);
       }
+
+      // 粘贴或批量输入快速通道：跳过逐键分析，分片发送避免主线程阻塞
+      if (
+        typeof data === "string" &&
+        (shouldChunkInputPayload(data) ||
+          (data.includes("\u001b[200~") && data.includes("\u001b[201~")))
+      ) {
+        currentInputBuffer = "";
+        setCurrentInput("");
+        setShowSuggestions(false);
+        setSuggestions([]);
+        if (processId && !shouldSkipSendToProcess) {
+          enqueueInputToProcess(processId, data, { forceChunk: true });
+        }
+        return;
+      }
+
       // 检查是否是ESC开头的转义序列（通常是方向键等特殊键）
       if (data === "\x1b") {
         isEscapeSequence = true;
@@ -3145,21 +3313,13 @@ const WebTerminal = ({
           e.preventDefault();
 
           // 检查是否是重复粘贴（100毫秒内的操作视为重复）
-          const now = Date.now();
-          if (now - lastPasteTimeRef.current < 100) {
+          if (!markPasteIfAllowed()) {
             // 忽略短时间内的重复粘贴请求
             return;
           }
 
-          // 更新最后粘贴时间
-          lastPasteTimeRef.current = now;
-
           window.clipboardAPI.readText().then((text) => {
-            if (text && processCache[tabId]) {
-              // 使用预处理函数处理多行文本，防止注释和缩进问题
-              const processedText = processMultilineInput(text);
-              sendInputToProcess(processCache[tabId], processedText);
-            }
+            handlePasteText(text);
           });
         }
         // Ctrl+/ 搜索切换 (打开/关闭搜索栏)
@@ -3250,6 +3410,21 @@ const WebTerminal = ({
           terminalRef.current,
           "paste",
           (e) => {
+            const pastedText =
+              typeof e.clipboardData?.getData === "function"
+                ? e.clipboardData.getData("text/plain")
+                : "";
+            if (pastedText) {
+              // 接管原生粘贴，统一走分片发送逻辑，避免一次性大包导致卡顿
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
+              if (markPasteIfAllowed()) {
+                handlePasteText(pastedText);
+              }
+              return;
+            }
+
             // 只在中键粘贴时阻止（通过检查最近是否有中键点击）
             const now = Date.now();
             if (now - lastPasteTimeRef.current < 200) {
@@ -3969,115 +4144,17 @@ const WebTerminal = ({
 
   // 粘贴剪贴板内容
   const handlePaste = () => {
-    // 新增：粘贴时自动隐藏命令提示浮动窗口
-    setShowSuggestions(false);
-    setSuggestions([]);
-
     // 检查是否是重复粘贴（100毫秒内的操作视为重复）
-    const now = Date.now();
-    if (now - lastPasteTimeRef.current < 100) {
+    if (!markPasteIfAllowed()) {
       // 忽略短时间内的重复粘贴请求
       handleClose();
       return;
     }
 
-    // 更新最后粘贴时间
-    lastPasteTimeRef.current = now;
-
     window.clipboardAPI
       .readText()
       .then((text) => {
-        if (text && termRef.current && processCache[tabId]) {
-          // 检测文本是否包含中文字符
-          const containsChinese = /[\u4e00-\u9fa5]/.test(text);
-
-          // 使用预处理函数处理多行文本，防止注释和缩进问题
-          let processedText = processMultilineInput(text);
-
-          // 如果包含中文字符，确保正确编码
-          if (containsChinese) {
-            // 对于SSH连接，确保中文字符能够正确传输
-            const processInfo =
-              window.terminalAPI && window.terminalAPI.getProcessInfo
-                ? window.terminalAPI.getProcessInfo(processCache[tabId])
-                : null;
-
-            if (processInfo && processInfo.type === "ssh2") {
-              // 对于SSH连接，确保使用UTF-8编码
-              if (typeof processedText === "string") {
-                // 确保字符串是有效的UTF-8编码
-                try {
-                  // 使用TextEncoder确保UTF-8编码
-                  const encoder = new TextEncoder();
-                  const decoder = new TextDecoder("utf-8");
-                  const encoded = encoder.encode(processedText);
-                  processedText = decoder.decode(encoded);
-                } catch {
-                  // 如果浏览器不支持TextEncoder/TextDecoder，使用备用方法
-                  processedText = processedText
-                    .split("")
-                    .map((char) => {
-                      // 对于中文字符，确保正确编码
-                      if (/[\u4e00-\u9fa5]/.test(char)) {
-                        return char;
-                      }
-                      return char;
-                    })
-                    .join("");
-                }
-              } else if (
-                processedText &&
-                typeof processedText === "object" &&
-                processedText.type === "multiline-with-comments"
-              ) {
-                // 处理多行带注释的情况
-                try {
-                  // 使用TextEncoder确保UTF-8编码
-                  const encoder = new TextEncoder();
-                  const decoder = new TextDecoder("utf-8");
-                  processedText.lines = processedText.lines.map((line) => {
-                    const encoded = encoder.encode(line);
-                    return decoder.decode(encoded);
-                  });
-                } catch {
-                  // 备用方法
-                  processedText.lines = processedText.lines.map((line) => {
-                    return line
-                      .split("")
-                      .map((char) => {
-                        // 对于中文字符，确保正确编码
-                        if (/[\u4e00-\u9fa5]/.test(char)) {
-                          return char;
-                        }
-                        return char;
-                      })
-                      .join("");
-                  });
-                }
-              }
-            }
-          }
-
-          // 检查是否需要逐行发送（含有注释的多行文本）
-          if (
-            processedText &&
-            typeof processedText === "object" &&
-            processedText.type === "multiline-with-comments"
-          ) {
-            // 使用EventManager管理逐行发送文本的延迟
-            processedText.lines.forEach((line, index) => {
-              eventManager.setTimeout(() => {
-                sendInputToProcess(
-                  processCache[tabId],
-                  line + (index < processedText.lines.length - 1 ? "\n" : ""),
-                );
-              }, index * 50); // 50毫秒的延迟，可以根据实际情况调整
-            });
-          } else {
-            // 正常发送处理后的文本
-            sendInputToProcess(processCache[tabId], processedText);
-          }
-        }
+        handlePasteText(text);
       })
       .catch(() => {
         // 从剪贴板读取失败
@@ -4161,10 +4238,13 @@ const WebTerminal = ({
       pendingWriteBufferRef.current = [];
       pendingWriteLengthRef.current = 0;
       pendingWriteUsingRafRef.current = false;
+      cancelInputQueueDrain();
+      inputQueueRef.current = [];
+      inputQueueBytesRef.current = 0;
       flushOutputAck();
       outputAckProcessIdRef.current = null;
     };
-  }, [flushOutputAck, resetRenderState]);
+  }, [cancelInputQueueDrain, flushOutputAck, resetRenderState]);
 
   useEffect(() => {
     if (!contentUpdated || !termRef.current) {
@@ -4199,6 +4279,9 @@ const WebTerminal = ({
     pendingWriteBufferRef.current = [];
     pendingWriteLengthRef.current = 0;
     pendingWriteUsingRafRef.current = false;
+    cancelInputQueueDrain();
+    inputQueueRef.current = [];
+    inputQueueBytesRef.current = 0;
     if (terminalWriteQueueRef.current) {
       terminalWriteQueueRef.current.clear();
     }
@@ -5274,7 +5357,9 @@ const WebTerminal = ({
         if (termRef.current) {
           // 通过setupCommandDetection的isRemoteInput参数，模拟远程输入
           // 这里只写入进程，不触发本地onData
-          sendInputToProcess(processCache[tabId], input);
+          enqueueInputToProcess(processCache[tabId], input, {
+            forceChunk: true,
+          });
         }
       }
     };
@@ -5315,7 +5400,7 @@ const WebTerminal = ({
       removeSyncListener();
       removeExternalListener();
     };
-  }, [tabId]);
+  }, [enqueueInputToProcess, tabId]);
 
   return (
     <Box
