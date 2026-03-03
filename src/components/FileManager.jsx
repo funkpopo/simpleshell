@@ -4836,8 +4836,9 @@ const FileManager = memo(
           sx={{
             display: "flex",
             alignItems: "center",
-            px: 1.5,
-            py: 1.25,
+            px: 1.25,
+            py: 0.75,
+            minHeight: 44,
             borderBottom: `1px solid ${theme.palette.divider}`,
             flexShrink: 0,
             backgroundColor:
@@ -4860,6 +4861,7 @@ const FileManager = memo(
             onClick={handleClose}
             edge="end"
             disabled={isClosing} // 禁用关闭按钮当正在关闭时
+            sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
           >
             <CloseIcon fontSize="small" />
           </IconButton>
