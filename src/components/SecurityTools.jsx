@@ -204,14 +204,21 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              p: 2,
+              px: 1.25,
+              py: 0.75,
+              minHeight: 44,
+              flexShrink: 0,
               borderBottom: `1px solid ${theme.palette.divider}`,
             }}
           >
             <Typography variant="subtitle1" fontWeight="medium">
               {t("securityTools.title")}
             </Typography>
-            <IconButton size="small" onClick={onClose}>
+            <IconButton
+              size="small"
+              onClick={onClose}
+              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+            >
               <CloseIcon fontSize="small" />
             </IconButton>
           </Box>

@@ -522,14 +522,21 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                p: 2,
+                px: 1.25,
+                py: 0.75,
+                minHeight: 44,
+                flexShrink: 0,
                 borderBottom: `1px solid ${theme.palette.divider}`,
               }}
             >
               <Typography variant="subtitle1" fontWeight="medium">
                 {t("commandHistory.title")}
               </Typography>
-              <IconButton onClick={onClose} size="small">
+              <IconButton
+                onClick={onClose}
+                size="small"
+                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              >
                 <CloseIcon fontSize="small" />
               </IconButton>
             </Box>

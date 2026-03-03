@@ -1757,18 +1757,25 @@ const ConnectionManager = memo(
             {/* 头部 */}
             <Box
               sx={{
-                p: 2,
-                borderBottom: 1,
-                borderColor: "divider",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
+                px: 1.25,
+                py: 0.75,
+                minHeight: 44,
+                flexShrink: 0,
+                borderBottom: 1,
+                borderColor: "divider",
               }}
             >
               <Typography variant="subtitle1" fontWeight="medium">
                 连接管理
               </Typography>
-              <IconButton size="small" onClick={onClose}>
+              <IconButton
+                size="small"
+                onClick={onClose}
+                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              >
                 <CloseIcon fontSize="small" />
               </IconButton>
             </Box>

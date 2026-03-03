@@ -298,7 +298,10 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              p: 2,
+              px: 1.25,
+              py: 0.75,
+              minHeight: 44,
+              flexShrink: 0,
               borderBottom: `1px solid ${theme.palette.divider}`,
             }}
           >
@@ -311,11 +314,16 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                   size="small"
                   onClick={handleRefresh}
                   disabled={loading}
+                  sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
                 >
                   <RefreshIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
-              <IconButton size="small" onClick={onClose}>
+              <IconButton
+                size="small"
+                onClick={onClose}
+                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              >
                 <CloseIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -326,7 +334,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
               flexGrow: 1,
               overflow: "auto",
               p: 2,
-              height: "calc(100% - 56px)",
+              height: "calc(100% - 44px)",
             }}
           >
             {loading && !error && !systemInfo ? (

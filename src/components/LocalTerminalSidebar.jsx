@@ -346,11 +346,14 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       {/* 头部 */}
       <Box
         sx={{
-          p: 2,
-          borderBottom: `1px solid ${theme.palette.divider}`,
           display: "flex",
           alignItems: "center",
+          px: 1.25,
+          py: 0.75,
+          minHeight: 44,
+          flexShrink: 0,
           gap: 1,
+          borderBottom: `1px solid ${theme.palette.divider}`,
         }}
       >
         <Typography
@@ -366,14 +369,23 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
             size="small"
             onClick={detectTerminals}
             disabled={isDetecting}
+            sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
           >
-            {isDetecting ? <CircularProgress size={18} /> : <RefreshIcon />}
+            {isDetecting ? (
+              <CircularProgress size={16} />
+            ) : (
+              <RefreshIcon fontSize="small" />
+            )}
           </IconButton>
         </Tooltip>
 
         <Tooltip title={t("common.close")}>
-          <IconButton size="small" onClick={onClose}>
-            <CloseIcon />
+          <IconButton
+            size="small"
+            onClick={onClose}
+            sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+          >
+            <CloseIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       </Box>

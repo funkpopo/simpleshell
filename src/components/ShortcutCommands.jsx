@@ -1169,7 +1169,10 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              p: 2,
+              px: 1.25,
+              py: 0.75,
+              minHeight: 44,
+              flexShrink: 0,
               borderBottom: `1px solid ${theme.palette.divider}`,
             }}
           >
@@ -1178,12 +1181,20 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
             </Typography>
             <Box>
               <Tooltip title={t("shortcutCommands.addCommand")}>
-                <IconButton onClick={handleAddCommand} size="small">
-                  <AddIcon />
+                <IconButton
+                  onClick={handleAddCommand}
+                  size="small"
+                  sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+                >
+                  <AddIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
-              <IconButton onClick={onClose} size="small">
-                <CloseIcon />
+              <IconButton
+                onClick={onClose}
+                size="small"
+                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              >
+                <CloseIcon fontSize="small" />
               </IconButton>
             </Box>
           </Box>
