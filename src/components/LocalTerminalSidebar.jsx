@@ -22,6 +22,7 @@ import {
   Snackbar,
   InputAdornment,
   Skeleton,
+  Chip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
@@ -38,6 +39,8 @@ import { GrArchlinux } from "react-icons/gr";
 import { SiAlpinelinux } from "react-icons/si";
 import { useTranslation } from "react-i18next";
 import useAutoCleanup from "../hooks/useAutoCleanup";
+
+const AUTO_REFRESH_COOLDOWN_MS = 2000;
 
 // 终端类型图标映射
 const getTerminalIcon = (terminal) => {
@@ -76,6 +79,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
 
   const searchInputRef = useRef(null);
   const sidebarRef = useRef(null);
+  const lastAutoRefreshAtRef = useRef(0);
 
   // 清理资源的自定义hook - useAutoCleanup不接受参数
   useAutoCleanup();
@@ -112,51 +116,155 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   }, [open]);
 
   // 检测可用终端
-  const detectTerminals = useCallback(async () => {
-    setIsDetecting(true);
-    try {
-      if (window.terminalAPI?.detectLocalTerminals) {
-        const terminals = await window.terminalAPI.detectLocalTerminals();
+  const detectTerminals = useCallback(
+    async (forceRefresh = false, options = {}) => {
+      const { silent = false } =
+        options && typeof options === "object" ? options : {};
 
-        setDetectedTerminals(terminals || []);
-        setHasInitialDetection(true); // 标记已完成初始检测
+      if (!silent) {
+        setIsDetecting(true);
+      }
 
-        // 只在手动刷新时显示成功消息，初始检测不显示
-        if (hasInitialDetection) {
+      try {
+        if (window.terminalAPI?.detectLocalTerminals) {
+          const terminals = await window.terminalAPI.detectLocalTerminals({
+            forceRefresh,
+            refreshRuntimeStatus: true,
+          });
+
+          setDetectedTerminals(terminals || []);
+          setHasInitialDetection(true); // 标记已完成初始检测
+
+          // 只在手动刷新时显示成功消息，初始检测不显示
+          if (hasInitialDetection && forceRefresh) {
+            setSnackbar({
+              open: true,
+              message: t("localTerminal.detectSuccess", {
+                count: terminals?.length || 0,
+              }),
+              severity: "success",
+            });
+          }
+        } else {
+          setHasInitialDetection(true);
           setSnackbar({
             open: true,
-            message: t("localTerminal.detectSuccess", {
-              count: terminals?.length || 0,
-            }),
-            severity: "success",
+            message: "终端API不可用",
+            severity: "error",
           });
         }
-      } else {
+      } catch {
         setHasInitialDetection(true);
-        setSnackbar({
-          open: true,
-          message: "终端API不可用",
-          severity: "error",
-        });
+        if (!silent) {
+          setSnackbar({
+            open: true,
+            message: t("localTerminal.detectError"),
+            severity: "error",
+          });
+        }
+      } finally {
+        if (!silent) {
+          setIsDetecting(false);
+        }
       }
-    } catch {
-      setHasInitialDetection(true);
-      setSnackbar({
-        open: true,
-        message: t("localTerminal.detectError"),
-        severity: "error",
-      });
-    } finally {
-      setIsDetecting(false);
-    }
-  }, [t, hasInitialDetection]);
+    },
+    [t, hasInitialDetection],
+  );
 
-  // 初始检测终端
+  // 侧边栏打开时检测终端；首次显示骨架，后续无感刷新
   useEffect(() => {
-    if (open && !hasInitialDetection) {
-      detectTerminals();
+    if (!open) return;
+
+    if (!hasInitialDetection) {
+      detectTerminals(false, { silent: false });
+      return;
     }
+
+    detectTerminals(false, { silent: true });
   }, [open, hasInitialDetection, detectTerminals]);
+
+  const hasWSLTerminal = useMemo(
+    () => detectedTerminals.some((terminal) => terminal.type === "wsl"),
+    [detectedTerminals],
+  );
+
+  const autoRefreshTerminals = useCallback(async () => {
+    if (!open || !hasInitialDetection || !hasWSLTerminal) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastAutoRefreshAtRef.current < AUTO_REFRESH_COOLDOWN_MS) {
+      return;
+    }
+    lastAutoRefreshAtRef.current = now;
+
+    await detectTerminals(false, { silent: true });
+  }, [open, hasInitialDetection, hasWSLTerminal, detectTerminals]);
+
+  // 事件驱动自动刷新：窗口回到前台时刷新（无轮询）
+  useEffect(() => {
+    if (!open || !hasInitialDetection || !hasWSLTerminal) {
+      return undefined;
+    }
+
+    const handleWindowFocus = () => {
+      autoRefreshTerminals();
+    };
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        autoRefreshTerminals();
+      }
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [open, hasInitialDetection, hasWSLTerminal, autoRefreshTerminals]);
+
+  // 事件驱动自动刷新：本地终端状态变化时刷新（无轮询）
+  useEffect(() => {
+    if (!open || !hasInitialDetection || !hasWSLTerminal) {
+      return undefined;
+    }
+    if (!window.terminalAPI?.onLocalTerminalStatus) {
+      return undefined;
+    }
+
+    const trackedTypes = new Set([
+      "launched",
+      "ready",
+      "closed",
+      "error",
+      "embedded",
+      "unembedded",
+    ]);
+
+    const handleLocalTerminalStatus = (statusData) => {
+      if (!trackedTypes.has(statusData?.type)) {
+        return;
+      }
+      autoRefreshTerminals();
+    };
+
+    const unsubscribe = window.terminalAPI.onLocalTerminalStatus(
+      handleLocalTerminalStatus,
+    );
+
+    return () => {
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+        return;
+      }
+      if (window.terminalAPI?.offLocalTerminalStatus) {
+        window.terminalAPI.offLocalTerminalStatus(handleLocalTerminalStatus);
+      }
+    };
+  }, [open, hasInitialDetection, hasWSLTerminal, autoRefreshTerminals]);
 
   // 过滤终端列表
   const filteredTerminals = useMemo(() => {
@@ -226,6 +334,61 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   // 终端项组件
   const TerminalItem = useCallback(
     ({ terminal }) => {
+      const isWSLTerminal = terminal.type === "wsl";
+      const availableDistributions = Array.isArray(
+        terminal.availableDistributions,
+      )
+        ? terminal.availableDistributions
+        : [];
+      const runningCount = availableDistributions.filter(
+        (dist) =>
+          (dist.runtimeState || dist.state || "").toLowerCase() === "running",
+      ).length;
+      const runtimeState =
+        terminal.runtimeStatus?.state ||
+        (runningCount > 0
+          ? "running"
+          : availableDistributions.length > 0
+            ? "stopped"
+            : "unknown");
+
+      const statusLabelMap = {
+        running: t("localTerminal.statusRunning"),
+        stopped: t("localTerminal.statusStopped"),
+        unknown: t("localTerminal.statusUnknown"),
+      };
+      const statusColorMap = {
+        running: "success",
+        stopped: "default",
+        unknown: "warning",
+      };
+
+      const secondaryLines = [];
+      if (terminal.description) {
+        secondaryLines.push(
+          <Typography
+            key="description"
+            variant="caption"
+            color="text.secondary"
+          >
+            {terminal.description}
+          </Typography>,
+        );
+      }
+
+      if (isWSLTerminal) {
+        secondaryLines.push(
+          <Typography key="wsl-status" variant="caption" color="text.secondary">
+            {t("localTerminal.wslRunningSummary", {
+              running: terminal.runtimeStatus?.runningCount ?? runningCount,
+              total:
+                terminal.runtimeStatus?.totalCount ??
+                availableDistributions.length,
+            })}
+          </Typography>,
+        );
+      }
+
       return (
         <ListItem disablePadding sx={{ mb: 0.5 }}>
           <ListItemButton
@@ -266,14 +429,41 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
                   >
                     {terminal.name}
                   </Typography>
+                  {isWSLTerminal && (
+                    <Chip
+                      size="small"
+                      color={statusColorMap[runtimeState] || "default"}
+                      variant={
+                        runtimeState === "running" ? "filled" : "outlined"
+                      }
+                      label={
+                        statusLabelMap[runtimeState] ||
+                        t("localTerminal.statusUnknown")
+                      }
+                      sx={{
+                        ml: "auto",
+                        height: 18,
+                        "& .MuiChip-label": {
+                          px: 0.75,
+                          fontSize: "0.6875rem",
+                        },
+                      }}
+                    />
+                  )}
                 </Box>
               }
               secondary={
-                terminal.description && (
-                  <Typography variant="caption" color="text.secondary">
-                    {terminal.description}
-                  </Typography>
-                )
+                secondaryLines.length > 0 ? (
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 0.25,
+                    }}
+                  >
+                    {secondaryLines}
+                  </Box>
+                ) : null
               }
             />
           </ListItemButton>
@@ -367,7 +557,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         <Tooltip title={t("localTerminal.refresh")}>
           <IconButton
             size="small"
-            onClick={detectTerminals}
+            onClick={() => detectTerminals(true, { silent: false })}
             disabled={isDetecting}
             sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
           >

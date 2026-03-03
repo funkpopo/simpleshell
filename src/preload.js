@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer, clipboard } = require("electron");
 // Listener wrapper stores (avoid mutating callback functions with hidden properties)
 const topConnectionsChangedWrappers = new WeakMap();
 const connectionsChangedWrappers = new WeakMap();
+const localTerminalStatusWrappers = new WeakMap();
 const streamWrappersByChannel = {
   "stream-chunk": new WeakMap(),
   "stream-end": new WeakMap(),
@@ -128,13 +129,38 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("terminal:getProcessInfo", processId),
 
   // 本地终端API
-  detectLocalTerminals: () => ipcRenderer.invoke("detectLocalTerminals"),
+  detectLocalTerminals: (options = {}) =>
+    ipcRenderer.invoke("detectLocalTerminals", options),
   launchLocalTerminal: (terminalConfig, tabId) =>
     ipcRenderer.invoke("launchLocalTerminal", terminalConfig, tabId),
   closeLocalTerminal: (tabId) =>
     ipcRenderer.invoke("closeLocalTerminal", tabId),
   getLocalTerminalInfo: (tabId) =>
     ipcRenderer.invoke("getLocalTerminalInfo", tabId),
+  onLocalTerminalStatus: (callback) => {
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+    const wrappedCallback = (_event, data) => callback(data);
+    localTerminalStatusWrappers.set(callback, wrappedCallback);
+    ipcRenderer.on("localTerminalStatus", wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener("localTerminalStatus", wrappedCallback);
+      localTerminalStatusWrappers.delete(callback);
+    };
+  },
+  offLocalTerminalStatus: (callback) => {
+    if (typeof callback !== "function") {
+      ipcRenderer.removeAllListeners("localTerminalStatus");
+      return;
+    }
+    const wrappedCallback = localTerminalStatusWrappers.get(callback);
+    if (!wrappedCallback) {
+      return;
+    }
+    ipcRenderer.removeListener("localTerminalStatus", wrappedCallback);
+    localTerminalStatusWrappers.delete(callback);
+  },
 
   // 重连管理API
   getReconnectStatus: (args) =>

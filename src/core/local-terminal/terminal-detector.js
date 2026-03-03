@@ -13,15 +13,38 @@ class TerminalDetector {
     this.isLinux = process.platform === "linux";
     this.cacheTime = null;
     this.cacheTTL = 300000; // 5 minutes cache
+    this.wslStatusCacheTime = null;
+    this.wslStatusCacheTTL = 10000; // 10 seconds cache
+  }
+
+  normalizeDetectOptions(options = {}) {
+    const normalizedOptions =
+      options && typeof options === "object" ? options : {};
+
+    return {
+      forceRefresh: normalizedOptions.forceRefresh === true,
+      refreshRuntimeStatus: normalizedOptions.refreshRuntimeStatus !== false,
+    };
   }
 
   /**
    * 检测当前系统中可用的本地终端
    */
-  async detectAllTerminals() {
+  async detectAllTerminals(options = {}) {
+    const { forceRefresh, refreshRuntimeStatus } =
+      this.normalizeDetectOptions(options);
+
     // 检查缓存
-    if (this.cacheTime && Date.now() - this.cacheTime < this.cacheTTL) {
-      return this.detectedTerminals;
+    if (
+      !forceRefresh &&
+      this.cacheTime &&
+      Date.now() - this.cacheTime < this.cacheTTL &&
+      this.detectedTerminals.length > 0
+    ) {
+      if (refreshRuntimeStatus) {
+        await this.refreshRuntimeStatus();
+      }
+      return this.getDetectedTerminals();
     }
 
     this.detectedTerminals = [];
@@ -39,7 +62,12 @@ class TerminalDetector {
     }
 
     this.cacheTime = Date.now();
-    return this.detectedTerminals;
+
+    if (refreshRuntimeStatus) {
+      await this.refreshRuntimeStatus();
+    }
+
+    return this.getDetectedTerminals();
   }
 
   /**
@@ -53,7 +81,6 @@ class TerminalDetector {
         type: "wsl",
         executable: "wsl.exe",
         priority: 12,
-        systemCommand: "wsl.exe",
         launchArgs: ["--distribution", "Ubuntu"],
         adminRequired: false,
       },
@@ -64,7 +91,15 @@ class TerminalDetector {
         type: "windows-terminal",
         executable: "wt.exe",
         priority: 11,
-        packageName: "Microsoft.WindowsTerminal_8wekyb3d8bbwe",
+        systemCommand: "wt.exe",
+        checkPaths: [
+          path.join(
+            process.env.LOCALAPPDATA || "",
+            "Microsoft",
+            "WindowsApps",
+            "wt.exe",
+          ),
+        ],
       },
     ];
 
@@ -231,24 +266,12 @@ class TerminalDetector {
       if (terminal.systemCommand) {
         checks.push(
           (async () => {
-            try {
-              const whereCommand = this.isWindows ? "where" : "which";
-              const { stdout } = await execAsync(
-                `${whereCommand} ${terminal.systemCommand}`,
-                {
-                  timeout: 2000,
-                  windowsHide: true,
-                },
-              );
-              if (stdout.trim()) {
-                const firstPath = stdout.trim().split("\n")[0].trim();
-                if (firstPath && (await this.fileExists(firstPath))) {
-                  terminal.executablePath = firstPath;
-                  return true;
-                }
-              }
-            } catch {
-              // 忽略
+            const resolvedPath = await this.resolveSystemCommandPath(
+              terminal.systemCommand,
+            );
+            if (resolvedPath) {
+              terminal.executablePath = resolvedPath;
+              return true;
             }
             return false;
           })(),
@@ -318,15 +341,76 @@ class TerminalDetector {
     }
   }
 
+  async refreshRuntimeStatus(options = {}) {
+    const { forceRefresh } = this.normalizeDetectOptions(options);
+    if (!this.isWindows) {
+      return;
+    }
+
+    const wslTerminal = this.detectedTerminals.find(
+      (terminal) => terminal.type === "wsl",
+    );
+    if (!wslTerminal) {
+      return;
+    }
+
+    if (
+      !forceRefresh &&
+      this.wslStatusCacheTime &&
+      Date.now() - this.wslStatusCacheTime < this.wslStatusCacheTTL
+    ) {
+      return;
+    }
+
+    await this.checkWSLAvailability(wslTerminal);
+  }
+
+  async resolveSystemCommandPath(command, timeout = 2000) {
+    try {
+      const whereCommand = this.isWindows ? "where" : "which";
+      const { stdout } = await execAsync(`${whereCommand} ${command}`, {
+        timeout,
+        windowsHide: true,
+      });
+      const output = (stdout || "").replace(/\0/g, "").trim();
+      if (!output) {
+        return null;
+      }
+
+      const firstPath = output.split(/\r?\n/)[0].trim();
+      if (!firstPath) {
+        return null;
+      }
+
+      // Windows App Execution Alias（例如 wt.exe）在 where 可解析时可直接使用
+      if (this.isWindows) {
+        return firstPath;
+      }
+
+      if (await this.fileExists(firstPath)) {
+        return firstPath;
+      }
+    } catch {
+      // 忽略
+    }
+
+    return null;
+  }
+
   /**
    * 检查 WSL 是否可用
    */
   async checkWSLAvailability(terminal) {
     try {
+      const executablePath =
+        (await this.resolveSystemCommandPath("wsl.exe", 1200)) || "wsl.exe";
+      terminal.executablePath = executablePath;
+
       // 通过 wsl -l -v 检查是否已安装（使用 UTF-16LE 编码处理）
-      const { stdout: wslList } = await execAsync("wsl -l -v", {
-        timeout: 3000,
+      const { stdout: wslList } = await execAsync("wsl.exe --list --verbose", {
+        timeout: 2000,
         encoding: "utf16le", // 指定 UTF-16LE 编码
+        windowsHide: true,
       });
 
       // 清理可能包含的空字符
@@ -357,12 +441,32 @@ class TerminalDetector {
         );
 
         if (validDistributions.length > 0) {
+          const runningCount = validDistributions.filter(
+            (dist) => dist.runtimeState === "running",
+          ).length;
+          const checkedAt = Date.now();
+
           terminal.availableDistributions = validDistributions;
+          terminal.runtimeStatus = {
+            state: runningCount > 0 ? "running" : "stopped",
+            runningCount,
+            totalCount: validDistributions.length,
+            checkedAt,
+          };
 
           // 多个发行版时，后续可提供选择
           if (validDistributions.length > 1) {
             terminal.hasMultipleDistributions = true;
           }
+
+          const defaultDistribution =
+            validDistributions.find((dist) => dist.isDefault) ||
+            validDistributions[0];
+          if (defaultDistribution?.name) {
+            terminal.name = `WSL (${defaultDistribution.name})`;
+          }
+
+          this.wslStatusCacheTime = checkedAt;
 
           return true;
         } else {
@@ -401,6 +505,7 @@ class TerminalDetector {
           const name = parts[0];
           const state = parts[1];
           const version = parts[2] || "WSL1";
+          const runtimeState = state.toLowerCase();
 
           // 仅在必要字段有效时加入结果
           if (
@@ -413,6 +518,7 @@ class TerminalDetector {
             const distribution = {
               name,
               state,
+              runtimeState,
               version,
               isDefault: trimmed.startsWith("*"),
             };
@@ -463,4 +569,3 @@ class TerminalDetector {
 }
 
 module.exports = TerminalDetector;
-

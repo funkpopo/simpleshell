@@ -141,9 +141,10 @@ class LocalTerminalHandlers {
 
   registerHandlers() {
     // 检测本地终端
-    safeHandle(this.ipcMain, "detectLocalTerminals", async () => {
+    safeHandle(this.ipcMain, "detectLocalTerminals", async (event, options) => {
       // 获取系统检测到的终端
-      const systemTerminals = await this.terminalDetector.detectAllTerminals();
+      const systemTerminals =
+        await this.terminalDetector.detectAllTerminals(options);
       return systemTerminals;
     });
 
@@ -172,7 +173,8 @@ class LocalTerminalHandlers {
               name: terminalConfig.name,
               type: terminalConfig.type,
               executable: terminalConfig.executable,
-              availableDistributions: terminalConfig.availableDistributions || [],
+              availableDistributions:
+                terminalConfig.availableDistributions || [],
             },
           },
           embedded: false, // 初始嵌入状态，后续通过事件更新
@@ -222,10 +224,17 @@ class LocalTerminalHandlers {
     });
 
     // 调整嵌入窗口大小
-    safeHandle(this.ipcMain, "resizeEmbeddedTerminal", async (event, tabId, bounds) => {
-      const resized = await this.windowEmbedder.resizeEmbeddedWindow(tabId, bounds);
-      return { success: Boolean(resized) };
-    });
+    safeHandle(
+      this.ipcMain,
+      "resizeEmbeddedTerminal",
+      async (event, tabId, bounds) => {
+        const resized = await this.windowEmbedder.resizeEmbeddedWindow(
+          tabId,
+          bounds,
+        );
+        return { success: Boolean(resized) };
+      },
+    );
 
     // 获取所有活动终端
     safeHandle(this.ipcMain, "getAllActiveLocalTerminals", async () => {
