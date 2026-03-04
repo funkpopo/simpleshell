@@ -9,7 +9,10 @@ const { app, dialog, shell, BrowserWindow } = require("electron");
 
 const sftpCore = require("../../core/transfer/sftp-engine");
 const processManager = require("../../core/process/processManager");
+const { processSSHPrivateKeyAsync } = require("../../core/utils/ssh-utils");
 const { logToFile } = require("../../core/utils/logger");
+const connectionManager = require("../connection");
+const TransferProcessPool = require("./transferProcessPool");
 
 const DIRECTORY_TYPE_MASK = 0o170000;
 const DIRECTORY_MODE = 0o040000;
@@ -17,6 +20,12 @@ const DEFAULT_PROGRESS_INTERVAL_MS = 200;
 const DEFAULT_STALL_TIMEOUT_MS = 45000;
 const MAX_TRANSFER_RETRIES = 2;
 const RETRY_BACKOFF_BASE_MS = 300;
+const EVENT_LOOP_LAG_INTERVAL_MS = 1000;
+const TRANSFER_ENGINE_MODE = "process-worker-pool-v1";
+const CHUNK_PARALLEL_THRESHOLD_BYTES = 128 * 1024 * 1024;
+const CHUNK_PARALLEL_TARGET_CHUNK_BYTES = 32 * 1024 * 1024;
+const CHUNK_PARALLEL_MAX_SEGMENTS = 16;
+const CHUNK_PARALLEL_MIN_SEGMENTS = 2;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -112,14 +121,222 @@ function makeBufferReadStream(buffer, chunkSize) {
 
 class FilemanagementService {
   constructor() {
+    this.transferEngineMode = TRANSFER_ENGINE_MODE;
     this.activeTransfers = new Map();
     this.inflightDirectoryReads = new Map();
+    this.transferProcessPool = new TransferProcessPool();
+    this.transferMetrics = {
+      startedAt: Date.now(),
+      successfulTransfers: 0,
+      failedTransfers: 0,
+      cancelledTransfers: 0,
+      totalTasks: 0,
+      failedTasks: 0,
+      totalBytesTransferred: 0,
+      cancelLatencySamples: [],
+      latestTransferThroughput: 0,
+      eventLoopLag: {
+        latestMs: 0,
+        maxMs: 0,
+        totalMs: 0,
+        samples: 0,
+      },
+    };
+    this.eventLoopLagTimer = null;
+    this._startEventLoopLagMonitor();
   }
 
   _log(message, level = "INFO") {
     if (typeof logToFile === "function") {
       logToFile(`[Filemanagement] ${message}`, level);
     }
+  }
+
+  _startEventLoopLagMonitor() {
+    if (this.eventLoopLagTimer) {
+      clearInterval(this.eventLoopLagTimer);
+      this.eventLoopLagTimer = null;
+    }
+
+    let expected = Date.now() + EVENT_LOOP_LAG_INTERVAL_MS;
+    this.eventLoopLagTimer = setInterval(() => {
+      const now = Date.now();
+      const lag = Math.max(0, now - expected);
+      expected = now + EVENT_LOOP_LAG_INTERVAL_MS;
+
+      const stats = this.transferMetrics.eventLoopLag;
+      stats.latestMs = lag;
+      stats.maxMs = Math.max(stats.maxMs, lag);
+      stats.totalMs += lag;
+      stats.samples += 1;
+    }, EVENT_LOOP_LAG_INTERVAL_MS);
+
+    if (typeof this.eventLoopLagTimer.unref === "function") {
+      this.eventLoopLagTimer.unref();
+    }
+  }
+
+  _stopEventLoopLagMonitor() {
+    if (this.eventLoopLagTimer) {
+      clearInterval(this.eventLoopLagTimer);
+      this.eventLoopLagTimer = null;
+    }
+  }
+
+  _recordTransferMetrics({
+    transferredBytes = 0,
+    completed = 0,
+    failed = 0,
+    cancelled = false,
+    durationMs = 0,
+  }) {
+    const metrics = this.transferMetrics;
+    const safeCompleted = Math.max(0, Number(completed) || 0);
+    const safeFailed = Math.max(0, Number(failed) || 0);
+    const safeBytes = Math.max(0, Number(transferredBytes) || 0);
+    const safeDurationMs = Math.max(0, Number(durationMs) || 0);
+
+    metrics.totalTasks += safeCompleted + safeFailed;
+    metrics.failedTasks += safeFailed;
+    metrics.totalBytesTransferred += safeBytes;
+
+    if (cancelled) {
+      metrics.cancelledTransfers += 1;
+    } else if (safeFailed > 0) {
+      metrics.failedTransfers += 1;
+    } else {
+      metrics.successfulTransfers += 1;
+    }
+
+    if (safeDurationMs > 0) {
+      metrics.latestTransferThroughput =
+        safeBytes / Math.max(0.001, safeDurationMs / 1000);
+    }
+  }
+
+  _recordCancelLatency(transfer) {
+    if (!transfer?.cancelRequestedAt) return;
+    if (transfer.cancelLatencyRecorded) return;
+    const latencyMs = Math.max(0, Date.now() - transfer.cancelRequestedAt);
+    this.transferMetrics.cancelLatencySamples.push(latencyMs);
+    if (this.transferMetrics.cancelLatencySamples.length > 100) {
+      this.transferMetrics.cancelLatencySamples.shift();
+    }
+    transfer.cancelLatencyRecorded = true;
+  }
+
+  _generateTaskId(prefix = "task") {
+    return `${prefix}-${Date.now().toString(36)}-${crypto.randomBytes(2).toString("hex")}`;
+  }
+
+  async _resolveTransferSshConfig(tabId) {
+    const processInfo = processManager.getProcess(tabId);
+    const rawConfig = processInfo?.config;
+    if (!rawConfig?.host || !rawConfig?.username) {
+      throw new Error("SSH connection config is unavailable");
+    }
+
+    const sshConfig = await processSSHPrivateKeyAsync({
+      host: rawConfig.host,
+      port: rawConfig.port || 22,
+      username: rawConfig.username,
+      password: rawConfig.password || undefined,
+      privateKey: rawConfig.privateKey || undefined,
+      privateKeyPath: rawConfig.privateKeyPath || undefined,
+      passphrase: rawConfig.passphrase || undefined,
+      readyTimeout: rawConfig.readyTimeout || undefined,
+      keepaliveInterval: rawConfig.keepaliveInterval || undefined,
+      keepaliveCountMax: rawConfig.keepaliveCountMax || undefined,
+    });
+
+    if (sshConfig?.privateKeyPath && sshConfig.privateKey) {
+      delete sshConfig.privateKeyPath;
+    }
+
+    const proxyManager = connectionManager?.sshConnectionPool?.proxyManager;
+    if (
+      proxyManager &&
+      typeof proxyManager.resolveProxyConfigAsync === "function"
+    ) {
+      try {
+        const resolvedProxy =
+          await proxyManager.resolveProxyConfigAsync(rawConfig);
+        if (resolvedProxy) {
+          sshConfig.proxy = resolvedProxy;
+        }
+      } catch (error) {
+        this._log(
+          `Resolve proxy for transfer tab=${tabId} failed: ${normalizeErrorMessage(error)}`,
+          "WARN",
+        );
+      }
+    }
+
+    return sshConfig;
+  }
+
+  async _materializeUploadEntry(entry, transferKey, index) {
+    if (entry?.localPath) {
+      return {
+        localPath: entry.localPath,
+        tempPath: null,
+      };
+    }
+
+    if (!entry?.buffer) {
+      throw new Error("Upload entry has no localPath or buffer");
+    }
+
+    const tempRoot = path.join(os.tmpdir(), "simpleshell-upload-buffer");
+    const transferDir = path.join(tempRoot, transferKey);
+    await fsp.mkdir(transferDir, { recursive: true });
+    const tempPath = path.join(
+      transferDir,
+      `${String(index).padStart(5, "0")}-${Date.now()}-${crypto.randomBytes(2).toString("hex")}.tmp`,
+    );
+    await fsp.writeFile(tempPath, entry.buffer);
+    return {
+      localPath: tempPath,
+      tempPath,
+    };
+  }
+
+  async _cleanupTempUploadSources(tempPaths = []) {
+    if (!Array.isArray(tempPaths) || tempPaths.length === 0) return;
+    const uniquePaths = Array.from(new Set(tempPaths.filter(Boolean)));
+    await Promise.allSettled(
+      uniquePaths.map((filePath) => fsp.rm(filePath, { force: true })),
+    );
+  }
+
+  getTransferRuntimeStats() {
+    const metrics = this.transferMetrics;
+    const elapsedSec = Math.max(0.001, (Date.now() - metrics.startedAt) / 1000);
+    const cancelSamples = metrics.cancelLatencySamples;
+    const avgCancelLatencyMs =
+      cancelSamples.length > 0
+        ? cancelSamples.reduce((sum, value) => sum + value, 0) /
+          cancelSamples.length
+        : 0;
+    const failureRate =
+      metrics.totalTasks > 0 ? metrics.failedTasks / metrics.totalTasks : 0;
+    const lag = metrics.eventLoopLag;
+
+    return {
+      transferEngineMode: this.transferEngineMode,
+      activeTransferCount: this.activeTransfers.size,
+      throughputBytesPerSec: metrics.totalBytesTransferred / elapsedSec,
+      latestTransferThroughput: metrics.latestTransferThroughput,
+      failureRate,
+      avgCancelLatencyMs,
+      eventLoopLag: {
+        latestMs: lag.latestMs,
+        maxMs: lag.maxMs,
+        avgMs: lag.samples > 0 ? lag.totalMs / lag.samples : 0,
+        samples: lag.samples,
+      },
+      pool: this.transferProcessPool.getRuntimeStats(),
+    };
   }
 
   _normalizeRemotePath(remotePath) {
@@ -247,6 +464,73 @@ class FilemanagementService {
     return Math.max(1, Math.min(concurrency, files));
   }
 
+  _shouldUseChunkParallel(totalBytes) {
+    const size = Number.isFinite(totalBytes) ? totalBytes : 0;
+    return size >= CHUNK_PARALLEL_THRESHOLD_BYTES;
+  }
+
+  _buildChunkSegments(totalBytes) {
+    const size = Number.isFinite(totalBytes) ? Math.floor(totalBytes) : 0;
+    if (size <= 0 || !this._shouldUseChunkParallel(size)) {
+      return [];
+    }
+
+    const estimatedCount = Math.ceil(size / CHUNK_PARALLEL_TARGET_CHUNK_BYTES);
+    const segmentCount = Math.max(
+      CHUNK_PARALLEL_MIN_SEGMENTS,
+      Math.min(CHUNK_PARALLEL_MAX_SEGMENTS, estimatedCount),
+    );
+    const segmentSize = Math.max(1, Math.ceil(size / segmentCount));
+    const segments = [];
+    let offset = 0;
+    let index = 0;
+
+    while (offset < size) {
+      const remaining = size - offset;
+      const length = Math.min(segmentSize, remaining);
+      segments.push({
+        index,
+        offset,
+        length,
+      });
+      offset += length;
+      index += 1;
+    }
+
+    return segments;
+  }
+
+  _buildFileTaskKey(direction, remotePath, localPath, index) {
+    return `${direction || "transfer"}::${index}::${remotePath || ""}::${localPath || ""}`;
+  }
+
+  async _prepareRemoteChunkUploadTarget(tabId, remotePath) {
+    const normalizedRemotePath = this._normalizeRemotePath(remotePath);
+    await this._withBorrowedSftp(tabId, async (sftp) => {
+      const handle = await this._openFileHandle(
+        sftp,
+        normalizedRemotePath,
+        "w",
+      );
+      await this._closeFileHandle(sftp, handle);
+    });
+  }
+
+  async _prepareLocalChunkDownloadTarget(tempPath, totalBytes) {
+    await fsp.mkdir(path.dirname(tempPath), { recursive: true });
+    const handle = await fsp.open(tempPath, "w");
+    await handle.close();
+    await fsp.truncate(tempPath, Math.max(0, Number(totalBytes) || 0));
+  }
+
+  async _cleanupLocalTempPaths(paths = []) {
+    if (!Array.isArray(paths) || paths.length === 0) return;
+    const uniquePaths = Array.from(new Set(paths.filter(Boolean)));
+    await Promise.allSettled(
+      uniquePaths.map((filePath) => fsp.rm(filePath, { force: true })),
+    );
+  }
+
   async _runConcurrent(tasks, concurrency, shouldStop = null) {
     const errors = [];
     let index = 0;
@@ -302,8 +586,11 @@ class FilemanagementService {
       startAt: Date.now(),
       lastEmitAt: 0,
       cancelled: false,
+      cancelRequestedAt: 0,
+      cancelLatencyRecorded: false,
       activeStreams: new Set(),
       metadata: { ...metadata },
+      transferEngineMode: this.transferEngineMode,
     };
     this.activeTransfers.set(transferKey, state);
     return state;
@@ -409,6 +696,9 @@ class FilemanagementService {
   _finalizeTransfer(transferKey) {
     const transfer = this._getTransfer(transferKey);
     if (!transfer) return;
+    if (transfer.cancelled) {
+      this._recordCancelLatency(transfer);
+    }
     this._destroyTransferStreams(transferKey, "Transfer finalized");
     this.activeTransfers.delete(transferKey);
   }
@@ -959,6 +1249,8 @@ class FilemanagementService {
     }
 
     transfer.cancelled = true;
+    transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
+    this.transferProcessPool.cancelTransfer(transferKey);
     this._destroyTransferStreams(transferKey, "Transfer cancelled by user");
     this._emitTransferProgress(transferKey, {
       force: true,
@@ -971,6 +1263,40 @@ class FilemanagementService {
     });
 
     return { success: true, cancelled: true };
+  }
+
+  cleanupTransfersForTab(tabId) {
+    if (tabId === undefined || tabId === null) {
+      return { success: false, cleanedCount: 0, error: "Invalid tabId" };
+    }
+
+    let cleanedCount = 0;
+    for (const [transferKey, transfer] of this.activeTransfers.entries()) {
+      if (String(transfer.tabId) !== String(tabId)) continue;
+      transfer.cancelled = true;
+      transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
+      this.transferProcessPool.cancelTransfer(transferKey);
+      this._destroyTransferStreams(
+        transferKey,
+        "Transfer cancelled due to tab cleanup",
+      );
+      this._emitTransferProgress(transferKey, {
+        force: true,
+        fileName: "传输已取消",
+        extra: {
+          cancelled: true,
+          userCancelled: true,
+          operationComplete: true,
+        },
+      });
+      cleanedCount += 1;
+    }
+
+    return {
+      success: true,
+      cleanedCount,
+      message: `Cleaned ${cleanedCount} transfer(s) for tab ${tabId}`,
+    };
   }
 
   async setFilePermissions(event, tabId, remotePath, permissions) {
@@ -1288,6 +1614,7 @@ class FilemanagementService {
 
   async downloadFile(event, tabId, remotePath) {
     let transferKey = null;
+    let chunkTempPath = null;
     try {
       const sender = event?.sender;
       const normalizedRemotePath = this._normalizeRemotePath(remotePath);
@@ -1340,24 +1667,126 @@ class FilemanagementService {
         currentFile: defaultName || normalizedRemotePath,
       });
 
-      await this._downloadFileToPath({
-        tabId,
-        transferKey,
-        remotePath: normalizedRemotePath,
-        localPath: filePath,
-        knownSize: fileSize,
-        onBytes: (bytes) => {
-          const current = this._getTransfer(transferKey);
-          if (!current) return;
-          current.transferredBytes += bytes;
-          this._emitTransferProgress(transferKey, {
-            channel: "download-progress",
+      if (this._buildChunkSegments(fileSize).length > 0) {
+        const sshConfig = await this._resolveTransferSshConfig(tabId);
+        const chunkSegments = this._buildChunkSegments(fileSize);
+        chunkTempPath = `${filePath}.part`;
+        await this._prepareLocalChunkDownloadTarget(chunkTempPath, fileSize);
+
+        const taskMetaMap = new Map();
+        const taskTransferredBytes = new Map();
+        let chunkTaskFailed = false;
+        const chunkErrors = [];
+        const tasks = chunkSegments.map((segment) => {
+          const taskId = this._generateTaskId("download-single-chunk");
+          taskMetaMap.set(taskId, {
+            knownSize: segment.length,
+            segmentIndex: segment.index,
+            segmentCount: chunkSegments.length,
+          });
+          return {
+            taskId,
+            direction: "download",
+            remotePath: normalizedRemotePath,
+            localPath: chunkTempPath,
+            totalBytes: segment.length,
             fileName: defaultName || normalizedRemotePath,
             currentFile: defaultName || normalizedRemotePath,
-            currentFileIndex: 1,
-          });
-        },
-      });
+            segmentOffset: segment.offset,
+            segmentLength: segment.length,
+            segmentIndex: segment.index,
+            segmentCount: chunkSegments.length,
+            localWriteFlags: "r+",
+            skipLocalTempRename: true,
+            maxRetries: MAX_TRANSFER_RETRIES,
+            noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
+          };
+        });
+
+        await this.transferProcessPool.runTasks({
+          transferKey,
+          tabId,
+          sshConfig,
+          tasks,
+          maxConcurrency: this._chooseConcurrency(
+            chunkSegments.length,
+            fileSize,
+            false,
+          ),
+          onProgress: (message) => {
+            const taskMeta = taskMetaMap.get(message?.taskId);
+            if (!taskMeta) return;
+            const deltaBytes = Math.max(0, Number(message?.deltaBytes) || 0);
+            if (deltaBytes > 0) {
+              taskTransferredBytes.set(
+                message.taskId,
+                (taskTransferredBytes.get(message.taskId) || 0) + deltaBytes,
+              );
+            }
+            const current = this._getTransfer(transferKey);
+            if (!current) return;
+            current.transferredBytes += deltaBytes;
+            this._emitTransferProgress(transferKey, {
+              channel: "download-progress",
+              fileName: defaultName || normalizedRemotePath,
+              currentFile: defaultName || normalizedRemotePath,
+              currentFileIndex: 1,
+            });
+          },
+          onTaskDone: (message) => {
+            const taskMeta = taskMetaMap.get(message?.taskId);
+            if (!taskMeta) return;
+            const current = this._getTransfer(transferKey);
+            if (!current) return;
+            const tracked = taskTransferredBytes.get(message.taskId) || 0;
+            const reportedTotal = Number.isFinite(taskMeta.knownSize)
+              ? taskMeta.knownSize
+              : Number(message?.totalBytes) || 0;
+            const remainder = Math.max(0, reportedTotal - tracked);
+            current.transferredBytes += remainder;
+          },
+          onTaskError: (message) => {
+            if (
+              message?.error?.cancelled ||
+              this._isTransferCancelled(transferKey)
+            ) {
+              return;
+            }
+            chunkTaskFailed = true;
+            chunkErrors.push(
+              message?.error?.message || "Download chunk task failed",
+            );
+          },
+        });
+
+        if (this._isTransferCancelled(transferKey)) {
+          throw buildCancelledError();
+        }
+        if (chunkTaskFailed) {
+          throw new Error(chunkErrors[0] || "Download chunk task failed");
+        }
+        await fsp.rename(chunkTempPath, filePath);
+        chunkTempPath = null;
+      } else {
+        await this._downloadFileToPath({
+          tabId,
+          transferKey,
+          remotePath: normalizedRemotePath,
+          localPath: filePath,
+          knownSize: fileSize,
+          onBytes: (bytes) => {
+            const current = this._getTransfer(transferKey);
+            if (!current) return;
+            current.transferredBytes += bytes;
+            this._emitTransferProgress(transferKey, {
+              channel: "download-progress",
+              fileName: defaultName || normalizedRemotePath,
+              currentFile: defaultName || normalizedRemotePath,
+              currentFileIndex: 1,
+            });
+          },
+        });
+      }
 
       const finalState = this._getTransfer(transferKey);
       if (finalState) {
@@ -1376,6 +1805,13 @@ class FilemanagementService {
         currentFileIndex: 1,
       });
 
+      this._recordTransferMetrics({
+        transferredBytes: finalState?.transferredBytes || 0,
+        completed: 1,
+        failed: 0,
+        cancelled: false,
+        durationMs: finalState ? Date.now() - finalState.startAt : 0,
+      });
       this._finalizeTransfer(transferKey);
       return {
         success: true,
@@ -1384,7 +1820,22 @@ class FilemanagementService {
         message: "下载完成",
       };
     } catch (error) {
-      if (transferKey) this._finalizeTransfer(transferKey);
+      if (chunkTempPath) {
+        await this._cleanupLocalTempPaths([chunkTempPath]);
+        chunkTempPath = null;
+      }
+      if (transferKey) {
+        const transferState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: transferState?.transferredBytes || 0,
+          completed: 0,
+          failed: isCancelledError(error) ? 0 : 1,
+          cancelled: isCancelledError(error),
+          durationMs: transferState ? Date.now() - transferState.startAt : 0,
+        });
+        this._recordCancelLatency(transferState);
+        this._finalizeTransfer(transferKey);
+      }
       if (isCancelledError(error)) {
         return { success: false, cancelled: true, error: "用户取消下载" };
       }
@@ -1398,6 +1849,7 @@ class FilemanagementService {
 
   async downloadFiles(event, tabId, files) {
     let transferKey = null;
+    const chunkTempCleanup = new Set();
     try {
       if (!Array.isArray(files) || files.length === 0) {
         return { success: false, error: "没有选择要下载的文件" };
@@ -1424,6 +1876,7 @@ class FilemanagementService {
         (sum, file) => sum + (Number.isFinite(file?.size) ? file.size : 0),
         0,
       );
+      const sshConfig = await this._resolveTransferSshConfig(tabId);
 
       transferKey = this._generateTransferKey(tabId, "batch-download");
       this._registerTransfer({
@@ -1446,68 +1899,205 @@ class FilemanagementService {
       let completed = 0;
       let failed = 0;
       const errors = [];
+      const taskMetaMap = new Map();
+      const taskTransferredBytes = new Map();
+      const fileStateMap = new Map();
+      const tasks = [];
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const remotePath = this._normalizeRemotePath(file?.remotePath || "");
+        const fileName = file?.fileName || path.posix.basename(remotePath);
+        const localPath = path.join(targetDir, fileName);
+        const knownSize = Number.isFinite(file?.size) ? file.size : 0;
+        const fileTaskKey = this._buildFileTaskKey(
+          "download",
+          remotePath,
+          localPath,
+          index,
+        );
+        const chunkSegments = this._buildChunkSegments(knownSize);
+
+        if (chunkSegments.length > 0) {
+          const tempPath = `${localPath}.part`;
+          await this._prepareLocalChunkDownloadTarget(tempPath, knownSize);
+          chunkTempCleanup.add(tempPath);
+          fileStateMap.set(fileTaskKey, {
+            fileTaskKey,
+            index,
+            fileName,
+            localPath,
+            tempPath,
+            chunked: true,
+            totalSegments: chunkSegments.length,
+            completedSegments: 0,
+            failed: false,
+          });
+
+          for (const segment of chunkSegments) {
+            const taskId = this._generateTaskId("download-chunk");
+            taskMetaMap.set(taskId, {
+              fileTaskKey,
+              index,
+              fileName,
+              knownSize: segment.length,
+              chunked: true,
+              segmentIndex: segment.index,
+              totalSegments: chunkSegments.length,
+              localPath,
+              tempPath,
+            });
+
+            tasks.push({
+              taskId,
+              direction: "download",
+              remotePath,
+              localPath: tempPath,
+              totalBytes: segment.length,
+              fileName,
+              currentFile: fileName,
+              segmentOffset: segment.offset,
+              segmentLength: segment.length,
+              segmentIndex: segment.index,
+              segmentCount: chunkSegments.length,
+              localWriteFlags: "r+",
+              skipLocalTempRename: true,
+              maxRetries: MAX_TRANSFER_RETRIES,
+              noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
+            });
+          }
+          continue;
+        }
+
+        fileStateMap.set(fileTaskKey, {
+          fileTaskKey,
+          index,
+          fileName,
+          localPath,
+          chunked: false,
+          failed: false,
+        });
+        const taskId = this._generateTaskId("download");
+        taskMetaMap.set(taskId, {
+          fileTaskKey,
+          index,
+          fileName,
+          knownSize,
+          chunked: false,
+        });
+        tasks.push({
+          taskId,
+          direction: "download",
+          remotePath,
+          localPath,
+          totalBytes: knownSize,
+          fileName,
+          currentFile: fileName,
+          maxRetries: MAX_TRANSFER_RETRIES,
+          noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
+        });
+      }
       const concurrency = this._chooseConcurrency(
-        totalFiles,
+        tasks.length,
         totalBytes,
         false,
       );
 
-      const tasks = files.map((file, index) => async () => {
-        if (this._isTransferCancelled(transferKey)) {
-          throw buildCancelledError();
-        }
+      await this.transferProcessPool.runTasks({
+        transferKey,
+        tabId,
+        sshConfig,
+        tasks,
+        maxConcurrency: concurrency,
+        onProgress: (message) => {
+          const taskId = message?.taskId;
+          const taskMeta = taskMetaMap.get(taskId);
+          if (!taskMeta) return;
 
-        const remote = this._normalizeRemotePath(file?.remotePath || "");
-        const fileName = file?.fileName || path.posix.basename(remote);
-        const localPath = path.join(targetDir, fileName);
-        const knownSize = Number.isFinite(file?.size) ? file.size : 0;
+          const deltaBytes = Math.max(0, Number(message?.deltaBytes) || 0);
+          if (deltaBytes > 0) {
+            taskTransferredBytes.set(
+              taskId,
+              (taskTransferredBytes.get(taskId) || 0) + deltaBytes,
+            );
+          }
 
-        try {
-          await this._downloadFileToPath({
-            tabId,
-            transferKey,
-            remotePath: remote,
-            localPath,
-            knownSize,
-            onBytes: (bytes) => {
-              const state = this._getTransfer(transferKey);
-              if (!state) return;
-              state.transferredBytes += bytes;
-              this._emitTransferProgress(transferKey, {
-                channel: "download-progress",
-                isBatch: true,
-                fileName,
-                currentFile: fileName,
-                currentFileIndex: index + 1,
-              });
-            },
-          });
-
-          completed += 1;
           const state = this._getTransfer(transferKey);
-          if (state) state.processedFiles += 1;
+          if (!state) return;
+          state.transferredBytes += deltaBytes;
+
           this._emitTransferProgress(transferKey, {
             channel: "download-progress",
-            force: true,
             isBatch: true,
-            fileName,
-            currentFile: fileName,
-            currentFileIndex: index + 1,
+            fileName: taskMeta.fileName,
+            currentFile: taskMeta.fileName,
+            currentFileIndex: taskMeta.index + 1,
           });
-        } catch (error) {
-          if (isCancelledError(error)) {
-            throw error;
+        },
+        onTaskDone: (message) => {
+          const taskId = message?.taskId;
+          const taskMeta = taskMetaMap.get(taskId);
+          if (!taskMeta) return;
+
+          const state = this._getTransfer(transferKey);
+          const reportedTotal = Number.isFinite(taskMeta.knownSize)
+            ? taskMeta.knownSize
+            : Number(message?.totalBytes) || 0;
+          const tracked = taskTransferredBytes.get(taskId) || 0;
+          const remainder = Math.max(0, reportedTotal - tracked);
+          if (state) {
+            state.transferredBytes += remainder;
           }
+
+          const fileState = fileStateMap.get(taskMeta.fileTaskKey);
+          if (!fileState) return;
+          if (taskMeta.chunked) {
+            fileState.completedSegments += 1;
+          } else {
+            completed += 1;
+            if (state) {
+              state.processedFiles += 1;
+            }
+          }
+
+          this._emitTransferProgress(transferKey, {
+            channel: "download-progress",
+            force: !taskMeta.chunked,
+            isBatch: true,
+            fileName: taskMeta.fileName,
+            currentFile: taskMeta.fileName,
+            currentFileIndex: taskMeta.index + 1,
+          });
+        },
+        onTaskError: (message) => {
+          if (
+            message?.error?.cancelled ||
+            this._isTransferCancelled(transferKey)
+          ) {
+            return;
+          }
+
+          const taskMeta = taskMetaMap.get(message?.taskId);
+          if (!taskMeta) return;
+          const fileState = fileStateMap.get(taskMeta.fileTaskKey);
+          if (!fileState) return;
+          if (fileState.failed) return;
+
+          fileState.failed = true;
           failed += 1;
-          errors.push({ fileName, error: normalizeErrorMessage(error) });
-        }
+          errors.push({
+            fileName:
+              taskMeta?.fileName ||
+              message?.fileName ||
+              message?.taskId ||
+              "unknown-file",
+            error: message?.error?.message || "Download task failed",
+          });
+        },
       });
 
-      await this._runConcurrent(tasks, concurrency, () =>
-        this._isTransferCancelled(transferKey),
-      );
-
       if (this._isTransferCancelled(transferKey)) {
+        await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
+        chunkTempCleanup.clear();
         this._emitTransferProgress(transferKey, {
           channel: "download-progress",
           force: true,
@@ -1519,6 +2109,100 @@ class FilemanagementService {
             operationComplete: true,
           },
         });
+        const cancelledState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: cancelledState?.transferredBytes || 0,
+          completed,
+          failed,
+          cancelled: true,
+          durationMs: cancelledState ? Date.now() - cancelledState.startAt : 0,
+        });
+        this._recordCancelLatency(cancelledState);
+        this._finalizeTransfer(transferKey);
+        return {
+          success: false,
+          cancelled: true,
+          userCancelled: true,
+          completed,
+          failed,
+          errors,
+          targetDir,
+        };
+      }
+
+      for (const fileState of fileStateMap.values()) {
+        if (!fileState.chunked || fileState.failed) continue;
+        if (fileState.completedSegments < fileState.totalSegments) {
+          fileState.failed = true;
+          failed += 1;
+          errors.push({
+            fileName: fileState.fileName,
+            error: "Download chunk incomplete",
+          });
+          continue;
+        }
+
+        try {
+          await fsp.rename(fileState.tempPath, fileState.localPath);
+          chunkTempCleanup.delete(fileState.tempPath);
+          completed += 1;
+
+          const state = this._getTransfer(transferKey);
+          if (state) {
+            state.processedFiles += 1;
+          }
+
+          this._emitTransferProgress(transferKey, {
+            channel: "download-progress",
+            force: true,
+            isBatch: true,
+            fileName: fileState.fileName,
+            currentFile: fileState.fileName,
+            currentFileIndex: fileState.index + 1,
+          });
+        } catch (renameError) {
+          fileState.failed = true;
+          failed += 1;
+          errors.push({
+            fileName: fileState.fileName,
+            error: `Chunk merge failed: ${normalizeErrorMessage(renameError)}`,
+          });
+        }
+      }
+
+      const failedTempPaths = [];
+      for (const fileState of fileStateMap.values()) {
+        if (!fileState.chunked || !fileState.failed) continue;
+        failedTempPaths.push(fileState.tempPath);
+      }
+      await this._cleanupLocalTempPaths(failedTempPaths);
+      for (const tempPath of failedTempPaths) {
+        chunkTempCleanup.delete(tempPath);
+      }
+
+      if (this._isTransferCancelled(transferKey)) {
+        await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
+        chunkTempCleanup.clear();
+        this._emitTransferProgress(transferKey, {
+          channel: "download-progress",
+          force: true,
+          isBatch: true,
+          fileName: "批量下载已取消",
+          extra: {
+            cancelled: true,
+            userCancelled: true,
+            operationComplete: true,
+          },
+        });
+        const cancelledState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: cancelledState?.transferredBytes || 0,
+          completed,
+          failed,
+          cancelled: true,
+          durationMs: cancelledState ? Date.now() - cancelledState.startAt : 0,
+        });
+        this._recordCancelLatency(cancelledState);
         this._finalizeTransfer(transferKey);
         return {
           success: false,
@@ -1541,6 +2225,14 @@ class FilemanagementService {
           );
         }
       }
+      const transferState = this._getTransfer(transferKey);
+      this._recordTransferMetrics({
+        transferredBytes: transferState?.transferredBytes || 0,
+        completed,
+        failed,
+        cancelled: false,
+        durationMs: transferState ? Date.now() - transferState.startAt : 0,
+      });
 
       this._emitTransferProgress(transferKey, {
         channel: "download-progress",
@@ -1575,7 +2267,20 @@ class FilemanagementService {
         targetDir,
       };
     } catch (error) {
-      if (transferKey) this._finalizeTransfer(transferKey);
+      await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
+      chunkTempCleanup.clear();
+      if (transferKey) {
+        const transferState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: transferState?.transferredBytes || 0,
+          completed: 0,
+          failed: 1,
+          cancelled: isCancelledError(error),
+          durationMs: transferState ? Date.now() - transferState.startAt : 0,
+        });
+        this._recordCancelLatency(transferState);
+        this._finalizeTransfer(transferKey);
+      }
       if (isCancelledError(error)) {
         return { success: false, cancelled: true, error: "用户取消下载" };
       }
@@ -1589,6 +2294,7 @@ class FilemanagementService {
 
   async downloadFolder(event, tabId, remoteFolderPath) {
     let transferKey = null;
+    const chunkTempCleanup = new Set();
     try {
       const sender = event?.sender;
       const normalizedRemoteRoot = this._normalizeRemotePath(remoteFolderPath);
@@ -1619,6 +2325,7 @@ class FilemanagementService {
       );
       const totalFiles = tree.files.length;
       const totalBytes = tree.totalBytes;
+      const sshConfig = await this._resolveTransferSshConfig(tabId);
 
       transferKey = this._generateTransferKey(tabId, "download-folder");
       this._registerTransfer({
@@ -1649,64 +2356,199 @@ class FilemanagementService {
       let completed = 0;
       let failed = 0;
       const errors = [];
-      const concurrency = this._chooseConcurrency(totalFiles, totalBytes, true);
-
-      const tasks = tree.files.map((file, index) => async () => {
-        if (this._isTransferCancelled(transferKey)) {
-          throw buildCancelledError();
-        }
-
+      const taskMetaMap = new Map();
+      const taskTransferredBytes = new Map();
+      const fileStateMap = new Map();
+      const tasks = [];
+      for (let index = 0; index < tree.files.length; index += 1) {
+        const file = tree.files[index];
         const localPath = path.join(
           localFolderPath,
           toPosixPath(file.relativePath),
         );
-        try {
-          await this._downloadFileToPath({
-            tabId,
-            transferKey,
-            remotePath: file.remotePath,
-            localPath,
-            knownSize: file.size,
-            onBytes: (bytes) => {
-              const state = this._getTransfer(transferKey);
-              if (!state) return;
-              state.transferredBytes += bytes;
-              this._emitTransferProgress(transferKey, {
-                channel: "download-folder-progress",
-                fileName: folderName,
-                currentFile: file.relativePath,
-                currentFileIndex: index + 1,
-              });
-            },
-          });
+        const remotePath = this._normalizeRemotePath(file.remotePath);
+        const knownSize = Number.isFinite(file.size) ? file.size : 0;
+        const fileTaskKey = this._buildFileTaskKey(
+          "download-folder",
+          remotePath,
+          localPath,
+          index,
+        );
+        const chunkSegments = this._buildChunkSegments(knownSize);
 
-          completed += 1;
-          const state = this._getTransfer(transferKey);
-          if (state) state.processedFiles += 1;
-          this._emitTransferProgress(transferKey, {
-            channel: "download-folder-progress",
-            force: true,
-            fileName: folderName,
-            currentFile: file.relativePath,
-            currentFileIndex: index + 1,
-          });
-        } catch (error) {
-          if (isCancelledError(error)) {
-            throw error;
-          }
-          failed += 1;
-          errors.push({
+        if (chunkSegments.length > 0) {
+          const tempPath = `${localPath}.part`;
+          await this._prepareLocalChunkDownloadTarget(tempPath, knownSize);
+          chunkTempCleanup.add(tempPath);
+          fileStateMap.set(fileTaskKey, {
+            fileTaskKey,
+            index,
             fileName: file.relativePath,
-            error: normalizeErrorMessage(error),
+            localPath,
+            tempPath,
+            chunked: true,
+            totalSegments: chunkSegments.length,
+            completedSegments: 0,
+            failed: false,
           });
-        }
-      });
 
-      await this._runConcurrent(tasks, concurrency, () =>
-        this._isTransferCancelled(transferKey),
+          for (const segment of chunkSegments) {
+            const taskId = this._generateTaskId("download-folder-chunk");
+            taskMetaMap.set(taskId, {
+              fileTaskKey,
+              index,
+              fileName: file.relativePath,
+              knownSize: segment.length,
+              chunked: true,
+              segmentIndex: segment.index,
+              totalSegments: chunkSegments.length,
+              localPath,
+              tempPath,
+            });
+            tasks.push({
+              taskId,
+              direction: "download",
+              remotePath,
+              localPath: tempPath,
+              totalBytes: segment.length,
+              fileName: file.relativePath,
+              currentFile: file.relativePath,
+              segmentOffset: segment.offset,
+              segmentLength: segment.length,
+              segmentIndex: segment.index,
+              segmentCount: chunkSegments.length,
+              localWriteFlags: "r+",
+              skipLocalTempRename: true,
+              maxRetries: MAX_TRANSFER_RETRIES,
+              noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
+            });
+          }
+          continue;
+        }
+
+        fileStateMap.set(fileTaskKey, {
+          fileTaskKey,
+          index,
+          fileName: file.relativePath,
+          localPath,
+          chunked: false,
+          failed: false,
+        });
+        const taskId = this._generateTaskId("download-folder");
+        taskMetaMap.set(taskId, {
+          fileTaskKey,
+          index,
+          fileName: file.relativePath,
+          knownSize,
+          chunked: false,
+        });
+        tasks.push({
+          taskId,
+          direction: "download",
+          remotePath,
+          localPath,
+          totalBytes: knownSize,
+          fileName: file.relativePath,
+          currentFile: file.relativePath,
+          maxRetries: MAX_TRANSFER_RETRIES,
+          noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
+        });
+      }
+      const concurrency = this._chooseConcurrency(
+        tasks.length,
+        totalBytes,
+        true,
       );
 
+      await this.transferProcessPool.runTasks({
+        transferKey,
+        tabId,
+        sshConfig,
+        tasks,
+        maxConcurrency: concurrency,
+        onProgress: (message) => {
+          const taskMeta = taskMetaMap.get(message?.taskId);
+          if (!taskMeta) return;
+          const deltaBytes = Math.max(0, Number(message?.deltaBytes) || 0);
+          if (deltaBytes > 0) {
+            taskTransferredBytes.set(
+              message.taskId,
+              (taskTransferredBytes.get(message.taskId) || 0) + deltaBytes,
+            );
+          }
+
+          const state = this._getTransfer(transferKey);
+          if (!state) return;
+          state.transferredBytes += deltaBytes;
+          this._emitTransferProgress(transferKey, {
+            channel: "download-folder-progress",
+            fileName: folderName,
+            currentFile: taskMeta.fileName,
+            currentFileIndex: taskMeta.index + 1,
+          });
+        },
+        onTaskDone: (message) => {
+          const taskMeta = taskMetaMap.get(message?.taskId);
+          if (!taskMeta) return;
+          const state = this._getTransfer(transferKey);
+          const reportedTotal = Number.isFinite(taskMeta.knownSize)
+            ? taskMeta.knownSize
+            : Number(message?.totalBytes) || 0;
+          const tracked = taskTransferredBytes.get(message.taskId) || 0;
+          const remainder = Math.max(0, reportedTotal - tracked);
+          if (state) {
+            state.transferredBytes += remainder;
+          }
+
+          const fileState = fileStateMap.get(taskMeta.fileTaskKey);
+          if (!fileState) return;
+          if (taskMeta.chunked) {
+            fileState.completedSegments += 1;
+          } else {
+            completed += 1;
+            if (state) {
+              state.processedFiles += 1;
+            }
+          }
+
+          this._emitTransferProgress(transferKey, {
+            channel: "download-folder-progress",
+            force: !taskMeta.chunked,
+            fileName: folderName,
+            currentFile: taskMeta.fileName,
+            currentFileIndex: taskMeta.index + 1,
+          });
+        },
+        onTaskError: (message) => {
+          if (
+            message?.error?.cancelled ||
+            this._isTransferCancelled(transferKey)
+          ) {
+            return;
+          }
+
+          const taskMeta = taskMetaMap.get(message?.taskId);
+          if (!taskMeta) return;
+          const fileState = fileStateMap.get(taskMeta.fileTaskKey);
+          if (!fileState) return;
+          if (fileState.failed) return;
+
+          fileState.failed = true;
+          failed += 1;
+          errors.push({
+            fileName:
+              taskMeta?.fileName ||
+              message?.fileName ||
+              message?.taskId ||
+              "unknown-file",
+            error: message?.error?.message || "Download task failed",
+          });
+        },
+      });
+
       if (this._isTransferCancelled(transferKey)) {
+        await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
+        chunkTempCleanup.clear();
         this._emitTransferProgress(transferKey, {
           channel: "download-folder-progress",
           force: true,
@@ -1717,6 +2559,98 @@ class FilemanagementService {
             operationComplete: true,
           },
         });
+        const cancelledState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: cancelledState?.transferredBytes || 0,
+          completed,
+          failed,
+          cancelled: true,
+          durationMs: cancelledState ? Date.now() - cancelledState.startAt : 0,
+        });
+        this._recordCancelLatency(cancelledState);
+        this._finalizeTransfer(transferKey);
+        return {
+          success: false,
+          cancelled: true,
+          userCancelled: true,
+          completed,
+          failed,
+          errors,
+          downloadPath: localFolderPath,
+        };
+      }
+
+      for (const fileState of fileStateMap.values()) {
+        if (!fileState.chunked || fileState.failed) continue;
+        if (fileState.completedSegments < fileState.totalSegments) {
+          fileState.failed = true;
+          failed += 1;
+          errors.push({
+            fileName: fileState.fileName,
+            error: "Download chunk incomplete",
+          });
+          continue;
+        }
+
+        try {
+          await fsp.rename(fileState.tempPath, fileState.localPath);
+          chunkTempCleanup.delete(fileState.tempPath);
+          completed += 1;
+
+          const state = this._getTransfer(transferKey);
+          if (state) {
+            state.processedFiles += 1;
+          }
+
+          this._emitTransferProgress(transferKey, {
+            channel: "download-folder-progress",
+            force: true,
+            fileName: folderName,
+            currentFile: fileState.fileName,
+            currentFileIndex: fileState.index + 1,
+          });
+        } catch (renameError) {
+          fileState.failed = true;
+          failed += 1;
+          errors.push({
+            fileName: fileState.fileName,
+            error: `Chunk merge failed: ${normalizeErrorMessage(renameError)}`,
+          });
+        }
+      }
+
+      const failedTempPaths = [];
+      for (const fileState of fileStateMap.values()) {
+        if (!fileState.chunked || !fileState.failed) continue;
+        failedTempPaths.push(fileState.tempPath);
+      }
+      await this._cleanupLocalTempPaths(failedTempPaths);
+      for (const tempPath of failedTempPaths) {
+        chunkTempCleanup.delete(tempPath);
+      }
+
+      if (this._isTransferCancelled(transferKey)) {
+        await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
+        chunkTempCleanup.clear();
+        this._emitTransferProgress(transferKey, {
+          channel: "download-folder-progress",
+          force: true,
+          fileName: folderName,
+          extra: {
+            cancelled: true,
+            userCancelled: true,
+            operationComplete: true,
+          },
+        });
+        const cancelledState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: cancelledState?.transferredBytes || 0,
+          completed,
+          failed,
+          cancelled: true,
+          durationMs: cancelledState ? Date.now() - cancelledState.startAt : 0,
+        });
+        this._recordCancelLatency(cancelledState);
         this._finalizeTransfer(transferKey);
         return {
           success: false,
@@ -1739,6 +2673,14 @@ class FilemanagementService {
           );
         }
       }
+      const transferState = this._getTransfer(transferKey);
+      this._recordTransferMetrics({
+        transferredBytes: transferState?.transferredBytes || 0,
+        completed,
+        failed,
+        cancelled: false,
+        durationMs: transferState ? Date.now() - transferState.startAt : 0,
+      });
 
       this._emitTransferProgress(transferKey, {
         channel: "download-folder-progress",
@@ -1779,7 +2721,20 @@ class FilemanagementService {
         downloadPath: localFolderPath,
       };
     } catch (error) {
-      if (transferKey) this._finalizeTransfer(transferKey);
+      await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
+      chunkTempCleanup.clear();
+      if (transferKey) {
+        const transferState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: transferState?.transferredBytes || 0,
+          completed: 0,
+          failed: 1,
+          cancelled: isCancelledError(error),
+          durationMs: transferState ? Date.now() - transferState.startAt : 0,
+        });
+        this._recordCancelLatency(transferState);
+        this._finalizeTransfer(transferKey);
+      }
       if (isCancelledError(error)) {
         return { success: false, cancelled: true, error: "用户取消下载" };
       }
@@ -1866,6 +2821,7 @@ class FilemanagementService {
       (sum, entry) => sum + (Number.isFinite(entry.size) ? entry.size : 0),
       0,
     );
+    const sshConfig = await this._resolveTransferSshConfig(tabId);
 
     const transferKey = this._generateTransferKey(tabId, transferType);
     this._registerTransfer({
@@ -1888,153 +2844,417 @@ class FilemanagementService {
         : {},
     });
 
-    const directories = [];
-    for (const entry of entries) {
-      directories.push(
-        path.posix.dirname(this._normalizeRemotePath(entry.remotePath)),
-      );
-    }
-    await this._ensureRemoteDirectories(tabId, directories);
-
-    const concurrency = this._chooseConcurrency(totalFiles, totalBytes, true);
     let uploadedCount = 0;
     let failedCount = 0;
     const errors = [];
+    const taskMetaMap = new Map();
+    const taskTransferredBytes = new Map();
+    const fileStateMap = new Map();
+    const tempUploadPaths = [];
 
-    const tasks = entries.map((entry, index) => async () => {
-      if (this._isTransferCancelled(transferKey)) {
-        throw buildCancelledError();
+    try {
+      const directories = [];
+      for (const entry of entries) {
+        directories.push(
+          path.posix.dirname(this._normalizeRemotePath(entry.remotePath)),
+        );
       }
+      await this._ensureRemoteDirectories(tabId, directories);
 
-      const fileLabel =
-        entry.relativePath ||
-        entry.fileName ||
-        path.basename(entry.localPath || "");
-
-      try {
-        await this._uploadEntry({
-          tabId,
+      const tasks = [];
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        const normalizedRemotePath = this._normalizeRemotePath(
+          entry.remotePath,
+        );
+        const materialized = await this._materializeUploadEntry(
+          entry,
           transferKey,
-          remotePath: entry.remotePath,
-          localPath: entry.localPath || null,
-          buffer: entry.buffer || null,
-          knownSize: entry.size,
-          onBytes: (bytes) => {
-            const state = this._getTransfer(transferKey);
-            if (!state) return;
-            state.transferredBytes += bytes;
-            this._emitTransferProgress(transferKey, {
-              fileName: displayName || fileLabel,
-              currentFile: fileLabel,
-              currentFileIndex: index + 1,
-              extra: includeOperationComplete
-                ? { operationComplete: false, cancelled: false }
-                : {},
+          index,
+        );
+        if (materialized.tempPath) {
+          tempUploadPaths.push(materialized.tempPath);
+        }
+
+        const fileLabel =
+          entry.relativePath ||
+          entry.fileName ||
+          path.basename(materialized.localPath || "");
+        const knownSize = Number.isFinite(entry.size) ? entry.size : 0;
+        const fileTaskKey = this._buildFileTaskKey(
+          "upload",
+          normalizedRemotePath,
+          materialized.localPath,
+          index,
+        );
+        const chunkSegments = this._buildChunkSegments(knownSize);
+
+        if (chunkSegments.length > 0 && materialized.localPath) {
+          await this._prepareRemoteChunkUploadTarget(
+            tabId,
+            normalizedRemotePath,
+          );
+          fileStateMap.set(fileTaskKey, {
+            fileTaskKey,
+            index,
+            fileLabel,
+            remotePath: normalizedRemotePath,
+            chunked: true,
+            totalSegments: chunkSegments.length,
+            completedSegments: 0,
+            failed: false,
+          });
+
+          for (const segment of chunkSegments) {
+            const taskId = this._generateTaskId("upload-chunk");
+            taskMetaMap.set(taskId, {
+              fileTaskKey,
+              index,
+              fileLabel,
+              knownSize: segment.length,
+              chunked: true,
+              segmentIndex: segment.index,
+              totalSegments: chunkSegments.length,
             });
+
+            tasks.push({
+              taskId,
+              direction: "upload",
+              localPath: materialized.localPath,
+              remotePath: normalizedRemotePath,
+              totalBytes: segment.length,
+              fileName: fileLabel,
+              currentFile: fileLabel,
+              segmentOffset: segment.offset,
+              segmentLength: segment.length,
+              segmentIndex: segment.index,
+              segmentCount: chunkSegments.length,
+              remoteWriteFlags: "r+",
+              maxRetries: MAX_TRANSFER_RETRIES,
+              noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
+            });
+          }
+          continue;
+        }
+
+        fileStateMap.set(fileTaskKey, {
+          fileTaskKey,
+          index,
+          fileLabel,
+          remotePath: normalizedRemotePath,
+          chunked: false,
+          failed: false,
+        });
+        const taskId = this._generateTaskId("upload");
+        taskMetaMap.set(taskId, {
+          fileTaskKey,
+          index,
+          fileLabel,
+          knownSize,
+          chunked: false,
+        });
+        tasks.push({
+          taskId,
+          direction: "upload",
+          localPath: materialized.localPath,
+          remotePath: normalizedRemotePath,
+          totalBytes: knownSize,
+          fileName: fileLabel,
+          currentFile: fileLabel,
+          maxRetries: MAX_TRANSFER_RETRIES,
+          noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
+        });
+      }
+      const concurrency = this._chooseConcurrency(
+        tasks.length,
+        totalBytes,
+        true,
+      );
+
+      await this.transferProcessPool.runTasks({
+        transferKey,
+        tabId,
+        sshConfig,
+        tasks,
+        maxConcurrency: concurrency,
+        onProgress: (message) => {
+          const taskMeta = taskMetaMap.get(message?.taskId);
+          if (!taskMeta) return;
+          const deltaBytes = Math.max(0, Number(message?.deltaBytes) || 0);
+          if (deltaBytes > 0) {
+            taskTransferredBytes.set(
+              message.taskId,
+              (taskTransferredBytes.get(message.taskId) || 0) + deltaBytes,
+            );
+          }
+          const state = this._getTransfer(transferKey);
+          if (!state) return;
+          state.transferredBytes += deltaBytes;
+          this._emitTransferProgress(transferKey, {
+            fileName: displayName || taskMeta.fileLabel,
+            currentFile: taskMeta.fileLabel,
+            currentFileIndex: taskMeta.index + 1,
+            extra: includeOperationComplete
+              ? { operationComplete: false, cancelled: false }
+              : {},
+          });
+        },
+        onTaskDone: (message) => {
+          const taskMeta = taskMetaMap.get(message?.taskId);
+          if (!taskMeta) return;
+          const state = this._getTransfer(transferKey);
+          const reportedTotal = Number.isFinite(taskMeta.knownSize)
+            ? taskMeta.knownSize
+            : Number(message?.totalBytes) || 0;
+          const tracked = taskTransferredBytes.get(message.taskId) || 0;
+          const remainder = Math.max(0, reportedTotal - tracked);
+          if (state) {
+            state.transferredBytes += remainder;
+          }
+
+          const fileState = fileStateMap.get(taskMeta.fileTaskKey);
+          if (!fileState) return;
+          if (taskMeta.chunked) {
+            fileState.completedSegments += 1;
+          } else {
+            uploadedCount += 1;
+            if (state) {
+              state.processedFiles += 1;
+            }
+          }
+
+          this._emitTransferProgress(transferKey, {
+            force: !taskMeta.chunked,
+            fileName: displayName || taskMeta.fileLabel,
+            currentFile: taskMeta.fileLabel,
+            currentFileIndex: taskMeta.index + 1,
+            extra: includeOperationComplete
+              ? { operationComplete: false, cancelled: false }
+              : {},
+          });
+        },
+        onTaskError: (message) => {
+          if (
+            message?.error?.cancelled ||
+            this._isTransferCancelled(transferKey)
+          ) {
+            return;
+          }
+
+          const taskMeta = taskMetaMap.get(message?.taskId);
+          if (!taskMeta) return;
+          const fileState = fileStateMap.get(taskMeta.fileTaskKey);
+          if (!fileState) return;
+          if (fileState.failed) return;
+
+          fileState.failed = true;
+          failedCount += 1;
+          errors.push({
+            fileName:
+              taskMeta?.fileLabel ||
+              message?.fileName ||
+              message?.taskId ||
+              "unknown-file",
+            error: message?.error?.message || "Upload task failed",
+          });
+        },
+      });
+
+      if (this._isTransferCancelled(transferKey)) {
+        this._emitTransferProgress(transferKey, {
+          force: true,
+          fileName: "上传已取消",
+          currentFile: "",
+          currentFileIndex: 0,
+          extra: {
+            cancelled: true,
+            userCancelled: true,
+            operationComplete: true,
           },
         });
+        const cancelledState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: cancelledState?.transferredBytes || 0,
+          completed: uploadedCount,
+          failed: failedCount,
+          cancelled: true,
+          durationMs: cancelledState ? Date.now() - cancelledState.startAt : 0,
+        });
+        this._recordCancelLatency(cancelledState);
+        this._finalizeTransfer(transferKey);
+        return {
+          success: true,
+          cancelled: true,
+          userCancelled: true,
+          message: "用户已取消操作",
+        };
+      }
+
+      const failedChunkRemotePaths = [];
+      for (const fileState of fileStateMap.values()) {
+        if (!fileState.chunked) continue;
+        if (fileState.failed) {
+          failedChunkRemotePaths.push(fileState.remotePath);
+          continue;
+        }
+        if (fileState.completedSegments < fileState.totalSegments) {
+          fileState.failed = true;
+          failedCount += 1;
+          errors.push({
+            fileName: fileState.fileLabel,
+            error: "Upload chunk incomplete",
+          });
+          failedChunkRemotePaths.push(fileState.remotePath);
+          continue;
+        }
 
         uploadedCount += 1;
         const state = this._getTransfer(transferKey);
-        if (state) state.processedFiles += 1;
+        if (state) {
+          state.processedFiles += 1;
+        }
         this._emitTransferProgress(transferKey, {
           force: true,
-          fileName: displayName || fileLabel,
-          currentFile: fileLabel,
-          currentFileIndex: index + 1,
+          fileName: displayName || fileState.fileLabel,
+          currentFile: fileState.fileLabel,
+          currentFileIndex: fileState.index + 1,
           extra: includeOperationComplete
             ? { operationComplete: false, cancelled: false }
             : {},
         });
-      } catch (error) {
-        if (isCancelledError(error)) {
-          throw error;
-        }
-        failedCount += 1;
-        errors.push({
-          fileName: fileLabel,
-          error: normalizeErrorMessage(error),
+      }
+
+      if (failedChunkRemotePaths.length > 0) {
+        await this._withBorrowedSftp(tabId, async (sftp) => {
+          for (const remotePath of failedChunkRemotePaths) {
+            try {
+              await this._unlink(sftp, remotePath);
+            } catch {
+              // ignore cleanup failure
+            }
+          }
         });
       }
-    });
 
-    await this._runConcurrent(tasks, concurrency, () =>
-      this._isTransferCancelled(transferKey),
-    );
-
-    if (this._isTransferCancelled(transferKey)) {
-      this._emitTransferProgress(transferKey, {
-        force: true,
-        fileName: "上传已取消",
-        currentFile: "",
-        currentFileIndex: 0,
-        extra: {
+      if (this._isTransferCancelled(transferKey)) {
+        this._emitTransferProgress(transferKey, {
+          force: true,
+          fileName: "上传已取消",
+          currentFile: "",
+          currentFileIndex: 0,
+          extra: {
+            cancelled: true,
+            userCancelled: true,
+            operationComplete: true,
+          },
+        });
+        const cancelledState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: cancelledState?.transferredBytes || 0,
+          completed: uploadedCount,
+          failed: failedCount,
+          cancelled: true,
+          durationMs: cancelledState ? Date.now() - cancelledState.startAt : 0,
+        });
+        this._recordCancelLatency(cancelledState);
+        this._finalizeTransfer(transferKey);
+        return {
+          success: true,
           cancelled: true,
           userCancelled: true,
-          operationComplete: true,
-        },
+          message: "用户已取消操作",
+        };
+      }
+
+      const state = this._getTransfer(transferKey);
+      if (state) {
+        state.processedFiles = uploadedCount + failedCount;
+        if (failedCount === 0) {
+          state.transferredBytes = Math.max(
+            state.transferredBytes,
+            state.totalBytes,
+          );
+        }
+      }
+      const finalState = this._getTransfer(transferKey);
+      this._recordTransferMetrics({
+        transferredBytes: finalState?.transferredBytes || 0,
+        completed: uploadedCount,
+        failed: failedCount,
+        cancelled: false,
+        durationMs: finalState ? Date.now() - finalState.startAt : 0,
+      });
+
+      this._emitTransferProgress(transferKey, {
+        force: true,
+        fileName:
+          failedCount === 0
+            ? "上传完成"
+            : `上传完成，失败 ${failedCount} 个文件`,
+        currentFile: "",
+        currentFileIndex: totalFiles,
+        extra: { operationComplete: true, cancelled: false },
       });
       this._finalizeTransfer(transferKey);
-      return {
-        success: true,
-        cancelled: true,
-        userCancelled: true,
-        message: "用户已取消操作",
-      };
-    }
 
-    const state = this._getTransfer(transferKey);
-    if (state) {
-      state.processedFiles = uploadedCount + failedCount;
       if (failedCount === 0) {
-        state.transferredBytes = Math.max(
-          state.transferredBytes,
-          state.totalBytes,
-        );
+        return {
+          success: true,
+          uploadedCount,
+          totalFiles,
+          failedCount,
+          transferKey,
+          message: "上传完成",
+        };
       }
-    }
-
-    this._emitTransferProgress(transferKey, {
-      force: true,
-      fileName:
-        failedCount === 0 ? "上传完成" : `上传完成，失败 ${failedCount} 个文件`,
-      currentFile: "",
-      currentFileIndex: totalFiles,
-      extra: { operationComplete: true, cancelled: false },
-    });
-    this._finalizeTransfer(transferKey);
-
-    if (failedCount === 0) {
+      if (uploadedCount > 0) {
+        return {
+          success: true,
+          partialSuccess: true,
+          uploadedCount,
+          totalFiles,
+          failedCount,
+          errors,
+          transferKey,
+          warning: `部分上传失败，已完成 ${uploadedCount}/${totalFiles} 个文件`,
+        };
+      }
       return {
-        success: true,
-        uploadedCount,
-        totalFiles,
-        failedCount,
-        transferKey,
-        message: "上传完成",
-      };
-    }
-    if (uploadedCount > 0) {
-      return {
-        success: true,
-        partialSuccess: true,
+        success: false,
         uploadedCount,
         totalFiles,
         failedCount,
         errors,
         transferKey,
-        warning: `部分上传失败，已完成 ${uploadedCount}/${totalFiles} 个文件`,
+        error: "上传失败",
       };
+    } catch (error) {
+      const state = this._getTransfer(transferKey);
+      if (state) {
+        this._recordTransferMetrics({
+          transferredBytes: state.transferredBytes || 0,
+          completed: uploadedCount,
+          failed: failedCount + (isCancelledError(error) ? 0 : 1),
+          cancelled: isCancelledError(error),
+          durationMs: Date.now() - state.startAt,
+        });
+        this._recordCancelLatency(state);
+      }
+      if (transferKey) {
+        this._finalizeTransfer(transferKey);
+      }
+      if (isCancelledError(error)) {
+        return {
+          success: true,
+          cancelled: true,
+          userCancelled: true,
+          message: "用户已取消操作",
+        };
+      }
+      throw error;
+    } finally {
+      await this._cleanupTempUploadSources(tempUploadPaths);
     }
-    return {
-      success: false,
-      uploadedCount,
-      totalFiles,
-      failedCount,
-      errors,
-      transferKey,
-      error: "上传失败",
-    };
   }
 
   async uploadFile(event, tabId, targetFolder, progressChannel) {
@@ -2232,15 +3452,24 @@ class FilemanagementService {
   }
 
   cleanup() {
+    this._stopEventLoopLagMonitor();
     for (const [transferKey, transfer] of this.activeTransfers.entries()) {
       try {
         transfer.cancelled = true;
+        transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
+        this.transferProcessPool.cancelTransfer(transferKey);
         this._destroyTransferStreams(transferKey, "Application cleanup");
       } catch {
         // ignore cleanup error
       }
       this.activeTransfers.delete(transferKey);
     }
+    this.transferProcessPool.shutdown().catch((error) => {
+      this._log(
+        `Transfer process pool shutdown failed: ${normalizeErrorMessage(error)}`,
+        "WARN",
+      );
+    });
     this._log(
       "All active Filemanagement transfers have been cleaned up",
       "INFO",
