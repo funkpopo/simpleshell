@@ -1,7 +1,9 @@
 const path = require("path");
 const fs = require("fs");
 const { logToFile } = require("../utils/logger");
-const { mainProcessResourceManager } = require("../utils/mainProcessResourceManager");
+const {
+  mainProcessResourceManager,
+} = require("../utils/mainProcessResourceManager");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
 const fileCache = require("../utils/fileCache");
@@ -9,6 +11,7 @@ const configService = require("../../services/configService");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const sftpCore = require("../transfer/sftp-engine");
 const sftpTransfer = require("../../modules/sftp/sftpTransfer");
+const filemanagementService = require("../../modules/filemanagement/filemanagementService");
 const externalEditorManager = require("../../modules/sftp/externalEditorManager");
 
 /**
@@ -55,12 +58,18 @@ class AppCleanup {
    * 清理外部编辑器管理器
    */
   async cleanupExternalEditorManager() {
-    if (externalEditorManager && typeof externalEditorManager.cleanup === "function") {
+    if (
+      externalEditorManager &&
+      typeof externalEditorManager.cleanup === "function"
+    ) {
       try {
         await externalEditorManager.cleanup();
         logToFile("External editor manager cleaned up", "INFO");
       } catch (error) {
-        logToFile(`External editor manager cleanup failed: ${error.message}`, "ERROR");
+        logToFile(
+          `External editor manager cleanup failed: ${error.message}`,
+          "ERROR",
+        );
       }
     }
   }
@@ -70,7 +79,10 @@ class AppCleanup {
    */
   async cleanupProcessSftp(id, proc) {
     // 清理待处理SFTP操作
-    if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === "function") {
+    if (
+      sftpCore &&
+      typeof sftpCore.clearPendingOperationsForTab === "function"
+    ) {
       sftpCore.clearPendingOperationsForTab(id);
       if (proc.config && proc.config.tabId && proc.config.tabId !== id) {
         sftpCore.clearPendingOperationsForTab(proc.config.tabId);
@@ -78,21 +90,52 @@ class AppCleanup {
     }
 
     // 清理活跃SFTP传输
-    if (sftpTransfer && typeof sftpTransfer.cleanupActiveTransfersForTab === "function") {
+    if (
+      sftpTransfer &&
+      typeof sftpTransfer.cleanupActiveTransfersForTab === "function"
+    ) {
       try {
         const result = await sftpTransfer.cleanupActiveTransfersForTab(id);
         if (result.cleanedCount > 0) {
-          logToFile(`Cleaned up ${result.cleanedCount} active SFTP transfers for tab ${id} during app quit`, "INFO");
+          logToFile(
+            `Cleaned up ${result.cleanedCount} active SFTP transfers for tab ${id} during app quit`,
+            "INFO",
+          );
         }
 
         if (proc.config && proc.config.tabId && proc.config.tabId !== id) {
-          const tabResult = await sftpTransfer.cleanupActiveTransfersForTab(proc.config.tabId);
+          const tabResult = await sftpTransfer.cleanupActiveTransfersForTab(
+            proc.config.tabId,
+          );
           if (tabResult.cleanedCount > 0) {
-            logToFile(`Cleaned up ${tabResult.cleanedCount} active SFTP transfers for tabId ${proc.config.tabId} during app quit`, "INFO");
+            logToFile(
+              `Cleaned up ${tabResult.cleanedCount} active SFTP transfers for tabId ${proc.config.tabId} during app quit`,
+              "INFO",
+            );
           }
         }
       } catch (cleanupError) {
-        logToFile(`Error initiating SFTP transfer cleanup for tab ${id}: ${cleanupError.message}`, "ERROR");
+        logToFile(
+          `Error initiating SFTP transfer cleanup for tab ${id}: ${cleanupError.message}`,
+          "ERROR",
+        );
+      }
+    }
+
+    if (
+      filemanagementService &&
+      typeof filemanagementService.cleanupTransfersForTab === "function"
+    ) {
+      try {
+        filemanagementService.cleanupTransfersForTab(id);
+        if (proc.config && proc.config.tabId && proc.config.tabId !== id) {
+          filemanagementService.cleanupTransfersForTab(proc.config.tabId);
+        }
+      } catch (cleanupError) {
+        logToFile(
+          `Error cleaning up filemanagement transfers for tab ${id}: ${cleanupError.message}`,
+          "ERROR",
+        );
       }
     }
   }
@@ -121,9 +164,15 @@ class AppCleanup {
             );
           }
         }
-        logToFile(`释放SSH连接池引用 (app quit): ${proc.connectionInfo.key}`, "INFO");
+        logToFile(
+          `释放SSH连接池引用 (app quit): ${proc.connectionInfo.key}`,
+          "INFO",
+        );
       } catch (error) {
-        logToFile(`Error releasing SSH connection during app quit: ${error.message}`, "ERROR");
+        logToFile(
+          `Error releasing SSH connection during app quit: ${error.message}`,
+          "ERROR",
+        );
       }
     }
   }
@@ -147,7 +196,10 @@ class AppCleanup {
           proc.stream.close();
           logToFile(`关闭SSH stream (app quit): ${id}`, "INFO");
         } catch (error) {
-          logToFile(`Error closing SSH stream during app quit ${id}: ${error.message}`, "ERROR");
+          logToFile(
+            `Error closing SSH stream during app quit ${id}: ${error.message}`,
+            "ERROR",
+          );
         }
       } else {
         // 终止其他类型的进程
@@ -218,12 +270,18 @@ class AppCleanup {
         typeof sftpTransfer.getTransferRuntimeStats === "function"
           ? sftpTransfer.getTransferRuntimeStats()
           : null,
+      filemanagement:
+        filemanagementService &&
+        typeof filemanagementService.getTransferRuntimeStats === "function"
+          ? filemanagementService.getTransferRuntimeStats()
+          : null,
     };
   }
 
   hasResidualRuntimeResources(snapshot) {
     const sftpStats = snapshot?.sftp || {};
     const transferStats = snapshot?.sftpTransfer || {};
+    const filemanagementStats = snapshot?.filemanagement || {};
 
     return Boolean(
       (snapshot?.processCount || 0) > 0 ||
@@ -243,11 +301,26 @@ class AppCleanup {
       (sftpStats.borrowLockCount || 0) > 0 ||
       sftpStats.healthCheckTimerActive ||
       (transferStats.activeTransferCount || 0) > 0 ||
-      (transferStats.activeStreamCount || 0) > 0
+      (transferStats.activeStreamCount || 0) > 0 ||
+      (filemanagementStats.activeTransferCount || 0) > 0,
     );
   }
 
   async cleanupGlobalSftpResources() {
+    if (
+      filemanagementService &&
+      typeof filemanagementService.cleanup === "function"
+    ) {
+      try {
+        filemanagementService.cleanup();
+      } catch (error) {
+        logToFile(
+          `App quit filemanagement cleanup failed: ${error.message}`,
+          "ERROR",
+        );
+      }
+    }
+
     if (
       sftpTransfer &&
       typeof sftpTransfer.cleanupAllActiveTransfers === "function"
@@ -276,7 +349,10 @@ class AppCleanup {
           "INFO",
         );
       } catch (error) {
-        logToFile(`App quit SFTP core shutdown failed: ${error.message}`, "ERROR");
+        logToFile(
+          `App quit SFTP core shutdown failed: ${error.message}`,
+          "ERROR",
+        );
       }
       return;
     }
@@ -294,16 +370,25 @@ class AppCleanup {
       const cleanedCount = await fileCache.cleanupAllCaches();
       logToFile(`Cleaned up ${cleanedCount} cache files on app quit`, "INFO");
     } catch (error) {
-      logToFile(`Failed to cleanup cache files on quit: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to cleanup cache files on quit: ${error.message}`,
+        "ERROR",
+      );
     }
 
     try {
       const cleared = await fileCache.clearCacheDirectory();
       if (cleared) {
-        logToFile(`Cleared temp directory on app quit: ${fileCache.cacheDir}`, "INFO");
+        logToFile(
+          `Cleared temp directory on app quit: ${fileCache.cacheDir}`,
+          "INFO",
+        );
       }
     } catch (error) {
-      logToFile(`Failed to clear temp directory on quit: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to clear temp directory on quit: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -314,9 +399,15 @@ class AppCleanup {
     try {
       const historyToSave = commandHistoryService.exportHistory();
       configService.saveCommandHistory(historyToSave);
-      logToFile(`Saved ${historyToSave.length} command history entries on app quit`, "INFO");
+      logToFile(
+        `Saved ${historyToSave.length} command history entries on app quit`,
+        "INFO",
+      );
     } catch (error) {
-      logToFile(`Failed to save command history on quit: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to save command history on quit: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -326,17 +417,29 @@ class AppCleanup {
   saveLastConnections() {
     try {
       const lastConnections = connectionManager.getLastConnections(5);
-      logToFile(`App quit: Got ${lastConnections.length} last connections: ${JSON.stringify(lastConnections)}`, "DEBUG");
+      logToFile(
+        `App quit: Got ${lastConnections.length} last connections: ${JSON.stringify(lastConnections)}`,
+        "DEBUG",
+      );
 
       const saved = configService.saveLastConnections(lastConnections);
 
       if (lastConnections && lastConnections.length > 0) {
-        logToFile(`Saved ${lastConnections.length} last connections on app quit${saved ? " successfully" : " - save returned false"}`, "INFO");
+        logToFile(
+          `Saved ${lastConnections.length} last connections on app quit${saved ? " successfully" : " - save returned false"}`,
+          "INFO",
+        );
       } else {
-        logToFile(`Saved empty last connections list on app quit${saved ? " successfully" : " - save returned false"}`, "INFO");
+        logToFile(
+          `Saved empty last connections list on app quit${saved ? " successfully" : " - save returned false"}`,
+          "INFO",
+        );
       }
     } catch (error) {
-      logToFile(`Failed to save last connections on quit: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to save last connections on quit: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 

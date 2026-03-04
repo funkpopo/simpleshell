@@ -5,6 +5,7 @@ module.exports = {
   entry: {
     index: "./src/main.js",
     "workers/ai-worker": "./src/workers/ai-worker.js",
+    "workers/sftp-transfer-worker": "./src/workers/sftp-transfer-worker.js",
   },
   resolve: {
     // Make optional native deps safe for bundling/package.

@@ -2,6 +2,7 @@ const { BrowserWindow } = require("electron");
 const { StringDecoder } = require("string_decoder");
 const { logToFile } = require("../../utils/logger");
 const terminalManager = require("../../../modules/terminal");
+const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
 const crypto = require("crypto");
 const configService = require("../../../services/configService");
 
@@ -1102,6 +1103,20 @@ class SSHHandlers {
                 "ERROR",
               );
             });
+        }
+      }
+
+      if (filemanagementService?.cleanupTransfersForTab) {
+        try {
+          filemanagementService.cleanupTransfersForTab(processId);
+          if (sshConfig.tabId && sshConfig.tabId !== processId) {
+            filemanagementService.cleanupTransfersForTab(sshConfig.tabId);
+          }
+        } catch (cleanupError) {
+          logToFile(
+            `Error cleaning up Filemanagement transfers: ${cleanupError.message}`,
+            "ERROR",
+          );
         }
       }
 
