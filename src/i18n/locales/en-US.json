@@ -644,6 +644,7 @@
         "size": "Size",
         "modifiedTime": "Modified Time",
         "accessTime": "Access Time",
+        "createdTime": "Created Time",
         "permissions": "Permissions",
         "owner": "Owner UID",
         "group": "Group GID",
