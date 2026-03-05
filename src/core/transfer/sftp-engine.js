@@ -1561,7 +1561,20 @@ async function getFilePermissions(tabId, filePath) {
       return new Promise((resolve, reject) => {
         sftp.stat(filePath, (err, stats) => {
           if (err) reject(err);
-          else resolve({ success: true, mode: stats.mode, uid: stats.uid, gid: stats.gid });
+          else {
+            const mode = stats.mode;
+            const permissions = (mode & parseInt("777", 8))
+              .toString(8)
+              .padStart(3, "0");
+            resolve({
+              success: true,
+              permissions,
+              mode,
+              uid: stats.uid,
+              gid: stats.gid,
+              stats,
+            });
+          }
         });
       });
     },

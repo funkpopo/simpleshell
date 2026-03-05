@@ -1989,6 +1989,7 @@ const FileManager = memo(
           size: Number.isFinite(file.size) ? file.size : null,
           modifyTime: Number.isFinite(file.modifyTime) ? file.modifyTime : null,
           accessTime: Number.isFinite(file.accessTime) ? file.accessTime : null,
+          createTime: Number.isFinite(file.createTime) ? file.createTime : null,
           permissions: formatPermissionMode(file.mode),
           uid: Number.isFinite(file.uid) ? file.uid : null,
           gid: Number.isFinite(file.gid) ? file.gid : null,
@@ -2027,6 +2028,7 @@ const FileManager = memo(
           const statsSize = permissionResp?.stats?.size;
           const statsMtime = permissionResp?.stats?.mtime;
           const statsAtime = permissionResp?.stats?.atime;
+          const statsCtime = permissionResp?.stats?.ctime;
 
           return {
             ...prev,
@@ -2044,6 +2046,9 @@ const FileManager = memo(
             accessTime: Number.isFinite(statsAtime)
               ? statsAtime * 1000
               : prev.accessTime,
+            createTime: Number.isFinite(statsCtime)
+              ? statsCtime * 1000
+              : prev.createTime,
           };
         });
       } catch (e) {
@@ -5610,6 +5615,13 @@ const FileManager = memo(
                 </Typography>
                 <Typography variant="body2">
                   {formatAbsoluteTime(propertiesData?.accessTime)}
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.createdTime")}
+                </Typography>
+                <Typography variant="body2">
+                  {formatAbsoluteTime(propertiesData?.createTime)}
                 </Typography>
 
                 <Typography variant="body2" color="text.secondary">

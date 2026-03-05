@@ -644,6 +644,7 @@
         "size": "大小",
         "modifiedTime": "修改时间",
         "accessTime": "访问时间",
+        "createdTime": "创建时间",
         "permissions": "权限",
         "owner": "所有者 UID",
         "group": "所属组 GID",
