@@ -44,6 +44,7 @@ import ClearIcon from "@mui/icons-material/Clear";
 import DeleteIcon from "@mui/icons-material/Delete";
 import DownloadIcon from "@mui/icons-material/Download";
 import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LinkIcon from "@mui/icons-material/Link";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
@@ -204,6 +205,11 @@ const FileManager = memo(
     useEffect(() => {
       loadingRef.current = loading;
     }, [loading]);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const isDeletingRef = useRef(isDeleting);
+    useEffect(() => {
+      isDeletingRef.current = isDeleting;
+    }, [isDeleting]);
 
     const openRef = useRef(open);
     useEffect(() => {
@@ -242,6 +248,9 @@ const FileManager = memo(
     const [newFileName, setNewFileName] = useState("");
     const [filePreview, setFilePreview] = useState(null);
     const [showPreview, setShowPreview] = useState(false);
+    const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
+    const [propertiesLoading, setPropertiesLoading] = useState(false);
+    const [propertiesData, setPropertiesData] = useState(null);
     const [pathInput, setPathInput] = useState("");
     const [transferCancelled, setTransferCancelled] = useState(false);
     const [isClosing] = useState(false);
@@ -1873,6 +1882,12 @@ const FileManager = memo(
     // 处理右键菜单 - 优化版本，立即显示菜单
     const handleContextMenu = useCallback(
       (event, file, index) => {
+        if (loadingRef.current || isDeletingRef.current) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
 
@@ -1913,14 +1928,15 @@ const FileManager = memo(
       const folderCount = selected.filter((f) => f.isDirectory).length;
 
       return {
-        isSingleSelection: selectedFiles.length === 1,
+        isSingleSelection: selected.length === 1,
         hasFiles,
         hasFolders,
         fileCount,
         folderCount,
         isDirectorySelected: selectedFile?.isDirectory,
+        isDeleting,
       };
-    }, [selectedFiles, selectedFile]);
+    }, [selectedFiles, selectedFile, isDeleting]);
 
     // 用户活动后的刷新函数，使用防抖优化
     const refreshAfterUserActivity = useMemo(
@@ -1943,6 +1959,118 @@ const FileManager = memo(
       },
       [currentPath],
     );
+
+    const formatAbsoluteTime = useCallback(
+      (timestamp) => {
+        if (!Number.isFinite(timestamp) || timestamp <= 0) {
+          return t("fileManager.propertiesDialog.notAvailable");
+        }
+        return new Date(timestamp).toLocaleString();
+      },
+      [t],
+    );
+
+    const formatPermissionMode = useCallback((mode) => {
+      if (!Number.isFinite(mode)) {
+        return "";
+      }
+      return (mode & 0o777).toString(8).padStart(3, "0");
+    }, []);
+
+    const normalizePropertiesData = useCallback(
+      (file, fullPath) => {
+        if (!file) return null;
+        return {
+          name: file.name || "",
+          type: file.isDirectory
+            ? t("fileManager.fileTypes.folder")
+            : t("fileManager.fileTypes.file"),
+          path: fullPath || "",
+          size: Number.isFinite(file.size) ? file.size : null,
+          modifyTime: Number.isFinite(file.modifyTime) ? file.modifyTime : null,
+          accessTime: Number.isFinite(file.accessTime) ? file.accessTime : null,
+          permissions: formatPermissionMode(file.mode),
+          uid: Number.isFinite(file.uid) ? file.uid : null,
+          gid: Number.isFinite(file.gid) ? file.gid : null,
+          isDirectory: Boolean(file.isDirectory),
+        };
+      },
+      [formatPermissionMode, t],
+    );
+
+    const handleOpenProperties = useCallback(async () => {
+      if (!selectedFile) return;
+
+      const fullPath = getFullPathForFile(selectedFile);
+      setPropertiesData(normalizePropertiesData(selectedFile, fullPath));
+      setShowPropertiesDialog(true);
+      setPropertiesLoading(true);
+      handleContextMenuClose();
+
+      try {
+        const [absolutePathResp, permissionResp] = await Promise.all([
+          window.terminalAPI?.getAbsolutePath
+            ? window.terminalAPI.getAbsolutePath(tabId, fullPath)
+            : Promise.resolve(null),
+          window.terminalAPI?.getFilePermissions
+            ? window.terminalAPI.getFilePermissions(tabId, fullPath)
+            : Promise.resolve(null),
+        ]);
+
+        setPropertiesData((prev) => {
+          if (!prev) return prev;
+
+          const mode =
+            permissionResp?.stats?.mode ?? permissionResp?.mode ?? null;
+          const uid = permissionResp?.stats?.uid ?? permissionResp?.uid;
+          const gid = permissionResp?.stats?.gid ?? permissionResp?.gid;
+          const statsSize = permissionResp?.stats?.size;
+          const statsMtime = permissionResp?.stats?.mtime;
+          const statsAtime = permissionResp?.stats?.atime;
+
+          return {
+            ...prev,
+            path:
+              absolutePathResp?.success && absolutePathResp?.path
+                ? absolutePathResp.path
+                : prev.path,
+            permissions: formatPermissionMode(mode) || prev.permissions || "",
+            uid: Number.isFinite(uid) ? uid : prev.uid,
+            gid: Number.isFinite(gid) ? gid : prev.gid,
+            size: Number.isFinite(statsSize) ? statsSize : prev.size,
+            modifyTime: Number.isFinite(statsMtime)
+              ? statsMtime * 1000
+              : prev.modifyTime,
+            accessTime: Number.isFinite(statsAtime)
+              ? statsAtime * 1000
+              : prev.accessTime,
+          };
+        });
+      } catch (e) {
+        showNotification(
+          e?.message || t("fileManager.propertiesDialog.loadFailed"),
+          "warning",
+          3000,
+        );
+      } finally {
+        setPropertiesLoading(false);
+      }
+    }, [
+      selectedFile,
+      getFullPathForFile,
+      normalizePropertiesData,
+      handleContextMenuClose,
+      tabId,
+      formatPermissionMode,
+      showNotification,
+      t,
+    ]);
+
+    const handleClosePropertiesDialog = useCallback(() => {
+      setShowPropertiesDialog(false);
+      setPropertiesLoading(false);
+      setPropertiesData(null);
+    }, []);
 
     // 打开权限对话框
     const handleOpenPermissions = useCallback(async () => {
@@ -2077,11 +2205,14 @@ const FileManager = memo(
 
     // 处理批量删除
     const handleBatchDelete = useCallback(() => {
+      if (isDeletingRef.current) return;
       const filesToDelete = getSelectedFiles();
       if (filesToDelete.length === 0) return;
+      handleContextMenuClose();
 
       // 实际执行删除的函数
       const doDelete = async () => {
+        setIsDeleting(true);
         setLoading(true);
         setError(null);
 
@@ -2126,7 +2257,9 @@ const FileManager = memo(
           );
         } finally {
           setLoading(false);
+          setIsDeleting(false);
           handleContextMenuClose();
+          setBlankContextMenu(null);
         }
       };
 
@@ -2144,36 +2277,44 @@ const FileManager = memo(
       loadDirectory,
       handleContextMenuClose,
       showBatchOperationConfirm,
+      setBlankContextMenu,
     ]);
 
     // 处理删除
     const handleDelete = async () => {
+      if (isDeletingRef.current) return;
       const filesToDelete = getSelectedFiles();
       if (filesToDelete.length === 0) return;
+
+      handleContextMenuClose();
+      setBlankContextMenu(null);
 
       if (filesToDelete.length > 1) {
         return handleBatchDelete();
       }
 
       const fileToDelete = filesToDelete[0];
+      const fullPath =
+        currentPath === "/"
+          ? "/" + fileToDelete.name
+          : currentPath
+            ? currentPath + "/" + fileToDelete.name
+            : fileToDelete.name;
+      const maxRetries = 3;
+      let lastError = "";
+      let deleted = false;
 
-      // 创建一个标识符，用于跟踪当前的删除操作
-
+      setIsDeleting(true);
       setLoading(true);
       setError(null);
-      let retryCount = 0;
-      const maxRetries = 3;
+      try {
+        if (!window.terminalAPI || !window.terminalAPI.deleteFile) {
+          setError(t("fileManager.errors.fileApiNotAvailable"));
+          return;
+        }
 
-      const attemptDelete = async () => {
-        try {
-          const fullPath =
-            currentPath === "/"
-              ? "/" + fileToDelete.name
-              : currentPath
-                ? currentPath + "/" + fileToDelete.name
-                : fileToDelete.name;
-
-          if (window.terminalAPI && window.terminalAPI.deleteFile) {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
             const response = await window.terminalAPI.deleteFile(
               tabId,
               fullPath,
@@ -2181,83 +2322,59 @@ const FileManager = memo(
             );
 
             if (response?.success) {
-              // 成功删除后立即重置选中文件，避免使用已删除的文件夹作为上传目标
-              setSelectedFile(null);
-              setSelectedFiles([]);
-              setLastSelectedIndex(-1);
-              setAnchorIndex(-1);
+              deleted = true;
+              break;
+            }
 
-              // 成功删除，刷新目录
-              await loadDirectory(currentPath, 0, true);
-            } else if (
-              response?.error?.includes("SFTP错误") &&
-              retryCount < maxRetries
-            ) {
-              // SFTP错误，尝试重试
-              retryCount++;
+            const responseError =
+              response?.error || t("fileManager.errors.deleteFailed");
+            const shouldRetry =
+              responseError.includes("SFTP错误") && attempt < maxRetries;
+
+            if (shouldRetry) {
               setError(
                 t("fileManager.messages.retrying", {
-                  current: retryCount,
+                  current: attempt + 1,
                   max: maxRetries,
                 }),
               );
-
-              // 添加延迟后重试
-              setTimeout(attemptDelete, 500 * retryCount);
-              return;
-            } else {
-              // 其他错误或已达到最大重试次数
-              setError(response?.error || t("fileManager.errors.deleteFailed"));
-              // 即使删除失败也重置选中文件状态
-              setSelectedFile(null);
-              setSelectedFiles([]);
-              setLastSelectedIndex(-1);
-              setAnchorIndex(-1);
+              await new Promise((resolve) =>
+                setTimeout(resolve, 500 * (attempt + 1)),
+              );
+              continue;
             }
-          }
-        } catch (error) {
-          // 删除文件失败
 
-          if (retryCount < maxRetries) {
-            // 发生异常，尝试重试
-            retryCount++;
-            setError(
-              t("fileManager.messages.retrying", {
-                current: retryCount,
-                max: maxRetries,
-              }),
-            );
+            lastError = responseError;
+            break;
+          } catch (error) {
+            if (attempt < maxRetries) {
+              setError(
+                t("fileManager.messages.retrying", {
+                  current: attempt + 1,
+                  max: maxRetries,
+                }),
+              );
+              await new Promise((resolve) =>
+                setTimeout(resolve, 500 * (attempt + 1)),
+              );
+              continue;
+            }
 
-            // 添加延迟后重试
-            setTimeout(attemptDelete, 500 * retryCount);
-            return;
-          }
-
-          setError(
-            t("fileManager.errors.deleteFailed") +
-              ": " +
-              (error.message || t("fileManager.errors.unknownError")),
-          );
-          // 即使删除失败也重置选中文件状态
-          setSelectedFile(null);
-          setSelectedFiles([]);
-          setLastSelectedIndex(-1);
-          setAnchorIndex(-1);
-        } finally {
-          if (retryCount === 0 || retryCount >= maxRetries) {
-            // 确保无论成功失败都重置loading状态
-            setLoading(false);
-            handleContextMenuClose();
-
-            // 确保状态完全重置，允许新的删除操作
-            setTimeout(() => {
-              // 这个空的setTimeout确保状态更新在UI渲染循环中完成
-            }, 10);
+            lastError = error?.message || t("fileManager.errors.unknownError");
           }
         }
-      };
 
-      attemptDelete();
+        clearSelection();
+
+        if (deleted) {
+          await loadDirectory(currentPath, 0, true);
+        } else {
+          setError(lastError || t("fileManager.errors.deleteFailed"));
+        }
+      } finally {
+        setLoading(false);
+        setIsDeleting(false);
+      }
     };
 
     // 处理上传文件到当前目录
@@ -2290,6 +2407,7 @@ const FileManager = memo(
       const savedCurrentPath = currentPath;
       const savedSelectedFile = selectedFile;
       let didForegroundRefresh = false;
+      let activeUploadTransferId = null;
 
       try {
         let targetPath;
@@ -2320,6 +2438,7 @@ const FileManager = memo(
             currentFileIndex: 0,
             totalFiles: 1,
           });
+          activeUploadTransferId = transferId;
 
           // 使用progressCallback处理进度更新
           const result = await window.terminalAPI.uploadFile(
@@ -2379,7 +2498,6 @@ const FileManager = memo(
 
             // 如果有警告信息（部分文件上传失败），显示给用户
             if (result.partialSuccess && result.warning) {
-              setError(result.warning);
               showNotification(result.warning, "warning", 6000);
             } else {
               showNotification(
@@ -2401,7 +2519,6 @@ const FileManager = memo(
             // 检查是否是取消操作相关的错误
             if (!isUserCancellationError(result)) {
               // 只有在不是用户主动取消的情况下才显示错误
-              setError(result.error || t("fileManager.errors.uploadFailed"));
               showNotification(
                 result.error || t("fileManager.errors.uploadFailed"),
                 "error",
@@ -2410,6 +2527,7 @@ const FileManager = memo(
               updateTransferProgress(transferId, {
                 error: result.error || t("fileManager.errors.uploadFailed"),
               });
+              storeScheduleTransferCleanup(transferId, 5000);
             } else {
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
@@ -2439,36 +2557,46 @@ const FileManager = memo(
             "error",
             6000,
           );
-          setError(
-            t("fileManager.errors.uploadFailed") +
-              ": " +
-              (error.message || t("fileManager.errors.unknownError")),
-          );
           // 更新所有未完成的传输为错误状态
           const errorMessage =
             error.message || t("fileManager.errors.unknownError");
-          transferProgressList
-            .filter(
-              (transfer) => transfer.progress < 100 && !transfer.isCancelled,
-            )
-            .forEach((transfer) => {
-              updateTransferProgress(transfer.transferId, {
-                error: errorMessage,
-              });
+          if (activeUploadTransferId) {
+            updateTransferProgress(activeUploadTransferId, {
+              error: errorMessage,
             });
+            storeScheduleTransferCleanup(activeUploadTransferId, 5000);
+          } else {
+            transferProgressList
+              .filter(
+                (transfer) => transfer.progress < 100 && !transfer.isCancelled,
+              )
+              .forEach((transfer) => {
+                updateTransferProgress(transfer.transferId, {
+                  error: errorMessage,
+                });
+                storeScheduleTransferCleanup(transfer.transferId, 5000);
+              });
+          }
         } else {
           setTransferCancelled(true);
-          // 标记所有未完成的传输为取消状态
-          transferProgressList
-            .filter(
-              (transfer) => transfer.progress < 100 && !transfer.isCancelled,
-            )
-            .forEach((transfer) => {
-              updateTransferProgress(transfer.transferId, {
-                isCancelled: true,
-                cancelMessage: t("fileManager.errors.userCancelled"),
-              });
+          if (activeUploadTransferId) {
+            updateTransferProgress(activeUploadTransferId, {
+              isCancelled: true,
+              cancelMessage: t("fileManager.errors.userCancelled"),
             });
+          } else {
+            // 标记所有未完成的传输为取消状态
+            transferProgressList
+              .filter(
+                (transfer) => transfer.progress < 100 && !transfer.isCancelled,
+              )
+              .forEach((transfer) => {
+                updateTransferProgress(transfer.transferId, {
+                  isCancelled: true,
+                  cancelMessage: t("fileManager.errors.userCancelled"),
+                });
+              });
+          }
         }
 
         // 异常分支如果尚未前台刷新，安排静默刷新兜底
@@ -2491,6 +2619,7 @@ const FileManager = memo(
       const savedCurrentPath = currentPath;
       const savedSelectedFile = selectedFile;
       let didForegroundRefresh = false;
+      let activeUploadTransferId = null;
 
       try {
         let targetPath;
@@ -2522,6 +2651,7 @@ const FileManager = memo(
             processedFiles: 0,
             totalFiles: 0,
           });
+          activeUploadTransferId = transferId;
 
           // 使用progressCallback处理进度更新
           const result = await window.terminalAPI.uploadFolder(
@@ -2582,7 +2712,6 @@ const FileManager = memo(
 
             // 如果有警告信息（部分文件上传失败），显示给用户
             if (result.partialSuccess && result.warning) {
-              setError(result.warning);
               showNotification(result.warning, "warning", 6000);
             } else {
               showNotification(
@@ -2604,7 +2733,6 @@ const FileManager = memo(
             // 检查是否是取消操作相关的错误
             if (!isUserCancellationError(result)) {
               // 只有在不是用户主动取消的情况下才显示错误
-              setError(result.error || t("fileManager.errors.uploadFailed"));
               showNotification(
                 result.error || t("fileManager.errors.uploadFailed"),
                 "error",
@@ -2613,6 +2741,7 @@ const FileManager = memo(
               updateTransferProgress(transferId, {
                 error: result.error || t("fileManager.errors.uploadFailed"),
               });
+              storeScheduleTransferCleanup(transferId, 5000);
             } else {
               setTransferCancelled(true);
               updateTransferProgress(transferId, {
@@ -2642,13 +2771,22 @@ const FileManager = memo(
             "error",
             6000,
           );
-          setError(
-            t("fileManager.errors.uploadFailed") +
-              ": " +
-              (error.message || t("fileManager.errors.unknownError")),
-          );
+          if (activeUploadTransferId) {
+            const errorMessage =
+              error?.message || t("fileManager.errors.unknownError");
+            updateTransferProgress(activeUploadTransferId, {
+              error: errorMessage,
+            });
+            storeScheduleTransferCleanup(activeUploadTransferId, 5000);
+          }
         } else {
           setTransferCancelled(true);
+          if (activeUploadTransferId) {
+            updateTransferProgress(activeUploadTransferId, {
+              isCancelled: true,
+              cancelMessage: t("fileManager.errors.userCancelled"),
+            });
+          }
         }
 
         // 异常分支如果尚未前台刷新，安排静默刷新兜底
@@ -2968,6 +3106,12 @@ const FileManager = memo(
 
     // 处理空白区域右键菜单
     const handleBlankContextMenu = (event) => {
+      if (loadingRef.current || isDeletingRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       event.preventDefault();
       event.stopPropagation();
 
@@ -3379,7 +3523,10 @@ const FileManager = memo(
 
               // 如果有警告信息（部分文件上传失败），显示给用户
               if (result.partialSuccess && result.warning) {
-                setError(result.warning);
+                setNotification({
+                  message: result.warning,
+                  severity: "warning",
+                });
               } else {
                 // 显示成功通知
                 setNotification({
@@ -4464,6 +4611,21 @@ const FileManager = memo(
           }
         }
 
+        // F4: 文件属性
+        if (event.key === "F4") {
+          event.preventDefault();
+          if (selectedFilesData.length === 1) {
+            handleOpenProperties();
+          } else if (selectedFilesData.length > 1) {
+            showNotification(
+              "暂不支持批量属性查看，请选择单个文件/文件夹",
+              "warning",
+            );
+          } else {
+            showNotification("请先选择要查看属性的文件/文件夹", "warning");
+          }
+        }
+
         // F5: 刷新
         if (event.key === "F5") {
           event.preventDefault();
@@ -4531,6 +4693,7 @@ const FileManager = memo(
         handleDelete,
         handleRename,
         handleOpenPermissions,
+        handleOpenProperties,
         handleRefresh,
         displayFiles,
         handleCopyAbsolutePath,
@@ -4971,7 +5134,7 @@ const FileManager = memo(
         </Box>
 
         <Menu
-          open={contextMenu !== null}
+          open={contextMenu !== null && !menuItems.isDeleting}
           onClose={handleContextMenuClose}
           anchorReference="anchorPosition"
           anchorPosition={
@@ -5013,6 +5176,23 @@ const FileManager = memo(
                   sx={{ ml: 2 }}
                 >
                   F3
+                </Typography>
+              </MenuItem>
+            ),
+
+            // 仅在单选时显示属性
+            menuItems.isSingleSelection && (
+              <MenuItem key="properties" onClick={handleOpenProperties}>
+                <ListItemIcon>
+                  <InfoOutlinedIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.properties")}</ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  F4
                 </Typography>
               </MenuItem>
             ),
@@ -5099,14 +5279,20 @@ const FileManager = memo(
             <Divider key="divider-2" />,
 
             // 删除操作：支持单选和多选
-            <MenuItem key="delete" onClick={handleDelete}>
+            <MenuItem
+              key="delete"
+              onClick={handleDelete}
+              disabled={menuItems.isDeleting}
+            >
               <ListItemIcon>
                 <DeleteIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>
-                {selectedFiles.length > 1
-                  ? `删除 ${selectedFiles.length} 个项目`
-                  : "删除"}
+                {menuItems.isDeleting
+                  ? t("fileManager.messages.operationInProgress")
+                  : selectedFiles.length > 1
+                    ? `删除 ${selectedFiles.length} 个项目`
+                    : "删除"}
               </ListItemText>
               <Typography
                 variant="caption"
@@ -5120,7 +5306,7 @@ const FileManager = memo(
         </Menu>
 
         <Menu
-          open={blankContextMenu !== null}
+          open={blankContextMenu !== null && !menuItems.isDeleting}
           onClose={handleBlankContextMenuClose}
           anchorReference="anchorPosition"
           anchorPosition={
@@ -5340,6 +5526,125 @@ const FileManager = memo(
               </form>
             </Paper>
           </Box>
+        )}
+
+        {showPropertiesDialog && (
+          <Dialog
+            open={showPropertiesDialog}
+            onClose={handleClosePropertiesDialog}
+            maxWidth="sm"
+            fullWidth
+          >
+            <DialogTitle>{t("fileManager.properties")}</DialogTitle>
+            <DialogContent dividers>
+              {propertiesLoading && (
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    mb: 2,
+                  }}
+                >
+                  <CircularProgress size={16} />
+                  <Typography variant="body2" color="text.secondary">
+                    {t("fileManager.propertiesDialog.loading")}
+                  </Typography>
+                </Box>
+              )}
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "120px minmax(0, 1fr)",
+                  rowGap: 1,
+                  columnGap: 1.5,
+                  alignItems: "start",
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.name")}
+                </Typography>
+                <Typography variant="body2">
+                  {propertiesData?.name ||
+                    t("fileManager.propertiesDialog.notAvailable")}
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.type")}
+                </Typography>
+                <Typography variant="body2">
+                  {propertiesData?.type ||
+                    t("fileManager.propertiesDialog.notAvailable")}
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.path")}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{ wordBreak: "break-all", whiteSpace: "pre-wrap" }}
+                >
+                  {propertiesData?.path ||
+                    t("fileManager.propertiesDialog.notAvailable")}
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.size")}
+                </Typography>
+                <Typography variant="body2">
+                  {Number.isFinite(propertiesData?.size)
+                    ? formatFileSize(propertiesData.size, { t })
+                    : t("fileManager.propertiesDialog.notAvailable")}
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.modifiedTime")}
+                </Typography>
+                <Typography variant="body2">
+                  {formatAbsoluteTime(propertiesData?.modifyTime)}
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.accessTime")}
+                </Typography>
+                <Typography variant="body2">
+                  {formatAbsoluteTime(propertiesData?.accessTime)}
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.permissions")}
+                </Typography>
+                <Typography variant="body2">
+                  {propertiesData?.permissions ||
+                    t("fileManager.propertiesDialog.notAvailable")}
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.owner")}
+                </Typography>
+                <Typography variant="body2">
+                  {Number.isFinite(propertiesData?.uid)
+                    ? String(propertiesData.uid)
+                    : t("fileManager.propertiesDialog.notAvailable")}
+                </Typography>
+
+                <Typography variant="body2" color="text.secondary">
+                  {t("fileManager.propertiesDialog.group")}
+                </Typography>
+                <Typography variant="body2">
+                  {Number.isFinite(propertiesData?.gid)
+                    ? String(propertiesData.gid)
+                    : t("fileManager.propertiesDialog.notAvailable")}
+                </Typography>
+              </Box>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleClosePropertiesDialog} color="primary">
+                {t("common.cancel")}
+              </Button>
+            </DialogActions>
+          </Dialog>
         )}
 
         {showCreateFolderDialog && (

@@ -635,6 +635,20 @@
         "selectFileToRename": "Please select a file to rename first",
         "copyPathError": "Can only copy path of a single file"
       },
+      "propertiesDialog": {
+        "loading": "Loading properties...",
+        "loadFailed": "Failed to load file properties",
+        "name": "Name",
+        "type": "Type",
+        "path": "Path",
+        "size": "Size",
+        "modifiedTime": "Modified Time",
+        "accessTime": "Access Time",
+        "permissions": "Permissions",
+        "owner": "Owner UID",
+        "group": "Group GID",
+        "notAvailable": "--"
+      },
       "fileTypes": {
         "folder": "Folder",
         "file": "File",
