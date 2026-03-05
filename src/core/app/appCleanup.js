@@ -11,7 +11,6 @@ const configService = require("../../services/configService");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const sftpCore = require("../transfer/sftp-engine");
 const sftpTransfer = require("../../modules/sftp/sftpTransfer");
-const filemanagementService = require("../../modules/filemanagement/filemanagementService");
 const externalEditorManager = require("../../modules/sftp/externalEditorManager");
 
 /**
@@ -122,22 +121,6 @@ class AppCleanup {
       }
     }
 
-    if (
-      filemanagementService &&
-      typeof filemanagementService.cleanupTransfersForTab === "function"
-    ) {
-      try {
-        filemanagementService.cleanupTransfersForTab(id);
-        if (proc.config && proc.config.tabId && proc.config.tabId !== id) {
-          filemanagementService.cleanupTransfersForTab(proc.config.tabId);
-        }
-      } catch (cleanupError) {
-        logToFile(
-          `Error cleaning up filemanagement transfers for tab ${id}: ${cleanupError.message}`,
-          "ERROR",
-        );
-      }
-    }
   }
 
   /**
@@ -270,18 +253,12 @@ class AppCleanup {
         typeof sftpTransfer.getTransferRuntimeStats === "function"
           ? sftpTransfer.getTransferRuntimeStats()
           : null,
-      filemanagement:
-        filemanagementService &&
-        typeof filemanagementService.getTransferRuntimeStats === "function"
-          ? filemanagementService.getTransferRuntimeStats()
-          : null,
     };
   }
 
   hasResidualRuntimeResources(snapshot) {
     const sftpStats = snapshot?.sftp || {};
     const transferStats = snapshot?.sftpTransfer || {};
-    const filemanagementStats = snapshot?.filemanagement || {};
 
     return Boolean(
       (snapshot?.processCount || 0) > 0 ||
@@ -301,26 +278,11 @@ class AppCleanup {
       (sftpStats.borrowLockCount || 0) > 0 ||
       sftpStats.healthCheckTimerActive ||
       (transferStats.activeTransferCount || 0) > 0 ||
-      (transferStats.activeStreamCount || 0) > 0 ||
-      (filemanagementStats.activeTransferCount || 0) > 0,
+      (transferStats.activeStreamCount || 0) > 0,
     );
   }
 
   async cleanupGlobalSftpResources() {
-    if (
-      filemanagementService &&
-      typeof filemanagementService.cleanup === "function"
-    ) {
-      try {
-        filemanagementService.cleanup();
-      } catch (error) {
-        logToFile(
-          `App quit filemanagement cleanup failed: ${error.message}`,
-          "ERROR",
-        );
-      }
-    }
-
     if (
       sftpTransfer &&
       typeof sftpTransfer.cleanupAllActiveTransfers === "function"
