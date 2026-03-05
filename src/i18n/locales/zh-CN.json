@@ -635,6 +635,20 @@
         "selectFileToRename": "请先选择要重命名的文件",
         "copyPathError": "只能复制单个文件的路径"
       },
+      "propertiesDialog": {
+        "loading": "正在读取属性...",
+        "loadFailed": "读取文件属性失败",
+        "name": "名称",
+        "type": "类型",
+        "path": "路径",
+        "size": "大小",
+        "modifiedTime": "修改时间",
+        "accessTime": "访问时间",
+        "permissions": "权限",
+        "owner": "所有者 UID",
+        "group": "所属组 GID",
+        "notAvailable": "--"
+      },
       "fileTypes": {
         "folder": "文件夹",
         "file": "文件",
