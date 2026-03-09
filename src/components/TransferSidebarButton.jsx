@@ -9,7 +9,7 @@ import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
  * 传输侧边栏按钮 - 带环形进度条
  */
 const TransferSidebarButton = memo(
-  ({ isOpen, onClick, tooltip = "文件传输", tooltipPlacement = "left" }) => {
+  ({ isOpen, onClick, tooltip = "文件传输", tooltipPlacement = "top" }) => {
     const theme = useTheme();
     const { allTransfers } = useAllGlobalTransfers();
 

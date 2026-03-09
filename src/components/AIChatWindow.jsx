@@ -168,7 +168,7 @@ const TokenUsageChart = ({ used, max, onCompressClick, isCompressing }) => {
   return (
     <Tooltip
       title={<span style={{ whiteSpace: "pre-line" }}>{tooltipContent}</span>}
-      placement="left"
+      placement="top"
       arrow
     >
       <Box

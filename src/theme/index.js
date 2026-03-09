@@ -308,6 +308,9 @@ export const createUnifiedTheme = (darkMode) =>
 
       // 统一工具提示样式
       MuiTooltip: {
+        defaultProps: {
+          placement: "top",
+        },
         styleOverrides: {
           tooltip: {
             borderRadius: 6,
