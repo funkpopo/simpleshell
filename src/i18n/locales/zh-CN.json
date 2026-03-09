@@ -636,6 +636,7 @@
         "startDownload": "开始下载 {{count}} 个文件",
         "downloadSuccessCount": "成功下载 {{count}} 个文件",
         "selectFileOrFolder": "请先选择要下载的文件或文件夹",
+        "mixedSelectionDownload": "检测到同时选中了文件和文件夹，将分别执行文件下载和文件夹下载",
         "selectFileOrFolderToDelete": "请先选择要删除的文件或文件夹",
         "batchRenameError": "无法批量重命名，请选择单个文件",
         "selectFileToRename": "请先选择要重命名的文件",

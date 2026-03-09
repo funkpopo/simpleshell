@@ -51,7 +51,6 @@ import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import LockIcon from "@mui/icons-material/Lock";
 import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
-import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import FilePreview from "./FilePreview.jsx";
 // TransferProgressFloat 已移至全局显示,不再导入
@@ -221,6 +220,7 @@ const FileManager = memo(
       if (!open) {
         setConnectionLoading(false);
         setConnectionLoadingMessage("");
+        setIsClosing(false);
       }
     }, [open]);
 
@@ -260,8 +260,9 @@ const FileManager = memo(
     const [propertiesData, setPropertiesData] = useState(null);
     const [pathInput, setPathInput] = useState("");
     const [transferCancelled, setTransferCancelled] = useState(false);
-    const [isClosing] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
     const [notification, setNotification] = useState(null);
+    const [createMenuAnchor, setCreateMenuAnchor] = useState(null);
     const [uploadMenuAnchor, setUploadMenuAnchor] = useState(null);
     const [externalEditorEnabled, setExternalEditorEnabled] = useState(false);
     const [sortMode, setSortMode] = useState("name"); // "name" or "time"
@@ -4630,6 +4631,51 @@ const FileManager = memo(
       handleContextMenuClose();
     };
 
+    const handleDownloadSelection = useCallback(async () => {
+      const selectedItems = getSelectedFiles();
+
+      if (selectedItems.length === 0) {
+        showNotification(
+          t("fileManager.messages.selectFileOrFolder"),
+          "warning",
+        );
+        return;
+      }
+
+      if (!sshConnection) {
+        showNotification(t("fileManager.errors.noConnection"), "error");
+        return;
+      }
+
+      const hasFiles = selectedItems.some((file) => !file.isDirectory);
+      const hasFolders = selectedItems.some((file) => file.isDirectory);
+
+      if (hasFiles && hasFolders) {
+        showNotification(
+          t("fileManager.messages.mixedSelectionDownload"),
+          "info",
+          4000,
+        );
+        await handleDownload();
+        await handleDownloadFolder();
+        return;
+      }
+
+      if (hasFolders) {
+        await handleDownloadFolder();
+        return;
+      }
+
+      await handleDownload();
+    }, [
+      getSelectedFiles,
+      handleDownload,
+      handleDownloadFolder,
+      showNotification,
+      sshConnection,
+      t,
+    ]);
+
     // 处理重命名
     const handleRename = async () => {
       if (!selectedFile) return;
@@ -4773,15 +4819,7 @@ const FileManager = memo(
         // Ctrl+D: 下载文件/文件夹
         if (event.ctrlKey && event.key === "d") {
           event.preventDefault();
-          if (selectedFilesData.length > 0) {
-            if (selectedFilesData.some((f) => f.isDirectory)) {
-              handleDownloadFolder();
-            } else {
-              handleDownload();
-            }
-          } else {
-            showNotification("请先选择要下载的文件或文件夹", "warning");
-          }
+          handleDownloadSelection();
         }
 
         // Delete: 删除文件/文件夹
@@ -4898,6 +4936,7 @@ const FileManager = memo(
         open,
         showPreview,
         getSelectedFiles,
+        handleDownloadSelection,
         handleDownloadFolder,
         handleDownload,
         handleDelete,
@@ -4952,8 +4991,37 @@ const FileManager = memo(
       };
     }, [open]);
 
+    const performClose = useCallback(() => {
+      if (isClosing) {
+        return;
+      }
+
+      setIsClosing(true);
+
+      try {
+        Promise.resolve(onClose?.())
+          .catch(() => {
+            setIsClosing(false);
+          })
+          .finally(() => {
+            addTimeout(() => {
+              if (openRef.current) {
+                setIsClosing(false);
+              }
+            }, 300);
+          });
+      } catch (error) {
+        setIsClosing(false);
+        throw error;
+      }
+    }, [addTimeout, isClosing, onClose]);
+
     // 处理关闭文件管理器
     const handleClose = () => {
+      if (isClosing) {
+        return;
+      }
+
       // 检查是否有正在进行的传输
       const activeTransfers = transferProgressList.filter(
         (t) => t.progress < 100 && !t.isCancelled && !t.error,
@@ -4980,17 +5048,35 @@ const FileManager = memo(
           open: true,
           title: t("fileManager.closeConfirmTitle"),
           message: t("fileManager.closeConfirmMessage", { transferType }),
-          onConfirm: onClose,
+          onConfirm: performClose,
           confirmText: t("common.confirm"),
           confirmColor: "primary",
         });
         return;
       }
 
-      onClose();
+      performClose();
     };
 
     // 处理上传菜单打开
+    const handleCreateMenuOpen = (event) => {
+      setCreateMenuAnchor(event.currentTarget);
+    };
+
+    const handleCreateMenuClose = () => {
+      setCreateMenuAnchor(null);
+    };
+
+    const handleCreateFolderFromMenu = () => {
+      handleCreateMenuClose();
+      handleCreateFolder();
+    };
+
+    const handleCreateFileFromMenu = () => {
+      handleCreateMenuClose();
+      handleCreateFile();
+    };
+
     const handleUploadMenuOpen = (event) => {
       setUploadMenuAnchor(event.currentTarget);
     };
@@ -5171,15 +5257,33 @@ const FileManager = memo(
 
           <Box sx={{ flexGrow: 1 }} />
 
-          <Tooltip title={t("fileManager.search")}>
-            <IconButton size="small" onClick={toggleSearch}>
-              <SearchIcon fontSize="small" />
+          <Tooltip
+            title={`${t("fileManager.createFile")} / ${t("fileManager.createFolder")}`}
+          >
+            <IconButton size="small" onClick={handleCreateMenuOpen}>
+              <NoteAddIcon fontSize="small" />
             </IconButton>
           </Tooltip>
 
           <Tooltip title={t("fileManager.upload")}>
             <IconButton size="small" onClick={handleUploadMenuOpen}>
               <UploadFileIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title={t("fileManager.search")}>
+            <IconButton size="small" onClick={toggleSearch}>
+              <SearchIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title={t("fileManager.sort")}>
+            <IconButton size="small" onClick={handleSortMenuOpen}>
+              {sortMode === "time" ? (
+                <AccessTimeIcon fontSize="small" />
+              ) : (
+                <SortByAlphaIcon fontSize="small" />
+              )}
             </IconButton>
           </Tooltip>
         </Box>
@@ -5285,31 +5389,6 @@ const FileManager = memo(
               },
             }}
           />
-          <Tooltip title="排序方式">
-            <IconButton
-              size="small"
-              onClick={handleSortMenuOpen}
-              sx={{
-                ml: 0.5,
-                borderRadius: 1.5,
-                border: `1px solid ${theme.palette.divider}`,
-                color: theme.palette.text.secondary,
-                transition: "all 0.2s ease",
-                "&:hover": {
-                  color: theme.palette.primary.main,
-                  borderColor: theme.palette.primary.main,
-                  backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                },
-              }}
-            >
-              {sortMode === "time" ? (
-                <AccessTimeIcon fontSize="small" />
-              ) : (
-                <SortByAlphaIcon fontSize="small" />
-              )}
-              <ArrowDropDownIcon fontSize="small" sx={{ ml: -0.5 }} />
-            </IconButton>
-          </Tooltip>
         </Box>
 
         <Box
@@ -5366,95 +5445,6 @@ const FileManager = memo(
           disableAutoFocusItem
         >
           {contextMenu !== null && [
-            // 仅在单选时显示重命名
-            menuItems.isSingleSelection && (
-              <MenuItem key="rename" onClick={handleRename}>
-                <ListItemIcon>
-                  <DriveFileRenameOutlineIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>{t("fileManager.rename")}</ListItemText>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ ml: 2 }}
-                >
-                  F2
-                </Typography>
-              </MenuItem>
-            ),
-
-            // 仅在单选时显示权限设置
-            menuItems.isSingleSelection && (
-              <MenuItem key="permissions" onClick={handleOpenPermissions}>
-                <ListItemIcon>
-                  <LockIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>{t("fileManager.permissions")}</ListItemText>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ ml: 2 }}
-                >
-                  F3
-                </Typography>
-              </MenuItem>
-            ),
-
-            // 仅在单选时显示属性
-            menuItems.isSingleSelection && (
-              <MenuItem key="properties" onClick={handleOpenProperties}>
-                <ListItemIcon>
-                  <InfoOutlinedIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>{t("fileManager.properties")}</ListItemText>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ ml: 2 }}
-                >
-                  F4
-                </Typography>
-              </MenuItem>
-            ),
-
-            // 仅在单选时显示复制路径
-            menuItems.isSingleSelection && (
-              <MenuItem key="copy-path" onClick={handleCopyAbsolutePath}>
-                <ListItemIcon>
-                  <LinkIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>{t("fileManager.copy")}</ListItemText>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ ml: 2 }}
-                >
-                  Ctrl+Shift+C
-                </Typography>
-              </MenuItem>
-            ),
-
-            menuItems.isSingleSelection && <Divider key="divider-1" />,
-
-            // 上传操作：仅在选中单个目录时显示
-            menuItems.isSingleSelection && menuItems.isDirectorySelected && (
-              <MenuItem key="upload-file" onClick={handleUploadFile}>
-                <ListItemIcon>
-                  <UploadFileIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>{t("fileManager.uploadFile")}</ListItemText>
-              </MenuItem>
-            ),
-
-            menuItems.isSingleSelection && menuItems.isDirectorySelected && (
-              <MenuItem key="upload-folder" onClick={handleUploadFolder}>
-                <ListItemIcon>
-                  <CreateNewFolderIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>{t("fileManager.uploadFolder")}</ListItemText>
-              </MenuItem>
-            ),
-
             // 下载操作：支持单选和多选
             menuItems.hasFiles && (
               <MenuItem key="download-files" onClick={handleDownload}>
@@ -5492,6 +5482,95 @@ const FileManager = memo(
                   sx={{ ml: 2 }}
                 >
                   Ctrl+D
+                </Typography>
+              </MenuItem>
+            ),
+
+            // 上传操作：仅在选中单个目录时显示
+            menuItems.isSingleSelection && menuItems.isDirectorySelected && (
+              <MenuItem key="upload-file" onClick={handleUploadFile}>
+                <ListItemIcon>
+                  <UploadFileIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.uploadFile")}</ListItemText>
+              </MenuItem>
+            ),
+
+            menuItems.isSingleSelection && menuItems.isDirectorySelected && (
+              <MenuItem key="upload-folder" onClick={handleUploadFolder}>
+                <ListItemIcon>
+                  <CreateNewFolderIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.uploadFolder")}</ListItemText>
+              </MenuItem>
+            ),
+
+            menuItems.isSingleSelection && <Divider key="divider-1" />,
+
+            // 仅在单选时显示复制路径
+            menuItems.isSingleSelection && (
+              <MenuItem key="copy-path" onClick={handleCopyAbsolutePath}>
+                <ListItemIcon>
+                  <LinkIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.copy")}</ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  Ctrl+Shift+C
+                </Typography>
+              </MenuItem>
+            ),
+
+            // 仅在单选时显示重命名
+            menuItems.isSingleSelection && (
+              <MenuItem key="rename" onClick={handleRename}>
+                <ListItemIcon>
+                  <DriveFileRenameOutlineIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.rename")}</ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  F2
+                </Typography>
+              </MenuItem>
+            ),
+
+            // 仅在单选时显示属性
+            menuItems.isSingleSelection && (
+              <MenuItem key="properties" onClick={handleOpenProperties}>
+                <ListItemIcon>
+                  <InfoOutlinedIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.properties")}</ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  F4
+                </Typography>
+              </MenuItem>
+            ),
+
+            // 仅在单选时显示权限设置
+            menuItems.isSingleSelection && (
+              <MenuItem key="permissions" onClick={handleOpenPermissions}>
+                <ListItemIcon>
+                  <LockIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("fileManager.permissions")}</ListItemText>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
+                  F3
                 </Typography>
               </MenuItem>
             ),
@@ -6084,6 +6163,33 @@ const FileManager = memo(
         </Snackbar>
 
         {/* TransferProgressFloat已移至全局底部栏,不再在侧边栏内显示 */}
+
+        <Menu
+          open={Boolean(createMenuAnchor)}
+          onClose={handleCreateMenuClose}
+          anchorEl={createMenuAnchor}
+          anchorOrigin={{
+            vertical: "bottom",
+            horizontal: "left",
+          }}
+          transformOrigin={{
+            vertical: "top",
+            horizontal: "left",
+          }}
+        >
+          <MenuItem onClick={handleCreateFileFromMenu}>
+            <ListItemIcon>
+              <NoteAddIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{t("fileManager.createFile")}</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleCreateFolderFromMenu}>
+            <ListItemIcon>
+              <CreateNewFolderIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{t("fileManager.createFolder")}</ListItemText>
+          </MenuItem>
+        </Menu>
 
         <Menu
           open={Boolean(uploadMenuAnchor)}

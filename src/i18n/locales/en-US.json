@@ -636,6 +636,7 @@
         "startDownload": "Starting download of {{count}} files",
         "downloadSuccessCount": "Successfully downloaded {{count}} files",
         "selectFileOrFolder": "Please select a file or folder to download first",
+        "mixedSelectionDownload": "Mixed selection detected. Files and folders will be downloaded separately",
         "selectFileOrFolderToDelete": "Please select a file or folder to delete first",
         "batchRenameError": "Batch rename is not supported, please select a single file",
         "selectFileToRename": "Please select a file to rename first",
