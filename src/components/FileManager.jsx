@@ -66,9 +66,83 @@ import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
 
-const FILE_LIST_ROW_HEIGHT = 36;
+const FILE_LIST_ROW_HEIGHT = 56;
 const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
 const FILE_LIST_OVERSCAN = 12;
+
+const FILE_LIST_ITEM_MIN_HEIGHT = 52;
+
+const FILE_LIST_TEXT_SX = {
+  my: 0,
+  "& .MuiListItemText-primary": {
+    fontSize: "0.875rem",
+    lineHeight: 1.3,
+    marginBottom: "3px",
+    fontWeight: 500,
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+    overflowWrap: "anywhere",
+  },
+  "& .MuiListItemText-secondary": {
+    fontSize: "0.75rem",
+    lineHeight: 1.2,
+    marginTop: 0,
+    display: "-webkit-box",
+    WebkitLineClamp: 1,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+    overflowWrap: "anywhere",
+  },
+};
+
+const FILE_LIST_PRIMARY_TYPOGRAPHY_PROPS = {
+  variant: "body2",
+  noWrap: false,
+};
+
+const FILE_LIST_SECONDARY_TYPOGRAPHY_PROPS = {
+  variant: "caption",
+  color: "text.secondary",
+  noWrap: false,
+};
+
+const joinPath = (basePath, childName) => {
+  if (!childName) return basePath;
+
+  if (basePath === "/") {
+    return `/${childName}`;
+  }
+
+  if (basePath === "~") {
+    return `~/${childName}`;
+  }
+
+  const normalizedBase = basePath.endsWith("/")
+    ? basePath.slice(0, -1)
+    : basePath;
+
+  return `${normalizedBase}/${childName}`;
+};
+
+const getParentPath = (targetPath) => {
+  if (!targetPath || targetPath === "/" || targetPath === "~") {
+    return targetPath || "/";
+  }
+
+  const normalizedPath =
+    targetPath.length > 1 && targetPath.endsWith("/")
+      ? targetPath.slice(0, -1)
+      : targetPath;
+  const lastSlashIndex = normalizedPath.lastIndexOf("/");
+
+  if (lastSlashIndex <= 0) {
+    return normalizedPath.startsWith("~") ? "~" : "/";
+  }
+
+  return normalizedPath.slice(0, lastSlashIndex);
+};
 
 const VirtualizedFileRow = memo(function VirtualizedFileRow({
   index,
@@ -101,8 +175,8 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
         sx={{
           py: 0,
           my: 0,
-          minHeight: 32,
-          height: 32,
+          minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
+          height: FILE_LIST_ITEM_MIN_HEIGHT,
         }}
       >
         <ListItemButton
@@ -112,10 +186,10 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
           dense
           selected={isSelected}
           sx={{
-            minHeight: 32,
-            height: 32,
+            minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
+            height: FILE_LIST_ITEM_MIN_HEIGHT,
             px: 1.5,
-            py: 0.5,
+            py: 0.75,
             borderRadius: 1,
             transition: "all 0.15s ease-in-out",
             userSelect: "none",
@@ -141,29 +215,9 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
           <ListItemText
             primary={file.name || ""}
             secondary={secondaryText}
-            sx={{
-              my: 0,
-              "& .MuiListItemText-primary": {
-                fontSize: "0.875rem",
-                lineHeight: 1.2,
-                marginBottom: "2px",
-                fontWeight: 500,
-              },
-              "& .MuiListItemText-secondary": {
-                fontSize: "0.75rem",
-                lineHeight: 1.1,
-                marginTop: 0,
-              },
-            }}
-            primaryTypographyProps={{
-              variant: "body2",
-              noWrap: true,
-            }}
-            secondaryTypographyProps={{
-              variant: "caption",
-              color: "text.secondary",
-              noWrap: true,
-            }}
+            sx={FILE_LIST_TEXT_SX}
+            primaryTypographyProps={FILE_LIST_PRIMARY_TYPOGRAPHY_PROPS}
+            secondaryTypographyProps={FILE_LIST_SECONDARY_TYPOGRAPHY_PROPS}
           />
         </ListItemButton>
       </ListItem>
@@ -215,6 +269,18 @@ const FileManager = memo(
     useEffect(() => {
       openRef.current = open;
     }, [open]);
+
+    useEffect(() => {
+      if (!showSearch) {
+        return;
+      }
+
+      const timeoutId = setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 0);
+
+      return () => clearTimeout(timeoutId);
+    }, [showSearch]);
 
     useEffect(() => {
       if (!open) {
@@ -1760,12 +1826,14 @@ const FileManager = memo(
     }, []);
 
     // 切换搜索框显示
-    const toggleSearch = () => {
-      setShowSearch(!showSearch);
-      if (showSearch) {
-        setSearchTerm("");
-      }
-    };
+    const toggleSearch = useCallback(() => {
+      setShowSearch((prev) => {
+        if (prev) {
+          setSearchTerm("");
+        }
+        return !prev;
+      });
+    }, []);
 
     // 多选文件管理函数 - 使用 Set 优化性能
     const selectedFilesSet = useMemo(() => {
@@ -2049,26 +2117,21 @@ const FileManager = memo(
 
     const buildCurrentFilePath = useCallback(
       (fileName) => {
-        return currentPath === "/"
-          ? "/" + fileName
-          : currentPath
-            ? currentPath + "/" + fileName
-            : fileName;
+        return currentPath ? joinPath(currentPath, fileName) : fileName;
       },
       [currentPath],
     );
 
     const deleteFileWithRetry = useCallback(
-      async (file) => {
+      async (targetPath, isDirectory) => {
         const maxRetries = 3;
-        const fullPath = buildCurrentFilePath(file.name);
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           try {
             const response = await window.terminalAPI.deleteFile(
               tabId,
-              fullPath,
-              file.isDirectory,
+              targetPath,
+              isDirectory,
             );
 
             if (response?.success) {
@@ -2108,7 +2171,115 @@ const FileManager = memo(
           error: t("fileManager.errors.deleteFailed"),
         };
       },
-      [buildCurrentFilePath, t, tabId],
+      [t, tabId],
+    );
+
+    const createFolderWithRetry = useCallback(
+      async (folderPath) => {
+        const maxRetries = 2;
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const response = await window.terminalAPI.createFolder(
+              tabId,
+              folderPath,
+            );
+
+            if (response?.success) {
+              return { success: true };
+            }
+
+            const responseError =
+              response?.error || t("fileManager.errors.createFolderFailed");
+            const alreadyExists =
+              responseError.includes("already exists") ||
+              responseError.includes("已存在") ||
+              responseError.includes("File exists");
+
+            if (alreadyExists) {
+              return { success: true };
+            }
+
+            if (responseError.includes("SFTP错误") && attempt < maxRetries) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, 300 * (attempt + 1)),
+              );
+              continue;
+            }
+
+            return { success: false, error: responseError };
+          } catch (error) {
+            if (attempt < maxRetries) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, 300 * (attempt + 1)),
+              );
+              continue;
+            }
+
+            return {
+              success: false,
+              error:
+                error?.message || t("fileManager.errors.createFolderFailed"),
+            };
+          }
+        }
+
+        return {
+          success: false,
+          error: t("fileManager.errors.createFolderFailed"),
+        };
+      },
+      [t, tabId],
+    );
+
+    const moveFileWithRetry = useCallback(
+      async (sourcePath, targetPath) => {
+        const maxRetries = 2;
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const response = await window.terminalAPI.moveFile(
+              tabId,
+              sourcePath,
+              targetPath,
+            );
+
+            if (response?.success) {
+              return { success: true };
+            }
+
+            const responseError =
+              response?.error || t("fileManager.errors.deleteFailed");
+
+            if (responseError.includes("SFTP错误") && attempt < maxRetries) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, 300 * (attempt + 1)),
+              );
+              continue;
+            }
+
+            return { success: false, error: responseError };
+          } catch (error) {
+            if (attempt < maxRetries) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, 300 * (attempt + 1)),
+              );
+              continue;
+            }
+
+            return {
+              success: false,
+              error: error?.message || t("fileManager.errors.deleteFailed"),
+            };
+          }
+        }
+
+        return {
+          success: false,
+          error: t("fileManager.errors.deleteFailed"),
+        };
+      },
+      [t, tabId],
     );
 
     const executeDeleteFiles = useCallback(
@@ -2123,9 +2294,15 @@ const FileManager = memo(
 
         const deletedFiles = [];
         const failedFiles = [];
+        const stagedEntries = [];
 
         try {
-          if (!window.terminalAPI || !window.terminalAPI.deleteFile) {
+          if (
+            !window.terminalAPI ||
+            !window.terminalAPI.deleteFile ||
+            !window.terminalAPI.moveFile ||
+            !window.terminalAPI.createFolder
+          ) {
             showNotification(
               t("fileManager.errors.fileApiNotAvailable"),
               "error",
@@ -2133,28 +2310,99 @@ const FileManager = memo(
             return;
           }
 
+          const selectionNames = new Set(
+            filesToDelete.map((file) => file?.name).filter(Boolean),
+          );
+          const parentPath = getParentPath(currentPath);
+          let stagingFolderName = `.simpleshell-delete-staging-${Date.now().toString(36)}`;
+          while (selectionNames.has(stagingFolderName)) {
+            stagingFolderName = `.simpleshell-delete-staging-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+          }
+
+          const stagingRootPath = joinPath(parentPath, stagingFolderName);
+          const createStagingResult =
+            await createFolderWithRetry(stagingRootPath);
+
+          if (!createStagingResult.success) {
+            showNotification(
+              createStagingResult.error || t("fileManager.errors.deleteFailed"),
+              "error",
+              6000,
+            );
+            return;
+          }
+
           for (const file of filesToDelete) {
-            const result = await deleteFileWithRetry(file);
-            if (result.success) {
-              deletedFiles.push(file);
-            } else {
+            const sourcePath = buildCurrentFilePath(file.name);
+            const stagedPath = joinPath(stagingRootPath, file.name);
+            const stageResult = await moveFileWithRetry(sourcePath, stagedPath);
+
+            if (!stageResult.success) {
               failedFiles.push({
                 file,
-                error: result.error || t("fileManager.errors.deleteFailed"),
+                error:
+                  stageResult.error ||
+                  t("fileManager.messages.deleteRollbackStageFailed"),
+                retainSelection: true,
+              });
+              continue;
+            }
+
+            stagedEntries.push({
+              file,
+              sourcePath,
+              stagedPath,
+            });
+          }
+
+          for (const stagedEntry of stagedEntries) {
+            const result = await deleteFileWithRetry(
+              stagedEntry.stagedPath,
+              stagedEntry.file.isDirectory,
+            );
+
+            if (result.success) {
+              deletedFiles.push(stagedEntry.file);
+            } else {
+              const rollbackResult = await moveFileWithRetry(
+                stagedEntry.stagedPath,
+                stagedEntry.sourcePath,
+              );
+
+              failedFiles.push({
+                file: stagedEntry.file,
+                retainSelection: rollbackResult.success,
+                error: rollbackResult.success
+                  ? result.error || t("fileManager.errors.deleteFailed")
+                  : t("fileManager.messages.deleteRollbackRestoreFailed", {
+                      name: stagedEntry.file.name,
+                      error:
+                        rollbackResult.error ||
+                        t("fileManager.errors.deleteFailed"),
+                    }),
               });
             }
           }
 
-          if (deletedFiles.length > 0) {
+          await deleteFileWithRetry(stagingRootPath, true);
+
+          if (stagedEntries.length > 0) {
             await loadDirectory(currentPath, 0, true);
           }
 
           if (failedFiles.length > 0) {
-            const failedSelection = failedFiles.map((item) => item.file);
-            setSelectedFiles(failedSelection);
-            setSelectedFile(failedSelection[0] || null);
-            setLastSelectedIndex(failedSelection.length > 0 ? 0 : -1);
-            setAnchorIndex(failedSelection.length > 0 ? 0 : -1);
+            const failedSelection = failedFiles
+              .filter((item) => item.retainSelection !== false)
+              .map((item) => item.file);
+
+            if (failedSelection.length > 0) {
+              setSelectedFiles(failedSelection);
+              setSelectedFile(failedSelection[0] || null);
+              setLastSelectedIndex(0);
+              setAnchorIndex(0);
+            } else {
+              clearSelection();
+            }
           } else {
             clearSelection();
           }
@@ -2174,8 +2422,14 @@ const FileManager = memo(
             failed: failedFiles.length,
           });
           const firstError = failedFiles[0]?.error;
+          const rollbackMessage =
+            deletedFiles.length > 0
+              ? t("fileManager.messages.deleteRollbackApplied")
+              : t("fileManager.messages.deleteRollbackKeptFiles");
           showNotification(
-            firstError ? `${summaryMessage}：${firstError}` : summaryMessage,
+            firstError
+              ? `${summaryMessage} ${rollbackMessage}：${firstError}`
+              : `${summaryMessage} ${rollbackMessage}`,
             deletedFiles.length > 0 ? "warning" : "error",
             6000,
           );
@@ -2194,10 +2448,13 @@ const FileManager = memo(
       },
       [
         clearSelection,
+        createFolderWithRetry,
         currentPath,
         deleteFileWithRetry,
         handleContextMenuClose,
         loadDirectory,
+        moveFileWithRetry,
+        buildCurrentFilePath,
         showNotification,
         t,
       ],
@@ -2555,22 +2812,6 @@ const FileManager = memo(
 
     // 处理上传文件到当前目录
     // 辅助函数：正确拼接路径，避免重复斜杠
-    const joinPath = (basePath, childName) => {
-      if (!childName) return basePath;
-
-      if (basePath === "/") {
-        return "/" + childName;
-      } else if (basePath === "~") {
-        return "~/" + childName;
-      } else {
-        // 移除 basePath 末尾的斜杠（如果有）
-        const normalizedBase = basePath.endsWith("/")
-          ? basePath.slice(0, -1)
-          : basePath;
-        return normalizedBase + "/" + childName;
-      }
-    };
-
     const handleUploadFile = async () => {
       handleContextMenuClose();
       handleBlankContextMenuClose();
@@ -3188,8 +3429,8 @@ const FileManager = memo(
                     sx={{
                       py: 0,
                       my: 0,
-                      minHeight: 32,
-                      height: 32,
+                      minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
+                      height: FILE_LIST_ITEM_MIN_HEIGHT,
                       "&:not(:last-child)": {
                         mb: 0.5,
                       },
@@ -3202,10 +3443,10 @@ const FileManager = memo(
                       dense
                       selected={isSelected}
                       sx={{
-                        minHeight: 32,
-                        height: 32,
+                        minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
+                        height: FILE_LIST_ITEM_MIN_HEIGHT,
                         px: 1.5,
-                        py: 0.5,
+                        py: 0.75,
                         borderRadius: 1,
                         transition: "all 0.15s ease-in-out",
                         userSelect: "none",
@@ -3237,29 +3478,13 @@ const FileManager = memo(
                       <ListItemText
                         primary={file.name || ""}
                         secondary={secondaryText}
-                        sx={{
-                          my: 0,
-                          "& .MuiListItemText-primary": {
-                            fontSize: "0.875rem",
-                            lineHeight: 1.2,
-                            marginBottom: "2px",
-                            fontWeight: 500,
-                          },
-                          "& .MuiListItemText-secondary": {
-                            fontSize: "0.75rem",
-                            lineHeight: 1.1,
-                            marginTop: 0,
-                          },
-                        }}
-                        primaryTypographyProps={{
-                          variant: "body2",
-                          noWrap: true,
-                        }}
-                        secondaryTypographyProps={{
-                          variant: "caption",
-                          color: "text.secondary",
-                          noWrap: true,
-                        }}
+                        sx={FILE_LIST_TEXT_SX}
+                        primaryTypographyProps={
+                          FILE_LIST_PRIMARY_TYPOGRAPHY_PROPS
+                        }
+                        secondaryTypographyProps={
+                          FILE_LIST_SECONDARY_TYPOGRAPHY_PROPS
+                        }
                       />
                     </ListItemButton>
                   </ListItem>
@@ -3332,6 +3557,15 @@ const FileManager = memo(
       setShowCreateFolderDialog(true);
       handleBlankContextMenuClose();
     };
+
+    const handleCloseCreateFolderDialog = useCallback(() => {
+      if (createFolderSubmitting) {
+        return;
+      }
+
+      setShowCreateFolderDialog(false);
+      setCreateFolderDialogError("");
+    }, [createFolderSubmitting]);
 
     // 处理创建文件夹提交
     const handleCreateFolderSubmit = async (e) => {
@@ -3434,6 +3668,15 @@ const FileManager = memo(
       setShowCreateFileDialog(true);
       handleBlankContextMenuClose();
     };
+
+    const handleCloseCreateFileDialog = useCallback(() => {
+      if (createFileSubmitting) {
+        return;
+      }
+
+      setShowCreateFileDialog(false);
+      setCreateFileDialogError("");
+    }, [createFileSubmitting]);
 
     // 处理创建文件提交
     const handleCreateFileSubmit = async (e) => {
@@ -4687,6 +4930,15 @@ const FileManager = memo(
       handleContextMenuClose();
     };
 
+    const handleCloseRenameDialog = useCallback(() => {
+      if (renameSubmitting) {
+        return;
+      }
+
+      setShowRenameDialog(false);
+      setRenameDialogError("");
+    }, [renameSubmitting]);
+
     // 处理重命名提交
     const handleRenameSubmit = async (e) => {
       e.preventDefault();
@@ -4711,7 +4963,7 @@ const FileManager = memo(
       // 检查是否有更改
       const nameChanged = newName && newName !== selectedFile.name;
       if (!nameChanged) {
-        setShowRenameDialog(false);
+        handleCloseRenameDialog();
         return;
       }
 
@@ -5288,20 +5540,57 @@ const FileManager = memo(
           </Tooltip>
         </Box>
 
-        {showSearch && (
-          <Box
-            sx={{
-              px: 1.5,
-              py: 1,
-              borderBottom: `1px solid ${theme.palette.divider}`,
-              flexShrink: 0,
-              backgroundColor: theme.palette.background.paper,
+        <Box
+          sx={{
+            px: 1.5,
+            py: 0.75,
+            overflow: "hidden",
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            zIndex: 1,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 0.75,
+            backgroundColor: theme.palette.background.paper,
+          }}
+        >
+          <TextField
+            size="small"
+            variant="outlined"
+            value={pathInput}
+            onChange={handlePathInputChange}
+            onKeyDown={handlePathInputSubmit}
+            placeholder={t("fileManager.enterPath")}
+            InputProps={{
+              style: { fontSize: "0.75rem" },
+              startAdornment: (
+                <InputAdornment position="start">
+                  <FolderIcon color="action" fontSize="small" />
+                </InputAdornment>
+              ),
             }}
-          >
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 1.5,
+                "& fieldset": {
+                  borderColor: theme.palette.divider,
+                },
+                "&:hover fieldset": {
+                  borderColor: theme.palette.primary.main,
+                },
+                "&.Mui-focused fieldset": {
+                  borderColor: theme.palette.primary.main,
+                },
+              },
+            }}
+          />
+
+          {showSearch && (
             <TextField
               inputRef={searchInputRef}
               size="small"
-              fullWidth
               placeholder={t("fileManager.search")}
               value={searchTerm}
               onChange={handleSearchChange}
@@ -5312,11 +5601,17 @@ const FileManager = memo(
                     <SearchIcon fontSize="small" />
                   </InputAdornment>
                 ),
-                endAdornment: searchTerm && (
+                endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
                       size="small"
-                      onClick={() => setSearchTerm("")}
+                      onClick={() => {
+                        if (searchTerm) {
+                          setSearchTerm("");
+                          return;
+                        }
+                        setShowSearch(false);
+                      }}
                       edge="end"
                     >
                       <ClearIcon fontSize="small" />
@@ -5325,6 +5620,8 @@ const FileManager = memo(
                 ),
               }}
               sx={{
+                width: 140,
+                flexShrink: 0,
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 1.5,
                   backgroundColor:
@@ -5341,54 +5638,7 @@ const FileManager = memo(
                 },
               }}
             />
-          </Box>
-        )}
-
-        <Box
-          sx={{
-            px: 1.5,
-            py: 0.75,
-            overflow: "hidden",
-            borderBottom: `1px solid ${theme.palette.divider}`,
-            zIndex: 1,
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            gap: 0.75,
-            backgroundColor: theme.palette.background.paper,
-          }}
-        >
-          <TextField
-            fullWidth
-            size="small"
-            variant="outlined"
-            value={pathInput}
-            onChange={handlePathInputChange}
-            onKeyDown={handlePathInputSubmit}
-            placeholder={t("fileManager.enterPath")}
-            InputProps={{
-              style: { fontSize: "0.75rem" },
-              startAdornment: (
-                <InputAdornment position="start">
-                  <FolderIcon color="action" fontSize="small" />
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 1.5,
-                "& fieldset": {
-                  borderColor: theme.palette.divider,
-                },
-                "&:hover fieldset": {
-                  borderColor: theme.palette.primary.main,
-                },
-                "&.Mui-focused fieldset": {
-                  borderColor: theme.palette.primary.main,
-                },
-              },
-            }}
-          />
+          )}
         </Box>
 
         <Box
@@ -5670,34 +5920,15 @@ const FileManager = memo(
         </Menu>
 
         {showRenameDialog && (
-          <Box
-            sx={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0, 0, 0, 0.5)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 1300,
-            }}
+          <Dialog
+            open={showRenameDialog}
+            onClose={handleCloseRenameDialog}
+            maxWidth="sm"
+            fullWidth
           >
-            <Paper
-              sx={{
-                width: "90%",
-                maxWidth: 600,
-                maxHeight: "80vh",
-                p: 3,
-                display: "flex",
-                flexDirection: "column",
-                gap: 2,
-                overflow: "auto",
-              }}
-            >
-              <Typography variant="subtitle1">编辑文件/文件夹</Typography>
-              <form onSubmit={handleRenameSubmit}>
+            <Box component="form" onSubmit={handleRenameSubmit}>
+              <DialogTitle>编辑文件/文件夹</DialogTitle>
+              <DialogContent dividers>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   {renameDialogError ? (
                     <Alert severity="error">{renameDialogError}</Alert>
@@ -5711,75 +5942,41 @@ const FileManager = memo(
                     variant="outlined"
                     size="small"
                   />
-
-                  {/* 权限设置已从重命名窗口剥离 */}
-
-                  <Box
-                    sx={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      mt: 2,
-                      gap: 1,
-                    }}
-                  >
-                    <Button
-                      onClick={() => {
-                        setShowRenameDialog(false);
-                        setRenameDialogError("");
-                      }}
-                      color="inherit"
-                      size="small"
-                      disabled={renameSubmitting}
-                    >
-                      {t("common.cancel")}
-                    </Button>
-                    <Button
-                      type="submit"
-                      variant="contained"
-                      color="primary"
-                      size="small"
-                      disabled={renameSubmitting}
-                    >
-                      {t("common.save")}
-                    </Button>
-                  </Box>
                 </Box>
-              </form>
-            </Paper>
-          </Box>
+              </DialogContent>
+              <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button
+                  onClick={handleCloseRenameDialog}
+                  color="inherit"
+                  size="small"
+                  disabled={renameSubmitting}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  disabled={renameSubmitting}
+                >
+                  {t("common.save")}
+                </Button>
+              </DialogActions>
+            </Box>
+          </Dialog>
         )}
 
         {showPermissionDialog && (
-          <Box
-            sx={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0, 0, 0, 0.5)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 1300,
-            }}
+          <Dialog
+            open={showPermissionDialog}
+            onClose={handlePermissionDialogClose}
+            maxWidth="sm"
+            fullWidth
           >
-            <Paper
-              sx={{
-                width: "90%",
-                maxWidth: 600,
-                maxHeight: "80vh",
-                p: 3,
-                display: "flex",
-                flexDirection: "column",
-                gap: 2,
-                overflow: "auto",
-              }}
-            >
-              <Typography variant="subtitle1">
-                {t("fileManager.permissions")}
-              </Typography>
-              <form onSubmit={handlePermissionDialogSubmit}>
+            <Box component="form" onSubmit={handlePermissionDialogSubmit}>
+              <DialogTitle>{t("fileManager.permissions")}</DialogTitle>
+              <DialogContent dividers>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   <FilePermissionEditor
                     permissions={permDialogPermissions}
@@ -5804,35 +6001,27 @@ const FileManager = memo(
                       size="small"
                     />
                   </Box>
-
-                  <Box
-                    sx={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      mt: 2,
-                      gap: 1,
-                    }}
-                  >
-                    <Button
-                      onClick={handlePermissionDialogClose}
-                      color="inherit"
-                      size="small"
-                    >
-                      {t("common.cancel")}
-                    </Button>
-                    <Button
-                      type="submit"
-                      variant="contained"
-                      color="primary"
-                      size="small"
-                    >
-                      {t("common.save")}
-                    </Button>
-                  </Box>
                 </Box>
-              </form>
-            </Paper>
-          </Box>
+              </DialogContent>
+              <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button
+                  onClick={handlePermissionDialogClose}
+                  color="inherit"
+                  size="small"
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                >
+                  {t("common.save")}
+                </Button>
+              </DialogActions>
+            </Box>
+          </Dialog>
         )}
 
         {showPropertiesDialog && (
@@ -5962,34 +6151,15 @@ const FileManager = memo(
         )}
 
         {showCreateFolderDialog && (
-          <Box
-            sx={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0, 0, 0, 0.5)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 1300,
-            }}
+          <Dialog
+            open={showCreateFolderDialog}
+            onClose={handleCloseCreateFolderDialog}
+            maxWidth="xs"
+            fullWidth
           >
-            <Paper
-              sx={{
-                width: "80%",
-                maxWidth: 400,
-                p: 2,
-                display: "flex",
-                flexDirection: "column",
-                gap: 2,
-              }}
-            >
-              <Typography variant="subtitle1">
-                {t("fileManager.createFolder")}
-              </Typography>
-              <form onSubmit={handleCreateFolderSubmit}>
+            <Box component="form" onSubmit={handleCreateFolderSubmit}>
+              <DialogTitle>{t("fileManager.createFolder")}</DialogTitle>
+              <DialogContent dividers>
                 {createFolderDialogError ? (
                   <Alert severity="error" sx={{ mb: 2 }}>
                     {createFolderDialogError}
@@ -6004,69 +6174,40 @@ const FileManager = memo(
                   variant="outlined"
                   size="small"
                 />
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    mt: 2,
-                    gap: 1,
-                  }}
+              </DialogContent>
+              <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button
+                  onClick={handleCloseCreateFolderDialog}
+                  color="inherit"
+                  size="small"
+                  disabled={createFolderSubmitting}
                 >
-                  <Button
-                    onClick={() => {
-                      setShowCreateFolderDialog(false);
-                      setCreateFolderDialogError("");
-                    }}
-                    color="inherit"
-                    size="small"
-                    disabled={createFolderSubmitting}
-                  >
-                    {t("common.cancel")}
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    color="primary"
-                    size="small"
-                    disabled={createFolderSubmitting}
-                  >
-                    {t("common.save")}
-                  </Button>
-                </Box>
-              </form>
-            </Paper>
-          </Box>
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  disabled={createFolderSubmitting}
+                >
+                  {t("common.save")}
+                </Button>
+              </DialogActions>
+            </Box>
+          </Dialog>
         )}
 
         {showCreateFileDialog && (
-          <Box
-            sx={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0, 0, 0, 0.5)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 1300,
-            }}
+          <Dialog
+            open={showCreateFileDialog}
+            onClose={handleCloseCreateFileDialog}
+            maxWidth="xs"
+            fullWidth
           >
-            <Paper
-              sx={{
-                width: "80%",
-                maxWidth: 400,
-                p: 2,
-                display: "flex",
-                flexDirection: "column",
-                gap: 2,
-              }}
-            >
-              <Typography variant="subtitle1">
-                {t("fileManager.createFile")}
-              </Typography>
-              <form onSubmit={handleCreateFileSubmit}>
+            <Box component="form" onSubmit={handleCreateFileSubmit}>
+              <DialogTitle>{t("fileManager.createFile")}</DialogTitle>
+              <DialogContent dividers>
                 {createFileDialogError ? (
                   <Alert severity="error" sx={{ mb: 2 }}>
                     {createFileDialogError}
@@ -6081,38 +6222,28 @@ const FileManager = memo(
                   variant="outlined"
                   size="small"
                 />
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    mt: 2,
-                    gap: 1,
-                  }}
+              </DialogContent>
+              <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button
+                  onClick={handleCloseCreateFileDialog}
+                  color="inherit"
+                  size="small"
+                  disabled={createFileSubmitting}
                 >
-                  <Button
-                    onClick={() => {
-                      setShowCreateFileDialog(false);
-                      setCreateFileDialogError("");
-                    }}
-                    color="inherit"
-                    size="small"
-                    disabled={createFileSubmitting}
-                  >
-                    {t("common.cancel")}
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    color="primary"
-                    size="small"
-                    disabled={createFileSubmitting}
-                  >
-                    {t("common.save")}
-                  </Button>
-                </Box>
-              </form>
-            </Paper>
-          </Box>
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  disabled={createFileSubmitting}
+                >
+                  {t("common.save")}
+                </Button>
+              </DialogActions>
+            </Box>
+          </Dialog>
         )}
 
         {showPreview && filePreview && (
