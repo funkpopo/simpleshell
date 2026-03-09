@@ -8,6 +8,7 @@ import {
   ListItemButton,
   alpha,
   Chip,
+  Tooltip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
@@ -161,15 +162,16 @@ const WelcomePage = ({ topConnections, onOpenConnection }) => {
                 border: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
               }}
             >
-              <span
-                className={`fi fi-${connection.country.toLowerCase()}`}
-                title={countries[connection.country].name}
-                style={{
-                  fontSize: "0.8rem",
-                  borderRadius: "1px",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
-                }}
-              />
+              <Tooltip title={countries[connection.country].name}>
+                <span
+                  className={`fi fi-${connection.country.toLowerCase()}`}
+                  style={{
+                    fontSize: "0.8rem",
+                    borderRadius: "1px",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                  }}
+                />
+              </Tooltip>
             </Box>
           )}
         </Box>

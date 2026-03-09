@@ -135,7 +135,9 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
 
       // 调用立即测试的API
       if (window.terminalAPI && window.terminalAPI.testLatencyNow) {
-        const result = await window.terminalAPI.testLatencyNow(currentTabForLatency.id);
+        const result = await window.terminalAPI.testLatencyNow(
+          currentTabForLatency.id,
+        );
         if (!result.success) {
           console.error("延迟测试失败:", result.error);
           // 如果测试失败，恢复原状态
@@ -260,9 +262,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
       </Typography>
       <Typography variant="caption" sx={{ display: "block" }}>
         {t("latency.current")}:{" "}
-        {hasLatencyNumber
-          ? `${latencyData.latency}ms`
-          : t("latency.unknown")}
+        {hasLatencyNumber ? `${latencyData.latency}ms` : t("latency.unknown")}
       </Typography>
       <Typography variant="caption" sx={{ display: "block" }}>
         {t("latency.quality")}: {signalInfo.text}
@@ -285,7 +285,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
           display: "block",
           mt: 1,
           fontWeight: "bold",
-          color: "primary.main"
+          color: "primary.main",
         }}
       >
         💡 点击立即测试延迟
@@ -307,7 +307,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
           zIndex: 1000,
         };
 
-  const tooltipPlacement = placement === "inline" ? "bottom" : "bottom-end";
+  const tooltipPlacement = placement === "inline" ? "top" : "top-end";
 
   return (
     <Fade in={isVisible} timeout={300}>

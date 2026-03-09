@@ -1,5 +1,5 @@
 import React, { memo, useCallback } from "react";
-import { Box, Typography, Tab, GlobalStyles } from "@mui/material";
+import { Box, Typography, Tab, GlobalStyles, Tooltip } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { findGroupByTab } from "../core/syncInputGroups";
 
@@ -270,33 +270,34 @@ const CustomTab = memo((props) => {
           >
             {/* 分组圆点与编号 */}
             {group && (
-              <Box
-                sx={{
-                  width: 14, // 更紧凑
-                  height: 14,
-                  minWidth: 14,
-                  minHeight: 14,
-                  borderRadius: "50%",
-                  background: group.color,
-                  color: "#fff",
-                  fontSize: 10, // 编号更小更精致
-                  fontWeight: 600,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  mr: 1,
-                  ml: 0.2,
-                  border: "1.5px solid #fff",
-                  boxShadow: "0 0 0 1px rgba(0,0,0,0.10)",
-                  lineHeight: 1,
-                  p: 0,
-                  overflow: "hidden",
-                  transition: "box-shadow 0.2s",
-                }}
-                title={`同步分组 ${group.groupId}`}
-              >
-                {group.groupId.replace("G", "")}
-              </Box>
+              <Tooltip title={`同步分组 ${group.groupId}`}>
+                <Box
+                  sx={{
+                    width: 14, // 更紧凑
+                    height: 14,
+                    minWidth: 14,
+                    minHeight: 14,
+                    borderRadius: "50%",
+                    background: group.color,
+                    color: "#fff",
+                    fontSize: 10, // 编号更小更精致
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    mr: 1,
+                    ml: 0.2,
+                    border: "1.5px solid #fff",
+                    boxShadow: "0 0 0 1px rgba(0,0,0,0.10)",
+                    lineHeight: 1,
+                    p: 0,
+                    overflow: "hidden",
+                    transition: "box-shadow 0.2s",
+                  }}
+                >
+                  {group.groupId.replace("G", "")}
+                </Box>
+              </Tooltip>
             )}
             <Typography
               variant="body2"
@@ -365,9 +366,7 @@ const CustomTab = memo((props) => {
                 bottom: 4,
                 width: 3,
                 background: (theme) =>
-                  theme.palette.mode === "dark"
-                    ? "#66bb6a"
-                    : "#2e7d32",
+                  theme.palette.mode === "dark" ? "#66bb6a" : "#2e7d32",
                 borderRadius: "2px",
                 zIndex: 1002,
               },
@@ -382,9 +381,7 @@ const CustomTab = memo((props) => {
                 bottom: 4,
                 width: 3,
                 background: (theme) =>
-                  theme.palette.mode === "dark"
-                    ? "#66bb6a"
-                    : "#2e7d32",
+                  theme.palette.mode === "dark" ? "#66bb6a" : "#2e7d32",
                 borderRadius: "2px",
                 zIndex: 1002,
               },

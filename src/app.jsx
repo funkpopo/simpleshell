@@ -487,7 +487,7 @@ function AppContent() {
   const tabsRef = useRef(null);
   const dragRafRef = React.useRef(null);
   const pendingDragStateRef = React.useRef(null);
-  const sidebarTooltipPlacement = sidebarPosition === "left" ? "right" : "left";
+  const sidebarTooltipPlacement = "top";
 
   const handleTabsWheel = useCallback((event) => {
     const scroller = event.currentTarget;

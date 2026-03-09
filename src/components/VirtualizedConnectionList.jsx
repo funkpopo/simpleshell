@@ -17,6 +17,7 @@ import {
   Typography,
   useTheme,
   IconButton,
+  Tooltip,
 } from "@mui/material";
 import {
   Computer as ComputerIcon,
@@ -220,20 +221,22 @@ const ConnectionItem = memo(
               }}
             >
               {isGroup && (
-                <IconButton
-                  size="small"
-                  onClick={handleAddConnection}
-                  title="添加连接"
-                >
-                  <AddIcon fontSize="small" />
-                </IconButton>
+                <Tooltip title="添加连接">
+                  <IconButton size="small" onClick={handleAddConnection}>
+                    <AddIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               )}
-              <IconButton size="small" onClick={handleEdit} title="编辑">
-                <EditIcon fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={handleDelete} title="删除">
-                <DeleteIcon fontSize="small" />
-              </IconButton>
+              <Tooltip title="编辑">
+                <IconButton size="small" onClick={handleEdit}>
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="删除">
+                <IconButton size="small" onClick={handleDelete}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
             </Box>
           </ListItemButton>
         </ListItem>
