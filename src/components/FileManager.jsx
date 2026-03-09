@@ -66,46 +66,36 @@ import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
 
-const FILE_LIST_ROW_HEIGHT = 56;
+const FILE_LIST_ROW_HEIGHT = 36;
 const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
 const FILE_LIST_OVERSCAN = 12;
 
-const FILE_LIST_ITEM_MIN_HEIGHT = 52;
+const FILE_LIST_ITEM_MIN_HEIGHT = 32;
 
 const FILE_LIST_TEXT_SX = {
   my: 0,
   "& .MuiListItemText-primary": {
     fontSize: "0.875rem",
-    lineHeight: 1.3,
-    marginBottom: "3px",
+    lineHeight: 1.2,
+    marginBottom: "2px",
     fontWeight: 500,
-    display: "-webkit-box",
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: "vertical",
-    overflow: "hidden",
-    overflowWrap: "anywhere",
   },
   "& .MuiListItemText-secondary": {
     fontSize: "0.75rem",
-    lineHeight: 1.2,
+    lineHeight: 1.1,
     marginTop: 0,
-    display: "-webkit-box",
-    WebkitLineClamp: 1,
-    WebkitBoxOrient: "vertical",
-    overflow: "hidden",
-    overflowWrap: "anywhere",
   },
 };
 
 const FILE_LIST_PRIMARY_TYPOGRAPHY_PROPS = {
   variant: "body2",
-  noWrap: false,
+  noWrap: true,
 };
 
 const FILE_LIST_SECONDARY_TYPOGRAPHY_PROPS = {
   variant: "caption",
   color: "text.secondary",
-  noWrap: false,
+  noWrap: true,
 };
 
 const joinPath = (basePath, childName) => {
@@ -189,7 +179,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
             minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
             height: FILE_LIST_ITEM_MIN_HEIGHT,
             px: 1.5,
-            py: 0.75,
+            py: 0.5,
             borderRadius: 1,
             transition: "all 0.15s ease-in-out",
             userSelect: "none",
@@ -271,18 +261,6 @@ const FileManager = memo(
     }, [open]);
 
     useEffect(() => {
-      if (!showSearch) {
-        return;
-      }
-
-      const timeoutId = setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 0);
-
-      return () => clearTimeout(timeoutId);
-    }, [showSearch]);
-
-    useEffect(() => {
       if (!open) {
         setConnectionLoading(false);
         setConnectionLoadingMessage("");
@@ -302,6 +280,17 @@ const FileManager = memo(
     const [searchTerm, setSearchTerm] = useState("");
     const searchInputRef = useRef(null);
     const [showSearch, setShowSearch] = useState(false);
+    useEffect(() => {
+      if (!showSearch) {
+        return;
+      }
+
+      const timeoutId = setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 0);
+
+      return () => clearTimeout(timeoutId);
+    }, [showSearch]);
     const [selectedFile, setSelectedFile] = useState(null);
     const [selectedFiles, setSelectedFiles] = useState([]); // 多选文件列表
     const [, setLastSelectedIndex] = useState(-1); // 用于Shift范围选择
@@ -2122,6 +2111,10 @@ const FileManager = memo(
       [currentPath],
     );
 
+    const handleContextMenuClose = useCallback(() => {
+      setContextMenu(null);
+    }, []);
+
     const deleteFileWithRetry = useCallback(
       async (targetPath, isDirectory) => {
         const maxRetries = 3;
@@ -2488,11 +2481,6 @@ const FileManager = memo(
       },
       [isFileSelected],
     );
-
-    // 关闭右键菜单
-    const handleContextMenuClose = useCallback(() => {
-      setContextMenu(null);
-    }, []);
 
     // 缓存菜单显示逻辑，避免每次渲染时重新计算
     const menuItems = useMemo(() => {
@@ -3446,7 +3434,7 @@ const FileManager = memo(
                         minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
                         height: FILE_LIST_ITEM_MIN_HEIGHT,
                         px: 1.5,
-                        py: 0.75,
+                        py: 0.5,
                         borderRadius: 1,
                         transition: "all 0.15s ease-in-out",
                         userSelect: "none",
@@ -5434,110 +5422,134 @@ const FileManager = memo(
             px: 1.5,
             py: 1,
             display: "flex",
-            alignItems: "center",
+            flexDirection: "column",
             borderBottom: `1px solid ${theme.palette.divider}`,
-            gap: 0.75,
+            gap: 0.5,
             flexShrink: 0,
             backgroundColor: theme.palette.background.paper,
           }}
         >
-          <Tooltip title={t("fileManager.back")}>
-            <span>
-              <IconButton
-                size="small"
-                onClick={handleHistoryBack}
-                disabled={historyIndex <= 0}
-              >
-                <ArrowBackIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              minWidth: 0,
+              gap: 1,
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Tooltip title={t("fileManager.back")}>
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={handleHistoryBack}
+                    disabled={historyIndex <= 0}
+                  >
+                    <ArrowBackIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
 
-          <Tooltip title={t("fileManager.nextPath")}>
-            <span>
-              <IconButton
-                size="small"
-                onClick={handleGoToNextPath}
-                disabled={historyIndex >= pathHistory.length - 1}
-              >
-                <ArrowForwardIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
+              <Tooltip title={t("fileManager.nextPath")}>
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={handleGoToNextPath}
+                    disabled={historyIndex >= pathHistory.length - 1}
+                  >
+                    <ArrowForwardIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
 
-          <Tooltip title={t("fileManager.upLevel")}>
-            <span>
-              <IconButton
-                size="small"
-                onClick={handleGoUp}
-                disabled={!currentPath || currentPath === "/"}
-              >
-                <ArrowUpwardIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
+              <Tooltip title={t("fileManager.upLevel")}>
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={handleGoUp}
+                    disabled={!currentPath || currentPath === "/"}
+                  >
+                    <ArrowUpwardIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
 
-          <Tooltip title={t("fileManager.home")}>
-            <IconButton size="small" onClick={handleGoHome}>
-              <HomeIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+              <Tooltip title={t("fileManager.home")}>
+                <IconButton size="small" onClick={handleGoHome}>
+                  <HomeIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
 
-          <Tooltip title={t("fileManager.refresh")}>
-            <IconButton size="small" onClick={handleRefresh}>
-              <RefreshIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+              <Tooltip title={t("fileManager.refresh")}>
+                <IconButton size="small" onClick={handleRefresh}>
+                  <RefreshIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+
+            <Box
+              component="span"
+              sx={{
+                minWidth: 0,
+                fontSize: "0.75rem",
+                color: theme.palette.text.secondary,
+                opacity: 0.8,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                textAlign: "right",
+              }}
+            >
+              {t("fileManager.statusBar.lastRefresh", {
+                time: formatLastRefreshTime(lastRefreshTime),
+              })}
+            </Box>
+          </Box>
 
           <Box
             sx={{
               display: "flex",
               alignItems: "center",
-              ml: 1,
-              fontSize: "0.75rem",
-              color: theme.palette.text.secondary,
+              justifyContent: "space-between",
+              minWidth: 0,
+              gap: 1,
             }}
           >
-            <Tooltip title={t("fileManager.statusBar.lastRefresh")}>
-              <Box component="span" sx={{ fontSize: "0.75rem", opacity: 0.8 }}>
-                {t("fileManager.statusBar.lastRefresh", {
-                  time: formatLastRefreshTime(lastRefreshTime),
-                })}
-              </Box>
-            </Tooltip>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Tooltip
+                title={`${t("fileManager.createFile")} / ${t("fileManager.createFolder")}`}
+              >
+                <IconButton size="small" onClick={handleCreateMenuOpen}>
+                  <NoteAddIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title={t("fileManager.upload")}>
+                <IconButton size="small" onClick={handleUploadMenuOpen}>
+                  <UploadFileIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Tooltip title={t("fileManager.search")}>
+                <IconButton size="small" onClick={toggleSearch}>
+                  <SearchIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title={t("fileManager.sort")}>
+                <IconButton size="small" onClick={handleSortMenuOpen}>
+                  {sortMode === "time" ? (
+                    <AccessTimeIcon fontSize="small" />
+                  ) : (
+                    <SortByAlphaIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </Tooltip>
+            </Box>
           </Box>
-
-          <Box sx={{ flexGrow: 1 }} />
-
-          <Tooltip
-            title={`${t("fileManager.createFile")} / ${t("fileManager.createFolder")}`}
-          >
-            <IconButton size="small" onClick={handleCreateMenuOpen}>
-              <NoteAddIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={t("fileManager.upload")}>
-            <IconButton size="small" onClick={handleUploadMenuOpen}>
-              <UploadFileIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={t("fileManager.search")}>
-            <IconButton size="small" onClick={toggleSearch}>
-              <SearchIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={t("fileManager.sort")}>
-            <IconButton size="small" onClick={handleSortMenuOpen}>
-              {sortMode === "time" ? (
-                <AccessTimeIcon fontSize="small" />
-              ) : (
-                <SortByAlphaIcon fontSize="small" />
-              )}
-            </IconButton>
-          </Tooltip>
         </Box>
 
         <Box
