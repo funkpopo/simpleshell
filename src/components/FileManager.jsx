@@ -52,6 +52,7 @@ import LockIcon from "@mui/icons-material/Lock";
 import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import FilePreview from "./FilePreview.jsx";
 // TransferProgressFloat 已移至全局显示,不再导入
 import FilePermissionEditor from "./FilePermissionEditor.jsx";
@@ -241,11 +242,17 @@ const FileManager = memo(
     const [anchorIndex, setAnchorIndex] = useState(-1); // Shift选择的锚点索引
     const [showRenameDialog, setShowRenameDialog] = useState(false);
     const [newName, setNewName] = useState("");
+    const [renameDialogError, setRenameDialogError] = useState("");
+    const [renameSubmitting, setRenameSubmitting] = useState(false);
     const [blankContextMenu, setBlankContextMenu] = useState(null);
     const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
+    const [createFolderDialogError, setCreateFolderDialogError] = useState("");
+    const [createFolderSubmitting, setCreateFolderSubmitting] = useState(false);
     const [showCreateFileDialog, setShowCreateFileDialog] = useState(false);
     const [newFileName, setNewFileName] = useState("");
+    const [createFileDialogError, setCreateFileDialogError] = useState("");
+    const [createFileSubmitting, setCreateFileSubmitting] = useState(false);
     const [filePreview, setFilePreview] = useState(null);
     const [showPreview, setShowPreview] = useState(false);
     const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
@@ -261,10 +268,30 @@ const FileManager = memo(
     const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
     const [pathHistory, setPathHistory] = useState([]); // 路径历史记录
     const [historyIndex, setHistoryIndex] = useState(-1); // 当前在历史记录中的位置
+    const pathHistoryRef = useRef(pathHistory);
+    useEffect(() => {
+      pathHistoryRef.current = pathHistory;
+    }, [pathHistory]);
+    const historyIndexRef = useRef(historyIndex);
+    useEffect(() => {
+      historyIndexRef.current = historyIndex;
+    }, [historyIndex]);
     const skipInitialPathSyncRef = useRef(false);
     const previousInitialPathRef = useRef(initialPath);
     const [isDragging, setIsDragging] = useState(false); // 拖拽状态
     const [, setDragCounter] = useState(0); // 拖拽计数器，用于处理子元素的dragenter/dragleave
+    const selectedFileRef = useRef(selectedFile);
+    useEffect(() => {
+      selectedFileRef.current = selectedFile;
+    }, [selectedFile]);
+    const selectedFilesRef = useRef(selectedFiles);
+    useEffect(() => {
+      selectedFilesRef.current = selectedFiles;
+    }, [selectedFiles]);
+    const throttledLoadStateRef = useRef({
+      lastExecution: 0,
+      timeoutId: null,
+    });
 
     // 权限弹窗状态
     const [showPermissionDialog, setShowPermissionDialog] = useState(false);
@@ -293,6 +320,62 @@ const FileManager = memo(
       setLastSelectedIndex(-1);
       setAnchorIndex(-1);
     }, []);
+
+    const getSelectionIdentity = useCallback((file) => {
+      if (!file || typeof file.name !== "string") {
+        return "";
+      }
+      return `${file.isDirectory ? "dir" : "file"}:${file.name}`;
+    }, []);
+
+    const reconcileSelectionWithNextList = useCallback(
+      (nextList) => {
+        if (!Array.isArray(nextList) || nextList.length === 0) {
+          clearSelection();
+          return;
+        }
+
+        const nextEntriesByKey = new Map();
+        nextList.forEach((file, index) => {
+          nextEntriesByKey.set(getSelectionIdentity(file), { file, index });
+        });
+
+        const seenKeys = new Set();
+        const nextSelectedFiles = [];
+        selectedFilesRef.current.forEach((file) => {
+          const key = getSelectionIdentity(file);
+          const match = nextEntriesByKey.get(key);
+          if (key && match && !seenKeys.has(key)) {
+            seenKeys.add(key);
+            nextSelectedFiles.push(match.file);
+          }
+        });
+
+        const currentSelectedKey = getSelectionIdentity(
+          selectedFileRef.current,
+        );
+        const currentSelectedMatch = currentSelectedKey
+          ? nextEntriesByKey.get(currentSelectedKey)
+          : null;
+        const fallbackSelected = nextSelectedFiles[0] || null;
+        const nextSelectedFile = currentSelectedMatch?.file || fallbackSelected;
+        const nextAnchorIndex = currentSelectedMatch
+          ? currentSelectedMatch.index
+          : nextSelectedFile
+            ? nextList.findIndex(
+                (file) =>
+                  getSelectionIdentity(file) ===
+                  getSelectionIdentity(nextSelectedFile),
+              )
+            : -1;
+
+        setSelectedFiles(nextSelectedFiles);
+        setSelectedFile(nextSelectedFile);
+        setLastSelectedIndex(nextAnchorIndex);
+        setAnchorIndex(nextAnchorIndex);
+      },
+      [clearSelection, getSelectionIdentity],
+    );
 
     // 用于存储延迟移除定时器的引用
 
@@ -820,7 +903,7 @@ const FileManager = memo(
 
                 if (changed) {
                   setFiles(nextList);
-                  clearSelection();
+                  reconcileSelectionWithNextList(nextList);
                 }
 
                 stableListSignatureKeyRef.current = key;
@@ -919,7 +1002,7 @@ const FileManager = memo(
       toApiPath,
       makeListKey,
       computeFileListSignature,
-      clearSelection,
+      reconcileSelectionWithNextList,
       scheduleChunkingReset,
       markLastRefreshTime,
     ]);
@@ -1256,51 +1339,45 @@ const FileManager = memo(
       startBackgroundDirectoryRefresh,
     ]);
 
+    const updatePathHistoryState = useCallback((nextHistory, nextIndex) => {
+      pathHistoryRef.current = nextHistory;
+      historyIndexRef.current = nextIndex;
+      setPathHistory(nextHistory);
+      setHistoryIndex(nextIndex);
+    }, []);
+
     // 添加路径到历史记录
-    const addToHistory = (path) => {
-      setPathHistory((prev) => {
-        // 如果当前不在历史记录的末尾，删除后面的记录
-        const newHistory =
-          historyIndex >= 0 ? prev.slice(0, historyIndex + 1) : [];
+    const addToHistory = useCallback(
+      (path) => {
+        const currentHistory = Array.isArray(pathHistoryRef.current)
+          ? pathHistoryRef.current
+          : [];
+        const currentIndex = Number.isInteger(historyIndexRef.current)
+          ? historyIndexRef.current
+          : -1;
+        const baseHistory =
+          currentIndex >= 0 ? currentHistory.slice(0, currentIndex + 1) : [];
 
-        // 避免连续重复的路径
+        let nextHistory = baseHistory;
+        let nextIndex = currentIndex;
+
         if (
-          newHistory.length === 0 ||
-          newHistory[newHistory.length - 1] !== path
+          baseHistory.length === 0 ||
+          baseHistory[baseHistory.length - 1] !== path
         ) {
-          newHistory.push(path);
+          nextHistory = [...baseHistory, path];
+          if (nextHistory.length > 50) {
+            nextHistory = nextHistory.slice(-50);
+          }
+          nextIndex = nextHistory.length - 1;
+        } else {
+          nextIndex = baseHistory.length - 1;
         }
 
-        // 限制历史记录长度为50
-        if (newHistory.length > 50) {
-          newHistory.shift();
-        }
-
-        return newHistory;
-      });
-
-      setHistoryIndex((prev) => {
-        const newHistory = pathHistory.slice(0, historyIndex + 1);
-        if (
-          newHistory.length === 0 ||
-          newHistory[newHistory.length - 1] !== path
-        ) {
-          return newHistory.length;
-        }
-        return prev;
-      });
-    };
-
-    // 返回先前路径
-
-    // 前进到下一个路径
-    const handleGoToNextPath = () => {
-      if (historyIndex < pathHistory.length - 1) {
-        const nextPath = pathHistory[historyIndex + 1];
-        setHistoryIndex(historyIndex + 1);
-        loadDirectory(nextPath, 0, false, true); // 最后一个参数表示是历史导航
-      }
-    };
+        updatePathHistoryState(nextHistory, nextIndex);
+      },
+      [updatePathHistoryState],
+    );
 
     // 修改loadDirectory，添加刷新时间记录
     const loadDirectory = async (
@@ -1347,6 +1424,8 @@ const FileManager = memo(
         setIsChunking(false);
       }
 
+      const isPathChanged = path !== currentPathRef.current;
+
       // 如果不是强制刷新，尝试从缓存获取数据
       if (!forceRefresh) {
         const cachedData = getDirectoryFromCache(path);
@@ -1358,8 +1437,11 @@ const FileManager = memo(
           setFiles(cachedData);
           updateCurrentPath(path, isHistoryNavigation);
           setPathInput(path);
-          // 加载新目录时重置选中文件
-          setSelectedFile(null);
+          if (isPathChanged) {
+            clearSelection();
+          } else {
+            reconcileSelectionWithNextList(cachedData);
+          }
           return;
         }
       }
@@ -1374,7 +1456,6 @@ const FileManager = memo(
           return;
         }
 
-        const isPathChanged = path !== currentPathRef.current;
         if (isPathChanged) {
           // 进入新目录前同步清空 ref/state，避免旧列表在分片到达前残留
           filesRef.current = [];
@@ -1430,11 +1511,11 @@ const FileManager = memo(
             setFiles(fileData);
             updateCurrentPath(path, isHistoryNavigation); // 保持UI中显示~
             setPathInput(path);
-            // 加载新目录时重置选中文件
-            setSelectedFile(null);
-            setSelectedFiles([]);
-            setLastSelectedIndex(-1);
-            setAnchorIndex(-1);
+            if (isPathChanged) {
+              clearSelection();
+            } else {
+              reconcileSelectionWithNextList(fileData);
+            }
 
             // 分片加载在 done 时记录刷新时间；非分片在此处记录
             if (!(response.chunked && response.token)) {
@@ -1559,36 +1640,87 @@ const FileManager = memo(
       }
     };
 
+    const loadDirectoryRef = useRef(loadDirectory);
+    loadDirectoryRef.current = loadDirectory;
+
     // 刷新目录（强制从服务器重新加载）
 
     // 节流函数，用于限制连续的目录加载操作
-    const throttleLoadDirectory = (() => {
-      let lastExecution = 0;
-      let timeoutId = null;
+    const throttleLoadDirectory = useCallback(
+      (path, forceRefresh = false, isHistoryNavigation = false) => {
+        const throttleState = throttledLoadStateRef.current;
+        const invokeLoad = () => {
+          throttleState.lastExecution = Date.now();
+          throttleState.timeoutId = null;
+          if (typeof loadDirectoryRef.current === "function") {
+            loadDirectoryRef.current(
+              path,
+              0,
+              forceRefresh,
+              isHistoryNavigation,
+            );
+          }
+        };
 
-      return (path, forceRefresh = false) => {
         const now = Date.now();
-        const timeSinceLastCall = now - lastExecution;
+        const timeSinceLastCall = now - throttleState.lastExecution;
 
-        // 如果上次调用在300ms内，则防止立即执行
         if (timeSinceLastCall < 300) {
-          // 取消之前的定时器
-          if (timeoutId) {
-            clearTimeout(timeoutId);
+          if (throttleState.timeoutId) {
+            clearTimeout(throttleState.timeoutId);
           }
 
-          // 安排新的定时器
-          timeoutId = setTimeout(() => {
-            lastExecution = Date.now();
-            loadDirectory(path, 0, forceRefresh);
+          throttleState.timeoutId = setTimeout(() => {
+            invokeLoad();
           }, 300 - timeSinceLastCall);
-        } else {
-          // 如果距离上次调用超过300ms，则立即执行
-          lastExecution = now;
-          loadDirectory(path, 0, forceRefresh);
+          return;
+        }
+
+        if (throttleState.timeoutId) {
+          clearTimeout(throttleState.timeoutId);
+          throttleState.timeoutId = null;
+        }
+
+        invokeLoad();
+      },
+      [],
+    );
+
+    useEffect(() => {
+      return () => {
+        const timeoutId = throttledLoadStateRef.current.timeoutId;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
         }
       };
-    })();
+    }, []);
+
+    const handleHistoryBack = () => {
+      const currentIndex = historyIndexRef.current;
+      const history = pathHistoryRef.current;
+
+      if (currentIndex <= 0 || currentIndex >= history.length) {
+        return;
+      }
+
+      const nextIndex = currentIndex - 1;
+      updatePathHistoryState(history, nextIndex);
+      loadDirectory(history[nextIndex], 0, false, true);
+    };
+
+    // 前进到下一个路径
+    const handleGoToNextPath = () => {
+      const currentIndex = historyIndexRef.current;
+      const history = pathHistoryRef.current;
+
+      if (currentIndex < 0 || currentIndex >= history.length - 1) {
+        return;
+      }
+
+      const nextIndex = currentIndex + 1;
+      updatePathHistoryState(history, nextIndex);
+      loadDirectory(history[nextIndex], 0, false, true);
+    };
 
     // 进入目录
     const handleEnterDirectory = (path) => {
@@ -1596,25 +1728,17 @@ const FileManager = memo(
     };
 
     // 返回上级目录
-    const handleGoBack = () => {
-      // 如果当前在家目录，返回到根目录
+    const handleGoUp = () => {
       if (currentPath === "~") {
         throttleLoadDirectory("/");
         return;
       }
 
-      // 如果当前路径为空或根目录，不执行任何操作
       if (!currentPath || currentPath === "/") return;
 
       const lastSlashIndex = currentPath.lastIndexOf("/");
-      let parentPath = "";
-
-      if (lastSlashIndex > 0) {
-        parentPath = currentPath.substring(0, lastSlashIndex);
-      } else {
-        // 如果没有找到斜杠，或斜杠在开头位置，返回根目录
-        parentPath = "/";
-      }
+      const parentPath =
+        lastSlashIndex > 0 ? currentPath.substring(0, lastSlashIndex) : "/";
 
       throttleLoadDirectory(parentPath);
     };
@@ -1857,11 +1981,29 @@ const FileManager = memo(
           : [];
     }, [selectedFiles, selectedFile]);
 
+    const formatSelectedFilesSummary = useCallback(
+      (files, previewCount = 6) => {
+        const names = files
+          .map((file) => file?.name)
+          .filter((name) => typeof name === "string" && name.length > 0);
+
+        if (names.length <= previewCount) {
+          return names.join(", ");
+        }
+
+        return t("fileManager.messages.fileListSummary", {
+          shown: names.slice(0, previewCount).join(", "),
+          remaining: names.length - previewCount,
+        });
+      },
+      [t],
+    );
+
     // 处理批量操作确认 - 显示确认对话框
     const showBatchOperationConfirm = useCallback(
       (operation, files, onConfirm) => {
         const fileCount = files.length;
-        const fileList = files.map((f) => f.name).join(", ");
+        const fileList = formatSelectedFilesSummary(files);
         const message = t("fileManager.batchOperationConfirm", {
           operation,
           count: fileCount,
@@ -1876,7 +2018,188 @@ const FileManager = memo(
           confirmColor: "error",
         });
       },
-      [t],
+      [formatSelectedFilesSummary, t],
+    );
+
+    const showDeleteConfirm = useCallback(
+      (files, onConfirm) => {
+        if (!Array.isArray(files) || files.length === 0) {
+          return;
+        }
+
+        if (files.length === 1) {
+          setConfirmDialog({
+            open: true,
+            title: t("fileManager.confirmTitle"),
+            message: t("fileManager.messages.deleteConfirm", {
+              name: files[0].name,
+            }),
+            onConfirm,
+            confirmText: t("fileManager.delete"),
+            confirmColor: "error",
+          });
+          return;
+        }
+
+        showBatchOperationConfirm(t("fileManager.delete"), files, onConfirm);
+      },
+      [showBatchOperationConfirm, t],
+    );
+
+    const buildCurrentFilePath = useCallback(
+      (fileName) => {
+        return currentPath === "/"
+          ? "/" + fileName
+          : currentPath
+            ? currentPath + "/" + fileName
+            : fileName;
+      },
+      [currentPath],
+    );
+
+    const deleteFileWithRetry = useCallback(
+      async (file) => {
+        const maxRetries = 3;
+        const fullPath = buildCurrentFilePath(file.name);
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const response = await window.terminalAPI.deleteFile(
+              tabId,
+              fullPath,
+              file.isDirectory,
+            );
+
+            if (response?.success) {
+              return { success: true };
+            }
+
+            const responseError =
+              response?.error || t("fileManager.errors.deleteFailed");
+            const shouldRetry =
+              responseError.includes("SFTP错误") && attempt < maxRetries;
+
+            if (shouldRetry) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, 500 * (attempt + 1)),
+              );
+              continue;
+            }
+
+            return { success: false, error: responseError };
+          } catch (error) {
+            if (attempt < maxRetries) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, 500 * (attempt + 1)),
+              );
+              continue;
+            }
+
+            return {
+              success: false,
+              error: error?.message || t("fileManager.errors.unknownError"),
+            };
+          }
+        }
+
+        return {
+          success: false,
+          error: t("fileManager.errors.deleteFailed"),
+        };
+      },
+      [buildCurrentFilePath, t, tabId],
+    );
+
+    const executeDeleteFiles = useCallback(
+      async (filesToDelete) => {
+        if (!Array.isArray(filesToDelete) || filesToDelete.length === 0) {
+          return;
+        }
+
+        setIsDeleting(true);
+        setLoading(true);
+        setError(null);
+
+        const deletedFiles = [];
+        const failedFiles = [];
+
+        try {
+          if (!window.terminalAPI || !window.terminalAPI.deleteFile) {
+            showNotification(
+              t("fileManager.errors.fileApiNotAvailable"),
+              "error",
+            );
+            return;
+          }
+
+          for (const file of filesToDelete) {
+            const result = await deleteFileWithRetry(file);
+            if (result.success) {
+              deletedFiles.push(file);
+            } else {
+              failedFiles.push({
+                file,
+                error: result.error || t("fileManager.errors.deleteFailed"),
+              });
+            }
+          }
+
+          if (deletedFiles.length > 0) {
+            await loadDirectory(currentPath, 0, true);
+          }
+
+          if (failedFiles.length > 0) {
+            const failedSelection = failedFiles.map((item) => item.file);
+            setSelectedFiles(failedSelection);
+            setSelectedFile(failedSelection[0] || null);
+            setLastSelectedIndex(failedSelection.length > 0 ? 0 : -1);
+            setAnchorIndex(failedSelection.length > 0 ? 0 : -1);
+          } else {
+            clearSelection();
+          }
+
+          if (failedFiles.length === 0) {
+            showNotification(
+              t("fileManager.messages.deleteSuccessCount", {
+                count: deletedFiles.length,
+              }),
+              "success",
+            );
+            return;
+          }
+
+          const summaryMessage = t("fileManager.messages.deletePartialResult", {
+            deleted: deletedFiles.length,
+            failed: failedFiles.length,
+          });
+          const firstError = failedFiles[0]?.error;
+          showNotification(
+            firstError ? `${summaryMessage}：${firstError}` : summaryMessage,
+            deletedFiles.length > 0 ? "warning" : "error",
+            6000,
+          );
+        } catch (error) {
+          showNotification(
+            `${t("fileManager.errors.deleteFailed")}: ${error.message || t("fileManager.errors.unknownError")}`,
+            "error",
+            6000,
+          );
+        } finally {
+          setLoading(false);
+          setIsDeleting(false);
+          handleContextMenuClose();
+          setBlankContextMenu(null);
+        }
+      },
+      [
+        clearSelection,
+        currentPath,
+        deleteFileWithRetry,
+        handleContextMenuClose,
+        loadDirectory,
+        showNotification,
+        t,
+      ],
     );
 
     // 处理右键菜单 - 优化版本，立即显示菜单
@@ -2215,172 +2538,19 @@ const FileManager = memo(
       if (filesToDelete.length === 0) return;
       handleContextMenuClose();
 
-      // 实际执行删除的函数
-      const doDelete = async () => {
-        setIsDeleting(true);
-        setLoading(true);
-        setError(null);
-
-        try {
-          for (const file of filesToDelete) {
-            const fullPath =
-              currentPath === "/"
-                ? "/" + file.name
-                : currentPath
-                  ? currentPath + "/" + file.name
-                  : file.name;
-
-            if (window.terminalAPI && window.terminalAPI.deleteFile) {
-              const response = await window.terminalAPI.deleteFile(
-                tabId,
-                fullPath,
-                file.isDirectory,
-              );
-
-              if (!response?.success) {
-                setError(
-                  `${t("fileManager.errors.deleteFailed")} ${file.name}: ${response?.error || t("fileManager.errors.unknownError")}`,
-                );
-                break;
-              }
-            }
-          }
-
-          // 清除选择状态
-          setSelectedFile(null);
-          setSelectedFiles([]);
-          setLastSelectedIndex(-1);
-          setAnchorIndex(-1);
-
-          // 刷新目录
-          await loadDirectory(currentPath, 0, true);
-        } catch (error) {
-          setError(
-            t("fileManager.errors.deleteFailed") +
-              ": " +
-              (error.message || t("fileManager.errors.unknownError")),
-          );
-        } finally {
-          setLoading(false);
-          setIsDeleting(false);
-          handleContextMenuClose();
-          setBlankContextMenu(null);
-        }
-      };
-
-      // 显示确认对话框
-      showBatchOperationConfirm(
-        t("fileManager.delete"),
-        filesToDelete,
-        doDelete,
-      );
+      showDeleteConfirm(filesToDelete, () => executeDeleteFiles(filesToDelete));
     }, [
+      executeDeleteFiles,
       getSelectedFiles,
-      currentPath,
-      tabId,
-      t,
-      loadDirectory,
       handleContextMenuClose,
-      showBatchOperationConfirm,
+      showDeleteConfirm,
       setBlankContextMenu,
     ]);
 
     // 处理删除
-    const handleDelete = async () => {
-      if (isDeletingRef.current) return;
-      const filesToDelete = getSelectedFiles();
-      if (filesToDelete.length === 0) return;
-
-      handleContextMenuClose();
-      setBlankContextMenu(null);
-
-      if (filesToDelete.length > 1) {
-        return handleBatchDelete();
-      }
-
-      const fileToDelete = filesToDelete[0];
-      const fullPath =
-        currentPath === "/"
-          ? "/" + fileToDelete.name
-          : currentPath
-            ? currentPath + "/" + fileToDelete.name
-            : fileToDelete.name;
-      const maxRetries = 3;
-      let lastError = "";
-      let deleted = false;
-
-      setIsDeleting(true);
-      setLoading(true);
-      setError(null);
-      try {
-        if (!window.terminalAPI || !window.terminalAPI.deleteFile) {
-          setError(t("fileManager.errors.fileApiNotAvailable"));
-          return;
-        }
-
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
-            const response = await window.terminalAPI.deleteFile(
-              tabId,
-              fullPath,
-              fileToDelete.isDirectory,
-            );
-
-            if (response?.success) {
-              deleted = true;
-              break;
-            }
-
-            const responseError =
-              response?.error || t("fileManager.errors.deleteFailed");
-            const shouldRetry =
-              responseError.includes("SFTP错误") && attempt < maxRetries;
-
-            if (shouldRetry) {
-              setError(
-                t("fileManager.messages.retrying", {
-                  current: attempt + 1,
-                  max: maxRetries,
-                }),
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, 500 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            lastError = responseError;
-            break;
-          } catch (error) {
-            if (attempt < maxRetries) {
-              setError(
-                t("fileManager.messages.retrying", {
-                  current: attempt + 1,
-                  max: maxRetries,
-                }),
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, 500 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            lastError = error?.message || t("fileManager.errors.unknownError");
-          }
-        }
-
-        clearSelection();
-
-        if (deleted) {
-          await loadDirectory(currentPath, 0, true);
-        } else {
-          setError(lastError || t("fileManager.errors.deleteFailed"));
-        }
-      } finally {
-        setLoading(false);
-        setIsDeleting(false);
-      }
-    };
+    const handleDelete = useCallback(() => {
+      handleBatchDelete();
+    }, [handleBatchDelete]);
 
     // 处理上传文件到当前目录
     // 辅助函数：正确拼接路径，避免重复斜杠
@@ -2404,7 +2574,10 @@ const FileManager = memo(
       handleContextMenuClose();
       handleBlankContextMenuClose();
 
-      if (!sshConnection) return;
+      if (!sshConnection) {
+        showNotification(t("fileManager.errors.noConnection"), "warning");
+        return;
+      }
 
       setTransferCancelled(false);
 
@@ -2616,7 +2789,10 @@ const FileManager = memo(
       handleContextMenuClose();
       handleBlankContextMenuClose();
 
-      if (!sshConnection) return;
+      if (!sshConnection) {
+        showNotification(t("fileManager.errors.noConnection"), "warning");
+        return;
+      }
 
       setTransferCancelled(false);
 
@@ -3150,6 +3326,8 @@ const FileManager = memo(
     // 处理创建文件夹
     const handleCreateFolder = () => {
       setNewFolderName("");
+      setCreateFolderDialogError("");
+      setCreateFolderSubmitting(false);
       setShowCreateFolderDialog(true);
       handleBlankContextMenuClose();
     };
@@ -3158,97 +3336,100 @@ const FileManager = memo(
     const handleCreateFolderSubmit = async (e) => {
       e.preventDefault();
 
-      if (!newFolderName.trim() || !sshConnection) {
-        setShowCreateFolderDialog(false);
+      const folderName = newFolderName.trim();
+
+      if (!folderName) {
+        setCreateFolderDialogError(t("fileManager.errors.emptyName"));
         return;
       }
 
-      setLoading(true);
-      setError(null);
-      let retryCount = 0;
+      if (!sshConnection) {
+        setCreateFolderDialogError(t("fileManager.errors.noConnection"));
+        return;
+      }
+
+      if (!window.terminalAPI || !window.terminalAPI.createFolder) {
+        setCreateFolderDialogError(t("fileManager.errors.fileApiNotAvailable"));
+        return;
+      }
+
+      const fullPath =
+        currentPath === "/" ? "/" + folderName : currentPath + "/" + folderName;
       const maxRetries = 3;
 
-      const attemptCreateFolder = async () => {
-        try {
-          const fullPath =
-            currentPath === "/"
-              ? "/" + newFolderName.trim()
-              : currentPath + "/" + newFolderName.trim();
+      setCreateFolderSubmitting(true);
+      setLoading(true);
+      setError(null);
+      setCreateFolderDialogError("");
 
-          if (window.terminalAPI && window.terminalAPI.createFolder) {
+      try {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
             const response = await window.terminalAPI.createFolder(
               tabId,
               fullPath,
             );
 
             if (response?.success) {
-              // 成功创建文件夹，刷新目录
               await loadDirectory(currentPath, 0, true);
               setShowCreateFolderDialog(false);
-            } else if (
-              response?.error?.includes("SFTP错误") &&
-              retryCount < maxRetries
-            ) {
-              // SFTP错误，尝试重试
-              retryCount++;
-              setError(
+              setNewFolderName("");
+              return;
+            }
+
+            const responseError =
+              response?.error || t("fileManager.errors.createFolderFailed");
+            const shouldRetry =
+              responseError.includes("SFTP错误") && attempt < maxRetries;
+
+            if (shouldRetry) {
+              setCreateFolderDialogError(
                 t("fileManager.messages.createFolderFailedRetrying", {
-                  current: retryCount,
+                  current: attempt + 1,
                   max: maxRetries,
                 }),
               );
-
-              // 添加延迟后重试
-              setTimeout(attemptCreateFolder, 500 * retryCount);
-              return;
-            } else {
-              // 其他错误或已达到最大重试次数
-              setError(
-                response?.error || t("fileManager.errors.createFolderFailed"),
+              await new Promise((resolve) =>
+                setTimeout(resolve, 500 * (attempt + 1)),
               );
-              setShowCreateFolderDialog(false);
+              continue;
             }
-          } else {
-            setError(t("fileManager.errors.fileApiNotAvailable"));
-            setShowCreateFolderDialog(false);
-          }
-        } catch (error) {
-          // t("fileManager.errors.createFolderFailed")
 
-          if (retryCount < maxRetries) {
-            // 发生异常，尝试重试
-            retryCount++;
-            setError(
-              t("fileManager.messages.createFolderFailedRetrying", {
-                current: retryCount,
-                max: maxRetries,
-              }),
+            setCreateFolderDialogError(responseError);
+            return;
+          } catch (error) {
+            if (attempt < maxRetries) {
+              setCreateFolderDialogError(
+                t("fileManager.messages.createFolderFailedRetrying", {
+                  current: attempt + 1,
+                  max: maxRetries,
+                }),
+              );
+              await new Promise((resolve) =>
+                setTimeout(resolve, 500 * (attempt + 1)),
+              );
+              continue;
+            }
+
+            setCreateFolderDialogError(
+              t("fileManager.errors.createFolderFailed") +
+                ": " +
+                (error.message || t("fileManager.errors.unknownError")),
             );
-
-            // 添加延迟后重试
-            setTimeout(attemptCreateFolder, 500 * retryCount);
             return;
           }
-
-          setError(
-            t("fileManager.errors.createFolderFailed") +
-              ": " +
-              (error.message || t("fileManager.errors.unknownError")),
-          );
-          setShowCreateFolderDialog(false);
-        } finally {
-          if (retryCount === 0 || retryCount >= maxRetries) {
-            setLoading(false);
-          }
         }
-      };
-
-      attemptCreateFolder();
+      } finally {
+        setLoading(false);
+        setCreateFolderSubmitting(false);
+      }
     };
 
     // 处理创建文件
     const handleCreateFile = () => {
       setNewFileName("");
+      setCreateFileDialogError("");
+      setCreateFileSubmitting(false);
       setShowCreateFileDialog(true);
       handleBlankContextMenuClose();
     };
@@ -3257,40 +3438,52 @@ const FileManager = memo(
     const handleCreateFileSubmit = async (e) => {
       e.preventDefault();
 
-      if (!newFileName.trim() || !sshConnection) {
-        setShowCreateFileDialog(false);
+      const fileName = newFileName.trim();
+
+      if (!fileName) {
+        setCreateFileDialogError(t("fileManager.errors.emptyName"));
         return;
       }
 
+      if (!sshConnection) {
+        setCreateFileDialogError(t("fileManager.errors.noConnection"));
+        return;
+      }
+
+      if (!window.terminalAPI || !window.terminalAPI.createFile) {
+        setCreateFileDialogError(t("fileManager.errors.fileApiNotAvailable"));
+        return;
+      }
+
+      const fullPath =
+        currentPath === "/" ? "/" + fileName : currentPath + "/" + fileName;
+
+      setCreateFileSubmitting(true);
       setLoading(true);
+      setError(null);
+      setCreateFileDialogError("");
 
       try {
-        const fullPath =
-          currentPath === "/"
-            ? "/" + newFileName.trim()
-            : currentPath + "/" + newFileName.trim();
-
-        if (window.terminalAPI && window.terminalAPI.createFile) {
-          const result = await window.terminalAPI.createFile(tabId, fullPath);
-          if (result.success) {
-            await loadDirectory(currentPath, 0, true);
-          } else {
-            setError(
-              `${t("fileManager.errors.createFolderFailed")}: ${result.error || t("fileManager.errors.unknownError")}`,
-            );
-          }
-        } else {
-          setError(t("fileManager.errors.fileApiNotAvailable"));
+        const result = await window.terminalAPI.createFile(tabId, fullPath);
+        if (result?.success) {
+          await loadDirectory(currentPath, 0, true);
+          setShowCreateFileDialog(false);
+          setNewFileName("");
+          return;
         }
+
+        setCreateFileDialogError(
+          `${t("fileManager.errors.createFileFailed")}: ${result?.error || t("fileManager.errors.unknownError")}`,
+        );
       } catch (error) {
-        setError(
-          t("fileManager.errors.createFolderFailed") +
+        setCreateFileDialogError(
+          t("fileManager.errors.createFileFailed") +
             ": " +
             (error.message || t("fileManager.errors.unknownError")),
         );
       } finally {
         setLoading(false);
-        setShowCreateFileDialog(false);
+        setCreateFileSubmitting(false);
       }
     };
 
@@ -4441,6 +4634,8 @@ const FileManager = memo(
     const handleRename = async () => {
       if (!selectedFile) return;
       setNewName(selectedFile.name);
+      setRenameDialogError("");
+      setRenameSubmitting(false);
       // 打开重命名对话框
       setShowRenameDialog(true);
       handleContextMenuClose();
@@ -4449,93 +4644,103 @@ const FileManager = memo(
     // 处理重命名提交
     const handleRenameSubmit = async (e) => {
       e.preventDefault();
-      setShowRenameDialog(false);
 
       if (!selectedFile) return;
 
+      if (!newName.trim()) {
+        setRenameDialogError(t("fileManager.errors.emptyName"));
+        return;
+      }
+
+      if (!sshConnection) {
+        setRenameDialogError(t("fileManager.errors.noConnection"));
+        return;
+      }
+
+      if (!window.terminalAPI || !window.terminalAPI.renameFile) {
+        setRenameDialogError(t("fileManager.errors.fileApiNotAvailable"));
+        return;
+      }
+
       // 检查是否有更改
       const nameChanged = newName && newName !== selectedFile.name;
-      if (!nameChanged) return;
+      if (!nameChanged) {
+        setShowRenameDialog(false);
+        return;
+      }
 
-      setLoading(true);
-      setError(null);
-      let retryCount = 0;
+      const oldPath =
+        currentPath === "/"
+          ? "/" + selectedFile.name
+          : currentPath
+            ? currentPath + "/" + selectedFile.name
+            : selectedFile.name;
       const maxRetries = 3;
 
-      const attemptUpdate = async () => {
-        try {
-          const oldPath =
-            currentPath === "/"
-              ? "/" + selectedFile.name
-              : currentPath
-                ? currentPath + "/" + selectedFile.name
-                : selectedFile.name;
+      setRenameSubmitting(true);
+      setLoading(true);
+      setError(null);
+      setRenameDialogError("");
 
-          // 如果需要重命名
-          if (
-            nameChanged &&
-            window.terminalAPI &&
-            window.terminalAPI.renameFile
-          ) {
+      try {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
             const renameResponse = await window.terminalAPI.renameFile(
               tabId,
               oldPath,
               newName,
             );
 
-            if (!renameResponse?.success) {
-              if (
-                renameResponse?.error?.includes("SFTP错误") &&
-                retryCount < maxRetries
-              ) {
-                // SFTP错误，尝试重试
-                retryCount++;
-                setError(
-                  t("fileManager.messages.updateFailedRetrying", {
-                    current: retryCount,
-                    max: maxRetries,
-                  }),
-                );
-                setTimeout(attemptUpdate, 500 * retryCount);
-                return;
-              } else {
-                // 重命名失败
-                setError(renameResponse?.error || "重命名失败");
-                return;
-              }
+            if (renameResponse?.success) {
+              await loadDirectory(currentPath, 0, true);
+              setShowRenameDialog(false);
+              return;
             }
-          }
 
-          // 重命名窗口中不再处理权限变更
+            const responseError =
+              renameResponse?.error || t("fileManager.errors.renameFailed");
+            const shouldRetry =
+              responseError.includes("SFTP错误") && attempt < maxRetries;
 
-          // 操作成功，刷新目录
-          await loadDirectory(currentPath, 0, true);
-        } catch (error) {
-          // 操作失败
-          if (retryCount < maxRetries) {
-            // 发生异常，尝试重试
-            retryCount++;
-            setError(
-              t("fileManager.messages.updateFailedRetrying", {
-                current: retryCount,
-                max: maxRetries,
-              }),
+            if (shouldRetry) {
+              setRenameDialogError(
+                t("fileManager.messages.updateFailedRetrying", {
+                  current: attempt + 1,
+                  max: maxRetries,
+                }),
+              );
+              await new Promise((resolve) =>
+                setTimeout(resolve, 500 * (attempt + 1)),
+              );
+              continue;
+            }
+
+            setRenameDialogError(responseError);
+            return;
+          } catch (error) {
+            if (attempt < maxRetries) {
+              setRenameDialogError(
+                t("fileManager.messages.updateFailedRetrying", {
+                  current: attempt + 1,
+                  max: maxRetries,
+                }),
+              );
+              await new Promise((resolve) =>
+                setTimeout(resolve, 500 * (attempt + 1)),
+              );
+              continue;
+            }
+
+            setRenameDialogError(
+              `${t("fileManager.errors.updateFailed")}: ${error.message || t("fileManager.errors.unknownError")}`,
             );
-            setTimeout(attemptUpdate, 500 * retryCount);
             return;
           }
-
-          setError(
-            `${t("fileManager.errors.updateFailed")}: ${error.message || t("fileManager.errors.unknownError")}`,
-          );
-        } finally {
-          if (retryCount === 0 || retryCount >= maxRetries) {
-            setLoading(false);
-          }
         }
-      };
-
-      attemptUpdate();
+      } finally {
+        setLoading(false);
+        setRenameSubmitting(false);
+      }
     };
 
     // 重命名不再处理权限变化
@@ -4902,10 +5107,8 @@ const FileManager = memo(
             <span>
               <IconButton
                 size="small"
-                onClick={handleGoBack}
-                disabled={
-                  !currentPath || (currentPath === "/" && currentPath !== "~")
-                }
+                onClick={handleHistoryBack}
+                disabled={historyIndex <= 0}
               >
                 <ArrowBackIcon fontSize="small" />
               </IconButton>
@@ -4920,6 +5123,18 @@ const FileManager = memo(
                 disabled={historyIndex >= pathHistory.length - 1}
               >
                 <ArrowForwardIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+
+          <Tooltip title={t("fileManager.upLevel")}>
+            <span>
+              <IconButton
+                size="small"
+                onClick={handleGoUp}
+                disabled={!currentPath || currentPath === "/"}
+              >
+                <ArrowUpwardIcon fontSize="small" />
               </IconButton>
             </span>
           </Tooltip>
@@ -5405,6 +5620,9 @@ const FileManager = memo(
               <Typography variant="subtitle1">编辑文件/文件夹</Typography>
               <form onSubmit={handleRenameSubmit}>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {renameDialogError ? (
+                    <Alert severity="error">{renameDialogError}</Alert>
+                  ) : null}
                   <TextField
                     fullWidth
                     label="新名称"
@@ -5426,9 +5644,13 @@ const FileManager = memo(
                     }}
                   >
                     <Button
-                      onClick={() => setShowRenameDialog(false)}
+                      onClick={() => {
+                        setShowRenameDialog(false);
+                        setRenameDialogError("");
+                      }}
                       color="inherit"
                       size="small"
+                      disabled={renameSubmitting}
                     >
                       {t("common.cancel")}
                     </Button>
@@ -5437,6 +5659,7 @@ const FileManager = memo(
                       variant="contained"
                       color="primary"
                       size="small"
+                      disabled={renameSubmitting}
                     >
                       {t("common.save")}
                     </Button>
@@ -5688,6 +5911,11 @@ const FileManager = memo(
                 {t("fileManager.createFolder")}
               </Typography>
               <form onSubmit={handleCreateFolderSubmit}>
+                {createFolderDialogError ? (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    {createFolderDialogError}
+                  </Alert>
+                ) : null}
                 <TextField
                   fullWidth
                   label={t("fileManager.createFolder")}
@@ -5706,9 +5934,13 @@ const FileManager = memo(
                   }}
                 >
                   <Button
-                    onClick={() => setShowCreateFolderDialog(false)}
+                    onClick={() => {
+                      setShowCreateFolderDialog(false);
+                      setCreateFolderDialogError("");
+                    }}
                     color="inherit"
                     size="small"
+                    disabled={createFolderSubmitting}
                   >
                     {t("common.cancel")}
                   </Button>
@@ -5717,6 +5949,7 @@ const FileManager = memo(
                     variant="contained"
                     color="primary"
                     size="small"
+                    disabled={createFolderSubmitting}
                   >
                     {t("common.save")}
                   </Button>
@@ -5755,6 +5988,11 @@ const FileManager = memo(
                 {t("fileManager.createFile")}
               </Typography>
               <form onSubmit={handleCreateFileSubmit}>
+                {createFileDialogError ? (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    {createFileDialogError}
+                  </Alert>
+                ) : null}
                 <TextField
                   fullWidth
                   label={t("fileManager.createFile")}
@@ -5773,9 +6011,13 @@ const FileManager = memo(
                   }}
                 >
                   <Button
-                    onClick={() => setShowCreateFileDialog(false)}
+                    onClick={() => {
+                      setShowCreateFileDialog(false);
+                      setCreateFileDialogError("");
+                    }}
                     color="inherit"
                     size="small"
+                    disabled={createFileSubmitting}
                   >
                     {t("common.cancel")}
                   </Button>
@@ -5784,6 +6026,7 @@ const FileManager = memo(
                     variant="contained"
                     color="primary"
                     size="small"
+                    disabled={createFileSubmitting}
                   >
                     {t("common.save")}
                   </Button>
