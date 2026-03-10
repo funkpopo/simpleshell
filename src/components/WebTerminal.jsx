@@ -2843,6 +2843,57 @@ const WebTerminal = ({
           }
           return value;
         };
+        const isValidIpv4Like = (value) => {
+          if (!ipv4LikeRegex.test(value)) {
+            return false;
+          }
+
+          const [hostAndPort] = value.split("/");
+          const [host, port] = hostAndPort.split(":");
+          const octets = host.split(".");
+          if (octets.length !== 4) {
+            return false;
+          }
+
+          const isValidOctet = octets.every((octet) => {
+            if (!/^\d{1,3}$/.test(octet)) {
+              return false;
+            }
+            const numeric = Number(octet);
+            return Number.isInteger(numeric) && numeric >= 0 && numeric <= 255;
+          });
+
+          if (!isValidOctet) {
+            return false;
+          }
+
+          if (port == null || port === "") {
+            return true;
+          }
+
+          if (!/^\d{1,5}$/.test(port)) {
+            return false;
+          }
+
+          const numericPort = Number(port);
+          return (
+            Number.isInteger(numericPort) &&
+            numericPort >= 1 &&
+            numericPort <= 65535
+          );
+        };
+        const isValidExternalUrl = (originalValue, normalizedValue) => {
+          if (ipv4LikeRegex.test(originalValue)) {
+            return isValidIpv4Like(originalValue);
+          }
+
+          try {
+            const parsed = new URL(normalizedValue);
+            return parsed.protocol === "http:" || parsed.protocol === "https:";
+          } catch {
+            return false;
+          }
+        };
         term.registerLinkProvider({
           provideLinks: (y, callback) => {
             const buffer = term.buffer.active;
@@ -2893,41 +2944,9 @@ const WebTerminal = ({
               offset += text.length;
             }
 
-            const targetSegment = segments.find(
-              (seg) => seg.lineIndex === targetLineIndex,
-            );
-            if (!targetSegment) {
-              callback([]);
-              return;
-            }
-
             const fullText = segments.map((seg) => seg.text).join("");
             const links = [];
             let match = null;
-
-            const mapOffsetToBufferPos = (offset, isEndExclusive = false) => {
-              if (segments.length === 0) {
-                return null;
-              }
-
-              for (let i = 0; i < segments.length; i += 1) {
-                const seg = segments[i];
-                if (offset < seg.endOffset) {
-                  const localOffset = offset - seg.startOffset;
-                  return { x: localOffset + 1, y: seg.lineIndex + 1 };
-                }
-
-                if (isEndExclusive && offset === seg.endOffset) {
-                  if (i < segments.length - 1) {
-                    return { x: 1, y: segments[i + 1].lineIndex + 1 };
-                  }
-                  return { x: seg.text.length + 1, y: seg.lineIndex + 1 };
-                }
-              }
-
-              const lastSeg = segments[segments.length - 1];
-              return { x: lastSeg.text.length + 1, y: lastSeg.lineIndex + 1 };
-            };
 
             simpleUrlRegex.lastIndex = 0;
             while ((match = simpleUrlRegex.exec(fullText)) !== null) {
@@ -2938,31 +2957,45 @@ const WebTerminal = ({
               }
 
               const fullUrl = trimmedUrl;
-              const externalUrl = normalizeExternalUrl(fullUrl);
               const globalStart = match.index;
+              const externalUrl = normalizeExternalUrl(fullUrl);
+              if (!isValidExternalUrl(fullUrl, externalUrl)) {
+                if (trimmedUrl.length !== rawUrl.length) {
+                  simpleUrlRegex.lastIndex = globalStart + trimmedUrl.length;
+                }
+                continue;
+              }
               const globalEndExclusive = globalStart + fullUrl.length;
 
-              // 仅当匹配与当前行有交集时才返回，避免无关行重复注册
-              const intersectsCurrentLine =
-                globalStart < targetSegment.endOffset &&
-                globalEndExclusive > targetSegment.startOffset;
-              if (intersectsCurrentLine) {
-                const rangeStart = mapOffsetToBufferPos(globalStart, false);
-                const rangeEnd = mapOffsetToBufferPos(globalEndExclusive, true);
-
-                if (rangeStart && rangeEnd) {
-                  links.push({
-                    text: fullUrl,
-                    range: {
-                      start: rangeStart,
-                      end: rangeEnd,
-                    },
-                    activate: (event) => {
-                      event?.preventDefault?.();
-                      void openExternalUrl(externalUrl);
-                    },
-                  });
+              for (const seg of segments) {
+                if (seg.lineIndex !== targetLineIndex) {
+                  continue;
                 }
+
+                const intersectStart = Math.max(globalStart, seg.startOffset);
+                const intersectEndExclusive = Math.min(
+                  globalEndExclusive,
+                  seg.endOffset,
+                );
+                if (intersectStart >= intersectEndExclusive) {
+                  continue;
+                }
+
+                const localStart = intersectStart - seg.startOffset;
+                const localEndExclusive =
+                  intersectEndExclusive - seg.startOffset;
+
+                links.push({
+                  text: fullUrl,
+                  range: {
+                    start: { x: localStart + 1, y },
+                    end: { x: localEndExclusive, y },
+                  },
+                  activate: (event) => {
+                    event?.preventDefault?.();
+                    void openExternalUrl(externalUrl);
+                  },
+                });
               }
 
               // 避免 rawUrl 被裁剪后，正则 lastIndex 指向错误位置

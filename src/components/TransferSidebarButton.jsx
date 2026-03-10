@@ -40,6 +40,8 @@ const TransferSidebarButton = memo(
       };
     }, [allTransfers]);
 
+    const showProgressRing = hasActiveTransfers && !isOpen;
+
     return (
       <Tooltip title={tooltip} placement={tooltipPlacement}>
         <Box
@@ -53,7 +55,7 @@ const TransferSidebarButton = memo(
           }}
         >
           {/* 环形进度条背景 */}
-          {hasActiveTransfers && (
+          {showProgressRing && (
             <CircularProgress
               variant="determinate"
               value={100}
@@ -66,7 +68,7 @@ const TransferSidebarButton = memo(
             />
           )}
           {/* 环形进度条 */}
-          {hasActiveTransfers && (
+          {showProgressRing && (
             <CircularProgress
               variant="determinate"
               value={totalProgress}

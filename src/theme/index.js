@@ -310,6 +310,10 @@ export const createUnifiedTheme = (darkMode) =>
       MuiTooltip: {
         defaultProps: {
           placement: "top",
+          disableInteractive: true,
+          enterDelay: 350,
+          enterNextDelay: 120,
+          leaveDelay: 60,
         },
         styleOverrides: {
           tooltip: {
@@ -319,6 +323,18 @@ export const createUnifiedTheme = (darkMode) =>
               ? "rgba(97, 97, 97, 0.95)"
               : "rgba(97, 97, 97, 0.9)",
             boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+          },
+          tooltipPlacementTop: {
+            marginBottom: 4,
+          },
+          tooltipPlacementBottom: {
+            marginTop: 4,
+          },
+          tooltipPlacementLeft: {
+            marginRight: 4,
+          },
+          tooltipPlacementRight: {
+            marginLeft: 4,
           },
         },
       },
