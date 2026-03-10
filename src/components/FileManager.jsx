@@ -5532,12 +5532,76 @@ const FileManager = memo(
               </Tooltip>
             </Box>
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Tooltip title={t("fileManager.search")}>
-                <IconButton size="small" onClick={toggleSearch}>
-                  <SearchIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                flex: 1,
+                gap: 0.5,
+                minWidth: 0,
+              }}
+            >
+              {showSearch && (
+                <TextField
+                  inputRef={searchInputRef}
+                  size="small"
+                  placeholder={t("fileManager.search")}
+                  value={searchTerm}
+                  onChange={handleSearchChange}
+                  variant="outlined"
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            if (searchTerm) {
+                              setSearchTerm("");
+                              return;
+                            }
+                            setShowSearch(false);
+                          }}
+                          edge="end"
+                        >
+                          <ClearIcon fontSize="small" />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    "& .MuiOutlinedInput-root": {
+                      borderRadius: 1.5,
+                      backgroundColor:
+                        theme.palette.mode === "dark"
+                          ? alpha(theme.palette.background.default, 0.5)
+                          : theme.palette.background.default,
+                      transition: "all 0.2s ease",
+                      "&:hover": {
+                        backgroundColor: theme.palette.background.paper,
+                      },
+                      "&.Mui-focused": {
+                        backgroundColor: theme.palette.background.paper,
+                      },
+                    },
+                  }}
+                />
+              )}
+
+              {!showSearch && (
+                <Tooltip title={t("fileManager.search")}>
+                  <IconButton size="small" onClick={toggleSearch}>
+                    <SearchIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
 
               <Tooltip title={t("fileManager.sort")}>
                 <IconButton size="small" onClick={handleSortMenuOpen}>
@@ -5598,59 +5662,6 @@ const FileManager = memo(
               },
             }}
           />
-
-          {showSearch && (
-            <TextField
-              inputRef={searchInputRef}
-              size="small"
-              placeholder={t("fileManager.search")}
-              value={searchTerm}
-              onChange={handleSearchChange}
-              variant="outlined"
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        if (searchTerm) {
-                          setSearchTerm("");
-                          return;
-                        }
-                        setShowSearch(false);
-                      }}
-                      edge="end"
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                width: 140,
-                flexShrink: 0,
-                "& .MuiOutlinedInput-root": {
-                  borderRadius: 1.5,
-                  backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? alpha(theme.palette.background.default, 0.5)
-                      : theme.palette.background.default,
-                  transition: "all 0.2s ease",
-                  "&:hover": {
-                    backgroundColor: theme.palette.background.paper,
-                  },
-                  "&.Mui-focused": {
-                    backgroundColor: theme.palette.background.paper,
-                  },
-                },
-              }}
-            />
-          )}
         </Box>
 
         <Box
