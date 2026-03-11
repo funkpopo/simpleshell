@@ -309,11 +309,6 @@ export class TerminalPerformanceMonitor {
     if (this.onWarning) {
       this.onWarning(warning);
     }
-
-    // 开发模式下输出到控制台
-    if (process.env.NODE_ENV === 'development') {
-      console.warn(`[TerminalPerformanceMonitor] ${message}`);
-    }
   }
 
   /**
