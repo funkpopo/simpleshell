@@ -66,6 +66,8 @@ import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
 
+const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
+
 const FILE_LIST_ROW_HEIGHT = 36;
 const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
 const FILE_LIST_OVERSCAN = 12;
@@ -96,6 +98,51 @@ const FILE_LIST_SECONDARY_TYPOGRAPHY_PROPS = {
   variant: "caption",
   color: "text.secondary",
   noWrap: true,
+};
+
+const getSearchFieldMotionSx = (
+  theme,
+  {
+    borderRadius = 1.5,
+    backgroundColor = theme.palette.mode === "dark"
+      ? alpha(theme.palette.background.default, 0.5)
+      : theme.palette.background.default,
+    hoverBackgroundColor = theme.palette.background.paper,
+    focusedBackgroundColor = theme.palette.background.paper,
+  } = {},
+) => {
+  const focusOutlineColor =
+    theme.palette.mode === "dark"
+      ? alpha(theme.palette.primary.light, 0.28)
+      : alpha(theme.palette.primary.main, 0.22);
+  const focusShadowColor =
+    theme.palette.mode === "dark"
+      ? alpha(theme.palette.primary.main, 0.3)
+      : alpha(theme.palette.primary.main, 0.16);
+
+  return {
+    "& .MuiOutlinedInput-root": {
+      borderRadius,
+      backgroundColor,
+      transition:
+        "transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
+      transformOrigin: "center",
+      "&:hover": {
+        backgroundColor: hoverBackgroundColor,
+      },
+      "&.Mui-focused": {
+        backgroundColor: focusedBackgroundColor,
+        transform: "scale(1.01)",
+        boxShadow: `0 0 0 1px ${focusOutlineColor}, 0 10px 24px ${focusShadowColor}`,
+      },
+      [REDUCED_MOTION_QUERY]: {
+        transition: "box-shadow 0.2s ease, background-color 0.2s ease",
+        "&.Mui-focused": {
+          transform: "none",
+        },
+      },
+    },
+  };
 };
 
 const joinPath = (basePath, childName) => {
@@ -5577,20 +5624,15 @@ const FileManager = memo(
                   sx={{
                     flex: 1,
                     minWidth: 0,
-                    "& .MuiOutlinedInput-root": {
+                    ...getSearchFieldMotionSx(theme, {
                       borderRadius: 1.5,
                       backgroundColor:
                         theme.palette.mode === "dark"
                           ? alpha(theme.palette.background.default, 0.5)
                           : theme.palette.background.default,
-                      transition: "all 0.2s ease",
-                      "&:hover": {
-                        backgroundColor: theme.palette.background.paper,
-                      },
-                      "&.Mui-focused": {
-                        backgroundColor: theme.palette.background.paper,
-                      },
-                    },
+                      hoverBackgroundColor: theme.palette.background.paper,
+                      focusedBackgroundColor: theme.palette.background.paper,
+                    }),
                   }}
                 />
               )}

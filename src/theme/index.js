@@ -1,4 +1,37 @@
+import { createElement, forwardRef } from "react";
+import Grow from "@mui/material/Grow";
+import Slide from "@mui/material/Slide";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { createTheme } from "@mui/material/styles";
+
+const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
+const PRESS_TRANSITION =
+  "transform 100ms ease-out, box-shadow 0.2s ease, background-color 0.2s ease";
+
+const DialogGrowTransition = forwardRef(
+  function DialogGrowTransition(props, ref) {
+    const prefersReducedMotion = useMediaQuery(REDUCED_MOTION_QUERY);
+
+    return createElement(Grow, {
+      ...props,
+      timeout: prefersReducedMotion ? 0 : props.timeout,
+      ref,
+    });
+  },
+);
+
+const SnackbarSlideTransition = forwardRef(
+  function SnackbarSlideTransition(props, ref) {
+    const prefersReducedMotion = useMediaQuery(REDUCED_MOTION_QUERY);
+
+    return createElement(Slide, {
+      ...props,
+      direction: "left",
+      timeout: prefersReducedMotion ? 0 : props.timeout,
+      ref,
+    });
+  },
+);
 
 /**
  * 创建统一的Material-UI主题配置
@@ -84,9 +117,19 @@ export const createUnifiedTheme = (darkMode) =>
             textTransform: "none",
             fontWeight: 600,
             boxShadow: "none",
-            transition: "all 0.2s ease",
+            transition: PRESS_TRANSITION,
+            transform: "translateZ(0)",
             "&:hover": {
               boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            },
+            "&:active": {
+              transform: "scale(0.97)",
+            },
+            [REDUCED_MOTION_QUERY]: {
+              transition: "box-shadow 0.2s ease, background-color 0.2s ease",
+              "&:active": {
+                transform: "none",
+              },
             },
           },
           contained: {
@@ -189,12 +232,25 @@ export const createUnifiedTheme = (darkMode) =>
         styleOverrides: {
           root: {
             borderRadius: 8,
-            transition: "all 0.2s ease",
+            transition: PRESS_TRANSITION,
+            transform: "translateZ(0)",
             "&:hover": {
               backgroundColor: darkMode
                 ? "rgba(255,255,255,0.08)"
                 : "rgba(0,0,0,0.06)",
               transform: "scale(1.05)",
+            },
+            "&:active": {
+              transform: "scale(0.94)",
+            },
+            [REDUCED_MOTION_QUERY]: {
+              transition: "background-color 0.2s ease",
+              "&:hover": {
+                transform: "none",
+              },
+              "&:active": {
+                transform: "none",
+              },
             },
           },
         },
@@ -202,11 +258,34 @@ export const createUnifiedTheme = (darkMode) =>
 
       // 统一对话框样式
       MuiDialog: {
+        defaultProps: {
+          slots: {
+            transition: DialogGrowTransition,
+          },
+          transitionDuration: {
+            enter: 220,
+            exit: 180,
+          },
+        },
         styleOverrides: {
           paper: {
             borderRadius: 12,
             backgroundImage: "none",
             border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"}`,
+            transformOrigin: "center top",
+            willChange: "transform, opacity",
+          },
+        },
+      },
+
+      MuiSnackbar: {
+        defaultProps: {
+          slots: {
+            transition: SnackbarSlideTransition,
+          },
+          transitionDuration: {
+            enter: 300,
+            exit: 220,
           },
         },
       },
