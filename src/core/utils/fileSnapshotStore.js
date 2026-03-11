@@ -163,13 +163,15 @@ class FileSnapshotStore {
     const fileDir = this.getFileDirectory(tabId, filePath);
     const entries = await this.loadIndex(fileDir);
 
-    return entries.map((entry) => ({
-      id: entry.id,
-      createdAt: entry.createdAt,
-      label: entry.label,
-      type: entry.type,
-      size: entry.size,
-    }));
+    return entries
+      .filter((entry) => entry.type !== "rollback-backup")
+      .map((entry) => ({
+        id: entry.id,
+        createdAt: entry.createdAt,
+        label: entry.label,
+        type: entry.type,
+        size: entry.size,
+      }));
   }
 
   async createSnapshot(tabId, filePath, content, options = {}) {
@@ -193,7 +195,7 @@ class FileSnapshotStore {
       .digest("hex");
     const latest = currentEntries[0];
 
-    if (latest?.contentHash === contentHash) {
+    if (!options.force && latest?.contentHash === contentHash) {
       return {
         success: true,
         deduplicated: true,
@@ -211,7 +213,16 @@ class FileSnapshotStore {
       typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    const createdAt = new Date().toISOString();
+    const createdAt = (() => {
+      if (typeof options.createdAt !== "string") {
+        return new Date().toISOString();
+      }
+
+      const parsed = new Date(options.createdAt);
+      return Number.isNaN(parsed.getTime())
+        ? new Date().toISOString()
+        : parsed.toISOString();
+    })();
     const maxEntries = Math.max(
       1,
       Number(options.maxEntries) || DEFAULT_MAX_SNAPSHOTS_PER_FILE,

@@ -60,6 +60,11 @@ class SftpHandlers {
         handler: this.createFileSnapshot.bind(this),
       },
       {
+        channel: "getFileSnapshot",
+        category: "sftp",
+        handler: this.getFileSnapshot.bind(this),
+      },
+      {
         channel: "restoreFileSnapshot",
         category: "sftp",
         handler: this.restoreFileSnapshot.bind(this),
@@ -171,6 +176,20 @@ class SftpHandlers {
     }
   }
 
+  async getFileSnapshot(event, tabId, filePath, snapshotId) {
+    try {
+      const snapshot = await fileSnapshotStore.readSnapshot(
+        tabId,
+        filePath,
+        snapshotId,
+      );
+      return { success: true, snapshot };
+    } catch (error) {
+      logToFile(`Error reading file snapshot: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
   async restoreFileSnapshot(
     event,
     tabId,
@@ -198,16 +217,6 @@ class SftpHandlers {
           error: saveResult?.error || "Failed to save restored snapshot",
         };
       }
-
-      await fileSnapshotStore.createSnapshot(
-        tabId,
-        filePath,
-        restoreResult.content,
-        {
-          label: "已回退版本",
-          type: "restore",
-        },
-      );
 
       const snapshots = await fileSnapshotStore.listSnapshots(tabId, filePath);
 
