@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef, memo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  memo,
+} from "react";
 import {
   Dialog,
   DialogTitle,
@@ -29,17 +36,19 @@ import DownloadIcon from "@mui/icons-material/Download";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import SaveIcon from "@mui/icons-material/Save";
-import HistoryIcon from "@mui/icons-material/History";
 import RestoreIcon from "@mui/icons-material/Restore";
-import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import { useTheme, alpha } from "@mui/material/styles";
 import CodeMirror from "@uiw/react-codemirror";
-import { EditorView } from "@codemirror/view";
-import { EditorState, EditorSelection } from "@codemirror/state";
+import { EditorView, Decoration, lineNumbers } from "@codemirror/view";
+import {
+  EditorState,
+  EditorSelection,
+  RangeSetBuilder,
+} from "@codemirror/state";
 import { javascript } from "@codemirror/lang-javascript";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
@@ -549,6 +558,286 @@ const formatSnapshotDate = (value) => {
   return date.toLocaleString();
 };
 
+const splitTextLines = (value) => String(value ?? "").split("\n");
+
+const diffLineSequences = (currentLines, snapshotLines) => {
+  const currentLength = currentLines.length;
+  const snapshotLength = snapshotLines.length;
+  const max = currentLength + snapshotLength;
+  const trace = [];
+  let vertices = new Map([[1, 0]]);
+
+  for (let distance = 0; distance <= max; distance += 1) {
+    trace.push(new Map(vertices));
+
+    for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
+      const leftVertex = vertices.get(diagonal - 1);
+      const rightVertex = vertices.get(diagonal + 1);
+
+      let currentIndex;
+      if (
+        diagonal === -distance ||
+        (diagonal !== distance &&
+          (leftVertex ?? Number.NEGATIVE_INFINITY) <
+            (rightVertex ?? Number.NEGATIVE_INFINITY))
+      ) {
+        currentIndex = rightVertex ?? 0;
+      } else {
+        currentIndex = (leftVertex ?? 0) + 1;
+      }
+
+      let snapshotIndex = currentIndex - diagonal;
+
+      while (
+        currentIndex < currentLength &&
+        snapshotIndex < snapshotLength &&
+        currentLines[currentIndex] === snapshotLines[snapshotIndex]
+      ) {
+        currentIndex += 1;
+        snapshotIndex += 1;
+      }
+
+      vertices.set(diagonal, currentIndex);
+
+      if (currentIndex >= currentLength && snapshotIndex >= snapshotLength) {
+        const operations = [];
+        let currentPointer = currentLength;
+        let snapshotPointer = snapshotLength;
+
+        for (
+          let traceIndex = trace.length - 1;
+          traceIndex >= 0;
+          traceIndex -= 1
+        ) {
+          const traceVertices = trace[traceIndex];
+          const traceDiagonal = currentPointer - snapshotPointer;
+
+          let previousDiagonal;
+          if (
+            traceDiagonal === -traceIndex ||
+            (traceDiagonal !== traceIndex &&
+              (traceVertices.get(traceDiagonal - 1) ??
+                Number.NEGATIVE_INFINITY) <
+                (traceVertices.get(traceDiagonal + 1) ??
+                  Number.NEGATIVE_INFINITY))
+          ) {
+            previousDiagonal = traceDiagonal + 1;
+          } else {
+            previousDiagonal = traceDiagonal - 1;
+          }
+
+          const previousCurrent = traceVertices.get(previousDiagonal) ?? 0;
+          const previousSnapshot = previousCurrent - previousDiagonal;
+
+          while (
+            currentPointer > previousCurrent &&
+            snapshotPointer > previousSnapshot
+          ) {
+            operations.push({
+              type: "equal",
+              currentText: currentLines[currentPointer - 1],
+              snapshotText: snapshotLines[snapshotPointer - 1],
+            });
+            currentPointer -= 1;
+            snapshotPointer -= 1;
+          }
+
+          if (traceIndex === 0) {
+            break;
+          }
+
+          if (currentPointer === previousCurrent) {
+            operations.push({
+              type: "insert",
+              snapshotText: snapshotLines[snapshotPointer - 1],
+            });
+            snapshotPointer -= 1;
+          } else {
+            operations.push({
+              type: "delete",
+              currentText: currentLines[currentPointer - 1],
+            });
+            currentPointer -= 1;
+          }
+        }
+
+        return operations.reverse();
+      }
+    }
+  }
+
+  return [];
+};
+
+const buildSnapshotDiffData = (baseContent, currentContent) => {
+  const baseLines = splitTextLines(baseContent);
+  const currentLines = splitTextLines(currentContent);
+  const operations = diffLineSequences(baseLines, currentLines);
+  const rows = [];
+  const summary = {
+    changed: 0,
+    added: 0,
+    removed: 0,
+  };
+
+  let operationIndex = 0;
+  let baseLineNumber = 1;
+  let currentLineNumber = 1;
+
+  while (operationIndex < operations.length) {
+    const operation = operations[operationIndex];
+
+    if (operation.type === "equal") {
+      rows.push({
+        type: "equal",
+        baseLineNumber,
+        baseText: operation.currentText ?? "",
+        currentLineNumber,
+        currentText: operation.snapshotText ?? "",
+      });
+      baseLineNumber += 1;
+      currentLineNumber += 1;
+      operationIndex += 1;
+      continue;
+    }
+
+    const removedRows = [];
+    const addedRows = [];
+
+    while (
+      operationIndex < operations.length &&
+      operations[operationIndex].type !== "equal"
+    ) {
+      const blockOperation = operations[operationIndex];
+      if (blockOperation.type === "delete") {
+        removedRows.push({
+          lineNumber: baseLineNumber,
+          text: blockOperation.currentText ?? "",
+        });
+        baseLineNumber += 1;
+      } else if (blockOperation.type === "insert") {
+        addedRows.push({
+          lineNumber: currentLineNumber,
+          text: blockOperation.snapshotText ?? "",
+        });
+        currentLineNumber += 1;
+      }
+      operationIndex += 1;
+    }
+
+    const blockLength = Math.max(removedRows.length, addedRows.length);
+    for (let rowIndex = 0; rowIndex < blockLength; rowIndex += 1) {
+      const removedRow = removedRows[rowIndex] || null;
+      const addedRow = addedRows[rowIndex] || null;
+
+      if (removedRow && addedRow) {
+        summary.changed += 1;
+        rows.push({
+          type: "changed",
+          baseLineNumber: removedRow.lineNumber,
+          baseText: removedRow.text,
+          currentLineNumber: addedRow.lineNumber,
+          currentText: addedRow.text,
+        });
+      } else if (removedRow) {
+        summary.removed += 1;
+        rows.push({
+          type: "removed",
+          baseLineNumber: removedRow.lineNumber,
+          baseText: removedRow.text,
+          currentLineNumber: null,
+          currentText: "",
+        });
+      } else if (addedRow) {
+        summary.added += 1;
+        rows.push({
+          type: "added",
+          baseLineNumber: null,
+          baseText: "",
+          currentLineNumber: addedRow.lineNumber,
+          currentText: addedRow.text,
+        });
+      }
+    }
+  }
+
+  return {
+    rows,
+    summary,
+    hasChanges: summary.changed > 0 || summary.added > 0 || summary.removed > 0,
+  };
+};
+
+const getDiffPaneRole = (rowType, side) => {
+  if (rowType === "equal") {
+    return "equal";
+  }
+
+  if (side === "base") {
+    if (rowType === "changed" || rowType === "removed") {
+      return "removed";
+    }
+    if (rowType === "added") {
+      return "empty";
+    }
+  }
+
+  if (side === "current") {
+    if (rowType === "changed" || rowType === "added") {
+      return "added";
+    }
+    if (rowType === "removed") {
+      return "empty";
+    }
+  }
+
+  return "equal";
+};
+
+const buildDiffPaneData = (rows, side) => {
+  const lines = rows.map((row) =>
+    side === "base" ? (row.baseText ?? "") : (row.currentText ?? ""),
+  );
+
+  return {
+    value: lines.join("\n"),
+    lineNumbers: rows.map((row) =>
+      side === "base"
+        ? (row.baseLineNumber ?? "")
+        : (row.currentLineNumber ?? ""),
+    ),
+    lineRoles: rows.map((row) => getDiffPaneRole(row.type, side)),
+  };
+};
+
+const buildDiffLineDecorations = (paneData) => {
+  const builder = new RangeSetBuilder();
+  const lines = paneData.value.split("\n");
+  let offset = 0;
+
+  paneData.lineRoles.forEach((role, index) => {
+    if (role !== "equal") {
+      builder.add(
+        offset,
+        offset,
+        Decoration.line({
+          attributes: {
+            class: `cm-diffLine cm-diffLine--${role}`,
+          },
+        }),
+      );
+    }
+
+    const lineLength = lines[index]?.length ?? 0;
+    offset += lineLength;
+    if (index < lines.length - 1) {
+      offset += 1;
+    }
+  });
+
+  return builder.finish();
+};
+
 const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const theme = useTheme();
   const [loading, setLoading] = useState(true);
@@ -563,10 +852,12 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [loadingSnapshots, setLoadingSnapshots] = useState(false);
   const [creatingSnapshot, setCreatingSnapshot] = useState(false);
   const [restoringSnapshotId, setRestoringSnapshotId] = useState(null);
-  const [showSnapshotPanel, setShowSnapshotPanel] = useState(true);
   const [pendingRestoreSnapshot, setPendingRestoreSnapshot] = useState(null);
+  const [selectedSnapshotContent, setSelectedSnapshotContent] = useState(null);
+  const [loadingSelectedSnapshot, setLoadingSelectedSnapshot] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const viewerEditorRef = useRef(null);
+  const syncedContentRef = useRef(null);
   const handleViewerEditorCreate = useCallback((view) => {
     viewerEditorRef.current = view;
   }, []);
@@ -582,6 +873,30 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
   const fullPath = path === "/" ? "/" + file?.name : path + "/" + file?.name;
   const isTextPreview = isTextFile(file?.name);
+  const visibleSnapshots = useMemo(
+    () => snapshots.filter((snapshot) => snapshot?.type !== "rollback-backup"),
+    [snapshots],
+  );
+  const snapshotDiffData = useMemo(() => {
+    if (
+      typeof content !== "string" ||
+      typeof selectedSnapshotContent !== "string"
+    ) {
+      return null;
+    }
+
+    return buildSnapshotDiffData(selectedSnapshotContent, content);
+  }, [content, selectedSnapshotContent]);
+  const snapshotDiffPaneData = useMemo(() => {
+    if (!snapshotDiffData) {
+      return null;
+    }
+
+    return {
+      base: buildDiffPaneData(snapshotDiffData.rows, "base"),
+      current: buildDiffPaneData(snapshotDiffData.rows, "current"),
+    };
+  }, [snapshotDiffData]);
 
   useEffect(() => {
     if (isEditing) {
@@ -592,20 +907,17 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   useEffect(() => {
     if (!open) {
       viewerEditorRef.current = null;
+      syncedContentRef.current = null;
     }
   }, [open]);
 
   useEffect(() => {
     if (!open) {
       setPendingRestoreSnapshot(null);
+      setSelectedSnapshotContent(null);
       setShowCloseConfirm(false);
-      return;
     }
-
-    if (isTextPreview) {
-      setShowSnapshotPanel(true);
-    }
-  }, [open, isTextPreview]);
+  }, [open]);
 
   // 加载字体设置
   useEffect(() => {
@@ -659,10 +971,12 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     async (
       snapshotContent,
       {
-        label = "手动快照",
-        type = "manual",
+        label = "已保存版本",
+        type = "save",
         silent = false,
         successMessage = "已创建时间点",
+        createdAt,
+        force = false,
       } = {},
     ) => {
       if (
@@ -682,6 +996,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           {
             label,
             type,
+            createdAt,
+            force,
           },
         );
 
@@ -724,6 +1040,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setError(null);
       setPendingRestoreSnapshot(null);
       setSnapshots([]);
+      syncedContentRef.current = null;
 
       try {
         // 检查文件大小限制 (10MB = 10 * 1024 * 1024 bytes)
@@ -765,22 +1082,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   );
                 } else {
                   setContent(content);
+                  syncedContentRef.current = content;
                   // 重置修改状态
                   setModified(false);
-                  await createSnapshot(content, {
-                    label: "打开时版本",
-                    type: "open",
-                    silent: true,
-                  });
                 }
               } else {
                 setContent(response.content);
+                syncedContentRef.current = response.content;
                 setModified(false);
-                await createSnapshot(response.content, {
-                  label: "打开时版本",
-                  type: "open",
-                  silent: true,
-                });
               }
             } else {
               // 如果读取失败，提供更友好的错误信息
@@ -886,6 +1195,85 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     refreshSnapshots();
   }, [open, isTextPreview, refreshSnapshots]);
 
+  useEffect(() => {
+    if (
+      pendingRestoreSnapshot?.id &&
+      !visibleSnapshots.some(
+        (snapshot) => snapshot.id === pendingRestoreSnapshot.id,
+      )
+    ) {
+      setPendingRestoreSnapshot(null);
+      setSelectedSnapshotContent(null);
+    }
+  }, [pendingRestoreSnapshot, visibleSnapshots]);
+
+  useEffect(() => {
+    if (!pendingRestoreSnapshot?.id) {
+      setSelectedSnapshotContent(null);
+      setLoadingSelectedSnapshot(false);
+      return;
+    }
+
+    if (!window.terminalAPI?.getFileSnapshot) {
+      setNotification({
+        message: "时间点读取API不可用",
+        severity: "error",
+      });
+      setPendingRestoreSnapshot(null);
+      setSelectedSnapshotContent(null);
+      setLoadingSelectedSnapshot(false);
+      return;
+    }
+
+    let cancelled = false;
+    const snapshotId = pendingRestoreSnapshot.id;
+
+    setLoadingSelectedSnapshot(true);
+
+    const loadSelectedSnapshot = async () => {
+      try {
+        const response = await window.terminalAPI.getFileSnapshot(
+          tabId,
+          fullPath,
+          snapshotId,
+        );
+
+        if (!response?.success) {
+          throw new Error(response?.error || "读取时间点失败");
+        }
+
+        if (!cancelled) {
+          setSelectedSnapshotContent(
+            typeof response.snapshot?.content === "string"
+              ? response.snapshot.content
+              : "",
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setNotification({
+            message: `加载差异失败: ${error.message || "未知错误"}`,
+            severity: "error",
+          });
+          setPendingRestoreSnapshot((current) =>
+            current?.id === snapshotId ? null : current,
+          );
+          setSelectedSnapshotContent(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingSelectedSnapshot(false);
+        }
+      }
+    };
+
+    loadSelectedSnapshot();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingRestoreSnapshot, tabId, fullPath]);
+
   // 清理缓存 - 组件卸载时
   useEffect(() => {
     return () => {
@@ -918,12 +1306,40 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     setModified(true);
   };
 
+  const handleSelectSnapshot = useCallback(
+    (snapshot) => {
+      if (!snapshot?.id || restoringSnapshotId) {
+        return;
+      }
+
+      if (pendingRestoreSnapshot?.id === snapshot.id) {
+        setPendingRestoreSnapshot(null);
+        setSelectedSnapshotContent(null);
+        return;
+      }
+
+      setPendingRestoreSnapshot(snapshot);
+    },
+    [pendingRestoreSnapshot, restoringSnapshotId],
+  );
+
+  const handleClearSnapshotSelection = useCallback(() => {
+    setPendingRestoreSnapshot(null);
+    setSelectedSnapshotContent(null);
+  }, []);
+
   // 处理保存文件
   const handleSaveFile = useCallback(async () => {
     if (!file || !isTextFile(file.name) || !modified) return;
 
     try {
       setSavingFile(true);
+      const saveClickedAt = new Date().toISOString();
+      const baselineContent = syncedContentRef.current;
+      const shouldCreateInitialSnapshot =
+        visibleSnapshots.length === 0 &&
+        typeof baselineContent === "string" &&
+        baselineContent !== content;
 
       if (window.terminalAPI && window.terminalAPI.saveFileContent) {
         const response = await window.terminalAPI.saveFileContent(
@@ -933,13 +1349,27 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         );
 
         if (response.success) {
+          if (shouldCreateInitialSnapshot) {
+            await createSnapshot(baselineContent, {
+              label: "初始版本",
+              type: "initial",
+              silent: true,
+              createdAt: saveClickedAt,
+              force: true,
+            });
+          }
           await createSnapshot(content, {
             label: "已保存版本",
             type: "save",
             silent: true,
+            createdAt: saveClickedAt,
+            force: true,
           });
+          syncedContentRef.current = content;
           setNotification({
-            message: "文件保存成功",
+            message: shouldCreateInitialSnapshot
+              ? "文件保存成功，已保留初始版本"
+              : "文件保存成功",
             severity: "success",
           });
           setModified(false);
@@ -967,7 +1397,15 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     } finally {
       setSavingFile(false);
     }
-  }, [file, content, modified, tabId, fullPath, createSnapshot]);
+  }, [
+    file,
+    content,
+    modified,
+    tabId,
+    fullPath,
+    createSnapshot,
+    visibleSnapshots.length,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -1034,18 +1472,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     setIsEditing(!isEditing);
   };
 
-  const handleCreateManualSnapshot = useCallback(async () => {
-    if (typeof content !== "string") {
-      return;
-    }
-
-    await createSnapshot(content, {
-      label: modified ? "未保存修改" : "手动快照",
-      type: "manual",
-      successMessage: "当前内容已保存为时间点",
-    });
-  }, [content, modified, createSnapshot]);
-
   const handleRestoreSnapshot = useCallback(async () => {
     if (
       !pendingRestoreSnapshot?.id ||
@@ -1070,9 +1496,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       }
 
       setContent(response.content);
+      syncedContentRef.current = response.content;
       setModified(false);
       setIsEditing(true);
       setSnapshots(Array.isArray(response.snapshots) ? response.snapshots : []);
+      setSelectedSnapshotContent(null);
       setNotification({
         message: `已回退到 ${formatSnapshotDate(pendingRestoreSnapshot.createdAt)}`,
         severity: "success",
@@ -1195,7 +1623,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   };
 
   const renderSnapshotPanel = () => {
-    if (!isTextPreview || !showSnapshotPanel) {
+    if (!isTextPreview) {
       return null;
     }
 
@@ -1233,7 +1661,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             justifyContent="space-between"
             spacing={1}
           >
-            <Typography variant="subtitle2">时间点</Typography>
+            <Typography variant="subtitle2">已保存版本</Typography>
             <Button
               size="small"
               onClick={refreshSnapshots}
@@ -1242,13 +1670,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               刷新
             </Button>
           </Stack>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ mt: 0.5, display: "block" }}
-          >
-            快照保存在 temp 目录，退出应用后会自动清理。
-          </Typography>
         </Box>
 
         <Box
@@ -1270,19 +1691,19 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             >
               <CircularProgress size={24} />
             </Box>
-          ) : snapshots.length === 0 ? (
+          ) : visibleSnapshots.length === 0 ? (
             <Box sx={{ p: 2 }}>
               <Typography variant="body2" color="text.secondary">
-                还没有可回退的时间点。
+                还没有可回退的已保存版本。
               </Typography>
             </Box>
           ) : (
             <List dense disablePadding>
-              {snapshots.map((snapshot, index) => (
+              {visibleSnapshots.map((snapshot, index) => (
                 <React.Fragment key={snapshot.id}>
                   <ListItemButton
                     alignItems="flex-start"
-                    onClick={() => setPendingRestoreSnapshot(snapshot)}
+                    onClick={() => handleSelectSnapshot(snapshot)}
                     selected={pendingRestoreSnapshot?.id === snapshot.id}
                     disabled={Boolean(restoringSnapshotId)}
                     sx={{
@@ -1324,25 +1745,370 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                         fontWeight: 600,
                       }}
                     />
-                    <Button
-                      size="small"
-                      startIcon={<RestoreIcon fontSize="small" />}
-                      disabled={restoringSnapshotId === snapshot.id}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setPendingRestoreSnapshot(snapshot);
-                      }}
-                      sx={{ ml: 1, flexShrink: 0 }}
-                    >
-                      回退
-                    </Button>
                   </ListItemButton>
-                  {index < snapshots.length - 1 ? <Divider /> : null}
+                  {index < visibleSnapshots.length - 1 ? <Divider /> : null}
                 </React.Fragment>
               ))}
             </List>
           )}
         </Box>
+      </Box>
+    );
+  };
+
+  const renderSnapshotDiffView = () => {
+    const diffSummary = snapshotDiffData?.summary || {
+      changed: 0,
+      added: 0,
+      removed: 0,
+    };
+    const languageModeFn = getLanguageMode(file?.name || "");
+    const scrollbarTrackColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.common.white, 0.06)
+        : alpha(theme.palette.common.black, 0.05);
+    const scrollbarThumbColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.common.white, 0.18)
+        : alpha(theme.palette.text.secondary, 0.24);
+    const scrollbarThumbHoverColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.primary.light, 0.4)
+        : alpha(theme.palette.primary.main, 0.36);
+    const fontFamily = getFontFamily(editorFont);
+    const vscodeGreenBackground =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.success.main, 0.22)
+        : alpha(theme.palette.success.main, 0.14);
+    const vscodeRedBackground =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.error.main, 0.22)
+        : alpha(theme.palette.error.main, 0.14);
+    const neutralBackground =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.common.white, 0.02)
+        : alpha(theme.palette.common.black, 0.012);
+    const neutralEmptyBackground =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.common.white, 0.012)
+        : alpha(theme.palette.common.black, 0.008);
+    const addedAccent = alpha(theme.palette.success.main, 0.9);
+    const removedAccent = alpha(theme.palette.error.main, 0.9);
+    const paneBackground =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.background.paper, 0.76)
+        : alpha(theme.palette.background.paper, 0.94);
+    const gutterBackground =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.background.default, 0.88)
+        : alpha(theme.palette.background.default, 0.82);
+    const headerBackground =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.background.default, 0.66)
+        : alpha(theme.palette.background.default, 0.72);
+    const diffEditorTheme = EditorView.theme({
+      "&": {
+        height: "100%",
+        backgroundColor: paneBackground,
+      },
+      ".cm-editor": {
+        height: "100%",
+        fontFamily: `${fontFamily} !important`,
+        backgroundColor: paneBackground,
+      },
+      "&.cm-editor.cm-focused": {
+        outline: "none",
+      },
+      ".cm-scroller": {
+        overflowX: "hidden",
+        overflowY: "auto",
+        scrollbarWidth: "thin",
+        scrollbarColor: `${scrollbarThumbColor} ${scrollbarTrackColor}`,
+        "&::-webkit-scrollbar": {
+          width: "10px",
+          height: "0px",
+        },
+        "&::-webkit-scrollbar-track": {
+          backgroundColor: scrollbarTrackColor,
+          borderRadius: "999px",
+        },
+        "&::-webkit-scrollbar-thumb": {
+          backgroundColor: scrollbarThumbColor,
+          borderRadius: "999px",
+        },
+        "&::-webkit-scrollbar-thumb:hover": {
+          backgroundColor: scrollbarThumbHoverColor,
+        },
+      },
+      ".cm-content": {
+        fontFamily: `${fontFamily} !important`,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+        overflowWrap: "anywhere",
+        minHeight: "100%",
+        paddingBottom: "24px",
+      },
+      ".cm-line": {
+        padding: "0 12px",
+      },
+      ".cm-gutters": {
+        backgroundColor: gutterBackground,
+        color: theme.palette.text.secondary,
+        borderRight: `1px solid ${theme.palette.divider}`,
+      },
+      ".cm-lineNumbers .cm-gutterElement": {
+        minWidth: "38px",
+        padding: "0 10px 0 8px",
+      },
+      ".cm-activeLine, .cm-activeLineGutter": {
+        backgroundColor: "transparent",
+      },
+      ".cm-selectionBackground, .cm-selectionLayer": {
+        backgroundColor: "transparent !important",
+      },
+      ".cm-cursor, .cm-dropCursor": {
+        display: "none",
+      },
+      ".cm-diffLine--added": {
+        backgroundColor: vscodeGreenBackground,
+        boxShadow: `inset 3px 0 0 ${addedAccent}`,
+      },
+      ".cm-diffLine--removed": {
+        backgroundColor: vscodeRedBackground,
+        boxShadow: `inset 3px 0 0 ${removedAccent}`,
+      },
+      ".cm-diffLine--empty": {
+        backgroundColor: neutralEmptyBackground,
+      },
+      ".cm-diffLine--equal": {
+        backgroundColor: neutralBackground,
+      },
+    });
+
+    const createDiffPaneExtensions = (paneData) => {
+      const extensions = [];
+
+      if (languageModeFn) {
+        extensions.push(languageModeFn());
+      }
+
+      if (theme.palette.mode === "dark") {
+        extensions.push(oneDark);
+      }
+
+      extensions.push(
+        lineNumbers({
+          formatNumber: (lineNo) => `${paneData.lineNumbers[lineNo - 1] ?? ""}`,
+        }),
+        EditorState.readOnly.of(true),
+        EditorView.lineWrapping,
+        diffEditorTheme,
+        EditorView.decorations.of(buildDiffLineDecorations(paneData)),
+      );
+
+      return extensions;
+    };
+
+    const diffPaneStyle = {
+      height: "100%",
+      flex: "1 1 auto",
+      overflow: "hidden",
+      width: "100%",
+      maxWidth: "100%",
+    };
+
+    return (
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? alpha(theme.palette.background.default, 0.18)
+              : alpha(theme.palette.background.default, 0.35),
+        }}
+      >
+        <Box
+          sx={{
+            px: 2,
+            py: 1.5,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            backgroundColor:
+              theme.palette.mode === "dark"
+                ? alpha(theme.palette.background.paper, 0.7)
+                : alpha(theme.palette.background.paper, 0.92),
+          }}
+        >
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1}
+            alignItems={{ xs: "flex-start", md: "center" }}
+            justifyContent="space-between"
+          >
+            <Box>
+              <Typography variant="subtitle2">版本差异</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {formatSnapshotDate(pendingRestoreSnapshot.createdAt)}
+                的已保存版本与当前内容对比
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`变更 ${diffSummary.changed}`}
+              />
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`新增 ${diffSummary.added}`}
+              />
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`删除 ${diffSummary.removed}`}
+              />
+            </Stack>
+          </Stack>
+        </Box>
+
+        {loadingSelectedSnapshot ? (
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <CircularProgress size={24} />
+          </Box>
+        ) : !snapshotDiffData || !snapshotDiffPaneData ? (
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              px: 3,
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              暂时无法生成当前版本和已保存版本的差异。
+            </Typography>
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              display: "grid",
+              gridTemplateColumns: {
+                xs: "1fr",
+                md: "minmax(0, 1fr) minmax(0, 1fr)",
+              },
+              gridTemplateRows: {
+                xs: "minmax(0, 1fr) minmax(0, 1fr)",
+                md: "1fr",
+              },
+            }}
+          >
+            <Box
+              sx={{
+                minWidth: 0,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                borderRight: {
+                  xs: "none",
+                  md: `1px solid ${theme.palette.divider}`,
+                },
+                borderBottom: {
+                  xs: `1px solid ${theme.palette.divider}`,
+                  md: "none",
+                },
+              }}
+            >
+              <Box
+                sx={{
+                  px: 1.5,
+                  py: 1,
+                  borderBottom: `1px solid ${theme.palette.divider}`,
+                  backgroundColor: headerBackground,
+                }}
+              >
+                <Typography variant="caption" color="text.secondary">
+                  已保存版本
+                </Typography>
+              </Box>
+              <Box
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                }}
+              >
+                <CodeMirror
+                  key={`diff-base-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}`}
+                  value={snapshotDiffPaneData.base.value}
+                  height="100%"
+                  basicSetup={false}
+                  editable={false}
+                  extensions={createDiffPaneExtensions(
+                    snapshotDiffPaneData.base,
+                  )}
+                  theme={theme.palette.mode}
+                  style={diffPaneStyle}
+                  className="file-preview-diff-pane file-preview-diff-pane-base"
+                />
+              </Box>
+            </Box>
+            <Box
+              sx={{
+                minWidth: 0,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <Box
+                sx={{
+                  px: 1.5,
+                  py: 1,
+                  borderBottom: `1px solid ${theme.palette.divider}`,
+                  backgroundColor: headerBackground,
+                }}
+              >
+                <Typography variant="caption" color="text.secondary">
+                  当前内容
+                </Typography>
+              </Box>
+              <Box
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                }}
+              >
+                <CodeMirror
+                  key={`diff-current-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}`}
+                  value={snapshotDiffPaneData.current.value}
+                  height="100%"
+                  basicSetup={false}
+                  editable={false}
+                  extensions={createDiffPaneExtensions(
+                    snapshotDiffPaneData.current,
+                  )}
+                  theme={theme.palette.mode}
+                  style={diffPaneStyle}
+                  className="file-preview-diff-pane file-preview-diff-pane-current"
+                />
+              </Box>
+            </Box>
+          </Box>
+        )}
       </Box>
     );
   };
@@ -1383,6 +2149,19 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         extensions.push(oneDark);
       }
 
+      const scrollbarTrackColor =
+        theme.palette.mode === "dark"
+          ? alpha(theme.palette.common.white, 0.06)
+          : alpha(theme.palette.common.black, 0.05);
+      const scrollbarThumbColor =
+        theme.palette.mode === "dark"
+          ? alpha(theme.palette.common.white, 0.18)
+          : alpha(theme.palette.text.secondary, 0.24);
+      const scrollbarThumbHoverColor =
+        theme.palette.mode === "dark"
+          ? alpha(theme.palette.primary.light, 0.4)
+          : alpha(theme.palette.primary.main, 0.36);
+
       // 添加字体样式扩展和滚动条设置
       const fontExtension = EditorView.theme({
         ".cm-editor": {
@@ -1391,38 +2170,42 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           height: "100%",
         },
         ".cm-scroller": {
-          overflow: "auto", // 启用滚动条
-          scrollbarWidth: "thin", // 细滚动条（Firefox）
+          overflowX: "hidden",
+          overflowY: "auto",
+          scrollbarWidth: "thin",
+          scrollbarColor: `${scrollbarThumbColor} ${scrollbarTrackColor}`,
           "&::-webkit-scrollbar": {
-            width: "8px",
-            height: "8px",
+            width: "10px",
+            height: "0px",
           },
           "&::-webkit-scrollbar-track": {
-            backgroundColor:
-              theme.palette.mode === "dark" ? "#2d2d2d" : "#f1f1f1",
+            backgroundColor: scrollbarTrackColor,
+            borderRadius: "999px",
           },
           "&::-webkit-scrollbar-thumb": {
-            backgroundColor: theme.palette.mode === "dark" ? "#555" : "#888",
-            borderRadius: "4px",
+            backgroundColor: scrollbarThumbColor,
+            borderRadius: "999px",
+            border: `2px solid ${
+              theme.palette.mode === "dark"
+                ? alpha(theme.palette.background.default, 0.55)
+                : alpha(theme.palette.background.paper, 0.9)
+            }`,
           },
           "&::-webkit-scrollbar-thumb:hover": {
-            backgroundColor: theme.palette.mode === "dark" ? "#666" : "#555",
+            backgroundColor: scrollbarThumbHoverColor,
           },
         },
         ".cm-content": {
           fontFamily: getFontFamily(editorFont) + " !important",
-          whiteSpace: "pre", // 保持代码格式，允许水平滚动
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          overflowWrap: "anywhere",
           minHeight: "100%",
         },
       });
       extensions.push(fontExtension);
 
-      // 根据文件类型决定是否启用自动换行
-      const fileExt = getFileExtension(file.name);
-      const shouldWrap = ["md", "txt", "log", "markdown"].includes(fileExt);
-      if (shouldWrap) {
-        extensions.push(EditorView.lineWrapping);
-      }
+      extensions.push(EditorView.lineWrapping);
 
       const viewerExtensions = [...extensions, EditorState.readOnly.of(true)];
 
@@ -1438,7 +2221,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       const cmStyle = {
         height: "100%",
         flex: "1 1 auto",
-        overflow: "auto",
+        overflow: "hidden",
         width: "100%",
         maxWidth: "100%",
       };
@@ -1451,16 +2234,18 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             display: "grid",
             gridTemplateColumns: {
               xs: "1fr",
-              lg: showSnapshotPanel ? "minmax(0, 1fr) 320px" : "1fr",
+              lg: "minmax(0, 1fr) 280px",
             },
             gridTemplateRows: {
-              xs: showSnapshotPanel ? "minmax(0, 1fr) 240px" : "1fr",
+              xs: "minmax(0, 1fr) 240px",
               lg: "1fr",
             },
           }}
         >
           <Box sx={boxSx}>
-            {isEditing ? (
+            {pendingRestoreSnapshot ? (
+              renderSnapshotDiffView()
+            ) : isEditing ? (
               <CodeMirror
                 key={`editor-${editorFont}`}
                 value={content || ""}
@@ -1719,9 +2504,29 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               {isTextPreview ? (
                 <Chip
                   size="small"
-                  color={modified ? "warning" : "default"}
-                  label={modified ? "有未保存修改" : "只读预览中"}
-                  variant={modified ? "filled" : "outlined"}
+                  color={
+                    pendingRestoreSnapshot
+                      ? "info"
+                      : modified
+                        ? "warning"
+                        : isEditing
+                          ? "primary"
+                          : "default"
+                  }
+                  label={
+                    pendingRestoreSnapshot
+                      ? "差异对比中"
+                      : modified
+                        ? "有未保存修改"
+                        : isEditing
+                          ? "编辑中"
+                          : "只读预览中"
+                  }
+                  variant={
+                    pendingRestoreSnapshot || modified || isEditing
+                      ? "filled"
+                      : "outlined"
+                  }
                 />
               ) : null}
               <IconButton onClick={handleClose}>
@@ -1756,29 +2561,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                     disabled={!isEditing || !modified || savingFile || loading}
                   >
                     {savingFile ? "保存中..." : "保存"}
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<AddCircleOutlineIcon />}
-                    onClick={handleCreateManualSnapshot}
-                    disabled={
-                      loading ||
-                      savingFile ||
-                      creatingSnapshot ||
-                      typeof content !== "string"
-                    }
-                  >
-                    {creatingSnapshot ? "保存时间点中..." : "保存时间点"}
-                  </Button>
-                  <Button
-                    size="small"
-                    variant={showSnapshotPanel ? "contained" : "outlined"}
-                    startIcon={<HistoryIcon />}
-                    onClick={() => setShowSnapshotPanel((prev) => !prev)}
-                    disabled={loading}
-                  >
-                    {showSnapshotPanel ? "隐藏时间点" : "显示时间点"}
                   </Button>
                 </>
               ) : null}
@@ -1861,13 +2643,23 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       </DialogContent>
       <DialogActions sx={{ px: 2.5, py: 1.5 }}>
         {pendingRestoreSnapshot ? (
-          <Typography
-            variant="caption"
-            color="text.secondary"
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
             sx={{ mr: "auto" }}
           >
-            已选中时间点：{formatSnapshotDate(pendingRestoreSnapshot.createdAt)}
-          </Typography>
+            <Typography variant="caption" color="text.secondary">
+              已选中版本：{formatSnapshotDate(pendingRestoreSnapshot.createdAt)}
+            </Typography>
+            <Button
+              size="small"
+              onClick={handleClearSnapshotSelection}
+              disabled={Boolean(restoringSnapshotId) || loadingSelectedSnapshot}
+            >
+              取消选择
+            </Button>
+          </Stack>
         ) : (
           <Box sx={{ mr: "auto" }} />
         )}
@@ -1876,9 +2668,17 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             color="warning"
             startIcon={<RestoreIcon />}
             onClick={handleRestoreSnapshot}
-            disabled={Boolean(restoringSnapshotId) || savingFile}
+            disabled={
+              Boolean(restoringSnapshotId) ||
+              savingFile ||
+              loadingSelectedSnapshot
+            }
           >
-            {restoringSnapshotId ? "回退中..." : "回退到该时间点"}
+            {restoringSnapshotId
+              ? "回退中..."
+              : loadingSelectedSnapshot
+                ? "加载对比中..."
+                : "回退到该版本"}
           </Button>
         ) : null}
         <Button onClick={handleClose} disabled={savingFile}>

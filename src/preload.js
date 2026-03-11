@@ -669,6 +669,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   createFileSnapshot: (tabId, filePath, content, options = {}) =>
     ipcRenderer.invoke("createFileSnapshot", tabId, filePath, content, options),
 
+  getFileSnapshot: (tabId, filePath, snapshotId) =>
+    ipcRenderer.invoke("getFileSnapshot", tabId, filePath, snapshotId),
+
   restoreFileSnapshot: (tabId, filePath, snapshotId, currentContent = null) =>
     ipcRenderer.invoke(
       "restoreFileSnapshot",
