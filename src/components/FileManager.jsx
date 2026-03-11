@@ -4205,6 +4205,31 @@ const FileManager = memo(
 
     // 在特定的回调函数中调用refreshAfterUserActivity
 
+    const openFilePreview = useCallback(
+      (file) => {
+        if (!file || file.isDirectory) {
+          return false;
+        }
+
+        const maxFileSize = 10 * 1024 * 1024;
+        if (file.size && file.size > maxFileSize) {
+          setError(
+            t("fileManager.messages.fileSizeExceedsLimit", {
+              name: file.name,
+              size: formatFileSize(file.size, { t }),
+            }),
+          );
+          return false;
+        }
+
+        setFilePreview(file);
+        setShowPreview(true);
+        refreshAfterUserActivity();
+        return true;
+      },
+      [refreshAfterUserActivity, t],
+    );
+
     // 处理文件激活（双击）
     const handleFileActivate = async (file) => {
       if (file.isDirectory) {
@@ -4221,29 +4246,11 @@ const FileManager = memo(
         return;
       }
 
-      const openInPreview = () => {
-        const maxFileSize = 10 * 1024 * 1024;
-        if (file.size && file.size > maxFileSize) {
-          setError(
-            t("fileManager.messages.fileSizeExceedsLimit", {
-              name: file.name,
-              size: formatFileSize(file.size, { t }),
-            }),
-          );
-          return false;
-        }
-
-        setFilePreview(file);
-        setShowPreview(true);
-        refreshAfterUserActivity();
-        return true;
-      };
-
       if (
         !externalEditorEnabled ||
         !window.terminalAPI?.openFileInExternalEditor
       ) {
-        openInPreview();
+        openFilePreview(file);
         return;
       }
 
@@ -4283,7 +4290,7 @@ const FileManager = memo(
             "error",
             6000,
           );
-          openInPreview();
+          openFilePreview(file);
           return;
         }
       } catch (error) {
@@ -4297,7 +4304,7 @@ const FileManager = memo(
           typeof errorMessage === "string" &&
           errorMessage.toLowerCase().includes("disabled")
         ) {
-          openInPreview();
+          openFilePreview(file);
           return;
         }
 
@@ -4309,9 +4316,11 @@ const FileManager = memo(
           "error",
           6000,
         );
-        openInPreview();
+        openFilePreview(file);
       }
-    }; // 关闭预览
+    };
+
+    // 关闭预览
     const handleClosePreview = () => {
       setShowPreview(false);
     };

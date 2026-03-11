@@ -663,6 +663,21 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   readFileAsBase64: (tabId, filePath) =>
     ipcRenderer.invoke("readFileAsBase64", tabId, filePath),
 
+  listFileSnapshots: (tabId, filePath) =>
+    ipcRenderer.invoke("listFileSnapshots", tabId, filePath),
+
+  createFileSnapshot: (tabId, filePath, content, options = {}) =>
+    ipcRenderer.invoke("createFileSnapshot", tabId, filePath, content, options),
+
+  restoreFileSnapshot: (tabId, filePath, snapshotId, currentContent = null) =>
+    ipcRenderer.invoke(
+      "restoreFileSnapshot",
+      tabId,
+      filePath,
+      snapshotId,
+      currentContent,
+    ),
+
   // 在外部浏览器打开链接
   openExternal: async (url, options = {}) => {
     const payload = normalizeExternalOpenRequest(url, options);

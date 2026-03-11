@@ -1,5 +1,6 @@
 const sftpCore = require("../../transfer/sftp-engine");
 const fileCache = require("../../utils/fileCache");
+const fileSnapshotStore = require("../../utils/fileSnapshotStore");
 const { logToFile } = require("../../utils/logger");
 
 /**
@@ -47,6 +48,21 @@ class SftpHandlers {
         channel: "cleanupTabCache",
         category: "sftp",
         handler: this.cleanupTabCache.bind(this),
+      },
+      {
+        channel: "listFileSnapshots",
+        category: "sftp",
+        handler: this.listFileSnapshots.bind(this),
+      },
+      {
+        channel: "createFileSnapshot",
+        category: "sftp",
+        handler: this.createFileSnapshot.bind(this),
+      },
+      {
+        channel: "restoreFileSnapshot",
+        category: "sftp",
+        handler: this.restoreFileSnapshot.bind(this),
       },
     ];
   }
@@ -127,6 +143,82 @@ class SftpHandlers {
       return { success: true };
     } catch (error) {
       logToFile(`Error cleaning up tab cache: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async listFileSnapshots(event, tabId, filePath) {
+    try {
+      const snapshots = await fileSnapshotStore.listSnapshots(tabId, filePath);
+      return { success: true, snapshots };
+    } catch (error) {
+      logToFile(`Error listing file snapshots: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async createFileSnapshot(event, tabId, filePath, content, options = {}) {
+    try {
+      return await fileSnapshotStore.createSnapshot(
+        tabId,
+        filePath,
+        content,
+        options,
+      );
+    } catch (error) {
+      logToFile(`Error creating file snapshot: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async restoreFileSnapshot(
+    event,
+    tabId,
+    filePath,
+    snapshotId,
+    currentContent = null,
+  ) {
+    try {
+      const restoreResult = await fileSnapshotStore.restoreSnapshot(
+        tabId,
+        filePath,
+        snapshotId,
+        currentContent,
+      );
+
+      const saveResult = await sftpCore.saveFileContent(
+        tabId,
+        filePath,
+        restoreResult.content,
+      );
+
+      if (!saveResult?.success) {
+        return {
+          success: false,
+          error: saveResult?.error || "Failed to save restored snapshot",
+        };
+      }
+
+      await fileSnapshotStore.createSnapshot(
+        tabId,
+        filePath,
+        restoreResult.content,
+        {
+          label: "已回退版本",
+          type: "restore",
+        },
+      );
+
+      const snapshots = await fileSnapshotStore.listSnapshots(tabId, filePath);
+
+      return {
+        success: true,
+        content: restoreResult.content,
+        restoredSnapshot: restoreResult.snapshot,
+        snapshots,
+      };
+    } catch (error) {
+      logToFile(`Error restoring file snapshot: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }

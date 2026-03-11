@@ -17,17 +17,26 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Divider,
+  Stack,
+  Chip,
+  List,
+  ListItemButton,
+  ListItemText,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import DownloadIcon from "@mui/icons-material/Download";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import SaveIcon from "@mui/icons-material/Save";
+import HistoryIcon from "@mui/icons-material/History";
+import RestoreIcon from "@mui/icons-material/Restore";
+import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import { useTheme } from "@mui/material/styles";
+import { useTheme, alpha } from "@mui/material/styles";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { EditorState, EditorSelection } from "@codemirror/state";
@@ -54,13 +63,13 @@ let reactPdfLoaded = false;
 // 动态加载 react-pdf
 const loadReactPdf = async () => {
   if (reactPdfLoaded) return;
-  
+
   try {
     const reactPdfModule = await import("react-pdf");
     Document = reactPdfModule.Document;
     Page = reactPdfModule.Page;
     pdfjs = reactPdfModule.pdfjs;
-    
+
     // 配置PDF.js worker - 使用本地文件
     if (typeof window !== "undefined" && pdfjs) {
       try {
@@ -73,11 +82,11 @@ const loadReactPdf = async () => {
         console.warn("使用备用路径加载 PDF worker:", e);
       }
     }
-    
+
     // 动态导入 CSS
     await import("react-pdf/dist/Page/AnnotationLayer.css");
     await import("react-pdf/dist/Page/TextLayer.css");
-    
+
     reactPdfLoaded = true;
   } catch (error) {
     console.error("Failed to load react-pdf:", error);
@@ -530,6 +539,16 @@ const fontOptions = [
   { value: "space-mono", label: "Space Mono" },
 ];
 
+const formatSnapshotDate = (value) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value || "");
+  }
+
+  return date.toLocaleString();
+};
+
 const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const theme = useTheme();
   const [loading, setLoading] = useState(true);
@@ -540,6 +559,13 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [savingFile, setSavingFile] = useState(false);
   const [notification, setNotification] = useState(null);
   const [editorFont, setEditorFont] = useState("system");
+  const [snapshots, setSnapshots] = useState([]);
+  const [loadingSnapshots, setLoadingSnapshots] = useState(false);
+  const [creatingSnapshot, setCreatingSnapshot] = useState(false);
+  const [restoringSnapshotId, setRestoringSnapshotId] = useState(null);
+  const [showSnapshotPanel, setShowSnapshotPanel] = useState(true);
+  const [pendingRestoreSnapshot, setPendingRestoreSnapshot] = useState(null);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const viewerEditorRef = useRef(null);
   const handleViewerEditorCreate = useCallback((view) => {
     viewerEditorRef.current = view;
@@ -555,6 +581,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [cacheFilePath, setCacheFilePath] = useState(null);
 
   const fullPath = path === "/" ? "/" + file?.name : path + "/" + file?.name;
+  const isTextPreview = isTextFile(file?.name);
 
   useEffect(() => {
     if (isEditing) {
@@ -567,6 +594,18 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       viewerEditorRef.current = null;
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setPendingRestoreSnapshot(null);
+      setShowCloseConfirm(false);
+      return;
+    }
+
+    if (isTextPreview) {
+      setShowSnapshotPanel(true);
+    }
+  }, [open, isTextPreview]);
 
   // 加载字体设置
   useEffect(() => {
@@ -587,12 +626,104 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     loadFontSetting();
   }, []);
 
+  const refreshSnapshots = useCallback(async () => {
+    if (!open || !isTextPreview || !window.terminalAPI?.listFileSnapshots) {
+      setSnapshots([]);
+      return;
+    }
+
+    setLoadingSnapshots(true);
+    try {
+      const response = await window.terminalAPI.listFileSnapshots(
+        tabId,
+        fullPath,
+      );
+      if (response?.success) {
+        setSnapshots(
+          Array.isArray(response.snapshots) ? response.snapshots : [],
+        );
+      } else {
+        throw new Error(response?.error || "加载快照列表失败");
+      }
+    } catch (error) {
+      setNotification({
+        message: `加载时间点失败: ${error.message || "未知错误"}`,
+        severity: "error",
+      });
+    } finally {
+      setLoadingSnapshots(false);
+    }
+  }, [open, isTextPreview, tabId, fullPath]);
+
+  const createSnapshot = useCallback(
+    async (
+      snapshotContent,
+      {
+        label = "手动快照",
+        type = "manual",
+        silent = false,
+        successMessage = "已创建时间点",
+      } = {},
+    ) => {
+      if (
+        !isTextPreview ||
+        typeof snapshotContent !== "string" ||
+        !window.terminalAPI?.createFileSnapshot
+      ) {
+        return null;
+      }
+
+      setCreatingSnapshot(true);
+      try {
+        const response = await window.terminalAPI.createFileSnapshot(
+          tabId,
+          fullPath,
+          snapshotContent,
+          {
+            label,
+            type,
+          },
+        );
+
+        if (!response?.success) {
+          throw new Error(response?.error || "创建快照失败");
+        }
+
+        await refreshSnapshots();
+
+        if (!silent) {
+          setNotification({
+            message: response.deduplicated
+              ? "当前内容与最新时间点一致，未重复保存。"
+              : successMessage,
+            severity: "success",
+          });
+        }
+
+        return response.snapshot || null;
+      } catch (error) {
+        if (!silent) {
+          setNotification({
+            message: `创建时间点失败: ${error.message || "未知错误"}`,
+            severity: "error",
+          });
+        }
+        return null;
+      } finally {
+        setCreatingSnapshot(false);
+      }
+    },
+    [isTextPreview, tabId, fullPath, refreshSnapshots],
+  );
+
   useEffect(() => {
     if (!open || !file) return;
 
     const loadFileContent = async () => {
       setLoading(true);
       setError(null);
+      setPendingRestoreSnapshot(null);
+      setSnapshots([]);
 
       try {
         // 检查文件大小限制 (10MB = 10 * 1024 * 1024 bytes)
@@ -636,10 +767,20 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   setContent(content);
                   // 重置修改状态
                   setModified(false);
+                  await createSnapshot(content, {
+                    label: "打开时版本",
+                    type: "open",
+                    silent: true,
+                  });
                 }
               } else {
                 setContent(response.content);
                 setModified(false);
+                await createSnapshot(response.content, {
+                  label: "打开时版本",
+                  type: "open",
+                  silent: true,
+                });
               }
             } else {
               // 如果读取失败，提供更友好的错误信息
@@ -687,7 +828,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             setLoading(false);
             return;
           }
-          
+
           if (window.terminalAPI && window.terminalAPI.readFileAsBase64) {
             const response = await window.terminalAPI.readFileAsBase64(
               tabId,
@@ -734,7 +875,16 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     loadFileContent();
     // 重置编辑状态
     setIsEditing(false);
-  }, [open, file, fullPath, tabId]);
+  }, [open, file, fullPath, tabId, createSnapshot]);
+
+  useEffect(() => {
+    if (!open || !isTextPreview) {
+      setSnapshots([]);
+      return;
+    }
+
+    refreshSnapshots();
+  }, [open, isTextPreview, refreshSnapshots]);
 
   // 清理缓存 - 组件卸载时
   useEffect(() => {
@@ -757,7 +907,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           () => {}, // 简单进度回调
         );
       }
-    } catch { /* intentionally ignored */ }
+    } catch {
+      /* intentionally ignored */
+    }
   };
 
   // 处理文本编辑
@@ -781,32 +933,41 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         );
 
         if (response.success) {
+          await createSnapshot(content, {
+            label: "已保存版本",
+            type: "save",
+            silent: true,
+          });
           setNotification({
             message: "文件保存成功",
             severity: "success",
           });
           setModified(false);
+          return true;
         } else {
           setNotification({
             message: `保存失败: ${response.error || "未知错误"}`,
             severity: "error",
           });
+          return false;
         }
       } else {
         setNotification({
           message: "文件保存API不可用",
           severity: "error",
         });
+        return false;
       }
     } catch (error) {
       setNotification({
         message: `保存失败: ${error.message || "未知错误"}`,
         severity: "error",
       });
+      return false;
     } finally {
       setSavingFile(false);
     }
-  }, [file, content, modified, tabId, fullPath]);
+  }, [file, content, modified, tabId, fullPath, createSnapshot]);
 
   useEffect(() => {
     if (!open) return;
@@ -872,6 +1033,60 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const toggleEditMode = () => {
     setIsEditing(!isEditing);
   };
+
+  const handleCreateManualSnapshot = useCallback(async () => {
+    if (typeof content !== "string") {
+      return;
+    }
+
+    await createSnapshot(content, {
+      label: modified ? "未保存修改" : "手动快照",
+      type: "manual",
+      successMessage: "当前内容已保存为时间点",
+    });
+  }, [content, modified, createSnapshot]);
+
+  const handleRestoreSnapshot = useCallback(async () => {
+    if (
+      !pendingRestoreSnapshot?.id ||
+      !window.terminalAPI?.restoreFileSnapshot ||
+      typeof content !== "string"
+    ) {
+      return;
+    }
+
+    setRestoringSnapshotId(pendingRestoreSnapshot.id);
+
+    try {
+      const response = await window.terminalAPI.restoreFileSnapshot(
+        tabId,
+        fullPath,
+        pendingRestoreSnapshot.id,
+        content,
+      );
+
+      if (!response?.success) {
+        throw new Error(response?.error || "回退失败");
+      }
+
+      setContent(response.content);
+      setModified(false);
+      setIsEditing(true);
+      setSnapshots(Array.isArray(response.snapshots) ? response.snapshots : []);
+      setNotification({
+        message: `已回退到 ${formatSnapshotDate(pendingRestoreSnapshot.createdAt)}`,
+        severity: "success",
+      });
+      setPendingRestoreSnapshot(null);
+    } catch (error) {
+      setNotification({
+        message: `回退失败: ${error.message || "未知错误"}`,
+        severity: "error",
+      });
+    } finally {
+      setRestoringSnapshotId(null);
+    }
+  }, [pendingRestoreSnapshot, tabId, fullPath, content]);
 
   // 处理字体选择变更
   const handleFontChange = async (event) => {
@@ -950,8 +1165,186 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
   // 处理对话框关闭
   const handleClose = async () => {
+    if (isTextPreview && modified && !savingFile) {
+      setShowCloseConfirm(true);
+      return;
+    }
+
     await cleanupCache(); // 清理缓存
     onClose();
+  };
+
+  const handleDiscardAndClose = async () => {
+    setShowCloseConfirm(false);
+    await cleanupCache();
+    onClose();
+  };
+
+  const handleSaveAndClose = async () => {
+    if (!modified) {
+      await handleDiscardAndClose();
+      return;
+    }
+
+    const saved = await handleSaveFile();
+    if (saved) {
+      setShowCloseConfirm(false);
+      await cleanupCache();
+      onClose();
+    }
+  };
+
+  const renderSnapshotPanel = () => {
+    if (!isTextPreview || !showSnapshotPanel) {
+      return null;
+    }
+
+    return (
+      <Box
+        sx={{
+          minWidth: 0,
+          minHeight: { xs: 220, lg: "100%" },
+          display: "flex",
+          flexDirection: "column",
+          borderTop: {
+            xs: `1px solid ${theme.palette.divider}`,
+            lg: "none",
+          },
+          borderLeft: {
+            xs: "none",
+            lg: `1px solid ${theme.palette.divider}`,
+          },
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? alpha(theme.palette.background.default, 0.35)
+              : alpha(theme.palette.background.default, 0.55),
+        }}
+      >
+        <Box
+          sx={{
+            px: 1.5,
+            py: 1.25,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={1}
+          >
+            <Typography variant="subtitle2">时间点</Typography>
+            <Button
+              size="small"
+              onClick={refreshSnapshots}
+              disabled={loadingSnapshots || creatingSnapshot}
+            >
+              刷新
+            </Button>
+          </Stack>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ mt: 0.5, display: "block" }}
+          >
+            快照保存在 temp 目录，退出应用后会自动清理。
+          </Typography>
+        </Box>
+
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflow: "auto",
+          }}
+        >
+          {loadingSnapshots ? (
+            <Box
+              sx={{
+                height: "100%",
+                minHeight: 180,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <CircularProgress size={24} />
+            </Box>
+          ) : snapshots.length === 0 ? (
+            <Box sx={{ p: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                还没有可回退的时间点。
+              </Typography>
+            </Box>
+          ) : (
+            <List dense disablePadding>
+              {snapshots.map((snapshot, index) => (
+                <React.Fragment key={snapshot.id}>
+                  <ListItemButton
+                    alignItems="flex-start"
+                    onClick={() => setPendingRestoreSnapshot(snapshot)}
+                    selected={pendingRestoreSnapshot?.id === snapshot.id}
+                    disabled={Boolean(restoringSnapshotId)}
+                    sx={{
+                      px: 1.5,
+                      py: 1.25,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <ListItemText
+                      primary={snapshot.label || "时间点"}
+                      secondary={
+                        <Box
+                          component="span"
+                          sx={{
+                            mt: 0.5,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 0.25,
+                          }}
+                        >
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            {formatSnapshotDate(snapshot.createdAt)}
+                          </Typography>
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            {formatFileSize(snapshot.size || 0)}
+                          </Typography>
+                        </Box>
+                      }
+                      primaryTypographyProps={{
+                        variant: "body2",
+                        fontWeight: 600,
+                      }}
+                    />
+                    <Button
+                      size="small"
+                      startIcon={<RestoreIcon fontSize="small" />}
+                      disabled={restoringSnapshotId === snapshot.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPendingRestoreSnapshot(snapshot);
+                      }}
+                      sx={{ ml: 1, flexShrink: 0 }}
+                    >
+                      回退
+                    </Button>
+                  </ListItemButton>
+                  {index < snapshots.length - 1 ? <Divider /> : null}
+                </React.Fragment>
+              ))}
+            </List>
+          )}
+        </Box>
+      </Box>
+    );
   };
 
   // 渲染文件内容
@@ -1037,47 +1430,61 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         flex: "1 1 auto",
         display: "flex",
         flexDirection: "column",
-        overflow: "auto", // 启用滚动条
+        overflow: "hidden",
         position: "relative",
+        minHeight: 0,
       };
 
       const cmStyle = {
         height: "100%",
         flex: "1 1 auto",
-        overflow: "auto", // 启用滚动条
+        overflow: "auto",
         width: "100%",
         maxWidth: "100%",
       };
 
-      if (isEditing) {
-        return (
-          <Box sx={boxSx}>
-            <CodeMirror
-              key={`editor-${editorFont}`}
-              value={content || ""}
-              height="100%"
-              extensions={extensions}
-              theme={theme.palette.mode}
-              onChange={handleEditorChange}
-              style={cmStyle}
-              className="file-preview-editor"
-            />
-          </Box>
-        );
-      }
-      // 预览模式
       return (
-        <Box sx={boxSx}>
-          <CodeMirror
-            key={`viewer-${editorFont}`}
-            value={content || ""}
-            height="100%"
-            extensions={viewerExtensions}
-            theme={theme.palette.mode}
-            style={cmStyle}
-            className="file-preview-viewer"
-            onCreateEditor={handleViewerEditorCreate}
-          />
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            display: "grid",
+            gridTemplateColumns: {
+              xs: "1fr",
+              lg: showSnapshotPanel ? "minmax(0, 1fr) 320px" : "1fr",
+            },
+            gridTemplateRows: {
+              xs: showSnapshotPanel ? "minmax(0, 1fr) 240px" : "1fr",
+              lg: "1fr",
+            },
+          }}
+        >
+          <Box sx={boxSx}>
+            {isEditing ? (
+              <CodeMirror
+                key={`editor-${editorFont}`}
+                value={content || ""}
+                height="100%"
+                extensions={extensions}
+                theme={theme.palette.mode}
+                onChange={handleEditorChange}
+                style={cmStyle}
+                className="file-preview-editor"
+              />
+            ) : (
+              <CodeMirror
+                key={`viewer-${editorFont}`}
+                value={content || ""}
+                height="100%"
+                extensions={viewerExtensions}
+                theme={theme.palette.mode}
+                style={cmStyle}
+                className="file-preview-viewer"
+                onCreateEditor={handleViewerEditorCreate}
+              />
+            )}
+          </Box>
+          {renderSnapshotPanel()}
         </Box>
       );
     }
@@ -1124,7 +1531,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           </Box>
         );
       }
-      
+
       return (
         <Box
           sx={{
@@ -1257,104 +1664,163 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           maxHeight: isPdfFile(file?.name) ? "95vh" : "85vh",
           minWidth: isPdfFile(file?.name)
             ? "min(1024px, 95vw)"
-            : "min(900px, 90vw)",
+            : isTextPreview
+              ? "min(1180px, 96vw)"
+              : "min(900px, 90vw)",
           display: "flex",
           flexDirection: "column",
         },
       }}
     >
-      <DialogTitle>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            {file?.name}
-            {file?.size && (
-              <Typography
-                variant="caption"
-                component="span"
-                sx={{ ml: 1, color: "text.secondary" }}
-              >
-                ({formatFileSize(file.size)})
+      <DialogTitle sx={{ px: 2.5, py: 2 }}>
+        <Stack spacing={1.5}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1.5}
+            alignItems={{ xs: "flex-start", md: "center" }}
+            justifyContent="space-between"
+          >
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography variant="h6" component="div" noWrap>
+                {file?.name}
+                {modified ? (
+                  <span style={{ color: theme.palette.warning.main }}> *</span>
+                ) : null}
               </Typography>
-            )}
-            {modified && (
-              <span style={{ color: theme.palette.warning.main }}> *</span>
-            )}
-          </Typography>
-
-          {/* 字体选择下拉菜单 - 仅在文本文件时显示 */}
-          {isTextFile(file?.name) && (
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <InputLabel id="font-select-label">字体</InputLabel>
-              <Select
-                labelId="font-select-label"
-                value={editorFont}
-                label="字体"
-                onChange={handleFontChange}
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{
+                  mt: 0.5,
+                  maxWidth: "100%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
               >
-                {fontOptions.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
+                {fullPath}
+              </Typography>
+            </Box>
 
-          <Box>
-            {isTextFile(file?.name) && (
-              <>
-                <Tooltip
-                  title={isEditing ? "切换到预览模式" : "切换到编辑模式"}
-                >
-                  <IconButton
-                    color="primary"
-                    onClick={toggleEditMode}
-                    disabled={loading}
-                  >
-                    {isEditing ? <VisibilityIcon /> : <EditIcon />}
-                  </IconButton>
-                </Tooltip>
-
-                <Tooltip title="保存文件">
-                  <span>
-                    <IconButton
-                      color="primary"
-                      onClick={handleSaveFile}
-                      disabled={
-                        !isEditing || !modified || savingFile || loading
-                      }
-                    >
-                      <SaveIcon />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </>
-            )}
-            <Tooltip title="下载文件">
-              <IconButton
-                color="primary"
-                onClick={handleDownload}
-                disabled={loading}
-              >
-                <DownloadIcon />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="关闭">
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+            >
+              {file?.size ? (
+                <Chip
+                  size="small"
+                  label={formatFileSize(file.size)}
+                  variant="outlined"
+                />
+              ) : null}
+              {isTextPreview ? (
+                <Chip
+                  size="small"
+                  color={modified ? "warning" : "default"}
+                  label={modified ? "有未保存修改" : "只读预览中"}
+                  variant={modified ? "filled" : "outlined"}
+                />
+              ) : null}
               <IconButton onClick={handleClose}>
                 <CloseIcon />
               </IconButton>
-            </Tooltip>
-          </Box>
-        </Box>
+            </Stack>
+          </Stack>
+
+          <Stack
+            direction={{ xs: "column", lg: "row" }}
+            spacing={1}
+            alignItems={{ xs: "stretch", lg: "center" }}
+            justifyContent="space-between"
+          >
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              {isTextPreview ? (
+                <>
+                  <Button
+                    size="small"
+                    variant={isEditing ? "contained" : "outlined"}
+                    startIcon={isEditing ? <VisibilityIcon /> : <EditIcon />}
+                    onClick={toggleEditMode}
+                    disabled={loading || savingFile}
+                  >
+                    {isEditing ? "切换到预览" : "切换到编辑"}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={<SaveIcon />}
+                    onClick={handleSaveFile}
+                    disabled={!isEditing || !modified || savingFile || loading}
+                  >
+                    {savingFile ? "保存中..." : "保存"}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<AddCircleOutlineIcon />}
+                    onClick={handleCreateManualSnapshot}
+                    disabled={
+                      loading ||
+                      savingFile ||
+                      creatingSnapshot ||
+                      typeof content !== "string"
+                    }
+                  >
+                    {creatingSnapshot ? "保存时间点中..." : "保存时间点"}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={showSnapshotPanel ? "contained" : "outlined"}
+                    startIcon={<HistoryIcon />}
+                    onClick={() => setShowSnapshotPanel((prev) => !prev)}
+                    disabled={loading}
+                  >
+                    {showSnapshotPanel ? "隐藏时间点" : "显示时间点"}
+                  </Button>
+                </>
+              ) : null}
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={handleDownload}
+                disabled={loading || savingFile}
+              >
+                下载
+              </Button>
+            </Stack>
+
+            {isTextPreview ? (
+              <FormControl size="small" sx={{ minWidth: 140 }}>
+                <InputLabel id="font-select-label">字体</InputLabel>
+                <Select
+                  labelId="font-select-label"
+                  value={editorFont}
+                  label="字体"
+                  onChange={handleFontChange}
+                >
+                  {fontOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : null}
+          </Stack>
+        </Stack>
       </DialogTitle>
       <DialogContent
         dividers
         sx={{
           flex: "1 1 auto",
-          p: 0, // 内边距由renderContent内部处理
+          p: 0,
           display: "flex",
           flexDirection: "column",
-          overflow: "auto", // 启用滚动条
+          overflow: "hidden",
           width: "100%",
           maxWidth: "100%",
           "&::-webkit-scrollbar": {
@@ -1378,9 +1844,10 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           <Box
             sx={{
               display: "flex",
+              flex: 1,
               justifyContent: "center",
               alignItems: "center",
-              height: "400px",
+              height: "100%",
             }}
           >
             <CircularProgress size={40} />
@@ -1392,19 +1859,73 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           renderContent()
         )}
       </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose}>关闭</Button>
-        {isTextFile(file?.name) && isEditing && (
+      <DialogActions sx={{ px: 2.5, py: 1.5 }}>
+        {pendingRestoreSnapshot ? (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ mr: "auto" }}
+          >
+            已选中时间点：{formatSnapshotDate(pendingRestoreSnapshot.createdAt)}
+          </Typography>
+        ) : (
+          <Box sx={{ mr: "auto" }} />
+        )}
+        {pendingRestoreSnapshot ? (
           <Button
-            onClick={handleSaveFile}
-            color="primary"
-            disabled={!modified || savingFile}
+            color="warning"
+            startIcon={<RestoreIcon />}
+            onClick={handleRestoreSnapshot}
+            disabled={Boolean(restoringSnapshotId) || savingFile}
+          >
+            {restoringSnapshotId ? "回退中..." : "回退到该时间点"}
+          </Button>
+        ) : null}
+        <Button onClick={handleClose} disabled={savingFile}>
+          关闭
+        </Button>
+      </DialogActions>
+
+      <Dialog
+        open={showCloseConfirm}
+        onClose={() => {
+          if (!savingFile) {
+            setShowCloseConfirm(false);
+          }
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>还有未保存的修改</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" color="text.secondary">
+            当前文件仍有未保存内容。你可以先保存，或者直接关闭并放弃这些修改。
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setShowCloseConfirm(false)}
+            disabled={savingFile}
+          >
+            取消
+          </Button>
+          <Button
+            onClick={handleDiscardAndClose}
+            color="inherit"
+            disabled={savingFile}
+          >
+            放弃修改
+          </Button>
+          <Button
+            onClick={handleSaveAndClose}
+            variant="contained"
+            disabled={savingFile}
             startIcon={<SaveIcon />}
           >
-            {savingFile ? "保存中..." : "保存"}
+            {savingFile ? "保存中..." : "保存后关闭"}
           </Button>
-        )}
-      </DialogActions>
+        </DialogActions>
+      </Dialog>
 
       {/* 通知消息 */}
       <Snackbar
