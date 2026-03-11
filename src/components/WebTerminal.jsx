@@ -3032,11 +3032,6 @@ const WebTerminal = ({
             enabled: true,
             sampleRate: 100,
             maxHistorySize: 1000,
-            onWarning: (warning) => {
-              if (process.env.NODE_ENV === "development") {
-                console.warn("[WebTerminal Performance]", warning);
-              }
-            },
             onStats: (stats) => {
               // 优化：节流stats更新，减少React重渲染
               const now = Date.now();
