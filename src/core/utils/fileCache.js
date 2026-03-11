@@ -165,6 +165,13 @@ class FileCache {
     return cleanedCount;
   }
 
+  async cleanup(cacheFilePath) {
+    return this.cleanupCacheFile(cacheFilePath);
+  }
+
+  async cleanupTabFiles(tabId) {
+    return this.cleanupTabCaches(tabId);
+  }
 
   async clearCacheDirectory({ recreate = false } = {}) {
     if (!this.cacheDir) {
@@ -177,10 +184,7 @@ class FileCache {
       if (fs.existsSync(this.cacheDir)) {
         directoryExisted = true;
         await fs.promises.rm(this.cacheDir, { recursive: true, force: true });
-        this.logToFile(
-          `Cleared cache directory: ${this.cacheDir}`,
-          "INFO",
-        );
+        this.logToFile(`Cleared cache directory: ${this.cacheDir}`, "INFO");
       }
 
       this.activeCaches.clear();

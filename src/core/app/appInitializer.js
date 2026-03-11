@@ -5,6 +5,7 @@ const sftpCore = require("../transfer/sftp-engine");
 const sftpTransfer = require("../../modules/sftp/sftpTransfer");
 const externalEditorManager = require("../../modules/sftp/externalEditorManager");
 const fileCache = require("../utils/fileCache");
+const fileSnapshotStore = require("../utils/fileSnapshotStore");
 const connectionManager = require("../../modules/connection");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const processManager = require("../process/processManager");
@@ -35,7 +36,10 @@ class AppInitializer {
       await session.defaultSession.setProxy({ mode: "system" });
       logToFile("Session proxy configured to use system settings", "INFO");
     } catch (proxyErr) {
-      logToFile(`Failed to configure session proxy: ${proxyErr.message}`, "WARN");
+      logToFile(
+        `Failed to configure session proxy: ${proxyErr.message}`,
+        "WARN",
+      );
     }
   }
 
@@ -70,7 +74,7 @@ class AppInitializer {
       dialog,
       shell,
       (tabId) => processManager.getProcess(tabId),
-      (channel, ...args) => safeSendToRenderer(channel, ...args)
+      (channel, ...args) => safeSendToRenderer(channel, ...args),
     );
     logToFile("SFTP transfer initialized", "INFO");
   }
@@ -86,11 +90,15 @@ class AppInitializer {
         configService,
         sftpCore,
         shell,
-        sendToRenderer: (channel, payload) => safeSendToRenderer(channel, payload),
+        sendToRenderer: (channel, payload) =>
+          safeSendToRenderer(channel, payload),
       });
       logToFile("External editor manager initialized", "INFO");
     } catch (error) {
-      logToFile(`Failed to initialize external editor manager: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to initialize external editor manager: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -100,6 +108,7 @@ class AppInitializer {
   initializeFileCache() {
     fileCache.init(logToFile, this.app);
     fileCache.startPeriodicCleanup();
+    fileSnapshotStore.init(logToFile, this.app);
     logToFile("File cache initialized", "INFO");
   }
 
@@ -143,7 +152,8 @@ class AppInitializer {
       if (Array.isArray(lastConnections) && proxyByServerKey) {
         for (const lc of lastConnections) {
           if (!lc || lc.type !== "connection") continue;
-          if (lc.protocol && String(lc.protocol).toLowerCase() !== "ssh") continue;
+          if (lc.protocol && String(lc.protocol).toLowerCase() !== "ssh")
+            continue;
           if (lc.proxy) continue;
           const key = `${lc.host}:${lc.port || 22}:${lc.username || ""}`;
           const p = proxyByServerKey.get(key);
@@ -152,10 +162,16 @@ class AppInitializer {
       }
       if (lastConnections && lastConnections.length > 0) {
         connectionManager.loadLastConnectionsFromConfig(lastConnections);
-        logToFile(`Loaded ${lastConnections.length} last connections on startup`, "INFO");
+        logToFile(
+          `Loaded ${lastConnections.length} last connections on startup`,
+          "INFO",
+        );
       }
     } catch (error) {
-      logToFile(`Failed to load last connections on startup: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to load last connections on startup: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -166,9 +182,15 @@ class AppInitializer {
     try {
       const commandHistory = configService.loadCommandHistory();
       commandHistoryService.initialize(commandHistory);
-      logToFile(`Command history service initialized with ${commandHistory.length} entries`, "INFO");
+      logToFile(
+        `Command history service initialized with ${commandHistory.length} entries`,
+        "INFO",
+      );
     } catch (error) {
-      logToFile(`Failed to initialize command history service: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to initialize command history service: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 

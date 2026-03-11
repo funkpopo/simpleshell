@@ -7,6 +7,7 @@ const {
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
 const fileCache = require("../utils/fileCache");
+const fileSnapshotStore = require("../utils/fileSnapshotStore");
 const configService = require("../../services/configService");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const sftpCore = require("../transfer/sftp-engine");
@@ -120,7 +121,6 @@ class AppCleanup {
         );
       }
     }
-
   }
 
   /**
@@ -351,6 +351,18 @@ class AppCleanup {
         `Failed to clear temp directory on quit: ${error.message}`,
         "ERROR",
       );
+    }
+
+    try {
+      const cleared = await fileSnapshotStore.clearAllSnapshots();
+      if (cleared) {
+        logToFile(
+          `Cleared snapshot directory on app quit: ${fileSnapshotStore.snapshotRoot}`,
+          "INFO",
+        );
+      }
+    } catch (error) {
+      logToFile(`Failed to clear snapshots on quit: ${error.message}`, "ERROR");
     }
   }
 
