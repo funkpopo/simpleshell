@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from "react";
+import React, { memo, useMemo, forwardRef } from "react";
 import PropTypes from "prop-types";
 import { Box, IconButton, Tooltip, CircularProgress } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -9,7 +9,7 @@ import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
  * 传输侧边栏按钮 - 带环形进度条
  */
 const TransferSidebarButton = memo(
-  ({ isOpen, onClick, tooltip = "文件传输", tooltipPlacement = "top" }) => {
+  forwardRef(({ isOpen, onClick, tooltip = "文件传输", tooltipPlacement = "top" }, ref) => {
     const theme = useTheme();
     const { allTransfers } = useAllGlobalTransfers();
 
@@ -45,6 +45,7 @@ const TransferSidebarButton = memo(
     return (
       <Tooltip title={tooltip} placement={tooltipPlacement}>
         <Box
+          ref={ref}
           sx={{
             position: "relative",
             width: 40,
@@ -129,7 +130,7 @@ const TransferSidebarButton = memo(
         </Box>
       </Tooltip>
     );
-  },
+  }),
 );
 
 TransferSidebarButton.propTypes = {

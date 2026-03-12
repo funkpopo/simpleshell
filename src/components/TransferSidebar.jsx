@@ -34,6 +34,7 @@ import {
   useAllGlobalTransfers,
   useTransferHistory,
 } from "../store/globalTransferStore.js";
+import { createAnchoredTransition } from "../utils/launchAnimation.js";
 
 // 浮动窗口对话框样式（参考 AIChatWindow）
 const FloatingDialog = styled(Dialog)(({ theme, customwidth, customzindex }) => ({
@@ -368,7 +369,7 @@ TransferItem.displayName = "TransferItem";
 /**
  * 传输浮动窗口组件
  */
-const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) => {
+const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus, anchorEl }) => {
   const theme = useTheme();
   const { allTransfers, clearCompletedTransfers, updateTransferProgress } = useAllGlobalTransfers();
   const { history, clearHistory, removeHistoryItemAt } = useTransferHistory();
@@ -456,6 +457,7 @@ const TransferSidebar = memo(({ open, onClose, onMinimize, zIndex, onFocus }) =>
       customwidth={windowWidth}
       customzindex={zIndex}
       onMouseDown={onFocus}
+      {...createAnchoredTransition(anchorEl)}
     >
       {/* 左侧拖动调整宽度手柄 */}
       <Box
