@@ -2931,6 +2931,12 @@ const FileManager = memo(
               progress: 100,
               fileName:
                 result.message || t("fileManager.messages.uploadComplete"),
+              processedFiles: Math.max(
+                0,
+                result.successfulFiles ?? result.totalFiles ?? 0,
+              ),
+              currentFileIndex: Math.max(0, result.totalFiles || 0),
+              totalFiles: Math.max(0, result.totalFiles || 0),
             });
 
             // 传输完成后延迟移除
@@ -3977,6 +3983,12 @@ const FileManager = memo(
                 fileName:
                   result.message || t("fileManager.messages.uploadComplete"),
                 isCompleted: true,
+                processedFiles: Math.max(
+                  0,
+                  result.successfulFiles ?? result.totalFiles ?? 0,
+                ),
+                currentFileIndex: Math.max(0, result.totalFiles || 0),
+                totalFiles: Math.max(0, result.totalFiles || 0),
               });
 
               // 传输完成后延迟移除

@@ -20,6 +20,7 @@ import {
   ExpandMore,
 } from "@mui/icons-material";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
+import { sumTransferFileCount } from "../utils/transferCounts.js";
 
 /**
  * 获取传输类型图标
@@ -90,10 +91,32 @@ const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
     <Chip
       icon={getTransferIcon(type)}
       label={
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: "100%" }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 0.5,
+            width: "100%",
+          }}
+        >
           {statusIcon}
-          <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", flex: 1, minWidth: 0 }}>
-            <span style={{ maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", fontSize: "0.75rem" }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-start",
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                maxWidth: "120px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                fontSize: "0.75rem",
+              }}
+            >
               {fileName || "传输中..."}
             </span>
             {sshHost && (
@@ -137,27 +160,27 @@ const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
         backgroundColor: hasError
           ? "#ffebee"
           : isCancelled
-          ? "#fff3e0"
-          : isCompleted
-          ? "#e8f5e8"
-          : `${getTransferColor(type)}15`,
+            ? "#fff3e0"
+            : isCompleted
+              ? "#e8f5e8"
+              : `${getTransferColor(type)}15`,
         color: hasError
           ? "#f44336"
           : isCancelled
-          ? "#ff9800"
-          : isCompleted
-          ? "#4caf50"
-          : getTransferColor(type),
+            ? "#ff9800"
+            : isCompleted
+              ? "#4caf50"
+              : getTransferColor(type),
         cursor: "pointer",
         transition: "all 0.2s ease",
         "&:hover": {
           backgroundColor: hasError
             ? "#ffcdd2"
             : isCancelled
-            ? "#ffe0b2"
-            : isCompleted
-            ? "#c8e6c9"
-            : `${getTransferColor(type)}30`,
+              ? "#ffe0b2"
+              : isCompleted
+                ? "#c8e6c9"
+                : `${getTransferColor(type)}30`,
         },
         "& .MuiChip-label": {
           paddingLeft: 1,
@@ -176,7 +199,8 @@ TransferTag.displayName = "TransferTag";
  */
 const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
   const theme = useTheme();
-  const { allTransfers, clearCompletedTransfers, removeTransferProgress } = useAllGlobalTransfers();
+  const { allTransfers, clearCompletedTransfers, removeTransferProgress } =
+    useAllGlobalTransfers();
   const [sshHostMap, setSshHostMap] = useState({});
 
   // 获取SSH主机信息
@@ -214,7 +238,7 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
         onOpenFloat(transfer);
       }
     },
-    [onOpenFloat]
+    [onOpenFloat],
   );
 
   const handleDeleteTransfer = useCallback(
@@ -224,7 +248,7 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
         removeTransferProgress(transfer.tabId, transfer.transferId);
       }
     },
-    [removeTransferProgress]
+    [removeTransferProgress],
   );
 
   const handleClearCompleted = useCallback(() => {
@@ -243,12 +267,14 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
   }
 
   // 计算活跃传输任务数
-  const activeCount = allTransfers.filter(
-    (t) => t.progress < 100 && !t.isCancelled && !t.error
-  ).length;
+  const activeTransfers = allTransfers.filter(
+    (t) => t.progress < 100 && !t.isCancelled && !t.error,
+  );
 
   // 计算完成任务数
-  const completedCount = allTransfers.filter((t) => t.progress >= 100).length;
+  const completedTransfers = allTransfers.filter((t) => t.progress >= 100);
+  const completedCount = sumTransferFileCount(completedTransfers);
+  const activeFileCount = sumTransferFileCount(activeTransfers);
 
   // 计算总进度
   const totalProgress =
@@ -309,7 +335,7 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
       {/* 右侧：操作按钮和状态信息 */}
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         {/* 总进度指示器 */}
-        {activeCount > 0 && (
+        {activeTransfers.length > 0 && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
             <Box sx={{ width: 60 }}>
               <LinearProgress
@@ -321,7 +347,12 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
                 }}
               />
             </Box>
-            <span style={{ fontSize: "0.75rem", color: theme.palette.text.secondary }}>
+            <span
+              style={{
+                fontSize: "0.75rem",
+                color: theme.palette.text.secondary,
+              }}
+            >
               {Math.round(totalProgress)}%
             </span>
           </Box>
@@ -329,11 +360,11 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
 
         {/* 状态文本 */}
         <Box sx={{ fontSize: "0.75rem", color: theme.palette.text.secondary }}>
-          {activeCount > 0
-            ? `进行中: ${activeCount}`
+          {activeTransfers.length > 0
+            ? `进行中: ${activeFileCount}`
             : completedCount > 0
-            ? `已完成: ${completedCount}`
-            : ""}
+              ? `已完成: ${completedCount}`
+              : ""}
         </Box>
 
         {/* 清除已完成按钮 */}
@@ -349,7 +380,11 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
         <Tooltip title={isFloatOpen ? "收起详情" : "查看详情"}>
           <IconButton
             size="small"
-            onClick={() => (onToggleFloat ? onToggleFloat(null) : onOpenFloat && onOpenFloat(null))}
+            onClick={() =>
+              onToggleFloat
+                ? onToggleFloat(null)
+                : onOpenFloat && onOpenFloat(null)
+            }
           >
             {isFloatOpen ? (
               <ExpandMore sx={{ fontSize: 18 }} />

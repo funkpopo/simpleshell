@@ -49,7 +49,10 @@ const notifyHistory = () => {
     try {
       listener();
     } catch (error) {
-      console.error("globalTransferStore: history listener execution failed", error);
+      console.error(
+        "globalTransferStore: history listener execution failed",
+        error,
+      );
     }
   }
 };
@@ -98,7 +101,7 @@ const getAllTransfersInternal = () => {
       ...transfers.map((t) => ({
         ...t,
         tabId,
-      }))
+      })),
     );
   }
   return allTransfers;
@@ -126,10 +129,13 @@ const clearAutoRemovalTimer = (transferId) => {
 const scheduleAutoRemoval = (tabId, transferId, delayMs = 1000) => {
   clearAutoRemovalTimer(transferId);
 
-  const timer = setTimeout(() => {
-    autoRemovalTimers.delete(transferId);
-    removeTransfer(tabId, transferId);
-  }, Math.max(0, delayMs));
+  const timer = setTimeout(
+    () => {
+      autoRemovalTimers.delete(transferId);
+      removeTransfer(tabId, transferId);
+    },
+    Math.max(0, delayMs),
+  );
 
   autoRemovalTimers.set(transferId, { timer, tabId });
 };
@@ -159,7 +165,7 @@ const updateTransfer = (tabId, transferId, updateData = {}) => {
   const { autoRemoveDelay, ...rest } = updateData || {};
 
   const next = transfers.map((transfer) =>
-    transfer.transferId === transferId ? { ...transfer, ...rest } : transfer
+    transfer.transferId === transferId ? { ...transfer, ...rest } : transfer,
   );
 
   setTransfersInternal(tabId, next);
@@ -187,7 +193,9 @@ const removeTransfer = (tabId, transferId, skipHistory = false) => {
     }
   }
 
-  const next = transfers.filter((transfer) => transfer.transferId !== transferId);
+  const next = transfers.filter(
+    (transfer) => transfer.transferId !== transferId,
+  );
   setTransfersInternal(tabId, next);
 };
 
@@ -252,7 +260,9 @@ const isTransferEqual = (a, b) => {
     a.transferSpeed === b.transferSpeed &&
     a.remainingTime === b.remainingTime &&
     a.currentFileIndex === b.currentFileIndex &&
+    a.processedFiles === b.processedFiles &&
     a.totalFiles === b.totalFiles &&
+    a.currentFile === b.currentFile &&
     a.isCancelled === b.isCancelled &&
     a.error === b.error &&
     a.isCompleted === b.isCompleted &&
@@ -272,7 +282,7 @@ const areTransfersEqual = (a, b) => {
 };
 
 const getSnapshot = (tabId) => {
-  const key = tabId || '__all__';
+  const key = tabId || "__all__";
 
   if (tabId) {
     const transfers = getTransfersInternal(tabId);
@@ -299,17 +309,14 @@ const getSnapshot = (tabId) => {
  * React Hook - 获取特定tabId的传输列表
  */
 export const useGlobalTransfers = (tabId) => {
-  const subscribeToStore = useCallback(
-    (listener) => subscribe(listener),
-    []
-  );
+  const subscribeToStore = useCallback((listener) => subscribe(listener), []);
 
   const getCurrentSnapshot = useCallback(() => getSnapshot(tabId), [tabId]);
 
   const transferList = useSyncExternalStore(
     subscribeToStore,
     getCurrentSnapshot,
-    getCurrentSnapshot
+    getCurrentSnapshot,
   );
 
   const helpers = useMemo(() => {
@@ -335,22 +342,20 @@ export const useGlobalTransfers = (tabId) => {
  * React Hook - 获取所有传输任务（用于全局底部栏）
  */
 export const useAllGlobalTransfers = () => {
-  const subscribeToStore = useCallback(
-    (listener) => subscribe(listener),
-    []
-  );
+  const subscribeToStore = useCallback((listener) => subscribe(listener), []);
 
   const getCurrentSnapshot = useCallback(() => getSnapshot(null), []);
 
   const allTransfers = useSyncExternalStore(
     subscribeToStore,
     getCurrentSnapshot,
-    getCurrentSnapshot
+    getCurrentSnapshot,
   );
 
   const helpers = useMemo(() => {
     return {
-      addTransferProgress: (tabId, transferData) => addTransfer(tabId, transferData),
+      addTransferProgress: (tabId, transferData) =>
+        addTransfer(tabId, transferData),
       updateTransferProgress: (tabId, transferId, updateData) =>
         updateTransfer(tabId, transferId, updateData),
       removeTransferProgress: (tabId, transferId) =>
@@ -389,7 +394,7 @@ export const useTransferHistory = () => {
   const history = useSyncExternalStore(
     subscribeToHistory,
     getHistorySnapshot,
-    getHistorySnapshot
+    getHistorySnapshot,
   );
 
   const clearHistory = useCallback(() => {

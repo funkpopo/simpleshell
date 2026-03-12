@@ -25,6 +25,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
 import { formatFileSize } from "../core/utils/formatters.js";
+import { sumTransferFileCount } from "../utils/transferCounts.js";
 
 // 格式化传输速度
 const formatSpeed = (bytesPerSecond) => {
@@ -120,9 +121,10 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
         m: 1,
         p: 1.5,
         borderRadius: 2,
-        backgroundColor: theme.palette.mode === 'dark'
-          ? 'rgba(255,255,255,0.05)'
-          : 'rgba(0,0,0,0.02)',
+        backgroundColor:
+          theme.palette.mode === "dark"
+            ? "rgba(255,255,255,0.05)"
+            : "rgba(0,0,0,0.02)",
         border: `1px solid ${theme.palette.divider}`,
       }}
     >
@@ -207,17 +209,17 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
               backgroundColor: hasError
                 ? "#ffebee"
                 : isCancelled
-                ? "#fff3e0"
-                : isCompleted
-                ? "#e8f5e8"
-                : `${getTransferColor(type)}15`,
+                  ? "#fff3e0"
+                  : isCompleted
+                    ? "#e8f5e8"
+                    : `${getTransferColor(type)}15`,
               color: hasError
                 ? "#f44336"
                 : isCancelled
-                ? "#ff9800"
-                : isCompleted
-                ? "#4caf50"
-                : getTransferColor(type),
+                  ? "#ff9800"
+                  : isCompleted
+                    ? "#4caf50"
+                    : getTransferColor(type),
             }}
           />
 
@@ -278,10 +280,10 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
               backgroundColor: hasError
                 ? "#f44336"
                 : isCancelled
-                ? "#ff9800"
-                : isCompleted
-                ? "#4caf50"
-                : getTransferColor(type),
+                  ? "#ff9800"
+                  : isCompleted
+                    ? "#4caf50"
+                    : getTransferColor(type),
               borderRadius: 3,
               transition: "transform 0.2s ease-in-out",
             },
@@ -346,7 +348,8 @@ TransferItem.displayName = "TransferItem";
  */
 const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
   const theme = useTheme();
-  const { allTransfers, updateTransferProgress, removeTransferProgress } = useAllGlobalTransfers();
+  const { allTransfers, updateTransferProgress, removeTransferProgress } =
+    useAllGlobalTransfers();
   const [isMinimized, setIsMinimized] = useState(false);
   const [selectedTabId, setSelectedTabId] = useState(null);
 
@@ -401,7 +404,7 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
   const handleCancelTransfer = (transferId) => {
     if (selectedTabId && window.terminalAPI?.cancelTransfer) {
       const transfer = allTransfers.find(
-        (t) => t.tabId === selectedTabId && t.transferId === transferId
+        (t) => t.tabId === selectedTabId && t.transferId === transferId,
       );
       if (transfer && transfer.transferKey) {
         window.terminalAPI
@@ -549,13 +552,14 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
             >
               {[...transfersByTab.keys()].map((tabId) => {
                 const transfers = transfersByTab.get(tabId) || [];
-                const activeCount = transfers.filter(
-                  (t) => t.progress < 100 && !t.isCancelled && !t.error
-                ).length;
+                const activeTransfers = transfers.filter(
+                  (t) => t.progress < 100 && !t.isCancelled && !t.error,
+                );
+                const activeFileCount = sumTransferFileCount(activeTransfers);
                 return (
                   <Tab
                     key={tabId}
-                    label={`Tab ${tabId} (${activeCount})`}
+                    label={`Tab ${tabId} (${activeFileCount})`}
                     value={tabId}
                   />
                 );
