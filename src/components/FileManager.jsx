@@ -124,22 +124,12 @@ const getSearchFieldMotionSx = (
     "& .MuiOutlinedInput-root": {
       borderRadius,
       backgroundColor,
-      transition:
-        "transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
-      transformOrigin: "center",
+      transition: "background-color 0.2s ease",
       "&:hover": {
         backgroundColor: hoverBackgroundColor,
       },
       "&.Mui-focused": {
         backgroundColor: focusedBackgroundColor,
-        transform: "scale(1.01)",
-        boxShadow: `0 0 0 1px ${focusOutlineColor}, 0 10px 24px ${focusShadowColor}`,
-      },
-      [REDUCED_MOTION_QUERY]: {
-        transition: "box-shadow 0.2s ease, background-color 0.2s ease",
-        "&.Mui-focused": {
-          transform: "none",
-        },
       },
     },
   };
