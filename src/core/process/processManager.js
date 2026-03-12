@@ -180,7 +180,10 @@ function cleanupProcess(processId, options = {}) {
           proc.stream.close();
           logToFile(`关闭SSH stream: ${processId}`, "INFO");
         } catch (error) {
-          logToFile(`Error closing SSH stream ${processId}: ${error.message}`, "ERROR");
+          logToFile(
+            `Error closing SSH stream ${processId}: ${error.message}`,
+            "ERROR",
+          );
         }
       } else {
         // 终止其他类型的进程
@@ -189,7 +192,10 @@ function cleanupProcess(processId, options = {}) {
             proc.process.kill();
           }
         } catch (error) {
-          logToFile(`Error killing process ${processId}: ${error.message}`, "ERROR");
+          logToFile(
+            `Error killing process ${processId}: ${error.message}`,
+            "ERROR",
+          );
         }
       }
     }
@@ -200,7 +206,10 @@ function cleanupProcess(processId, options = {}) {
       childProcesses.delete(proc.config.tabId);
     }
   } catch (error) {
-    logToFile(`Error cleaning up process ${processId}: ${error.message}`, "ERROR");
+    logToFile(
+      `Error cleaning up process ${processId}: ${error.message}`,
+      "ERROR",
+    );
   }
 }
 
@@ -245,7 +254,10 @@ function cleanupAllProcesses(options = {}) {
             proc.stream.close();
             logToFile(`关闭SSH stream (cleanup all): ${id}`, "INFO");
           } catch (error) {
-            logToFile(`Error closing SSH stream during cleanup ${id}: ${error.message}`, "ERROR");
+            logToFile(
+              `Error closing SSH stream during cleanup ${id}: ${error.message}`,
+              "ERROR",
+            );
           }
         } else {
           try {

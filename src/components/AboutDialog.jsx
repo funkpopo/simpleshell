@@ -68,8 +68,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     if (open && updateStatus === "idle") {
       (async () => {
         try {
-          const result =
-            await window.terminalAPI.hasDownloadedInstaller?.();
+          const result = await window.terminalAPI.hasDownloadedInstaller?.();
           if (result?.available) {
             setUpdateStatus("downloaded");
           }

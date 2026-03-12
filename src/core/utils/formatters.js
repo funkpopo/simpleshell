@@ -1,11 +1,17 @@
 export const formatFileSize = (bytes, options = {}) => {
-  const { decimals = 2, t = null } = typeof options === 'number'
-    ? { decimals: options }
-    : options;
+  const { decimals = 2, t = null } =
+    typeof options === "number" ? { decimals: options } : options;
 
   const defaultSizes = ["Bytes", "KB", "MB", "GB", "TB", "PB"];
   const sizes = t
-    ? [t("fileManager.units.bytes"), t("fileManager.units.kb"), t("fileManager.units.mb"), t("fileManager.units.gb"), t("fileManager.units.tb"), "PB"]
+    ? [
+        t("fileManager.units.bytes"),
+        t("fileManager.units.kb"),
+        t("fileManager.units.mb"),
+        t("fileManager.units.gb"),
+        t("fileManager.units.tb"),
+        "PB",
+      ]
     : defaultSizes;
 
   if (!bytes || bytes === 0) return `0 ${sizes[0]}`;

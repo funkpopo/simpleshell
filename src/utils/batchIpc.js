@@ -6,9 +6,7 @@
 export async function batchGetFilePermissions(tabId, filePaths) {
   if (!window.terminalAPI?.getFilePermissionsBatch) {
     // 降级方案：逐个调用
-    console.warn(
-      "batchGetFilePermissions: API 不可用，降级为逐个调用",
-    );
+    console.warn("batchGetFilePermissions: API 不可用，降级为逐个调用");
     return fallbackBatchGetPermissions(tabId, filePaths);
   }
 

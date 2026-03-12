@@ -129,7 +129,8 @@ const Settings = memo(({ open, onClose }) => {
   const [terminalFontSize, setTerminalFontSize] = React.useState(14);
   const [terminalFontWeight, setTerminalFontWeight] = React.useState(500);
   const [darkMode, setDarkMode] = React.useState(true);
-  const [externalEditorEnabled, setExternalEditorEnabled] = React.useState(false);
+  const [externalEditorEnabled, setExternalEditorEnabled] =
+    React.useState(false);
   const [externalEditorCommand, setExternalEditorCommand] = React.useState("");
   const [logLevel, setLogLevel] = React.useState("WARN");
   const [maxFileSize, setMaxFileSize] = React.useState(5);
@@ -228,7 +229,9 @@ const Settings = memo(({ open, onClose }) => {
             setCleanupIntervalDays(logSettings.cleanupIntervalDays || 7);
           }
         }
-      } catch { /* intentionally ignored */ } finally {
+      } catch {
+        /* intentionally ignored */
+      } finally {
         setIsLoading(false);
       }
     };
@@ -448,10 +451,7 @@ const Settings = memo(({ open, onClose }) => {
                     {t("settings.language")}
                   </Typography>
                   <FormControl fullWidth variant="outlined" size="small">
-                    <Select
-                      value={language}
-                      onChange={handleLanguageChange}
-                    >
+                    <Select value={language} onChange={handleLanguageChange}>
                       {languages.map((lang) => (
                         <MenuItem key={lang.code} value={lang.code}>
                           {lang.name}
@@ -470,8 +470,12 @@ const Settings = memo(({ open, onClose }) => {
                       value={darkMode ? "dark" : "light"}
                       onChange={handleDarkModeChange}
                     >
-                      <MenuItem value="light">{t("settings.themeLight")}</MenuItem>
-                      <MenuItem value="dark">{t("settings.themeDark")}</MenuItem>
+                      <MenuItem value="light">
+                        {t("settings.themeLight")}
+                      </MenuItem>
+                      <MenuItem value="dark">
+                        {t("settings.themeDark")}
+                      </MenuItem>
                     </Select>
                   </FormControl>
                 </Box>
@@ -520,16 +524,50 @@ const Settings = memo(({ open, onClose }) => {
                   </Typography>
                   <Box sx={{ display: "flex", flexDirection: "column" }}>
                     <FormControlLabel
-                      control={<Switch checked={dndEnabled} onChange={(e) => setDndEnabled(e.target.checked)} size="small" />}
-                      label={<Typography variant="body2">{t("settings.dnd.enable")}</Typography>}
+                      control={
+                        <Switch
+                          checked={dndEnabled}
+                          onChange={(e) => setDndEnabled(e.target.checked)}
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2">
+                          {t("settings.dnd.enable")}
+                        </Typography>
+                      }
                     />
                     <FormControlLabel
-                      control={<Switch checked={dndAutoScroll} onChange={(e) => setDndAutoScroll(e.target.checked)} disabled={!dndEnabled} size="small" />}
-                      label={<Typography variant="body2">{t("settings.dnd.autoScroll")}</Typography>}
+                      control={
+                        <Switch
+                          checked={dndAutoScroll}
+                          onChange={(e) => setDndAutoScroll(e.target.checked)}
+                          disabled={!dndEnabled}
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2">
+                          {t("settings.dnd.autoScroll")}
+                        </Typography>
+                      }
                     />
                     <FormControlLabel
-                      control={<Switch checked={dndCompactPreview} onChange={(e) => setDndCompactPreview(e.target.checked)} disabled={!dndEnabled} size="small" />}
-                      label={<Typography variant="body2">{t("settings.dnd.compactPreview")}</Typography>}
+                      control={
+                        <Switch
+                          checked={dndCompactPreview}
+                          onChange={(e) =>
+                            setDndCompactPreview(e.target.checked)
+                          }
+                          disabled={!dndEnabled}
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2">
+                          {t("settings.dnd.compactPreview")}
+                        </Typography>
+                      }
                     />
                   </Box>
                 </Box>
@@ -539,13 +577,27 @@ const Settings = memo(({ open, onClose }) => {
                     {t("settings.externalEditor.title")}
                   </Typography>
                   <FormControlLabel
-                    control={<Switch checked={externalEditorEnabled} onChange={(e) => setExternalEditorEnabled(e.target.checked)} size="small" />}
-                    label={<Typography variant="body2">{t("settings.externalEditor.enable")}</Typography>}
+                    control={
+                      <Switch
+                        checked={externalEditorEnabled}
+                        onChange={(e) =>
+                          setExternalEditorEnabled(e.target.checked)
+                        }
+                        size="small"
+                      />
+                    }
+                    label={
+                      <Typography variant="body2">
+                        {t("settings.externalEditor.enable")}
+                      </Typography>
+                    }
                   />
                   <TextField
                     fullWidth
                     size="small"
-                    placeholder={t("settings.externalEditor.commandPlaceholder")}
+                    placeholder={t(
+                      "settings.externalEditor.commandPlaceholder",
+                    )}
                     value={externalEditorCommand}
                     onChange={(e) => setExternalEditorCommand(e.target.value)}
                     disabled={!externalEditorEnabled}
@@ -571,7 +623,9 @@ const Settings = memo(({ open, onClose }) => {
                   >
                     {terminalFonts.map((font) => (
                       <MenuItem key={font.value} value={font.value}>
-                        <Typography style={{ fontFamily: font.value }}>{font.label}</Typography>
+                        <Typography style={{ fontFamily: font.value }}>
+                          {font.label}
+                        </Typography>
                       </MenuItem>
                     ))}
                   </Select>
@@ -579,7 +633,9 @@ const Settings = memo(({ open, onClose }) => {
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Typography variant="body2" sx={{ minWidth: 60 }}>粗细</Typography>
+                  <Typography variant="body2" sx={{ minWidth: 60 }}>
+                    粗细
+                  </Typography>
                   <Slider
                     value={terminalFontWeight}
                     onChange={handleTerminalFontWeightChange}
@@ -604,13 +660,18 @@ const Settings = memo(({ open, onClose }) => {
             </Grid>
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, md: 6 }}>
-                <Typography variant="body2" gutterBottom>终端字体大小</Typography>
+                <Typography variant="body2" gutterBottom>
+                  终端字体大小
+                </Typography>
                 <Box sx={{ px: 1 }}>
                   <Slider
                     value={terminalFontSize}
                     onChange={handleTerminalFontSizeChange}
                     step={null}
-                    marks={fontSizes.map((size) => ({ value: size.value, label: size.label }))}
+                    marks={fontSizes.map((size) => ({
+                      value: size.value,
+                      label: size.label,
+                    }))}
                     min={12}
                     max={18}
                     size="small"
@@ -618,12 +679,16 @@ const Settings = memo(({ open, onClose }) => {
                 </Box>
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <Typography variant="body2" gutterBottom>{t("settings.logSettingsTitle")}</Typography>
+                <Typography variant="body2" gutterBottom>
+                  {t("settings.logSettingsTitle")}
+                </Typography>
                 <Box sx={{ display: "flex", gap: 1 }}>
                   <FormControl variant="outlined" size="small" sx={{ flex: 1 }}>
                     <Select value={logLevel} onChange={handleLogLevelChange}>
                       {logLevels.map((level) => (
-                        <MenuItem key={level.value} value={level.value}>{level.label}</MenuItem>
+                        <MenuItem key={level.value} value={level.value}>
+                          {level.label}
+                        </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -632,7 +697,11 @@ const Settings = memo(({ open, onClose }) => {
                     type="number"
                     value={maxFileSize}
                     onChange={handleMaxFileSizeChange}
-                    InputProps={{ endAdornment: <InputAdornment position="end">MB</InputAdornment> }}
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">MB</InputAdornment>
+                      ),
+                    }}
                     inputProps={{ min: 1 }}
                     sx={{ width: 100 }}
                   />

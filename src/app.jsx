@@ -1258,9 +1258,12 @@ function AppContent() {
       // 设置一些拖动时的数据
       e.dataTransfer.effectAllowed = "move";
 
-      // 使拖动的元素半透明
+      // 使拖动的元素半透明并稍微缩小
       if (e.currentTarget) {
-        e.currentTarget.style.opacity = "0.5";
+        e.currentTarget.style.opacity = "0.4";
+        e.currentTarget.style.transform = "scale(0.95)";
+        e.currentTarget.style.transition =
+          "opacity 0.2s ease, transform 0.2s ease";
       }
     },
     [tabs, dispatch],
@@ -1451,9 +1454,10 @@ function AppContent() {
       reorderTab(sourceIndex, targetIndex, position);
       cleanupDragState();
 
-      // 恢复透明度
+      // 恢复透明度和缩放
       if (e.currentTarget) {
         e.currentTarget.style.opacity = "1";
+        e.currentTarget.style.transform = "scale(1)";
       }
     },
     [draggedTabIndex, dragInsertPosition, cleanupDragState, reorderTab],
@@ -1464,6 +1468,7 @@ function AppContent() {
     (e) => {
       if (e.currentTarget) {
         e.currentTarget.style.opacity = "1";
+        e.currentTarget.style.transform = "scale(1)";
       }
       cleanupDragState();
     },

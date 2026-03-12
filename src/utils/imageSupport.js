@@ -38,7 +38,10 @@ export const detectImageSupport = () => {
   const ctx = canvas.getContext("2d");
 
   if (!ctx) {
-    cachedImageSupport = { supported: false, reason: "Canvas context not available" };
+    cachedImageSupport = {
+      supported: false,
+      reason: "Canvas context not available",
+    };
     return cachedImageSupport;
   }
 
@@ -81,25 +84,26 @@ const getMaxTextureSize = () => {
 
   try {
     const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
-    
+    const gl =
+      canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+
     if (gl) {
       const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-      
+
       // 清理WebGL上下文
-      const loseContext = gl.getExtension('WEBGL_lose_context');
+      const loseContext = gl.getExtension("WEBGL_lose_context");
       if (loseContext) {
         loseContext.loseContext();
       }
-      
+
       // 缓存结果
       cachedMaxTextureSize = maxSize;
       return maxSize;
     }
   } catch (error) {
     // WebGL不可用，记录错误但继续
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('WebGL检测失败:', error);
+    if (process.env.NODE_ENV === "development") {
+      console.warn("WebGL检测失败:", error);
     }
   }
 

@@ -3,8 +3,8 @@
  * Provides an easy-to-use interface for scanning folders asynchronously using worker threads
  */
 
-const { Worker } = require('worker_threads');
-const path = require('path');
+const { Worker } = require("worker_threads");
+const path = require("path");
 
 /**
  * Scan a folder asynchronously using a worker thread
@@ -14,11 +14,15 @@ const path = require('path');
  * @param {number} options.timeout - Timeout in milliseconds (default: 30000ms = 30s)
  * @returns {Promise<Object>} Scan result with totalSize, fileCount, files, and errors
  */
-async function scanFolderAsync(folderPath, relativeBasePath = '', options = {}) {
+async function scanFolderAsync(
+  folderPath,
+  relativeBasePath = "",
+  options = {},
+) {
   const { timeout = 30000 } = options;
 
   return new Promise((resolve, reject) => {
-    const workerPath = path.join(__dirname, 'folder-scanner-worker.js');
+    const workerPath = path.join(__dirname, "folder-scanner-worker.js");
 
     // Create worker
     const worker = new Worker(workerPath, {
@@ -31,11 +35,13 @@ async function scanFolderAsync(folderPath, relativeBasePath = '', options = {}) 
     // Set timeout
     const timeoutId = setTimeout(() => {
       worker.terminate();
-      reject(new Error(`Folder scan timeout after ${timeout}ms for: ${folderPath}`));
+      reject(
+        new Error(`Folder scan timeout after ${timeout}ms for: ${folderPath}`),
+      );
     }, timeout);
 
     // Handle messages from worker
-    worker.on('message', (message) => {
+    worker.on("message", (message) => {
       clearTimeout(timeoutId);
 
       if (message.success) {
@@ -46,13 +52,13 @@ async function scanFolderAsync(folderPath, relativeBasePath = '', options = {}) 
     });
 
     // Handle worker errors
-    worker.on('error', (error) => {
+    worker.on("error", (error) => {
       clearTimeout(timeoutId);
       reject(new Error(`Worker error: ${error.message}`));
     });
 
     // Handle worker exit
-    worker.on('exit', (code) => {
+    worker.on("exit", (code) => {
       clearTimeout(timeoutId);
 
       if (code !== 0) {
@@ -69,9 +75,9 @@ async function scanFolderAsync(folderPath, relativeBasePath = '', options = {}) 
  * @param {string} relativeBasePath - Optional relative base path
  * @returns {Object} Scan result
  */
-function scanFolderSync(folderPath, relativeBasePath = '') {
-  const fs = require('fs');
-  const path = require('path');
+function scanFolderSync(folderPath, relativeBasePath = "") {
+  const fs = require("fs");
+  const path = require("path");
 
   let totalSize = 0;
   let fileCount = 0;
@@ -84,7 +90,9 @@ function scanFolderSync(folderPath, relativeBasePath = '') {
 
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
-        const entryRelativePath = path.join(relativePath, entry.name).replace(/\\/g, '/');
+        const entryRelativePath = path
+          .join(relativePath, entry.name)
+          .replace(/\\/g, "/");
 
         try {
           if (entry.isDirectory()) {

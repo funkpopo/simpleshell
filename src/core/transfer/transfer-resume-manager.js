@@ -246,10 +246,7 @@ class TransferResumeManager extends EventEmitter {
     if (!skipVerification) {
       const isValid = await this.verifyTransferIntegrity(transferId);
       if (!isValid) {
-        this.logToFile(
-          `传输完成但校验失败: ${transferId}`,
-          "ERROR",
-        );
+        this.logToFile(`传输完成但校验失败: ${transferId}`, "ERROR");
         transfer.state = TRANSFER_STATE.FAILED;
         transfer.errors.push({
           message: "文件完整性校验失败",
@@ -357,10 +354,7 @@ class TransferResumeManager extends EventEmitter {
       // 检查文件大小
       const localPath = transfer.localPath;
       if (!fs.existsSync(localPath)) {
-        this.logToFile(
-          `校验失败: 文件不存在 ${localPath}`,
-          "ERROR",
-        );
+        this.logToFile(`校验失败: 文件不存在 ${localPath}`, "ERROR");
         return false;
       }
 
@@ -377,10 +371,7 @@ class TransferResumeManager extends EventEmitter {
       if (transfer.metadata.enableChecksum) {
         const checksum = await this.calculateChecksum(localPath);
         if (transfer.checksum && transfer.checksum !== checksum) {
-          this.logToFile(
-            `校验失败: 校验和不匹配`,
-            "ERROR",
-          );
+          this.logToFile(`校验失败: 校验和不匹配`, "ERROR");
           return false;
         }
         transfer.checksum = checksum;
@@ -389,10 +380,7 @@ class TransferResumeManager extends EventEmitter {
       this.logToFile(`传输校验通过: ${transferId}`, "INFO");
       return true;
     } catch (error) {
-      this.logToFile(
-        `传输校验出错: ${transferId} - ${error.message}`,
-        "ERROR",
-      );
+      this.logToFile(`传输校验出错: ${transferId} - ${error.message}`, "ERROR");
       return false;
     }
   }
@@ -459,16 +447,10 @@ class TransferResumeManager extends EventEmitter {
       }
 
       if (loadedCount > 0) {
-        this.logToFile(
-          `加载了 ${loadedCount} 个未完成的传输记录`,
-          "INFO",
-        );
+        this.logToFile(`加载了 ${loadedCount} 个未完成的传输记录`, "INFO");
       }
     } catch (error) {
-      this.logToFile(
-        `加载持久化状态失败: ${error.message}`,
-        "ERROR",
-      );
+      this.logToFile(`加载持久化状态失败: ${error.message}`, "ERROR");
     }
   }
 
@@ -539,10 +521,7 @@ class TransferResumeManager extends EventEmitter {
     }
 
     if (cleanedCount > 0) {
-      this.logToFile(
-        `清理了 ${cleanedCount} 个已完成的传输记录`,
-        "INFO",
-      );
+      this.logToFile(`清理了 ${cleanedCount} 个已完成的传输记录`, "INFO");
     }
   }
 

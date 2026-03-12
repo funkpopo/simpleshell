@@ -3,7 +3,9 @@ const { BrowserWindow } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { logToFile } = require("../utils/logger");
-const { mainProcessResourceManager } = require("../utils/mainProcessResourceManager");
+const {
+  mainProcessResourceManager,
+} = require("../utils/mainProcessResourceManager");
 
 // AI Worker状态
 let aiWorker = null;
@@ -59,7 +61,9 @@ function detachCurrentWorkerEventHandlers(worker) {
   }
 }
 
-async function cleanupWorkerRegistrations({ terminateWorker } = { terminateWorker: true }) {
+async function cleanupWorkerRegistrations(
+  { terminateWorker } = { terminateWorker: true },
+) {
   // 先清理 restart timer 的资源注册（如果存在）
   await cleanupRestartTimerRegistration();
 
@@ -108,7 +112,9 @@ function getWorkerPath() {
     }
   }
 
-  throw new Error(`找不到AI worker文件，已尝试路径: ${possiblePaths.join(", ")}`);
+  throw new Error(
+    `找不到AI worker文件，已尝试路径: ${possiblePaths.join(", ")}`,
+  );
 }
 
 /**
@@ -116,7 +122,11 @@ function getWorkerPath() {
  */
 function handleWorkerTypeMessage(type, id, data, result, error) {
   const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
+  if (
+    !mainWindow ||
+    !mainWindow.webContents ||
+    mainWindow.webContents.isDestroyed()
+  ) {
     logToFile("无法发送Worker消息: 主窗口不可用", "ERROR");
     return;
   }
@@ -198,9 +208,13 @@ function createAIWorker() {
 
     aiWorker = new Worker(workerPath);
     // AI Worker 属于预期长生命周期资源，避免被 30 分钟阈值误判为泄漏
-    disposeWorkerResource = mainProcessResourceManager.addWorker(aiWorker, "AI Worker", {
-      skipLeakCheck: true,
-    });
+    disposeWorkerResource = mainProcessResourceManager.addWorker(
+      aiWorker,
+      "AI Worker",
+      {
+        skipLeakCheck: true,
+      },
+    );
 
     const messageHandler = (message) => {
       const { id, type, result, error, data } = message;
@@ -213,7 +227,7 @@ function createAIWorker() {
       const callback = aiRequestMap.get(id);
       if (callback) {
         if (error) {
-          const errorMessage = error.message || 'Unknown error';
+          const errorMessage = error.message || "Unknown error";
           callback.reject(new Error(errorMessage));
         } else {
           callback.resolve(result);
@@ -225,18 +239,21 @@ function createAIWorker() {
     };
 
     aiWorker.on("message", messageHandler);
-    disposeMessageListenerResource = mainProcessResourceManager.addEventListener(
-      aiWorker,
-      "message",
-      messageHandler,
-      "AI Worker message handler",
-      { skipLeakCheck: true }
-    );
+    disposeMessageListenerResource =
+      mainProcessResourceManager.addEventListener(
+        aiWorker,
+        "message",
+        messageHandler,
+        "AI Worker message handler",
+        { skipLeakCheck: true },
+      );
 
     const errorHandler = (error) => {
       logToFile(`AI Worker错误: ${error.message}`, "ERROR");
       for (const [id, callback] of aiRequestMap.entries()) {
-        callback.reject(new Error("AI Worker encountered an error: " + error.message));
+        callback.reject(
+          new Error("AI Worker encountered an error: " + error.message),
+        );
         aiRequestMap.delete(id);
       }
       streamSessions.clear();
@@ -248,7 +265,7 @@ function createAIWorker() {
       "error",
       errorHandler,
       "AI Worker error handler",
-      { skipLeakCheck: true }
+      { skipLeakCheck: true },
     );
 
     const exitHandler = (code) => {
@@ -264,11 +281,13 @@ function createAIWorker() {
         disposeRestartTimerResource = mainProcessResourceManager.addTimer(
           timerId,
           "timeout",
-          "AI Worker restart timer"
+          "AI Worker restart timer",
         );
       }
       for (const [id, callback] of aiRequestMap.entries()) {
-        callback.reject(new Error(`AI Worker stopped unexpectedly with code ${code}`));
+        callback.reject(
+          new Error(`AI Worker stopped unexpectedly with code ${code}`),
+        );
         aiRequestMap.delete(id);
       }
       streamSessions.clear();
@@ -285,7 +304,7 @@ function createAIWorker() {
       "exit",
       exitHandler,
       "AI Worker exit handler",
-      { skipLeakCheck: true }
+      { skipLeakCheck: true },
     );
 
     currentWorkerHandlers = { messageHandler, errorHandler, exitHandler };
@@ -293,14 +312,19 @@ function createAIWorker() {
     // 初始化系统代理配置
     try {
       const proxyManager = require("../proxy/proxy-manager");
-      const proxyConfig = proxyManager.getDefaultProxyConfig() || proxyManager.getSystemProxyConfig();
+      const proxyConfig =
+        proxyManager.getDefaultProxyConfig() ||
+        proxyManager.getSystemProxyConfig();
       if (proxyConfig) {
         aiWorker.postMessage({
           type: "update_proxy",
           id: `proxy_init_${Date.now()}`,
           data: proxyConfig,
         });
-        logToFile(`AI Worker 代理已配置: ${proxyConfig.host}:${proxyConfig.port}`, "INFO");
+        logToFile(
+          `AI Worker 代理已配置: ${proxyConfig.host}:${proxyConfig.port}`,
+          "INFO",
+        );
       }
     } catch (proxyError) {
       logToFile(`AI Worker 代理配置失败: ${proxyError.message}`, "WARN");

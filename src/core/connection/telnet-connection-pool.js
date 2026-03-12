@@ -3,8 +3,8 @@
  * 提供Telnet协议特定的连接管理功能
  */
 
-const BaseConnectionPool = require('./base-connection-pool');
-const Telnet = require('telnet-client');
+const BaseConnectionPool = require("./base-connection-pool");
+const Telnet = require("telnet-client");
 
 /**
  * Telnet连接池类
@@ -17,11 +17,11 @@ class TelnetConnectionPool extends BaseConnectionPool {
   constructor(config = {}) {
     super({
       ...config,
-      protocolType: 'Telnet',
+      protocolType: "Telnet",
       maxConnections: config.maxConnections || 50,
       idleTimeout: config.idleTimeout || 30 * 60 * 1000, // 30分钟
       healthCheckInterval: config.healthCheckInterval || 5 * 60 * 1000, // 5分钟
-      connectionTimeout: config.connectionTimeout || 15 * 1000 // 15秒
+      connectionTimeout: config.connectionTimeout || 15 * 1000, // 15秒
     });
   }
 
@@ -60,7 +60,7 @@ class TelnetConnectionPool extends BaseConnectionPool {
         refCount: 1,
         ready: false,
         stream: null,
-        listeners: new Set()
+        listeners: new Set(),
       };
 
       // Telnet连接参数
@@ -73,15 +73,15 @@ class TelnetConnectionPool extends BaseConnectionPool {
         password: telnetConfig.password,
         passwordPrompt: /Password:|密码:/i,
         loginPrompt: /login:|用户名:/i,
-        shellPrompt: /#|\$|>|%/
+        shellPrompt: /#|\$|>|%/,
       };
 
       // 监听错误事件
-      telnet.on('error', (err) => {
+      telnet.on("error", (err) => {
         const enhancedError = this._handleTelnetError(
           err,
           telnetConfig,
-          connectionKey
+          connectionKey,
         );
 
         this.connections.delete(connectionKey);
@@ -96,7 +96,10 @@ class TelnetConnectionPool extends BaseConnectionPool {
           this.connections.set(connectionKey, connectionInfo);
 
           this._logInfo(`Telnet连接建立成功: ${connectionKey}`);
-          this.emit('connectionCreated', { key: connectionKey, connection: connectionInfo });
+          this.emit("connectionCreated", {
+            key: connectionKey,
+            connection: connectionInfo,
+          });
 
           resolve(connectionInfo);
         })
@@ -104,7 +107,7 @@ class TelnetConnectionPool extends BaseConnectionPool {
           const enhancedError = this._handleTelnetError(
             err,
             telnetConfig,
-            connectionKey
+            connectionKey,
           );
 
           this.connections.delete(connectionKey);
@@ -119,11 +122,7 @@ class TelnetConnectionPool extends BaseConnectionPool {
    * @returns {boolean} 是否健康
    */
   isConnectionHealthy(connectionInfo) {
-    return (
-      connectionInfo &&
-      connectionInfo.client &&
-      connectionInfo.ready
-    );
+    return connectionInfo && connectionInfo.client && connectionInfo.ready;
   }
 
   /**
@@ -145,7 +144,7 @@ class TelnetConnectionPool extends BaseConnectionPool {
         lastUsed: info.lastUsed,
         refCount: info.refCount,
         ready: info.ready,
-        idleTime: Date.now() - info.lastUsed
+        idleTime: Date.now() - info.lastUsed,
       });
     }
 
@@ -154,14 +153,14 @@ class TelnetConnectionPool extends BaseConnectionPool {
     for (const [tabId, connKey] of this.tabReferences) {
       tabRefs.push({
         tabId,
-        connectionKey: connKey
+        connectionKey: connKey,
       });
     }
 
     return {
       ...stats,
       connections,
-      tabReferences: tabRefs
+      tabReferences: tabRefs,
     };
   }
 
@@ -177,13 +176,19 @@ class TelnetConnectionPool extends BaseConnectionPool {
     let errorMessage = `Telnet连接错误: ${err.message}`;
 
     // 检测常见Telnet错误
-    if (err.message.includes('ECONNREFUSED')) {
+    if (err.message.includes("ECONNREFUSED")) {
       errorMessage = `连接被拒绝: 无法连接到 ${telnetConfig.host}:${telnetConfig.port || 23}`;
-    } else if (err.message.includes('ENOTFOUND')) {
+    } else if (err.message.includes("ENOTFOUND")) {
       errorMessage = `主机不存在: 无法解析主机名 ${telnetConfig.host}`;
-    } else if (err.message.includes('ETIMEDOUT') || err.message.includes('timeout')) {
+    } else if (
+      err.message.includes("ETIMEDOUT") ||
+      err.message.includes("timeout")
+    ) {
       errorMessage = `连接超时: 无法在指定时间内连接到 ${telnetConfig.host}:${telnetConfig.port || 23}`;
-    } else if (err.message.includes('authentication') || err.message.includes('login')) {
+    } else if (
+      err.message.includes("authentication") ||
+      err.message.includes("login")
+    ) {
       errorMessage = `Telnet认证失败: 请检查用户名和密码是否正确`;
     }
 
@@ -198,7 +203,7 @@ class TelnetConnectionPool extends BaseConnectionPool {
       host: telnetConfig.host,
       port: telnetConfig.port || 23,
       username: telnetConfig.username,
-      hasPassword: !!telnetConfig.password
+      hasPassword: !!telnetConfig.password,
     };
 
     return enhancedError;

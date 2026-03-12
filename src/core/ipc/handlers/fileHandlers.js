@@ -187,7 +187,13 @@ class FileHandlers {
 
             // Ensure done signal even for empty directories
             if (data.length === 0) {
-              send({ tabId, path: requestedPath, token, items: [], done: true });
+              send({
+                tabId,
+                path: requestedPath,
+                token,
+                items: [],
+                done: true,
+              });
             }
           })
           .catch((err) => {
@@ -202,7 +208,9 @@ class FileHandlers {
                   error: err?.message || String(err),
                 });
               }
-            } catch { /* intentionally ignored */ }
+            } catch {
+              /* intentionally ignored */
+            }
           });
 
         return { success: true, data: [], chunked: true, token };
@@ -231,7 +239,7 @@ class FileHandlers {
     if (!sourcePath || !targetPath) {
       logToFile(
         `[Move Check Failed] Invalid paths. Source: ${sourcePath}, Target: ${targetPath} (Tab: ${tabId})`,
-        "WARN"
+        "WARN",
       );
       return { success: false, error: "Invalid source or target path" };
     }
@@ -240,14 +248,14 @@ class FileHandlers {
     if (sourcePath.trim() === "/" || sourcePath.trim() === "\\") {
       logToFile(
         `[Move Check Failed] Attempt to move root directory (Tab: ${tabId})`,
-        "WARN"
+        "WARN",
       );
       return { success: false, error: "Cannot move root directory" };
     }
 
     logToFile(
       `[Sensitive Operation] moveFile triggered. TabId: ${tabId}, Source: ${sourcePath}, Target: ${targetPath}, Source: IPC`,
-      "INFO"
+      "INFO",
     );
 
     try {
@@ -277,7 +285,7 @@ class FileHandlers {
     if (!filePath || typeof filePath !== "string") {
       logToFile(
         `[Delete Check Failed] Invalid path: ${filePath} (Tab: ${tabId})`,
-        "WARN"
+        "WARN",
       );
       return { success: false, error: "Invalid file path" };
     }
@@ -286,14 +294,14 @@ class FileHandlers {
     if (filePath.trim() === "/" || filePath.trim() === "\\") {
       logToFile(
         `[Delete Check Failed] Attempt to delete root: ${filePath} (Tab: ${tabId})`,
-        "WARN"
+        "WARN",
       );
       return { success: false, error: "Cannot delete root directory" };
     }
 
     logToFile(
       `[Sensitive Operation] deleteFile triggered. TabId: ${tabId}, Path: ${filePath}, IsDir: ${isDirectory}, Source: IPC`,
-      "INFO"
+      "INFO",
     );
 
     try {
@@ -319,7 +327,7 @@ class FileHandlers {
             }
           });
         },
-        { type: "deleteFile", path: filePath }
+        { type: "deleteFile", path: filePath },
       );
     } catch (error) {
       logToFile(`Error deleting file: ${error.message}`, "ERROR");
@@ -352,14 +360,14 @@ class FileHandlers {
     if (!oldPath || !newName) {
       logToFile(
         `[Rename Check Failed] Invalid params. Old: ${oldPath}, New: ${newName} (Tab: ${tabId})`,
-        "WARN"
+        "WARN",
       );
       return { success: false, error: "Invalid old path or new name" };
     }
     if (oldPath.trim() === "/" || oldPath.trim() === "\\") {
       logToFile(
         `[Rename Check Failed] Attempt to rename root (Tab: ${tabId})`,
-        "WARN"
+        "WARN",
       );
       return { success: false, error: "Cannot rename root directory" };
     }
@@ -367,7 +375,7 @@ class FileHandlers {
     const newPath = path.posix.join(path.posix.dirname(oldPath), newName);
     logToFile(
       `[Sensitive Operation] renameFile triggered. TabId: ${tabId}, Old: ${oldPath}, New: ${newPath}, Source: IPC`,
-      "INFO"
+      "INFO",
     );
 
     try {
@@ -474,9 +482,15 @@ class FileHandlers {
   }
 
   async downloadFiles(event, tabId, files) {
-    if (!sftpTransfer || typeof sftpTransfer.handleDownloadFiles !== "function") {
+    if (
+      !sftpTransfer ||
+      typeof sftpTransfer.handleDownloadFiles !== "function"
+    ) {
       logToFile("sftpTransfer.handleDownloadFiles is not available", "ERROR");
-      return { success: false, error: "SFTP Batch Download feature not properly initialized." };
+      return {
+        success: false,
+        error: "SFTP Batch Download feature not properly initialized.",
+      };
     }
     return sftpTransfer.handleDownloadFiles(event, tabId, files);
   }
@@ -494,8 +508,14 @@ class FileHandlers {
         return new Promise((resolve) => {
           sftp.chmod(filePath, mode, (err) => {
             if (err) {
-              logToFile(`Failed to set file permissions: ${err.message}`, "ERROR");
-              resolve({ success: false, error: `设置权限失败: ${err.message}` });
+              logToFile(
+                `Failed to set file permissions: ${err.message}`,
+                "ERROR",
+              );
+              resolve({
+                success: false,
+                error: `设置权限失败: ${err.message}`,
+              });
             } else {
               resolve({ success: true });
             }
@@ -522,18 +542,29 @@ class FileHandlers {
           chunks.push(filePaths.slice(i, i + BATCH_CONCURRENCY));
         }
         for (const chunk of chunks) {
-          const chunkPromises = chunk.map((filePath) =>
-            new Promise((resolve) => {
-              sftp.stat(filePath, (err, stats) => {
-                if (err) {
-                  resolve({ path: filePath, success: false, error: err.message });
-                } else {
-                  const mode = stats.mode;
-                  const permissions = (mode & parseInt("777", 8)).toString(8);
-                  resolve({ path: filePath, success: true, permissions: permissions.padStart(3, "0"), mode, stats });
-                }
-              });
-            })
+          const chunkPromises = chunk.map(
+            (filePath) =>
+              new Promise((resolve) => {
+                sftp.stat(filePath, (err, stats) => {
+                  if (err) {
+                    resolve({
+                      path: filePath,
+                      success: false,
+                      error: err.message,
+                    });
+                  } else {
+                    const mode = stats.mode;
+                    const permissions = (mode & parseInt("777", 8)).toString(8);
+                    resolve({
+                      path: filePath,
+                      success: true,
+                      permissions: permissions.padStart(3, "0"),
+                      mode,
+                      stats,
+                    });
+                  }
+                });
+              }),
           );
           const chunkResults = await Promise.all(chunkPromises);
           results.push(...chunkResults);
@@ -626,11 +657,19 @@ class FileHandlers {
                     });
                   } else reject(err);
                 } else if (stats.isDirectory()) resolve();
-                else reject(new Error(`Path exists but is not a directory: ${currentPath}`));
+                else
+                  reject(
+                    new Error(
+                      `Path exists but is not a directory: ${currentPath}`,
+                    ),
+                  );
               });
             });
           } catch (error) {
-            logToFile(`Warning creating folder ${currentPath}: ${error.message}`, "WARN");
+            logToFile(
+              `Warning creating folder ${currentPath}: ${error.message}`,
+              "WARN",
+            );
           }
         }
       };
@@ -644,13 +683,22 @@ class FileHandlers {
 
   async uploadFile(event, tabId, targetFolder, progressChannel) {
     if (!sftpTransfer || typeof sftpTransfer.handleUploadFile !== "function") {
-      return { success: false, error: "SFTP Upload feature not properly initialized." };
+      return {
+        success: false,
+        error: "SFTP Upload feature not properly initialized.",
+      };
     }
     const processInfo = processManager.getProcess(tabId);
-    if (!processInfo || !processInfo.config || !processInfo.process || processInfo.type !== "ssh2") {
+    if (
+      !processInfo ||
+      !processInfo.config ||
+      !processInfo.process ||
+      processInfo.type !== "ssh2"
+    ) {
       return { success: false, error: "无效或未就绪的SSH连接" };
     }
-    const mainWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    const mainWindow =
+      BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     if (!mainWindow) return { success: false, error: "无法显示对话框" };
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: "选择要上传的文件",
@@ -661,22 +709,50 @@ class FileHandlers {
       return { success: false, cancelled: true, error: "用户取消上传" };
     }
     try {
-      return await sftpTransfer.handleUploadFile(event, tabId, targetFolder, filePaths, progressChannel);
+      return await sftpTransfer.handleUploadFile(
+        event,
+        tabId,
+        targetFolder,
+        filePaths,
+        progressChannel,
+      );
     } catch (error) {
-      const isCancelError = error.message?.includes("cancel") || error.message?.includes("abort") || error.message?.includes("用户取消");
+      const isCancelError =
+        error.message?.includes("cancel") ||
+        error.message?.includes("abort") ||
+        error.message?.includes("用户取消");
       if (isCancelError) {
-        return { success: true, cancelled: true, userCancelled: true, message: "用户已取消操作" };
+        return {
+          success: true,
+          cancelled: true,
+          userCancelled: true,
+          message: "用户已取消操作",
+        };
       }
       return { success: false, error: `上传文件失败: ${error.message}` };
     }
   }
 
-  async uploadDroppedFiles(event, tabId, targetFolder, uploadData, progressChannel) {
+  async uploadDroppedFiles(
+    event,
+    tabId,
+    targetFolder,
+    uploadData,
+    progressChannel,
+  ) {
     if (!sftpTransfer || typeof sftpTransfer.handleUploadFile !== "function") {
-      return { success: false, error: "SFTP Upload feature not properly initialized." };
+      return {
+        success: false,
+        error: "SFTP Upload feature not properly initialized.",
+      };
     }
     const processInfo = processManager.getProcess(tabId);
-    if (!processInfo || !processInfo.config || !processInfo.process || processInfo.type !== "ssh2") {
+    if (
+      !processInfo ||
+      !processInfo.config ||
+      !processInfo.process ||
+      processInfo.type !== "ssh2"
+    ) {
       return { success: false, error: "无效或未就绪的SSH连接" };
     }
     try {
@@ -684,18 +760,30 @@ class FileHandlers {
       if (uploadData.folders && uploadData.folders.length > 0) {
         const sftp = await sftpCore.getSftpSession(tabId);
         for (const folderPath of uploadData.folders) {
-          const remoteFolderPath = path.posix.join(targetFolder, folderPath).replace(/\\/g, "/");
+          const remoteFolderPath = path.posix
+            .join(targetFolder, folderPath)
+            .replace(/\\/g, "/");
           try {
             await new Promise((resolve) => {
               sftp.mkdir(remoteFolderPath, (err) => {
-                if (err && err.code !== 4 && !err.message.includes("File exists")) {
-                  logToFile(`Error creating folder ${remoteFolderPath}: ${err.message}`, "WARN");
+                if (
+                  err &&
+                  err.code !== 4 &&
+                  !err.message.includes("File exists")
+                ) {
+                  logToFile(
+                    `Error creating folder ${remoteFolderPath}: ${err.message}`,
+                    "WARN",
+                  );
                 }
                 resolve();
               });
             });
           } catch (folderError) {
-            logToFile(`Error creating folder ${remoteFolderPath}: ${folderError.message}`, "WARN");
+            logToFile(
+              `Error creating folder ${remoteFolderPath}: ${folderError.message}`,
+              "WARN",
+            );
           }
         }
       }
@@ -704,12 +792,20 @@ class FileHandlers {
       for (const fileData of filesData) {
         if (fileData) {
           const relativePath = fileData.relativePath || fileData.name;
-          const tempFilePath = path.join(tempDir, "simpleshell-upload", relativePath);
+          const tempFilePath = path.join(
+            tempDir,
+            "simpleshell-upload",
+            relativePath,
+          );
           const tempFileDir = path.dirname(tempFilePath);
-          if (!fs.existsSync(tempFileDir)) fs.mkdirSync(tempFileDir, { recursive: true });
+          if (!fs.existsSync(tempFileDir))
+            fs.mkdirSync(tempFileDir, { recursive: true });
           let buffer;
           if (fileData.chunks && fileData.isChunked) {
-            const totalLength = fileData.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const totalLength = fileData.chunks.reduce(
+              (sum, chunk) => sum + chunk.length,
+              0,
+            );
             buffer = Buffer.alloc(totalLength);
             let offset = 0;
             for (const chunk of fileData.chunks) {
@@ -724,58 +820,112 @@ class FileHandlers {
           } else continue;
           fs.writeFileSync(tempFilePath, buffer);
           if (fileData.relativePath && fileData.relativePath.includes("/")) {
-            const remoteFilePath = path.posix.join(targetFolder, fileData.relativePath).replace(/\\/g, "/");
-            filePaths.push({ localPath: tempFilePath, remotePath: remoteFilePath });
+            const remoteFilePath = path.posix
+              .join(targetFolder, fileData.relativePath)
+              .replace(/\\/g, "/");
+            filePaths.push({
+              localPath: tempFilePath,
+              remotePath: remoteFilePath,
+            });
           } else {
             filePaths.push(tempFilePath);
           }
         }
       }
-      if (filePaths.length === 0) return { success: false, error: "没有有效的文件可上传" };
+      if (filePaths.length === 0)
+        return { success: false, error: "没有有效的文件可上传" };
       const hasCustomPaths = filePaths.some((f) => typeof f === "object");
       let result;
       if (hasCustomPaths) {
-        let uploadedCount = 0, failedCount = 0;
+        let uploadedCount = 0,
+          failedCount = 0;
         for (const fileInfo of filePaths) {
-          const localPath = typeof fileInfo === "string" ? fileInfo : fileInfo.localPath;
-          const remotePath = typeof fileInfo === "string"
-            ? path.posix.join(targetFolder, path.basename(fileInfo)).replace(/\\/g, "/")
-            : fileInfo.remotePath;
+          const localPath =
+            typeof fileInfo === "string" ? fileInfo : fileInfo.localPath;
+          const remotePath =
+            typeof fileInfo === "string"
+              ? path.posix
+                  .join(targetFolder, path.basename(fileInfo))
+                  .replace(/\\/g, "/")
+              : fileInfo.remotePath;
           const remoteDir = path.posix.dirname(remotePath);
-          const singleResult = await sftpTransfer.handleUploadFile(event, tabId, remoteDir, [localPath], progressChannel);
+          const singleResult = await sftpTransfer.handleUploadFile(
+            event,
+            tabId,
+            remoteDir,
+            [localPath],
+            progressChannel,
+          );
           if (singleResult.success) uploadedCount++;
           else failedCount++;
         }
-        result = { success: failedCount === 0, uploadedCount, totalFiles: filePaths.length, failedCount };
+        result = {
+          success: failedCount === 0,
+          uploadedCount,
+          totalFiles: filePaths.length,
+          failedCount,
+        };
       } else {
-        const uploadPaths = filePaths.map((f) => typeof f === "string" ? f : f.localPath);
-        result = await sftpTransfer.handleUploadFile(event, tabId, targetFolder, uploadPaths, progressChannel);
+        const uploadPaths = filePaths.map((f) =>
+          typeof f === "string" ? f : f.localPath,
+        );
+        result = await sftpTransfer.handleUploadFile(
+          event,
+          tabId,
+          targetFolder,
+          uploadPaths,
+          progressChannel,
+        );
       }
       try {
         const tempUploadDir = path.join(tempDir, "simpleshell-upload");
-        if (fs.existsSync(tempUploadDir)) fs.rmSync(tempUploadDir, { recursive: true, force: true });
+        if (fs.existsSync(tempUploadDir))
+          fs.rmSync(tempUploadDir, { recursive: true, force: true });
       } catch (cleanupError) {
-        logToFile(`Error cleaning up temp files: ${cleanupError.message}`, "WARN");
+        logToFile(
+          `Error cleaning up temp files: ${cleanupError.message}`,
+          "WARN",
+        );
       }
       return result;
     } catch (error) {
-      const isCancelError = error.message?.includes("cancel") || error.message?.includes("abort") || error.message?.includes("用户取消");
+      const isCancelError =
+        error.message?.includes("cancel") ||
+        error.message?.includes("abort") ||
+        error.message?.includes("用户取消");
       if (isCancelError) {
-        return { success: true, cancelled: true, userCancelled: true, message: "用户已取消操作" };
+        return {
+          success: true,
+          cancelled: true,
+          userCancelled: true,
+          message: "用户已取消操作",
+        };
       }
       return { success: false, error: `上传文件失败: ${error.message}` };
     }
   }
 
   async uploadFolder(event, tabId, targetFolder, progressChannel) {
-    if (!sftpTransfer || typeof sftpTransfer.handleUploadFolder !== "function") {
-      return { success: false, error: "SFTP Upload feature not properly initialized." };
+    if (
+      !sftpTransfer ||
+      typeof sftpTransfer.handleUploadFolder !== "function"
+    ) {
+      return {
+        success: false,
+        error: "SFTP Upload feature not properly initialized.",
+      };
     }
     const processInfo = processManager.getProcess(tabId);
-    if (!processInfo || !processInfo.config || !processInfo.process || processInfo.type !== "ssh2") {
+    if (
+      !processInfo ||
+      !processInfo.config ||
+      !processInfo.process ||
+      processInfo.type !== "ssh2"
+    ) {
       return { success: false, error: "无效或未就绪的SSH连接" };
     }
-    const mainWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    const mainWindow =
+      BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     if (!mainWindow) return { success: false, error: "无法显示对话框" };
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: "选择要上传的文件夹",
@@ -786,11 +936,24 @@ class FileHandlers {
       return { success: false, cancelled: true, error: "用户取消上传" };
     }
     try {
-      return await sftpTransfer.handleUploadFolder(tabId, filePaths[0], targetFolder, progressChannel);
+      return await sftpTransfer.handleUploadFolder(
+        tabId,
+        filePaths[0],
+        targetFolder,
+        progressChannel,
+      );
     } catch (error) {
-      const isCancelError = error.message?.includes("cancel") || error.message?.includes("abort") || error.message?.includes("用户取消");
+      const isCancelError =
+        error.message?.includes("cancel") ||
+        error.message?.includes("abort") ||
+        error.message?.includes("用户取消");
       if (isCancelError) {
-        return { success: true, cancelled: true, userCancelled: true, message: "用户已取消操作" };
+        return {
+          success: true,
+          cancelled: true,
+          userCancelled: true,
+          message: "用户已取消操作",
+        };
       }
       return { success: false, error: `上传文件夹失败: ${error.message}` };
     }

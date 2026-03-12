@@ -41,100 +41,112 @@ import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
 
 // 虚拟化历史记录项组件
-const HistoryItem = React.memo(({ index, style, filteredHistory, selectMode, selectedCommands, toggleCommandSelection, handleSendCommand, handleMenuOpen, formatTime }) => {
-  const theme = useTheme();
-  const item = filteredHistory[index];
-  if (!item) return null;
+const HistoryItem = React.memo(
+  ({
+    index,
+    style,
+    filteredHistory,
+    selectMode,
+    selectedCommands,
+    toggleCommandSelection,
+    handleSendCommand,
+    handleMenuOpen,
+    formatTime,
+  }) => {
+    const theme = useTheme();
+    const item = filteredHistory[index];
+    if (!item) return null;
 
-  return (
-    <div style={style}>
-      <ListItem
-        disablePadding
-        sx={{
-          borderBottom: `1px solid ${theme.palette.divider}`,
-          overflow: "hidden",
-        }}
-      >
-        <ListItemButton
-          onClick={() =>
-            selectMode
-              ? toggleCommandSelection(item.command)
-              : handleSendCommand(item.command)
-          }
+    return (
+      <div style={style}>
+        <ListItem
+          disablePadding
           sx={{
-            minHeight: 48,
-            bgcolor:
-              selectMode && selectedCommands.has(item.command)
-                ? "action.selected"
-                : "transparent",
-            borderRadius: 0,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            overflow: "hidden",
           }}
         >
-          {selectMode && (
-            <ListItemIcon sx={{ minWidth: 36 }}>
-              <Checkbox
-                checked={selectedCommands.has(item.command)}
-                onChange={() => toggleCommandSelection(item.command)}
-                size="small"
-              />
-            </ListItemIcon>
-          )}
+          <ListItemButton
+            onClick={() =>
+              selectMode
+                ? toggleCommandSelection(item.command)
+                : handleSendCommand(item.command)
+            }
+            sx={{
+              minHeight: 48,
+              bgcolor:
+                selectMode && selectedCommands.has(item.command)
+                  ? "action.selected"
+                  : "transparent",
+              borderRadius: 0,
+            }}
+          >
+            {selectMode && (
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                <Checkbox
+                  checked={selectedCommands.has(item.command)}
+                  onChange={() => toggleCommandSelection(item.command)}
+                  size="small"
+                />
+              </ListItemIcon>
+            )}
 
-          <ListItemText
-            primary={
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                }}
-              >
-                <Typography
-                  variant="body2"
+            <ListItemText
+              primary={
+                <Box
                   sx={{
-                    flex: 1,
-                    wordBreak: "break-all",
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                    lineHeight: "1.2em",
-                    maxHeight: "2.4em",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
                   }}
                 >
-                  {item.command}
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      flex: 1,
+                      wordBreak: "break-all",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                      lineHeight: "1.2em",
+                      maxHeight: "2.4em",
+                    }}
+                  >
+                    {item.command}
+                  </Typography>
+                  {item.count > 1 && (
+                    <Chip
+                      label={`${item.count}次`}
+                      size="small"
+                      variant="outlined"
+                      sx={{ fontSize: "0.7rem", height: 20 }}
+                    />
+                  )}
+                </Box>
+              }
+              secondary={
+                <Typography variant="caption" color="text.secondary">
+                  {formatTime(item.timestamp)}
                 </Typography>
-                {item.count > 1 && (
-                  <Chip
-                    label={`${item.count}次`}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: "0.7rem", height: 20 }}
-                  />
-                )}
-              </Box>
-            }
-            secondary={
-              <Typography variant="caption" color="text.secondary">
-                {formatTime(item.timestamp)}
-              </Typography>
-            }
-          />
+              }
+            />
 
-          {!selectMode && (
-            <IconButton
-              size="small"
-              onClick={(e) => handleMenuOpen(e, item)}
-              sx={{ ml: 1 }}
-            >
-              <MoreVertIcon />
-            </IconButton>
-          )}
-        </ListItemButton>
-      </ListItem>
-    </div>
-  );
-});
+            {!selectMode && (
+              <IconButton
+                size="small"
+                onClick={(e) => handleMenuOpen(e, item)}
+                sx={{ ml: 1 }}
+              >
+                <MoreVertIcon />
+              </IconButton>
+            )}
+          </ListItemButton>
+        </ListItem>
+      </div>
+    );
+  },
+);
 
 function CommandHistory({ open, onClose, onSendCommand }) {
   const theme = useTheme();
@@ -346,7 +358,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       formatTime,
     ],
   );
-
 
   // 复制命令到剪贴板
   const handleCopyCommand = async (command) => {
@@ -694,7 +705,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                 // 对于大量数据，使用虚拟化渲染
                 containerHeight > 0 && (
                   <List
-                    style={{ height: containerHeight, width: '100%' }}
+                    style={{ height: containerHeight, width: "100%" }}
                     rowCount={filteredHistory.length}
                     rowHeight={48}
                     rowProps={listItemData}

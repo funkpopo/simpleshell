@@ -97,7 +97,8 @@ class ConnectionManager {
 
   getLastConnections(count) {
     // 合并SSH和Telnet的最近连接（获取连接对象,而不是连接ID）
-    const sshLastConnections = this.sshConnectionPool.getLastConnectionsWithDetails(count);
+    const sshLastConnections =
+      this.sshConnectionPool.getLastConnectionsWithDetails(count);
     const telnetLastConnections =
       this.telnetConnectionPool.getLastConnectionsWithDetails(count);
 
@@ -114,7 +115,7 @@ class ConnectionManager {
       const telnetConnections = [];
 
       for (const conn of connections) {
-        if (conn.protocol === 'telnet') {
+        if (conn.protocol === "telnet") {
           telnetConnections.push(conn);
         } else {
           // 默认视为SSH连接
@@ -126,7 +127,9 @@ class ConnectionManager {
         this.sshConnectionPool.loadLastConnectionsFromConfig(sshConnections);
       }
       if (telnetConnections.length > 0) {
-        this.telnetConnectionPool.loadLastConnectionsFromConfig(telnetConnections);
+        this.telnetConnectionPool.loadLastConnectionsFromConfig(
+          telnetConnections,
+        );
       }
 
       logToFile(

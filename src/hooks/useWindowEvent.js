@@ -46,7 +46,7 @@ export function useWindowEvent(eventName, handler, options = {}) {
       window,
       eventName,
       stableHandler,
-      options
+      options,
     );
 
     return removeListener;
@@ -76,7 +76,7 @@ export function useWindowEvents(eventHandlers, options = {}) {
   }, [eventHandlers]);
 
   useEffect(() => {
-    if (!eventHandlers || typeof eventHandlers !== 'object') {
+    if (!eventHandlers || typeof eventHandlers !== "object") {
       return;
     }
 
@@ -84,7 +84,7 @@ export function useWindowEvents(eventHandlers, options = {}) {
 
     // 为每个事件添加监听器
     Object.entries(eventHandlers).forEach(([eventName, handler]) => {
-      if (eventName && typeof handler === 'function') {
+      if (eventName && typeof handler === "function") {
         const stableHandler = (...args) => {
           const currentHandler = handlersRef.current[eventName];
           if (currentHandler) {
@@ -96,7 +96,7 @@ export function useWindowEvents(eventHandlers, options = {}) {
           window,
           eventName,
           stableHandler,
-          options
+          options,
         );
 
         removeListeners.push(removeListener);
@@ -105,7 +105,7 @@ export function useWindowEvents(eventHandlers, options = {}) {
 
     // 清理所有监听器
     return () => {
-      removeListeners.forEach(remove => remove?.());
+      removeListeners.forEach((remove) => remove?.());
     };
   }, [eventManager, options]);
 }
@@ -144,7 +144,7 @@ export function useElementEvent(elementRef, eventName, handler, options = {}) {
       element,
       eventName,
       stableHandler,
-      options
+      options,
     );
 
     return removeListener;
@@ -164,7 +164,12 @@ export function useElementEvent(elementRef, eventName, handler, options = {}) {
  * // 仅在对话框打开时监听 ESC 键
  * useConditionalWindowEvent('keydown', handleEscape, dialogOpen);
  */
-export function useConditionalWindowEvent(eventName, handler, enabled = true, options = {}) {
+export function useConditionalWindowEvent(
+  eventName,
+  handler,
+  enabled = true,
+  options = {},
+) {
   const eventManager = useEventManager();
   const handlerRef = useRef(handler);
 
@@ -183,7 +188,7 @@ export function useConditionalWindowEvent(eventName, handler, enabled = true, op
       window,
       eventName,
       stableHandler,
-      options
+      options,
     );
 
     return removeListener;
@@ -219,10 +224,13 @@ export function useCustomEvent(eventName, handler) {
  * @returns {Function} emit - 发射事件的函数
  */
 export function useCustomEventEmitter(eventName) {
-  return useCallback((detail) => {
-    const event = new CustomEvent(eventName, { detail });
-    window.dispatchEvent(event);
-  }, [eventName]);
+  return useCallback(
+    (detail) => {
+      const event = new CustomEvent(eventName, { detail });
+      window.dispatchEvent(event);
+    },
+    [eventName],
+  );
 }
 
 /**
@@ -237,7 +245,12 @@ export function useCustomEventEmitter(eventName) {
  * // resize 事件节流处理
  * useThrottledWindowEvent('resize', handleResize, 200);
  */
-export function useThrottledWindowEvent(eventName, handler, delay = 200, options = {}) {
+export function useThrottledWindowEvent(
+  eventName,
+  handler,
+  delay = 200,
+  options = {},
+) {
   const eventManager = useEventManager();
   const handlerRef = useRef(handler);
   const lastCallRef = useRef(0);
@@ -275,7 +288,7 @@ export function useThrottledWindowEvent(eventName, handler, delay = 200, options
       window,
       eventName,
       throttledHandler,
-      options
+      options,
     );
 
     return () => {
@@ -299,7 +312,12 @@ export function useThrottledWindowEvent(eventName, handler, delay = 200, options
  * // scroll 事件防抖处理
  * useDebouncedWindowEvent('scroll', handleScroll, 300);
  */
-export function useDebouncedWindowEvent(eventName, handler, delay = 300, options = {}) {
+export function useDebouncedWindowEvent(
+  eventName,
+  handler,
+  delay = 300,
+  options = {},
+) {
   const eventManager = useEventManager();
   const handlerRef = useRef(handler);
   const timeoutRef = useRef(null);
@@ -326,7 +344,7 @@ export function useDebouncedWindowEvent(eventName, handler, delay = 300, options
       window,
       eventName,
       debouncedHandler,
-      options
+      options,
     );
 
     return () => {

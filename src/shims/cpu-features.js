@@ -12,4 +12,3 @@
 module.exports = function cpuFeaturesShim() {
   return null;
 };
-

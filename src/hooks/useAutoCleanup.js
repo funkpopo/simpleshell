@@ -54,16 +54,13 @@ export function useAutoCleanup() {
   }, []);
 
   // 注册 IntersectionObserver，并在清理时断开观察
-  const addIntersectionObserver = useCallback(
-    (callback, element, options) => {
-      return cleanupManagerRef.current?.addIntersectionObserver(
-        callback,
-        element,
-        options,
-      );
-    },
-    [],
-  );
+  const addIntersectionObserver = useCallback((callback, element, options) => {
+    return cleanupManagerRef.current?.addIntersectionObserver(
+      callback,
+      element,
+      options,
+    );
+  }, []);
 
   // 注册 MutationObserver，并在清理时断开观察
   const addMutationObserver = useCallback((callback, element, options) => {
@@ -184,9 +181,7 @@ class CleanupManager {
     };
 
     const timerId = setInterval(wrapped, interval);
-    return this.addResource("interval", timerId, () =>
-      clearInterval(timerId),
-    );
+    return this.addResource("interval", timerId, () => clearInterval(timerId));
   }
 
   // 事件监听封装，自动捕获错误并在清理时移除监听
@@ -432,4 +427,3 @@ export function useEffectWithCleanup(effect, deps) {
 }
 
 export default useAutoCleanup;
-

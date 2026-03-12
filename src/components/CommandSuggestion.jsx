@@ -5,7 +5,13 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import { Paper, List, ListItemButton, ListItemText, Typography } from "@mui/material";
+import {
+  Paper,
+  List,
+  ListItemButton,
+  ListItemText,
+  Typography,
+} from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useConditionalWindowEvent } from "../hooks/useWindowEvent.js";
 

@@ -7,11 +7,15 @@ const baseRules = require("./webpack.rules");
 const rules = baseRules.filter((rule) => {
   const use = rule && rule.use;
   if (!use) return true;
-  if (typeof use === "string") return use !== "@vercel/webpack-asset-relocator-loader";
+  if (typeof use === "string")
+    return use !== "@vercel/webpack-asset-relocator-loader";
   if (Array.isArray(use)) {
-    return !use.some((entry) => entry === "@vercel/webpack-asset-relocator-loader");
+    return !use.some(
+      (entry) => entry === "@vercel/webpack-asset-relocator-loader",
+    );
   }
-  if (typeof use === "object") return use.loader !== "@vercel/webpack-asset-relocator-loader";
+  if (typeof use === "object")
+    return use.loader !== "@vercel/webpack-asset-relocator-loader";
   return true;
 });
 const path = require("path");
@@ -33,8 +37,8 @@ module.exports = {
     usedExports: true,
   },
   cache: {
-    type: 'filesystem',
-    cacheDirectory: path.resolve(__dirname, '.webpack_cache'),
+    type: "filesystem",
+    cacheDirectory: path.resolve(__dirname, ".webpack_cache"),
     buildDependencies: {
       config: [__filename],
     },
@@ -43,12 +47,22 @@ module.exports = {
     {
       apply: (compiler) => {
         compiler.hooks.afterEmit.tap("CopyPdfWorker", () => {
-          const outputDir = path.join(__dirname, ".webpack", "renderer", "main_window");
+          const outputDir = path.join(
+            __dirname,
+            ".webpack",
+            "renderer",
+            "main_window",
+          );
           if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
           }
 
-          const pdfjsDistPath = path.join(__dirname, "node_modules", "pdfjs-dist", "build");
+          const pdfjsDistPath = path.join(
+            __dirname,
+            "node_modules",
+            "pdfjs-dist",
+            "build",
+          );
           const workerSrcPath = path.join(pdfjsDistPath, "pdf.worker.min.mjs");
           const workerDestPath = path.join(outputDir, "pdf.worker.min.mjs");
 

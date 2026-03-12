@@ -73,7 +73,10 @@ async function batchInvoke(_event, calls) {
         continue;
       }
 
-      results.push({ success: false, error: `Channel not allowed: ${channel}` });
+      results.push({
+        success: false,
+        error: `Channel not allowed: ${channel}`,
+      });
     } catch (error) {
       logToFile(
         `ipc:batchInvoke failed for ${channel}: ${error?.message || String(error)}`,
@@ -96,4 +99,3 @@ function registerBatchInvokeHandlers(ipcMain, safeHandle) {
 module.exports = {
   registerBatchInvokeHandlers,
 };
-

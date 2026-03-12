@@ -19,9 +19,9 @@
  * ```
  */
 
-const BaseConnectionPool = require('./base-connection-pool');
-const SSHConnectionPool = require('./ssh-pool'); // 已更新为简化的ssh-pool
-const TelnetConnectionPool = require('./telnet-connection-pool');
+const BaseConnectionPool = require("./base-connection-pool");
+const SSHConnectionPool = require("./ssh-pool"); // 已更新为简化的ssh-pool
+const TelnetConnectionPool = require("./telnet-connection-pool");
 
 // 创建单例实例
 const sshConnectionPool = new SSHConnectionPool();
@@ -52,7 +52,7 @@ function cleanupConnectionPools() {
 function getAllConnectionPoolsStatus() {
   return {
     ssh: sshConnectionPool.getStatus(),
-    telnet: telnetConnectionPool.getStatus()
+    telnet: telnetConnectionPool.getStatus(),
   };
 }
 
@@ -63,7 +63,7 @@ function getAllConnectionPoolsStatus() {
 function getAllConnectionPoolsStats() {
   return {
     ssh: sshConnectionPool.getDetailedStats(),
-    telnet: telnetConnectionPool.getDetailedStats()
+    telnet: telnetConnectionPool.getDetailedStats(),
   };
 }
 
@@ -83,5 +83,5 @@ module.exports = {
   initializeConnectionPools,
   cleanupConnectionPools,
   getAllConnectionPoolsStatus,
-  getAllConnectionPoolsStats
+  getAllConnectionPoolsStats,
 };

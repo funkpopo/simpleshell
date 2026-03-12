@@ -9,7 +9,7 @@
  * 5. 通过IPC批处理减少进程间通信开销
  */
 
-const IPCBatcher = require('../../core/ipc/ipc-batcher');
+const IPCBatcher = require("../../core/ipc/ipc-batcher");
 
 class TransferProgressCoordinator {
   constructor({
@@ -75,7 +75,9 @@ class TransferProgressCoordinator {
   updateFileProgress(fileIndex, bytesTransferred) {
     const fileState = this.fileStates.get(fileIndex);
     if (!fileState) {
-      console.warn(`TransferProgressCoordinator: Unknown file index ${fileIndex}`);
+      console.warn(
+        `TransferProgressCoordinator: Unknown file index ${fileIndex}`,
+      );
       return;
     }
 
@@ -266,7 +268,10 @@ class TransferProgressCoordinator {
           this.onProgress(progressData);
         }
       } catch (error) {
-        console.error("TransferProgressCoordinator: Progress callback error:", error);
+        console.error(
+          "TransferProgressCoordinator: Progress callback error:",
+          error,
+        );
       }
     }
 

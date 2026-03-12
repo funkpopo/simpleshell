@@ -53,7 +53,7 @@ const WorldMap = ({ latitude, longitude }) => {
       >
         <CircularProgress size={24} />
         <Typography sx={{ ml: 1 }} variant="body2">
-        {t("worldMap.loading")}
+          {t("worldMap.loading")}
         </Typography>
       </Box>
     );
@@ -127,5 +127,3 @@ const WorldMap = ({ latitude, longitude }) => {
 };
 
 export default memo(WorldMap);
-
-

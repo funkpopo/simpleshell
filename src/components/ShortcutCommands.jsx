@@ -47,176 +47,185 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
 
 // 虚拟化命令项组件
-const CommandItem = React.memo(({ index, style, commands, handleSendCommand, handleCopyCommand, handleMenuOpen }) => {
-  const theme = useTheme();
-  const { t } = useTranslation();
-  const cmd = commands[index];
+const CommandItem = React.memo(
+  ({
+    index,
+    style,
+    commands,
+    handleSendCommand,
+    handleCopyCommand,
+    handleMenuOpen,
+  }) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const cmd = commands[index];
 
-  if (!cmd) return null;
+    if (!cmd) return null;
 
-  return (
-    <div style={style}>
-      <ListItem
-        disablePadding
-        sx={{
-          mb: 0.5,
-          mx: 0.5,
-          borderRadius: 1,
-          overflow: "hidden",
-          minHeight: 72,
-          width: "calc(100% - 8px)",
-          boxSizing: "border-box",
-        }}
-      >
-        <ListItemButton
+    return (
+      <div style={style}>
+        <ListItem
+          disablePadding
           sx={{
-            pl: 1,
-            pr: 1,
-            minHeight: 72,
+            mb: 0.5,
+            mx: 0.5,
             borderRadius: 1,
-            position: "relative",
-            py: 1,
-            width: "100%",
+            overflow: "hidden",
+            minHeight: 72,
+            width: "calc(100% - 8px)",
             boxSizing: "border-box",
-            "&:hover": {
-              backgroundColor: theme.palette.action.hover,
-              "& .command-actions": {
-                opacity: 1,
-              },
-            },
           }}
         >
-          <ListItemText
+          <ListItemButton
             sx={{
-              flex: 1,
-              minWidth: 0,
-              mr: 1,
+              pl: 1,
+              pr: 1,
+              minHeight: 72,
+              borderRadius: 1,
+              position: "relative",
+              py: 1,
+              width: "100%",
+              boxSizing: "border-box",
+              "&:hover": {
+                backgroundColor: theme.palette.action.hover,
+                "& .command-actions": {
+                  opacity: 1,
+                },
+              },
             }}
-            primary={
-              <Typography
-                variant="subtitle2"
-                fontWeight="medium"
-                sx={{
-                  color: theme.palette.text.primary,
-                  mb: 0.5,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {cmd.name}
-              </Typography>
-            }
-            secondary={
-              <Box sx={{ minWidth: 0 }}>
+          >
+            <ListItemText
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                mr: 1,
+              }}
+              primary={
                 <Typography
-                  variant="body2"
-                  component="div"
+                  variant="subtitle2"
+                  fontWeight="medium"
                   sx={{
-                    fontFamily: "monospace",
-                    backgroundColor: theme.palette.action.hover,
-                    color: theme.palette.text.secondary,
-                    px: 1,
-                    py: 0.4,
-                    borderRadius: 0.5,
-                    fontSize: "0.75rem",
+                    color: theme.palette.text.primary,
+                    mb: 0.5,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
-                    mb: cmd.description ? 0.4 : 0,
                   }}
                 >
-                  {cmd.command}
+                  {cmd.name}
                 </Typography>
-                {cmd.description && (
+              }
+              secondary={
+                <Box sx={{ minWidth: 0 }}>
                   <Typography
-                    variant="caption"
+                    variant="body2"
                     component="div"
                     sx={{
-                      color: "text.secondary",
+                      fontFamily: "monospace",
+                      backgroundColor: theme.palette.action.hover,
+                      color: theme.palette.text.secondary,
+                      px: 1,
+                      py: 0.4,
+                      borderRadius: 0.5,
+                      fontSize: "0.75rem",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
+                      mb: cmd.description ? 0.4 : 0,
                     }}
                   >
-                    {cmd.description}
+                    {cmd.command}
                   </Typography>
-                )}
-              </Box>
-            }
-          />
-          <Box
-            className="command-actions"
-            sx={{
-              display: "flex",
-              gap: 0.5,
-              opacity: 0,
-              transition: "opacity 0.2s",
-              position: "absolute",
-              right: 8,
-              top: "50%",
-              transform: "translateY(-50%)",
-              flexShrink: 0,
-            }}
-          >
-            <Tooltip title={t("shortcutCommands.sendCommand")}>
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSendCommand(cmd.command);
-                }}
-                sx={{
-                  backgroundColor: theme.palette.primary.main,
-                  color: "white",
-                  "&:hover": {
-                    backgroundColor: theme.palette.primary.dark,
-                  },
-                }}
-              >
-                <SendIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t("shortcutCommands.copyCommand")}>
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCopyCommand(cmd.command);
-                }}
-                sx={{
-                  backgroundColor: theme.palette.grey[600],
-                  color: "white",
-                  "&:hover": {
-                    backgroundColor: theme.palette.grey[700],
-                  },
-                }}
-              >
-                <ContentCopyIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleMenuOpen(e, cmd.id, "command");
-              }}
+                  {cmd.description && (
+                    <Typography
+                      variant="caption"
+                      component="div"
+                      sx={{
+                        color: "text.secondary",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {cmd.description}
+                    </Typography>
+                  )}
+                </Box>
+              }
+            />
+            <Box
+              className="command-actions"
               sx={{
-                backgroundColor: theme.palette.grey[500],
-                color: "white",
-                "&:hover": {
-                  backgroundColor: theme.palette.grey[600],
-                },
+                display: "flex",
+                gap: 0.5,
+                opacity: 0,
+                transition: "opacity 0.2s",
+                position: "absolute",
+                right: 8,
+                top: "50%",
+                transform: "translateY(-50%)",
+                flexShrink: 0,
               }}
             >
-              <MoreVertIcon fontSize="small" />
-            </IconButton>
-          </Box>
-        </ListItemButton>
-      </ListItem>
-    </div>
-  );
-});
+              <Tooltip title={t("shortcutCommands.sendCommand")}>
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSendCommand(cmd.command);
+                  }}
+                  sx={{
+                    backgroundColor: theme.palette.primary.main,
+                    color: "white",
+                    "&:hover": {
+                      backgroundColor: theme.palette.primary.dark,
+                    },
+                  }}
+                >
+                  <SendIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t("shortcutCommands.copyCommand")}>
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCopyCommand(cmd.command);
+                  }}
+                  sx={{
+                    backgroundColor: theme.palette.grey[600],
+                    color: "white",
+                    "&:hover": {
+                      backgroundColor: theme.palette.grey[700],
+                    },
+                  }}
+                >
+                  <ContentCopyIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleMenuOpen(e, cmd.id, "command");
+                }}
+                sx={{
+                  backgroundColor: theme.palette.grey[500],
+                  color: "white",
+                  "&:hover": {
+                    backgroundColor: theme.palette.grey[600],
+                  },
+                }}
+              >
+                <MoreVertIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </ListItemButton>
+        </ListItem>
+      </div>
+    );
+  },
+);
 
 function ShortcutCommands({ open, onClose, onSendCommand }) {
   const theme = useTheme();
@@ -329,10 +338,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
             expanded[category.id] = true;
           });
           setExpandedCategories(expanded);
-
         }
       }
-    } catch { /* intentionally ignored */ } finally {
+    } catch {
+      /* intentionally ignored */
+    } finally {
       setLoading(false);
     }
   };
@@ -349,7 +359,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           console.warn("Failed to save shortcut commands");
         }
       }
-    } catch { /* intentionally ignored */ }
+    } catch {
+      /* intentionally ignored */
+    }
   };
 
   // 生成唯一ID
@@ -682,7 +694,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     return (
       containerHeight > 0 && (
         <List
-          style={{ height: containerHeight, width: '100%' }}
+          style={{ height: containerHeight, width: "100%" }}
           rowCount={filteredCommands.length}
           rowHeight={72}
           rowProps={listItemData}

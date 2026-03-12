@@ -26,7 +26,7 @@ class IPCBatcher {
       totalMessages: 0,
       totalBatches: 0,
       totalSingleMessages: 0,
-      averageBatchSize: 0
+      averageBatchSize: 0,
     };
   }
 
@@ -47,7 +47,7 @@ class IPCBatcher {
     this.queue.push({
       channel,
       data,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
 
     this.stats.totalMessages++;
@@ -91,10 +91,10 @@ class IPCBatcher {
       // 检查ipcRenderer是否可用
       if (!this.ipcRenderer) {
         try {
-          const { ipcRenderer } = require('electron');
+          const { ipcRenderer } = require("electron");
           this.ipcRenderer = ipcRenderer;
         } catch (error) {
-          console.error('Failed to load ipcRenderer:', error);
+          console.error("Failed to load ipcRenderer:", error);
           this.queue = [];
           this.sending = false;
           return;
@@ -115,15 +115,17 @@ class IPCBatcher {
       }
 
       // 更新平均批次大小
-      const totalBatchedMessages = this.stats.totalMessages - this.stats.totalSingleMessages;
+      const totalBatchedMessages =
+        this.stats.totalMessages - this.stats.totalSingleMessages;
       if (this.stats.totalBatches > 0) {
-        this.stats.averageBatchSize = totalBatchedMessages / this.stats.totalBatches;
+        this.stats.averageBatchSize =
+          totalBatchedMessages / this.stats.totalBatches;
       }
 
       // 清空队列
       this.queue = [];
     } catch (error) {
-      console.error('Error flushing IPC messages:', error);
+      console.error("Error flushing IPC messages:", error);
     } finally {
       this.sending = false;
     }
@@ -148,9 +150,13 @@ class IPCBatcher {
     return {
       ...this.stats,
       queueLength: this.queue.length,
-      efficiency: this.stats.totalMessages > 0
-        ? (1 - (this.stats.totalBatches + this.stats.totalSingleMessages) / this.stats.totalMessages) * 100
-        : 0
+      efficiency:
+        this.stats.totalMessages > 0
+          ? (1 -
+              (this.stats.totalBatches + this.stats.totalSingleMessages) /
+                this.stats.totalMessages) *
+            100
+          : 0,
     };
   }
 
@@ -162,7 +168,7 @@ class IPCBatcher {
       totalMessages: 0,
       totalBatches: 0,
       totalSingleMessages: 0,
-      averageBatchSize: 0
+      averageBatchSize: 0,
     };
   }
 }

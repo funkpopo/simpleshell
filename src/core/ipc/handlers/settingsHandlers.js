@@ -198,7 +198,10 @@ class SettingsHandlers {
 
   async getCommandSuggestions(event, input, maxResults = 10) {
     try {
-      const suggestions = commandHistoryService.getSuggestions(input, maxResults);
+      const suggestions = commandHistoryService.getSuggestions(
+        input,
+        maxResults,
+      );
       return { success: true, suggestions };
     } catch (error) {
       logToFile(`Error getting command suggestions: ${error.message}`, "ERROR");
