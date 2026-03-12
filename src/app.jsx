@@ -488,6 +488,8 @@ function AppContent() {
   const dragRafRef = React.useRef(null);
   const pendingDragStateRef = React.useRef(null);
   const sidebarTooltipPlacement = "top";
+  const transferSidebarButtonRef = useRef(null);
+  const aiChatButtonRef = useRef(null);
 
   const handleTabsWheel = useCallback((event) => {
     const scroller = event.currentTarget;
@@ -2839,6 +2841,7 @@ function AppContent() {
                 {/* 传输侧边栏按钮 - 仅在sidebar模式下显示 */}
                 {transferBarMode === "sidebar" && (
                   <TransferSidebarButton
+                    ref={transferSidebarButtonRef}
                     isOpen={transferSidebarOpen}
                     onClick={() => {
                       const newState = !transferSidebarOpen;
@@ -2858,6 +2861,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    ref={aiChatButtonRef}
                     color="primary"
                     onClick={handleToggleGlobalAiChatWindow}
                     sx={{
@@ -2941,6 +2945,7 @@ function AppContent() {
         onExecuteCommand={handleSendCommand}
         zIndex={lastActiveFloatWindow === "ai" ? 1310 : 1300}
         onFocus={() => setLastActiveFloatWindow("ai")}
+        anchorEl={aiChatButtonRef.current}
       />
 
       {/* 文件传输浮动窗口 - 仅在sidebar模式下显示 */}
@@ -2950,6 +2955,7 @@ function AppContent() {
           onClose={() => setTransferSidebarOpen(false)}
           zIndex={lastActiveFloatWindow === "transfer" ? 1310 : 1300}
           onFocus={() => setLastActiveFloatWindow("transfer")}
+          anchorEl={transferSidebarButtonRef.current}
         />
       )}
 

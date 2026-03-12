@@ -48,6 +48,7 @@ import {
   parseCommandsFromResponse,
   setCustomRiskRules,
 } from "../utils/aiSystemPrompt";
+import { createAnchoredTransition } from "../utils/launchAnimation.js";
 import "./AIChatWindow.css";
 import "./CodeHighlight.css";
 
@@ -331,6 +332,7 @@ const AIChatWindow = ({
   onExecuteCommand,
   zIndex,
   onFocus,
+  anchorEl,
 }) => {
   const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState([]);
@@ -1238,6 +1240,7 @@ ${conversationText}`;
       customzindex={zIndex}
       ref={dialogRef}
       onMouseDown={onFocus}
+      {...createAnchoredTransition(anchorEl)}
     >
       {/* 左上角拖动调整宽高手柄 */}
       <Box
