@@ -11,26 +11,26 @@ export class TerminalPerformanceMonitor {
 
     // 性能指标
     this.metrics = {
-      writeCount: 0,              // 写入次数
-      writeBytes: 0,              // 写入字节数
-      flushCount: 0,              // 刷新次数
-      renderCount: 0,             // 渲染次数
-      droppedFrames: 0,           // 丢帧数
-      avgWriteTime: 0,            // 平均写入时间 (ms)
-      avgFlushTime: 0,            // 平均刷新时间 (ms)
-      avgRenderTime: 0,           // 平均渲染时间 (ms)
-      peakMemoryUsage: 0,         // 峰值内存使用 (bytes)
-      currentBufferSize: 0,       // 当前缓冲区大小
-      scrollbackUsage: 0,         // 滚回缓冲使用率 (%)
+      writeCount: 0, // 写入次数
+      writeBytes: 0, // 写入字节数
+      flushCount: 0, // 刷新次数
+      renderCount: 0, // 渲染次数
+      droppedFrames: 0, // 丢帧数
+      avgWriteTime: 0, // 平均写入时间 (ms)
+      avgFlushTime: 0, // 平均刷新时间 (ms)
+      avgRenderTime: 0, // 平均渲染时间 (ms)
+      peakMemoryUsage: 0, // 峰值内存使用 (bytes)
+      currentBufferSize: 0, // 当前缓冲区大小
+      scrollbackUsage: 0, // 滚回缓冲使用率 (%)
     };
 
     // 时间序列数据
     this.history = {
-      writeTime: [],              // 写入时间历史
-      flushTime: [],              // 刷新时间历史
-      renderTime: [],             // 渲染时间历史
-      bufferSize: [],             // 缓冲区大小历史
-      fps: [],                    // 帧率历史
+      writeTime: [], // 写入时间历史
+      flushTime: [], // 刷新时间历史
+      renderTime: [], // 渲染时间历史
+      bufferSize: [], // 缓冲区大小历史
+      fps: [], // 帧率历史
     };
 
     // 性能计时器
@@ -47,10 +47,10 @@ export class TerminalPerformanceMonitor {
 
     // 性能警告阈值
     this.thresholds = {
-      maxWriteTime: options.maxWriteTime || 50,      // 最大写入时间 (ms)
-      maxFlushTime: options.maxFlushTime || 16,      // 最大刷新时间 (ms)
-      maxRenderTime: options.maxRenderTime || 16,    // 最大渲染时间 (ms)
-      minFPS: options.minFPS || 30,                  // 最小帧率
+      maxWriteTime: options.maxWriteTime || 50, // 最大写入时间 (ms)
+      maxFlushTime: options.maxFlushTime || 16, // 最大刷新时间 (ms)
+      maxRenderTime: options.maxRenderTime || 16, // 最大渲染时间 (ms)
+      minFPS: options.minFPS || 30, // 最小帧率
       maxBufferSize: options.maxBufferSize || 1048576, // 最大缓冲区大小 (1MB)
     };
 
@@ -148,12 +148,15 @@ export class TerminalPerformanceMonitor {
 
     // 采样记录历史
     if (this.metrics.writeCount % this.sampleRate === 0) {
-      this.addHistory('writeTime', duration);
+      this.addHistory("writeTime", duration);
     }
 
     // 检查性能警告
     if (duration > this.thresholds.maxWriteTime) {
-      this.warn('write', `写入时间过长: ${duration.toFixed(2)}ms (阈值: ${this.thresholds.maxWriteTime}ms)`);
+      this.warn(
+        "write",
+        `写入时间过长: ${duration.toFixed(2)}ms (阈值: ${this.thresholds.maxWriteTime}ms)`,
+      );
     }
   }
 
@@ -173,12 +176,15 @@ export class TerminalPerformanceMonitor {
 
     // 采样记录历史
     if (this.metrics.flushCount % this.sampleRate === 0) {
-      this.addHistory('flushTime', duration);
+      this.addHistory("flushTime", duration);
     }
 
     // 检查性能警告
     if (duration > this.thresholds.maxFlushTime) {
-      this.warn('flush', `刷新时间过长: ${duration.toFixed(2)}ms (阈值: ${this.thresholds.maxFlushTime}ms)`);
+      this.warn(
+        "flush",
+        `刷新时间过长: ${duration.toFixed(2)}ms (阈值: ${this.thresholds.maxFlushTime}ms)`,
+      );
     }
   }
 
@@ -199,13 +205,16 @@ export class TerminalPerformanceMonitor {
 
     // 采样记录历史
     if (this.metrics.renderCount % this.sampleRate === 0) {
-      this.addHistory('renderTime', duration);
+      this.addHistory("renderTime", duration);
     }
 
     // 检查性能警告
     if (duration > this.thresholds.maxRenderTime) {
       this.metrics.droppedFrames++;
-      this.warn('render', `渲染时间过长: ${duration.toFixed(2)}ms (阈值: ${this.thresholds.maxRenderTime}ms)`);
+      this.warn(
+        "render",
+        `渲染时间过长: ${duration.toFixed(2)}ms (阈值: ${this.thresholds.maxRenderTime}ms)`,
+      );
     }
   }
 
@@ -220,12 +229,15 @@ export class TerminalPerformanceMonitor {
 
     // 采样记录历史
     if (this.metrics.writeCount % this.sampleRate === 0) {
-      this.addHistory('bufferSize', size);
+      this.addHistory("bufferSize", size);
     }
 
     // 检查性能警告
     if (size > this.thresholds.maxBufferSize) {
-      this.warn('buffer', `缓冲区过大: ${(size / 1024).toFixed(2)}KB (阈值: ${(this.thresholds.maxBufferSize / 1024).toFixed(2)}KB)`);
+      this.warn(
+        "buffer",
+        `缓冲区过大: ${(size / 1024).toFixed(2)}KB (阈值: ${(this.thresholds.maxBufferSize / 1024).toFixed(2)}KB)`,
+      );
     }
   }
 
@@ -248,11 +260,14 @@ export class TerminalPerformanceMonitor {
     this.frameCount = 0;
 
     // 记录历史
-    this.addHistory('fps', this.currentFPS);
+    this.addHistory("fps", this.currentFPS);
 
     // 检查性能警告
     if (this.currentFPS < this.thresholds.minFPS) {
-      this.warn('fps', `帧率过低: ${this.currentFPS}fps (阈值: ${this.thresholds.minFPS}fps)`);
+      this.warn(
+        "fps",
+        `帧率过低: ${this.currentFPS}fps (阈值: ${this.thresholds.minFPS}fps)`,
+      );
     }
   }
 
@@ -284,7 +299,7 @@ export class TerminalPerformanceMonitor {
 
     this.history[key].push({
       timestamp: Date.now(),
-      value: value
+      value: value,
     });
 
     // 限制历史记录大小
@@ -303,7 +318,7 @@ export class TerminalPerformanceMonitor {
       type,
       message,
       timestamp: Date.now(),
-      metrics: { ...this.metrics }
+      metrics: { ...this.metrics },
     };
 
     if (this.onWarning) {
@@ -333,12 +348,12 @@ export class TerminalPerformanceMonitor {
       metrics: { ...this.metrics },
       currentFPS: this.currentFPS,
       history: {
-        writeTime: this.getHistoryStats('writeTime'),
-        flushTime: this.getHistoryStats('flushTime'),
-        renderTime: this.getHistoryStats('renderTime'),
-        bufferSize: this.getHistoryStats('bufferSize'),
-        fps: this.getHistoryStats('fps'),
-      }
+        writeTime: this.getHistoryStats("writeTime"),
+        flushTime: this.getHistoryStats("flushTime"),
+        renderTime: this.getHistoryStats("renderTime"),
+        bufferSize: this.getHistoryStats("bufferSize"),
+        fps: this.getHistoryStats("fps"),
+      },
     };
   }
 
@@ -354,7 +369,7 @@ export class TerminalPerformanceMonitor {
       return { min: 0, max: 0, avg: 0, count: 0 };
     }
 
-    const values = data.map(item => item.value);
+    const values = data.map((item) => item.value);
     const min = Math.min(...values);
     const max = Math.max(...values);
     const avg = values.reduce((sum, val) => sum + val, 0) / values.length;

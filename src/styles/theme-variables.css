@@ -99,6 +99,7 @@ body {
   background-color: var(--color-bg-default);
   color: var(--color-text-primary);
   transition:
-    background-color var(--theme-transition-duration) var(--theme-transition-easing),
+    background-color var(--theme-transition-duration)
+      var(--theme-transition-easing),
     color var(--theme-transition-duration) var(--theme-transition-easing);
 }

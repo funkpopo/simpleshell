@@ -67,7 +67,6 @@ class TerminalManager {
     this.processManager.killProcess(processId);
   }
 
-
   getProcessInfo(processId) {
     return this.processManager.getProcessInfo(processId);
   }

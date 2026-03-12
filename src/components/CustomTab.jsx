@@ -7,83 +7,14 @@ import { findGroupByTab } from "../core/syncInputGroups";
 const dragIndicatorStyles = (
   <GlobalStyles
     styles={{
-      "@keyframes dragIndicator": {
+      "@keyframes indicatorPopIn": {
         "0%": {
-          opacity: 0.7,
-          transform: "scaleY(0.9) scaleX(0.95)",
-          boxShadow: "0 0 8px rgba(46, 125, 50, 0.6)",
-        },
-        "50%": {
-          opacity: 1,
-          transform: "scaleY(1) scaleX(1)",
-          boxShadow: "0 0 24px rgba(46, 125, 50, 1.0)",
-        },
-        "100%": {
-          opacity: 0.7,
-          transform: "scaleY(0.9) scaleX(0.95)",
-          boxShadow: "0 0 8px rgba(46, 125, 50, 0.6)",
-        },
-      },
-      "@keyframes magneticPull": {
-        "0%": {
-          transform: "scale(1) translateY(0)",
-        },
-        "50%": {
-          transform: "scale(1.02) translateY(-1px)",
-        },
-        "100%": {
-          transform: "scale(1.05) translateY(-2px)",
-        },
-      },
-      "@keyframes magneticGlow": {
-        "0%": {
-          boxShadow: "0 0 0 rgba(25, 118, 210, 0)",
-        },
-        "100%": {
-          boxShadow:
-            "0 0 20px rgba(25, 118, 210, 0.6), 0 0 40px rgba(25, 118, 210, 0.4)",
-        },
-      },
-      "@keyframes dragEnter": {
-        "0%": {
-          transform: "scale(1) rotate(0deg)",
-          filter: "brightness(1)",
-        },
-        "50%": {
-          transform: "scale(1.08) rotate(1deg)",
-          filter: "brightness(1.1)",
-        },
-        "100%": {
-          transform: "scale(1.05) rotate(0deg)",
-          filter: "brightness(1.05)",
-        },
-      },
-      "@keyframes dragLeave": {
-        "0%": {
-          transform: "scale(1.05)",
-          filter: "brightness(1.05)",
-        },
-        "100%": {
-          transform: "scale(1)",
-          filter: "brightness(1)",
-        },
-      },
-      "@keyframes dropZonePulse": {
-        "0%, 100%": {
-          boxShadow: "0 0 0 0 rgba(46, 125, 50, 0.7)",
-        },
-        "50%": {
-          boxShadow: "0 0 0 6px rgba(46, 125, 50, 0)",
-        },
-      },
-      "@keyframes slideIn": {
-        "0%": {
+          transform: "scaleY(0.3)",
           opacity: 0,
-          transform: "translateY(-10px) scale(0.9)",
         },
         "100%": {
+          transform: "scaleY(1)",
           opacity: 1,
-          transform: "translateY(0) scale(1)",
         },
       },
     }}
@@ -162,69 +93,54 @@ const CustomTab = memo((props) => {
       // 创建幽灵元素预览
       const createDragPreview = () => {
         const preview = document.createElement("div");
+        const isDark = document.body.classList.contains("dark-theme");
+
         preview.style.cssText = `
-        padding: 10px 18px;
-        background: linear-gradient(135deg, 
-          rgba(25, 118, 210, 0.95) 0%, 
-          rgba(21, 101, 192, 0.95) 30%, 
-          rgba(13, 71, 161, 0.95) 70%,
-          rgba(25, 118, 210, 0.95) 100%);
-        color: white;
-        border-radius: 12px;
-        font-family: 'Roboto', 'Arial', sans-serif;
-        font-size: 14px;
-        font-weight: 600;
-        box-shadow: 0 12px 40px rgba(25, 118, 210, 0.5), 
-                    0 4px 16px rgba(0, 0, 0, 0.3),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-        border: 2px solid rgba(255, 255, 255, 0.3);
-        backdrop-filter: blur(20px);
-        transform: rotate(-3deg) scale(1.05);
-        white-space: nowrap;
-        pointer-events: none;
-        z-index: 10000;
-        position: absolute;
-        left: -2000px;
-        top: -2000px;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        letter-spacing: 0.5px;
-        animation: dragPreviewPulse 0.8s ease-in-out infinite alternate;
-      `;
+          padding: 6px 14px;
+          background-color: ${isDark ? "rgba(40, 40, 40, 0.85)" : "rgba(255, 255, 255, 0.85)"};
+          color: ${isDark ? "#fff" : "#333"};
+          border-radius: 6px;
+          font-family: system-ui, -apple-system, sans-serif;
+          font-size: 13px;
+          font-weight: 500;
+          box-shadow: ${
+            isDark
+              ? "0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1)"
+              : "0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05)"
+          };
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          pointer-events: none;
+          position: absolute;
+          left: -9999px;
+          top: -9999px;
+          z-index: 99999;
+          white-space: nowrap;
+          max-width: 200px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        `;
 
         // 创建图标元素
         const icon = document.createElement("span");
         icon.style.cssText = `
-          display: inline-block;
-          margin-right: 8px;
-          font-size: 16px;
-          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+          display: inline-flex;
+          align-items: center;
+          opacity: 0.7;
         `;
-        icon.textContent = "🏷️";
+        icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>`;
 
         // 创建文本元素
         const text = document.createElement("span");
         text.textContent = label;
+        text.style.overflow = "hidden";
+        text.style.textOverflow = "ellipsis";
 
         preview.appendChild(icon);
         preview.appendChild(text);
-
-        // 添加拖拽预览脉冲动画
-        const style = document.createElement("style");
-        style.textContent = `
-          @keyframes dragPreviewPulse {
-            0% { 
-              box-shadow: 0 12px 40px rgba(25, 118, 210, 0.5), 
-                         0 4px 16px rgba(0, 0, 0, 0.3),
-                         inset 0 1px 0 rgba(255, 255, 255, 0.2);
-            }
-            100% { 
-              box-shadow: 0 16px 48px rgba(25, 118, 210, 0.7), 
-                         0 6px 20px rgba(0, 0, 0, 0.4),
-                         inset 0 1px 0 rgba(255, 255, 255, 0.3);
-            }
-          }
-        `;
-        document.head.appendChild(style);
         document.body.appendChild(preview);
 
         // 设置拖拽预览图像
@@ -234,13 +150,10 @@ const CustomTab = memo((props) => {
           preview.offsetHeight / 2,
         );
 
-        // 延迟移除预览元素和样式，给浏览器时间捕获它
+        // 延迟移除预览元素
         setTimeout(() => {
           if (document.body.contains(preview)) {
             document.body.removeChild(preview);
-          }
-          if (document.head.contains(style)) {
-            document.head.removeChild(style);
           }
         }, 100);
       };
@@ -340,35 +253,26 @@ const CustomTab = memo((props) => {
           cursor: isDraggedOver ? "grab" : "pointer",
           userSelect: "none",
           color: "text.secondary",
+          transition:
+            "opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease",
 
           // 拖拽悬停时的特殊样式（仅排序）
           ...(isDraggedOver && {
-            backgroundColor: (theme) =>
-              theme.palette.mode === "dark"
-                ? "rgba(76, 175, 80, 0.12)"
-                : "rgba(46, 125, 50, 0.15)",
-            borderRadius: "6px",
-            boxShadow: (theme) =>
-              theme.palette.mode === "dark"
-                ? "0 0 0 2px rgba(76, 175, 80, 0.35)"
-                : "0 0 0 2px rgba(46, 125, 50, 0.45)",
             position: "relative",
-            // 避免缩放和复杂动画引起布局抖动
-            transition: "background-color 0.12s ease, box-shadow 0.12s ease",
-
             // 排序操作的插入位置指示器
             ...(dragInsertPosition === "before" && {
               "&::before": {
                 content: '""',
                 position: "absolute",
-                left: -4,
-                top: 4,
-                bottom: 4,
+                left: -1,
+                top: "20%",
+                bottom: "20%",
                 width: 3,
-                background: (theme) =>
-                  theme.palette.mode === "dark" ? "#66bb6a" : "#2e7d32",
-                borderRadius: "2px",
+                backgroundColor: "primary.main",
+                borderRadius: 3,
                 zIndex: 1002,
+                animation:
+                  "indicatorPopIn 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
               },
             }),
 
@@ -376,14 +280,15 @@ const CustomTab = memo((props) => {
               "&::after": {
                 content: '""',
                 position: "absolute",
-                right: -4,
-                top: 4,
-                bottom: 4,
+                right: -1,
+                top: "20%",
+                bottom: "20%",
                 width: 3,
-                background: (theme) =>
-                  theme.palette.mode === "dark" ? "#66bb6a" : "#2e7d32",
-                borderRadius: "2px",
+                backgroundColor: "primary.main",
+                borderRadius: 3,
                 zIndex: 1002,
+                animation:
+                  "indicatorPopIn 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
               },
             }),
           }),

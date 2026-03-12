@@ -235,11 +235,16 @@ class ProxyManager {
    */
   async resolveSystemProxyForTarget(targetHost) {
     // 环境变量代理（全局，不按 host）
-    if (this.systemProxyConfig && this.isValidProxyConfig(this.systemProxyConfig)) {
+    if (
+      this.systemProxyConfig &&
+      this.isValidProxyConfig(this.systemProxyConfig)
+    ) {
       return this.systemProxyConfig;
     }
 
-    const hostKey = String(targetHost || "").trim().toLowerCase();
+    const hostKey = String(targetHost || "")
+      .trim()
+      .toLowerCase();
     if (!hostKey) return null;
 
     if (this._systemProxyByHost.has(hostKey)) {
@@ -252,7 +257,10 @@ class ProxyManager {
       this._systemProxyByHost.set(hostKey, cfg || null);
       return cfg || null;
     } catch (error) {
-      logToFile(`Electron system proxy detection failed for ${targetHost}: ${error.message}`, "WARN");
+      logToFile(
+        `Electron system proxy detection failed for ${targetHost}: ${error.message}`,
+        "WARN",
+      );
       this._systemProxyByHost.set(hostKey, null);
       return null;
     }
@@ -264,14 +272,20 @@ class ProxyManager {
    */
   async ensureSystemProxyConfig() {
     // 已有缓存
-    if (this.systemProxyConfig && this.isValidProxyConfig(this.systemProxyConfig)) {
+    if (
+      this.systemProxyConfig &&
+      this.isValidProxyConfig(this.systemProxyConfig)
+    ) {
       return this.systemProxyConfig;
     }
 
     // 先同步检测环境变量（快速路径）
     try {
       this.detectSystemProxy();
-      if (this.systemProxyConfig && this.isValidProxyConfig(this.systemProxyConfig)) {
+      if (
+        this.systemProxyConfig &&
+        this.isValidProxyConfig(this.systemProxyConfig)
+      ) {
         return this.systemProxyConfig;
       }
     } catch {
@@ -360,7 +374,8 @@ class ProxyManager {
    * @returns {{host: string|null, port: number|null}}
    */
   parseHostPort(hostPort) {
-    if (!hostPort || typeof hostPort !== "string") return { host: null, port: null };
+    if (!hostPort || typeof hostPort !== "string")
+      return { host: null, port: null };
 
     const s = hostPort.trim();
     if (!s) return { host: null, port: null };
@@ -461,13 +476,22 @@ class ProxyManager {
 
     // 注意：系统规则中 "HTTPS host:port" 表示“用于 HTTPS 请求的代理”，但代理本身通常仍是 HTTP 代理（明文 CONNECT）
     if (type === "http" || type === "https") {
-      return await this._connectViaHttpProxy(proxyConfig, targetHost, targetPort, { timeoutMs });
+      return await this._connectViaHttpProxy(
+        proxyConfig,
+        targetHost,
+        targetPort,
+        { timeoutMs },
+      );
     }
     if (type === "socks5") {
-      return await this._connectViaSocks5(proxyConfig, targetHost, targetPort, { timeoutMs });
+      return await this._connectViaSocks5(proxyConfig, targetHost, targetPort, {
+        timeoutMs,
+      });
     }
     if (type === "socks4") {
-      return await this._connectViaSocks4(proxyConfig, targetHost, targetPort, { timeoutMs });
+      return await this._connectViaSocks4(proxyConfig, targetHost, targetPort, {
+        timeoutMs,
+      });
     }
 
     throw new Error(`Unsupported proxy type: ${proxyConfig.type}`);
@@ -527,7 +551,12 @@ class ProxyManager {
     );
   }
 
-  async _connectViaHttpProxy(proxyConfig, targetHost, targetPort, { timeoutMs }) {
+  async _connectViaHttpProxy(
+    proxyConfig,
+    targetHost,
+    targetPort,
+    { timeoutMs },
+  ) {
     const connectPromise = new Promise((resolve, reject) => {
       const onError = (e) => reject(e);
 
@@ -673,14 +702,21 @@ class ProxyManager {
           throw new Error("SOCKS5: username/password too long");
         }
         socket.write(
-          Buffer.concat([Buffer.from([0x01, u.length]), u, Buffer.from([p.length]), p]),
+          Buffer.concat([
+            Buffer.from([0x01, u.length]),
+            u,
+            Buffer.from([p.length]),
+            p,
+          ]),
         );
         const authResp = await this._readExact(socket, 2, timeoutMs);
         if (authResp[0] !== 0x01 || authResp[1] !== 0x00) {
           throw new Error("SOCKS5 authentication failed");
         }
       } else if (method !== 0x00) {
-        throw new Error(`SOCKS5: unsupported auth method selected: 0x${method.toString(16)}`);
+        throw new Error(
+          `SOCKS5: unsupported auth method selected: 0x${method.toString(16)}`,
+        );
       }
 
       // CONNECT request
@@ -709,10 +745,17 @@ class ProxyManager {
       const portPart = Buffer.alloc(2);
       portPart.writeUInt16BE(Number(targetPort), 0);
 
-      socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00, atyp]), addrPart, portPart]));
+      socket.write(
+        Buffer.concat([
+          Buffer.from([0x05, 0x01, 0x00, atyp]),
+          addrPart,
+          portPart,
+        ]),
+      );
 
       const head = await this._readExact(socket, 4, timeoutMs);
-      if (head[0] !== 0x05) throw new Error("Invalid SOCKS5 proxy response (bad version)");
+      if (head[0] !== 0x05)
+        throw new Error("Invalid SOCKS5 proxy response (bad version)");
       const rep = head[1];
       const repAtyp = head[3];
       if (rep !== 0x00) {

@@ -1,9 +1,13 @@
 const { ipcMain } = require("electron");
 const { logToFile } = require("../utils/logger");
 const { safeHandle } = require("../ipc/ipcResponse");
-const { registerReconnectHandlers } = require("../ipc/handlers/reconnectHandlers");
+const {
+  registerReconnectHandlers,
+} = require("../ipc/handlers/reconnectHandlers");
 const { registerBatchHandlers } = require("../ipc/handlers/batchHandlers");
-const { registerBatchInvokeHandlers } = require("../ipc/handlers/batchInvokeHandlers");
+const {
+  registerBatchInvokeHandlers,
+} = require("../ipc/handlers/batchInvokeHandlers");
 const LatencyHandlers = require("../ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("../ipc/handlers/localTerminalHandlers");
 const SettingsHandlers = require("../ipc/handlers/settingsHandlers");
@@ -138,9 +142,15 @@ class IPCSetup {
       // 注册基本终端处理器
       this.registerBasicTerminalHandlers();
 
-      logToFile("Critical IPC handlers registered before window creation", "INFO");
+      logToFile(
+        "Critical IPC handlers registered before window creation",
+        "INFO",
+      );
     } catch (error) {
-      logToFile(`Failed to register critical IPC handlers: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to register critical IPC handlers: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -181,7 +191,7 @@ class IPCSetup {
             ) {
               logToFile(
                 `SSH connection not available for process ${processId}, falling back to local system info`,
-                "WARN"
+                "WARN",
               );
               return await systemInfo.getLocalSystemInfo();
             }
@@ -225,7 +235,7 @@ class IPCSetup {
             ) {
               logToFile(
                 `SSH connection not available for process ${processId}, falling back to local process list`,
-                "WARN"
+                "WARN",
               );
               return systemInfo.getProcessList();
             }
@@ -254,7 +264,10 @@ class IPCSetup {
    */
   initializeLocalTerminalHandlers(mainWindow) {
     try {
-      this.localTerminalHandlers = new LocalTerminalHandlers(mainWindow, ipcMain);
+      this.localTerminalHandlers = new LocalTerminalHandlers(
+        mainWindow,
+        ipcMain,
+      );
       logToFile("本地终端处理器初始化成功", "INFO");
     } catch (error) {
       logToFile(`本地终端处理器初始化失败: ${error.message}`, "ERROR");
@@ -300,9 +313,11 @@ class IPCSetup {
       });
       // 注册事件类型处理器（使用ipcMain.on）
       if (typeof this.terminalHandlers.getEventHandlers === "function") {
-        this.terminalHandlers.getEventHandlers().forEach(({ channel, handler }) => {
-          ipcMain.on(channel, handler);
-        });
+        this.terminalHandlers
+          .getEventHandlers()
+          .forEach(({ channel, handler }) => {
+            ipcMain.on(channel, handler);
+          });
       }
       logToFile("Terminal handlers registered", "INFO");
     } catch (error) {

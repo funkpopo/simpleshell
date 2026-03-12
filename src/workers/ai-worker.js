@@ -25,8 +25,8 @@ const openaiAdapter = {
    * 构建聊天完成API的URL
    */
   buildChatUrl(baseUrl) {
-    if (!baseUrl.includes('/chat/completions')) {
-      return baseUrl.replace(/\/$/, '') + '/chat/completions';
+    if (!baseUrl.includes("/chat/completions")) {
+      return baseUrl.replace(/\/$/, "") + "/chat/completions";
     }
     return baseUrl;
   },
@@ -36,13 +36,13 @@ const openaiAdapter = {
    */
   buildModelsUrl(baseUrl) {
     const parsedUrl = new URL(baseUrl);
-    const pathParts = parsedUrl.pathname.split('/');
-    if (pathParts.length >= 3 && pathParts[1] === 'v1') {
-      pathParts[pathParts.length - 1] = 'models';
-      parsedUrl.pathname = pathParts.join('/');
+    const pathParts = parsedUrl.pathname.split("/");
+    if (pathParts.length >= 3 && pathParts[1] === "v1") {
+      pathParts[pathParts.length - 1] = "models";
+      parsedUrl.pathname = pathParts.join("/");
       return parsedUrl.toString();
     }
-    return baseUrl.replace(/\/$/, '') + '/models';
+    return baseUrl.replace(/\/$/, "") + "/models";
   },
 
   /**
@@ -51,7 +51,7 @@ const openaiAdapter = {
   buildHeaders(apiKey) {
     return {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     };
   },
 
@@ -90,8 +90,12 @@ const openaiAdapter = {
     if (line.startsWith("data: ") && line !== "data: [DONE]") {
       try {
         const jsonData = JSON.parse(line.substring(6));
-        if (jsonData.choices && jsonData.choices[0] &&
-            jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
+        if (
+          jsonData.choices &&
+          jsonData.choices[0] &&
+          jsonData.choices[0].delta &&
+          jsonData.choices[0].delta.content
+        ) {
           return { content: jsonData.choices[0].delta.content };
         }
       } catch {
@@ -108,11 +112,11 @@ const openaiAdapter = {
    */
   parseModelsResponse(data) {
     if (data.data && Array.isArray(data.data)) {
-      return data.data.map(model => model.id).filter(id => id);
+      return data.data.map((model) => model.id).filter((id) => id);
     } else if (Array.isArray(data)) {
-      return data.map(model => model.id || model).filter(id => id);
+      return data.map((model) => model.id || model).filter((id) => id);
     } else if (data.models && Array.isArray(data.models)) {
-      return data.models.map(model => model.id || model).filter(id => id);
+      return data.models.map((model) => model.id || model).filter((id) => id);
     }
     return [];
   },
@@ -128,8 +132,8 @@ const anthropicAdapter = {
    * 构建聊天完成API的URL
    */
   buildChatUrl(baseUrl) {
-    if (!baseUrl.includes('/messages')) {
-      return baseUrl.replace(/\/$/, '') + '/v1/messages';
+    if (!baseUrl.includes("/messages")) {
+      return baseUrl.replace(/\/$/, "") + "/v1/messages";
     }
     return baseUrl;
   },
@@ -196,21 +200,27 @@ const anthropicAdapter = {
    */
   parseResponse(data) {
     if (data.content && Array.isArray(data.content)) {
-      const textContent = data.content.find(c => c.type === "text");
+      const textContent = data.content.find((c) => c.type === "text");
       if (textContent) {
         return {
           success: true,
-          choices: [{
-            message: {
-              role: "assistant",
-              content: textContent.text,
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: textContent.text,
+              },
             },
-          }],
-          usage: data.usage ? {
-            prompt_tokens: data.usage.input_tokens,
-            completion_tokens: data.usage.output_tokens,
-            total_tokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0),
-          } : undefined,
+          ],
+          usage: data.usage
+            ? {
+                prompt_tokens: data.usage.input_tokens,
+                completion_tokens: data.usage.output_tokens,
+                total_tokens:
+                  (data.usage.input_tokens || 0) +
+                  (data.usage.output_tokens || 0),
+              }
+            : undefined,
         };
       }
     }
@@ -226,8 +236,11 @@ const anthropicAdapter = {
         const jsonData = JSON.parse(line.substring(6));
 
         // Anthropic流式响应类型
-        if (jsonData.type === "content_block_delta" &&
-            jsonData.delta && jsonData.delta.text) {
+        if (
+          jsonData.type === "content_block_delta" &&
+          jsonData.delta &&
+          jsonData.delta.text
+        ) {
           return { content: jsonData.delta.text };
         } else if (jsonData.type === "message_stop") {
           return { done: true };
@@ -266,23 +279,23 @@ const geminiAdapter = {
    */
   buildChatUrl(baseUrl, model, apiKey, isStream) {
     // Gemini API格式: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}
-    let url = baseUrl.replace(/\/$/, '');
+    let url = baseUrl.replace(/\/$/, "");
 
     // 如果URL不包含models路径，添加它
-    if (!url.includes('/models/')) {
-      url = url + '/v1beta/models/' + model;
+    if (!url.includes("/models/")) {
+      url = url + "/v1beta/models/" + model;
     }
 
     // 添加操作类型
     if (isStream) {
-      url = url.replace(/:generateContent.*$/, '') + ':streamGenerateContent';
+      url = url.replace(/:generateContent.*$/, "") + ":streamGenerateContent";
     } else {
-      url = url.replace(/:streamGenerateContent.*$/, '') + ':generateContent';
+      url = url.replace(/:streamGenerateContent.*$/, "") + ":generateContent";
     }
 
     // 添加API key作为查询参数
-    const separator = url.includes('?') ? '&' : '?';
-    url = url + separator + 'key=' + apiKey;
+    const separator = url.includes("?") ? "&" : "?";
+    url = url + separator + "key=" + apiKey;
 
     return url;
   },
@@ -291,12 +304,12 @@ const geminiAdapter = {
    * 构建模型列表API的URL
    */
   buildModelsUrl(baseUrl, apiKey) {
-    let url = baseUrl.replace(/\/$/, '');
-    if (!url.includes('/models')) {
-      url = url + '/v1beta/models';
+    let url = baseUrl.replace(/\/$/, "");
+    if (!url.includes("/models")) {
+      url = url + "/v1beta/models";
     }
-    const separator = url.includes('?') ? '&' : '?';
-    return url + separator + 'key=' + apiKey;
+    const separator = url.includes("?") ? "&" : "?";
+    return url + separator + "key=" + apiKey;
   },
 
   /**
@@ -348,23 +361,31 @@ const geminiAdapter = {
    * 解析标准响应
    */
   parseResponse(data) {
-    if (data.candidates && data.candidates[0] &&
-        data.candidates[0].content && data.candidates[0].content.parts) {
-      const textPart = data.candidates[0].content.parts.find(p => p.text);
+    if (
+      data.candidates &&
+      data.candidates[0] &&
+      data.candidates[0].content &&
+      data.candidates[0].content.parts
+    ) {
+      const textPart = data.candidates[0].content.parts.find((p) => p.text);
       if (textPart) {
         return {
           success: true,
-          choices: [{
-            message: {
-              role: "assistant",
-              content: textPart.text,
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: textPart.text,
+              },
             },
-          }],
-          usage: data.usageMetadata ? {
-            prompt_tokens: data.usageMetadata.promptTokenCount,
-            completion_tokens: data.usageMetadata.candidatesTokenCount,
-            total_tokens: data.usageMetadata.totalTokenCount,
-          } : undefined,
+          ],
+          usage: data.usageMetadata
+            ? {
+                prompt_tokens: data.usageMetadata.promptTokenCount,
+                completion_tokens: data.usageMetadata.candidatesTokenCount,
+                total_tokens: data.usageMetadata.totalTokenCount,
+              }
+            : undefined,
         };
       }
     }
@@ -379,13 +400,19 @@ const geminiAdapter = {
     if (line.startsWith("[") || line.startsWith(",") || line.startsWith("{")) {
       try {
         // 清理行首的逗号或方括号
-        let cleanLine = line.replace(/^[[,\s]+/, '').replace(/\]$/, '');
-        if (!cleanLine || cleanLine === ']') return null;
+        let cleanLine = line.replace(/^[[,\s]+/, "").replace(/\]$/, "");
+        if (!cleanLine || cleanLine === "]") return null;
 
         const jsonData = JSON.parse(cleanLine);
-        if (jsonData.candidates && jsonData.candidates[0] &&
-            jsonData.candidates[0].content && jsonData.candidates[0].content.parts) {
-          const textPart = jsonData.candidates[0].content.parts.find(p => p.text);
+        if (
+          jsonData.candidates &&
+          jsonData.candidates[0] &&
+          jsonData.candidates[0].content &&
+          jsonData.candidates[0].content.parts
+        ) {
+          const textPart = jsonData.candidates[0].content.parts.find(
+            (p) => p.text,
+          );
           if (textPart) {
             return { content: textPart.text };
           }
@@ -403,9 +430,12 @@ const geminiAdapter = {
   parseModelsResponse(data) {
     if (data.models && Array.isArray(data.models)) {
       return data.models
-        .filter(model => model.supportedGenerationMethods &&
-                model.supportedGenerationMethods.includes("generateContent"))
-        .map(model => model.name.replace("models/", ""));
+        .filter(
+          (model) =>
+            model.supportedGenerationMethods &&
+            model.supportedGenerationMethods.includes("generateContent"),
+        )
+        .map((model) => model.name.replace("models/", ""));
     }
     return [];
   },
@@ -434,7 +464,11 @@ function getApiAdapter(provider) {
  * @returns {object|null} 代理Agent或null
  */
 function createProxyAgent(protocol) {
-  if (!systemProxyConfig || !systemProxyConfig.host || !systemProxyConfig.port) {
+  if (
+    !systemProxyConfig ||
+    !systemProxyConfig.host ||
+    !systemProxyConfig.port
+  ) {
     return null;
   }
 
@@ -667,7 +701,12 @@ function handleStandardRequest(requestId, requestData) {
   activeRequests.set(requestId, { req, type: "standard" });
 
   // 使用适配器构建请求体
-  const requestBody = adapter.buildRequestBody(model, messages, false, maxTokens);
+  const requestBody = adapter.buildRequestBody(
+    model,
+    messages,
+    false,
+    maxTokens,
+  );
 
   // 发送请求数据
   req.write(JSON.stringify(requestBody));
@@ -681,7 +720,8 @@ function handleStandardRequest(requestId, requestData) {
  * @param {Object} requestData - 请求数据
  */
 function handleStreamRequest(requestId, requestData) {
-  const { url, apiKey, model, messages, sessionId, provider, maxTokens } = requestData;
+  const { url, apiKey, model, messages, sessionId, provider, maxTokens } =
+    requestData;
 
   // 获取适配器
   const adapter = getApiAdapter(provider);
@@ -869,7 +909,12 @@ function handleStreamRequest(requestId, requestData) {
   activeRequests.set(requestId, { req, type: "stream", sessionId });
 
   // 使用适配器构建请求体
-  const requestBody = adapter.buildRequestBody(model, messages, true, maxTokens);
+  const requestBody = adapter.buildRequestBody(
+    model,
+    messages,
+    true,
+    maxTokens,
+  );
 
   // 发送请求数据
   req.write(JSON.stringify(requestBody));
@@ -1001,7 +1046,9 @@ function handleModelsRequest(requestId, requestData) {
     method: "GET",
     hostname: parsedModelsUrl.hostname,
     path: parsedModelsUrl.pathname + parsedModelsUrl.search,
-    port: parsedModelsUrl.port || (parsedModelsUrl.protocol === "https:" ? 443 : 80),
+    port:
+      parsedModelsUrl.port ||
+      (parsedModelsUrl.protocol === "https:" ? 443 : 80),
     headers: adapter.buildHeaders(apiKey),
   };
 

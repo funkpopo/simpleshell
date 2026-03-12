@@ -6,9 +6,9 @@
  * - List of all files with metadata
  */
 
-const { parentPort, workerData } = require('worker_threads');
-const fs = require('fs');
-const path = require('path');
+const { parentPort, workerData } = require("worker_threads");
+const fs = require("fs");
+const path = require("path");
 
 /**
  * Scan a directory recursively and collect file information
@@ -16,7 +16,7 @@ const path = require('path');
  * @param {string} relativeBasePath - Relative base path for maintaining folder structure
  * @returns {Object} Scan result with totalSize, fileCount, and files array
  */
-function scanDirectorySync(rootPath, relativeBasePath = '') {
+function scanDirectorySync(rootPath, relativeBasePath = "") {
   let totalSize = 0;
   let fileCount = 0;
   const files = [];
@@ -28,7 +28,9 @@ function scanDirectorySync(rootPath, relativeBasePath = '') {
 
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
-        const entryRelativePath = path.join(relativePath, entry.name).replace(/\\/g, '/');
+        const entryRelativePath = path
+          .join(relativePath, entry.name)
+          .replace(/\\/g, "/");
 
         try {
           if (entry.isDirectory()) {
@@ -80,10 +82,10 @@ function scanDirectorySync(rootPath, relativeBasePath = '') {
 // Main worker execution
 try {
   if (!workerData || !workerData.folderPath) {
-    throw new Error('folderPath is required in workerData');
+    throw new Error("folderPath is required in workerData");
   }
 
-  const { folderPath, relativeBasePath = '' } = workerData;
+  const { folderPath, relativeBasePath = "" } = workerData;
 
   // Check if the folder exists
   if (!fs.existsSync(folderPath)) {

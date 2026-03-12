@@ -163,7 +163,10 @@ function chooseChunkSize(totalBytes) {
  * @param {number} [baseTimeout] - 基础超时时间(毫秒)
  * @returns {number} - 计算后的超时时间(毫秒)
  */
-function calculateDynamicTimeout(fileSize, baseTimeout = TIMEOUT_CONFIG.BASE_OPERATION_TIMEOUT) {
+function calculateDynamicTimeout(
+  fileSize,
+  baseTimeout = TIMEOUT_CONFIG.BASE_OPERATION_TIMEOUT,
+) {
   if (!fileSize || fileSize <= 0) {
     return baseTimeout;
   }
@@ -246,8 +249,8 @@ function isRetryableError(error) {
   if (!error || !error.message) return false;
 
   const message = error.message.toLowerCase();
-  return RETRY_CONFIG.RETRYABLE_ERRORS.some(pattern =>
-    message.includes(pattern.toLowerCase())
+  return RETRY_CONFIG.RETRYABLE_ERRORS.some((pattern) =>
+    message.includes(pattern.toLowerCase()),
   );
 }
 
@@ -260,8 +263,8 @@ function isSessionError(error) {
   if (!error || !error.message) return false;
 
   const message = error.message.toLowerCase();
-  return RETRY_CONFIG.SESSION_ERRORS.some(pattern =>
-    message.includes(pattern.toLowerCase())
+  return RETRY_CONFIG.SESSION_ERRORS.some((pattern) =>
+    message.includes(pattern.toLowerCase()),
   );
 }
 

@@ -7,43 +7,43 @@
 export const RISK_LEVELS = {
   SAFE: {
     level: 1,
-    name: 'safe',
-    color: '#4caf50', // 绿色
-    label: '安全',
-    labelEn: 'Safe',
-    description: '只读操作，不会修改系统状态',
+    name: "safe",
+    color: "#4caf50", // 绿色
+    label: "安全",
+    labelEn: "Safe",
+    description: "只读操作，不会修改系统状态",
   },
   LOW: {
     level: 2,
-    name: 'low',
-    color: '#8bc34a', // 浅绿色
-    label: '低风险',
-    labelEn: 'Low Risk',
-    description: '轻微修改，影响范围有限',
+    name: "low",
+    color: "#8bc34a", // 浅绿色
+    label: "低风险",
+    labelEn: "Low Risk",
+    description: "轻微修改，影响范围有限",
   },
   MEDIUM: {
     level: 3,
-    name: 'medium',
-    color: '#ff9800', // 橙色
-    label: '中风险',
-    labelEn: 'Medium Risk',
-    description: '可能影响服务或数据',
+    name: "medium",
+    color: "#ff9800", // 橙色
+    label: "中风险",
+    labelEn: "Medium Risk",
+    description: "可能影响服务或数据",
   },
   HIGH: {
     level: 4,
-    name: 'high',
-    color: '#f44336', // 红色
-    label: '高风险',
-    labelEn: 'High Risk',
-    description: '可能导致服务中断或数据丢失',
+    name: "high",
+    color: "#f44336", // 红色
+    label: "高风险",
+    labelEn: "High Risk",
+    description: "可能导致服务中断或数据丢失",
   },
   CRITICAL: {
     level: 5,
-    name: 'critical',
-    color: '#9c27b0', // 紫色
-    label: '极高风险',
-    labelEn: 'Critical Risk',
-    description: '可能导致系统不可用或不可恢复',
+    name: "critical",
+    color: "#9c27b0", // 紫色
+    label: "极高风险",
+    labelEn: "Critical Risk",
+    description: "可能导致系统不可用或不可恢复",
   },
 };
 
@@ -147,40 +147,48 @@ let customRules = {
  * @param {Object} rules - 自定义规则对象
  */
 export function setCustomRiskRules(rules) {
-  if (rules && typeof rules === 'object') {
+  if (rules && typeof rules === "object") {
     customRules = {
-      critical: (rules.critical || []).map(pattern => {
-        try {
-          return new RegExp(pattern, 'i');
-        } catch (e) {
-          console.error('Invalid regex pattern:', pattern, e);
-          return null;
-        }
-      }).filter(Boolean),
-      high: (rules.high || []).map(pattern => {
-        try {
-          return new RegExp(pattern, 'i');
-        } catch (e) {
-          console.error('Invalid regex pattern:', pattern, e);
-          return null;
-        }
-      }).filter(Boolean),
-      medium: (rules.medium || []).map(pattern => {
-        try {
-          return new RegExp(pattern, 'i');
-        } catch (e) {
-          console.error('Invalid regex pattern:', pattern, e);
-          return null;
-        }
-      }).filter(Boolean),
-      low: (rules.low || []).map(pattern => {
-        try {
-          return new RegExp(pattern, 'i');
-        } catch (e) {
-          console.error('Invalid regex pattern:', pattern, e);
-          return null;
-        }
-      }).filter(Boolean),
+      critical: (rules.critical || [])
+        .map((pattern) => {
+          try {
+            return new RegExp(pattern, "i");
+          } catch (e) {
+            console.error("Invalid regex pattern:", pattern, e);
+            return null;
+          }
+        })
+        .filter(Boolean),
+      high: (rules.high || [])
+        .map((pattern) => {
+          try {
+            return new RegExp(pattern, "i");
+          } catch (e) {
+            console.error("Invalid regex pattern:", pattern, e);
+            return null;
+          }
+        })
+        .filter(Boolean),
+      medium: (rules.medium || [])
+        .map((pattern) => {
+          try {
+            return new RegExp(pattern, "i");
+          } catch (e) {
+            console.error("Invalid regex pattern:", pattern, e);
+            return null;
+          }
+        })
+        .filter(Boolean),
+      low: (rules.low || [])
+        .map((pattern) => {
+          try {
+            return new RegExp(pattern, "i");
+          } catch (e) {
+            console.error("Invalid regex pattern:", pattern, e);
+            return null;
+          }
+        })
+        .filter(Boolean),
     };
   }
 }
@@ -199,10 +207,10 @@ export function getCustomRiskRules() {
  */
 export function getBuiltinRiskPatterns() {
   return {
-    critical: DANGEROUS_PATTERNS.critical.map(r => r.source),
-    high: DANGEROUS_PATTERNS.high.map(r => r.source),
-    medium: DANGEROUS_PATTERNS.medium.map(r => r.source),
-    low: DANGEROUS_PATTERNS.low.map(r => r.source),
+    critical: DANGEROUS_PATTERNS.critical.map((r) => r.source),
+    high: DANGEROUS_PATTERNS.high.map((r) => r.source),
+    medium: DANGEROUS_PATTERNS.medium.map((r) => r.source),
+    low: DANGEROUS_PATTERNS.low.map((r) => r.source),
   };
 }
 
@@ -212,7 +220,7 @@ export function getBuiltinRiskPatterns() {
  * @returns {Object} 风险等级对象
  */
 export function assessCommandRisk(command) {
-  if (!command || typeof command !== 'string') {
+  if (!command || typeof command !== "string") {
     return RISK_LEVELS.SAFE;
   }
 
@@ -287,9 +295,9 @@ export function assessCommandRisk(command) {
  * @returns {string} 系统提示词
  */
 export function generateSystemPrompt(options = {}) {
-  const { language = 'zh-CN', connectionInfo = null } = options;
+  const { language = "zh-CN", connectionInfo = null } = options;
 
-  const isZhCN = language === 'zh-CN' || language.startsWith('zh');
+  const isZhCN = language === "zh-CN" || language.startsWith("zh");
 
   if (isZhCN) {
     return generateZhCNPrompt(connectionInfo);
@@ -300,8 +308,8 @@ export function generateSystemPrompt(options = {}) {
 
 function generateZhCNPrompt(connectionInfo) {
   const connectionContext = connectionInfo
-    ? `当前连接: ${connectionInfo.host || '未知主机'} (${connectionInfo.type || 'SSH'})`
-    : '当前无活动连接';
+    ? `当前连接: ${connectionInfo.host || "未知主机"} (${connectionInfo.type || "SSH"})`
+    : "当前无活动连接";
 
   return `你是一个专业的Linux/Unix服务器运维助手，内置于SimpleShell终端应用中。你的职责是帮助用户进行服务器管理、故障排查和日常运维任务。
 
@@ -350,8 +358,8 @@ ${connectionContext}
 
 function generateEnUSPrompt(connectionInfo) {
   const connectionContext = connectionInfo
-    ? `Current connection: ${connectionInfo.host || 'Unknown host'} (${connectionInfo.type || 'SSH'})`
-    : 'No active connection';
+    ? `Current connection: ${connectionInfo.host || "Unknown host"} (${connectionInfo.type || "SSH"})`
+    : "No active connection";
 
   return `You are a professional Linux/Unix server operations assistant, built into the SimpleShell terminal application. Your role is to help users with server management, troubleshooting, and daily operations tasks.
 
@@ -404,7 +412,7 @@ Example outputs:
  * @returns {Array<{command: string, risk: Object, index: number, length: number}>} 命令数组
  */
 export function parseCommandsFromResponse(content) {
-  if (!content || typeof content !== 'string') {
+  if (!content || typeof content !== "string") {
     return [];
   }
 
@@ -427,7 +435,7 @@ export function parseCommandsFromResponse(content) {
     }
 
     // 如果AI没有正确标注风险，使用自动评估
-    if (riskLevel === RISK_LEVELS.SAFE && riskName !== 'safe') {
+    if (riskLevel === RISK_LEVELS.SAFE && riskName !== "safe") {
       riskLevel = assessCommandRisk(command);
     }
 

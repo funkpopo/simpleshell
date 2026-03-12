@@ -1141,7 +1141,11 @@ async function testD2AppQuitReleasesAllResources() {
 
     const finalSftpStats = sftpCoreMock.getSftpRuntimeStats();
     assert.equal(finalSftpStats.sessionCount, 0, "退出后SFTP会话应为0");
-    assert.equal(finalSftpStats.pendingOperationCount, 0, "退出后SFTP队列应为0");
+    assert.equal(
+      finalSftpStats.pendingOperationCount,
+      0,
+      "退出后SFTP队列应为0",
+    );
     assert.equal(finalSftpStats.sessionLockCount, 0, "退出后SFTP锁应清零");
     assert.equal(
       finalSftpStats.healthCheckTimerActive,
@@ -1172,8 +1176,8 @@ async function testD2AppQuitReleasesAllResources() {
       "退出后重连会话应为0",
     );
     assert.equal(
-      connectionManagerMock.sshConnectionPool.reconnectionManager.reconnectTimers
-        .size,
+      connectionManagerMock.sshConnectionPool.reconnectionManager
+        .reconnectTimers.size,
       0,
       "退出后重连定时器应为0",
     );

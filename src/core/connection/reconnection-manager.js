@@ -148,7 +148,10 @@ class ReconnectionManager extends EventEmitter {
 
       if (state && existingSession.state !== RECONNECT_STATE.RECONNECTING) {
         existingSession.state = state;
-      } else if (autoStart && existingSession.state === RECONNECT_STATE.CONNECTED) {
+      } else if (
+        autoStart &&
+        existingSession.state === RECONNECT_STATE.CONNECTED
+      ) {
         existingSession.state = RECONNECT_STATE.PENDING;
       }
 
@@ -1234,7 +1237,10 @@ class ReconnectionManager extends EventEmitter {
 
     try {
       // 移除旧连接的监听器
-      if (oldConnection && typeof oldConnection.removeAllListeners === "function") {
+      if (
+        oldConnection &&
+        typeof oldConnection.removeAllListeners === "function"
+      ) {
         oldConnection.removeAllListeners();
       }
 

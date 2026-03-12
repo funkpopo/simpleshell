@@ -52,7 +52,12 @@ function wrapIpcHandler(handler, options = {}) {
   };
 }
 
-function safeHandle(ipcMainOrChannel, channelOrHandler, handlerOrOptions, options = {}) {
+function safeHandle(
+  ipcMainOrChannel,
+  channelOrHandler,
+  handlerOrOptions,
+  options = {},
+) {
   let ipcMain = ipcMainOrChannel;
   let channel = channelOrHandler;
   let handler = handlerOrOptions;

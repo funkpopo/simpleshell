@@ -35,7 +35,10 @@ process.on("uncaughtException", (error) => {
   logToFile(`未捕获的异常: ${error.message}`, "ERROR");
   logToFile(`堆栈: ${error.stack}`, "ERROR");
 
-  const { getPrimaryWindow, safeSendToRenderer } = require("./core/window/windowManager");
+  const {
+    getPrimaryWindow,
+    safeSendToRenderer,
+  } = require("./core/window/windowManager");
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     safeSendToRenderer("app:error", {
@@ -47,7 +50,8 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason) => {
-  const errorMessage = reason instanceof Error ? reason.message : String(reason);
+  const errorMessage =
+    reason instanceof Error ? reason.message : String(reason);
   const errorStack = reason instanceof Error ? reason.stack : "";
 
   logToFile(`未处理的Promise拒绝: ${errorMessage}`, "ERROR");
@@ -55,7 +59,10 @@ process.on("unhandledRejection", (reason) => {
     logToFile(`堆栈: ${errorStack}`, "ERROR");
   }
 
-  const { getPrimaryWindow, safeSendToRenderer } = require("./core/window/windowManager");
+  const {
+    getPrimaryWindow,
+    safeSendToRenderer,
+  } = require("./core/window/windowManager");
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     safeSendToRenderer("app:error", {

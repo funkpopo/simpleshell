@@ -6,33 +6,33 @@
 export class VirtualScrollBuffer {
   constructor(options = {}) {
     // 配置参数
-    this.maxBufferLines = options.maxBufferLines || 10000;        // 最大缓冲行数
-    this.visibleLines = options.visibleLines || 30;               // 可见行数
-    this.overscanLines = options.overscanLines || 10;             // 预渲染行数（上下各10行）
-    this.pruneThreshold = options.pruneThreshold || 0.8;          // 修剪阈值（80%满时触发）
-    this.pruneTargetRatio = options.pruneTargetRatio || 0.6;      // 修剪目标比例（修剪到60%）
+    this.maxBufferLines = options.maxBufferLines || 10000; // 最大缓冲行数
+    this.visibleLines = options.visibleLines || 30; // 可见行数
+    this.overscanLines = options.overscanLines || 10; // 预渲染行数（上下各10行）
+    this.pruneThreshold = options.pruneThreshold || 0.8; // 修剪阈值（80%满时触发）
+    this.pruneTargetRatio = options.pruneTargetRatio || 0.6; // 修剪目标比例（修剪到60%）
 
     // 缓冲区数据
-    this.buffer = [];                                             // 行数据缓冲区
-    this.currentScrollPosition = 0;                               // 当前滚动位置（行号）
-    this.totalLines = 0;                                          // 总行数
+    this.buffer = []; // 行数据缓冲区
+    this.currentScrollPosition = 0; // 当前滚动位置（行号）
+    this.totalLines = 0; // 总行数
 
     // 虚拟窗口
-    this.viewportStart = 0;                                       // 视口起始行
-    this.viewportEnd = 0;                                         // 视口结束行
+    this.viewportStart = 0; // 视口起始行
+    this.viewportEnd = 0; // 视口结束行
 
     // 统计信息
     this.stats = {
-      totalBytesReceived: 0,        // 总接收字节数
-      totalLinesAdded: 0,            // 总添加行数
-      totalLinesPruned: 0,           // 总修剪行数
-      pruneCount: 0,                 // 修剪次数
-      lastPruneTime: 0,              // 上次修剪时间
+      totalBytesReceived: 0, // 总接收字节数
+      totalLinesAdded: 0, // 总添加行数
+      totalLinesPruned: 0, // 总修剪行数
+      pruneCount: 0, // 修剪次数
+      lastPruneTime: 0, // 上次修剪时间
     };
 
     // 回调
-    this.onBufferChange = options.onBufferChange || null;         // 缓冲区变化回调
-    this.onPrune = options.onPrune || null;                       // 修剪回调
+    this.onBufferChange = options.onBufferChange || null; // 缓冲区变化回调
+    this.onPrune = options.onPrune || null; // 修剪回调
   }
 
   /**
@@ -43,7 +43,7 @@ export class VirtualScrollBuffer {
   addData(data) {
     if (!data) return [];
 
-    const dataStr = typeof data === 'string' ? data : data.toString();
+    const dataStr = typeof data === "string" ? data : data.toString();
     this.stats.totalBytesReceived += dataStr.length;
 
     // 分割为行（保留换行符信息）
@@ -52,8 +52,11 @@ export class VirtualScrollBuffer {
     if (lines.length === 0) return [];
 
     // 如果缓冲区为空或最后一行已完成，直接添加新行
-    if (this.buffer.length === 0 || this.buffer[this.buffer.length - 1].complete) {
-      lines.forEach(line => {
+    if (
+      this.buffer.length === 0 ||
+      this.buffer[this.buffer.length - 1].complete
+    ) {
+      lines.forEach((line) => {
         this.buffer.push({
           content: line.content,
           complete: line.complete,
@@ -91,7 +94,7 @@ export class VirtualScrollBuffer {
       });
     }
 
-    return lines.map(l => l.content);
+    return lines.map((l) => l.content);
   }
 
   /**
@@ -101,36 +104,36 @@ export class VirtualScrollBuffer {
    */
   splitIntoLines(data) {
     const lines = [];
-    let currentLine = '';
+    let currentLine = "";
     let i = 0;
 
     while (i < data.length) {
       const char = data[i];
 
-      if (char === '\n') {
+      if (char === "\n") {
         // 完整的行（包含换行符）
         lines.push({
-          content: currentLine + '\n',
+          content: currentLine + "\n",
           complete: true,
         });
-        currentLine = '';
-      } else if (char === '\r') {
+        currentLine = "";
+      } else if (char === "\r") {
         // 处理 \r\n 或 \r
-        if (i + 1 < data.length && data[i + 1] === '\n') {
+        if (i + 1 < data.length && data[i + 1] === "\n") {
           // \r\n
           lines.push({
-            content: currentLine + '\r\n',
+            content: currentLine + "\r\n",
             complete: true,
           });
-          currentLine = '';
+          currentLine = "";
           i++; // 跳过 \n
         } else {
           // 单独的 \r（回车，通常表示覆盖当前行）
           lines.push({
-            content: currentLine + '\r',
+            content: currentLine + "\r",
             complete: true,
           });
-          currentLine = '';
+          currentLine = "";
         }
       } else {
         currentLine += char;
@@ -207,15 +210,18 @@ export class VirtualScrollBuffer {
     if (scrollPosition !== null) {
       this.currentScrollPosition = Math.max(
         0,
-        Math.min(scrollPosition, this.totalLines - this.visibleLines)
+        Math.min(scrollPosition, this.totalLines - this.visibleLines),
       );
     }
 
     // 计算视口范围（包含预渲染区域）
-    this.viewportStart = Math.max(0, this.currentScrollPosition - this.overscanLines);
+    this.viewportStart = Math.max(
+      0,
+      this.currentScrollPosition - this.overscanLines,
+    );
     this.viewportEnd = Math.min(
       this.totalLines,
-      this.currentScrollPosition + this.visibleLines + this.overscanLines
+      this.currentScrollPosition + this.visibleLines + this.overscanLines,
     );
   }
 
@@ -226,12 +232,14 @@ export class VirtualScrollBuffer {
   getViewportLines() {
     this.updateViewport();
 
-    return this.buffer.slice(this.viewportStart, this.viewportEnd).map((line, index) => ({
-      lineNumber: this.viewportStart + index,
-      content: line.content,
-      complete: line.complete,
-      timestamp: line.timestamp,
-    }));
+    return this.buffer
+      .slice(this.viewportStart, this.viewportEnd)
+      .map((line, index) => ({
+        lineNumber: this.viewportStart + index,
+        content: line.content,
+        complete: line.complete,
+        timestamp: line.timestamp,
+      }));
   }
 
   /**
@@ -257,7 +265,7 @@ export class VirtualScrollBuffer {
    * @returns {string} 合并后的内容
    */
   getAllContent() {
-    return this.buffer.map(line => line.content).join('');
+    return this.buffer.map((line) => line.content).join("");
   }
 
   /**

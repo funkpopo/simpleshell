@@ -32,7 +32,9 @@ function findProjectRoot() {
     throw new Error("External editor manager not initialized");
   }
 
-  let currentDir = electronApp.getAppPath ? electronApp.getAppPath() : process.cwd();
+  let currentDir = electronApp.getAppPath
+    ? electronApp.getAppPath()
+    : process.cwd();
 
   while (currentDir && currentDir !== path.dirname(currentDir)) {
     try {
@@ -73,7 +75,11 @@ function getExternalEditRoot() {
       : process.env.NODE_ENV !== "development";
 
   if (isPackaged) {
-    return path.join(electronApp.getPath("temp"), "simpleshell", "external-edit");
+    return path.join(
+      electronApp.getPath("temp"),
+      "simpleshell",
+      "external-edit",
+    );
   }
 
   return path.join(getDevelopmentTempRoot(), "external-edit");
@@ -124,7 +130,10 @@ async function removeDirIfEmpty(dirPath) {
     }
   } catch (error) {
     if (error.code !== "ENOENT" && error.code !== "ENOTEMPTY") {
-      logToFile(`Failed to remove directory ${dirPath}: ${error.message}`, "WARN");
+      logToFile(
+        `Failed to remove directory ${dirPath}: ${error.message}`,
+        "WARN",
+      );
     }
   }
 }
@@ -142,7 +151,10 @@ async function removeDirectoryRecursive(dirPath) {
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
-      logToFile(`Failed to remove directory ${dirPath}: ${error.message}`, "WARN");
+      logToFile(
+        `Failed to remove directory ${dirPath}: ${error.message}`,
+        "WARN",
+      );
     }
   }
 }
@@ -223,7 +235,6 @@ function prepareExternalEditorCommand(command, quotedPath) {
 
   return `${trimmed} ${quotedPath}`;
 }
-
 
 async function downloadFile(tabId, remotePath, localPath) {
   const { sftp, sessionId } = await sftpCore.borrowSftpSession(tabId);
@@ -336,7 +347,8 @@ async function triggerUpload(entry) {
   }
   entry.uploading = true;
   try {
-    const stats = entry.pendingStats || (await fs.promises.stat(entry.localPath));
+    const stats =
+      entry.pendingStats || (await fs.promises.stat(entry.localPath));
     entry.pendingStats = null;
     if (
       typeof entry.lastUploadedMtime === "number" &&
@@ -404,7 +416,9 @@ async function launchExternalEditor(entry, command) {
   }
 
   if (!shellModule || typeof shellModule.openPath !== "function") {
-    throw new Error("No external editor configured and shell.openPath unavailable");
+    throw new Error(
+      "No external editor configured and shell.openPath unavailable",
+    );
   }
 
   const result = await shellModule.openPath(entry.localPath);
@@ -432,7 +446,11 @@ async function openFileInExternalEditor(tabId, remotePath) {
   if (!isEnabled) {
     throw new Error("External editor is disabled in settings");
   }
-  const command = (externalEditorSettings.command || settings?.externalEditorCommand || "").trim();
+  const command = (
+    externalEditorSettings.command ||
+    settings?.externalEditorCommand ||
+    ""
+  ).trim();
 
   const externalRoot = getExternalEditRoot();
   const localBase = path.join(externalRoot, String(tabId));
@@ -556,7 +574,14 @@ async function cleanup() {
   }
 }
 
-function init({ app, logger, configService: cfg, sftpCore: core, shell, sendToRenderer: send }) {
+function init({
+  app,
+  logger,
+  configService: cfg,
+  sftpCore: core,
+  shell,
+  sendToRenderer: send,
+}) {
   electronApp = app;
   if (logger && typeof logger.logToFile === "function") {
     logToFile = logger.logToFile;

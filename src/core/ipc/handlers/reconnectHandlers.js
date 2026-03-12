@@ -8,8 +8,7 @@ let boundConnectionPool = null;
 let boundReconnectionManager = null;
 const recentReconnectTerminalEvents = new Map();
 
-const DEFAULT_RECONNECT_HINT =
-  "请检查代理/VPN和网络后重试，可点击“手动重连”。";
+const DEFAULT_RECONNECT_HINT = "请检查代理/VPN和网络后重试，可点击“手动重连”。";
 const DUPLICATE_TERMINAL_EVENT_TTL_MS = 3000;
 
 function resolveMaxAttempts(reconnectionManager, sessionId, fallback = null) {
@@ -176,15 +175,12 @@ function registerReconnectHandlers(connectionPool) {
   if (boundReconnectionManager) {
     // 重连开始事件
     const onReconnectStarted = ({ sessionId, attempt, maxRetries }) => {
-      const payload = normalizeReconnectPayload(
-        boundReconnectionManager,
-        {
-          sessionId,
-          attempts: attempt,
-          maxAttempts: maxRetries,
-          error: null,
-        },
-      );
+      const payload = normalizeReconnectPayload(boundReconnectionManager, {
+        sessionId,
+        attempts: attempt,
+        maxAttempts: maxRetries,
+        error: null,
+      });
       broadcastToRenderer("reconnect-started", {
         ...payload,
         timestamp: Date.now(),
@@ -200,16 +196,13 @@ function registerReconnectHandlers(connectionPool) {
       retryCount,
       maxRetries,
     }) => {
-      const payload = normalizeReconnectPayload(
-        boundReconnectionManager,
-        {
-          sessionId,
-          attempts: retryCount,
-          maxAttempts: maxRetries,
-          delay,
-          error: null,
-        },
-      );
+      const payload = normalizeReconnectPayload(boundReconnectionManager, {
+        sessionId,
+        attempts: retryCount,
+        maxAttempts: maxRetries,
+        delay,
+        error: null,
+      });
       broadcastToRenderer("reconnect-progress", {
         ...payload,
         timestamp: Date.now(),
@@ -220,15 +213,12 @@ function registerReconnectHandlers(connectionPool) {
 
     // 重连成功事件
     const onReconnectSuccess = ({ sessionId, attempts, maxRetries }) => {
-      const payload = normalizeReconnectPayload(
-        boundReconnectionManager,
-        {
-          sessionId,
-          attempts,
-          maxAttempts: maxRetries,
-          error: null,
-        },
-      );
+      const payload = normalizeReconnectPayload(boundReconnectionManager, {
+        sessionId,
+        attempts,
+        maxAttempts: maxRetries,
+        error: null,
+      });
       logToFile(
         `重连成功通知前端: tabId=${payload.tabId}, attempts=${payload.attempts}`,
         "INFO",

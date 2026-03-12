@@ -58,12 +58,12 @@
 
 /* 激活动画时应用 */
 .theme-switch-overlay.animating {
-  animation: theme-switch-animation 0.5s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+  animation: theme-switch-animation 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 /* 主题切换时的背景过渡（仅 body 自身） */
 body.theme-switching {
-  transition: background-color 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /*
@@ -78,10 +78,10 @@ body.theme-switching .MuiDialog-paper,
 body.theme-switching .MuiMenu-paper,
 body.theme-switching .MuiToolbar-root {
   transition:
-    background-color 0.4s cubic-bezier(0.4, 0.0, 0.2, 1),
-    background 0.4s cubic-bezier(0.4, 0.0, 0.2, 1),
-    border-color 0.4s cubic-bezier(0.4, 0.0, 0.2, 1),
-    box-shadow 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+    background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* 文本颜色过渡 */
@@ -89,12 +89,12 @@ body.theme-switching .MuiTypography-root,
 body.theme-switching .MuiListItemText-root,
 body.theme-switching .MuiButton-root,
 body.theme-switching .MuiIconButton-root {
-  transition: color 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transition: color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* 图标颜色过渡 */
 body.theme-switching .MuiSvgIcon-root {
-  transition: fill 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transition: fill 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* 为按钮添加点击动画效果 */

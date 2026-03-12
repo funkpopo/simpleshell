@@ -46,7 +46,10 @@ class ProxyHandlers {
     try {
       return proxyManager.getDefaultProxyConfig();
     } catch (error) {
-      logToFile(`Error getting default proxy config: ${error.message}`, "ERROR");
+      logToFile(
+        `Error getting default proxy config: ${error.message}`,
+        "ERROR",
+      );
       return { success: false, error: error.message };
     }
   }

@@ -80,7 +80,13 @@ class NetworkLatencyService extends EventEmitter {
    * @param {number} port 端口号
    * @param {object|null} proxyConfig 代理配置（连接项的 proxy 字段，支持 useDefault）
    */
-  registerSSHConnection(tabId, sshConnection, host, port = 22, proxyConfig = null) {
+  registerSSHConnection(
+    tabId,
+    sshConnection,
+    host,
+    port = 22,
+    proxyConfig = null,
+  ) {
     if (!this.isRunning) {
       logToFile(`服务未启动，无法注册连接: ${tabId}`, "WARN");
       return;
@@ -244,7 +250,11 @@ class NetworkLatencyService extends EventEmitter {
         });
 
         if (resolvedProxy && proxyManager.isValidProxyConfig(resolvedProxy)) {
-          return await this._measureTcpLatencyViaProxy(resolvedProxy, host, port);
+          return await this._measureTcpLatencyViaProxy(
+            resolvedProxy,
+            host,
+            port,
+          );
         }
 
         return await this._measureTcpLatencyDirect(host, port);
@@ -271,7 +281,9 @@ class NetworkLatencyService extends EventEmitter {
         socket.removeAllListeners();
         try {
           socket.destroy();
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
       };
 
       const onError = (e) => {
@@ -280,7 +292,9 @@ class NetworkLatencyService extends EventEmitter {
       };
 
       // 更贴近真实：等待 SSH 服务端 banner（"SSH-"）返回的耗时，而非仅 TCP connect 耗时
-      socket.setTimeout(timeoutMs, () => onError(new Error("延迟检测超时 (5秒)")));
+      socket.setTimeout(timeoutMs, () =>
+        onError(new Error("延迟检测超时 (5秒)")),
+      );
       socket.once("error", onError);
 
       // 一旦收到任何数据（SSH banner），就认为链路可达并计算耗时
@@ -293,20 +307,33 @@ class NetworkLatencyService extends EventEmitter {
       // 某些极端情况下可能收不到 banner，但 connect 已完成；
       // 为避免永远等待，这里用一个更短的兜底窗口返回 connect 耗时。
       socket.once("connect", () => {
-        fallbackTimer = setTimeout(() => {
-          const latency = nowMs() - startTime;
-          cleanup();
-          resolve(latency);
-        }, Math.min(300, timeoutMs));
+        fallbackTimer = setTimeout(
+          () => {
+            const latency = nowMs() - startTime;
+            cleanup();
+            resolve(latency);
+          },
+          Math.min(300, timeoutMs),
+        );
       });
     });
   }
 
-  async _measureTcpLatencyViaProxy(resolvedProxyConfig, host, port, timeoutMs = 5000) {
+  async _measureTcpLatencyViaProxy(
+    resolvedProxyConfig,
+    host,
+    port,
+    timeoutMs = 5000,
+  ) {
     const startTime = nowMs();
-    const sock = await proxyManager.createTunnelSocket(resolvedProxyConfig, host, port, {
-      timeoutMs,
-    });
+    const sock = await proxyManager.createTunnelSocket(
+      resolvedProxyConfig,
+      host,
+      port,
+      {
+        timeoutMs,
+      },
+    );
 
     // 关键修复：仅测“隧道建立/CONNECT 成功”在本地代理场景可能几乎恒定很小（比如 1ms）。
     // 为更贴近实际体验，这里等待目标 SSH 服务端 banner 返回，用首包耗时作为延迟指标。
@@ -317,7 +344,9 @@ class NetworkLatencyService extends EventEmitter {
         sock.removeAllListeners();
         try {
           sock.destroy();
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
       };
 
       const onError = (e) => {
@@ -335,9 +364,13 @@ class NetworkLatencyService extends EventEmitter {
         resolve(ms);
       };
 
-      sock.setTimeout(timeoutMs, () => onError(new Error("延迟检测超时 (5秒)")));
+      sock.setTimeout(timeoutMs, () =>
+        onError(new Error("延迟检测超时 (5秒)")),
+      );
       sock.once("error", onError);
-      sock.once("close", () => onError(new Error("Proxy tunnel socket closed")));
+      sock.once("close", () =>
+        onError(new Error("Proxy tunnel socket closed")),
+      );
       sock.once("data", onData);
     });
 
@@ -391,9 +424,9 @@ class NetworkLatencyService extends EventEmitter {
 
               // 显式关闭流以释放通道
               try {
-                if (typeof stream.close === 'function') {
+                if (typeof stream.close === "function") {
                   stream.close();
-                } else if (typeof stream.destroy === 'function') {
+                } else if (typeof stream.destroy === "function") {
                   stream.destroy();
                 }
               } catch {
@@ -410,7 +443,7 @@ class NetworkLatencyService extends EventEmitter {
             if (!resolved) {
               resolved = true;
               try {
-                if (typeof stream.close === 'function') {
+                if (typeof stream.close === "function") {
                   stream.close();
                 }
               } catch {
@@ -433,7 +466,7 @@ class NetworkLatencyService extends EventEmitter {
             if (!resolved) {
               // 尝试优雅关闭
               try {
-                if (typeof stream.close === 'function') {
+                if (typeof stream.close === "function") {
                   stream.close();
                 }
               } catch {

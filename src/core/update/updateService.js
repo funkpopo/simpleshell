@@ -821,7 +821,10 @@ class UpdateService {
         await this.cleanupInstallerArtifacts(filePath);
       }
     } catch (error) {
-      logToFile(`Failed to cleanup consumed installer: ${error.message}`, "WARN");
+      logToFile(
+        `Failed to cleanup consumed installer: ${error.message}`,
+        "WARN",
+      );
     }
   }
 

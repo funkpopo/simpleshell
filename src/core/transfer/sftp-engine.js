@@ -296,8 +296,8 @@ async function checkSftpSessionsHealth() {
       const batch = sessionsToCheck.slice(i, i + concurrencyLimit);
       await Promise.all(
         batch.map(({ tabId, session }) =>
-          checkSessionAlive(tabId, session).catch(() => {})
-        )
+          checkSessionAlive(tabId, session).catch(() => {}),
+        ),
       );
     }
   } catch (error) {
@@ -325,7 +325,9 @@ async function checkSessionAlive(tabId, session) {
       session.sftp.stat(".", (err) => {
         try {
           if (timeoutId) clearTimeout(timeoutId);
-        } catch { /* intentionally ignored */ }
+        } catch {
+          /* intentionally ignored */
+        }
         if (err) reject(err);
         else resolve();
       });
@@ -448,7 +450,10 @@ async function getSftpSession(tabId) {
         session.lastUsed = Date.now();
         return session.sftp;
       } else {
-        logToFile(`sftpEngine: SFTP会话不健康，尝试重建: tabId=${tabId}`, "WARN");
+        logToFile(
+          `sftpEngine: SFTP会话不健康，尝试重建: tabId=${tabId}`,
+          "WARN",
+        );
         return await handleUnhealthySession(tabId, session);
       }
     }
@@ -567,10 +572,7 @@ async function handleUnhealthySession(tabId, session) {
 
       try {
         await ensureSshAutoReconnect(tabId, processInfo);
-        logToFile(
-          `sftpEngine: SSH自动重连完成: tabId=${tabId}`,
-          "INFO",
-        );
+        logToFile(`sftpEngine: SSH自动重连完成: tabId=${tabId}`, "INFO");
       } catch (reconnectError) {
         logToFile(
           `sftpEngine: SSH自动重连失败: tabId=${tabId}, error=${reconnectError.message}`,
@@ -751,7 +753,9 @@ async function acquireSftpSession(tabId, options = {}) {
               if (sftp && typeof sftp.end === "function") {
                 sftp.end();
               }
-            } catch { /* intentionally ignored */ }
+            } catch {
+              /* intentionally ignored */
+            }
             return;
           }
           if (err) {
@@ -1153,7 +1157,10 @@ async function processSftpQueue(tabId) {
       );
 
       // 优化：使用指数退避策略，避免立即失败的循环
-      const backoffDelay = Math.min(1000 * Math.pow(2, nextOp.retries - 1), 10000);
+      const backoffDelay = Math.min(
+        1000 * Math.pow(2, nextOp.retries - 1),
+        10000,
+      );
       setTimeout(() => {
         processSftpQueue(tabId); // 再次尝试处理队列
       }, backoffDelay);
@@ -1374,7 +1381,7 @@ async function listFiles(tabId, dirPath, options = {}) {
         });
       });
     },
-    { type: "listFiles", path: dirPath, canMerge: true }
+    { type: "listFiles", path: dirPath, canMerge: true },
   );
 }
 
@@ -1392,22 +1399,27 @@ async function copyFile(tabId, sourcePath, targetPath) {
         readStream.pipe(writeStream);
       });
     },
-    { type: "copyFile", path: sourcePath }
+    { type: "copyFile", path: sourcePath },
   );
 }
-
 
 const DIRECTORY_TYPE_MASK = 0o170000;
 const DIRECTORY_MODE = 0o040000;
 
 function isDirectoryMode(mode) {
-  return typeof mode === "number" && (mode & DIRECTORY_TYPE_MASK) === DIRECTORY_MODE;
+  return (
+    typeof mode === "number" && (mode & DIRECTORY_TYPE_MASK) === DIRECTORY_MODE
+  );
 }
 
 function isMissingPathError(error) {
   const code = String(error?.code || "").toUpperCase();
   const message = String(error?.message || "").toLowerCase();
-  return code === "ENOENT" || code === "NO_SUCH_FILE" || message.includes("no such file");
+  return (
+    code === "ENOENT" ||
+    code === "NO_SUCH_FILE" ||
+    message.includes("no such file")
+  );
 }
 
 function sftpLstat(sftp, targetPath) {
@@ -1517,7 +1529,7 @@ async function deleteFile(tabId, filePath, isDirectory = false) {
 
       return { success: true };
     },
-    { type: "deleteFile", path: filePath }
+    { type: "deleteFile", path: filePath },
   );
 }
 
@@ -1533,7 +1545,7 @@ async function createFolder(tabId, folderPath) {
         });
       });
     },
-    { type: "createFolder", path: folderPath }
+    { type: "createFolder", path: folderPath },
   );
 }
 
@@ -1549,7 +1561,7 @@ async function createFile(tabId, filePath) {
         writeStream.end();
       });
     },
-    { type: "createFile", path: filePath }
+    { type: "createFile", path: filePath },
   );
 }
 
@@ -1578,7 +1590,7 @@ async function getFilePermissions(tabId, filePath) {
         });
       });
     },
-    { type: "getFilePermissions", path: filePath }
+    { type: "getFilePermissions", path: filePath },
   );
 }
 
@@ -1594,7 +1606,7 @@ async function getAbsolutePath(tabId, relativePath) {
         });
       });
     },
-    { type: "getAbsolutePath", path: relativePath }
+    { type: "getAbsolutePath", path: relativePath },
   );
 }
 
@@ -1614,7 +1626,7 @@ async function readFileContent(tabId, filePath) {
         });
       });
     },
-    { type: "readFileContent", path: filePath }
+    { type: "readFileContent", path: filePath },
   );
 }
 
@@ -1634,7 +1646,7 @@ async function readFileAsBase64(tabId, filePath) {
         });
       });
     },
-    { type: "readFileAsBase64", path: filePath }
+    { type: "readFileAsBase64", path: filePath },
   );
 }
 
@@ -1650,7 +1662,7 @@ async function saveFileContent(tabId, filePath, content) {
         writeStream.end(content, "utf8");
       });
     },
-    { type: "saveFileContent", path: filePath }
+    { type: "saveFileContent", path: filePath },
   );
 }
 

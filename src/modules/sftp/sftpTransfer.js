@@ -2809,10 +2809,7 @@ async function cleanupAllActiveTransfers(options = {}) {
     cleanedCount++;
   }
 
-  if (
-    sftpCore &&
-    typeof sftpCore.clearPendingOperationsForTab === "function"
-  ) {
+  if (sftpCore && typeof sftpCore.clearPendingOperationsForTab === "function") {
     for (const tabId of tabIds) {
       try {
         sftpCore.clearPendingOperationsForTab(tabId, { userCancelled });
@@ -2882,11 +2879,7 @@ async function cleanupActiveTransfersForTab(tabId) {
         "INFO",
       );
       const transfer = activeTransfers.get(transferKey);
-      const result = forceStopTransfer(
-        transferKey,
-        transfer,
-        "tab-cleanup",
-      );
+      const result = forceStopTransfer(transferKey, transfer, "tab-cleanup");
       if (result.stoppedStreams > 0) {
         logToFile(
           `sftpTransfer: Stopped ${result.stoppedStreams} streams for ${transferKey}`,
