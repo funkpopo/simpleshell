@@ -2,6 +2,11 @@
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 
 const { contextBridge, ipcRenderer, clipboard } = require("electron");
+const {
+  TERMINAL_IO_MAILBOX_CHANNEL,
+  TERMINAL_IO_MESSAGE_TYPES,
+  getTerminalIOMailboxOutputChannel,
+} = require("./modules/terminal/io/terminalIOMailboxProtocol");
 
 // Listener wrapper stores (avoid mutating callback functions with hidden properties)
 const topConnectionsChangedWrappers = new WeakMap();
@@ -13,6 +18,8 @@ const streamWrappersByChannel = {
 };
 const processOutputWrappersByChannel = new Map();
 const processOutputListenersByChannel = new Map();
+const terminalMailboxWrappersByChannel = new Map();
+const terminalMailboxListenersByChannel = new Map();
 
 const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 const RESTRICTED_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
@@ -35,6 +42,32 @@ const getProcessOutputWrapperStore = (channel) => {
 
 const removeAllManagedProcessOutputListeners = (channel) => {
   const listeners = processOutputListenersByChannel.get(channel);
+  if (!listeners || listeners.size === 0) {
+    return;
+  }
+
+  listeners.forEach((wrapped) => {
+    ipcRenderer.removeListener(channel, wrapped);
+  });
+  listeners.clear();
+};
+
+const getTerminalMailboxWrapperStore = (channel) => {
+  if (!terminalMailboxWrappersByChannel.has(channel)) {
+    terminalMailboxWrappersByChannel.set(channel, new WeakMap());
+  }
+  if (!terminalMailboxListenersByChannel.has(channel)) {
+    terminalMailboxListenersByChannel.set(channel, new Set());
+  }
+
+  return {
+    wrappers: terminalMailboxWrappersByChannel.get(channel),
+    listeners: terminalMailboxListenersByChannel.get(channel),
+  };
+};
+
+const removeAllManagedTerminalMailboxListeners = (channel) => {
+  const listeners = terminalMailboxListenersByChannel.get(channel);
   if (!listeners || listeners.size === 0) {
     return;
   }
@@ -88,6 +121,60 @@ const normalizeExternalOpenRequest = (url, options = {}) => {
 
 // 暴露安全的API给渲染进程
 contextBridge.exposeInMainWorld("terminalAPI", {
+  postTerminalMailboxMessage: (processId, message) => {
+    const channel = getTerminalIOMailboxOutputChannel(processId);
+    if (!channel || !message || typeof message !== "object") {
+      return false;
+    }
+
+    ipcRenderer.send(TERMINAL_IO_MAILBOX_CHANNEL, {
+      processId,
+      message,
+    });
+    return true;
+  },
+  onTerminalMailboxMessage: (processId, callback) => {
+    const channel = getTerminalIOMailboxOutputChannel(processId);
+    if (!channel || typeof callback !== "function") {
+      return () => {};
+    }
+
+    const { wrappers, listeners } = getTerminalMailboxWrapperStore(channel);
+    const wrapped = (_event, message) => {
+      callback(message);
+    };
+    wrappers.set(callback, wrapped);
+    listeners.add(wrapped);
+    ipcRenderer.on(channel, wrapped);
+
+    return () => {
+      ipcRenderer.removeListener(channel, wrapped);
+      listeners.delete(wrapped);
+      wrappers.delete(callback);
+    };
+  },
+  removeTerminalMailboxListener: (processId, callback) => {
+    const channel = getTerminalIOMailboxOutputChannel(processId);
+    if (!channel) {
+      return;
+    }
+
+    const { wrappers, listeners } = getTerminalMailboxWrapperStore(channel);
+
+    if (typeof callback === "function") {
+      const wrapped = wrappers.get(callback);
+      if (!wrapped) {
+        return;
+      }
+      ipcRenderer.removeListener(channel, wrapped);
+      listeners.delete(wrapped);
+      wrappers.delete(callback);
+      return;
+    }
+
+    removeAllManagedTerminalMailboxListeners(channel);
+  },
+
   // 发送命令到主进程处理 (用于模拟终端)
   sendCommand: (command) => ipcRenderer.invoke("terminal:command", command),
 
@@ -100,9 +187,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       return false;
     }
 
-    ipcRenderer.send("terminal:sendInput", {
+    ipcRenderer.send(TERMINAL_IO_MAILBOX_CHANNEL, {
       processId,
-      input: typeof data === "string" ? data : data.toString(),
+      message: {
+        type: TERMINAL_IO_MESSAGE_TYPES.INPUT,
+        data: typeof data === "string" ? data : data.toString(),
+      },
     });
     return true;
   },
@@ -116,9 +206,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     if (!Number.isFinite(normalizedBytes) || normalizedBytes <= 0) {
       return;
     }
-    ipcRenderer.send("terminal:outputAck", {
+    ipcRenderer.send(TERMINAL_IO_MAILBOX_CHANNEL, {
       processId,
-      bytes: normalizedBytes,
+      message: {
+        type: TERMINAL_IO_MESSAGE_TYPES.ACK,
+        bytes: normalizedBytes,
+      },
     });
   },
   killProcess: (processId) =>
@@ -193,14 +286,20 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 事件监听
   onProcessOutput: (processId, callback) => {
-    const channel = `process:output:${processId}`;
     if (typeof callback !== "function") {
       return () => {};
     }
 
+    const channel = getTerminalIOMailboxOutputChannel(processId);
+    if (!channel) {
+      return () => {};
+    }
+
     const { wrappers, listeners } = getProcessOutputWrapperStore(channel);
-    const wrapped = (event, data) => {
-      callback(data);
+    const wrapped = (_event, message) => {
+      if (message?.type === TERMINAL_IO_MESSAGE_TYPES.OUTPUT) {
+        callback(message.data);
+      }
     };
     wrappers.set(callback, wrapped);
     listeners.add(wrapped);
@@ -218,7 +317,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       return;
     }
 
-    const channel = `process:output:${processId}`;
+    const channel = getTerminalIOMailboxOutputChannel(processId);
+    if (!channel) {
+      return;
+    }
     const { wrappers, listeners } = getProcessOutputWrapperStore(channel);
 
     if (typeof callback === "function") {
@@ -288,8 +390,18 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   executeCommand: (command) => ipcRenderer.invoke("terminal:command", command),
 
   // 终端大小调整
-  resizeTerminal: (processId, cols, rows) =>
-    ipcRenderer.invoke("terminal:resize", processId, cols, rows),
+  resizeTerminal: (processId, cols, rows) => {
+    ipcRenderer.send(TERMINAL_IO_MAILBOX_CHANNEL, {
+      processId,
+      message: {
+        type: TERMINAL_IO_MESSAGE_TYPES.RESIZE,
+        cols,
+        rows,
+        immediate: true,
+      },
+    });
+    return Promise.resolve(true);
+  },
 
   // AI助手API
   saveAISettings: (settings) => ipcRenderer.invoke("ai:saveSettings", settings),

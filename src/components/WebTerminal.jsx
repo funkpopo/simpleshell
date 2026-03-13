@@ -14,12 +14,12 @@ import { useTerminalSuggestions } from "../hooks/useTerminalSuggestions.js";
 import { useTerminalInputSync } from "../hooks/useTerminalInputSync.js";
 import { TerminalPerformanceMonitor } from "../utils/TerminalPerformanceMonitor.js";
 import { ScrollbackUsageTracker } from "../utils/ScrollbackUsageTracker.js";
-import { TerminalWriteQueue } from "../utils/TerminalWriteQueue.js";
 import { highlightPromptInputLine } from "../utils/realtimeInputHighlighter.js";
 import PropTypes from "prop-types";
 import CommandSuggestion from "./CommandSuggestion";
 import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.jsx";
 import WebTerminalContextMenu from "./web-terminal/WebTerminalContextMenu.jsx";
+import { RendererTerminalIOMailbox } from "../modules/terminal/io/RendererTerminalIOMailbox.js";
 import {
   ANSI_CSI_SEQUENCE_REGEX,
   TERMINAL_RESIZE_QUERY_REGEX,
@@ -36,8 +36,10 @@ import {
   fitAddonCache,
   forceResizeTerminal,
   processCache,
+  registerTerminalIOMailbox,
   sendResizeIfNeeded,
   terminalCache,
+  unregisterTerminalIOMailbox,
 } from "../modules/terminal/controller/terminalSessionStore.js";
 import {
   COMMENT_LINE_SEND_INTERVAL_MS,
@@ -89,7 +91,7 @@ const WebTerminal = ({
   // 性能优化相关 refs
   const performanceMonitorRef = useRef(null);
   const scrollbackUsageTrackerRef = useRef(null);
-  const terminalWriteQueueRef = useRef(null);
+  const terminalIOMailboxRef = useRef(null);
 
   const theme = useTheme();
   const eventManager = useEventManager(); // 使用统一的事件管理器
@@ -106,17 +108,6 @@ const WebTerminal = ({
   const inputQueueDrainHandleRef = useRef(null);
   const inputQueueDrainHandleTypeRef = useRef(null);
   const webglRendererEnabledRef = useRef(true);
-  const pendingWriteBufferRef = useRef([]);
-  const pendingWriteLengthRef = useRef(0);
-  const pendingWriteHandleRef = useRef(null);
-  const pendingWriteUsingRafRef = useRef(false);
-  const utf8EncoderRef = useRef(
-    typeof TextEncoder !== "undefined" ? new TextEncoder() : null,
-  );
-  const outputAckProcessIdRef = useRef(null);
-  const outputAckBytesRef = useRef(0);
-  const outputAckTimerRef = useRef(null);
-  const processOutputUnsubscribeRef = useRef(null);
   const isActiveRef = useRef(isActive);
 
   useEffect(() => {
@@ -200,91 +191,6 @@ const WebTerminal = ({
     performanceMonitorRef,
   });
 
-  const getUtf8ByteLength = useCallback((value) => {
-    if (value === undefined || value === null) {
-      return 0;
-    }
-
-    const str = typeof value === "string" ? value : value.toString();
-    if (!str) {
-      return 0;
-    }
-
-    if (utf8EncoderRef.current) {
-      return utf8EncoderRef.current.encode(str).length;
-    }
-
-    try {
-      return new Blob([str]).size;
-    } catch {
-      return str.length;
-    }
-  }, []);
-
-  const flushOutputAck = useCallback(() => {
-    if (outputAckTimerRef.current !== null) {
-      clearTimeout(outputAckTimerRef.current);
-      outputAckTimerRef.current = null;
-    }
-
-    const processId = outputAckProcessIdRef.current;
-    const ackBytes = outputAckBytesRef.current;
-    outputAckBytesRef.current = 0;
-
-    if (
-      processId === undefined ||
-      processId === null ||
-      !Number.isFinite(ackBytes) ||
-      ackBytes <= 0
-    ) {
-      return;
-    }
-
-    if (window.terminalAPI?.notifyOutputConsumed) {
-      window.terminalAPI.notifyOutputConsumed(processId, ackBytes);
-    }
-  }, []);
-
-  const queueOutputAck = useCallback(
-    (processId, byteLength) => {
-      const normalizedBytes = Math.floor(Number(byteLength));
-      if (
-        processId === undefined ||
-        processId === null ||
-        !Number.isFinite(normalizedBytes) ||
-        normalizedBytes <= 0
-      ) {
-        return;
-      }
-
-      outputAckProcessIdRef.current = processId;
-      outputAckBytesRef.current += normalizedBytes;
-
-      if (outputAckBytesRef.current >= 64 * 1024) {
-        flushOutputAck();
-        return;
-      }
-
-      if (outputAckTimerRef.current !== null) {
-        return;
-      }
-
-      outputAckTimerRef.current = setTimeout(() => {
-        outputAckTimerRef.current = null;
-        flushOutputAck();
-      }, 24);
-    },
-    [flushOutputAck],
-  );
-
-  const resetOutputAckState = useCallback(
-    (nextProcessId = null) => {
-      flushOutputAck();
-      outputAckProcessIdRef.current = nextProcessId;
-    },
-    [flushOutputAck],
-  );
-
   const sendInputToProcess = useCallback((processId, input) => {
     if (
       processId === undefined ||
@@ -297,6 +203,12 @@ const WebTerminal = ({
 
     const inputStr = typeof input === "string" ? input : input.toString();
     if (!inputStr) {
+      return;
+    }
+
+    const mailbox = terminalIOMailboxRef.current;
+    if (mailbox && String(mailbox.getProcessId()) === String(processId)) {
+      mailbox.sendInput(inputStr);
       return;
     }
 
@@ -509,120 +421,8 @@ const WebTerminal = ({
     eventManager,
   });
 
-  const flushPendingWrites = useCallback(
-    (termInstance) => {
-      if (!termInstance) {
-        return;
-      }
-      const pending = pendingWriteBufferRef.current;
-      if (!pending.length) {
-        return;
-      }
-      pendingWriteBufferRef.current = [];
-      pendingWriteLengthRef.current = 0;
-      const dataToWrite = pending.join("");
-      if (!dataToWrite) {
-        return;
-      }
-      const processIdForAck = outputAckProcessIdRef.current;
-      const byteLength = getUtf8ByteLength(dataToWrite);
-      const onWriteComplete = () => {
-        scheduleHighlightRefresh(termInstance);
-        if (byteLength > 0) {
-          queueOutputAck(processIdForAck, byteLength);
-        }
-      };
-      try {
-        termInstance.write(dataToWrite, onWriteComplete);
-      } catch {
-        termInstance.write(dataToWrite);
-        onWriteComplete();
-      }
-      setContentUpdated(true);
-    },
-    [
-      getUtf8ByteLength,
-      queueOutputAck,
-      scheduleHighlightRefresh,
-      setContentUpdated,
-    ],
-  );
-
   // 优化：使用ref追踪内容更新状态，避免频繁的React状态更新
   const contentUpdatedRef = useRef(false);
-
-  const enqueueTerminalWrite = useCallback(
-    (termInstance, chunk) => {
-      if (!termInstance || !chunk) {
-        return;
-      }
-      const chunkStr = typeof chunk === "string" ? chunk : chunk.toString();
-      if (!chunkStr) {
-        return;
-      }
-
-      // 如果启用了新的写入队列，使用它
-      if (terminalWriteQueueRef.current) {
-        // 仅记录滚回统计信息，避免重复缓存整份输出
-        if (scrollbackUsageTrackerRef.current) {
-          scrollbackUsageTrackerRef.current.addData(chunkStr);
-        }
-
-        // 使用写入队列入队
-        terminalWriteQueueRef.current.enqueue(chunkStr);
-        // 优化：使用ref追踪，减少React状态更新频率
-        contentUpdatedRef.current = true;
-        return;
-      }
-
-      // 后备方案：使用原有的批处理逻辑
-      pendingWriteBufferRef.current.push(chunkStr);
-      pendingWriteLengthRef.current += chunkStr.length;
-
-      // 优化：提高批处理阈值到64KB，减少刷新次数
-      const batchThreshold = 65536;
-
-      if (
-        pendingWriteLengthRef.current > batchThreshold &&
-        pendingWriteHandleRef.current !== null
-      ) {
-        if (
-          pendingWriteUsingRafRef.current &&
-          typeof cancelAnimationFrame === "function"
-        ) {
-          cancelAnimationFrame(pendingWriteHandleRef.current);
-        } else {
-          clearTimeout(pendingWriteHandleRef.current);
-        }
-        pendingWriteHandleRef.current = null;
-      }
-
-      // 超过阈值立即刷新
-      if (pendingWriteLengthRef.current > batchThreshold) {
-        flushPendingWrites(termInstance);
-        return;
-      }
-
-      if (pendingWriteHandleRef.current !== null) {
-        return;
-      }
-
-      const flush = () => {
-        pendingWriteHandleRef.current = null;
-        flushPendingWrites(termInstance);
-      };
-
-      // 优化调度策略：统一使用 RAF 批处理，减少定时器开销
-      if (typeof requestAnimationFrame === "function") {
-        pendingWriteUsingRafRef.current = true;
-        pendingWriteHandleRef.current = requestAnimationFrame(flush);
-      } else {
-        pendingWriteUsingRafRef.current = false;
-        pendingWriteHandleRef.current = setTimeout(flush, 16);
-      }
-    },
-    [flushPendingWrites],
-  );
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState(null);
@@ -2412,38 +2212,48 @@ const WebTerminal = ({
           });
         }
 
-        // 初始化写入队列
-        if (!terminalWriteQueueRef.current) {
-          terminalWriteQueueRef.current = new TerminalWriteQueue({
-            onDrain: (data) => {
-              // 实际写入到终端
-              if (term && data) {
-                const startTime = performance.now();
-                const processIdForAck = outputAckProcessIdRef.current;
-                const byteLength = getUtf8ByteLength(data);
-                const onWriteComplete = () => {
-                  const duration = performance.now() - startTime;
-                  if (performanceMonitorRef.current) {
-                    performanceMonitorRef.current.recordWrite(
-                      data.length,
-                      duration,
-                    );
-                  }
-                  scheduleHighlightRefresh(term);
-                  if (byteLength > 0) {
-                    queueOutputAck(processIdForAck, byteLength);
-                  }
-                };
-                try {
-                  term.write(data, onWriteComplete);
-                } catch {
-                  term.write(data);
-                  onWriteComplete();
-                }
+        if (!terminalIOMailboxRef.current) {
+          terminalIOMailboxRef.current = new RendererTerminalIOMailbox({
+            term,
+            onQueueOutput: (data) => {
+              if (scrollbackUsageTrackerRef.current) {
+                scrollbackUsageTrackerRef.current.addData(data);
               }
+              contentUpdatedRef.current = true;
+              setContentUpdated(true);
+            },
+            onWriteComplete: ({ data, duration }) => {
+              if (performanceMonitorRef.current) {
+                performanceMonitorRef.current.recordWrite(
+                  data.length,
+                  duration,
+                );
+              }
+              scheduleHighlightRefresh(term);
+            },
+          });
+        } else {
+          terminalIOMailboxRef.current.setTerm(term);
+          terminalIOMailboxRef.current.updateHandlers({
+            onQueueOutput: (data) => {
+              if (scrollbackUsageTrackerRef.current) {
+                scrollbackUsageTrackerRef.current.addData(data);
+              }
+              contentUpdatedRef.current = true;
+              setContentUpdated(true);
+            },
+            onWriteComplete: ({ data, duration }) => {
+              if (performanceMonitorRef.current) {
+                performanceMonitorRef.current.recordWrite(
+                  data.length,
+                  duration,
+                );
+              }
+              scheduleHighlightRefresh(term);
             },
           });
         }
+        registerTerminalIOMailbox(tabId, terminalIOMailboxRef.current);
         if (webglRendererEnabledRef.current) {
           tryEnableWebglRenderer(term);
         } else {
@@ -3192,16 +3002,9 @@ const WebTerminal = ({
 
       // 添加自定义清理逻辑到EventManager
       eventManager.addCleanup(() => {
-        // 清理terminalAPI监听器
-        if (window.terminalAPI) {
-          if (processCache[tabId]) {
-            window.terminalAPI.removeOutputListener(processCache[tabId]);
-          } else {
-            window.terminalAPI.removeOutputListener();
-          }
+        if (terminalIOMailboxRef.current) {
+          terminalIOMailboxRef.current.detachProcess();
         }
-        flushOutputAck();
-        outputAckProcessIdRef.current = null;
 
         // 从DOM中分离终端但保留缓存
         if (termRef.current) {
@@ -3241,10 +3044,10 @@ const WebTerminal = ({
           scrollbackUsageTrackerRef.current = null;
         }
 
-        // 清理写入队列
-        if (terminalWriteQueueRef.current) {
-          terminalWriteQueueRef.current.destroy();
-          terminalWriteQueueRef.current = null;
+        if (terminalIOMailboxRef.current) {
+          unregisterTerminalIOMailbox(tabId, terminalIOMailboxRef.current);
+          terminalIOMailboxRef.current.destroy();
+          terminalIOMailboxRef.current = null;
         }
 
         // 清理终端事件监听器
@@ -3277,10 +3080,7 @@ const WebTerminal = ({
     lifecycleEventManager,
     tryEnableWebglRenderer,
     disableWebglRenderer,
-    enqueueTerminalWrite,
-    flushOutputAck,
-    getUtf8ByteLength,
-    queueOutputAck,
+    scheduleHighlightRefresh,
   ]);
 
   // 设置模拟终端（用于无法使用IPC API时的回退）
@@ -3496,9 +3296,8 @@ const WebTerminal = ({
 
   useEffect(() => {
     return () => {
-      if (typeof processOutputUnsubscribeRef.current === "function") {
-        processOutputUnsubscribeRef.current();
-        processOutputUnsubscribeRef.current = null;
+      if (terminalIOMailboxRef.current) {
+        terminalIOMailboxRef.current.detachProcess();
       }
 
       resetRenderState();
@@ -3513,27 +3312,11 @@ const WebTerminal = ({
       realtimeInputHighlightWritingRef.current = false;
       realtimeInputHighlightSnapshotRef.current = "";
 
-      if (pendingWriteHandleRef.current !== null) {
-        if (
-          pendingWriteUsingRafRef.current &&
-          typeof cancelAnimationFrame === "function"
-        ) {
-          cancelAnimationFrame(pendingWriteHandleRef.current);
-        } else {
-          clearTimeout(pendingWriteHandleRef.current);
-        }
-      }
-      pendingWriteHandleRef.current = null;
-      pendingWriteBufferRef.current = [];
-      pendingWriteLengthRef.current = 0;
-      pendingWriteUsingRafRef.current = false;
       cancelInputQueueDrain();
       inputQueueRef.current = [];
       inputQueueBytesRef.current = 0;
-      flushOutputAck();
-      outputAckProcessIdRef.current = null;
     };
-  }, [cancelInputQueueDrain, flushOutputAck, resetRenderState]);
+  }, [cancelInputQueueDrain, resetRenderState]);
 
   useEffect(() => {
     if (!contentUpdated || !termRef.current) {
@@ -3545,35 +3328,12 @@ const WebTerminal = ({
 
   // 设置数据监听器的函数，处理终端输出
   const setupDataListener = (processId, term) => {
-    if (typeof processOutputUnsubscribeRef.current === "function") {
-      processOutputUnsubscribeRef.current();
-      processOutputUnsubscribeRef.current = null;
-    }
-
     const previousProcessId = processCache[tabId];
-    resetOutputAckState(processId);
+    const mailbox = terminalIOMailboxRef.current;
 
-    // 清理待写入缓冲
-    if (pendingWriteHandleRef.current !== null) {
-      if (
-        pendingWriteUsingRafRef.current &&
-        typeof cancelAnimationFrame === "function"
-      ) {
-        cancelAnimationFrame(pendingWriteHandleRef.current);
-      } else {
-        clearTimeout(pendingWriteHandleRef.current);
-      }
-      pendingWriteHandleRef.current = null;
-    }
-    pendingWriteBufferRef.current = [];
-    pendingWriteLengthRef.current = 0;
-    pendingWriteUsingRafRef.current = false;
     cancelInputQueueDrain();
     inputQueueRef.current = [];
     inputQueueBytesRef.current = 0;
-    if (terminalWriteQueueRef.current) {
-      terminalWriteQueueRef.current.clear();
-    }
 
     // 保存进程ID以便后续可以关闭
     if (previousProcessId && previousProcessId !== processId) {
@@ -3587,10 +3347,6 @@ const WebTerminal = ({
       if (!data) {
         return;
       }
-
-      enqueueTerminalWrite(term, data);
-      // 更新内容状态标志，表示终端内容已更新
-      setContentUpdated(true);
 
       const dataStr = typeof data === "string" ? data : data.toString();
 
@@ -3643,11 +3399,12 @@ const WebTerminal = ({
       }
     };
 
-    if (window.terminalAPI?.onProcessOutput) {
-      processOutputUnsubscribeRef.current = window.terminalAPI.onProcessOutput(
-        processId,
-        handleProcessOutput,
-      );
+    if (mailbox) {
+      mailbox.setTerm(term);
+      mailbox.updateHandlers({
+        onOutput: handleProcessOutput,
+      });
+      mailbox.attachProcess(processId);
     }
 
     // 同步终端大小

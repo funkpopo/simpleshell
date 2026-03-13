@@ -26,6 +26,7 @@ class SSHHandlers {
     this.sftpTransfer = dependencies.sftpTransfer;
     this.getNextProcessId = dependencies.getNextProcessId;
     this.getLatencyHandlers = dependencies.getLatencyHandlers;
+    this.terminalIOMailboxManager = dependencies.terminalIOMailboxManager;
 
     // 待处理的认证请求
     this.pendingAuthRequests = new Map();
@@ -502,12 +503,97 @@ class SSHHandlers {
   }
 
   _emitProcessOutput(processId, output) {
+    if (this.terminalIOMailboxManager) {
+      const emitted = this.terminalIOMailboxManager.emitOutput(
+        processId,
+        output,
+      );
+      if (emitted) {
+        return;
+      }
+    }
+
     const mainWindow = this._getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) {
       return;
     }
 
     mainWindow.webContents.send(`process:output:${processId}`, output);
+  }
+
+  _setProcessBufferedBytes(processId, bytes) {
+    if (!this.terminalIOMailboxManager) {
+      return;
+    }
+
+    this.terminalIOMailboxManager.setBufferedBytes(processId, bytes);
+  }
+
+  _resetProcessResizeState(processId) {
+    if (!this.terminalIOMailboxManager) {
+      return;
+    }
+
+    this.terminalIOMailboxManager.resetResizeState(processId);
+  }
+
+  _destroyProcessMailbox(processId) {
+    if (!this.terminalIOMailboxManager) {
+      return;
+    }
+
+    this.terminalIOMailboxManager.destroyProcess(processId);
+  }
+
+  _getFlowControlTarget(processId, tabId = null) {
+    const procInfo = this.childProcesses.get(processId);
+    const tabProcInfo = tabId ? this.childProcesses.get(tabId) : null;
+
+    return procInfo?.stream || tabProcInfo?.stream || procInfo?.process || null;
+  }
+
+  _applyMailboxResize(processId, tabId, cols, rows) {
+    const procInfo = this.childProcesses.get(processId);
+    const tabProcInfo = tabId ? this.childProcesses.get(tabId) : null;
+    const activeProc = procInfo || tabProcInfo;
+
+    if (!activeProc) {
+      return false;
+    }
+
+    if (
+      activeProc.type === "ssh2" &&
+      activeProc.stream &&
+      typeof activeProc.stream.setWindow === "function"
+    ) {
+      activeProc.stream.setWindow(rows, cols);
+      return true;
+    }
+
+    if (
+      activeProc.type === "telnet" &&
+      activeProc.process &&
+      typeof activeProc.process.setWindow === "function"
+    ) {
+      activeProc.process.setWindow(rows, cols);
+      return true;
+    }
+
+    return false;
+  }
+
+  _configureProcessMailbox(processId, config = {}) {
+    if (!this.terminalIOMailboxManager) {
+      return null;
+    }
+
+    return this.terminalIOMailboxManager.createMailbox(processId, {
+      aliases: config.tabId ? [config.tabId] : [],
+      getFlowControlTarget: () =>
+        this._getFlowControlTarget(processId, config.tabId),
+      applyResize: (cols, rows) =>
+        this._applyMailboxResize(processId, config.tabId, cols, rows),
+    });
   }
 
   _ensureReconnectListener() {
@@ -747,132 +833,22 @@ class SSHHandlers {
     const OUTPUT_PROFILE = {
       flushIntervalMs: 8,
       flushThresholdBytes: 16 * 1024,
-      pauseThresholdBytes: 512 * 1024,
     };
-    const BACKPRESSURE_RECOVERY_INTERVAL_MS = 100;
-
-    let isPaused = false;
     let flushTimer = null;
-    let backpressureRecoveryTimer = null;
-    let pendingAckBytes = 0;
     let droppedBytes = 0;
     const stdoutDecoder = new StringDecoder("utf8");
     const stderrDecoder = new StringDecoder("utf8");
+    const processMailbox = this._configureProcessMailbox(processId, sshConfig);
 
     const getOutputProfile = () => OUTPUT_PROFILE;
 
-    const getPayloadByteLength = (payload) => {
-      if (Buffer.isBuffer(payload)) {
-        return payload.length;
-      }
-      if (typeof payload === "string") {
-        return Buffer.byteLength(payload, "utf8");
-      }
-      return 0;
-    };
-
-    const clearBackpressureRecoveryTimer = () => {
-      if (backpressureRecoveryTimer) {
-        clearTimeout(backpressureRecoveryTimer);
-        backpressureRecoveryTimer = null;
-      }
-    };
-
-    const updateBackpressure = () => {
-      if (stream.destroyed) {
-        clearBackpressureRecoveryTimer();
-        return;
-      }
-
-      const totalPendingBytes = pendingAckBytes + buffer.length;
-      const backpressurePauseThreshold = getOutputProfile().pauseThresholdBytes;
-      const backpressureResumeThreshold = Math.floor(
-        backpressurePauseThreshold / 2,
-      );
-
-      if (!isPaused && totalPendingBytes >= backpressurePauseThreshold) {
-        stream.pause();
-        isPaused = true;
-        logToFile(
-          `Stream paused for processId ${processId}: pendingAck=${pendingAckBytes}, buffer=${buffer.length}`,
-          "DEBUG",
-        );
-      } else if (isPaused && totalPendingBytes <= backpressureResumeThreshold) {
-        stream.resume();
-        isPaused = false;
-        logToFile(
-          `Stream resumed for processId ${processId}: pendingAck=${pendingAckBytes}, buffer=${buffer.length}`,
-          "DEBUG",
-        );
-      }
-
-      if (isPaused) {
-        if (!backpressureRecoveryTimer) {
-          backpressureRecoveryTimer = setTimeout(() => {
-            backpressureRecoveryTimer = null;
-            updateBackpressure();
-          }, BACKPRESSURE_RECOVERY_INTERVAL_MS);
-        }
-      } else {
-        clearBackpressureRecoveryTimer();
-      }
-    };
-
-    const outputAckHandler = (bytes) => {
-      const ackBytes = Math.floor(Number(bytes));
-      if (!Number.isFinite(ackBytes) || ackBytes <= 0) {
-        return;
-      }
-
-      pendingAckBytes = Math.max(0, pendingAckBytes - ackBytes);
-      updateBackpressure();
-    };
-
-    const bindOutputAckHandlers = () => {
-      const processIds = [processId];
-      if (sshConfig.tabId && sshConfig.tabId !== processId) {
-        processIds.push(sshConfig.tabId);
-      }
-
-      processIds.forEach((id) => {
-        const procInfo = this.childProcesses.get(id);
-        if (procInfo) {
-          procInfo.outputAckHandler = outputAckHandler;
-        }
-      });
-    };
-
-    const unbindOutputAckHandlers = () => {
-      const processIds = [processId];
-      if (sshConfig.tabId && sshConfig.tabId !== processId) {
-        processIds.push(sshConfig.tabId);
-      }
-
-      processIds.forEach((id) => {
-        const procInfo = this.childProcesses.get(id);
-        if (procInfo && procInfo.outputAckHandler === outputAckHandler) {
-          delete procInfo.outputAckHandler;
-        }
-      });
-    };
-
-    bindOutputAckHandlers();
-
     const emitOutput = (payload, options = {}) => {
-      const { trackBackpressure = true } = options;
-      const mainWindow = this._getMainWindow();
-      if (!mainWindow || mainWindow.isDestroyed()) {
+      if (processMailbox) {
+        processMailbox.emitOutput(payload, options);
         return;
       }
-      mainWindow.webContents.send(`process:output:${processId}`, payload);
 
-      if (trackBackpressure) {
-        const payloadBytes = getPayloadByteLength(payload);
-        if (payloadBytes > 0) {
-          pendingAckBytes += payloadBytes;
-          updateBackpressure();
-        }
-      }
+      this._emitProcessOutput(processId, payload);
     };
 
     const emitDroppedBytesWarning = () => {
@@ -914,7 +890,7 @@ class SSHHandlers {
         emitDroppedBytesWarning();
 
         if (!output) {
-          updateBackpressure();
+          this._setProcessBufferedBytes(processId, buffer.length);
           return;
         }
 
@@ -931,7 +907,7 @@ class SSHHandlers {
           "ERROR",
         );
       } finally {
-        updateBackpressure();
+        this._setProcessBufferedBytes(processId, buffer.length);
       }
     };
 
@@ -977,7 +953,7 @@ class SSHHandlers {
 
         if (chunk.length === 0) {
           scheduleFlush();
-          updateBackpressure();
+          this._setProcessBufferedBytes(processId, buffer.length);
           return;
         }
 
@@ -995,10 +971,11 @@ class SSHHandlers {
           scheduleFlush();
         }
 
-        updateBackpressure();
+        this._setProcessBufferedBytes(processId, buffer.length);
       } catch (error) {
         logToFile(`Error handling stream data: ${error.message}`, "ERROR");
         buffer = Buffer.alloc(0); // 错误时清理缓冲区
+        this._setProcessBufferedBytes(processId, 0);
       }
     };
 
@@ -1043,8 +1020,7 @@ class SSHHandlers {
         clearTimeout(flushTimer);
         flushTimer = null;
       }
-      clearBackpressureRecoveryTimer();
-      unbindOutputAckHandlers();
+      this._setProcessBufferedBytes(processId, 0);
 
       // 清理事件监听器，防止内存泄漏
       stream.removeListener("data", dataHandler);
@@ -1077,10 +1053,7 @@ class SSHHandlers {
         mainWindow &&
         !mainWindow.isDestroyed()
       ) {
-        mainWindow.webContents.send(
-          `process:output:${processId}`,
-          `\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`,
-        );
+        emitOutput(`\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`);
       }
 
       // 清理SFTP传输
@@ -1179,6 +1152,7 @@ class SSHHandlers {
 
       // 仅主动关闭时清理进程映射；意外断线时保留以便自动恢复 shell
       if (shouldReleaseConnection) {
+        this._destroyProcessMailbox(processId);
         this.childProcesses.delete(processId);
         if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
       }
@@ -1192,14 +1166,17 @@ class SSHHandlers {
 
   _setupTelnetEventListeners(telnet, processId, telnetConfig, connectionInfo) {
     const mainWindow = this._getMainWindow();
+    const processMailbox = this._configureProcessMailbox(
+      processId,
+      telnetConfig,
+    );
 
     telnet.on("data", (data) => {
       try {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(
-            `process:output:${processId}`,
-            data.toString(),
-          );
+        if (processMailbox) {
+          processMailbox.emitOutput(data.toString());
+        } else if (mainWindow && !mainWindow.isDestroyed()) {
+          this._emitProcessOutput(processId, data.toString());
         }
       } catch (error) {
         logToFile(`Error handling Telnet data: ${error.message}`, "ERROR");
@@ -1213,8 +1190,8 @@ class SSHHandlers {
       );
 
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(
-          `process:output:${processId}`,
+        this._emitProcessOutput(
+          processId,
           `\r\n*** Telnet连接错误: ${err.message} ***\r\n`,
         );
         mainWindow.webContents.send(`process:exit:${processId}`, {
@@ -1222,6 +1199,7 @@ class SSHHandlers {
           signal: null,
         });
       }
+      this._destroyProcessMailbox(processId);
 
       this.connectionManager.releaseTelnetConnection(
         connectionInfo.key,
@@ -1233,15 +1211,13 @@ class SSHHandlers {
       logToFile(`Telnet connection ended for processId ${processId}`, "INFO");
 
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(
-          `process:output:${processId}`,
-          `\r\n*** Telnet连接已关闭 ***\r\n`,
-        );
+        this._emitProcessOutput(processId, `\r\n*** Telnet连接已关闭 ***\r\n`);
         mainWindow.webContents.send(`process:exit:${processId}`, {
           code: 0,
           signal: null,
         });
       }
+      this._destroyProcessMailbox(processId);
 
       this.connectionManager.releaseTelnetConnection(
         connectionInfo.key,
@@ -1253,10 +1229,7 @@ class SSHHandlers {
       logToFile(`Telnet connection timeout for processId ${processId}`, "WARN");
 
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(
-          `process:output:${processId}`,
-          `\r\n*** Telnet连接超时 ***\r\n`,
-        );
+        this._emitProcessOutput(processId, `\r\n*** Telnet连接超时 ***\r\n`);
       }
     });
   }
@@ -1395,6 +1368,7 @@ class SSHHandlers {
         if (connectionConfig.tabId) {
           this.childProcesses.set(connectionConfig.tabId, { ...procInfo });
         }
+        this._configureProcessMailbox(processId, connectionConfig);
         this._bindConnectionProcess(
           connectionInfo.key,
           processId,
@@ -1406,8 +1380,8 @@ class SSHHandlers {
           logToFile(`复用现有SSH连接: ${connectionInfo.key}`, "INFO");
 
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
+            this._emitProcessOutput(
+              processId,
               `\r\n*** ${connectionConfig.host} SSH连接已建立（复用现有连接） ***\r\n`,
             );
           }
@@ -1456,6 +1430,7 @@ class SSHHandlers {
           );
 
           // 清理之前的连接尝试
+          this._destroyProcessMailbox(processId);
           this.childProcesses.delete(processId);
           if (finalConfig.tabId) this.childProcesses.delete(finalConfig.tabId);
           this._unbindConnectionProcessByProcess(processId, finalConfig.tabId);
@@ -1549,6 +1524,7 @@ class SSHHandlers {
               connectionInfo.key,
               sshConfig.tabId,
             );
+            this._destroyProcessMailbox(processId);
             this.childProcesses.delete(processId);
             if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
             this._unbindConnectionProcess(connectionInfo?.key);
@@ -1678,8 +1654,8 @@ class SSHHandlers {
         }
 
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(
-            `process:output:${processId}`,
+          this._emitProcessOutput(
+            processId,
             `\r\n*** ${sshConfig.host} SSH连接已建立 ***\r\n`,
           );
         }
@@ -1704,8 +1680,8 @@ class SSHHandlers {
         // 给用户一次性提示：正在等待代理/VPN/网络恢复并自动重试
         try {
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-              `process:output:${processId}`,
+            this._emitProcessOutput(
+              processId,
               `\r\n连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多1分钟）...\r\n`,
             );
           }
@@ -1783,6 +1759,7 @@ class SSHHandlers {
           connectionInfo.key,
           sshConfig.tabId,
         );
+        this._destroyProcessMailbox(processId);
         this.childProcesses.delete(processId);
         if (sshConfig.tabId) this.childProcesses.delete(sshConfig.tabId);
         this._unbindConnectionProcess(connectionInfo?.key);
@@ -1794,8 +1771,8 @@ class SSHHandlers {
         if (settled) return;
         logToFile("SSH connection timed out after 60 seconds", "ERROR");
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(
-            `process:output:${processId}`,
+          this._emitProcessOutput(
+            processId,
             `\r\n自动重连超时（1分钟），请检查代理/VPN/网络后手动重连\r\n`,
           );
         }
@@ -1851,13 +1828,14 @@ class SSHHandlers {
       if (telnetConfig.tabId) {
         this.childProcesses.set(telnetConfig.tabId, { ...procInfo });
       }
+      this._configureProcessMailbox(processId, telnetConfig);
 
       if (connectionInfo.ready) {
         logToFile(`复用现有Telnet连接: ${connectionInfo.key}`, "INFO");
 
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(
-            `process:output:${processId}`,
+          this._emitProcessOutput(
+            processId,
             `\r\n*** ${telnetConfig.host} Telnet连接已建立（复用现有连接） ***\r\n`,
           );
         }

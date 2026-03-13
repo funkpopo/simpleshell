@@ -4,72 +4,46 @@ export const terminalCache = {};
 export const fitAddonCache = {};
 export const processCache = {};
 export const disposablesCache = {};
-
-const terminalGeometryCache = new Map();
-
-const getGeometryKey = (processId, tabId) => {
-  if (processId) return `process:${processId}`;
-  if (tabId) return `tab:${tabId}`;
-  return null;
-};
-
-const normalizeGeometry = (cols = 0, rows = 0) => ({
-  cols: Math.max(Math.floor(cols) || 1, 1),
-  rows: Math.max(Math.floor(rows) || 1, 1),
-});
-
-const shouldTransmitGeometry = (processId, tabId, cols, rows) => {
-  const key = getGeometryKey(processId, tabId);
-  if (!key) {
-    return { key: null, cols, rows, changed: false };
-  }
-
-  const { cols: normalizedCols, rows: normalizedRows } = normalizeGeometry(
-    cols,
-    rows,
-  );
-  const cached = terminalGeometryCache.get(key);
-  if (
-    cached &&
-    cached.cols === normalizedCols &&
-    cached.rows === normalizedRows
-  ) {
-    return { key, cols: normalizedCols, rows: normalizedRows, changed: false };
-  }
-
-  terminalGeometryCache.set(key, {
-    cols: normalizedCols,
-    rows: normalizedRows,
-  });
-  return { key, cols: normalizedCols, rows: normalizedRows, changed: true };
-};
+export const terminalIOMailboxCache = {};
 
 export const clearGeometryFor = (processId, tabId) => {
-  const key = getGeometryKey(processId, tabId);
-  if (key) {
-    terminalGeometryCache.delete(key);
+  const mailbox = terminalIOMailboxCache[tabId];
+  if (mailbox?.resetResizeState) {
+    mailbox.resetResizeState();
   }
 };
 
 export const sendResizeIfNeeded = (processId, tabId, cols, rows) => {
-  const {
-    key,
-    cols: nextCols,
-    rows: nextRows,
-    changed,
-  } = shouldTransmitGeometry(processId, tabId, cols, rows);
+  const mailbox = terminalIOMailboxCache[tabId];
+  if (mailbox?.requestResize) {
+    return mailbox.requestResize(cols, rows);
+  }
 
-  if (!changed || !window.terminalAPI?.resizeTerminal) {
+  if (!window.terminalAPI?.resizeTerminal) {
     return Promise.resolve();
   }
 
   return window.terminalAPI
-    .resizeTerminal(processId || tabId, nextCols, nextRows)
-    .catch(() => {
-      if (key) {
-        terminalGeometryCache.delete(key);
-      }
-    });
+    .resizeTerminal(processId || tabId, cols, rows)
+    .catch(() => {});
+};
+
+export const registerTerminalIOMailbox = (tabId, mailbox) => {
+  if (!tabId || !mailbox) {
+    return;
+  }
+
+  terminalIOMailboxCache[tabId] = mailbox;
+};
+
+export const unregisterTerminalIOMailbox = (tabId, mailbox) => {
+  if (!tabId) {
+    return;
+  }
+
+  if (!mailbox || terminalIOMailboxCache[tabId] === mailbox) {
+    delete terminalIOMailboxCache[tabId];
+  }
 };
 
 export const forceResizeTerminal = debounce(
