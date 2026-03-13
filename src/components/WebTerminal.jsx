@@ -21,7 +21,11 @@ import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.js
 import WebTerminalContextMenu from "./web-terminal/WebTerminalContextMenu.jsx";
 import { RendererTerminalIOMailbox } from "../modules/terminal/io/RendererTerminalIOMailbox.js";
 import {
-  ANSI_CSI_SEQUENCE_REGEX,
+  buildShellIntegrationInjection,
+  OSC_133_IDENTIFIER,
+  parseShellIntegrationOscPayload,
+} from "../modules/terminal/shellIntegration.js";
+import {
   TERMINAL_RESIZE_QUERY_REGEX,
   ensureSharedTerminalStyles,
   getCharacterMetricsCss,
@@ -76,6 +80,19 @@ const areWebTerminalPropsEqual = (prevProps, nextProps) => {
     getTerminalConfigSignature(nextProps.sshConfig)
   );
 };
+
+const TERMINAL_COMMAND_LINE_REGEX =
+  /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/;
+const FULLSCREEN_COMMAND_REGEX =
+  /\b(top|htop|vi|vim|nano|less|more|watch|tail -f)\b/;
+
+const createShellIntegrationState = () => ({
+  active: false,
+  promptStarted: false,
+  promptReady: false,
+  commandRunning: false,
+  lastExitCode: null,
+});
 
 const WebTerminal = ({
   tabId,
@@ -432,12 +449,23 @@ const WebTerminal = ({
 
   // 命令执行状态跟踪
   const [isCommandExecuting, setIsCommandExecuting] = useState(false);
+  const [hasShellIntegration, setHasShellIntegration] = useState(false);
+  const [isShellPromptReady, setIsShellPromptReady] = useState(false);
   const lastExecutedCommandTimeRef = useRef(0);
   const lastExecutedCommandRef = useRef("");
-
-  // 新增：确认提示状态
-  const [isConfirmationPromptActive, setIsConfirmationPromptActive] =
-    useState(false);
+  const shellIntegrationStateRef = useRef(createShellIntegrationState());
+  const shellIntegrationBootstrapRef = useRef({
+    processId: null,
+    detectionToken: 0,
+    injected: false,
+    blockedByUserInput: false,
+    detectedShell: null,
+  });
+  const pendingCommandBoundaryRef = useRef({
+    command: "",
+    capturedAt: 0,
+  });
+  const shellIntegrationEventHandlerRef = useRef(null);
 
   const {
     showSearchBar,
@@ -491,6 +519,7 @@ const WebTerminal = ({
   const realtimeInputHighlightFrameRef = useRef(null);
   const realtimeInputHighlightSnapshotRef = useRef("");
   const realtimeInputHighlightWritingRef = useRef(false);
+  const hasShellIntegrationRef = useRef(false);
 
   useEffect(() => {
     inEditorModeRef.current = inEditorMode;
@@ -499,6 +528,212 @@ const WebTerminal = ({
   useEffect(() => {
     isCommandExecutingRef.current = isCommandExecuting;
   }, [isCommandExecuting]);
+
+  useEffect(() => {
+    hasShellIntegrationRef.current = hasShellIntegration;
+  }, [hasShellIntegration]);
+
+  const resetShellIntegrationTracking = useCallback((processId = null) => {
+    const nextToken =
+      (shellIntegrationBootstrapRef.current?.detectionToken || 0) + 1;
+
+    shellIntegrationStateRef.current = createShellIntegrationState();
+    shellIntegrationBootstrapRef.current = {
+      processId,
+      detectionToken: nextToken,
+      injected: false,
+      blockedByUserInput: false,
+      detectedShell: null,
+    };
+    pendingCommandBoundaryRef.current = {
+      command: "",
+      capturedAt: 0,
+    };
+
+    setHasShellIntegration(false);
+    setIsShellPromptReady(false);
+    setIsCommandExecuting(false);
+  }, []);
+
+  const commitExecutedCommand = useCallback(() => {
+    const pendingCommand = pendingCommandBoundaryRef.current?.command || "";
+    const command = pendingCommand.trim();
+    if (!command || inEditorModeRef.current) {
+      return;
+    }
+
+    const now = Date.now();
+    const isNearDuplicate =
+      command === lastExecutedCommandRef.current &&
+      now - lastExecutedCommandTimeRef.current < 300;
+    if (isNearDuplicate) {
+      return;
+    }
+
+    lastExecutedCommandRef.current = command;
+    lastExecutedCommandTimeRef.current = now;
+
+    if (
+      !suggestionSelectedRef.current &&
+      window.terminalAPI?.addToCommandHistory
+    ) {
+      window.terminalAPI.addToCommandHistory(command);
+    }
+  }, [suggestionSelectedRef]);
+
+  const handleShellIntegrationEvent = useCallback(
+    (event) => {
+      if (!event) {
+        return;
+      }
+
+      shellIntegrationBootstrapRef.current.injected = true;
+      const state = shellIntegrationStateRef.current;
+      state.active = true;
+
+      if (!hasShellIntegrationRef.current) {
+        hasShellIntegrationRef.current = true;
+        setHasShellIntegration(true);
+      }
+
+      switch (event.type) {
+        case "prompt-start":
+          state.promptStarted = true;
+          state.promptReady = false;
+          state.commandRunning = false;
+          setIsShellPromptReady(false);
+          setIsCommandExecuting(false);
+          break;
+        case "prompt-end":
+          state.promptStarted = false;
+          state.promptReady = true;
+          state.commandRunning = false;
+          setIsShellPromptReady(true);
+          setIsCommandExecuting(false);
+          break;
+        case "command-start":
+          state.promptReady = false;
+          state.commandRunning = true;
+          setIsShellPromptReady(false);
+          setIsCommandExecuting(true);
+          commitExecutedCommand();
+          pendingCommandBoundaryRef.current = {
+            command: "",
+            capturedAt: 0,
+          };
+          setShowSuggestions(false);
+          setSuggestions([]);
+          setCurrentInput("");
+          setSuggestionsHiddenByEsc(false);
+          setSuggestionsSuppressedUntilEnter(false);
+          suggestionSelectedRef.current = false;
+          break;
+        case "command-finish":
+          state.commandRunning = false;
+          state.lastExitCode = event.exitCode ?? null;
+          setIsCommandExecuting(false);
+          break;
+        default:
+          break;
+      }
+
+      if (termRef.current) {
+        scheduleHighlightRefresh(termRef.current);
+      }
+    },
+    [
+      commitExecutedCommand,
+      scheduleHighlightRefresh,
+      setCurrentInput,
+      setShowSuggestions,
+      setSuggestions,
+      setSuggestionsHiddenByEsc,
+      setSuggestionsSuppressedUntilEnter,
+      suggestionSelectedRef,
+    ],
+  );
+
+  shellIntegrationEventHandlerRef.current = handleShellIntegrationEvent;
+
+  const ensureShellIntegrationParser = useCallback((term) => {
+    if (
+      !term ||
+      !term.parser ||
+      term.__simpleShellOsc133Disposable ||
+      typeof term.parser.registerOscHandler !== "function"
+    ) {
+      return;
+    }
+
+    try {
+      term.__simpleShellOsc133Disposable = term.parser.registerOscHandler(
+        OSC_133_IDENTIFIER,
+        (payload) => {
+          const event = parseShellIntegrationOscPayload(payload);
+          if (!event) {
+            return false;
+          }
+
+          if (typeof shellIntegrationEventHandlerRef.current === "function") {
+            shellIntegrationEventHandlerRef.current(event);
+          }
+
+          return true;
+        },
+      );
+    } catch {
+      // ignore parser registration errors
+    }
+  }, []);
+
+  const bootstrapShellIntegration = useCallback(
+    async (processId) => {
+      if (
+        !processId ||
+        !sshConfig ||
+        sshConfig.protocol === "telnet" ||
+        !window.terminalAPI?.detectShellIntegrationShell
+      ) {
+        return;
+      }
+
+      const bootstrapState = shellIntegrationBootstrapRef.current;
+      const detectionToken = bootstrapState.detectionToken;
+
+      try {
+        const result =
+          await window.terminalAPI.detectShellIntegrationShell(processId);
+
+        if (
+          shellIntegrationBootstrapRef.current.processId !== processId ||
+          shellIntegrationBootstrapRef.current.detectionToken !== detectionToken
+        ) {
+          return;
+        }
+
+        const normalizedShell =
+          result && result.supported ? result.shell : result?.shell;
+        const injection = buildShellIntegrationInjection(normalizedShell);
+        shellIntegrationBootstrapRef.current.detectedShell =
+          normalizedShell || null;
+
+        if (
+          !injection ||
+          shellIntegrationBootstrapRef.current.injected ||
+          shellIntegrationBootstrapRef.current.blockedByUserInput ||
+          shellIntegrationStateRef.current.active
+        ) {
+          return;
+        }
+
+        sendInputToProcess(processId, injection);
+        shellIntegrationBootstrapRef.current.injected = true;
+      } catch {
+        // best-effort bootstrap
+      }
+    },
+    [sendInputToProcess, sshConfig],
+  );
 
   const repaintCurrentInputLineHighlight = useCallback((term) => {
     if (!term || realtimeInputHighlightWritingRef.current) {
@@ -584,106 +819,6 @@ const WebTerminal = ({
     },
     [repaintCurrentInputLineHighlight],
   );
-
-  // 密码提示检测模式（支持多语言和格式）
-  const passwordPromptPatterns = [
-    // 英文密码提示
-    /password\s*[:：]/i,
-    /passwd\s*[:：]/i,
-    /enter\s+password/i,
-    /\(password\)/i,
-    /passphrase\s*[:：]/i,
-
-    // SSH相关
-    /'s\s+password\s*[:：]/,
-    /ssh\s+password/i,
-
-    // sudo相关
-    /\[sudo\]\s+password\s+for/i,
-    /sudo\s+password/i,
-
-    // 中文密码提示
-    /密码\s*[:：]/,
-    /请输入密码/,
-    /输入密码/,
-
-    // PIN和Token
-    /\bPIN\s*[:：]/i,
-    /\btoken\s*[:：]/i,
-    /authentication\s*[:：]/i,
-    /authenticate/i,
-
-    // 其他认证提示
-    /enter\s+passphrase/i,
-    /enter\s+pin/i,
-    /security\s+code/i,
-    /verification\s+code/i,
-    /验证码/,
-
-    // 数据库相关
-    /database\s+password/i,
-    /db\s+password/i,
-
-    // 常见的密码输入提示结尾
-    /password\s*$/i,
-    /密码\s*$/,
-  ];
-
-  // 确认提示检测模式
-  const confirmationPromptPatterns = [
-    // 标准确认提示格式
-    /\(yes\/no\)/i,
-    /\(y\/n\)/i,
-    /\[Y\/n\]/,
-    /\[y\/N\]/,
-    // 支持 [y]/n 与 y/[n] 形式
-    /\[\s*[yY]\s*\]\s*\/\s*[nN]/,
-    /[yY]\s*\/\s*\[\s*[nN]\s*\]/,
-    /\[\s*[yY]\s*\]\s*\/\s*\[\s*[nN]\s*\]/,
-    /\[yes\/no\]/i,
-    /\[YES\/NO\]/i,
-    // 带问号的确认提示
-    /continue\s*\?/i,
-    /proceed\s*\?/i,
-    /confirm\s*\?/i,
-    /are\s+you\s+sure\s*\?/i,
-    // 带冒号的确认提示
-    /\(y\/n\)\s*:/i,
-    /\[y\/n\]\s*:/i,
-    /confirm\s*:/i,
-    // 中文确认提示
-    /是\/否/,
-    /确认/,
-    /\(确定\/取消\)/,
-    /\[是\/否\]/,
-    /\[Y\/N\]/,
-    // 确认提示在句子中间
-    /\s+\(y\/n\)\s+/i,
-    /\s+\[y\/n\]\s+/i,
-    // 确认提示在句子开头
-    /^\s*\(y\/n\)\s+/i,
-    /^\s*\[y\/n\]\s+/i,
-    // 确认提示在句子末尾
-    /\s+\(y\/n\)\s*$/i,
-    /\s+\[y\/n\]\s*$/i,
-    /\s+\[\s*[yY]\s*\]\s*\/\s*[nN]\s*$/i,
-    /\s+[yY]\s*\/\s*\[\s*[nN]\s*\]\s*$/i,
-    // 带有yes/no的提示
-    /yes\s+or\s+no/i,
-    /y\s+or\s+n/i,
-    // 其他常见格式
-    /type\s+['"]*y['"]*\s+to\s+/i,
-    /press\s+['"]*y['"]*\s+to\s+/i,
-    /enter\s+['"]*y['"]*\s+to\s+/i,
-  ];
-
-  // 密码输入保护：跟踪是否正在等待密码输入
-  const isPasswordPromptActiveRef = useRef(false);
-
-  // 跟踪最近的终端输出行，用于上下文分析
-  const recentOutputLinesRef = useRef([]);
-  // 最大保存的输出行数
-  const MAX_RECENT_LINES = 10;
 
   // 优化的选择元素调整函数 - 避免重复高亮
   const adjustSelectionElements = () => {
@@ -926,95 +1061,6 @@ const WebTerminal = ({
     }
   };
 
-  // 分析确认对话上下文的函数
-  const analyzeConfirmationContext = useCallback(
-    (cleanData) => {
-      // 将当前输出添加到最近输出行
-      if (cleanData && cleanData.trim()) {
-        const lines = cleanData.split(/\r?\n/).filter((line) => line.trim());
-        if (lines.length > 0) {
-          // 添加新行并保持最大行数限制
-          recentOutputLinesRef.current = [
-            ...lines,
-            ...recentOutputLinesRef.current,
-          ].slice(0, MAX_RECENT_LINES);
-        }
-      }
-
-      // 检查最近几行是否构成确认对话上下文
-      // 1. 检查是否有确认提示
-      const hasExplicitPrompt = recentOutputLinesRef.current.some((line) =>
-        confirmationPromptPatterns.some((pattern) => pattern.test(line)),
-      );
-
-      if (hasExplicitPrompt) {
-        return true;
-      }
-
-      // 2. 检查是否有隐含的确认对话特征
-      // 例如：短问题后跟空行，等待用户输入y/n
-      if (recentOutputLinesRef.current.length >= 2) {
-        const lastLine = recentOutputLinesRef.current[0].trim();
-        const prevLine = recentOutputLinesRef.current[1].trim();
-
-        // 检查最后一行是否为空或只有提示符，前一行是否是问句
-        const isLastLineEmpty = lastLine === "" || /[>$#]\s*$/.test(lastLine);
-        const isPrevLineQuestion =
-          /\?\s*$/.test(prevLine) ||
-          /continue|proceed|confirm|overwrite|replace|delete/i.test(prevLine);
-
-        if (isLastLineEmpty && isPrevLineQuestion) {
-          return true;
-        }
-      }
-
-      return false;
-    },
-    [confirmationPromptPatterns],
-  );
-
-  // 检测提示的函数（包括密码提示和确认提示）
-  const checkForPrompts = useCallback(
-    (data) => {
-      // 确保数据存在
-      if (!data) return;
-
-      // 转换为字符串
-      const dataStr = typeof data === "string" ? data : data.toString();
-
-      // 忽略ANSI转义序列
-      const cleanData = dataStr.replace(ANSI_CSI_SEQUENCE_REGEX, "");
-
-      // 检查是否包含密码提示
-      const hasPasswordPrompt = passwordPromptPatterns.some((pattern) =>
-        pattern.test(cleanData),
-      );
-
-      // 检查是否包含确认提示（直接匹配或通过上下文分析）
-      const hasDirectConfirmationPrompt = confirmationPromptPatterns.some(
-        (pattern) => pattern.test(cleanData),
-      );
-
-      // 通过上下文分析检测确认对话
-      const hasConfirmationContext = analyzeConfirmationContext(cleanData);
-
-      if (hasPasswordPrompt) {
-        isPasswordPromptActiveRef.current = true;
-        // 同时更新React状态
-        setIsConfirmationPromptActive(true);
-      } else if (hasDirectConfirmationPrompt || hasConfirmationContext) {
-        // 对于确认提示，也设置标志避免记录到历史
-        isPasswordPromptActiveRef.current = true;
-        setIsConfirmationPromptActive(true);
-      }
-    },
-    [
-      passwordPromptPatterns,
-      confirmationPromptPatterns,
-      analyzeConfirmationContext,
-    ],
-  );
-
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
   const setupCommandDetection = (
     term,
@@ -1033,8 +1079,6 @@ const WebTerminal = ({
     // 标记上一个按键是否是特殊键序列的开始
     let isEscapeSequence = false;
     // 用于存储转义序列
-    // 用于记录最后一个执行的命令，避免重复添加到历史记录
-    let lastExecutedCommand = "";
     // 跟踪编辑器模式状态
     let inEditorMode = false;
     // 标记是否刚刚使用了Tab补全
@@ -1042,12 +1086,24 @@ const WebTerminal = ({
     // 用于临时存储当前行位置和内容，以便在Tab补全后能恢复正确位置
     let currentLineBeforeTab = null;
 
-    // 清空最近输出行缓存，确保每个新会话都从空白开始
-    recentOutputLinesRef.current = [];
-
     // 识别编辑器命令的正则表达式
     const editorCommandRegex =
       /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
+    const extractCommand = (line) => {
+      const normalizedLine =
+        typeof line === "string" ? line : line?.toString?.() || "";
+      const commandMatch = normalizedLine.match(TERMINAL_COMMAND_LINE_REGEX);
+
+      if (commandMatch && commandMatch[1] && commandMatch[1].trim() !== "") {
+        return commandMatch[1].trim();
+      }
+
+      if (currentInputBuffer.trim() !== "") {
+        return currentInputBuffer.trim();
+      }
+
+      return "";
+    };
 
     // 添加buffer类型监听，用于检测编辑器模式
     // xterm.js在全屏应用（如vi）运行时会切换到alternate buffer
@@ -1105,6 +1161,14 @@ const WebTerminal = ({
         // console.log("[onData]", JSON.stringify(data), "processId=", processId);
       }
       lastInputActivityAt = Date.now();
+
+      if (!shellIntegrationBootstrapRef.current.injected) {
+        shellIntegrationBootstrapRef.current.blockedByUserInput = true;
+      }
+
+      const canTrackPromptInput =
+        !hasShellIntegrationRef.current ||
+        shellIntegrationStateRef.current.promptReady;
 
       // 输入阶段也触发刷新，避免高频输入时出现高亮状态滞后
       scheduleHighlightRefresh(term);
@@ -1181,7 +1245,11 @@ const WebTerminal = ({
       // 处理退格键
       if (data === "\b" || data === "\x7f") {
         // 只有在非Tab补全状态下才处理退格
-        if (!tabCompletionUsed && currentInputBuffer.length > 0) {
+        if (
+          canTrackPromptInput &&
+          !tabCompletionUsed &&
+          currentInputBuffer.length > 0
+        ) {
           currentInputBuffer = currentInputBuffer.slice(0, -1);
 
           // 实时更新光标位置
@@ -1218,27 +1286,29 @@ const WebTerminal = ({
 
       // 处理Tab键，标记Tab补全被使用
       if (data === "\t") {
-        tabCompletionUsed = true;
-        // 清空当前输入缓冲区，避免记录不完整的命令
-        currentInputBuffer = "";
+        if (canTrackPromptInput) {
+          tabCompletionUsed = true;
+          // 清空当前输入缓冲区，避免记录不完整的命令
+          currentInputBuffer = "";
 
-        // 存储当前行内容，以便于之后获取Tab补全后的完整命令
-        currentLineBeforeTab = {
-          y: term.buffer.active.cursorY,
-          content:
-            term.buffer.active
-              .getLine(term.buffer.active.cursorY)
-              ?.translateToString() || "",
-        };
+          // 存储当前行内容，以便于之后获取Tab补全后的完整命令
+          currentLineBeforeTab = {
+            y: term.buffer.active.cursorY,
+            content:
+              term.buffer.active
+                .getLine(term.buffer.active.cursorY)
+                ?.translateToString() || "",
+          };
 
-        // 隐藏命令建议窗口（因为用户在使用原生Tab补全）
-        if (!inEditorMode) {
-          setShowSuggestions(false);
-          setSuggestions([]);
-          setCurrentInput("");
-          setSuggestionsHiddenByEsc(false);
-          // 解除因手动关闭而设置的抑制，仅在回车时恢复
-          setSuggestionsSuppressedUntilEnter(false);
+          // 隐藏命令建议窗口（因为用户在使用原生Tab补全）
+          if (!inEditorMode) {
+            setShowSuggestions(false);
+            setSuggestions([]);
+            setCurrentInput("");
+            setSuggestionsHiddenByEsc(false);
+            // 解除因手动关闭而设置的抑制，仅在回车时恢复
+            setSuggestionsSuppressedUntilEnter(false);
+          }
         }
 
         // 发送数据到进程
@@ -1258,49 +1328,34 @@ const WebTerminal = ({
           return;
         }
 
-        // 设置命令执行状态，防止显示建议
-        setIsCommandExecuting(true);
+        if (hasShellIntegrationRef.current && !canTrackPromptInput) {
+          currentInputBuffer = "";
+          setCurrentInput("");
+          if (processId) {
+            sendInputToProcess(processId, data);
+          }
+          return;
+        }
 
         // 回车进入新一行：解除因 ESC 或手动关闭导致的抑制，允许下一次正常输入时显示建议
         setSuggestionsHiddenByEsc(false);
         setSuggestionsSuppressedUntilEnter(false);
 
         try {
+          const shouldUseShellIntegrationFlow =
+            hasShellIntegrationRef.current ||
+            shellIntegrationBootstrapRef.current.injected;
+
           // 获取终端的最后一行内容（可能包含用户输入的命令）
           const lastLine =
             term.buffer.active
               .getLine(term.buffer.active.cursorY)
               ?.translateToString() || "";
 
-          // 提取用户输入的命令（去除提示符）
-          // 改进提示符检测，支持更多类型的shell提示符
-          const commandMatch = lastLine.match(
-            /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/,
-          );
-
-          // 获取实际命令，优先使用终端行显示的内容（包含tab补全后的结果）
-          let command = "";
-          if (
-            commandMatch &&
-            commandMatch[1] &&
-            commandMatch[1].trim() !== ""
-          ) {
-            // 优先使用从终端行获取的命令，这包含了Tab补全后的结果
-            command = commandMatch[1].trim();
-          } else if (currentInputBuffer.trim() !== "") {
-            // 如果无法从终端行获取，回退到使用输入缓冲区
-            command = currentInputBuffer.trim();
-          }
-
           // 特殊处理：如果使用了Tab补全，直接使用当前行的完整内容
+          let command = extractCommand(lastLine);
           if (tabCompletionUsed) {
-            // 从当前行获取Tab补全后的完整命令
-            const fullCommand = lastLine.match(
-              /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/,
-            );
-            if (fullCommand && fullCommand[1] && fullCommand[1].trim() !== "") {
-              command = fullCommand[1].trim();
-            }
+            command = extractCommand(lastLine);
           }
 
           // 检测是否进入了编辑器模式（备用模式。确保能够实施resize）
@@ -1318,53 +1373,10 @@ const WebTerminal = ({
             }
           }
 
-          // 密码输入保护：如果当前处于密码输入状态，不记录到历史
-          const shouldSkipHistory = isPasswordPromptActiveRef.current;
-
-          // 重置密码输入状态（用户已经输入并按下回车）
-          if (isPasswordPromptActiveRef.current) {
-            isPasswordPromptActiveRef.current = false;
-            setIsConfirmationPromptActive(false);
-          }
-
-          // 增强的确认响应检测：检查整行是否包含确认对话特征
-          const hasConfirmationPromptInLine =
-            /(\[?[yY]\/[nN]\]?|\(?[yY]\/[nN]\)?|yes\/no|YES\/NO|是\/否)/i.test(
-              lastLine,
-            );
-
-          // 检查用户输入是否为确认响应
-          const isUserConfirmationInput =
-            /^(y|n|yes|no|是|否|确认|取消)$/i.test(command) ||
-            /^[yYnN]$/i.test(command);
-
-          // 只有当整行包含确认提示且用户输入为确认响应时，才认定为确认响应
-          const isConfirmationResponse =
-            hasConfirmationPromptInLine && isUserConfirmationInput;
-
-          // 确保命令不为空且不与上一次执行的命令相同，并且不在编辑器模式中
-          // 注意：inEditorMode可能已经被buffer类型检测器更新
-          if (
-            command &&
-            command !== lastExecutedCommand &&
-            !inEditorMode &&
-            !shouldSkipHistory &&
-            !isConfirmationResponse
-          ) {
-            lastExecutedCommand = command;
-
-            // 记录执行的命令和时间，用于防止后续显示该命令的建议
-            lastExecutedCommandRef.current = command;
-            lastExecutedCommandTimeRef.current = Date.now();
-
-            // 只有不是通过建议选择的命令才添加到历史记录
-            if (
-              !suggestionSelectedRef.current &&
-              window.terminalAPI?.addToCommandHistory
-            ) {
-              window.terminalAPI.addToCommandHistory(command);
-            }
-          }
+          pendingCommandBoundaryRef.current = {
+            command,
+            capturedAt: Date.now(),
+          };
 
           // 重置Tab补全状态（立即重置，因为已经处理完命令）
           tabCompletionUsed = false;
@@ -1382,15 +1394,23 @@ const WebTerminal = ({
           setCurrentInput("");
           setSuggestionsHiddenByEsc(false);
 
-          // 延迟重置命令执行状态，给足够时间让输出完成
-          setTimeout(() => {
-            setIsCommandExecuting(false);
-          }, 100);
+          if (!shouldUseShellIntegrationFlow) {
+            setIsCommandExecuting(true);
+            commitExecutedCommand();
+            pendingCommandBoundaryRef.current = {
+              command: "",
+              capturedAt: 0,
+            };
+
+            setTimeout(() => {
+              if (!hasShellIntegrationRef.current) {
+                setIsCommandExecuting(false);
+              }
+            }, 100);
+          }
 
           // 检查这一行是否包含常见的全屏应用命令
-          if (
-            /\b(top|htop|vi|vim|nano|less|more|watch|tail -f)\b/.test(lastLine)
-          ) {
+          if (FULLSCREEN_COMMAND_REGEX.test(lastLine)) {
             // 使用EventManager管理延迟序列触发终端大小调整
             const delayTimes = [200, 500, 1000, 1500];
             delayTimes.forEach((delay) => {
@@ -1412,9 +1432,11 @@ const WebTerminal = ({
         } catch {
           // 忽略任何错误，不影响正常功能
           // 即使发生错误也要重置命令执行状态
-          setTimeout(() => {
-            setIsCommandExecuting(false);
-          }, 100);
+          if (!hasShellIntegrationRef.current) {
+            setTimeout(() => {
+              setIsCommandExecuting(false);
+            }, 100);
+          }
         }
 
         // 发送回车键到进程
@@ -1424,7 +1446,7 @@ const WebTerminal = ({
         return;
       } else if (data !== "\t") {
         // 对于非Tab键输入，只有在非Tab补全状态下才追加到输入缓冲区
-        if (!tabCompletionUsed) {
+        if (canTrackPromptInput && !tabCompletionUsed) {
           currentInputBuffer += data;
         }
 
@@ -1437,6 +1459,7 @@ const WebTerminal = ({
 
         // 更新当前输入状态并触发建议搜索（仅在普通字符输入时，且不在Tab补全状态）
         if (
+          canTrackPromptInput &&
           !inEditorMode &&
           !tabCompletionUsed &&
           data.length === 1 &&
@@ -1536,9 +1559,7 @@ const WebTerminal = ({
           // 如果行内容发生了变化，可能是Tab补全生效了
           if (currentLine !== previousContent) {
             // 尝试提取命令部分（去除提示符）
-            const commandMatch = currentLine.match(
-              /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/,
-            );
+            const commandMatch = currentLine.match(TERMINAL_COMMAND_LINE_REGEX);
             if (
               commandMatch &&
               commandMatch[1] &&
@@ -1571,8 +1592,7 @@ const WebTerminal = ({
       disposables.push(onRenderDisposable);
     }
 
-    const onWriteParsedDisposable = term.onWriteParsed((data) => {
-      checkForPrompts(data);
+    const onWriteParsedDisposable = term.onWriteParsed(() => {
       scheduleHighlightRefresh(term);
       if (Date.now() - lastInputActivityAt <= 1500) {
         scheduleRealtimeInputHighlight(term);
@@ -1683,6 +1703,14 @@ const WebTerminal = ({
 
       // 清除旧终端
       try {
+        if (
+          terminalCache[tabId].__simpleShellOsc133Disposable &&
+          typeof terminalCache[tabId].__simpleShellOsc133Disposable.dispose ===
+            "function"
+        ) {
+          terminalCache[tabId].__simpleShellOsc133Disposable.dispose();
+          delete terminalCache[tabId].__simpleShellOsc133Disposable;
+        }
         terminalCache[tabId].dispose();
       } catch {
         // Failed to dispose terminal
@@ -1845,6 +1873,7 @@ const WebTerminal = ({
 
         // 重新打开终端并附加到DOM
         term.open(terminalRef.current);
+        ensureShellIntegrationParser(term);
         syncTerminalLinkCtrlState(term, false);
 
         // 确保 Alt+F1 快捷键能冒泡到全局处理
@@ -2166,6 +2195,7 @@ const WebTerminal = ({
 
         // 打开终端
         term.open(terminalRef.current);
+        ensureShellIntegrationParser(term);
         syncTerminalLinkCtrlState(term, false);
 
         // 拦截 Alt+F1 快捷键，让其冒泡到全局处理
@@ -2375,7 +2405,7 @@ const WebTerminal = ({
                   // 设置数据接收监听
                   setupDataListener(processId, term);
 
-                  // 设置命令检测（包含密码提示检测）
+                  // 设置命令边界检测与 shell integration 状态同步
                   console.debug(
                     `[WebTerminal] Setting up command detection for tabId=${tabId}, processId=${processId}`,
                   );
@@ -3069,6 +3099,13 @@ const WebTerminal = ({
           );
         }
 
+        shellIntegrationBootstrapRef.current = {
+          ...shellIntegrationBootstrapRef.current,
+          processId: null,
+          detectionToken:
+            (shellIntegrationBootstrapRef.current?.detectionToken || 0) + 1,
+        };
+
         // 清理本 effect 的事件/定时器/观察器，防止切换标签后叠加
         eventManager.reset();
       };
@@ -3080,6 +3117,7 @@ const WebTerminal = ({
     lifecycleEventManager,
     tryEnableWebglRenderer,
     disableWebglRenderer,
+    ensureShellIntegrationParser,
     scheduleHighlightRefresh,
   ]);
 
@@ -3341,6 +3379,8 @@ const WebTerminal = ({
     }
     processCache[tabId] = processId;
     clearGeometryFor(processId, tabId);
+    resetShellIntegrationTracking(processId);
+    ensureShellIntegrationParser(term);
 
     // 添加数据监听
     const handleProcessOutput = (data) => {
@@ -3349,9 +3389,6 @@ const WebTerminal = ({
       }
 
       const dataStr = typeof data === "string" ? data : data.toString();
-
-      // 检测密码和确认提示
-      checkForPrompts(dataStr);
 
       // 检测全屏应用启动并触发重新调整大小
       // 通常像top, htop, vim, nano等全屏应用会发送特定的ANSI转义序列
@@ -3433,6 +3470,7 @@ const WebTerminal = ({
 
     // 使用EventManager管理延迟同步，确保布局稳定后大小正确
     eventManager.setTimeout(syncTerminalSize, 100);
+    void bootstrapShellIntegration(processId);
 
     // 使用EventManager管理定期检查终端可见性的定时器
     // 优化：移除此重复的定时器，主useEffect中已有相同功能
@@ -4043,14 +4081,6 @@ const WebTerminal = ({
     };
   }, [tabId, eventManager]);
 
-  // 清理最近输出行缓存
-  useEffect(() => {
-    return () => {
-      // 组件卸载时清理最近输出行缓存
-      recentOutputLinesRef.current = [];
-    };
-  }, []);
-
   return (
     <Box
       data-tab-id={tabId}
@@ -4099,7 +4129,9 @@ const WebTerminal = ({
       {/* 命令建议组件 */}
       <CommandSuggestion
         suggestions={suggestions}
-        visible={showSuggestions && !isConfirmationPromptActive}
+        visible={
+          showSuggestions && (!hasShellIntegration || isShellPromptReady)
+        }
         position={cursorPosition}
         onSelectSuggestion={handleSuggestionSelect}
         onClose={closeSuggestions}
