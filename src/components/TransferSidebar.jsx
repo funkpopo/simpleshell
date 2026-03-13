@@ -156,11 +156,14 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
   const isMultiFile = transferFileCount > 1;
   const canExpand = hasFileList || transferFileCount > 1;
 
-  // 计算已完成文件数（优先使用 processedFiles，其次根据 currentFileIndex 推算）
-  const completedFiles =
-    transfer.processedFiles ??
-    Math.max(0, (transfer.currentFileIndex || 1) - 1);
   const totalFiles = transfer.totalFiles || 0;
+  const completedFiles =
+    isCompleted && !hasError && !isCancelled && totalFiles > 0
+      ? totalFiles
+      : Math.max(
+          Number(transfer.processedFiles) || 0,
+          Math.max(0, (transfer.currentFileIndex || 1) - 1),
+        );
   // 确保已完成数不超过总数
   const displayCompleted = Math.min(completedFiles, totalFiles);
 

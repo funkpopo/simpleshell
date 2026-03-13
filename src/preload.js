@@ -509,6 +509,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.transferSpeed || 0,
           progressData.remainingTime || 0,
           progressData.currentFileIndex || 0,
+          progressData.processedFiles || 0,
           progressData.totalFiles || 0,
           progressData.transferKey || "", // 添加transferKey参数
           progressData.fileList || null, // 添加fileList参数
@@ -587,6 +588,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressData.transferSpeed || 0,
           progressData.remainingTime || 0,
           progressData.currentFileIndex || 0,
+          progressData.processedFiles || 0,
           progressData.totalFiles || 0,
           progressData.transferKey || "",
           progressData.operationComplete || false,

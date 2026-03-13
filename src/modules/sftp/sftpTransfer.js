@@ -1311,6 +1311,10 @@ async function handleUploadFile(
 
         // Final overall progress update after loop (covers all files)
         if (progressChannel) {
+          const processedFiles = Math.min(
+            totalFilesToUpload,
+            filesUploadedCount + failedUploads,
+          );
           // Check if progressChannel is provided
           sendToRenderer(progressChannel, {
             // Use progressChannel
@@ -1327,6 +1331,7 @@ async function handleUploadFile(
                 ? `${failedUploads} 个文件上传失败`
                 : "所有文件上传完成!",
             currentFileIndex: totalFilesToUpload,
+            processedFiles,
             totalFiles: totalFilesToUpload,
             transferredBytes: overallUploadedBytes,
             totalBytes: totalBytesToUpload,
@@ -1363,6 +1368,10 @@ async function handleUploadFile(
 
         // Send a final error status to renderer for the whole operation
         if (progressChannel) {
+          const processedFiles = Math.min(
+            totalFilesToUpload,
+            filesUploadedCount + failedUploads,
+          );
           // Check if progressChannel is provided
           sendToRenderer(progressChannel, {
             // Use progressChannel
@@ -1371,6 +1380,9 @@ async function handleUploadFile(
             error: isCancelledOperation ? null : error.message, // 如果是取消操作，不发送错误消息
             cancelled: isCancelledOperation,
             progress: isCancelledOperation ? 0 : -1, // 0表示取消，-1表示错误
+            currentFileIndex: processedFiles,
+            processedFiles,
+            totalFiles: totalFilesToUpload,
             operationComplete: true,
             successfulFiles: filesUploadedCount,
             failedFiles: totalFilesToUpload - filesUploadedCount, // All remaining are failed
