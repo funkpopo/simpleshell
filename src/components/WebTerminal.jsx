@@ -362,6 +362,26 @@ const disposablesCache = {};
 
 const SHARED_STYLE_ELEMENT_ID = "web-terminal-shared-style";
 let sharedStyleElement = null;
+const TERMINAL_LINK_CTRL_ACTIVE_CLASS = "xterm-link-ctrl-pressed";
+
+const syncTerminalLinkCtrlState = (term, isCtrlPressed) => {
+  if (!term?.element?.classList) {
+    return;
+  }
+
+  term.element.classList.toggle(
+    TERMINAL_LINK_CTRL_ACTIVE_CLASS,
+    Boolean(isCtrlPressed),
+  );
+};
+
+const isCtrlLeftMouseClick = (event) => {
+  if (typeof MouseEvent === "undefined" || !(event instanceof MouseEvent)) {
+    return false;
+  }
+
+  return event.button === 0 && event.ctrlKey;
+};
 
 const ensureSharedTerminalStyles = () => {
   if (sharedStyleElement && document.contains(sharedStyleElement)) {
@@ -1712,6 +1732,8 @@ const WebTerminal = ({
 
   // 添加鼠标中键粘贴功能
   const handleMouseDown = (e) => {
+    syncTerminalLinkCtrlState(termRef.current, e.ctrlKey);
+
     // 鼠标中键点击 (e.button === 1 表示鼠标中键)
     if (e.button === 1) {
       e.preventDefault();
@@ -1749,6 +1771,8 @@ const WebTerminal = ({
 
   // 简化的鼠标事件处理 - 减少频繁调整
   const handleMouseMove = (e) => {
+    syncTerminalLinkCtrlState(termRef.current, e.ctrlKey);
+
     // 检测是否正在进行选择操作
     if (e.buttons === 1) {
       // 左键按下
@@ -1760,7 +1784,9 @@ const WebTerminal = ({
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e) => {
+    syncTerminalLinkCtrlState(termRef.current, e.ctrlKey);
+
     // 鼠标释放时进行一次性选择区域调整
     if (termRef.current) {
       const selection = window.getSelection?.();
@@ -2698,6 +2724,7 @@ const WebTerminal = ({
 
         // 重新打开终端并附加到DOM
         term.open(terminalRef.current);
+        syncTerminalLinkCtrlState(term, false);
 
         // 确保 Alt+F1 快捷键能冒泡到全局处理
         term.attachCustomKeyEventHandler((event) => {
@@ -2993,6 +3020,9 @@ const WebTerminal = ({
                   },
                   activate: (event) => {
                     event?.preventDefault?.();
+                    if (!isCtrlLeftMouseClick(event)) {
+                      return;
+                    }
                     void openExternalUrl(externalUrl);
                   },
                 });
@@ -3013,6 +3043,7 @@ const WebTerminal = ({
 
         // 打开终端
         term.open(terminalRef.current);
+        syncTerminalLinkCtrlState(term, false);
 
         // 拦截 Alt+F1 快捷键，让其冒泡到全局处理
         term.attachCustomKeyEventHandler((event) => {
@@ -3290,6 +3321,8 @@ const WebTerminal = ({
 
       // 添加键盘快捷键支持
       const handleKeyDown = (e) => {
+        syncTerminalLinkCtrlState(term, e.ctrlKey);
+
         // Alt+F1 全局快捷键，始终允许冒泡到 app.jsx 处理
         if (e.altKey && e.key === "F1") {
           return;
@@ -3408,8 +3441,18 @@ const WebTerminal = ({
         }
       };
 
+      const handleKeyUp = (e) => {
+        syncTerminalLinkCtrlState(term, e.ctrlKey);
+      };
+
+      const handleWindowBlur = () => {
+        syncTerminalLinkCtrlState(term, false);
+      };
+
       // 使用EventManager添加键盘事件监听
       eventManager.addEventListener(document, "keydown", handleKeyDown);
+      eventManager.addEventListener(document, "keyup", handleKeyUp);
+      eventManager.addEventListener(window, "blur", handleWindowBlur);
 
       // 使用EventManager添加鼠标事件监听
       // 中键事件使用捕获阶段，确保在xterm.js处理之前拦截
