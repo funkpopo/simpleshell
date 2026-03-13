@@ -25,6 +25,7 @@ const ConnectionHandlers = require("../ipc/handlers/connectionHandlers");
 const SshKeyHandlers = require("../ipc/handlers/sshKeyHandlers");
 const MemoryHandlers = require("../ipc/handlers/memoryHandlers");
 const ExternalEditorHandlers = require("../ipc/handlers/externalEditorHandlers");
+const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
@@ -41,6 +42,17 @@ class IPCSetup {
     this.localTerminalHandlers = null;
     this.sshHandlers = null;
     this.terminalHandlers = null;
+    this.terminalIOMailboxManager = new TerminalIOMailboxManager({
+      getMainWindow: () => {
+        const { BrowserWindow } = require("electron");
+        const windows = BrowserWindow.getAllWindows();
+        const mainWindow = Array.isArray(windows) ? windows[0] : null;
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          return null;
+        }
+        return mainWindow;
+      },
+    });
   }
 
   /**
@@ -287,6 +299,7 @@ class IPCSetup {
         sftpTransfer,
         getNextProcessId: () => processManager.getNextProcessId(),
         getLatencyHandlers: () => this.latencyHandlers,
+        terminalIOMailboxManager: this.terminalIOMailboxManager,
       });
       this.sshHandlers.getHandlers().forEach(({ channel, handler }) => {
         safeHandle(ipcMain, channel, handler);
@@ -307,6 +320,7 @@ class IPCSetup {
         connectionManager,
         sftpCore,
         getLatencyHandlers: () => this.latencyHandlers,
+        terminalIOMailboxManager: this.terminalIOMailboxManager,
       });
       this.terminalHandlers.getHandlers().forEach(({ channel, handler }) => {
         safeHandle(ipcMain, channel, handler);

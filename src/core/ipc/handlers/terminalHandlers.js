@@ -1,6 +1,10 @@
 const { dialog, BrowserWindow } = require("electron");
 const { logToFile } = require("../../utils/logger");
 const configService = require("../../../services/configService");
+const {
+  TERMINAL_IO_MAILBOX_CHANNEL,
+  TERMINAL_IO_MESSAGE_TYPES,
+} = require("../../../modules/terminal/io/terminalIOMailboxProtocol");
 
 // 跟踪编辑器会话状态的正则表达式
 const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
@@ -30,6 +34,7 @@ class TerminalHandlers {
     this.connectionManager = options.connectionManager;
     this.sftpCore = options.sftpCore;
     this.getLatencyHandlers = options.getLatencyHandlers;
+    this.terminalIOMailboxManager = options.terminalIOMailboxManager;
   }
 
   /**
@@ -100,6 +105,11 @@ class TerminalHandlers {
         category: "terminal",
         handler: this.handleOutputAck.bind(this),
       },
+      {
+        channel: TERMINAL_IO_MAILBOX_CHANNEL,
+        category: "terminal",
+        handler: this.handleMailboxMessage.bind(this),
+      },
     ];
   }
 
@@ -111,6 +121,20 @@ class TerminalHandlers {
       return;
     }
 
+    if (this.terminalIOMailboxManager) {
+      this.terminalIOMailboxManager.handleRendererMessage(
+        processId,
+        {
+          type: TERMINAL_IO_MESSAGE_TYPES.INPUT,
+          data: input,
+        },
+        {
+          writeInput: this.writeToProcess.bind(this),
+        },
+      );
+      return;
+    }
+
     this.writeToProcess(processId, input);
   }
 
@@ -118,30 +142,40 @@ class TerminalHandlers {
    * 渲染进程输出消费确认（用于主进程背压控制）
    */
   handleOutputAck(_event, payload) {
-    const processId = payload?.processId;
-    const ackBytes = Math.floor(Number(payload?.bytes));
-    if (
-      processId === undefined ||
-      processId === null ||
-      !Number.isFinite(ackBytes) ||
-      ackBytes <= 0
-    ) {
-      return;
-    }
+    const handled = this.terminalIOMailboxManager?.handleRendererMessage(
+      payload?.processId,
+      {
+        type: TERMINAL_IO_MESSAGE_TYPES.ACK,
+        bytes: payload?.bytes,
+      },
+      {
+        writeInput: this.writeToProcess.bind(this),
+      },
+    );
 
-    let procInfo = this.processManager.getProcess(processId);
-    if (!procInfo && typeof processId === "string" && /^\d+$/.test(processId)) {
-      procInfo = this.processManager.getProcess(Number(processId));
-    }
-    if (!procInfo || typeof procInfo.outputAckHandler !== "function") {
-      return;
-    }
-
-    try {
-      procInfo.outputAckHandler(ackBytes);
-    } catch (error) {
+    if (!handled) {
       logToFile(
-        `Failed to handle output ack for process ${processId}: ${error.message}`,
+        `Ignored terminal output ack for process ${payload?.processId}`,
+        "DEBUG",
+      );
+    }
+  }
+
+  handleMailboxMessage(_event, payload) {
+    const processId = payload?.processId;
+    const message = payload?.message;
+
+    const handled = this.terminalIOMailboxManager?.handleRendererMessage(
+      processId,
+      message,
+      {
+        writeInput: this.writeToProcess.bind(this),
+      },
+    );
+
+    if (!handled) {
+      logToFile(
+        `Failed to handle terminal mailbox message for process ${processId}`,
         "WARN",
       );
     }
@@ -485,6 +519,25 @@ class TerminalHandlers {
    * 调整终端大小
    */
   async resizeTerminal(event, processId, cols, rows) {
+    if (this.terminalIOMailboxManager) {
+      const handled = this.terminalIOMailboxManager.handleRendererMessage(
+        processId,
+        {
+          type: TERMINAL_IO_MESSAGE_TYPES.RESIZE,
+          cols,
+          rows,
+          immediate: true,
+        },
+        {
+          writeInput: this.writeToProcess.bind(this),
+        },
+      );
+
+      if (handled) {
+        return true;
+      }
+    }
+
     const procInfo = this.processManager.getProcess(processId);
     if (!procInfo) {
       return false;
