@@ -8,757 +8,45 @@ import "@xterm/xterm/css/xterm.css";
 import "./WebTerminal.css";
 import { debounce, createResizeObserver } from "../core/utils/performance.js";
 import { useEventManager } from "../core/utils/eventManager.js";
-import { useWindowEvent } from "../hooks/useWindowEvent.js";
 import { useTerminalRender } from "../hooks/useTerminalRender.js";
+import { useTerminalSearch } from "../hooks/useTerminalSearch.js";
+import { useTerminalSuggestions } from "../hooks/useTerminalSuggestions.js";
+import { useTerminalInputSync } from "../hooks/useTerminalInputSync.js";
 import { TerminalPerformanceMonitor } from "../utils/TerminalPerformanceMonitor.js";
 import { ScrollbackUsageTracker } from "../utils/ScrollbackUsageTracker.js";
 import { TerminalWriteQueue } from "../utils/TerminalWriteQueue.js";
 import { highlightPromptInputLine } from "../utils/realtimeInputHighlighter.js";
-import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
-import ListItemIcon from "@mui/material/ListItemIcon";
-import ListItemText from "@mui/material/ListItemText";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import PasteIcon from "@mui/icons-material/ContentPaste";
-import ClearAllIcon from "@mui/icons-material/ClearAll";
-import SearchIcon from "@mui/icons-material/Search";
-import CloseIcon from "@mui/icons-material/Close";
-import SmartToyIcon from "@mui/icons-material/SmartToy";
-import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
-import NavigateNextIcon from "@mui/icons-material/NavigateNext";
-import Divider from "@mui/material/Divider";
-import Typography from "@mui/material/Typography";
-import Tooltip from "@mui/material/Tooltip";
-import IconButton from "@mui/material/IconButton";
 import PropTypes from "prop-types";
-import { findGroupByTab } from "../core/syncInputGroups";
 import CommandSuggestion from "./CommandSuggestion";
-
-// 添加全局样式以确保xterm正确填满容器
-const ESC_CHAR = String.fromCharCode(27);
-const ANSI_CSI_SEQUENCE_REGEX = new RegExp(
-  ESC_CHAR + "[[][0-9;]*[a-zA-Z]",
-  "g",
-);
-const TERMINAL_RESIZE_QUERY_REGEX = new RegExp(
-  ESC_CHAR + "[[]8;[0-9]+;[0-9]+t",
-);
-
-const terminalStyles = `
-.xterm {
-  height: 100%;
-  width: 100%;
-  background: inherit;
-  overflow: hidden;
-}
-.xterm-viewport {
-  width: 100% !important;
-  height: 100% !important;
-  overflow-y: auto;
-  overflow-x: hidden;
-  background: inherit !important;
-}
-.xterm-viewport::-webkit-scrollbar {
-  width: 10px;
-}
-.xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-.xterm-viewport::-webkit-scrollbar-thumb {
-  background-color: rgba(128, 128, 128, 0.4);
-  border-radius: 5px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  transition: background-color 0.2s ease;
-}
-.xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(128, 128, 128, 0.7);
-}
-.terminal-container {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
-}
-
-/* 增强版选中高亮样式 */
-.xterm-selection {
-  opacity: 1 !important;
-  z-index: 10 !important;
-  pointer-events: none !important;
-  position: absolute !important;
-}
-
-/* 默认隐藏所有选择div */
-.xterm .xterm-selection div {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-  position: absolute !important;
-  box-sizing: border-box !important;
-}
-
-/* 仅显示第一个选择容器中的第一个div */
-.xterm .xterm-selection:first-of-type div:first-child {
-  display: block !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  will-change: transform, width, height !important;
-  transition: transform 0.05s ease, opacity 0.1s ease !important;
-  box-sizing: border-box !important;
-  border-radius: 2px !important;
-}
-
-/* 彻底隐藏任何额外的选择容器 */
-.xterm-selection:not(:first-of-type) {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-}
-
-/* 标记为重复的选择元素彻底隐藏 */
-.xterm-selection-duplicate {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-
-/* 选择高亮颜色 - 增强可见度 */
-.xterm .xterm-selection div {
-  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.28), rgba(88, 166, 255, 0.38)) !important;
-  box-shadow: 0 0 4px rgba(88, 166, 255, 0.3) !important;
-}
-
-/* 深色主题下的选择高亮 - 使用更亮的颜色 */
-.dark-theme .xterm .xterm-selection div {
-  background: linear-gradient(to bottom, rgba(255, 223, 0, 0.25), rgba(255, 223, 0, 0.35)) !important;
-  box-shadow: 0 0 4px rgba(255, 223, 0, 0.25) !important;
-}
-
-/* 浅色主题下的选择高亮 - 使用更深的蓝色 */
-.light-theme .xterm .xterm-selection div,
-body:not(.dark-theme) .xterm .xterm-selection div {
-  background: linear-gradient(to bottom, rgba(9, 105, 218, 0.25), rgba(9, 105, 218, 0.35)) !important;
-  box-shadow: 0 0 4px rgba(9, 105, 218, 0.3) !important;
-}
-
-/* 搜索结果高亮 - xterm SearchAddon 使用的类名 */
-.xterm-decoration-overview-ruler {
-  background: rgba(255, 165, 0, 0.5) !important;
-}
-
-/* 当前搜索结果高亮 */
-.xterm-decoration {
-  background: rgba(255, 165, 0, 0.4) !important;
-}
-
-/* 深色主题下的搜索高亮 */
-.dark-theme .xterm-decoration-overview-ruler {
-  background: rgba(255, 200, 0, 0.6) !important;
-}
-
-.dark-theme .xterm-decoration {
-  background: rgba(255, 200, 0, 0.45) !important;
-}
-
-/* 浅色主题下的搜索高亮 */
-.light-theme .xterm-decoration-overview-ruler,
-body:not(.dark-theme) .xterm-decoration-overview-ruler {
-  background: rgba(255, 140, 0, 0.5) !important;
-}
-
-.light-theme .xterm-decoration,
-body:not(.dark-theme) .xterm-decoration {
-  background: rgba(255, 140, 0, 0.4) !important;
-}
-`;
-
-// 添加搜索相关样式
-const searchBarStyles = `
-/* 深色主题搜索框样式 */
-.dark-theme .search-bar,
-body:not(.light-theme) .search-bar {
-  position: absolute;
-  top: 8px;
-  right: 15px;
-  z-index: 10;
-  display: flex;
-  background: linear-gradient(to bottom, rgba(30, 30, 30, 0.95), rgba(20, 20, 20, 0.95));
-  border: 1px solid rgba(88, 166, 255, 0.3);
-  border-radius: 6px;
-  padding: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(88, 166, 255, 0.1);
-  align-items: center;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(10px);
-}
-.dark-theme .search-bar:focus-within,
-body:not(.light-theme) .search-bar:focus-within {
-  border-color: rgba(88, 166, 255, 0.5);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(88, 166, 255, 0.3);
-}
-
-/* 浅色主题搜索框样式 */
-.light-theme .search-bar {
-  position: absolute;
-  top: 8px;
-  right: 15px;
-  z-index: 10;
-  display: flex;
-  background: linear-gradient(to bottom, rgba(248, 249, 250, 0.95), rgba(240, 242, 245, 0.95));
-  border: 1px solid rgba(88, 166, 255, 0.4);
-  border-radius: 6px;
-  padding: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(88, 166, 255, 0.15);
-  align-items: center;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(10px);
-}
-.light-theme .search-bar:focus-within {
-  border-color: rgba(88, 166, 255, 0.6);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(88, 166, 255, 0.4);
-}
-
-/* 深色主题输入框样式 */
-.dark-theme .search-input,
-body:not(.light-theme) .search-input {
-  border: none;
-  outline: none;
-  background: transparent;
-  color: #e6edf3;
-  font-size: 14px;
-  font-family: inherit;
-  padding: 4px 8px;
-  width: 200px;
-  transition: all 0.2s ease;
-}
-.dark-theme .search-input::placeholder,
-body:not(.light-theme) .search-input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
-}
-.dark-theme .search-input:focus,
-body:not(.light-theme) .search-input:focus {
-  border-bottom: 1px solid rgba(88, 166, 255, 0.5);
-}
-
-/* 浅色主题输入框样式 */
-.light-theme .search-input {
-  border: none;
-  outline: none;
-  background: transparent;
-  color: #24292f;
-  font-size: 14px;
-  font-family: inherit;
-  padding: 4px 8px;
-  width: 200px;
-  transition: all 0.2s ease;
-}
-.light-theme .search-input::placeholder {
-  color: rgba(0, 0, 0, 0.4);
-}
-.light-theme .search-input:focus {
-  border-bottom: 1px solid rgba(88, 166, 255, 0.6);
-}
-
-/* 深色主题按钮样式 */
-.dark-theme .search-button,
-body:not(.light-theme) .search-button {
-  color: white !important;
-  cursor: pointer;
-  margin-left: 2px;
-  opacity: 0.7;
-  transition: all 0.2s ease;
-  border-radius: 4px;
-}
-.dark-theme .search-button:hover,
-body:not(.light-theme) .search-button:hover {
-  background-color: rgba(88, 166, 255, 0.2) !important;
-  opacity: 1;
-  transform: scale(1.05);
-}
-.dark-theme .search-button:disabled,
-body:not(.light-theme) .search-button:disabled {
-  opacity: 0.3 !important;
-  cursor: not-allowed;
-}
-
-/* 浅色主题按钮样式 */
-.light-theme .search-button {
-  color: rgba(0, 0, 0, 0.7) !important;
-  cursor: pointer;
-  margin-left: 2px;
-  opacity: 0.8;
-  transition: all 0.2s ease;
-  border-radius: 4px;
-}
-.light-theme .search-button:hover {
-  background-color: rgba(88, 166, 255, 0.15) !important;
-  color: rgba(0, 0, 0, 0.9) !important;
-  opacity: 1;
-  transform: scale(1.05);
-}
-.light-theme .search-button:disabled {
-  opacity: 0.3 !important;
-  cursor: not-allowed;
-}
-/* 深色主题搜索图标按钮 */
-.dark-theme .search-icon-btn,
-body:not(.light-theme) .search-icon-btn {
-  position: absolute;
-  top: 8px;
-  right: 15px;
-  z-index: 9;
-  border-radius: 6px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  opacity: 0.8;
-  backdrop-filter: blur(5px);
-  color: rgba(255, 255, 255, 0.7);
-  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.15), rgba(88, 166, 255, 0.1));
-  border: 1px solid rgba(88, 166, 255, 0.2);
-}
-.dark-theme .search-icon-btn:hover,
-body:not(.light-theme) .search-icon-btn:hover {
-  opacity: 1;
-  transform: scale(1.05);
-  color: white;
-  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.25), rgba(88, 166, 255, 0.2));
-  border-color: rgba(88, 166, 255, 0.4);
-}
-
-/* 浅色主题搜索图标按钮 */
-.light-theme .search-icon-btn {
-  position: absolute;
-  top: 8px;
-  right: 15px;
-  z-index: 9;
-  border-radius: 6px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  opacity: 0.8;
-  backdrop-filter: blur(5px);
-  color: rgba(0, 0, 0, 0.7);
-  background: linear-gradient(to bottom, rgba(248, 249, 250, 0.9), rgba(240, 242, 245, 0.9));
-  border: 1px solid rgba(88, 166, 255, 0.3);
-}
-.light-theme .search-icon-btn:hover {
-  opacity: 1;
-  transform: scale(1.05);
-  color: rgba(0, 0, 0, 0.9);
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(248, 249, 250, 0.95));
-  border-color: rgba(88, 166, 255, 0.5);
-}
-`;
-
-// 使用对象来存储所有终端实例，实现跨标签页缓存
-const terminalCache = {};
-const fitAddonCache = {};
-const processCache = {};
-// 添加disposables缓存以管理事件监听器的清理
-const disposablesCache = {};
-
-const SHARED_STYLE_ELEMENT_ID = "web-terminal-shared-style";
-let sharedStyleElement = null;
-const TERMINAL_LINK_CTRL_ACTIVE_CLASS = "xterm-link-ctrl-pressed";
-
-const syncTerminalLinkCtrlState = (term, isCtrlPressed) => {
-  if (!term?.element?.classList) {
-    return;
-  }
-
-  term.element.classList.toggle(
-    TERMINAL_LINK_CTRL_ACTIVE_CLASS,
-    Boolean(isCtrlPressed),
-  );
-};
-
-const isCtrlLeftMouseClick = (event) => {
-  if (typeof MouseEvent === "undefined" || !(event instanceof MouseEvent)) {
-    return false;
-  }
-
-  return event.button === 0 && event.ctrlKey;
-};
-
-const ensureSharedTerminalStyles = () => {
-  if (sharedStyleElement && document.contains(sharedStyleElement)) {
-    return sharedStyleElement;
-  }
-
-  const existing = document.getElementById(SHARED_STYLE_ELEMENT_ID);
-  if (existing) {
-    sharedStyleElement = existing;
-    return sharedStyleElement;
-  }
-
-  const style = document.createElement("style");
-  style.id = SHARED_STYLE_ELEMENT_ID;
-  document.head.appendChild(style);
-  sharedStyleElement = style;
-  return sharedStyleElement;
-};
-
-const terminalGeometryCache = new Map();
-
-const getGeometryKey = (processId, tabId) => {
-  if (processId) return `process:${processId}`;
-  if (tabId) return `tab:${tabId}`;
-  return null;
-};
-
-const clearGeometryFor = (processId, tabId) => {
-  const key = getGeometryKey(processId, tabId);
-  if (key) {
-    terminalGeometryCache.delete(key);
-  }
-};
-
-const getCharacterMetricsCss = (term) => {
-  const base = getCharacterMetrics(term);
-  if (!base || !term || !term.element) return base;
-
-  let { charWidth, charHeight } = base;
-  try {
-    const cme = term.element.querySelector(".xterm-char-measure-element");
-    const dpr =
-      typeof window !== "undefined" && window.devicePixelRatio
-        ? window.devicePixelRatio
-        : 1;
-
-    if (cme) {
-      const rect = cme.getBoundingClientRect();
-      if (rect && rect.width > 0) charWidth = rect.width;
-      if (rect && rect.height > 0) charHeight = rect.height;
-    } else if (dpr > 1) {
-      const viewport = term.element.querySelector(".xterm-viewport");
-      const screen = term.element.querySelector(".xterm-screen");
-      const refEl = viewport || screen || term.element;
-      const rect = refEl.getBoundingClientRect
-        ? refEl.getBoundingClientRect()
-        : { width: term.cols * charWidth, height: term.rows * charHeight };
-      if (charWidth * (term.cols || 1) > (rect.width || 0) + 2) {
-        charWidth = charWidth / dpr;
-      }
-      if (charHeight * (term.rows || 1) > (rect.height || 0) + 2) {
-        charHeight = charHeight / dpr;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return { ...base, charWidth, charHeight, scaleFactor: 1 };
-};
-
-const normalizeGeometry = (cols = 0, rows = 0) => ({
-  cols: Math.max(Math.floor(cols) || 1, 1),
-  rows: Math.max(Math.floor(rows) || 1, 1),
-});
-
-const shouldTransmitGeometry = (processId, tabId, cols, rows) => {
-  const key = getGeometryKey(processId, tabId);
-  if (!key) {
-    return { key: null, cols, rows, changed: false };
-  }
-
-  const { cols: normalizedCols, rows: normalizedRows } = normalizeGeometry(
-    cols,
-    rows,
-  );
-  const cached = terminalGeometryCache.get(key);
-  if (
-    cached &&
-    cached.cols === normalizedCols &&
-    cached.rows === normalizedRows
-  ) {
-    return { key, cols: normalizedCols, rows: normalizedRows, changed: false };
-  }
-
-  terminalGeometryCache.set(key, {
-    cols: normalizedCols,
-    rows: normalizedRows,
-  });
-  return { key, cols: normalizedCols, rows: normalizedRows, changed: true };
-};
-
-const sendResizeIfNeeded = (processId, tabId, cols, rows) => {
-  const {
-    key,
-    cols: nextCols,
-    rows: nextRows,
-    changed,
-  } = shouldTransmitGeometry(processId, tabId, cols, rows);
-
-  if (!changed || !window.terminalAPI?.resizeTerminal) {
-    return Promise.resolve();
-  }
-
-  return window.terminalAPI
-    .resizeTerminal(processId || tabId, nextCols, nextRows)
-    .catch(() => {
-      if (key) {
-        terminalGeometryCache.delete(key);
-      }
-    });
-};
-
-// 将processCache暴露到全局window对象，以便其他模块可以访问进程ID映射
-window.processCache = processCache;
-
-// 字符度量计算辅助函数
-const getCharacterMetrics = (term) => {
-  if (!term || !term.element) return null;
-
-  try {
-    // 获取终端的实际字符尺寸
-    const charMeasureElement = term.element.querySelector(
-      ".xterm-char-measure-element",
-    );
-    let charWidth = 9; // 默认值
-    let charHeight = 17; // 默认值
-
-    if (charMeasureElement) {
-      // 优先使用公开 DOM 测量，避免依赖 xterm 私有字段
-      charWidth = charMeasureElement.getBoundingClientRect().width;
-      charHeight = charMeasureElement.getBoundingClientRect().height;
-    } else {
-      const viewport = term.element.querySelector(".xterm-viewport");
-      const screen = term.element.querySelector(".xterm-screen");
-      const fallbackRect = (screen || viewport)?.getBoundingClientRect();
-      const cols = Math.max(1, term.cols || 1);
-      const rows = Math.max(1, term.rows || 1);
-
-      if (fallbackRect?.width > 0) {
-        charWidth = fallbackRect.width / cols;
-      }
-      if (fallbackRect?.height > 0) {
-        charHeight = fallbackRect.height / rows;
-      }
-    }
-
-    // 确保尺寸至少为1，避免0或负值
-    charWidth = Math.max(1, Math.round(charWidth * 100) / 100);
-    charHeight = Math.max(1, Math.round(charHeight * 100) / 100);
-
-    // 获取终端视口和屏幕的元素
-    const viewport = term.element.querySelector(".xterm-viewport");
-    const screen = term.element.querySelector(".xterm-screen");
-
-    // 获取视口和屏幕的位置信息
-    const viewportRect = viewport?.getBoundingClientRect() || {
-      left: 0,
-      top: 0,
-    };
-    const screenRect = screen?.getBoundingClientRect() || { left: 0, top: 0 };
-
-    // 计算滚动偏移量
-    const scrollTop = viewport ? viewport.scrollTop : 0;
-    const scrollLeft = viewport ? viewport.scrollLeft : 0;
-
-    // 考虑终端的滚动状态
-    const terminalScrollPosition = term.buffer?.active?.viewportY || 0;
-    const terminalHasScrolled = terminalScrollPosition > 0;
-
-    // 使用浏览器设备像素比作为缩放因子
-    const termScale =
-      typeof window !== "undefined" && window.devicePixelRatio
-        ? window.devicePixelRatio
-        : 1;
-
-    return {
-      charWidth,
-      charHeight,
-      viewportOffset: {
-        x: viewportRect.left,
-        y: viewportRect.top,
-        scrollLeft,
-        scrollTop,
-      },
-      screenOffset: {
-        x: screenRect.left,
-        y: screenRect.top,
-      },
-      scrollPosition: terminalScrollPosition,
-      hasScrolled: terminalHasScrolled,
-      scaleFactor: termScale,
-      // 附加调试信息，用于排查问题
-      debug: {
-        viewportRect: {
-          left: viewportRect.left,
-          top: viewportRect.top,
-          width: viewportRect.width,
-          height: viewportRect.height,
-        },
-        screenRect: {
-          left: screenRect.left,
-          top: screenRect.top,
-          width: screenRect.width,
-          height: screenRect.height,
-        },
-      },
-    };
-  } catch (error) {
-    // 获取字符度量失败，使用默认值
-    console.warn("Failed to get character metrics:", error);
-    return {
-      charWidth: 9,
-      charHeight: 17,
-      viewportOffset: { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 },
-      screenOffset: { x: 0, y: 0 },
-      scrollPosition: 0,
-      hasScrolled: false,
-      scaleFactor: 1,
-    };
-  }
-};
-
-// 字符网格坐标转换函数
-
-// 优化的终端尺寸调整函数，使用防抖机制减少频繁调用
-const forceResizeTerminal = debounce(
-  (term, container, processId, tabId, fitAddon) => {
-    try {
-      if (!container || !term || !fitAddon) {
-        return;
-      }
-
-      const rect = container.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) {
-        return;
-      }
-
-      if (term.element) {
-        const targetWidth = `${rect.width}px`;
-        const targetHeight = `${rect.height}px`;
-
-        if (term.element.style.width !== targetWidth) {
-          term.element.style.width = targetWidth;
-        }
-        if (term.element.style.height !== targetHeight) {
-          term.element.style.height = targetHeight;
-        }
-
-        term.element.getBoundingClientRect();
-      }
-
-      fitAddon.fit();
-
-      // Canvas 渲染器需要手动刷新
-      if (!term.__webglEnabled && typeof term.refresh === "function") {
-        term.refresh(0, term.rows - 1);
-      }
-
-      // 优化：移除ensureSized的RAF调用，减少二次resize
-      const cols = term.cols;
-      const rows = term.rows;
-      const resolvedProcessId = processId || processCache[tabId];
-
-      if (resolvedProcessId) {
-        sendResizeIfNeeded(resolvedProcessId, tabId, cols, rows);
-      }
-    } catch {
-      // Error in forceResizeTerminal
-    }
-  },
-  100, // 优化防抖时间到100ms，减少频繁调用
-);
-// 添加辅助函数，用于处理多行粘贴文本，防止注释符号和缩进异常
-const processMultilineInput = (text, options = {}) => {
-  if (!text || typeof text !== "string") return text;
-
-  // 如果文本不包含换行符，直接返回
-  if (!text.includes("\n")) return text;
-
-  // 分割成行数组
-  const lines = text.split(/\r?\n/);
-  if (lines.length <= 1) return text;
-
-  // 常见的注释符号模式
-  const commentPatterns = [
-    /^\s*\/\//, // JavaScript, C, C++, Java 等的单行注释 //
-    /^\s*#/, // Python, Bash, Ruby 等的注释 #
-    /^\s*--/, // SQL, Lua 等的注释 --
-    /^\s*;/, // Assembly, INI 等的注释 ;
-    /^\s*%/, // LaTeX, Matlab 等的注释 %
-    /^\s*\/\*/, // C, Java 等的多行注释开始 /*
-    /^\s*\*\//, // C, Java 等的多行注释结束 */
-  ];
-
-  // 判断当前行是否包含注释
-  const isCommentLine = (line) => {
-    return commentPatterns.some((pattern) => pattern.test(line));
-  };
-
-  // 检测是否有注释行
-  const hasCommentLines = lines.some((line) => isCommentLine(line));
-
-  // 如果检测到注释行并且开启了逐行发送选项（默认为true），返回特殊标记对象
-  // 这将触发调用方进行逐行处理
-  if (hasCommentLines && options.sendLineByLine !== false) {
-    return {
-      type: "multiline-with-comments",
-      lines: lines,
-      isCommentLine: isCommentLine,
-    };
-  }
-  //统一使用'\n'
-  const lineEnding = "\n";
-
-  // 处理每一行
-  let result = "";
-  let isInCommentBlock = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // 检测是否是注释行
-    const hasComment = isCommentLine(line);
-
-    // 检测多行注释块
-    if (line.includes("/*")) isInCommentBlock = true;
-    if (line.includes("*/")) isInCommentBlock = false;
-
-    // 添加当前行
-    result += line;
-
-    // 如果不是最后一行，添加换行符
-    if (i < lines.length - 1) {
-      // 如果当前行包含注释或者在注释块内，添加一个额外的回车键输入
-      // 这会触发终端执行当前行，防止注释符号影响下一行
-      if (hasComment || isInCommentBlock) {
-        result += lineEnding + String.fromCharCode(13); // 回车键
-      } else {
-        result += lineEnding;
-      }
-    }
-  }
-
-  return result;
-};
-
-const INPUT_SEND_CHUNK_SIZE = 1024;
-const INPUT_SEND_MAX_CHUNKS_PER_FRAME = 8;
-const INPUT_SEND_FRAME_DELAY_MS = 8;
-const LARGE_INPUT_LENGTH_THRESHOLD = 2048;
-const MULTILINE_INPUT_LENGTH_THRESHOLD = 512;
-const COMMENT_LINE_SEND_INTERVAL_MS = 12;
-
-const shouldChunkInputPayload = (input) => {
-  if (!input || typeof input !== "string") {
-    return false;
-  }
-
-  if (input.length >= LARGE_INPUT_LENGTH_THRESHOLD) {
-    return true;
-  }
-
-  return (
-    input.length >= MULTILINE_INPUT_LENGTH_THRESHOLD &&
-    (input.includes("\n") || input.includes("\r"))
-  );
-};
+import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.jsx";
+import WebTerminalContextMenu from "./web-terminal/WebTerminalContextMenu.jsx";
+import {
+  ANSI_CSI_SEQUENCE_REGEX,
+  TERMINAL_RESIZE_QUERY_REGEX,
+  ensureSharedTerminalStyles,
+  getCharacterMetricsCss,
+  isCtrlLeftMouseClick,
+  searchBarStyles,
+  syncTerminalLinkCtrlState,
+  terminalStyles,
+} from "../modules/terminal/controller/terminalDom.js";
+import {
+  clearGeometryFor,
+  disposablesCache,
+  fitAddonCache,
+  forceResizeTerminal,
+  processCache,
+  sendResizeIfNeeded,
+  terminalCache,
+} from "../modules/terminal/controller/terminalSessionStore.js";
+import {
+  COMMENT_LINE_SEND_INTERVAL_MS,
+  INPUT_SEND_CHUNK_SIZE,
+  INPUT_SEND_FRAME_DELAY_MS,
+  INPUT_SEND_MAX_CHUNKS_PER_FRAME,
+  processMultilineInput,
+  shouldChunkInputPayload,
+} from "../modules/terminal/controller/terminalInput.js";
 
 const getTerminalConfigSignature = (config) => {
   if (!config) return "__NO_CONFIG__";
@@ -1214,6 +502,13 @@ const WebTerminal = ({
     [sendProcessedInputToProcess, tabId],
   );
 
+  const { broadcastInputToGroup } = useTerminalInputSync({
+    tabId,
+    enqueueInputToProcess,
+    termRef,
+    eventManager,
+  });
+
   const flushPendingWrites = useCallback(
     (termInstance) => {
       if (!termInstance) {
@@ -1333,11 +628,6 @@ const WebTerminal = ({
   const [contextMenu, setContextMenu] = useState(null);
   const [selectedText, setSelectedText] = useState("");
   const searchAddonRef = useRef(null);
-  const [showSearchBar, setShowSearchBar] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState({ count: 0, current: 0 });
-  const [noMatchFound, setNoMatchFound] = useState(false);
-
   const [inEditorMode, setInEditorMode] = useState(false);
 
   // 命令执行状态跟踪
@@ -1349,22 +639,53 @@ const WebTerminal = ({
   const [isConfirmationPromptActive, setIsConfirmationPromptActive] =
     useState(false);
 
-  // 命令建议相关状态
-  const [suggestions, setSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
-  const [currentInput, setCurrentInput] = useState("");
-  const [suggestionsHiddenByEsc, setSuggestionsHiddenByEsc] = useState(false);
-  // 用户手动关闭命令快捷窗口后抑制显示，直到下一次按下回车才恢复
-  const [suggestionsSuppressedUntilEnter, setSuggestionsSuppressedUntilEnter] =
-    useState(false);
-  // 记录抑制建议时的上下文（输入内容与时间），便于在输入变化时自动解除抑制
-  const suppressionContextRef = useRef({ input: "", timestamp: 0 });
-  // 在事件回调中读取“抑制”最新状态
-  const suggestionsSuppressedRef = useRef(false);
-  useEffect(() => {
-    suggestionsSuppressedRef.current = suggestionsSuppressedUntilEnter;
-  }, [suggestionsSuppressedUntilEnter]);
+  const {
+    showSearchBar,
+    searchTerm,
+    searchResults,
+    noMatchFound,
+    setSearchTerm,
+    handleSearch,
+    handleSearchPrevious,
+    openSearchBar,
+    closeSearchBar,
+    toggleSearchBar,
+  } = useTerminalSearch({
+    searchAddonRef,
+    termRef,
+    isActive,
+  });
+
+  const {
+    suggestions,
+    setSuggestions,
+    showSuggestions,
+    setShowSuggestions,
+    cursorPosition,
+    currentInput,
+    setCurrentInput,
+    suggestionsHiddenByEsc,
+    setSuggestionsHiddenByEsc,
+    suggestionsSuppressedUntilEnter,
+    setSuggestionsSuppressedUntilEnter,
+    suppressionContextRef,
+    suggestionsSuppressedRef,
+    suggestionSelectedRef,
+    getSuggestions,
+    updateCursorPosition,
+    handleSuggestionSelect,
+    closeSuggestions,
+  } = useTerminalSuggestions({
+    tabId,
+    termRef,
+    terminalRef,
+    inEditorMode,
+    isCommandExecuting,
+    lastExecutedCommandRef,
+    lastExecutedCommandTimeRef,
+    sendInputToProcess,
+  });
+
   const inEditorModeRef = useRef(false);
   const isCommandExecutingRef = useRef(false);
   const realtimeInputHighlightFrameRef = useRef(null);
@@ -2942,10 +2263,12 @@ const WebTerminal = ({
             }
 
             let blockEnd = targetLineIndex;
-            while (true) {
+            let searchingWrappedLines = true;
+            while (searchingWrappedLines) {
               const next = buffer.getLine(blockEnd + 1);
               if (!next || !next.isWrapped) {
-                break;
+                searchingWrappedLines = false;
+                continue;
               }
               blockEnd += 1;
             }
@@ -3390,9 +2713,7 @@ const WebTerminal = ({
 
           e.preventDefault();
           e.stopPropagation();
-
-          // 切换搜索栏状态：如果已显示则关闭，如果已关闭则打开
-          setShowSearchBar((prev) => !prev);
+          toggleSearchBar();
         }
         // Esc 关闭搜索或建议
         else if (e.key === "Escape") {
@@ -3400,7 +2721,7 @@ const WebTerminal = ({
             // 只有当前活跃的终端才处理搜索相关快捷键
             if (!isActiveRef.current) return;
             e.preventDefault();
-            setShowSearchBar(false);
+            closeSearchBar();
           } else if (showSuggestions) {
             e.preventDefault();
             setShowSuggestions(false);
@@ -4062,114 +3383,11 @@ const WebTerminal = ({
     }
   };
 
-  // 处理搜索
-  const handleSearch = () => {
-    if (searchAddonRef.current && searchTerm) {
-      // 重置无匹配状态
-      setNoMatchFound(false);
-
-      try {
-        const result = searchAddonRef.current.findNext(searchTerm);
-        if (!result) {
-          setNoMatchFound(true);
-        } else {
-          // 更新当前匹配位置
-          if (searchResults.count > 0) {
-            setSearchResults((prev) => ({
-              ...prev,
-              current: (prev.current % prev.count) + 1,
-            }));
-          }
-        }
-      } catch {
-        // Search error
-        setNoMatchFound(true);
-      }
-    }
-  };
-
-  // 处理搜索上一个
-  const handleSearchPrevious = () => {
-    if (searchAddonRef.current && searchTerm) {
-      // 重置无匹配状态
-      setNoMatchFound(false);
-
-      try {
-        const result = searchAddonRef.current.findPrevious(searchTerm);
-        if (!result) {
-          setNoMatchFound(true);
-        } else {
-          // 更新当前匹配位置
-          if (searchResults.count > 0) {
-            setSearchResults((prev) => ({
-              ...prev,
-              current: prev.current <= 1 ? prev.count : prev.current - 1,
-            }));
-          }
-        }
-      } catch {
-        // Search error
-        setNoMatchFound(true);
-      }
-    }
-  };
-
-  // 计算搜索结果数量
-  const calculateSearchResults = (term) => {
-    if (!term || !termRef.current) {
-      setSearchResults({ count: 0, current: 0 });
-      return;
-    }
-
-    // 简单估算匹配数量 (xterm.js SearchAddon没有直接提供计数方法)
-    // 这是一个近似值，实际上需要更复杂的实现来获取准确计数
-    const buffer = termRef.current.buffer.active;
-    let count = 0;
-
-    try {
-      for (let i = 0; i < buffer.length; i++) {
-        const line = buffer.getLine(i);
-        if (line) {
-          const text = line.translateToString();
-          // 统计当前行中的匹配数
-          let pos = 0;
-          while ((pos = text.indexOf(term, pos)) !== -1) {
-            count++;
-            pos += term.length;
-          }
-        }
-      }
-
-      setSearchResults({ count, current: count > 0 ? 1 : 0 });
-      setNoMatchFound(count === 0);
-    } catch {
-      // 搜索结果计算失败，重置为默认值
-      setSearchResults({ count: 0, current: 0 });
-    }
-  };
-
-  // 当搜索词变化时计算匹配数
-  useEffect(() => {
-    if (searchTerm && termRef.current) {
-      calculateSearchResults(searchTerm);
-    } else {
-      setSearchResults({ count: 0, current: 0 });
-      setNoMatchFound(false);
-    }
-  }, [searchTerm]);
-
-  // 当终端变为非活跃状态时，隐藏搜索栏
-  useEffect(() => {
-    if (!isActive && showSearchBar) {
-      setShowSearchBar(false);
-    }
-  }, [isActive, showSearchBar]);
-
   // 处理快捷搜索选项
   const handleSearchFromMenu = () => {
     // 只有当前活跃的终端才处理搜索
     if (!isActiveRef.current) return;
-    setShowSearchBar(true);
+    openSearchBar();
     handleClose();
   };
 
@@ -5076,403 +4294,6 @@ const WebTerminal = ({
     };
   }, []);
 
-  // 输入同步广播封装
-  const broadcastInputToGroup = useCallback(
-    (input, sourceTabId) => {
-      const group = findGroupByTab(tabId);
-      if (group && group.members && group.members.length > 1) {
-        group.members.forEach((targetTabId) => {
-          if (
-            targetTabId !== (sourceTabId || tabId) &&
-            window.terminalAPI &&
-            window.terminalAPI.sendToProcess &&
-            processCache[targetTabId]
-          ) {
-            // 通过自定义事件将输入同步到目标终端
-            const event = new CustomEvent("syncTerminalInput", {
-              detail: {
-                input,
-                sourceTabId: sourceTabId || tabId,
-                targetTabId,
-              },
-            });
-            window.dispatchEvent(event);
-          }
-        });
-      }
-    },
-    [tabId],
-  );
-
-  // 命令建议相关状态
-  const suggestionSelectedRef = useRef(false);
-
-  // 更新光标位置函数 - 简化版本，更可靠
-  const updateCursorPosition = useCallback(() => {
-    if (!termRef.current || !terminalRef.current) {
-      setCursorPosition({ x: 0, y: 0 });
-      return;
-    }
-
-    try {
-      const term = termRef.current;
-      const container = terminalRef.current;
-
-      // 方法1：尝试获取xterm的实际光标元素
-      const cursorElement = term.element?.querySelector(".xterm-cursor");
-      if (cursorElement) {
-        const cursorRect = cursorElement.getBoundingClientRect();
-        if (cursorRect.width > 0 && cursorRect.height > 0) {
-          const suggestionHeight = Math.min(
-            (suggestions?.length || 0) * 28 + 28,
-            300,
-          );
-          const containerRect = container.getBoundingClientRect();
-          const gap = 20; // 增加间距到20px，避免遮挡输入行
-          const showAbove =
-            cursorRect.bottom + suggestionHeight + gap > containerRect.bottom &&
-            cursorRect.top - suggestionHeight - gap >= containerRect.top;
-
-          setCursorPosition({
-            x: cursorRect.left,
-            y: cursorRect.top,
-            cursorHeight: cursorRect.height || 18,
-            cursorBottom:
-              cursorRect.bottom || cursorRect.top + (cursorRect.height || 18),
-            showAbove,
-          });
-          return;
-        }
-      }
-
-      // 方法2：使用终端的字符度量计算
-      const metrics = getCharacterMetricsCss(term);
-      if (metrics) {
-        // 获取当前光标位置（相对于终端buffer）
-        const cursorX = term.buffer.active.cursorX;
-        const cursorY = term.buffer.active.cursorY;
-
-        // 获取终端内容区域
-        const screen =
-          term.element?.querySelector(".xterm-viewport") ||
-          term.element?.querySelector(".xterm-screen") ||
-          container;
-
-        const screenRect = screen.getBoundingClientRect();
-
-        // 考虑终端的padding（8px）
-        const terminalPadding = 8;
-
-        // 计算光标的像素位置（考虑padding）
-        const pixelX = cursorX * metrics.charWidth + terminalPadding;
-        const pixelY = cursorY * metrics.charHeight + terminalPadding;
-
-        // 计算相对于视口的绝对位置
-        const absoluteX = screenRect.left + pixelX;
-        const absoluteY = screenRect.top + pixelY;
-
-        const suggestionHeight = Math.min(
-          (suggestions?.length || 0) * 28 + 28,
-          300,
-        );
-        const containerRect = container.getBoundingClientRect();
-        const gap = 20; // 增加间距到20px，避免遮挡输入行
-        const showAbove =
-          absoluteY + suggestionHeight + gap > containerRect.bottom &&
-          absoluteY - suggestionHeight - gap >= containerRect.top;
-
-        setCursorPosition({
-          x: absoluteX,
-          y: absoluteY,
-          cursorHeight: metrics.charHeight || 18,
-          cursorBottom: absoluteY + (metrics.charHeight || 18),
-          showAbove,
-        });
-        return;
-      }
-
-      // 方法3：降级到容器相对位置
-      const containerRect = container.getBoundingClientRect();
-
-      setCursorPosition({
-        x: containerRect.left + 20,
-        y: containerRect.top + 20,
-        cursorHeight: 18,
-        cursorBottom: containerRect.top + 38,
-      });
-    } catch {
-      // 最后的降级方案
-      try {
-        const containerRect = terminalRef.current.getBoundingClientRect();
-        setCursorPosition({
-          x: containerRect.left + 50,
-          y: containerRect.top + 50,
-          cursorHeight: 18,
-          cursorBottom: containerRect.top + 68,
-        });
-      } catch {
-        setCursorPosition({
-          x: 100,
-          y: 100,
-          cursorHeight: 18,
-          cursorBottom: 118,
-        });
-      }
-    }
-  }, [suggestions?.length || 0]);
-
-  // 命令建议相关函数
-  const getSuggestions = useCallback(
-    async (input) => {
-      if (!input || input.trim() === "" || inEditorMode || isCommandExecuting) {
-        setSuggestions([]);
-        setShowSuggestions(false);
-        return;
-      }
-
-      const trimmedInput = input.trim();
-
-      // Require at least 2 characters before showing suggestions
-      if (trimmedInput.length < 2) {
-        setSuggestions([]);
-        setShowSuggestions(false);
-        return;
-      }
-
-      // 防止为最近执行的命令显示建议
-      if (
-        lastExecutedCommandRef.current &&
-        trimmedInput === lastExecutedCommandRef.current &&
-        Date.now() - lastExecutedCommandTimeRef.current < 600
-      ) {
-        setSuggestions([]);
-        setShowSuggestions(false);
-        return;
-      }
-
-      try {
-        // 从命令历史获取建议
-        if (window.terminalAPI && window.terminalAPI.getCommandSuggestions) {
-          const response =
-            await window.terminalAPI.getCommandSuggestions(trimmedInput);
-
-          // API返回的是 { success: true, suggestions: [...] } 格式
-          const commandSuggestions = response?.success
-            ? response.suggestions
-            : [];
-
-          if (commandSuggestions && commandSuggestions.length > 0) {
-            // 过滤和排序建议
-            const filteredSuggestions = commandSuggestions
-              .filter(
-                (suggestion) =>
-                  suggestion.command &&
-                  suggestion.command
-                    .toLowerCase()
-                    .includes(trimmedInput.toLowerCase()) &&
-                  suggestion.command !== trimmedInput, // 不显示完全相同的命令
-              )
-              .sort((a, b) => {
-                // 优先显示前缀匹配
-                const aStartsWith = a.command
-                  .toLowerCase()
-                  .startsWith(trimmedInput.toLowerCase());
-                const bStartsWith = b.command
-                  .toLowerCase()
-                  .startsWith(trimmedInput.toLowerCase());
-
-                if (aStartsWith && !bStartsWith) return -1;
-                if (!aStartsWith && bStartsWith) return 1;
-
-                // 按使用次数排序
-                return (b.count || 0) - (a.count || 0);
-              })
-              .slice(0, 10); // 最多显示10个建议
-
-            if (filteredSuggestions.length > 0) {
-              setSuggestions(filteredSuggestions);
-              // 立即更新光标位置，然后显示建议
-              updateCursorPosition();
-              // 确保位置更新后再显示建议窗口
-              requestAnimationFrame(() => {
-                setShowSuggestions(true);
-              });
-            } else {
-              setSuggestions([]);
-              setShowSuggestions(false);
-            }
-          } else {
-            setSuggestions([]);
-            setShowSuggestions(false);
-          }
-        } else {
-          setSuggestions([]);
-          setShowSuggestions(false);
-        }
-      } catch {
-        // 获取建议失败，隐藏建议窗口
-        setSuggestions([]);
-        setShowSuggestions(false);
-      }
-    },
-    [inEditorMode, isCommandExecuting, updateCursorPosition],
-  );
-
-  // 监听刷新建议事件（使用 useWindowEvent Hook）
-  const handleRefreshSuggestions = useCallback(
-    (event) => {
-      const { input } = event.detail || {};
-      if (
-        input &&
-        !suggestionsHiddenByEsc &&
-        !suggestionsSuppressedUntilEnter &&
-        !isCommandExecuting
-      ) {
-        getSuggestions(input);
-      }
-    },
-    [
-      getSuggestions,
-      suggestionsHiddenByEsc,
-      suggestionsSuppressedUntilEnter,
-      isCommandExecuting,
-    ],
-  );
-
-  useWindowEvent("refreshCommandSuggestions", handleRefreshSuggestions);
-
-  const handleSuggestionSelect = useCallback(
-    (suggestion) => {
-      if (!suggestion || !termRef.current || !processCache[tabId]) {
-        setShowSuggestions(false);
-        return;
-      }
-
-      try {
-        // 标记这是通过建议选择的命令
-        suggestionSelectedRef.current = true;
-
-        // 获取当前终端行
-        const currentLine =
-          termRef.current.buffer.active
-            .getLine(termRef.current.buffer.active.cursorY)
-            ?.translateToString() || "";
-
-        // 提取当前输入的命令部分（去除提示符）
-        const commandMatch = currentLine.match(
-          /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.*)$/,
-        );
-
-        const currentInputOnLine = commandMatch ? commandMatch[1] : "";
-        const currentInputLength = currentInputOnLine.length;
-
-        // 计算需要删除的字符数
-        const deleteCount = currentInput.length || currentInputLength;
-
-        // 发送退格键删除当前输入
-        for (let i = 0; i < deleteCount; i++) {
-          sendInputToProcess(processCache[tabId], "\b");
-        }
-
-        // 发送选中的命令
-        sendInputToProcess(processCache[tabId], suggestion.command);
-
-        // 更新当前输入状态
-        setCurrentInput(suggestion.command);
-
-        // 隐藏建议窗口
-        setShowSuggestions(false);
-        setSuggestions([]);
-      } catch {
-        setShowSuggestions(false);
-      }
-    },
-    [tabId, currentInput],
-  );
-
-  const closeSuggestions = useCallback(() => {
-    // 手动关闭建议窗口后，抑制再次显示，直到用户按下回车
-    setShowSuggestions(false);
-    setSuggestions([]);
-    setSuggestionsSuppressedUntilEnter(true);
-    suppressionContextRef.current = {
-      input: currentInput,
-      timestamp: Date.now(),
-    };
-  }, [currentInput]);
-
-  // 示例：假设有如下输入处理函数
-
-  // 注册表初始化
-  if (typeof window !== "undefined" && !window.webTerminalRefs) {
-    window.webTerminalRefs = {};
-  }
-
-  useEffect(() => {
-    if (termRef.current && tabId) {
-      window.webTerminalRefs[tabId] = termRef.current;
-    }
-    return () => {
-      if (tabId && window.webTerminalRefs) {
-        delete window.webTerminalRefs[tabId];
-      }
-    };
-  }, [tabId, termRef.current]);
-
-  // 监听来自其它终端的输入同步事件
-  useEffect(() => {
-    const handler = (e) => {
-      const { input, targetTabId } = e.detail || {};
-      if (targetTabId === tabId && processCache[tabId]) {
-        // 直接写入本地进程，且不再广播，防止回环
-        if (termRef.current) {
-          // 通过setupCommandDetection的isRemoteInput参数，模拟远程输入
-          // 这里只写入进程，不触发本地onData
-          enqueueInputToProcess(processCache[tabId], input, {
-            forceChunk: true,
-          });
-        }
-      }
-    };
-
-    // 监听外部命令发送事件，设置临时屏蔽期
-    const externalCommandHandler = (e) => {
-      const { tabId: eventTabId, command, timestamp } = e.detail || {};
-      if (eventTabId === tabId && termRef.current) {
-        // 记录外部命令的详情，用于在onData中进行精确匹配
-        termRef.current._externalCommand = {
-          command: command,
-          timestamp: timestamp,
-          processedLength: 0,
-          totalLength: command.length,
-        };
-
-        // 设置2秒后清理标记，防止影响后续正常输入
-        setTimeout(() => {
-          if (termRef.current && termRef.current._externalCommand) {
-            delete termRef.current._externalCommand;
-          }
-        }, 2000);
-      }
-    };
-
-    const removeSyncListener = eventManager.addEventListener(
-      window,
-      "syncTerminalInput",
-      handler,
-    );
-    const removeExternalListener = eventManager.addEventListener(
-      window,
-      "externalCommandSending",
-      externalCommandHandler,
-    );
-
-    return () => {
-      removeSyncListener();
-      removeExternalListener();
-    };
-  }, [enqueueInputToProcess, tabId]);
-
   return (
     <Box
       data-tab-id={tabId}
@@ -5493,176 +4314,30 @@ const WebTerminal = ({
           }}
         />
 
-        {!showSearchBar && isActive && (
-          <Tooltip title="打开搜索 (Ctrl+/)">
-            <IconButton
-              size="small"
-              className="search-icon-btn"
-              onClick={() => setShowSearchBar(true)}
-              sx={{
-                padding: "4px",
-                color:
-                  theme.palette.mode === "dark"
-                    ? "rgba(255, 255, 255, 0.7) !important"
-                    : "rgba(0, 0, 0, 0.7) !important",
-                "&:hover": {
-                  color:
-                    theme.palette.mode === "dark"
-                      ? "white !important"
-                      : "rgba(0, 0, 0, 0.9) !important",
-                },
-                "& svg": {
-                  fontSize: "18px",
-                  color: "inherit !important",
-                },
-              }}
-            >
-              <SearchIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        )}
-
-        {showSearchBar && isActive && (
-          <div className="search-bar">
-            <input
-              type="text"
-              className="search-input"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="搜索..."
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleSearch();
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  setShowSearchBar(false);
-                }
-              }}
-              style={{
-                borderColor: noMatchFound ? "red" : undefined,
-                width: searchTerm ? "150px" : "200px", // 有搜索结果显示时调整宽度
-              }}
-            />
-            {searchTerm && (
-              <div
-                style={{
-                  color: noMatchFound ? "#ff6b6b" : "#aaa",
-                  margin: "0 8px",
-                  fontSize: "12px",
-                  whiteSpace: "nowrap",
-                  minWidth: "50px",
-                  textAlign: "center",
-                }}
-              >
-                {noMatchFound
-                  ? "无匹配结果"
-                  : searchResults.count > 0
-                    ? `${searchResults.current}/${searchResults.count}`
-                    : ""}
-              </div>
-            )}
-            <Tooltip title="查找上一个 (Ctrl+,)">
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={handleSearchPrevious}
-                  className="search-button"
-                  disabled={!searchTerm || noMatchFound}
-                >
-                  <NavigateBeforeIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title="查找下一个 (Ctrl+.)">
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={handleSearch}
-                  className="search-button"
-                  disabled={!searchTerm || noMatchFound}
-                >
-                  <NavigateNextIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title="关闭搜索 (Ctrl+/ 或 Esc)">
-              <IconButton
-                size="small"
-                onClick={() => setShowSearchBar(false)}
-                className="search-button"
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </div>
-        )}
+        <WebTerminalSearchOverlay
+          isActive={isActive}
+          showSearchBar={showSearchBar}
+          searchTerm={searchTerm}
+          searchResults={searchResults}
+          noMatchFound={noMatchFound}
+          onOpenSearch={openSearchBar}
+          onCloseSearch={closeSearchBar}
+          onSearchTermChange={setSearchTerm}
+          onSearchNext={handleSearch}
+          onSearchPrevious={handleSearchPrevious}
+        />
       </div>
-      <Menu
-        open={contextMenu !== null}
+      <WebTerminalContextMenu
+        contextMenu={contextMenu}
+        isActive={isActive}
+        selectedText={selectedText}
         onClose={handleClose}
-        anchorReference="anchorPosition"
-        anchorPosition={
-          contextMenu !== null
-            ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
-            : undefined
-        }
-        PaperProps={{
-          sx: {
-            boxShadow: theme.shadows[8],
-            bgcolor: "background.paper",
-            color: "text.primary",
-          },
-        }}
-      >
-        <MenuItem onClick={handleCopy} disabled={!selectedText}>
-          <ListItemIcon>
-            <ContentCopyIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>复制</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-            Ctrl+;
-          </Typography>
-        </MenuItem>
-        <MenuItem onClick={handlePaste}>
-          <ListItemIcon>
-            <PasteIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>粘贴</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-            Ctrl+&apos; / 中键
-          </Typography>
-        </MenuItem>
-        <MenuItem onClick={handleSendToAI} disabled={!selectedText}>
-          <ListItemIcon>
-            <SmartToyIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>发送到AI助手</ListItemText>
-        </MenuItem>
-        <Divider />
-        {isActive && (
-          <MenuItem onClick={handleSearchFromMenu}>
-            <ListItemIcon>
-              <SearchIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>搜索</ListItemText>
-            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-              Ctrl+/
-            </Typography>
-          </MenuItem>
-        )}
-        <Divider />
-        <MenuItem onClick={handleClear}>
-          <ListItemIcon>
-            <ClearAllIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>清空</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-            Ctrl+L
-          </Typography>
-        </MenuItem>
-      </Menu>
+        onCopy={handleCopy}
+        onPaste={handlePaste}
+        onSendToAI={handleSendToAI}
+        onSearch={handleSearchFromMenu}
+        onClear={handleClear}
+      />
 
       {/* 命令建议组件 */}
       <CommandSuggestion
