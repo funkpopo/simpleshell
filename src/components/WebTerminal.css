@@ -124,11 +124,21 @@
   text-decoration: underline;
   text-decoration-style: dotted;
   text-decoration-color: rgba(100, 150, 255, 0.5);
-  cursor: pointer;
+  cursor: default;
   transition: all 0.2s ease;
 }
 
 .xterm-link:hover {
+  text-decoration-style: dotted;
+  text-decoration-color: rgba(100, 150, 255, 0.5);
+  background: transparent;
+}
+
+.xterm.xterm-link-ctrl-pressed .xterm-link {
+  cursor: pointer;
+}
+
+.xterm.xterm-link-ctrl-pressed .xterm-link:hover {
   text-decoration-style: solid;
   text-decoration-color: rgba(100, 150, 255, 1);
   background: rgba(100, 150, 255, 0.1);
