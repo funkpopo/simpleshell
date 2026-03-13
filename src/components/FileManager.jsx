@@ -2897,6 +2897,7 @@ const FileManager = memo(
               transferSpeed,
               remainingTime,
               currentFileIndex,
+              processedFiles,
               totalFiles,
               transferKey,
               fileList,
@@ -2908,6 +2909,7 @@ const FileManager = memo(
               const validTransferSpeed = Math.max(0, transferSpeed || 0);
               const validRemainingTime = Math.max(0, remainingTime || 0);
               const validCurrentFileIndex = Math.max(0, currentFileIndex || 0);
+              const validProcessedFiles = Math.max(0, processedFiles || 0);
               const validTotalFiles = Math.max(0, totalFiles || 0);
 
               updateTransferProgress(transferId, {
@@ -2918,6 +2920,7 @@ const FileManager = memo(
                 transferSpeed: validTransferSpeed,
                 remainingTime: validRemainingTime,
                 currentFileIndex: validCurrentFileIndex,
+                processedFiles: validProcessedFiles,
                 totalFiles: validTotalFiles,
                 transferKey: transferKey || "",
                 fileList: fileList || null,
@@ -3933,6 +3936,7 @@ const FileManager = memo(
                 transferSpeed,
                 remainingTime,
                 currentFileIndex,
+                processedFiles,
                 totalFiles,
                 transferKey,
                 operationComplete,
@@ -3951,6 +3955,7 @@ const FileManager = memo(
                   0,
                   currentFileIndex || 0,
                 );
+                const validProcessedFiles = Math.max(0, processedFiles || 0);
                 const validTotalFiles = Math.max(0, totalFiles || 0);
 
                 // 检查是否已取消
@@ -3967,6 +3972,7 @@ const FileManager = memo(
                   transferSpeed: validTransferSpeed,
                   remainingTime: validRemainingTime,
                   currentFileIndex: validCurrentFileIndex,
+                  processedFiles: validProcessedFiles,
                   totalFiles: validTotalFiles,
                   transferKey: transferKey || "",
                   isCompleted: operationComplete === true,

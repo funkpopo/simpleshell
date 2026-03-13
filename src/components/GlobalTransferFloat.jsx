@@ -114,6 +114,18 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
   const isCompleted = progress >= 100;
   const hasError = !!error;
   const statusIcon = getStatusIcon(transfer);
+  const displayFileProgress =
+    totalFiles > 0 && isCompleted && !hasError && !isCancelled
+      ? totalFiles
+      : type === "upload-multifile"
+        ? Math.min(Math.max(0, currentFileIndex || 0), totalFiles)
+        : Math.min(
+            Math.max(
+              Number(processedFiles) || 0,
+              Math.max(0, (currentFileIndex || 1) - 1),
+            ),
+            totalFiles,
+          );
 
   return (
     <Box
@@ -178,10 +190,7 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
             >
               {totalFiles > 1 && (
                 <span>
-                  {type === "upload-multifile"
-                    ? `${currentFileIndex}/${totalFiles}`
-                    : `${processedFiles}/${totalFiles}`}{" "}
-                  文件
+                  {displayFileProgress}/{totalFiles} 文件
                 </span>
               )}
               {currentFile && (
