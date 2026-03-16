@@ -190,6 +190,8 @@ class ReconnectionManager extends EventEmitter {
       reconnectWindowStartedAt: null, // 首次进入自动重连窗口的时间（用于总耗时封顶）
       createdAt: Date.now(),
       reconnectHistory: [],
+      nextReconnectAt: null,
+      pendingReconnectConnection: null,
       qualityMetrics: {
         stability: 1.0,
         latency: 0,
@@ -477,6 +479,10 @@ class ReconnectionManager extends EventEmitter {
     const intervalMs = Number(this.config.networkProbe?.intervalMs || 3000);
 
     while (true) {
+      if (this._shouldAbortReconnect(session)) {
+        return false;
+      }
+
       if (this._isReconnectWindowExpired(session)) {
         return false;
       }
@@ -789,6 +795,7 @@ class ReconnectionManager extends EventEmitter {
       this.executeReconnect(session, failureReason);
     }, delay);
     this.reconnectTimers.set(session.id, timerId);
+    session.nextReconnectAt = reconnectTask.executeAt;
 
     this.emit("reconnectScheduled", {
       sessionId: session.id,
@@ -816,6 +823,45 @@ class ReconnectionManager extends EventEmitter {
       this.reconnectTimers.delete(sessionId);
       logToFile(`取消待执行的重连任务: ${sessionId}`, "DEBUG");
     }
+
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.nextReconnectAt = null;
+    }
+  }
+
+  _shouldAbortReconnect(session) {
+    return (
+      !session ||
+      session.state === RECONNECT_STATE.ABANDONED ||
+      !this.sessions.has(session.id) ||
+      this.sessions.get(session.id) !== session
+    );
+  }
+
+  _cleanupReconnectConnection(handle, reason = "unknown") {
+    if (!handle || typeof handle.cleanup !== "function") {
+      return;
+    }
+
+    try {
+      handle.cleanup(reason);
+    } catch (error) {
+      logToFile(
+        `清理重连临时连接异常(已忽略): ${reason} - ${error?.message || error}`,
+        "WARN",
+      );
+    }
+  }
+
+  _clearPendingReconnectConnection(session, reason = "unknown") {
+    if (!session?.pendingReconnectConnection) {
+      return;
+    }
+
+    const pendingConnection = session.pendingReconnectConnection;
+    session.pendingReconnectConnection = null;
+    this._cleanupReconnectConnection(pendingConnection, reason);
   }
 
   // 执行重连
@@ -853,10 +899,15 @@ class ReconnectionManager extends EventEmitter {
 
     session.state = RECONNECT_STATE.RECONNECTING;
     session.isReconnecting = true; // 标记正在重连
+    session.nextReconnectAt = null;
 
     // 等待网络/代理恢复（不消耗重试次数，但计入总耗时封顶）
     const preflightOk = await this._waitForPreflight(session);
     if (!preflightOk) {
+      if (this._shouldAbortReconnect(session)) {
+        session.isReconnecting = false;
+        return;
+      }
       session.isReconnecting = false;
       this.abandonReconnection(
         session,
@@ -899,10 +950,23 @@ class ReconnectionManager extends EventEmitter {
 
     this.statistics.totalAttempts++;
 
+    let newConnection = null;
+    let newConnectionAdopted = false;
+
     try {
       const attemptNumber = session.retryCount;
       // 创建新连接
-      const newConnection = await this.createNewConnection(session.config);
+      newConnection = await this.createNewConnection(session.config);
+      session.pendingReconnectConnection = newConnection;
+
+      if (this._shouldAbortReconnect(session)) {
+        session.isReconnecting = false;
+        this._clearPendingReconnectConnection(
+          session,
+          "reconnect-aborted-before-validate",
+        );
+        return;
+      }
 
       // 验证连接
       const isValid = await this.validateConnection(newConnection);
@@ -910,8 +974,19 @@ class ReconnectionManager extends EventEmitter {
         throw new Error("连接验证失败");
       }
 
+      if (this._shouldAbortReconnect(session)) {
+        session.isReconnecting = false;
+        this._clearPendingReconnectConnection(
+          session,
+          "reconnect-aborted-before-replace",
+        );
+        return;
+      }
+
       // 替换旧连接
       await this.replaceConnection(session, newConnection);
+      newConnectionAdopted = true;
+      session.pendingReconnectConnection = null;
 
       // 重连成功 - 取消所有待执行的重连任务
       this.cancelPendingReconnect(session.id);
@@ -942,9 +1017,24 @@ class ReconnectionManager extends EventEmitter {
         attempts: attemptNumber,
       });
     } catch (error) {
+      if (newConnection && !newConnectionAdopted) {
+        if (session?.pendingReconnectConnection === newConnection) {
+          session.pendingReconnectConnection = null;
+        }
+        this._cleanupReconnectConnection(
+          newConnection,
+          `reconnect-attempt-failed:${error?.message || error}`,
+        );
+      }
+
       // 重连过程中再次检查状态，避免在连接已成功时报告错误
       if (session.state === RECONNECT_STATE.CONNECTED) {
         logToFile(`重连异常被忽略(连接已成功): ${session.id}`, "DEBUG");
+        return;
+      }
+
+      if (this._shouldAbortReconnect(session)) {
+        session.isReconnecting = false;
         return;
       }
 
@@ -1023,22 +1113,130 @@ class ReconnectionManager extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       const ssh = new Client();
+      let proxySocket = null;
+      let settled = false;
+      let cleanedUp = false;
+      let adopted = false;
+
+      const finishResolve = (value) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        resolve(value);
+      };
+
+      const finishReject = (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        reject(error);
+      };
+
+      const cleanup = (reason = "unknown") => {
+        if (cleanedUp || adopted) {
+          return;
+        }
+
+        cleanedUp = true;
+        clearTimeout(timeout);
+
+        try {
+          ssh.removeListener("ready", onReady);
+          ssh.removeListener("error", onError);
+          ssh.removeListener("close", onClose);
+        } catch {
+          /* intentionally ignored */
+        }
+
+        try {
+          if (proxySocket && typeof proxySocket.destroy === "function") {
+            proxySocket.destroy();
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+
+        try {
+          if (
+            ssh._sock &&
+            ssh._sock !== proxySocket &&
+            typeof ssh._sock.destroy === "function"
+          ) {
+            ssh._sock.destroy();
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+
+        try {
+          if (typeof ssh.end === "function") {
+            ssh.end();
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+
+        logToFile(
+          `清理重连阶段临时连接: ${processedConfig.host}:${processedConfig.port || 22}, reason=${reason}`,
+          "DEBUG",
+        );
+      };
+
+      const connectionHandle = {
+        client: ssh,
+        proxySocket: null,
+        isClosed: () => cleanedUp,
+        claim: () => {
+          adopted = true;
+        },
+        cleanup,
+        adopt: () => {
+          adopted = true;
+          clearTimeout(timeout);
+          try {
+            ssh.removeListener("ready", onReady);
+            ssh.removeListener("error", onError);
+            ssh.removeListener("close", onClose);
+          } catch {
+            /* intentionally ignored */
+          }
+        },
+      };
 
       const timeout = setTimeout(() => {
-        ssh.end();
-        reject(new Error("连接超时"));
+        cleanup("connect-timeout");
+        finishReject(new Error("连接超时"));
       }, connectionTimeoutMs);
 
-      ssh.on("ready", () => {
+      const onReady = () => {
         clearTimeout(timeout);
         applySocketNetworkProfile(ssh._sock, networkProfile);
-        resolve(ssh);
-      });
+        finishResolve(connectionHandle);
+      };
 
-      ssh.on("error", (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
+      const onError = (err) => {
+        if (adopted || cleanedUp) {
+          return;
+        }
+
+        cleanup(`connect-error:${err?.message || err}`);
+        finishReject(err);
+      };
+
+      const onClose = () => {
+        if (adopted || cleanedUp) {
+          return;
+        }
+
+        cleanup("connect-closed");
+        finishReject(new Error("连接已关闭"));
+      };
+
+      ssh.on("ready", onReady);
+      ssh.on("error", onError);
+      ssh.on("close", onClose);
 
       const connectionOptions = {
         host: processedConfig.host,
@@ -1080,18 +1278,15 @@ class ReconnectionManager extends EventEmitter {
               { timeoutMs: connectionTimeoutMs },
             );
             applySocketNetworkProfile(sock, networkProfile);
+            proxySocket = sock;
+            connectionHandle.proxySocket = sock;
             connectionOptions.sock = sock;
           }
 
           ssh.connect(connectionOptions);
         } catch (e) {
-          clearTimeout(timeout);
-          try {
-            ssh.end();
-          } catch {
-            /* intentionally ignored */
-          }
-          reject(e);
+          cleanup(`connect-setup-error:${e?.message || e}`);
+          finishReject(e);
         }
       })();
     });
@@ -1099,6 +1294,7 @@ class ReconnectionManager extends EventEmitter {
 
   // 验证连接
   async validateConnection(connection) {
+    const client = connection?.client || connection;
     const timeoutMs = 3000;
 
     const tryExec = () =>
@@ -1113,7 +1309,7 @@ class ReconnectionManager extends EventEmitter {
 
         try {
           // 执行简单命令测试连接
-          connection.exec("echo test", (err, stream) => {
+          client.exec("echo test", (err, stream) => {
             if (err) {
               clearTimeout(timeoutId);
               finish(false);
@@ -1152,7 +1348,7 @@ class ReconnectionManager extends EventEmitter {
         const timeoutId = setTimeout(() => finish(false), timeoutMs);
 
         try {
-          connection.sftp((err, sftp) => {
+          client.sftp((err, sftp) => {
             if (err) {
               clearTimeout(timeoutId);
               finish(false);
@@ -1187,7 +1383,7 @@ class ReconnectionManager extends EventEmitter {
         const timeoutId = setTimeout(() => finish(false), timeoutMs);
 
         try {
-          connection.shell((err, stream) => {
+          client.shell((err, stream) => {
             if (err) {
               clearTimeout(timeoutId);
               finish(false);
@@ -1222,6 +1418,14 @@ class ReconnectionManager extends EventEmitter {
       return;
     }
 
+    const nextConnection = newConnection.client || newConnection;
+    if (
+      typeof newConnection.isClosed === "function" &&
+      newConnection.isClosed()
+    ) {
+      throw new Error("重连连接在接管前已关闭");
+    }
+
     if (this.replacingSessions.has(session.id)) {
       logToFile(`跳过并发连接替换: ${session.id}`, "DEBUG");
       return;
@@ -1230,7 +1434,7 @@ class ReconnectionManager extends EventEmitter {
     this.replacingSessions.add(session.id);
     const oldConnection = session.connection;
 
-    if (oldConnection === newConnection) {
+    if (oldConnection === nextConnection) {
       this.replacingSessions.delete(session.id);
       return;
     }
@@ -1244,11 +1448,19 @@ class ReconnectionManager extends EventEmitter {
         oldConnection.removeAllListeners();
       }
 
+      if (typeof newConnection.claim === "function") {
+        newConnection.claim();
+      }
+
       // 设置新连接
-      session.connection = newConnection;
+      session.connection = nextConnection;
 
       // 设置新连接的监听器
       this.setupConnectionListeners(session);
+
+      if (typeof newConnection.adopt === "function") {
+        newConnection.adopt();
+      }
 
       // 尝试优雅关闭旧连接
       try {
@@ -1261,7 +1473,7 @@ class ReconnectionManager extends EventEmitter {
 
       this.emit("connectionReplaced", {
         sessionId: session.id,
-        newConnection,
+        newConnection: nextConnection,
       });
     } finally {
       this.replacingSessions.delete(session.id);
@@ -1298,6 +1510,9 @@ class ReconnectionManager extends EventEmitter {
     // 取消待执行的重连任务
     this.cancelPendingReconnect(sessionId);
 
+    // 清理重连阶段新建但尚未接管的连接
+    this._clearPendingReconnectConnection(session, "cleanup-session");
+
     // 关闭连接
     try {
       session.connection.end();
@@ -1325,6 +1540,7 @@ class ReconnectionManager extends EventEmitter {
       state: session.state,
       retryCount: session.retryCount,
       maxRetries: this.config.maxRetries,
+      nextReconnectAt: session.nextReconnectAt,
       lastAttempt: session.lastAttempt,
       lastError: session.lastError ? session.lastError.message : null,
       qualityMetrics: session.qualityMetrics,
@@ -1484,7 +1700,9 @@ class ReconnectionManager extends EventEmitter {
     const session = this.sessions.get(sessionId);
     if (session) {
       this.cancelPendingReconnect(sessionId);
+      this._clearPendingReconnectConnection(session, "pause-reconnect");
       session.state = RECONNECT_STATE.ABANDONED;
+      session.isReconnecting = false;
       logToFile(`暂停重连: ${sessionId}`, "INFO");
     }
   }
