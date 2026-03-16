@@ -1,4 +1,5 @@
 import React, { memo, useCallback } from "react";
+import PropTypes from "prop-types";
 import { Box, Typography, Tab, GlobalStyles, Tooltip } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { findGroupByTab } from "../core/syncInputGroups";
@@ -15,6 +16,20 @@ const dragIndicatorStyles = (
         "100%": {
           transform: "scaleY(1)",
           opacity: 1,
+        },
+      },
+      "@keyframes reconnectPulse": {
+        "0%": {
+          transform: "scale(0.9)",
+          opacity: 0.8,
+        },
+        "50%": {
+          transform: "scale(1.15)",
+          opacity: 1,
+        },
+        "100%": {
+          transform: "scale(0.9)",
+          opacity: 0.8,
         },
       },
     }}
@@ -37,6 +52,8 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.onDragLeave === nextProps.onDragLeave &&
     prevProps.onDrop === nextProps.onDrop &&
     prevProps.onDragEnd === nextProps.onDragEnd &&
+    prevProps.statusColor === nextProps.statusColor &&
+    prevProps.statusTooltip === nextProps.statusTooltip &&
     prevProps.isDraggedOver === nextProps.isDraggedOver &&
     prevProps.dragInsertPosition === nextProps.dragInsertPosition
   );
@@ -57,6 +74,8 @@ const CustomTab = memo((props) => {
     onDrop,
     onDragEnd, // 拖拽结束回调
     tabId, // 每个Tab需传递tabId
+    statusColor = null,
+    statusTooltip = null,
     isDraggedOver = false, // 是否被拖拽悬停
     dragInsertPosition = null, // 插入位置 ('before' | 'after')
     ...other
@@ -230,6 +249,40 @@ const CustomTab = memo((props) => {
             >
               {label}
             </Typography>
+            {statusColor &&
+              (statusTooltip ? (
+                <Tooltip title={statusTooltip}>
+                  <Box
+                    component="span"
+                    sx={{
+                      width: 8,
+                      height: 8,
+                      minWidth: 8,
+                      minHeight: 8,
+                      borderRadius: "50%",
+                      bgcolor: statusColor,
+                      mr: 1,
+                      boxShadow: "0 0 0 1px rgba(255,255,255,0.75)",
+                      animation: "reconnectPulse 1.6s ease-in-out infinite",
+                    }}
+                  />
+                </Tooltip>
+              ) : (
+                <Box
+                  component="span"
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    minWidth: 8,
+                    minHeight: 8,
+                    borderRadius: "50%",
+                    bgcolor: statusColor,
+                    mr: 1,
+                    boxShadow: "0 0 0 1px rgba(255,255,255,0.75)",
+                    animation: "reconnectPulse 1.6s ease-in-out infinite",
+                  }}
+                />
+              ))}
             {onClose && (
               <CloseIcon
                 fontSize="small"
@@ -309,5 +362,24 @@ const CustomTab = memo((props) => {
 
 // 设置显示名称用于调试
 CustomTab.displayName = "CustomTab";
+
+CustomTab.propTypes = {
+  label: PropTypes.node.isRequired,
+  onClose: PropTypes.func,
+  onContextMenu: PropTypes.func,
+  onClick: PropTypes.func,
+  index: PropTypes.number,
+  draggable: PropTypes.bool,
+  onDragStart: PropTypes.func,
+  onDragOver: PropTypes.func,
+  onDragLeave: PropTypes.func,
+  onDrop: PropTypes.func,
+  onDragEnd: PropTypes.func,
+  tabId: PropTypes.string,
+  statusColor: PropTypes.string,
+  statusTooltip: PropTypes.string,
+  isDraggedOver: PropTypes.bool,
+  dragInsertPosition: PropTypes.oneOf(["before", "after", null]),
+};
 
 export default CustomTab;

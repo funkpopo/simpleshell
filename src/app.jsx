@@ -19,6 +19,7 @@ import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Tabs from "@mui/material/Tabs";
+import Typography from "@mui/material/Typography";
 import AppsIcon from "@mui/icons-material/Apps";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
@@ -81,6 +82,8 @@ import ListItemText from "@mui/material/ListItemText";
 import Divider from "@mui/material/Divider";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import AddIcon from "@mui/icons-material/Add";
+import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
+import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
 import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
 import { useEventManager } from "./core/utils/eventManager.js";
 import ErrorNotification from "./components/ErrorNotification.jsx";
@@ -88,6 +91,7 @@ import GlobalTransferBar from "./components/GlobalTransferBar.jsx";
 import GlobalTransferFloat from "./components/GlobalTransferFloat.jsx";
 import TransferSidebar from "./components/TransferSidebar.jsx";
 import TransferSidebarButton from "./components/TransferSidebarButton.jsx";
+import { useNotification } from "./contexts/NotificationContext.jsx";
 
 const resolveConnectionPort = (connection) => {
   if (!connection) return null;
@@ -235,10 +239,89 @@ const buildRecentConnectionsSignature = (items) => {
 const normalizeSidebarPosition = (position) =>
   position === "left" ? "left" : "right";
 
+const RECONNECT_STATE_COLORS = {
+  pending: "#ed6c02",
+  reconnecting: "#0288d1",
+  failed: "#d32f2f",
+  abandoned: "#d32f2f",
+  paused: "#9e9e9e",
+};
+
+const normalizeReconnectUiState = (state) => {
+  switch (state) {
+    case "pending":
+    case "reconnecting":
+    case "failed":
+    case "abandoned":
+    case "paused":
+      return state;
+    default:
+      return null;
+  }
+};
+
+const getReconnectStatusColor = (state) =>
+  RECONNECT_STATE_COLORS[normalizeReconnectUiState(state)] || null;
+
+const getReconnectCountdownSeconds = (nextReconnectAt, now = Date.now()) => {
+  const target = Number(nextReconnectAt);
+  if (!Number.isFinite(target) || target <= 0) {
+    return null;
+  }
+  return Math.max(0, Math.ceil((target - now) / 1000));
+};
+
+const buildReconnectStatusTitle = (t, status, now = Date.now()) => {
+  const state = normalizeReconnectUiState(status?.state);
+  const seconds = getReconnectCountdownSeconds(status?.nextReconnectAt, now);
+
+  switch (state) {
+    case "pending":
+      return Number.isFinite(seconds) && seconds > 0
+        ? t("tabMenu.reconnectWaitingRetry", { seconds })
+        : t("tabMenu.reconnectPending");
+    case "reconnecting":
+      return t("tabMenu.reconnecting");
+    case "failed":
+      return t("tabMenu.reconnectFailed");
+    case "abandoned":
+      return t("tabMenu.reconnectStopped");
+    case "paused":
+      return t("tabMenu.reconnectPaused");
+    default:
+      return null;
+  }
+};
+
+const buildReconnectBadgeTooltip = (t, status, now = Date.now()) => {
+  const title = buildReconnectStatusTitle(t, status, now);
+  if (!title) {
+    return null;
+  }
+
+  const attempts = Number(status?.attempts);
+  const maxAttempts = Number(status?.maxAttempts);
+  if (
+    Number.isFinite(attempts) &&
+    Number.isFinite(maxAttempts) &&
+    maxAttempts
+  ) {
+    return `${title} (${attempts}/${maxAttempts})`;
+  }
+
+  return title;
+};
+
+const canPauseReconnectStatus = (status) => {
+  const state = normalizeReconnectUiState(status?.state);
+  return state === "pending" || state === "reconnecting";
+};
+
 function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
   const eventManager = useEventManager(); // 使用统一的事件管理器
+  const { showError, showInfo } = useNotification();
 
   // 使用全局状态和 dispatch
   const state = useAppState();
@@ -365,6 +448,223 @@ function AppContent() {
 
   // 锁定的文件管理器tabId（在打开时不随标签页切换而变化）
   const [lockedFileManagerTabId, setLockedFileManagerTabId] = useState(null);
+  const [reconnectStateByTabId, setReconnectStateByTabId] = React.useState({});
+  const [reconnectActionTabId, setReconnectActionTabId] = React.useState(null);
+  const [reconnectNow, setReconnectNow] = React.useState(Date.now());
+
+  const updateReconnectStatus = useCallback((tabId, updater) => {
+    if (!tabId) {
+      return;
+    }
+
+    setReconnectStateByTabId((previous) => {
+      const current = previous[tabId] || { tabId };
+      const draft =
+        typeof updater === "function"
+          ? updater(current)
+          : { ...current, ...updater };
+      const normalizedState = normalizeReconnectUiState(draft?.state);
+
+      if (!normalizedState) {
+        if (!previous[tabId]) {
+          return previous;
+        }
+
+        const next = { ...previous };
+        delete next[tabId];
+        return next;
+      }
+
+      return {
+        ...previous,
+        [tabId]: {
+          ...current,
+          ...draft,
+          tabId,
+          state: normalizedState,
+          updatedAt: Date.now(),
+        },
+      };
+    });
+  }, []);
+
+  const clearReconnectStatus = useCallback((tabId) => {
+    if (!tabId) {
+      return;
+    }
+
+    setReconnectStateByTabId((previous) => {
+      if (!previous[tabId]) {
+        return previous;
+      }
+
+      const next = { ...previous };
+      delete next[tabId];
+      return next;
+    });
+  }, []);
+
+  const loadReconnectStatus = useCallback(
+    async (tabId) => {
+      if (!tabId || !window.terminalAPI?.getReconnectStatus) {
+        return;
+      }
+
+      try {
+        const status = await window.terminalAPI.getReconnectStatus({ tabId });
+        const normalizedState = normalizeReconnectUiState(status?.state);
+        if (!normalizedState) {
+          return;
+        }
+
+        updateReconnectStatus(tabId, {
+          state: normalizedState,
+          attempts: Number(status?.retryCount || 0),
+          maxAttempts: Number(status?.maxRetries || 0),
+          nextRetryAt: Number(status?.nextReconnectAt || 0) || null,
+          error: status?.lastError || null,
+          hint: null,
+        });
+      } catch (error) {
+        console.warn("Failed to load reconnect status:", error);
+      }
+    },
+    [updateReconnectStatus],
+  );
+
+  React.useEffect(() => {
+    const activeTabIds = new Set(tabs.map((tab) => tab.id));
+    setReconnectStateByTabId((previous) => {
+      let changed = false;
+      const next = {};
+
+      Object.entries(previous).forEach(([tabId, value]) => {
+        if (activeTabIds.has(tabId)) {
+          next[tabId] = value;
+        } else {
+          changed = true;
+        }
+      });
+
+      return changed ? next : previous;
+    });
+  }, [tabs]);
+
+  React.useEffect(() => {
+    if (!window.terminalAPI) {
+      return undefined;
+    }
+
+    const handleConnectionLost = (_event, payload) => {
+      if (!payload?.tabId) {
+        return;
+      }
+
+      updateReconnectStatus(payload.tabId, (current) => ({
+        ...current,
+        state: "pending",
+        nextRetryAt: null,
+        error: null,
+      }));
+    };
+
+    const handleReconnectStarted = (_event, payload) => {
+      if (!payload?.tabId) {
+        return;
+      }
+
+      updateReconnectStatus(payload.tabId, {
+        state: "reconnecting",
+        attempts: Number(payload?.attempts || 0),
+        maxAttempts: Number(payload?.maxAttempts || 0),
+        nextRetryAt: null,
+        error: null,
+        hint: payload?.hint || null,
+      });
+      setReconnectActionTabId((current) =>
+        current === payload.tabId ? null : current,
+      );
+    };
+
+    const handleReconnectProgress = (_event, payload) => {
+      if (!payload?.tabId) {
+        return;
+      }
+
+      const delay = Number(payload?.delay || 0);
+      const baseTimestamp = Number(payload?.timestamp || Date.now());
+      updateReconnectStatus(payload.tabId, {
+        state: "pending",
+        attempts: Number(payload?.attempts || 0),
+        maxAttempts: Number(payload?.maxAttempts || 0),
+        nextRetryAt:
+          Number.isFinite(delay) && delay > 0 ? baseTimestamp + delay : null,
+        error: null,
+        hint: payload?.hint || null,
+      });
+      setReconnectActionTabId((current) =>
+        current === payload.tabId ? null : current,
+      );
+    };
+
+    const handleReconnectSuccess = (_event, payload) => {
+      if (!payload?.tabId) {
+        return;
+      }
+
+      clearReconnectStatus(payload.tabId);
+      setReconnectActionTabId((current) =>
+        current === payload.tabId ? null : current,
+      );
+    };
+
+    const handleReconnectFailed = (_event, payload) => {
+      if (!payload?.tabId) {
+        return;
+      }
+
+      updateReconnectStatus(payload.tabId, {
+        state: "failed",
+        attempts: Number(payload?.attempts || 0),
+        maxAttempts: Number(payload?.maxAttempts || 0),
+        nextRetryAt: null,
+        error: payload?.error || null,
+        hint: payload?.hint || null,
+      });
+      setReconnectActionTabId((current) =>
+        current === payload.tabId ? null : current,
+      );
+    };
+
+    const handleReconnectAbandoned = (_event, payload) => {
+      if (!payload?.tabId) {
+        return;
+      }
+
+      updateReconnectStatus(payload.tabId, {
+        state: "abandoned",
+        attempts: Number(payload?.attempts || 0),
+        maxAttempts: Number(payload?.maxAttempts || 0),
+        nextRetryAt: null,
+        error: payload?.error || null,
+        hint: payload?.hint || null,
+      });
+      setReconnectActionTabId((current) =>
+        current === payload.tabId ? null : current,
+      );
+    };
+
+    window.terminalAPI.onConnectionLost?.(handleConnectionLost);
+    window.terminalAPI.onReconnectStart?.(handleReconnectStarted);
+    window.terminalAPI.onReconnectProgress?.(handleReconnectProgress);
+    window.terminalAPI.onReconnectSuccess?.(handleReconnectSuccess);
+    window.terminalAPI.onReconnectFailed?.(handleReconnectFailed);
+    window.terminalAPI.onReconnectAbandoned?.(handleReconnectAbandoned);
+
+    return () => {
+      window.terminalAPI?.removeReconnectListeners?.();
+    };
+  }, [clearReconnectStatus, updateReconnectStatus]);
 
   // 监听 SSH 认证请求
   React.useEffect(() => {
@@ -490,6 +790,53 @@ function AppContent() {
   const sidebarTooltipPlacement = "top";
   const transferSidebarButtonRef = useRef(null);
   const aiChatButtonRef = useRef(null);
+  const contextMenuTab =
+    tabContextMenu.tabIndex !== null &&
+    tabContextMenu.tabIndex >= 0 &&
+    tabContextMenu.tabIndex < tabs.length
+      ? tabs[tabContextMenu.tabIndex]
+      : null;
+  const contextMenuReconnectStatus = contextMenuTab
+    ? reconnectStateByTabId[contextMenuTab.id] || null
+    : null;
+  const isContextMenuSshTab = contextMenuTab?.type === "ssh";
+  const reconnectStatusTitle = buildReconnectStatusTitle(
+    t,
+    contextMenuReconnectStatus,
+    reconnectNow,
+  );
+  const reconnectStatusColor = getReconnectStatusColor(
+    contextMenuReconnectStatus?.state,
+  );
+  const reconnectCountdownSeconds = getReconnectCountdownSeconds(
+    contextMenuReconnectStatus?.nextRetryAt,
+    reconnectNow,
+  );
+  const isReconnectActionPending =
+    Boolean(contextMenuTab?.id) && reconnectActionTabId === contextMenuTab.id;
+
+  React.useEffect(() => {
+    if (
+      tabContextMenu.mouseY === null ||
+      !contextMenuReconnectStatus?.nextRetryAt ||
+      contextMenuReconnectStatus.state !== "pending"
+    ) {
+      return undefined;
+    }
+
+    setReconnectNow(Date.now());
+    const timerId = setInterval(() => {
+      setReconnectNow(Date.now());
+    }, 1000);
+
+    return () => {
+      clearInterval(timerId);
+    };
+  }, [
+    contextMenuReconnectStatus?.nextRetryAt,
+    contextMenuReconnectStatus?.state,
+    tabContextMenu.mouseY,
+  ]);
 
   const handleTabsWheel = useCallback((event) => {
     const scroller = event.currentTarget;
@@ -1012,8 +1359,12 @@ function AppContent() {
           tabId: tabId,
         }),
       );
+
+      if (tabs[index]?.type === "ssh") {
+        void loadReconnectStatus(tabId);
+      }
     },
-    [tabs, dispatch],
+    [tabs, dispatch, loadReconnectStatus],
   );
 
   // 标签页右键菜单关闭
@@ -1105,6 +1456,140 @@ function AppContent() {
     }
     handleTabContextMenuClose();
   };
+
+  const handleManualReconnect = useCallback(async () => {
+    const tabId = tabContextMenu.tabId;
+    if (!tabId) {
+      return;
+    }
+
+    if (!window.terminalAPI?.manualReconnect) {
+      showError(t("app.apiNotFound"));
+      return;
+    }
+
+    const sshConfig = terminalInstances[`${tabId}-config`] || null;
+    setReconnectActionTabId(tabId);
+    updateReconnectStatus(tabId, (current) => ({
+      ...current,
+      state: "reconnecting",
+      nextRetryAt: null,
+      error: null,
+    }));
+
+    try {
+      const result = await window.terminalAPI.manualReconnect({
+        tabId,
+        sshConfig,
+      });
+      if (result && result.success === false) {
+        throw new Error(result.error || t("tabMenu.manualReconnect"));
+      }
+
+      setReconnectActionTabId(null);
+      showInfo(t("tabMenu.manualReconnectStarted"));
+      handleTabContextMenuClose();
+    } catch (error) {
+      updateReconnectStatus(tabId, (current) => ({
+        ...current,
+        state: "failed",
+        nextRetryAt: null,
+        error: error?.message || String(error),
+      }));
+      setReconnectActionTabId(null);
+      showError(error?.message || t("tabMenu.manualReconnect"));
+    }
+  }, [
+    handleTabContextMenuClose,
+    showError,
+    showInfo,
+    t,
+    tabContextMenu.tabId,
+    terminalInstances,
+    updateReconnectStatus,
+  ]);
+
+  const handlePauseReconnect = useCallback(async () => {
+    const tabId = tabContextMenu.tabId;
+    if (!tabId) {
+      return;
+    }
+
+    if (!window.terminalAPI?.pauseReconnect) {
+      showError(t("app.apiNotFound"));
+      return;
+    }
+
+    setReconnectActionTabId(tabId);
+
+    try {
+      const result = await window.terminalAPI.pauseReconnect({ tabId });
+      if (result && result.success === false) {
+        throw new Error(result.error || t("tabMenu.pauseReconnect"));
+      }
+
+      updateReconnectStatus(tabId, (current) => ({
+        ...current,
+        state: "paused",
+        nextRetryAt: null,
+        error: null,
+      }));
+      setReconnectActionTabId(null);
+      showInfo(t("tabMenu.pauseReconnectDone"));
+      handleTabContextMenuClose();
+    } catch (error) {
+      setReconnectActionTabId(null);
+      showError(error?.message || t("tabMenu.pauseReconnect"));
+    }
+  }, [
+    handleTabContextMenuClose,
+    showError,
+    showInfo,
+    t,
+    tabContextMenu.tabId,
+    updateReconnectStatus,
+  ]);
+
+  const handleResumeReconnect = useCallback(async () => {
+    const tabId = tabContextMenu.tabId;
+    if (!tabId) {
+      return;
+    }
+
+    if (!window.terminalAPI?.resumeReconnect) {
+      showError(t("app.apiNotFound"));
+      return;
+    }
+
+    setReconnectActionTabId(tabId);
+
+    try {
+      const result = await window.terminalAPI.resumeReconnect({ tabId });
+      if (result && result.success === false) {
+        throw new Error(result.error || t("tabMenu.resumeReconnect"));
+      }
+
+      updateReconnectStatus(tabId, (current) => ({
+        ...current,
+        state: "pending",
+        nextRetryAt: null,
+        error: null,
+      }));
+      setReconnectActionTabId(null);
+      showInfo(t("tabMenu.resumeReconnectDone"));
+      handleTabContextMenuClose();
+    } catch (error) {
+      setReconnectActionTabId(null);
+      showError(error?.message || t("tabMenu.resumeReconnect"));
+    }
+  }, [
+    handleTabContextMenuClose,
+    showError,
+    showInfo,
+    t,
+    tabContextMenu.tabId,
+    updateReconnectStatus,
+  ]);
 
   // 创建远程连接（SSH或Telnet）
   const handleCreateSSHConnection = useCallback(
@@ -1218,6 +1703,11 @@ function AppContent() {
     const newPaths = { ...fileManagerPaths };
     delete newPaths[tabToRemove.id];
     dispatch(actions.setFileManagerPaths(newPaths));
+
+    clearReconnectStatus(tabToRemove.id);
+    setReconnectActionTabId((current) =>
+      current === tabToRemove.id ? null : current,
+    );
 
     const newTabs = tabs.filter((_, i) => i !== index);
     dispatch(actions.setTabs(newTabs));
@@ -2178,11 +2668,21 @@ function AppContent() {
                       index === 0
                         ? t("terminal.welcome")
                         : tab.label || tab.title || "";
+                    const tabReconnectStatus = reconnectStateByTabId[tab.id];
+                    const tabReconnectColor = getReconnectStatusColor(
+                      tabReconnectStatus?.state,
+                    );
+                    const tabReconnectTooltip = buildReconnectBadgeTooltip(
+                      t,
+                      tabReconnectStatus,
+                    );
 
                     return (
                       <CustomTab
                         key={tab.id}
                         label={label}
+                        statusColor={tabReconnectColor}
+                        statusTooltip={tabReconnectTooltip}
                         onClose={
                           tab.id !== "welcome"
                             ? () => handleCloseTab(index)
@@ -2264,6 +2764,139 @@ function AppContent() {
               <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
               {t("tabMenu.close")}
             </MenuItem>
+
+            {isContextMenuSshTab && <Divider />}
+
+            {isContextMenuSshTab && contextMenuReconnectStatus && (
+              <Box
+                sx={{
+                  px: 2,
+                  py: 1.25,
+                  maxWidth: 320,
+                  WebkitAppRegion: "no-drag",
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{ color: "text.secondary", display: "block", mb: 0.75 }}
+                >
+                  {t("tabMenu.reconnectStatus")}
+                </Typography>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    mb: 0.75,
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      bgcolor: reconnectStatusColor || "text.disabled",
+                      flexShrink: 0,
+                    }}
+                  />
+                  <Typography variant="body2">
+                    {reconnectStatusTitle}
+                  </Typography>
+                </Box>
+                {Number.isFinite(
+                  Number(contextMenuReconnectStatus?.attempts),
+                ) &&
+                  Number.isFinite(
+                    Number(contextMenuReconnectStatus?.maxAttempts),
+                  ) &&
+                  Number(contextMenuReconnectStatus?.maxAttempts) > 0 && (
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary", display: "block" }}
+                    >
+                      {t("tabMenu.retryAttempts", {
+                        attempts: Number(contextMenuReconnectStatus.attempts),
+                        maxAttempts: Number(
+                          contextMenuReconnectStatus.maxAttempts,
+                        ),
+                      })}
+                    </Typography>
+                  )}
+                {Number.isFinite(reconnectCountdownSeconds) &&
+                  reconnectCountdownSeconds > 0 && (
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary", display: "block" }}
+                    >
+                      {t("tabMenu.nextRetryIn", {
+                        seconds: reconnectCountdownSeconds,
+                      })}
+                    </Typography>
+                  )}
+                {contextMenuReconnectStatus?.error && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "error.main",
+                      display: "block",
+                      mt: 0.75,
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {t("tabMenu.lastError", {
+                      error: contextMenuReconnectStatus.error,
+                    })}
+                  </Typography>
+                )}
+                {contextMenuReconnectStatus?.hint && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "text.secondary",
+                      display: "block",
+                      mt: 0.5,
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {t("tabMenu.reconnectHint", {
+                      hint: contextMenuReconnectStatus.hint,
+                    })}
+                  </Typography>
+                )}
+              </Box>
+            )}
+
+            {isContextMenuSshTab && (
+              <MenuItem
+                onClick={handleManualReconnect}
+                disabled={isReconnectActionPending}
+              >
+                <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
+                {t("tabMenu.manualReconnect")}
+              </MenuItem>
+            )}
+
+            {isContextMenuSshTab &&
+              canPauseReconnectStatus(contextMenuReconnectStatus) && (
+                <MenuItem
+                  onClick={handlePauseReconnect}
+                  disabled={isReconnectActionPending}
+                >
+                  <PauseCircleOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("tabMenu.pauseReconnect")}
+                </MenuItem>
+              )}
+
+            {isContextMenuSshTab &&
+              contextMenuReconnectStatus?.state === "paused" && (
+                <MenuItem
+                  onClick={handleResumeReconnect}
+                  disabled={isReconnectActionPending}
+                >
+                  <PlayCircleOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("tabMenu.resumeReconnect")}
+                </MenuItem>
+              )}
             {/* 分组相关菜单项 */}
             {(() => {
               const tabId = tabContextMenu.tabId;
