@@ -3,9 +3,19 @@ const fsp = require("fs/promises");
 const path = require("path");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
-const { Client } = require("ssh2");
-
-const proxyManager = require("../core/proxy/proxy-manager");
+const {
+  DEFAULT_SSH_RETRY_CONFIG,
+  FAILURE_REASON,
+  buildSshRetryConfig,
+  analyzeSshFailureReason,
+  getEffectiveMaxRetries,
+  getRemainingRetryWindowMs,
+  getRetryWindowExpiresAt,
+  isRetryWindowExpired,
+  waitForSshPreflight,
+  calculateRetryDelay,
+  createManagedSshConnection,
+} = require("../core/connection/ssh-retry-helper");
 
 const DEFAULT_PROGRESS_INTERVAL_MS = 100;
 const DEFAULT_STALL_TIMEOUT_MS = 45000;
@@ -76,6 +86,9 @@ function isRetryableTransferError(error) {
     message.includes("no progress") ||
     code === "ETIMEDOUT" ||
     code === "ECONNRESET" ||
+    code === "ECONNREFUSED" ||
+    code === "ENETUNREACH" ||
+    code === "EPIPE" ||
     code === "ENOTCONN"
   );
 }
@@ -135,60 +148,163 @@ async function buildSshConnectOptions(sshConfig = {}) {
     throw new Error("Invalid SSH configuration for transfer worker");
   }
 
-  const options = {
-    host: sshConfig.host,
-    port: Number.isFinite(sshConfig.port) ? sshConfig.port : 22,
-    username: sshConfig.username,
-    readyTimeout: Number.isFinite(sshConfig.readyTimeout)
-      ? sshConfig.readyTimeout
-      : 30000,
-    keepaliveInterval: Number.isFinite(sshConfig.keepaliveInterval)
-      ? sshConfig.keepaliveInterval
-      : 15000,
-    keepaliveCountMax: Number.isFinite(sshConfig.keepaliveCountMax)
-      ? sshConfig.keepaliveCountMax
-      : 5,
-  };
+  return sshConfig;
+}
 
-  if (sshConfig.password) {
-    options.password = sshConfig.password;
+function resolveWorkerRetryConfig(sshConfig = {}) {
+  return buildSshRetryConfig({
+    ...DEFAULT_SSH_RETRY_CONFIG,
+    ...(sshConfig.retryConfig || sshConfig.reconnectConfig || {}),
+  });
+}
+
+function buildConnectWindowTimeoutError(retryConfig, windowStartedAt) {
+  const error = new Error("SSH 连接重试超时，请检查代理/VPN/网络后重试。");
+  error.code = "ETIMEDOUT";
+  error.windowExpiresAt = getRetryWindowExpiresAt(windowStartedAt, retryConfig);
+  return error;
+}
+
+function isSessionHealthy(session) {
+  if (!session?.client || !session?.sftp) {
+    return false;
   }
 
-  if (sshConfig.privateKey) {
-    options.privateKey = sshConfig.privateKey;
-  } else if (sshConfig.privateKeyPath) {
-    options.privateKey = await fsp.readFile(sshConfig.privateKeyPath, "utf8");
+  if (session.client.destroyed || session.sftp.destroyed) {
+    return false;
   }
 
-  if (sshConfig.passphrase) {
-    options.passphrase = sshConfig.passphrase;
-  }
-
-  let proxySocket = null;
+  const sock = session.client._sock;
   if (
-    sshConfig.proxy &&
-    typeof proxyManager?.createTunnelSocket === "function" &&
-    sshConfig.proxy.host &&
-    sshConfig.proxy.port &&
-    sshConfig.proxy.type
+    sock &&
+    (sock.destroyed || (sock.readable === false && sock.writable === false))
   ) {
-    proxySocket = await proxyManager.createTunnelSocket(
-      sshConfig.proxy,
-      options.host,
-      options.port,
+    return false;
+  }
+
+  return true;
+}
+
+async function createSftpClient(client) {
+  return new Promise((resolve, reject) => {
+    client.sftp((error, sftpClient) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(sftpClient);
+    });
+  });
+}
+
+async function connectSessionWithRetry(envelope, sshConfig) {
+  const normalizedConfig = await buildSshConnectOptions(sshConfig);
+  const retryConfig = resolveWorkerRetryConfig(normalizedConfig);
+  const windowStartedAt = Date.now();
+  let attemptCount = 0;
+  let failureReason = FAILURE_REASON.NETWORK;
+  let lastError = null;
+
+  while (true) {
+    if (isTaskCancelled(envelope)) {
+      throw buildCancelledError();
+    }
+
+    const effectiveMaxRetries = getEffectiveMaxRetries(
+      retryConfig,
+      normalizedConfig,
+      failureReason,
+    );
+    const nextAttempt = attemptCount + 1;
+    if (nextAttempt > effectiveMaxRetries) {
+      throw lastError || new Error("SSH session retry limit reached");
+    }
+
+    if (isRetryWindowExpired(windowStartedAt, retryConfig)) {
+      throw buildConnectWindowTimeoutError(retryConfig, windowStartedAt);
+    }
+
+    const preflightOk = await waitForSshPreflight(
+      normalizedConfig,
+      retryConfig,
       {
-        timeoutMs: Number.isFinite(sshConfig.proxyTimeoutMs)
-          ? sshConfig.proxyTimeoutMs
-          : 15000,
+        windowStartedAt,
+        shouldAbort: () => isTaskCancelled(envelope),
       },
     );
-    options.sock = proxySocket;
-  }
+    if (!preflightOk) {
+      if (isTaskCancelled(envelope)) {
+        throw buildCancelledError();
+      }
+      throw buildConnectWindowTimeoutError(retryConfig, windowStartedAt);
+    }
 
-  return {
-    options,
-    proxySocket,
-  };
+    let connectionHandle = null;
+    try {
+      connectionHandle = await createManagedSshConnection(normalizedConfig);
+      const sftp = await createSftpClient(connectionHandle.client);
+      attemptCount = nextAttempt;
+
+      return {
+        transferKey: envelope.transferKey,
+        tabId: envelope.tabId,
+        sshConfig: normalizedConfig,
+        client: connectionHandle.client,
+        sftp,
+        proxySocket: connectionHandle.proxySocket,
+        connectionHandle,
+        reconnectMeta: {
+          attempts: attemptCount,
+          failureReason,
+          effectiveMaxRetries,
+          windowExpiresAt: getRetryWindowExpiresAt(
+            windowStartedAt,
+            retryConfig,
+          ),
+        },
+      };
+    } catch (error) {
+      if (connectionHandle?.cleanup) {
+        try {
+          connectionHandle.cleanup("worker-connect-retry");
+        } catch {
+          // ignore
+        }
+      }
+
+      lastError = error;
+      attemptCount = nextAttempt;
+      failureReason = analyzeSshFailureReason(error);
+
+      const nextMaxRetries = getEffectiveMaxRetries(
+        retryConfig,
+        normalizedConfig,
+        failureReason,
+      );
+      if (
+        nextMaxRetries <= 0 ||
+        attemptCount >= nextMaxRetries ||
+        isRetryWindowExpired(windowStartedAt, retryConfig)
+      ) {
+        throw error;
+      }
+
+      const waitMs = Math.min(
+        calculateRetryDelay({
+          retryConfig,
+          attempt: attemptCount + 1,
+          lastError: error,
+        }),
+        getRemainingRetryWindowMs(windowStartedAt, retryConfig),
+      );
+
+      if (!Number.isFinite(waitMs) || waitMs <= 0) {
+        throw error;
+      }
+
+      await sleep(waitMs);
+    }
+  }
 }
 
 async function closeSession() {
@@ -197,6 +313,14 @@ async function closeSession() {
   try {
     if (currentSession.sftp && typeof currentSession.sftp.end === "function") {
       currentSession.sftp.end();
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (currentSession.connectionHandle?.cleanup) {
+      currentSession.connectionHandle.cleanup("worker-close-session");
     }
   } catch {
     // ignore
@@ -226,69 +350,15 @@ async function ensureSession(envelope, sshConfig) {
   if (
     currentSession &&
     currentSession.transferKey === envelope.transferKey &&
-    currentSession.tabId === envelope.tabId
+    currentSession.tabId === envelope.tabId &&
+    isSessionHealthy(currentSession)
   ) {
     return currentSession;
   }
 
   await closeSession();
 
-  const { options, proxySocket } = await buildSshConnectOptions(sshConfig);
-  const client = new Client();
-
-  const sftp = await new Promise((resolve, reject) => {
-    let settled = false;
-    const cleanup = () => {
-      client.removeListener("ready", onReady);
-      client.removeListener("error", onError);
-      client.removeListener("end", onEnd);
-      client.removeListener("close", onClose);
-    };
-    const onError = (error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-    const onEnd = () => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new Error("SSH connection ended before SFTP ready"));
-    };
-    const onClose = () => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new Error("SSH connection closed before SFTP ready"));
-    };
-    const onReady = () => {
-      client.sftp((error, sftpClient) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve(sftpClient);
-      });
-    };
-
-    client.once("ready", onReady);
-    client.once("error", onError);
-    client.once("end", onEnd);
-    client.once("close", onClose);
-    client.connect(options);
-  });
-
-  currentSession = {
-    transferKey: envelope.transferKey,
-    tabId: envelope.tabId,
-    client,
-    sftp,
-    proxySocket,
-  };
+  currentSession = await connectSessionWithRetry(envelope, sshConfig);
 
   return currentSession;
 }
@@ -582,7 +652,7 @@ async function transferWithStreams(envelope, task, attempt) {
   }
 }
 
-async function executeTaskWithRetry(envelope, task) {
+async function executeTaskWithRetry(envelope, task, sshConfig) {
   const maxRetries = Number.isFinite(task.maxRetries)
     ? Math.max(0, task.maxRetries)
     : DEFAULT_MAX_RETRIES;
@@ -594,6 +664,7 @@ async function executeTaskWithRetry(envelope, task) {
     }
 
     try {
+      await ensureSession(envelope, sshConfig);
       return await transferWithStreams(envelope, task, attempt);
     } catch (error) {
       lastError = error;
@@ -606,6 +677,8 @@ async function executeTaskWithRetry(envelope, task) {
       if (!canRetry) {
         throw error;
       }
+
+      await closeSession();
 
       const waitMs = RETRY_BACKOFF_BASE_MS * Math.pow(2, attempt);
       await sleep(waitMs);
@@ -643,6 +716,7 @@ function markTaskCancelled(message) {
 
 async function handleStartTask(message) {
   const taskPayload = message?.payload || {};
+  const sshConfig = taskPayload?.sshConfig || {};
   const taskKey = taskKeyOf(message);
 
   if (currentTaskState) {
@@ -662,8 +736,11 @@ async function handleStartTask(message) {
   };
 
   try {
-    await ensureSession(message, taskPayload?.sshConfig || {});
-    const transferResult = await executeTaskWithRetry(message, taskPayload);
+    const transferResult = await executeTaskWithRetry(
+      message,
+      taskPayload,
+      sshConfig,
+    );
 
     sendMessage("taskDone", message, {
       workerPid: process.pid,

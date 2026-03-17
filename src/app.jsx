@@ -271,6 +271,23 @@ const getReconnectCountdownSeconds = (nextReconnectAt, now = Date.now()) => {
   return Math.max(0, Math.ceil((target - now) / 1000));
 };
 
+const getReconnectFailureReasonLabel = (t, failureReason) => {
+  switch (String(failureReason || "").toLowerCase()) {
+    case "network":
+      return t("tabMenu.failureReasonNetwork");
+    case "authentication":
+      return t("tabMenu.failureReasonAuthentication");
+    case "timeout":
+      return t("tabMenu.failureReasonTimeout");
+    case "resource":
+      return t("tabMenu.failureReasonResource");
+    case "unknown":
+      return t("tabMenu.failureReasonUnknown");
+    default:
+      return null;
+  }
+};
+
 const buildReconnectStatusTitle = (t, status, now = Date.now()) => {
   const state = normalizeReconnectUiState(status?.state);
   const seconds = getReconnectCountdownSeconds(status?.nextReconnectAt, now);
@@ -520,8 +537,12 @@ function AppContent() {
         updateReconnectStatus(tabId, {
           state: normalizedState,
           attempts: Number(status?.retryCount || 0),
-          maxAttempts: Number(status?.maxRetries || 0),
+          maxAttempts: Number(
+            status?.effectiveMaxRetries ?? status?.maxRetries ?? 0,
+          ),
           nextRetryAt: Number(status?.nextReconnectAt || 0) || null,
+          windowExpiresAt: Number(status?.windowExpiresAt || 0) || null,
+          failureReason: status?.failureReason || null,
           error: status?.lastError || null,
           hint: null,
         });
@@ -564,6 +585,7 @@ function AppContent() {
         ...current,
         state: "pending",
         nextRetryAt: null,
+        windowExpiresAt: current?.windowExpiresAt || null,
         error: null,
       }));
     };
@@ -578,6 +600,8 @@ function AppContent() {
         attempts: Number(payload?.attempts || 0),
         maxAttempts: Number(payload?.maxAttempts || 0),
         nextRetryAt: null,
+        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
+        failureReason: payload?.failureReason || null,
         error: null,
         hint: payload?.hint || null,
       });
@@ -599,6 +623,8 @@ function AppContent() {
         maxAttempts: Number(payload?.maxAttempts || 0),
         nextRetryAt:
           Number.isFinite(delay) && delay > 0 ? baseTimestamp + delay : null,
+        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
+        failureReason: payload?.failureReason || null,
         error: null,
         hint: payload?.hint || null,
       });
@@ -628,6 +654,8 @@ function AppContent() {
         attempts: Number(payload?.attempts || 0),
         maxAttempts: Number(payload?.maxAttempts || 0),
         nextRetryAt: null,
+        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
+        failureReason: payload?.failureReason || null,
         error: payload?.error || null,
         hint: payload?.hint || null,
       });
@@ -646,6 +674,8 @@ function AppContent() {
         attempts: Number(payload?.attempts || 0),
         maxAttempts: Number(payload?.maxAttempts || 0),
         nextRetryAt: null,
+        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
+        failureReason: payload?.failureReason || null,
         error: payload?.error || null,
         hint: payload?.hint || null,
       });
@@ -812,14 +842,23 @@ function AppContent() {
     contextMenuReconnectStatus?.nextRetryAt,
     reconnectNow,
   );
+  const reconnectWindowSeconds = getReconnectCountdownSeconds(
+    contextMenuReconnectStatus?.windowExpiresAt,
+    reconnectNow,
+  );
+  const reconnectFailureReasonLabel = getReconnectFailureReasonLabel(
+    t,
+    contextMenuReconnectStatus?.failureReason,
+  );
   const isReconnectActionPending =
     Boolean(contextMenuTab?.id) && reconnectActionTabId === contextMenuTab.id;
 
   React.useEffect(() => {
     if (
       tabContextMenu.mouseY === null ||
-      !contextMenuReconnectStatus?.nextRetryAt ||
-      contextMenuReconnectStatus.state !== "pending"
+      (!contextMenuReconnectStatus?.nextRetryAt &&
+        !contextMenuReconnectStatus?.windowExpiresAt) ||
+      !["pending", "reconnecting"].includes(contextMenuReconnectStatus.state)
     ) {
       return undefined;
     }
@@ -834,6 +873,7 @@ function AppContent() {
     };
   }, [
     contextMenuReconnectStatus?.nextRetryAt,
+    contextMenuReconnectStatus?.windowExpiresAt,
     contextMenuReconnectStatus?.state,
     tabContextMenu.mouseY,
   ]);
@@ -1474,6 +1514,7 @@ function AppContent() {
       ...current,
       state: "reconnecting",
       nextRetryAt: null,
+      failureReason: current?.failureReason || "network",
       error: null,
     }));
 
@@ -1494,6 +1535,7 @@ function AppContent() {
         ...current,
         state: "failed",
         nextRetryAt: null,
+        windowExpiresAt: current?.windowExpiresAt || null,
         error: error?.message || String(error),
       }));
       setReconnectActionTabId(null);
@@ -1573,6 +1615,7 @@ function AppContent() {
         ...current,
         state: "pending",
         nextRetryAt: null,
+        failureReason: current?.failureReason || "network",
         error: null,
       }));
       setReconnectActionTabId(null);
@@ -2830,6 +2873,27 @@ function AppContent() {
                     >
                       {t("tabMenu.nextRetryIn", {
                         seconds: reconnectCountdownSeconds,
+                      })}
+                    </Typography>
+                  )}
+                {reconnectFailureReasonLabel && (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "text.secondary", display: "block" }}
+                  >
+                    {t("tabMenu.failureReasonLabel", {
+                      reason: reconnectFailureReasonLabel,
+                    })}
+                  </Typography>
+                )}
+                {Number.isFinite(reconnectWindowSeconds) &&
+                  reconnectWindowSeconds > 0 && (
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary", display: "block" }}
+                    >
+                      {t("tabMenu.retryWindowRemaining", {
+                        seconds: reconnectWindowSeconds,
                       })}
                     </Typography>
                   )}

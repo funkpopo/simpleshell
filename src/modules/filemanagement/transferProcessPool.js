@@ -5,10 +5,14 @@ const fs = require("fs");
 
 const { SESSION_CONFIG } = require("../sftp/sftpConfig");
 const { logToFile } = require("../../core/utils/logger");
+const {
+  DEFAULT_SSH_RETRY_CONFIG,
+} = require("../../core/connection/ssh-retry-helper");
 
 const HEARTBEAT_CHECK_INTERVAL_MS = 3000;
 const HEARTBEAT_TIMEOUT_MS = 15000;
-const INIT_SESSION_TIMEOUT_MS = 20000;
+const INIT_SESSION_TIMEOUT_MS =
+  Number(DEFAULT_SSH_RETRY_CONFIG?.totalTimeCapMs || 60000) + 10000;
 const DEFAULT_MAX_QUEUE_SIZE = 20000;
 
 function normalizeErrorMessage(error) {
@@ -401,7 +405,10 @@ class TransferProcessPool {
         tabId: taskEntry.tabId,
         attempt: 0,
         timestamp: Date.now(),
-        payload: taskEntry.taskPayload,
+        payload: {
+          ...taskEntry.taskPayload,
+          sshConfig: taskEntry.sshConfig,
+        },
       });
     } catch (error) {
       this._rejectTask(
