@@ -14,7 +14,6 @@ import { useTerminalSuggestions } from "../hooks/useTerminalSuggestions.js";
 import { useTerminalInputSync } from "../hooks/useTerminalInputSync.js";
 import { TerminalPerformanceMonitor } from "../utils/TerminalPerformanceMonitor.js";
 import { ScrollbackUsageTracker } from "../utils/ScrollbackUsageTracker.js";
-import { highlightPromptInputLine } from "../utils/realtimeInputHighlighter.js";
 import PropTypes from "prop-types";
 import CommandSuggestion from "./CommandSuggestion";
 import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.jsx";
@@ -515,19 +514,11 @@ const WebTerminal = ({
   });
 
   const inEditorModeRef = useRef(false);
-  const isCommandExecutingRef = useRef(false);
-  const realtimeInputHighlightFrameRef = useRef(null);
-  const realtimeInputHighlightSnapshotRef = useRef("");
-  const realtimeInputHighlightWritingRef = useRef(false);
   const hasShellIntegrationRef = useRef(false);
 
   useEffect(() => {
     inEditorModeRef.current = inEditorMode;
   }, [inEditorMode]);
-
-  useEffect(() => {
-    isCommandExecutingRef.current = isCommandExecuting;
-  }, [isCommandExecuting]);
 
   useEffect(() => {
     hasShellIntegrationRef.current = hasShellIntegration;
@@ -733,91 +724,6 @@ const WebTerminal = ({
       }
     },
     [sendInputToProcess, sshConfig],
-  );
-
-  const repaintCurrentInputLineHighlight = useCallback((term) => {
-    if (!term || realtimeInputHighlightWritingRef.current) {
-      return;
-    }
-
-    if (inEditorModeRef.current || isCommandExecutingRef.current) {
-      realtimeInputHighlightSnapshotRef.current = "";
-      return;
-    }
-
-    const activeBuffer = term?.buffer?.active;
-    if (!activeBuffer || typeof activeBuffer.getLine !== "function") {
-      return;
-    }
-
-    const cursorY = activeBuffer.cursorY;
-    const cursorX = activeBuffer.cursorX;
-    const lineObject = activeBuffer.getLine(cursorY);
-    if (!lineObject || typeof lineObject.translateToString !== "function") {
-      return;
-    }
-
-    const currentLine = lineObject.translateToString(false);
-    if (!currentLine || !currentLine.trim()) {
-      realtimeInputHighlightSnapshotRef.current = "";
-      return;
-    }
-
-    const highlighted = highlightPromptInputLine(currentLine);
-    if (!highlighted) {
-      realtimeInputHighlightSnapshotRef.current = "";
-      return;
-    }
-
-    const snapshotKey = `${cursorY}:${cursorX}:${highlighted.plainLine}`;
-    if (snapshotKey === realtimeInputHighlightSnapshotRef.current) {
-      return;
-    }
-
-    realtimeInputHighlightSnapshotRef.current = snapshotKey;
-    const cursorRestore = cursorX > 0 ? `\r\x1b[${Math.floor(cursorX)}C` : "\r";
-    const repaintSequence = `\r\x1b[2K${highlighted.renderedLine}${cursorRestore}`;
-
-    realtimeInputHighlightWritingRef.current = true;
-    try {
-      term.write(repaintSequence, () => {
-        realtimeInputHighlightWritingRef.current = false;
-      });
-    } catch {
-      try {
-        term.write(repaintSequence);
-      } catch {
-        // intentionally ignored
-      }
-      realtimeInputHighlightWritingRef.current = false;
-    }
-  }, []);
-
-  const scheduleRealtimeInputHighlight = useCallback(
-    (term) => {
-      if (!term || !isActiveRef.current) {
-        return;
-      }
-
-      if (
-        realtimeInputHighlightFrameRef.current !== null &&
-        typeof cancelAnimationFrame === "function"
-      ) {
-        cancelAnimationFrame(realtimeInputHighlightFrameRef.current);
-      }
-
-      const run = () => {
-        realtimeInputHighlightFrameRef.current = null;
-        repaintCurrentInputLineHighlight(term);
-      };
-
-      if (typeof requestAnimationFrame === "function") {
-        realtimeInputHighlightFrameRef.current = requestAnimationFrame(run);
-      } else {
-        run();
-      }
-    },
-    [repaintCurrentInputLineHighlight],
   );
 
   // 优化的选择元素调整函数 - 避免重复高亮
@@ -1074,8 +980,6 @@ const WebTerminal = ({
 
     // 用于存储用户正在输入的命令
     let currentInputBuffer = "";
-    // 最近一次输入活动时间，用于在输出回显到达时维持短时间实时重绘
-    let lastInputActivityAt = 0;
     // 标记上一个按键是否是特殊键序列的开始
     let isEscapeSequence = false;
     // 用于存储转义序列
@@ -1160,8 +1064,6 @@ const WebTerminal = ({
       if (data && data.length > 0) {
         // console.log("[onData]", JSON.stringify(data), "processId=", processId);
       }
-      lastInputActivityAt = Date.now();
-
       if (!shellIntegrationBootstrapRef.current.injected) {
         shellIntegrationBootstrapRef.current.blockedByUserInput = true;
       }
@@ -1170,9 +1072,8 @@ const WebTerminal = ({
         !hasShellIntegrationRef.current ||
         shellIntegrationStateRef.current.promptReady;
 
-      // 输入阶段也触发刷新，避免高频输入时出现高亮状态滞后
+      // 输入阶段只触发渲染层刷新，避免通过额外写入污染终端缓冲区
       scheduleHighlightRefresh(term);
-      scheduleRealtimeInputHighlight(term);
 
       // 检查是否正在处理外部命令
       let shouldSkipSendToProcess = false;
@@ -1594,9 +1495,6 @@ const WebTerminal = ({
 
     const onWriteParsedDisposable = term.onWriteParsed(() => {
       scheduleHighlightRefresh(term);
-      if (Date.now() - lastInputActivityAt <= 1500) {
-        scheduleRealtimeInputHighlight(term);
-      }
     });
 
     if (
@@ -3339,16 +3237,6 @@ const WebTerminal = ({
       }
 
       resetRenderState();
-
-      if (
-        realtimeInputHighlightFrameRef.current !== null &&
-        typeof cancelAnimationFrame === "function"
-      ) {
-        cancelAnimationFrame(realtimeInputHighlightFrameRef.current);
-      }
-      realtimeInputHighlightFrameRef.current = null;
-      realtimeInputHighlightWritingRef.current = false;
-      realtimeInputHighlightSnapshotRef.current = "";
 
       cancelInputQueueDrain();
       inputQueueRef.current = [];
