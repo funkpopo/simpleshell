@@ -19,7 +19,7 @@ function resolveMaxAttempts(reconnectionManager, sessionId, fallback = null) {
     return null;
   }
   const status = reconnectionManager.getSessionStatus?.(sessionId);
-  const maxRetries = Number(status?.maxRetries);
+  const maxRetries = Number(status?.effectiveMaxRetries ?? status?.maxRetries);
   return Number.isFinite(maxRetries) ? maxRetries : null;
 }
 
@@ -31,7 +31,11 @@ function normalizeReconnectPayload(
   const sessionId = payload.sessionId || options.sessionId || null;
   const attemptsValue =
     payload.attempts ?? payload.retryCount ?? payload.attempt ?? 0;
-  const maxAttemptsValue = payload.maxAttempts ?? payload.maxRetries ?? null;
+  const maxAttemptsValue =
+    payload.maxAttempts ??
+    payload.effectiveMaxRetries ??
+    payload.maxRetries ??
+    null;
   const normalized = {
     tabId: extractTabIdFromSessionId(sessionId),
     sessionId,
@@ -48,6 +52,23 @@ function normalizeReconnectPayload(
         ? null
         : String(payload.error),
   };
+
+  if (payload.failureReason !== undefined) {
+    normalized.failureReason =
+      payload.failureReason === null ? null : String(payload.failureReason);
+  }
+  if (payload.windowExpiresAt !== undefined) {
+    const windowExpiresAt = Number(payload.windowExpiresAt);
+    normalized.windowExpiresAt = Number.isFinite(windowExpiresAt)
+      ? windowExpiresAt
+      : null;
+  }
+  if (payload.nextReconnectAt !== undefined) {
+    const nextReconnectAt = Number(payload.nextReconnectAt);
+    normalized.nextReconnectAt = Number.isFinite(nextReconnectAt)
+      ? nextReconnectAt
+      : null;
+  }
 
   if (payload.reason !== undefined) {
     normalized.reason = payload.reason;
@@ -174,10 +195,20 @@ function registerReconnectHandlers(connectionPool) {
   // 设置重连事件转发
   if (boundReconnectionManager) {
     // 重连开始事件
-    const onReconnectStarted = ({ sessionId, attempt, maxRetries }) => {
+    const onReconnectStarted = ({
+      sessionId,
+      attempt,
+      maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
+    }) => {
       const payload = normalizeReconnectPayload(boundReconnectionManager, {
         sessionId,
         attempts: attempt,
+        failureReason,
+        effectiveMaxRetries,
+        windowExpiresAt,
         maxAttempts: maxRetries,
         error: null,
       });
@@ -195,10 +226,16 @@ function registerReconnectHandlers(connectionPool) {
       delay,
       retryCount,
       maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
     }) => {
       const payload = normalizeReconnectPayload(boundReconnectionManager, {
         sessionId,
         attempts: retryCount,
+        failureReason,
+        effectiveMaxRetries,
+        windowExpiresAt,
         maxAttempts: maxRetries,
         delay,
         error: null,
@@ -212,10 +249,20 @@ function registerReconnectHandlers(connectionPool) {
     reconnectListeners.set("rm:reconnectScheduled", onReconnectScheduled);
 
     // 重连成功事件
-    const onReconnectSuccess = ({ sessionId, attempts, maxRetries }) => {
+    const onReconnectSuccess = ({
+      sessionId,
+      attempts,
+      maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
+    }) => {
       const payload = normalizeReconnectPayload(boundReconnectionManager, {
         sessionId,
         attempts,
+        failureReason,
+        effectiveMaxRetries,
+        windowExpiresAt,
         maxAttempts: maxRetries,
         error: null,
       });
@@ -233,12 +280,23 @@ function registerReconnectHandlers(connectionPool) {
     reconnectListeners.set("rm:reconnectSuccess", onReconnectSuccess);
 
     // 重连失败事件
-    const onReconnectFailed = ({ sessionId, error, attempts, maxRetries }) => {
+    const onReconnectFailed = ({
+      sessionId,
+      error,
+      attempts,
+      maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
+    }) => {
       const payload = normalizeReconnectPayload(
         boundReconnectionManager,
         {
           sessionId,
           attempts,
+          failureReason,
+          effectiveMaxRetries,
+          windowExpiresAt,
           maxAttempts: maxRetries,
           error,
         },
@@ -272,6 +330,9 @@ function registerReconnectHandlers(connectionPool) {
       error,
       attempts,
       maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
     }) => {
       const finalError = error || reason || "自动重连已放弃";
       const payload = normalizeReconnectPayload(
@@ -279,6 +340,9 @@ function registerReconnectHandlers(connectionPool) {
         {
           sessionId,
           attempts,
+          failureReason,
+          effectiveMaxRetries,
+          windowExpiresAt,
           maxAttempts: maxRetries,
           error: finalError,
           reason,
