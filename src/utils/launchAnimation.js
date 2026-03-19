@@ -1,18 +1,16 @@
-import { Grow } from "@mui/material";
-import React, { forwardRef } from "react";
+import { Zoom } from "@mui/material";
 
 /**
- * 创建从指定元素位置开始的动画过渡组件
+ * 获取从指定元素位置开始的动画过渡配置
  * @param {HTMLElement|null} anchorEl - 锚点元素（通常是触发按钮）
- * @returns {Object} TransitionProps 对象，可直接传递给 Dialog
+ * @returns {Object} 包含 TransitionComponent 和 TransitionProps 的对象
  */
 export const createAnchoredTransition = (anchorEl) => {
   if (!anchorEl) {
-    // 如果没有锚点元素，返回默认配置
     return {
-      TransitionComponent: Grow,
+      TransitionComponent: Zoom,
       TransitionProps: {
-        timeout: 225,
+        timeout: 250,
       },
     };
   }
@@ -22,22 +20,14 @@ export const createAnchoredTransition = (anchorEl) => {
   const anchorX = rect.left + rect.width / 2;
   const anchorY = rect.top + rect.height / 2;
 
-  // 创建自定义过渡组件
-  const AnchoredGrow = forwardRef((props, ref) => {
-    return React.createElement(Grow, {
-      ...props,
-      ref: ref,
-      timeout: 225,
+  return {
+    TransitionComponent: Zoom,
+    TransitionProps: {
+      timeout: 250,
       style: {
         transformOrigin: `${anchorX}px ${anchorY}px`,
       },
-    });
-  });
-
-  AnchoredGrow.displayName = "AnchoredGrow";
-
-  return {
-    TransitionComponent: AnchoredGrow,
+    },
   };
 };
 
