@@ -12,6 +12,7 @@ const configService = require("../../services/configService");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const sftpCore = require("../transfer/sftp-engine");
 const sftpTransfer = require("../../modules/sftp/sftpTransfer");
+const filemanagementService = require("../../modules/filemanagement/filemanagementService");
 const externalEditorManager = require("../../modules/sftp/externalEditorManager");
 
 /**
@@ -117,6 +118,38 @@ class AppCleanup {
       } catch (cleanupError) {
         logToFile(
           `Error initiating SFTP transfer cleanup for tab ${id}: ${cleanupError.message}`,
+          "ERROR",
+        );
+      }
+    }
+
+    if (
+      filemanagementService &&
+      typeof filemanagementService.cleanupTransfersForTab === "function"
+    ) {
+      try {
+        const result = filemanagementService.cleanupTransfersForTab(id);
+        if (result.cleanedCount > 0) {
+          logToFile(
+            `Cleaned up ${result.cleanedCount} filemanagement transfers for tab ${id} during app quit`,
+            "INFO",
+          );
+        }
+
+        if (proc.config && proc.config.tabId && proc.config.tabId !== id) {
+          const tabResult = filemanagementService.cleanupTransfersForTab(
+            proc.config.tabId,
+          );
+          if (tabResult.cleanedCount > 0) {
+            logToFile(
+              `Cleaned up ${tabResult.cleanedCount} filemanagement transfers for tabId ${proc.config.tabId} during app quit`,
+              "INFO",
+            );
+          }
+        }
+      } catch (cleanupError) {
+        logToFile(
+          `Error initiating filemanagement transfer cleanup for tab ${id}: ${cleanupError.message}`,
           "ERROR",
         );
       }
@@ -253,12 +286,18 @@ class AppCleanup {
         typeof sftpTransfer.getTransferRuntimeStats === "function"
           ? sftpTransfer.getTransferRuntimeStats()
           : null,
+      filemanagementTransfer:
+        filemanagementService &&
+        typeof filemanagementService.getTransferRuntimeStats === "function"
+          ? filemanagementService.getTransferRuntimeStats()
+          : null,
     };
   }
 
   hasResidualRuntimeResources(snapshot) {
     const sftpStats = snapshot?.sftp || {};
     const transferStats = snapshot?.sftpTransfer || {};
+    const filemanagementStats = snapshot?.filemanagementTransfer || {};
 
     return Boolean(
       (snapshot?.processCount || 0) > 0 ||
@@ -278,11 +317,19 @@ class AppCleanup {
       (sftpStats.borrowLockCount || 0) > 0 ||
       sftpStats.healthCheckTimerActive ||
       (transferStats.activeTransferCount || 0) > 0 ||
-      (transferStats.activeStreamCount || 0) > 0,
+      (transferStats.activeStreamCount || 0) > 0 ||
+      (filemanagementStats.activeTransferCount || 0) > 0,
     );
   }
 
   async cleanupGlobalSftpResources() {
+    if (
+      filemanagementService &&
+      typeof filemanagementService.cleanup === "function"
+    ) {
+      filemanagementService.cleanup();
+    }
+
     if (
       sftpTransfer &&
       typeof sftpTransfer.cleanupAllActiveTransfers === "function"

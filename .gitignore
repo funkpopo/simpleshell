@@ -37,13 +37,21 @@ temp/*
 .webpack_cache
 .webpack_cache/*
 
-installer
+# Inno Setup scripts should stay in repo; generated installers should not.
+installer/*
+!installer/*.iss
+
+# Rust transfer sidecar source stays in repo; build outputs do not.
+transfernative/bin/*
+!transfernative/bin/README.md
+transfernative/**/target/
 
 # 其他常见构建/打包产物（保险兜底）
 *.asar
 *.exe
 *.msi
 *.dmg
+*.pdb
 
 .claude/
 

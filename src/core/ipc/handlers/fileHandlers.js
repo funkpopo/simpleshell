@@ -1,11 +1,11 @@
 const sftpCore = require("../../transfer/sftp-engine"); // 已合并到sftp-engine
 const sftpTransfer = require("../../../modules/sftp/sftpTransfer");
+const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
 const { logToFile } = require("../../utils/logger");
 const processManager = require("../../process/processManager");
 const path = require("path");
 const fs = require("fs");
-const os = require("os");
-const { shell, dialog, BrowserWindow } = require("electron");
+const { shell } = require("electron");
 
 /**
  * 文件操作相关的IPC处理器
@@ -465,6 +465,26 @@ class FileHandlers {
 
   async cancelTransfer(event, tabId, transferKey) {
     try {
+      if (
+        filemanagementService &&
+        typeof filemanagementService.cancelTransfer === "function"
+      ) {
+        const nextResult = await filemanagementService.cancelTransfer(
+          event,
+          tabId,
+          transferKey,
+        );
+
+        if (nextResult?.success || nextResult?.cancelled) {
+          for (const [k, v] of this.activeTransfers.entries()) {
+            if (v === transferKey) {
+              this.activeTransfers.delete(k);
+            }
+          }
+          return nextResult;
+        }
+      }
+
       // NOTE: sftpTransfer.cancelTransfer uses strict signature (tabId, transferKey).
       const result = await sftpTransfer.cancelTransfer(tabId, transferKey);
 
@@ -682,7 +702,10 @@ class FileHandlers {
   }
 
   async uploadFile(event, tabId, targetFolder, progressChannel) {
-    if (!sftpTransfer || typeof sftpTransfer.handleUploadFile !== "function") {
+    if (
+      !filemanagementService ||
+      typeof filemanagementService.uploadFile !== "function"
+    ) {
       return {
         success: false,
         error: "SFTP Upload feature not properly initialized.",
@@ -697,23 +720,11 @@ class FileHandlers {
     ) {
       return { success: false, error: "无效或未就绪的SSH连接" };
     }
-    const mainWindow =
-      BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
-    if (!mainWindow) return { success: false, error: "无法显示对话框" };
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title: "选择要上传的文件",
-      properties: ["openFile", "multiSelections"],
-      buttonLabel: "上传文件",
-    });
-    if (canceled || !filePaths || filePaths.length === 0) {
-      return { success: false, cancelled: true, error: "用户取消上传" };
-    }
     try {
-      return await sftpTransfer.handleUploadFile(
+      return await filemanagementService.uploadFile(
         event,
         tabId,
         targetFolder,
-        filePaths,
         progressChannel,
       );
     } catch (error) {
@@ -740,7 +751,10 @@ class FileHandlers {
     uploadData,
     progressChannel,
   ) {
-    if (!sftpTransfer || typeof sftpTransfer.handleUploadFile !== "function") {
+    if (
+      !filemanagementService ||
+      typeof filemanagementService.uploadDroppedFiles !== "function"
+    ) {
       return {
         success: false,
         error: "SFTP Upload feature not properly initialized.",
@@ -756,138 +770,13 @@ class FileHandlers {
       return { success: false, error: "无效或未就绪的SSH连接" };
     }
     try {
-      const tempDir = os.tmpdir();
-      if (uploadData.folders && uploadData.folders.length > 0) {
-        const sftp = await sftpCore.getSftpSession(tabId);
-        for (const folderPath of uploadData.folders) {
-          const remoteFolderPath = path.posix
-            .join(targetFolder, folderPath)
-            .replace(/\\/g, "/");
-          try {
-            await new Promise((resolve) => {
-              sftp.mkdir(remoteFolderPath, (err) => {
-                if (
-                  err &&
-                  err.code !== 4 &&
-                  !err.message.includes("File exists")
-                ) {
-                  logToFile(
-                    `Error creating folder ${remoteFolderPath}: ${err.message}`,
-                    "WARN",
-                  );
-                }
-                resolve();
-              });
-            });
-          } catch (folderError) {
-            logToFile(
-              `Error creating folder ${remoteFolderPath}: ${folderError.message}`,
-              "WARN",
-            );
-          }
-        }
-      }
-      const filePaths = [];
-      const filesData = uploadData.files || uploadData;
-      for (const fileData of filesData) {
-        if (fileData) {
-          const relativePath = fileData.relativePath || fileData.name;
-          const tempFilePath = path.join(
-            tempDir,
-            "simpleshell-upload",
-            relativePath,
-          );
-          const tempFileDir = path.dirname(tempFilePath);
-          if (!fs.existsSync(tempFileDir))
-            fs.mkdirSync(tempFileDir, { recursive: true });
-          let buffer;
-          if (fileData.chunks && fileData.isChunked) {
-            const totalLength = fileData.chunks.reduce(
-              (sum, chunk) => sum + chunk.length,
-              0,
-            );
-            buffer = Buffer.alloc(totalLength);
-            let offset = 0;
-            for (const chunk of fileData.chunks) {
-              const chunkBuffer = Buffer.from(chunk);
-              chunkBuffer.copy(buffer, offset);
-              offset += chunkBuffer.length;
-            }
-          } else if (fileData.chunks && fileData.chunks.length === 1) {
-            buffer = Buffer.from(fileData.chunks[0]);
-          } else if (fileData.data) {
-            buffer = Buffer.from(fileData.data);
-          } else continue;
-          fs.writeFileSync(tempFilePath, buffer);
-          if (fileData.relativePath && fileData.relativePath.includes("/")) {
-            const remoteFilePath = path.posix
-              .join(targetFolder, fileData.relativePath)
-              .replace(/\\/g, "/");
-            filePaths.push({
-              localPath: tempFilePath,
-              remotePath: remoteFilePath,
-            });
-          } else {
-            filePaths.push(tempFilePath);
-          }
-        }
-      }
-      if (filePaths.length === 0)
-        return { success: false, error: "没有有效的文件可上传" };
-      const hasCustomPaths = filePaths.some((f) => typeof f === "object");
-      let result;
-      if (hasCustomPaths) {
-        let uploadedCount = 0,
-          failedCount = 0;
-        for (const fileInfo of filePaths) {
-          const localPath =
-            typeof fileInfo === "string" ? fileInfo : fileInfo.localPath;
-          const remotePath =
-            typeof fileInfo === "string"
-              ? path.posix
-                  .join(targetFolder, path.basename(fileInfo))
-                  .replace(/\\/g, "/")
-              : fileInfo.remotePath;
-          const remoteDir = path.posix.dirname(remotePath);
-          const singleResult = await sftpTransfer.handleUploadFile(
-            event,
-            tabId,
-            remoteDir,
-            [localPath],
-            progressChannel,
-          );
-          if (singleResult.success) uploadedCount++;
-          else failedCount++;
-        }
-        result = {
-          success: failedCount === 0,
-          uploadedCount,
-          totalFiles: filePaths.length,
-          failedCount,
-        };
-      } else {
-        const uploadPaths = filePaths.map((f) =>
-          typeof f === "string" ? f : f.localPath,
-        );
-        result = await sftpTransfer.handleUploadFile(
-          event,
-          tabId,
-          targetFolder,
-          uploadPaths,
-          progressChannel,
-        );
-      }
-      try {
-        const tempUploadDir = path.join(tempDir, "simpleshell-upload");
-        if (fs.existsSync(tempUploadDir))
-          fs.rmSync(tempUploadDir, { recursive: true, force: true });
-      } catch (cleanupError) {
-        logToFile(
-          `Error cleaning up temp files: ${cleanupError.message}`,
-          "WARN",
-        );
-      }
-      return result;
+      return await filemanagementService.uploadDroppedFiles(
+        event,
+        tabId,
+        targetFolder,
+        uploadData,
+        progressChannel,
+      );
     } catch (error) {
       const isCancelError =
         error.message?.includes("cancel") ||
@@ -907,8 +796,8 @@ class FileHandlers {
 
   async uploadFolder(event, tabId, targetFolder, progressChannel) {
     if (
-      !sftpTransfer ||
-      typeof sftpTransfer.handleUploadFolder !== "function"
+      !filemanagementService ||
+      typeof filemanagementService.uploadFolder !== "function"
     ) {
       return {
         success: false,
@@ -924,21 +813,10 @@ class FileHandlers {
     ) {
       return { success: false, error: "无效或未就绪的SSH连接" };
     }
-    const mainWindow =
-      BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
-    if (!mainWindow) return { success: false, error: "无法显示对话框" };
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title: "选择要上传的文件夹",
-      properties: ["openDirectory"],
-      buttonLabel: "上传文件夹",
-    });
-    if (canceled || !filePaths || filePaths.length === 0) {
-      return { success: false, cancelled: true, error: "用户取消上传" };
-    }
     try {
-      return await sftpTransfer.handleUploadFolder(
+      return await filemanagementService.uploadFolder(
+        event,
         tabId,
-        filePaths[0],
         targetFolder,
         progressChannel,
       );
@@ -977,6 +855,12 @@ class FileHandlers {
     }
 
     this.activeTransfers.clear();
+    if (
+      filemanagementService &&
+      typeof filemanagementService.cleanup === "function"
+    ) {
+      filemanagementService.cleanup();
+    }
     logToFile("All file transfers cleaned up", "INFO");
   }
 }

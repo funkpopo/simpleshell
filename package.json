@@ -6,10 +6,11 @@
   "main": ".webpack/main",
   "scripts": {
     "format": "prettier --write .",
-    "start": "set NODE_ENV=development && electron-forge start",
-    "package": "electron-forge package",
-    "make": "electron-forge make",
-    "publish": "electron-forge publish",
+    "prepare:native-sidecar": "node scripts/prepare-rust-sidecar.js",
+    "start": "npm run prepare:native-sidecar && set NODE_ENV=development && electron-forge start",
+    "package": "npm run prepare:native-sidecar && electron-forge package",
+    "make": "npm run prepare:native-sidecar && electron-forge make",
+    "publish": "npm run prepare:native-sidecar && electron-forge publish",
     "lint": "echo \"No linting configured\""
   },
   "keywords": [],
