@@ -93,6 +93,33 @@ const createShellIntegrationState = () => ({
   lastExitCode: null,
 });
 
+const isCursorInsideWrappedInputBlock = (term) => {
+  const buffer = term?.buffer?.active;
+  if (!buffer) {
+    return false;
+  }
+
+  const currentLine = buffer.getLine(buffer.cursorY);
+  if (currentLine?.isWrapped) {
+    return true;
+  }
+
+  if (buffer.cursorY <= 0) {
+    return false;
+  }
+
+  const previousLine = buffer.getLine(buffer.cursorY - 1);
+  return previousLine?.isWrapped === true;
+};
+
+const shouldForceTerminalViewportRefresh = (term, inEditorMode = false) => {
+  if (!term || inEditorMode || term.buffer?.active?.type === "alternate") {
+    return false;
+  }
+
+  return term.__pendingWrappedInputRefresh === true;
+};
+
 const WebTerminal = ({
   tabId,
   refreshKey,
@@ -1071,6 +1098,15 @@ const WebTerminal = ({
       const canTrackPromptInput =
         !hasShellIntegrationRef.current ||
         shellIntegrationStateRef.current.promptReady;
+
+      if (
+        canTrackPromptInput &&
+        !inEditorMode &&
+        (data === "\b" || data === "\x7f" || data === "\x03") &&
+        isCursorInsideWrappedInputBlock(term)
+      ) {
+        term.__pendingWrappedInputRefresh = true;
+      }
 
       // 输入阶段只触发渲染层刷新，避免通过额外写入污染终端缓冲区
       scheduleHighlightRefresh(term);
@@ -2157,7 +2193,14 @@ const WebTerminal = ({
                   duration,
                 );
               }
-              scheduleHighlightRefresh(term);
+              const forceRefresh = shouldForceTerminalViewportRefresh(
+                term,
+                inEditorModeRef.current,
+              );
+              if (term.__pendingWrappedInputRefresh === true) {
+                term.__pendingWrappedInputRefresh = false;
+              }
+              scheduleHighlightRefresh(term, { force: forceRefresh });
             },
           });
         } else {
@@ -2177,7 +2220,14 @@ const WebTerminal = ({
                   duration,
                 );
               }
-              scheduleHighlightRefresh(term);
+              const forceRefresh = shouldForceTerminalViewportRefresh(
+                term,
+                inEditorModeRef.current,
+              );
+              if (term.__pendingWrappedInputRefresh === true) {
+                term.__pendingWrappedInputRefresh = false;
+              }
+              scheduleHighlightRefresh(term, { force: forceRefresh });
             },
           });
         }
@@ -3269,6 +3319,7 @@ const WebTerminal = ({
     clearGeometryFor(processId, tabId);
     resetShellIntegrationTracking(processId);
     ensureShellIntegrationParser(term);
+    term.__pendingWrappedInputRefresh = false;
 
     // 添加数据监听
     const handleProcessOutput = (data) => {
