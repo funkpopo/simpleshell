@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const nativeSftpClient = require("../../core/utils/nativeSftpClient");
 
 const FILE_PLACEHOLDER = "%FILE%";
 const DEFAULT_DEBOUNCE_MS = 700;
@@ -14,7 +15,6 @@ let logToFile = (message, level = "INFO") => {
   }
 };
 let configService = null;
-let sftpCore = null;
 let shellModule = null;
 let sendToRenderer = null;
 
@@ -164,7 +164,7 @@ function getWatcherKey(tabId, remotePath) {
 }
 
 function ensureInitialized() {
-  if (!electronApp || !configService || !sftpCore) {
+  if (!electronApp || !configService) {
     throw new Error("External editor manager not initialized");
   }
 }
@@ -237,43 +237,26 @@ function prepareExternalEditorCommand(command, quotedPath) {
 }
 
 async function downloadFile(tabId, remotePath, localPath) {
-  const { sftp, sessionId } = await sftpCore.borrowSftpSession(tabId);
-  try {
-    await new Promise((resolve, reject) => {
-      sftp.fastGet(remotePath, localPath, {}, (err) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-    });
-    logToFile(`Downloaded ${remotePath} to ${localPath}`, "INFO");
-  } finally {
-    if (sessionId) {
-      sftpCore.releaseSftpSession(tabId, sessionId);
-    }
+  const result = await nativeSftpClient.downloadFile(tabId, remotePath, localPath);
+  if (!result?.success) {
+    throw new Error(result?.error || "Download failed");
   }
+  logToFile(`Downloaded ${remotePath} to ${localPath}`, "INFO");
 }
 
 async function uploadFile(tabId, remotePath, localPath) {
   let lastError = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const { sftp, sessionId } = await sftpCore.borrowSftpSession(tabId);
     try {
-      await new Promise((resolve, reject) => {
-        sftp.fastPut(localPath, remotePath, {}, (err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-      });
-      logToFile(`Uploaded ${localPath} back to ${remotePath}`, "INFO");
-      if (sessionId) {
-        sftpCore.releaseSftpSession(tabId, sessionId);
+      const result = await nativeSftpClient.uploadFile(
+        tabId,
+        localPath,
+        remotePath,
+      );
+      if (!result?.success) {
+        throw new Error(result?.error || "Upload failed");
       }
+      logToFile(`Uploaded ${localPath} back to ${remotePath}`, "INFO");
       return;
     } catch (error) {
       lastError = error;
@@ -282,13 +265,7 @@ async function uploadFile(tabId, remotePath, localPath) {
         "WARN",
       );
       if (!RETRYABLE_ERRORS.has(error.code)) {
-        if (sessionId) {
-          sftpCore.releaseSftpSession(tabId, sessionId);
-        }
         break;
-      }
-      if (sessionId) {
-        sftpCore.releaseSftpSession(tabId, sessionId);
       }
       await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
     }
@@ -587,7 +564,7 @@ function init({
     logToFile = logger.logToFile;
   }
   configService = cfg;
-  sftpCore = core;
+  void core;
   shellModule = shell;
   sendToRenderer = send;
 }

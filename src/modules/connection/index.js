@@ -1,4 +1,3 @@
-const sftpCore = require("../../core/transfer/sftp-engine"); // 已合并到sftp-engine
 const {
   sshConnectionPool,
   telnetConnectionPool,
@@ -7,7 +6,6 @@ const { logToFile } = require("../../core/utils/logger");
 
 class ConnectionManager {
   constructor() {
-    this.sftpCore = sftpCore;
     this.sshConnectionPool = sshConnectionPool;
     this.telnetConnectionPool = telnetConnectionPool;
   }
@@ -23,65 +21,24 @@ class ConnectionManager {
     logToFile("Connection manager cleanup", "INFO");
     this.sshConnectionPool.cleanup();
     this.telnetConnectionPool.cleanup();
-    this.sftpCore.stopSftpHealthCheck();
   }
 
   async getSftpSession(tabId) {
-    try {
-      // 确保SSH连接已正确关联到此标签页
-      const processInfo =
-        this.sshConnectionPool.getConnectionByTabId &&
-        this.sshConnectionPool.getConnectionByTabId(tabId);
-
-      if (!processInfo) {
-        logToFile(
-          `Connection manager: No SSH connection found for tab ${tabId}`,
-          "WARN",
-        );
-      }
-
-      // 使用sftpCore统一管理SFTP会话
-      try {
-        return await this.sftpCore.getSftpSession(tabId);
-      } catch (error) {
-        // 如果获取SFTP会话失败,但我们知道有有效的SSH连接,尝试清理并重试
-        if (
-          processInfo &&
-          error.message.includes("Invalid SSH connection info")
-        ) {
-          logToFile(
-            `Connection manager: SFTP session error, cleaning up and retrying for tab ${tabId}`,
-            "WARN",
-          );
-
-          // 先关闭可能存在的问题会话
-          await this.sftpCore.closeSftpSession(tabId);
-
-          // 短暂延迟
-          await new Promise((resolve) => setTimeout(resolve, 300));
-
-          // 重试获取SFTP会话
-          return await this.sftpCore.getSftpSession(tabId);
-        }
-
-        // 其他错误直接抛出
-        throw error;
-      }
-    } catch (error) {
-      logToFile(
-        `Connection manager: Failed to get SFTP session for tab ${tabId}: ${error.message}`,
-        "ERROR",
-      );
-      throw error;
-    }
+    void tabId;
+    return { success: true, native: true };
   }
 
   async closeSftpSession(tabId) {
-    await this.sftpCore.closeSftpSession(tabId);
+    void tabId;
   }
 
   enqueueSftpOperation(tabId, operation, options = {}) {
-    return this.sftpCore.enqueueSftpOperation(tabId, operation, options);
+    void tabId;
+    void options;
+    if (typeof operation === "function") {
+      return Promise.resolve().then(operation);
+    }
+    return Promise.resolve({ success: true, queued: false, native: true });
   }
 
   getTopConnections(count) {

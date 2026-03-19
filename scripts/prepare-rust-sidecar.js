@@ -29,6 +29,7 @@ const stagedDir = path.join(
   platformArchDir,
 );
 const stagedPath = path.join(stagedDir, executableName);
+const sourceRoot = path.join(projectRoot, "transfernative", "transfer-sidecar");
 
 function log(message) {
   process.stdout.write(`[prepare-rust-sidecar] ${message}\n`);
@@ -51,6 +52,41 @@ function copyIfPresent() {
 
 function hasStagedBinary() {
   return fs.existsSync(stagedPath);
+}
+
+function getNewestMtimeMs(targetPath) {
+  if (!fs.existsSync(targetPath)) {
+    return 0;
+  }
+
+  const stats = fs.statSync(targetPath);
+  if (!stats.isDirectory()) {
+    return stats.mtimeMs;
+  }
+
+  let newest = stats.mtimeMs;
+  for (const entry of fs.readdirSync(targetPath, { withFileTypes: true })) {
+    if (entry.name === "target") {
+      continue;
+    }
+    const childPath = path.join(targetPath, entry.name);
+    newest = Math.max(newest, getNewestMtimeMs(childPath));
+  }
+  return newest;
+}
+
+function isStagedBinaryOutdated() {
+  if (!hasStagedBinary()) {
+    return true;
+  }
+
+  const stagedMtime = fs.statSync(stagedPath).mtimeMs;
+  const buildMtime = fs.existsSync(buildOutputPath)
+    ? fs.statSync(buildOutputPath).mtimeMs
+    : 0;
+  const sourceMtime = getNewestMtimeMs(sourceRoot);
+
+  return buildMtime > stagedMtime || sourceMtime > stagedMtime;
 }
 
 function isCargoAvailable() {
@@ -100,16 +136,16 @@ function tryBuildWithCargo() {
 function main() {
   ensureDir(path.join(projectRoot, "transfernative", "bin"));
 
-  if (hasStagedBinary()) {
+  if (hasStagedBinary() && !isStagedBinaryOutdated()) {
     log(`using staged native sidecar at ${path.relative(projectRoot, stagedPath)}`);
     return;
   }
 
-  if (copyIfPresent()) {
+  if (copyIfPresent() && !isStagedBinaryOutdated()) {
     return;
   }
 
-  const built = tryBuildWithCargo();
+  tryBuildWithCargo();
 
   if (!copyIfPresent()) {
     throw new Error(

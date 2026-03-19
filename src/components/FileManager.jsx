@@ -774,7 +774,17 @@ const FileManager = memo(
 
     // 当SSH连接改变时，重置状态并加载目录
     useEffect(() => {
-      if (!open || !sshConnection || !tabId) {
+      if (!open) {
+        return;
+      }
+
+      if (!tabId) {
+        setError(t("fileManager.errors.missingConnectionInfo"));
+        return;
+      }
+
+      if (!sshConnection) {
+        setError(t("fileManager.errors.missingConnectionInfo"));
         return;
       }
 

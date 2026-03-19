@@ -1,5 +1,5 @@
 const fs = require("fs");
-const sftpCore = require("../../transfer/sftp-engine");
+const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
 
 const MAX_CALLS_PER_BATCH = 100;
@@ -61,7 +61,7 @@ async function batchInvoke(_event, calls) {
       // Strict allowlist: keep narrow to avoid arbitrary IPC execution.
       if (channel === "getFilePermissions") {
         const [tabId, filePath] = args;
-        const raw = await sftpCore.getFilePermissions(tabId, filePath);
+        const raw = await nativeSftpClient.getFilePermissions(tabId, filePath);
         results.push(normalizeResult(raw));
         continue;
       }

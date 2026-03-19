@@ -10,8 +10,6 @@ const fileCache = require("../utils/fileCache");
 const fileSnapshotStore = require("../utils/fileSnapshotStore");
 const configService = require("../../services/configService");
 const commandHistoryService = require("../../modules/terminal/command-history");
-const sftpCore = require("../transfer/sftp-engine");
-const sftpTransfer = require("../../modules/sftp/sftpTransfer");
 const filemanagementService = require("../../modules/filemanagement/filemanagementService");
 const externalEditorManager = require("../../modules/sftp/externalEditorManager");
 
@@ -79,50 +77,6 @@ class AppCleanup {
    * 清理单个进程的SFTP资源
    */
   async cleanupProcessSftp(id, proc) {
-    // 清理待处理SFTP操作
-    if (
-      sftpCore &&
-      typeof sftpCore.clearPendingOperationsForTab === "function"
-    ) {
-      sftpCore.clearPendingOperationsForTab(id);
-      if (proc.config && proc.config.tabId && proc.config.tabId !== id) {
-        sftpCore.clearPendingOperationsForTab(proc.config.tabId);
-      }
-    }
-
-    // 清理活跃SFTP传输
-    if (
-      sftpTransfer &&
-      typeof sftpTransfer.cleanupActiveTransfersForTab === "function"
-    ) {
-      try {
-        const result = await sftpTransfer.cleanupActiveTransfersForTab(id);
-        if (result.cleanedCount > 0) {
-          logToFile(
-            `Cleaned up ${result.cleanedCount} active SFTP transfers for tab ${id} during app quit`,
-            "INFO",
-          );
-        }
-
-        if (proc.config && proc.config.tabId && proc.config.tabId !== id) {
-          const tabResult = await sftpTransfer.cleanupActiveTransfersForTab(
-            proc.config.tabId,
-          );
-          if (tabResult.cleanedCount > 0) {
-            logToFile(
-              `Cleaned up ${tabResult.cleanedCount} active SFTP transfers for tabId ${proc.config.tabId} during app quit`,
-              "INFO",
-            );
-          }
-        }
-      } catch (cleanupError) {
-        logToFile(
-          `Error initiating SFTP transfer cleanup for tab ${id}: ${cleanupError.message}`,
-          "ERROR",
-        );
-      }
-    }
-
     if (
       filemanagementService &&
       typeof filemanagementService.cleanupTransfersForTab === "function"
@@ -277,15 +231,6 @@ class AppCleanup {
         tabReferences: telnetPool?.tabReferences?.size || 0,
         healthCheckTimerActive: Boolean(telnetPool?.healthCheckTimer),
       },
-      sftp:
-        sftpCore && typeof sftpCore.getSftpRuntimeStats === "function"
-          ? sftpCore.getSftpRuntimeStats()
-          : null,
-      sftpTransfer:
-        sftpTransfer &&
-        typeof sftpTransfer.getTransferRuntimeStats === "function"
-          ? sftpTransfer.getTransferRuntimeStats()
-          : null,
       filemanagementTransfer:
         filemanagementService &&
         typeof filemanagementService.getTransferRuntimeStats === "function"
@@ -295,8 +240,6 @@ class AppCleanup {
   }
 
   hasResidualRuntimeResources(snapshot) {
-    const sftpStats = snapshot?.sftp || {};
-    const transferStats = snapshot?.sftpTransfer || {};
     const filemanagementStats = snapshot?.filemanagementTransfer || {};
 
     return Boolean(
@@ -309,15 +252,6 @@ class AppCleanup {
       (snapshot?.telnet?.connections || 0) > 0 ||
       (snapshot?.telnet?.tabReferences || 0) > 0 ||
       snapshot?.telnet?.healthCheckTimerActive ||
-      (sftpStats.poolCount || 0) > 0 ||
-      (sftpStats.sessionCount || 0) > 0 ||
-      (sftpStats.pendingQueueCount || 0) > 0 ||
-      (sftpStats.pendingOperationCount || 0) > 0 ||
-      (sftpStats.sessionLockCount || 0) > 0 ||
-      (sftpStats.borrowLockCount || 0) > 0 ||
-      sftpStats.healthCheckTimerActive ||
-      (transferStats.activeTransferCount || 0) > 0 ||
-      (transferStats.activeStreamCount || 0) > 0 ||
       (filemanagementStats.activeTransferCount || 0) > 0,
     );
   }
@@ -328,46 +262,6 @@ class AppCleanup {
       typeof filemanagementService.cleanup === "function"
     ) {
       filemanagementService.cleanup();
-    }
-
-    if (
-      sftpTransfer &&
-      typeof sftpTransfer.cleanupAllActiveTransfers === "function"
-    ) {
-      try {
-        const summary = await sftpTransfer.cleanupAllActiveTransfers({
-          reason: "app-quit",
-        });
-        logToFile(
-          `App quit transfer cleanup summary: ${JSON.stringify(summary)}`,
-          "INFO",
-        );
-      } catch (error) {
-        logToFile(
-          `App quit transfer cleanup failed: ${error.message}`,
-          "ERROR",
-        );
-      }
-    }
-
-    if (sftpCore && typeof sftpCore.shutdownAllSftpResources === "function") {
-      try {
-        const summary = await sftpCore.shutdownAllSftpResources();
-        logToFile(
-          `App quit SFTP core shutdown summary: ${JSON.stringify(summary)}`,
-          "INFO",
-        );
-      } catch (error) {
-        logToFile(
-          `App quit SFTP core shutdown failed: ${error.message}`,
-          "ERROR",
-        );
-      }
-      return;
-    }
-
-    if (sftpCore && typeof sftpCore.stopSftpHealthCheck === "function") {
-      sftpCore.stopSftpHealthCheck();
     }
   }
 

@@ -4,6 +4,7 @@ const { logToFile } = require("../../utils/logger");
 const terminalManager = require("../../../modules/terminal");
 const crypto = require("crypto");
 const configService = require("../../../services/configService");
+const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
 
 /**
  * SSH/Telnet连接相关的IPC处理器
@@ -14,16 +15,12 @@ class SSHHandlers {
    * @param {Object} dependencies - 依赖注入
    * @param {Map} dependencies.childProcesses - 子进程映射
    * @param {Object} dependencies.connectionManager - 连接管理器
-   * @param {Object} dependencies.sftpCore - SFTP核心模块
-   * @param {Object} dependencies.sftpTransfer - SFTP传输模块
    * @param {Function} dependencies.getNextProcessId - 获取下一个进程ID的函数
    * @param {Function} dependencies.getLatencyHandlers - 获取延迟处理器的函数
    */
   constructor(dependencies) {
     this.childProcesses = dependencies.childProcesses;
     this.connectionManager = dependencies.connectionManager;
-    this.sftpCore = dependencies.sftpCore;
-    this.sftpTransfer = dependencies.sftpTransfer;
     this.getNextProcessId = dependencies.getNextProcessId;
     this.getLatencyHandlers = dependencies.getLatencyHandlers;
     this.terminalIOMailboxManager = dependencies.terminalIOMailboxManager;
@@ -1057,44 +1054,14 @@ class SSHHandlers {
       }
 
       // 清理SFTP传输
-      if (this.sftpTransfer?.cleanupActiveTransfersForTab) {
-        this.sftpTransfer
-          .cleanupActiveTransfersForTab(processId)
-          .catch((err) => {
-            logToFile(
-              `Error cleaning up SFTP transfers: ${err.message}`,
-              "ERROR",
-            );
-          });
-        if (sshConfig.tabId && sshConfig.tabId !== processId) {
-          this.sftpTransfer
-            .cleanupActiveTransfersForTab(sshConfig.tabId)
-            .catch((err) => {
-              logToFile(
-                `Error cleaning up SFTP transfers for tabId: ${err.message}`,
-                "ERROR",
-              );
-            });
-        }
-      }
-
-      // 清理SFTP操作
-      if (this.sftpCore?.clearPendingOperationsForTab) {
-        this.sftpCore.clearPendingOperationsForTab(processId);
-        if (sshConfig.tabId)
-          this.sftpCore.clearPendingOperationsForTab(sshConfig.tabId);
-      }
-
-      // 清理SFTP会话池
       try {
-        if (this.sftpCore?.closeAllSftpSessionsForTab) {
-          this.sftpCore.closeAllSftpSessionsForTab(processId);
-          if (sshConfig.tabId)
-            this.sftpCore.closeAllSftpSessionsForTab(sshConfig.tabId);
+        filemanagementService.cleanupTransfersForTab(processId);
+        if (sshConfig.tabId && sshConfig.tabId !== processId) {
+          filemanagementService.cleanupTransfersForTab(sshConfig.tabId);
         }
       } catch (err) {
         logToFile(
-          `Error closing SFTP sessions on SSH close: ${err.message}`,
+          `Error cleaning up native transfers on SSH close: ${err.message}`,
           "ERROR",
         );
       }

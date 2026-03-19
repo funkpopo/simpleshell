@@ -1,6 +1,5 @@
-const sftpCore = require("../../transfer/sftp-engine"); // 已合并到sftp-engine
-const sftpTransfer = require("../../../modules/sftp/sftpTransfer");
 const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
+const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
 const processManager = require("../../process/processManager");
 const path = require("path");
@@ -151,10 +150,7 @@ class FileHandlers {
         // Fire-and-forget chunk producer
         Promise.resolve()
           .then(async () => {
-            const result = await sftpCore.listFiles(tabId, requestedPath, {
-              ...options,
-              nonBlocking: false, // avoid nested nonBlocking semantics in lower layers
-            });
+            const result = await nativeSftpClient.listFiles(tabId, requestedPath);
 
             const send = (payload) => {
               try {
@@ -216,7 +212,7 @@ class FileHandlers {
         return { success: true, data: [], chunked: true, token };
       }
 
-      const result = await sftpCore.listFiles(tabId, path, options);
+      const result = await nativeSftpClient.listFiles(tabId, path);
       return result;
     } catch (error) {
       logToFile(`Error listing files: ${error.message}`, "ERROR");
@@ -226,7 +222,7 @@ class FileHandlers {
 
   async copyFile(event, tabId, sourcePath, targetPath) {
     try {
-      const result = await sftpCore.copyFile(tabId, sourcePath, targetPath);
+      const result = await nativeSftpClient.copyFile(tabId, sourcePath, targetPath);
       return result;
     } catch (error) {
       logToFile(`Error copying file: ${error.message}`, "ERROR");
@@ -259,21 +255,7 @@ class FileHandlers {
     );
 
     try {
-      if (typeof sftpCore.moveFile === "function") {
-        const result = await sftpCore.moveFile(tabId, sourcePath, targetPath);
-        return result;
-      }
-
-      // Fallback implementation
-      return await sftpCore.enqueueSftpOperation(tabId, async () => {
-        const sftp = await sftpCore.getSftpSession(tabId);
-        return new Promise((resolve, reject) => {
-          sftp.rename(sourcePath, targetPath, (err) => {
-            if (err) reject(err);
-            else resolve({ success: true });
-          });
-        });
-      });
+      return await nativeSftpClient.moveFile(tabId, sourcePath, targetPath);
     } catch (error) {
       logToFile(`Error moving file: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -305,30 +287,7 @@ class FileHandlers {
     );
 
     try {
-      if (typeof sftpCore.deleteFile === "function") {
-        const result = await sftpCore.deleteFile(tabId, filePath, isDirectory);
-        return result;
-      }
-
-      // Fallback implementation
-      return await sftpCore.enqueueSftpOperation(
-        tabId,
-        async () => {
-          const sftp = await sftpCore.getSftpSession(tabId);
-          return new Promise((resolve, reject) => {
-            const cb = (err) => {
-              if (err) reject(err);
-              else resolve({ success: true });
-            };
-            if (isDirectory) {
-              sftp.rmdir(filePath, cb);
-            } else {
-              sftp.unlink(filePath, cb);
-            }
-          });
-        },
-        { type: "deleteFile", path: filePath },
-      );
+      return await nativeSftpClient.deleteFile(tabId, filePath, isDirectory);
     } catch (error) {
       logToFile(`Error deleting file: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -337,7 +296,7 @@ class FileHandlers {
 
   async createFolder(event, tabId, folderPath) {
     try {
-      const result = await sftpCore.createFolder(tabId, folderPath);
+      const result = await nativeSftpClient.createFolder(tabId, folderPath);
       return result;
     } catch (error) {
       logToFile(`Error creating folder: ${error.message}`, "ERROR");
@@ -347,7 +306,7 @@ class FileHandlers {
 
   async createFile(event, tabId, filePath) {
     try {
-      const result = await sftpCore.createFile(tabId, filePath);
+      const result = await nativeSftpClient.createFile(tabId, filePath);
       return result;
     } catch (error) {
       logToFile(`Error creating file: ${error.message}`, "ERROR");
@@ -379,21 +338,7 @@ class FileHandlers {
     );
 
     try {
-      if (typeof sftpCore.renameFile === "function") {
-        const result = await sftpCore.renameFile(tabId, oldPath, newPath);
-        return result;
-      }
-
-      // Fallback implementation
-      return await sftpCore.enqueueSftpOperation(tabId, async () => {
-        const sftp = await sftpCore.getSftpSession(tabId);
-        return new Promise((resolve, reject) => {
-          sftp.rename(oldPath, newPath, (err) => {
-            if (err) reject(err);
-            else resolve({ success: true });
-          });
-        });
-      });
+      return await nativeSftpClient.renameFile(tabId, oldPath, newPath);
     } catch (error) {
       logToFile(`Error renaming file: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -402,7 +347,11 @@ class FileHandlers {
 
   async downloadFile(event, tabId, remotePath) {
     try {
-      const result = await sftpTransfer.downloadFile(tabId, remotePath);
+      const result = await filemanagementService.downloadFile(
+        event,
+        tabId,
+        remotePath,
+      );
       if (result.success) {
         this.activeTransfers.set(`${tabId}-${remotePath}`, result.transferKey);
       }
@@ -415,7 +364,11 @@ class FileHandlers {
 
   async downloadFolder(event, tabId, remotePath) {
     try {
-      const result = await sftpTransfer.downloadFolder(tabId, remotePath);
+      const result = await filemanagementService.downloadFolder(
+        event,
+        tabId,
+        remotePath,
+      );
       return result;
     } catch (error) {
       logToFile(`Error downloading folder: ${error.message}`, "ERROR");
@@ -425,7 +378,7 @@ class FileHandlers {
 
   async getFilePermissions(event, tabId, filePath) {
     try {
-      const result = await sftpCore.getFilePermissions(tabId, filePath);
+      const result = await nativeSftpClient.getFilePermissions(tabId, filePath);
       return result;
     } catch (error) {
       logToFile(`Error getting file permissions: ${error.message}`, "ERROR");
@@ -435,7 +388,7 @@ class FileHandlers {
 
   async getAbsolutePath(event, tabId, relativePath) {
     try {
-      const result = await sftpCore.getAbsolutePath(tabId, relativePath);
+      const result = await nativeSftpClient.getAbsolutePath(tabId, relativePath);
       return result;
     } catch (error) {
       logToFile(`Error getting absolute path: ${error.message}`, "ERROR");
@@ -485,8 +438,11 @@ class FileHandlers {
         }
       }
 
-      // NOTE: sftpTransfer.cancelTransfer uses strict signature (tabId, transferKey).
-      const result = await sftpTransfer.cancelTransfer(tabId, transferKey);
+      const result = await filemanagementService.cancelTransfer(
+        event,
+        tabId,
+        transferKey,
+      );
 
       // Clean up any local bookkeeping that maps to this transferKey (if present).
       for (const [k, v] of this.activeTransfers.entries()) {
@@ -502,46 +458,16 @@ class FileHandlers {
   }
 
   async downloadFiles(event, tabId, files) {
-    if (
-      !sftpTransfer ||
-      typeof sftpTransfer.handleDownloadFiles !== "function"
-    ) {
-      logToFile("sftpTransfer.handleDownloadFiles is not available", "ERROR");
-      return {
-        success: false,
-        error: "SFTP Batch Download feature not properly initialized.",
-      };
-    }
-    return sftpTransfer.handleDownloadFiles(event, tabId, files);
+    return filemanagementService.downloadFiles(event, tabId, files);
   }
 
   async setFilePermissions(event, tabId, filePath, permissions) {
     try {
-      const permissionStr = String(permissions || "").trim();
-      const mode = parseInt(permissionStr, 8);
-      if (!permissionStr || Number.isNaN(mode)) {
-        return { success: false, error: "无效的权限值" };
-      }
-
-      return sftpCore.enqueueSftpOperation(tabId, async () => {
-        const sftp = await sftpCore.getSftpSession(tabId);
-        return new Promise((resolve) => {
-          sftp.chmod(filePath, mode, (err) => {
-            if (err) {
-              logToFile(
-                `Failed to set file permissions: ${err.message}`,
-                "ERROR",
-              );
-              resolve({
-                success: false,
-                error: `设置权限失败: ${err.message}`,
-              });
-            } else {
-              resolve({ success: true });
-            }
-          });
-        });
-      });
+      return await nativeSftpClient.setFilePermissions(
+        tabId,
+        filePath,
+        permissions,
+      );
     } catch (error) {
       logToFile(`Set file permissions error: ${error.message}`, "ERROR");
       return { success: false, error: `设置权限失败: ${error.message}` };
@@ -550,47 +476,7 @@ class FileHandlers {
 
   async getFilePermissionsBatch(event, tabId, filePaths) {
     try {
-      if (!Array.isArray(filePaths) || filePaths.length === 0) {
-        return { success: true, results: [] };
-      }
-      return sftpCore.enqueueSftpOperation(tabId, async () => {
-        const sftp = await sftpCore.getSftpSession(tabId);
-        const results = [];
-        const BATCH_CONCURRENCY = 10;
-        const chunks = [];
-        for (let i = 0; i < filePaths.length; i += BATCH_CONCURRENCY) {
-          chunks.push(filePaths.slice(i, i + BATCH_CONCURRENCY));
-        }
-        for (const chunk of chunks) {
-          const chunkPromises = chunk.map(
-            (filePath) =>
-              new Promise((resolve) => {
-                sftp.stat(filePath, (err, stats) => {
-                  if (err) {
-                    resolve({
-                      path: filePath,
-                      success: false,
-                      error: err.message,
-                    });
-                  } else {
-                    const mode = stats.mode;
-                    const permissions = (mode & parseInt("777", 8)).toString(8);
-                    resolve({
-                      path: filePath,
-                      success: true,
-                      permissions: permissions.padStart(3, "0"),
-                      mode,
-                      stats,
-                    });
-                  }
-                });
-              }),
-          );
-          const chunkResults = await Promise.all(chunkPromises);
-          results.push(...chunkResults);
-        }
-        return { success: true, results };
-      });
+      return await nativeSftpClient.getFilePermissionsBatch(tabId, filePaths);
     } catch (error) {
       logToFile(`Batch get file permissions error: ${error.message}`, "ERROR");
       return { success: false, error: `批量获取权限失败: ${error.message}` };
@@ -599,55 +485,12 @@ class FileHandlers {
 
   async setFileOwnership(event, tabId, filePath, owner, group) {
     try {
-      const ownerStr = String(owner ?? "").trim();
-      const groupStr = String(group ?? "").trim();
-      if (!ownerStr && !groupStr) return { success: true };
-
-      const ownerId =
-        ownerStr && /^\d+$/.test(ownerStr) ? parseInt(ownerStr, 10) : null;
-      const groupId =
-        groupStr && /^\d+$/.test(groupStr) ? parseInt(groupStr, 10) : null;
-
-      if (ownerStr && ownerId === null) {
-        return { success: false, error: "所有者必须是数字UID" };
-      }
-      if (groupStr && groupId === null) {
-        return { success: false, error: "组必须是数字GID" };
-      }
-
-      return sftpCore.enqueueSftpOperation(tabId, async () => {
-        const sftp = await sftpCore.getSftpSession(tabId);
-        return new Promise((resolve) => {
-          const applyChown = (uid, gid) => {
-            sftp.chown(filePath, uid, gid, (err) => {
-              if (err) {
-                return resolve({
-                  success: false,
-                  error: `设置所有者/组失败: ${err.message}`,
-                });
-              }
-              resolve({ success: true });
-            });
-          };
-
-          if (ownerId !== null && groupId !== null) {
-            applyChown(ownerId, groupId);
-            return;
-          }
-
-          sftp.stat(filePath, (statErr, stats) => {
-            if (statErr) {
-              return resolve({
-                success: false,
-                error: `获取现有所有者/组失败: ${statErr.message}`,
-              });
-            }
-            const uid = ownerId !== null ? ownerId : stats.uid;
-            const gid = groupId !== null ? groupId : stats.gid;
-            applyChown(uid, gid);
-          });
-        });
-      });
+      return await nativeSftpClient.setFileOwnership(
+        tabId,
+        filePath,
+        owner,
+        group,
+      );
     } catch (error) {
       logToFile(`Set file ownership error: ${error.message}`, "ERROR");
       return { success: false, error: `设置所有者/组失败: ${error.message}` };
@@ -660,41 +503,7 @@ class FileHandlers {
       if (!processInfo || !processInfo.config || processInfo.type !== "ssh2") {
         return { success: false, error: "Invalid SSH connection" };
       }
-      const sftp = await sftpCore.getSftpSession(tabId);
-      const createDirRecursive = async (dirPath) => {
-        const parts = dirPath.split("/").filter(Boolean);
-        let currentPath = dirPath.startsWith("/") ? "/" : "";
-        for (const part of parts) {
-          currentPath = path.posix.join(currentPath, part);
-          try {
-            await new Promise((resolve, reject) => {
-              sftp.stat(currentPath, (err, stats) => {
-                if (err) {
-                  if (err.code === 2) {
-                    sftp.mkdir(currentPath, (mkdirErr) => {
-                      if (mkdirErr && mkdirErr.code !== 4) reject(mkdirErr);
-                      else resolve();
-                    });
-                  } else reject(err);
-                } else if (stats.isDirectory()) resolve();
-                else
-                  reject(
-                    new Error(
-                      `Path exists but is not a directory: ${currentPath}`,
-                    ),
-                  );
-              });
-            });
-          } catch (error) {
-            logToFile(
-              `Warning creating folder ${currentPath}: ${error.message}`,
-              "WARN",
-            );
-          }
-        }
-      };
-      await createDirRecursive(folderPath);
-      return { success: true };
+      return await nativeSftpClient.createRemoteFolders(tabId, folderPath);
     } catch (error) {
       logToFile(`Error creating remote folders: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -843,9 +652,8 @@ class FileHandlers {
   cleanup() {
     for (const [key, transferKey] of this.activeTransfers) {
       try {
-        // Back-compat: cancelTransfer can take only transferKey, but we also try to pass tabId when we can.
         const tabId = String(key).split("-")[0];
-        sftpTransfer.cancelTransfer(tabId, transferKey);
+        filemanagementService.cancelTransfer(null, tabId, transferKey);
       } catch (error) {
         logToFile(
           `Error cleaning up transfer ${key}: ${error.message}`,
