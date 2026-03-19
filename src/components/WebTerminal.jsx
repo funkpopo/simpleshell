@@ -112,6 +112,14 @@ const isCursorInsideWrappedInputBlock = (term) => {
   return previousLine?.isWrapped === true;
 };
 
+const clearPendingWrappedInputRefresh = (term) => {
+  if (!term) {
+    return;
+  }
+
+  term.__pendingWrappedInputRefresh = false;
+};
+
 const shouldForceTerminalViewportRefresh = (term, inEditorMode = false) => {
   if (!term || inEditorMode || term.buffer?.active?.type === "alternate") {
     return false;
@@ -567,6 +575,7 @@ const WebTerminal = ({
       command: "",
       capturedAt: 0,
     };
+    clearPendingWrappedInputRefresh(termRef.current);
 
     setHasShellIntegration(false);
     setIsShellPromptReady(false);
@@ -619,6 +628,7 @@ const WebTerminal = ({
           state.promptStarted = true;
           state.promptReady = false;
           state.commandRunning = false;
+          clearPendingWrappedInputRefresh(termRef.current);
           setIsShellPromptReady(false);
           setIsCommandExecuting(false);
           break;
@@ -626,12 +636,14 @@ const WebTerminal = ({
           state.promptStarted = false;
           state.promptReady = true;
           state.commandRunning = false;
+          clearPendingWrappedInputRefresh(termRef.current);
           setIsShellPromptReady(true);
           setIsCommandExecuting(false);
           break;
         case "command-start":
           state.promptReady = false;
           state.commandRunning = true;
+          clearPendingWrappedInputRefresh(termRef.current);
           setIsShellPromptReady(false);
           setIsCommandExecuting(true);
           commitExecutedCommand();
@@ -649,6 +661,7 @@ const WebTerminal = ({
         case "command-finish":
           state.commandRunning = false;
           state.lastExitCode = event.exitCode ?? null;
+          clearPendingWrappedInputRefresh(termRef.current);
           setIsCommandExecuting(false);
           break;
         default:
@@ -1043,6 +1056,7 @@ const WebTerminal = ({
         if (type === "alternate") {
           // 进入编辑器/全屏应用模式
           inEditorMode = true;
+          clearPendingWrappedInputRefresh(term);
           setInEditorMode(true);
 
           // 通知主进程编辑器模式状态变更
@@ -1055,6 +1069,7 @@ const WebTerminal = ({
           setSuggestions([]);
         } else if (type === "normal") {
           // 退出编辑器/全屏应用模式
+          clearPendingWrappedInputRefresh(term);
           if (inEditorMode) {
             inEditorMode = false;
             setInEditorMode(false);
@@ -1264,6 +1279,8 @@ const WebTerminal = ({
         if (shouldSkipSendToProcess) {
           return;
         }
+
+        clearPendingWrappedInputRefresh(term);
 
         if (hasShellIntegrationRef.current && !canTrackPromptInput) {
           currentInputBuffer = "";
@@ -2197,9 +2214,7 @@ const WebTerminal = ({
                 term,
                 inEditorModeRef.current,
               );
-              if (term.__pendingWrappedInputRefresh === true) {
-                term.__pendingWrappedInputRefresh = false;
-              }
+              clearPendingWrappedInputRefresh(term);
               scheduleHighlightRefresh(term, { force: forceRefresh });
             },
           });
@@ -2224,9 +2239,7 @@ const WebTerminal = ({
                 term,
                 inEditorModeRef.current,
               );
-              if (term.__pendingWrappedInputRefresh === true) {
-                term.__pendingWrappedInputRefresh = false;
-              }
+              clearPendingWrappedInputRefresh(term);
               scheduleHighlightRefresh(term, { force: forceRefresh });
             },
           });
@@ -3319,7 +3332,7 @@ const WebTerminal = ({
     clearGeometryFor(processId, tabId);
     resetShellIntegrationTracking(processId);
     ensureShellIntegrationParser(term);
-    term.__pendingWrappedInputRefresh = false;
+    clearPendingWrappedInputRefresh(term);
 
     // 添加数据监听
     const handleProcessOutput = (data) => {
