@@ -9,6 +9,10 @@ const MAX_PORT = 65535;
 const DEFAULT_DEV_SERVER_PORT = 3001;
 const DEFAULT_LOGGER_PORT = 19001;
 const LOCALE_PAKS_TO_KEEP = new Set(["en-US.pak", "zh-CN.pak"]);
+const SIDECAR_BASENAME =
+  process.platform === "win32"
+    ? "transfer-sidecar.exe"
+    : "transfer-sidecar";
 
 const parsePort = (rawValue, fallback) => {
   if (!rawValue) {
@@ -169,6 +173,15 @@ module.exports = async () => {
     packagerConfig: {
       asar: true,
       icon: "./src/assets/logo",
+      extraResource: [
+        path.join(
+          __dirname,
+          "transfernative",
+          "bin",
+          `${process.platform}-${process.arch}`,
+          SIDECAR_BASENAME,
+        ),
+      ],
       afterComplete: [cleanupLocalesHook],
       download: {
         unsafelyDisableChecksums: false,

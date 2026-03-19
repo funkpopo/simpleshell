@@ -3878,15 +3878,34 @@ const FileManager = memo(
           let didForegroundRefresh = false;
 
           try {
-            // 准备文件数据供IPC传输
+            // 优先传递本地文件路径，避免把文件内容整体读入渲染进程并穿过 IPC。
             const filesDataForUpload = [];
             const foldersToCreate = Array.from(folderStructure).sort();
 
             for (const item of allFiles) {
-              // 读取文件内容为ArrayBuffer
-              const arrayBuffer = await item.file.arrayBuffer();
+              let localPath =
+                typeof item.file?.path === "string" ? item.file.path : "";
+              if (!localPath && window.terminalAPI?.getPathForFile) {
+                try {
+                  localPath = window.terminalAPI.getPathForFile(item.file) || "";
+                } catch {
+                  localPath = "";
+                }
+              }
+              if (localPath) {
+                filesDataForUpload.push({
+                  name: item.file.name,
+                  relativePath: item.relativePath,
+                  size: item.file.size,
+                  type: item.file.type,
+                  lastModified: item.file.lastModified,
+                  localPath,
+                });
+                continue;
+              }
 
-              // 对于大文件，分块处理以避免 "Invalid array length" 错误
+              // 少数无法解析为本地路径的场景再回退到内存传输。
+              const arrayBuffer = await item.file.arrayBuffer();
               const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
               const chunks = [];
 

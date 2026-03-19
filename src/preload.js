@@ -1,7 +1,12 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 
-const { contextBridge, ipcRenderer, clipboard } = require("electron");
+const {
+  contextBridge,
+  ipcRenderer,
+  clipboard,
+  webUtils,
+} = require("electron");
 const {
   TERMINAL_IO_MAILBOX_CHANNEL,
   TERMINAL_IO_MESSAGE_TYPES,
@@ -819,6 +824,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 文件系统辅助API
   checkPathExists: (path) => ipcRenderer.invoke("checkPathExists", path),
   showItemInFolder: (path) => ipcRenderer.invoke("showItemInFolder", path),
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || "";
+    } catch {
+      return "";
+    }
+  },
 
   // UI设置相关API
   loadUISettings: () => ipcRenderer.invoke("settings:loadUISettings"),

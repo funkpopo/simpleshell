@@ -2,6 +2,7 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const { execFile } = require("child_process");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
 const crypto = require("crypto");
@@ -9,6 +10,7 @@ const { app, dialog, shell, BrowserWindow } = require("electron");
 
 const sftpCore = require("../../core/transfer/sftp-engine");
 const processManager = require("../../core/process/processManager");
+const { getTransferNativeScannerPath } = require("../../core/utils/nativeTransferSidecar");
 const { processSSHPrivateKeyAsync } = require("../../core/utils/ssh-utils");
 const { logToFile } = require("../../core/utils/logger");
 const connectionManager = require("../connection");
@@ -1452,51 +1454,95 @@ class FilemanagementService {
     });
   }
 
-  async _scanLocalFolder(localFolderPath) {
-    const normalizedRoot = path.resolve(localFolderPath);
-    const stack = [{ absPath: normalizedRoot, relPath: "" }];
-    const files = [];
-    const directories = new Set();
-    let totalBytes = 0;
-
-    while (stack.length > 0) {
-      const current = stack.pop();
-      const entries = await fsp.readdir(current.absPath, {
-        withFileTypes: true,
-      });
-      for (const entry of entries) {
-        const abs = path.join(current.absPath, entry.name);
-        const rel = current.relPath
-          ? path.posix.join(current.relPath, entry.name)
-          : entry.name;
-
-        if (entry.isDirectory()) {
-          directories.add(rel);
-          stack.push({ absPath: abs, relPath: rel });
-          continue;
-        }
-
-        if (!entry.isFile()) {
-          continue;
-        }
-
-        const stats = await fsp.stat(abs);
-        const fileSize = Number.isFinite(stats?.size) ? stats.size : 0;
-        totalBytes += fileSize;
-        files.push({
-          localPath: abs,
-          relativePath: toPosixPath(rel),
-          fileName: entry.name,
-          size: fileSize,
-        });
-      }
+  async _scanLocalFolderWithNativeSidecar(localFolderPath) {
+    const scannerPath = getTransferNativeScannerPath();
+    if (!scannerPath) {
+      throw new Error(
+        "Rust transfer sidecar is required for folder scanning but was not found",
+      );
     }
 
-    return {
-      files,
-      directories: Array.from(directories),
-      totalBytes,
+    return new Promise((resolve, reject) => {
+      execFile(
+        scannerPath,
+        ["scan-folder", "--path", localFolderPath],
+        {
+          windowsHide: true,
+          maxBuffer: 128 * 1024 * 1024,
+          timeout: 60000,
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            reject(
+              new Error(
+                stderr?.trim() ||
+                  stdout?.trim() ||
+                  normalizeErrorMessage(error),
+              ),
+            );
+            return;
+          }
+
+          const payload = String(stdout || "").trim();
+          if (!payload) {
+            reject(new Error("Native scanner returned empty output"));
+            return;
+          }
+
+          try {
+            resolve(JSON.parse(payload));
+          } catch (parseError) {
+            reject(
+              new Error(
+                `Native scanner returned invalid JSON: ${normalizeErrorMessage(parseError)}`,
+              ),
+            );
+          }
+        },
+      );
+    });
+  }
+
+  async _scanLocalFolder(localFolderPath) {
+    const normalizedRoot = path.resolve(localFolderPath);
+    const normalizeScanResult = (scanResult) => {
+      const rawFiles = Array.isArray(scanResult?.files) ? scanResult.files : [];
+      const files = rawFiles.map((file) => {
+        const relativePath = toPosixPath(
+          file?.relativePath || file?.path || file?.name || "",
+        );
+        const localPath = file?.localPath || file?.path || "";
+        return {
+          localPath,
+          relativePath,
+          fileName:
+            file?.fileName ||
+            file?.name ||
+            path.basename(localPath || relativePath),
+          size: Number.isFinite(file?.size) ? file.size : 0,
+        };
+      });
+
+      const totalBytesFromPayload =
+        Number.isFinite(scanResult?.totalBytes) && scanResult.totalBytes >= 0
+          ? scanResult.totalBytes
+          : Number.isFinite(scanResult?.totalSize) && scanResult.totalSize >= 0
+            ? scanResult.totalSize
+            : files.reduce(
+                (sum, file) => sum + (Number.isFinite(file.size) ? file.size : 0),
+                0,
+              );
+
+      return {
+        files,
+        directories: [],
+        totalBytes: totalBytesFromPayload,
+      };
     };
+    const nativeScan = await this._scanLocalFolderWithNativeSidecar(
+      normalizedRoot,
+    );
+    return normalizeScanResult(nativeScan);
   }
 
   async _scanRemoteFolderTree(tabId, remoteRootPath) {
