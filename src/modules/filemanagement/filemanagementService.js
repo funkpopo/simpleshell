@@ -8,10 +8,10 @@ const { pipeline } = require("stream/promises");
 const crypto = require("crypto");
 const { app, dialog, shell, BrowserWindow } = require("electron");
 
-const sftpCore = require("../../core/transfer/sftp-engine");
 const processManager = require("../../core/process/processManager");
 const { getTransferNativeScannerPath } = require("../../core/utils/nativeTransferSidecar");
 const { processSSHPrivateKeyAsync } = require("../../core/utils/ssh-utils");
+const nativeSftpClient = require("../../core/utils/nativeSftpClient");
 const { logToFile } = require("../../core/utils/logger");
 const connectionManager = require("../connection");
 const TransferProcessPool = require("./transferProcessPool");
@@ -396,17 +396,165 @@ class FilemanagementService {
     }
   }
 
+  _toShimStats(result) {
+    const stats = result?.stats || result || {};
+    return {
+      size: Number.isFinite(stats.size) ? stats.size : 0,
+      mode: Number.isFinite(stats.mode) ? stats.mode : 0,
+      uid: Number.isFinite(stats.uid) ? stats.uid : 0,
+      gid: Number.isFinite(stats.gid) ? stats.gid : 0,
+      mtime: Number.isFinite(stats.modifyTime)
+        ? Math.floor(stats.modifyTime / 1000)
+        : 0,
+      atime: Number.isFinite(stats.accessTime)
+        ? Math.floor(stats.accessTime / 1000)
+        : 0,
+    };
+  }
+
+  _toShimDirEntry(item) {
+    return {
+      filename: item?.name || "",
+      attrs: {
+        size: Number.isFinite(item?.size) ? item.size : 0,
+        mode: Number.isFinite(item?.mode) ? item.mode : 0,
+        uid: Number.isFinite(item?.uid) ? item.uid : 0,
+        gid: Number.isFinite(item?.gid) ? item.gid : 0,
+        mtime: Number.isFinite(item?.modifyTime)
+          ? Math.floor(item.modifyTime / 1000)
+          : 0,
+        atime: Number.isFinite(item?.accessTime)
+          ? Math.floor(item.accessTime / 1000)
+          : 0,
+      },
+    };
+  }
+
+  _createNativeSftpShim(tabId) {
+    return {
+      stat: (remotePath, callback) => {
+        nativeSftpClient
+          .getFilePermissions(tabId, remotePath)
+          .then((result) => {
+            if (!result?.success) {
+              callback(new Error(result?.error || "stat failed"));
+              return;
+            }
+            callback(null, this._toShimStats(result));
+          })
+          .catch(callback);
+      },
+      lstat: (remotePath, callback) => {
+        nativeSftpClient
+          .getFilePermissions(tabId, remotePath)
+          .then((result) => {
+            if (!result?.success) {
+              callback(new Error(result?.error || "lstat failed"));
+              return;
+            }
+            callback(null, this._toShimStats(result));
+          })
+          .catch(callback);
+      },
+      readdir: (remotePath, callback) => {
+        nativeSftpClient
+          .listFiles(tabId, remotePath)
+          .then((result) => {
+            if (!result?.success) {
+              callback(new Error(result?.error || "readdir failed"));
+              return;
+            }
+            callback(
+              null,
+              (Array.isArray(result.data) ? result.data : []).map((item) =>
+                this._toShimDirEntry(item),
+              ),
+            );
+          })
+          .catch(callback);
+      },
+      rename: (sourcePath, targetPath, callback) => {
+        nativeSftpClient
+          .renameFile(tabId, sourcePath, targetPath)
+          .then((result) =>
+            result?.success
+              ? callback(null)
+              : callback(new Error(result?.error || "rename failed")),
+          )
+          .catch(callback);
+      },
+      unlink: (remotePath, callback) => {
+        nativeSftpClient
+          .deleteFile(tabId, remotePath, false)
+          .then((result) =>
+            result?.success
+              ? callback(null)
+              : callback(new Error(result?.error || "unlink failed")),
+          )
+          .catch(callback);
+      },
+      rmdir: (remotePath, callback) => {
+        nativeSftpClient
+          .deleteFile(tabId, remotePath, true)
+          .then((result) =>
+            result?.success
+              ? callback(null)
+              : callback(new Error(result?.error || "rmdir failed")),
+          )
+          .catch(callback);
+      },
+      mkdir: (remotePath, callback) => {
+        nativeSftpClient
+          .createFolder(tabId, remotePath)
+          .then((result) =>
+            result?.success
+              ? callback(null)
+              : callback(new Error(result?.error || "mkdir failed")),
+          )
+          .catch(callback);
+      },
+      chmod: (remotePath, mode, callback) => {
+        nativeSftpClient
+          .setFilePermissions(
+            tabId,
+            remotePath,
+            (mode & 0o7777).toString(8).padStart(3, "0"),
+          )
+          .then((result) =>
+            result?.success
+              ? callback(null)
+              : callback(new Error(result?.error || "chmod failed")),
+          )
+          .catch(callback);
+      },
+      chown: (remotePath, uid, gid, callback) => {
+        nativeSftpClient
+          .setFileOwnership(tabId, remotePath, uid, gid)
+          .then((result) =>
+            result?.success
+              ? callback(null)
+              : callback(new Error(result?.error || "chown failed")),
+          )
+          .catch(callback);
+      },
+      open: (remotePath, _flags, callback) => {
+        nativeSftpClient
+          .createFile(tabId, remotePath)
+          .then((result) =>
+            result?.success
+              ? callback(null, { path: remotePath })
+              : callback(new Error(result?.error || "open failed")),
+          )
+          .catch(callback);
+      },
+      close: (_handle, callback) => {
+        callback(null);
+      },
+    };
+  }
+
   async _withBorrowedSftp(tabId, worker) {
-    const borrowed = await sftpCore.borrowSftpSession(tabId);
-    try {
-      return await worker(borrowed.sftp, borrowed.sessionId);
-    } finally {
-      try {
-        sftpCore.releaseSftpSession(tabId, borrowed.sessionId);
-      } catch {
-        // ignore release error
-      }
-    }
+    return worker(this._createNativeSftpShim(tabId), null);
   }
 
   async _withTransferRetry(transferKey, task) {
@@ -1056,37 +1204,7 @@ class FilemanagementService {
     try {
       const source = this._normalizeRemotePath(sourcePath);
       const target = this._normalizeRemotePath(targetPath);
-
-      await this._withBorrowedSftp(tabId, async (sftp) => {
-        const stats = await this._stat(sftp, source);
-        const chunkSize = this._chooseChunkSize(stats?.size || 0);
-        const readStream = sftp.createReadStream(source, {
-          highWaterMark: chunkSize,
-        });
-        const writeStream = sftp.createWriteStream(target, {
-          highWaterMark: chunkSize,
-        });
-
-        const transferKey = this._generateTransferKey(tabId, "copy");
-        this._registerTransfer({
-          transferKey,
-          tabId,
-          type: "copy",
-          sender: event?.sender,
-        });
-        try {
-          await this._pumpStreams({
-            transferKey,
-            readStream,
-            writeStream,
-            onBytes: () => {},
-          });
-        } finally {
-          this._finalizeTransfer(transferKey);
-        }
-      });
-
-      return { success: true };
+      return await nativeSftpClient.copyFile(tabId, source, target);
     } catch (error) {
       this._log(`copyFile failed: ${normalizeErrorMessage(error)}`, "ERROR");
       return { success: false, error: normalizeErrorMessage(error) };
@@ -1217,7 +1335,7 @@ class FilemanagementService {
 
   async getAbsolutePath(event, tabId, remotePath) {
     try {
-      return await sftpCore.getAbsolutePath(tabId, remotePath);
+      return await nativeSftpClient.getAbsolutePath(tabId, remotePath);
     } catch (error) {
       return { success: false, error: normalizeErrorMessage(error) };
     }
@@ -1620,30 +1738,29 @@ class FilemanagementService {
     try {
       const downloadedSize = await this._withTransferRetry(
         transferKey,
-        async () =>
-          this._withBorrowedSftp(tabId, async (sftp) => {
-            let fileSize = knownSize;
-            if (!Number.isFinite(fileSize) || fileSize < 0) {
-              const stats = await this._stat(sftp, normalizedRemotePath);
-              fileSize = Number.isFinite(stats?.size) ? stats.size : 0;
-            }
-
-            const chunkSize = this._chooseChunkSize(fileSize);
-            const readStream = sftp.createReadStream(normalizedRemotePath, {
-              highWaterMark: chunkSize,
-            });
-            const writeStream = fs.createWriteStream(tmpPath, {
-              highWaterMark: chunkSize,
-            });
-
-            await this._pumpStreams({
-              transferKey,
-              readStream,
-              writeStream,
-              onBytes,
-            });
-            return fileSize;
-          }),
+        async () => {
+          const result = await nativeSftpClient.downloadFile(
+            tabId,
+            normalizedRemotePath,
+            tmpPath,
+            {
+              onProgress: (payload) => {
+                const delta = Math.max(0, Number(payload?.deltaBytes) || 0);
+                if (delta > 0 && typeof onBytes === "function") {
+                  onBytes(delta);
+                }
+              },
+            },
+          );
+          if (!result?.success) {
+            throw new Error(result?.error || "download failed");
+          }
+          return Number.isFinite(result?.totalBytes)
+            ? result.totalBytes
+            : Number.isFinite(knownSize)
+              ? knownSize
+              : 0;
+        },
       );
 
       await fsp.rename(tmpPath, localPath);
@@ -2802,33 +2919,48 @@ class FilemanagementService {
     onBytes,
   }) {
     const normalizedRemotePath = this._normalizeRemotePath(remotePath);
+    let uploadSourcePath = localPath;
+    let cleanupTempPath = null;
 
-    await this._withTransferRetry(transferKey, async () =>
-      this._withBorrowedSftp(tabId, async (sftp) => {
+    if (!uploadSourcePath && buffer) {
+      cleanupTempPath = path.join(
+        os.tmpdir(),
+        `simpleshell-upload-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.tmp`,
+      );
+      await fsp.writeFile(cleanupTempPath, buffer);
+      uploadSourcePath = cleanupTempPath;
+    }
+
+    try {
+      await this._withTransferRetry(transferKey, async () => {
         let size = knownSize;
-        if (localPath && (!Number.isFinite(size) || size <= 0)) {
-          const stats = await fsp.stat(localPath);
+        if (uploadSourcePath && (!Number.isFinite(size) || size <= 0)) {
+          const stats = await fsp.stat(uploadSourcePath);
           size = Number.isFinite(stats?.size) ? stats.size : 0;
-        } else if (buffer && (!Number.isFinite(size) || size <= 0)) {
-          size = buffer.length;
         }
-
-        const chunkSize = this._chooseChunkSize(size);
-        const writeStream = sftp.createWriteStream(normalizedRemotePath, {
-          highWaterMark: chunkSize,
-        });
-        const readStream = localPath
-          ? fs.createReadStream(localPath, { highWaterMark: chunkSize })
-          : makeBufferReadStream(buffer || Buffer.alloc(0), chunkSize);
-
-        await this._pumpStreams({
-          transferKey,
-          readStream,
-          writeStream,
-          onBytes,
-        });
-      }),
-    );
+        const result = await nativeSftpClient.uploadFile(
+          tabId,
+          uploadSourcePath,
+          normalizedRemotePath,
+          {
+            onProgress: (payload) => {
+              const delta = Math.max(0, Number(payload?.deltaBytes) || 0);
+              if (delta > 0 && typeof onBytes === "function") {
+                onBytes(delta);
+              }
+            },
+            remoteWriteFlags: "w",
+          },
+        );
+        if (!result?.success) {
+          throw new Error(result?.error || "upload failed");
+        }
+      });
+    } finally {
+      if (cleanupTempPath) {
+        await fsp.rm(cleanupTempPath, { force: true }).catch(() => {});
+      }
+    }
   }
 
   _extractDroppedFileBuffer(fileData) {

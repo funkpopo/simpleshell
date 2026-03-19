@@ -1,6 +1,7 @@
 const { dialog, BrowserWindow } = require("electron");
 const { logToFile } = require("../../utils/logger");
 const configService = require("../../../services/configService");
+const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
 const {
   TERMINAL_IO_MAILBOX_CHANNEL,
   TERMINAL_IO_MESSAGE_TYPES,
@@ -32,7 +33,6 @@ class TerminalHandlers {
   constructor(options = {}) {
     this.processManager = options.processManager;
     this.connectionManager = options.connectionManager;
-    this.sftpCore = options.sftpCore;
     this.getLatencyHandlers = options.getLatencyHandlers;
     this.terminalIOMailboxManager = options.terminalIOMailboxManager;
   }
@@ -371,20 +371,13 @@ class TerminalHandlers {
     const proc = this.processManager.getProcess(processId);
     if (proc && proc.process) {
       try {
-        // 清理与此进程相关的待处理SFTP操作
+        filemanagementService.cleanupTransfersForTab(processId);
         if (
-          this.sftpCore &&
-          typeof this.sftpCore.clearPendingOperationsForTab === "function"
+          proc.config &&
+          proc.config.tabId &&
+          proc.config.tabId !== processId
         ) {
-          this.sftpCore.clearPendingOperationsForTab(processId);
-          // 如果是SSH进程，它可能在childProcesses中用config.tabId也存储了
-          if (
-            proc.config &&
-            proc.config.tabId &&
-            proc.config.tabId !== processId
-          ) {
-            this.sftpCore.clearPendingOperationsForTab(proc.config.tabId);
-          }
+          filemanagementService.cleanupTransfersForTab(proc.config.tabId);
         }
 
         // 如果是SSH连接，释放连接池中的连接引用

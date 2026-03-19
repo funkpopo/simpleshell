@@ -29,8 +29,6 @@ const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager")
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
-const sftpCore = require("../transfer/sftp-engine");
-const sftpTransfer = require("../../modules/sftp/sftpTransfer");
 
 /**
  * IPC设置模块
@@ -295,8 +293,6 @@ class IPCSetup {
       this.sshHandlers = new SSHHandlers({
         childProcesses: processManager.getProcessMap(),
         connectionManager,
-        sftpCore,
-        sftpTransfer,
         getNextProcessId: () => processManager.getNextProcessId(),
         getLatencyHandlers: () => this.latencyHandlers,
         terminalIOMailboxManager: this.terminalIOMailboxManager,
@@ -318,7 +314,6 @@ class IPCSetup {
       this.terminalHandlers = new TerminalHandlers({
         processManager,
         connectionManager,
-        sftpCore,
         getLatencyHandlers: () => this.latencyHandlers,
         terminalIOMailboxManager: this.terminalIOMailboxManager,
       });

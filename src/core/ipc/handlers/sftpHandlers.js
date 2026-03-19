@@ -1,6 +1,6 @@
-const sftpCore = require("../../transfer/sftp-engine");
 const fileCache = require("../../utils/fileCache");
 const fileSnapshotStore = require("../../utils/fileSnapshotStore");
+const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
 
 /**
@@ -74,8 +74,14 @@ class SftpHandlers {
 
   async getSftpSession(event, tabId) {
     try {
-      const session = await sftpCore.getSftpSession(tabId);
-      return { success: true, session };
+      return {
+        success: true,
+        session: {
+          tabId,
+          backend: "rust-sidecar",
+          native: true,
+        },
+      };
     } catch (error) {
       logToFile(`Error getting SFTP session: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -84,8 +90,10 @@ class SftpHandlers {
 
   async enqueueSftpOperation(event, tabId, operation) {
     try {
-      const result = await sftpCore.enqueueSftpOperation(tabId, operation);
-      return result;
+      void event;
+      void tabId;
+      void operation;
+      return { success: true, queued: false, native: true };
     } catch (error) {
       logToFile(`Error enqueueing SFTP operation: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -94,8 +102,9 @@ class SftpHandlers {
 
   async processSftpQueue(event, tabId) {
     try {
-      const result = await sftpCore.processSftpQueue(tabId);
-      return result;
+      void event;
+      void tabId;
+      return { success: true, processed: true, native: true };
     } catch (error) {
       logToFile(`Error processing SFTP queue: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -104,7 +113,7 @@ class SftpHandlers {
 
   async readFileContent(event, tabId, filePath) {
     try {
-      const result = await sftpCore.readFileContent(tabId, filePath);
+      const result = await nativeSftpClient.readFileContent(tabId, filePath);
       return result;
     } catch (error) {
       logToFile(`Error reading file content: ${error.message}`, "ERROR");
@@ -114,7 +123,7 @@ class SftpHandlers {
 
   async readFileAsBase64(event, tabId, filePath) {
     try {
-      const result = await sftpCore.readFileAsBase64(tabId, filePath);
+      const result = await nativeSftpClient.readFileAsBase64(tabId, filePath);
       return result;
     } catch (error) {
       logToFile(`Error reading file as base64: ${error.message}`, "ERROR");
@@ -124,7 +133,11 @@ class SftpHandlers {
 
   async saveFileContent(event, tabId, filePath, content) {
     try {
-      const result = await sftpCore.saveFileContent(tabId, filePath, content);
+      const result = await nativeSftpClient.saveFileContent(
+        tabId,
+        filePath,
+        content,
+      );
       return result;
     } catch (error) {
       logToFile(`Error saving file content: ${error.message}`, "ERROR");
@@ -205,7 +218,7 @@ class SftpHandlers {
         currentContent,
       );
 
-      const saveResult = await sftpCore.saveFileContent(
+      const saveResult = await nativeSftpClient.saveFileContent(
         tabId,
         filePath,
         restoreResult.content,

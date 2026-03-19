@@ -1,8 +1,6 @@
 const { session } = require("electron");
 const { logToFile, initLogger, updateLogConfig } = require("../utils/logger");
 const configService = require("../../services/configService");
-const sftpCore = require("../transfer/sftp-engine");
-const sftpTransfer = require("../../modules/sftp/sftpTransfer");
 const externalEditorManager = require("../../modules/sftp/externalEditorManager");
 const fileCache = require("../utils/fileCache");
 const fileSnapshotStore = require("../utils/fileSnapshotStore");
@@ -59,24 +57,19 @@ class AppInitializer {
    * 初始化SFTP核心模块
    */
   initializeSftpCore() {
-    sftpCore.init({ logToFile }, (tabId) => processManager.getProcess(tabId));
-    sftpCore.startSftpHealthCheck();
-    logToFile("SFTP core initialized", "INFO");
+    void processManager;
+    logToFile("Native SFTP backend initialized", "INFO");
   }
 
   /**
    * 初始化SFTP传输模块
    */
   initializeSftpTransfer(dialog, shell) {
-    sftpTransfer.init(
-      { logToFile },
-      sftpCore,
-      dialog,
-      shell,
-      (tabId) => processManager.getProcess(tabId),
-      (channel, ...args) => safeSendToRenderer(channel, ...args),
-    );
-    logToFile("SFTP transfer initialized", "INFO");
+    void dialog;
+    void shell;
+    void processManager;
+    void safeSendToRenderer;
+    logToFile("Native transfer pipeline initialized", "INFO");
   }
 
   /**
@@ -88,7 +81,7 @@ class AppInitializer {
         app: this.app,
         logger: { logToFile },
         configService,
-        sftpCore,
+        sftpCore: null,
         shell,
         sendToRenderer: (channel, payload) =>
           safeSendToRenderer(channel, payload),
