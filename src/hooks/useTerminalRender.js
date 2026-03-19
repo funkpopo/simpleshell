@@ -169,12 +169,15 @@ export const useTerminalRender = ({
   );
 
   const scheduleHighlightRefresh = useCallback(
-    (termInstance) => {
+    (termInstance, options = {}) => {
       if (!termInstance || typeof termInstance.refresh !== "function") {
         return;
       }
 
-      if (termInstance.__webglEnabled) {
+      const forceRefresh = options.force === true;
+      const minIntervalMs = forceRefresh ? 0 : 16;
+
+      if (termInstance.__webglEnabled && !forceRefresh) {
         return;
       }
 
@@ -189,7 +192,7 @@ export const useTerminalRender = ({
       }
 
       if (typeof requestAnimationFrame !== "function") {
-        if (timeSinceLastRefresh >= 16) {
+        if (timeSinceLastRefresh >= minIntervalMs) {
           const startTime = performance.now();
           termInstance.refresh(0, termInstance.rows - 1);
           const duration = performance.now() - startTime;
@@ -207,7 +210,7 @@ export const useTerminalRender = ({
       highlightRefreshFrameRef.current = requestAnimationFrame(() => {
         highlightRefreshFrameRef.current = null;
         const currentTime = Date.now();
-        if (currentTime - lastHighlightRefreshRef.current >= 16) {
+        if (currentTime - lastHighlightRefreshRef.current >= minIntervalMs) {
           const startTime = performance.now();
           termInstance.refresh(0, termInstance.rows - 1);
           const duration = performance.now() - startTime;
