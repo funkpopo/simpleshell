@@ -12,6 +12,7 @@ const { shell } = require("electron");
 class FileHandlers {
   constructor() {
     this.activeTransfers = new Map();
+    this.activeDirectoryReads = new Map();
   }
 
   /**
@@ -90,6 +91,11 @@ class FileHandlers {
         handler: this.cancelTransfer.bind(this),
       },
       {
+        channel: "cancelListFiles",
+        category: "file",
+        handler: this.cancelListFiles.bind(this),
+      },
+      {
         channel: "downloadFiles",
         category: "file",
         handler: this.downloadFiles.bind(this),
@@ -132,6 +138,30 @@ class FileHandlers {
     ];
   }
 
+  _removeActiveDirectoryRead(token) {
+    if (!token) return;
+    this.activeDirectoryReads.delete(String(token));
+  }
+
+  _cancelActiveDirectoryRead(token) {
+    const entry = this.activeDirectoryReads.get(String(token));
+    if (!entry) {
+      return false;
+    }
+
+    this._removeActiveDirectoryRead(token);
+
+    try {
+      if (entry.child && !entry.child.killed) {
+        entry.child.kill();
+      }
+    } catch {
+      // ignore process kill failures
+    }
+
+    return true;
+  }
+
   // 实现各个处理器方法
   async listFiles(event, tabId, path, options = {}) {
     try {
@@ -150,7 +180,15 @@ class FileHandlers {
         // Fire-and-forget chunk producer
         Promise.resolve()
           .then(async () => {
-            const result = await nativeSftpClient.listFiles(tabId, requestedPath);
+            const result = await nativeSftpClient.listFiles(tabId, requestedPath, {
+              onSpawn: (child) => {
+                this.activeDirectoryReads.set(token, {
+                  tabId: String(tabId),
+                  token,
+                  child,
+                });
+              },
+            });
 
             const send = (payload) => {
               try {
@@ -207,6 +245,9 @@ class FileHandlers {
             } catch {
               /* intentionally ignored */
             }
+          })
+          .finally(() => {
+            this._removeActiveDirectoryRead(token);
           });
 
         return { success: true, data: [], chunked: true, token };
@@ -457,6 +498,40 @@ class FileHandlers {
     }
   }
 
+  async cancelListFiles(event, tabId, token = null) {
+    try {
+      const normalizedTabId = String(tabId ?? "");
+      if (!normalizedTabId) {
+        return { success: false, error: "tabId is required" };
+      }
+
+      if (token) {
+        const entry = this.activeDirectoryReads.get(String(token));
+        if (!entry || entry.tabId !== normalizedTabId) {
+          return { success: true, cancelledCount: 0 };
+        }
+
+        return {
+          success: true,
+          cancelledCount: this._cancelActiveDirectoryRead(token) ? 1 : 0,
+        };
+      }
+
+      let cancelledCount = 0;
+      for (const [activeToken, entry] of this.activeDirectoryReads.entries()) {
+        if (entry.tabId !== normalizedTabId) continue;
+        if (this._cancelActiveDirectoryRead(activeToken)) {
+          cancelledCount += 1;
+        }
+      }
+
+      return { success: true, cancelledCount };
+    } catch (error) {
+      logToFile(`Error cancelling listFiles: ${error.message}`, "WARN");
+      return { success: false, error: error.message };
+    }
+  }
+
   async downloadFiles(event, tabId, files) {
     return filemanagementService.downloadFiles(event, tabId, files);
   }
@@ -650,6 +725,10 @@ class FileHandlers {
    * 清理所有活跃的传输
    */
   cleanup() {
+    for (const token of Array.from(this.activeDirectoryReads.keys())) {
+      this._cancelActiveDirectoryRead(token);
+    }
+
     for (const [key, transferKey] of this.activeTransfers) {
       try {
         const tabId = String(key).split("-")[0];

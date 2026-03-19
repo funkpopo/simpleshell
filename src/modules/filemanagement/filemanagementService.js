@@ -28,6 +28,22 @@ const CHUNK_PARALLEL_THRESHOLD_BYTES = 128 * 1024 * 1024;
 const CHUNK_PARALLEL_TARGET_CHUNK_BYTES = 32 * 1024 * 1024;
 const CHUNK_PARALLEL_MAX_SEGMENTS = 16;
 const CHUNK_PARALLEL_MIN_SEGMENTS = 2;
+const TRANSFER_POOL_IDLE_SHUTDOWN_MS = 2500;
+
+function buildEmptyTransferPoolStats() {
+  return {
+    workerCount: 0,
+    targetWorkerCount: 0,
+    maxWorkers: 0,
+    queuedTasks: 0,
+    pendingTasks: 0,
+    pendingInits: 0,
+    activeTransfers: 0,
+    cancelledTransfers: 0,
+    maxQueueSize: 0,
+    shutdown: true,
+  };
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -126,7 +142,8 @@ class FilemanagementService {
     this.transferEngineMode = TRANSFER_ENGINE_MODE;
     this.activeTransfers = new Map();
     this.inflightDirectoryReads = new Map();
-    this.transferProcessPool = new TransferProcessPool();
+    this.transferProcessPool = null;
+    this.transferProcessPoolIdleTimer = null;
     this.transferMetrics = {
       startedAt: Date.now(),
       successfulTransfers: 0,
@@ -182,6 +199,75 @@ class FilemanagementService {
     if (this.eventLoopLagTimer) {
       clearInterval(this.eventLoopLagTimer);
       this.eventLoopLagTimer = null;
+    }
+  }
+
+  _clearTransferProcessPoolIdleTimer() {
+    if (this.transferProcessPoolIdleTimer) {
+      clearTimeout(this.transferProcessPoolIdleTimer);
+      this.transferProcessPoolIdleTimer = null;
+    }
+  }
+
+  _ensureTransferProcessPool() {
+    this._clearTransferProcessPoolIdleTimer();
+
+    const currentStats = this.transferProcessPool?.getRuntimeStats?.();
+    if (!this.transferProcessPool || currentStats?.shutdown) {
+      this.transferProcessPool = new TransferProcessPool();
+      this._log("Transfer process pool initialized", "INFO");
+    }
+
+    return this.transferProcessPool;
+  }
+
+  _scheduleTransferProcessPoolIdleShutdown() {
+    this._clearTransferProcessPoolIdleTimer();
+
+    if (!this.transferProcessPool || this.activeTransfers.size > 0) {
+      return;
+    }
+
+    this.transferProcessPoolIdleTimer = setTimeout(() => {
+      this.transferProcessPoolIdleTimer = null;
+
+      const pool = this.transferProcessPool;
+      if (!pool || this.activeTransfers.size > 0) {
+        return;
+      }
+
+      const poolStats = pool.getRuntimeStats?.() || buildEmptyTransferPoolStats();
+      const hasPendingWork =
+        (poolStats.queuedTasks || 0) > 0 ||
+        (poolStats.pendingTasks || 0) > 0 ||
+        (poolStats.pendingInits || 0) > 0 ||
+        (poolStats.activeTransfers || 0) > 0;
+
+      if (hasPendingWork) {
+        this._scheduleTransferProcessPoolIdleShutdown();
+        return;
+      }
+
+      if (this.transferProcessPool !== pool) {
+        return;
+      }
+
+      this.transferProcessPool = null;
+
+      pool.shutdown()
+        .catch((error) => {
+          this._log(
+            `Idle transfer process pool shutdown failed: ${normalizeErrorMessage(error)}`,
+            "WARN",
+          );
+        })
+        .finally(() => {
+          this._log("Transfer process pool shutdown after idle", "INFO");
+        });
+    }, TRANSFER_POOL_IDLE_SHUTDOWN_MS);
+
+    if (typeof this.transferProcessPoolIdleTimer.unref === "function") {
+      this.transferProcessPoolIdleTimer.unref();
     }
   }
 
@@ -337,7 +423,10 @@ class FilemanagementService {
         avgMs: lag.samples > 0 ? lag.totalMs / lag.samples : 0,
         samples: lag.samples,
       },
-      pool: this.transferProcessPool.getRuntimeStats(),
+      pool: this.transferProcessPool
+        ? this.transferProcessPool.getRuntimeStats()
+        : buildEmptyTransferPoolStats(),
+      poolIdleShutdownScheduled: Boolean(this.transferProcessPoolIdleTimer),
     };
   }
 
@@ -723,6 +812,8 @@ class FilemanagementService {
     totalFiles = 1,
     metadata = {},
   }) {
+    this._clearTransferProcessPoolIdleTimer();
+
     const state = {
       transferKey,
       tabId,
@@ -851,6 +942,10 @@ class FilemanagementService {
     }
     this._destroyTransferStreams(transferKey, "Transfer finalized");
     this.activeTransfers.delete(transferKey);
+
+    if (this.activeTransfers.size === 0) {
+      this._scheduleTransferProcessPoolIdleShutdown();
+    }
   }
 
   async _pumpStreams({
@@ -1370,7 +1465,9 @@ class FilemanagementService {
 
     transfer.cancelled = true;
     transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
-    this.transferProcessPool.cancelTransfer(transferKey);
+    if (this.transferProcessPool) {
+      this.transferProcessPool.cancelTransfer(transferKey);
+    }
     this._destroyTransferStreams(transferKey, "Transfer cancelled by user");
     this._emitTransferProgress(transferKey, {
       force: true,
@@ -1395,7 +1492,9 @@ class FilemanagementService {
       if (String(transfer.tabId) !== String(tabId)) continue;
       transfer.cancelled = true;
       transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
-      this.transferProcessPool.cancelTransfer(transferKey);
+      if (this.transferProcessPool) {
+        this.transferProcessPool.cancelTransfer(transferKey);
+      }
       this._destroyTransferStreams(
         transferKey,
         "Transfer cancelled due to tab cleanup",
@@ -1866,7 +1965,8 @@ class FilemanagementService {
           };
         });
 
-        await this.transferProcessPool.runTasks({
+        const transferProcessPool = this._ensureTransferProcessPool();
+        await transferProcessPool.runTasks({
           transferKey,
           tabId,
           sshConfig,
@@ -2165,7 +2265,8 @@ class FilemanagementService {
         false,
       );
 
-      await this.transferProcessPool.runTasks({
+      const transferProcessPool = this._ensureTransferProcessPool();
+      await transferProcessPool.runTasks({
         transferKey,
         tabId,
         sshConfig,
@@ -2623,7 +2724,8 @@ class FilemanagementService {
         true,
       );
 
-      await this.transferProcessPool.runTasks({
+      const transferProcessPool = this._ensureTransferProcessPool();
+      await transferProcessPool.runTasks({
         transferKey,
         tabId,
         sshConfig,
@@ -3149,7 +3251,8 @@ class FilemanagementService {
         true,
       );
 
-      await this.transferProcessPool.runTasks({
+      const transferProcessPool = this._ensureTransferProcessPool();
+      await transferProcessPool.runTasks({
         transferKey,
         tabId,
         sshConfig,
@@ -3630,24 +3733,31 @@ class FilemanagementService {
   }
 
   cleanup() {
+    this._clearTransferProcessPoolIdleTimer();
     this._stopEventLoopLagMonitor();
     for (const [transferKey, transfer] of this.activeTransfers.entries()) {
       try {
         transfer.cancelled = true;
         transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
-        this.transferProcessPool.cancelTransfer(transferKey);
+        if (this.transferProcessPool) {
+          this.transferProcessPool.cancelTransfer(transferKey);
+        }
         this._destroyTransferStreams(transferKey, "Application cleanup");
       } catch {
         // ignore cleanup error
       }
       this.activeTransfers.delete(transferKey);
     }
-    this.transferProcessPool.shutdown().catch((error) => {
-      this._log(
-        `Transfer process pool shutdown failed: ${normalizeErrorMessage(error)}`,
-        "WARN",
-      );
-    });
+    if (this.transferProcessPool) {
+      const pool = this.transferProcessPool;
+      this.transferProcessPool = null;
+      pool.shutdown().catch((error) => {
+        this._log(
+          `Transfer process pool shutdown failed: ${normalizeErrorMessage(error)}`,
+          "WARN",
+        );
+      });
+    }
     this._log(
       "All active Filemanagement transfers have been cleaned up",
       "INFO",

@@ -218,11 +218,11 @@ function invokeNativeRequestWithConfig(
   });
 }
 
-async function listFiles(tabId, remotePath) {
+async function listFiles(tabId, remotePath, options = {}) {
   return invokeNativeRequest(tabId, {
     operation: "listFiles",
     path: remotePath,
-  });
+  }, options);
 }
 
 async function copyFile(tabId, sourcePath, targetPath) {
