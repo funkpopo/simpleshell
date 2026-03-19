@@ -929,8 +929,6 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // Telnet连接相关
   startTelnet: (telnetConfig) =>
     ipcRenderer.invoke("terminal:startTelnet", telnetConfig),
-  detectShellIntegrationShell: (processId) =>
-    ipcRenderer.invoke("terminal:detectShellIntegrationShell", processId),
 
   // SSH 认证相关 IPC
   // 监听 SSH 认证请求（主机密钥验证、凭证请求等）
