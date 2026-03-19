@@ -19,11 +19,7 @@ import CommandSuggestion from "./CommandSuggestion";
 import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.jsx";
 import WebTerminalContextMenu from "./web-terminal/WebTerminalContextMenu.jsx";
 import { RendererTerminalIOMailbox } from "../modules/terminal/io/RendererTerminalIOMailbox.js";
-import {
-  buildShellIntegrationInjection,
-  OSC_133_IDENTIFIER,
-  parseShellIntegrationOscPayload,
-} from "../modules/terminal/shellIntegration.js";
+import { isPromptReadyFromTerminal } from "../modules/terminal/promptDetection.js";
 import {
   TERMINAL_RESIZE_QUERY_REGEX,
   ensureSharedTerminalStyles,
@@ -85,12 +81,9 @@ const TERMINAL_COMMAND_LINE_REGEX =
 const FULLSCREEN_COMMAND_REGEX =
   /\b(top|htop|vi|vim|nano|less|more|watch|tail -f)\b/;
 
-const createShellIntegrationState = () => ({
-  active: false,
-  promptStarted: false,
+const createPromptTrackingState = () => ({
   promptReady: false,
   commandRunning: false,
-  lastExitCode: null,
 });
 
 const isCursorInsideWrappedInputBlock = (term) => {
@@ -483,23 +476,14 @@ const WebTerminal = ({
 
   // 命令执行状态跟踪
   const [isCommandExecuting, setIsCommandExecuting] = useState(false);
-  const [hasShellIntegration, setHasShellIntegration] = useState(false);
   const [isShellPromptReady, setIsShellPromptReady] = useState(false);
   const lastExecutedCommandTimeRef = useRef(0);
   const lastExecutedCommandRef = useRef("");
-  const shellIntegrationStateRef = useRef(createShellIntegrationState());
-  const shellIntegrationBootstrapRef = useRef({
-    processId: null,
-    detectionToken: 0,
-    injected: false,
-    blockedByUserInput: false,
-    detectedShell: null,
-  });
+  const promptTrackingStateRef = useRef(createPromptTrackingState());
   const pendingCommandBoundaryRef = useRef({
     command: "",
     capturedAt: 0,
   });
-  const shellIntegrationEventHandlerRef = useRef(null);
 
   const {
     showSearchBar,
@@ -549,35 +533,49 @@ const WebTerminal = ({
   });
 
   const inEditorModeRef = useRef(false);
-  const hasShellIntegrationRef = useRef(false);
 
   useEffect(() => {
     inEditorModeRef.current = inEditorMode;
   }, [inEditorMode]);
 
-  useEffect(() => {
-    hasShellIntegrationRef.current = hasShellIntegration;
-  }, [hasShellIntegration]);
+  const applyPromptTrackingState = useCallback((nextState = {}) => {
+    const state = promptTrackingStateRef.current;
+    let promptReadyChanged = false;
+    let commandRunningChanged = false;
 
-  const resetShellIntegrationTracking = useCallback((processId = null) => {
-    const nextToken =
-      (shellIntegrationBootstrapRef.current?.detectionToken || 0) + 1;
+    if (
+      typeof nextState.promptReady === "boolean" &&
+      state.promptReady !== nextState.promptReady
+    ) {
+      state.promptReady = nextState.promptReady;
+      promptReadyChanged = true;
+    }
 
-    shellIntegrationStateRef.current = createShellIntegrationState();
-    shellIntegrationBootstrapRef.current = {
-      processId,
-      detectionToken: nextToken,
-      injected: false,
-      blockedByUserInput: false,
-      detectedShell: null,
-    };
+    if (
+      typeof nextState.commandRunning === "boolean" &&
+      state.commandRunning !== nextState.commandRunning
+    ) {
+      state.commandRunning = nextState.commandRunning;
+      commandRunningChanged = true;
+    }
+
+    if (promptReadyChanged) {
+      setIsShellPromptReady(state.promptReady);
+    }
+
+    if (promptReadyChanged || commandRunningChanged) {
+      setIsCommandExecuting(state.commandRunning && !state.promptReady);
+    }
+  }, []);
+
+  const resetPromptTracking = useCallback(() => {
+    promptTrackingStateRef.current = createPromptTrackingState();
     pendingCommandBoundaryRef.current = {
       command: "",
       capturedAt: 0,
     };
     clearPendingWrappedInputRefresh(termRef.current);
 
-    setHasShellIntegration(false);
     setIsShellPromptReady(false);
     setIsCommandExecuting(false);
   }, []);
@@ -608,162 +606,25 @@ const WebTerminal = ({
     }
   }, [suggestionSelectedRef]);
 
-  const handleShellIntegrationEvent = useCallback(
-    (event) => {
-      if (!event) {
+  const syncPromptTrackingFromTerminal = useCallback(
+    (term) => {
+      if (!term) {
         return;
       }
 
-      shellIntegrationBootstrapRef.current.injected = true;
-      const state = shellIntegrationStateRef.current;
-      state.active = true;
-
-      if (!hasShellIntegrationRef.current) {
-        hasShellIntegrationRef.current = true;
-        setHasShellIntegration(true);
-      }
-
-      switch (event.type) {
-        case "prompt-start":
-          state.promptStarted = true;
-          state.promptReady = false;
-          state.commandRunning = false;
-          clearPendingWrappedInputRefresh(termRef.current);
-          setIsShellPromptReady(false);
-          setIsCommandExecuting(false);
-          break;
-        case "prompt-end":
-          state.promptStarted = false;
-          state.promptReady = true;
-          state.commandRunning = false;
-          clearPendingWrappedInputRefresh(termRef.current);
-          setIsShellPromptReady(true);
-          setIsCommandExecuting(false);
-          break;
-        case "command-start":
-          state.promptReady = false;
-          state.commandRunning = true;
-          clearPendingWrappedInputRefresh(termRef.current);
-          setIsShellPromptReady(false);
-          setIsCommandExecuting(true);
-          commitExecutedCommand();
-          pendingCommandBoundaryRef.current = {
-            command: "",
-            capturedAt: 0,
-          };
-          setShowSuggestions(false);
-          setSuggestions([]);
-          setCurrentInput("");
-          setSuggestionsHiddenByEsc(false);
-          setSuggestionsSuppressedUntilEnter(false);
-          suggestionSelectedRef.current = false;
-          break;
-        case "command-finish":
-          state.commandRunning = false;
-          state.lastExitCode = event.exitCode ?? null;
-          clearPendingWrappedInputRefresh(termRef.current);
-          setIsCommandExecuting(false);
-          break;
-        default:
-          break;
-      }
-
-      if (termRef.current) {
-        scheduleHighlightRefresh(termRef.current);
-      }
-    },
-    [
-      commitExecutedCommand,
-      scheduleHighlightRefresh,
-      setCurrentInput,
-      setShowSuggestions,
-      setSuggestions,
-      setSuggestionsHiddenByEsc,
-      setSuggestionsSuppressedUntilEnter,
-      suggestionSelectedRef,
-    ],
-  );
-
-  shellIntegrationEventHandlerRef.current = handleShellIntegrationEvent;
-
-  const ensureShellIntegrationParser = useCallback((term) => {
-    if (
-      !term ||
-      !term.parser ||
-      term.__simpleShellOsc133Disposable ||
-      typeof term.parser.registerOscHandler !== "function"
-    ) {
-      return;
-    }
-
-    try {
-      term.__simpleShellOsc133Disposable = term.parser.registerOscHandler(
-        OSC_133_IDENTIFIER,
-        (payload) => {
-          const event = parseShellIntegrationOscPayload(payload);
-          if (!event) {
-            return false;
-          }
-
-          if (typeof shellIntegrationEventHandlerRef.current === "function") {
-            shellIntegrationEventHandlerRef.current(event);
-          }
-
-          return true;
-        },
-      );
-    } catch {
-      // ignore parser registration errors
-    }
-  }, []);
-
-  const bootstrapShellIntegration = useCallback(
-    async (processId) => {
-      if (
-        !processId ||
-        !sshConfig ||
-        sshConfig.protocol === "telnet" ||
-        !window.terminalAPI?.detectShellIntegrationShell
-      ) {
+      const promptReady = isPromptReadyFromTerminal(term);
+      if (promptReady) {
+        clearPendingWrappedInputRefresh(term);
+        applyPromptTrackingState({
+          promptReady: true,
+          commandRunning: false,
+        });
         return;
       }
 
-      const bootstrapState = shellIntegrationBootstrapRef.current;
-      const detectionToken = bootstrapState.detectionToken;
-
-      try {
-        const result =
-          await window.terminalAPI.detectShellIntegrationShell(processId);
-
-        if (
-          shellIntegrationBootstrapRef.current.processId !== processId ||
-          shellIntegrationBootstrapRef.current.detectionToken !== detectionToken
-        ) {
-          return;
-        }
-
-        const normalizedShell =
-          result && result.supported ? result.shell : result?.shell;
-        const injection = buildShellIntegrationInjection(normalizedShell);
-        shellIntegrationBootstrapRef.current.detectedShell =
-          normalizedShell || null;
-
-        if (
-          !injection ||
-          shellIntegrationBootstrapRef.current.injected ||
-          shellIntegrationBootstrapRef.current.blockedByUserInput ||
-          shellIntegrationStateRef.current.active
-        ) {
-          return;
-        }
-
-        sendInputToProcess(processId, injection);
-        shellIntegrationBootstrapRef.current.injected = true;
-      } catch {
-        // best-effort bootstrap
-      }
+      applyPromptTrackingState({ promptReady: false });
     },
-    [sendInputToProcess, sshConfig],
+    [applyPromptTrackingState],
   );
 
   // 优化的选择元素调整函数 - 避免重复高亮
@@ -1049,6 +910,26 @@ const WebTerminal = ({
       return "";
     };
 
+    const syncPromptState = () => {
+      if (inEditorMode) {
+        applyPromptTrackingState({ promptReady: false });
+        return;
+      }
+
+      if (
+        !promptTrackingStateRef.current.commandRunning &&
+        currentInputBuffer.trim() !== ""
+      ) {
+        applyPromptTrackingState({
+          promptReady: true,
+          commandRunning: false,
+        });
+        return;
+      }
+
+      syncPromptTrackingFromTerminal(term);
+    };
+
     // 添加buffer类型监听，用于检测编辑器模式
     // xterm.js在全屏应用（如vi）运行时会切换到alternate buffer
     const bufferTypeObserver = {
@@ -1057,6 +938,7 @@ const WebTerminal = ({
           // 进入编辑器/全屏应用模式
           inEditorMode = true;
           clearPendingWrappedInputRefresh(term);
+          applyPromptTrackingState({ promptReady: false });
           setInEditorMode(true);
 
           // 通知主进程编辑器模式状态变更
@@ -1079,6 +961,7 @@ const WebTerminal = ({
               window.terminalAPI.notifyEditorModeChange(processId, false);
             }
           }
+          syncPromptState();
         }
       },
     };
@@ -1106,13 +989,9 @@ const WebTerminal = ({
       if (data && data.length > 0) {
         // console.log("[onData]", JSON.stringify(data), "processId=", processId);
       }
-      if (!shellIntegrationBootstrapRef.current.injected) {
-        shellIntegrationBootstrapRef.current.blockedByUserInput = true;
-      }
-
       const canTrackPromptInput =
-        !hasShellIntegrationRef.current ||
-        shellIntegrationStateRef.current.promptReady;
+        promptTrackingStateRef.current.promptReady &&
+        !promptTrackingStateRef.current.commandRunning;
 
       if (
         canTrackPromptInput &&
@@ -1282,7 +1161,7 @@ const WebTerminal = ({
 
         clearPendingWrappedInputRefresh(term);
 
-        if (hasShellIntegrationRef.current && !canTrackPromptInput) {
+        if (!canTrackPromptInput) {
           currentInputBuffer = "";
           setCurrentInput("");
           if (processId) {
@@ -1296,10 +1175,6 @@ const WebTerminal = ({
         setSuggestionsSuppressedUntilEnter(false);
 
         try {
-          const shouldUseShellIntegrationFlow =
-            hasShellIntegrationRef.current ||
-            shellIntegrationBootstrapRef.current.injected;
-
           // 获取终端的最后一行内容（可能包含用户输入的命令）
           const lastLine =
             term.buffer.active
@@ -1347,21 +1222,15 @@ const WebTerminal = ({
           setSuggestions([]);
           setCurrentInput("");
           setSuggestionsHiddenByEsc(false);
-
-          if (!shouldUseShellIntegrationFlow) {
-            setIsCommandExecuting(true);
-            commitExecutedCommand();
-            pendingCommandBoundaryRef.current = {
-              command: "",
-              capturedAt: 0,
-            };
-
-            setTimeout(() => {
-              if (!hasShellIntegrationRef.current) {
-                setIsCommandExecuting(false);
-              }
-            }, 100);
-          }
+          applyPromptTrackingState({
+            promptReady: false,
+            commandRunning: true,
+          });
+          commitExecutedCommand();
+          pendingCommandBoundaryRef.current = {
+            command: "",
+            capturedAt: 0,
+          };
 
           // 检查这一行是否包含常见的全屏应用命令
           if (FULLSCREEN_COMMAND_REGEX.test(lastLine)) {
@@ -1385,12 +1254,6 @@ const WebTerminal = ({
           }
         } catch {
           // 忽略任何错误，不影响正常功能
-          // 即使发生错误也要重置命令执行状态
-          if (!hasShellIntegrationRef.current) {
-            setTimeout(() => {
-              setIsCommandExecuting(false);
-            }, 100);
-          }
         }
 
         // 发送回车键到进程
@@ -1486,6 +1349,8 @@ const WebTerminal = ({
             }
           }
         }
+
+        syncPromptState();
       } catch {
         // 忽略任何错误，不影响正常功能
       }
@@ -1537,6 +1402,8 @@ const WebTerminal = ({
           // 处理Tab补全后内容时出错
         }
       }
+
+      syncPromptState();
     });
 
     if (
@@ -1548,6 +1415,7 @@ const WebTerminal = ({
 
     const onWriteParsedDisposable = term.onWriteParsed(() => {
       scheduleHighlightRefresh(term);
+      syncPromptState();
     });
 
     if (
@@ -1824,7 +1692,6 @@ const WebTerminal = ({
 
         // 重新打开终端并附加到DOM
         term.open(terminalRef.current);
-        ensureShellIntegrationParser(term);
         syncTerminalLinkCtrlState(term, false);
 
         // 确保 Alt+F1 快捷键能冒泡到全局处理
@@ -2146,7 +2013,6 @@ const WebTerminal = ({
 
         // 打开终端
         term.open(terminalRef.current);
-        ensureShellIntegrationParser(term);
         syncTerminalLinkCtrlState(term, false);
 
         // 拦截 Alt+F1 快捷键，让其冒泡到全局处理
@@ -2366,7 +2232,7 @@ const WebTerminal = ({
                   // 设置数据接收监听
                   setupDataListener(processId, term);
 
-                  // 设置命令边界检测与 shell integration 状态同步
+                  // 设置命令边界检测与提示符状态同步
                   console.debug(
                     `[WebTerminal] Setting up command detection for tabId=${tabId}, processId=${processId}`,
                   );
@@ -3060,13 +2926,6 @@ const WebTerminal = ({
           );
         }
 
-        shellIntegrationBootstrapRef.current = {
-          ...shellIntegrationBootstrapRef.current,
-          processId: null,
-          detectionToken:
-            (shellIntegrationBootstrapRef.current?.detectionToken || 0) + 1,
-        };
-
         // 清理本 effect 的事件/定时器/观察器，防止切换标签后叠加
         eventManager.reset();
       };
@@ -3078,7 +2937,6 @@ const WebTerminal = ({
     lifecycleEventManager,
     tryEnableWebglRenderer,
     disableWebglRenderer,
-    ensureShellIntegrationParser,
     scheduleHighlightRefresh,
   ]);
 
@@ -3330,9 +3188,9 @@ const WebTerminal = ({
     }
     processCache[tabId] = processId;
     clearGeometryFor(processId, tabId);
-    resetShellIntegrationTracking(processId);
-    ensureShellIntegrationParser(term);
+    resetPromptTracking();
     clearPendingWrappedInputRefresh(term);
+    syncPromptTrackingFromTerminal(term);
 
     // 添加数据监听
     const handleProcessOutput = (data) => {
@@ -3422,7 +3280,6 @@ const WebTerminal = ({
 
     // 使用EventManager管理延迟同步，确保布局稳定后大小正确
     eventManager.setTimeout(syncTerminalSize, 100);
-    void bootstrapShellIntegration(processId);
 
     // 使用EventManager管理定期检查终端可见性的定时器
     // 优化：移除此重复的定时器，主useEffect中已有相同功能
@@ -4081,9 +3938,7 @@ const WebTerminal = ({
       {/* 命令建议组件 */}
       <CommandSuggestion
         suggestions={suggestions}
-        visible={
-          showSuggestions && (!hasShellIntegration || isShellPromptReady)
-        }
+        visible={showSuggestions && isShellPromptReady}
         position={cursorPosition}
         onSelectSuggestion={handleSuggestionSelect}
         onClose={closeSuggestions}
