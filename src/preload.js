@@ -25,6 +25,10 @@ const processOutputWrappersByChannel = new Map();
 const processOutputListenersByChannel = new Map();
 const terminalMailboxWrappersByChannel = new Map();
 const terminalMailboxListenersByChannel = new Map();
+const listFilesChunkWrappers = new WeakMap();
+const listFilesChunkListeners = new Set();
+const listFilesTokensByTab = new Map();
+const listFilesTabByToken = new Map();
 
 const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 const RESTRICTED_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
@@ -81,6 +85,94 @@ const removeAllManagedTerminalMailboxListeners = (channel) => {
     ipcRenderer.removeListener(channel, wrapped);
   });
   listeners.clear();
+};
+
+const normalizeListFilesTabId = (tabId) =>
+  tabId === undefined || tabId === null ? "" : String(tabId);
+
+const trackListFilesToken = (tabId, token) => {
+  const normalizedTabId = normalizeListFilesTabId(tabId);
+  const normalizedToken =
+    token === undefined || token === null ? "" : String(token);
+
+  if (!normalizedTabId || !normalizedToken) {
+    return;
+  }
+
+  const previousTabId = listFilesTabByToken.get(normalizedToken);
+  if (previousTabId && previousTabId !== normalizedTabId) {
+    const previousSet = listFilesTokensByTab.get(previousTabId);
+    if (previousSet) {
+      previousSet.delete(normalizedToken);
+      if (previousSet.size === 0) {
+        listFilesTokensByTab.delete(previousTabId);
+      }
+    }
+  }
+
+  let tokenSet = listFilesTokensByTab.get(normalizedTabId);
+  if (!tokenSet) {
+    tokenSet = new Set();
+    listFilesTokensByTab.set(normalizedTabId, tokenSet);
+  }
+
+  tokenSet.add(normalizedToken);
+  listFilesTabByToken.set(normalizedToken, normalizedTabId);
+};
+
+const untrackListFilesToken = (token) => {
+  const normalizedToken =
+    token === undefined || token === null ? "" : String(token);
+  if (!normalizedToken) {
+    return;
+  }
+
+  const tabId = listFilesTabByToken.get(normalizedToken);
+  if (!tabId) {
+    return;
+  }
+
+  listFilesTabByToken.delete(normalizedToken);
+  const tokenSet = listFilesTokensByTab.get(tabId);
+  if (!tokenSet) {
+    return;
+  }
+
+  tokenSet.delete(normalizedToken);
+  if (tokenSet.size === 0) {
+    listFilesTokensByTab.delete(tabId);
+  }
+};
+
+const untrackListFilesTokensForTab = (tabId) => {
+  const normalizedTabId = normalizeListFilesTabId(tabId);
+  if (!normalizedTabId) {
+    return;
+  }
+
+  const tokenSet = listFilesTokensByTab.get(normalizedTabId);
+  if (!tokenSet) {
+    return;
+  }
+
+  for (const token of tokenSet) {
+    listFilesTabByToken.delete(token);
+  }
+  listFilesTokensByTab.delete(normalizedTabId);
+};
+
+const maybeAutoCancelTrackedListFiles = () => {
+  if (listFilesChunkListeners.size > 0 || listFilesTokensByTab.size === 0) {
+    return;
+  }
+
+  const pendingTabIds = Array.from(listFilesTokensByTab.keys());
+  listFilesTokensByTab.clear();
+  listFilesTabByToken.clear();
+
+  pendingTabIds.forEach((tabId) => {
+    ipcRenderer.invoke("cancelListFiles", tabId).catch(() => {});
+  });
 };
 
 const normalizeExternalOpenRequest = (url, options = {}) => {
@@ -486,17 +578,57 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   checkForUpdate: () => ipcRenderer.invoke("app:checkForUpdate"),
 
   // 文件管理相关API
-  listFiles: (tabId, path, options) =>
-    ipcRenderer.invoke("listFiles", tabId, path, options),
+  listFiles: async (tabId, path, options) => {
+    const response = await ipcRenderer.invoke("listFiles", tabId, path, options);
+    if (options?.nonBlocking && response?.chunked && response?.token) {
+      trackListFilesToken(tabId, response.token);
+    }
+    return response;
+  },
+  cancelListFiles: (tabId, token) => {
+    if (token) {
+      untrackListFilesToken(token);
+    } else {
+      untrackListFilesTokensForTab(tabId);
+    }
+    return ipcRenderer.invoke("cancelListFiles", tabId, token);
+  },
   onListFilesChunk: (callback) => {
-    const wrapped = (_, data) => callback(data);
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+
+    const wrapped = (_, data) => {
+      if (data?.done && data?.token) {
+        untrackListFilesToken(data.token);
+      }
+      callback(data);
+    };
     ipcRenderer.on("listFiles:chunk", wrapped);
-    if (!callback._wrappedCallback) callback._wrappedCallback = wrapped;
-    return () => ipcRenderer.removeListener("listFiles:chunk", wrapped);
+    listFilesChunkWrappers.set(callback, wrapped);
+    listFilesChunkListeners.add(wrapped);
+
+    return () => {
+      ipcRenderer.removeListener("listFiles:chunk", wrapped);
+      listFilesChunkListeners.delete(wrapped);
+      listFilesChunkWrappers.delete(callback);
+      maybeAutoCancelTrackedListFiles();
+    };
   },
   offListFilesChunk: (callback) => {
-    const wrapped = callback._wrappedCallback || callback;
+    if (typeof callback !== "function") {
+      return;
+    }
+
+    const wrapped = listFilesChunkWrappers.get(callback);
+    if (!wrapped) {
+      return;
+    }
+
     ipcRenderer.removeListener("listFiles:chunk", wrapped);
+    listFilesChunkListeners.delete(wrapped);
+    listFilesChunkWrappers.delete(callback);
+    maybeAutoCancelTrackedListFiles();
   },
   copyFile: (tabId, sourcePath, targetPath) =>
     ipcRenderer.invoke("copyFile", tabId, sourcePath, targetPath),
