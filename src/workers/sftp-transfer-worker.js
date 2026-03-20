@@ -6,6 +6,7 @@ const {
 } = require("../core/utils/nativeSftpClient");
 
 const HEARTBEAT_INTERVAL_MS = 2000;
+const parentPort = process.parentPort || null;
 
 let currentTransferKey = null;
 let currentTabId = null;
@@ -51,9 +52,20 @@ function isTaskCancelled(envelope) {
   return cancelledTaskKeys.has(taskKeyOf(envelope));
 }
 
+function extractMessage(messageEvent) {
+  if (
+    messageEvent &&
+    typeof messageEvent === "object" &&
+    Object.prototype.hasOwnProperty.call(messageEvent, "data")
+  ) {
+    return messageEvent.data;
+  }
+
+  return messageEvent;
+}
+
 function sendMessage(type, envelope, payload = {}) {
-  if (typeof process.send !== "function") return;
-  process.send({
+  const message = {
     type,
     transferKey: envelope?.transferKey ?? null,
     taskId: envelope?.taskId ?? null,
@@ -61,7 +73,16 @@ function sendMessage(type, envelope, payload = {}) {
     attempt: Number.isFinite(envelope?.attempt) ? envelope.attempt : 0,
     timestamp: Date.now(),
     ...payload,
-  });
+  };
+
+  if (parentPort && typeof parentPort.postMessage === "function") {
+    parentPort.postMessage(message);
+    return;
+  }
+
+  if (typeof process.send === "function") {
+    process.send(message);
+  }
 }
 
 function terminateCurrentChild(reason = "Transfer cancelled by user") {
@@ -368,7 +389,9 @@ if (typeof heartbeatTimer.unref === "function") {
   heartbeatTimer.unref();
 }
 
-process.on("message", (message) => {
+const handleIncomingMessage = (incomingMessage) => {
+  const message = extractMessage(incomingMessage);
+
   Promise.resolve(handleMessage(message)).catch((error) => {
     const envelope = {
       transferKey: message?.transferKey || currentTransferKey || null,
@@ -381,7 +404,13 @@ process.on("message", (message) => {
       error: serializeError(error),
     });
   });
-});
+};
+
+if (parentPort && typeof parentPort.on === "function") {
+  parentPort.on("message", handleIncomingMessage);
+} else {
+  process.on("message", handleIncomingMessage);
+}
 
 process.on("disconnect", () => {
   terminateCurrentChild("Worker disconnect");

@@ -9,6 +9,12 @@ const MAX_PORT = 65535;
 const DEFAULT_DEV_SERVER_PORT = 3001;
 const DEFAULT_LOGGER_PORT = 19001;
 const LOCALE_PAKS_TO_KEEP = new Set(["en-US.pak", "zh-CN.pak"]);
+const WORKER_UNPACK_DIRS = [
+  ".webpack/main/workers",
+  ".webpack\\main\\workers",
+  "src/workers",
+  "src\\workers",
+];
 const SIDECAR_BASENAME =
   process.platform === "win32"
     ? "transfer-sidecar.exe"
@@ -171,7 +177,9 @@ module.exports = async () => {
 
   return {
     packagerConfig: {
-      asar: true,
+      asar: {
+        unpackDir: `{${WORKER_UNPACK_DIRS.join(",")}}`,
+      },
       icon: "./src/assets/logo",
       extraResource: [
         path.join(

@@ -1,10 +1,18 @@
 const { fork } = require("child_process");
 const os = require("os");
-const path = require("path");
-const fs = require("fs");
+
+let electronUtilityProcess = null;
+try {
+  ({ utilityProcess: electronUtilityProcess } = require("electron"));
+} catch {
+  electronUtilityProcess = null;
+}
 
 const { SESSION_CONFIG } = require("../sftp/sftpConfig");
 const { logToFile } = require("../../core/utils/logger");
+const {
+  resolveWorkerScriptPath,
+} = require("../../core/utils/workerScriptResolver");
 const {
   DEFAULT_SSH_RETRY_CONFIG,
 } = require("../../core/connection/ssh-retry-helper");
@@ -38,6 +46,30 @@ function createTaskRuntimeError(message, payload = {}) {
   error.worker = payload.worker || null;
   error.raw = payload.raw || null;
   return error;
+}
+
+function spawnWorkerProcess(workerPath, workerId) {
+  if (
+    electronUtilityProcess &&
+    typeof electronUtilityProcess.fork === "function"
+  ) {
+    const child = electronUtilityProcess.fork(workerPath, [], {
+      stdio: "ignore",
+      serviceName: `Transfer Worker ${workerId}`,
+    });
+
+    return {
+      child,
+      transport: "utilityProcess",
+    };
+  }
+
+  return {
+    child: fork(workerPath, [], {
+      stdio: ["ignore", "ignore", "ignore", "ipc"],
+    }),
+    transport: "fork",
+  };
 }
 
 class TransferProcessPool {
@@ -88,36 +120,10 @@ class TransferProcessPool {
   }
 
   _resolveWorkerPath() {
-    const candidates = [
-      path.join(__dirname, "..", "..", "workers", "sftp-transfer-worker.js"),
-      path.join(
-        __dirname,
-        "..",
-        "..",
-        "..",
-        "src",
-        "workers",
-        "sftp-transfer-worker.js",
-      ),
-      path.join(
-        process.cwd(),
-        ".webpack",
-        "main",
-        "workers",
-        "sftp-transfer-worker.js",
-      ),
-      path.join(process.cwd(), "src", "workers", "sftp-transfer-worker.js"),
-    ];
-
-    for (const filePath of candidates) {
-      if (fs.existsSync(filePath)) {
-        return filePath;
-      }
-    }
-
-    throw new Error(
-      `Unable to locate sftp-transfer-worker.js. Checked: ${candidates.join(", ")}`,
-    );
+    return resolveWorkerScriptPath("sftp-transfer-worker.js", {
+      runtimeDir: __dirname,
+      envVar: "SIMPLESHELL_TRANSFER_WORKER_PATH",
+    });
   }
 
   _ensureWorkerCount(requiredCount) {
@@ -150,13 +156,12 @@ class TransferProcessPool {
     }
 
     const workerId = `tpw-${this._nextWorkerSeq++}`;
-    const child = fork(workerPath, [], {
-      stdio: ["ignore", "ignore", "ignore", "ipc"],
-    });
+    const { child, transport } = spawnWorkerProcess(workerPath, workerId);
 
     const state = {
       id: workerId,
       process: child,
+      transport,
       busy: false,
       currentTaskKey: null,
       currentTransferKey: null,
@@ -174,15 +179,30 @@ class TransferProcessPool {
       this._handleWorkerExit(workerId, code, signal);
     });
 
-    child.on("error", (error) => {
-      this._log(
-        `Worker ${workerId} error: ${normalizeErrorMessage(error)}`,
-        "ERROR",
-      );
+    child.on("error", (...args) => {
+      const [error, location] = args;
+      const details =
+        args.length > 1
+          ? `${normalizeErrorMessage(error)} @ ${location || "unknown"}`
+          : normalizeErrorMessage(error);
+      this._log(`Worker ${workerId} error: ${details}`, "ERROR");
     });
 
     this.workers.set(workerId, state);
-    this._log(`Spawned worker ${workerId} (pid=${child.pid})`, "INFO");
+    this._log(
+      `Spawned worker ${workerId} via ${transport} (pid=${child.pid || "pending"}) from ${workerPath}`,
+      "INFO",
+    );
+
+    if (typeof child.once === "function") {
+      child.once("spawn", () => {
+        this._log(
+          `Worker ${workerId} spawned via ${transport} (pid=${child.pid || "unknown"})`,
+          "INFO",
+        );
+      });
+    }
+
     return state;
   }
 
@@ -191,7 +211,17 @@ class TransferProcessPool {
       throw new Error("Worker is not available");
     }
 
-    workerState.process.send(message);
+    if (typeof workerState.process.postMessage === "function") {
+      workerState.process.postMessage(message);
+      return;
+    }
+
+    if (typeof workerState.process.send === "function") {
+      workerState.process.send(message);
+      return;
+    }
+
+    throw new Error("Worker does not support IPC messaging");
   }
 
   _findBestIdleWorker(transferKey) {
