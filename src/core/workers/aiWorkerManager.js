@@ -1,8 +1,7 @@
 const { Worker } = require("worker_threads");
 const { BrowserWindow } = require("electron");
-const path = require("path");
-const fs = require("fs");
 const { logToFile } = require("../utils/logger");
+const { resolveWorkerScriptPath } = require("../utils/workerScriptResolver");
 const {
   mainProcessResourceManager,
 } = require("../utils/mainProcessResourceManager");
@@ -96,25 +95,10 @@ async function cleanupWorkerRegistrations(
  * 获取worker文件路径
  */
 function getWorkerPath() {
-  // 可能的路径列表
-  const possiblePaths = [
-    // webpack打包后的路径 (.webpack/main/workers/ai-worker.js)
-    path.join(__dirname, "workers", "ai-worker.js"),
-    // 开发环境路径 (src/workers/ai-worker.js)
-    path.join(__dirname, "..", "..", "workers", "ai-worker.js"),
-    // 备用路径
-    path.join(__dirname, "..", "..", "..", "src", "workers", "ai-worker.js"),
-  ];
-
-  for (const workerPath of possiblePaths) {
-    if (fs.existsSync(workerPath)) {
-      return workerPath;
-    }
-  }
-
-  throw new Error(
-    `找不到AI worker文件，已尝试路径: ${possiblePaths.join(", ")}`,
-  );
+  return resolveWorkerScriptPath("ai-worker.js", {
+    runtimeDir: __dirname,
+    envVar: "SIMPLESHELL_AI_WORKER_PATH",
+  });
 }
 
 /**
