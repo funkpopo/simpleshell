@@ -1833,37 +1833,79 @@ class FilemanagementService {
     const normalizedRemotePath = this._normalizeRemotePath(remotePath);
     const tmpPath = `${localPath}.part`;
     await fsp.mkdir(path.dirname(localPath), { recursive: true });
+    const sshConfig = await this._resolveTransferSshConfig(tabId);
+    const taskId = this._generateTaskId("download-single");
+    const fileLabel =
+      path.posix.basename(normalizedRemotePath) || normalizedRemotePath;
+    let trackedBytes = 0;
+    let taskFailedMessage = null;
 
     try {
-      const downloadedSize = await this._withTransferRetry(
+      const transferProcessPool = this._ensureTransferProcessPool();
+      await transferProcessPool.runTasks({
         transferKey,
-        async () => {
-          const result = await nativeSftpClient.downloadFile(
-            tabId,
-            normalizedRemotePath,
-            tmpPath,
-            {
-              onProgress: (payload) => {
-                const delta = Math.max(0, Number(payload?.deltaBytes) || 0);
-                if (delta > 0 && typeof onBytes === "function") {
-                  onBytes(delta);
-                }
-              },
-            },
-          );
-          if (!result?.success) {
-            throw new Error(result?.error || "download failed");
+        tabId,
+        sshConfig,
+        tasks: [
+          {
+            taskId,
+            direction: "download",
+            remotePath: normalizedRemotePath,
+            localPath: tmpPath,
+            totalBytes:
+              Number.isFinite(knownSize) && knownSize > 0
+                ? knownSize
+                : undefined,
+            fileName: fileLabel,
+            currentFile: fileLabel,
+            maxRetries: MAX_TRANSFER_RETRIES,
+            noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
+          },
+        ],
+        maxConcurrency: 1,
+        onProgress: (message) => {
+          if (message?.taskId !== taskId) return;
+          const delta = Math.max(0, Number(message?.deltaBytes) || 0);
+          if (delta <= 0) return;
+          trackedBytes += delta;
+          if (typeof onBytes === "function") {
+            onBytes(delta);
           }
-          return Number.isFinite(result?.totalBytes)
-            ? result.totalBytes
-            : Number.isFinite(knownSize)
-              ? knownSize
-              : 0;
         },
-      );
+        onTaskDone: (message) => {
+          if (message?.taskId !== taskId) return;
+          const reportedTotal =
+            Number.isFinite(knownSize) && knownSize > 0
+            ? knownSize
+            : Number(message?.totalBytes) || 0;
+          const remainder = Math.max(0, reportedTotal - trackedBytes);
+          if (remainder <= 0) return;
+          trackedBytes += remainder;
+          if (typeof onBytes === "function") {
+            onBytes(remainder);
+          }
+        },
+        onTaskError: (message) => {
+          if (
+            message?.error?.cancelled ||
+            this._isTransferCancelled(transferKey)
+          ) {
+            return;
+          }
+          taskFailedMessage =
+            message?.error?.message || "Download task failed";
+        },
+      });
+
+      if (this._isTransferCancelled(transferKey)) {
+        throw buildCancelledError();
+      }
+      if (taskFailedMessage) {
+        throw new Error(taskFailedMessage);
+      }
 
       await fsp.rename(tmpPath, localPath);
-      return downloadedSize;
+      return trackedBytes;
     } catch (error) {
       try {
         await fsp.rm(tmpPath, { force: true });
