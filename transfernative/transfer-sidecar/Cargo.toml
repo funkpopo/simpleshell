@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-base64 = "0.22"
-bytes = "1.10"
-futures-util = "0.3"
-openssh-sftp-client = "0.15"
-russh = { version = "0.58", default-features = false, features = ["flate2", "ring", "rsa"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-ssh-key = "0.6"
-tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "rt-multi-thread"] }
+base64 = "0.22.1"
+bytes = "1.11.1"
+futures-util = "0.3.32"
+openssh-sftp-client = "0.15.4"
+russh = { version = "0.58.0", default-features = false, features = ["flate2", "ring", "rsa"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+ssh-key = "0.6.7"
+tokio = { version = "1.50.0", features = ["fs", "io-std", "io-util", "macros", "rt-multi-thread"] }
