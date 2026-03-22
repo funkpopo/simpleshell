@@ -22,6 +22,7 @@ const DEFAULT_PROGRESS_INTERVAL_MS = 200;
 const DEFAULT_STALL_TIMEOUT_MS = 45000;
 const MAX_TRANSFER_RETRIES = 2;
 const RETRY_BACKOFF_BASE_MS = 300;
+const PREPARATION_PROGRESS_PERCENT = 5;
 const EVENT_LOOP_LAG_INTERVAL_MS = 1000;
 const TRANSFER_ENGINE_MODE = "process-worker-pool-v1";
 const CHUNK_PARALLEL_THRESHOLD_BYTES = 128 * 1024 * 1024;
@@ -824,6 +825,8 @@ class FilemanagementService {
       totalFiles: Math.max(1, totalFiles || 1),
       transferredBytes: 0,
       processedFiles: 0,
+      preparationTotal: 0,
+      preparationCompleted: 0,
       startAt: Date.now(),
       lastEmitAt: 0,
       cancelled: false,
@@ -877,6 +880,26 @@ class FilemanagementService {
     transfer.activeStreams.clear();
   }
 
+  _setTransferPreparation(transferKey, totalSteps = 0) {
+    const transfer = this._getTransfer(transferKey);
+    if (!transfer) return null;
+
+    transfer.preparationTotal = Math.max(0, totalSteps || 0);
+    transfer.preparationCompleted = 0;
+    return transfer;
+  }
+
+  _advanceTransferPreparation(transferKey, steps = 1) {
+    const transfer = this._getTransfer(transferKey);
+    if (!transfer) return null;
+
+    transfer.preparationCompleted = Math.min(
+      transfer.preparationTotal,
+      transfer.preparationCompleted + Math.max(0, steps || 0),
+    );
+    return transfer;
+  }
+
   _emitTransferProgress(
     transferKey,
     {
@@ -906,12 +929,33 @@ class FilemanagementService {
       transfer.totalBytes - transfer.transferredBytes,
     );
     const remainingTime = speed > 0 ? remainingBytes / speed : 0;
-    const progress =
+    const byteProgress =
       transfer.totalBytes > 0
         ? Math.min(100, (transfer.transferredBytes / transfer.totalBytes) * 100)
         : transfer.processedFiles >= transfer.totalFiles
           ? 100
           : 0;
+    const hasPreparation = transfer.preparationTotal > 0;
+    const preparationRatio = hasPreparation
+      ? Math.min(
+          1,
+          transfer.preparationCompleted / Math.max(1, transfer.preparationTotal),
+        )
+      : 0;
+    let progress = byteProgress;
+
+    if (progress < 100 && hasPreparation) {
+      const preparationProgress =
+        preparationRatio * PREPARATION_PROGRESS_PERCENT;
+      progress =
+        byteProgress > 0
+          ? Math.max(
+              preparationProgress,
+              PREPARATION_PROGRESS_PERCENT +
+                (byteProgress / 100) * (100 - PREPARATION_PROGRESS_PERCENT),
+            )
+          : preparationProgress;
+    }
 
     const payload = {
       tabId: transfer.tabId,
@@ -926,6 +970,8 @@ class FilemanagementService {
       currentFileIndex,
       processedFiles: transfer.processedFiles,
       totalFiles: transfer.totalFiles,
+      preparationCompleted: transfer.preparationCompleted,
+      preparationTotal: transfer.preparationTotal,
       isBatch,
       ...extra,
     };
@@ -1109,24 +1155,25 @@ class FilemanagementService {
 
   async _mkdirIfNeeded(sftp, remotePath) {
     try {
-      const stats = await this._stat(sftp, remotePath);
-      if (!isDirectoryMode(stats?.mode)) {
-        throw new Error(`Path exists and is not a directory: ${remotePath}`);
-      }
-      return;
-    } catch {
-      // path does not exist
-    }
-
-    try {
       await this._mkdir(sftp, remotePath);
+      return;
     } catch (mkdirError) {
       if (!isPathExistsError(mkdirError)) {
-        const stats = await this._stat(sftp, remotePath);
-        if (!isDirectoryMode(stats?.mode)) {
-          throw mkdirError;
+        const stats = await this._stat(sftp, remotePath).catch(() => null);
+        if (isDirectoryMode(stats?.mode)) {
+          return;
         }
+        throw mkdirError;
       }
+
+      const stats = await this._stat(sftp, remotePath).catch(() => null);
+      if (isDirectoryMode(stats?.mode)) {
+        return;
+      }
+      if (stats) {
+        throw new Error(`Path exists and is not a directory: ${remotePath}`);
+      }
+      throw mkdirError;
     }
   }
 
@@ -1637,7 +1684,11 @@ class FilemanagementService {
     }
   }
 
-  async _ensureRemoteDirectories(tabId, remoteDirs) {
+  async _ensureRemoteDirectories(
+    tabId,
+    remoteDirs,
+    { transferKey = null, displayName = "准备上传", progressExtra = {} } = {},
+  ) {
     const uniqueDirs = Array.from(
       new Set(
         (remoteDirs || [])
@@ -1645,6 +1696,10 @@ class FilemanagementService {
           .filter((dir) => dir && dir !== "." && dir !== "/"),
       ),
     );
+
+    if (transferKey) {
+      this._setTransferPreparation(transferKey, uniqueDirs.length);
+    }
 
     if (uniqueDirs.length === 0) return;
 
@@ -1656,7 +1711,8 @@ class FilemanagementService {
 
     await this._withBorrowedSftp(tabId, async (sftp) => {
       const created = new Set(["", ".", "/"]);
-      for (const fullDirPath of uniqueDirs) {
+      for (let index = 0; index < uniqueDirs.length; index += 1) {
+        const fullDirPath = uniqueDirs[index];
         const isAbsolute = fullDirPath.startsWith("/");
         const parts = fullDirPath.split("/").filter(Boolean);
         let currentPath = isAbsolute ? "/" : "";
@@ -1667,8 +1723,35 @@ class FilemanagementService {
           await this._mkdirIfNeeded(sftp, currentPath);
           created.add(currentPath);
         }
+
+        if (transferKey) {
+          const transfer = this._advanceTransferPreparation(transferKey);
+          this._emitTransferProgress(transferKey, {
+            fileName: displayName || "准备上传",
+            currentFile: `正在创建目录 ${index + 1}/${uniqueDirs.length}: ${fullDirPath}`,
+            extra: {
+              preparationCompleted: transfer?.preparationCompleted || 0,
+              preparationTotal: transfer?.preparationTotal || uniqueDirs.length,
+              ...progressExtra,
+            },
+          });
+        }
       }
     });
+
+    if (transferKey) {
+      const transfer = this._getTransfer(transferKey);
+      this._emitTransferProgress(transferKey, {
+        force: true,
+        fileName: displayName || "准备上传",
+        currentFile: "目录结构已就绪，开始传输文件",
+        extra: {
+          preparationCompleted: transfer?.preparationCompleted || 0,
+          preparationTotal: transfer?.preparationTotal || uniqueDirs.length,
+          ...progressExtra,
+        },
+      });
+    }
   }
 
   async _scanLocalFolderWithNativeSidecar(localFolderPath) {
@@ -3128,6 +3211,7 @@ class FilemanagementService {
     event,
     tabId,
     entries,
+    remoteDirectories = [],
     progressChannel,
     transferType,
     displayName,
@@ -3175,13 +3259,21 @@ class FilemanagementService {
     const tempUploadPaths = [];
 
     try {
-      const directories = [];
+      const directories = Array.isArray(remoteDirectories)
+        ? [...remoteDirectories]
+        : [];
       for (const entry of entries) {
         directories.push(
           path.posix.dirname(this._normalizeRemotePath(entry.remotePath)),
         );
       }
-      await this._ensureRemoteDirectories(tabId, directories);
+      await this._ensureRemoteDirectories(tabId, directories, {
+        transferKey,
+        displayName,
+        progressExtra: includeOperationComplete
+          ? { operationComplete: false, cancelled: false }
+          : {},
+      });
 
       const tasks = [];
       for (let index = 0; index < entries.length; index += 1) {
@@ -3645,6 +3737,9 @@ class FilemanagementService {
         : Array.isArray(uploadData)
           ? uploadData
           : [];
+      const rawFolders = Array.isArray(uploadData?.folders)
+        ? uploadData.folders
+        : [];
 
       const entries = [];
       for (const fileData of rawFiles) {
@@ -3679,10 +3774,15 @@ class FilemanagementService {
         });
       }
 
+      const remoteDirectories = rawFolders.map((folderPath) =>
+        this._joinRemotePath(normalizedTarget, toPosixPath(folderPath)),
+      );
+
       return this._uploadEntries({
         event,
         tabId,
         entries,
+        remoteDirectories,
         progressChannel,
         transferType: "upload-multifile",
         displayName: "拖拽上传",
