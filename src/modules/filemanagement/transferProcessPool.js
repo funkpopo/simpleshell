@@ -696,6 +696,13 @@ class TransferProcessPool {
     return message.includes("cancelled") || message.includes("canceled");
   }
 
+  _clearTransferState(transferKey) {
+    if (!transferKey) return;
+    this.transferConcurrencyLimits.delete(transferKey);
+    this.transferRunningCounts.delete(transferKey);
+    this.transferCancelled.delete(transferKey);
+  }
+
   async runTasks({
     transferKey,
     tabId,
@@ -714,6 +721,11 @@ class TransferProcessPool {
       throw new Error("transferKey and tabId are required");
     }
 
+    if (this.transferCancelled.has(transferKey)) {
+      this._clearTransferState(transferKey);
+      throw buildCancelledError("Transfer cancelled before task queueing");
+    }
+
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return { completed: 0, failed: 0, cancelled: 0, results: [] };
     }
@@ -725,7 +737,6 @@ class TransferProcessPool {
 
     this._ensureWorkerCount(limit);
     this._ensureQueueCapacity(tasks.length);
-    this.transferCancelled.delete(transferKey);
     this.transferConcurrencyLimits.set(transferKey, limit);
 
     const taskPromises = tasks.map((task) => {
@@ -791,9 +802,7 @@ class TransferProcessPool {
       );
 
     if (!hasOutstanding) {
-      this.transferConcurrencyLimits.delete(transferKey);
-      this.transferRunningCounts.delete(transferKey);
-      this.transferCancelled.delete(transferKey);
+      this._clearTransferState(transferKey);
     }
 
     return {
@@ -860,14 +869,6 @@ class TransferProcessPool {
           entry.workerId,
         );
       }
-    }
-
-    if (
-      queued.length === 0 &&
-      runningTaskKeys.length === 0 &&
-      !this.transferConcurrencyLimits.has(transferKey)
-    ) {
-      this.transferCancelled.delete(transferKey);
     }
 
     return {
