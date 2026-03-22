@@ -2938,7 +2938,13 @@ const FileManager = memo(
             },
           );
 
-          if (result?.success) {
+          if (isUserCancellationError(result)) {
+            setTransferCancelled(true);
+            updateTransferProgress(transferId, {
+              isCancelled: true,
+              cancelMessage: t("fileManager.errors.userCancelled"),
+            });
+          } else if (result?.success) {
             // 标记传输完成
             updateTransferProgress(transferId, {
               progress: 100,
@@ -2971,14 +2977,6 @@ const FileManager = memo(
               );
             }
 
-            // 检查是否是用户取消操作
-            if (isUserCancellationError(result)) {
-              setTransferCancelled(true);
-              updateTransferProgress(transferId, {
-                isCancelled: true,
-                cancelMessage: t("fileManager.errors.userCancelled"),
-              });
-            }
           } else if (!transferCancelled) {
             // 检查是否是取消操作相关的错误
             if (!isUserCancellationError(result)) {
@@ -3162,7 +3160,13 @@ const FileManager = memo(
             },
           );
 
-          if (result?.success) {
+          if (isUserCancellationError(result)) {
+            setTransferCancelled(true);
+            updateTransferProgress(transferId, {
+              isCancelled: true,
+              cancelMessage: t("fileManager.errors.userCancelled"),
+            });
+          } else if (result?.success) {
             // 标记传输完成
             updateTransferProgress(transferId, {
               progress: 100,
@@ -3188,14 +3192,6 @@ const FileManager = memo(
               );
             }
 
-            // 检查是否是用户取消操作
-            if (isUserCancellationError(result)) {
-              setTransferCancelled(true);
-              updateTransferProgress(transferId, {
-                isCancelled: true,
-                cancelMessage: t("fileManager.errors.userCancelled"),
-              });
-            }
           } else if (!transferCancelled) {
             // 检查是否是取消操作相关的错误
             if (!isUserCancellationError(result)) {
@@ -4011,7 +4007,13 @@ const FileManager = memo(
             );
 
             // 与 handleUploadFile 保持一致的结果处理
-            if (result?.success) {
+            if (isUserCancellationError(result)) {
+              setTransferCancelled(true);
+              updateTransferProgress(transferId, {
+                isCancelled: true,
+                cancelMessage: t("fileManager.errors.userCancelled"),
+              });
+            } else if (result?.success) {
               // 标记传输完成
               updateTransferProgress(transferId, {
                 progress: 100,

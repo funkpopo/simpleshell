@@ -365,6 +365,8 @@ class FilemanagementService {
   }
 
   async _materializeUploadEntry(entry, transferKey, index) {
+    this._throwIfTransferCancelled(transferKey);
+
     if (entry?.localPath) {
       return {
         localPath: entry.localPath,
@@ -379,11 +381,13 @@ class FilemanagementService {
     const tempRoot = path.join(os.tmpdir(), "simpleshell-upload-buffer");
     const transferDir = path.join(tempRoot, transferKey);
     await fsp.mkdir(transferDir, { recursive: true });
+    this._throwIfTransferCancelled(transferKey);
     const tempPath = path.join(
       transferDir,
       `${String(index).padStart(5, "0")}-${Date.now()}-${crypto.randomBytes(2).toString("hex")}.tmp`,
     );
     await fsp.writeFile(tempPath, entry.buffer);
+    this._throwIfTransferCancelled(transferKey);
     return {
       localPath: tempPath,
       tempPath,
@@ -744,7 +748,10 @@ class FilemanagementService {
     return `${direction || "transfer"}::${index}::${remotePath || ""}::${localPath || ""}`;
   }
 
-  async _prepareRemoteChunkUploadTarget(tabId, remotePath) {
+  async _prepareRemoteChunkUploadTarget(tabId, remotePath, transferKey = null) {
+    if (transferKey) {
+      this._throwIfTransferCancelled(transferKey);
+    }
     const normalizedRemotePath = this._normalizeRemotePath(remotePath);
     await this._withBorrowedSftp(tabId, async (sftp) => {
       const handle = await this._openFileHandle(
@@ -754,13 +761,26 @@ class FilemanagementService {
       );
       await this._closeFileHandle(sftp, handle);
     });
+    if (transferKey) {
+      this._throwIfTransferCancelled(transferKey);
+    }
   }
 
-  async _prepareLocalChunkDownloadTarget(tempPath, totalBytes) {
+  async _prepareLocalChunkDownloadTarget(
+    tempPath,
+    totalBytes,
+    transferKey = null,
+  ) {
+    if (transferKey) {
+      this._throwIfTransferCancelled(transferKey);
+    }
     await fsp.mkdir(path.dirname(tempPath), { recursive: true });
     const handle = await fsp.open(tempPath, "w");
     await handle.close();
     await fsp.truncate(tempPath, Math.max(0, Number(totalBytes) || 0));
+    if (transferKey) {
+      this._throwIfTransferCancelled(transferKey);
+    }
   }
 
   async _cleanupLocalTempPaths(paths = []) {
@@ -847,6 +867,12 @@ class FilemanagementService {
   _isTransferCancelled(transferKey) {
     const transfer = this._getTransfer(transferKey);
     return !transfer || transfer.cancelled;
+  }
+
+  _throwIfTransferCancelled(transferKey) {
+    if (this._isTransferCancelled(transferKey)) {
+      throw buildCancelledError();
+    }
   }
 
   _trackTransferStream(transferKey, stream) {
@@ -988,6 +1014,12 @@ class FilemanagementService {
     }
     this._destroyTransferStreams(transferKey, "Transfer finalized");
     this.activeTransfers.delete(transferKey);
+    if (
+      this.transferProcessPool &&
+      typeof this.transferProcessPool._clearTransferState === "function"
+    ) {
+      this.transferProcessPool._clearTransferState(transferKey);
+    }
 
     if (this.activeTransfers.size === 0) {
       this._scheduleTransferProcessPoolIdleShutdown();
@@ -1713,6 +1745,9 @@ class FilemanagementService {
       const created = new Set(["", ".", "/"]);
       for (let index = 0; index < uniqueDirs.length; index += 1) {
         const fullDirPath = uniqueDirs[index];
+        if (transferKey) {
+          this._throwIfTransferCancelled(transferKey);
+        }
         const isAbsolute = fullDirPath.startsWith("/");
         const parts = fullDirPath.split("/").filter(Boolean);
         let currentPath = isAbsolute ? "/" : "";
@@ -1845,7 +1880,7 @@ class FilemanagementService {
     return normalizeScanResult(nativeScan);
   }
 
-  async _scanRemoteFolderTree(tabId, remoteRootPath) {
+  async _scanRemoteFolderTree(tabId, remoteRootPath, transferKey = null) {
     const rootPath = this._normalizeRemotePath(remoteRootPath);
     const queue = [{ remotePath: rootPath, relativePath: "" }];
     const files = [];
@@ -1854,10 +1889,16 @@ class FilemanagementService {
 
     await this._withBorrowedSftp(tabId, async (sftp) => {
       while (queue.length > 0) {
+        if (transferKey) {
+          this._throwIfTransferCancelled(transferKey);
+        }
         const current = queue.shift();
         const entries = await this._readdir(sftp, current.remotePath);
 
         for (const item of entries) {
+          if (transferKey) {
+            this._throwIfTransferCancelled(transferKey);
+          }
           const name = item?.filename;
           if (!name || name === "." || name === "..") continue;
 
@@ -1913,9 +1954,11 @@ class FilemanagementService {
     knownSize,
     onBytes,
   }) {
+    this._throwIfTransferCancelled(transferKey);
     const normalizedRemotePath = this._normalizeRemotePath(remotePath);
     const tmpPath = `${localPath}.part`;
     await fsp.mkdir(path.dirname(localPath), { recursive: true });
+    this._throwIfTransferCancelled(transferKey);
     const sshConfig = await this._resolveTransferSshConfig(tabId);
     const taskId = this._generateTaskId("download-single");
     const fileLabel =
@@ -1987,6 +2030,7 @@ class FilemanagementService {
         throw new Error(taskFailedMessage);
       }
 
+      this._throwIfTransferCancelled(transferKey);
       await fsp.rename(tmpPath, localPath);
       return trackedBytes;
     } catch (error) {
@@ -2053,18 +2097,24 @@ class FilemanagementService {
         fileName: defaultName || normalizedRemotePath,
         currentFile: defaultName || normalizedRemotePath,
       });
+      this._throwIfTransferCancelled(transferKey);
 
       if (this._buildChunkSegments(fileSize).length > 0) {
         const sshConfig = await this._resolveTransferSshConfig(tabId);
         const chunkSegments = this._buildChunkSegments(fileSize);
         chunkTempPath = `${filePath}.part`;
-        await this._prepareLocalChunkDownloadTarget(chunkTempPath, fileSize);
+        await this._prepareLocalChunkDownloadTarget(
+          chunkTempPath,
+          fileSize,
+          transferKey,
+        );
 
         const taskMetaMap = new Map();
         const taskTransferredBytes = new Map();
         let chunkTaskFailed = false;
         const chunkErrors = [];
         const tasks = chunkSegments.map((segment) => {
+          this._throwIfTransferCancelled(transferKey);
           const taskId = this._generateTaskId("download-single-chunk");
           taskMetaMap.set(taskId, {
             knownSize: segment.length,
@@ -2089,6 +2139,7 @@ class FilemanagementService {
             noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
           };
         });
+        this._throwIfTransferCancelled(transferKey);
 
         const transferProcessPool = this._ensureTransferProcessPool();
         await transferProcessPool.runTasks({
@@ -2153,6 +2204,7 @@ class FilemanagementService {
         if (chunkTaskFailed) {
           throw new Error(chunkErrors[0] || "Download chunk task failed");
         }
+        this._throwIfTransferCancelled(transferKey);
         await fsp.rename(chunkTempPath, filePath);
         chunkTempPath = null;
       } else {
@@ -2283,6 +2335,7 @@ class FilemanagementService {
         isBatch: true,
         fileName: `批量下载 (${totalFiles} 个文件)`,
       });
+      this._throwIfTransferCancelled(transferKey);
 
       let completed = 0;
       let failed = 0;
@@ -2292,6 +2345,7 @@ class FilemanagementService {
       const fileStateMap = new Map();
       const tasks = [];
       for (let index = 0; index < files.length; index += 1) {
+        this._throwIfTransferCancelled(transferKey);
         const file = files[index];
         const remotePath = this._normalizeRemotePath(file?.remotePath || "");
         const fileName = file?.fileName || path.posix.basename(remotePath);
@@ -2307,7 +2361,11 @@ class FilemanagementService {
 
         if (chunkSegments.length > 0) {
           const tempPath = `${localPath}.part`;
-          await this._prepareLocalChunkDownloadTarget(tempPath, knownSize);
+          await this._prepareLocalChunkDownloadTarget(
+            tempPath,
+            knownSize,
+            transferKey,
+          );
           chunkTempCleanup.add(tempPath);
           fileStateMap.set(fileTaskKey, {
             fileTaskKey,
@@ -2322,6 +2380,7 @@ class FilemanagementService {
           });
 
           for (const segment of chunkSegments) {
+            this._throwIfTransferCancelled(transferKey);
             const taskId = this._generateTaskId("download-chunk");
             taskMetaMap.set(taskId, {
               fileTaskKey,
@@ -2384,6 +2443,7 @@ class FilemanagementService {
           noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
         });
       }
+      this._throwIfTransferCancelled(transferKey);
       const concurrency = this._chooseConcurrency(
         tasks.length,
         totalBytes,
@@ -2520,6 +2580,7 @@ class FilemanagementService {
       }
 
       for (const fileState of fileStateMap.values()) {
+        this._throwIfTransferCancelled(transferKey);
         if (!fileState.chunked || fileState.failed) continue;
         if (fileState.completedSegments < fileState.totalSegments) {
           fileState.failed = true;
@@ -2561,6 +2622,7 @@ class FilemanagementService {
 
       const failedTempPaths = [];
       for (const fileState of fileStateMap.values()) {
+        this._throwIfTransferCancelled(transferKey);
         if (!fileState.chunked || !fileState.failed) continue;
         failedTempPaths.push(fileState.tempPath);
       }
@@ -2706,16 +2768,6 @@ class FilemanagementService {
 
       const targetRootDir = filePaths[0];
       const localFolderPath = path.join(targetRootDir, folderName);
-      await fsp.mkdir(localFolderPath, { recursive: true });
-
-      const tree = await this._scanRemoteFolderTree(
-        tabId,
-        normalizedRemoteRoot,
-      );
-      const totalFiles = tree.files.length;
-      const totalBytes = tree.totalBytes;
-      const sshConfig = await this._resolveTransferSshConfig(tabId);
-
       transferKey = this._generateTransferKey(tabId, "download-folder");
       this._registerTransfer({
         transferKey,
@@ -2723,9 +2775,34 @@ class FilemanagementService {
         type: "download-folder",
         sender,
         progressChannel: "download-folder-progress",
-        totalBytes,
-        totalFiles: Math.max(1, totalFiles),
+        totalBytes: 0,
+        totalFiles: 1,
       });
+      this._emitTransferProgress(transferKey, {
+        channel: "download-folder-progress",
+        force: true,
+        fileName: folderName,
+        currentFile: "正在扫描远程文件夹",
+      });
+      await fsp.mkdir(localFolderPath, { recursive: true });
+      this._throwIfTransferCancelled(transferKey);
+
+      const tree = await this._scanRemoteFolderTree(
+        tabId,
+        normalizedRemoteRoot,
+        transferKey,
+      );
+      this._throwIfTransferCancelled(transferKey);
+      const totalFiles = tree.files.length;
+      const totalBytes = tree.totalBytes;
+      const sshConfig = await this._resolveTransferSshConfig(tabId);
+      const initialTransferState = this._getTransfer(transferKey);
+      if (initialTransferState) {
+        initialTransferState.totalBytes = Math.max(0, totalBytes || 0);
+        initialTransferState.totalFiles = Math.max(1, totalFiles || 1);
+        initialTransferState.transferredBytes = 0;
+        initialTransferState.processedFiles = 0;
+      }
 
       this._emitTransferProgress(transferKey, {
         channel: "download-folder-progress",
@@ -2735,6 +2812,7 @@ class FilemanagementService {
       });
 
       for (const relativeDir of tree.directories) {
+        this._throwIfTransferCancelled(transferKey);
         const localDirPath = path.join(
           localFolderPath,
           toPosixPath(relativeDir),
@@ -2750,6 +2828,7 @@ class FilemanagementService {
       const fileStateMap = new Map();
       const tasks = [];
       for (let index = 0; index < tree.files.length; index += 1) {
+        this._throwIfTransferCancelled(transferKey);
         const file = tree.files[index];
         const localPath = path.join(
           localFolderPath,
@@ -2767,7 +2846,11 @@ class FilemanagementService {
 
         if (chunkSegments.length > 0) {
           const tempPath = `${localPath}.part`;
-          await this._prepareLocalChunkDownloadTarget(tempPath, knownSize);
+          await this._prepareLocalChunkDownloadTarget(
+            tempPath,
+            knownSize,
+            transferKey,
+          );
           chunkTempCleanup.add(tempPath);
           fileStateMap.set(fileTaskKey, {
             fileTaskKey,
@@ -2782,6 +2865,7 @@ class FilemanagementService {
           });
 
           for (const segment of chunkSegments) {
+            this._throwIfTransferCancelled(transferKey);
             const taskId = this._generateTaskId("download-folder-chunk");
             taskMetaMap.set(taskId, {
               fileTaskKey,
@@ -2843,6 +2927,7 @@ class FilemanagementService {
           noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
         });
       }
+      this._throwIfTransferCancelled(transferKey);
       const concurrency = this._chooseConcurrency(
         tasks.length,
         totalBytes,
@@ -2971,6 +3056,7 @@ class FilemanagementService {
       }
 
       for (const fileState of fileStateMap.values()) {
+        this._throwIfTransferCancelled(transferKey);
         if (!fileState.chunked || fileState.failed) continue;
         if (fileState.completedSegments < fileState.totalSegments) {
           fileState.failed = true;
@@ -3011,6 +3097,7 @@ class FilemanagementService {
 
       const failedTempPaths = [];
       for (const fileState of fileStateMap.values()) {
+        this._throwIfTransferCancelled(transferKey);
         if (!fileState.chunked || !fileState.failed) continue;
         failedTempPaths.push(fileState.tempPath);
       }
@@ -3145,6 +3232,7 @@ class FilemanagementService {
     knownSize = 0,
     onBytes,
   }) {
+    this._throwIfTransferCancelled(transferKey);
     const normalizedRemotePath = this._normalizeRemotePath(remotePath);
     let uploadSourcePath = localPath;
     let cleanupTempPath = null;
@@ -3156,6 +3244,7 @@ class FilemanagementService {
       );
       await fsp.writeFile(cleanupTempPath, buffer);
       uploadSourcePath = cleanupTempPath;
+      this._throwIfTransferCancelled(transferKey);
     }
 
     try {
@@ -3212,6 +3301,7 @@ class FilemanagementService {
     tabId,
     entries,
     remoteDirectories = [],
+    transferKey: providedTransferKey = null,
     progressChannel,
     transferType,
     displayName,
@@ -3229,16 +3319,31 @@ class FilemanagementService {
     );
     const sshConfig = await this._resolveTransferSshConfig(tabId);
 
-    const transferKey = this._generateTransferKey(tabId, transferType);
-    this._registerTransfer({
-      transferKey,
-      tabId,
-      type: transferType,
-      sender,
-      progressChannel,
-      totalBytes,
-      totalFiles,
-    });
+    const transferKey =
+      providedTransferKey || this._generateTransferKey(tabId, transferType);
+    const existingTransfer = this._getTransfer(transferKey);
+
+    if (existingTransfer) {
+      existingTransfer.type = transferType;
+      existingTransfer.sender = sender;
+      existingTransfer.progressChannel = progressChannel;
+      existingTransfer.totalBytes = Math.max(0, totalBytes || 0);
+      existingTransfer.totalFiles = Math.max(1, totalFiles || 1);
+      existingTransfer.transferredBytes = 0;
+      existingTransfer.processedFiles = 0;
+      existingTransfer.preparationTotal = 0;
+      existingTransfer.preparationCompleted = 0;
+    } else {
+      this._registerTransfer({
+        transferKey,
+        tabId,
+        type: transferType,
+        sender,
+        progressChannel,
+        totalBytes,
+        totalFiles,
+      });
+    }
 
     this._emitTransferProgress(transferKey, {
       force: true,
@@ -3277,6 +3382,7 @@ class FilemanagementService {
 
       const tasks = [];
       for (let index = 0; index < entries.length; index += 1) {
+        this._throwIfTransferCancelled(transferKey);
         const entry = entries[index];
         const normalizedRemotePath = this._normalizeRemotePath(
           entry.remotePath,
@@ -3307,6 +3413,7 @@ class FilemanagementService {
           await this._prepareRemoteChunkUploadTarget(
             tabId,
             normalizedRemotePath,
+            transferKey,
           );
           fileStateMap.set(fileTaskKey, {
             fileTaskKey,
@@ -3320,6 +3427,7 @@ class FilemanagementService {
           });
 
           for (const segment of chunkSegments) {
+            this._throwIfTransferCancelled(transferKey);
             const taskId = this._generateTaskId("upload-chunk");
             taskMetaMap.set(taskId, {
               fileTaskKey,
@@ -3379,6 +3487,7 @@ class FilemanagementService {
           noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
         });
       }
+      this._throwIfTransferCancelled(transferKey);
       const concurrency = this._chooseConcurrency(
         tasks.length,
         totalBytes,
@@ -3507,6 +3616,7 @@ class FilemanagementService {
 
       const failedChunkRemotePaths = [];
       for (const fileState of fileStateMap.values()) {
+        this._throwIfTransferCancelled(transferKey);
         if (!fileState.chunked) continue;
         if (fileState.failed) {
           failedChunkRemotePaths.push(fileState.remotePath);
@@ -3805,7 +3915,9 @@ class FilemanagementService {
   }
 
   async uploadFolder(event, tabId, targetFolder, progressChannel) {
+    let transferKey = null;
     try {
+      const sender = event?.sender;
       const dialogWindow = this._resolveDialogWindow();
       const { canceled, filePaths } = await dialog.showOpenDialog(
         dialogWindow || undefined,
@@ -3824,9 +3936,36 @@ class FilemanagementService {
       const folderName = path.basename(localFolderPath);
       const normalizedTarget = this._normalizeRemotePath(targetFolder);
       const remoteBase = this._joinRemotePath(normalizedTarget, folderName);
+      transferKey = this._generateTransferKey(tabId, "upload-folder");
+      this._registerTransfer({
+        transferKey,
+        tabId,
+        type: "upload-folder",
+        sender,
+        progressChannel,
+        totalBytes: 0,
+        totalFiles: 1,
+      });
+      this._emitTransferProgress(transferKey, {
+        force: true,
+        fileName: folderName,
+        currentFile: "正在扫描本地文件夹",
+        currentFileIndex: 0,
+        extra: { operationComplete: false, cancelled: false },
+      });
 
       const scan = await this._scanLocalFolder(localFolderPath);
+      this._throwIfTransferCancelled(transferKey);
       if (!scan.files || scan.files.length === 0) {
+        this._emitTransferProgress(transferKey, {
+          force: true,
+          fileName: folderName,
+          currentFile: "",
+          currentFileIndex: 0,
+          extra: { operationComplete: true, cancelled: false },
+        });
+        this._finalizeTransfer(transferKey);
+        transferKey = null;
         return {
           success: true,
           uploadedCount: 0,
@@ -3848,6 +3987,7 @@ class FilemanagementService {
         event,
         tabId,
         entries,
+        transferKey,
         progressChannel,
         transferType: "upload-folder",
         displayName: folderName,
@@ -3859,6 +3999,18 @@ class FilemanagementService {
       }
       return result;
     } catch (error) {
+      if (transferKey) {
+        const state = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: state?.transferredBytes || 0,
+          completed: 0,
+          failed: isCancelledError(error) ? 0 : 1,
+          cancelled: isCancelledError(error),
+          durationMs: state ? Date.now() - state.startAt : 0,
+        });
+        this._recordCancelLatency(state);
+        this._finalizeTransfer(transferKey);
+      }
       if (isCancelledError(error)) {
         return {
           success: true,
