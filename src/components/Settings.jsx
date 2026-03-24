@@ -53,6 +53,28 @@ const GlassDialog = styled(Dialog)(({ theme }) => ({
   },
 }));
 
+const sectionCardSx = {
+  p: 2,
+  borderRadius: 2,
+  border: "1px solid",
+  borderColor: "divider",
+  bgcolor: (theme) =>
+    theme.palette.mode === "dark"
+      ? "rgba(255, 255, 255, 0.03)"
+      : "rgba(17, 24, 39, 0.025)",
+};
+
+const sectionTitleRowSx = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  mb: 1.5,
+};
+
+const compactFieldSx = {
+  mb: 1.75,
+};
+
 // Custom styled dialog title
 const BootstrapDialogTitle = memo((props) => {
   const { t } = useTranslation();
@@ -443,86 +465,99 @@ const Settings = memo(({ open, onClose }) => {
           <SettingsSkeleton />
         ) : (
           <>
-            <Grid container spacing={2}>
+            <Grid container spacing={2.25}>
               {/* 左列 */}
               <Grid size={{ xs: 12, md: 6 }}>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    {t("settings.language")}
-                  </Typography>
-                  <FormControl fullWidth variant="outlined" size="small">
-                    <Select value={language} onChange={handleLanguageChange}>
-                      {languages.map((lang) => (
-                        <MenuItem key={lang.code} value={lang.code}>
-                          {lang.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Box>
-
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    {t("settings.theme")}
-                  </Typography>
-                  <FormControl fullWidth variant="outlined" size="small">
-                    <Select
-                      value={darkMode ? "dark" : "light"}
-                      onChange={handleDarkModeChange}
-                    >
-                      <MenuItem value="light">
-                        {t("settings.themeLight")}
-                      </MenuItem>
-                      <MenuItem value="dark">
-                        {t("settings.themeDark")}
-                      </MenuItem>
-                    </Select>
-                  </FormControl>
-                </Box>
-
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    {t("settings.fontSize")}
-                  </Typography>
-                  <Box sx={{ px: 1 }}>
-                    <Slider
-                      value={fontSize}
-                      onChange={handleFontSizeChange}
-                      step={null}
-                      marks={fontSizes.map((size) => ({
-                        value: size.value,
-                        label: size.label,
-                      }))}
-                      min={12}
-                      max={18}
+                <Box sx={sectionCardSx}>
+                  <Box sx={sectionTitleRowSx}>
+                    <Typography variant="subtitle1">
+                      {t("settings.title")}
+                    </Typography>
+                    <Chip
                       size="small"
+                      color="primary"
+                      variant="outlined"
+                      label={t("settings.language")}
                     />
                   </Box>
-                </Box>
+                  <Box sx={compactFieldSx}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      {t("settings.language")}
+                    </Typography>
+                    <FormControl fullWidth variant="outlined" size="small">
+                      <Select value={language} onChange={handleLanguageChange}>
+                        {languages.map((lang) => (
+                          <MenuItem key={lang.code} value={lang.code}>
+                            {lang.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Box>
 
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    文件传输显示
-                  </Typography>
-                  <FormControl fullWidth variant="outlined" size="small">
-                    <Select
-                      value={transferBarMode}
-                      onChange={(e) => setTransferBarMode(e.target.value)}
-                    >
-                      <MenuItem value="bottom">底部栏模式</MenuItem>
-                      <MenuItem value="sidebar">侧边栏模式</MenuItem>
-                    </Select>
-                  </FormControl>
+                  <Box sx={compactFieldSx}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      {t("settings.theme")}
+                    </Typography>
+                    <FormControl fullWidth variant="outlined" size="small">
+                      <Select
+                        value={darkMode ? "dark" : "light"}
+                        onChange={handleDarkModeChange}
+                      >
+                        <MenuItem value="light">
+                          {t("settings.themeLight")}
+                        </MenuItem>
+                        <MenuItem value="dark">{t("settings.themeDark")}</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+
+                  <Box sx={compactFieldSx}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      {t("settings.fontSize")}
+                    </Typography>
+                    <Box sx={{ px: 1 }}>
+                      <Slider
+                        value={fontSize}
+                        onChange={handleFontSizeChange}
+                        step={null}
+                        marks={fontSizes.map((size) => ({
+                          value: size.value,
+                          label: size.label,
+                        }))}
+                        min={12}
+                        max={18}
+                        size="small"
+                      />
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ mb: 0 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      文件传输显示
+                    </Typography>
+                    <FormControl fullWidth variant="outlined" size="small">
+                      <Select
+                        value={transferBarMode}
+                        onChange={(e) => setTransferBarMode(e.target.value)}
+                      >
+                        <MenuItem value="bottom">底部栏模式</MenuItem>
+                        <MenuItem value="sidebar">侧边栏模式</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
                 </Box>
               </Grid>
 
               {/* 右列 */}
               <Grid size={{ xs: 12, md: 6 }}>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    {t("settings.dnd.title")}
-                  </Typography>
-                  <Box sx={{ display: "flex", flexDirection: "column" }}>
+                <Box sx={sectionCardSx}>
+                  <Box sx={sectionTitleRowSx}>
+                    <Typography variant="subtitle1">
+                      {t("settings.dnd.title")}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: "flex", flexDirection: "column", mb: 1 }}>
                     <FormControlLabel
                       control={
                         <Switch
@@ -570,9 +605,9 @@ const Settings = memo(({ open, onClose }) => {
                       }
                     />
                   </Box>
-                </Box>
 
-                <Box sx={{ mb: 2 }}>
+                  <Divider sx={{ my: 1.25 }} />
+
                   <Typography variant="subtitle2" gutterBottom>
                     {t("settings.externalEditor.title")}
                   </Typography>
@@ -606,113 +641,111 @@ const Settings = memo(({ open, onClose }) => {
               </Grid>
             </Grid>
 
-            <Divider sx={{ my: 1.5 }} />
+            <Box sx={{ ...sectionCardSx, mt: 2.25 }}>
+              <Box sx={sectionTitleRowSx}>
+                <Typography variant="subtitle1">终端与日志</Typography>
+              </Box>
 
-            {/* 终端字体设置 - 双列 */}
-            <Typography variant="subtitle2" gutterBottom>
-              终端字体设置
-            </Typography>
-            <Grid container spacing={2} sx={{ mb: 1 }}>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <FormControl fullWidth variant="outlined" size="small">
-                  <InputLabel>终端字体族</InputLabel>
-                  <Select
-                    value={terminalFont}
-                    onChange={handleTerminalFontChange}
-                    label="终端字体族"
-                  >
-                    {terminalFonts.map((font) => (
-                      <MenuItem key={font.value} value={font.value}>
-                        <Typography style={{ fontFamily: font.value }}>
-                          {font.label}
-                        </Typography>
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Typography variant="body2" sx={{ minWidth: 60 }}>
-                    粗细
-                  </Typography>
-                  <Slider
-                    value={terminalFontWeight}
-                    onChange={handleTerminalFontWeightChange}
-                    min={300}
-                    max={1000}
-                    size="small"
-                    sx={{ flex: 1 }}
-                  />
-                  <TextField
-                    value={terminalFontWeight}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      if (!isNaN(val)) setTerminalFontWeight(val);
-                    }}
-                    size="small"
-                    type="number"
-                    inputProps={{ min: 300, max: 1000 }}
-                    sx={{ width: 70 }}
-                  />
-                </Box>
-              </Grid>
-            </Grid>
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Typography variant="body2" gutterBottom>
-                  终端字体大小
-                </Typography>
-                <Box sx={{ px: 1 }}>
-                  <Slider
-                    value={terminalFontSize}
-                    onChange={handleTerminalFontSizeChange}
-                    step={null}
-                    marks={fontSizes.map((size) => ({
-                      value: size.value,
-                      label: size.label,
-                    }))}
-                    min={12}
-                    max={18}
-                    size="small"
-                  />
-                </Box>
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Typography variant="body2" gutterBottom>
-                  {t("settings.logSettingsTitle")}
-                </Typography>
-                <Box sx={{ display: "flex", gap: 1 }}>
-                  <FormControl variant="outlined" size="small" sx={{ flex: 1 }}>
-                    <Select value={logLevel} onChange={handleLogLevelChange}>
-                      {logLevels.map((level) => (
-                        <MenuItem key={level.value} value={level.value}>
-                          {level.label}
+              <Grid container spacing={2} sx={{ mb: 1 }}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <FormControl fullWidth variant="outlined" size="small">
+                    <InputLabel>终端字体族</InputLabel>
+                    <Select
+                      value={terminalFont}
+                      onChange={handleTerminalFontChange}
+                      label="终端字体族"
+                    >
+                      {terminalFonts.map((font) => (
+                        <MenuItem key={font.value} value={font.value}>
+                          <Typography style={{ fontFamily: font.value }}>
+                            {font.label}
+                          </Typography>
                         </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
-                  <TextField
-                    size="small"
-                    type="number"
-                    value={maxFileSize}
-                    onChange={handleMaxFileSizeChange}
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">MB</InputAdornment>
-                      ),
-                    }}
-                    inputProps={{ min: 1 }}
-                    sx={{ width: 100 }}
-                  />
-                </Box>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Typography variant="body2" sx={{ minWidth: 60 }}>
+                      粗细
+                    </Typography>
+                    <Slider
+                      value={terminalFontWeight}
+                      onChange={handleTerminalFontWeightChange}
+                      min={300}
+                      max={1000}
+                      size="small"
+                      sx={{ flex: 1 }}
+                    />
+                    <TextField
+                      value={terminalFontWeight}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) setTerminalFontWeight(val);
+                      }}
+                      size="small"
+                      type="number"
+                      inputProps={{ min: 300, max: 1000 }}
+                      sx={{ width: 70 }}
+                    />
+                  </Box>
+                </Grid>
               </Grid>
-            </Grid>
-
-            <Divider sx={{ my: 1.5 }} />
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Typography variant="body2" gutterBottom>
+                    终端字体大小
+                  </Typography>
+                  <Box sx={{ px: 1 }}>
+                    <Slider
+                      value={terminalFontSize}
+                      onChange={handleTerminalFontSizeChange}
+                      step={null}
+                      marks={fontSizes.map((size) => ({
+                        value: size.value,
+                        label: size.label,
+                      }))}
+                      min={12}
+                      max={18}
+                      size="small"
+                    />
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Typography variant="body2" gutterBottom>
+                    {t("settings.logSettingsTitle")}
+                  </Typography>
+                  <Box sx={{ display: "flex", gap: 1 }}>
+                    <FormControl variant="outlined" size="small" sx={{ flex: 1 }}>
+                      <Select value={logLevel} onChange={handleLogLevelChange}>
+                        {logLevels.map((level) => (
+                          <MenuItem key={level.value} value={level.value}>
+                            {level.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <TextField
+                      size="small"
+                      type="number"
+                      value={maxFileSize}
+                      onChange={handleMaxFileSizeChange}
+                      InputProps={{
+                        endAdornment: (
+                          <InputAdornment position="end">MB</InputAdornment>
+                        ),
+                      }}
+                      inputProps={{ min: 1 }}
+                      sx={{ width: 100 }}
+                    />
+                  </Box>
+                </Grid>
+              </Grid>
+            </Box>
 
             {/* 性能设置 */}
-            <Box sx={{ mb: 3 }}>
+            <Box sx={{ ...sectionCardSx, mt: 2.25, mb: 1 }}>
               <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
                 <TuneIcon sx={{ mr: 1, color: "primary.main" }} />
                 <Typography variant="subtitle1">
@@ -952,8 +985,8 @@ const Settings = memo(({ open, onClose }) => {
           </>
         )}
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} color="primary">
+      <DialogActions sx={{ px: 3, py: 1.5, gap: 1 }}>
+        <Button onClick={onClose} color="primary" variant="outlined">
           {t("settings.cancel")}
         </Button>
         <Button onClick={handleSave} color="primary" variant="contained">
