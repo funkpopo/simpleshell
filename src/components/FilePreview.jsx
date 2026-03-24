@@ -856,11 +856,12 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [selectedSnapshotContent, setSelectedSnapshotContent] = useState(null);
   const [loadingSelectedSnapshot, setLoadingSelectedSnapshot] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  const viewerEditorRef = useRef(null);
+  const textEditorRef = useRef(null);
+  const textEditorScrollElementRef = useRef(null);
+  const textEditorScrollListenerRef = useRef(null);
+  const textEditorScrollSnapshotRef = useRef({ top: 0, left: 0 });
+  const shouldRestoreTextEditorScrollRef = useRef(false);
   const syncedContentRef = useRef(null);
-  const handleViewerEditorCreate = useCallback((view) => {
-    viewerEditorRef.current = view;
-  }, []);
 
   // PDF相关状态
   const [numPages, setNumPages] = useState(null);
@@ -898,18 +899,103 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     };
   }, [snapshotDiffData]);
 
-  useEffect(() => {
-    if (isEditing) {
-      viewerEditorRef.current = null;
+  const detachTextEditorScrollListener = useCallback(() => {
+    if (
+      textEditorScrollElementRef.current &&
+      textEditorScrollListenerRef.current
+    ) {
+      textEditorScrollElementRef.current.removeEventListener(
+        "scroll",
+        textEditorScrollListenerRef.current,
+      );
     }
-  }, [isEditing]);
+
+    textEditorScrollElementRef.current = null;
+    textEditorScrollListenerRef.current = null;
+  }, []);
+
+  const captureTextEditorScrollPosition = useCallback(
+    (view = textEditorRef.current) => {
+      if (!view?.scrollDOM) {
+        return;
+      }
+
+      textEditorScrollSnapshotRef.current = {
+        top: view.scrollDOM.scrollTop,
+        left: view.scrollDOM.scrollLeft,
+      };
+    },
+    [],
+  );
+
+  const restoreTextEditorScrollPosition = useCallback(
+    (view = textEditorRef.current) => {
+      if (!shouldRestoreTextEditorScrollRef.current || !view?.scrollDOM) {
+        return;
+      }
+
+      const { top, left } = textEditorScrollSnapshotRef.current;
+      shouldRestoreTextEditorScrollRef.current = false;
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const activeView = textEditorRef.current;
+          if (!activeView?.scrollDOM) {
+            return;
+          }
+
+          activeView.scrollDOM.scrollTop = top;
+          activeView.scrollDOM.scrollLeft = left;
+          activeView.requestMeasure();
+        });
+      });
+    },
+    [],
+  );
+
+  const handleTextEditorCreate = useCallback(
+    (view) => {
+      detachTextEditorScrollListener();
+      textEditorRef.current = view;
+
+      if (!view?.scrollDOM) {
+        return;
+      }
+
+      const handleScroll = () => {
+        captureTextEditorScrollPosition(view);
+      };
+
+      textEditorScrollElementRef.current = view.scrollDOM;
+      textEditorScrollListenerRef.current = handleScroll;
+      view.scrollDOM.addEventListener("scroll", handleScroll, {
+        passive: true,
+      });
+
+      restoreTextEditorScrollPosition(view);
+    },
+    [
+      captureTextEditorScrollPosition,
+      detachTextEditorScrollListener,
+      restoreTextEditorScrollPosition,
+    ],
+  );
 
   useEffect(() => {
     if (!open) {
-      viewerEditorRef.current = null;
+      detachTextEditorScrollListener();
+      textEditorRef.current = null;
+      textEditorScrollSnapshotRef.current = { top: 0, left: 0 };
+      shouldRestoreTextEditorScrollRef.current = false;
       syncedContentRef.current = null;
     }
-  }, [open]);
+  }, [detachTextEditorScrollListener, open]);
+
+  useEffect(() => {
+    return () => {
+      detachTextEditorScrollListener();
+    };
+  }, [detachTextEditorScrollListener]);
 
   useEffect(() => {
     if (!open) {
@@ -1041,6 +1127,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setPendingRestoreSnapshot(null);
       setSnapshots([]);
       syncedContentRef.current = null;
+      textEditorScrollSnapshotRef.current = { top: 0, left: 0 };
+      shouldRestoreTextEditorScrollRef.current = true;
 
       try {
         // 检查文件大小限制 (10MB = 10 * 1024 * 1024 bytes)
@@ -1187,6 +1275,23 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   }, [open, file, fullPath, tabId, createSnapshot]);
 
   useEffect(() => {
+    if (!open || !isTextPreview || pendingRestoreSnapshot) {
+      return;
+    }
+
+    restoreTextEditorScrollPosition();
+  }, [
+    editorFont,
+    fullPath,
+    isEditing,
+    isTextPreview,
+    open,
+    pendingRestoreSnapshot,
+    restoreTextEditorScrollPosition,
+    theme.palette.mode,
+  ]);
+
+  useEffect(() => {
     if (!open || !isTextPreview) {
       setSnapshots([]);
       return;
@@ -1301,10 +1406,10 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   };
 
   // 处理文本编辑
-  const handleEditorChange = (value) => {
+  const handleEditorChange = useCallback((value) => {
     setContent(value);
     setModified(true);
-  };
+  }, []);
 
   const handleSelectSnapshot = useCallback(
     (snapshot) => {
@@ -1313,17 +1418,25 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       }
 
       if (pendingRestoreSnapshot?.id === snapshot.id) {
+        shouldRestoreTextEditorScrollRef.current = true;
         setPendingRestoreSnapshot(null);
         setSelectedSnapshotContent(null);
         return;
       }
 
+      captureTextEditorScrollPosition();
+      shouldRestoreTextEditorScrollRef.current = true;
       setPendingRestoreSnapshot(snapshot);
     },
-    [pendingRestoreSnapshot, restoringSnapshotId],
+    [
+      captureTextEditorScrollPosition,
+      pendingRestoreSnapshot,
+      restoringSnapshotId,
+    ],
   );
 
   const handleClearSnapshotSelection = useCallback(() => {
+    shouldRestoreTextEditorScrollRef.current = true;
     setPendingRestoreSnapshot(null);
     setSelectedSnapshotContent(null);
   }, []);
@@ -1445,7 +1558,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           return;
         }
 
-        const view = viewerEditorRef.current;
+        const view = textEditorRef.current;
         if (!view) {
           return;
         }
@@ -1468,9 +1581,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   }, [open, file, isEditing, modified, savingFile, handleSaveFile]);
 
   // 切换编辑/预览模式
-  const toggleEditMode = () => {
-    setIsEditing(!isEditing);
-  };
+  const toggleEditMode = useCallback(() => {
+    captureTextEditorScrollPosition();
+    shouldRestoreTextEditorScrollRef.current = true;
+    setIsEditing((current) => !current);
+  }, [captureTextEditorScrollPosition]);
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (
@@ -1501,6 +1616,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setIsEditing(true);
       setSnapshots(Array.isArray(response.snapshots) ? response.snapshots : []);
       setSelectedSnapshotContent(null);
+      shouldRestoreTextEditorScrollRef.current = true;
       setNotification({
         message: `已回退到 ${formatSnapshotDate(pendingRestoreSnapshot.createdAt)}`,
         severity: "success",
@@ -1519,6 +1635,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   // 处理字体选择变更
   const handleFontChange = async (event) => {
     const newFont = event.target.value;
+    captureTextEditorScrollPosition();
+    shouldRestoreTextEditorScrollRef.current = true;
     setEditorFont(newFont);
 
     try {
@@ -1548,6 +1666,82 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const handleCloseNotification = () => {
     setNotification(null);
   };
+
+  const textEditorExtensions = useMemo(() => {
+    if (!isTextPreview) {
+      return [];
+    }
+
+    const nextExtensions = [];
+    const languageModeFn = getLanguageMode(file?.name);
+    if (languageModeFn) {
+      nextExtensions.push(languageModeFn());
+    }
+
+    if (theme.palette.mode === "dark") {
+      nextExtensions.push(oneDark);
+    }
+
+    const scrollbarTrackColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.common.white, 0.06)
+        : alpha(theme.palette.common.black, 0.05);
+    const scrollbarThumbColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.common.white, 0.18)
+        : alpha(theme.palette.text.secondary, 0.24);
+    const scrollbarThumbHoverColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.primary.light, 0.4)
+        : alpha(theme.palette.primary.main, 0.36);
+
+    nextExtensions.push(
+      EditorView.theme({
+        ".cm-editor": {
+          fontFamily: getFontFamily(editorFont) + " !important",
+          width: "100%",
+          height: "100%",
+        },
+        ".cm-scroller": {
+          overflowX: "hidden",
+          overflowY: "auto",
+          scrollbarWidth: "thin",
+          scrollbarColor: `${scrollbarThumbColor} ${scrollbarTrackColor}`,
+          "&::-webkit-scrollbar": {
+            width: "10px",
+            height: "0px",
+          },
+          "&::-webkit-scrollbar-track": {
+            backgroundColor: scrollbarTrackColor,
+            borderRadius: "999px",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            backgroundColor: scrollbarThumbColor,
+            borderRadius: "999px",
+            border: `2px solid ${
+              theme.palette.mode === "dark"
+                ? alpha(theme.palette.background.default, 0.55)
+                : alpha(theme.palette.background.paper, 0.9)
+            }`,
+          },
+          "&::-webkit-scrollbar-thumb:hover": {
+            backgroundColor: scrollbarThumbHoverColor,
+          },
+        },
+        ".cm-content": {
+          fontFamily: getFontFamily(editorFont) + " !important",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          overflowWrap: "anywhere",
+          minHeight: "100%",
+        },
+      }),
+    );
+
+    nextExtensions.push(EditorView.lineWrapping);
+
+    return nextExtensions;
+  }, [editorFont, file?.name, isTextPreview, theme]);
 
   // PDF相关事件处理
   const onDocumentLoadSuccess = ({ numPages }) => {
@@ -2139,76 +2333,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     }
 
     if (isTextFile(file?.name)) {
-      const languageModeFn = getLanguageMode(file.name);
-      const extensions = [];
-      if (languageModeFn) {
-        extensions.push(languageModeFn());
-      }
-
-      if (theme.palette.mode === "dark") {
-        extensions.push(oneDark);
-      }
-
-      const scrollbarTrackColor =
-        theme.palette.mode === "dark"
-          ? alpha(theme.palette.common.white, 0.06)
-          : alpha(theme.palette.common.black, 0.05);
-      const scrollbarThumbColor =
-        theme.palette.mode === "dark"
-          ? alpha(theme.palette.common.white, 0.18)
-          : alpha(theme.palette.text.secondary, 0.24);
-      const scrollbarThumbHoverColor =
-        theme.palette.mode === "dark"
-          ? alpha(theme.palette.primary.light, 0.4)
-          : alpha(theme.palette.primary.main, 0.36);
-
-      // 添加字体样式扩展和滚动条设置
-      const fontExtension = EditorView.theme({
-        ".cm-editor": {
-          fontFamily: getFontFamily(editorFont) + " !important",
-          width: "100%",
-          height: "100%",
-        },
-        ".cm-scroller": {
-          overflowX: "hidden",
-          overflowY: "auto",
-          scrollbarWidth: "thin",
-          scrollbarColor: `${scrollbarThumbColor} ${scrollbarTrackColor}`,
-          "&::-webkit-scrollbar": {
-            width: "10px",
-            height: "0px",
-          },
-          "&::-webkit-scrollbar-track": {
-            backgroundColor: scrollbarTrackColor,
-            borderRadius: "999px",
-          },
-          "&::-webkit-scrollbar-thumb": {
-            backgroundColor: scrollbarThumbColor,
-            borderRadius: "999px",
-            border: `2px solid ${
-              theme.palette.mode === "dark"
-                ? alpha(theme.palette.background.default, 0.55)
-                : alpha(theme.palette.background.paper, 0.9)
-            }`,
-          },
-          "&::-webkit-scrollbar-thumb:hover": {
-            backgroundColor: scrollbarThumbHoverColor,
-          },
-        },
-        ".cm-content": {
-          fontFamily: getFontFamily(editorFont) + " !important",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          overflowWrap: "anywhere",
-          minHeight: "100%",
-        },
-      });
-      extensions.push(fontExtension);
-
-      extensions.push(EditorView.lineWrapping);
-
-      const viewerExtensions = [...extensions, EditorState.readOnly.of(true)];
-
       const boxSx = {
         flex: "1 1 auto",
         display: "flex",
@@ -2245,27 +2369,20 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           <Box sx={boxSx}>
             {pendingRestoreSnapshot ? (
               renderSnapshotDiffView()
-            ) : isEditing ? (
-              <CodeMirror
-                key={`editor-${editorFont}`}
-                value={content || ""}
-                height="100%"
-                extensions={extensions}
-                theme={theme.palette.mode}
-                onChange={handleEditorChange}
-                style={cmStyle}
-                className="file-preview-editor"
-              />
             ) : (
               <CodeMirror
-                key={`viewer-${editorFont}`}
                 value={content || ""}
                 height="100%"
-                extensions={viewerExtensions}
+                extensions={textEditorExtensions}
                 theme={theme.palette.mode}
+                editable={isEditing}
+                readOnly={!isEditing}
+                onChange={handleEditorChange}
                 style={cmStyle}
-                className="file-preview-viewer"
-                onCreateEditor={handleViewerEditorCreate}
+                className={
+                  isEditing ? "file-preview-editor" : "file-preview-viewer"
+                }
+                onCreateEditor={handleTextEditorCreate}
               />
             )}
           </Box>
