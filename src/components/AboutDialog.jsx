@@ -38,6 +38,33 @@ const GlassDialog = styled(Dialog)(({ theme }) => ({
   },
 }));
 
+const updatePanelSx = {
+  mt: 1,
+  p: 1.5,
+  borderRadius: 2,
+  border: "1px solid",
+  borderColor: "divider",
+  bgcolor: (theme) =>
+    theme.palette.mode === "dark"
+      ? "rgba(255, 255, 255, 0.04)"
+      : "rgba(17, 24, 39, 0.03)",
+};
+
+const releaseNoteSx = {
+  mt: 2,
+  maxHeight: 140,
+  overflow: "auto",
+  borderRadius: 1.5,
+  border: "1px solid",
+  borderColor: "divider",
+  bgcolor: (theme) =>
+    theme.palette.mode === "dark"
+      ? "rgba(0, 0, 0, 0.2)"
+      : "rgba(17, 24, 39, 0.04)",
+  p: 1.25,
+  fontSize: "0.75rem",
+};
+
 const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   const { t } = useTranslation();
   const { showError } = useNotification();
@@ -224,7 +251,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   const renderUpdateContent = () => {
     if (error) {
       return (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" variant="outlined" sx={{ mt: 1, mb: 1 }}>
           {error}
         </Alert>
       );
@@ -233,36 +260,46 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     switch (updateStatus) {
       case "checking":
         return (
-          <Box display="flex" alignItems="center" mb={2}>
-            <CircularProgress size={16} sx={{ mr: 1 }} />
-            <Typography variant="body2">{t("update.checking")}</Typography>
+          <Box sx={updatePanelSx}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <CircularProgress size={16} />
+              <Typography variant="body2">{t("update.checking")}</Typography>
+            </Box>
           </Box>
         );
 
       case "upToDate":
         return (
-          <Box display="flex" alignItems="center" mb={2}>
-            <CheckIcon color="success" sx={{ mr: 1 }} />
-            <Typography variant="body2" color="success.main">
-              {t("update.upToDate")}
-            </Typography>
+          <Box sx={updatePanelSx}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <CheckIcon color="success" />
+              <Typography variant="body2" color="success.main">
+                {t("update.upToDate")}
+              </Typography>
+            </Box>
           </Box>
         );
 
       case "available":
         return (
-          <Box>
-            <Box display="flex" alignItems="center" mb={1}>
-              <UpdateIcon color="primary" sx={{ mr: 1 }} />
-              <Typography variant="body2">{t("update.available")}</Typography>
+          <Box sx={updatePanelSx}>
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="space-between"
+              gap={1}
+            >
+              <Box display="flex" alignItems="center" gap={1}>
+                <UpdateIcon color="primary" />
+                <Typography variant="body2">{t("update.available")}</Typography>
+              </Box>
               <Chip
                 label={`v${updateInfo?.latestVersion}`}
                 color="primary"
                 size="small"
-                sx={{ ml: 1 }}
               />
             </Box>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
               {t("update.currentVersion")}: {updateInfo?.currentVersion} →{" "}
               {updateInfo?.latestVersion}
             </Typography>
@@ -271,7 +308,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
       case "downloading":
         return (
-          <Box>
+          <Box sx={updatePanelSx}>
             <Box
               display="flex"
               alignItems="center"
@@ -279,33 +316,49 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
               mb={1}
             >
               <Typography variant="body2">{t("update.downloading")}</Typography>
-              <Typography variant="caption">
+              <Typography variant="caption" color="primary.main" fontWeight={600}>
                 {Math.round(downloadProgress)}%
               </Typography>
             </Box>
             <LinearProgress
               variant="determinate"
               value={downloadProgress}
-              sx={{ mb: 1 }}
+              sx={{
+                height: 8,
+                borderRadius: 999,
+                bgcolor: "action.hover",
+                "& .MuiLinearProgress-bar": {
+                  borderRadius: 999,
+                },
+              }}
             />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75 }}>
+              {t("update.downloadProgress", {
+                percent: Math.round(downloadProgress),
+              })}
+            </Typography>
           </Box>
         );
 
       case "downloaded":
         return (
-          <Box display="flex" alignItems="center" mb={2}>
-            <CheckIcon color="success" sx={{ mr: 1 }} />
-            <Typography variant="body2" color="success.main">
-              {t("update.downloadComplete")}
-            </Typography>
+          <Box sx={updatePanelSx}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <CheckIcon color="success" />
+              <Typography variant="body2" color="success.main">
+                {t("update.downloadComplete")}
+              </Typography>
+            </Box>
           </Box>
         );
 
       case "installing":
         return (
-          <Box display="flex" alignItems="center" mb={2}>
-            <CircularProgress size={16} sx={{ mr: 1 }} />
-            <Typography variant="body2">{t("update.installing")}</Typography>
+          <Box sx={updatePanelSx}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <CircularProgress size={16} />
+              <Typography variant="body2">{t("update.installing")}</Typography>
+            </Box>
           </Box>
         );
 
@@ -443,19 +496,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
                 <Typography variant="subtitle2" gutterBottom>
                   {t("update.releaseNotes")}
                 </Typography>
-                <Box
-                  sx={{
-                    maxHeight: 120,
-                    overflow: "auto",
-                    bgcolor: (theme) =>
-                      theme.palette.mode === "dark"
-                        ? "rgba(0, 0, 0, 0.2)"
-                        : "grey.100",
-                    p: 1,
-                    borderRadius: 1,
-                    fontSize: "0.75rem",
-                  }}
-                >
+                <Box sx={releaseNoteSx}>
                   <pre
                     style={{
                       whiteSpace: "pre-wrap",
@@ -470,7 +511,9 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
               </Box>
             )}
 
-            <Box sx={{ mt: 2 }}>{renderUpdateButtons()}</Box>
+            <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}>
+              {renderUpdateButtons()}
+            </Box>
           </Box>
         </Box>
       </DialogContent>
