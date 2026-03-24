@@ -112,6 +112,7 @@
       "reconnectPending": "Waiting for next automatic retry",
       "reconnectWaitingRetry": "Automatic retry in {{seconds}}s",
       "reconnecting": "Automatically reconnecting",
+      "reconnectRestoringShell": "Network restored, rebuilding terminal session",
       "reconnectFailed": "Automatic reconnect failed",
       "reconnectStopped": "Automatic reconnect stopped",
       "reconnectPaused": "Automatic reconnect paused",
@@ -131,7 +132,9 @@
       "resumeReconnect": "Resume Auto Reconnect",
       "manualReconnectStarted": "Manual reconnect started",
       "pauseReconnectDone": "Automatic reconnect paused",
-      "resumeReconnectDone": "Automatic reconnect resumed"
+      "resumeReconnectDone": "Automatic reconnect resumed",
+      "reconnectRestoringShellHint": "Network restored. Rebuilding the interactive shell and restoring terminal input.",
+      "reconnectSessionRestoreFailedHint": "The transport connection recovered, but the interactive terminal session could not be restored. You can use Manual Reconnect."
     },
     "about": {
       "title": "About SimpleShell",

@@ -642,6 +642,55 @@ async function testCSessionRecoveryAndWaitProtection() {
       },
     };
 
+    let resetResizeCalls = 0;
+    const resetResizeTargets = [];
+    const terminalIOMailboxManager = {
+      emitOutput(processId, payload) {
+        electronMock.sentMessages.push({
+          channel: `process:output:${processId}`,
+          payload,
+        });
+        return true;
+      },
+      createMailbox(processId) {
+        return {
+          emitOutput(payload) {
+            electronMock.sentMessages.push({
+              channel: `process:output:${processId}`,
+              payload,
+            });
+            return true;
+          },
+          setBufferedBytes() {
+            return true;
+          },
+          requestResize() {
+            return true;
+          },
+          pause() {
+            return true;
+          },
+          resume() {
+            return true;
+          },
+          destroy() {
+            return true;
+          },
+        };
+      },
+      setBufferedBytes() {
+        return true;
+      },
+      resetResizeState(processId) {
+        resetResizeCalls += 1;
+        resetResizeTargets.push(processId);
+        return true;
+      },
+      destroyProcess() {
+        return true;
+      },
+    };
+
     const handler = new SSHHandlers({
       childProcesses,
       connectionManager,
@@ -649,6 +698,7 @@ async function testCSessionRecoveryAndWaitProtection() {
       sftpTransfer: {},
       getNextProcessId: () => 1001,
       getLatencyHandlers: () => null,
+      terminalIOMailboxManager,
     });
 
     // C1/C2: 重连成功后自动恢复 shell，且可继续输出
@@ -706,6 +756,17 @@ async function testCSessionRecoveryAndWaitProtection() {
     const updatedProcess = childProcesses.get(processId);
     assert.ok(updatedProcess?.stream, "重连后应恢复 stream");
     assert.equal(shellCreateCount, 1, "重连恢复时仅应创建一次 shell");
+    assert.ok(
+      resetResizeCalls >= 1 && resetResizeTargets.includes(processId),
+      "重连恢复时应重置终端尺寸状态",
+    );
+    const restoredEvent = electronMock.sentMessages.find(
+      ({ channel, payload }) =>
+        channel === "terminal:session-restored" &&
+        payload?.tabId === tabId &&
+        payload?.processId === processId,
+    );
+    assert.ok(restoredEvent, "重连恢复后应广播终端会话恢复事件");
 
     restoredStream.emit("data", Buffer.from("hello-after-reconnect"));
     await delay(40);
@@ -735,6 +796,56 @@ async function testCSessionRecoveryAndWaitProtection() {
     });
     await delay(40);
     assert.equal(shellCreateCount, 1, "已有可用 stream 时不应重复建流");
+
+    // C2.1: shell 恢复失败时应明确广播失败事件，避免前端停留在“已恢复”假象
+    const failedConnectionKey = "ck-recover-fail";
+    const failedProcessId = 1002;
+    const failedTabId = "tab-recover-fail";
+    const failedConfig = {
+      host: "127.0.0.1",
+      port: 22,
+      username: "u",
+      tabId: failedTabId,
+    };
+    const failedClient = {
+      shell(_opts, cb) {
+        cb(new Error("restore shell failed"));
+      },
+    };
+    const failedProcessInfo = {
+      ...processInfo,
+      stream: null,
+      ready: false,
+      connectionInfo: { key: failedConnectionKey },
+      config: failedConfig,
+    };
+    childProcesses.set(failedProcessId, failedProcessInfo);
+    childProcesses.set(failedTabId, { ...failedProcessInfo });
+    handler._bindConnectionProcess(
+      failedConnectionKey,
+      failedProcessId,
+      failedTabId,
+    );
+
+    sshPoolEmitter.connections.set(failedConnectionKey, {
+      key: failedConnectionKey,
+      client: failedClient,
+      config: failedConfig,
+      intentionalClose: false,
+    });
+    sshPoolEmitter.emit("connectionReconnected", {
+      key: failedConnectionKey,
+      connection: sshPoolEmitter.connections.get(failedConnectionKey),
+    });
+    await delay(80);
+
+    const restoreFailedEvent = electronMock.sentMessages.find(
+      ({ channel, payload }) =>
+        channel === "terminal:session-restore-failed" &&
+        payload?.tabId === failedTabId &&
+        String(payload?.error || "").includes("restore shell failed"),
+    );
+    assert.ok(restoreFailedEvent, "shell 恢复失败时应广播失败事件");
 
     // C3: 等待重连阶段旧 error 不应提前失败
     const waitProcessId = 2001;

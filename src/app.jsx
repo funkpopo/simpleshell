@@ -271,6 +271,9 @@ const getReconnectCountdownSeconds = (nextReconnectAt, now = Date.now()) => {
   return Math.max(0, Math.ceil((target - now) / 1000));
 };
 
+const getReconnectNextAt = (status) =>
+  status?.nextRetryAt ?? status?.nextReconnectAt ?? null;
+
 const getReconnectFailureReasonLabel = (t, failureReason) => {
   switch (String(failureReason || "").toLowerCase()) {
     case "network":
@@ -290,7 +293,11 @@ const getReconnectFailureReasonLabel = (t, failureReason) => {
 
 const buildReconnectStatusTitle = (t, status, now = Date.now()) => {
   const state = normalizeReconnectUiState(status?.state);
-  const seconds = getReconnectCountdownSeconds(status?.nextReconnectAt, now);
+  const seconds = getReconnectCountdownSeconds(getReconnectNextAt(status), now);
+
+  if (state === "reconnecting" && status?.phase === "restoring-shell") {
+    return t("tabMenu.reconnectRestoringShell");
+  }
 
   switch (state) {
     case "pending":
@@ -540,6 +547,7 @@ function AppContent() {
           maxAttempts: Number(
             status?.effectiveMaxRetries ?? status?.maxRetries ?? 0,
           ),
+          phase: null,
           nextRetryAt: Number(status?.nextReconnectAt || 0) || null,
           windowExpiresAt: Number(status?.windowExpiresAt || 0) || null,
           failureReason: status?.failureReason || null,
@@ -584,6 +592,7 @@ function AppContent() {
       updateReconnectStatus(payload.tabId, (current) => ({
         ...current,
         state: "pending",
+        phase: null,
         nextRetryAt: null,
         windowExpiresAt: current?.windowExpiresAt || null,
         error: null,
@@ -599,6 +608,7 @@ function AppContent() {
         state: "reconnecting",
         attempts: Number(payload?.attempts || 0),
         maxAttempts: Number(payload?.maxAttempts || 0),
+        phase: null,
         nextRetryAt: null,
         windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
         failureReason: payload?.failureReason || null,
@@ -621,6 +631,7 @@ function AppContent() {
         state: "pending",
         attempts: Number(payload?.attempts || 0),
         maxAttempts: Number(payload?.maxAttempts || 0),
+        phase: null,
         nextRetryAt:
           Number.isFinite(delay) && delay > 0 ? baseTimestamp + delay : null,
         windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
@@ -638,7 +649,17 @@ function AppContent() {
         return;
       }
 
-      clearReconnectStatus(payload.tabId);
+      updateReconnectStatus(payload.tabId, {
+        state: "reconnecting",
+        phase: "restoring-shell",
+        attempts: Number(payload?.attempts || 0),
+        maxAttempts: Number(payload?.maxAttempts || 0),
+        nextRetryAt: null,
+        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
+        failureReason: null,
+        error: null,
+        hint: t("tabMenu.reconnectRestoringShellHint"),
+      });
       setReconnectActionTabId((current) =>
         current === payload.tabId ? null : current,
       );
@@ -653,6 +674,7 @@ function AppContent() {
         state: "failed",
         attempts: Number(payload?.attempts || 0),
         maxAttempts: Number(payload?.maxAttempts || 0),
+        phase: null,
         nextRetryAt: null,
         windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
         failureReason: payload?.failureReason || null,
@@ -673,11 +695,56 @@ function AppContent() {
         state: "abandoned",
         attempts: Number(payload?.attempts || 0),
         maxAttempts: Number(payload?.maxAttempts || 0),
+        phase: null,
         nextRetryAt: null,
         windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
         failureReason: payload?.failureReason || null,
         error: payload?.error || null,
         hint: payload?.hint || null,
+      });
+      setReconnectActionTabId((current) =>
+        current === payload.tabId ? null : current,
+      );
+    };
+
+    const handleTerminalSessionRestored = (payload) => {
+      window.dispatchEvent(
+        new CustomEvent("terminalSessionRestored", {
+          detail: payload || {},
+        }),
+      );
+
+      if (!payload?.tabId) {
+        return;
+      }
+
+      clearReconnectStatus(payload.tabId);
+      setReconnectActionTabId((current) =>
+        current === payload.tabId ? null : current,
+      );
+    };
+
+    const handleTerminalSessionRestoreFailed = (payload) => {
+      window.dispatchEvent(
+        new CustomEvent("terminalSessionRestoreFailed", {
+          detail: payload || {},
+        }),
+      );
+
+      if (!payload?.tabId) {
+        return;
+      }
+
+      updateReconnectStatus(payload.tabId, {
+        state: "failed",
+        phase: null,
+        attempts: Number(payload?.attempts || 0),
+        maxAttempts: Number(payload?.maxAttempts || 0),
+        nextRetryAt: null,
+        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
+        failureReason: payload?.failureReason || "network",
+        error: payload?.error || null,
+        hint: payload?.hint || t("tabMenu.reconnectSessionRestoreFailedHint"),
       });
       setReconnectActionTabId((current) =>
         current === payload.tabId ? null : current,
@@ -690,11 +757,25 @@ function AppContent() {
     window.terminalAPI.onReconnectSuccess?.(handleReconnectSuccess);
     window.terminalAPI.onReconnectFailed?.(handleReconnectFailed);
     window.terminalAPI.onReconnectAbandoned?.(handleReconnectAbandoned);
+    const cleanupTerminalSessionRestored =
+      window.terminalAPI.onTerminalSessionRestored?.(
+        handleTerminalSessionRestored,
+      );
+    const cleanupTerminalSessionRestoreFailed =
+      window.terminalAPI.onTerminalSessionRestoreFailed?.(
+        handleTerminalSessionRestoreFailed,
+      );
 
     return () => {
+      if (typeof cleanupTerminalSessionRestored === "function") {
+        cleanupTerminalSessionRestored();
+      }
+      if (typeof cleanupTerminalSessionRestoreFailed === "function") {
+        cleanupTerminalSessionRestoreFailed();
+      }
       window.terminalAPI?.removeReconnectListeners?.();
     };
-  }, [clearReconnectStatus, updateReconnectStatus]);
+  }, [clearReconnectStatus, t, updateReconnectStatus]);
 
   // 监听 SSH 认证请求
   React.useEffect(() => {
@@ -1513,6 +1594,7 @@ function AppContent() {
     updateReconnectStatus(tabId, (current) => ({
       ...current,
       state: "reconnecting",
+      phase: null,
       nextRetryAt: null,
       failureReason: current?.failureReason || "network",
       error: null,
@@ -1534,6 +1616,7 @@ function AppContent() {
       updateReconnectStatus(tabId, (current) => ({
         ...current,
         state: "failed",
+        phase: null,
         nextRetryAt: null,
         windowExpiresAt: current?.windowExpiresAt || null,
         error: error?.message || String(error),
@@ -1573,6 +1656,7 @@ function AppContent() {
       updateReconnectStatus(tabId, (current) => ({
         ...current,
         state: "paused",
+        phase: null,
         nextRetryAt: null,
         error: null,
       }));
@@ -1614,6 +1698,7 @@ function AppContent() {
       updateReconnectStatus(tabId, (current) => ({
         ...current,
         state: "pending",
+        phase: null,
         nextRetryAt: null,
         failureReason: current?.failureReason || "network",
         error: null,

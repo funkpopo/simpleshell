@@ -1,12 +1,7 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 
-const {
-  contextBridge,
-  ipcRenderer,
-  clipboard,
-  webUtils,
-} = require("electron");
+const { contextBridge, ipcRenderer, clipboard, webUtils } = require("electron");
 const {
   TERMINAL_IO_MAILBOX_CHANNEL,
   TERMINAL_IO_MESSAGE_TYPES,
@@ -579,7 +574,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 文件管理相关API
   listFiles: async (tabId, path, options) => {
-    const response = await ipcRenderer.invoke("listFiles", tabId, path, options);
+    const response = await ipcRenderer.invoke(
+      "listFiles",
+      tabId,
+      path,
+      options,
+    );
     if (options?.nonBlocking && response?.chunked && response?.token) {
       trackListFilesToken(tabId, response.token);
     }
@@ -1091,6 +1091,26 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 响应 SSH 认证请求
   respondSSHAuth: (response) =>
     ipcRenderer.invoke("ssh:auth-response", response),
+
+  onTerminalSessionRestored: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, data) => callback(data);
+    ipcRenderer.on("terminal:session-restored", wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener("terminal:session-restored", wrappedCallback);
+    };
+  },
+  onTerminalSessionRestoreFailed: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, data) => callback(data);
+    ipcRenderer.on("terminal:session-restore-failed", wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener(
+        "terminal:session-restore-failed",
+        wrappedCallback,
+      );
+    };
+  },
 
   // 更新连接配置（用于保存自动登录凭据）
   updateConnectionCredentials: (connectionId, credentials) =>

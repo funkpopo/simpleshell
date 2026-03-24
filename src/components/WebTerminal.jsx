@@ -3416,6 +3416,139 @@ const WebTerminal = ({
     };
   }, [tabId, eventManager]);
 
+  useEffect(() => {
+    const syncTerminalAfterSessionRestore = (processIdFromEvent = null) => {
+      const resolvedProcessId = processIdFromEvent || processCache[tabId];
+
+      if (resolvedProcessId) {
+        clearGeometryFor(resolvedProcessId, tabId);
+      }
+      if (terminalIOMailboxRef.current?.resetResizeState) {
+        terminalIOMailboxRef.current.resetResizeState();
+      }
+
+      const syncGeometry = () => {
+        if (!termRef.current || !fitAddonRef.current || !terminalRef.current) {
+          return;
+        }
+
+        if (
+          terminalRef.current.offsetWidth <= 0 ||
+          terminalRef.current.offsetHeight <= 0
+        ) {
+          return;
+        }
+
+        try {
+          fitAddonRef.current.fit();
+
+          if (
+            !termRef.current.__webglEnabled &&
+            typeof termRef.current.refresh === "function"
+          ) {
+            termRef.current.refresh(0, termRef.current.rows - 1);
+          }
+
+          const activeProcessId = processIdFromEvent || processCache[tabId];
+          if (terminalIOMailboxRef.current?.requestResize) {
+            terminalIOMailboxRef.current.requestResize(
+              termRef.current.cols,
+              termRef.current.rows,
+              {
+                force: true,
+                immediate: true,
+              },
+            );
+          } else if (activeProcessId) {
+            sendResizeIfNeeded(
+              activeProcessId,
+              tabId,
+              termRef.current.cols,
+              termRef.current.rows,
+            );
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+      };
+
+      const focusTerminal = () => {
+        if (
+          !isActiveRef.current ||
+          !termRef.current ||
+          !terminalRef.current ||
+          terminalRef.current.offsetWidth <= 0 ||
+          terminalRef.current.offsetHeight <= 0
+        ) {
+          return;
+        }
+
+        try {
+          const helperTextarea = termRef.current.element?.querySelector(
+            ".xterm-helper-textarea",
+          );
+
+          if (helperTextarea && document.activeElement !== helperTextarea) {
+            helperTextarea.focus();
+            return;
+          }
+
+          if (typeof termRef.current.focus === "function") {
+            termRef.current.focus();
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+      };
+
+      if (termRef.current) {
+        clearPendingWrappedInputRefresh(termRef.current);
+        syncPromptTrackingFromTerminal(termRef.current);
+        scheduleHighlightRefresh(termRef.current);
+      }
+      setContentUpdated(true);
+
+      syncGeometry();
+      focusTerminal();
+
+      [60, 180, 320].forEach((delay) => {
+        eventManager.setTimeout(syncGeometry, delay);
+      });
+      [40, 140, 260].forEach((delay) => {
+        eventManager.setTimeout(focusTerminal, delay);
+      });
+    };
+
+    const handleTerminalSessionRestored = (event) => {
+      const detail = event.detail || {};
+      if (detail.tabId && detail.tabId !== tabId) {
+        return;
+      }
+
+      const currentProcessId = processCache[tabId];
+      if (
+        !detail.tabId &&
+        detail.processId &&
+        currentProcessId &&
+        String(detail.processId) !== String(currentProcessId)
+      ) {
+        return;
+      }
+
+      syncTerminalAfterSessionRestore(detail.processId);
+    };
+
+    const removeRestoredListener = eventManager.addEventListener(
+      window,
+      "terminalSessionRestored",
+      handleTerminalSessionRestored,
+    );
+
+    return () => {
+      removeRestoredListener();
+    };
+  }, [eventManager, scheduleHighlightRefresh, tabId]);
+
   // 添加标签切换监听器
   useEffect(() => {
     // 创建一个用于监听标签切换事件的处理函数

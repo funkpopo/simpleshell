@@ -112,6 +112,7 @@
       "reconnectPending": "等待下一次自动重试",
       "reconnectWaitingRetry": "{{seconds}} 秒后自动重试",
       "reconnecting": "正在自动重连",
+      "reconnectRestoringShell": "网络已恢复，正在恢复终端会话",
       "reconnectFailed": "自动重连失败",
       "reconnectStopped": "自动重连已停止",
       "reconnectPaused": "自动重连已暂停",
@@ -131,7 +132,9 @@
       "resumeReconnect": "恢复自动重连",
       "manualReconnectStarted": "已触发手动重连",
       "pauseReconnectDone": "已暂停自动重连",
-      "resumeReconnectDone": "已恢复自动重连"
+      "resumeReconnectDone": "已恢复自动重连",
+      "reconnectRestoringShellHint": "网络已恢复，正在自动重建终端 shell 并恢复输入状态。",
+      "reconnectSessionRestoreFailedHint": "底层连接已恢复，但终端会话恢复失败，可点击“手动重连”。"
     },
     "about": {
       "title": "关于 SimpleShell",
