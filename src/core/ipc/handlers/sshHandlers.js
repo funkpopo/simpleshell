@@ -518,6 +518,18 @@ class SSHHandlers {
     mainWindow.webContents.send(`process:output:${processId}`, output);
   }
 
+  _emitTerminalSessionEvent(channel, payload = {}) {
+    const mainWindow = this._getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+
+    mainWindow.webContents.send(channel, {
+      ...payload,
+      timestamp: Date.now(),
+    });
+  }
+
   _setProcessBufferedBytes(processId, bytes) {
     if (!this.terminalIOMailboxManager) {
       return;
@@ -775,6 +787,15 @@ class SSHHandlers {
         processId,
         `\r\n\x1b[32m*** 终端会话已自动恢复 ***\x1b[0m\r\n`,
       );
+
+      this._emitTerminalSessionEvent("terminal:session-restored", {
+        processId,
+        tabId,
+        connectionKey,
+        host: sshConfig.host,
+        port: sshConfig.port || 22,
+        username: sshConfig.username,
+      });
     } catch (error) {
       const message =
         error?.message || "自动恢复终端会话失败，请检查网络后手动重连。";
@@ -805,6 +826,17 @@ class SSHHandlers {
         processId,
         `\r\n\x1b[31m*** 自动恢复终端会话失败: ${message}。请点击手动重连。 ***\x1b[0m\r\n`,
       );
+
+      this._emitTerminalSessionEvent("terminal:session-restore-failed", {
+        processId,
+        tabId,
+        connectionKey,
+        host: sshConfig.host,
+        port: sshConfig.port || 22,
+        username: sshConfig.username,
+        error: message,
+        hint: "底层连接已恢复，但终端会话恢复失败，可点击“手动重连”。",
+      });
     } finally {
       this.reconnectingShells.delete(connectionKey);
     }
@@ -1523,6 +1555,10 @@ class SSHHandlers {
             processId,
             sshConfig?.tabId,
           );
+
+          if (isReconnectRecovery) {
+            this._resetProcessResizeState(processId);
+          }
 
           this._setupStreamEventListeners(
             stream,
