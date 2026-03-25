@@ -20,6 +20,7 @@ import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.js
 import WebTerminalContextMenu from "./web-terminal/WebTerminalContextMenu.jsx";
 import { RendererTerminalIOMailbox } from "../modules/terminal/io/RendererTerminalIOMailbox.js";
 import { isPromptReadyFromTerminal } from "../modules/terminal/promptDetection.js";
+import { resetSessionRestoreInteractionState } from "../modules/terminal/sessionRestoreUI.js";
 import {
   TERMINAL_RESIZE_QUERY_REGEX,
   ensureSharedTerminalStyles,
@@ -3467,6 +3468,8 @@ const WebTerminal = ({
               termRef.current.rows,
             );
           }
+
+          updateCursorPosition();
         } catch {
           /* intentionally ignored */
         }
@@ -3501,10 +3504,22 @@ const WebTerminal = ({
         }
       };
 
+      resetPromptTracking();
+      resetSessionRestoreInteractionState({
+        setShowSuggestions,
+        setSuggestions,
+        setCurrentInput,
+        setSuggestionsHiddenByEsc,
+        setSuggestionsSuppressedUntilEnter,
+        suggestionSelectedRef,
+        suppressionContextRef,
+      });
+
       if (termRef.current) {
         clearPendingWrappedInputRefresh(termRef.current);
         syncPromptTrackingFromTerminal(termRef.current);
         scheduleHighlightRefresh(termRef.current);
+        updateCursorPosition();
       }
       setContentUpdated(true);
 
@@ -3547,7 +3562,21 @@ const WebTerminal = ({
     return () => {
       removeRestoredListener();
     };
-  }, [eventManager, scheduleHighlightRefresh, tabId]);
+  }, [
+    eventManager,
+    resetPromptTracking,
+    scheduleHighlightRefresh,
+    setCurrentInput,
+    setShowSuggestions,
+    setSuggestions,
+    setSuggestionsHiddenByEsc,
+    setSuggestionsSuppressedUntilEnter,
+    suggestionSelectedRef,
+    suppressionContextRef,
+    syncPromptTrackingFromTerminal,
+    tabId,
+    updateCursorPosition,
+  ]);
 
   // 添加标签切换监听器
   useEffect(() => {

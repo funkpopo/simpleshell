@@ -999,13 +999,19 @@ async function testD2AppQuitReleasesAllResources() {
   const processManagerPath = path.join(ROOT, "src/core/process/processManager");
   const connectionManagerPath = path.join(ROOT, "src/modules/connection");
   const fileCachePath = path.join(ROOT, "src/core/utils/fileCache");
+  const fileSnapshotStorePath = path.join(
+    ROOT,
+    "src/core/utils/fileSnapshotStore",
+  );
   const configServicePath = path.join(ROOT, "src/services/configService");
   const commandHistoryPath = path.join(
     ROOT,
     "src/modules/terminal/command-history",
   );
-  const sftpCorePath = path.join(ROOT, "src/core/transfer/sftp-engine");
-  const sftpTransferPath = path.join(ROOT, "src/modules/sftp/sftpTransfer");
+  const filemanagementServicePath = path.join(
+    ROOT,
+    "src/modules/filemanagement/filemanagementService",
+  );
   const externalEditorPath = path.join(
     ROOT,
     "src/modules/sftp/externalEditorManager",
@@ -1033,10 +1039,11 @@ async function testD2AppQuitReleasesAllResources() {
     }
   };
 
-  let transferCleanupAllCount = 0;
-  let sftpShutdownCount = 0;
+  let perTabTransferCleanupCalls = [];
+  let filemanagementCleanupCount = 0;
   let connectionCleanupCount = 0;
   let releasedSshCount = 0;
+  let snapshotClearCount = 0;
 
   const processMap = new Map([
     [
@@ -1065,20 +1072,32 @@ async function testD2AppQuitReleasesAllResources() {
   const sshHealthTimer = setInterval(() => {}, 10_000);
   const telnetHealthTimer = setInterval(() => {}, 10_000);
 
-  let sftpStats = {
-    poolCount: 1,
-    sessionCount: 2,
-    pendingQueueCount: 1,
-    pendingOperationCount: 3,
-    inProgressOperationCount: 1,
-    sessionLockCount: 1,
-    borrowLockCount: 1,
-    healthCheckTimerActive: true,
-  };
-  let transferStats = {
+  let filemanagementStats = {
+    transferEngineMode: "process-worker-pool-v1",
     activeTransferCount: 2,
-    activeStreamCount: 4,
-    trackedTabCount: 1,
+    throughputBytesPerSec: 1024,
+    latestTransferThroughput: 512,
+    failureRate: 0,
+    avgCancelLatencyMs: 10,
+    eventLoopLag: {
+      latestMs: 2,
+      maxMs: 5,
+      avgMs: 3,
+      samples: 4,
+    },
+    pool: {
+      workerCount: 1,
+      targetWorkerCount: 2,
+      maxWorkers: 4,
+      queuedTasks: 1,
+      pendingTasks: 2,
+      pendingInits: 0,
+      activeTransfers: 2,
+      cancelledTransfers: 0,
+      maxQueueSize: 32,
+      shutdown: false,
+    },
+    poolIdleShutdownScheduled: true,
   };
 
   const connectionManagerMock = {
@@ -1131,56 +1150,42 @@ async function testD2AppQuitReleasesAllResources() {
     },
   };
 
-  const sftpCoreMock = {
-    clearPendingOperationsForTab() {},
-    async shutdownAllSftpResources() {
-      sftpShutdownCount += 1;
-      const before = { ...sftpStats };
-      sftpStats = {
-        poolCount: 0,
-        sessionCount: 0,
-        pendingQueueCount: 0,
-        pendingOperationCount: 0,
-        inProgressOperationCount: 0,
-        sessionLockCount: 0,
-        borrowLockCount: 0,
-        healthCheckTimerActive: false,
-      };
+  const filemanagementServiceMock = {
+    cleanupTransfersForTab(tabId) {
+      perTabTransferCleanupCalls.push(tabId);
       return {
-        cleanedTabs: 1,
-        before,
-        after: { ...sftpStats },
+        cleanedCount: tabId === "tab-d2" ? 1 : 0,
+        remainingTransfers: Math.max(
+          0,
+          filemanagementStats.activeTransferCount - 1,
+        ),
       };
     },
-    getSftpRuntimeStats() {
-      return { ...sftpStats };
-    },
-    stopSftpHealthCheck() {
-      sftpStats.healthCheckTimerActive = false;
-    },
-  };
-
-  const sftpTransferMock = {
-    async cleanupActiveTransfersForTab() {
-      return { success: true, cleanedCount: 0 };
-    },
-    async cleanupAllActiveTransfers() {
-      transferCleanupAllCount += 1;
-      transferStats = {
+    cleanup() {
+      filemanagementCleanupCount += 1;
+      filemanagementStats = {
+        ...filemanagementStats,
         activeTransferCount: 0,
-        activeStreamCount: 0,
-        trackedTabCount: 0,
-      };
-      return {
-        success: true,
-        cleanedCount: 2,
-        stoppedStreams: 4,
-        reason: "app-quit",
-        remainingTransfers: 0,
+        throughputBytesPerSec: 0,
+        latestTransferThroughput: 0,
+        pool: {
+          ...filemanagementStats.pool,
+          workerCount: 0,
+          queuedTasks: 0,
+          pendingTasks: 0,
+          pendingInits: 0,
+          activeTransfers: 0,
+          shutdown: true,
+        },
+        poolIdleShutdownScheduled: false,
       };
     },
     getTransferRuntimeStats() {
-      return { ...transferStats };
+      return {
+        ...filemanagementStats,
+        eventLoopLag: { ...filemanagementStats.eventLoopLag },
+        pool: { ...filemanagementStats.pool },
+      };
     },
   };
 
@@ -1208,6 +1213,13 @@ async function testD2AppQuitReleasesAllResources() {
       return true;
     },
   });
+  injectMock(fileSnapshotStorePath, {
+    snapshotRoot: "mock-snapshots",
+    async clearAllSnapshots() {
+      snapshotClearCount += 1;
+      return true;
+    },
+  });
   injectMock(configServicePath, {
     saveCommandHistory() {},
     saveLastConnections() {
@@ -1219,8 +1231,7 @@ async function testD2AppQuitReleasesAllResources() {
       return [];
     },
   });
-  injectMock(sftpCorePath, sftpCoreMock);
-  injectMock(sftpTransferPath, sftpTransferMock);
+  injectMock(filemanagementServicePath, filemanagementServiceMock);
   injectMock(externalEditorPath, {
     async cleanup() {},
   });
@@ -1244,36 +1255,37 @@ async function testD2AppQuitReleasesAllResources() {
       async cleanup() {},
     });
 
-    assert.equal(transferCleanupAllCount, 1, "退出时应清理所有活跃SFTP传输");
-    assert.equal(sftpShutdownCount, 1, "退出时应执行SFTP引擎全量关停");
+    assert.deepEqual(
+      perTabTransferCleanupCalls,
+      ["tab-d2"],
+      "退出时应先按 tab 清理对应文件传输任务",
+    );
+    assert.equal(
+      filemanagementCleanupCount,
+      1,
+      "退出时应执行 Filemanagement 传输全量清理",
+    );
     assert.equal(connectionCleanupCount, 1, "退出时应清理连接管理器");
     assert.ok(releasedSshCount >= 1, "退出时应释放SSH连接引用");
+    assert.equal(snapshotClearCount, 1, "退出时应清理文件快照缓存");
     assert.equal(processMap.size, 0, "退出后进程表应清空");
 
-    const finalSftpStats = sftpCoreMock.getSftpRuntimeStats();
-    assert.equal(finalSftpStats.sessionCount, 0, "退出后SFTP会话应为0");
+    const finalFilemanagementStats =
+      filemanagementServiceMock.getTransferRuntimeStats();
     assert.equal(
-      finalSftpStats.pendingOperationCount,
+      finalFilemanagementStats.activeTransferCount,
       0,
-      "退出后SFTP队列应为0",
-    );
-    assert.equal(finalSftpStats.sessionLockCount, 0, "退出后SFTP锁应清零");
-    assert.equal(
-      finalSftpStats.healthCheckTimerActive,
-      false,
-      "退出后SFTP健康检查定时器应停止",
-    );
-
-    const finalTransferStats = sftpTransferMock.getTransferRuntimeStats();
-    assert.equal(
-      finalTransferStats.activeTransferCount,
-      0,
-      "退出后活跃SFTP传输应为0",
+      "退出后活跃文件传输应为0",
     );
     assert.equal(
-      finalTransferStats.activeStreamCount,
+      finalFilemanagementStats.pool.pendingTasks,
       0,
-      "退出后SFTP传输流应全部停止",
+      "退出后文件传输待处理任务应为0",
+    );
+    assert.equal(
+      finalFilemanagementStats.pool.shutdown,
+      true,
+      "退出后文件传输进程池应进入 shutdown 状态",
     );
 
     assert.equal(

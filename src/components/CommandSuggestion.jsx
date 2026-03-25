@@ -14,6 +14,7 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useConditionalWindowEvent } from "../hooks/useWindowEvent.js";
+import { resolveCommandSuggestionWindowPosition } from "../modules/terminal/commandSuggestionPosition.js";
 
 const COMMAND_FONT =
   '13px "Fira Code", "Consolas", "Monaco", "Courier New", monospace';
@@ -345,133 +346,13 @@ const CommandSuggestion = ({
     return null;
   }
 
-  // 计算建议窗口位置（使用缓存的尺寸）
-  const getWindowPosition = () => {
-    const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
-    const suggestionWidth = windowDimensions.width;
-    const suggestionHeight = windowDimensions.height;
-
-    let left = position.x;
-    let top = position.y;
-
-    // 检查位置是否有效（不能简单检查是否为0，因为光标可能真的在0位置）
-    const isValidPosition =
-      typeof left === "number" &&
-      typeof top === "number" &&
-      !isNaN(left) &&
-      !isNaN(top);
-
-    // 如果位置信息无效，尝试获取终端元素位置作为备选
-    if (!isValidPosition) {
-      if (terminalElement) {
-        const terminalRect = terminalElement.getBoundingClientRect();
-        left = terminalRect.left + 50;
-        top = terminalRect.top + 50;
-      } else {
-        left = 100;
-        top = 100;
-      }
-    }
-
-    // 终端容器边界（优先使用容器边界约束其位置，确保在容器内部）
-    const containerRect = terminalElement?.getBoundingClientRect();
-    const bounds = containerRect
-      ? {
-          left: containerRect.left,
-          top: containerRect.top,
-          right: containerRect.right,
-          bottom: containerRect.bottom,
-        }
-      : { left: 0, top: 0, right: windowWidth, bottom: windowHeight };
-
-    // 与容器边界保持内边距
-    const padding = 8;
-    const gap = 20; // 与光标的垂直间距，确保不遮挡输入行
-
-    // 计算光标下边缘位置（更稳定的定位）
-    const cursorBottom =
-      position.cursorBottom ?? position.y + (position.cursorHeight || 18);
-
-    // 计算上下可用空间
-    const spaceBelow = Math.max(0, bounds.bottom - cursorBottom - gap);
-    const spaceAbove = Math.max(0, position.y - bounds.top - gap);
-
-    // 选择展示方向：优先使用传入的showAbove；若空间不足则选择空间更大的一侧
-    let showAbove = !!position.showAbove;
-    const desiredHeight = suggestionHeight;
-    const belowFits = spaceBelow >= Math.min(desiredHeight, 120);
-    const aboveFits = spaceAbove >= Math.min(desiredHeight, 120);
-    if (!belowFits && !aboveFits) {
-      // 两侧都不够，选择空间更大的一侧
-      showAbove = spaceAbove > spaceBelow;
-    } else if (showAbove && !aboveFits && belowFits) {
-      showAbove = false;
-    } else if (!showAbove && !belowFits && aboveFits) {
-      showAbove = true;
-    }
-
-    // 根据容器可用空间动态收缩尺寸，确保完全位于容器内
-    const containerWidthAvailable = Math.max(
-      50,
-      bounds.right - bounds.left - padding * 2,
-    );
-    const finalWidth = Math.min(suggestionWidth, containerWidthAvailable);
-
-    const containerHeightAvailable = Math.max(
-      40,
-      bounds.bottom - bounds.top - padding * 2,
-    );
-    const sideSpace = showAbove ? spaceAbove : spaceBelow;
-    let finalHeight = Math.min(
-      suggestionHeight,
-      containerHeightAvailable,
-      sideSpace,
-    );
-    if (!Number.isFinite(finalHeight) || finalHeight <= 0) {
-      // 最小显示高度回退
-      finalHeight = Math.min(suggestionHeight, containerHeightAvailable);
-    }
-
-    // 使用容器边界进行限制（横向）
-    const maxLeftWithin = bounds.right - finalWidth - padding;
-    const minLeftWithin = bounds.left + padding;
-    if (left > maxLeftWithin) left = Math.max(minLeftWithin, maxLeftWithin);
-    if (left < minLeftWithin) left = minLeftWithin;
-
-    // 计算目标top（尽量贴近光标但不遮挡）
-    if (showAbove) {
-      top = position.y - finalHeight - gap;
-    } else {
-      top = cursorBottom + gap;
-    }
-
-    // 使用容器边界进行限制（纵向）
-    const maxTopWithin = bounds.bottom - finalHeight - padding;
-    const minTopWithin = bounds.top + padding;
-    if (top > maxTopWithin) {
-      // 优先尝试翻转到光标上方（如果原来在下方）
-      if (!showAbove && isValidPosition) {
-        const flippedTop = position.y - finalHeight - gap;
-        top = Math.max(minTopWithin, Math.min(flippedTop, maxTopWithin));
-      } else {
-        top = Math.max(minTopWithin, maxTopWithin);
-      }
-    }
-    if (top < minTopWithin) {
-      // 优先尝试翻转到光标下方（如果原来在上方）
-      if (showAbove && isValidPosition) {
-        const flippedTop = cursorBottom + gap;
-        top = Math.max(minTopWithin, Math.min(flippedTop, maxTopWithin));
-      } else {
-        top = minTopWithin;
-      }
-    }
-
-    return { left, top, width: finalWidth, height: finalHeight };
-  };
-
-  const windowPosition = getWindowPosition();
+  const windowPosition = resolveCommandSuggestionWindowPosition({
+    position,
+    windowDimensions,
+    terminalRect: terminalElement?.getBoundingClientRect?.() || null,
+    windowWidth: window.innerWidth,
+    windowHeight: window.innerHeight,
+  });
 
   // 高亮匹配的文本
   const highlightMatch = (text, input) => {
