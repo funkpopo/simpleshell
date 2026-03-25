@@ -1,81 +1,135 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  collectTerminalSearchMatches,
+  findSelectedTerminalSearchMatchIndex,
+} from "../modules/terminal/searchResults.js";
 
-export const useTerminalSearch = ({ searchAddonRef, termRef, isActive }) => {
+const EMPTY_SEARCH_RESULTS = {
+  count: 0,
+  current: 0,
+};
+
+const SEARCH_DECORATIONS = Object.freeze({
+  matchOverviewRuler: "#7CB8FF",
+  activeMatchColorOverviewRuler: "#FFB020",
+});
+
+export const useTerminalSearch = ({
+  searchAddonRef,
+  termRef,
+  isActive,
+  searchAddonVersion = 0,
+}) => {
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState({ count: 0, current: 0 });
+  const [searchResults, setSearchResults] = useState(EMPTY_SEARCH_RESULTS);
   const [noMatchFound, setNoMatchFound] = useState(false);
+  const searchTermRef = useRef(searchTerm);
 
-  const handleSearch = useCallback(() => {
-    if (searchAddonRef.current && searchTerm) {
+  useEffect(() => {
+    searchTermRef.current = searchTerm;
+  }, [searchTerm]);
+
+  const clearSearchState = useCallback(
+    ({ clearSelection = false } = {}) => {
+      if (clearSelection) {
+        try {
+          searchAddonRef.current?.clearDecorations?.();
+        } catch {
+          // ignore search cleanup errors
+        }
+
+        try {
+          termRef.current?.clearSelection?.();
+        } catch {
+          // ignore terminal selection cleanup errors
+        }
+      }
+
+      setSearchResults(EMPTY_SEARCH_RESULTS);
       setNoMatchFound(false);
+    },
+    [searchAddonRef, termRef],
+  );
 
-      try {
-        const result = searchAddonRef.current.findNext(searchTerm);
-        if (!result) {
-          setNoMatchFound(true);
-        } else if (searchResults.count > 0) {
-          setSearchResults((prev) => ({
-            ...prev,
-            current: (prev.current % prev.count) + 1,
-          }));
-        }
-      } catch {
-        setNoMatchFound(true);
-      }
-    }
-  }, [searchAddonRef, searchResults.count, searchTerm]);
-
-  const handleSearchPrevious = useCallback(() => {
-    if (searchAddonRef.current && searchTerm) {
-      setNoMatchFound(false);
-
-      try {
-        const result = searchAddonRef.current.findPrevious(searchTerm);
-        if (!result) {
-          setNoMatchFound(true);
-        } else if (searchResults.count > 0) {
-          setSearchResults((prev) => ({
-            ...prev,
-            current: prev.current <= 1 ? prev.count : prev.current - 1,
-          }));
-        }
-      } catch {
-        setNoMatchFound(true);
-      }
-    }
-  }, [searchAddonRef, searchResults.count, searchTerm]);
-
-  const calculateSearchResults = useCallback(
-    (term) => {
-      if (!term || !termRef.current) {
-        setSearchResults({ count: 0, current: 0 });
-        return;
+  const refreshSearchState = useCallback(
+    (term = searchTermRef.current) => {
+      const terminal = termRef.current;
+      if (!term || !terminal) {
+        setSearchResults(EMPTY_SEARCH_RESULTS);
+        setNoMatchFound(false);
+        return {
+          matches: [],
+          currentIndex: -1,
+        };
       }
 
-      const buffer = termRef.current.buffer.active;
-      let count = 0;
+      const matches = collectTerminalSearchMatches(terminal, term);
+      const currentIndex = findSelectedTerminalSearchMatchIndex(
+        terminal,
+        matches,
+      );
 
-      try {
-        for (let i = 0; i < buffer.length; i++) {
-          const line = buffer.getLine(i);
-          if (line) {
-            const text = line.translateToString();
-            let pos = 0;
-            while ((pos = text.indexOf(term, pos)) !== -1) {
-              count++;
-              pos += term.length;
-            }
-          }
-        }
+      setSearchResults((prev) => ({
+        count: matches.length,
+        current:
+          currentIndex >= 0
+            ? currentIndex + 1
+            : matches.length > 0
+              ? Math.min(Math.max(prev.current || 1, 1), matches.length)
+              : 0,
+      }));
+      setNoMatchFound(matches.length === 0);
 
-        setSearchResults({ count, current: count > 0 ? 1 : 0 });
-        setNoMatchFound(count === 0);
-      } catch {
-        setSearchResults({ count: 0, current: 0 });
-      }
+      return {
+        matches,
+        currentIndex,
+      };
     },
     [termRef],
+  );
+
+  const runSearch = useCallback(
+    (direction = "next", options = {}) => {
+      const searchAddon = searchAddonRef.current;
+      const term = searchTermRef.current;
+
+      if (!term) {
+        clearSearchState({ clearSelection: true });
+        return false;
+      }
+
+      if (!searchAddon) {
+        refreshSearchState(term);
+        return false;
+      }
+
+      try {
+        const searchOptions = {
+          decorations: SEARCH_DECORATIONS,
+          incremental: direction === "next" && options.incremental === true,
+        };
+        const found =
+          direction === "previous"
+            ? searchAddon.findPrevious(term, searchOptions)
+            : searchAddon.findNext(term, searchOptions);
+
+        refreshSearchState(term);
+        return found;
+      } catch {
+        setSearchResults(EMPTY_SEARCH_RESULTS);
+        setNoMatchFound(true);
+        return false;
+      }
+    },
+    [clearSearchState, refreshSearchState, searchAddonRef],
+  );
+
+  const handleSearch = useCallback(() => runSearch("next"), [runSearch]);
+
+  const handleSearchPrevious = useCallback(
+    () => runSearch("previous"),
+    [runSearch],
   );
 
   const openSearchBar = useCallback(() => {
@@ -91,19 +145,36 @@ export const useTerminalSearch = ({ searchAddonRef, termRef, isActive }) => {
   }, []);
 
   useEffect(() => {
-    if (searchTerm && termRef.current) {
-      calculateSearchResults(searchTerm);
-    } else {
-      setSearchResults({ count: 0, current: 0 });
-      setNoMatchFound(false);
+    if (!searchTerm) {
+      clearSearchState({ clearSelection: true });
+      return;
     }
-  }, [calculateSearchResults, searchTerm, termRef]);
+
+    runSearch("next", { incremental: true });
+  }, [clearSearchState, runSearch, searchAddonVersion, searchTerm]);
 
   useEffect(() => {
     if (!isActive && showSearchBar) {
       setShowSearchBar(false);
     }
   }, [isActive, showSearchBar]);
+
+  useEffect(() => {
+    const searchAddon = searchAddonRef.current;
+    if (!searchAddon?.onAfterSearch) {
+      return undefined;
+    }
+
+    const disposable = searchAddon.onAfterSearch(() => {
+      refreshSearchState(searchTermRef.current);
+    });
+
+    return () => {
+      if (typeof disposable?.dispose === "function") {
+        disposable.dispose();
+      }
+    };
+  }, [refreshSearchState, searchAddonRef, searchAddonVersion]);
 
   return {
     showSearchBar,

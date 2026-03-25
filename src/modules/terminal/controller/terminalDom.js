@@ -112,34 +112,68 @@ body:not(.dark-theme) .xterm .xterm-selection div {
   box-shadow: 0 0 4px rgba(9, 105, 218, 0.3) !important;
 }
 
-/* 搜索结果高亮 - xterm SearchAddon 使用的类名 */
+/* 搜索结果高亮 */
+.xterm-find-result-decoration,
+.xterm-find-active-result-decoration {
+  border-radius: 0 !important;
+  outline: none !important;
+  pointer-events: none !important;
+  background-clip: padding-box !important;
+  transition:
+    background-color 0.12s ease,
+    box-shadow 0.12s ease !important;
+}
+
 .xterm-decoration-overview-ruler {
-  background: rgba(255, 165, 0, 0.5) !important;
+  border-radius: 999px !important;
 }
 
-/* 当前搜索结果高亮 */
-.xterm-decoration {
-  background: rgba(255, 165, 0, 0.4) !important;
+/* 搜索模式下隐藏 selection 叠层，避免与 active decoration 叠加后出现范围偏移 */
+.xterm.xterm-search-selection-hidden .xterm-selection,
+.xterm.xterm-search-selection-hidden .xterm-selection div {
+  opacity: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
-/* 深色主题下的搜索高亮 */
-.dark-theme .xterm-decoration-overview-ruler {
-  background: rgba(255, 200, 0, 0.6) !important;
+/* 深色主题下的搜索高亮：使用偏冷色，避免压住浅色终端文字 */
+.dark-theme .xterm-find-result-decoration,
+body:not(.light-theme) .xterm-find-result-decoration {
+  background: rgba(72, 132, 214, 0.28) !important;
+  box-shadow: inset 0 0 0 1px rgba(148, 196, 255, 0.34) !important;
 }
 
-.dark-theme .xterm-decoration {
-  background: rgba(255, 200, 0, 0.45) !important;
+.dark-theme .xterm-find-active-result-decoration,
+body:not(.light-theme) .xterm-find-active-result-decoration {
+  background: rgba(92, 156, 255, 0.36) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(220, 236, 255, 0.8),
+    inset 0 0 0 2px rgba(18, 58, 102, 0.12) !important;
 }
 
-/* 浅色主题下的搜索高亮 */
+.dark-theme .xterm-decoration-overview-ruler,
+body:not(.light-theme) .xterm-decoration-overview-ruler {
+  background: rgba(124, 184, 255, 0.78) !important;
+}
+
+/* 浅色主题下的搜索高亮：使用更轻的冷色，减少对深色文字的覆盖 */
+.light-theme .xterm-find-result-decoration,
+body:not(.dark-theme) .xterm-find-result-decoration {
+  background: rgba(132, 191, 255, 0.26) !important;
+  box-shadow: inset 0 0 0 1px rgba(46, 108, 184, 0.24) !important;
+}
+
+.light-theme .xterm-find-active-result-decoration,
+body:not(.dark-theme) .xterm-find-active-result-decoration {
+  background: rgba(104, 169, 255, 0.34) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(28, 88, 166, 0.38),
+    inset 0 0 0 2px rgba(214, 232, 255, 0.52) !important;
+}
+
 .light-theme .xterm-decoration-overview-ruler,
 body:not(.dark-theme) .xterm-decoration-overview-ruler {
-  background: rgba(255, 140, 0, 0.5) !important;
-}
-
-.light-theme .xterm-decoration,
-body:not(.dark-theme) .xterm-decoration {
-  background: rgba(255, 140, 0, 0.4) !important;
+  background: rgba(72, 136, 214, 0.7) !important;
 }
 `;
 
