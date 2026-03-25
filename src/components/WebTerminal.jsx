@@ -473,6 +473,7 @@ const WebTerminal = ({
   const [contextMenu, setContextMenu] = useState(null);
   const [selectedText, setSelectedText] = useState("");
   const searchAddonRef = useRef(null);
+  const [searchAddonVersion, setSearchAddonVersion] = useState(0);
   const [inEditorMode, setInEditorMode] = useState(false);
 
   // 命令执行状态跟踪
@@ -501,6 +502,7 @@ const WebTerminal = ({
     searchAddonRef,
     termRef,
     isActive,
+    searchAddonVersion,
   });
 
   const {
@@ -636,6 +638,18 @@ const WebTerminal = ({
       // 获取终端DOM元素
       const terminalElement = termRef.current.element;
       if (!terminalElement) return;
+
+      if (searchTerm) {
+        const selectionElements = terminalElement.querySelectorAll(
+          ".xterm-selection div",
+        );
+        selectionElements.forEach((elem) => {
+          elem.style.transform = "";
+          elem.style.willChange = "";
+          elem.style.width = "";
+        });
+        return;
+      }
 
       // 获取所有选择相关元素
       const selectionElements = terminalElement.querySelectorAll(
@@ -2305,10 +2319,16 @@ const WebTerminal = ({
       }
 
       // 保存搜索插件引用
+      const previousSearchAddon = searchAddonRef.current;
+      const previousSearchTerm = termRef.current;
       searchAddonRef.current = searchAddon;
 
       // 确保termRef也被设置，用于搜索功能
       termRef.current = term;
+
+      if (previousSearchAddon !== searchAddon || previousSearchTerm !== term) {
+        setSearchAddonVersion((prev) => prev + 1);
+      }
 
       // 添加键盘快捷键支持
       const handleKeyDown = (e) => {
@@ -3173,6 +3193,22 @@ const WebTerminal = ({
 
     scheduleHighlightRefresh(termRef.current);
   }, [contentUpdated, scheduleHighlightRefresh]);
+
+  useEffect(() => {
+    const terminalElement = termRef.current?.element;
+    if (!terminalElement?.classList) {
+      return undefined;
+    }
+
+    terminalElement.classList.toggle(
+      "xterm-search-selection-hidden",
+      Boolean(searchTerm),
+    );
+
+    return () => {
+      terminalElement.classList.remove("xterm-search-selection-hidden");
+    };
+  }, [searchAddonVersion, searchTerm]);
 
   // 设置数据监听器的函数，处理终端输出
   const setupDataListener = (processId, term) => {
