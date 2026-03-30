@@ -205,38 +205,6 @@ class AppInitializer {
   }
 }
 
-/**
- * 获取连接管理器实例（供其他模块使用）
- */
-function getConnectionManager() {
-  return connectionManager;
-}
-
-/**
- * 获取SFTP核心模块（供其他模块使用）
- */
-function getSftpCore() {
-  return sftpCore;
-}
-
-/**
- * 获取SFTP传输模块（供其他模块使用）
- */
-function getSftpTransfer() {
-  return sftpTransfer;
-}
-
-/**
- * 获取外部编辑器管理器（供其他模块使用）
- */
-function getExternalEditorManager() {
-  return externalEditorManager;
-}
-
 module.exports = {
   AppInitializer,
-  getConnectionManager,
-  getSftpCore,
-  getSftpTransfer,
-  getExternalEditorManager,
 };
