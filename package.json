@@ -104,6 +104,6 @@
     "socks-proxy-agent": "^8.0.5",
     "ssh2": "^1.17.0",
     "systeminformation": "^5.31.5",
-    "telnet-client": "^2.2.12"
+    "telnet-client": "^2.2.13"
   }
 }
