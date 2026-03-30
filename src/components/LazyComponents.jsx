@@ -6,7 +6,6 @@ import {
   LocalTerminalSidebarSkeleton,
   SettingsSkeleton,
   CommandHistorySkeleton,
-  AIChatSkeleton,
 } from "./SkeletonLoader.jsx";
 
 // React 19 优化：使用 memo 包装懒加载组件工厂函数，减少不必要的重渲染
@@ -87,22 +86,6 @@ export const LocalTerminalSidebarWithSuspense = createLazyComponent(
   "本地终端",
   LocalTerminalSidebarSkeleton,
 );
-
-// AI助手组件（如果存在）- 保持兼容性
-export const AIAssistantWithSuspense = createLazyComponent(
-  () => import("./AIChatWindow.jsx"),
-  "正在加载AI助手...",
-  "AI助手",
-  AIChatSkeleton,
-);
-
-// 为了向后兼容，创建直接的懒加载组件引用
-const ResourceMonitor = lazy(() => import("./ResourceMonitor.jsx"));
-const IPAddressQuery = lazy(() => import("./IPAddressQuery.jsx"));
-const Settings = lazy(() => import("./Settings.jsx"));
-const CommandHistory = lazy(() => import("./CommandHistory.jsx"));
-const ShortcutCommands = lazy(() => import("./ShortcutCommands.jsx"));
-const LocalTerminalSidebar = lazy(() => import("./LocalTerminalSidebar.jsx"));
 
 // 预加载函数对象，为提高应用启动速度，延迟加载非关键组件
 const preloadComponents = {
@@ -186,14 +169,4 @@ const smartPreload = {
   },
 };
 
-// 导出懒加载组件以供直接使用（如果需要）
-export {
-  ResourceMonitor,
-  IPAddressQuery,
-  Settings,
-  CommandHistory,
-  ShortcutCommands,
-  LocalTerminalSidebar,
-  preloadComponents,
-  smartPreload,
-};
+export { preloadComponents, smartPreload };
