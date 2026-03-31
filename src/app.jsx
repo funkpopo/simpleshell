@@ -341,6 +341,20 @@ const canPauseReconnectStatus = (status) => {
   return state === "pending" || state === "reconnecting";
 };
 
+const shouldClearStaleReconnectStatus = (status, loadedState) => {
+  const backendState = String(loadedState || "").toLowerCase();
+  if (backendState !== "connected" && backendState !== "idle") {
+    return false;
+  }
+
+  const state = normalizeReconnectUiState(status?.state);
+  if (!state || status?.phase === "restoring-shell") {
+    return false;
+  }
+
+  return state === "failed" || state === "abandoned";
+};
+
 function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
@@ -538,6 +552,17 @@ function AppContent() {
         const status = await window.terminalAPI.getReconnectStatus({ tabId });
         const normalizedState = normalizeReconnectUiState(status?.state);
         if (!normalizedState) {
+          setReconnectStateByTabId((previous) => {
+            if (
+              !shouldClearStaleReconnectStatus(previous[tabId], status?.state)
+            ) {
+              return previous;
+            }
+
+            const next = { ...previous };
+            delete next[tabId];
+            return next;
+          });
           return;
         }
 
@@ -751,12 +776,28 @@ function AppContent() {
       );
     };
 
+    const handleTabConnectionStatus = (payload) => {
+      if (
+        !payload?.tabId ||
+        payload?.connectionStatus?.isConnected !== true
+      ) {
+        return;
+      }
+
+      clearReconnectStatus(payload.tabId);
+      setReconnectActionTabId((current) =>
+        current === payload.tabId ? null : current,
+      );
+    };
+
     window.terminalAPI.onConnectionLost?.(handleConnectionLost);
     window.terminalAPI.onReconnectStart?.(handleReconnectStarted);
     window.terminalAPI.onReconnectProgress?.(handleReconnectProgress);
     window.terminalAPI.onReconnectSuccess?.(handleReconnectSuccess);
     window.terminalAPI.onReconnectFailed?.(handleReconnectFailed);
     window.terminalAPI.onReconnectAbandoned?.(handleReconnectAbandoned);
+    const cleanupTabConnectionStatus =
+      window.terminalAPI.onTabConnectionStatus?.(handleTabConnectionStatus);
     const cleanupTerminalSessionRestored =
       window.terminalAPI.onTerminalSessionRestored?.(
         handleTerminalSessionRestored,
@@ -767,6 +808,9 @@ function AppContent() {
       );
 
     return () => {
+      if (typeof cleanupTabConnectionStatus === "function") {
+        cleanupTabConnectionStatus();
+      }
       if (typeof cleanupTerminalSessionRestored === "function") {
         cleanupTerminalSessionRestored();
       }
