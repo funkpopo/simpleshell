@@ -339,6 +339,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   onReconnectAbandoned: (callback) =>
     ipcRenderer.on("reconnect-abandoned", callback),
   onConnectionLost: (callback) => ipcRenderer.on("connection-lost", callback),
+  onTabConnectionStatus: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, data) => callback(data);
+    ipcRenderer.on("tab-connection-status", wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener("tab-connection-status", wrappedCallback);
+    };
+  },
   removeReconnectListeners: () => {
     ipcRenderer.removeAllListeners("reconnect-started");
     ipcRenderer.removeAllListeners("reconnect-progress");
