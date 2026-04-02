@@ -43,6 +43,21 @@ class SettingsHandlers {
         handler: this.updatePrefetchSettings.bind(this),
       },
       {
+        channel: "settings:getCredentialSecurityStatus",
+        category: "settings",
+        handler: this.getCredentialSecurityStatus.bind(this),
+      },
+      {
+        channel: "settings:updateCredentialSecurity",
+        category: "settings",
+        handler: this.updateCredentialSecurity.bind(this),
+      },
+      {
+        channel: "settings:unlockCredentialStore",
+        category: "settings",
+        handler: this.unlockCredentialStore.bind(this),
+      },
+      {
         channel: "get-shortcut-commands",
         category: "settings",
         handler: this.getShortcutCommands.bind(this),
@@ -161,6 +176,46 @@ class SettingsHandlers {
       return { success: true };
     } catch (error) {
       logToFile(`Error updating prefetch settings: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getCredentialSecurityStatus() {
+    try {
+      const status = configService.getCredentialSecurityStatus();
+      return { success: true, status };
+    } catch (error) {
+      logToFile(
+        `Error getting credential security status: ${error.message}`,
+        "ERROR",
+      );
+      return { success: false, error: error.message };
+    }
+  }
+
+  async updateCredentialSecurity(event, settings) {
+    try {
+      const status = configService.updateCredentialSecurity(settings);
+      logToFile("Credential security settings updated", "INFO");
+      return { success: true, status };
+    } catch (error) {
+      logToFile(
+        `Error updating credential security settings: ${error.message}`,
+        "ERROR",
+      );
+      return { success: false, error: error.message };
+    }
+  }
+
+  async unlockCredentialStore(event, masterPassword) {
+    try {
+      const result = configService.unlockCredentialStore(masterPassword);
+      if (result.success) {
+        logToFile("Credential store unlocked", "INFO");
+      }
+      return result;
+    } catch (error) {
+      logToFile(`Error unlocking credential store: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }

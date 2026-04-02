@@ -41,7 +41,11 @@ class ConfigService {
     if (
       typeof this.logger.logToFile !== "function" ||
       typeof this.crypto.encryptText !== "function" ||
-      typeof this.crypto.decryptText !== "function"
+      typeof this.crypto.decryptText !== "function" ||
+      typeof this.crypto.configureSecurity !== "function" ||
+      typeof this.crypto.getSecurityStatus !== "function" ||
+      typeof this.crypto.createSecurityConfig !== "function" ||
+      typeof this.crypto.unlockWithMasterPassword !== "function"
     ) {
       console.error("ConfigService: Required functions are not available");
       return false;
@@ -247,6 +251,132 @@ class ConfigService {
   }
 
   /**
+   * 获取默认安全设置
+   * @param {Object} existingSecurity - 现有安全配置
+   * @returns {Object} 安全设置
+   */
+  _getDefaultSecuritySettings(existingSecurity = {}) {
+    const randomKey =
+      typeof existingSecurity?.randomKey === "string"
+        ? existingSecurity.randomKey.trim()
+        : "";
+    const masterPasswordEnabled =
+      existingSecurity?.masterPasswordEnabled === true &&
+      typeof existingSecurity?.masterPasswordVerifier === "string" &&
+      existingSecurity.masterPasswordVerifier.trim() !== "";
+
+    return {
+      randomKey:
+        randomKey ||
+        this.crypto.createSecurityConfig({ currentSecurity: existingSecurity })
+          .randomKey,
+      masterPasswordEnabled,
+      masterPasswordVerifier: masterPasswordEnabled
+        ? existingSecurity.masterPasswordVerifier.trim()
+        : "",
+    };
+  }
+
+  /**
+   * 构建默认配置对象
+   * @returns {Object} 默认配置
+   */
+  _buildDefaultConfig() {
+    return {
+      security: this.crypto.createSecurityConfig(),
+      connections: [],
+      uiSettings: {
+        language: "zh-CN",
+        fontSize: 14,
+        editorFont: "system",
+        darkMode: true,
+        sidebarPosition: "right",
+        terminalFont: "Fira Code",
+        terminalFontSize: 14,
+        performance: {},
+        externalEditor: {},
+      },
+      aiSettings: {
+        configs: [],
+        current: null,
+      },
+      logSettings: {
+        level: "INFO",
+        maxFileSize: 5242880,
+        maxFiles: 5,
+        compressOldLogs: true,
+        cleanupInterval: 24,
+      },
+      shortcutCommands: "{}",
+      commandHistory: {
+        compressed: false,
+        data: [],
+      },
+      topConnections: [],
+      lastConnections: [],
+    };
+  }
+
+  /**
+   * 确保配置中包含安全配置
+   * @param {Object} config - 原始配置
+   * @returns {{config: Object, changed: boolean}} 归一化结果
+   */
+  _ensureSecurityConfig(config) {
+    const normalizedConfig =
+      config && typeof config === "object" ? { ...config } : {};
+    const existingSecurity =
+      normalizedConfig.security && typeof normalizedConfig.security === "object"
+        ? normalizedConfig.security
+        : {};
+    const randomKey =
+      typeof existingSecurity.randomKey === "string"
+        ? existingSecurity.randomKey.trim()
+        : "";
+    const masterPasswordEnabled =
+      existingSecurity.masterPasswordEnabled === true;
+    const masterPasswordVerifier =
+      masterPasswordEnabled &&
+      typeof existingSecurity.masterPasswordVerifier === "string"
+        ? existingSecurity.masterPasswordVerifier.trim()
+        : "";
+
+    let nextSecurity;
+    if (randomKey) {
+      nextSecurity = {
+        randomKey,
+        masterPasswordEnabled:
+          masterPasswordEnabled && masterPasswordVerifier !== "",
+        masterPasswordVerifier:
+          masterPasswordEnabled && masterPasswordVerifier !== ""
+            ? masterPasswordVerifier
+            : "",
+      };
+    } else {
+      nextSecurity = this.crypto.createSecurityConfig({
+        currentSecurity: existingSecurity,
+        masterPasswordEnabled: false,
+      });
+    }
+
+    normalizedConfig.security = nextSecurity;
+
+    return {
+      config: normalizedConfig,
+      changed:
+        JSON.stringify(existingSecurity || {}) !== JSON.stringify(nextSecurity),
+    };
+  }
+
+  /**
+   * 将安全配置应用到运行时加密上下文
+   * @param {Object} security - 安全配置
+   */
+  _applySecuritySettings(security) {
+    this.crypto.configureSecurity(security);
+  }
+
+  /**
    * 初始化主配置文件（如果不存在则创建）
    */
   initializeMainConfig() {
@@ -260,38 +390,7 @@ class ConfigService {
 
     try {
       if (!fs.existsSync(this.mainConfigPath)) {
-        const defaultConfig = {
-          connections: [],
-          uiSettings: {
-            language: "zh-CN",
-            fontSize: 14,
-            editorFont: "system",
-            darkMode: true,
-            sidebarPosition: "right",
-            terminalFont: "Fira Code",
-            terminalFontSize: 14,
-            performance: {},
-            externalEditor: {},
-          },
-          aiSettings: {
-            configs: [],
-            current: null,
-          },
-          logSettings: {
-            level: "INFO",
-            maxFileSize: 5242880,
-            maxFiles: 5,
-            compressOldLogs: true,
-            cleanupInterval: 24,
-          },
-          shortcutCommands: "{}",
-          commandHistory: {
-            compressed: false,
-            data: [],
-          },
-          topConnections: [],
-          lastConnections: [],
-        };
+        const defaultConfig = this._buildDefaultConfig();
 
         fs.writeFileSync(
           this.mainConfigPath,
@@ -300,8 +399,27 @@ class ConfigService {
         );
         this._configCache = defaultConfig;
         this._lastSerializedConfig = JSON.stringify(defaultConfig, null, 2);
+        this._applySecuritySettings(defaultConfig.security);
         this._log("ConfigService: Main config file created.", "INFO");
+        return;
       }
+
+      const config = this._readConfig(true);
+      const { config: normalizedConfig, changed } =
+        this._ensureSecurityConfig(config);
+
+      if (changed) {
+        this._writeConfig(normalizedConfig);
+        this._log(
+          "ConfigService: Security settings initialized for existing config.",
+          "INFO",
+        );
+      } else {
+        this._configCache = this._cloneConfig(normalizedConfig);
+        this._lastSerializedConfig = JSON.stringify(normalizedConfig, null, 2);
+      }
+
+      this._applySecuritySettings(normalizedConfig.security);
     } catch (error) {
       this._log(
         `ConfigService: Failed to initialize main config - ${error.message}`,
@@ -396,6 +514,18 @@ class ConfigService {
   }
 
   /**
+   * 凭据存储是否处于锁定状态
+   * @returns {boolean} 是否锁定
+   */
+  _isCredentialStoreLocked() {
+    const status =
+      this.crypto && typeof this.crypto.getSecurityStatus === "function"
+        ? this.crypto.getSecurityStatus()
+        : null;
+    return Boolean(status?.requiresUnlock);
+  }
+
+  /**
    * 处理连接配置以进行加密保存
    * @param {Array} items - 连接项数组
    * @returns {Array} 处理后的连接项
@@ -440,30 +570,47 @@ class ConfigService {
       return items;
     }
 
+    const storeLocked = this._isCredentialStoreLocked();
+
     return items.map((item) => {
       const result = { ...item };
       if (item.type === "connection") {
         if (item.password) {
           try {
-            result.password = this.crypto.decryptText(item.password);
+            const decryptedPassword = this.crypto.decryptText(item.password);
+            if (decryptedPassword === null && !storeLocked) {
+              this._log("ConfigService: Failed to decrypt password.", "WARN");
+            }
+            result.password = decryptedPassword ?? "";
           } catch (error) {
-            this._log(
-              `ConfigService: Failed to decrypt password - ${error.message}`,
-              "WARN",
-            );
+            if (!storeLocked) {
+              this._log(
+                `ConfigService: Failed to decrypt password - ${error.message}`,
+                "WARN",
+              );
+            }
             result.password = "";
           }
         }
         if (item.privateKeyPath) {
           try {
-            result.privateKeyPath = this.crypto.decryptText(
+            const decryptedPrivateKeyPath = this.crypto.decryptText(
               item.privateKeyPath,
             );
+            if (decryptedPrivateKeyPath === null && !storeLocked) {
+              this._log(
+                "ConfigService: Failed to decrypt privateKeyPath.",
+                "WARN",
+              );
+            }
+            result.privateKeyPath = decryptedPrivateKeyPath ?? "";
           } catch (error) {
-            this._log(
-              `ConfigService: Failed to decrypt privateKeyPath - ${error.message}`,
-              "WARN",
-            );
+            if (!storeLocked) {
+              this._log(
+                `ConfigService: Failed to decrypt privateKeyPath - ${error.message}`,
+                "WARN",
+              );
+            }
             result.privateKeyPath = "";
           }
         }
@@ -535,6 +682,126 @@ class ConfigService {
   }
 
   /**
+   * 处理 AI 设置以进行解密加载
+   * @param {Object} settings - 原始 AI 设置
+   * @returns {Object} 处理后的 AI 设置
+   */
+  _processAISettingsForLoad(settings) {
+    const result =
+      settings && typeof settings === "object" ? { ...settings } : {};
+    const storeLocked = this._isCredentialStoreLocked();
+
+    if (Array.isArray(result.configs)) {
+      result.configs = result.configs.map((cfg) => {
+        if (cfg.apiKey && this.crypto.decryptText) {
+          try {
+            const decryptedApiKey = this.crypto.decryptText(cfg.apiKey);
+            if (decryptedApiKey === null && !storeLocked) {
+              this._log(
+                `ConfigService: Failed to decrypt API key for config ${cfg.name || cfg.id}.`,
+                "WARN",
+              );
+            }
+            return { ...cfg, apiKey: decryptedApiKey ?? "" };
+          } catch (error) {
+            if (!storeLocked) {
+              this._log(
+                `ConfigService: Failed to decrypt API key for config ${cfg.name || cfg.id} - ${error.message}`,
+                "WARN",
+              );
+            }
+            return { ...cfg, apiKey: "" };
+          }
+        }
+        return cfg;
+      });
+    }
+
+    if (result.current && result.current.apiKey && this.crypto.decryptText) {
+      try {
+        const decryptedCurrentApiKey = this.crypto.decryptText(
+          result.current.apiKey,
+        );
+        if (decryptedCurrentApiKey === null && !storeLocked) {
+          this._log(
+            "ConfigService: Failed to decrypt current API key.",
+            "WARN",
+          );
+        }
+        result.current = {
+          ...result.current,
+          apiKey: decryptedCurrentApiKey ?? "",
+        };
+      } catch (error) {
+        if (!storeLocked) {
+          this._log(
+            `ConfigService: Failed to decrypt current API key - ${error.message}`,
+            "WARN",
+          );
+        }
+        result.current = {
+          ...result.current,
+          apiKey: "",
+        };
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 处理 AI 设置以进行加密保存
+   * @param {Object} settings - AI 设置
+   * @returns {Object} 处理后的 AI 设置
+   */
+  _processAISettingsForSave(settings) {
+    const settingsToSave =
+      settings && typeof settings === "object" ? { ...settings } : {};
+
+    if (Array.isArray(settingsToSave.configs) && this.crypto.encryptText) {
+      settingsToSave.configs = settingsToSave.configs.map((cfg) => {
+        if (cfg.apiKey) {
+          try {
+            const encryptedKey = this.crypto.encryptText(cfg.apiKey);
+            return { ...cfg, apiKey: encryptedKey };
+          } catch (error) {
+            this._log(
+              `ConfigService: Failed to encrypt API key for config ${cfg.name || cfg.id} - ${error.message}`,
+              "WARN",
+            );
+            return { ...cfg, apiKey: "" };
+          }
+        }
+        return cfg;
+      });
+    }
+
+    if (
+      settingsToSave.current &&
+      settingsToSave.current.apiKey &&
+      this.crypto.encryptText
+    ) {
+      try {
+        settingsToSave.current = {
+          ...settingsToSave.current,
+          apiKey: this.crypto.encryptText(settingsToSave.current.apiKey),
+        };
+      } catch (error) {
+        this._log(
+          `ConfigService: Failed to encrypt current API key - ${error.message}`,
+          "WARN",
+        );
+        settingsToSave.current = {
+          ...settingsToSave.current,
+          apiKey: "",
+        };
+      }
+    }
+
+    return settingsToSave;
+  }
+
+  /**
    * 加载 AI 设置
    * @returns {Object} AI 设置对象
    */
@@ -558,44 +825,7 @@ class ConfigService {
     try {
       const config = this._readConfig();
       if (config.aiSettings) {
-        const settings = { ...config.aiSettings };
-
-        // 解密 configs 数组中的 API keys
-        if (settings.configs && Array.isArray(settings.configs)) {
-          settings.configs = settings.configs.map((cfg) => {
-            if (cfg.apiKey && this.crypto.decryptText) {
-              try {
-                return { ...cfg, apiKey: this.crypto.decryptText(cfg.apiKey) };
-              } catch (error) {
-                this._log(
-                  `ConfigService: Failed to decrypt API key for config ${cfg.name || cfg.id} - ${error.message}`,
-                  "WARN",
-                );
-                return { ...cfg, apiKey: "" };
-              }
-            }
-            return cfg;
-          });
-        }
-
-        // 解密当前配置的 API key
-        if (
-          settings.current &&
-          settings.current.apiKey &&
-          this.crypto.decryptText
-        ) {
-          try {
-            settings.current.apiKey = this.crypto.decryptText(
-              settings.current.apiKey,
-            );
-          } catch (error) {
-            this._log(
-              `ConfigService: Failed to decrypt current API key - ${error.message}`,
-              "WARN",
-            );
-            settings.current.apiKey = "";
-          }
-        }
+        const settings = this._processAISettingsForLoad(config.aiSettings);
 
         // 验证加载的数据
         this._validate("aiSettings", settings);
@@ -640,49 +870,7 @@ class ConfigService {
 
     try {
       const config = this._readConfig();
-      const settingsToSave = { ...settings };
-
-      // 加密 configs 数组中的 API keys
-      if (
-        settingsToSave.configs &&
-        Array.isArray(settingsToSave.configs) &&
-        this.crypto.encryptText
-      ) {
-        settingsToSave.configs = settingsToSave.configs.map((cfg) => {
-          if (cfg.apiKey) {
-            try {
-              const encryptedKey = this.crypto.encryptText(cfg.apiKey);
-              return { ...cfg, apiKey: encryptedKey };
-            } catch (error) {
-              this._log(
-                `ConfigService: Failed to encrypt API key for config ${cfg.name || cfg.id} - ${error.message}`,
-                "WARN",
-              );
-              return { ...cfg, apiKey: "" };
-            }
-          }
-          return cfg;
-        });
-      }
-
-      // 加密当前配置的 API key
-      if (
-        settingsToSave.current &&
-        settingsToSave.current.apiKey &&
-        this.crypto.encryptText
-      ) {
-        try {
-          settingsToSave.current.apiKey = this.crypto.encryptText(
-            settingsToSave.current.apiKey,
-          );
-        } catch (error) {
-          this._log(
-            `ConfigService: Failed to encrypt current API key - ${error.message}`,
-            "WARN",
-          );
-          settingsToSave.current.apiKey = "";
-        }
-      }
+      const settingsToSave = this._processAISettingsForSave(settings);
 
       config.aiSettings = settingsToSave;
 
@@ -1183,6 +1371,150 @@ class ConfigService {
       );
     }
     return false;
+  }
+
+  /**
+   * 加载凭据安全状态
+   * @returns {Object} 安全状态
+   */
+  getCredentialSecurityStatus() {
+    if (!this._initialized) {
+      return {
+        randomKeyConfigured: false,
+        masterPasswordEnabled: false,
+        unlocked: true,
+        requiresUnlock: false,
+      };
+    }
+
+    try {
+      const config = this._readConfig();
+      const { config: normalizedConfig } = this._ensureSecurityConfig(config);
+      const runtimeStatus = this.crypto.getSecurityStatus();
+
+      return {
+        randomKeyConfigured: Boolean(normalizedConfig?.security?.randomKey),
+        masterPasswordEnabled:
+          normalizedConfig?.security?.masterPasswordEnabled === true,
+        unlocked: runtimeStatus?.unlocked !== false,
+        requiresUnlock: Boolean(runtimeStatus?.requiresUnlock),
+      };
+    } catch (error) {
+      this._log(
+        `ConfigService: Failed to get credential security status - ${error.message}`,
+        "ERROR",
+      );
+      return {
+        randomKeyConfigured: false,
+        masterPasswordEnabled: false,
+        unlocked: true,
+        requiresUnlock: false,
+      };
+    }
+  }
+
+  /**
+   * 解锁凭据存储
+   * @param {string} masterPassword - 主密码
+   * @returns {{success: boolean, error?: string, status?: Object}} 结果
+   */
+  unlockCredentialStore(masterPassword) {
+    if (!this._initialized) {
+      return {
+        success: false,
+        error: "Config service is not initialized",
+      };
+    }
+
+    try {
+      const config = this._readConfig();
+      const { config: normalizedConfig } = this._ensureSecurityConfig(config);
+      this._applySecuritySettings(normalizedConfig.security);
+      const result = this.crypto.unlockWithMasterPassword(masterPassword);
+
+      if (!result.success) {
+        return result;
+      }
+
+      return {
+        success: true,
+        status: this.getCredentialSecurityStatus(),
+      };
+    } catch (error) {
+      this._log(
+        `ConfigService: Failed to unlock credential store - ${error.message}`,
+        "ERROR",
+      );
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * 更新凭据安全配置，并按新配置重加密敏感字段
+   * @param {Object} options - 安全配置
+   * @returns {Object} 更新后的安全状态
+   */
+  updateCredentialSecurity(options = {}) {
+    if (!this._initialized) {
+      throw new Error("Config service is not initialized");
+    }
+
+    const masterPasswordEnabled = options?.masterPasswordEnabled === true;
+    const masterPassword =
+      typeof options?.masterPassword === "string" ? options.masterPassword : "";
+
+    if (masterPasswordEnabled && !masterPassword) {
+      throw new Error("Master password is required");
+    }
+
+    const decryptedConnections = this.loadConnections();
+    const decryptedTopConnections = this.loadTopConnections();
+    const decryptedLastConnections = this.loadLastConnections();
+    const decryptedAISettings = this.loadAISettings();
+
+    const config = this._readConfig(true);
+    const { config: normalizedConfig } = this._ensureSecurityConfig(config);
+    const nextSecurity = masterPasswordEnabled
+      ? this.crypto.createSecurityConfig({
+          currentSecurity: normalizedConfig.security,
+          masterPasswordEnabled: true,
+          masterPassword,
+        })
+      : {
+          ...normalizedConfig.security,
+          masterPasswordEnabled: false,
+          masterPasswordVerifier: "",
+        };
+
+    normalizedConfig.security = nextSecurity;
+    this._applySecuritySettings(nextSecurity);
+
+    if (masterPasswordEnabled) {
+      const unlockResult = this.crypto.unlockWithMasterPassword(masterPassword);
+      if (!unlockResult.success) {
+        throw new Error(unlockResult.error || "Invalid master password");
+      }
+    }
+
+    normalizedConfig.connections =
+      this._processConnectionsForSave(decryptedConnections);
+    normalizedConfig.topConnections = this._processConnectionsForSave(
+      decryptedTopConnections,
+    );
+    normalizedConfig.lastConnections = this._processConnectionsForSave(
+      decryptedLastConnections,
+    );
+    normalizedConfig.aiSettings =
+      this._processAISettingsForSave(decryptedAISettings);
+
+    if (!this._writeConfig(normalizedConfig)) {
+      throw new Error("Failed to persist security settings");
+    }
+
+    return this.getCredentialSecurityStatus();
   }
 
   /**

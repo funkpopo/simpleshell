@@ -976,6 +976,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   loadUISettings: () => ipcRenderer.invoke("settings:loadUISettings"),
   saveUISettings: (settings) =>
     ipcRenderer.invoke("settings:saveUISettings", settings),
+  getCredentialSecurityStatus: () =>
+    ipcRenderer.invoke("settings:getCredentialSecurityStatus"),
+  updateCredentialSecurity: (settings) =>
+    ipcRenderer.invoke("settings:updateCredentialSecurity", settings),
+  unlockCredentialStore: (masterPassword) =>
+    ipcRenderer.invoke("settings:unlockCredentialStore", masterPassword),
 
   // 日志设置相关API
   loadLogSettings: () => ipcRenderer.invoke("settings:loadLogSettings"),

@@ -84,7 +84,31 @@
         "commandPlaceholder": "例如：C:\\Users\\xxx\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\notebook.exe",
         "commandHelper": "填写可执行文件路径或命令。%FILE% 将被替换为下载后的文件路径。留空则使用系统默认程序打开。",
         "enable": "使用外部编辑器"
+      },
+      "security": {
+        "title": "凭据加密",
+        "description": "主密码开启后，SSH 密码和 AI API Key 会改为“随机密钥 + 主密码”联合加密；关闭后仅使用随机密钥保存。",
+        "enable": "启用主密码",
+        "password": "主密码",
+        "confirmPassword": "确认主密码",
+        "createHint": "首次开启时必须设置主密码。",
+        "changeHint": "留空表示继续使用当前主密码；填写后会立即改为新主密码。",
+        "disableHint": "当前未启用主密码，敏感字段仅使用随机密钥加密保存。",
+        "passwordRequired": "请先设置主密码",
+        "passwordMismatch": "两次输入的主密码不一致",
+        "updateFailed": "更新主密码设置失败"
       }
+    },
+    "masterPassword": {
+      "title": "输入主密码",
+      "description": "当前已启用主密码保护。解锁后才能继续操作软件界面。",
+      "loadingTitle": "正在检查安全状态",
+      "loadingDescription": "正在确认是否需要输入主密码，请稍候。",
+      "passwordLabel": "主密码",
+      "unlock": "解锁",
+      "unlocking": "正在解锁...",
+      "invalidPassword": "主密码错误，请重试。",
+      "unlockFailed": "解锁失败，请重试。"
     },
     "languages": {
       "zh-CN": "简体中文",

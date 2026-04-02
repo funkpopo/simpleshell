@@ -63,6 +63,7 @@ import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
 import WindowControls from "./components/WindowControls.jsx";
 import AboutDialog from "./components/AboutDialog.jsx";
 import SSHAuthDialog from "./components/SSHAuthDialog.jsx";
+import MasterPasswordOverlay from "./components/MasterPasswordOverlay.jsx";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
 import "./i18n/i18n";
@@ -369,6 +370,16 @@ function AppContent() {
   const [appError, setAppError] = React.useState(null);
   const [errorNotificationOpen, setErrorNotificationOpen] =
     React.useState(false);
+  const [credentialSecurityStatus, setCredentialSecurityStatus] =
+    React.useState({
+      loading: true,
+      masterPasswordEnabled: false,
+      unlocked: true,
+      requiresUnlock: false,
+    });
+  const [masterPasswordError, setMasterPasswordError] = React.useState("");
+  const [unlockingCredentialStore, setUnlockingCredentialStore] =
+    React.useState(false);
 
   // SSH 认证对话框状态
   const [sshAuthDialogOpen, setSshAuthDialogOpen] = React.useState(false);
@@ -399,6 +410,110 @@ function AppContent() {
   const handleCloseErrorNotification = () => {
     setErrorNotificationOpen(false);
   };
+
+  const refreshCredentialSecurityStatus = useCallback(async () => {
+    if (!window.terminalAPI?.getCredentialSecurityStatus) {
+      setCredentialSecurityStatus({
+        loading: false,
+        masterPasswordEnabled: false,
+        unlocked: true,
+        requiresUnlock: false,
+      });
+      return;
+    }
+
+    try {
+      const response = await window.terminalAPI.getCredentialSecurityStatus();
+      const status = response?.success ? response.status : response;
+      setCredentialSecurityStatus({
+        loading: false,
+        masterPasswordEnabled: status?.masterPasswordEnabled === true,
+        unlocked: status?.unlocked !== false,
+        requiresUnlock: status?.requiresUnlock === true,
+      });
+    } catch {
+      setCredentialSecurityStatus({
+        loading: false,
+        masterPasswordEnabled: false,
+        unlocked: true,
+        requiresUnlock: false,
+      });
+    }
+  }, []);
+
+  React.useEffect(() => {
+    refreshCredentialSecurityStatus();
+  }, [refreshCredentialSecurityStatus]);
+
+  React.useEffect(() => {
+    const handleCredentialSecurityChanged = (event) => {
+      const status = event?.detail?.status;
+      if (!status) {
+        refreshCredentialSecurityStatus();
+        return;
+      }
+
+      setMasterPasswordError("");
+      setCredentialSecurityStatus({
+        loading: false,
+        masterPasswordEnabled: status?.masterPasswordEnabled === true,
+        unlocked: status?.unlocked !== false,
+        requiresUnlock: status?.requiresUnlock === true,
+      });
+    };
+
+    const removeListener = eventManager.addEventListener(
+      window,
+      "credentialSecurityChanged",
+      handleCredentialSecurityChanged,
+    );
+
+    return () => {
+      removeListener();
+    };
+  }, [eventManager, refreshCredentialSecurityStatus]);
+
+  const handleUnlockCredentialStore = useCallback(
+    async (masterPassword) => {
+      if (!window.terminalAPI?.unlockCredentialStore) {
+        return;
+      }
+
+      setUnlockingCredentialStore(true);
+      setMasterPasswordError("");
+
+      try {
+        const response =
+          await window.terminalAPI.unlockCredentialStore(masterPassword);
+        if (response?.success === false) {
+          setMasterPasswordError(
+            response.error === "Invalid master password"
+              ? t("masterPassword.invalidPassword")
+              : response.error || t("masterPassword.unlockFailed"),
+          );
+          return;
+        }
+
+        const nextStatus = response?.status || {
+          masterPasswordEnabled: true,
+          unlocked: true,
+          requiresUnlock: false,
+        };
+
+        setCredentialSecurityStatus({
+          loading: false,
+          masterPasswordEnabled: nextStatus?.masterPasswordEnabled === true,
+          unlocked: nextStatus?.unlocked !== false,
+          requiresUnlock: nextStatus?.requiresUnlock === true,
+        });
+      } catch {
+        setMasterPasswordError(t("masterPassword.unlockFailed"));
+      } finally {
+        setUnlockingCredentialStore(false);
+      }
+    },
+    [t],
+  );
 
   // Update the tabs when language changes
   React.useEffect(() => {
@@ -475,6 +590,8 @@ function AppContent() {
   const open = Boolean(anchorEl);
   const connectionsRef = React.useRef(connections);
   const topConnectionsRef = React.useRef(topConnections);
+  const terminalInstancesRef = React.useRef(terminalInstances);
+  const processCacheRef = React.useRef(processCache);
 
   React.useEffect(() => {
     connectionsRef.current = connections;
@@ -483,6 +600,14 @@ function AppContent() {
   React.useEffect(() => {
     topConnectionsRef.current = topConnections;
   }, [topConnections]);
+
+  React.useEffect(() => {
+    terminalInstancesRef.current = terminalInstances;
+  }, [terminalInstances]);
+
+  React.useEffect(() => {
+    processCacheRef.current = processCache;
+  }, [processCache]);
 
   // 锁定的文件管理器tabId（在打开时不随标签页切换而变化）
   const [lockedFileManagerTabId, setLockedFileManagerTabId] = useState(null);
@@ -777,10 +902,7 @@ function AppContent() {
     };
 
     const handleTabConnectionStatus = (payload) => {
-      if (
-        !payload?.tabId ||
-        payload?.connectionStatus?.isConnected !== true
-      ) {
+      if (!payload?.tabId || payload?.connectionStatus?.isConnected !== true) {
         return;
       }
 
@@ -1179,30 +1301,36 @@ function AppContent() {
     SIDEBAR_WIDTHS,
   ]);
 
-  // 应用启动时加载连接配置和预加载组件
   React.useEffect(() => {
+    if (
+      credentialSecurityStatus.loading ||
+      !credentialSecurityStatus.unlocked ||
+      !window.terminalAPI
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
     const loadData = async () => {
       try {
-        if (window.terminalAPI) {
-          const loadedConnections =
-            (await window.terminalAPI.loadConnections()) || [];
-          if (Array.isArray(loadedConnections)) {
-            dispatch(actions.setConnections(loadedConnections));
+        const loadedConnections =
+          (await window.terminalAPI.loadConnections()) || [];
+        if (!cancelled && Array.isArray(loadedConnections)) {
+          dispatch(actions.setConnections(loadedConnections));
 
-            // loadTopConnections 现在返回完整的连接对象数组，不再是ID数组
-            const lastConnectionObjs =
-              (await window.terminalAPI.loadTopConnections()) || [];
-            if (
-              Array.isArray(lastConnectionObjs) &&
-              lastConnectionObjs.length > 0
-            ) {
-              const normalizedRecent = normalizeRecentConnections(
-                lastConnectionObjs,
-                loadedConnections,
-              );
-              if (normalizedRecent.length > 0) {
-                dispatch(actions.setTopConnections(normalizedRecent));
-              }
+          const lastConnectionObjs =
+            (await window.terminalAPI.loadTopConnections()) || [];
+          if (
+            Array.isArray(lastConnectionObjs) &&
+            lastConnectionObjs.length > 0
+          ) {
+            const normalizedRecent = normalizeRecentConnections(
+              lastConnectionObjs,
+              loadedConnections,
+            );
+            if (!cancelled && normalizedRecent.length > 0) {
+              dispatch(actions.setTopConnections(normalizedRecent));
             }
           }
         }
@@ -1213,7 +1341,17 @@ function AppContent() {
 
     loadData();
 
-    // 延迟预加载组件，避免影响应用启动性能
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    credentialSecurityStatus.loading,
+    credentialSecurityStatus.unlocked,
+    dispatch,
+  ]);
+
+  // 应用启动时注册预加载和事件监听
+  React.useEffect(() => {
     const preloadTimer = setTimeout(() => {
       // 再延迟一点预加载其他组件
       setTimeout(() => {
@@ -1229,7 +1367,7 @@ function AppContent() {
         // 更新终端实例中的进程ID
         dispatch(
           actions.setTerminalInstances({
-            ...terminalInstances,
+            ...terminalInstancesRef.current,
             [`${terminalId}-processId`]: processId,
           }),
         );
@@ -1237,7 +1375,7 @@ function AppContent() {
         // 更新进程缓存
         dispatch(
           actions.setProcessCache({
-            ...processCache,
+            ...processCacheRef.current,
             [terminalId]: processId,
           }),
         );
@@ -1256,7 +1394,7 @@ function AppContent() {
 
       removeSshListener();
     };
-  }, []);
+  }, [dispatch, eventManager]);
 
   // 当连接列表更新时，同步更新置顶连接列表
   React.useEffect(() => {
@@ -3804,6 +3942,17 @@ function AppContent() {
 
       {/* 设置对话框 */}
       <Settings open={settingsDialogOpen} onClose={handleCloseSettings} />
+
+      <MasterPasswordOverlay
+        open={
+          credentialSecurityStatus.loading ||
+          credentialSecurityStatus.requiresUnlock
+        }
+        loading={credentialSecurityStatus.loading}
+        isSubmitting={unlockingCredentialStore}
+        error={masterPasswordError}
+        onUnlock={handleUnlockCredentialStore}
+      />
 
       {/* 错误通知 */}
       <ErrorNotification
