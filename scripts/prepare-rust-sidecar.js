@@ -3,6 +3,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const projectRoot = path.resolve(__dirname, "..");
+const packageManifestPath = path.join(projectRoot, "package.json");
 const manifestPath = path.join(
   projectRoot,
   "transfernative",
@@ -11,9 +12,7 @@ const manifestPath = path.join(
 );
 const platformArchDir = `${process.platform}-${process.arch}`;
 const executableName =
-  process.platform === "win32"
-    ? "transfer-sidecar.exe"
-    : "transfer-sidecar";
+  process.platform === "win32" ? "transfer-sidecar.exe" : "transfer-sidecar";
 const buildOutputPath = path.join(
   projectRoot,
   "transfernative",
@@ -33,6 +32,50 @@ const sourceRoot = path.join(projectRoot, "transfernative", "transfer-sidecar");
 
 function log(message) {
   process.stdout.write(`[prepare-rust-sidecar] ${message}\n`);
+}
+
+function readJsonFile(jsonPath) {
+  return JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+}
+
+function getAppVersion() {
+  if (!fs.existsSync(packageManifestPath)) {
+    throw new Error(`package manifest not found: ${packageManifestPath}`);
+  }
+
+  const packageManifest = readJsonFile(packageManifestPath);
+  const version = packageManifest?.version;
+  if (typeof version !== "string" || !version.trim()) {
+    throw new Error(`invalid application version in ${packageManifestPath}`);
+  }
+
+  return version.trim();
+}
+
+function syncSidecarManifestVersion(appVersion) {
+  const manifestContent = fs.readFileSync(manifestPath, "utf8");
+  const packageSectionPattern =
+    /(\[package\][\s\S]*?\nversion\s*=\s*")([^"]+)(")/;
+  const match = manifestContent.match(packageSectionPattern);
+
+  if (!match) {
+    throw new Error(
+      `unable to locate package.version in native sidecar manifest: ${manifestPath}`,
+    );
+  }
+
+  const currentVersion = match[2];
+  if (currentVersion === appVersion) {
+    return false;
+  }
+
+  const updatedContent = manifestContent.replace(
+    packageSectionPattern,
+    `$1${appVersion}$3`,
+  );
+  fs.writeFileSync(manifestPath, updatedContent, "utf8");
+  log(`synced sidecar version ${currentVersion} -> ${appVersion}`);
+  return true;
 }
 
 function ensureDir(dirPath) {
@@ -122,7 +165,9 @@ function tryBuildWithCargo() {
   );
 
   if (result.error) {
-    log(`cargo unavailable, skipping native sidecar build: ${result.error.message}`);
+    log(
+      `cargo unavailable, skipping native sidecar build: ${result.error.message}`,
+    );
     return false;
   }
 
@@ -135,9 +180,18 @@ function tryBuildWithCargo() {
 
 function main() {
   ensureDir(path.join(projectRoot, "transfernative", "bin"));
+  const appVersion = getAppVersion();
+
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`native sidecar manifest not found: ${manifestPath}`);
+  }
+
+  syncSidecarManifestVersion(appVersion);
 
   if (hasStagedBinary() && !isStagedBinaryOutdated()) {
-    log(`using staged native sidecar at ${path.relative(projectRoot, stagedPath)}`);
+    log(
+      `using staged native sidecar at ${path.relative(projectRoot, stagedPath)}`,
+    );
     return;
   }
 
