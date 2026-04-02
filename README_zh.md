@@ -156,47 +156,80 @@ npm run make -- --platform=linux
 ```
 simpleshell/
 ├── src/
-│   ├── main.js              # 主进程入口
-│   ├── app.jsx              # 渲染进程入口
-│   ├── preload.js           # 预加载脚本
-│   ├── core/                # 核心模块
-│   │   ├── connection/      # 连接管理
-│   │   ├── transfer/        # 文件传输引擎
-│   │   ├── memory/          # 内存管理
-│   │   ├── ipc/            # IPC 通信
-│   │   └── proxy/          # 代理管理
-│   ├── modules/            # 功能模块
-│   │   ├── terminal/       # 终端实现
-│   │   ├── sftp/          # SFTP 操作
-│   │   ├── system-info/   # 系统监控
-│   │   └── connection/    # 连接处理
-│   ├── components/        # React 组件
-│   └── i18n/             # 国际化
-├── forge.config.js       # Electron Forge 配置
-└── webpack.*.config.js   # Webpack 配置
+│   ├── main.js              # 主进程入口（Electron main）
+│   ├── app.jsx              # 渲染进程入口（React 应用）
+│   ├── preload.js           # 预加载脚本（contextBridge/expose）
+│   ├── components/         # React UI 组件
+│   ├── core/                # 核心模块 / 底层能力
+│   │   ├── app/            # App 启动与接线
+│   │   ├── connection/     # 协议连接原语/连接池
+│   │   ├── ipc/            # IPC 帮助方法/服务
+│   │   ├── terminal/       # 终端运行时（本地/远程）
+│   │   ├── local-terminal/ # 本地终端集成
+│   │   ├── process/        # 进程/pty 辅助
+│   │   ├── proxy/          # 代理管理
+│   │   ├── services/       # 共享核心服务
+│   │   ├── window/         # 窗口与生命周期辅助
+│   │   └── workers/        # Worker 线程逻辑
+│   ├── modules/            # 功能模块（供 UI 调用）
+│   │   ├── connection/     # 连接处理（应用层编排）
+│   │   ├── filemanagement/ # 文件管理/传输编排
+│   │   ├── sftp/           # SFTP 操作
+│   │   ├── system-info/   # 系统监控（本地/远程）
+│   │   └── terminal/      # 终端功能
+│   ├── services/           # 应用服务（例如 config）
+│   ├── store/              # 状态管理
+│   ├── workers/            # Worker 入口
+│   ├── hooks/              # React hooks
+│   ├── contexts/           # React contexts
+│   ├── i18n/               # 国际化
+│   ├── styles/             # 全局样式
+│   ├── theme/              # 主题样式/Token
+│   └── utils/              # 公共工具
+├── transfernative/         # 原生传输 sidecar（Rust）
+├── forge.config.js         # Electron Forge 配置
+├── webpack.main.config.js  # Electron main 的 Webpack 配置
+└── webpack.renderer.config.js # Electron renderer 的 Webpack 配置
 ```
 
 ## **技术栈**
 
 ### **核心技术**
 
-- **[Electron](https://www.electronjs.org/)** v37.4.0 - 跨平台桌面框架
-- **[React](https://react.dev/)** v18.3.1 - UI 库
-- **[Material-UI](https://mui.com/)** v7 - 组件库
-- **[TypeScript](https://www.typescriptlang.org/)** - 类型安全
+- **[Electron](https://www.electronjs.org/)** 40.4.1 - 跨平台桌面框架
+- **[React](https://react.dev/)** 19.2.4 - UI 库（React 19）
+- **[Material UI](https://mui.com/)** 7.3.9 - 组件库
+- **Electron Forge + Webpack** + **ESLint/Prettier** - 构建与代码质量工具链
+- JavaScript/JSX + Babel 工具链（此仓库未使用 TypeScript 构建）
 
 ### **终端与 SSH**
 
-- **[xterm.js](https://xtermjs.org/)** - 终端模拟器
-- **[ssh2](https://github.com/mscdex/ssh2)** - SSH/SFTP 客户端
-- **[node-pty](https://github.com/microsoft/node-pty)** - 伪终端支持
+- **[xterm.js](https://xtermjs.org/)** 6.1.0-beta.167 - 终端模拟器 + 常用 Addon
+  - `@xterm/addon-fit`, `@xterm/addon-search`, `@xterm/addon-web-links`, `@xterm/addon-image`, `@xterm/addon-webgl`
+- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - SSH/SFTP 客户端
+- **[node-pty](https://github.com/microsoft/node-pty)** 1.2.0-beta.11 - 伪终端支持
+- **[telnet-client](https://www.npmjs.com/package/telnet-client)** 2.2.13 - Telnet 客户端
 
-### **其他库**
+### **文件传输（原生 Sidecar）**
 
-- **[CodeMirror](https://codemirror.net/)** - 带语法高亮的代码编辑器
-- **[i18next](https://www.i18next.com/)** - 国际化
-- **[React Beautiful DnD](https://github.com/atlassian/react-beautiful-dnd)** - 拖放功能
-- **[React Simple Maps](https://www.react-simple-maps.io/)** - 世界地图可视化
+- **Rust sidecar（`transfernative/`）** - 原生 “transfer-sidecar”，用于加速/增强大文件传输可靠性
+
+### **编辑、预览与渲染**
+
+- **CodeMirror 6**（`@codemirror/*`、`@uiw/react-codemirror`）- 语法高亮与编辑器
+- **highlight.js** - 额外的代码高亮
+- **react-markdown** + `remark-gfm` - Markdown 渲染
+- **react-syntax-highlighter** - 渲染内容的代码高亮兜底
+- **react-pdf** - PDF 预览
+- **DND kit**（`@dnd-kit/*`）- 拖放交互
+
+### **国际化、UI 与工具**
+
+- **i18next** + **react-i18next** - 国际化
+- **react-simple-maps** - 世界地图可视化
+- **systeminformation** - 系统信息采集
+- 代理支持：`http-proxy-agent`、`https-proxy-agent`、`socks-proxy-agent`
+- 性能辅助：`react-window`、`react-window-infinite-loader`
 
 ## **贡献**
 

@@ -156,47 +156,80 @@ npm run make -- --platform=linux
 ```
 simpleshell/
 ├── src/
-│   ├── main.js              # Main process entry
-│   ├── app.jsx              # Renderer process entry
-│   ├── preload.js           # Preload script
-│   ├── core/                # Core modules
-│   │   ├── connection/      # Connection management
-│   │   ├── transfer/        # File transfer engine
-│   │   ├── memory/          # Memory management
-│   │   ├── ipc/            # IPC communication
-│   │   └── proxy/          # Proxy management
-│   ├── modules/            # Feature modules
-│   │   ├── terminal/       # Terminal implementation
-│   │   ├── sftp/          # SFTP operations
-│   │   ├── system-info/   # System monitoring
-│   │   └── connection/    # Connection handling
-│   ├── components/        # React components
-│   └── i18n/             # Internationalization
-├── forge.config.js       # Electron Forge configuration
-└── webpack.*.config.js   # Webpack configurations
+│   ├── main.js              # Main process entry (Electron main)
+│   ├── app.jsx              # Renderer entry (React app)
+│   ├── preload.js           # Preload script (contextBridge/expose)
+│   ├── components/         # React UI components
+│   ├── core/                # Core modules / low-level primitives
+│   │   ├── app/            # App bootstrap wiring
+│   │   ├── connection/     # Protocol connection primitives/pools
+│   │   ├── ipc/            # IPC helpers/services
+│   │   ├── terminal/       # Terminal runtime (local/remote)
+│   │   ├── local-terminal/ # Local terminal integration
+│   │   ├── process/        # Process/pty helpers
+│   │   ├── proxy/          # Proxy management
+│   │   ├── services/       # Shared core services
+│   │   ├── window/         # Window + lifecycle helpers
+│   │   └── workers/        # Worker-thread logic
+│   ├── modules/            # Feature modules (used by the UI)
+│   │   ├── connection/     # Connection handling (app-level orchestration)
+│   │   ├── filemanagement/ # File manager / transfer orchestration
+│   │   ├── sftp/           # SFTP operations
+│   │   ├── system-info/   # System monitoring (local/remote)
+│   │   └── terminal/      # Terminal feature
+│   ├── services/           # App services (e.g. config)
+│   ├── store/              # State management
+│   ├── workers/            # Worker entry points
+│   ├── hooks/              # React hooks
+│   ├── contexts/           # React contexts
+│   ├── i18n/               # Internationalization
+│   ├── styles/             # Global styles
+│   ├── theme/              # Theme tokens/styles
+│   └── utils/              # Shared utilities
+├── transfernative/         # Native transfer sidecar (Rust)
+├── forge.config.js         # Electron Forge configuration
+├── webpack.main.config.js  # Webpack config for Electron main
+└── webpack.renderer.config.js # Webpack config for Electron renderer
 ```
 
 ## **Tech Stack**
 
 ### **Core Technologies**
 
-- **[Electron](https://www.electronjs.org/)** v37.4.0 - Cross-platform desktop framework
-- **[React](https://react.dev/)** v18.3.1 - UI library
-- **[Material-UI](https://mui.com/)** v7 - Component library
-- **[TypeScript](https://www.typescriptlang.org/)** - Type safety
+- **[Electron](https://www.electronjs.org/)** 40.4.1 - Cross-platform desktop framework
+- **[React](https://react.dev/)** 19.2.4 - UI library (React 19)
+- **[Material UI](https://mui.com/)** 7.3.9 - Component library
+- **Electron Forge + Webpack** + **ESLint/Prettier** - Build and code quality toolchain
+- JavaScript/JSX + Babel toolchain (no TypeScript build in this repo)
 
 ### **Terminal & SSH**
 
-- **[xterm.js](https://xtermjs.org/)** - Terminal emulator
-- **[ssh2](https://github.com/mscdex/ssh2)** - SSH/SFTP client
-- **[node-pty](https://github.com/microsoft/node-pty)** - Pseudo terminal support
+- **[xterm.js](https://xtermjs.org/)** 6.1.0-beta.167 - Terminal emulator + add-ons
+  - `@xterm/addon-fit`, `@xterm/addon-search`, `@xterm/addon-web-links`, `@xterm/addon-image`, `@xterm/addon-webgl`
+- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - SSH/SFTP client
+- **[node-pty](https://github.com/microsoft/node-pty)** 1.2.0-beta.11 - Pseudo terminal support
+- **[telnet-client](https://www.npmjs.com/package/telnet-client)** 2.2.13 - Telnet client
 
-### **Additional Libraries**
+### **File Transfer (Native Sidecar)**
 
-- **[CodeMirror](https://codemirror.net/)** - Code editor with syntax highlighting
-- **[i18next](https://www.i18next.com/)** - Internationalization
-- **[React Beautiful DnD](https://github.com/atlassian/react-beautiful-dnd)** - Drag and drop
-- **[React Simple Maps](https://www.react-simple-maps.io/)** - World map visualization
+- **Rust sidecar (`transfernative/`)** - Native “transfer-sidecar” to speed up/robustify large transfers
+
+### **Editing, Preview & Rendering**
+
+- **CodeMirror 6** (`@codemirror/*`, `@uiw/react-codemirror`) - Syntax highlighting and editors
+- **highlight.js** - Additional code highlighting
+- **react-markdown** + `remark-gfm` - Markdown rendering
+- **react-syntax-highlighter** - Fallback code highlighting for rendered markdown/code
+- **react-pdf** - PDF preview
+- **DND kit** (`@dnd-kit/*`) - Drag-and-drop interactions
+
+### **Internationalization, UI & Utilities**
+
+- **i18next** + **react-i18next** - Internationalization
+- **react-simple-maps** - World map visualization
+- **systeminformation** - System info collection
+- Proxy support: `http-proxy-agent`, `https-proxy-agent`, `socks-proxy-agent`
+- Performance helpers: `react-window`, `react-window-infinite-loader`
 
 ## **Connection Architecture**
 
