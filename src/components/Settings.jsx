@@ -158,6 +158,12 @@ const Settings = memo(({ open, onClose }) => {
   const [maxFileSize, setMaxFileSize] = React.useState(5);
   const [cleanupIntervalDays, setCleanupIntervalDays] = React.useState(7);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [masterPasswordEnabled, setMasterPasswordEnabled] =
+    React.useState(false);
+  const [initialMasterPasswordEnabled, setInitialMasterPasswordEnabled] =
+    React.useState(false);
+  const [masterPassword, setMasterPassword] = React.useState("");
+  const [confirmMasterPassword, setConfirmMasterPassword] = React.useState("");
 
   // 性能设置状态
   const [imageSupported, setImageSupported] = React.useState(true);
@@ -233,6 +239,17 @@ const Settings = memo(({ open, onClose }) => {
             // 保存原始设置用于比较
             setOriginalPerformanceSettings(performanceSettings);
           }
+        }
+
+        if (window.terminalAPI?.getCredentialSecurityStatus) {
+          const response =
+            await window.terminalAPI.getCredentialSecurityStatus();
+          const securityStatus = response?.success ? response.status : response;
+          const enabled = securityStatus?.masterPasswordEnabled === true;
+          setMasterPasswordEnabled(enabled);
+          setInitialMasterPasswordEnabled(enabled);
+          setMasterPassword("");
+          setConfirmMasterPassword("");
         }
 
         // 加载日志设置
@@ -358,6 +375,59 @@ const Settings = memo(({ open, onClose }) => {
   // Save settings
   const handleSave = async () => {
     try {
+      const shouldUpdateCredentialSecurity =
+        masterPasswordEnabled !== initialMasterPasswordEnabled ||
+        (masterPasswordEnabled && masterPassword.trim() !== "");
+
+      if (shouldUpdateCredentialSecurity) {
+        if (
+          masterPasswordEnabled &&
+          !initialMasterPasswordEnabled &&
+          !masterPassword.trim()
+        ) {
+          showError(t("settings.security.passwordRequired"));
+          return;
+        }
+
+        if (masterPasswordEnabled && masterPassword.trim()) {
+          if (masterPassword !== confirmMasterPassword) {
+            showError(t("settings.security.passwordMismatch"));
+            return;
+          }
+        }
+
+        if (window.terminalAPI?.updateCredentialSecurity) {
+          const securityResponse =
+            await window.terminalAPI.updateCredentialSecurity({
+              masterPasswordEnabled,
+              masterPassword: masterPasswordEnabled ? masterPassword : "",
+            });
+
+          if (securityResponse?.success === false) {
+            throw new Error(
+              securityResponse.error || t("settings.security.updateFailed"),
+            );
+          }
+
+          const securityStatus = securityResponse?.status ||
+            securityResponse?.data || {
+              masterPasswordEnabled,
+              unlocked: true,
+              requiresUnlock: false,
+            };
+
+          window.dispatchEvent(
+            new CustomEvent("credentialSecurityChanged", {
+              detail: { status: securityStatus },
+            }),
+          );
+
+          setInitialMasterPasswordEnabled(masterPasswordEnabled);
+          setMasterPassword("");
+          setConfirmMasterPassword("");
+        }
+      }
+
       // 保存UI设置
       if (window.terminalAPI?.saveUISettings) {
         const settings = {
@@ -444,8 +514,8 @@ const Settings = memo(({ open, onClose }) => {
       setTimeout(() => {
         onClose();
       }, 500);
-    } catch {
-      showError(t("settings.saveError"));
+    } catch (error) {
+      showError(error?.message || t("settings.saveError"));
     }
   };
 
@@ -507,7 +577,9 @@ const Settings = memo(({ open, onClose }) => {
                         <MenuItem value="light">
                           {t("settings.themeLight")}
                         </MenuItem>
-                        <MenuItem value="dark">{t("settings.themeDark")}</MenuItem>
+                        <MenuItem value="dark">
+                          {t("settings.themeDark")}
+                        </MenuItem>
                       </Select>
                     </FormControl>
                   </Box>
@@ -638,6 +710,78 @@ const Settings = memo(({ open, onClose }) => {
                     disabled={!externalEditorEnabled}
                   />
                 </Box>
+
+                <Box sx={{ ...sectionCardSx, mt: 2.25 }}>
+                  <Box sx={sectionTitleRowSx}>
+                    <Typography variant="subtitle1">
+                      {t("settings.security.title")}
+                    </Typography>
+                  </Box>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 1.5 }}
+                  >
+                    {t("settings.security.description")}
+                  </Typography>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={masterPasswordEnabled}
+                        onChange={(e) =>
+                          setMasterPasswordEnabled(e.target.checked)
+                        }
+                        size="small"
+                      />
+                    }
+                    label={
+                      <Typography variant="body2">
+                        {t("settings.security.enable")}
+                      </Typography>
+                    }
+                  />
+
+                  {masterPasswordEnabled ? (
+                    <Box sx={{ mt: 1.25 }}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block", mb: 1.25 }}
+                      >
+                        {initialMasterPasswordEnabled
+                          ? t("settings.security.changeHint")
+                          : t("settings.security.createHint")}
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="password"
+                        label={t("settings.security.password")}
+                        value={masterPassword}
+                        onChange={(e) => setMasterPassword(e.target.value)}
+                        sx={{ mb: 1.25 }}
+                      />
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="password"
+                        label={t("settings.security.confirmPassword")}
+                        value={confirmMasterPassword}
+                        onChange={(e) =>
+                          setConfirmMasterPassword(e.target.value)
+                        }
+                      />
+                    </Box>
+                  ) : (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mt: 0.75 }}
+                    >
+                      {t("settings.security.disableHint")}
+                    </Typography>
+                  )}
+                </Box>
               </Grid>
             </Grid>
 
@@ -717,7 +861,11 @@ const Settings = memo(({ open, onClose }) => {
                     {t("settings.logSettingsTitle")}
                   </Typography>
                   <Box sx={{ display: "flex", gap: 1 }}>
-                    <FormControl variant="outlined" size="small" sx={{ flex: 1 }}>
+                    <FormControl
+                      variant="outlined"
+                      size="small"
+                      sx={{ flex: 1 }}
+                    >
                       <Select value={logLevel} onChange={handleLogLevelChange}>
                         {logLevels.map((level) => (
                           <MenuItem key={level.value} value={level.value}>
