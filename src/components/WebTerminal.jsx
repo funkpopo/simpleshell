@@ -2620,7 +2620,7 @@ const WebTerminal = ({
         }
       };
 
-      const handleVisibilityChange = () => {
+      const handleShortcutRecoveryVisibilityChange = () => {
         if (!document.hidden && pendingSystemShortcutRecoveryRef.current) {
           scheduleShortcutRecovery({ delays: [0, 80, 180] });
         }
@@ -2634,7 +2634,7 @@ const WebTerminal = ({
       eventManager.addEventListener(
         document,
         "visibilitychange",
-        handleVisibilityChange,
+        handleShortcutRecoveryVisibilityChange,
       );
 
       // 使用EventManager添加鼠标事件监听
@@ -2904,7 +2904,7 @@ const WebTerminal = ({
       );
 
       // 优化的可见性变化处理，使用防抖减少频繁调用
-      const handleVisibilityChange = debounce(() => {
+      const handleTerminalVisibilityChange = debounce(() => {
         if (
           !document.hidden &&
           termRef.current &&
@@ -2917,7 +2917,7 @@ const WebTerminal = ({
       eventManager.addEventListener(
         document,
         "visibilitychange",
-        handleVisibilityChange,
+        handleTerminalVisibilityChange,
       );
 
       const attributeObserver =
