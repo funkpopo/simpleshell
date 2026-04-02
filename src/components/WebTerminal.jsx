@@ -22,6 +22,10 @@ import { RendererTerminalIOMailbox } from "../modules/terminal/io/RendererTermin
 import { isPromptReadyFromTerminal } from "../modules/terminal/promptDetection.js";
 import { resetSessionRestoreInteractionState } from "../modules/terminal/sessionRestoreUI.js";
 import {
+  isSystemShortcutRecoveryKey,
+  shouldArmSystemShortcutRecovery,
+} from "../modules/terminal/systemShortcutRecovery.js";
+import {
   TERMINAL_RESIZE_QUERY_REGEX,
   ensureSharedTerminalStyles,
   getCharacterMetricsCss,
@@ -481,6 +485,8 @@ const WebTerminal = ({
   const [isShellPromptReady, setIsShellPromptReady] = useState(false);
   const lastExecutedCommandTimeRef = useRef(0);
   const lastExecutedCommandRef = useRef("");
+  const pendingSystemShortcutRecoveryRef = useRef(false);
+  const recoverTerminalInteractionStateRef = useRef(() => {});
   const promptTrackingStateRef = useRef(createPromptTrackingState());
   const pendingCommandBoundaryRef = useRef({
     command: "",
@@ -540,6 +546,38 @@ const WebTerminal = ({
   useEffect(() => {
     inEditorModeRef.current = inEditorMode;
   }, [inEditorMode]);
+
+  const focusTerminalInput = useCallback(() => {
+    if (
+      !isActiveRef.current ||
+      !termRef.current ||
+      !terminalRef.current ||
+      terminalRef.current.offsetWidth <= 0 ||
+      terminalRef.current.offsetHeight <= 0
+    ) {
+      return false;
+    }
+
+    try {
+      const helperTextarea = termRef.current.element?.querySelector(
+        ".xterm-helper-textarea",
+      );
+
+      if (helperTextarea && document.activeElement !== helperTextarea) {
+        helperTextarea.focus();
+        return true;
+      }
+
+      if (typeof termRef.current.focus === "function") {
+        termRef.current.focus();
+        return true;
+      }
+    } catch {
+      /* intentionally ignored */
+    }
+
+    return false;
+  }, []);
 
   const applyPromptTrackingState = useCallback((nextState = {}) => {
     const state = promptTrackingStateRef.current;
@@ -629,6 +667,65 @@ const WebTerminal = ({
     },
     [applyPromptTrackingState],
   );
+
+  const recoverTerminalInteractionState = useCallback(
+    ({ refocus = true, refreshSuggestions = true } = {}) => {
+      const term = termRef.current;
+      if (!term) {
+        pendingSystemShortcutRecoveryRef.current = false;
+        return;
+      }
+
+      clearPendingWrappedInputRefresh(term);
+
+      if (refocus) {
+        focusTerminalInput();
+      }
+
+      syncPromptTrackingFromTerminal(term);
+      updateCursorPosition();
+      scheduleHighlightRefresh(term);
+
+      const promptReady =
+        promptTrackingStateRef.current.promptReady &&
+        !promptTrackingStateRef.current.commandRunning;
+
+      if (
+        promptReady &&
+        refreshSuggestions &&
+        currentInput.trim() &&
+        !inEditorModeRef.current &&
+        !suggestionsHiddenByEsc &&
+        !suggestionsSuppressedUntilEnter &&
+        !isCommandExecuting
+      ) {
+        getSuggestions(currentInput);
+      } else if (!promptReady || !currentInput.trim()) {
+        setShowSuggestions(false);
+        setSuggestions([]);
+      }
+
+      pendingSystemShortcutRecoveryRef.current = false;
+    },
+    [
+      currentInput,
+      focusTerminalInput,
+      getSuggestions,
+      isCommandExecuting,
+      scheduleHighlightRefresh,
+      setShowSuggestions,
+      setSuggestions,
+      suggestionsHiddenByEsc,
+      suggestionsSuppressedUntilEnter,
+      syncPromptTrackingFromTerminal,
+      updateCursorPosition,
+    ],
+  );
+
+  useEffect(() => {
+    recoverTerminalInteractionStateRef.current =
+      recoverTerminalInteractionState;
+  }, [recoverTerminalInteractionState]);
 
   // 优化的选择元素调整函数 - 避免重复高亮
   const adjustSelectionElements = () => {
@@ -1004,6 +1101,16 @@ const WebTerminal = ({
       if (data && data.length > 0) {
         // console.log("[onData]", JSON.stringify(data), "processId=", processId);
       }
+
+      if (
+        pendingSystemShortcutRecoveryRef.current &&
+        typeof data === "string" &&
+        data.length > 0 &&
+        !["\x1b", "Shift", "Alt"].includes(data)
+      ) {
+        pendingSystemShortcutRecoveryRef.current = false;
+      }
+
       const canTrackPromptInput =
         promptTrackingStateRef.current.promptReady &&
         !promptTrackingStateRef.current.commandRunning;
@@ -2330,9 +2437,51 @@ const WebTerminal = ({
         setSearchAddonVersion((prev) => prev + 1);
       }
 
+      const isTerminalShortcutContext = (target) => {
+        const helperTextarea = term.element?.querySelector(
+          ".xterm-helper-textarea",
+        );
+
+        return (
+          target?.classList?.contains?.("xterm-helper-textarea") ||
+          document.activeElement === helperTextarea
+        );
+      };
+
+      const scheduleShortcutRecovery = ({
+        delays = [0, 40, 120],
+        refocus = true,
+      } = {}) => {
+        if (!pendingSystemShortcutRecoveryRef.current) {
+          return;
+        }
+
+        delays.forEach((delay) => {
+          eventManager.setTimeout(() => {
+            if (!pendingSystemShortcutRecoveryRef.current) {
+              return;
+            }
+
+            recoverTerminalInteractionStateRef.current({
+              refocus,
+              refreshSuggestions: true,
+            });
+          }, delay);
+        });
+      };
+
       // 添加键盘快捷键支持
       const handleKeyDown = (e) => {
         syncTerminalLinkCtrlState(term, e.ctrlKey);
+
+        if (
+          shouldArmSystemShortcutRecovery(e, {
+            terminalFocused: isTerminalShortcutContext(e.target),
+          })
+        ) {
+          pendingSystemShortcutRecoveryRef.current = true;
+          return;
+        }
 
         // Alt+F1 全局快捷键，始终允许冒泡到 app.jsx 处理
         if (e.altKey && e.key === "F1") {
@@ -2452,20 +2601,74 @@ const WebTerminal = ({
 
       const handleKeyUp = (e) => {
         syncTerminalLinkCtrlState(term, e.ctrlKey);
+
+        if (
+          pendingSystemShortcutRecoveryRef.current &&
+          isSystemShortcutRecoveryKey(e)
+        ) {
+          scheduleShortcutRecovery();
+        }
       };
 
       const handleWindowBlur = () => {
         syncTerminalLinkCtrlState(term, false);
       };
 
+      const handleWindowFocus = () => {
+        if (pendingSystemShortcutRecoveryRef.current) {
+          scheduleShortcutRecovery({ delays: [0, 60, 160] });
+        }
+      };
+
+      const handleVisibilityChange = () => {
+        if (!document.hidden && pendingSystemShortcutRecoveryRef.current) {
+          scheduleShortcutRecovery({ delays: [0, 80, 180] });
+        }
+      };
+
       // 使用EventManager添加键盘事件监听
       eventManager.addEventListener(document, "keydown", handleKeyDown);
       eventManager.addEventListener(document, "keyup", handleKeyUp);
       eventManager.addEventListener(window, "blur", handleWindowBlur);
+      eventManager.addEventListener(window, "focus", handleWindowFocus);
+      eventManager.addEventListener(
+        document,
+        "visibilitychange",
+        handleVisibilityChange,
+      );
 
       // 使用EventManager添加鼠标事件监听
       // 中键事件使用捕获阶段，确保在xterm.js处理之前拦截
       if (terminalRef.current) {
+        const helperTextarea = term.element?.querySelector(
+          ".xterm-helper-textarea",
+        );
+        if (helperTextarea) {
+          eventManager.addEventListener(helperTextarea, "blur", () => {
+            if (pendingSystemShortcutRecoveryRef.current) {
+              scheduleShortcutRecovery({ delays: [20, 100, 220] });
+            }
+          });
+          eventManager.addEventListener(
+            helperTextarea,
+            "compositionend",
+            () => {
+              if (pendingSystemShortcutRecoveryRef.current) {
+                scheduleShortcutRecovery({ delays: [0, 40, 120] });
+              }
+            },
+          );
+          eventManager.addEventListener(
+            helperTextarea,
+            "compositioncancel",
+            () => {
+              if (pendingSystemShortcutRecoveryRef.current) {
+                scheduleShortcutRecovery({ delays: [0, 40, 120] });
+              }
+            },
+          );
+        }
+
         eventManager.addEventListener(
           terminalRef.current,
           "mousedown",
