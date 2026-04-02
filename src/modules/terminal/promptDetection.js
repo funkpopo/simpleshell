@@ -1,4 +1,4 @@
-const PASSIVE_PROMPT_PATTERNS = Object.freeze([
+const SHELL_PROMPT_PATTERNS = Object.freeze([
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[\w.-]+@[\w.-]+(?::[^\r\n#$%>]*)?)[#$%]\s*$/,
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[~./][^\r\n#$%>]*)[#$%]\s*$/,
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[\w.-]+)[#$%]\s*$/,
@@ -7,12 +7,24 @@ const PASSIVE_PROMPT_PATTERNS = Object.freeze([
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[A-Za-z]:\\[^\r\n>]*>\s*$/,
 ]);
 
-const PASSIVE_PROMPT_INPUT_PATTERNS = Object.freeze([
+const SHELL_PROMPT_INPUT_PATTERNS = Object.freeze([
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[\w.-]+@[\w.-]+(?::[^\r\n#$%>]*)?)[#$%]\s+.+$/,
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[~./][^\r\n#$%>]*)[#$%]\s+.+$/,
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[#$%]\s+.+$/,
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*PS [^\r\n>]+>\s+.+$/,
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[A-Za-z]:\\[^\r\n>]*>\s+.+$/,
+]);
+
+const DATABASE_PROMPT_PATTERNS = Object.freeze([
+  /^(?:mysql|sqlite|duckdb)>\s*$/i,
+  /^MariaDB \[[^\]\r\n]*\]>\s*$/i,
+  /^[^\s\r\n]+(?:=>|=#)\s*$/,
+]);
+
+const DATABASE_PROMPT_INPUT_PATTERNS = Object.freeze([
+  /^(?:mysql|sqlite|duckdb)>\s+.+$/i,
+  /^MariaDB \[[^\]\r\n]*\]>\s+.+$/i,
+  /^[^\s\r\n]+(?:=>|=#)\s+.+$/,
 ]);
 
 const CONTINUATION_PROMPT_PATTERNS = Object.freeze([
@@ -21,6 +33,11 @@ const CONTINUATION_PROMPT_PATTERNS = Object.freeze([
   /^dquote>\s*$/i,
   /^heredoc>\s*$/i,
   /^\.\.\.\s*$/,
+  /^->\s*$/,
+  /^'>\s*$/,
+  /^">\s*$/,
+  /^`>\s*$/,
+  /^[^\s\r\n]+(?:->|-#|'>|">|`>|#>|~>)\s*$/,
 ]);
 
 const normalizePromptLine = (value = "") =>
@@ -28,7 +45,7 @@ const normalizePromptLine = (value = "") =>
     .replace(/\u00a0/g, " ")
     .replace(/\s+$/g, "");
 
-export const getLogicalLineUntilCursor = (term) => {
+const getLogicalLineUntilCursor = (term) => {
   const buffer = term?.buffer?.active;
   if (!buffer) {
     return "";
@@ -57,7 +74,7 @@ export const getLogicalLineUntilCursor = (term) => {
   return normalizePromptLine(parts.join(""));
 };
 
-export const isLikelyPromptLine = (line) => {
+const isLikelyPromptLine = (line) => {
   const normalized = normalizePromptLine(line);
   if (!normalized) {
     return false;
@@ -70,12 +87,14 @@ export const isLikelyPromptLine = (line) => {
   }
 
   return (
-    PASSIVE_PROMPT_PATTERNS.some((pattern) => pattern.test(normalized)) ||
-    PASSIVE_PROMPT_INPUT_PATTERNS.some((pattern) => pattern.test(normalized))
+    SHELL_PROMPT_PATTERNS.some((pattern) => pattern.test(normalized)) ||
+    SHELL_PROMPT_INPUT_PATTERNS.some((pattern) => pattern.test(normalized)) ||
+    DATABASE_PROMPT_PATTERNS.some((pattern) => pattern.test(normalized)) ||
+    DATABASE_PROMPT_INPUT_PATTERNS.some((pattern) => pattern.test(normalized))
   );
 };
 
-export const isPromptReadyFromTerminal = (term) => {
+const isPromptReadyFromTerminal = (term) => {
   if (term?.buffer?.active?.type === "alternate") {
     return false;
   }
@@ -84,7 +103,7 @@ export const isPromptReadyFromTerminal = (term) => {
   return isLikelyPromptLine(currentLine);
 };
 
-export default {
+module.exports = {
   getLogicalLineUntilCursor,
   isLikelyPromptLine,
   isPromptReadyFromTerminal,
