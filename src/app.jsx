@@ -216,6 +216,86 @@ const resolveRecentConnection = (candidate, connections) => {
   return null;
 };
 
+const getConnectionSyncSignature = (connection) =>
+  JSON.stringify({
+    id: connection?.id || "",
+    connectionId: connection?.connectionId || "",
+    name: connection?.name || "",
+    host: connection?.host || "",
+    port: Number(connection?.port) || 0,
+    username: connection?.username || "",
+    password: connection?.password || "",
+    authType: connection?.authType || "",
+    privateKeyPath: connection?.privateKeyPath || "",
+    country: connection?.country || "",
+    os: connection?.os || "",
+    connectionType: connection?.connectionType || "",
+    protocol: connection?.protocol || "",
+    proxy: connection?.proxy || null,
+  });
+
+const syncTerminalInstanceConfigs = (
+  terminalInstances,
+  tabs,
+  connections,
+) => {
+  if (!terminalInstances || typeof terminalInstances !== "object") {
+    return terminalInstances;
+  }
+
+  const tabList = Array.isArray(tabs) ? tabs : [];
+  let nextInstances = terminalInstances;
+
+  for (const tab of tabList) {
+    if (!tab || (tab.type !== "ssh" && tab.type !== "telnet")) {
+      continue;
+    }
+
+    const configKey = `${tab.id}-config`;
+    const currentConfig = terminalInstances[configKey];
+    if (!currentConfig || typeof currentConfig !== "object") {
+      continue;
+    }
+
+    const latestConnection = resolveRecentConnection(
+      {
+        id: tab.connectionId || currentConfig.id,
+        connectionId: tab.connectionId || currentConfig.connectionId,
+        serverKey: currentConfig.serverKey || buildServerKey(currentConfig),
+        host: currentConfig.host,
+        port: currentConfig.port,
+        username: currentConfig.username,
+        protocol: currentConfig.protocol || tab.type,
+      },
+      connections,
+    );
+
+    if (!latestConnection || latestConnection.type !== "connection") {
+      continue;
+    }
+
+    const mergedConfig = {
+      ...currentConfig,
+      ...latestConnection,
+      tabId: currentConfig.tabId || tab.id,
+    };
+
+    if (
+      getConnectionSyncSignature(mergedConfig) ===
+      getConnectionSyncSignature(currentConfig)
+    ) {
+      continue;
+    }
+
+    if (nextInstances === terminalInstances) {
+      nextInstances = { ...terminalInstances };
+    }
+    nextInstances[configKey] = mergedConfig;
+  }
+
+  return nextInstances;
+};
+
 const normalizeRecentConnections = (recentConnections, connections) => {
   if (!Array.isArray(recentConnections)) return [];
   return recentConnections
@@ -608,6 +688,31 @@ function AppContent() {
   React.useEffect(() => {
     processCacheRef.current = processCache;
   }, [processCache]);
+
+  const refreshConnectionState = useCallback(async () => {
+    if (!window.terminalAPI?.loadConnections) {
+      return;
+    }
+
+    const loadedConnections = (await window.terminalAPI.loadConnections()) || [];
+    if (!Array.isArray(loadedConnections)) {
+      return;
+    }
+
+    dispatch(actions.setConnections(loadedConnections));
+
+    try {
+      const topConnectionCandidates =
+        (await window.terminalAPI.loadTopConnections?.()) || [];
+      const normalizedRecent = normalizeRecentConnections(
+        Array.isArray(topConnectionCandidates) ? topConnectionCandidates : [],
+        loadedConnections,
+      );
+      dispatch(actions.setTopConnections(normalizedRecent));
+    } catch {
+      dispatch(actions.setTopConnections([]));
+    }
+  }, [dispatch]);
 
   // 锁定的文件管理器tabId（在打开时不随标签页切换而变化）
   const [lockedFileManagerTabId, setLockedFileManagerTabId] = useState(null);
@@ -1007,11 +1112,44 @@ function AppContent() {
       console.error("Failed to respond SSH auth:", error);
     }
 
+    const targetTabId =
+      sshAuthData?.tabId || sshAuthConnectionConfig?.tabId || null;
+    if (targetTabId) {
+      const configKey = `${targetTabId}-config`;
+      const currentConfig =
+        terminalInstancesRef.current?.[configKey] || sshAuthConnectionConfig;
+
+      if (currentConfig) {
+        dispatch(
+          actions.setTerminalInstances({
+            ...terminalInstancesRef.current,
+            [configKey]: {
+              ...currentConfig,
+              username:
+                authResult?.username !== undefined
+                  ? authResult.username
+                  : currentConfig.username,
+              password:
+                authResult?.password !== undefined
+                  ? authResult.password
+                  : currentConfig.password,
+              privateKeyPath:
+                authResult?.privateKeyPath !== undefined
+                  ? authResult.privateKeyPath
+                  : currentConfig.privateKeyPath,
+              authType:
+                authResult?.authType || currentConfig.authType || "password",
+            },
+          }),
+        );
+      }
+    }
+
     setSshAuthDialogOpen(false);
     setSshAuthData(null);
     setSshAuthConnectionConfig(null);
     sshAuthRequestIdRef.current = null;
-  }, []);
+  }, [dispatch, sshAuthConnectionConfig, sshAuthData]);
 
   // 处理 SSH 认证对话框关闭/取消
   const handleSSHAuthClose = React.useCallback(async () => {
@@ -1314,25 +1452,8 @@ function AppContent() {
 
     const loadData = async () => {
       try {
-        const loadedConnections =
-          (await window.terminalAPI.loadConnections()) || [];
-        if (!cancelled && Array.isArray(loadedConnections)) {
-          dispatch(actions.setConnections(loadedConnections));
-
-          const lastConnectionObjs =
-            (await window.terminalAPI.loadTopConnections()) || [];
-          if (
-            Array.isArray(lastConnectionObjs) &&
-            lastConnectionObjs.length > 0
-          ) {
-            const normalizedRecent = normalizeRecentConnections(
-              lastConnectionObjs,
-              loadedConnections,
-            );
-            if (!cancelled && normalizedRecent.length > 0) {
-              dispatch(actions.setTopConnections(normalizedRecent));
-            }
-          }
+        if (!cancelled) {
+          await refreshConnectionState();
         }
       } catch {
         // 连接加载失败，应用仍可正常启动
@@ -1346,9 +1467,54 @@ function AppContent() {
     };
   }, [
     credentialSecurityStatus.loading,
+    credentialSecurityStatus.masterPasswordEnabled,
     credentialSecurityStatus.unlocked,
-    dispatch,
+    refreshConnectionState,
   ]);
+
+  React.useEffect(() => {
+    if (!window.terminalAPI?.onConnectionsChanged) {
+      return undefined;
+    }
+
+    const handleConnectionsChanged = () => {
+      if (
+        credentialSecurityStatus.loading ||
+        !credentialSecurityStatus.unlocked
+      ) {
+        return;
+      }
+
+      void refreshConnectionState();
+    };
+
+    const unsubscribe =
+      window.terminalAPI.onConnectionsChanged(handleConnectionsChanged);
+
+    return () => {
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      } else {
+        window.terminalAPI?.offConnectionsChanged?.(handleConnectionsChanged);
+      }
+    };
+  }, [
+    credentialSecurityStatus.loading,
+    credentialSecurityStatus.unlocked,
+    refreshConnectionState,
+  ]);
+
+  React.useEffect(() => {
+    const syncedInstances = syncTerminalInstanceConfigs(
+      terminalInstances,
+      tabs,
+      connections,
+    );
+
+    if (syncedInstances !== terminalInstances) {
+      dispatch(actions.setTerminalInstances(syncedInstances));
+    }
+  }, [connections, dispatch, tabs, terminalInstances]);
 
   // 应用启动时注册预加载和事件监听
   React.useEffect(() => {

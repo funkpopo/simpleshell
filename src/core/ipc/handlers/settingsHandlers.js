@@ -1,3 +1,4 @@
+const { BrowserWindow } = require("electron");
 const configService = require("../../../services/configService");
 const commandHistoryService = require("../../../modules/terminal/command-history");
 const { logToFile, updateLogConfig } = require("../../utils/logger");
@@ -196,6 +197,12 @@ class SettingsHandlers {
   async updateCredentialSecurity(event, settings) {
     try {
       const status = configService.updateCredentialSecurity(settings);
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        if (win && !win.isDestroyed() && win.webContents) {
+          win.webContents.send("connections-changed");
+        }
+      }
       logToFile("Credential security settings updated", "INFO");
       return { success: true, status };
     } catch (error) {
