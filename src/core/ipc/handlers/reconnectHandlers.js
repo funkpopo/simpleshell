@@ -30,7 +30,11 @@ function normalizeReconnectPayload(
 ) {
   const sessionId = payload.sessionId || options.sessionId || null;
   const attemptsValue =
-    payload.attempts ?? payload.retryCount ?? payload.attempt ?? 0;
+    payload.attempts ??
+    payload.completedAttempts ??
+    payload.retryCount ??
+    payload.attempt ??
+    0;
   const maxAttemptsValue =
     payload.maxAttempts ??
     payload.effectiveMaxRetries ??

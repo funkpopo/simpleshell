@@ -5,6 +5,11 @@ const terminalManager = require("../../../modules/terminal");
 const crypto = require("crypto");
 const configService = require("../../../services/configService");
 const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
+const {
+  DEFAULT_SSH_RETRY_CONFIG,
+  buildReconnectTimeoutMessage,
+  buildReconnectWaitMessage,
+} = require("../../connection/ssh-retry-helper");
 
 /**
  * SSH/Telnet连接相关的IPC处理器
@@ -1611,6 +1616,10 @@ class SSHHandlers {
       const connectionKey = connectionInfo?.key;
       const sshPool = this.connectionManager?.sshConnectionPool;
       const reconnectManager = sshPool?.reconnectionManager;
+      const reconnectWaitTimeoutMs = Number(
+        reconnectManager?.config?.totalTimeCapMs ||
+          DEFAULT_SSH_RETRY_CONFIG.totalTimeCapMs,
+      );
 
       const getLatestClient = () => {
         const latest = sshPool?.connections?.get(connectionKey);
@@ -1685,7 +1694,9 @@ class SSHHandlers {
           if (mainWindow && !mainWindow.isDestroyed()) {
             this._emitProcessOutput(
               processId,
-              `\r\n连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多1分钟）...\r\n`,
+              `\r\n${buildReconnectWaitMessage(
+                reconnectManager?.config || DEFAULT_SSH_RETRY_CONFIG,
+              )}\r\n`,
             );
           }
         } catch {
@@ -1693,7 +1704,7 @@ class SSHHandlers {
         }
 
         waitForReconnectPromise = reconnectManager
-          .waitForReconnect(connectionKey, 60_000)
+          .waitForReconnect(connectionKey, reconnectWaitTimeoutMs)
           .then(() => {
             // 走统一成功路径
             readyHandler(true);
@@ -1772,17 +1783,22 @@ class SSHHandlers {
 
       connectionTimeout = setTimeout(() => {
         if (settled) return;
-        logToFile("SSH connection timed out after 60 seconds", "ERROR");
+        logToFile(
+          `SSH connection timed out after ${reconnectWaitTimeoutMs}ms`,
+          "ERROR",
+        );
         if (mainWindow && !mainWindow.isDestroyed()) {
           this._emitProcessOutput(
             processId,
-            `\r\n自动重连超时（1分钟），请检查代理/VPN/网络后手动重连\r\n`,
+            `\r\n${buildReconnectTimeoutMessage(
+              reconnectManager?.config || DEFAULT_SSH_RETRY_CONFIG,
+            )}\r\n`,
           );
         }
         errorHandler(new Error("SSH connection timeout"), {
           fromReconnectWait: true,
         });
-      }, 60_000);
+      }, reconnectWaitTimeoutMs);
 
       // 注册事件监听器
       ssh.on("ready", readyHandler);

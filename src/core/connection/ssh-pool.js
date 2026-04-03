@@ -600,7 +600,23 @@ class SSHPool extends BaseConnectionPool {
    * @param {string} key - 连接键
    */
   closeConnection(key, options = {}) {
-    super.closeConnection(key, options);
+    const closeOptions = this._normalizeCloseOptions(
+      options,
+      CLOSE_REASON.SYSTEM,
+    );
+    const isActiveClose =
+      closeOptions.intentional ||
+      closeOptions.reason === CLOSE_REASON.USER ||
+      closeOptions.reason === CLOSE_REASON.SYSTEM;
+
+    if (isActiveClose && this.reconnectionManager?.cancelSession) {
+      this.reconnectionManager.cancelSession(
+        key,
+        `close-connection:${closeOptions.reason}`,
+      );
+    }
+
+    super.closeConnection(key, closeOptions);
   }
 
   /**
