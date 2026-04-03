@@ -547,6 +547,36 @@ const WebTerminal = ({
     inEditorModeRef.current = inEditorMode;
   }, [inEditorMode]);
 
+  const attachTerminalToContainer = useCallback(
+    (termInstance = null) => {
+      const container = terminalRef.current;
+      const resolvedTerm =
+        termInstance || termRef.current || terminalCache[tabId];
+
+      if (!container || !resolvedTerm) {
+        return false;
+      }
+
+      if (resolvedTerm.element) {
+        if (resolvedTerm.element.parentElement !== container) {
+          while (container.firstChild) {
+            container.removeChild(container.firstChild);
+          }
+          container.appendChild(resolvedTerm.element);
+        }
+        return true;
+      }
+
+      if (typeof resolvedTerm.open === "function") {
+        resolvedTerm.open(container);
+        return true;
+      }
+
+      return false;
+    },
+    [tabId],
+  );
+
   const focusTerminalInput = useCallback(() => {
     if (
       !isActiveRef.current ||
@@ -559,6 +589,8 @@ const WebTerminal = ({
     }
 
     try {
+      attachTerminalToContainer(termRef.current);
+
       const helperTextarea = termRef.current.element?.querySelector(
         ".xterm-helper-textarea",
       );
@@ -577,7 +609,7 @@ const WebTerminal = ({
     }
 
     return false;
-  }, []);
+  }, [attachTerminalToContainer]);
 
   const applyPromptTrackingState = useCallback((nextState = {}) => {
     const state = promptTrackingStateRef.current;
@@ -1812,8 +1844,8 @@ const WebTerminal = ({
         searchAddon = new SearchAddon();
         term.loadAddon(searchAddon);
 
-        // 重新打开终端并附加到DOM
-        term.open(terminalRef.current);
+        // 复用缓存终端时优先重新挂载现有 DOM，避免重复 open 导致空白。
+        attachTerminalToContainer(term);
         syncTerminalLinkCtrlState(term, false);
 
         // 确保 Alt+F1 快捷键能冒泡到全局处理
@@ -3087,20 +3119,6 @@ const WebTerminal = ({
           terminalIOMailboxRef.current.detachProcess();
         }
 
-        // 从DOM中分离终端但保留缓存
-        if (termRef.current) {
-          try {
-            const element = terminalRef.current;
-            if (element) {
-              while (element.firstChild) {
-                element.removeChild(element.firstChild);
-              }
-            }
-          } catch {
-            // Error detaching terminal
-          }
-        }
-
         // 移除样式元素
       });
 
@@ -3162,6 +3180,7 @@ const WebTerminal = ({
     tryEnableWebglRenderer,
     disableWebglRenderer,
     scheduleHighlightRefresh,
+    attachTerminalToContainer,
   ]);
 
   // 设置模拟终端（用于无法使用IPC API时的回退）
@@ -3550,6 +3569,8 @@ const WebTerminal = ({
       // ʹ�õ������ӳ�����γ������ý���
       const attemptFocus = () => {
         try {
+          attachTerminalToContainer(termRef.current);
+
           // ��֤�ն�ʵ���ͽ��㷽������
           if (termRef.current && terminalRef.current) {
             // ����ն�Ԫ���Ƿ������ɼ�
@@ -3614,7 +3635,7 @@ const WebTerminal = ({
         timers.forEach((timer) => clearTimeout(timer));
       };
     }
-  }, [isActive, tabId]); // 监听isActive和tabId变化
+  }, [isActive, tabId, attachTerminalToContainer]); // 监听isActive和tabId变化
 
   useEffect(() => {
     const handleTabFocus = (event) => {
@@ -3623,6 +3644,8 @@ const WebTerminal = ({
 
       eventManager.setTimeout(() => {
         try {
+          attachTerminalToContainer(termRef.current);
+
           if (
             !terminalRef.current ||
             !termRef.current ||
@@ -3654,7 +3677,7 @@ const WebTerminal = ({
     return () => {
       removeTabFocusListener();
     };
-  }, [tabId, eventManager]);
+  }, [tabId, eventManager, attachTerminalToContainer]);
 
   useEffect(() => {
     const syncTerminalAfterSessionRestore = (processIdFromEvent = null) => {
