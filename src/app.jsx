@@ -357,6 +357,14 @@ const getReconnectNextAt = (status) =>
 
 const getReconnectFailureReasonLabel = (t, failureReason) => {
   switch (String(failureReason || "").toLowerCase()) {
+    case "proxy-unavailable":
+      return t("tabMenu.failureReasonProxyUnavailable");
+    case "connection-refused":
+      return t("tabMenu.failureReasonConnectionRefused");
+    case "host-unresolved":
+      return t("tabMenu.failureReasonHostUnresolved");
+    case "connection-reset":
+      return t("tabMenu.failureReasonConnectionReset");
     case "network":
       return t("tabMenu.failureReasonNetwork");
     case "authentication":
@@ -1852,7 +1860,15 @@ function AppContent() {
   const handleRefreshTerminal = async () => {
     const tabIndex = tabContextMenu.tabIndex;
     if (tabIndex !== null && tabIndex < tabs.length) {
-      const tabId = tabs[tabIndex].id;
+      const currentTabInfo = tabs[tabIndex];
+      const tabId = currentTabInfo.id;
+
+      if (currentTabInfo.type === "ssh") {
+        clearReconnectStatus(tabId);
+        setReconnectActionTabId((current) =>
+          current === tabId ? null : current,
+        );
+      }
 
       // 先关闭所有侧边栏以避免连接错误
       dispatch(actions.setResourceMonitorOpen(false));

@@ -11,27 +11,27 @@ const {
 
 const DEFAULT_SSH_RETRY_CONFIG = Object.freeze({
   maxRetries: 5,
-  initialDelay: 1000,
-  maxDelay: 30000,
-  exponentialFactor: 2.0,
-  jitter: 1000,
-  totalTimeCapMs: 60_000,
+  initialDelay: 5000,
+  maxDelay: 5000,
+  exponentialFactor: 1.0,
+  jitter: 0,
+  totalTimeCapMs: 25_000,
   networkProbe: {
     enabled: true,
-    intervalMs: 3000,
-    tcpTimeoutMs: 1500,
+    intervalMs: 1000,
+    tcpTimeoutMs: 300,
   },
-  useExponentialBackoff: true,
+  useExponentialBackoff: false,
   fastReconnect: {
-    enabled: true,
-    maxAttempts: 2,
-    delay: 500,
+    enabled: false,
+    maxAttempts: 0,
+    delay: 5000,
     conditions: ["ECONNRESET", "EPIPE"],
   },
   smartReconnect: {
-    enabled: true,
-    analyzePattern: true,
-    adaptiveDelay: true,
+    enabled: false,
+    analyzePattern: false,
+    adaptiveDelay: false,
     networkQualityThreshold: 0.7,
   },
   authFailure: {
@@ -45,6 +45,10 @@ const FAILURE_REASON = Object.freeze({
   AUTHENTICATION: "authentication",
   TIMEOUT: "timeout",
   RESOURCE: "resource",
+  PROXY_UNAVAILABLE: "proxy-unavailable",
+  CONNECTION_REFUSED: "connection-refused",
+  HOST_UNRESOLVED: "host-unresolved",
+  CONNECTION_RESET: "connection-reset",
   UNKNOWN: "unknown",
 });
 
@@ -78,10 +82,26 @@ function analyzeSshFailureReason(error) {
   ).toUpperCase();
 
   if (
-    errorCode === "ECONNREFUSED" ||
-    errorCode === "ECONNRESET" ||
+    errorCode === "EPROXYUNAVAILABLE" ||
+    error?.failureReason === FAILURE_REASON.PROXY_UNAVAILABLE
+  ) {
+    return FAILURE_REASON.PROXY_UNAVAILABLE;
+  }
+
+  if (errorCode === "ECONNREFUSED") {
+    return FAILURE_REASON.CONNECTION_REFUSED;
+  }
+
+  if (errorCode === "ENOTFOUND") {
+    return FAILURE_REASON.HOST_UNRESOLVED;
+  }
+
+  if (errorCode === "ECONNRESET" || errorCode === "EPIPE") {
+    return FAILURE_REASON.CONNECTION_RESET;
+  }
+
+  if (
     errorCode === "ETIMEDOUT" ||
-    errorCode === "EPIPE" ||
     errorCode === "ENETUNREACH" ||
     errorMessage.includes("socket") ||
     errorMessage.includes("network") ||
@@ -186,6 +206,37 @@ function isRetryWindowExpired(windowStartedAt, retryConfig) {
   return Number.isFinite(remaining) && remaining <= 0;
 }
 
+function formatRetryWindowLabel(durationMs) {
+  const normalizedMs = Number(durationMs || 0);
+  if (!Number.isFinite(normalizedMs) || normalizedMs <= 0) {
+    return "0秒";
+  }
+
+  if (normalizedMs < 60_000) {
+    const seconds = normalizedMs / 1000;
+    const rendered = Number.isInteger(seconds)
+      ? String(seconds)
+      : seconds.toFixed(1).replace(/\.0$/, "");
+    return `${rendered}秒`;
+  }
+
+  const minutes = normalizedMs / 60_000;
+  const rendered = Number.isInteger(minutes)
+    ? String(minutes)
+    : minutes.toFixed(1).replace(/\.0$/, "");
+  return `${rendered}分钟`;
+}
+
+function buildReconnectTimeoutMessage(retryConfig) {
+  const resolvedRetryConfig = buildSshRetryConfig(retryConfig);
+  return `自动重连超时（${formatRetryWindowLabel(resolvedRetryConfig.totalTimeCapMs)}），请检查代理/VPN/网络后手动重连。`;
+}
+
+function buildReconnectWaitMessage(retryConfig) {
+  const resolvedRetryConfig = buildSshRetryConfig(retryConfig);
+  return `连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多${formatRetryWindowLabel(resolvedRetryConfig.totalTimeCapMs)}）...`;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -193,14 +244,18 @@ function sleep(ms) {
 function probeTcp(host, port, timeoutMs) {
   return new Promise((resolve) => {
     if (!host || !port) {
-      resolve(false);
+      resolve({
+        ok: false,
+        code: "EINVAL",
+        message: "invalid tcp target",
+      });
       return;
     }
 
     const socket = net.createConnection({ host, port });
     let finished = false;
 
-    const finish = (ok) => {
+    const finish = (result) => {
       if (finished) {
         return;
       }
@@ -210,20 +265,38 @@ function probeTcp(host, port, timeoutMs) {
       } catch {
         /* intentionally ignored */
       }
-      resolve(ok);
+      resolve(result);
     };
 
     socket.setTimeout(timeoutMs);
-    socket.once("connect", () => finish(true));
-    socket.once("timeout", () => finish(false));
-    socket.once("error", () => finish(false));
+    socket.once("connect", () => finish({ ok: true, code: null, message: null }));
+    socket.once("timeout", () =>
+      finish({
+        ok: false,
+        code: "ETIMEDOUT",
+        message: "tcp probe timeout",
+      }),
+    );
+    socket.once("error", (error) =>
+      finish({
+        ok: false,
+        code: String(error?.code || "ECONNFAILED").toUpperCase(),
+        message: String(error?.message || "tcp probe failed"),
+        originalError: error,
+      }),
+    );
   });
 }
 
-async function isSshPreflightReady(sshConfig, retryConfig) {
+async function checkSshPreflight(sshConfig, retryConfig) {
   const resolvedRetryConfig = buildSshRetryConfig(retryConfig);
   if (!resolvedRetryConfig.networkProbe?.enabled) {
-    return true;
+    return {
+      ok: true,
+      failureReason: null,
+      code: null,
+      message: null,
+    };
   }
 
   const resolvedProxyConfig =
@@ -239,16 +312,73 @@ async function isSshPreflightReady(sshConfig, retryConfig) {
   if (usingProxy) {
     const proxyPort = Number(resolvedProxyConfig.port);
     if (!Number.isFinite(proxyPort) || proxyPort <= 0) {
-      return false;
+      return {
+        ok: false,
+        code: "EPROXYUNAVAILABLE",
+        failureReason: FAILURE_REASON.PROXY_UNAVAILABLE,
+        message: "proxy endpoint is unavailable",
+      };
     }
-    return probeTcp(resolvedProxyConfig.host, proxyPort, tcpTimeoutMs);
+    const probeResult = await probeTcp(
+      resolvedProxyConfig.host,
+      proxyPort,
+      tcpTimeoutMs,
+    );
+    if (probeResult.ok) {
+      return {
+        ok: true,
+        failureReason: null,
+        code: null,
+        message: null,
+      };
+    }
+    return {
+      ...probeResult,
+      code: "EPROXYUNAVAILABLE",
+      failureReason: FAILURE_REASON.PROXY_UNAVAILABLE,
+      message:
+        probeResult.message ||
+        `proxy ${resolvedProxyConfig.host}:${proxyPort} is unavailable`,
+    };
   }
 
   const targetPort = Number(sshConfig?.port ?? 22);
   if (!Number.isFinite(targetPort) || targetPort <= 0) {
-    return false;
+    return {
+      ok: false,
+      code: "EINVAL",
+      failureReason: FAILURE_REASON.UNKNOWN,
+      message: "invalid ssh target port",
+    };
   }
-  return probeTcp(sshConfig?.host, targetPort, tcpTimeoutMs);
+  const probeResult = await probeTcp(sshConfig?.host, targetPort, tcpTimeoutMs);
+  if (probeResult.ok) {
+    return {
+      ok: true,
+      failureReason: null,
+      code: null,
+      message: null,
+    };
+  }
+
+  const probeError = new Error(probeResult.message || "tcp probe failed");
+  probeError.code = probeResult.code;
+  if (probeResult.originalError) {
+    probeError.originalError = probeResult.originalError;
+  }
+
+  return {
+    ...probeResult,
+    failureReason: analyzeSshFailureReason(probeError),
+    message:
+      probeResult.message ||
+      `ssh target ${sshConfig?.host}:${targetPort} is unavailable`,
+  };
+}
+
+async function isSshPreflightReady(sshConfig, retryConfig) {
+  const result = await checkSshPreflight(sshConfig, retryConfig);
+  return result.ok === true;
 }
 
 async function waitForSshPreflight(
@@ -555,6 +685,10 @@ module.exports = {
   getRemainingRetryWindowMs,
   getRetryWindowExpiresAt,
   isRetryWindowExpired,
+  formatRetryWindowLabel,
+  buildReconnectTimeoutMessage,
+  buildReconnectWaitMessage,
+  checkSshPreflight,
   waitForSshPreflight,
   calculateRetryDelay,
   createManagedSshConnection,
