@@ -1,12 +1,38 @@
-import { debounce } from "../../../core/utils/performance.js";
-
 export const terminalCache = {};
 export const fitAddonCache = {};
 export const processCache = {};
 export const disposablesCache = {};
 export const terminalIOMailboxCache = {};
+const pendingForceResizeTimers = new Map();
+
+const getTabResizeTimerKey = (tabId) =>
+  tabId !== undefined && tabId !== null && tabId !== "" ? `tab:${tabId}` : null;
+
+const getProcessResizeTimerKey = (processId) =>
+  processId !== undefined && processId !== null && processId !== ""
+    ? `process:${processId}`
+    : null;
+
+const clearPendingForceResize = (...keys) => {
+  keys.forEach((key) => {
+    if (key === null || key === undefined || key === "") {
+      return;
+    }
+
+    const timerId = pendingForceResizeTimers.get(key);
+    if (timerId !== undefined) {
+      clearTimeout(timerId);
+      pendingForceResizeTimers.delete(key);
+    }
+  });
+};
 
 export const clearGeometryFor = (processId, tabId) => {
+  clearPendingForceResize(
+    getTabResizeTimerKey(tabId),
+    getProcessResizeTimerKey(processId),
+  );
+
   const mailbox = terminalIOMailboxCache[tabId];
   if (mailbox?.resetResizeState) {
     mailbox.resetResizeState();
@@ -46,8 +72,21 @@ export const unregisterTerminalIOMailbox = (tabId, mailbox) => {
   }
 };
 
-export const forceResizeTerminal = debounce(
-  (term, container, processId, tabId, fitAddon) => {
+export const forceResizeTerminal = (
+  term,
+  container,
+  processId,
+  tabId,
+  fitAddon,
+) => {
+  const resizeKey =
+    getTabResizeTimerKey(tabId) || getProcessResizeTimerKey(processId) || term;
+
+  clearPendingForceResize(resizeKey);
+
+  const timerId = setTimeout(() => {
+    pendingForceResizeTimers.delete(resizeKey);
+
     try {
       if (!container || !term || !fitAddon) {
         return;
@@ -74,8 +113,10 @@ export const forceResizeTerminal = debounce(
 
       fitAddon.fit();
 
-      if (!term.__webglEnabled && typeof term.refresh === "function") {
-        term.refresh(0, term.rows - 1);
+      // 标签切换时多个终端会并发触发 resize；fit 后强制 repaint
+      // 可以避免 renderer 虽已拿到正确尺寸但仍停留在空白帧。
+      if (typeof term.refresh === "function") {
+        term.refresh(0, Math.max(term.rows - 1, 0));
       }
 
       const cols = term.cols;
@@ -88,9 +129,10 @@ export const forceResizeTerminal = debounce(
     } catch {
       // Error in forceResizeTerminal
     }
-  },
-  100,
-);
+  }, 100);
+
+  pendingForceResizeTimers.set(resizeKey, timerId);
+};
 
 if (typeof window !== "undefined") {
   window.processCache = processCache;
