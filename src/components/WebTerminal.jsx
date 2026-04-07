@@ -611,6 +611,44 @@ const WebTerminal = ({
     return false;
   }, [attachTerminalToContainer]);
 
+  const recoverTerminalAfterActivation = useCallback(
+    ({ resize = true, refocus = true, refreshSuggestions = true } = {}) => {
+      if (
+        !isActiveRef.current ||
+        !termRef.current ||
+        !terminalRef.current ||
+        terminalRef.current.offsetWidth <= 0 ||
+        terminalRef.current.offsetHeight <= 0
+      ) {
+        return false;
+      }
+
+      try {
+        attachTerminalToContainer(termRef.current);
+
+        if (resize && fitAddonRef.current) {
+          forceResizeTerminal(
+            termRef.current,
+            terminalRef.current,
+            processCache[tabId],
+            tabId,
+            fitAddonRef.current,
+          );
+        }
+
+        recoverTerminalInteractionStateRef.current({
+          refocus,
+          refreshSuggestions,
+        });
+
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [attachTerminalToContainer, tabId],
+  );
+
   const applyPromptTrackingState = useCallback((nextState = {}) => {
     const state = promptTrackingStateRef.current;
     let promptReadyChanged = false;
@@ -2502,6 +2540,25 @@ const WebTerminal = ({
         });
       };
 
+      const scheduleActivationRecovery = ({
+        delays = [0, 60, 160],
+        refreshSuggestions = false,
+      } = {}) => {
+        delays.forEach((delay) => {
+          eventManager.setTimeout(() => {
+            if (document.hidden) {
+              return;
+            }
+
+            recoverTerminalAfterActivation({
+              resize: true,
+              refocus: true,
+              refreshSuggestions,
+            });
+          }, delay);
+        });
+      };
+
       // 添加键盘快捷键支持
       const handleKeyDown = (e) => {
         syncTerminalLinkCtrlState(term, e.ctrlKey);
@@ -2650,11 +2707,17 @@ const WebTerminal = ({
         if (pendingSystemShortcutRecoveryRef.current) {
           scheduleShortcutRecovery({ delays: [0, 60, 160] });
         }
+
+        scheduleActivationRecovery();
       };
 
       const handleShortcutRecoveryVisibilityChange = () => {
-        if (!document.hidden && pendingSystemShortcutRecoveryRef.current) {
-          scheduleShortcutRecovery({ delays: [0, 80, 180] });
+        if (!document.hidden) {
+          if (pendingSystemShortcutRecoveryRef.current) {
+            scheduleShortcutRecovery({ delays: [0, 80, 180] });
+          }
+
+          scheduleActivationRecovery({ delays: [40, 140, 260] });
         }
       };
 
@@ -2943,6 +3006,7 @@ const WebTerminal = ({
           isElementVisible(terminalRef.current)
         ) {
           handleResize();
+          scheduleActivationRecovery({ delays: [60, 180] });
         }
       }, 50);
 
@@ -3181,6 +3245,7 @@ const WebTerminal = ({
     disableWebglRenderer,
     scheduleHighlightRefresh,
     attachTerminalToContainer,
+    recoverTerminalAfterActivation,
   ]);
 
   // 设置模拟终端（用于无法使用IPC API时的回退）
@@ -3558,84 +3623,26 @@ const WebTerminal = ({
     }
   }, [theme.palette.mode, tabId]);
 
-  // 监听isActive变化，管理终端焦点状态
+  // 监听isActive变化，恢复终端交互状态
   useEffect(() => {
-    // 当标签变为活动状态时，确保终端获得焦点以接收键盘输入
-    if (isActive && termRef.current) {
-      let focusAttempt = 0;
-      const maxAttempts = 5;
-      const timers = [];
-
-      // ʹ�õ������ӳ�����γ������ý���
-      const attemptFocus = () => {
-        try {
-          attachTerminalToContainer(termRef.current);
-
-          // ��֤�ն�ʵ���ͽ��㷽������
-          if (termRef.current && terminalRef.current) {
-            // ����ն�Ԫ���Ƿ������ɼ�
-            const isVisible =
-              terminalRef.current.offsetWidth > 0 &&
-              terminalRef.current.offsetHeight > 0;
-
-            if (isVisible && termRef.current.element) {
-              // 检查xterm-helper-textarea是否已经获得焦点
-              const helperTextarea = termRef.current.element.querySelector(
-                ".xterm-helper-textarea",
-              );
-
-              if (helperTextarea && document.activeElement !== helperTextarea) {
-                // 让终端获得焦点，使其能够接收键盘输入
-                helperTextarea.focus();
-                console.debug(
-                  `[WebTerminal] Successfully focused terminal for tabId=${tabId} on attempt ${focusAttempt + 1}`,
-                );
-              } else if (
-                helperTextarea &&
-                document.activeElement === helperTextarea
-              ) {
-                console.debug(
-                  `[WebTerminal] Terminal already focused for tabId=${tabId}`,
-                );
-                return; // 已经获得焦点，不需要继续尝试
-              }
-            }
-          }
-
-          // 继续重试（如果还未达到最大尝试次数）
-          focusAttempt++;
-          if (focusAttempt < maxAttempts) {
-            const nextDelay = 50 + focusAttempt * 50; // 递增延迟: 100ms, 150ms, 200ms, 250ms, 300ms
-            const timer = setTimeout(attemptFocus, nextDelay);
-            timers.push(timer);
-          }
-        } catch (error) {
-          // 记录焦点设置失败的错误
-          console.error(
-            `[WebTerminal] Terminal focus failed for tabId=${tabId} on attempt ${focusAttempt + 1}:`,
-            error,
-          );
-
-          // 继续重试（如果还未达到最大尝试次数）
-          focusAttempt++;
-          if (focusAttempt < maxAttempts) {
-            const nextDelay = 50 + focusAttempt * 50;
-            const timer = setTimeout(attemptFocus, nextDelay);
-            timers.push(timer);
-          }
-        }
-      };
-
-      // 初始延迟后开始首次尝试
-      const initialTimer = setTimeout(attemptFocus, 100);
-      timers.push(initialTimer);
-
-      // 清理所有定时器
-      return () => {
-        timers.forEach((timer) => clearTimeout(timer));
-      };
+    if (!isActive || !termRef.current) {
+      return undefined;
     }
-  }, [isActive, tabId, attachTerminalToContainer]); // 监听isActive和tabId变化
+
+    const timers = [80, 160, 260, 380, 520].map((delay) =>
+      setTimeout(() => {
+        recoverTerminalAfterActivation({
+          resize: true,
+          refocus: true,
+          refreshSuggestions: false,
+        });
+      }, delay),
+    );
+
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+    };
+  }, [isActive, recoverTerminalAfterActivation]);
 
   useEffect(() => {
     const handleTabFocus = (event) => {
@@ -3643,28 +3650,11 @@ const WebTerminal = ({
       if (!terminalRef.current || !termRef.current) return;
 
       eventManager.setTimeout(() => {
-        try {
-          attachTerminalToContainer(termRef.current);
-
-          if (
-            !terminalRef.current ||
-            !termRef.current ||
-            terminalRef.current.offsetWidth <= 0 ||
-            terminalRef.current.offsetHeight <= 0
-          ) {
-            return;
-          }
-
-          const helperTextarea = termRef.current.element?.querySelector(
-            ".xterm-helper-textarea",
-          );
-
-          if (helperTextarea && document.activeElement !== helperTextarea) {
-            helperTextarea.focus();
-          }
-        } catch {
-          /* intentionally ignored */
-        }
+        recoverTerminalAfterActivation({
+          resize: true,
+          refocus: true,
+          refreshSuggestions: false,
+        });
       }, 120);
     };
 
@@ -3677,7 +3667,7 @@ const WebTerminal = ({
     return () => {
       removeTabFocusListener();
     };
-  }, [tabId, eventManager, attachTerminalToContainer]);
+  }, [tabId, eventManager, recoverTerminalAfterActivation]);
 
   useEffect(() => {
     const syncTerminalAfterSessionRestore = (processIdFromEvent = null) => {
