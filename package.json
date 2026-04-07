@@ -90,7 +90,7 @@
     "node-pty": "^1.2.0-beta.11",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-i18next": "^16.6.6",
+    "react-i18next": "^17.0.2",
     "react-icons": "^5.6.0",
     "react-markdown": "^10.1.0",
     "react-pdf": "^10.4.1",
@@ -101,7 +101,7 @@
     "react-window-infinite-loader": "^2.0.1",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
-    "socks-proxy-agent": "^8.0.5",
+    "socks-proxy-agent": "^10.0.0",
     "ssh2": "^1.17.0",
     "systeminformation": "^5.31.5",
     "telnet-client": "^2.2.13"
