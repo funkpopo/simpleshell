@@ -1,7 +1,7 @@
 {
   "name": "simpleshell",
   "productName": "simpleshell",
-  "version": "0.4.9",
+  "version": "0.4.10",
   "description": "A Simple Electron SSH Terminal for Windows",
   "main": ".webpack/main",
   "scripts": {
@@ -16,7 +16,7 @@
   "keywords": [],
   "author": {
     "name": "funkpopo",
-    "email": "s767609509@gmail.com"
+    "email": "funkpopoisme@gmail.com"
   },
   "license": "Apache-2.0",
   "devDependencies": {
