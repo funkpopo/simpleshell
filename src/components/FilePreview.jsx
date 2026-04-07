@@ -64,7 +64,9 @@ import { yaml } from "@codemirror/lang-yaml";
 import { markdown } from "@codemirror/lang-markdown";
 import { sql } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { useTranslation } from "react-i18next";
 import { formatFileSize } from "../core/utils/formatters.js";
+import { useGlobalTransfers } from "../store/globalTransferStore.js";
 // 延迟导入 react-pdf 以避免 webpack 模块初始化问题
 let Document, Page, pdfjs;
 let reactPdfLoaded = false;
@@ -840,6 +842,7 @@ const buildDiffLineDecorations = (paneData) => {
 
 const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [content, setContent] = useState(null);
@@ -873,6 +876,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [cacheFilePath, setCacheFilePath] = useState(null);
 
   const fullPath = path === "/" ? "/" + file?.name : path + "/" + file?.name;
+  const {
+    addTransferProgress,
+    updateTransferProgress,
+    scheduleTransferCleanup,
+  } = useGlobalTransfers(tabId);
   const isTextPreview = isTextFile(file?.name);
   const visibleSnapshots = useMemo(
     () => snapshots.filter((snapshot) => snapshot?.type !== "rollback-backup"),
@@ -1392,16 +1400,132 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const handleDownload = async () => {
     if (!file) return;
 
+    let transferId = null;
     try {
-      if (window.terminalAPI && window.terminalAPI.downloadFile) {
-        await window.terminalAPI.downloadFile(
-          tabId,
-          fullPath,
-          () => {}, // 简单进度回调
-        );
+      if (!window.terminalAPI?.downloadFile) {
+        throw new Error(t("fileManager.errors.fileApiNotAvailable"));
       }
-    } catch {
-      /* intentionally ignored */
+
+      setNotification({
+        message: t("fileManager.messages.startDownloadNamed", {
+          name: file.name,
+        }),
+        severity: "info",
+      });
+
+      transferId = addTransferProgress({
+        type: "download",
+        progress: 0,
+        fileName: file.name,
+        statusText: t("fileManager.transfer.status.waitingForSaveLocation"),
+        currentFile: file.name,
+        transferredBytes: 0,
+        totalBytes: file.size || 0,
+        transferSpeed: 0,
+        remainingTime: 0,
+        processedFiles: 0,
+        totalFiles: 1,
+      });
+
+      const result = await window.terminalAPI.downloadFile(
+        tabId,
+        fullPath,
+        (
+          progress,
+          fileName,
+          transferredBytes,
+          totalBytes,
+          transferSpeed,
+          remainingTime,
+          processedFiles,
+          totalFiles,
+          transferKey,
+        ) => {
+          if (!transferId) {
+            return;
+          }
+
+          updateTransferProgress(transferId, {
+            progress: Math.max(0, Math.min(100, progress || 0)),
+            fileName: fileName || file.name,
+            statusText: t("fileManager.transfer.status.downloading"),
+            currentFile: fileName || file.name,
+            transferredBytes: Math.max(0, transferredBytes || 0),
+            totalBytes: Math.max(0, totalBytes || 0),
+            transferSpeed: Math.max(0, transferSpeed || 0),
+            remainingTime: Math.max(0, remainingTime || 0),
+            processedFiles: Math.max(0, processedFiles || 0),
+            totalFiles: Math.max(1, totalFiles || 1),
+            transferKey: transferKey || "",
+          });
+        },
+      );
+
+      if (result?.cancelled) {
+        if (transferId) {
+          updateTransferProgress(transferId, {
+            isCancelled: true,
+            statusText: t("fileManager.transfer.status.downloadCancelled"),
+            cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
+          });
+          scheduleTransferCleanup(transferId, 3000);
+        }
+        setNotification({
+          message: t("fileManager.errors.downloadCancelledByUser"),
+          severity: "info",
+        });
+        return;
+      }
+
+      if (result?.success) {
+        if (transferId) {
+          updateTransferProgress(transferId, {
+            progress: 100,
+            fileName: file.name,
+            statusText: t("fileManager.transfer.status.completed"),
+            currentFile: "",
+            processedFiles: 1,
+            totalFiles: 1,
+            downloadPath: result.downloadPath || "",
+          });
+          scheduleTransferCleanup(transferId, 3000);
+        }
+        setNotification({
+          message: t("fileManager.messages.downloadCompleted", {
+            name: file.name,
+          }),
+          severity: "success",
+        });
+        return;
+      }
+
+      const errorMessage =
+        result?.error || t("fileManager.errors.downloadFailed");
+      if (transferId) {
+        updateTransferProgress(transferId, {
+          error: errorMessage,
+          statusText: t("fileManager.transfer.status.downloadFailed"),
+        });
+        scheduleTransferCleanup(transferId, 5000);
+      }
+      setNotification({
+        message: `${t("fileManager.errors.downloadFailed")}: ${errorMessage}`,
+        severity: "error",
+      });
+    } catch (error) {
+      const errorMessage =
+        error?.message || t("fileManager.errors.downloadFailed");
+      if (transferId) {
+        updateTransferProgress(transferId, {
+          error: errorMessage,
+          statusText: t("fileManager.transfer.status.downloadFailed"),
+        });
+        scheduleTransferCleanup(transferId, 5000);
+      }
+      setNotification({
+        message: `${t("fileManager.errors.downloadFailed")}: ${errorMessage}`,
+        severity: "error",
+      });
     }
   };
 

@@ -255,6 +255,7 @@ const isTransferEqual = (a, b) => {
     a.transferId === b.transferId &&
     a.progress === b.progress &&
     a.fileName === b.fileName &&
+    a.statusText === b.statusText &&
     a.transferredBytes === b.transferredBytes &&
     a.totalBytes === b.totalBytes &&
     a.transferSpeed === b.transferSpeed &&
@@ -265,6 +266,7 @@ const isTransferEqual = (a, b) => {
     a.currentFile === b.currentFile &&
     a.isCancelled === b.isCancelled &&
     a.error === b.error &&
+    a.warning === b.warning &&
     a.isCompleted === b.isCompleted &&
     a.tabId === b.tabId
   );

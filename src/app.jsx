@@ -234,11 +234,30 @@ const getConnectionSyncSignature = (connection) =>
     proxy: connection?.proxy || null,
   });
 
-const syncTerminalInstanceConfigs = (
-  terminalInstances,
-  tabs,
-  connections,
-) => {
+const areFileManagerHistoryStatesEqual = (left, right) => {
+  if (left === right) {
+    return true;
+  }
+
+  const leftHistory = Array.isArray(left?.pathHistory) ? left.pathHistory : [];
+  const rightHistory = Array.isArray(right?.pathHistory)
+    ? right.pathHistory
+    : [];
+
+  if (leftHistory.length !== rightHistory.length) {
+    return false;
+  }
+
+  for (let index = 0; index < leftHistory.length; index += 1) {
+    if (leftHistory[index] !== rightHistory[index]) {
+      return false;
+    }
+  }
+
+  return (left?.historyIndex ?? -1) === (right?.historyIndex ?? -1);
+};
+
+const syncTerminalInstanceConfigs = (terminalInstances, tabs, connections) => {
   if (!terminalInstances || typeof terminalInstances !== "object") {
     return terminalInstances;
   }
@@ -702,7 +721,8 @@ function AppContent() {
       return;
     }
 
-    const loadedConnections = (await window.terminalAPI.loadConnections()) || [];
+    const loadedConnections =
+      (await window.terminalAPI.loadConnections()) || [];
     if (!Array.isArray(loadedConnections)) {
       return;
     }
@@ -724,6 +744,9 @@ function AppContent() {
 
   // 锁定的文件管理器tabId（在打开时不随标签页切换而变化）
   const [lockedFileManagerTabId, setLockedFileManagerTabId] = useState(null);
+  const [fileManagerHistoryByTabId, setFileManagerHistoryByTabId] = useState(
+    {},
+  );
   const [reconnectStateByTabId, setReconnectStateByTabId] = React.useState({});
   const [reconnectActionTabId, setReconnectActionTabId] = React.useState(null);
   const [reconnectNow, setReconnectNow] = React.useState(Date.now());
@@ -1108,56 +1131,59 @@ function AppContent() {
   }, [connections, terminalInstances]);
 
   // 处理 SSH 认证对话框确认
-  const handleSSHAuthConfirm = React.useCallback(async (authResult) => {
-    if (!sshAuthRequestIdRef.current) return;
+  const handleSSHAuthConfirm = React.useCallback(
+    async (authResult) => {
+      if (!sshAuthRequestIdRef.current) return;
 
-    try {
-      await window.terminalAPI.respondSSHAuth({
-        requestId: sshAuthRequestIdRef.current,
-        ...authResult,
-      });
-    } catch (error) {
-      console.error("Failed to respond SSH auth:", error);
-    }
-
-    const targetTabId =
-      sshAuthData?.tabId || sshAuthConnectionConfig?.tabId || null;
-    if (targetTabId) {
-      const configKey = `${targetTabId}-config`;
-      const currentConfig =
-        terminalInstancesRef.current?.[configKey] || sshAuthConnectionConfig;
-
-      if (currentConfig) {
-        dispatch(
-          actions.setTerminalInstances({
-            ...terminalInstancesRef.current,
-            [configKey]: {
-              ...currentConfig,
-              username:
-                authResult?.username !== undefined
-                  ? authResult.username
-                  : currentConfig.username,
-              password:
-                authResult?.password !== undefined
-                  ? authResult.password
-                  : currentConfig.password,
-              privateKeyPath:
-                authResult?.privateKeyPath !== undefined
-                  ? authResult.privateKeyPath
-                  : currentConfig.privateKeyPath,
-              authType:
-                authResult?.authType || currentConfig.authType || "password",
-            },
-          }),
-        );
+      try {
+        await window.terminalAPI.respondSSHAuth({
+          requestId: sshAuthRequestIdRef.current,
+          ...authResult,
+        });
+      } catch (error) {
+        console.error("Failed to respond SSH auth:", error);
       }
-    }
 
-    setSshAuthDialogOpen(false);
-    setSshAuthData(null);
-    setSshAuthConnectionConfig(null);
-    sshAuthRequestIdRef.current = null;
-  }, [dispatch, sshAuthConnectionConfig, sshAuthData]);
+      const targetTabId =
+        sshAuthData?.tabId || sshAuthConnectionConfig?.tabId || null;
+      if (targetTabId) {
+        const configKey = `${targetTabId}-config`;
+        const currentConfig =
+          terminalInstancesRef.current?.[configKey] || sshAuthConnectionConfig;
+
+        if (currentConfig) {
+          dispatch(
+            actions.setTerminalInstances({
+              ...terminalInstancesRef.current,
+              [configKey]: {
+                ...currentConfig,
+                username:
+                  authResult?.username !== undefined
+                    ? authResult.username
+                    : currentConfig.username,
+                password:
+                  authResult?.password !== undefined
+                    ? authResult.password
+                    : currentConfig.password,
+                privateKeyPath:
+                  authResult?.privateKeyPath !== undefined
+                    ? authResult.privateKeyPath
+                    : currentConfig.privateKeyPath,
+                authType:
+                  authResult?.authType || currentConfig.authType || "password",
+              },
+            }),
+          );
+        }
+      }
+
+      setSshAuthDialogOpen(false);
+      setSshAuthData(null);
+      setSshAuthConnectionConfig(null);
+      sshAuthRequestIdRef.current = null;
+    },
+    [dispatch, sshAuthConnectionConfig, sshAuthData],
+  );
 
   // 处理 SSH 认证对话框关闭/取消
   const handleSSHAuthClose = React.useCallback(async () => {
@@ -1496,8 +1522,9 @@ function AppContent() {
       void refreshConnectionState();
     };
 
-    const unsubscribe =
-      window.terminalAPI.onConnectionsChanged(handleConnectionsChanged);
+    const unsubscribe = window.terminalAPI.onConnectionsChanged(
+      handleConnectionsChanged,
+    );
 
     return () => {
       if (typeof unsubscribe === "function") {
@@ -2195,6 +2222,15 @@ function AppContent() {
     const newPaths = { ...fileManagerPaths };
     delete newPaths[tabToRemove.id];
     dispatch(actions.setFileManagerPaths(newPaths));
+    setFileManagerHistoryByTabId((previous) => {
+      if (!previous[tabToRemove.id]) {
+        return previous;
+      }
+
+      const next = { ...previous };
+      delete next[tabToRemove.id];
+      return next;
+    });
 
     clearReconnectStatus(tabToRemove.id);
     setReconnectActionTabId((current) =>
@@ -2529,6 +2565,33 @@ function AppContent() {
     return fileManagerPaths[tabId] || "/";
   };
 
+  const updateFileManagerHistory = useCallback((tabId, navigationState) => {
+    if (!tabId || !navigationState) {
+      return;
+    }
+
+    const nextHistoryState = {
+      pathHistory: Array.isArray(navigationState.pathHistory)
+        ? navigationState.pathHistory
+        : [],
+      historyIndex: Number.isInteger(navigationState.historyIndex)
+        ? navigationState.historyIndex
+        : -1,
+    };
+
+    setFileManagerHistoryByTabId((previous) => {
+      const current = previous[tabId];
+      if (areFileManagerHistoryStatesEqual(current, nextHistoryState)) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        [tabId]: nextHistoryState,
+      };
+    });
+  }, []);
+
   // 添加切换快捷命令侧边栏的函数
   const toggleShortcutCommands = () => {
     dispatch(actions.setShortcutCommandsOpen(!shortcutCommandsOpen));
@@ -2772,6 +2835,7 @@ function AppContent() {
         tabName: null,
         sshConnection: null,
         initialPath: "/",
+        navigationState: null,
       };
     }
 
@@ -2783,6 +2847,7 @@ function AppContent() {
         tabName: null,
         sshConnection: null,
         initialPath: "/",
+        navigationState: null,
       };
     }
 
@@ -2794,8 +2859,10 @@ function AppContent() {
           ? terminalInstances[`${targetTab.id}-config`]
           : null,
       initialPath: getFileManagerPath(targetTab.id),
+      navigationState: fileManagerHistoryByTabId[targetTab.id] || null,
     };
   }, [
+    fileManagerHistoryByTabId,
     lockedFileManagerTabId,
     currentPanelTab,
     tabs,
@@ -3653,13 +3720,16 @@ function AppContent() {
                 >
                   {fileManagerOpen && (
                     <FileManager
+                      key={fileManagerProps.tabId || "file-manager-empty"}
                       open={fileManagerOpen}
                       onClose={handleCloseFileManager}
                       tabId={fileManagerProps.tabId}
                       tabName={fileManagerProps.tabName}
                       sshConnection={fileManagerProps.sshConnection}
                       initialPath={fileManagerProps.initialPath}
+                      navigationState={fileManagerProps.navigationState}
                       onPathChange={updateFileManagerPath}
+                      onNavigationStateChange={updateFileManagerHistory}
                     />
                   )}
                 </Box>

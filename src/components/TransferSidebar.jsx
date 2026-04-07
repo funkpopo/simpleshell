@@ -23,6 +23,7 @@ import FileUploadIcon from "@mui/icons-material/FileUpload";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import FolderIcon from "@mui/icons-material/Folder";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorIcon from "@mui/icons-material/Error";
 import CancelIcon from "@mui/icons-material/Cancel";
 import StopIcon from "@mui/icons-material/Stop";
@@ -39,6 +40,7 @@ import {
   getNormalizedTransferFileCount,
   sumTransferFileCount,
 } from "../utils/transferCounts.js";
+import { useTranslation } from "react-i18next";
 
 // 浮动窗口对话框样式（参考 AIChatWindow）
 const FloatingDialog = styled(Dialog)(
@@ -104,6 +106,9 @@ const getStatusIcon = (transfer) => {
   if (transfer.error) {
     return <ErrorIcon sx={{ fontSize: 16, color: "#f44336" }} />;
   }
+  if (transfer.warning) {
+    return <WarningAmberIcon sx={{ fontSize: 16, color: "#ff9800" }} />;
+  }
   if (transfer.isCancelled) {
     return <CancelIcon sx={{ fontSize: 16, color: "#ff9800" }} />;
   }
@@ -127,10 +132,10 @@ const formatSize = (bytes) => {
 /**
  * 格式化时间
  */
-const formatTime = (timestamp) => {
+const formatTime = (timestamp, locale) => {
   if (!timestamp) return "";
   const date = new Date(timestamp);
-  return date.toLocaleTimeString("zh-CN", {
+  return date.toLocaleTimeString(locale || undefined, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -142,10 +147,12 @@ const formatTime = (timestamp) => {
  */
 const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
   const theme = useTheme();
+  const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const statusIcon = getStatusIcon(transfer);
   const isCompleted = transfer.progress >= 100;
   const hasError = !!transfer.error;
+  const hasWarning = !!transfer.warning;
   const isCancelled = transfer.isCancelled;
   const canCancel = isActive && !isCompleted && !hasError && !isCancelled;
   const canDeleteHistory = !isActive && typeof onDelete === "function";
@@ -195,19 +202,22 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
             whiteSpace: "nowrap",
           }}
         >
-          {transfer.fileName || "传输中..."}
+          {transfer.fileName || t("fileManager.transfer.fallbackName")}
         </Typography>
         <Typography
           variant="caption"
           color="text.secondary"
           sx={{ flexShrink: 0 }}
         >
-          {formatTime(transfer.startTime || transfer.completedTime)}
+          {formatTime(
+            transfer.startTime || transfer.completedTime,
+            i18n.language,
+          )}
         </Typography>
         {statusIcon}
         {/* 删除历史记录按钮 */}
         {canDeleteHistory && (
-          <Tooltip title="删除记录">
+          <Tooltip title={t("fileManager.transfer.deleteRecord")}>
             <IconButton
               size="small"
               onClick={() => onDelete?.(transfer)}
@@ -241,6 +251,28 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
           </IconButton>
         )}
       </Box>
+
+      {(transfer.statusText || transfer.currentFile) && (
+        <Typography
+          variant="caption"
+          sx={{
+            display: "block",
+            mt: 0.5,
+            color: hasError
+              ? "#f44336"
+              : hasWarning
+                ? "#ff9800"
+                : isCancelled
+                  ? "#ff9800"
+                  : theme.palette.text.secondary,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {transfer.statusText || transfer.currentFile}
+        </Typography>
+      )}
 
       {/* 进度条 - 仅活跃传输显示 */}
       {canCancel && (
@@ -288,7 +320,10 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
           )}
           {isMultiFile && totalFiles > 0 && (
             <Chip
-              label={`${displayCompleted}/${totalFiles} 文件`}
+              label={t("fileManager.transfer.completedFiles", {
+                completed: displayCompleted,
+                total: totalFiles,
+              })}
               size="small"
               variant="outlined"
               sx={{ height: 18, fontSize: "0.65rem" }}
@@ -296,15 +331,23 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
           )}
           {hasError && (
             <Chip
-              label="失败"
+              label={t("fileManager.transfer.status.failedShort")}
               size="small"
               color="error"
               sx={{ height: 18, fontSize: "0.65rem" }}
             />
           )}
+          {hasWarning && (
+            <Chip
+              label={t("fileManager.transfer.status.partialShort")}
+              size="small"
+              color="warning"
+              sx={{ height: 18, fontSize: "0.65rem" }}
+            />
+          )}
           {isCancelled && (
             <Chip
-              label="已取消"
+              label={t("fileManager.transfer.status.cancelledShort")}
               size="small"
               color="warning"
               sx={{ height: 18, fontSize: "0.65rem" }}
@@ -312,7 +355,7 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
           )}
         </Box>
         {canCancel && onCancel && (
-          <Tooltip title="终止传输">
+          <Tooltip title={t("fileManager.transfer.stop")}>
             <IconButton
               size="small"
               onClick={() => onCancel(transfer)}
@@ -385,7 +428,7 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
             </List>
           ) : totalFiles > 0 ? (
             <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
-              共 {totalFiles} 个文件
+              {t("fileManager.transfer.fileCount", { count: totalFiles })}
             </Typography>
           ) : null}
         </Box>
@@ -402,6 +445,7 @@ TransferItem.displayName = "TransferItem";
 const TransferSidebar = memo(
   ({ open, onClose, onMinimize, zIndex, onFocus, anchorEl }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const { allTransfers, clearCompletedTransfers, updateTransferProgress } =
       useAllGlobalTransfers();
     const { history, clearHistory, removeHistoryItemAt } = useTransferHistory();
@@ -453,17 +497,27 @@ const TransferSidebar = memo(
               if (result.success) {
                 updateTransferProgress(transfer.tabId, transfer.transferId, {
                   isCancelled: true,
+                  statusText: t(
+                    "fileManager.transfer.status.transferCancelled",
+                  ),
+                  cancelMessage: t(
+                    "fileManager.transfer.status.transferCancelled",
+                  ),
                 });
               }
             })
             .catch(() => {
               updateTransferProgress(transfer.tabId, transfer.transferId, {
                 isCancelled: true,
+                statusText: t("fileManager.transfer.status.transferCancelled"),
+                cancelMessage: t(
+                  "fileManager.transfer.status.transferCancelled",
+                ),
               });
             });
         }
       },
-      [updateTransferProgress],
+      [t, updateTransferProgress],
     );
 
     // 清除所有已完成的传输
@@ -554,7 +608,7 @@ const TransferSidebar = memo(
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <SwapVertIcon color="primary" />
             <Typography variant="subtitle1" fontWeight="medium">
-              文件传输
+              {t("fileManager.transfer.panelTitle")}
             </Typography>
           </Box>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -586,7 +640,7 @@ const TransferSidebar = memo(
             disabled={completedTransfers.length === 0}
             sx={{ fontSize: "0.75rem" }}
           >
-            清除已完成
+            {t("fileManager.transfer.clearCompleted")}
           </Button>
           <Button
             size="small"
@@ -595,7 +649,7 @@ const TransferSidebar = memo(
             disabled={history.length === 0}
             sx={{ fontSize: "0.75rem" }}
           >
-            清除历史
+            {t("fileManager.transfer.clearHistory")}
           </Button>
         </Box>
 
@@ -625,7 +679,9 @@ const TransferSidebar = memo(
             <>
               <Box sx={{ px: 2, py: 1, bgcolor: "action.hover" }}>
                 <Typography variant="caption" color="text.secondary">
-                  正在传输 ({activeFileCount})
+                  {t("fileManager.transfer.activeSection", {
+                    count: activeFileCount,
+                  })}
                 </Typography>
               </Box>
               <Box>
@@ -646,7 +702,9 @@ const TransferSidebar = memo(
             <>
               <Box sx={{ px: 2, py: 1, bgcolor: "action.hover" }}>
                 <Typography variant="caption" color="text.secondary">
-                  已完成 ({completedFileCount})
+                  {t("fileManager.transfer.completedSection", {
+                    count: completedFileCount,
+                  })}
                 </Typography>
               </Box>
               <Box>
@@ -667,7 +725,9 @@ const TransferSidebar = memo(
               <Divider />
               <Box sx={{ px: 2, py: 1, bgcolor: "action.hover" }}>
                 <Typography variant="caption" color="text.secondary">
-                  历史记录 ({historyFileCount})
+                  {t("fileManager.transfer.historySection", {
+                    count: historyFileCount,
+                  })}
                 </Typography>
               </Box>
               <Box>
@@ -699,7 +759,9 @@ const TransferSidebar = memo(
                 }}
               >
                 <FileUploadIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-                <Typography variant="body2">暂无传输记录</Typography>
+                <Typography variant="body2">
+                  {t("fileManager.transfer.noTransfers")}
+                </Typography>
               </Box>
             )}
         </Box>

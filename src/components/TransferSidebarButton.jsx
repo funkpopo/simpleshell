@@ -3,6 +3,7 @@ import PropTypes from "prop-types";
 import { Box, IconButton, Tooltip, CircularProgress } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { SwapVert } from "@mui/icons-material";
+import { useTranslation } from "react-i18next";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
 import { sumTransferFileCount } from "../utils/transferCounts.js";
 
@@ -10,141 +11,138 @@ import { sumTransferFileCount } from "../utils/transferCounts.js";
  * 传输侧边栏按钮 - 带环形进度条
  */
 const TransferSidebarButton = memo(
-  forwardRef(
-    (
-      { isOpen, onClick, tooltip = "文件传输", tooltipPlacement = "top" },
-      ref,
-    ) => {
-      const theme = useTheme();
-      const { allTransfers } = useAllGlobalTransfers();
+  forwardRef(({ isOpen, onClick, tooltip, tooltipPlacement = "top" }, ref) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const { allTransfers } = useAllGlobalTransfers();
+    const resolvedTooltip = tooltip || t("fileManager.transfer.panelTitle");
 
-      // 计算总进度
-      const { totalProgress, hasActiveTransfers, activeCount } = useMemo(() => {
-        if (!allTransfers || allTransfers.length === 0) {
-          return {
-            totalProgress: 0,
-            hasActiveTransfers: false,
-            activeCount: 0,
-          };
-        }
-
-        const activeTransfers = allTransfers.filter(
-          (t) => t.progress < 100 && !t.isCancelled && !t.error,
-        );
-
-        if (activeTransfers.length === 0) {
-          return {
-            totalProgress: 0,
-            hasActiveTransfers: false,
-            activeCount: 0,
-          };
-        }
-
-        const total = activeTransfers.reduce(
-          (sum, t) => sum + (t.progress || 0),
-          0,
-        );
-        const avg = total / activeTransfers.length;
-
+    // 计算总进度
+    const { totalProgress, hasActiveTransfers, activeCount } = useMemo(() => {
+      if (!allTransfers || allTransfers.length === 0) {
         return {
-          totalProgress: avg,
-          hasActiveTransfers: true,
-          activeCount: sumTransferFileCount(activeTransfers),
+          totalProgress: 0,
+          hasActiveTransfers: false,
+          activeCount: 0,
         };
-      }, [allTransfers]);
+      }
 
-      const showProgressRing = hasActiveTransfers && !isOpen;
+      const activeTransfers = allTransfers.filter(
+        (t) => t.progress < 100 && !t.isCancelled && !t.error,
+      );
 
-      return (
-        <Tooltip title={tooltip} placement={tooltipPlacement}>
-          <Box
-            ref={ref}
-            sx={{
-              position: "relative",
-              width: 40,
-              height: 40,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* 环形进度条背景 */}
-            {showProgressRing && (
-              <CircularProgress
-                variant="determinate"
-                value={100}
-                size={38}
-                thickness={3}
-                sx={{
-                  position: "absolute",
-                  color: theme.palette.action.disabledBackground,
-                }}
-              />
-            )}
-            {/* 环形进度条 */}
-            {showProgressRing && (
-              <CircularProgress
-                variant="determinate"
-                value={totalProgress}
-                size={38}
-                thickness={3}
-                sx={{
-                  position: "absolute",
-                  color: theme.palette.primary.main,
-                  "& .MuiCircularProgress-circle": {
-                    strokeLinecap: "round",
-                  },
-                }}
-              />
-            )}
-            {/* 按钮 */}
-            <IconButton
-              onClick={onClick}
-              color="primary"
-              size="small"
+      if (activeTransfers.length === 0) {
+        return {
+          totalProgress: 0,
+          hasActiveTransfers: false,
+          activeCount: 0,
+        };
+      }
+
+      const total = activeTransfers.reduce(
+        (sum, t) => sum + (t.progress || 0),
+        0,
+      );
+      const avg = total / activeTransfers.length;
+
+      return {
+        totalProgress: avg,
+        hasActiveTransfers: true,
+        activeCount: sumTransferFileCount(activeTransfers),
+      };
+    }, [allTransfers]);
+
+    const showProgressRing = hasActiveTransfers && !isOpen;
+
+    return (
+      <Tooltip title={resolvedTooltip} placement={tooltipPlacement}>
+        <Box
+          ref={ref}
+          sx={{
+            position: "relative",
+            width: 40,
+            height: 40,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {/* 环形进度条背景 */}
+          {showProgressRing && (
+            <CircularProgress
+              variant="determinate"
+              value={100}
+              size={38}
+              thickness={3}
               sx={{
-                width: 32,
-                height: 32,
-                bgcolor: isOpen ? "action.selected" : "transparent",
-                "&:hover": {
-                  bgcolor: isOpen ? "action.selected" : "action.hover",
+                position: "absolute",
+                color: theme.palette.action.disabledBackground,
+              }}
+            />
+          )}
+          {/* 环形进度条 */}
+          {showProgressRing && (
+            <CircularProgress
+              variant="determinate"
+              value={totalProgress}
+              size={38}
+              thickness={3}
+              sx={{
+                position: "absolute",
+                color: theme.palette.primary.main,
+                "& .MuiCircularProgress-circle": {
+                  strokeLinecap: "round",
                 },
               }}
+            />
+          )}
+          {/* 按钮 */}
+          <IconButton
+            onClick={onClick}
+            color="primary"
+            size="small"
+            sx={{
+              width: 32,
+              height: 32,
+              bgcolor: isOpen ? "action.selected" : "transparent",
+              "&:hover": {
+                bgcolor: isOpen ? "action.selected" : "action.hover",
+              },
+            }}
+          >
+            <SwapVert
+              sx={{
+                fontSize: 20,
+              }}
+            />
+          </IconButton>
+          {/* 活跃传输数量徽章 */}
+          {activeCount > 0 && (
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                minWidth: 16,
+                height: 16,
+                borderRadius: 8,
+                bgcolor: theme.palette.primary.main,
+                color: theme.palette.primary.contrastText,
+                fontSize: 10,
+                fontWeight: "bold",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                px: 0.5,
+              }}
             >
-              <SwapVert
-                sx={{
-                  fontSize: 20,
-                }}
-              />
-            </IconButton>
-            {/* 活跃传输数量徽章 */}
-            {activeCount > 0 && (
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: 0,
-                  right: 0,
-                  minWidth: 16,
-                  height: 16,
-                  borderRadius: 8,
-                  bgcolor: theme.palette.primary.main,
-                  color: theme.palette.primary.contrastText,
-                  fontSize: 10,
-                  fontWeight: "bold",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  px: 0.5,
-                }}
-              >
-                {activeCount}
-              </Box>
-            )}
-          </Box>
-        </Tooltip>
-      );
-    },
-  ),
+              {activeCount}
+            </Box>
+          )}
+        </Box>
+      </Tooltip>
+    );
+  }),
 );
 
 TransferSidebarButton.propTypes = {
